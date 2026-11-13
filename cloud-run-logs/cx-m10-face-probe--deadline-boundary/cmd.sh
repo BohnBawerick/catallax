@@ -1,0 +1,1 @@
+set -euo pipefail; cargo test --release -j4 -p catallax-numbers --test polynomials -- --nocapture; cargo test --release -j4 -p catallax-numbers --test certified_equations -- --nocapture; cargo clippy --release -j4 -p catallax-numbers --all-targets -- -D warnings

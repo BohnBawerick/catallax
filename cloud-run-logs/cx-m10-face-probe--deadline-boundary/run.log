@@ -1,0 +1,102 @@
+warning: /home/user/catallax/crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded sized-chunks v0.6.5
+  Downloaded autocfg v1.5.1
+  Downloaded bitmaps v2.1.0
+  Downloaded version_check v0.9.5
+  Downloaded num-integer v0.1.47
+  Downloaded rand_core v0.6.4
+  Downloaded rand_xoshiro v0.6.0
+  Downloaded az v1.3.0
+  Downloaded num-traits v0.2.19
+  Downloaded typenum v1.20.1
+  Downloaded num-bigint v0.4.8
+  Downloaded im v15.1.0
+  Downloaded libm v0.2.16
+  Downloaded rug v1.30.0
+  Downloaded libc v0.2.191
+  Downloaded gmp-mpfr-sys v1.7.1
+   Compiling autocfg v1.5.1
+   Compiling gmp-mpfr-sys v1.7.1
+   Compiling version_check v0.9.5
+   Compiling typenum v1.20.1
+   Compiling libc v0.2.191
+   Compiling im v15.1.0
+   Compiling num-traits v0.2.19
+   Compiling bitmaps v2.1.0
+   Compiling rand_core v0.6.4
+   Compiling libm v0.2.16
+   Compiling rand_xoshiro v0.6.0
+   Compiling num-integer v0.1.47
+   Compiling sized-chunks v0.6.5
+   Compiling rug v1.30.0
+   Compiling num-bigint v0.4.8
+   Compiling az v1.3.0
+   Compiling catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+    Finished `release` profile [optimized] target(s) in 1m 48s
+     Running tests/polynomials.rs (target/release/deps/polynomials-70305c22faf7d466)
+
+running 16 tests
+test gcd_preserves_rational_factors_at_large_integer_scales ... ok
+test irrational_roots_isolation_refinement_and_real_equality ... ok
+test a_simple_root_stays_exact_in_a_quadratic_tower_without_an_eliminant ... ok
+test multivariate_order_substitution_derivatives_and_resultants ... ok
+test polynomial_normal_form_arithmetic_and_factorisation ... ok
+test a_configured_deadline_preserves_the_legacy_constructor_budget_boundary ... ok
+test single_precision_root_certification_keeps_closed_box_obligations ... ok
+test single_precision_root_certification_obeys_caller_limits ... ok
+test single_precision_root_certification_preserves_fallback_work ... ok
+test system_certification_unique_empty_multiple_and_singular ... ok
+test system_certification_with_pinned_coordinate ... ok
+test system_certification_with_two_pinned_coordinates ... ok
+test three_sphere_roots_and_closed_boundary_boxes ... ok
+test mignotte_close_roots_are_distinct_and_complete ... ok
+test rational_roots_wilkinson_multiplicity_and_generated_families ... ok
+test chebyshev_roots_one_through_sixty_four ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.89s
+
+warning: /home/user/catallax/crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+   Compiling catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+    Finished `release` profile [optimized] target(s) in 0.81s
+     Running tests/certified_equations.rs (target/release/deps/certified_equations-c88677c74ef8796f)
+
+running 11 tests
+test a_conjugate_outside_the_original_coefficient_definition_is_not_a_root ... ok
+test defining_zero_cannot_hide_an_undefined_divisor ... ok
+test four_unknown_joint_roots_retain_each_original_equation ... ok
+test joint_root_refuses_a_wrong_coefficient_conjugate ... ok
+test joint_equation_preflight_keeps_nearby_certificates_distinct ... ok
+test joint_equation_preflight_preserves_undefined_dependencies ... ok
+test nearby_certificates_do_not_exchange_equations ... ok
+test rational_cubic_retains_its_defining_equation ... ok
+test quadratic_coefficient_definitions_survive_lowering ... ok
+test joint_roots_preserve_original_coefficient_dags ... ok
+test four_unknowns_share_original_equation_authority ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+warning: /home/user/catallax/crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+    Checking typenum v1.20.1
+    Checking num-traits v0.2.19
+    Checking rand_core v0.6.4
+    Checking libc v0.2.191
+    Checking rand_xoshiro v0.6.0
+    Checking libm v0.2.16
+    Checking num-integer v0.1.47
+    Checking bitmaps v2.1.0
+    Checking num-bigint v0.4.8
+    Checking gmp-mpfr-sys v1.7.1
+    Checking sized-chunks v0.6.5
+    Checking az v1.3.0
+    Checking im v15.1.0
+    Checking rug v1.30.0
+    Checking catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+    Finished `release` profile [optimized] target(s) in 7.97s

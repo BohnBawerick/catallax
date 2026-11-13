@@ -922,15 +922,28 @@ fn display_spline_fillet_refuses_a_vertex_cap_with_numbers() {
         ..Default::default()
     };
     let (answer, work) = with_operation_budget(ALLOWANCE, || {
-        catallax_mesh::mesh_body(
+        assert!(
+            catallax_mesh::mesh_body(
+                &built.model,
+                built.result,
+                &options,
+                &mut Decider::default()
+            )
+            .is_err(),
+            "the strict mesh also respects the four-vertex cap"
+        );
+        catallax_mesh::display_mesh_body(
             &built.model,
             built.result,
             &options,
+            &serde_json::to_string(built.recipe()).unwrap(),
             &mut Decider::default(),
         )
     });
     assert!(!work.exhausted);
-    let error = answer.unwrap_err();
+    let catallax_numbers::OperationResult::Refused(error) = answer else {
+        panic!("a four-vertex cap cannot display this body");
+    };
     assert!(
         matches!(
             error.code,

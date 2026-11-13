@@ -215,7 +215,8 @@ pub fn display_mesh_body(
         }
         Err(mut error) => {
             error.detail = format!(
-                "spline display mesh level 1/100 mm, {} total request units: {}",
+                "spline display mesh level 1/100 mm, vertex cap {}, {} total request units: {}",
+                options.max_vertices,
                 catallax_numbers::current_operation_work().used,
                 error.detail
             );

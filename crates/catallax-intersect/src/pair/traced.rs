@@ -7,6 +7,7 @@ use catallax_shapes::{
     SplineSupport, Torus,
 };
 
+pub(super) mod fitted;
 pub(super) mod sphere;
 
 fn refused(detail: impl Into<String>) -> Refusal {

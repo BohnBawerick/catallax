@@ -1,10 +1,11 @@
 //! SMLib proposes selectors. Complete Catallax components remain the geometry.
 
 use super::*;
-use catallax_shapes::{BSplineSurface, Isometry, PatchPairCurve};
+use catallax_shapes::{BSplineSurface, Isometry, PatchPairCurve, PatchSectionBranch};
 use catallax_trace::{
     spline::{BSplineSurface as CandidateSurface, ControlPoint, PointForm},
     surface_intersector::Intersector,
+    vector::Vector3 as CandidateVector,
 };
 
 pub(super) struct Candidates {
@@ -75,6 +76,47 @@ impl Candidates {
     ) -> Result<Self, Refusal> {
         let first = surface(sources[0].0, sources[0].1, dec)?;
         let second = surface(sources[1].0, sources[1].1, dec)?;
+        Self::trace(first, second, dec)
+    }
+
+    pub(super) fn plane_section(
+        plane: &Plane,
+        source: &BSplineSurface,
+        swap: bool,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        let vector = |value: &Vector3| -> Result<CandidateVector, Refusal> {
+            Ok(CandidateVector {
+                x: approximate(&value.x)?,
+                y: approximate(&value.y)?,
+                z: approximate(&value.z)?,
+            })
+        };
+        let origin = CandidateVector {
+            x: approximate(&plane.origin.x)?,
+            y: approximate(&plane.origin.y)?,
+            z: approximate(&plane.origin.z)?,
+        };
+        let x_axis = plane.normal.cross(&plane.ref_dir);
+        let native = CandidateSurface::canonical_plane(
+            origin,
+            vector(&x_axis)?,
+            vector(&plane.normal.cross(&x_axis))?,
+        )
+        .map_err(|error| refusal(format!("unproved plane adaptation failed: {error:?}")))?;
+        let fitted = surface(source, &Isometry::identity(), dec)?;
+        if swap {
+            Self::trace(fitted, native, dec)
+        } else {
+            Self::trace(native, fitted, dec)
+        }
+    }
+
+    fn trace(
+        first: CandidateSurface,
+        second: CandidateSurface,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
         dec.check_deadline()?;
         let curves = Intersector::new(
             &first,
@@ -113,13 +155,29 @@ impl Candidates {
         components: &[PatchPairCurve],
         dec: &mut Decider,
     ) -> Result<(), Refusal> {
-        let mut selected = vec![false; components.len()];
+        self.select(components.len(), |index| components[index].witnesses(), dec)
+    }
+
+    pub(super) fn prove_sections(
+        &self,
+        components: &[PatchSectionBranch],
+        dec: &mut Decider,
+    ) -> Result<(), Refusal> {
+        self.select(components.len(), |index| components[index].witnesses(), dec)
+    }
+
+    fn select<F, I>(&self, count: usize, witnesses: F, dec: &mut Decider) -> Result<(), Refusal>
+    where
+        F: Fn(usize) -> I,
+        I: Iterator<Item = Point3>,
+    {
+        let mut selected = vec![false; count];
         for seed in &self.seeds {
             dec.check_deadline()?;
             let mut best: Option<(usize, Real)> = None;
             let mut tied = false;
-            for (index, component) in components.iter().enumerate() {
-                for witness in component.witnesses() {
+            for index in 0..count {
+                for witness in witnesses(index) {
                     let distance = witness.minus(seed).norm_squared();
                     let Some((previous, previous_distance)) = &best else {
                         best = Some((index, distance));

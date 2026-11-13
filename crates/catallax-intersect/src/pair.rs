@@ -896,6 +896,9 @@ fn uncached_plan(
             Surface::BSpline(catallax_shapes::SplineSupport::RationalAtlas(atlas)) => {
                 return rational_patch::atlas(&surface, atlas, swap, dec);
             }
+            Surface::BSpline(catallax_shapes::SplineSupport::RollingEnvelope(envelope)) => {
+                return traced::fitted::section(&surface, envelope, swap, dec);
+            }
             _ => (),
         }
     }

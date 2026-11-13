@@ -1,0 +1,11 @@
+{"request_id":"cx-m10-wire-trace--original-spans-c6ff536b","repo":"BohnBawerick/catallax","sha":"c6ff536ba83024e840e7c4ef349d3a43a52e002f","script_exit_code":1,"seconds":355,"commands":[
+{"cmd":"rustup update stable","status":"exit 0"},
+{"cmd":"cargo +stable clippy -j4 -p catallax-shapes -p catallax-intersect -p catallax-boolean --all-targets -- -D warnings","status":"exit 0"},
+{"cmd":"cargo +stable test -j4 -p catallax-shapes --test atlas_pair -- --nocapture || test_status=$?","status":"failed with exit 101 (tolerated by ||, recorded as original_span_test_status=101)"},
+{"cmd":"probe=$(mktemp -d ...); write main.rs, Cargo.lock, Cargo.toml for cx-m10-original-span-proof","status":"exit 0"},
+{"cmd":"cargo +stable run -j4 --manifest-path $probe/Cargo.toml ... || probe_status=$?","status":"exit 0 (original_span_joint_probe_status=0)"},
+{"cmd":"if test_status != 0 or probe_status != 0; then exit 1; fi","status":"failed with exit 1"}],
+"test_counts":{"passed":7,"failed":1,"ignored":0,"filtered_out":0},
+"failed_tests":["original_spans_keep_complete_circle_components_and_exact_periodic_ownership"],
+"platform":{"cpu_model":"Intel(R) Xeon(R) Processor @ 2.10GHz","nproc":4,"mem_total_gb":15},
+"notes":"Failure: panic at crates/catallax-shapes/tests/atlas_pair.rs:397:42, unwrap on Err Refusal { code: shapes.rational-patch-unproven, detail: a patch proof requires exact equality, not bounded coincidence }. Joint probe ran and printed stage=patch_meeting result=Err(Refusal numbers.operation-budget) used=19988497 exhausted=true. Script ends exit 1 because test_status=101. The script's own mktemp dir is removed by its EXIT trap. A cargo warning about catallax-cli main.rs in multiple build targets appeared; clippy still finished."}

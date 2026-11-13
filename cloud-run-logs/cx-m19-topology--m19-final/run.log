@@ -1,0 +1,131 @@
+warning: /home/user/catallax/crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded allocator-api2 v0.2.21
+  Downloaded autocfg v1.5.1
+  Downloaded cpufeatures v0.2.17
+  Downloaded equivalent v1.0.3
+  Downloaded cfg-if v1.0.5
+  Downloaded itoa v1.0.18
+  Downloaded block-buffer v0.10.4
+  Downloaded rand_xoshiro v0.6.0
+  Downloaded num-integer v0.1.47
+  Downloaded quote v1.0.47
+  Downloaded rand_core v0.6.4
+  Downloaded sha2 v0.10.9
+  Downloaded version_check v0.9.5
+  Downloaded zmij v1.0.23
+  Downloaded bitmaps v2.1.0
+  Downloaded crossbeam-deque v0.8.8
+  Downloaded crypto-common v0.1.7
+  Downloaded digest v0.10.7
+  Downloaded either v1.19.0
+  Downloaded foldhash v0.2.0
+  Downloaded generic-array v0.14.7
+  Downloaded sized-chunks v0.6.5
+  Downloaded smallvec v1.16.3
+  Downloaded crossbeam-epoch v0.9.21
+  Downloaded serde_core v1.0.229
+  Downloaded serde_derive v1.0.229
+  Downloaded unicode-ident v1.0.27
+  Downloaded num-traits v0.2.19
+  Downloaded proc-macro2 v1.0.107
+  Downloaded rayon-core v1.13.0
+  Downloaded crossbeam-utils v0.8.23
+  Downloaded serde v1.0.229
+  Downloaded memchr v2.8.3
+  Downloaded num-bigint v0.4.8
+  Downloaded im v15.1.0
+  Downloaded typenum v1.20.1
+  Downloaded hashbrown v0.16.1
+  Downloaded libm v0.2.16
+  Downloaded serde_json v1.0.154
+  Downloaded rayon v1.12.0
+  Downloaded syn v3.0.9
+  Downloaded spade v2.15.1
+  Downloaded robust v1.2.0
+   Compiling version_check v0.9.5
+   Compiling typenum v1.20.1
+   Compiling autocfg v1.5.1
+   Compiling proc-macro2 v1.0.107
+   Compiling num-traits v0.2.19
+   Compiling bitmaps v2.1.0
+   Compiling im v15.1.0
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.27
+   Compiling rand_core v0.6.4
+   Compiling rand_xoshiro v0.6.0
+   Compiling num-integer v0.1.47
+   Compiling sized-chunks v0.6.5
+   Compiling serde_core v1.0.229
+   Compiling num-bigint v0.4.8
+   Compiling zmij v1.0.23
+   Compiling syn v3.0.9
+   Compiling catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+   Compiling serde_json v1.0.154
+   Compiling serde v1.0.229
+   Compiling serde_derive v1.0.229
+   Compiling itoa v1.0.18
+   Compiling memchr v2.8.3
+   Compiling catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+   Compiling generic-array v0.14.7
+   Compiling catallax-recipe v0.1.5 (/home/user/catallax/crates/catallax-recipe)
+   Compiling catallax-topology v0.1.5 (/home/user/catallax/crates/catallax-topology)
+   Compiling catallax-intersect v0.1.5 (/home/user/catallax/crates/catallax-intersect)
+   Compiling crossbeam-utils v0.8.23
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling crossbeam-epoch v0.9.21
+   Compiling digest v0.10.7
+   Compiling catallax-boolean v0.1.5 (/home/user/catallax/crates/catallax-boolean)
+   Compiling crossbeam-deque v0.8.8
+   Compiling cfg-if v1.0.5
+   Compiling cpufeatures v0.2.17
+   Compiling sha2 v0.10.9
+   Compiling catallax-measure v0.1.5 (/home/user/catallax/crates/catallax-measure)
+   Compiling rayon-core v1.13.0
+   Compiling allocator-api2 v0.2.21
+   Compiling foldhash v0.2.0
+   Compiling libm v0.2.16
+   Compiling equivalent v1.0.3
+   Compiling hashbrown v0.16.1
+   Compiling catallax-import v0.1.5 (/home/user/catallax/crates/catallax-import)
+   Compiling smallvec v1.16.3
+   Compiling robust v1.2.0
+   Compiling spade v2.15.1
+   Compiling either v1.19.0
+   Compiling rayon v1.12.0
+   Compiling catallax-mesh v0.1.5 (/home/user/catallax/crates/catallax-mesh)
+   Compiling catallax-features v0.1.5 (/home/user/catallax/crates/catallax-features)
+   Compiling catallax-cli v0.1.5 (/home/user/catallax/crates/catallax-cli)
+   Compiling catallax-step v0.1.5 (/home/user/catallax/crates/catallax-step)
+   Compiling catallax-field v0.1.5 (/home/user/catallax/crates/catallax-field)
+   Compiling catallax-app v0.1.5 (/home/user/catallax/crates/catallax-app)
+   Compiling catallax-compare v0.1.5 (/home/user/catallax/crates/catallax-compare)
+   Compiling catallax-iges v0.1.5 (/home/user/catallax/crates/catallax-iges)
+    Finished `release` profile [optimized] target(s) in 5m 24s
+     Running tests/m19_print_verdict.rs (target/release/deps/m19_print_verdict-35f4b8a40629fa98)
+
+running 5 tests
+test bounded_p6_requests_keep_settings_and_refuse_identically_on_workers ... ignored, bounded P6 diagnostics; run explicitly with --ignored
+test coarse_sheet_refusal_keeps_settings_cleans_files_and_matches_workers ... sheet-coarse workers=1 refusal={"code":"field.print-detail-topology","detail":"sheet point and box queries are supported; print cells do not yet certify both local boundary sheets","stage":null,"step":null} work={"exhausted":false,"limit":1000000,"used":0}
+sheet-coarse workers=2 refusal={"code":"field.print-detail-topology","detail":"sheet point and box queries are supported; print cells do not yet certify both local boundary sheets","stage":null,"step":null} work={"exhausted":false,"limit":1000000,"used":0}
+sheet-coarse workers=4 refusal={"code":"field.print-detail-topology","detail":"sheet point and box queries are supported; print cells do not yet certify both local boundary sheets","stage":null,"step":null} work={"exhausted":false,"limit":1000000,"used":0}
+ok
+test fine_sheet_allowance_refusal_keeps_settings_cleans_files_and_matches_workers ... sheet-default workers=1 refusal={"code":"field.print-detail-topology","detail":"sheet point and box queries are supported; use the explicit adaptive request for stage diagnostics; sheet print topology remains unresolved","stage":null,"step":null} work={"exhausted":false,"limit":1000,"used":0}
+sheet-default workers=2 refusal={"code":"field.print-detail-topology","detail":"sheet point and box queries are supported; use the explicit adaptive request for stage diagnostics; sheet print topology remains unresolved","stage":null,"step":null} work={"exhausted":false,"limit":1000,"used":0}
+sheet-default workers=4 refusal={"code":"field.print-detail-topology","detail":"sheet point and box queries are supported; use the explicit adaptive request for stage diagnostics; sheet print topology remains unresolved","stage":null,"step":null} work={"exhausted":false,"limit":1000,"used":0}
+ok
+test fine_sheet_request_keeps_settings_cleans_files_and_matches_workers ... ignored, bounded fine-sheet diagnostics; run explicitly with --ignored
+test p6_allowance_refusal_keeps_settings_cleans_files_and_matches_workers ... P6-default workers=1 refusal={"code":"numbers.operation-budget","detail":"operation work allowance exhausted","stage":null,"step":null} work={"exhausted":true,"limit":1000,"used":1000}
+P6-explicit-coarser workers=1 refusal={"code":"numbers.operation-budget","detail":"operation work allowance exhausted","stage":null,"step":null} work={"exhausted":true,"limit":1000,"used":1000}
+P6-default workers=2 refusal={"code":"numbers.operation-budget","detail":"operation work allowance exhausted","stage":null,"step":null} work={"exhausted":true,"limit":1000,"used":1000}
+P6-explicit-coarser workers=2 refusal={"code":"numbers.operation-budget","detail":"operation work allowance exhausted","stage":null,"step":null} work={"exhausted":true,"limit":1000,"used":1000}
+P6-default workers=4 refusal={"code":"numbers.operation-budget","detail":"operation work allowance exhausted","stage":null,"step":null} work={"exhausted":true,"limit":1000,"used":1000}
+P6-explicit-coarser workers=4 refusal={"code":"numbers.operation-budget","detail":"operation work allowance exhausted","stage":null,"step":null} work={"exhausted":true,"limit":1000,"used":1000}
+ok
+
+test result: ok. 3 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.37s
+

@@ -469,6 +469,19 @@ impl MPoly {
             .map(|(m, c)| (m.clone(), c.clone()))
             .collect()
     }
+
+    pub(crate) fn is_constant_linear_in(&self, var: usize) -> bool {
+        let mut found = false;
+        for monomial in self.terms.keys() {
+            if monomial.exponents()[var] != 0 {
+                if monomial.degree() != 1 {
+                    return false;
+                }
+                found = true;
+            }
+        }
+        found
+    }
     /// Scalar multiplication.
     pub fn scale(&self, c: &Rational) -> Self {
         Self::from_terms(

@@ -301,7 +301,7 @@ fn krawczyk(system: &PolySystem, bounds: &RootBox, p: u32) -> Option<(RootBox, b
 pub(crate) fn coordinate_polynomial(
     system: &PolySystem,
     axis: usize,
-    reverse: bool,
+    linear_first: bool,
     work: &mut Work,
 ) -> Result<Option<UPoly>, &'static str> {
     let n = system.dimension();
@@ -313,12 +313,9 @@ pub(crate) fn coordinate_polynomial(
             insert_poly(&mut polys, p);
         }
     }
-    // The opt-in view removes later matching coordinates and lifted definitions
-    // first. Legacy annihilator and height callers retain ascending traversal.
-    for var in (0..n)
-        .map(|var| if reverse { n - 1 - var } else { var })
-        .filter(|v| *v != axis)
-    {
+    let mut variables = linear_first.then(|| (0..n).filter(|v| *v != axis).collect::<Vec<_>>());
+    let mut legacy = (0..n).filter(|v| *v != axis);
+    loop {
         if let Some(p) = polys
             .iter()
             .filter_map(|p| p.to_upoly(axis))
@@ -326,7 +323,34 @@ pub(crate) fn coordinate_polynomial(
         {
             return Ok(Some(p));
         }
-        let linear = polys.iter().find_map(|f| {
+        // The opt-in view solves rationally linear definitions and source
+        // matches before forming resultants. Legacy traversal is unchanged.
+        let (var, source) = if let Some(variables) = &mut variables {
+            if variables.is_empty() {
+                return Ok(None);
+            }
+            let linear = variables
+                .iter()
+                .enumerate()
+                .rev()
+                .find_map(|(index, &var)| {
+                    polys
+                        .iter()
+                        .position(|poly| poly.is_constant_linear_in(var))
+                        .map(|source| (index, source))
+                });
+            if let Some((index, source)) = linear {
+                (variables.remove(index), source)
+            } else {
+                (variables.pop().expect("checked nonempty"), polys.len())
+            }
+        } else {
+            let Some(var) = legacy.next() else {
+                return Ok(None);
+            };
+            (var, 0)
+        };
+        let linear = polys[source..].iter().find_map(|f| {
             let c = f.coefficients_in(var);
             if c.len() != 2 {
                 return None;
@@ -363,10 +387,6 @@ pub(crate) fn coordinate_polynomial(
             polys = next;
         }
     }
-    Ok(polys
-        .iter()
-        .filter_map(|p| p.to_upoly(axis))
-        .find(|p| p.degree().is_some_and(|d| d > 0)))
 }
 fn insert_poly(polys: &mut Vec<MPoly>, p: MPoly) {
     if p.is_zero() {

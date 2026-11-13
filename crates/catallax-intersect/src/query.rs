@@ -388,28 +388,25 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
             Err(error) => return Outcome::Refused(error),
         }
     }
-    // A patch branch and a line or spline are different point sets when an
-    // exact cell-end witness of the branch is off the other curve.
+    // A section lies in finitely many positive-weight chart hulls. Bounded
+    // components and unbounded lines differ even with the same straight support.
     for (x, y) in [(a, b), (b, a)] {
         let Curve::PatchSection(branch) = geom.curve(x) else {
             continue;
         };
-        let mut witnesses = branch.witnesses().collect::<Vec<_>>();
-        witnesses.push(branch.endpoints()[1].clone());
-        for point in &witnesses {
-            let off = match geom.curve(y) {
-                Curve::Line(line) => sign(
-                    &point.minus(&line.origin).cross(&line.dir).norm_squared(),
-                    dec,
-                )
-                .map(|s| s != Sign::Zero)
-                .map_err(Refusal::from),
-                Curve::BSpline(curve) => curve.unique_parameter_of(point, dec).map(|t| t.is_none()),
-                _ => break,
-            };
-            match off {
-                Ok(true) => return Outcome::Proven(Apart),
-                Ok(false) => (),
+        if matches!(geom.curve(y), Curve::Line(_)) {
+            return Outcome::Proven(Apart);
+        }
+        let Curve::BSpline(curve) = geom.curve(y) else {
+            continue;
+        };
+        for point in branch
+            .witnesses()
+            .chain(std::iter::once(branch.endpoints()[1].clone()))
+        {
+            match curve.unique_parameter_of(&point, dec) {
+                Ok(None) => return Outcome::Proven(Apart),
+                Ok(Some(_)) => (),
                 Err(error) => return Outcome::Refused(error),
             }
         }

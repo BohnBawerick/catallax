@@ -266,3 +266,44 @@ fn reconstructed_joint_roots_keep_closed_non_dyadic_coordinates_exact() {
     });
     assert!(!work.exhausted);
 }
+
+#[test]
+fn selected_coefficient_field_preserves_correlated_quadratic_coordinates() {
+    let (_, work) = with_operation_budget(20_000_000, || {
+        let mut dec = Decider::default();
+        let a = Real::from(2_i64).sqrt();
+        let b = Real::from(3_i64).sqrt();
+        let x = RealPoly::var(2, 0);
+        let y = RealPoly::var(2, 1);
+        let equations = [
+            &x + &y - RealPoly::constant(2, &a + &b),
+            x.pow_u32(2) + y.pow_u32(2).scale(&Real::from(2_i64))
+                - RealPoly::constant(2, Real::from(7_i64)),
+        ];
+        let half_three = Rational::from_ratio(3, 2).unwrap();
+        let values = RealPoly::simple_algebraic_root_in_reconstructed(
+            &equations,
+            &[
+                [half_three.clone(), Rational::from_i64(2)],
+                [Rational::one(), half_three],
+            ],
+            &[1, 0, 1],
+            128,
+            &mut dec,
+        )
+        .unwrap();
+        for (value, expected) in values.iter().zip([&a, &b, &a]) {
+            assert!(matches!(
+                dec.sign(&(value - expected)),
+                Outcome::ProvenCoincident(proof) if proof.proof != ZeroProof::SeparationBound
+            ));
+        }
+        for equation in equations {
+            assert!(matches!(
+                dec.sign(&equation.eval_real(&[values[1].clone(), values[0].clone()])),
+                Outcome::ProvenCoincident(proof) if proof.proof != ZeroProof::SeparationBound
+            ));
+        }
+    });
+    assert!(!work.exhausted);
+}

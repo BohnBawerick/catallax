@@ -1061,22 +1061,6 @@ impl Decider {
         assert!(axis < root.root_box().dimension());
         self.stats.decisions += 1;
         self.check_deadline()?;
-        fn boundary(
-            dec: &mut Decider,
-            value: &Real,
-            bound: &Real,
-        ) -> Result<Option<Sign>, Refusal> {
-            match dec.sign(&(value - bound)) {
-                Outcome::Proven(StrictSign::Negative) => Ok(Some(Sign::Negative)),
-                Outcome::Proven(StrictSign::Positive) => Ok(Some(Sign::Positive)),
-                Outcome::ProvenCoincident(proof) if proof.proof != ZeroProof::SeparationBound => {
-                    Ok(Some(Sign::Zero))
-                }
-                Outcome::ProvenCoincident(_) => Ok(None),
-                Outcome::Refused(error) => Err(error),
-                Outcome::NotExact(error) => Err(Refusal::from(error)),
-            }
-        }
         let answer = (|| {
             let mut work = Work::new(self.policy, self.deadline);
             let projection = system::coordinate_polynomial(root.system(), axis, true, &mut work);
@@ -1093,42 +1077,13 @@ impl Decider {
                 Outcome::NotExact(error) => return Err(Refusal::from(error)),
                 Outcome::ProvenCoincident(_) => return Ok(None),
             };
-            let lower = &root.root_box().lo()[axis];
-            let upper = &root.root_box().hi()[axis];
-            let mut bounds = None;
-            let mut selected = None;
-            for root in roots {
-                self.check_deadline()?;
-                let value = Real::from_algebraic(root.value);
-                if let Some(value) = value.rational_ref() {
-                    if value < lower {
-                        continue;
-                    }
-                    if value > upper {
-                        break;
-                    }
-                } else {
-                    let bounds = bounds.get_or_insert_with(|| {
-                        [Real::from(lower.clone()), Real::from(upper.clone())]
-                    });
-                    let Some(low) = boundary(self, &value, &bounds[0])? else {
-                        return Ok(None);
-                    };
-                    if low == Sign::Negative {
-                        continue;
-                    }
-                    let Some(high) = boundary(self, &value, &bounds[1])? else {
-                        return Ok(None);
-                    };
-                    if high == Sign::Positive {
-                        break;
-                    }
-                }
-                if selected.replace(value).is_some() {
-                    return Ok(None);
-                }
-            }
-            Ok(selected)
+            self.select_coordinate(
+                root,
+                axis,
+                roots
+                    .into_iter()
+                    .map(|root| Real::from_algebraic(root.value)),
+            )
         })();
         match &answer {
             Ok(Some(_)) => self.stats.exact += 1,
@@ -1136,6 +1091,178 @@ impl Decider {
             Ok(None) => {}
         }
         answer
+    }
+
+    fn select_coordinate(
+        &mut self,
+        root: &crate::IsolatedRoot,
+        axis: usize,
+        candidates: impl IntoIterator<Item = Real>,
+    ) -> Result<Option<Real>, Refusal> {
+        fn boundary(
+            dec: &mut Decider,
+            value: &Real,
+            bound: &Real,
+        ) -> Result<Option<Sign>, Refusal> {
+            match dec.sign(&(value - bound)) {
+                Outcome::Proven(StrictSign::Negative) => Ok(Some(Sign::Negative)),
+                Outcome::Proven(StrictSign::Positive) => Ok(Some(Sign::Positive)),
+                Outcome::ProvenCoincident(proof) if proof.proof != ZeroProof::SeparationBound => {
+                    Ok(Some(Sign::Zero))
+                }
+                Outcome::ProvenCoincident(_) => Ok(None),
+                Outcome::Refused(error) => Err(error),
+                Outcome::NotExact(error) => Err(Refusal::from(error)),
+            }
+        }
+        let lower = &root.root_box().lo()[axis];
+        let upper = &root.root_box().hi()[axis];
+        let mut bounds = None;
+        let mut selected = None;
+        for value in candidates {
+            self.check_deadline()?;
+            if let Some(value) = value.rational_ref() {
+                if value < lower {
+                    continue;
+                }
+                if value > upper {
+                    break;
+                }
+            } else {
+                let bounds = bounds
+                    .get_or_insert_with(|| [Real::from(lower.clone()), Real::from(upper.clone())]);
+                let Some(low) = boundary(self, &value, &bounds[0])? else {
+                    return Ok(None);
+                };
+                if low == Sign::Negative {
+                    continue;
+                }
+                let Some(high) = boundary(self, &value, &bounds[1])? else {
+                    return Ok(None);
+                };
+                if high == Sign::Positive {
+                    break;
+                }
+            }
+            if selected.replace(value).is_some() {
+                return Ok(None);
+            }
+        }
+        Ok(selected)
+    }
+
+    #[cfg_attr(feature = "work-profile", track_caller)]
+    pub(crate) fn reconstruct_coordinates_in_field(
+        &mut self,
+        root: &crate::IsolatedRoot,
+        axes: &[usize],
+        constants: &[Real],
+    ) -> Result<Option<Vec<Real>>, Refusal> {
+        #[cfg(feature = "work-profile")]
+        let _span = crate::profile::Span::enter("reconstruct_coordinates_field");
+        let original_variables = root.system().dimension() - constants.len();
+        assert!(axes.iter().all(|axis| *axis < original_variables));
+        self.stats.decisions += 1;
+        self.check_deadline()?;
+        let answer = (|| {
+            let mut work = Work::new(self.policy, self.deadline);
+            let projection =
+                system::coordinate_field_projection(root.system(), original_variables, &mut work);
+            self.account(&work);
+            self.check_deadline()?;
+            let Some(projection) = projection.map_err(|code| {
+                Refusal::new(code, "scalar coefficient-field projection stopped")
+            })?
+            else {
+                return Ok(None);
+            };
+            let mut values: Vec<Option<std::borrow::Cow<'_, Real>>> = (0..original_variables)
+                .map(|_| None)
+                .chain(
+                    constants
+                        .iter()
+                        .map(|value| Some(std::borrow::Cow::Borrowed(value))),
+                )
+                .collect();
+            let source = projection.polynomial.into_terms();
+            let mut terms = Vec::with_capacity(source.len());
+            for (monomial, coefficient) in source {
+                let value = self.projection_term(
+                    coefficient,
+                    &monomial.exponents()[original_variables..],
+                    &values[original_variables..],
+                )?;
+                terms.push((vec![monomial.exponents()[projection.axis]], value));
+            }
+            let polynomial = crate::RealPoly::from_terms(1, terms);
+            let separated = self.stats.coincident_separation;
+            let Some(degree) = polynomial.total_degree(self)? else {
+                return Ok(None);
+            };
+            if degree == 0 || self.stats.coincident_separation != separated {
+                return Ok(None);
+            }
+            let candidates = polynomial.real_roots(self)?;
+            if self.stats.coincident_separation != separated {
+                return Ok(None);
+            }
+            let Some(value) = self.select_coordinate(root, projection.axis, candidates)? else {
+                return Ok(None);
+            };
+            values[projection.axis] = Some(std::borrow::Cow::Owned(value));
+            for (axis, definition) in projection.definitions.into_iter().rev() {
+                let mut value = Real::from(0_i64);
+                for (monomial, coefficient) in definition.into_terms() {
+                    value =
+                        value + self.projection_term(coefficient, monomial.exponents(), &values)?;
+                }
+                values[axis] = Some(std::borrow::Cow::Owned(value));
+            }
+            // The selected scalar is unique in its certified coordinate box.
+            // Every other original unknown is an exact function of it and of
+            // the already-selected coefficients, not a separately chosen root.
+            Ok(Some(
+                axes.iter()
+                    .map(|axis| {
+                        values[*axis]
+                            .as_ref()
+                            .expect("all original unknowns reconstructed")
+                            .as_ref()
+                            .clone()
+                    })
+                    .collect(),
+            ))
+        })();
+        match &answer {
+            Ok(Some(_)) => self.stats.exact += 1,
+            Err(_) => self.stats.refused += 1,
+            Ok(None) => {}
+        }
+        answer
+    }
+
+    fn projection_term(
+        &mut self,
+        coefficient: Rational,
+        powers: &[u32],
+        values: &[Option<std::borrow::Cow<'_, Real>>],
+    ) -> Result<Real, Refusal> {
+        assert_eq!(powers.len(), values.len());
+        self.charge_work(1)?;
+        let mut value = Real::from(coefficient);
+        for (power, input) in powers.iter().zip(values) {
+            if *power != 0 {
+                let input = input.as_ref().ok_or_else(|| {
+                    Refusal::new(
+                        "numbers.coordinate-definition-unproven",
+                        "functional coordinate reconstruction has an unresolved dependency",
+                    )
+                })?;
+                self.charge_work(u64::from(*power).saturating_add(1))?;
+                value = value * input.as_ref().pow_u32(*power);
+            }
+        }
+        Ok(value)
     }
 
     #[cfg_attr(feature = "work-profile", track_caller)]

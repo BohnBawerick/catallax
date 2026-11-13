@@ -441,14 +441,7 @@ pub(crate) fn coordinate_polynomial(
     work: &mut Work,
 ) -> Result<Option<UPoly>, &'static str> {
     let n = system.dimension();
-    let mut polys = system.equations.clone();
-    // Linear combinations often expose affine constraints before elimination.
-    for i in 0..system.equations.len() {
-        for j in i + 1..system.equations.len() {
-            let p = &system.equations[i] - &system.equations[j];
-            insert_poly(&mut polys, p);
-        }
-    }
+    let mut polys = projection_polys(&system.equations);
     let mut variables = linear_first.then(|| (0..n).filter(|v| *v != axis).collect::<Vec<_>>());
     let mut legacy = (0..n).filter(|v| *v != axis);
     loop {
@@ -465,65 +458,145 @@ pub(crate) fn coordinate_polynomial(
             if variables.is_empty() {
                 return Ok(None);
             }
-            let linear = variables
-                .iter()
-                .enumerate()
-                .rev()
-                .find_map(|(index, &var)| {
-                    polys
-                        .iter()
-                        .position(|poly| poly.is_constant_linear_in(var))
-                        .map(|source| (index, source))
-                });
-            if let Some((index, source)) = linear {
-                (variables.remove(index), source)
-            } else {
-                (variables.pop().expect("checked nonempty"), polys.len())
-            }
+            projection_variable(variables, &polys)
         } else {
             let Some(var) = legacy.next() else {
                 return Ok(None);
             };
             (var, 0)
         };
-        let linear = polys[source..].iter().find_map(|f| {
-            let c = f.coefficients_in(var);
-            if c.len() != 2 {
-                return None;
-            }
-            let terms = c[1].terms();
-            if terms.len() == 1 && terms[0].0.degree() == 0 {
-                Some((-&c[0]).scale(&terms[0].1.recip().unwrap()))
-            } else {
-                None
-            }
-        });
-        if let Some(value) = linear {
-            let mut next = Vec::new();
-            for f in polys {
-                work.mpoly(&f, &value)?;
-                insert_poly(&mut next, f.substitute(var, &value));
-            }
-            polys = next;
-        } else {
-            let (independent, dependent): (Vec<_>, Vec<_>) = polys
-                .into_iter()
-                .partition(|f| f.coefficients_in(var).len() == 1);
-            let mut next = independent;
-            for i in 0..dependent.len() {
-                for j in i + 1..dependent.len() {
-                    work.mpoly(&dependent[i], &dependent[j])?;
-                    insert_poly(
-                        &mut next,
-                        dependent[i]
-                            .resultant_checked(&dependent[j], var, &|| work.check_deadline())?,
-                    );
-                }
-            }
-            polys = next;
-        }
+        polys = projection_step(polys, var, source, work)?;
     }
 }
+
+pub(crate) struct ScalarFieldProjection {
+    pub(crate) axis: usize,
+    pub(crate) polynomial: MPoly,
+    pub(crate) definitions: Vec<(usize, MPoly)>,
+}
+
+/// Keep certified coefficient choices fixed and eliminate rational-linear
+/// unknowns. A remaining linear/quadratic equation gives one scalar root;
+/// reverse substitution preserves correlation between all its coordinates.
+/// Other systems retain the general rational projection.
+pub(crate) fn coordinate_field_projection(
+    system: &PolySystem,
+    original_variables: usize,
+    work: &mut Work,
+) -> Result<Option<ScalarFieldProjection>, &'static str> {
+    assert!(0 < original_variables && original_variables <= system.dimension());
+    let mut polys = projection_polys(&system.equations[..original_variables]);
+    let mut variables: Vec<_> = (0..original_variables).collect();
+    let mut definitions = Vec::with_capacity(original_variables - 1);
+    while variables.len() > 1 {
+        let (var, source) = projection_variable(&mut variables, &polys);
+        let Some(value) = projection_linear_value(&polys, var, source) else {
+            return Ok(None);
+        };
+        polys = projection_substitute(polys, var, &value, work)?;
+        definitions.push((var, value));
+    }
+    let axis = variables[0];
+    let Some(index) = polys.iter().position(|polynomial| {
+        matches!(
+            polynomial.univariate_degree_in_prefix(axis, original_variables),
+            Some(1..=2)
+        )
+    }) else {
+        return Ok(None);
+    };
+    Ok(Some(ScalarFieldProjection {
+        axis,
+        polynomial: polys.swap_remove(index),
+        definitions,
+    }))
+}
+
+fn projection_polys(equations: &[MPoly]) -> Vec<MPoly> {
+    let mut polys = equations.to_vec();
+    // Linear combinations often expose affine constraints before elimination.
+    for i in 0..equations.len() {
+        for j in i + 1..equations.len() {
+            insert_poly(&mut polys, &equations[i] - &equations[j]);
+        }
+    }
+    polys
+}
+
+fn projection_variable(variables: &mut Vec<usize>, polys: &[MPoly]) -> (usize, usize) {
+    let linear = variables
+        .iter()
+        .enumerate()
+        .rev()
+        .find_map(|(index, &var)| {
+            polys
+                .iter()
+                .position(|poly| poly.is_constant_linear_in(var))
+                .map(|source| (index, source))
+        });
+    if let Some((index, source)) = linear {
+        (variables.remove(index), source)
+    } else {
+        (variables.pop().expect("checked nonempty"), polys.len())
+    }
+}
+
+fn projection_linear_value(polys: &[MPoly], var: usize, source: usize) -> Option<MPoly> {
+    polys[source..].iter().find_map(|f| {
+        let c = f.coefficients_in(var);
+        if c.len() != 2 {
+            return None;
+        }
+        let terms = c[1].terms();
+        if terms.len() == 1 && terms[0].0.degree() == 0 {
+            Some((-&c[0]).scale(&terms[0].1.recip().unwrap()))
+        } else {
+            None
+        }
+    })
+}
+
+fn projection_substitute(
+    polys: Vec<MPoly>,
+    var: usize,
+    value: &MPoly,
+    work: &mut Work,
+) -> Result<Vec<MPoly>, &'static str> {
+    let mut next = Vec::new();
+    for f in polys {
+        work.mpoly(&f, value)?;
+        insert_poly(&mut next, f.substitute(var, value));
+    }
+    Ok(next)
+}
+
+fn projection_step(
+    polys: Vec<MPoly>,
+    var: usize,
+    source: usize,
+    work: &mut Work,
+) -> Result<Vec<MPoly>, &'static str> {
+    if let Some(value) = projection_linear_value(&polys, var, source) {
+        projection_substitute(polys, var, &value, work)
+    } else {
+        let (independent, dependent): (Vec<_>, Vec<_>) = polys
+            .into_iter()
+            .partition(|f| f.coefficients_in(var).len() == 1);
+        let mut next = independent;
+        for i in 0..dependent.len() {
+            for j in i + 1..dependent.len() {
+                work.mpoly(&dependent[i], &dependent[j])?;
+                insert_poly(
+                    &mut next,
+                    dependent[i]
+                        .resultant_checked(&dependent[j], var, &|| work.check_deadline())?,
+                );
+            }
+        }
+        Ok(next)
+    }
+}
+
 fn insert_poly(polys: &mut Vec<MPoly>, p: MPoly) {
     if p.is_zero() {
         return;

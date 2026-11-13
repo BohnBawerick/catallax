@@ -513,8 +513,8 @@ impl RealPoly {
             .iter()
             .map(|[lo, hi]| (lo.clone(), hi.clone()))
             .unzip();
-        for constant in constants {
-            let enclosure = dec.enclose_budgeted_at(&constant, precision)?;
+        for constant in &constants {
+            let enclosure = dec.enclose_budgeted_at(constant, precision)?;
             let enclosed_lo = enclosure.lo();
             let enclosed_hi = enclosure.hi();
             let mut lower = &enclosed_lo - &slack;
@@ -558,6 +558,13 @@ impl RealPoly {
             lo.push(lower);
             hi.push(upper);
         }
+        let field_constants =
+            if reconstruct.is_some() && uncoupled_coefficients && !constants.is_empty() {
+                Some(constants)
+            } else {
+                drop(constants);
+                None
+            };
         let system = Arc::new(PolySystem::new(lowered).ok_or_else(refused)?);
         let candidate = RootBox::new(lo, hi).ok_or_else(refused)?;
         let answer = if reconstruct.is_some() {
@@ -573,6 +580,12 @@ impl RealPoly {
                 // Only this certified correspondence admits original f/g.
                 root.original_equations = Some(equations.to_vec().into());
                 if let Some(axes) = reconstruct {
+                    if let Some(constants) = field_constants.as_deref()
+                        && let Some(coordinates) =
+                            dec.reconstruct_coordinates_in_field(&root, axes, constants)?
+                    {
+                        return Ok(coordinates);
+                    }
                     let mut coordinates = Vec::with_capacity(axes.len());
                     for &axis in axes {
                         if uncoupled_coefficients

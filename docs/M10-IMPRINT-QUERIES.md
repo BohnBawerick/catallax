@@ -9,6 +9,10 @@ The [M8 proof boundary](M8-LATER-CUTS.md#fixed-coefficient-root-reconstruction)
 records both results. These advances do not imply a complete loft Boolean or
 a successful STEP export.
 
+The [numbered Boolean qualification](M10-BOOLEAN-QUALIFICATION.md) records
+the current box/loft, through-cut, imported-part and two-spline requests,
+including the complete construction/export work and remaining refusals.
+
 ## Coefficient admission and bounded proofs
 
 Shared algebraic root certificates now retain the original coefficient definitions and their selected root domains. The opt-in constructor proves the lifted system, including coefficient correspondence, before attaching original-equation authority. Callers still check the original equations and a strict transverse Jacobian. The legacy constructor retains its 25,077-unit boundary, including a configured non-expired deadline.

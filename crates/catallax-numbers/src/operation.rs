@@ -530,12 +530,14 @@ pub(crate) fn record_pi_proof(precision: u32, ball: &Ball) {
 }
 
 pub(crate) fn charge(units: u64) -> bool {
+    #[cfg(feature = "work-span")]
+    let mut observed = None;
     RESERVATIONS.with(|slot| {
         if let Some(reservations) = &mut *slot.borrow_mut() {
             reservations.push(units);
         }
     });
-    ACTIVE.with(|slot| {
+    let exhausted = ACTIVE.with(|slot| {
         let mut active = slot.borrow_mut();
         let Some(state) = active.as_mut() else {
             return false;
@@ -548,7 +550,9 @@ pub(crate) fn charge(units: u64) -> bool {
         } else if !state.exhausted {
             state.used += units;
             #[cfg(feature = "work-span")]
-            crate::work_span::advance(units);
+            {
+                observed = Some(units);
+            }
         }
         if state.worker {
             // An item the writer no longer wants stops at its next charges.
@@ -558,7 +562,13 @@ pub(crate) fn charge(units: u64) -> bool {
             }
         }
         state.exhausted
-    })
+    });
+    // The observer queries worker state, so release the counter's mutable borrow first.
+    #[cfg(feature = "work-span")]
+    if let Some(units) = observed {
+        crate::work_span::advance(units);
+    }
+    exhausted
 }
 
 /// Whether `units` more fit the allowance. Unlike a charge, asking latches

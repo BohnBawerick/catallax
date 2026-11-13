@@ -1052,6 +1052,20 @@ mod tests {
     static SERIAL: Mutex<()> = Mutex::new(());
 
     #[test]
+    fn observes_only_admitted_request_charges_without_reborrowing_the_counter() {
+        let _serial = SERIAL.lock().unwrap_or_else(PoisonError::into_inner);
+        let (((), work), report) = with_work_span_on_this_thread(|| {
+            crate::with_operation_budget(7, || {
+                assert!(!crate::operation::charge(5));
+                assert!(crate::operation::charge(3));
+            })
+        });
+        assert_eq!(work.used, 5);
+        assert!(work.exhausted);
+        assert_eq!(report.work, 5);
+    }
+
+    #[test]
     fn span_follows_tasks_and_their_tracked_dependencies() {
         let _serial = SERIAL.lock().unwrap_or_else(PoisonError::into_inner);
         // Concurrent tests charge work on their own threads.

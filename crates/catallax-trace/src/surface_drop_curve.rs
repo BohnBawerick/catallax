@@ -777,7 +777,7 @@ impl DropTracer<'_> {
         let middle = self.working_domain.evaluate(0.5, 0.5);
         // `GetULeftEval` and `GetVLeftEval`.
         let sides = [uv.x <= middle.x, uv.y <= middle.y];
-        let cells = evaluate(self.surface, uv, 1, 1, sides, true, false, false)?;
+        let cells = evaluate(self.surface, uv, 1, 1, sides, true, true, true)?;
         point.surface_point = cells[0];
         point.du = cells[2];
         point.dv = cells[1];

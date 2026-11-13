@@ -84,9 +84,10 @@ taking the other parameter from the stepped-back point, skipping the step
 back, keeping the point's own tangent for the span, or keeping the singular
 `u` derivative changes cases.
 
-When two side planes graze, SMLib intersects their side curves. Polynomial
-line pairs now use the ported analytic branch; analytic arc and rational
-line pairs still refuse with `SolverRefusal::NotPorted`. The `boundary` operation records a grazing leaf pair
+When two side planes graze, SMLib intersects their natural side curves.
+Line and circle pairs, including rational two-point lines that pass the
+constant-speed test, now use the analytic dispatch. The `boundary` operation
+records a grazing leaf pair
 (`GrazingBoxProcess`) as `-2` and a grazing side-plane pair as `-3`.
 
 The `boundary` cases add levels at the highest point of the bump's u = 0 side
@@ -123,9 +124,14 @@ the long-range threshold survive: the range curves here are tangent or
 coincident (from the principal directions), with equal zero gaps at both
 ends, and no start point lies on them. Three short ranges take the
 short-range branch (the tighter end moved by a local normal solve).
-Three cases run no `intersect`:
-SMLib's `DoIntersection` crashes (a segmentation fault) on the flat patches
-that share an edge, lie 1e-9 apart, or share half an edge.
+The three formerly skipped flat-patch cases now run `intersect`: patches
+sharing an edge, lying 1e-9 apart and sharing half an edge. The old probe
+segfaulted while reading absent UV curves, which SMLib intentionally returns
+for natural-boundary grazing answers. On each identical request, the old
+probe exits with signal 11 and the null-safe probe returns success with one
+curve. The port represents each absent UV curve as `None`, and the saved
+output uses `i-1` for that curve. This is a probe correction, not a geometric
+miss in SMLib.
 
 One classification deliberately differs from SMLib. Its planarity test for
 parallel normals (`smsurf_ComputeSurfacePointType`) reads only `N . S_uu`

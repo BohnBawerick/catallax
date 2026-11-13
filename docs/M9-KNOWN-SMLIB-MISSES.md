@@ -33,7 +33,12 @@ Raw evidence retained privately.
 | Quartic whose knot samples lie on a parameter line but whose interior bends away | `DropIsoCurve` accepts the straight line from knot samples alone | Require the whole-span control-point bound before taking the iso-line shortcut. Otherwise use the general drop. [Drop-curve negative gate](../crates/catallax-trace/tests/drop_curve.rs), `review::a_curved_curve_is_not_dropped_as_a_parameter_line`. |
 | Saddle `z = u*v` with parallel normals | Reads `N.S_uu` and `N.S_vv` but omits `N.S_uv`, so calls the point planar and the meeting tangent | Classify the mixed-curvature saddle as singular. [Intersector negative gate](../crates/catallax-trace/tests/intersector.rs), `review::a_mixed_curvature_saddle_is_not_planar`, in both surface orders. |
 | Singularity at a start point with a previous direction | Can keep the first branch found even when it leaves the domain | Select the inside branch. [Intersector negative gate](../crates/catallax-trace/tests/intersector.rs), `review::a_start_singularity_takes_an_inside_branch`. |
-| Flat patches sharing an edge, separated by 1e-9, or sharing half an edge | `DoIntersection` crashes in the three recorded cases | The candidate gate must not score an omitted C++ call as a successful intersection. [Intersector gate exclusions](../crates/catallax-trace/tests/fixtures/intersector/README.md) records the three cases. |
+
+The three formerly recorded flat-patch crashes were probe faults. The old
+probe dereferenced the absent UV curves returned for natural-boundary grazing
+answers. On identical inputs, the old probe exits with signal 11 and the
+null-safe probe returns success with one curve in all three cases. They are
+restored to the candidate gate and do not count as SMLib misses.
 
 This list records the misses and invalid results already identified by the
 port and M25 study. It is not a completeness claim about SMLib. A crash,
@@ -42,13 +47,22 @@ Numeric ULP allowances compare candidates only; they never establish a proof.
 The existing tolerances, deterministic work allowances and 477 saved replay
 answers stay unchanged.
 
-## Remaining port units
+## Port status and proof boundary
 
 Main already contains steps 1 to 9, the range-answer follow-ups, analytic
 polynomial two-point lines and analytic circular arcs. In particular,
-[analytic lines](https://github.com/BohnBawerick/catallax/pull/498) and
-[circular arcs](https://github.com/BohnBawerick/catallax/pull/508) are merged.
-This slice adds the Hermite and line polar boxes. Analytic curve/curve
-intersection, the rational two-point analytic line, grazing side boxes and
-dropping through a side point remain separate port units. No M9 completion
-claim follows from this exception list.
+[analytic lines](https://github.com/BohnBawerick/catallax/pull/498),
+[circular arcs](https://github.com/BohnBawerick/catallax/pull/508) and
+[Hermite and line polar boxes](https://github.com/BohnBawerick/catallax/pull/563)
+are merged. This follow-up adds line/circle analytic pairs, rational
+two-point lines passing the sampled line test, natural-boundary grazing
+curves and recovery through singular side points.
+
+Remaining typed refusals include a curve intersected with itself, a circle
+SMLib rebuilds through `MakeNurb`, a zero tangent where SMLib reads past its
+array, the projected side search for curves not known to lie on the surface,
+closed-surface seam starts and the general tracer fallback. Two of the
+132 end-to-end drop cases retain `SolverRefusal::NotPorted` for the projected
+side search and tracer fallback. They are not hidden or counted as completed
+geometric answers. A ported candidate unit never replaces Catallax's exact
+proof layer, and this list makes no claim that every SMLib operation is ported.

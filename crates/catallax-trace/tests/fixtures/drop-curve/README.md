@@ -56,15 +56,20 @@ second-order Taylor guess, no offset term in the dropped tangent, ten
 instead of twenty closing samples, and no duplicate removal after the seam
 copies.
 
-Four cases are `drefuse`: the port refuses with `SolverRefusal::NotPorted`
-and SMLib's answer stays in the raw evidence. One is a cubic 0.1 off the tilted
-plane at a control point, whose box meets the plane's side lines in the
-boundary search (not ported); one is a parameter line from the pole and one the pole as a point
-curve (a start on a singularity); one is a curve not known to lie on the
-surface (the projected side search). The port also refuses a seam start on
-a closed surface, the tracer's fallback when the general drop fails or gives more than one
-curve,
-and a plane's side lines that meet the curve's box.
+Two cases remain `drefuse`: the port returns `SolverRefusal::NotPorted`
+and SMLib's answer stays in the raw evidence. One is a cubic 0.1 off the
+tilted plane at a control point, which reaches the tracer's fallback. The
+other is a curve not known to lie on the surface, which needs the projected
+side search. Seam starts and the tracer fallback remain typed refusals.
+
+The two formerly refused pole cases now compare complete positive outputs:
+a parameter curve leaving the pole and the pole as a point curve. Before
+changing the expectations, direct comparison with the retained C++ calls
+matched all 28 binary64 outputs and every integer exactly. Singular starts
+recover the varying UV coordinate by dropping the nearby curve point. The
+separate `../drop-start` gate exercises `ComputePointValues`, including the
+nearby tangent-point drop. Plane boundary lines also enter the curve-pair
+search. The full fixture is checked with 1, 2 and 4 workers.
 
 One answer deliberately differs from SMLib. `DropIsoCurve` accepts a
 parameter line from samples at the curve's knots only, so a curved curve

@@ -25,13 +25,7 @@ CASES = []
 # Cases whose side search the port refuses (`brefuse`), by case index (none
 # since the side ranges are ported); see README.md.
 # Exceptions to the whole-intersection oracle calls; see README.md.
-INTERSECT = {  # by case index
-    # Flat patches sharing an edge, 1e-9 apart, and sharing half an edge:
-    # SMLib's DoIntersection crashes (segmentation fault) on them.
-    33: 'skip',
-    35: 'skip',
-    38: 'skip',
-}
+INTERSECT = {}
 CASE_INDEX = []
 BOUNDARY = {
 }

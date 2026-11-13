@@ -1,5 +1,7 @@
 # Analytic field kernel
 
+[The M18 native-field note](M18-NATIVE-FIELDS.md) records reduced sweep/loft construction, terminal circular smooth-blend queries and their remaining boundary limits.
+
 `catallax-field` compiles version 3 and version 4 recipe stock solids, line/circle/arc sketch profiles, signed extrusions, two-sided and one-sided through-all cuts, full and rational-frame partial revolutions, named hole bands, planar first-hit face/next extrusions, linear and circular body patterns, plane mirrors, and regularised union, subtraction and intersection. It calls no B-rep builder. Sketch validation calls `catallax_features::Profile::new`; hole meridians and planar first-hit arrangements likewise share definition-native compilers. Every parameter and rigid placement retains its exact definition from [RECIPE.md](RECIPE.md).
 
 This is original MIT code. Fidget supplied design ideas, notably fixed-order tapes, independent point evaluation and reusable evaluator storage. No Fidget code or dependency is included. Definition-native display meshing is described below. General fillets, FEA and application integration are not implemented.

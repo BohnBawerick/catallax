@@ -103,6 +103,10 @@ fn location(leaf: &geometry::Leaf, p: &Point3, dec: &mut Decider) -> Result<Loca
         return leaf.location(&[p.x, p.y, p.z], dec);
     }
     match leaf {
+        geometry::Leaf::Smooth(_) => Err(Refusal::new(
+            "smooth.algebraic-query-unsupported",
+            "smooth point query requires rational coordinates",
+        )),
         geometry::Leaf::Feature(f) => f.classify(p, dec),
         geometry::Leaf::Draft(region) => region.classify(p, None, dec),
         geometry::Leaf::Lattice(_) | geometry::Leaf::Gyroid(_) | geometry::Leaf::Mesh(_) => {

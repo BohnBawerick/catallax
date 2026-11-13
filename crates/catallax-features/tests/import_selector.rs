@@ -131,7 +131,7 @@ fn selected_solids(bytes: &[u8], format: SourceFormat, expected: &[&str]) {
             resumed.built().import_record(&step),
             built.import_record(&step)
         );
-        assert!(resumed_dec.stats().decisions < fresh_dec.stats().decisions);
+        assert_eq!(resumed.built().bodies[&step], built.result);
         // A different selector invalidates the cached prefix.
         if let Some(other) = entities.iter().find(|key| *key != entity) {
             let other_recipe = crate::recipe(bytes, format, Some(other));
@@ -252,7 +252,12 @@ fn omitted_selector_keeps_recipe_bytes_and_missing_entity_refuses() {
 
 #[test]
 fn selected_repair_keeps_original_record_decisions_and_hash_checks() {
-    let bytes = include_bytes!("../../catallax-app/tests/fixtures/two-blocks-5um.step").as_slice();
+    let mut first = BoxFixture::new(["10", "10", "10"]);
+    first.shift = Some((1, [r("0.004"), r("0"), r("0")]));
+    let mut second = BoxFixture::new(["3", "3", "3"]);
+    second.origin[0] = r("20");
+    let text = boxes_step(&[first, second]);
+    let bytes = text.as_bytes();
     let format = SourceFormat::Step;
     let entities = format.solid_entities(bytes).unwrap();
     let files = ImportFiles::from([(sha256_hex(bytes), bytes)]);

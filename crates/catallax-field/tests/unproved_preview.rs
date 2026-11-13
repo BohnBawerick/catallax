@@ -5,18 +5,19 @@ use catallax_field::{Plan, PreviewHardware, UnprovedBatch, Workspace};
 use catallax_recipe::Recipe;
 use std::path::{Path, PathBuf};
 
-const NAMES: [&str; 4] = [
+const NAMES: [&str; 5] = [
     "unproved_preview",
     "UnprovedValue",
     "PreviewHardware",
     "UnprovedBatch",
+    "Picker",
 ];
 
 // Library source that may name the hardware preview. Everything else in the
 // workspace's library and binary sources may not, so no export, proven
 // measurement or proof route can reach it. A display caller added later is
 // listed here in its own reviewed change; `FORBIDDEN` paths never are.
-const ALLOWED: [&str; 5] = [
+const ALLOWED: [&str; 6] = [
     "crates/catallax-field/src/lib.rs",
     "crates/catallax-field/src/unproved_batch.rs",
     "crates/catallax-field/src/unproved_wgsl.rs",
@@ -25,6 +26,7 @@ const ALLOWED: [&str; 5] = [
     // binary only; no other crate depends on catallax-preview, and it has no
     // writer, proof or proven-measurement output.
     "crates/catallax-preview/src/batch.rs",
+    "crates/catallax-preview/src/picking.rs",
     "crates/catallax-preview/src/main.rs",
 ];
 const FORBIDDEN: [&str; 9] = [
@@ -313,10 +315,33 @@ fn wgsl_refuses_constants_outside_binary32() {
 
 #[test]
 fn wgsl_refuses_an_unsupported_leaf_without_a_partial_program() {
-    let recipe = serde_json::json!({"format":"catallax-recipe/3","name":"draft preview refusal","steps":[{"id":"base","op":"block","size":["8","8","4"],"pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}},{"id":"drafted","op":"draft","body":"base","faces":[{"face":{"step":"base","role":{"side":{"segment":"x_max"}}}}],"pull":["0","0","1"],"neutral":{"point":["0","0","0"],"normal":["0","0","1"]},"angle":"45"}],"result":"drafted"});
+    let recipe = serde_json::json!({"format":"catallax-recipe/3","name":"lattice preview refusal","steps":[
+        {"id":"base","op":"block","size":["4","4","4"],"pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}},
+        {"id":"beams","op":"lattice","region":"base","cell":"cubic","size":"2","frame":{"rotation":["1","0","0","0"],"translation":["0","0","0"]},"radius":{"constant":"0.25"}}
+    ],"result":"beams"});
     let plan = Plan::compile(&Recipe::parse(&recipe.to_string()).unwrap()).unwrap();
-    assert_eq!(
-        plan.unproved_preview_wgsl().unwrap_err().code,
-        "field.preview-wgsl-unsupported"
-    );
+    let refusal = plan.unproved_preview_wgsl().unwrap_err();
+    assert_eq!(refusal.code, "field.preview-wgsl-unsupported");
+    assert!(refusal.detail.contains("leaf 1 of 2"), "{refusal:?}");
+    assert!(refusal.detail.contains("result face records"));
+}
+
+#[test]
+fn planar_draft_previews_keep_the_nearest_face_projection() {
+    let plan = Plan::compile(
+        &Recipe::parse(include_str!("../../../parts/P1-drafted-bracket.json")).unwrap(),
+    )
+    .unwrap();
+    for point in [
+        [9.944385528564453, 11.361885070800781, 16.847496032714844],
+        [32.99707794189453, 11.38400650024414, 22.54297637939453],
+    ] {
+        let expected = point[1] - 5.0;
+        let fast = plan.fast(point, &mut Workspace::default()).unwrap();
+        let preview = plan
+            .unproved_preview(point, &mut Workspace::default())
+            .unwrap();
+        assert!((fast.value - expected).abs() < 1e-12, "{point:?}: {fast:?}");
+        assert_eq!(fast.value.to_bits(), preview.value.to_bits());
+    }
 }

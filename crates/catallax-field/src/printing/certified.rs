@@ -425,9 +425,21 @@ pub(super) fn run(
     for refinement in 0..=3 {
         if let Some(report) = report.as_deref_mut() {
             report.stage = super::adaptive::Stage::Candidate;
+            report.progress = super::adaptive::Progress {
+                candidate_round: Some(refinement),
+                cells: visited,
+                ..Default::default()
+            };
         }
-        let (mut mesh, owners, unresolved) =
-            grid.mesh(plan, options, visited, report.is_some(), dec)?;
+        let retain_unresolved = report.is_some();
+        let (mut mesh, owners, unresolved) = grid.mesh(
+            plan,
+            options,
+            visited,
+            retain_unresolved,
+            report.as_deref_mut().map(|report| &mut report.progress),
+            dec,
+        )?;
         if !unresolved.is_empty() {
             if let Some(report) = report.as_deref_mut() {
                 report.stage = super::adaptive::Stage::Refinement;
@@ -454,7 +466,7 @@ pub(super) fn run(
         if let Some(report) = report.as_deref_mut() {
             report.stage = super::adaptive::Stage::MeshToBoundary;
         }
-        let mut failed = cover_mesh(
+        let covered = cover_mesh(
             &mut mesh,
             &mut classifier,
             clip.as_ref(),
@@ -462,8 +474,11 @@ pub(super) fn run(
             &mut cache,
             options,
             dec,
-        )
-        .map_err(|mut e| {
+        );
+        if let Some(report) = report.as_deref_mut() {
+            report.progress.capture(&mesh);
+        }
+        let mut failed = covered.map_err(|mut e| {
             e.detail = format!(
                 "{}; cells={} vertices={}",
                 e.detail,
@@ -500,8 +515,11 @@ pub(super) fn run(
                     options,
                     dec,
                 )
+            };
+            if let Some(report) = report.as_deref_mut() {
+                report.progress.capture(&mesh);
             }
-            .map_err(|mut e| {
+            let coverage = coverage.map_err(|mut e| {
                 e.detail = format!(
                     "{}; cells={} vertices={}",
                     e.detail,

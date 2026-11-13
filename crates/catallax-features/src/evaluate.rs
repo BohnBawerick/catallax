@@ -476,14 +476,7 @@ fn evaluate_impl(
     dec: &mut Decider,
 ) -> Result<EvaluationState, BuildError> {
     recipe.check().map_err(BuildError::Recipe)?;
-    if recipe.steps.iter().any(|step| {
-        matches!(
-            step.op,
-            Operation::Fillet { .. } | Operation::FilletVariable { .. } | Operation::Shell { .. }
-        )
-    }) {
-        catallax_numbers::reuse_operation_enclosures();
-    }
+    catallax_numbers::reuse_operation_enclosures();
 
     for step in &recipe.steps {
         let (file, kind) = match &step.op {

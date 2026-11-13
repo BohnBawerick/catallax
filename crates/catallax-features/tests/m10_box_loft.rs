@@ -209,7 +209,7 @@ fn assert_boolean_matrix(mut check: impl FnMut(&str, &str, &str, u64)) {
         .into_iter()
         .flat_map(|kind| ["side", "top"].map(|case| (kind, case)))
         .collect::<Vec<_>>();
-    let mut baseline = None;
+    let mut runs = Vec::new();
     for workers in [1, 2, 4] {
         let mut rows = std::thread::scope(|scope| {
             let handles = (0..workers)
@@ -238,13 +238,15 @@ fn assert_boolean_matrix(mut check: impl FnMut(&str, &str, &str, u64)) {
             );
         }
         let answers = rows.into_iter().map(|row| row.1).collect::<Vec<_>>();
-        for ((kind, case), (answer, work)) in jobs.iter().zip(&answers) {
-            check(kind, case, answer, *work);
-        }
-        if let Some(baseline) = &baseline {
+        if let Some(baseline) = runs.first() {
             assert_eq!(&answers, baseline);
-        } else {
-            baseline = Some(answers);
+        }
+        runs.push(answers);
+    }
+    // Check every worker count before a changed frozen cost can stop the run.
+    for answers in &runs {
+        for ((kind, case), (answer, work)) in jobs.iter().zip(answers) {
+            check(kind, case, answer, *work);
         }
     }
 }

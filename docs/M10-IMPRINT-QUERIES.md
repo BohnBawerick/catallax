@@ -15,6 +15,27 @@ Spline probes may follow a certified internal chart join without treating that j
 
 A 72-request matrix at 1, 2 and 4 workers and 1, 2, 4 and 24 kernel threads retains these exact outcomes and work counts. Four retained-section consumer regressions pass, including the distinction between a finite straight section and its unbounded supporting line. Intersector all-target Clippy and the M10 test-target Clippy pass. The permanent M10 test retains complete answer/work comparisons across worker counts without pinning incidental implementation costs.
 
+The [M2 numeric proof-reuse integration](M2-P1-WORK-PROFILE.md) at `7f3274b5`
+reduced the side construction charges. Its 72-request matrix at 1, 2 and 4 request workers
+and 1, 2, 4 and 24 kernel threads has identical outcomes and charges in every
+configuration:
+
+| Loft cut | Operation | Work after numeric reuse | B-rep result |
+| --- | --- | ---: | --- |
+| Side | subtract | 8,185,324 | solid |
+| Side | union | 8,185,373 | solid |
+| Side | intersect | 8,181,187 | solid |
+| Top | subtract, union, intersect | 19,998,535 | `numbers.operation-budget` |
+
+These are historical charges before the finite-section correction above and
+the later complete-parent enclosure reuse. The allowance remains 20M. The top row records its accepted prefix, not a
+completed proof cost; the next reservation still exceeds the remaining cap.
+The permanent regression follows main's current contract: geometry, outcomes,
+the unchanged allowance, and complete answer/work equality across request
+workers. Measured absolute costs remain in the evidence instead of being fixed
+by the test. Raw evidence
+retained privately.
+
 The top cut remains open. Complete algebraic meetings advance it beyond the rational-coefficient refusal, but the exact proof still exceeds the unchanged 20M allowance. The all-solid target remains separately ignored, not recorded as passing.
 
 The side solids are feature-builder results, not exported STEP evidence. Ordinary recipe exchange refuses genuine spline geometry under manifest/3. The documented opt-in certified exchange also refuses these cut lofts with `features.unsupported-offset-family`, because they have no supported complete prism certificate. No STEP files were produced and no OpenCASCADE validity is claimed.

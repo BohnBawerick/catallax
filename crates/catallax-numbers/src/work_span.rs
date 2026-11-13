@@ -513,6 +513,18 @@ struct Segment {
     work: u64,
 }
 
+impl Drop for Segment {
+    fn drop(&mut self) {
+        let mut previous = self.previous.take();
+        while let Some(segment) = previous {
+            match Arc::try_unwrap(segment) {
+                Ok(mut segment) => previous = segment.previous.take(),
+                Err(_) => break,
+            }
+        }
+    }
+}
+
 /// A strand's position: its clock, the path that led to it, and work since
 /// the last segment boundary.
 #[derive(Clone, Default)]
@@ -1050,6 +1062,43 @@ mod tests {
 
     // The observer is process-wide, so its tests take turns.
     static SERIAL: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn long_paths_drop_iteratively_and_keep_shared_prefixes_alive() {
+        std::thread::Builder::new()
+            .stack_size(128 * 1024)
+            .spawn(|| {
+                let mut clock = Clock::default();
+                clock.advance(1);
+                clock.flush(0);
+                let shared = clock.clone();
+                for _ in 0..100_000 {
+                    clock.advance(1);
+                    clock.flush(1);
+                }
+                drop(clock);
+                assert_eq!(shared.path.as_ref().unwrap().work, 1);
+                assert!(shared.path.as_ref().unwrap().previous.is_none());
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn operation_charges_reach_the_observer_without_reborrowing_the_budget() {
+        let _serial = SERIAL.lock().unwrap_or_else(PoisonError::into_inner);
+        let (((), work), report) = with_work_span_on_this_thread(|| {
+            crate::with_operation_budget(10, || {
+                assert!(!crate::operation::charge(4));
+                assert!(crate::operation::charge(7));
+            })
+        });
+        assert!(work.exhausted);
+        assert_eq!(work.used, 4);
+        assert_eq!(report.work, work.used);
+        assert!(report.spans.iter().all(|row| row.span == work.used));
+    }
 
     #[test]
     fn span_follows_tasks_and_their_tracked_dependencies() {

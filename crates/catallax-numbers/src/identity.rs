@@ -264,10 +264,17 @@ struct Identity<'a, 'w> {
     work: &'w mut Work,
     rewrites: usize,
     nodes: usize,
+    defer_roots: bool,
 }
 
 impl<'a> Identity<'a, '_> {
     fn normalize(&mut self, mut value: Fraction) -> Result<Fraction, &'static str> {
+        if self.defer_roots {
+            return Ok(match ratio(&value, self.work)? {
+                Some(r) => Fraction::constant(r),
+                None => value,
+            });
+        }
         loop {
             let square = [(false, &value.numerator), (true, &value.denominator)]
                 .into_iter()
@@ -432,6 +439,7 @@ pub(crate) fn rational(value: &Real, work: &mut Work) -> Result<Option<Rational>
         work,
         rewrites: 0,
         nodes: 0,
+        defer_roots: false,
     };
     let result = identity
         .visit(value)

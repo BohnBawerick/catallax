@@ -303,6 +303,15 @@ the pull request body, not in a new commit that would change the tested head.
 
 ## The rebuild contract
 
+A saved recipe's compatibility promise is "open as built in version N".
+Opening it in N+1 must preserve its version-N meaning under the checks below.
+If the new release cannot reproduce that meaning, report the incompatibility
+instead of silently accepting a different build. An explicit migration records
+the source and target recipe versions and what changed: faces and names, exact
+regions, fitted-face bounds and published output bytes. A release review must
+identify those differences before accepting the migrated recipe. A newer
+fitter alone does not authorize a migration.
+
 A Catallax document is a recipe, so every reopen is a rebuild by whichever version opens it. A saved answer under release N is one request and its accepted answer. The request is the original question or recipe with only `out` removed; its digest includes the original work allowance. The accepted answer is the comparable manifest — the manifest without its statistics and build identity — plus the SHA-256 of every published output file: `answer.step`, `display.obj`, `print.stl` and `answer.igs`. Nothing else about the release run is part of the answer.
 
 What is regenerated. At a release everything is rebuilt from source: the baseline and candidate verifiers are compiled fresh, the driver replays the ordered corpus with no cache and no reused artifact, and each case writes a new manifest, operation log and output files. Nothing is carried over from a previous release's artifacts; no earlier answer is measured, sampled or reused as evidence.

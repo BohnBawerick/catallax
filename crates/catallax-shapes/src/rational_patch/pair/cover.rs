@@ -16,6 +16,13 @@ pub(super) enum RetainedSource {
 }
 
 impl RetainedSource {
+    pub(super) fn patch(&self, chart: usize) -> &RationalPatch {
+        match self {
+            Self::Patch(patch) => patch,
+            Self::Atlas(atlas) => atlas.charts()[chart].patch(),
+        }
+    }
+
     pub(super) fn span(&self, chart: usize, span: usize) -> &Span {
         match self {
             Self::Patch(patch) => &patch.data.spans[span],

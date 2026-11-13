@@ -4,6 +4,9 @@ use super::*;
 use crate::rational_patch::trace_series::series;
 use std::collections::BTreeMap;
 
+mod curve;
+pub use curve::PatchPairCurve;
+
 #[derive(Clone, Debug)]
 struct Definition {
     first: RetainedSource,

@@ -65,7 +65,7 @@ mod prepared;
 mod run;
 mod trace;
 mod unit;
-pub use trace::PairTracePiece;
+pub use trace::{PairTracePiece, PatchPairCurve};
 
 use net::Cell;
 pub(crate) use net::PolynomialBounds;

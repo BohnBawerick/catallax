@@ -15,8 +15,9 @@ pub(crate) use pair::PolynomialBounds;
 pub(crate) use pair::curve_hulls_disjoint;
 pub use pair::{
     OffsetPatch, PairArc, PairCertificate, PairPoint, PairTracePiece, PatchPairBranch,
-    PatchPairIntersection, PatchPairSearch,
+    PatchPairCurve, PatchPairIntersection, PatchPairSearch,
 };
+mod differential;
 mod query;
 mod range;
 mod section;

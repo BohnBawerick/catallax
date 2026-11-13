@@ -209,3 +209,109 @@ fn curved_pair_exact_incidence_and_whole_panel_second_jets() {
     catallax_numbers::set_threads(None);
     catallax_numbers::set_run_ahead_wait(false);
 }
+
+#[test]
+fn retained_pair_queries_select_the_component_and_preserve_its_tangent() {
+    catallax_numbers::set_run_ahead_wait(true);
+    for swapped in [false, true] {
+        let mut seen = None;
+        for threads in [Some(1), Some(2), Some(4), None] {
+            catallax_numbers::set_threads(threads.and_then(std::num::NonZeroUsize::new));
+            let [a, b] = patches(&mut Decider::default(), swapped);
+            let (result, work) =
+                with_operation_budget(20_000_000, || -> Result<Vec<String>, Refusal> {
+                    let mut dec = Decider::default();
+                    let meeting = a.patch_meeting(&b, &mut dec)?;
+                    let curve = meeting.curve_branch(0, &mut dec)?;
+                    assert!(!curve.is_closed());
+                    let ends = curve.endpoints();
+                    assert!(curve.contains(&ends[0], &mut dec)?);
+                    assert!(curve.contains(&ends[1], &mut dec)?);
+                    assert_eq!(
+                        curve.compare(&ends[0], &ends[1], &mut dec)?,
+                        catallax_numbers::Sign::Positive,
+                    );
+                    let x = Real::from(q(7, 10));
+                    let y = Real::from(q(363, 700)).sqrt();
+                    let point = Point3::new(x.clone(), y.clone(), Real::from(q(353, 350)));
+                    assert!(curve.contains(&point, &mut dec)?);
+                    let other_component = Point3::new(-x, y, point.z.clone());
+                    assert!(!curve.contains(&other_component, &mut dec)?);
+                    let off_surface = Point3::new(
+                        point.x.clone(),
+                        point.y.clone(),
+                        &point.z + &Real::from(q(1, 100)),
+                    );
+                    assert!(!curve.contains(&off_surface, &mut dec)?);
+                    let mut records = Vec::new();
+                    for (index, point) in std::iter::once(point).chain(ends).enumerate() {
+                        for tangent in curve.tangents(&point, &mut dec)? {
+                            zero(
+                                &(&(&Real::from_i64(26) * &point.x * &tangent.x)
+                                    + &(&Real::from_i64(14) * &point.y * &tangent.y)),
+                                &mut dec,
+                            )?;
+                            zero(
+                                &(&tangent.z
+                                    - &(&Real::from_i64(2)
+                                        * &(&(&point.x * &tangent.x) + &(&point.y * &tangent.y)))),
+                                &mut dec,
+                            )?;
+                            assert!(matches!(
+                                dec.sign(&tangent.norm_squared()),
+                                Outcome::Proven(_),
+                            ));
+                            let outgoing = if index == 2 {
+                                tangent.scaled(&Real::from_i64(-1))
+                            } else {
+                                tangent.clone()
+                            };
+                            let acceleration =
+                                curve.normal_acceleration(&point, &outgoing, &mut dec)?;
+                            zero(
+                                &(&(&Real::from_i64(26)
+                                    * &(&(&point.x * &acceleration.x) + &outgoing.x.square()))
+                                    + &(&Real::from_i64(14)
+                                        * &(&(&point.y * &acceleration.y) + &outgoing.y.square()))),
+                                &mut dec,
+                            )?;
+                            zero(
+                                &(&acceleration.z
+                                    - &(&Real::from_i64(2)
+                                        * &(&(&(&point.x * &acceleration.x)
+                                            + &(&point.y * &acceleration.y))
+                                            + &(&outgoing.x.square() + &outgoing.y.square())))),
+                                &mut dec,
+                            )?;
+                            zero(&outgoing.dot(&acceleration), &mut dec)?;
+                            for coordinate in [&tangent.x, &tangent.y, &tangent.z] {
+                                let bound = dec.enclose_at(coordinate, 128)?;
+                                records.push(format!("{}..{}", bound.lo(), bound.hi()));
+                            }
+                        }
+                    }
+                    for piece in curve.pieces() {
+                        let point = piece.point_at(&q(1, 3), &mut dec)?;
+                        assert!(curve.contains(&point, &mut dec)?);
+                    }
+                    Ok(records)
+                });
+            println!(
+                "retained pair queries {swapped}/{threads:?}: {result:?}; {} work",
+                work.used
+            );
+            assert!(
+                !work.exhausted,
+                "component queries retain the unchanged allowance"
+            );
+            let now = (result.unwrap(), work.used);
+            if let Some(first) = &seen {
+                assert_eq!(first, &now);
+            } else {
+                seen = Some(now);
+            }
+        }
+    }
+    catallax_numbers::set_threads(None);
+    catallax_numbers::set_run_ahead_wait(false);
+}

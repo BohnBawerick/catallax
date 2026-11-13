@@ -1,0 +1,264 @@
+   Compiling version_check v0.9.5
+   Compiling proc-macro2 v1.0.107
+   Compiling autocfg v1.5.1
+   Compiling unicode-ident v1.0.27
+   Compiling quote v1.0.47
+   Compiling cfg-if v1.0.5
+   Compiling serde_core v1.0.229
+   Compiling num-traits v0.2.19
+   Compiling syn v3.0.9
+   Compiling typenum v1.20.1
+   Compiling serde v1.0.229
+   Compiling zmij v1.0.23
+   Compiling serde_json v1.0.154
+   Compiling memchr v2.8.3
+   Compiling itoa v1.0.18
+   Compiling libm v0.2.16
+   Compiling bytemuck v1.25.2
+   Compiling bitmaps v2.1.0
+   Compiling im v15.1.0
+   Compiling rand_core v0.6.4
+   Compiling nano-gemm-codegen v0.2.1
+   Compiling rand_xoshiro v0.6.0
+   Compiling sized-chunks v0.6.5
+   Compiling num-complex v0.4.6
+   Compiling num-integer v0.1.47
+   Compiling num-bigint v0.4.8
+   Compiling bitflags v2.13.2
+   Compiling paste v1.0.15
+   Compiling raw-cpuid v11.6.0
+   Compiling catallax-numbers v0.1.5 (https://github.com/BohnBawerick/catallax?rev=9aed0777184353a5f52d1b660f9d2411b97f0fc9#9aed0777)
+   Compiling generic-array v0.14.7
+   Compiling pulp v0.22.3
+   Compiling equivalent v1.0.2
+   Compiling libc v0.2.190
+   Compiling reborrow v0.5.5
+   Compiling pulp-wasm-simd-flag v0.1.1
+   Compiling serde_derive v1.0.229
+   Compiling catallax-shapes v0.1.5 (https://github.com/BohnBawerick/catallax?rev=9aed0777184353a5f52d1b660f9d2411b97f0fc9#9aed0777)
+   Compiling thiserror v2.0.21
+   Compiling dyn-stack-macros v0.1.3
+   Compiling dyn-stack v0.13.2
+   Compiling thiserror-impl v2.0.21
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling syn v1.0.109
+   Compiling catallax-recipe v0.1.5 (https://github.com/BohnBawerick/catallax?rev=9aed0777184353a5f52d1b660f9d2411b97f0fc9#9aed0777)
+   Compiling once_cell v1.21.4
+   Compiling seq-macro v0.3.6
+   Compiling gemm-common v0.19.0
+   Compiling digest v0.10.7
+   Compiling catallax-topology v0.1.5 (https://github.com/BohnBawerick/catallax?rev=9aed0777184353a5f52d1b660f9d2411b97f0fc9#9aed0777)
+   Compiling catallax-intersect v0.1.5 (https://github.com/BohnBawerick/catallax?rev=9aed0777184353a5f52d1b660f9d2411b97f0fc9#9aed0777)
+   Compiling crossbeam-utils v0.8.23
+   Compiling cpufeatures v0.2.17
+   Compiling nano-gemm-core v0.2.1
+   Compiling sha2 v0.10.9
+   Compiling hashbrown v0.17.1
+   Compiling crossbeam-epoch v0.9.21
+   Compiling indexmap v2.14.2
+   Compiling catallax-boolean v0.1.5 (https://github.com/BohnBawerick/catallax?rev=9aed0777184353a5f52d1b660f9d2411b97f0fc9#9aed0777)
+   Compiling soliddraft-kernel-api v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-kernel-api)
+   Compiling interpol v0.2.1
+   Compiling nano-gemm-c32 v0.2.1
+   Compiling nano-gemm-f64 v0.2.1
+   Compiling nano-gemm-c64 v0.2.1
+   Compiling nano-gemm-f32 v0.2.1
+   Compiling syn v2.0.119
+   Compiling shlex v2.0.1
+   Compiling crc32fast v1.5.2
+   Compiling crossbeam-deque v0.8.8
+   Compiling find-msvc-tools v0.1.14
+   Compiling defer v0.2.1
+   Compiling private-gemm-x86 v0.1.22
+   Compiling cc v1.8.0
+   Compiling catallax-measure v0.1.5 (https://github.com/BohnBawerick/catallax?rev=9aed0777184353a5f52d1b660f9d2411b97f0fc9#9aed0777)
+   Compiling equator-macro v0.2.1
+   Compiling zlib-rs v0.6.8
+   Compiling foldhash v0.2.0
+   Compiling allocator-api2 v0.2.21
+   Compiling rayon-core v1.13.0
+   Compiling winnow v1.0.4
+   Compiling getrandom v0.4.3
+   Compiling hashbrown v0.16.1
+   Compiling flate2 v1.1.10
+   Compiling equator v0.2.2
+   Compiling catallax-import v0.1.5 (https://github.com/BohnBawerick/catallax?rev=9aed0777184353a5f52d1b660f9d2411b97f0fc9#9aed0777)
+   Compiling blake3 v1.8.7
+   Compiling gemm-f64 v0.19.0
+   Compiling gemm-c64 v0.19.0
+   Compiling gemm-f32 v0.19.0
+   Compiling gemm-c32 v0.19.0
+   Compiling num_cpus v1.17.0
+   Compiling qd v0.8.0
+   Compiling smallvec v1.16.3
+   Compiling typed-path v0.12.3
+   Compiling robust v1.2.0
+   Compiling generativity v1.2.1
+   Compiling equator-macro v0.6.0
+   Compiling faer-traits v0.24.0
+   Compiling equator v0.6.0
+   Compiling spade v2.15.1
+   Compiling zip v9.0.5
+   Compiling gemm v0.19.0
+   Compiling nano-gemm v0.2.2
+   Compiling cpufeatures v0.3.1
+   Compiling constant_time_eq v0.4.2
+   Compiling arrayvec v0.7.8
+   Compiling either v1.19.0
+   Compiling rayon v1.12.0
+   Compiling uuid v1.26.1
+   Compiling faer v0.24.4
+   Compiling catallax-mesh v0.1.5 (https://github.com/BohnBawerick/catallax?rev=9aed0777184353a5f52d1b660f9d2411b97f0fc9#9aed0777)
+   Compiling catallax-features v0.1.5 (https://github.com/BohnBawerick/catallax?rev=9aed0777184353a5f52d1b660f9d2411b97f0fc9#9aed0777)
+   Compiling toml_parser v1.1.5+spec-1.1.0
+   Compiling fs2 v0.4.3
+   Compiling serde_spanned v1.1.2
+   Compiling toml_datetime v1.1.2+spec-1.1.0
+   Compiling glam v0.34.1
+   Compiling toml_writer v1.1.3+spec-1.1.0
+   Compiling mutants v0.0.3
+   Compiling web-time v1.1.0
+   Compiling soliddraft-document v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-document)
+   Compiling catallax-field v0.1.5 (https://github.com/BohnBawerick/catallax?rev=9aed0777184353a5f52d1b660f9d2411b97f0fc9#9aed0777)
+   Compiling toml v1.1.8+spec-1.1.0
+   Compiling ezpz v0.2.29 (https://github.com/KittyCAD/ezpz?rev=915882cc731da31042ce494c89b10334ee57837a#915882cc)
+   Compiling soliddraft-tessellation v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-tessellation)
+   Compiling roxmltree v0.20.0
+   Compiling ttf-parser v0.25.1
+   Compiling soliddraft-sketch v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-sketch)
+   Compiling soliddraft-materials v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-materials)
+   Compiling soliddraft-exchange v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-exchange)
+   Compiling catallax-app v0.1.5 (https://github.com/BohnBawerick/catallax?rev=9aed0777184353a5f52d1b660f9d2411b97f0fc9#9aed0777)
+   Compiling catallax-step v0.1.5 (https://github.com/BohnBawerick/catallax?rev=9aed0777184353a5f52d1b660f9d2411b97f0fc9#9aed0777)
+   Compiling catallax-iges v0.1.5 (https://github.com/BohnBawerick/catallax?rev=9aed0777184353a5f52d1b660f9d2411b97f0fc9#9aed0777)
+   Compiling soliddraft-kernel-catallax v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-kernel-catallax)
+   Compiling soliddraft-model v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-model)
+   Compiling soliddraft-recipe v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-recipe)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4m 52s
+     Running tests/loft.rs (target/debug/build/soliddraft-kernel-catallax/5ebb7c8b54e7c22f/out/loft-5ebb7c8b54e7c22f)
+
+running 4 tests
+test coplanar_loft_is_refused_plainly_and_retained_lofts_export_as_native_recipes ... ok
+test face_profiles_keep_exact_holes_and_a_rotated_polygon_frame ... ok
+test incompatible_holes_report_the_typed_refusal_in_plain_words ... ok
+test spline_loft_edge_fillet_keeps_its_proof_and_refuses_a_trimmed_neighbour_plainly ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.89s
+
+    Checking cfg-if v1.0.5
+    Checking num-traits v0.2.19
+    Checking serde_core v1.0.229
+    Checking typenum v1.20.1
+    Checking memchr v2.8.3
+    Checking zmij v1.0.23
+    Checking itoa v1.0.18
+    Checking bytemuck v1.25.2
+    Checking libm v0.2.16
+    Checking bitmaps v2.1.0
+    Checking rand_core v0.6.4
+    Checking rand_xoshiro v0.6.0
+    Checking num-complex v0.4.6
+    Checking sized-chunks v0.6.5
+    Checking num-integer v0.1.47
+    Checking im v15.1.0
+    Checking num-bigint v0.4.8
+    Checking bitflags v2.13.2
+    Checking raw-cpuid v11.6.0
+    Checking serde v1.0.229
+    Checking serde_json v1.0.154
+    Checking equivalent v1.0.2
+    Checking reborrow v0.5.5
+    Checking pulp-wasm-simd-flag v0.1.1
+    Checking generic-array v0.14.7
+    Checking catallax-numbers v0.1.5 (https://github.com/BohnBawerick/catallax?rev=9aed0777184353a5f52d1b660f9d2411b97f0fc9#9aed0777)
+    Checking dyn-stack v0.13.2
+    Checking libc v0.2.190
+    Checking thiserror v2.0.21
+    Checking block-buffer v0.10.4
+    Checking crypto-common v0.1.7
+    Checking once_cell v1.21.4
+    Checking digest v0.10.7
+    Checking pulp v0.22.3
+    Checking cpufeatures v0.2.17
+    Checking nano-gemm-core v0.2.1
+    Checking sha2 v0.10.9
+    Checking hashbrown v0.17.1
+    Checking crossbeam-utils v0.8.23
+    Checking indexmap v2.14.2
+    Checking soliddraft-kernel-api v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-kernel-api)
+    Checking crossbeam-epoch v0.9.21
+    Checking winnow v1.0.4
+    Checking catallax-shapes v0.1.5 (https://github.com/BohnBawerick/catallax?rev=9aed0777184353a5f52d1b660f9d2411b97f0fc9#9aed0777)
+    Checking catallax-recipe v0.1.5 (https://github.com/BohnBawerick/catallax?rev=9aed0777184353a5f52d1b660f9d2411b97f0fc9#9aed0777)
+    Checking gemm-common v0.19.0
+    Checking zlib-rs v0.6.8
+    Checking foldhash v0.2.0
+    Checking allocator-api2 v0.2.21
+    Checking flate2 v1.1.10
+    Checking hashbrown v0.16.1
+    Checking gemm-c64 v0.19.0
+    Checking gemm-f32 v0.19.0
+    Checking gemm-c32 v0.19.0
+    Checking gemm-f64 v0.19.0
+    Checking qd v0.8.0
+    Checking crossbeam-deque v0.8.8
+    Checking nano-gemm-c32 v0.2.1
+    Checking nano-gemm-f64 v0.2.1
+    Checking nano-gemm-c64 v0.2.1
+    Checking catallax-topology v0.1.5 (https://github.com/BohnBawerick/catallax?rev=9aed0777184353a5f52d1b660f9d2411b97f0fc9#9aed0777)
+    Checking catallax-intersect v0.1.5 (https://github.com/BohnBawerick/catallax?rev=9aed0777184353a5f52d1b660f9d2411b97f0fc9#9aed0777)
+    Checking nano-gemm-f32 v0.2.1
+    Checking equator v0.2.2
+    Checking crc32fast v1.5.2
+    Checking num_cpus v1.17.0
+    Checking robust v1.2.0
+    Checking catallax-boolean v0.1.5 (https://github.com/BohnBawerick/catallax?rev=9aed0777184353a5f52d1b660f9d2411b97f0fc9#9aed0777)
+    Checking generativity v1.2.1
+    Checking smallvec v1.16.3
+    Checking typed-path v0.12.3
+    Checking spade v2.15.1
+    Checking zip v9.0.5
+    Checking catallax-measure v0.1.5 (https://github.com/BohnBawerick/catallax?rev=9aed0777184353a5f52d1b660f9d2411b97f0fc9#9aed0777)
+    Checking equator v0.6.0
+    Checking faer-traits v0.24.0
+    Checking private-gemm-x86 v0.1.22
+    Checking gemm v0.19.0
+    Checking rayon-core v1.13.0
+    Checking getrandom v0.4.3
+    Checking arrayvec v0.7.8
+    Checking either v1.19.0
+    Checking cpufeatures v0.3.1
+    Checking constant_time_eq v0.4.2
+    Checking blake3 v1.8.7
+    Checking rayon v1.12.0
+    Checking catallax-import v0.1.5 (https://github.com/BohnBawerick/catallax?rev=9aed0777184353a5f52d1b660f9d2411b97f0fc9#9aed0777)
+    Checking uuid v1.26.1
+    Checking toml_parser v1.1.5+spec-1.1.0
+    Checking fs2 v0.4.3
+    Checking serde_spanned v1.1.2
+    Checking toml_datetime v1.1.2+spec-1.1.0
+    Checking toml_writer v1.1.3+spec-1.1.0
+    Checking web-time v1.1.0
+    Checking glam v0.34.1
+    Checking soliddraft-document v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-document)
+    Checking toml v1.1.8+spec-1.1.0
+    Checking nano-gemm v0.2.2
+    Checking catallax-features v0.1.5 (https://github.com/BohnBawerick/catallax?rev=9aed0777184353a5f52d1b660f9d2411b97f0fc9#9aed0777)
+    Checking faer v0.24.4
+    Checking catallax-mesh v0.1.5 (https://github.com/BohnBawerick/catallax?rev=9aed0777184353a5f52d1b660f9d2411b97f0fc9#9aed0777)
+    Checking ttf-parser v0.25.1
+    Checking roxmltree v0.20.0
+    Checking soliddraft-tessellation v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-tessellation)
+    Checking soliddraft-materials v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-materials)
+    Checking soliddraft-exchange v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-exchange)
+    Checking catallax-step v0.1.5 (https://github.com/BohnBawerick/catallax?rev=9aed0777184353a5f52d1b660f9d2411b97f0fc9#9aed0777)
+    Checking catallax-iges v0.1.5 (https://github.com/BohnBawerick/catallax?rev=9aed0777184353a5f52d1b660f9d2411b97f0fc9#9aed0777)
+    Checking soliddraft-recipe v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-recipe)
+    Checking catallax-field v0.1.5 (https://github.com/BohnBawerick/catallax?rev=9aed0777184353a5f52d1b660f9d2411b97f0fc9#9aed0777)
+    Checking catallax-app v0.1.5 (https://github.com/BohnBawerick/catallax?rev=9aed0777184353a5f52d1b660f9d2411b97f0fc9#9aed0777)
+    Checking soliddraft-kernel-catallax v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-kernel-catallax)
+    Checking ezpz v0.2.29 (https://github.com/KittyCAD/ezpz?rev=915882cc731da31042ce494c89b10334ee57837a#915882cc)
+    Checking soliddraft-sketch v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-sketch)
+    Checking soliddraft-model v0.4.0 (/home/user/catallax/target/sd-run/crates/soliddraft-model)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 38.69s

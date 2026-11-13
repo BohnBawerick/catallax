@@ -124,8 +124,8 @@ construction and any export:
 Each full refusal, work count and exhausted flag agrees at 1, 2, 4 and the
 default/all thread setting. These are refusal results, not successful builds.
 No STEP answer was produced, so OpenCASCADE was not run.
-The [earlier cloud matrix](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--eight-native-artifacts-594e81f)
-has the same stopping stages; the current k07 work count replaces its older count.
+The [current cloud matrix](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--eight-native-artifacts-a770b15)
+also records eight budget refusals and no STEP output on Rust 1.100.0.
 
 The independent cylinder/torus calibration now assembles all 20 original
 source units while retaining 684 atlas charts as authority. It reaches search,

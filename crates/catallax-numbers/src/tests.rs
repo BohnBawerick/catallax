@@ -1011,6 +1011,34 @@ fn bounded_enclosures_reuse_request_work_and_keep_cold_decision_work() {
 }
 
 #[test]
+fn unbounded_enclosures_keep_parent_proofs_after_child_cache_eviction() {
+    // This balanced DAG exceeds the request cache's 8,192 entries. The root's
+    // completed enclosure remains cached after some child proofs are evicted.
+    let mut level: Vec<_> = (2..4098)
+        .map(|value| Real::from_i64(value).sqrt())
+        .collect();
+    while level.len() > 1 {
+        level = level
+            .chunks_exact(2)
+            .map(|pair| &pair[0] + &pair[1])
+            .collect();
+    }
+    let value = level.pop().unwrap();
+    let ((), work) = with_operation_budget(20_000_000, || {
+        reuse_operation_enclosures();
+        let dec = Decider::default();
+        let first = dec.enclose_at(&value, 96).unwrap();
+        let paid = current_operation_work().used;
+        let second = dec.enclose_at(&value, 96).unwrap();
+        assert_eq!(first.lo(), second.lo());
+        assert_eq!(first.hi(), second.hi());
+        assert!(paid > 0);
+        assert_eq!(current_operation_work().used, paid);
+    });
+    assert!(!work.exhausted);
+}
+
+#[test]
 fn enclosure_reuse_keeps_precision_policy_and_domain_assumptions_separate() {
     let ((), work) = with_operation_budget(1_000_000, || {
         reuse_operation_enclosures();

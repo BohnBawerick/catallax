@@ -1,0 +1,44 @@
+{
+ "request_id": "cx-m10-wire-trace--broad-s1",
+ "repo": "BohnBawerick/catallax",
+ "sha": "08432eddc566c16c56e62c878c3cff610585f061",
+ "script_exit_code": 0,
+ "seconds": 2769,
+ "commands": [
+  {
+   "cmd": "bash -lc: set -euo pipefail; rustup update stable",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "mktemp scratch dir, write probe.py and shard.json, git worktrees before (7cde411) and after (08432ed) checked out",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "probe.py --sha 7cde4119 --release --shard-phase before (shard 1), then proof output",
+   "status": "exit 0 (probe code 0)"
+  },
+  {
+   "cmd": "probe.py --sha 08432edd --release --shard-phase after (shard 1), then proof output",
+   "status": "exit 0 (probe code 0)"
+  },
+  {
+   "cmd": "[ before -eq 0 ] && [ after -eq 0 ]",
+   "status": "exit 0"
+  }
+ ],
+ "test_counts": {
+  "passed": 657,
+  "failed": 2,
+  "ignored": 0,
+  "filtered_out": 0
+ },
+ "failed_tests": [
+  "case16_irrational_circle_centres_remain_circles (intersections, ignored-by-default test; failed in both before and after runs, counted as ignored_failed, probe exit code stayed 0)"
+ ],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.30GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "run.log has no cargo 'test result:' lines; the script uses a Python probe. Counts are summed from the probe summary rows: before 327 passed of 328, after 330 passed of 331; each has failed=1 ignored_failed=1 normal_failed=0 timed_out=0. The 2 failed are the same ignored test in each revision. The subcommands inside the script are summarized as the script's 5 top-level steps since the script is one bash -lc string. rustc 1.100.0."
+}

@@ -49,6 +49,12 @@ pub(crate) struct Feature {
     // The exact volume of an imported body of revolution, kept with its definition.
     volume: Option<Box<crate::import_revolution::Volume>>,
 }
+
+pub(crate) struct LinearRevolution {
+    pub origin: RPoint3,
+    pub axis: RVector3,
+    pub loops: Vec<Vec<RPoint3>>,
+}
 fn bad(code: &'static str) -> Refusal {
     Refusal::new(
         code,
@@ -83,6 +89,35 @@ fn side(segment: &catallax_recipe::ElementId) -> Role {
 }
 
 impl Feature {
+    /// Complete polygonal meridian of a full revolution, in world coordinates.
+    pub(crate) fn linear_revolution(&self) -> Option<LinearRevolution> {
+        let Sweep::Revolve {
+            origin,
+            axis,
+            angle,
+        } = &self.sweep
+        else {
+            return None;
+        };
+        if !angle.is(360) || self.loops.iter().flatten().any(|e| e.circle.is_some()) {
+            return None;
+        }
+        let world = self.inverse.inverse();
+        Some(LinearRevolution {
+            origin: world.apply_rational_point(origin)?,
+            axis: world.apply_vector(&axis.to_real()).as_rational()?,
+            loops: self
+                .loops
+                .iter()
+                .map(|edges| {
+                    edges
+                        .iter()
+                        .map(|edge| world.apply_rational_point(&point(&edge.start)))
+                        .collect()
+                })
+                .collect::<Option<_>>()?,
+        })
+    }
     pub(crate) fn complete_planar_carriers(&self) -> bool {
         matches!(self.sweep, Sweep::Extrude { .. })
             && self.algebraic_end.is_none()

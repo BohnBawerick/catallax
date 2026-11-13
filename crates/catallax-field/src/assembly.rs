@@ -108,6 +108,32 @@ pub fn uniform_mass(
     })
 }
 
+/// Opt-in exact meridian integration for coaxial polygonal revolutions.
+/// Density and property accuracies have the same units as [`uniform_mass`].
+/// Unsupported meridians refuse without substituting their bounding envelopes.
+pub fn revolved_uniform_mass(
+    part: &PlacedPart,
+    density: &Rational,
+    accuracy: &mass::Accuracy,
+    options: &mass::Options,
+    dec: &mut Decider,
+) -> Result<Mass, Refusal> {
+    if density <= &Rational::zero() {
+        return Err(Refusal::new(
+            "assembly.density",
+            "uniform density must be positive in g/mm^3",
+        ));
+    }
+    let properties = mass::revolved_properties(&part.plan, accuracy, options, dec)?;
+    Ok(Mass {
+        grams: Enclosure {
+            lo: &properties.volume.lo * density,
+            hi: &properties.volume.hi * density,
+        },
+        centre_of_gravity: properties.centroid,
+    })
+}
+
 fn middle(b: &Box3) -> Point {
     std::array::from_fn(|i| (&b[i][0] + &b[i][1]).mul_pow2(-1))
 }

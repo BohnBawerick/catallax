@@ -1,0 +1,73 @@
+info: syncing channel updates for stable-x86_64-unknown-linux-gnu
+
+  stable-x86_64-unknown-linux-gnu unchanged - rustc 1.100.0 (0ef1bc386 2026-11-09)
+
+info: checking for self-update (current version: 1.29.3)
+warning: crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+warning: `catallax-cli` (manifest) generated 1 warning
+   Compiling autocfg v1.5.1
+   Compiling typenum v1.20.1
+   Compiling version_check v0.9.5
+   Compiling libm v0.2.16
+   Compiling gmp-mpfr-sys v1.7.1
+   Compiling im v15.1.0
+   Compiling num-traits v0.2.19
+   Compiling libc v0.2.191
+   Compiling bitmaps v2.1.0
+   Compiling rand_core v0.6.4
+   Compiling rand_xoshiro v0.6.0
+   Compiling num-integer v0.1.47
+   Compiling sized-chunks v0.6.5
+   Compiling num-bigint v0.4.8
+   Compiling rug v1.30.0
+   Compiling catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+   Compiling az v1.3.0
+   Compiling catallax-trace v0.1.5 (/home/user/catallax/crates/catallax-trace)
+   Compiling catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+   Compiling catallax-intersect v0.1.5 (/home/user/catallax/crates/catallax-intersect)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 35s
+     Running unittests src/lib.rs (target/debug/build/catallax-intersect/cecd0b3b3741c934/out/catallax_intersect-cecd0b3b3741c934)
+
+running 1 test
+test pair::traced::tests::a_cone_apex_on_the_cylinder_is_not_dropped_from_the_native_cover ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 62 filtered out; finished in 0.00s
+
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.27
+   Compiling serde_core v1.0.229
+   Compiling zmij v1.0.23
+   Compiling catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+   Compiling generic-array v0.14.7
+   Compiling serde v1.0.229
+   Compiling serde_json v1.0.154
+   Compiling memchr v2.8.3
+   Compiling syn v3.0.9
+   Compiling itoa v1.0.18
+   Compiling catallax-trace v0.1.5 (/home/user/catallax/crates/catallax-trace)
+   Compiling serde_derive v1.0.229
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling digest v0.10.7
+   Compiling catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+   Compiling catallax-recipe v0.1.5 (/home/user/catallax/crates/catallax-recipe)
+   Compiling cfg-if v1.0.5
+   Compiling cpufeatures v0.2.17
+   Compiling sha2 v0.10.9
+   Compiling catallax-intersect v0.1.5 (/home/user/catallax/crates/catallax-intersect)
+   Compiling catallax-topology v0.1.5 (/home/user/catallax/crates/catallax-topology)
+   Compiling catallax-boolean v0.1.5 (/home/user/catallax/crates/catallax-boolean)
+   Compiling catallax-measure v0.1.5 (/home/user/catallax/crates/catallax-measure)
+   Compiling catallax-import v0.1.5 (/home/user/catallax/crates/catallax-import)
+   Compiling catallax-features v0.1.5 (/home/user/catallax/crates/catallax-features)
+   Compiling cx-m10-k07-proof v0.0.0 (/tmp/cx-m10-k07-proof.MJM5u8)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 34.76s
+     Running `target/debug/cx-m10-k07-proof /home/user/catallax/crates/catallax-features/tests/fixtures/p5-later-cuts/k07-cone-drill.json`
+case=k07;threads=Some(1);work=26550;exhausted=false;answer=Geometry { step: StepId("drilled"), refusal: Refusal { code: "intersect.trace-native-window", detail: "traced cone/cylinder bounded native window: nonperpendicular cone/cylinder axes need a certified bounded native window" } }
+case=k07;threads=Some(2);work=26550;exhausted=false;answer=Geometry { step: StepId("drilled"), refusal: Refusal { code: "intersect.trace-native-window", detail: "traced cone/cylinder bounded native window: nonperpendicular cone/cylinder axes need a certified bounded native window" } }
+case=k07;threads=Some(4);work=26550;exhausted=false;answer=Geometry { step: StepId("drilled"), refusal: Refusal { code: "intersect.trace-native-window", detail: "traced cone/cylinder bounded native window: nonperpendicular cone/cylinder axes need a certified bounded native window" } }
+case=k07;threads=None;work=26550;exhausted=false;answer=Geometry { step: StepId("drilled"), refusal: Refusal { code: "intersect.trace-native-window", detail: "traced cone/cylinder bounded native window: nonperpendicular cone/cylinder axes need a certified bounded native window" } }
+k07_answer_work_and_refusal_match_all_threads=true

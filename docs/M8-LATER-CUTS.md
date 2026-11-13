@@ -66,6 +66,8 @@ For booleans with a fitted band, line queries now use the line's checked paramet
 
 Fresh verification-driver runs of all thirteen later cuts and canonical P5 use the unchanged 20M application allowance. The answers, work, operation records and STEP bytes agree with 1, 2 and 4 kernel threads and the same number of stream workers, and with all 24 available kernel threads and one stream worker. All 477 saved replay answers are unchanged by this step against current main. [M10's query record](M10-IMPRINT-QUERIES.md) retains the earlier native-query comparison, including attribution of three older budget advances already present on its base.
 
+The following table records the pre-integration baseline. The forced trace-candidate route below has separate measured outcomes; its own 477-answer preservation gate is not yet qualified.
+
 | Case | Outcome | Work | Named kind | Crossing observed for that kind |
 | --- | --- | --- | --- | --- |
 | k01 | `numbers.operation-budget` | 19,999,991 | none | not reached |
@@ -87,6 +89,58 @@ Fresh verification-driver runs of all thirteen later cuts and canonical P5 use t
 - **k03 exhausts 20M.** The curve equations exclude the old circle query. Finite-carrier point exclusions then complete the intersection graph. Native spline queries replace the earlier outgoing-germ refusal, and the CLI stops with `numbers.operation-budget` after 19,999,994 units.
 - **k02 names a finite spline line contact.** Its former analytic sign decision spent 18,253,736 units before exhausting 20M. Keeping the line parameter takes the complete cut to its next refusal at 3,516,600 units. The finite spline solver proves separated transverse crossings only; this contact needs a proof beyond that case.
 - **k01 and k13 still run out of work.** k01 reaches finite-face membership in the intersection graph before chart enclosures exhaust the allowance. k13 exhausts exact sign decisions in the analytic intersector. These remain capability gaps under 20M; neither has a proved missing-intersection diagnosis. The census does not count them as builds or as named intersection refusals.
+
+### Forced trace candidates: current proof boundary
+
+The intersector now calls `catallax-trace` for unproved branch candidates.
+The Boolean preserves the old support preflight and trimmed-face exclusions,
+then calls `intersect_surfaces_traced` only when they do not settle the pair.
+Deferred and forced plans have separate cache keys. Candidate fits, binary64
+coordinates and SMLib tolerances never establish a geometric answer.
+
+For the three analytic pairs, exact bounded native windows supply rational
+atlases. Every chart's native-surface equation is checked, and original tensor
+spans retain the full atlas cover, regularity and periodic/physical ownership.
+The existing field, normal-cone and root engine still has to prove the complete
+branch cover. Fitted-carrier pairs retain their original algebraic coefficients
+and use the existing exact analytic section route after embedding admission.
+
+Fresh cloud recipe probes at `c6ff536b` for analytic pairs and `44b7ea1a` for
+fitted pairs produce these later-cut refusals under the unchanged 20M allowance:
+
+| Case | Refusal | Work | Missing proof at the stopping point |
+| --- | --- | ---: | --- |
+| k04 | `numbers.operation-budget` | 19,999,995 | Original-span cylinder/torus search, after four splits |
+| k07 | `shapes.rational-patch-unproven` | 11,388,790 | Strict exact equality; bounded coincidence is rejected |
+| k08 | `numbers.operation-budget` | 19,994,031 | Original-span cone/sphere search, after eight splits |
+| k05 | `numbers.operation-budget` | 19,999,984 | Fitted-source embedding and complete chart cover |
+| k06 | `numbers.operation-budget` | 19,999,987 | Fitted-source embedding and complete chart cover |
+| k09 | `numbers.operation-budget` | 20,000,000 | Fitted-source embedding and complete chart cover |
+| k10 | `numbers.operation-budget` | 19,999,995 | Fitted-source embedding and complete chart cover |
+| k11 | `numbers.operation-budget` | 19,999,994 | Fitted-source embedding and complete chart cover |
+
+Each full refusal, work count and exhausted flag agrees at 1, 2, 4 and the
+default/all thread setting. These are refusal results, not successful builds.
+No STEP answer was produced, so OpenCASCADE was not run.
+
+The independent cylinder/torus calibration now assembles all 20 original
+source units while retaining 684 atlas charts as authority. It reaches search,
+then exhausts at 19,988,497 work; 282 face-root certificate calls account for
+7,036,737 units. This is no longer the earlier per-chart preparation barrier,
+but it is still not a complete branch answer. Exact-request reuse is being
+measured without increasing the allowance or omitting source pieces.
+
+The retained-curve consumer has a separate boundary. Positive construction
+identity now proves both of a curve's own endpoints and their order. An
+independently constructed equal endpoint still refuses exact equality, and
+the clipped-endpoint exactness guard still rejects a separation-bound result.
+Those unproved queries do not qualify classification, sewing or export.
+
+Evidence: [analytic recipe probes](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--native-c6ff536b),
+[fitted recipe probes](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--fitted-44b7ea1),
+[original-span calibration](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--original-spans-c6ff536b)
+and [retained-query follow-through](https://github.com/BohnBawerick/catallax/tree/cloud/run-cx-m10-wire-trace--endpoint-identity-44b7ea1).
+
 
 ### Retained carrier at M10's input checks
 

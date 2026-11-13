@@ -311,9 +311,7 @@ pub(super) fn cone_sphere(
         &sphere.center.minus(&c.apex).cross(&c.axis).norm_squared(),
         dec,
     )? {
-        return Err(traced(
-            "non-coaxial cone/sphere intersection requires certified branch tracing",
-        ));
+        return super::traced::sphere::cone_sphere(c, sphere, sigma, dec);
     }
     let axis2 = c.axis.norm_squared();
     let h = &sphere.center.minus(&c.apex).dot(&c.axis) / &axis2;

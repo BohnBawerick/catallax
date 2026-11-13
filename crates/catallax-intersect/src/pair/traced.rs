@@ -7,6 +7,8 @@ use catallax_shapes::{
     SplineSupport, Torus,
 };
 
+pub(super) mod sphere;
+
 fn refused(detail: impl Into<String>) -> Refusal {
     Refusal::new("intersect.trace-native-cover", detail)
 }

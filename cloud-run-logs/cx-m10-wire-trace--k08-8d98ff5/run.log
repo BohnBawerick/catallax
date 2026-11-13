@@ -1,0 +1,65 @@
+info: syncing channel updates for stable-x86_64-unknown-linux-gnu
+
+  stable-x86_64-unknown-linux-gnu unchanged - rustc 1.100.0 (0ef1bc386 2026-11-09)
+
+info: checking for self-update (current version: 1.29.3)
+warning: crates/catallax-cli/Cargo.toml: file `/home/user/catallax/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+warning: `catallax-cli` (manifest) generated 1 warning
+   Compiling autocfg v1.5.1
+   Compiling typenum v1.20.1
+   Compiling version_check v0.9.5
+   Compiling gmp-mpfr-sys v1.7.1
+   Compiling im v15.1.0
+   Compiling num-traits v0.2.19
+   Compiling libc v0.2.191
+   Compiling libm v0.2.16
+   Compiling rand_core v0.6.4
+   Compiling bitmaps v2.1.0
+   Compiling rand_xoshiro v0.6.0
+   Compiling num-integer v0.1.47
+   Compiling sized-chunks v0.6.5
+   Compiling num-bigint v0.4.8
+   Compiling rug v1.30.0
+   Compiling catallax-numbers v0.1.5 (/home/user/catallax/crates/catallax-numbers)
+   Compiling az v1.3.0
+   Compiling catallax-trace v0.1.5 (/home/user/catallax/crates/catallax-trace)
+   Compiling catallax-shapes v0.1.5 (/home/user/catallax/crates/catallax-shapes)
+   Compiling catallax-intersect v0.1.5 (/home/user/catallax/crates/catallax-intersect)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 47s
+     Running unittests src/lib.rs (target/debug/build/catallax-intersect/cecd0b3b3741c934/out/catallax_intersect-cecd0b3b3741c934)
+
+running 2 tests
+test pair::traced::sphere::tests::a_sphere_through_the_apex_does_not_gain_a_regular_native_cover ... ok
+
+thread 'pair::traced::sphere::tests::the_spherical_window_has_exact_incidence_and_outward_orientation' (22002) panicked at crates/catallax-intersect/src/pair/traced/sphere.rs:242:14:
+called `Result::unwrap()` on an `Err` value: Refusal { code: "shapes.rational-atlas-carrier", detail: "the chart needs an exact binding to the retained tensor source" }
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/std/src/panicking.rs:676:5
+   1: core::panicking::panic_fmt
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/panicking.rs:80:14
+   2: core::result::unwrap_failed
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/result.rs:1870:5
+   3: <core::result::Result<(), catallax_numbers::outcome::Refusal>>::unwrap
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/result.rs:1232:23
+   4: catallax_intersect::pair::traced::sphere::tests::the_spherical_window_has_exact_incidence_and_outward_orientation
+             at ./src/pair/traced/sphere.rs:242:14
+   5: catallax_intersect::pair::traced::sphere::tests::the_spherical_window_has_exact_incidence_and_outward_orientation::{closure#0}
+             at ./src/pair/traced/sphere.rs:227:74
+   6: <catallax_intersect::pair::traced::sphere::tests::the_spherical_window_has_exact_incidence_and_outward_orientation::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/ops/function.rs:250:5
+   7: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/0ef1bc386059596dada8fb65b50425aab2ea637a/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+test pair::traced::sphere::tests::the_spherical_window_has_exact_incidence_and_outward_orientation ... FAILED
+
+failures:
+
+failures:
+    pair::traced::sphere::tests::the_spherical_window_has_exact_incidence_and_outward_orientation
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 63 filtered out; finished in 0.11s
+
+error: test failed, to rerun pass `-p catallax-intersect --lib`

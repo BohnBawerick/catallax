@@ -1,0 +1,68 @@
+{
+ "request_id": "cx-m10-wire-trace--k08-8d98ff5",
+ "repo": "BohnBawerick/catallax",
+ "sha": "8d98ff58647e372adde00d0edc896586c64fa549",
+ "script_exit_code": 101,
+ "seconds": 108,
+ "commands": [
+  {
+   "cmd": "rustup update stable",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "cargo +stable test -j4 -p catallax-intersect --lib pair::traced::sphere::tests -- --nocapture",
+   "status": "failed with exit 101"
+  },
+  {
+   "cmd": "probe=$(mktemp -d /tmp/cx-m10-k08-proof.XXXXXX)",
+   "status": "not reached"
+  },
+  {
+   "cmd": "trap 'rm -rf \"$probe\"' EXIT",
+   "status": "not reached"
+  },
+  {
+   "cmd": "mkdir -p \"$probe/src\"",
+   "status": "not reached"
+  },
+  {
+   "cmd": "printf '%s' '<base64 main.rs>' | base64 -d > \"$probe/src/main.rs\"",
+   "status": "not reached"
+  },
+  {
+   "cmd": "cp \"$root/Cargo.lock\" \"$probe/Cargo.lock\"",
+   "status": "not reached"
+  },
+  {
+   "cmd": "cat > \"$probe/Cargo.toml\" <<MANIFEST (probe manifest)",
+   "status": "not reached"
+  },
+  {
+   "cmd": "cargo +stable fetch --manifest-path \"$probe/Cargo.toml\"",
+   "status": "not reached"
+  },
+  {
+   "cmd": "cargo +stable run --offline -j4 --manifest-path \"$probe/Cargo.toml\" --target-dir ... k08-sphere-dimple.json",
+   "status": "not reached"
+  },
+  {
+   "cmd": "cargo +stable clippy -j4 -p catallax-shapes -p catallax-intersect --all-targets -- -D warnings",
+   "status": "not reached"
+  }
+ ],
+ "test_counts": {
+  "passed": 1,
+  "failed": 1,
+  "ignored": 0,
+  "filtered_out": 63
+ },
+ "failed_tests": [
+  "pair::traced::sphere::tests::the_spherical_window_has_exact_incidence_and_outward_orientation"
+ ],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "Panic at crates/catallax-intersect/src/pair/traced/sphere.rs:242:14: Result::unwrap() on Err Refusal { code: \"shapes.rational-atlas-carrier\", detail: \"the chart needs an exact binding to the retained tensor source\" }. rustup update stable reported unchanged (rustc 1.100.0). cargo fetch at repo root succeeded. Script uses set -e so later commands were not reached."
+}

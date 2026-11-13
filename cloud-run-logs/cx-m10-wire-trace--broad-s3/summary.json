@@ -1,0 +1,9 @@
+{"request_id":"cx-m10-wire-trace--broad-s3","repo":"BohnBawerick/catallax","sha":"08432eddc566c16c56e62c878c3cff610585f061","script_exit_code":0,"seconds":3323,
+"commands":[
+{"cmd":"bash -lc 'set -euo pipefail; root=$PWD; rustup update stable; scratch=$(mktemp -d ...); python3 setup ...; git fetch/clone/checkout before+after ...","status":"exit 0"},
+{"cmd":"(inner) probe.py --sha 7cde4119547109994eb685d6ff10187ce0b846fc --release --shard-phase before","status":"exit 0"},
+{"cmd":"(inner) probe.py --sha 08432eddc566c16c56e62c878c3cff610585f061 --release --shard-phase after","status":"exit 0"}],
+"test_counts":{"passed":662,"failed":0,"ignored":0,"filtered_out":0},
+"failed_tests":[],
+"platform":{"cpu_model":"Intel(R) Xeon(R) Processor @ 2.10GHz","nproc":4,"mem_total_gb":15},
+"notes":"The script is a single top-level bash -lc command; the two probe runs are inner steps. run.log has no cargo 'test result:' lines because the probe harness runs tests itself. Counts are the probe summary rows: before (7cde411) passed 329 of 329 tests, failed 0, timed_out 0; after (08432ed) passed 333 of 333, failed 0, timed_out 0. The ignored and filtered_out counts are not reported by the probe, so they are shown as 0. Discovered tests: 3293 before, 3321 after. Rust 1.100.0 stable. cargo fetch succeeded."}

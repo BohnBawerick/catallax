@@ -1,0 +1,56 @@
+{
+ "request_id": "cx-m10-wire-trace--contract-supplement-v3-08432edd",
+ "repo": "BohnBawerick/catallax",
+ "sha": "08432eddc566c16c56e62c878c3cff610585f061",
+ "script_exit_code": 1,
+ "seconds": 1964,
+ "commands": [
+  {
+   "cmd": "bash -lc 'set -euo pipefail; root=$PWD; rustup update stable; scratch=$(mktemp -d ...); write probe.py; ...",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git fetch origin 7cde4119547109994eb685d6ff10187ce0b846fc; git checkout --detach 7cde4119...",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "timeout 9000 python3 -B probe.py --sha 7cde4119... (4 tests, before)",
+   "status": "failed with exit 1 (tolerated by || before=$?)"
+  },
+  {
+   "cmd": "proof before",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "git checkout --detach 08432eddc566c16c56e62c878c3cff610585f061",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "timeout 9000 python3 -B probe.py --sha 08432edd... (4 tests, after)",
+   "status": "failed with exit 1 (tolerated by || after=$?)"
+  },
+  {
+   "cmd": "proof after",
+   "status": "exit 0"
+  },
+  {
+   "cmd": "[ \"$before\" -eq 0 ] && [ \"$after\" -eq 0 ]",
+   "status": "failed with exit 1"
+  }
+ ],
+ "test_counts": {
+  "passed": 6,
+  "failed": 0,
+  "ignored": 0,
+  "filtered_out": 48
+ },
+ "failed_tests": [
+  "later_cuts_refuse_by_naming_what_is_missing (catallax-features, target later_cuts; at both 7cde4119 and 08432edd)"
+ ],
+ "platform": {
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "nproc": 4,
+  "mem_total_gb": 15
+ },
+ "notes": "Script exit 1 because later_cuts_refuse_by_naming_what_is_missing hit the script's 900s per-test timeout (timed_out=true, killed, code -9, wall 900.1s) at both the before (7cde4119) and after (08432edd) revisions; it printed only 'running 1 test'. The other 3 tests passed at both revisions. Counts come from test result lines inside the gzip_base64 full-proof blobs in run.log (run.log has no plain test result lines); the timed-out test has no result line so is not counted in failed. The inventory found 963 tests in 111 targets. The 4-core VM may be slower than the intended build machine; no OOM evidence in dmesg. Command breakdown is of the single bash -lc script."
+}

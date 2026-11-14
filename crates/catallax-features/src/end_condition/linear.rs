@@ -18,7 +18,7 @@ enum Node {
 #[derive(Clone, Debug)]
 struct Sweep {
     profile: Profile,
-    vector: RVector3,
+    vector: Vector3,
     range: [Option<Real>; 2],
 }
 #[derive(Clone, Debug)]
@@ -95,7 +95,20 @@ impl Scene {
         };
         let mut known = BTreeMap::new();
         scene.root = scene.step(recipe, target, &mut known, dec)?;
+        scene.retain_sources();
         Ok(scene)
+    }
+    fn retain_sources(&mut self) {
+        let mut owners = BTreeSet::new();
+        let mut pending = vec![self.root];
+        while let Some(node) = pending.pop() {
+            if owners.insert(node)
+                && let Node::Boolean { a, b, .. } = &self.nodes[node]
+            {
+                pending.extend([*a, *b]);
+            }
+        }
+        self.sources.retain(|source| owners.contains(&source.owner));
     }
     fn add_plane(&mut self, plane: Plane, dec: &mut Decider) -> Result<Wall, Refusal> {
         let mut coeff = [
@@ -265,7 +278,58 @@ impl Scene {
                 })?;
                 self.sweep(
                     profile,
-                    direction.scaled(&(distance.value() / &length)),
+                    direction.scaled(&(distance.value() / &length)).to_real(),
+                    [Some(r(0)), Some(r(1))],
+                    [Some(Role::Start), Some(Role::End)],
+                    id,
+                    dec,
+                )?
+            }
+            Operation::ExtrudeOnFace {
+                profile,
+                body,
+                face,
+                normal_direction,
+                x_direction,
+                offset,
+                distance,
+                placement,
+            } => {
+                if distance.value().is_zero() {
+                    return Err(bad(
+                        "extrude.zero-distance",
+                        "extrusion distance must not be zero",
+                    ));
+                }
+                let support = self.step(recipe, body, known, dec)?;
+                let mut support_scene = self.clone();
+                support_scene.root = support;
+                support_scene.bound = recipe_bound(recipe, body, dec)?;
+                support_scene.retain_sources();
+                let boundary = support_scene.boundary(dec)?;
+                let planes = boundary
+                    .patches
+                    .iter()
+                    .filter(|patch| patch.origins.iter().any(|origin| face.matches(origin)))
+                    .map(|patch| support_scene.planes[patch.plane].clone())
+                    .collect::<Vec<_>>();
+                let mut profile = read_profile(recipe, profile, dec)?;
+                crate::check_face_profile(&profile.pose, dec)?;
+                profile.pose = crate::face_placement(
+                    &planes,
+                    &vector(normal_direction),
+                    &vector(x_direction),
+                    offset.value(),
+                    placement,
+                    dec,
+                )?;
+                let direction = profile.pose.apply_vector(
+                    &RVector3::new(Rational::zero(), Rational::zero(), distance.value().clone())
+                        .to_real(),
+                );
+                self.sweep(
+                    profile,
+                    direction,
                     [Some(r(0)), Some(r(1))],
                     [Some(Role::Start), Some(Role::End)],
                     id,
@@ -290,7 +354,7 @@ impl Scene {
                     ThroughSide::Forward => ([Some(r(0)), None], [Some(Role::Start), None]),
                     ThroughSide::Backward => ([None, Some(r(0))], [None, Some(Role::Start)]),
                 };
-                let b = self.sweep(profile, direction, range, caps, id, dec)?;
+                let b = self.sweep(profile, direction.to_real(), range, caps, id, dec)?;
                 self.node(Node::Boolean {
                     kind: BooleanKind::Subtract,
                     a,
@@ -341,23 +405,22 @@ impl Scene {
     fn sweep(
         &mut self,
         profile: Profile,
-        vector: RVector3,
+        vector: Vector3,
         range: [Option<Real>; 2],
         caps: [Option<Role>; 2],
         step: &StepId,
         dec: &mut Decider,
     ) -> Result<usize, Refusal> {
-        if vector.is_zero() {
+        if sign(&vector.norm_squared(), dec)? == Sign::Zero {
             return Err(bad(
                 "extrude.zero-direction",
                 "extrusion direction must not be zero",
             ));
         }
-        let normal = crate::profile::rational_vector(
-            &profile.pose,
-            &RVector3::new(Rational::zero(), Rational::zero(), Rational::one()),
+        let normal = profile.pose.apply_vector(
+            &RVector3::new(Rational::zero(), Rational::zero(), Rational::one()).to_real(),
         );
-        if vector.dot(&normal).is_zero() {
+        if sign(&vector.dot(&normal), dec)? == Sign::Zero {
             return Err(bad(
                 "extrude.zero-thickness",
                 "extrusion direction lies in the sketch plane",
@@ -382,12 +445,17 @@ impl Scene {
         });
         let node = self.node(Node::Sweep(index));
         for edge in profile.loops.iter().flat_map(|b| &b.segments) {
-            let a = profile.world(&edge.start, &zero_vec());
-            let b = profile.world(&edge.end, &zero_vec());
+            let world = |p: &[Rational; 2]| {
+                profile.pose.apply_point(
+                    &RPoint3::new(p[0].clone(), p[1].clone(), Rational::zero()).to_real(),
+                )
+            };
+            let a = world(&edge.start);
+            let b = world(&edge.end);
             let plane = Plane {
-                origin: a.clone().into(),
-                normal: b.minus(&a).cross(&vector).into(),
-                ref_dir: vector.clone().into(),
+                origin: a.clone(),
+                normal: b.minus(&a).cross(&vector),
+                ref_dir: vector.clone(),
             };
             let wall = self.add_plane(plane, dec)?;
             self.sources.push(Source {
@@ -396,9 +464,6 @@ impl Scene {
                 origins: edge.ids.iter().map(|id| origin(step, side(id))).collect(),
             });
         }
-        let normal = profile.pose.apply_vector(
-            &RVector3::new(Rational::zero(), Rational::zero(), Rational::one()).to_real(),
-        );
         let reference = profile.pose.apply_vector(
             &RVector3::new(Rational::one(), Rational::zero(), Rational::zero()).to_real(),
         );
@@ -408,7 +473,7 @@ impl Scene {
                     origin: profile
                         .pose
                         .apply_point(&Point3::origin())
-                        .plus(&vector.to_real().scaled(depth)),
+                        .plus(&vector.scaled(depth)),
                     normal: normal.clone(),
                     ref_dir: reference.clone(),
                 };
@@ -466,7 +531,7 @@ impl Scene {
         }
         let tool = self.sweep(
             profile,
-            cap.direction.clone(),
+            cap.direction.to_real(),
             [None, None],
             [None, None],
             step,
@@ -550,8 +615,8 @@ impl Scene {
                     p = p.plus(&d.scaled(&(&epsilon / &r(2))));
                 }
                 let local = profile.pose.inverse().apply_point(&p);
-                let v = crate::profile::rational_vector(&profile.pose.inverse(), vector);
-                let t = &local.z / &Real::from(v.z.clone());
+                let v = profile.pose.inverse().apply_vector(vector);
+                let t = &local.z / &v.z;
                 if let Some(lo) = &range[0]
                     && sign(&(&t - lo), dec)? == Sign::Negative
                 {
@@ -562,10 +627,7 @@ impl Scene {
                 {
                     return Ok(false);
                 }
-                let q = [
-                    &local.x - &(&t * &Real::from(v.x)),
-                    &local.y - &(&t * &Real::from(v.y)),
-                ];
+                let q = [&local.x - &(&t * &v.x), &local.y - &(&t * &v.y)];
                 Ok(profile_location(profile, &q, dec)? != RegionLocation::Outside)
             }
             Node::Boolean { kind, a, b } => {
@@ -638,6 +700,20 @@ pub(super) fn recipe_bound(
             crate::evaluate::profile_radius(&read_profile(recipe, profile, dec)?)
                 + distance.value().abs()
         }
+        Operation::ExtrudeOnFace {
+            profile,
+            body,
+            offset,
+            distance,
+            placement,
+            ..
+        } => stock(
+            recipe_bound(recipe, body, dec)?
+                + crate::evaluate::profile_radius(&read_profile(recipe, profile, dec)?)
+                + offset.value().abs()
+                + distance.value().abs(),
+            placement,
+        ),
         Operation::Revolve { profile, axis, .. } => {
             crate::evaluate::profile_radius(&read_profile(recipe, profile, dec)?)
                 + axis.point.0.iter().fold(Rational::zero(), |a, n| {

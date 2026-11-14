@@ -67,7 +67,7 @@ struct State {
     origins: BTreeSet<Origin>,
 }
 
-pub(super) fn skin(plan: &Plan, root: usize, dec: &mut Decider) -> Result<Skin, Refusal> {
+pub(crate) fn skin(plan: &Plan, root: usize, dec: &mut Decider) -> Result<Skin, Refusal> {
     let mut active = vec![false; root + 1];
     active[root] = true;
     for i in (0..=root).rev() {

@@ -500,21 +500,17 @@ impl Plan {
                         x_direction,
                         offset,
                         distance,
+                        placement,
                     } => {
                         let profile = &profiles[profile];
                         catallax_features::check_face_profile(&profile.pose, dec)?;
-                        let planes = step_faces[body]
-                            .iter()
-                            .map(|id| &plan.faces[*id])
-                            .filter(|candidate| face.matches(&candidate.origin))
-                            .map(|candidate| match &candidate.surface {
-                                Surface::Plane(plane) => Ok(plane.clone()),
-                                _ => Err(Refusal::new(
-                                    "extrude.nonplanar-face",
-                                    "the sketch support is not planar",
-                                )),
-                            })
-                            .collect::<Result<Vec<_>, Refusal>>()?;
+                        let boundary = planar_face::recovery::skin(&plan, steps[body], dec)?;
+                        let planes = boundary
+                            .patches
+                            .into_iter()
+                            .filter(|patch| patch.origins.iter().any(|origin| face.matches(origin)))
+                            .map(|patch| patch.plane)
+                            .collect::<Vec<_>>();
                         let [x, y, z] = x_direction.0.each_ref().map(|n| n.value().clone());
                         let [nx, ny, nz] = normal_direction.0.each_ref().map(|n| n.value().clone());
                         let map = catallax_features::face_placement(
@@ -522,8 +518,10 @@ impl Plan {
                             &RVector3::new(nx, ny, nz),
                             &RVector3::new(x, y, z),
                             offset.value(),
+                            placement,
                             dec,
                         )?;
+                        let map = Isometry::from(&map);
                         let mut built = features::Feature::extrude(
                             profile,
                             &step.id,

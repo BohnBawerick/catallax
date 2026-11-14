@@ -11,8 +11,9 @@ pub fn face_placement(
     normal_direction: &RVector3,
     x_direction: &RVector3,
     offset: &Rational,
+    placement: &catallax_recipe::Pose,
     dec: &mut Decider,
-) -> Result<Isometry, Refusal> {
+) -> Result<Pose, Refusal> {
     let Some(first) = planes.first() else {
         return Err(Refusal::new(
             "reference.lost-face",
@@ -56,7 +57,7 @@ pub fn face_placement(
         origin.plus(&normal.scaled(&offset.clone().into())),
         dec,
     )?;
-    Ok(Isometry::from(&pose))
+    Ok(pose.then(&crate::profile::placement(placement, dec)?))
 }
 
 /// Face extrusion coordinates are local XY, not another world-space frame.

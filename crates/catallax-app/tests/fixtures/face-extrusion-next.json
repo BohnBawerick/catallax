@@ -1,0 +1,299 @@
+{
+  "format": "catallax-recipe/5",
+  "name": "SolidDraft",
+  "result": "op_117",
+  "steps": [
+    {
+      "id": "op_1",
+      "loops": [
+        [
+          {
+            "id": "l0s0",
+            "kind": "line",
+            "to": [
+              "60",
+              "0"
+            ]
+          },
+          {
+            "id": "l0s1",
+            "kind": "line",
+            "to": [
+              "60",
+              "40"
+            ]
+          },
+          {
+            "id": "l0s2",
+            "kind": "line",
+            "to": [
+              "0",
+              "40"
+            ]
+          },
+          {
+            "id": "l0s3",
+            "kind": "line",
+            "to": [
+              "0",
+              "0"
+            ]
+          }
+        ]
+      ],
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "-1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "direction": [
+        "0",
+        "0",
+        "1"
+      ],
+      "distance": "5",
+      "id": "op_3",
+      "op": "extrude",
+      "profile": "op_1"
+    },
+    {
+      "id": "op_31",
+      "loops": [
+        [
+          {
+            "id": "l0s0",
+            "kind": "line",
+            "to": [
+              "10",
+              "0"
+            ]
+          },
+          {
+            "id": "l0s1",
+            "kind": "line",
+            "to": [
+              "10",
+              "40"
+            ]
+          },
+          {
+            "id": "l0s2",
+            "kind": "line",
+            "to": [
+              "0",
+              "40"
+            ]
+          },
+          {
+            "id": "l0s3",
+            "kind": "line",
+            "to": [
+              "0",
+              "0"
+            ]
+          }
+        ]
+      ],
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "-1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "body": "op_3",
+      "distance": "35",
+      "face": {
+        "role": "end",
+        "step": "op_3"
+      },
+      "id": "op_33",
+      "normal_direction": [
+        "0",
+        "0",
+        "1"
+      ],
+      "offset": "0",
+      "op": "extrude_on_face",
+      "profile": "op_31",
+      "x_direction": [
+        "1",
+        "0",
+        "0"
+      ]
+    },
+    {
+      "id": "op_59",
+      "kind": "union",
+      "op": "boolean",
+      "target": "op_3",
+      "tool": "op_33"
+    },
+    {
+      "id": "op_70",
+      "loops": [
+        [
+          {
+            "id": "l0s0",
+            "kind": "line",
+            "to": [
+              "60",
+              "0"
+            ]
+          },
+          {
+            "id": "l0s1",
+            "kind": "line",
+            "to": [
+              "60",
+              "40"
+            ]
+          },
+          {
+            "id": "l0s2",
+            "kind": "line",
+            "to": [
+              "0",
+              "40"
+            ]
+          },
+          {
+            "id": "l0s3",
+            "kind": "line",
+            "to": [
+              "0",
+              "0"
+            ]
+          }
+        ]
+      ],
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "-1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "body": "op_59",
+      "distance": "-5",
+      "face": {
+        "role": "end",
+        "step": "op_33"
+      },
+      "id": "op_72",
+      "normal_direction": [
+        "0",
+        "0",
+        "1"
+      ],
+      "offset": "0",
+      "op": "extrude_on_face",
+      "profile": "op_70",
+      "x_direction": [
+        "1",
+        "0",
+        "0"
+      ]
+    },
+    {
+      "id": "op_98",
+      "kind": "union",
+      "op": "boolean",
+      "target": "op_59",
+      "tool": "op_72"
+    },
+    {
+      "id": "op_115",
+      "loops": [
+        [
+          {
+            "id": "l0s0",
+            "kind": "line",
+            "to": [
+              "55",
+              "29"
+            ]
+          },
+          {
+            "id": "l0s1",
+            "kind": "line",
+            "to": [
+              "55",
+              "35"
+            ]
+          },
+          {
+            "id": "l0s2",
+            "kind": "line",
+            "to": [
+              "49",
+              "35"
+            ]
+          },
+          {
+            "id": "l0s3",
+            "kind": "line",
+            "to": [
+              "49",
+              "29"
+            ]
+          }
+        ]
+      ],
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "-1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "40"
+        ]
+      }
+    },
+    {
+      "direction": [
+        "0",
+        "0",
+        "-1"
+      ],
+      "id": "op_117",
+      "op": "extrude_next",
+      "profile": "op_115",
+      "target": "op_98"
+    }
+  ]
+}

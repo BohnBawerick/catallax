@@ -217,7 +217,7 @@ What carries over unchanged from exact-brep, about 32,000 lines of Rust:
 - the same answer on every machine and thread count, and no unsafe code;
 - the command-line interface the judge uses.
 
-What changes in exact-brep's design documents (`docs/DESIGN.md`, `docs/ARCHITECTURE.md`) and in [PLAN.md](PLAN.md):
+What changes in exact-brep's design documents (`docs/DESIGN.md`, `docs/ARCHITECTURE.md`) and in [PLAN.md](archive/PLAN-2026-11.md):
 
 - what it is part of: the B-rep half of Catallax;
 - the refusal rule in DESIGN R1, per section 3.2;
@@ -267,7 +267,7 @@ SolidDraft is the application this kernel serves. Integration must use the share
 6. Integrate Catallax into SolidDraft once it covers the operations the application needs.
 7. Add the field-only features, the export levels and the stand-in, then FEA and interference. FEA is designed in its own discussion first.
 
-Target-part and milestone acceptance follows [PLAN sections 9 and 10.1](PLAN.md#9-target-parts): preview/display meets the interactive targets, background proof completes within its separate budget, and the existing export, name-survival and application checks pass. List field comparison as an on-demand check with its coverage and outcome, not a universal landing or built gate. Preview alone does not count as a built part.
+Target-part and milestone acceptance follows [PLAN sections 9 and 10.1](TARGET-PARTS.md): preview/display meets the interactive targets, background proof completes within its separate budget, and the existing export, name-survival and application checks pass. List field comparison as an on-demand check with its coverage and outcome, not a universal landing or built gate. Preview alone does not count as a built part.
 
 Prioritise cheaper-proof research: proof from recorded construction facts, certificate caching and reuse across edits, proof scoped to requested exports or measurements, and coarse certificates refined on demand. These are research candidates, not decided designs or weaker accuracy requirements.
 

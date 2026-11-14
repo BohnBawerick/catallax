@@ -1,6 +1,6 @@
 # Catallax design rules
 
-[PRD.md](PRD.md) sets the product direction. This document governs the B-rep half of Catallax. [ARCHITECTURE.md](ARCHITECTURE.md) describes its implementation, and [pieces/](pieces/) records the existing crate contracts. [PLAN.md](PLAN.md) orders the work still needed.
+[PRD.md](PRD.md) sets the product direction. This document governs the B-rep half of Catallax. [ARCHITECTURE.md](ARCHITECTURE.md) describes its implementation, and [pieces/](pieces/) records the existing crate contracts. [PLAN.md](archive/PLAN-2026-11.md) orders the work still needed.
 
 ## Fixed points
 

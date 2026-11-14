@@ -13,7 +13,7 @@ reads `CATALLAX_THREADS`. Helper threads work to the writer's deadline, and
 `Charges::adopt` takes the writer's decider and adopts nothing past it. `uv::fit` in the STEP crate now needs `Sync` pieces,
 so the pcurve placement and surface are held in `Arc`. No operation signature,
 outcome, refusal code, budget default or file format changed.
-Why: decision L1 of [PLAN.md](../PLAN.md#124-named-for-later), adopted on
+Why: decision L1 of [PLAN.md](../archive/PLAN-2026-11.md#124-named-for-later), adopted on
 11 November 2026. [RUN-AHEAD.md](../RUN-AHEAD.md) describes the mechanism and
 the measured times.
 Migration: none for callers. Answers, refusals, work counts, statistics and

@@ -9,7 +9,7 @@ allowance. M4 remains open.
 The later [cylindrical probe proof attempt](M4-P4-PROBE-PROOFS.md) reduces the
 count to 1,553,312. The source-specific baseline profile below remains its record.
 
-This is the count and verdict landing for [PLAN item 17](PLAN.md#114-the-22-october-next-items-on-11-november).
+This is the count and verdict landing for [PLAN item 17](archive/PLAN-2026-11.md#114-the-22-october-next-items-on-11-november).
 The input is the unchanged [canonical P4 recipe](../parts/P4-shelled-tray.json).
 [Portable evidence](evidence/m4-p4-work-profile.json) records the source and
 binary hashes, request outcomes, operation counts, stage attribution and fresh

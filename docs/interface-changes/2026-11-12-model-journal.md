@@ -15,7 +15,7 @@ exports `GeomJournal` and `GeomRemap`; `catallax-topology` exports `Journal`,
 `Remap` and `Relocate`. In the Boolean, the cell of a face in imprint and the
 classification of a piece now run on a copy and are replayed at once. No
 answer, refusal, work count or file byte changed.
-Why: decision L1 of [PLAN.md](../PLAN.md#124-named-for-later). A loop item
+Why: decision L1 of [PLAN.md](../archive/PLAN-2026-11.md#124-named-for-later). A loop item
 that adds to the model must have this form before another thread can run it.
 [RUN-AHEAD.md](../RUN-AHEAD.md) section 3 describes it.
 Migration: none for callers. A new method that changes a `GeomStore` or a

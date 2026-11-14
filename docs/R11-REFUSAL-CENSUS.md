@@ -4,7 +4,7 @@
 answered.** Offset and thicken have no coverage in this input set. This replaces
 the earlier missing-current-log finding with a bounded, newly generated census.
 It does not establish the surviving-face refusal share needed to authorize
-[PLAN.md R11 step two](PLAN.md#126-robustness-and-many-core-steps).
+[PLAN.md R11 step two](archive/PLAN-2026-11.md#126-robustness-and-many-core-steps).
 
 ## Source, interval and coverage
 

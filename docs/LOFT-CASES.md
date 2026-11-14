@@ -1,6 +1,6 @@
 # Rational loft cases
 
-The rational loft entry is `catallax_app::build` with a version 4 or 5 `loft` operation. Its immutable definition is the recipe, including ordered start ids and `shape`. The correspondence law is [RECIPE 4.12](RECIPE.md#412-loft); this inventory follows [PLAN 3.8](PLAN.md).
+The rational loft entry is `catallax_app::build` with a version 4 or 5 `loft` operation. Its immutable definition is the recipe, including ordered start ids and `shape`. The correspondence law is [RECIPE 4.12](RECIPE.md#412-loft); this inventory follows [PLAN 3.8](archive/PLAN-2026-11.md).
 
 Tests live in `crates/catallax-app/tests/rational_lofts.rs`. They construct actual recipes through the application entry, not manually assembled `Built` values.
 

@@ -12,7 +12,7 @@ Catallax is developed by Zigrawbohnbawerick Pty Ltd. No licence fees, seats or r
 
 An exact boundary representation (B-rep) and a signed distance field evaluate a shared subset of one feature tree. Geometry is stored by definition. Faces and edges keep names tied to the operations that created them. The field can check the B-rep through a separate, sampled comparison. This is not a whole-boundary proof.
 
-In design: general tolerance-policy composition, broader agreement checks between the two representations, and complete industrial CAD coverage. The [roadmap](docs/PLAN.md) separates landed work from those goals.
+In design: general tolerance-policy composition, broader agreement checks between the two representations, and complete industrial CAD coverage. The [roadmap](ROADMAP.md) separates landed work from those goals.
 
 ## What works today
 

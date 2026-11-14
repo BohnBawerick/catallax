@@ -1,0 +1,212 @@
+{
+  "format": "catallax-operation-log/1",
+  "marks": [],
+  "operations": [
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 0,
+        "max_bits_high_water": 0,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 0
+      },
+      "id": "section0",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "sketch",
+      "refusal": null,
+      "sequence": 0,
+      "status": "answered",
+      "wall_ms": 0.087884,
+      "work": {
+        "after": 19,
+        "before": 0,
+        "used": 19
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 0,
+        "max_bits_high_water": 0,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 0
+      },
+      "id": "section1",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "sketch",
+      "refusal": null,
+      "sequence": 1,
+      "status": "answered",
+      "wall_ms": 0.0263,
+      "work": {
+        "after": 38,
+        "before": 19,
+        "used": 19
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 64,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 33,
+        "max_bits_high_water": 128,
+        "not_exact": 0,
+        "refined": 42,
+        "refused": 0,
+        "total": 139
+      },
+      "id": "loft",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "loft",
+      "refusal": null,
+      "sequence": 2,
+      "status": "answered",
+      "wall_ms": 0.644848,
+      "work": {
+        "after": 5953,
+        "before": 38,
+        "used": 5915
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 0,
+        "max_bits_high_water": 128,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 0
+      },
+      "id": "box",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "block",
+      "refusal": null,
+      "sequence": 3,
+      "status": "answered",
+      "wall_ms": 0.09443700000000001,
+      "work": {
+        "after": 5953,
+        "before": 5953,
+        "used": 0
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 5391,
+        "coincident_fact": 475,
+        "coincident_separation": 0,
+        "exact": 372,
+        "filter": 38021,
+        "max_bits_high_water": 128,
+        "not_exact": 0,
+        "refined": 817,
+        "refused": 0,
+        "total": 45076
+      },
+      "id": "cut",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "boolean",
+      "refusal": null,
+      "sequence": 4,
+      "status": "answered",
+      "wall_ms": 225.146084,
+      "work": {
+        "after": 1802159,
+        "before": 5953,
+        "used": 1796206
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 0,
+        "max_bits_high_water": 128,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 0
+      },
+      "id": "cut",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "summarize",
+      "refusal": null,
+      "sequence": 5,
+      "status": "answered",
+      "wall_ms": 0.014076,
+      "work": {
+        "after": 1802159,
+        "before": 1802159,
+        "used": 0
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 0,
+        "max_bits_high_water": 128,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 0
+      },
+      "id": "cut",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "step",
+      "refusal": {
+        "code": "numbers.geometric-gap-unproven",
+        "detail": "a complete rational patch needs one boundary loop"
+      },
+      "sequence": 6,
+      "status": "refused",
+      "wall_ms": 0.628768,
+      "work": {
+        "after": 1802159,
+        "before": 1802159,
+        "used": 0
+      }
+    }
+  ],
+  "refusal": {
+    "code": "numbers.geometric-gap-unproven",
+    "detail": "a complete rational patch needs one boundary loop",
+    "stage": null,
+    "step": null
+  },
+  "status": "refused"
+}

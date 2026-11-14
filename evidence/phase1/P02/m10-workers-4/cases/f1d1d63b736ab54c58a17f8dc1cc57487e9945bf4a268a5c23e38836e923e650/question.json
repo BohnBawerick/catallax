@@ -1,0 +1,330 @@
+{
+  "format": "catallax-question/1",
+  "max_work": 20000000,
+  "problem": {
+    "format": "catallax-step/1",
+    "recipe": {
+      "format": "catallax-recipe/5",
+      "name": "spline-pair-intersect",
+      "result": "cut",
+      "steps": [
+        {
+          "id": "section0",
+          "loops": [
+            [
+              {
+                "controls": [
+                  [
+                    "2",
+                    "4"
+                  ]
+                ],
+                "id": "s0_roof",
+                "kind": "bezier",
+                "to": [
+                  "4",
+                  "0"
+                ]
+              },
+              {
+                "id": "s0_floor",
+                "kind": "line",
+                "to": [
+                  "0",
+                  "0"
+                ]
+              }
+            ]
+          ],
+          "op": "sketch",
+          "plane": {
+            "rotation": [
+              "1",
+              "0",
+              "0",
+              "0"
+            ],
+            "translation": [
+              "0",
+              "0",
+              "0"
+            ]
+          }
+        },
+        {
+          "id": "section1",
+          "loops": [
+            [
+              {
+                "controls": [
+                  [
+                    "2",
+                    "6"
+                  ]
+                ],
+                "id": "s1_roof",
+                "kind": "bezier",
+                "to": [
+                  "4",
+                  "0"
+                ]
+              },
+              {
+                "id": "s1_floor",
+                "kind": "line",
+                "to": [
+                  "0",
+                  "0"
+                ]
+              }
+            ]
+          ],
+          "op": "sketch",
+          "plane": {
+            "rotation": [
+              "1",
+              "0",
+              "0",
+              "0"
+            ],
+            "translation": [
+              "0",
+              "0",
+              "1"
+            ]
+          }
+        },
+        {
+          "id": "section2",
+          "loops": [
+            [
+              {
+                "controls": [
+                  [
+                    "2",
+                    "4"
+                  ]
+                ],
+                "id": "s2_roof",
+                "kind": "bezier",
+                "to": [
+                  "4",
+                  "0"
+                ]
+              },
+              {
+                "id": "s2_floor",
+                "kind": "line",
+                "to": [
+                  "0",
+                  "0"
+                ]
+              }
+            ]
+          ],
+          "op": "sketch",
+          "plane": {
+            "rotation": [
+              "1",
+              "0",
+              "0",
+              "0"
+            ],
+            "translation": [
+              "0",
+              "0",
+              "2"
+            ]
+          }
+        },
+        {
+          "id": "loft",
+          "op": "loft",
+          "sections": [
+            {
+              "profile": "section0",
+              "start": [
+                "s0_roof"
+              ]
+            },
+            {
+              "profile": "section1",
+              "start": [
+                "s1_roof"
+              ]
+            },
+            {
+              "profile": "section2",
+              "start": [
+                "s2_roof"
+              ]
+            }
+          ],
+          "shape": "smooth"
+        },
+        {
+          "id": "other_section0",
+          "loops": [
+            [
+              {
+                "controls": [
+                  [
+                    "2",
+                    "4"
+                  ]
+                ],
+                "id": "s0_roof",
+                "kind": "bezier",
+                "to": [
+                  "4",
+                  "0"
+                ]
+              },
+              {
+                "id": "s0_floor",
+                "kind": "line",
+                "to": [
+                  "0",
+                  "0"
+                ]
+              }
+            ]
+          ],
+          "op": "sketch",
+          "plane": {
+            "rotation": [
+              "1",
+              "0",
+              "0",
+              "0"
+            ],
+            "translation": [
+              "1",
+              "0",
+              "0"
+            ]
+          }
+        },
+        {
+          "id": "other_section1",
+          "loops": [
+            [
+              {
+                "controls": [
+                  [
+                    "2",
+                    "6"
+                  ]
+                ],
+                "id": "s1_roof",
+                "kind": "bezier",
+                "to": [
+                  "4",
+                  "0"
+                ]
+              },
+              {
+                "id": "s1_floor",
+                "kind": "line",
+                "to": [
+                  "0",
+                  "0"
+                ]
+              }
+            ]
+          ],
+          "op": "sketch",
+          "plane": {
+            "rotation": [
+              "1",
+              "0",
+              "0",
+              "0"
+            ],
+            "translation": [
+              "1",
+              "0",
+              "1"
+            ]
+          }
+        },
+        {
+          "id": "other_section2",
+          "loops": [
+            [
+              {
+                "controls": [
+                  [
+                    "2",
+                    "4"
+                  ]
+                ],
+                "id": "s2_roof",
+                "kind": "bezier",
+                "to": [
+                  "4",
+                  "0"
+                ]
+              },
+              {
+                "id": "s2_floor",
+                "kind": "line",
+                "to": [
+                  "0",
+                  "0"
+                ]
+              }
+            ]
+          ],
+          "op": "sketch",
+          "plane": {
+            "rotation": [
+              "1",
+              "0",
+              "0",
+              "0"
+            ],
+            "translation": [
+              "1",
+              "0",
+              "2"
+            ]
+          }
+        },
+        {
+          "id": "other_loft",
+          "op": "loft",
+          "sections": [
+            {
+              "profile": "other_section0",
+              "start": [
+                "s0_roof"
+              ]
+            },
+            {
+              "profile": "other_section1",
+              "start": [
+                "s1_roof"
+              ]
+            },
+            {
+              "profile": "other_section2",
+              "start": [
+                "s2_roof"
+              ]
+            }
+          ],
+          "shape": "smooth"
+        },
+        {
+          "id": "cut",
+          "kind": "intersect",
+          "op": "boolean",
+          "target": "loft",
+          "tool": "other_loft"
+        }
+      ]
+    }
+  },
+  "source": "recipe"
+}

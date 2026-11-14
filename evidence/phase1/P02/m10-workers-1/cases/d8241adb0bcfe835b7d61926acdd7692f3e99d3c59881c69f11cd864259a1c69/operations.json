@@ -1,0 +1,100 @@
+{
+  "format": "catallax-operation-log/1",
+  "marks": [],
+  "operations": [
+    {
+      "decisions": {
+        "coincident_exact": 40,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 80,
+        "max_bits_high_water": 128,
+        "not_exact": 0,
+        "refined": 64,
+        "refused": 0,
+        "total": 184
+      },
+      "id": "part",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "import_step",
+      "refusal": null,
+      "sequence": 0,
+      "status": "answered",
+      "wall_ms": 35.154027,
+      "work": {
+        "after": 114370,
+        "before": 0,
+        "used": 114370
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 0,
+        "max_bits_high_water": 128,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 0
+      },
+      "id": "box",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "block",
+      "refusal": null,
+      "sequence": 1,
+      "status": "answered",
+      "wall_ms": 0.13373000000000002,
+      "work": {
+        "after": 114370,
+        "before": 114370,
+        "used": 0
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 18,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 7,
+        "filter": 218,
+        "max_bits_high_water": 128,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 243
+      },
+      "id": "cut",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "boolean",
+      "refusal": {
+        "code": "intersect.parametric-coincidence",
+        "detail": "different spline definitions require a finite curve-equivalence proof"
+      },
+      "sequence": 2,
+      "status": "refused",
+      "wall_ms": 0.47496,
+      "work": {
+        "after": 115984,
+        "before": 114370,
+        "used": 1614
+      }
+    }
+  ],
+  "refusal": {
+    "code": "intersect.parametric-coincidence",
+    "detail": "different spline definitions require a finite curve-equivalence proof",
+    "stage": null,
+    "step": "cut"
+  },
+  "status": "refused"
+}

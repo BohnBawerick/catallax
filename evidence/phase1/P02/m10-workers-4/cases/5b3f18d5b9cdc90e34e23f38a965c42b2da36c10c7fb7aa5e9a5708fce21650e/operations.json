@@ -1,0 +1,268 @@
+{
+  "format": "catallax-operation-log/1",
+  "marks": [],
+  "operations": [
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 0,
+        "max_bits_high_water": 0,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 0
+      },
+      "id": "section0",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "sketch",
+      "refusal": null,
+      "sequence": 0,
+      "status": "answered",
+      "wall_ms": 0.082685,
+      "work": {
+        "after": 19,
+        "before": 0,
+        "used": 19
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 0,
+        "max_bits_high_water": 0,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 0
+      },
+      "id": "section1",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "sketch",
+      "refusal": null,
+      "sequence": 1,
+      "status": "answered",
+      "wall_ms": 0.035196,
+      "work": {
+        "after": 38,
+        "before": 19,
+        "used": 19
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 0,
+        "max_bits_high_water": 0,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 0
+      },
+      "id": "section2",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "sketch",
+      "refusal": null,
+      "sequence": 2,
+      "status": "answered",
+      "wall_ms": 0.080621,
+      "work": {
+        "after": 57,
+        "before": 38,
+        "used": 19
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 152,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 96,
+        "max_bits_high_water": 128,
+        "not_exact": 0,
+        "refined": 147,
+        "refused": 0,
+        "total": 395
+      },
+      "id": "loft",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "loft",
+      "refusal": null,
+      "sequence": 3,
+      "status": "answered",
+      "wall_ms": 3.542076,
+      "work": {
+        "after": 37346,
+        "before": 57,
+        "used": 37289
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 0,
+        "max_bits_high_water": 128,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 0
+      },
+      "id": "other_section0",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "sketch",
+      "refusal": null,
+      "sequence": 4,
+      "status": "answered",
+      "wall_ms": 0.039123,
+      "work": {
+        "after": 37365,
+        "before": 37346,
+        "used": 19
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 0,
+        "max_bits_high_water": 128,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 0
+      },
+      "id": "other_section1",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "sketch",
+      "refusal": null,
+      "sequence": 5,
+      "status": "answered",
+      "wall_ms": 0.026009,
+      "work": {
+        "after": 37384,
+        "before": 37365,
+        "used": 19
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 0,
+        "max_bits_high_water": 128,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 0
+      },
+      "id": "other_section2",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "sketch",
+      "refusal": null,
+      "sequence": 6,
+      "status": "answered",
+      "wall_ms": 0.023825,
+      "work": {
+        "after": 37403,
+        "before": 37384,
+        "used": 19
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 152,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 96,
+        "max_bits_high_water": 128,
+        "not_exact": 0,
+        "refined": 147,
+        "refused": 0,
+        "total": 395
+      },
+      "id": "other_loft",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "loft",
+      "refusal": null,
+      "sequence": 7,
+      "status": "answered",
+      "wall_ms": 3.6928080000000003,
+      "work": {
+        "after": 74581,
+        "before": 37403,
+        "used": 37178
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 28,
+        "max_bits_high_water": 128,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 28
+      },
+      "id": "cut",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "boolean",
+      "refusal": {
+        "code": "intersect.unsupported-pair",
+        "detail": "rational atlas with rational atlas: surface pair is outside piece 4 coverage"
+      },
+      "sequence": 8,
+      "status": "refused",
+      "wall_ms": 0.08774499999999999,
+      "work": {
+        "after": 74693,
+        "before": 74581,
+        "used": 112
+      }
+    }
+  ],
+  "refusal": {
+    "code": "intersect.unsupported-pair",
+    "detail": "rational atlas with rational atlas: surface pair is outside piece 4 coverage",
+    "stage": null,
+    "step": "cut"
+  },
+  "status": "refused"
+}

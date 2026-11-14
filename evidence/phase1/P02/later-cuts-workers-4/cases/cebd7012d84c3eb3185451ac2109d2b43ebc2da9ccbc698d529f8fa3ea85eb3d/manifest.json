@@ -1,0 +1,20 @@
+{
+  "exact": false,
+  "format": "catallax-manifest/3",
+  "kernel": {
+    "commit": "f4db345f2e7c51835d1ebeba9f6446d117144117",
+    "name": "exact-brep",
+    "version": "0.1.5"
+  },
+  "marks": [],
+  "properties": null,
+  "refusal": {
+    "code": "intersect.unsupported-pair",
+    "detail": "parallel cone/torus minor-angle quarter has no certified sign: certified enclosure retained at the first exhausted limit",
+    "stage": null,
+    "step": "drilled"
+  },
+  "result": null,
+  "status": "refused",
+  "step": null
+}

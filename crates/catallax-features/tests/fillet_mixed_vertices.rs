@@ -215,6 +215,7 @@ fn radius_edits_keep_origins_and_incremental_raw_step_for_partial_and_all_select
             &mut bytes,
         )
         .unwrap();
+        catallax_step::check_seams(&bytes).unwrap();
         bytes
     }
     for mut value in [partial_input(), input()] {

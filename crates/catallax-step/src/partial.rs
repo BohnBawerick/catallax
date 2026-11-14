@@ -206,7 +206,7 @@ fn prepare_charts(
     }
     // Classify structure before doing exact membership work. In particular,
     // this is not an arbitrary cone, elliptic-cylinder or torus-trim cutover.
-    // Trimmed tori need explicit circular trims and a proven exterior v seam.
+    // Trimmed tori need explicit finite trims and a proven exterior v seam.
     let wide = options.seams == crate::Seams::Required;
     let mut apex_checked = BTreeSet::new();
     for face in faces() {
@@ -214,7 +214,7 @@ fn prepare_charts(
         match model.geom().surface(definition.surface) {
             Surface::Plane(_) if unchanged_planar_boundary(model, face, wide) => {}
             Surface::Sphere(_) | Surface::Torus(_) if definition.loops.is_empty() => {}
-            Surface::Torus(_) | Surface::TorusSheet(_) if circular_boundary(model, face) => {}
+            Surface::Torus(_) | Surface::TorusSheet(_) if explicit_torus_boundary(model, face) => {}
             // A band gains at most a vertex on its rails, written as they are.
             Surface::BSpline(
                 SplineSupport::RollingPipe(_)
@@ -497,7 +497,7 @@ fn start_at_repeated_vertex(model: &Model, wire: &mut [Coedge]) {
 }
 
 // Uncharted caps may gain exact subdivisions, but must keep the same native
-// analytic space curves. An opaque intersection could otherwise receive the
+// space curves. An opaque intersection could otherwise receive the
 // chart fitter's different 3D approximation without a proven chart for this face.
 fn unchanged_planar_boundary(model: &Model, face: FaceId, wide: bool) -> bool {
     let definition = model.face(face);
@@ -509,7 +509,10 @@ fn unchanged_planar_boundary(model: &Model, face: FaceId, wide: bool) -> bool {
             !coedges.is_empty()
                 && coedges.iter().all(|id| {
                     match model.geom().curve(model.edge(model.coedge(*id).edge).curve) {
-                        Curve::Line(_) | Curve::Circle(_) | Curve::Ellipse(_) => true,
+                        Curve::Line(_)
+                        | Curve::Circle(_)
+                        | Curve::Ellipse(_)
+                        | Curve::BSpline(_) => true,
                         Curve::Intersection(curve) => {
                             curve
                                 .surfaces
@@ -534,7 +537,7 @@ fn unchanged_planar_boundary(model: &Model, face: FaceId, wide: bool) -> bool {
 // Opaque torus intersections are quartic. Their membership queries are not
 // part of this cutover and can exhaust an operation allowance that the legacy
 // encoder never spends, so they keep the legacy bytes.
-fn circular_boundary(model: &Model, face: FaceId) -> bool {
+fn explicit_torus_boundary(model: &Model, face: FaceId) -> bool {
     let definition = model.face(face);
     !definition.loops.is_empty()
         && definition.loops.iter().all(|id| {
@@ -545,7 +548,7 @@ fn circular_boundary(model: &Model, face: FaceId) -> bool {
                 && coedges.iter().all(|id| {
                     matches!(
                         model.geom().curve(model.edge(model.coedge(*id).edge).curve),
-                        Curve::Circle(_)
+                        Curve::Circle(_) | Curve::BSpline(_)
                     )
                 })
         })

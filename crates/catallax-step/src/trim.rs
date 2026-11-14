@@ -5,10 +5,11 @@ use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use catallax_intersect::{Contact, CurveForm, CurveSurface, Cyclic};
+use catallax_intersect::{Contact, CurveForm, CurveHit, CurveSurface, Cyclic};
 use catallax_numbers::{Decider, Outcome, Rational, Real, Refusal, Sign, StrictOrder, StrictSign};
 use catallax_shapes::{
-    CurveId, GeomStore, Plane, Point3, PointDef, PointId, Surface, SurfaceId, Vector3,
+    BSplineCurve, Curve, CurveId, GeomStore, Plane, Point3, PointDef, PointId, Surface, SurfaceId,
+    Vector3,
 };
 use catallax_topology::{EdgeId, FaceId, Loop, Model, Sense};
 
@@ -42,6 +43,7 @@ pub(crate) struct Geometry {
     forms: BTreeMap<CurveId, Rc<CurveForm>>,
     closed: BTreeMap<CurveId, bool>,
     boundaries: BTreeMap<FaceId, Rc<Vec<Boundary>>>,
+    parameters: BTreeMap<(CurveId, PointId), Real>,
 }
 
 pub(crate) fn sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
@@ -111,6 +113,7 @@ impl Geometry {
             forms: BTreeMap::new(),
             closed: BTreeMap::new(),
             boundaries: BTreeMap::new(),
+            parameters: BTreeMap::new(),
         }
     }
 
@@ -173,9 +176,100 @@ impl Geometry {
         } else {
             catallax_intersect::intersect_curve_surface
         };
-        let result = Rc::new(intersect(&mut self.store, curve, plane, dec)?.value);
+        let result = match intersect(&mut self.store, curve, plane, dec) {
+            Ok(result) => result.value,
+            Err(error) if error.code == "intersect.spline-plane" => {
+                let (Curve::BSpline(spline), Surface::Plane(cut)) = (
+                    self.store.curve(curve).clone(),
+                    self.store.surface(plane).clone(),
+                ) else {
+                    return Err(error);
+                };
+                self.spline_plane(curve, &spline, &cut, dec)?
+            }
+            Err(error) => return Err(error),
+        };
+        let result = Rc::new(result);
         self.hits.insert((curve, plane), result.clone());
         Ok(result)
+    }
+
+    // Algebraic finite spline trims need the same exact polynomial roots as
+    // rational trims. Keep every knot interval; a partially contained spline
+    // has no single CurveSurface result and cannot certify a chart cut.
+    fn spline_plane(
+        &mut self,
+        curve: CurveId,
+        spline: &BSplineCurve,
+        cut: &Plane,
+        dec: &mut Decider,
+    ) -> Result<CurveSurface, Refusal> {
+        let mut hits = Vec::<CurveHit>::new();
+        let mut contained = 0;
+        let mut spans = 0;
+        let before = dec.stats().coincident_separation;
+        let normal = [&cut.normal.x, &cut.normal.y, &cut.normal.z];
+        let offset = cut.origin.minus(&Point3::origin()).dot(&cut.normal);
+        for (span, [lo, hi]) in spline.spans() {
+            spans += 1;
+            let homogeneous = spline.query_span_polynomials(span, dec)?;
+            let equation = (0..3).fold(catallax_numbers::RealPoly::zero(1), |sum, i| {
+                sum + homogeneous[i].scale(normal[i])
+            }) - homogeneous[3].scale(&offset);
+            if equation.is_zero(dec)? {
+                contained += 1;
+                continue;
+            }
+            let roots = equation.real_roots(dec)?;
+            for parameter in roots {
+                let lower = sign(&(&parameter - &Real::from(lo.clone())), dec)?;
+                let upper = sign(&(&Real::from(hi.clone()) - &parameter), dec)?;
+                if lower == Sign::Negative || upper == Sign::Negative {
+                    continue;
+                }
+                // A knot needs both one-sided tangents. Conservatively reject
+                // it as a chart crossing; another meridian can avoid it.
+                let tangent = lower == Sign::Zero
+                    || upper == Sign::Zero
+                    || sign(
+                        &equation
+                            .partial(0)
+                            .eval_real(std::slice::from_ref(&parameter)),
+                        dec,
+                    )? == Sign::Zero;
+                let point = self.point(spline.point_at(&parameter, dec)?);
+                let mut duplicate = false;
+                for hit in &hits {
+                    duplicate |= sign(&(&parameter - &self.parameters[&(curve, hit.point)]), dec)?
+                        == Sign::Zero;
+                }
+                if !duplicate {
+                    self.parameters.insert((curve, point), parameter);
+                    hits.push(CurveHit {
+                        point,
+                        contact: if tangent {
+                            Contact::Tangent
+                        } else {
+                            Contact::Crossing
+                        },
+                    });
+                }
+            }
+        }
+        if dec.stats().coincident_separation != before {
+            return Err(number::budget("spline chart cut needs exact finite roots"));
+        }
+        if contained == spans {
+            Ok(CurveSurface::Contained)
+        } else if contained > 0 {
+            Err(number::budget(
+                "a spline chart cut contains only some knot spans",
+            ))
+        } else if hits.is_empty() {
+            Ok(CurveSurface::Disjoint)
+        } else {
+            Ok(CurveSurface::Meets(hits))
+        }
     }
 
     pub fn form(&mut self, curve: CurveId, dec: &mut Decider) -> Result<Rc<CurveForm>, Refusal> {
@@ -256,6 +350,42 @@ impl Geometry {
         point: PointId,
         dec: &mut Decider,
     ) -> Result<Location, Refusal> {
+        if let Some(parameter) = self.parameters.get(&(edge.curve, point))
+            && !edge.closed
+            && let Curve::BSpline(spline) = self.store.curve(edge.curve)
+            && let (Some(from), Some(to)) = (edge.from, edge.to)
+        {
+            let bound = |point, dec: &mut Decider| -> Result<Real, Refusal> {
+                let position = self.store.position(point);
+                let [lo, hi] = spline.domain();
+                if sign(&position.minus(spline.control(0)).norm_squared(), dec)? == Sign::Zero {
+                    Ok(Real::from(lo.clone()))
+                } else if sign(
+                    &position
+                        .minus(spline.control(spline.control_count() - 1))
+                        .norm_squared(),
+                    dec,
+                )? == Sign::Zero
+                {
+                    Ok(Real::from(hi.clone()))
+                } else {
+                    Ok(spline
+                        .unique_parameter_of(&position, dec)?
+                        .ok_or_else(|| number::budget("spline trim endpoint has no parameter"))?
+                        .value()
+                        .clone())
+                }
+            };
+            let from = sign(&(parameter - &bound(from, dec)?), dec)?;
+            let to = sign(&(&bound(to, dec)? - parameter), dec)?;
+            return Ok(if from == Sign::Negative || to == Sign::Negative {
+                Location::Outside
+            } else if from == Sign::Zero || to == Sign::Zero {
+                Location::Boundary
+            } else {
+                Location::Inside
+            });
+        }
         let (Some(from), Some(to)) = (edge.from, edge.to) else {
             assert!(edge.from.is_none() && edge.to.is_none() && edge.closed);
             return Ok(Location::Inside);
@@ -287,6 +417,20 @@ impl Geometry {
             }
             Ok(Location::Inside)
         }
+    }
+
+    pub fn tangent(
+        &self,
+        curve: CurveId,
+        point: PointId,
+        dec: &mut Decider,
+    ) -> Result<Vector3, Refusal> {
+        if let Some(parameter) = self.parameters.get(&(curve, point))
+            && let Curve::BSpline(spline) = self.store.curve(curve)
+        {
+            return spline.first_at(parameter, dec);
+        }
+        Ok(catallax_intersect::tangent_at(&self.store, curve, point, dec)?[1].clone())
     }
 
     /// Locates `point` on a spherical face, or `None` without a certificate.
@@ -537,6 +681,82 @@ mod tests {
     use super::*;
     use catallax_numbers::BudgetPolicy;
     use catallax_shapes::RPoint3;
+
+    #[test]
+    fn algebraic_finite_spline_cuts_keep_endpoints_and_contacts() {
+        let mut dec = Decider::default();
+        let mut geometry = Geometry::new(&Model::new(), true);
+        let root = Real::from_i64(2).sqrt();
+        let spline = BSplineCurve::new(
+            2,
+            vec![0.into(), 0.into(), 0.into(), 1.into(), 1.into(), 1.into()],
+            vec![
+                Point3::new(-root.clone(), root.clone(), Real::zero()),
+                Point3::new(Real::zero(), -root.clone(), Real::zero()),
+                Point3::new(root.clone(), root, Real::zero()),
+            ],
+            vec![Real::one(); 3],
+            &mut dec,
+        )
+        .unwrap();
+        let curve = geometry.store.add_curve(Curve::BSpline(spline));
+        for (normal, origin, expected) in [
+            (
+                Vector3::new(1.into(), 0.into(), 0.into()),
+                Point3::origin(),
+                Contact::Crossing,
+            ),
+            (
+                Vector3::new(0.into(), 1.into(), 0.into()),
+                Point3::origin(),
+                Contact::Tangent,
+            ),
+        ] {
+            let plane = geometry
+                .plane(
+                    origin,
+                    normal,
+                    Vector3::new(0.into(), 0.into(), 1.into()),
+                    &mut dec,
+                )
+                .unwrap();
+            let hits = geometry.intersections(curve, plane, &mut dec).unwrap();
+            let CurveSurface::Meets(hits) = hits.as_ref() else {
+                panic!("finite cut");
+            };
+            assert_eq!(hits.len(), 1);
+            assert_eq!(hits[0].contact, expected);
+        }
+        let spline = match geometry.store.curve(curve) {
+            Curve::BSpline(s) => s.clone(),
+            _ => unreachable!(),
+        };
+        let plane = geometry
+            .plane(
+                spline.control(0).clone(),
+                Vector3::new(1.into(), 0.into(), 0.into()),
+                Vector3::new(0.into(), 1.into(), 0.into()),
+                &mut dec,
+            )
+            .unwrap();
+        let hits = geometry.intersections(curve, plane, &mut dec).unwrap();
+        let CurveSurface::Meets(hits) = hits.as_ref() else {
+            panic!("endpoint cut");
+        };
+        assert_eq!(hits.len(), 1);
+        assert!(
+            sign(
+                &geometry
+                    .store
+                    .position(hits[0].point)
+                    .minus(spline.control(0))
+                    .norm_squared(),
+                &mut dec
+            )
+            .unwrap()
+                == Sign::Zero
+        );
+    }
 
     // The sphere-cylinder fixture mirrored in y = 0 is the same solid with
     // left-handed band frames. Its sphere face still keeps the equator and

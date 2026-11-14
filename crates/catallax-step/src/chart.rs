@@ -319,7 +319,18 @@ fn meridian_with(
             if aligned_edges.contains(&boundary.edge) {
                 continue;
             }
-            if let Curve::BSpline(rail) = geometry.store.curve(boundary.curve).clone() {
+            if major.is_some()
+                && let Curve::BSpline(rail) = geometry.store.curve(boundary.curve)
+                && matches!(
+                    rail_event(rail, &origin, &stored, &reference, dec)?,
+                    Rail::Clear
+                )
+            {
+                continue;
+            }
+            if let Curve::BSpline(rail) = geometry.store.curve(boundary.curve).clone()
+                && major.is_none()
+            {
                 let exact = match attempt {
                     0 => plain.clone(),
                     1 => plain.scaled(&(-Real::one())),
@@ -428,13 +439,8 @@ fn meridian_with(
                             regular = false;
                             break;
                         }
-                        let tangent = catallax_intersect::tangent_at(
-                            &geometry.store,
-                            boundary.curve,
-                            hit.point,
-                            dec,
-                        )?;
-                        let direction = trim::sign(&axis.dot(&radial.cross(&tangent[1])), dec)?;
+                        let tangent = geometry.tangent(boundary.curve, hit.point, dec)?;
+                        let direction = trim::sign(&axis.dot(&radial.cross(&tangent)), dec)?;
                         if direction == Sign::Zero {
                             regular = false;
                             break;

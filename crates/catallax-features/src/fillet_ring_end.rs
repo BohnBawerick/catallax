@@ -162,17 +162,27 @@ pub(super) fn geometry(
         .plus(&t.scaled(&(radius * &three)));
     let mut controls: Vec<_> = (0..5)
         .map(|i| {
-            node.plus(&v.scaled(&(radius * &(&x[i] / &weights[i]))))
-                .plus(&t.scaled(&(radius * &(&z[i] / &weights[i]))))
+            let numerator = node
+                .minus(&Point3::origin())
+                .scaled(&weights[i])
+                .plus(&v.scaled(&(radius * &x[i])))
+                .plus(&t.scaled(&(radius * &z[i])));
+            [numerator.x, numerator.y, numerator.z, weights[i].clone()]
         })
         .collect();
     // Substituting u=√3-√2 and u=1 gives these simpler exact endpoint
     // coordinates. Keep the shared vertices and curve ends in that form.
-    controls[0] = foot.clone();
-    controls[4] = node.clone();
+    for (index, point) in [(0, &foot), (4, &node)] {
+        controls[index] = [
+            &point.x * &weights[index],
+            &point.y * &weights[index],
+            &point.z * &weights[index],
+            weights[index].clone(),
+        ];
+    }
     let mut knots = vec![Rational::zero(); 5];
     knots.extend(vec![Rational::one(); 5]);
-    let curve = BSplineCurve::new(4, knots, controls, weights.to_vec(), dec)?;
+    let curve = BSplineCurve::from_homogeneous(4, knots, controls, dec)?;
     let mut feet = [node.clone(), node];
     feet[planar] = foot.clone();
     let hull_end = input.center.plus(

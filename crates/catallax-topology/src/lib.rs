@@ -13,6 +13,8 @@ mod entity;
 mod fit;
 mod linear_fillet;
 mod model;
+/// Numerical bodies with explicit finite trims and recorded checks.
+pub mod numerical;
 mod oblique_draft;
 mod rational_atlas;
 mod rational_patch;

@@ -11,7 +11,16 @@ use crate::{
 };
 
 pub(super) fn check(model: &Model, body: BodyId) -> Vec<TopologyFault> {
+    check_with_incidence(model, body, true)
+}
+
+pub(super) fn structure(model: &Model, body: BodyId) -> Vec<TopologyFault> {
+    check_with_incidence(model, body, false)
+}
+
+fn check_with_incidence(model: &Model, body: BodyId, exact_incidence: bool) -> Vec<TopologyFault> {
     let mut check = Checker {
+        exact_incidence,
         model,
         faults: Vec::new(),
         lumps: BTreeSet::new(),
@@ -49,6 +58,7 @@ pub(super) fn check(model: &Model, body: BodyId) -> Vec<TopologyFault> {
 }
 
 struct Checker<'a> {
+    exact_incidence: bool,
     model: &'a Model,
     faults: Vec<TopologyFault>,
     lumps: BTreeSet<LumpId>,
@@ -114,7 +124,7 @@ impl Checker<'_> {
     }
 
     fn incidence(&mut self, a: GeomKey, b: GeomKey) {
-        if !self.model.geom().facts().holds(FactKind::Incident, a, b) {
+        if self.exact_incidence && !self.model.geom().facts().holds(FactKind::Incident, a, b) {
             self.fault("topology.missing-incidence", || {
                 format!("missing Incident({a:?}, {b:?})")
             });

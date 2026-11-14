@@ -4,6 +4,40 @@ use catallax_numbers::{Decider, Real};
 use catallax_shapes::*;
 use common::*;
 
+#[test]
+fn a_frame_keeps_an_irrational_normal_and_exact_lengths() {
+    let mut dec = Decider::default();
+    let n = Vector3::new(4.into(), 0.into(), 5.into());
+    let hint = Vector3::new(0.into(), 1.into(), 0.into());
+    let rotation = Rotation::from_frame(&n, &hint, &mut dec).unwrap();
+    let axes = [
+        Vector3::new(1.into(), 0.into(), 0.into()),
+        Vector3::new(0.into(), 1.into(), 0.into()),
+        Vector3::new(0.into(), 0.into(), 1.into()),
+    ]
+    .map(|v| rotation.apply(&v));
+    let mut zero = |value: Real| {
+        assert!(matches!(
+            dec.sign(&value),
+            catallax_numbers::Outcome::ProvenCoincident(_)
+        ))
+    };
+    for axis in &axes {
+        zero(axis.norm_squared() - Real::one());
+    }
+    zero(axes[0].dot(&axes[1]));
+    zero(axes[2].cross(&n).norm_squared());
+    zero(axes[0].cross(&axes[1]).minus(&axes[2]).norm_squared());
+    rejected(
+        Rotation::from_frame(&Vector3::zero(), &hint, &mut dec),
+        "shapes.zero-normal",
+    );
+    rejected(
+        Rotation::from_frame(&n, &n, &mut dec),
+        "shapes.parallel-frame",
+    );
+}
+
 blind_test!(cases_01_to_09_quaternions, {
     for w in ["1", "2", "-3", "1/7"] {
         assert!(

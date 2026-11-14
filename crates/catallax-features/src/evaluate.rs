@@ -726,6 +726,65 @@ fn evaluate_impl(
                         radius: profile_radius(profile) + distance.value().abs(),
                     }
                 }
+                Operation::ExtrudeOnFace {
+                    profile,
+                    body,
+                    face,
+                    normal_direction,
+                    x_direction,
+                    offset,
+                    distance,
+                } => {
+                    let profile = &profiles[profile];
+                    crate::check_face_profile(&profile.pose, dec)?;
+                    let support = &bodies[body];
+                    let planes = model
+                        .faces_of_body(support.body)
+                        .into_iter()
+                        .filter(|id| {
+                            model
+                                .face_origins(*id)
+                                .iter()
+                                .any(|origin| face.matches(origin))
+                        })
+                        .map(|id| {
+                            let native = model.face(id);
+                            let catallax_shapes::Surface::Plane(plane) =
+                                model.geom().surface(native.surface)
+                            else {
+                                return Err(Refusal::new(
+                                    "extrude.nonplanar-face",
+                                    "the sketch support is not planar",
+                                ));
+                            };
+                            Ok(plane.clone())
+                        })
+                        .collect::<Result<Vec<_>, Refusal>>()?;
+                    let map = crate::face_placement(
+                        &planes,
+                        &vector(normal_direction),
+                        &vector(x_direction),
+                        offset.value(),
+                        dec,
+                    )?;
+                    let local = crate::extrude::extrude_with_decider(
+                        model,
+                        profile,
+                        &step.id,
+                        distance.value(),
+                        None,
+                        dec,
+                    )?;
+                    let body =
+                        catallax_topology::transformed_body(model, local, &map, Clone::clone);
+                    BodyValue {
+                        body,
+                        radius: support.radius.clone()
+                            + profile_radius(profile)
+                            + offset.value().abs()
+                            + distance.value().abs(),
+                    }
+                }
                 Operation::Loft { sections, shape } => {
                     let (body, radius) = crate::loft::build(
                         model, recipe, sections, *shape, &step.id, &profiles, dec,

@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::ids::{ElementId, StepId};
-use crate::names::{EdgeRef, EdgeSelection, FaceRef, VertexName};
+use crate::names::{EdgeRef, EdgeSelection, FaceRef, OriginPattern, VertexName};
 use crate::number::{Axis, Number, Plane, Point2, Point3, Pose, Vector3};
 
 /// What a step's value is.
@@ -136,6 +136,23 @@ pub enum Operation {
         /// Sweep direction, of any length; the sketch normal when absent.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         direction: Option<Vector3>,
+    },
+    /// Sweeps local profile coordinates from an exact supporting face plane.
+    ExtrudeOnFace {
+        /// An XY profile; its placement must be the identity.
+        profile: StepId,
+        /// Body carrying the supporting face.
+        body: StepId,
+        /// Matching faces must share one supporting plane.
+        face: OriginPattern,
+        /// Chooses which of the two exact plane normals defines local Z.
+        normal_direction: Vector3,
+        /// Projected onto the supporting plane to define local X.
+        x_direction: Vector3,
+        /// Signed normal offset from that plane.
+        offset: Number,
+        /// Signed length along local Z, not zero.
+        distance: Number,
     },
     /// Cuts a profile through a target in both directions, without end caps.
     ExtrudeThrough {
@@ -413,6 +430,7 @@ impl Operation {
             Operation::Sketch { .. } => "sketch",
             Operation::Path { .. } => "path",
             Operation::Extrude { .. } => "extrude",
+            Operation::ExtrudeOnFace { .. } => "extrude_on_face",
             Operation::ExtrudeThrough { .. } => "extrude_through",
             Operation::ExtrudeTo { .. } => "extrude_to",
             Operation::ExtrudeNext { .. } => "extrude_next",
@@ -468,6 +486,9 @@ impl Operation {
             | Operation::ScanImport { .. } => vec![],
             Operation::Extrude { profile, .. } | Operation::Revolve { profile, .. } => {
                 vec![(profile, Profile)]
+            }
+            Operation::ExtrudeOnFace { body, profile, .. } => {
+                vec![(profile, Profile), (body, Body)]
             }
             Operation::ExtrudeThrough {
                 target, profile, ..

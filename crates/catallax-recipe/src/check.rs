@@ -171,6 +171,7 @@ fn patterns(op: &Operation) -> Vec<&OriginPattern> {
     }
     match op {
         Operation::ExtrudeTo { limit, .. } => face(limit).collect(),
+        Operation::ExtrudeOnFace { face, .. } => vec![face],
         Operation::Fillet {
             edges, overflow, ..
         } => {
@@ -485,6 +486,7 @@ impl Ctx<'_> {
             ) if segment.as_str() == "wall" => Ok(()),
             (
                 O::Extrude { .. }
+                | O::ExtrudeOnFace { .. }
                 | O::ExtrudeTo { .. }
                 | O::ExtrudeNext { .. }
                 | O::Revolve { .. }
@@ -505,6 +507,7 @@ impl Ctx<'_> {
             ) => Ok(()),
             (
                 O::Extrude { profile, .. }
+                | O::ExtrudeOnFace { profile, .. }
                 | O::ExtrudeThrough { profile, .. }
                 | O::ExtrudeTo { profile, .. }
                 | O::ExtrudeNext { profile, .. }

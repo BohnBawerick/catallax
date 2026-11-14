@@ -1,0 +1,188 @@
+//! The equal-radius torus cut where a mixed corner leaves its upright sharp.
+//!
+//! In units of the fillet radius, the end wall is one unit from the ring
+//! axis and the torus has major radius two and minor radius one. In that
+//! plane its equation is `(X²+Z²)²+8(X²-Z²)=0`. The branch from the planar
+//! rail to the cylinder contact is the rational quartic
+//! `X=4√2 u(1-u²)/D`, `Z=2√2(1-u⁴)/D`, `D=1+6u²+u⁴`,
+//! for `√3-√2 <= u <= 1`. Substitution proves the complete curve lies on
+//! both supports, including the singular carrier endpoint at X=Z=0.
+
+use super::*;
+use catallax_shapes::BSplineCurve;
+
+pub(super) struct End {
+    pub(super) feet: [Point3; 2],
+    pub(super) curve: Curve,
+    // The extended end direction, expressed on the input edge's circle.
+    pub(super) hull_end: Point3,
+}
+
+fn choose(n: usize, k: usize) -> i64 {
+    if k > n {
+        return 0;
+    }
+    (0..k).fold(1, |a, i| a * (n - i) as i64 / (i + 1) as i64)
+}
+
+// Power coefficients in u, transformed to Bernstein coefficients on [lo,1].
+fn bernstein(power: [Real; 5], lo: &Real) -> [Real; 5] {
+    let width = &Real::one() - lo;
+    let mut shifted: [Real; 5] = std::array::from_fn(|_| Real::zero());
+    for (i, coefficient) in power.iter().enumerate() {
+        for (j, value) in shifted.iter_mut().enumerate().take(i + 1) {
+            let mut term = coefficient * &Real::from_i64(choose(i, j));
+            for _ in 0..i - j {
+                term = &term * lo;
+            }
+            for _ in 0..j {
+                term = &term * &width;
+            }
+            *value = &*value + &term;
+        }
+    }
+    std::array::from_fn(|i| {
+        (0..=i).fold(Real::zero(), |sum, j| {
+            &sum + &(&shifted[j]
+                * &Real::from_rational(
+                    Rational::from_ratio(choose(i, j), choose(4, j)).expect("nonzero binomial"),
+                ))
+        })
+    })
+}
+
+/// A partial mixed end has a planar support normal to the ring axis, a
+/// concave cylinder of the same radius, and an end wall tangent to that
+/// cylinder. Other ring ends keep their existing construction/refusal.
+pub(super) fn geometry(
+    model: &Model,
+    run: &Run,
+    wall: FaceId,
+    old: VertexId,
+    dec: &mut Decider,
+) -> Result<Option<End>, Refusal> {
+    let Surface::Torus(torus) = &run.definition.surface else {
+        return Ok(None);
+    };
+    if !run.definition.convex {
+        return Ok(None);
+    }
+    let Some(planar) = run
+        .definition
+        .supports
+        .iter()
+        .position(|s| matches!(s, Surface::Plane(_)))
+    else {
+        return Ok(None);
+    };
+    let circular = 1 - planar;
+    let (Surface::Cylinder(cylinder), Surface::Plane(end), Curve::Circle(input)) = (
+        &run.definition.supports[circular],
+        model.geom().surface(model.face(wall).surface),
+        &run.definition.edge,
+    ) else {
+        return Ok(None);
+    };
+    let radius = &run.definition.radius;
+    if sign(&(&torus.major - &(radius * &Real::from_i64(2))), dec)? != Sign::Zero
+        || sign(&(&torus.minor - radius), dec)? != Sign::Zero
+        || sign(&(&cylinder.radius_sq - &radius.square()), dec)? != Sign::Zero
+        || sign(&end.normal.dot(&torus.axis), dec)? != Sign::Zero
+        || !tangent_faces(
+            model,
+            run.faces[circular],
+            wall,
+            &model.geom().position(model.vertex(old).point),
+            dec,
+        )?
+    {
+        return Ok(None);
+    }
+    let e = model.edge(run.edge);
+    let far = if e.start == Some(old) { e.end } else { e.start };
+    let Some(far) = far else {
+        return Ok(None);
+    };
+    let at = model.geom().position(model.vertex(old).point);
+    let radial = at.minus(&input.center);
+    if sign(&(&radial.norm_squared() - &radius.square()), dec)? != Sign::Zero {
+        return Ok(None);
+    }
+    let q = radial.scaled(&(&Real::one() / radius));
+    let across = input.center.minus(&torus.center);
+    if sign(&(&across.norm_squared() - &radius.square()), dec)? != Sign::Zero
+        || sign(&across.cross(&torus.axis).norm_squared(), dec)? != Sign::Zero
+    {
+        return Ok(None);
+    }
+    let v = across.scaled(&(&Real::one() / radius));
+    let toward = model
+        .geom()
+        .position(model.vertex(far).point)
+        .minus(&input.center);
+    let away = toward
+        .minus(&q.scaled(&toward.dot(&q)))
+        .scaled(&Real::from_i64(-1));
+    if sign(&away.norm_squared(), dec)? == Sign::Zero {
+        return Ok(None);
+    }
+    let t = unit(&away);
+    let two = Real::from_i64(2).sqrt();
+    let three = Real::from_i64(3).sqrt();
+    let lo = &three - &two;
+    let zero = Real::zero;
+    let weights = bernstein(
+        [Real::one(), zero(), Real::from_i64(6), zero(), Real::one()],
+        &lo,
+    );
+    let x = bernstein(
+        [
+            zero(),
+            &Real::from_i64(4) * &two,
+            zero(),
+            -&(&Real::from_i64(4) * &two),
+            zero(),
+        ],
+        &lo,
+    );
+    let z = bernstein(
+        [
+            &Real::from_i64(2) * &two,
+            zero(),
+            zero(),
+            zero(),
+            -&(&Real::from_i64(2) * &two),
+        ],
+        &lo,
+    );
+    let node = torus.center.plus(&q.scaled(radius));
+    let foot = input
+        .center
+        .plus(&q.scaled(radius))
+        .plus(&t.scaled(&(radius * &three)));
+    let mut controls: Vec<_> = (0..5)
+        .map(|i| {
+            node.plus(&v.scaled(&(radius * &(&x[i] / &weights[i]))))
+                .plus(&t.scaled(&(radius * &(&z[i] / &weights[i]))))
+        })
+        .collect();
+    // Substituting u=√3-√2 and u=1 gives these simpler exact endpoint
+    // coordinates. Keep the shared vertices and curve ends in that form.
+    controls[0] = foot.clone();
+    controls[4] = node.clone();
+    let mut knots = vec![Rational::zero(); 5];
+    knots.extend(vec![Rational::one(); 5]);
+    let curve = BSplineCurve::new(4, knots, controls, weights.to_vec(), dec)?;
+    let mut feet = [node.clone(), node];
+    feet[planar] = foot.clone();
+    let hull_end = input.center.plus(
+        &foot
+            .minus(&input.center)
+            .scaled(&(&Real::one() / &Real::from_i64(2))),
+    );
+    Ok(Some(End {
+        feet,
+        curve: Curve::BSpline(curve),
+        hull_end,
+    }))
+}

@@ -1,7 +1,7 @@
 //! Rational charts. The cylindrical coordinate is a lift of a diamond,
 //! not an angle or a transcendental parameter.
 
-use catallax_numbers::{Ball, Decider, Integer, Rational, Real, Refusal, Sign};
+use catallax_numbers::{Ball, Decider, Integer, Outcome, Rational, Real, Refusal, Sign, ZeroProof};
 use catallax_shapes::{Point3, Rotation, SplineSupport, Surface, Vector3};
 
 use crate::geometry::{r, refusal, sign, unit};
@@ -25,6 +25,17 @@ pub(crate) enum Projection {
         u: Vector3,
         v: Vector3,
         pole: Vector3,
+    },
+    // S1 times a stereographic chart of the tube circle. The omitted
+    // parallel must be certified clear of the complete boundary before use.
+    Torus {
+        origin: Point3,
+        u: Vector3,
+        v: Vector3,
+        axis: Vector3,
+        major: Real,
+        minor: Real,
+        pole: [Real; 2],
     },
 }
 
@@ -204,11 +215,35 @@ impl Projection {
                     pole: rotation.apply(&unit(2)),
                 }
             }
-            Surface::Torus(_) => {
-                return Err(refusal(
-                    "boolean.torus-chart-required",
-                    "non-circular torus boundaries require a certified periodic chart",
-                ));
+            Surface::Torus(s) => {
+                let axis = s
+                    .axis
+                    .scaled(&(&Real::one() / &s.axis.norm_squared().sqrt()));
+                let u = s
+                    .ref_dir
+                    .scaled(&(&Real::one() / &s.ref_dir.norm_squared().sqrt()));
+                let pole = match choice {
+                    0 => [r(0), r(1)],
+                    1 => [r(0), r(-1)],
+                    2 => [r(1), r(0)],
+                    3 => [r(-1), r(0)],
+                    _ => {
+                        let k = r(choice - 2);
+                        let square = &k * &k;
+                        let over = &r(1) + &square;
+                        [&(&r(1) - &square) / &over, &(&r(2) * &k) / &over]
+                    }
+                }
+                .map(Real::from);
+                Self::Torus {
+                    origin: s.center.clone(),
+                    v: axis.cross(&u),
+                    u,
+                    axis,
+                    major: s.major.clone(),
+                    minor: s.minor.clone(),
+                    pole,
+                }
             }
             _ => {
                 return Err(refusal(
@@ -220,8 +255,64 @@ impl Projection {
     }
 
     pub(crate) fn periodic(&self) -> bool {
-        matches!(self, Self::Cylinder { .. })
+        matches!(self, Self::Cylinder { .. } | Self::Torus { .. })
     }
+
+    /// A query on the omitted parallel belongs to the chart's zero cell.
+    /// Only meaningful after the entire boundary was proved clear of it and
+    /// each group's total periodic traversal was proved zero.
+    pub(crate) fn on_torus_pole(&self, point: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
+        let Self::Torus {
+            origin,
+            axis,
+            major,
+            minor,
+            pole,
+            ..
+        } = self
+        else {
+            return Ok(false);
+        };
+        let offset = point.minus(origin);
+        let height = offset.dot(axis);
+        let twice_major = &Real::from_i64(2) * major;
+        let radial = &(&offset.norm_squared() - &major.square()) - &minor.square();
+        let along = &(&pole[0] * &radial) + &(&pole[1] * &(&twice_major * &height));
+        match dec.sign(&(&along - &(&twice_major * minor))) {
+            Outcome::Proven(_) => Ok(false),
+            Outcome::ProvenCoincident(proof) if proof.proof != ZeroProof::SeparationBound => {
+                Ok(true)
+            }
+            Outcome::ProvenCoincident(_) => Err(Refusal::new(
+                "numbers.geometric-gap-unproven",
+                "a torus chart pole needs exact incidence",
+            )),
+            Outcome::NotExact(error) => Err(Refusal::from(error)),
+            Outcome::Refused(error) => Err(error),
+        }
+    }
+    pub(crate) fn torus_coordinate(&self, point: &Point3) -> Real {
+        let Self::Torus {
+            origin,
+            axis,
+            major,
+            minor,
+            pole,
+            ..
+        } = self
+        else {
+            unreachable!("torus chart");
+        };
+        let offset = point.minus(origin);
+        let height = offset.dot(axis);
+        let tube = &(&(&offset.norm_squared() - &major.square()) - &minor.square())
+            / &(&Real::from_i64(2) * major);
+        let along = &(&pole[0] * &tube) + &(&pole[1] * &height);
+        let denominator = minor - &along;
+        let numerator = &(&pole[0] * &height) - &(&pole[1] * &tube);
+        &numerator / &denominator
+    }
+
     pub(crate) fn pole_point(&self) -> Option<Point3> {
         match self {
             Self::Sphere {
@@ -281,6 +372,46 @@ impl Projection {
                     return Ok(None);
                 };
                 Some([x, y])
+            }
+            Self::Torus {
+                origin,
+                u,
+                v,
+                axis,
+                major,
+                minor,
+                pole,
+            } => {
+                let d = displacement(p, origin, dec)?;
+                let x = dot(&d, u, dec)?;
+                let y = dot(&d, v, dec)?;
+                let Some(phase) = phase_box(&x, &y) else {
+                    return Ok(None);
+                };
+                let height = dot(&d, axis, dec)?;
+                // On a ring torus, rho-R=(|p-c|²-R²-r²)/(2R).
+                // R>r fixes the positive radial branch. The tube coordinate
+                // is rational on the surface, with no angular approximation.
+                let major = dec.enclose_at(major, p[0].precision())?;
+                let minor = dec.enclose_at(minor, p[0].precision())?;
+                let twice_major = &major * &Ball::from_rational(&r(2), p[0].precision());
+                let norm = &(&x.square() + &y.square()) + &height.square();
+                let tube = (norm - major.square() - minor.square())
+                    .checked_div(&twice_major)
+                    .expect("ring torus major radius is positive");
+                let c = dec.enclose_at(&pole[0], p[0].precision())?;
+                let s = dec.enclose_at(&pole[1], p[0].precision())?;
+                let denominator = minor - (&c * &tube + &s * &height);
+                if !excludes_zero(&denominator, dec)? {
+                    return Ok(None);
+                }
+                let numerator = &c * &height - &s * &tube;
+                Some([
+                    phase,
+                    numerator
+                        .checked_div(&denominator)
+                        .expect("denominator excludes zero"),
+                ])
             }
         })
     }
@@ -378,6 +509,45 @@ pub(crate) fn winding(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn torus_cylinder_chart_certifies_tube_coordinates_and_omitted_parallel() {
+        let torus = Surface::Torus(catallax_shapes::Torus {
+            center: Point3::new(r(7).into(), r(-3).into(), r(2).into()),
+            axis: Vector3::new(r(0).into(), r(0).into(), r(2).into()),
+            ref_dir: Vector3::new(r(3).into(), r(0).into(), r(0).into()),
+            major: r(3).into(),
+            minor: r(1).into(),
+        });
+        let projection = Projection::new(&torus, 0).unwrap();
+        let mut dec = Decider::default();
+        for (xyz, uv) in [
+            ([11, -3, 2], [0, -1]),
+            ([9, -3, 2], [0, 1]),
+            ([10, -3, 1], [0, 0]),
+            ([3, -3, 2], [2, -1]),
+        ] {
+            let xyz = xyz.map(|v| Ball::from_rational(&r(v), 128));
+            let projected = projection
+                .project_certified(&xyz, &mut dec)
+                .unwrap()
+                .unwrap();
+            for i in 0..2 {
+                assert!(projected[i].contains(&r(uv[i])));
+            }
+        }
+        let pole = Point3::new(r(10).into(), r(-3).into(), r(3).into());
+        let xyz = [&pole.x, &pole.y, &pole.z].map(|v| dec.enclose_at(v, 128).unwrap());
+        assert!(
+            projection
+                .project_certified(&xyz, &mut dec)
+                .unwrap()
+                .is_none()
+        );
+        assert!(projection.on_torus_pole(&pole, &mut dec).unwrap());
+        let other = Projection::new(&torus, 1).unwrap();
+        assert!(other.project_certified(&xyz, &mut dec).unwrap().is_some());
+    }
 
     #[test]
     fn diamond_projection_keeps_quadrants_seams_and_poles_distinct() {

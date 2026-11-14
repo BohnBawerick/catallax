@@ -9,7 +9,9 @@ use catallax_shapes::{CurveId, Point3, PointId, Torus, Vector3};
 use catallax_topology::{Loop, LoopId, Model};
 use std::{cmp::Ordering, collections::BTreeSet};
 
+mod side;
 mod trimmed;
+pub(crate) use side::target;
 
 struct Phase {
     x: Real,

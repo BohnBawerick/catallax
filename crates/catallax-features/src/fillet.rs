@@ -51,7 +51,7 @@ pub struct FilletDefinition {
 pub const RADIUS_TOO_LARGE: &str = "fillet.radius-too-large";
 
 /// The refusal code for a strip end the builder does not trim yet: an arc
-/// strip on an end plane off its axis or on a curved end face, an end face
+/// strip outside the proved meridian or tangent-wall end sections, an end face
 /// the rails do not cross, or a vertex of more than three faces.
 pub const UNSUPPORTED_END: &str = "fillet.unsupported-end";
 

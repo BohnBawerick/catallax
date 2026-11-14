@@ -39,6 +39,8 @@ mod fillet_inscribed;
 mod fillet_limit;
 #[path = "fillet_mixed.rs"]
 mod fillet_mixed;
+#[path = "fillet_ring_end.rs"]
+mod fillet_ring_end;
 #[path = "fillet_setback.rs"]
 pub(crate) mod fillet_setback;
 #[path = "fillet_spline.rs"]
@@ -613,21 +615,35 @@ fn tangent_join(
     };
     Ok(Some((circle, p, qa)))
 }
-/// Where a ring strip meets a planar end face through its axis: the contact
+enum RingEndCurve {
+    Meridian(Circle),
+    Section(Curve, Sense),
+}
+
+/// Where a ring strip meets a planar end face: the contact
 /// on each support in that plane, in strip face order, and the meridian
-/// through them about the ball centre there. Any other end plane cuts the
-/// ring's carrier in a spiric curve, which no edge carries yet.
+/// through them about the ball centre there, or the equal-radius rational
+/// section at a wall tangent to the concave support.
 fn ring_end(
     model: &Model,
     run: &Run,
     third: FaceId,
     old: VertexId,
     dec: &mut Decider,
-) -> Result<(Point3, Point3, Circle), Refusal> {
+) -> Result<(Point3, Point3, RingEndCurve), Refusal> {
     let end = |detail: &str| Refusal::new(UNSUPPORTED_END, detail);
     let edge = model.edge(run.edge);
     if edge.start == edge.end {
         return Err(end("an arc strip whose two ends meet at one vertex"));
+    }
+    if let Some(end) = fillet_ring_end::geometry(model, run, third, old, dec)? {
+        let [a, b] = end.feet;
+        let sense = if matches!(run.definition.supports[0], Surface::Plane(_)) {
+            Sense::Same
+        } else {
+            Sense::Reversed
+        };
+        return Ok((a, b, RingEndCurve::Section(end.curve, sense)));
     }
     let Surface::Plane(wall) = model.geom().surface(model.face(third).surface) else {
         return Err(end("an arc strip end needs a planar end face"));
@@ -673,7 +689,7 @@ fn ring_end(
         radius_sq: run.definition.radius.square(),
         ref_dir: a.minus(&centre),
     };
-    Ok((a, b, meridian))
+    Ok((a, b, RingEndCurve::Meridian(meridian)))
 }
 /// The shorter meridian arc from the shared contact to the outer contact.
 fn meridian_edge(
@@ -825,6 +841,7 @@ fn continue_tangent(
     selected: Vec<EdgeId>,
     radius: &Real,
     earlier: &[FilletDefinition],
+    stopped: &[EdgeId],
     dec: &mut Decider,
 ) -> Result<Vec<(EdgeId, EdgeId)>, Refusal> {
     let touches = |edge: EdgeId, v: VertexId| {
@@ -872,6 +889,7 @@ fn continue_tangent(
                         .keys()
                         .find(|h| **h != edge && touches(**h, v) && between(h, stay, next))
                         && !sources.contains_key(continued)
+                        && !stopped.contains(continued)
                     {
                         sources.insert(*continued, source);
                         pending.push(*continued);
@@ -1060,12 +1078,36 @@ fn hull(
     if let (Curve::Circle(_), Some(start), Some(end)) =
         (model.geom().curve(e.curve), e.start, e.end)
     {
-        let [from, to] = if e.sense == Sense::Same {
-            [start, end]
-        } else {
-            [end, start]
+        let mut ends = [start, end].map(|v| model.geom().position(model.vertex(v).point));
+        for (i, old) in [start, end].into_iter().enumerate() {
+            if runs.iter().any(|other| {
+                other.edge != run.edge && {
+                    let edge = model.edge(other.edge);
+                    edge.start == Some(old) || edge.end == Some(old)
+                }
+            }) {
+                continue;
+            }
+            let others: BTreeSet<_> = uses
+                .iter()
+                .filter(|(edge, _)| {
+                    let edge = model.edge(**edge);
+                    edge.start == Some(old) || edge.end == Some(old)
+                })
+                .flat_map(|(_, adjacent)| adjacent.iter().map(|(face, _)| *face))
+                .filter(|face| !run.faces.contains(face))
+                .collect();
+            if let [wall] = others.into_iter().collect::<Vec<_>>()[..]
+                && let Some(end) = fillet_ring_end::geometry(model, run, wall, old, dec)?
+            {
+                ends[i] = end.hull_end;
+            }
         }
-        .map(|v| model.geom().position(model.vertex(v).point));
+        let [from, to] = if e.sense == Sense::Same {
+            ends
+        } else {
+            [ends[1].clone(), ends[0].clone()]
+        };
         return run.definition.arc_hull([&from, &to], dec);
     }
     Ok(match end_cuts(model, run, runs, uses, centres, dec)? {
@@ -2362,7 +2404,17 @@ pub(crate) fn build(
         return Ok(result);
     }
     strips_of(
-        model, body, selected, radius, roll_over, closure, step, earlier, consumed, dec,
+        model,
+        body,
+        selected,
+        radius,
+        roll_over,
+        &[],
+        closure,
+        step,
+        earlier,
+        consumed,
+        dec,
     )
 }
 
@@ -2409,6 +2461,7 @@ fn strips_of(
     selected: Vec<EdgeId>,
     radius: &Real,
     roll_over: bool,
+    stopped: &[EdgeId],
     closure: catallax_recipe::FilletCorner,
     step: &StepId,
     earlier: &[FilletDefinition],
@@ -2423,6 +2476,7 @@ fn strips_of(
         selected,
         radius,
         roll_over,
+        stopped,
         closure,
         step,
         earlier,
@@ -2454,6 +2508,7 @@ fn build_strips(
     selected: Vec<EdgeId>,
     radius: &Real,
     roll_over: bool,
+    stopped: &[EdgeId],
     closure: catallax_recipe::FilletCorner,
     step: &StepId,
     earlier: &[FilletDefinition],
@@ -2479,7 +2534,7 @@ fn build_strips(
         return Ok((result, definitions));
     }
     let selected = if roll_over {
-        continue_tangent(model, &uses, selected, radius, earlier, dec)?
+        continue_tangent(model, &uses, selected, radius, earlier, stopped, dec)?
     } else {
         selected.into_iter().map(|edge| (edge, edge)).collect()
     };
@@ -3116,7 +3171,18 @@ fn build_strips(
                     runs[*i].ends.insert((old, face), v);
                 }
                 let cap = match meridian {
-                    Some(meridian) => meridian_edge(model, meridian, a, b, dec)?,
+                    Some(RingEndCurve::Meridian(meridian)) => {
+                        meridian_edge(model, meridian, a, b, dec)?
+                    }
+                    Some(RingEndCurve::Section(curve, sense)) => {
+                        let curve = model.geom_mut().add_curve(curve);
+                        model.add_edge(Edge {
+                            curve,
+                            sense,
+                            start: Some(a),
+                            end: Some(b),
+                        })
+                    }
                     None => {
                         let surface = runs[*i].definition.surface.clone();
                         let third_surface = model.geom().surface(model.face(third).surface).clone();

@@ -104,7 +104,7 @@ fn face_mounted_cut_opens_supporting_plane() {
         x_direction: catallax_recipe::Vector3([0, 1, 0].map(Number::from)),
         offset: Number::from(0),
         distance: Number::from(-150),
-        placement: Default::default(),
+        placement: catallax_recipe::Pose::identity(),
     };
     let built = catallax_features::evaluate(&converted.recipe, &mut Decider::default()).unwrap();
     let tool = &converted.steps["Tool"];

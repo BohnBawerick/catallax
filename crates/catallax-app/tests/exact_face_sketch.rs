@@ -132,7 +132,7 @@ fn opens(angled: bool, sides: usize) {
         },
         &catallax_shapes::RVector3::new(x[0].into(), x[1].into(), x[2].into()),
         &Rational::zero(),
-        &Default::default(),
+        &catallax_recipe::Pose::identity(),
         &mut dec,
     )
     .unwrap();

@@ -1,0 +1,285 @@
+{
+  "format": "catallax-operation-log/1",
+  "marks": [],
+  "operations": [
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 0,
+        "max_bits_high_water": 0,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 0
+      },
+      "id": "c",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "cylinder",
+      "refusal": null,
+      "sequence": 0,
+      "status": "answered",
+      "wall_ms": 0.054983,
+      "work": {
+        "after": 0,
+        "before": 0,
+        "used": 0
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 34,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 12,
+        "max_bits_high_water": 0,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 46
+      },
+      "id": "section",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "sketch",
+      "refusal": null,
+      "sequence": 1,
+      "status": "answered",
+      "wall_ms": 0.060924,
+      "work": {
+        "after": 355,
+        "before": 0,
+        "used": 355
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 0,
+        "max_bits_high_water": 0,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 0
+      },
+      "id": "cut",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "extrude",
+      "refusal": null,
+      "sequence": 2,
+      "status": "answered",
+      "wall_ms": 0.113443,
+      "work": {
+        "after": 355,
+        "before": 355,
+        "used": 0
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 261,
+        "coincident_fact": 69,
+        "coincident_separation": 0,
+        "exact": 49,
+        "filter": 4237,
+        "max_bits_high_water": 128,
+        "not_exact": 0,
+        "refined": 271,
+        "refused": 0,
+        "total": 4887
+      },
+      "id": "j",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "boolean",
+      "refusal": null,
+      "sequence": 3,
+      "status": "answered",
+      "wall_ms": 30.540347999999998,
+      "work": {
+        "after": 74796,
+        "before": 355,
+        "used": 74441
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 0,
+        "max_bits_high_water": 128,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 0
+      },
+      "id": "clip",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "block",
+      "refusal": null,
+      "sequence": 4,
+      "status": "answered",
+      "wall_ms": 0.10127,
+      "work": {
+        "after": 74796,
+        "before": 74796,
+        "used": 0
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 443,
+        "coincident_fact": 632,
+        "coincident_separation": 0,
+        "exact": 284,
+        "filter": 6011,
+        "max_bits_high_water": 576,
+        "not_exact": 0,
+        "refined": 369,
+        "refused": 0,
+        "total": 7739
+      },
+      "id": "clipped",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "boolean",
+      "refusal": null,
+      "sequence": 5,
+      "status": "answered",
+      "wall_ms": 65.32153,
+      "work": {
+        "after": 485702,
+        "before": 74796,
+        "used": 410906
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 0,
+        "max_bits_high_water": 576,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 0
+      },
+      "id": "round",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "fillet.contact",
+      "refusal": null,
+      "sequence": 6,
+      "status": "answered",
+      "wall_ms": 1.033977,
+      "work": {
+        "after": 485872,
+        "before": 485794,
+        "used": 78
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 2,
+        "max_bits_high_water": 576,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 2
+      },
+      "id": "round",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "fillet.sections",
+      "refusal": null,
+      "sequence": 7,
+      "status": "answered",
+      "wall_ms": 0.014025999999999999,
+      "work": {
+        "after": 485880,
+        "before": 485872,
+        "used": 8
+      }
+    },
+    {
+      "decisions": null,
+      "id": "round",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "fillet.trimming",
+      "refusal": null,
+      "sequence": 8,
+      "status": "interrupted",
+      "wall_ms": 0.027912999999999997,
+      "work": {
+        "after": 485932,
+        "before": 485880,
+        "used": 52
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 4,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 33,
+        "max_bits_high_water": 576,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 37
+      },
+      "id": "round",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "fillet",
+      "refusal": {
+        "code": "fillet.unsupported-end",
+        "detail": "vertex trimming needs straight rails"
+      },
+      "sequence": 9,
+      "status": "refused",
+      "wall_ms": 1.294876,
+      "work": {
+        "after": 485948,
+        "before": 485702,
+        "used": 246
+      }
+    }
+  ],
+  "refusal": {
+    "code": "fillet.unsupported-end",
+    "detail": "vertex trimming needs straight rails; maximum unknown",
+    "stage": null,
+    "step": "round"
+  },
+  "status": "refused"
+}

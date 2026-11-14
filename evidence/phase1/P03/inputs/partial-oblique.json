@@ -1,0 +1,145 @@
+{
+  "format": "catallax-recipe/4",
+  "name": "partial-oblique",
+  "result": "round",
+  "steps": [
+    {
+      "id": "c",
+      "op": "cylinder",
+      "radius": "5",
+      "height": "16",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "section",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "24/25",
+          "0",
+          "7/25",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "8"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "line",
+            "id": "0",
+            "to": [
+              "30",
+              "-30"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "1",
+            "to": [
+              "30",
+              "30"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "2",
+            "to": [
+              "-30",
+              "30"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "3",
+            "to": [
+              "-30",
+              "-30"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "id": "cut",
+      "op": "extrude",
+      "profile": "section",
+      "distance": "30"
+    },
+    {
+      "id": "j",
+      "op": "boolean",
+      "kind": "subtract",
+      "target": "c",
+      "tool": "cut"
+    },
+    {
+      "id": "clip",
+      "op": "block",
+      "size": [
+        "30",
+        "60",
+        "40"
+      ],
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "-30",
+          "-10"
+        ]
+      }
+    },
+    {
+      "id": "clipped",
+      "op": "boolean",
+      "kind": "intersect",
+      "target": "j",
+      "tool": "clip"
+    },
+    {
+      "id": "round",
+      "op": "fillet",
+      "body": "clipped",
+      "radius": "0.5",
+      "edges": [
+        {
+          "between": [
+            {
+              "step": "c",
+              "role": {
+                "side": {
+                  "segment": "wall"
+                }
+              }
+            },
+            {
+              "step": "cut",
+              "role": "start"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

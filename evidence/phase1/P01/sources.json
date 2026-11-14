@@ -1,0 +1,36 @@
+{
+  "baseline": "f4db345f2e7c51835d1ebeba9f6446d117144117",
+  "observed_at": "2026-11-14T18:16:52.418119+00:00",
+  "sources": [
+    {
+      "path": "ROADMAP.md",
+      "sha256": "36d582aedf0a19ca32d036e5f9431752d1d4c4d307d0fe5a91f4de4a5b4ded87",
+      "bytes": 28519
+    },
+    {
+      "path": "docs/ARCHITECTURE.md",
+      "sha256": "c13331faa9c2f8d1203438de92d1f1fe084ffdbbfc90be1c37d08b5ba75980bd",
+      "bytes": 153499
+    },
+    {
+      "path": "docs/CAPABILITIES.md",
+      "sha256": "f8b88865a72e8128ab2aaa5b3d6bf0199a2e485c04b13d4bd10af2f54d4200d0",
+      "bytes": 31982
+    },
+    {
+      "path": "docs/PRD.md",
+      "sha256": "af174d1f99f96361d8391270d7735ef5f27782c8a6cf8bd57acaf510ba8e8066",
+      "bytes": 28290
+    },
+    {
+      "path": "docs/archive/PLAN-2026-11.md",
+      "sha256": "caf4e4a2a2ac85453e17a2c210e67235fcc7d2db81844fa6f27ed8a995cf7a72",
+      "bytes": 195628
+    },
+    {
+      "path": ".claude/skills/verify-catallax/SKILL.md",
+      "sha256": "6d7be1568e0e0d72d6b29724e886c3660495047b129ba14d7e114770e873fca7",
+      "bytes": 9752
+    }
+  ]
+}

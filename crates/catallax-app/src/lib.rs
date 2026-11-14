@@ -14,6 +14,27 @@ pub mod curves;
 /// Revision-bound preview delivery and caller-scheduled proof.
 pub mod lifecycle;
 pub mod loops;
+/// Separate numerical admission and continuation, with finite trims and actual checks.
+/// Numerical results never enter the exact evaluation checkpoint. Export is separate.
+///
+/// ```compile_fail
+/// use catallax_app::NumericalBody;
+/// use catallax_features::EvaluationCheckpoint;
+/// fn promote(body: NumericalBody) -> EvaluationCheckpoint { body.into() }
+/// ```
+///
+/// ```compile_fail
+/// use catallax_app::NumericalBody;
+/// use catallax_numbers::Decider;
+/// fn export(body: NumericalBody) {
+///     catallax_step::write_step(&body, &[], &Default::default(),
+///         &mut Decider::default(), &mut Vec::new()).unwrap();
+/// }
+/// ```
+pub use catallax_topology::numerical::{
+    NumericalBody, NumericalDefinition, NumericalEdge, NumericalFace, NumericalOptions,
+    NumericalTrim, NumericalVertex, build as build_numerical,
+};
 /// Saved feature-pattern editing with explicit per-instance bindings.
 pub mod pattern;
 /// Unproved preview meshes and selection names from retained B-rep definitions.

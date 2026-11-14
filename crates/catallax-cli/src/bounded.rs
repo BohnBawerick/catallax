@@ -1,4 +1,4 @@
-//! Wire records for rule-bound answers. Existing manifests omit these fields.
+//! Separate wire records for bounded answers and checked numerical builds.
 
 use catallax_numbers::{BoundedEvidence, CertificateScope, EvidenceUnit, OperationResult};
 use serde_json::{Value, json};
@@ -60,5 +60,62 @@ pub fn operation_result_summary<T>(
             "exact":false, "result":null,
             "refusal":{"code":refusal.code, "detail":refusal.detail}
         }),
+    }
+}
+
+/// Serializes actual numerical checks without creating a complete-bound field.
+/// Parameter locations and pointwise distance enclosures remain explicit.
+pub fn numerical_evidence_summary(evidence: &catallax_numbers::NumericalEvidence) -> Value {
+    use catallax_numbers::{NumericalCheck, NumericalRepair};
+    let checks: Vec<_> = evidence.checks().iter().map(|check| match check {
+        NumericalCheck::Passed { name, scope } => json!({"kind":"passed", "name":name, "scope":scope}),
+        NumericalCheck::Samples { name, scope, samples } => json!({
+            "kind":"samples", "name":name, "scope":scope,
+            "sampled_max_mm":samples.iter().map(|s| &s.distance_upper_mm).max().map(ToString::to_string),
+            "samples":samples.iter().map(|sample| json!({
+                "parameters":sample.parameters.iter().map(ToString::to_string).collect::<Vec<_>>(),
+                "distance_upper_mm":sample.distance_upper_mm.to_string()
+            })).collect::<Vec<_>>()
+        }),
+    }).collect();
+    let repairs: Vec<_> = evidence
+        .repairs()
+        .iter()
+        .map(|repair| match repair {
+            NumericalRepair::VertexMoved {
+                vertex,
+                before,
+                after,
+                distance_upper_mm,
+            } => json!({
+                "kind":"vertex-moved", "vertex":vertex,
+                "before_mm":before.iter().map(ToString::to_string).collect::<Vec<_>>(),
+                "after_mm":after.iter().map(ToString::to_string).collect::<Vec<_>>(),
+                "distance_upper_mm":distance_upper_mm.to_string()
+            }),
+        })
+        .collect();
+    json!({"tolerance_mm":evidence.tolerance_mm().to_string(), "checks":checks, "repairs":repairs})
+}
+
+/// Public numerical build delivery. This format is separate from exact manifests
+/// and from complete bounded answers. It grants no export authority; `step` is null.
+/// Refusals publish neither a body nor partial acceptance evidence.
+pub fn numerical_build_summary(
+    result: &Result<catallax_app::NumericalBody, catallax_numbers::Refusal>,
+) -> Value {
+    match result {
+        Ok(body) => {
+            let counts = body.counts();
+            json!({"format":"catallax-numerical-result/1", "status":"numerical", "proof":"numerical", "exact":false,
+                "definition":body.definition().name,
+                "result":{"lumps":counts.lumps,"shells":counts.shells,"faces":counts.faces,"edges":counts.edges,"vertices":counts.vertices},
+                "numerical":numerical_evidence_summary(body.evidence()), "step":null})
+        }
+        Err(refusal) => {
+            json!({"format":"catallax-numerical-result/1", "status":"refused", "proof":"refused", "exact":false,
+            "result":null, "numerical":null, "step":null,
+            "refusal":{"code":refusal.code,"detail":refusal.detail}})
+        }
     }
 }

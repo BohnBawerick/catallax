@@ -17,7 +17,9 @@ mod recipe_edit;
 mod stand_in;
 pub mod verification;
 
-pub use bounded::{BoundedSummary, operation_result_summary};
+pub use bounded::{
+    BoundedSummary, numerical_build_summary, numerical_evidence_summary, operation_result_summary,
+};
 
 pub use manifest::{
     Bound, KernelInfo, Manifest, MarkEntry, Properties, RefusalEntry, ResultSummary, Stats, Status,

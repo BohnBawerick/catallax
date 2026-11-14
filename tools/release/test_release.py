@@ -155,6 +155,13 @@ class ReplayPolicyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "baseline differs"):
             check_summary(summary, "b" * 40)
 
+    def test_stable_digit_rows_keep_step_evidence_for_bound_only_changes(self):
+        row = self.correction() | {"class": "stable-last-digit",
+                                   "manifest_fields": ["step.max_deviation"]}
+        row["evidence"]["after_step_sha256"] = row["evidence"]["before_step_sha256"]
+        self.save_corrections([row])
+        self.assertEqual(release.read_corrections()["corrections"], [row])
+
     def test_invalid_or_unbounded_correction_approvals_are_rejected(self):
         mutations = (
             {"index": True}, {"index": -1}, {"index": 477},

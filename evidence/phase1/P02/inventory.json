@@ -1,0 +1,123 @@
+[
+  {
+    "id": "M10-001",
+    "name": "side-subtract"
+  },
+  {
+    "id": "M10-002",
+    "name": "side-union"
+  },
+  {
+    "id": "M10-003",
+    "name": "side-intersect"
+  },
+  {
+    "id": "M10-004",
+    "name": "top-subtract"
+  },
+  {
+    "id": "M10-005",
+    "name": "top-union"
+  },
+  {
+    "id": "M10-006",
+    "name": "top-intersect"
+  },
+  {
+    "id": "M10-007",
+    "name": "through-cut"
+  },
+  {
+    "id": "M10-008",
+    "name": "m7-cut"
+  },
+  {
+    "id": "M10-009",
+    "name": "import-subtract"
+  },
+  {
+    "id": "M10-010",
+    "name": "import-union"
+  },
+  {
+    "id": "M10-011",
+    "name": "import-intersect"
+  },
+  {
+    "id": "M10-012",
+    "name": "spline-pair-subtract"
+  },
+  {
+    "id": "M10-013",
+    "name": "spline-pair-union"
+  },
+  {
+    "id": "M10-014",
+    "name": "spline-pair-intersect"
+  },
+  {
+    "id": "k01-wall-hole",
+    "source": "crates/catallax-features/tests/fixtures/p5-later-cuts/k01-wall-hole.json",
+    "sha256": "d1a58a7f6026026251861435cd6799cb6018b7778a4e0671ac5808bad39c809c"
+  },
+  {
+    "id": "k02-top-slot",
+    "source": "crates/catallax-features/tests/fixtures/p5-later-cuts/k02-top-slot.json",
+    "sha256": "94dceb16064c56c6e74ed83775d6dd7330412beb8f317fd7d524aeed39028611"
+  },
+  {
+    "id": "k03-rim-notch",
+    "source": "crates/catallax-features/tests/fixtures/p5-later-cuts/k03-rim-notch.json",
+    "sha256": "c195291cb4e50cad5646a8b351b2d8ecdfa5c7e991b9c083858532a06122a183"
+  },
+  {
+    "id": "k04-torus-pocket",
+    "source": "crates/catallax-features/tests/fixtures/p5-later-cuts/k04-torus-pocket.json",
+    "sha256": "7bf252f4faad7c933f127d165704d419760584abef2141493c8544b292b33b92"
+  },
+  {
+    "id": "k05-plane-notch",
+    "source": "crates/catallax-features/tests/fixtures/p5-later-cuts/k05-plane-notch.json",
+    "sha256": "650eca80f2cdee329c93227e355978c25d0e836b9c29b5f75f5f15febb37d66d"
+  },
+  {
+    "id": "k06-cylinder-drill",
+    "source": "crates/catallax-features/tests/fixtures/p5-later-cuts/k06-cylinder-drill.json",
+    "sha256": "2ac8aad3199410823fdd15c9704c99df7366dc36982f9e35e6b801eeb2e38543"
+  },
+  {
+    "id": "k07-cone-drill",
+    "source": "crates/catallax-features/tests/fixtures/p5-later-cuts/k07-cone-drill.json",
+    "sha256": "e1cb0b020c2ca0438fd65995be45a41fbeb32204fce2acbea47a453d222e2d91"
+  },
+  {
+    "id": "k08-sphere-dimple",
+    "source": "crates/catallax-features/tests/fixtures/p5-later-cuts/k08-sphere-dimple.json",
+    "sha256": "f76982675925d426ac32612a93d8e02fd66207910e4eb435c6e08f3993aed12f"
+  },
+  {
+    "id": "k09-ring-groove",
+    "source": "crates/catallax-features/tests/fixtures/p5-later-cuts/k09-ring-groove.json",
+    "sha256": "5572276ac1a1342bd1b482d20400780737a5116101ecfdedbea4bd335e505dc1"
+  },
+  {
+    "id": "k10-axis-section",
+    "source": "crates/catallax-features/tests/fixtures/p5-later-cuts/k10-axis-section.json",
+    "sha256": "62391835afef52c5ebf840c489f80abdd726038dd8f84db6b8aaee95e178471f"
+  },
+  {
+    "id": "k11-offset-section",
+    "source": "crates/catallax-features/tests/fixtures/p5-later-cuts/k11-offset-section.json",
+    "sha256": "7641f68c7da3317120ffb32fa89239eeb19d4221745ae143b1c5578b7019ec38"
+  },
+  {
+    "id": "k12-far-disjoint",
+    "source": "crates/catallax-features/tests/fixtures/p5-later-cuts/k12-far-disjoint.json",
+    "sha256": "3da0da5d8ee3181d2e8407e1dd6223cd5636ea623325492acc9a58898486f5fe"
+  },
+  {
+    "id": "k13-fillet-first",
+    "source": "crates/catallax-features/tests/fixtures/p5-later-cuts/k13-fillet-first.json",
+    "sha256": "2ce74e321b08d403a38f4eaa06cd2da81d469f8e7cda33fe18019d08e4428568"
+  }
+]

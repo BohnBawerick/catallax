@@ -238,7 +238,7 @@ Each entry links to a short file: what we were trying to achieve, why it was pro
 | [Decide-once merging](docs/research/decide-once-merging.md) | Dropped | No saved answer would have improved. |
 | [Threads inside one field request](docs/research/field-threads.md) | Adopted | Same bytes and work counts on 1 to 12 processors. |
 | [Running ahead on other cores](docs/research/run-ahead.md) | Adopted | STEP export about 8 times quicker on 24 threads. Booleans no quicker. |
-| [SMLib intersection port scope](docs/research/smlib-intersection-port-scope.md) | Adopted | 37,255 lines needed before a plane cut. SMLib's tracer missed a tiny loop, so Catallax keeps its own complete search. |
+| [SMLib intersection port scope](docs/research/smlib-intersection-port-scope.md) | Adopted | 37,255 physical lines of SMLib left to port before a plane cut. SMLib's tracer missed a tiny loop, so Catallax keeps its own complete search. |
 | [Spline against spline by the 2026 method](docs/research/spline-intersection-2026-method.md) | Adopted with a proof per cell | All 24 test pairs resolve inside 20M: 20 proved, 4 tangent contacts refused by name. |
 | [Spline fillets: the offset search](docs/research/spline-fillet-offset-search.md) | Route changed | The direct search hit its depth limit. The replacement rounds one loft edge within 59 nm. |
 | [Tangent-touch prototype](docs/research/tangent-touch.md) | Parked | Interior touches classify. A touch on a border is undecided. First candidate for a bounded answer. |

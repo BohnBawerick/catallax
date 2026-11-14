@@ -112,8 +112,18 @@ impl Rotation {
                 "frame X direction is parallel to its normal",
             ));
         }
-        let z = normal.scaled(&(Real::one() / norm.sqrt()));
-        let x = x.scaled(&(Real::one() / x_norm.sqrt()));
+        let length = norm.sqrt();
+        let length = dec
+            .rational_value(&length)?
+            .map(Real::from)
+            .unwrap_or(length);
+        let x_length = x_norm.sqrt();
+        let x_length = dec
+            .rational_value(&x_length)?
+            .map(Real::from)
+            .unwrap_or(x_length);
+        let z = normal.scaled(&(Real::one() / length));
+        let x = x.scaled(&(Real::one() / x_length));
         let y = z.cross(&x);
         Ok(Self {
             matrix: [[x.x, y.x, z.x], [x.y, y.y, z.y], [x.z, y.z, z.z]],

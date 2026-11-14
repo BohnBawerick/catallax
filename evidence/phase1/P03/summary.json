@@ -1,0 +1,276 @@
+[
+  {
+    "input": "evidence/phase1/P03/inputs/bevel-single-control.json",
+    "case_key": "f3a986ddd72cae921cd9a55609ae870793d5baf42ead3f696a7ebe5ca8778107",
+    "status": "answered",
+    "refusal": null,
+    "work": {
+      "exhausted": false,
+      "limit": 20000000,
+      "used": 2695
+    },
+    "wall_ms": 3.675185,
+    "result": {
+      "edges": 15,
+      "edges_by_kind": {
+        "line": 15
+      },
+      "faces": 7,
+      "faces_by_kind": {
+        "plane": 7
+      },
+      "kind": "solid",
+      "lumps": 1,
+      "ring_edges": 0,
+      "shells": 1,
+      "vertices": 10
+    },
+    "step_present": true,
+    "artifact_dir": "raw/recipe/cases/f3a986ddd72cae921cd9a55609ae870793d5baf42ead3f696a7ebe5ca8778107"
+  },
+  {
+    "input": "evidence/phase1/P03/inputs/bevel-three-edge-corner.json",
+    "case_key": "56ef4948971ad8d15b11169928711243c92bb4f609f8c17886b893d5a63f645b",
+    "status": "refused",
+    "refusal": {
+      "code": "chamfer.unsupported-topology",
+      "detail": "three selected strips at a vertex need a corner patch",
+      "stage": null,
+      "step": "bevel"
+    },
+    "work": {
+      "exhausted": false,
+      "limit": 20000000,
+      "used": 224
+    },
+    "wall_ms": 0.461945,
+    "result": null,
+    "step_present": false,
+    "artifact_dir": "raw/recipe/cases/56ef4948971ad8d15b11169928711243c92bb4f609f8c17886b893d5a63f645b"
+  },
+  {
+    "input": "evidence/phase1/P03/inputs/bored-cap-control.json",
+    "case_key": "1329d696cb92aafce76f04af69e42adcf68a9bc97d9e74a4e2c70d38cbf4ffa3",
+    "status": "answered",
+    "refusal": null,
+    "work": {
+      "exhausted": false,
+      "limit": 20000000,
+      "used": 96543
+    },
+    "wall_ms": 52.813078,
+    "result": {
+      "edges": 28,
+      "edges_by_kind": {
+        "circle": 4,
+        "line": 24
+      },
+      "faces": 14,
+      "faces_by_kind": {
+        "cylinder": 2,
+        "plane": 12
+      },
+      "kind": "solid",
+      "lumps": 1,
+      "ring_edges": 4,
+      "shells": 1,
+      "vertices": 16
+    },
+    "step_present": true,
+    "artifact_dir": "raw/recipe/cases/1329d696cb92aafce76f04af69e42adcf68a9bc97d9e74a4e2c70d38cbf4ffa3"
+  },
+  {
+    "input": "evidence/phase1/P03/inputs/bored-side-opening.json",
+    "case_key": "65bb488bd7282dc80a94bb0d0ddbf6f3fc8b5d658595045e12e189e7049e6402",
+    "status": "refused",
+    "refusal": {
+      "code": "distance.unsupported-envelope",
+      "detail": "bored shells open only their perpendicular end caps; maximum unknown",
+      "stage": null,
+      "step": "shell"
+    },
+    "work": {
+      "exhausted": false,
+      "limit": 20000000,
+      "used": 13180
+    },
+    "wall_ms": 8.025544,
+    "result": null,
+    "step_present": false,
+    "artifact_dir": "raw/recipe/cases/65bb488bd7282dc80a94bb0d0ddbf6f3fc8b5d658595045e12e189e7049e6402"
+  },
+  {
+    "input": "evidence/phase1/P03/inputs/hollow-oblique-draft.json",
+    "case_key": "354db767a6025e98eeab7372bdcc5ba190d712758e74fc7df9556e19c048f3a9",
+    "status": "refused",
+    "refusal": {
+      "code": "draft.unsupported-oblique-annulus",
+      "detail": "annular oblique draft needs a whole-height, whole-angle radial separation proof and shared trimmed cap rings; outer_radius_squared_mm2=[64,64]; inner_radius_squared_mm2=[4,4]; selected_outer=true; selected_inner=false; cap_span_mm=[2,2]; tan_angle=[1,1]; neutral_transverse_ratio_squared=[5/64,5/64]; certified_radial_gap=unknown",
+      "stage": null,
+      "step": "drafted"
+    },
+    "work": {
+      "exhausted": false,
+      "limit": 20000000,
+      "used": 454
+    },
+    "wall_ms": 0.69403,
+    "result": null,
+    "step_present": false,
+    "artifact_dir": "raw/recipe/cases/354db767a6025e98eeab7372bdcc5ba190d712758e74fc7df9556e19c048f3a9"
+  },
+  {
+    "input": "evidence/phase1/P03/inputs/mixed-all-control.json",
+    "case_key": "939efe5386fccea93c4e9dedfe81dd7fa9938fbf752a66a8f0b11894688ef521",
+    "status": "answered",
+    "refusal": null,
+    "work": {
+      "exhausted": false,
+      "limit": 20000000,
+      "used": 724536
+    },
+    "wall_ms": 12471.967537999999,
+    "result": {
+      "edges": 74,
+      "edges_by_kind": {
+        "circle": 38,
+        "line": 36
+      },
+      "faces": 38,
+      "faces_by_kind": {
+        "cylinder": 18,
+        "plane": 8,
+        "sphere": 10,
+        "torus": 2
+      },
+      "kind": "solid",
+      "lumps": 1,
+      "ring_edges": 0,
+      "shells": 1,
+      "vertices": 38
+    },
+    "step_present": true,
+    "artifact_dir": "raw/recipe/cases/939efe5386fccea93c4e9dedfe81dd7fa9938fbf752a66a8f0b11894688ef521"
+  },
+  {
+    "input": "evidence/phase1/P03/inputs/mixed-unselected.json",
+    "case_key": "88b6f71294c145c47a4286ba7da85194d4ec39b4698dbfab44b54777889c5a2d",
+    "status": "refused",
+    "refusal": {
+      "code": "fillet.unsupported-corner",
+      "detail": "a convex and a concave strip meeting at a vertex need a general corner patch; maximum unknown",
+      "stage": null,
+      "step": "round"
+    },
+    "work": {
+      "exhausted": false,
+      "limit": 20000000,
+      "used": 43067
+    },
+    "wall_ms": 19.260528,
+    "result": null,
+    "step_present": false,
+    "artifact_dir": "raw/recipe/cases/88b6f71294c145c47a4286ba7da85194d4ec39b4698dbfab44b54777889c5a2d"
+  },
+  {
+    "input": "evidence/phase1/P03/inputs/oblique-solid-control.json",
+    "case_key": "de1b3c796f69dd2aaadc6fa0319cbe9205ce119ba0eaede81626a84096ab1031",
+    "status": "answered",
+    "refusal": null,
+    "work": {
+      "exhausted": false,
+      "limit": 20000000,
+      "used": 3801
+    },
+    "wall_ms": 1.803529,
+    "result": {
+      "edges": 2,
+      "edges_by_kind": {
+        "bspline": 2
+      },
+      "faces": 3,
+      "faces_by_kind": {
+        "bspline": 1,
+        "plane": 2
+      },
+      "kind": "solid",
+      "lumps": 1,
+      "ring_edges": 2,
+      "shells": 1,
+      "vertices": 0
+    },
+    "step_present": true,
+    "artifact_dir": "raw/recipe/cases/de1b3c796f69dd2aaadc6fa0319cbe9205ce119ba0eaede81626a84096ab1031"
+  },
+  {
+    "input": "evidence/phase1/P03/inputs/partial-oblique.json",
+    "case_key": "7e17102b23e8daadef1bf7fb70a6d6d41352613962b8d3a361d29af026d50cb6",
+    "status": "refused",
+    "refusal": {
+      "code": "fillet.unsupported-end",
+      "detail": "vertex trimming needs straight rails; maximum unknown",
+      "stage": null,
+      "step": "round"
+    },
+    "work": {
+      "exhausted": false,
+      "limit": 20000000,
+      "used": 485948
+    },
+    "wall_ms": 99.153964,
+    "result": null,
+    "step_present": false,
+    "artifact_dir": "raw/recipe/cases/7e17102b23e8daadef1bf7fb70a6d6d41352613962b8d3a361d29af026d50cb6"
+  },
+  {
+    "input": "evidence/phase1/P03/inputs/radial-hole-control.json",
+    "case_key": "d80516b7f7c10fcb95dea179989f300fa73ea67d936a60f2cd4752004e715837",
+    "status": "answered",
+    "refusal": null,
+    "work": {
+      "exhausted": false,
+      "limit": 20000000,
+      "used": 15528
+    },
+    "wall_ms": 12.305671,
+    "result": {
+      "edges": 8,
+      "edges_by_kind": {
+        "circle": 8
+      },
+      "faces": 7,
+      "faces_by_kind": {
+        "cone": 2,
+        "cylinder": 3,
+        "plane": 2
+      },
+      "kind": "solid",
+      "lumps": 1,
+      "ring_edges": 8,
+      "shells": 1,
+      "vertices": 0
+    },
+    "step_present": true,
+    "artifact_dir": "raw/recipe/cases/d80516b7f7c10fcb95dea179989f300fa73ea67d936a60f2cd4752004e715837"
+  },
+  {
+    "input": "evidence/phase1/P03/inputs/skew-hole.json",
+    "case_key": "9d75733b4fd9ed4c30ec8851730719e1988668fe0135f68ab1781926a5017cf4",
+    "status": "refused",
+    "refusal": {
+      "code": "intersect.trace-native-cover",
+      "detail": "traced cone/cylinder bounded native window: the native window needs exact rational coefficient admission",
+      "stage": null,
+      "step": "drilled"
+    },
+    "work": {
+      "exhausted": false,
+      "limit": 20000000,
+      "used": 60085
+    },
+    "wall_ms": 4.826922,
+    "result": null,
+    "step_present": false,
+    "artifact_dir": "raw/recipe/cases/9d75733b4fd9ed4c30ec8851730719e1988668fe0135f68ab1781926a5017cf4"
+  }
+]

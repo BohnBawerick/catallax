@@ -1,0 +1,176 @@
+{
+  "format": "catallax-operation-log/1",
+  "marks": [],
+  "operations": [
+    {
+      "decisions": {
+        "coincident_exact": 34,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 12,
+        "max_bits_high_water": 0,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 46
+      },
+      "id": "section",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "sketch",
+      "refusal": null,
+      "sequence": 0,
+      "status": "answered",
+      "wall_ms": 0.12073600000000001,
+      "work": {
+        "after": 355,
+        "before": 0,
+        "used": 355
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 12,
+        "max_bits_high_water": 0,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 12
+      },
+      "id": "ring",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "revolve",
+      "refusal": null,
+      "sequence": 1,
+      "status": "answered",
+      "wall_ms": 0.330829,
+      "work": {
+        "after": 403,
+        "before": 355,
+        "used": 48
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 20,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 32,
+        "max_bits_high_water": 128,
+        "not_exact": 0,
+        "refined": 51,
+        "refused": 0,
+        "total": 103
+      },
+      "id": "collar",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "chamfer",
+      "refusal": null,
+      "sequence": 2,
+      "status": "answered",
+      "wall_ms": 0.235411,
+      "work": {
+        "after": 1345,
+        "before": 403,
+        "used": 942
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 297,
+        "coincident_fact": 82,
+        "coincident_separation": 0,
+        "exact": 44,
+        "filter": 888,
+        "max_bits_high_water": 128,
+        "not_exact": 0,
+        "refined": 283,
+        "refused": 0,
+        "total": 1594
+      },
+      "id": "drilled",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "hole",
+      "refusal": null,
+      "sequence": 3,
+      "status": "answered",
+      "wall_ms": 8.437373999999998,
+      "work": {
+        "after": 13192,
+        "before": 1345,
+        "used": 11847
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 0,
+        "max_bits_high_water": 128,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 0
+      },
+      "id": "drilled",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "summarize",
+      "refusal": null,
+      "sequence": 4,
+      "status": "answered",
+      "wall_ms": 0.008085,
+      "work": {
+        "after": 13192,
+        "before": 13192,
+        "used": 0
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 20,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 19,
+        "max_bits_high_water": 128,
+        "not_exact": 0,
+        "refined": 215,
+        "refused": 0,
+        "total": 254
+      },
+      "id": "drilled",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "step",
+      "refusal": null,
+      "sequence": 5,
+      "status": "answered",
+      "wall_ms": 2.531442,
+      "work": {
+        "after": 15528,
+        "before": 13192,
+        "used": 2336
+      }
+    }
+  ],
+  "refusal": null,
+  "status": "answered"
+}

@@ -1,0 +1,20 @@
+{
+  "exact": false,
+  "format": "catallax-manifest/3",
+  "kernel": {
+    "commit": "f4db345f2e7c51835d1ebeba9f6446d117144117",
+    "name": "exact-brep",
+    "version": "0.1.5"
+  },
+  "marks": [],
+  "properties": null,
+  "refusal": {
+    "code": "draft.unsupported-oblique-annulus",
+    "detail": "annular oblique draft needs a whole-height, whole-angle radial separation proof and shared trimmed cap rings; outer_radius_squared_mm2=[64,64]; inner_radius_squared_mm2=[4,4]; selected_outer=true; selected_inner=false; cap_span_mm=[2,2]; tan_angle=[1,1]; neutral_transverse_ratio_squared=[5/64,5/64]; certified_radial_gap=unknown",
+    "stage": null,
+    "step": "drafted"
+  },
+  "result": null,
+  "status": "refused",
+  "step": null
+}

@@ -1,0 +1,65 @@
+{
+  "format": "catallax-recipe/4",
+  "name": "l-mixed-all",
+  "result": "round",
+  "steps": [
+    {
+      "id": "base",
+      "op": "block",
+      "size": [
+        "20",
+        "20",
+        "5"
+      ],
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "wall",
+      "op": "block",
+      "size": [
+        "20",
+        "5",
+        "10"
+      ],
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "j",
+      "op": "boolean",
+      "kind": "union",
+      "target": "base",
+      "tool": "wall"
+    },
+    {
+      "id": "round",
+      "op": "fillet",
+      "body": "j",
+      "radius": "1",
+      "edges": "all"
+    }
+  ]
+}

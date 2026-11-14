@@ -1,0 +1,35 @@
+{
+  "exact": true,
+  "format": "catallax-manifest/5",
+  "kernel": {
+    "commit": "f4db345f2e7c51835d1ebeba9f6446d117144117",
+    "name": "exact-brep",
+    "version": "0.1.5"
+  },
+  "marks": [],
+  "refusal": null,
+  "result": {
+    "edges": 2,
+    "edges_by_kind": {
+      "bspline": 2
+    },
+    "faces": 3,
+    "faces_by_kind": {
+      "bspline": 1,
+      "plane": 2
+    },
+    "kind": "solid",
+    "lumps": 1,
+    "ring_edges": 2,
+    "shells": 1,
+    "vertices": 0
+  },
+  "status": "answered",
+  "step": {
+    "added_edges": 4,
+    "added_vertices": 4,
+    "approximated_curves": 0,
+    "file": "answer.step",
+    "max_deviation": "0"
+  }
+}

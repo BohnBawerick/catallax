@@ -1,0 +1,57 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "plane bevel",
+  "steps": [
+    {
+      "id": "base",
+      "op": "block",
+      "size": [
+        "10",
+        "12",
+        "8"
+      ],
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "bevel",
+      "op": "chamfer",
+      "body": "base",
+      "distance": "2",
+      "edges": [
+        {
+          "between": [
+            {
+              "step": "base",
+              "role": {
+                "side": {
+                  "segment": "x_min"
+                }
+              }
+            },
+            {
+              "step": "base",
+              "role": {
+                "side": {
+                  "segment": "y_min"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "result": "bevel"
+}

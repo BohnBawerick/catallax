@@ -19,7 +19,7 @@ Current attribution and pins are in [NOTICE](../NOTICE) and
 
 ## Four must-show lines
 
-These are the four obligations from [PLAN section 10.1](PLAN.md#101-milestones),
+These are the four obligations from [PLAN section 10.1](archive/PLAN-2026-11.md#101-milestones),
 preserved verbatim:
 
 1. A written scope of the SMLib intersection subsystem: which SMLib units curve-with-surface and surface-with-surface intersection pull in, directly and through their dependencies, the size of each, and which units serve only SMLib's own tolerance rules and so are not ported.

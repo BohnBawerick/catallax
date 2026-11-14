@@ -8,7 +8,7 @@ with its charges and statistics in order. The Boolean uses it by default for
 probe clearance against boundary edges and for comparisons of a new point
 against known points. No signature, outcome, refusal code or work count
 changed.
-Why: the next step of decision L1 of [PLAN.md](../PLAN.md#124-named-for-later).
+Why: the next step of decision L1 of [PLAN.md](../archive/PLAN-2026-11.md#124-named-for-later).
 [RUN-AHEAD.md](../RUN-AHEAD.md) section 5 has the measured times.
 Migration: none. An item handed over this way must read nothing a loop
 iteration changes and must keep nothing: taking the model by `&Model` is what

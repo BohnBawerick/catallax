@@ -6,7 +6,7 @@ cantilever below, and on 12 November 2026 the owner agreed this design as
 written for the M16 groundwork and M20 solver lanes. D5 (benchmarks beyond this
 cantilever) and D6 (imported parts) remain sequenced after the cantilever.
 This document records the separate FEA design discussion required by
-[PRD](PRD.md) and [PLAN](PLAN.md).
+[PRD](PRD.md) and [PLAN](archive/PLAN-2026-11.md).
 
 ## First step: the field solves a rectangular cantilever
 

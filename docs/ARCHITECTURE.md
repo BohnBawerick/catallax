@@ -2,7 +2,7 @@
 
 Catallax's master model is one recipe evaluated by an exact B-rep kernel and a signed distance field kernel. Each operation shares one mathematical definition. [PRD.md](PRD.md) defines that direction; [DESIGN.md](DESIGN.md) governs the B-rep implementation.
 
-The seven pieces below implement the B-rep half, exported without source history into this public repository. [RECIPE.md](RECIPE.md) defines the shared recipe language. `catallax-recipe` holds its data model, and `catallax-field` evaluates stock solids and booleans with separate named face records. `catallax-compare` checks their sampled display boundaries in both directions; conversions and the finer pre-export check remain unimplemented. [FIELD.md](FIELD.md) defines the field query boundary; [PLAN.md](PLAN.md) orders the remaining work.
+The seven pieces below implement the B-rep half, exported without source history into this public repository. [RECIPE.md](RECIPE.md) defines the shared recipe language. `catallax-recipe` holds its data model, and `catallax-field` evaluates stock solids and booleans with separate named face records. `catallax-compare` checks their sampled display boundaries in both directions; conversions and the finer pre-export check remain unimplemented. [FIELD.md](FIELD.md) defines the field query boundary; [PLAN.md](archive/PLAN-2026-11.md) orders the remaining work.
 
 The target is reasonably good, comparable to OpenCASCADE, SMLib and the Rust kernels. The former 1-in-10,000 programme and grid-cell product gates are retired. Mathematical regression tests remain; speed per click matters for the interactive CAD tool.
 
@@ -20,7 +20,7 @@ This change adds the result contract and reporting, without making any operation
 
 ## Direction after M1: decisions of 2026-11-10
 
-The project owner set the direction for the work after M1 on 10 November 2026. The decisions were taken between milestones, as the 26 October decisions were. [PLAN section 10.1](PLAN.md#101-milestones) now says that a dated decision in this file is how direction changes, whether or not it falls at a milestone. [PLAN.md](PLAN.md) orders the resulting work as milestones M6 to M26. These are direction decisions only: no public signature, outcome, manifest, default or refusal code changes here, so they need no interface-change fragment.
+The project owner set the direction for the work after M1 on 10 November 2026. The decisions were taken between milestones, as the 26 October decisions were. [PLAN section 10.1](archive/PLAN-2026-11.md#101-milestones) now says that a dated decision in this file is how direction changes, whether or not it falls at a milestone. [PLAN.md](archive/PLAN-2026-11.md) orders the resulting work as milestones M6 to M26. These are direction decisions only: no public signature, outcome, manifest, default or refusal code changes here, so they need no interface-change fragment.
 
 ### NURBS first, with ported code in three areas
 
@@ -48,11 +48,11 @@ Both kernels act on the same geometry, imported parts included. A STEP file, a c
 
 ### Mesh and scan import to a clean part
 
-Mesh and scan import aim at a clean, workable part with the smallest deviation, as B-rep and as field. No recipe or feature tree is required. Classic fitting comes first: region growing, then plane, cylinder and cone fitting. Learned segmentation such as DualBrep is used only if classic fitting is not good enough, and its weights licence is checked before any use. A scan is never silently treated as a solid. Every result reports its deviation both ways, scan to part and part to scan. This replaces the recipe-writing route of PRD section 7 and RECIPE.md section 4.19.1, which [PLAN section 14](PLAN.md#14-proposed-prd-changes) proposes to change.
+Mesh and scan import aim at a clean, workable part with the smallest deviation, as B-rep and as field. No recipe or feature tree is required. Classic fitting comes first: region growing, then plane, cylinder and cone fitting. Learned segmentation such as DualBrep is used only if classic fitting is not good enough, and its weights licence is checked before any use. A scan is never silently treated as a solid. Every result reports its deviation both ways, scan to part and part to scan. This replaces the recipe-writing route of PRD section 7 and RECIPE.md section 4.19.1, which [PLAN section 14](archive/PLAN-2026-11.md#14-proposed-prd-changes) proposes to change.
 
 ### Machines to themselves
 
-Graphics-view work and timing benchmarks need a machine to themselves. Graphics-card work holds the machine for the whole job. A timing pass holds it only while it measures. Work that counts Catallax's deterministic work units does not, because that count does not change under load. [PLAN section 10.5](PLAN.md#105-jobs-that-need-a-machine-to-themselves) lists which jobs are which. This adds to the existing rule of a pinned core, warm-up and matched AB/BA pairs in [the time budget](#the-time-budget).
+Graphics-view work and timing benchmarks need a machine to themselves. Graphics-card work holds the machine for the whole job. A timing pass holds it only while it measures. Work that counts Catallax's deterministic work units does not, because that count does not change under load. [PLAN section 10.5](archive/PLAN-2026-11.md#105-jobs-that-need-a-machine-to-themselves) lists which jobs are which. This adds to the existing rule of a pinned core, warm-up and matched AB/BA pairs in [the time budget](#the-time-budget).
 
 ### What these decisions do not change
 
@@ -60,7 +60,7 @@ The 1 nm modelling tolerance, the 100 nm approximation target, the 1 µm kernel-
 
 ## Preview and deferred proof: decision of 2026-10-26
 
-Separate what the user sees from when its proof completes. The preview/display path and the background proof path have separate budgets. The field's second-kernel comparison runs on demand only. This decision supersedes earlier click-path and both-kernel landing requirements in this document, [PLAN.md](PLAN.md) and [PRD.md](PRD.md); it does not weaken any proof obligation.
+Separate what the user sees from when its proof completes. The preview/display path and the background proof path have separate budgets. The field's second-kernel comparison runs on demand only. This decision supersedes earlier click-path and both-kernel landing requirements in this document, [PLAN.md](archive/PLAN-2026-11.md) and [PRD.md](PRD.md); it does not weaken any proof obligation.
 
 ### Measured reason
 
@@ -190,7 +190,7 @@ This documentation decision changes no current public signature, default, schema
 
 ## Print accuracy and routes: decision of 2026-10-26
 
-Keep 0.01 mm as the default print accuracy, not a mandatory accuracy for every export. Accuracy and resource caps are recorded output settings, consistent with [PLAN section 3.1](PLAN.md#31-one-modelling-tolerance). Prefer accurate parts and improve the route rather than silently coarsening them. When the requested output does not fit, explain the cost and let the user choose a coarser accuracy or a higher cap.
+Keep 0.01 mm as the default print accuracy, not a mandatory accuracy for every export. Accuracy and resource caps are recorded output settings, consistent with [PLAN section 3.1](archive/PLAN-2026-11.md#31-one-modelling-tolerance). Prefer accurate parts and improve the route rather than silently coarsening them. When the requested output does not fit, explain the cost and let the user choose a coarser accuracy or a higher cap.
 
 The ordinary B-rep adapter and versioned file metadata are implemented by the [B-rep print interface fragment](interface-changes/2026-10-26-certified-brep-print.md). Adaptive boundary cells and trade-off estimates remain requirements, not delivered capabilities. [VERIFY-INTERFACE.md](VERIFY-INTERFACE.md#field-printing) specifies current routing and output guarantees.
 
@@ -288,7 +288,7 @@ Cone/torus and recipe coverage may then land independently, with consumer and ag
 
 Amended by the owner on 2026-10-23. Certify the whole result as exact except for its listed approximated or imported faces and recorded bounded decisions. Each exception carries a proved local tolerance and its applicable limit. This replaces the original universal requirement that the represented solid and every hand-off be strictly below 1 nm from the recipe. The 1 nm modelling tolerance remains the limit for sameness and decisions. A fitted face within its local cap does not also need a sub-nanometre whole-solid certificate.
 
-A mark records why a decision stopped; it is not a geometric proof. This is the implementation contract for [PLAN.md](PLAN.md)'s error-policy item and [PRD section 3.1](PRD.md#31-agreement). It supersedes the inherited rule below that automatically takes every `NotExact` as coincidence. This documentation decision changes no code, work-budget policy or existing exchange contract. An unchanged exchange that promises 1 nm must retain that promise or refuse; exposing the amended certificate needs a versioned contract.
+A mark records why a decision stopped; it is not a geometric proof. This is the implementation contract for [PLAN.md](archive/PLAN-2026-11.md)'s error-policy item and [PRD section 3.1](PRD.md#31-agreement). It supersedes the inherited rule below that automatically takes every `NotExact` as coincidence. This documentation decision changes no code, work-budget policy or existing exchange contract. An unchanged exchange that promises 1 nm must retain that promise or refuse; exposing the amended certificate needs a versioned contract.
 
 | Decision | Reason | Alternative and cost |
 | --- | --- | --- |
@@ -585,7 +585,7 @@ Measure preview construction and first complete selectable display separately fr
 
 The owner approved the replacement of [PRD section 3.1 item 1](PRD.md#31-agreement), and this change applies it. The former sentences "Both kernels hold these exactly by their definition. The approximation appears only in the exported file." no longer prohibit a fitted B-rep carrier. Both kernels still retain exact definitions. Each approximated/imported face carries its measured local tolerance within the applicable cap, and the body certificate covers the exact regions and all exceptions.
 
-The section's introductory agreement sentence now refers to those scoped bounds rather than a universal 1 nm difference. Item 2 retains the strict 1 nm decision-gap rule. Measurement, comparison and STEP use the amended composable-error policy above; an existing exchange promising a stronger bound remains unchanged until a versioned contract explicitly adopts the new policy. [PLAN section 14 item 3](PLAN.md#14-proposed-prd-changes) records this decision.
+The section's introductory agreement sentence now refers to those scoped bounds rather than a universal 1 nm difference. Item 2 retains the strict 1 nm decision-gap rule. Measurement, comparison and STEP use the amended composable-error policy above; an existing exchange promising a stronger bound remains unchanged until a versioned contract explicitly adopts the new policy. [PLAN section 14 item 3](archive/PLAN-2026-11.md#14-proposed-prd-changes) records this decision.
 
 ### Implemented first-family coverage
 

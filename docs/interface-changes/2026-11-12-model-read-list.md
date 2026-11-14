@@ -15,7 +15,7 @@ asks the writer whether another thread's value still holds before it takes
 the value's charges. In the Boolean, the cut of each face in imprint and the
 class of each piece are computed whole by other threads and taken when their
 reads hold. No answer, refusal, work count or file byte changed.
-Why: decision L1 of [PLAN.md](../PLAN.md#124-named-for-later). A journal made
+Why: decision L1 of [PLAN.md](../archive/PLAN-2026-11.md#124-named-for-later). A journal made
 on a copy is good for the model only while the model still answers what the
 work asked as the copy did. [RUN-AHEAD.md](../RUN-AHEAD.md) section 3
 describes it.

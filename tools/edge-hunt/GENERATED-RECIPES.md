@@ -1,7 +1,7 @@
 # R3 generated recipes with built-in checks
 
 This Rust-only companion to the edge-hunt outcome census implements a bounded
-first tranche of PLAN.md sections 12.3 and 12.6 R3. It creates native public-format
+first tranche of sections 12.3 and 12.6 R3 of docs/archive/PLAN-2026-11.md. It creates native public-format
 recipes and checks successful measurement enclosures against independent exact
 mathematics. It neither reads a saved-answer inventory nor uses an external CAD
 oracle. These finite checks are evidence, **not a proof that the kernel never

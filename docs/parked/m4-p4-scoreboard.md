@@ -9,7 +9,7 @@ then refuses during STEP export. It leaves no STEP file. M4 remains open.
 This records the remaining-work disposition for joint release review. It does
 not change the M4 must-show list, certify a refused result or raise an allowance.
 Resuming requires a later milestone to un-park the work under
-[PLAN section 10.1](../PLAN.md#101-milestones).
+[PLAN section 10.1](../archive/PLAN-2026-11.md#101-milestones).
 
 ## What main already delivered
 

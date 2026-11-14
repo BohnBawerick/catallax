@@ -1,0 +1,44 @@
+{
+  "baseline": "3a2f4e0c65feae548f4980d5c520a0c330acf6fb",
+  "method": "SHA-256 of final changed public artifacts; this manifest is not self-hashed. No machine locations. Baseline sources are separately identified.",
+  "artifacts": [
+    {
+      "path": "crates/catallax-trace/src/surface_trace.rs",
+      "sha256": "2add52622d12f586af225d49b3a3dfb2a69b64cc662b267a6e632853afb9ffc3"
+    },
+    {
+      "path": "crates/catallax-trace/tests/b02_seam.rs",
+      "sha256": "8c7b01bee3a10ee6d34c8df1fe2df0263838fec58cf1a419e13b169518b8d743"
+    },
+    {
+      "path": "docs/phase1/B02/SEAM-RANGE.md",
+      "sha256": "467d92aa5ad5af73f3c5cfd937a143e1ae3e2596a39221af0ceefb03b2a68cbe"
+    },
+    {
+      "path": "evidence/phase1/B02/VALIDATION.md",
+      "sha256": "df56ef283d10039b184904ced6e1f10de0fb83677b08e31988555678f0de16c4"
+    },
+    {
+      "path": "evidence/phase1/B02/baseline-regression.txt",
+      "sha256": "9e515950843ec3aa78e0b613e7195001d85d2828b43e2a580b350e8be4e7cee0"
+    }
+  ],
+  "baseline_sources": [
+    {
+      "path": "crates/catallax-trace/src/surface_trace.rs",
+      "sha256": "cff006120ce8aa3daf7492eb2ea65e3b439d68b5b6685525c7545d25109417d8"
+    },
+    {
+      "path": "crates/catallax-trace/src/surface_intersector.rs",
+      "sha256": "c1aaf4e2cb294d72dfbeacc0d630c7cf5fded7289f58863bff77d2fd51efb573"
+    },
+    {
+      "path": "docs/phase1/P04/PORT-CONSUMERS.md",
+      "sha256": "e0e03e8b5d1ad317f13712bdac617c810efcafd0640b1761a86d3750fd7b493f"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/drop-curve/generate.py",
+      "sha256": "ec977f9f0a6bef7c32199485a67e8e31ca998914e7be01819ec98e0b429e46f0"
+    }
+  ]
+}

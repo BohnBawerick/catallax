@@ -2421,6 +2421,7 @@ impl Tracer {
         &mut self,
         intersector: &Intersector<'_>,
         side: &SideCurve,
+        source_side: (usize, usize),
         mut solution: crate::solution::Solution,
         curves: &mut Vec<IntersectionCurve>,
         edge_crossings: &mut Vec<TsectPoint>,
@@ -2456,6 +2457,42 @@ impl Tracer {
         let mut uv: Vec<BSplineCurve> = Vec::with_capacity(2);
         let mut distances = [0.0; 2];
         for target in 0..2 {
+            let (owner, side_index) = source_side;
+            let axis = side_index % 2;
+            let closed = if axis == 0 {
+                intersector.closed_u[owner]
+            } else {
+                intersector.closed_v[owner]
+            };
+            if target == owner && closed {
+                // This curve is the requested domain's own iso-boundary,
+                // not an arbitrary curve being inverted onto a closed
+                // surface. Retain its side identity instead of asking the
+                // drop solver to choose between the two seam parameters.
+                let domain = intersector.domains[owner];
+                let boundary = if side_index < 2 {
+                    domain.min
+                } else {
+                    domain.max
+                };
+                let interval = curve.natural_interval();
+                let at = |t| {
+                    if axis == 0 {
+                        Vector3::new(boundary.x, t, 0.0)
+                    } else {
+                        Vector3::new(t, boundary.y, 0.0)
+                    }
+                };
+                let start = at(interval.min);
+                let end = at(interval.max);
+                if !domain.contains_point(Vector2::new(start.x, start.y), 0.0)
+                    || !domain.contains_point(Vector2::new(end.x, end.y), 0.0)
+                {
+                    return Err(Fault::InvalidInput.into());
+                }
+                uv.push(crate::line::Line::segment(start, end, true, Some(interval))?.make_nurb()?);
+                continue;
+            }
             let dropped = crate::surface_drop_curve::drop_and_trim_curve(
                 intersector.surfaces[target],
                 intersector.domains[target],
@@ -2592,6 +2629,7 @@ impl Tracer {
                             self.side_range_curve(
                                 intersector,
                                 side,
+                                (s, index),
                                 solution,
                                 curves,
                                 &mut edge_crossings,

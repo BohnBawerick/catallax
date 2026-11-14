@@ -1,0 +1,19 @@
+{
+  "kind": "publication-sanitized-artifact-digests",
+  "original_commit": "1df3b5889ac60bfcd65c1fcaf7229e0f22dfc312",
+  "method": "SHA-256 of the sanitized public artifacts listed below; source-manifest baseline-source digests remain unchanged. This file is not self-hashed. Original artifacts preserved in authorized private scratch.",
+  "artifacts": [
+    {
+      "path": "docs/phase1/P04/PORT-CONSUMERS.md",
+      "sha256": "e0e03e8b5d1ad317f13712bdac617c810efcafd0640b1761a86d3750fd7b493f"
+    },
+    {
+      "path": "evidence/phase1/P04/VALIDATION.md",
+      "sha256": "c346bd3cdb9715104047635395dafa5e7cc8ce3c9b73b7b2c18894e67f98df79"
+    },
+    {
+      "path": "evidence/phase1/P04/source-manifest.json",
+      "sha256": "f27d0d46aca28ac5c8f272c82b9cef78dd8c76394aa53c0d5d992a040a11fc97"
+    }
+  ]
+}

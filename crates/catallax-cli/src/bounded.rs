@@ -100,7 +100,9 @@ pub fn numerical_evidence_summary(evidence: &catallax_numbers::NumericalEvidence
 
 /// Public numerical build delivery. This format is separate from exact manifests
 /// and from complete bounded answers. It grants no export authority; `step` is null.
-/// Refusals publish neither a body nor partial acceptance evidence.
+/// Refusals publish neither a body nor partial acceptance evidence. A retained
+/// undecided decision keeps its code, detail and exact rational magnitude bound;
+/// that residual does not grant geometric accuracy or body acceptance.
 pub fn numerical_build_summary(
     result: &Result<catallax_app::NumericalBody, catallax_numbers::Refusal>,
 ) -> Value {
@@ -113,9 +115,15 @@ pub fn numerical_build_summary(
                 "numerical":numerical_evidence_summary(body.evidence()), "step":null})
         }
         Err(refusal) => {
+            let mut reason = json!({"code":refusal.code,"detail":refusal.detail});
+            if let Some(decision) = refusal.undecided() {
+                reason["undecided"] = json!({
+                    "code":decision.code, "detail":decision.detail,
+                    "bound":decision.bound.to_string()
+                });
+            }
             json!({"format":"catallax-numerical-result/1", "status":"refused", "proof":"refused", "exact":false,
-            "result":null, "numerical":null, "step":null,
-            "refusal":{"code":refusal.code,"detail":refusal.detail}})
+            "result":null, "numerical":null, "step":null, "refusal":reason})
         }
     }
 }

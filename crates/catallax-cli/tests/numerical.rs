@@ -162,3 +162,43 @@ fn malformed_records_and_underreported_repairs_do_not_form_evidence() {
         "numbers.invalid-numerical-evidence"
     );
 }
+
+#[test]
+fn numerical_refusals_keep_distinct_undecided_residual_bounds() {
+    use catallax_numbers::NotExact;
+    use numerical_cases::q;
+    let record = |bound| {
+        numerical_build_summary(&Err(Refusal::new(
+            "test.support-undecided",
+            "support decision stopped",
+        )
+        .keeping(NotExact {
+            code: "numbers.budget-exhausted",
+            detail: "direction sign unresolved".into(),
+            bound: q(bound),
+        })))
+    };
+    let narrow = record("1/3");
+    let wide = record("2/3");
+    assert_ne!(
+        narrow, wide,
+        "distinct retained bounds must remain distinguishable"
+    );
+    for (record, bound) in [(narrow, "1/3"), (wide, "2/3")] {
+        assert_eq!(record["refusal"]["code"], "test.support-undecided");
+        assert_eq!(record["refusal"]["detail"], "support decision stopped");
+        assert_eq!(
+            record["refusal"]["undecided"],
+            json!({
+                "code":"numbers.budget-exhausted", "detail":"direction sign unresolved", "bound":bound
+            })
+        );
+        assert_eq!(record["status"], "refused");
+        assert_eq!(record["exact"], false);
+        assert!(record["result"].is_null());
+        assert!(record["numerical"].is_null());
+        assert!(record["step"].is_null());
+    }
+    let plain = numerical_build_summary(&Err(Refusal::new("test.unsupported", "no decision")));
+    assert!(plain["refusal"].get("undecided").is_none());
+}

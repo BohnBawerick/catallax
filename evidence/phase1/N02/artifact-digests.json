@@ -1,1 +1,64 @@
-{}
+{
+  "baseline": "f26c898c94582dd640c754b210cca796071416d4",
+  "prerequisites": {
+    "N01": {
+      "pr": 603,
+      "merge": "f26c898c94582dd640c754b210cca796071416d4"
+    },
+    "P02": {
+      "pr": 599,
+      "merge": "416f4b46780a7cba576a44395da343f0e1be137d"
+    }
+  },
+  "method": "SHA-256 of final N02 public source, docs and retained records; this manifest is not self-hashed. Debug captures are actual numerical definitions/evidence and refusals, not a stable wire schema. Validation prose is a transcribed execution summary.",
+  "files": [
+    {
+      "path": "crates/catallax-topology/src/numerical.rs",
+      "sha256": "5c09a0c4685e117441819bc30acd00c5726f23d33e1aea1cdf1786c614fcb648"
+    },
+    {
+      "path": "crates/catallax-topology/tests/numerical_trim.rs",
+      "sha256": "0de9fda51109a0df9c6c25236d55d824227982f9b6761a535e3299851ed31d3d"
+    },
+    {
+      "path": "docs/interface-changes/2026-11-14-numerical-trim-sewing.md",
+      "sha256": "04b29db5090e9fa72876f7dbbef82d9473202f193c88f881e8db0e492b135215"
+    },
+    {
+      "path": "docs/phase1/N02/REPORT.md",
+      "sha256": "ffffd5a088eb1a4f1d878749c4de0741d17ed2ad15dc453e0d35d712afc20cc2"
+    },
+    {
+      "path": "evidence/phase1/N02/VALIDATION.md",
+      "sha256": "bf935b1e908c43afc8a4a0affb39984a336057f0727c2638ae60f39c7fb52461"
+    },
+    {
+      "path": "evidence/phase1/N02/crossing-refusal.txt",
+      "sha256": "c4497b5807ac99e7cc03bf843a74e8586faf99b8db2ee6043c643fa69fd54006"
+    },
+    {
+      "path": "evidence/phase1/N02/excessive-gap-refusal.txt",
+      "sha256": "4db32096a1aadcf1b7cbf5fa6609878305ced893f20f9b1333f57253be1e393f"
+    },
+    {
+      "path": "evidence/phase1/N02/near-gap.txt",
+      "sha256": "e1da0c5842e5cf40b562926d3618c07fdd83b39ce1c61670fb69cda92d2f5c75"
+    },
+    {
+      "path": "evidence/phase1/N02/outside-refusal.txt",
+      "sha256": "fde2b238d65eb004ca74ddb59187d4c33ff61a9767216523feab986931850ebc"
+    },
+    {
+      "path": "evidence/phase1/N02/reversed-refusal.txt",
+      "sha256": "c0557af74d888d2a6967acf7b91675d8bcaafe5d0952179ddfe440f91d22a555"
+    },
+    {
+      "path": "evidence/phase1/N02/self-crossing-refusal.txt",
+      "sha256": "3d9bfe17367da76e74e726e9c35b24bc4497bcdbb531dd3bd9fdec2bcea17661"
+    },
+    {
+      "path": "evidence/phase1/N02/touching-refusal.txt",
+      "sha256": "c4497b5807ac99e7cc03bf843a74e8586faf99b8db2ee6043c643fa69fd54006"
+    }
+  ]
+}

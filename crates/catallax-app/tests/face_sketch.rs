@@ -31,7 +31,7 @@ fn cut_profile() -> Value {
 }
 
 #[test]
-fn identity_copy_placements_keep_rational_face_axes() {
+fn identity_copy_placements_keep_the_attachment_frame() {
     let normal = RVector3::new(2.into(), 0.into(), 3.into());
     let x = RVector3::new(0.into(), 1.into(), 0.into());
     let plane = catallax_shapes::Plane {
@@ -39,6 +39,8 @@ fn identity_copy_placements_keep_rational_face_axes() {
         normal: normal.clone().into(),
         ref_dir: x.clone().into(),
     };
+    let expected =
+        Rotation::from_frame(&normal.to_real(), &x.to_real(), &mut Decider::default()).unwrap();
     for scale in [1, -2] {
         let mut placement = catallax_recipe::Pose::identity();
         placement.rotation[0] = Number::from(scale);
@@ -51,13 +53,15 @@ fn identity_copy_placements_keep_rational_face_axes() {
             &mut Decider::default(),
         )
         .unwrap();
-        assert_eq!(
-            pose.rotation.matrix()[1]
-                .each_ref()
-                .map(|v| v.as_rational()),
-            [Some(1.into()), Some(0.into()), Some(0.into())]
+        assert!(
+            pose.rotation
+                .matrix()
+                .iter()
+                .flatten()
+                .zip(expected.matrix().iter().flatten())
+                .all(|(actual, expected)| actual.same_definition(expected)),
+            "an identity copy changed the attachment frame's expression definitions"
         );
-        assert_eq!(pose.translation.y.as_rational(), Some(0.into()));
     }
 }
 

@@ -684,9 +684,7 @@ fn carrier_areas_of<'a>(
             .collect();
     };
     let board = Board {
-        slots: (0..carriers.len())
-            .map(|_| Mutex::new(Slot::Open))
-            .collect(),
+        slots: Mutex::new((0..carriers.len()).map(|_| Slot::Open).collect()),
         changed: Condvar::new(),
         next: AtomicUsize::new(0),
     };
@@ -737,8 +735,11 @@ enum Slot {
     Failed,
 }
 
+// One lock guards every slot. The writer waits on `changed` for slot after
+// slot, and a condition variable must always be used with the same mutex:
+// macOS panics on a second one.
 struct Board {
-    slots: Vec<Mutex<Slot>>,
+    slots: Mutex<Vec<Slot>>,
     changed: Condvar,
     next: AtomicUsize,
 }
@@ -758,11 +759,11 @@ struct Settle<'a> {
 
 impl Drop for Settle<'_> {
     fn drop(&mut self) {
-        let mut slot = locked(&self.board.slots[self.index]);
-        if matches!(*slot, Slot::Taken) {
-            *slot = Slot::Failed;
+        let mut slots = locked(&self.board.slots);
+        if matches!(slots[self.index], Slot::Taken) {
+            slots[self.index] = Slot::Failed;
         }
-        drop(slot);
+        drop(slots);
         self.board.changed.notify_all();
     }
 }
@@ -788,11 +789,11 @@ fn explore<F>(
             return;
         };
         {
-            let mut slot = locked(&board.slots[index]);
-            if !matches!(*slot, Slot::Open) {
+            let mut slots = locked(&board.slots);
+            if !matches!(slots[index], Slot::Open) {
                 continue;
             }
-            *slot = Slot::Taken;
+            slots[index] = Slot::Taken;
         }
         // The slot is settled on every path out, a panic included. A helper's
         // unwind stops at the board: the writer computes that carrier itself,
@@ -802,7 +803,7 @@ fn explore<F>(
             catallax_numbers::record(|| evaluate(carrier, &mut *worker))
         }));
         if let Ok((value, charges)) = recorded {
-            *locked(&board.slots[index]) = Slot::Done(Box::new(value), charges);
+            locked(&board.slots)[index] = Slot::Done(Box::new(value), charges);
         }
         drop(settle);
     }
@@ -815,24 +816,24 @@ fn take<F>(board: &Board, index: usize, dec: &mut Decider, evaluate: F) -> Resul
 where
     F: FnOnce(&mut Decider) -> Result<Ball, Refusal>,
 {
-    let mut slot = locked(&board.slots[index]);
+    let mut slots = locked(&board.slots);
     loop {
-        if matches!(*slot, Slot::Failed) {
-            drop(slot);
+        if matches!(slots[index], Slot::Failed) {
+            drop(slots);
             return evaluate(dec);
         }
-        if let Slot::Done(..) = *slot {
+        if let Slot::Done(..) = slots[index] {
             break;
         }
-        slot = board
+        slots = board
             .changed
-            .wait(slot)
+            .wait(slots)
             .unwrap_or_else(std::sync::PoisonError::into_inner);
     }
-    let Slot::Done(value, charges) = std::mem::replace(&mut *slot, Slot::Taken) else {
+    let Slot::Done(value, charges) = std::mem::replace(&mut slots[index], Slot::Taken) else {
         unreachable!("the wait stops only at a done slot")
     };
-    drop(slot);
+    drop(slots);
     if let Some(charges) = charges
         && charges.adopt(dec)
     {
@@ -1093,9 +1094,7 @@ mod carrier_unwind {
         let mut dec = Decider::default();
         let helpers = Helpers::new(&dec).expect("two threads run helpers");
         let board = Board {
-            slots: (0..carriers.len())
-                .map(|_| Mutex::new(Slot::Open))
-                .collect(),
+            slots: Mutex::new((0..carriers.len()).map(|_| Slot::Open).collect()),
             changed: Condvar::new(),
             next: AtomicUsize::new(0),
         };
@@ -1138,6 +1137,61 @@ mod carrier_unwind {
             }
             (areas, joined)
         })
+    }
+
+    // One helper takes both carriers and is slow on each, so the writer
+    // waits on the board for the first carrier and then for the second.
+    // Both waits must use the one lock the condition variable has seen:
+    // macOS panics on another.
+    #[test]
+    fn the_writer_waits_for_carrier_after_carrier_on_one_lock() {
+        let _threads = super::THREAD_COUNT_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        struct Restore;
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                set_threads(None);
+            }
+        }
+        let _restore = Restore;
+        set_threads(Some(NonZeroUsize::new(2).unwrap()));
+        let mut setup = Decider::default();
+        let first = carrier(&mut setup);
+        let second = carrier(&mut setup);
+        let carriers = [&first, &second];
+        let target = Rational::from_ratio(2, 1).unwrap();
+        let evaluate = |carrier: &BSplineSurface, worker: &mut Decider| {
+            if std::thread::current().name() == Some("carrier-slow-helper") {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            carrier.certified_area(&target, CARRIER_CELLS, CARRIER_BITS, worker)
+        };
+        let mut dec = Decider::default();
+        let helpers = Helpers::new(&dec).expect("two threads run helpers");
+        let board = Board {
+            slots: Mutex::new((0..carriers.len()).map(|_| Slot::Open).collect()),
+            changed: Condvar::new(),
+            next: AtomicUsize::new(0),
+        };
+        let areas: Vec<Ball> = std::thread::scope(|scope| {
+            std::thread::Builder::new()
+                .name("carrier-slow-helper".into())
+                .stack_size(helpers.stack_size())
+                .spawn_scoped(scope, || {
+                    helpers.run(|worker| explore(&carriers, &board, &helpers, &evaluate, worker));
+                })
+                .expect("helper thread");
+            (0..carriers.len())
+                .map(|index| {
+                    take(&board, index, &mut dec, |dec| {
+                        evaluate(carriers[index], dec)
+                    })
+                    .expect("the carrier's area is enclosed")
+                })
+                .collect()
+        });
+        assert_eq!(areas.len(), 2);
     }
 
     #[test]

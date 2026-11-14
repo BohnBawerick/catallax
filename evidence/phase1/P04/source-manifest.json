@@ -1,0 +1,808 @@
+{
+  "baseline": "f4db345f2e7c51835d1ebeba9f6446d117144117",
+  "method": "SHA-256 of tracked baseline files; fixture row counts are static data inspection, not executed oracle calls. Manifest inventory includes supporting sources, not a claim every function was reviewed.",
+  "sources": [
+    {
+      "path": "NOTICE",
+      "sha256": "92b2bf6b4778d4adc3b17ff4d78f95c02c3ba597d877d81cd863ee04c2f5f1c1"
+    },
+    {
+      "path": "ROADMAP.md",
+      "sha256": "36d582aedf0a19ca32d036e5f9431752d1d4c4d307d0fe5a91f4de4a5b4ded87"
+    },
+    {
+      "path": "crates/catallax-intersect/src/pair/trace_candidates.rs",
+      "sha256": "0fddc240f585f1cf1d0e5ab460b50abf5199afaeccb10d91ff20ac5c9428d7f2"
+    },
+    {
+      "path": "crates/catallax-intersect/src/pair/traced.rs",
+      "sha256": "d4e51325ee254be02beb926d043caf4a736e484ecb30cbf1272f69dd32f997b9"
+    },
+    {
+      "path": "crates/catallax-intersect/src/pair/traced/fitted.rs",
+      "sha256": "eff3a55858fa057a51e30a728ad7b79e7484d5c7734fc7c747ad8160f5ec8c87"
+    },
+    {
+      "path": "crates/catallax-intersect/src/pair/traced/sphere.rs",
+      "sha256": "eb5c50cc3215811e486ef37b539a5054ca89e4595a62fdde13efa0955904bfd4"
+    },
+    {
+      "path": "crates/catallax-trace/src/analytic_curve.rs",
+      "sha256": "0303eb0de49b08bd0e530d3d23838f55fd5d389b0cae7666744b59df38a2cc5e"
+    },
+    {
+      "path": "crates/catallax-trace/src/circle.rs",
+      "sha256": "ef0b8d7778bf44a36009abdbef3d287f1be27bd8140eeafbaf350fa56c6f2d1e"
+    },
+    {
+      "path": "crates/catallax-trace/src/conic.rs",
+      "sha256": "e40818ea3af0888220cc3a20f0745b66756c99308a8ffcbb264efa0dc55d8a8c"
+    },
+    {
+      "path": "crates/catallax-trace/src/curve.rs",
+      "sha256": "4289a6102ff3d98fe760dd2cf87868cdfeb12ed9a46ad2ce212d59c1b250fd29"
+    },
+    {
+      "path": "crates/catallax-trace/src/curve_arc.rs",
+      "sha256": "599afcd40291508bfa14e1c295723196b7c91ee3875fef9547891df78bf956ca"
+    },
+    {
+      "path": "crates/catallax-trace/src/curve_build.rs",
+      "sha256": "1575c9c2b1317ff788baec2d20356ef3e04386321db3a678da3f40737531c9fb"
+    },
+    {
+      "path": "crates/catallax-trace/src/curve_cache.rs",
+      "sha256": "1bf95167d2b483e78e69ab63ce899c83a59baf96304e8522641fd26d1fc24e57"
+    },
+    {
+      "path": "crates/catallax-trace/src/curve_compat.rs",
+      "sha256": "3a97b3e4ef22723c8cb193b59b6edf5c0457185f6730e50f7b692457bf3cd35f"
+    },
+    {
+      "path": "crates/catallax-trace/src/curve_curve.rs",
+      "sha256": "aabf7008995789692e14de76106bf51b13bce3cefa301134981cb76ae43f087e"
+    },
+    {
+      "path": "crates/catallax-trace/src/curve_degen.rs",
+      "sha256": "0b956992dfda2e1fa251e14bbd28ffc3e045782bce415796ca31cb7a7fc17b44"
+    },
+    {
+      "path": "crates/catallax-trace/src/curve_edit.rs",
+      "sha256": "e83d280ce82a357d836eded3bba1aaf0b2a924f690e975083ac83e0ec1f3c17b"
+    },
+    {
+      "path": "crates/catallax-trace/src/curve_fit.rs",
+      "sha256": "c6297422431f5004da9dc47c03ca476fe3789d8dff7354a9342cef2c1fe3e687"
+    },
+    {
+      "path": "crates/catallax-trace/src/curve_global.rs",
+      "sha256": "1e31c93e455379596bfb6cbbe32671a9cffb82fbc6d8f3e28324bc50b0d24fb5"
+    },
+    {
+      "path": "crates/catallax-trace/src/curve_nlib.rs",
+      "sha256": "9835b9ecd10b58b96d279f01856440d7517495e3fa26f47c0720632b0c7da44e"
+    },
+    {
+      "path": "crates/catallax-trace/src/curve_on_surface.rs",
+      "sha256": "abf5035ae429ba7efbdb6af32802ec4331def20fdb4c131a3fe9d6c7e85c40fa"
+    },
+    {
+      "path": "crates/catallax-trace/src/curve_solve.rs",
+      "sha256": "cfa6f982de7fbd7386d9df29bc8643a201b030dc183df4bddd308b66e1c598b2"
+    },
+    {
+      "path": "crates/catallax-trace/src/curve_surface.rs",
+      "sha256": "88a88724e72bbec70725cd40310f1261ab3fa0d93318b791c44fb74104348b63"
+    },
+    {
+      "path": "crates/catallax-trace/src/curve_surface_global.rs",
+      "sha256": "4a1037b2edd426c8725a8a47d92c4527ace12b2e776f37c363250db6505e773d"
+    },
+    {
+      "path": "crates/catallax-trace/src/extent.rs",
+      "sha256": "ff7ed920089898e2c6b3fc24540538e881902ca6c6691447c27f9fb69114ef55"
+    },
+    {
+      "path": "crates/catallax-trace/src/fillet_intersector.rs",
+      "sha256": "cf0018be40651b2c4df2fb1fce5db60eec831052e663d988d4f305a5462e57ae"
+    },
+    {
+      "path": "crates/catallax-trace/src/geometry.rs",
+      "sha256": "c2802d8add8dbbf8d14d54e994278e8bed2e18310378a46a9ce7a3dce94f79eb"
+    },
+    {
+      "path": "crates/catallax-trace/src/global_solver.rs",
+      "sha256": "89caac3ad166228b19c396bcd9c5f73c0ff9363013f3eb1b2c305c1d4da8aa1f"
+    },
+    {
+      "path": "crates/catallax-trace/src/hermite.rs",
+      "sha256": "67107f0441e9d30a5bb3974646043e29f2d5c95887a39426de5f0ae33d3feb0f"
+    },
+    {
+      "path": "crates/catallax-trace/src/iges_curve.rs",
+      "sha256": "03d7c9e0154ca656ddba2e7bf513b0b73ab32b02a035038715846ef2fefd2399"
+    },
+    {
+      "path": "crates/catallax-trace/src/lib.rs",
+      "sha256": "36ba0c137de24158e65d6918a1787f947c8e6d2606ce7369fb639ac2dbf36c2d"
+    },
+    {
+      "path": "crates/catallax-trace/src/line.rs",
+      "sha256": "e7bb75d304addd1816fe94aa47e25da46cf6b678508ccf9c6f99a5c6f79db48a"
+    },
+    {
+      "path": "crates/catallax-trace/src/line_surface.rs",
+      "sha256": "08025e6794a86b42f48cb0a9b640d407f9a3a80258b1dc993f4d1f5383afcc0d"
+    },
+    {
+      "path": "crates/catallax-trace/src/local_solve.rs",
+      "sha256": "9234172f600706f55f5374f64b785cbc561a912f82e1d817283b889a0b9e4974"
+    },
+    {
+      "path": "crates/catallax-trace/src/matrix.rs",
+      "sha256": "fe30ca7137eaa867d38c848c50040d56a70d7e68b328b7c62d49ce335f91dbd8"
+    },
+    {
+      "path": "crates/catallax-trace/src/plane.rs",
+      "sha256": "ebbc3d453184f3ee3fac9750acd898b46f2eaf8b6de8f297fff7ed6ef0a0c5fd"
+    },
+    {
+      "path": "crates/catallax-trace/src/polar_box.rs",
+      "sha256": "082818ad7d02a96bad362efb9ccb3ef60e67ba04dd02e851d0decd583857a326"
+    },
+    {
+      "path": "crates/catallax-trace/src/polynomial.rs",
+      "sha256": "5cf3bee7776636d2ae3e81c37ef99fa276130abf7cee2dc040ea721260e0c65f"
+    },
+    {
+      "path": "crates/catallax-trace/src/pseudo_box.rs",
+      "sha256": "1e9b96ab77dc447b27be99b1dacd077c81cc0c620f3194714518c057877f8b9a"
+    },
+    {
+      "path": "crates/catallax-trace/src/rolling_ball.rs",
+      "sha256": "e5db037500c448383bd507fdc2200f4ace33b2afae7b29969efba7bc15e32ada"
+    },
+    {
+      "path": "crates/catallax-trace/src/scalar.rs",
+      "sha256": "c8fcb73176c164e6864c4711bc43ae99a9dc470e05dc9219d4d5768e97c9746d"
+    },
+    {
+      "path": "crates/catallax-trace/src/search_math.rs",
+      "sha256": "10806c10cc43b289994873b18d1f77e6744f0fbfb2625c9b5b124759b5580c5a"
+    },
+    {
+      "path": "crates/catallax-trace/src/solution.rs",
+      "sha256": "f3958e349adee7c64ed642142341eaafeebf158a3d504d212262e15241f0551f"
+    },
+    {
+      "path": "crates/catallax-trace/src/spline.rs",
+      "sha256": "b53c7d26c8708c5a32478f27c3799c7d9870d06b04c05fa9b8b078fc783d4896"
+    },
+    {
+      "path": "crates/catallax-trace/src/surface_build.rs",
+      "sha256": "e17f9941d63c08dd190109ed975d38eeae68e948615673a2a1eeecf12f79d80d"
+    },
+    {
+      "path": "crates/catallax-trace/src/surface_cache.rs",
+      "sha256": "23ca39e6e7df71858b25be67d823f3f09f044c5852a56a020c6c08650ffda45a"
+    },
+    {
+      "path": "crates/catallax-trace/src/surface_curves.rs",
+      "sha256": "171c6f4d2c470c21369fd7639078d49612161825522d245bdaab9dee11fa74a6"
+    },
+    {
+      "path": "crates/catallax-trace/src/surface_drop.rs",
+      "sha256": "f547cf4b11709f1c11ded6adecb6b188e6fbe2e9e9899302def7d418b4ec7b47"
+    },
+    {
+      "path": "crates/catallax-trace/src/surface_drop_curve.rs",
+      "sha256": "bd4b48cba01696304b1e34cd2b4f5c8698667c699a6f618c8fe8a09b68f394e9"
+    },
+    {
+      "path": "crates/catallax-trace/src/surface_drop_general.rs",
+      "sha256": "67b08fbc956ae4ba85e5359336c284cd95fdf21209bc7505ab3bceedf3601b60"
+    },
+    {
+      "path": "crates/catallax-trace/src/surface_eval.rs",
+      "sha256": "51e8f6edb07fba96fbe93fe5e71864e4b9979f531b777faf29d636feb6cd6c34"
+    },
+    {
+      "path": "crates/catallax-trace/src/surface_extend.rs",
+      "sha256": "e93a3e57cbb06664b9425674f0b1163a4804353bef79f7c5fedceaa706d0caea"
+    },
+    {
+      "path": "crates/catallax-trace/src/surface_global.rs",
+      "sha256": "2aeb53db03f6e7d2a7e44838701036aefc9518de135f39f3c5d84843773cfa80"
+    },
+    {
+      "path": "crates/catallax-trace/src/surface_intersector.rs",
+      "sha256": "c1aaf4e2cb294d72dfbeacc0d630c7cf5fded7289f58863bff77d2fd51efb573"
+    },
+    {
+      "path": "crates/catallax-trace/src/surface_offset.rs",
+      "sha256": "4f67936a37766798a97cf194a11fda45c214a5f8d5557456c6d12be47f5c07d5"
+    },
+    {
+      "path": "crates/catallax-trace/src/surface_solve.rs",
+      "sha256": "ec651c455375b06dd21ee6ee546065ea87d463e4550e8797b3edcfd166f78a68"
+    },
+    {
+      "path": "crates/catallax-trace/src/surface_surface.rs",
+      "sha256": "3edd1c9b131f93aacbeae1d0e0b221f2bdcb97606ae47c8d3017fdd05d98326c"
+    },
+    {
+      "path": "crates/catallax-trace/src/surface_trace.rs",
+      "sha256": "cff006120ce8aa3daf7492eb2ea65e3b439d68b5b6685525c7545d25109417d8"
+    },
+    {
+      "path": "crates/catallax-trace/src/vector.rs",
+      "sha256": "8438fe2e938883c76c415144070146e49a50fdea410370baa0c828adcdae7dba"
+    },
+    {
+      "path": "crates/catallax-trace/tests/drop_curve.rs",
+      "sha256": "af92d6de2ea8e89970ac813b8a72fb4f4e3f5781f1767bb29abd12643e129ae8"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/conic/README.md",
+      "sha256": "9033d7e4034f7ae494564cfe7734f8fe2f961bf3fd5ff1f4d7bdb2245a9784af"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/conic/cases.txt",
+      "sha256": "af5734e56aab187479fe7722ac6b6973581b3f571ecb5755eb38550e90a7d273",
+      "noncomment_rows": 63,
+      "operations": {
+        "cubic": 17,
+        "quartic": 19,
+        "conic": 25,
+        "conicx": 2
+      }
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/curve-arc/README.md",
+      "sha256": "f8229fec7df79f4149f9c085cc7b35a8577434f6abce5c5cd87c702c4041d38d"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/curve-arc/cases.txt",
+      "sha256": "51dfbdd10dabc4257206b95bda5e1eefc4cbb610c188b3678f88fdc1cc395911",
+      "noncomment_rows": 2609,
+      "operations": {
+        "circle": 201,
+        "edit-end": 84,
+        "edit-end-invalid": 6,
+        "derivs": 1394,
+        "closest": 396,
+        "extract": 528
+      }
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/curve-build/README.md",
+      "sha256": "bfc98c80d37c1336205d52cc2e590815ff380e1b70a28cacf46e88344bf116fd"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/curve-build/cases.txt",
+      "sha256": "ca839f27b8f9169a813604fa6496ef5395b1cd0534a75a67dcd56ff1747370e2",
+      "noncomment_rows": 679,
+      "operations": {
+        "line": 25,
+        "point": 6,
+        "point-planar": 2,
+        "insert": 308,
+        "refine": 178,
+        "refine-unordered": 16,
+        "reparam": 120,
+        "reparam-nonincreasing": 24
+      }
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/curve-cache/README.md",
+      "sha256": "a6b6d94cfb49f675fbb422bd0adbad3aba81924dd9273d768e2ac32a9c3c2319"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/curve-cache/cases.txt",
+      "sha256": "076f925339ea6f48a810fb2f75a28e5b7bbb068dc2b40c20b17a9efad7ba7bb1",
+      "noncomment_rows": 18,
+      "operations": {
+        "cache": 18
+      }
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/curve-compat/README.md",
+      "sha256": "e2630c86e8740f7364313f85567f608ad27ba2207d0c20b70c4b6740c4f9506f"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/curve-compat/cases.txt",
+      "sha256": "5fdc3b0e287b231e0b6fd787b55938b08cf9701337f7cd0256a17b10ab596beb",
+      "noncomment_rows": 628,
+      "operations": {
+        "elevate": 331,
+        "remove": 219,
+        "knots": 35,
+        "sync": 40,
+        "sync-mixed-dimension": 3
+      }
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/curve-curve/README.md",
+      "sha256": "b3b3cb32f9b60484820fef3c22fbc5f62c1a24c108928dc0aa397f15f4ac412e"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/curve-curve/cases.txt",
+      "sha256": "3e40531f80e78db8684c38af17053c36099ba315716a3375d121c54fef63df8d",
+      "noncomment_rows": 744,
+      "operations": {
+        "global": 704,
+        "coincide": 24,
+        "known-miss": 16
+      }
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/curve-fit/README.md",
+      "sha256": "5cd4ce13e62f2bef2689539069d835d768c19622f328432163bad19048ff850c"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/curve-fit/cases.txt",
+      "sha256": "b284099e7d6838607492458549d6ae28e8256f85aea8d027e38717aa2493b64c",
+      "noncomment_rows": 1315,
+      "operations": {
+        "interpolate-planar": 60,
+        "interpolate": 1195,
+        "fair": 60
+      }
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/curve-global/README.md",
+      "sha256": "84eaec6fa3d6a93c56a0b18856a2bfe72451795780f0b9fe9c3bd5880be37de1"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/curve-global/cases.txt",
+      "sha256": "18bf92e71c9457d406a7e9c431074cd6682af945d7729ea733e9f29f8a3939e7",
+      "noncomment_rows": 1733,
+      "operations": {
+        "global": 1605,
+        "drop": 128
+      }
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/curve-on-surface/README.md",
+      "sha256": "93779be6b7ac17fb653156e69f2e12c478d4347af774771f5c3947c5090ba510"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/curve-on-surface/cases.txt",
+      "sha256": "951e3716471682d71896013f8b07e253aa19869f0eb65436ef91fac325c3475e",
+      "noncomment_rows": 1826,
+      "operations": {
+        "cos-eval": 110,
+        "cos-branch": 1716
+      }
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/curve-polar/README.md",
+      "sha256": "552263d07445266fc20edde0531fe812f3fdf64e0e6e9b9368d35b0d4aa53993"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/curve-polar/cases.txt",
+      "sha256": "03598427ff51926357e469b5d4e0bd2ffe4725918c65f8106da691fea5fae914",
+      "noncomment_rows": 898,
+      "operations": {
+        "line": 520,
+        "hermite": 378
+      }
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/curve-solve/README.md",
+      "sha256": "5854f8f5d1d670131ff3235aefe9a767f8b14ae5ad005866a81bf7fff1778e65"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/curve-solve/cases.txt",
+      "sha256": "bae151284b2df17a0226828106c19618fb1ff653ba677ffb31feb1099920ee2d",
+      "noncomment_rows": 60,
+      "operations": {
+        "point": 20,
+        "intersect": 15,
+        "solve": 4,
+        "maxdist": 5,
+        "coincide": 12,
+        "closed": 4
+      }
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/curve-surface/README.md",
+      "sha256": "020307bd86d6334778acd06290bd47f406f0deae689c15edaca7e6f266289bf0"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/curve-surface/cases.txt",
+      "sha256": "880c0a918399968a65cee6799035d0480c32145dcc4619134303405f8c749af9",
+      "noncomment_rows": 246,
+      "operations": {
+        "intersect": 30,
+        "solve": 22,
+        "coincide": 16,
+        "global": 161,
+        "grefuse": 1,
+        "sing": 16
+      }
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/drop-curve/README.md",
+      "sha256": "d7f6ef3f0a63cbdb2c940111233a86aeddfdd769e61425daf2b452c07788bd3a"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/drop-curve/cases.txt",
+      "sha256": "3f44e1021da9ed5a93ed8059821b00a71a06ad1c46975127e7e533719272b76a",
+      "noncomment_rows": 132,
+      "operations": {
+        "drop": 64,
+        "drefuse": 2,
+        "general": 66
+      }
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/drop-curve/generate.py",
+      "sha256": "ec977f9f0a6bef7c32199485a67e8e31ca998914e7be01819ec98e0b429e46f0"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/drop-start/README.md",
+      "sha256": "20608a61b4097a5c7e53b0279e59600959af016aa7a15f489cd0ad3ff458a4ee"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/drop-start/cases.txt",
+      "sha256": "995624b31221218bfa7c18a7979510dc6e7444be94dc8e3ec26d11f132151200",
+      "noncomment_rows": 41,
+      "operations": {
+        "start": 41
+      }
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/fillet-intersector/README.md",
+      "sha256": "2b25a9c78a9febae4398c5d15c1732d432c8b236accfb247ec7b97aa63c2025c"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/fillet-intersector/cases.txt",
+      "sha256": "00025e5035a44999cb4052bec5741343d23f33427a03005a885348dab5405cae",
+      "noncomment_rows": 632,
+      "operations": {
+        "fi-ctor": 34,
+        "fi-values": 60,
+        "fi-delta": 48,
+        "fi-law": 37,
+        "fi-next": 253,
+        "fi-span": 200
+      }
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/fillet-trace/README.md",
+      "sha256": "f54ce5925c5904816b7b127f8e822fa341363f6c6029cde718576de3bc0d3568"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/fillet-trace/cases.txt",
+      "sha256": "54caccd18b5de8f0688d71b6c24d44faf0df8ba184f7a87af72388b7aa3163e5",
+      "noncomment_rows": 295,
+      "operations": {
+        "fi-trace": 295
+      }
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/foundation/README.md",
+      "sha256": "5d42614490cc3b6caa121d4ffcad8d95d48968e9e53ccc401763ea9554bfb6c7"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/foundation/cases.txt",
+      "sha256": "6b99bc970b409571254f0601058fe66ef9c84b78c67f41705953c1e27830db32",
+      "noncomment_rows": 183,
+      "operations": {
+        "angle": 16,
+        "unitize": 6,
+        "parallel": 5,
+        "perp": 4,
+        "ortho": 5,
+        "uderiv": 2,
+        "divassign3": 5,
+        "div2": 4,
+        "closer": 3,
+        "differs2": 3,
+        "ext1": 8,
+        "ext2": 6,
+        "clip": 9,
+        "ext3": 7,
+        "triarea": 6,
+        "tripoint": 13,
+        "linepoint": 4,
+        "lineclosest": 4,
+        "segpoint": 6,
+        "segangle": 6,
+        "linecircle": 10,
+        "twoplanes": 7,
+        "threeplanes": 5,
+        "planedist": 3,
+        "ptproj": 2,
+        "vecproj": 2,
+        "lincomb": 5,
+        "det3": 2,
+        "frenet": 8,
+        "continuity": 17
+      }
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/intersector/README.md",
+      "sha256": "cb2d09974d4da82efc057f609f7d7a36e9e7df2102e88771cf1539a3acc456f7"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/intersector/cases.txt",
+      "sha256": "7982db38936ec9173a8b21c919267b782bc35401f971ea72f8bc44eb9dfd6526",
+      "noncomment_rows": 616,
+      "operations": {
+        "search": 94,
+        "planes": 94,
+        "boundary": 94,
+        "intersect": 94,
+        "point": 78,
+        "step": 60,
+        "trace": 18,
+        "classify": 23,
+        "self": 61
+      }
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/local-solve/README.md",
+      "sha256": "3fdc43cca5f3865ee16a9d05b9cc092dfe88be8c01530b25bb3e70c8edf90468"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/local-solve/cases.txt",
+      "sha256": "461d33c5f4c904a3729f4e62a9d937499afdf775fc608f7668efd64a2c093a0f",
+      "noncomment_rows": 56,
+      "operations": {
+        "solve1": 34,
+        "solven": 22
+      }
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/offset-curve-surface/README.md",
+      "sha256": "d9fb95945d207a304d730bb07f65c24a481054bf0e0b01a794b8e3274b5c4d47"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/offset-curve-surface/cases.txt",
+      "sha256": "11404fc75db5adbc7e2fad6f3e6e8653ad761acab104da531f100fcef2b854f3",
+      "noncomment_rows": 545,
+      "operations": {
+        "oc-intersect": 415,
+        "oc-solve": 46,
+        "oc-sing": 84
+      }
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/offset-extend/README.md",
+      "sha256": "44208d07beaa62ddcefa77ec8fd8a9276e071e7ecf705e2ea13829c2af8f18ee"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/offset-extend/cases.txt",
+      "sha256": "2b19d4628302fd31a271e7502dd1b6db81a067aa36157c208d002b32af93dd4e",
+      "noncomment_rows": 1080,
+      "operations": {
+        "ox-seq": 1080
+      }
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/output-curves/README.md",
+      "sha256": "f98d501f407c6dba6c2ff7acee4bf2e89f106e35025911144951cb7a0a5d363b"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/output-curves/cases.txt",
+      "sha256": "d81123298501a2f54f05b0f68b94563a555d52687b4b6332209266684bb5e153",
+      "noncomment_rows": 2518,
+      "operations": {
+        "line": 520,
+        "hermite": 378,
+        "clip": 180,
+        "reparam": 144,
+        "trim": 553,
+        "trim-short": 210,
+        "trim-whole": 62,
+        "canon": 471
+      }
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/plane/README.md",
+      "sha256": "6016e62c48c17ef6d7e13bcaaad070842b02b148edf39fabca38680666718bd5"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/plane/cases.txt",
+      "sha256": "0e5f70f9578795b0c43c39d8536df5ac3263b4b507b09735f8f4374659ed891f",
+      "noncomment_rows": 719,
+      "operations": {
+        "net": 6,
+        "point": 60,
+        "normal": 30,
+        "flags": 30,
+        "eval": 180,
+        "drop": 216,
+        "global": 162,
+        "cs": 35
+      }
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/rolling-ball/README.md",
+      "sha256": "b72cc3caa903ac0091e90f964108328acc043820e2e6e853f78e15231ad68ab4"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/rolling-ball/cases.txt",
+      "sha256": "b0b65a865bebb75836baf88963162b90c7c740eeccd85b7b7c2461c535cc5d39",
+      "noncomment_rows": 305,
+      "operations": {
+        "rb-surface": 81,
+        "rb-point": 53,
+        "rb-step": 159,
+        "rb-step-extended": 4,
+        "rb-step-failed": 8
+      }
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/search/README.md",
+      "sha256": "0af42c3dc9ff265572f7393e5b4554999608dfd791668115ff4f2028340d56c4"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/search/cases.txt",
+      "sha256": "10e35ca273b6af2d8738dc223adb682ac0947d271c1c929c404fc3e1bb8fd2c4",
+      "noncomment_rows": 1286,
+      "operations": {
+        "solcmp": 126,
+        "solidx": 98,
+        "addsorted": 164,
+        "array": 18,
+        "branch": 673,
+        "tree": 141,
+        "solve": 66
+      }
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/spline/README.md",
+      "sha256": "4639d1154c2a784c741aae0943372e1fa3713331add9e27d892fb4f97357458d"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/spline/cases.txt",
+      "sha256": "7bd84bf31bd8ea3576ebb9cc485d391d62c4ece2416a7c5aba311c7b411c7e33",
+      "noncomment_rows": 1075,
+      "operations": {
+        "curve": 955,
+        "surface": 120
+      }
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/surface-build/README.md",
+      "sha256": "9b7a569cd6a6510fb6af8b60c4004f4e7c9c2c5705f4281e556e1b1c5fa59704"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/surface-build/cases.txt",
+      "sha256": "e5d3e447d597f4dc8f2a84f3ed357f545f1fdc8870aa08c7319088fb1a78c392",
+      "noncomment_rows": 611,
+      "operations": {
+        "ruled": 196,
+        "reparam": 90,
+        "reparam-single": 30,
+        "revolve": 295
+      }
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/surface-cache/README.md",
+      "sha256": "4d83feafa24fea326cde5866cd2912fb34d4dfffa025860375390d26502f7959"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/surface-cache/cases.txt",
+      "sha256": "cbfe5a758c033cdff3cf263fb68738d09bbaa2e66b892d7d0bc4087e868f75d5",
+      "noncomment_rows": 231,
+      "operations": {
+        "cache": 33,
+        "net": 33,
+        "cont": 33,
+        "bbox": 33,
+        "planes": 14,
+        "polar": 17,
+        "polarbox": 68
+      }
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/surface-drop/README.md",
+      "sha256": "6b6c7cf9d705eec2ac70cd4cc296fbead6c980c57a04b5801d31a3d567f1808d"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/surface-drop/cases.txt",
+      "sha256": "c7eb6fdeebdf9a4a34441c05dffbf6a0518abe516989ed30d0c821f69a8c1a64",
+      "noncomment_rows": 452,
+      "operations": {
+        "drop": 452
+      }
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/surface-eval/README.md",
+      "sha256": "f6c7d7e90381efdcb7d315deb2dc46b48a010e2921555fdf2c81083ac0112d98"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/surface-eval/cases.txt",
+      "sha256": "572f06cfe05516125d38729b5a0c6b1a6c9b03a28cb65b76e5a19a9fef94a6d4",
+      "noncomment_rows": 140,
+      "operations": {
+        "point": 28,
+        "eval": 69,
+        "simple": 10,
+        "normal": 33
+      }
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/surface-extend/README.md",
+      "sha256": "530b72deed003933a61001089e32aff63065b2af9c76f343f70f3099dee67984"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/surface-extend/cases.txt",
+      "sha256": "7318f98e7bd1eebfe1e26795aed50880c4befccfbf36ed9694e2f93063353a55",
+      "noncomment_rows": 1382,
+      "operations": {
+        "srf-remove": 922,
+        "srf-remove-overrun": 25,
+        "srf-extend": 435
+      }
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/surface-offset/README.md",
+      "sha256": "c45ad66723243875917d038837a1feb8291c6bc278642e64949c08ed851ac969"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/surface-offset/cases.txt",
+      "sha256": "748da98f28dd0c18df262507f98e026fea4eb755bceaf604ab2d9d27d7245422",
+      "noncomment_rows": 1914,
+      "operations": {
+        "offset-point": 225,
+        "offset-normal": 225,
+        "offset-eval": 1464
+      }
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/surface-solve/README.md",
+      "sha256": "9ef72faa34ad4274914b3b7f769dc6054ee31dc49a122a84326766f360b07c5d"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/surface-solve/cases.txt",
+      "sha256": "2dfc3782f39b166a03dccc6115c094b0e253d4aaff3f7df0d09375eefb56a300",
+      "noncomment_rows": 312,
+      "operations": {
+        "solve": 196,
+        "global": 116
+      }
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/surface-surface/README.md",
+      "sha256": "2656132dda6c7606c06453592ae4da1e4f295e0a12f196dbb854caa46b23e607"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/surface-surface/cases.txt",
+      "sha256": "a2c53b1c06dc156a788dd64576c5428de7eab4eb6d8d834b7639de23f13e92ee",
+      "noncomment_rows": 269,
+      "operations": {
+        "lsi": 251,
+        "lss": 18
+      }
+    },
+    {
+      "path": "crates/catallax-trace/tests/intersector.rs",
+      "sha256": "7192d72f925b52a2216c1afa2e43953a2be6dad790bcfec674aa3ffed05fccb6"
+    },
+    {
+      "path": "docs/M25-INTERSECTION-PORT-SCOPE.md",
+      "sha256": "49e27c414ba7410ec1ef63b829bd05395b027d1baca7035ddbc74dee8e07ece4"
+    },
+    {
+      "path": "docs/M27-SPLINE-FILLET-SCOPE.md",
+      "sha256": "489cf281e2c5112e816e46acbde487c438ace174f044df6eb190a10356a06b34"
+    },
+    {
+      "path": "docs/M8-LATER-CUTS.md",
+      "sha256": "18e5dd51bf77e7af74c1430731b8c15074eb1ee94305408d0505ffa0ddf24f52"
+    },
+    {
+      "path": "docs/M9-KNOWN-SMLIB-MISSES.md",
+      "sha256": "354324f2166327076b636b07ebcc8616cfa7dc6c3cf110ba4653c3394602fcab"
+    },
+    {
+      "path": "docs/THIRD-PARTY.md",
+      "sha256": "e3356f63cb9336c553151fd1724a8d6fb0579ff634d4c6c6318d9b73f798473b"
+    }
+  ]
+}

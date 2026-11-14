@@ -1,7 +1,7 @@
 //! Two-way sampled display comparison. Agreement is not a global Hausdorff
 //! certificate or a pre-export accuracy certificate. Imported definitions also
 //! compare exact containment samples and independent volume enclosures.
-//! See `docs/PLAN.md` for coverage and measured costs.
+//! See `docs/archive/PLAN-2026-11.md` for coverage and measured costs.
 #![forbid(unsafe_code)]
 
 use catallax_numbers::{Interval, Rational, Refusal};

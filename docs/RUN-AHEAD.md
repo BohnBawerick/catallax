@@ -1,6 +1,6 @@
 # How the exact kernel uses every core
 
-The exact kernel's STEP export uses every available core by default, and so do four checks that take about half the time in a Boolean of flat and round faces. The rest of the Boolean can use them behind a setting and is slower that way today. An answer, a refusal, a work count and every output byte are the same at any thread count, one included, with the setting on or off. This page says how that is done, what a thread may not touch, where the threads work and where they do not pay yet. It is the first step of decision L1 of [PLAN.md](PLAN.md#124-named-for-later). The measurement that preceded it is R5.
+The exact kernel's STEP export uses every available core by default, and so do four checks that take about half the time in a Boolean of flat and round faces. The rest of the Boolean can use them behind a setting and is slower that way today. An answer, a refusal, a work count and every output byte are the same at any thread count, one included, with the setting on or off. This page says how that is done, what a thread may not touch, where the threads work and where they do not pay yet. It is the first step of decision L1 of [PLAN.md](archive/PLAN-2026-11.md#124-named-for-later). The measurement that preceded it is R5.
 
 ## 1. The settings
 

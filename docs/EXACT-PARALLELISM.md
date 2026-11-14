@@ -135,7 +135,7 @@ Ordered can fall below Unshared. It sends every merge through one chain per loop
 
 ### 4.3 By Boolean stage, measurement and export
 
-The table [PLAN.md](PLAN.md#126-robustness-and-many-core-steps) asks for: total work, the longest chain that must run in order, and their ratio, for the three slow P0 cases and P1 to P5. Work by stage is summed over every Boolean in the build.
+The table [PLAN.md](archive/PLAN-2026-11.md#126-robustness-and-many-core-steps) asks for: total work, the longest chain that must run in order, and their ratio, for the three slow P0 cases and P1 to P5. Work by stage is summed over every Boolean in the build.
 
 | Case | Intersect | Imprint | Classify | Sew | Other build | Measurement and certification | STEP export |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |

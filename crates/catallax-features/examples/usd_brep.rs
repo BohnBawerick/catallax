@@ -1,6 +1,6 @@
 //! One-way USD BRep export of analytic-square-through-hole/1 only.
 //! Run with OUT HEIGHT PLACEMENT SOURCE_COMMIT. HEIGHT is 2 or 3; PLACEMENT is
-//! identity or placed. See docs/PLAN.md, Optional USD BRep and Omniverse exchange.
+//! identity or placed. See docs/archive/PLAN-2026-11.md, Optional USD BRep and Omniverse exchange.
 use std::{collections::BTreeMap, error::Error, fmt::Write as _, fs, path::Path};
 
 use catallax_features::evaluate;

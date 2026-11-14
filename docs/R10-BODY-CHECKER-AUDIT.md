@@ -2,7 +2,7 @@
 
 Research date: 11 November 2026, against main
 `54c4b1860ddca18397b4849cde2ea8629ad31cfb`. This is the audit that
-[PLAN.md R10](PLAN.md#126-robustness-and-many-core-steps) places in M12's exit
+[PLAN.md R10](archive/PLAN-2026-11.md#126-robustness-and-many-core-steps) places in M12's exit
 run. It decides nothing by itself: the decision on the independent body checker
 is taken after M12, from these numbers. No kernel behaviour, saved answer,
 tolerance or work allowance changes. The only code is two read-only research

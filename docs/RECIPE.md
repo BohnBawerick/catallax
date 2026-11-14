@@ -422,8 +422,13 @@ Normal circular sweeps retain each side cylinder's exact squared radius. A ratio
 | `x_direction` | nonzero direction whose projection onto the plane defines local X |
 | `offset` | signed distance along the selected unit normal |
 | `distance` | signed sweep length along that normal, not zero |
+| `placement` | optional model-space pose applied after attachment; identity by default |
 
 Let `n` be the exact unit normal selected by `normal_direction` and `o` the projection of world zero onto the supporting plane. Normalize the projection of `x_direction` onto the plane to obtain `x`; set `y = n × x`. A profile point `(u,v)` starts at `o + offset n + u x + v y`. Sweep it by `distance n`. Normalization may be algebraic. No rational-quaternion fit or geometric tolerance changes the supporting plane.
+
+Feature copies keep the profile local and compose their model-space pose into `placement`. The carrier body is a reference context, bound through the instance's `origins` map, not the accumulating Boolean target. Copying the carrier in the same feature graph, sharing its local profile with a world-space feature, and reflected feature copies are refused.
+
+The field interpreter recovers the carrier's certified planar boundary before resolving an origin. Removed faces cannot supply a plane. A carrier outside that recovery path is refused rather than resolved from stale face candidates.
 
 Both kernels build the local sweep and apply this exact rigid placement. Names are the same `start`, `end` and `side` roles as `extrude`. A missing face, nonplanar match, conflicting planes, tangential normal direction, parallel X direction, nonlocal profile or zero distance is refused. The result is a tool body, not an automatic union or subtraction.
 

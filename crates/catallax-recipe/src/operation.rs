@@ -153,6 +153,9 @@ pub enum Operation {
         offset: Number,
         /// Signed length along local Z, not zero.
         distance: Number,
+        /// Model-space placement after attachment, used by feature copies.
+        #[serde(default)]
+        placement: Pose,
     },
     /// Cuts a profile through a target in both directions, without end caps.
     ExtrudeThrough {

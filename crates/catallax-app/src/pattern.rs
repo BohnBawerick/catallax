@@ -16,7 +16,7 @@ pub struct FeatureInstance {
     pub steps: BTreeMap<StepId, StepId>,
     /// Every external input and the actual earlier body/profile/path read by this instance.
     pub inputs: BTreeMap<StepId, StepId>,
-    /// Every external origin creator and its explicit binding. Identity is explicit too.
+    /// Every external origin creator and reference context. Identity is explicit too.
     pub origins: BTreeMap<StepId, StepId>,
 }
 
@@ -178,6 +178,14 @@ fn geometry(op: &mut Operation, recipe: &Recipe, map: &Isometry) -> Result<(), R
                 *direction = Some(save_vector(map.apply_vector(&n))?);
             }
         }
+        ExtrudeOnFace { placement, .. } => {
+            if map.reversing() {
+                return Err(bad(
+                    "reflection of a face-mounted feature is not implemented",
+                ));
+            }
+            *placement = save_pose(map, placement, 2)?;
+        }
         Revolve { axis, .. } => {
             p(&mut axis.point)?;
             axial(&mut axis.direction)?;
@@ -289,6 +297,7 @@ fn rewrite(
         Value::Object(values) => {
             let input_object = values.contains_key("op")
                 || values.contains_key("profile") && values.contains_key("start");
+            let face_context = values.get("op").and_then(Value::as_str) == Some("extrude_on_face");
             if let Some(source) = values.get("step").and_then(Value::as_str)
                 && reflected_blocks.iter().any(|id| id.as_str() == source)
                 && let Some(segment) = values
@@ -314,11 +323,12 @@ fn rewrite(
                     let source =
                         StepId::new(value.as_str().ok_or_else(|| bad("invalid step binding"))?)
                             .map_err(|e| bad(e.to_string()))?;
-                    let table = if key == "step" { references } else { bindings };
+                    let reference = key == "step" || face_context && key == "body";
+                    let table = if reference { references } else { bindings };
                     let target = table.get(&source).ok_or_else(|| {
                         bad(format!(
                             "missing explicit {} binding for {source}",
-                            if key == "step" { "origin" } else { "input" }
+                            if reference { "reference" } else { "input" }
                         ))
                     })?;
                     *value = Value::String(target.as_str().into());
@@ -361,6 +371,32 @@ pub fn expand_feature(
                 .ok_or_else(|| bad(format!("unknown graph step {id}")))
         })
         .collect::<Result<Vec<_>, _>>()?;
+    let local_profiles = source
+        .iter()
+        .filter_map(|step| match &step.op {
+            Operation::ExtrudeOnFace { profile, .. } => Some(profile),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+    // shortcut: carrier copies and shared local/world profiles need frame rebasing first.
+    for step in &source {
+        if let Operation::ExtrudeOnFace { body, .. } = &step.op {
+            if ids.contains(body) {
+                return Err(bad(
+                    "a face-mounted feature needs an external support context",
+                ));
+            }
+        } else if step
+            .op
+            .inputs()
+            .iter()
+            .any(|(input, _)| local_profiles.contains(input))
+        {
+            return Err(bad(
+                "a face-mounted profile cannot also drive a world-space feature",
+            ));
+        }
+    }
     let mut expanded = recipe.clone();
     for instance in instances {
         let placement = instance.placement.reduced(dec)?;
@@ -385,7 +421,9 @@ pub fn expand_feature(
         }
         for step in &source {
             let mut op = step.op.clone();
-            geometry(&mut op, recipe, &placement)?;
+            if !local_profiles.contains(&step.id) {
+                geometry(&mut op, recipe, &placement)?;
+            }
             let mut saved = serde_json::to_value(op).expect("operation serialises");
             rewrite(
                 &mut saved,

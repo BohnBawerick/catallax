@@ -734,6 +734,7 @@ fn evaluate_impl(
                     x_direction,
                     offset,
                     distance,
+                    placement,
                 } => {
                     let profile = &profiles[profile];
                     crate::check_face_profile(&profile.pose, dec)?;
@@ -765,8 +766,10 @@ fn evaluate_impl(
                         &vector(normal_direction),
                         &vector(x_direction),
                         offset.value(),
+                        placement,
                         dec,
                     )?;
+                    let map = Isometry::from(&map);
                     let local = crate::extrude::extrude_with_decider(
                         model,
                         profile,
@@ -782,7 +785,12 @@ fn evaluate_impl(
                         radius: support.radius.clone()
                             + profile_radius(profile)
                             + offset.value().abs()
-                            + distance.value().abs(),
+                            + distance.value().abs()
+                            + placement
+                                .translation
+                                .0
+                                .iter()
+                                .fold(Rational::zero(), |sum, n| sum + n.value().abs()),
                     }
                 }
                 Operation::Loft { sections, shape } => {

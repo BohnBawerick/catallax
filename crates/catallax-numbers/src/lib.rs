@@ -27,6 +27,7 @@ mod identity;
 mod integer;
 mod interval;
 mod marks;
+mod numerical;
 mod operation;
 mod outcome;
 pub use operation::{
@@ -72,6 +73,7 @@ pub use facts::{Fact, FactBook, FactKind, FactOrigin, FactRead};
 pub use integer::{Integer, ParseErrorKind, ParseNumberError, Sign};
 pub use interval::Interval;
 pub use marks::{BoundKind, Mark, MarkLog};
+pub use numerical::{NumericalCheck, NumericalEvidence, NumericalRepair, NumericalSample};
 pub use outcome::{
     Answer, Answered, Coincidence, NotExact, Outcome, Refusal, StrictOrder, StrictSign, ZeroProof,
 };

@@ -5,6 +5,23 @@ use catallax_shapes::*;
 use common::*;
 
 #[test]
+fn rational_frames_keep_rational_coefficients() {
+    let vector = |[x, y, z]: [i64; 3]| Vector3::new(x.into(), y.into(), z.into());
+    for (normal, x) in [
+        ([0, 0, 1], [1, 0, 0]),
+        ([0, -1200, 0], [1, 0, 0]),
+        ([3, 4, 0], [0, 0, 5]),
+    ] {
+        let frame =
+            Rotation::from_frame(&vector(normal), &vector(x), &mut Decider::default()).unwrap();
+        assert!(
+            frame.rational_matrix().is_some(),
+            "normal={normal:?}, x={x:?}"
+        );
+    }
+}
+
+#[test]
 fn a_frame_keeps_an_irrational_normal_and_exact_lengths() {
     let mut dec = Decider::default();
     let n = Vector3::new(4.into(), 0.into(), 5.into());

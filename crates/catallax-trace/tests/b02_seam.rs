@@ -242,7 +242,9 @@ fn cases() -> Vec<Case> {
 #[test]
 fn seam_ranges_are_complete_clipped_and_period_translated() {
     let cases = cases();
-    for family in cases.chunks_exact(4) {
+    let (families, remainder) = cases.as_chunks::<4>();
+    assert!(remainder.is_empty());
+    for family in families {
         let expected = run(family[0]).normalized;
         for &case in &family[1..] {
             assert_eq!(run(case).normalized, expected, "{case:?}");

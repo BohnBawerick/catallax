@@ -1,5 +1,15 @@
 # B02: retain a closed seam range's source-side parameters
 
+P2 correction at reviewed head `32e460b40e6918b0c42d1666446217cd7ffb67b6`:
+the native owning UV identity is now guarded through source-side pretrim,
+initial clipping and opposite-side reclip. If trim enters short-span processing,
+identity is not established and the seam path returns a typed refusal instead
+of advertising zero owning drop with a changed parameterization. The reported
+nonuniform helper mismatch was executed and confirmed; see
+[before/after evidence](../../../evidence/phase1/B02/P2/VALIDATION.md).
+The same repair uses fixed-array chunk iteration in the existing 128-case test,
+with an empty-remainder assertion and no lint suppression.
+
 A rational cylinder cut by its tangent plane along the closed seam now returns one tangent range over the requested clipped domains, in either axial direction. Previously the full-period case returned `NotPorted(Intersect)` although either half-period returned one component. The repair retains the source iso-boundary's UV identity in `surface_trace.rs`; it does not port general ambiguous seam inversion.
 
 **Partial B02 evidence:** candidate results and typed refusals are deterministic at actual 1, 2 and 4 validation workers. Application work equality is unmeasured because this direct candidate API exposes no request work counter. This is not full B02 work qualification, an application acceptance proof, or production parallelism.
@@ -16,7 +26,7 @@ No named application recipe was replayed. This establishes a public candidate-le
 
 The cylinder's u-min and u-max sides are the same physical ruling. The existing long-range branch trims that side, then asks the general drop to invert it onto both surfaces. Inverting onto its own closed surface produces the two seam parameter solutions and hits the documented refusal. The curve already carries an unambiguous source-side identity; the search discarded that information before calling the drop.
 
-The private range helper now receives `(surface index, side index)`. Only when the target is that source surface and the side's fixed axis is closed does it build the known UV line: `(fixed side u, t)` or `(t, fixed side v)`, with the trimmed curve's own interval. It checks endpoints against the requested source domain. The other surface's drop, trimming, distance filter, classification and existing duplicate removal stay in place. The owning side's drop distance is zero by construction; it is not a newly accepted numerical projection. The later independent Catallax proof boundary is unchanged.
+The private range helper now receives `(surface index, side index)`. Only when the target is that source surface and the side's fixed axis is closed does it build the known UV line: `(fixed side u, t)` or `(t, fixed side v)`, with the trimmed curve's own interval. It checks endpoints against the requested source domain. The other surface's drop, trimming, distance filter, classification and existing duplicate removal stay in place. For trims that do not enter short-span processing, the owning side's drop distance is zero by construction; it is not a newly accepted numerical projection. The later independent Catallax proof boundary is unchanged.
 
 This bounded construction avoids choosing an arbitrary seam solution. It does not change `surface_drop_curve.rs`'s general two-solution refusal, projected-drop refusal or tracer fallback. It does not add a general closed-surface seam walker, seam jump continuation or donor-parity claim for new positive outputs. The established source iso-curve identity justifies this range construction without C++ oracle regeneration.
 

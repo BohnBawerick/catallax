@@ -1,3 +1,7 @@
+> Historical B02 implementation evidence at `32e460b40e6918b0c42d1666446217cd7ffb67b6`.
+> For the parameter-identity repair and current focused results, see [P2/VALIDATION.md](P2/VALIDATION.md).
+> Original capture bytes are preserved; earlier results do not qualify the new guard by themselves.
+
 # B02 executed evidence
 
 Baseline: `3a2f4e0c65feae548f4980d5c520a0c330acf6fb`.

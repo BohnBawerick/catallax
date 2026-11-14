@@ -1,0 +1,4 @@
+Refusal {
+    code: "numerical.invalid-trim",
+    detail: "outer and hole boundaries share an endpoint",
+}

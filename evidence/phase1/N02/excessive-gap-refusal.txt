@@ -1,0 +1,4 @@
+Refusal {
+    code: "numerical.repair-tolerance-exceeded",
+    detail: "sewing gap exceeds the local tolerance",
+}

@@ -1,0 +1,4 @@
+Refusal {
+    code: "numerical.invalid-trim",
+    detail: "parameter loop orientation disagrees with material normal",
+}

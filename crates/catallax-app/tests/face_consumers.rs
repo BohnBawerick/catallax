@@ -62,6 +62,7 @@ fn volume(recipe: &Recipe, expected: i64) {
         mass.volume.contains(&Rational::from_i64(expected)),
         "{mass:?}"
     );
+    assert!(mass.volume.width() <= Rational::parse("1e-9").unwrap());
 }
 
 fn location(recipe: &Recipe, at: [i64; 3], inside: bool) {

@@ -1,0 +1,148 @@
+{
+  "format": "catallax-operation-log/1",
+  "marks": [],
+  "operations": [
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 0,
+        "max_bits_high_water": 0,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 0
+      },
+      "id": "section",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "sketch",
+      "refusal": null,
+      "sequence": 0,
+      "status": "answered",
+      "wall_ms": 0.12651700000000002,
+      "work": {
+        "after": 1,
+        "before": 0,
+        "used": 1
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 0,
+        "max_bits_high_water": 0,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 0
+      },
+      "id": "base",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "extrude",
+      "refusal": null,
+      "sequence": 1,
+      "status": "answered",
+      "wall_ms": 0.055414000000000005,
+      "work": {
+        "after": 1,
+        "before": 1,
+        "used": 0
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 3,
+        "filter": 1,
+        "max_bits_high_water": 0,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 4
+      },
+      "id": "drafted",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "draft",
+      "refusal": null,
+      "sequence": 2,
+      "status": "answered",
+      "wall_ms": 0.532818,
+      "work": {
+        "after": 3382,
+        "before": 1,
+        "used": 3381
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 0,
+        "max_bits_high_water": 0,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 0
+      },
+      "id": "drafted",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "summarize",
+      "refusal": null,
+      "sequence": 3,
+      "status": "answered",
+      "wall_ms": 0.0049099999999999994,
+      "work": {
+        "after": 3383,
+        "before": 3383,
+        "used": 0
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 0,
+        "max_bits_high_water": 132,
+        "not_exact": 0,
+        "refined": 2,
+        "refused": 0,
+        "total": 2
+      },
+      "id": "drafted",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "step",
+      "refusal": null,
+      "sequence": 4,
+      "status": "answered",
+      "wall_ms": 0.675776,
+      "work": {
+        "after": 3801,
+        "before": 3383,
+        "used": 418
+      }
+    }
+  ],
+  "refusal": null,
+  "status": "answered"
+}

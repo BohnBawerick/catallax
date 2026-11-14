@@ -1,0 +1,240 @@
+{
+  "format": "catallax-operation-log/1",
+  "marks": [],
+  "operations": [
+    {
+      "decisions": {
+        "coincident_exact": 55,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 25,
+        "max_bits_high_water": 0,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 80
+      },
+      "id": "section",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "sketch",
+      "refusal": null,
+      "sequence": 0,
+      "status": "answered",
+      "wall_ms": 0.11854200000000001,
+      "work": {
+        "after": 596,
+        "before": 0,
+        "used": 596
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 18,
+        "max_bits_high_water": 0,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 18
+      },
+      "id": "housing",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "revolve",
+      "refusal": null,
+      "sequence": 1,
+      "status": "answered",
+      "wall_ms": 0.158397,
+      "work": {
+        "after": 668,
+        "before": 596,
+        "used": 72
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 18,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 46,
+        "max_bits_high_water": 64,
+        "not_exact": 0,
+        "refined": 3,
+        "refused": 0,
+        "total": 67
+      },
+      "id": "filleted",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "fillet",
+      "refusal": null,
+      "sequence": 2,
+      "status": "answered",
+      "wall_ms": 0.321823,
+      "work": {
+        "after": 1224,
+        "before": 668,
+        "used": 556
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 0,
+        "max_bits_high_water": 64,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 0
+      },
+      "id": "drill",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "cylinder",
+      "refusal": null,
+      "sequence": 3,
+      "status": "answered",
+      "wall_ms": 0.04265,
+      "work": {
+        "after": 1224,
+        "before": 1224,
+        "used": 0
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 0,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 0,
+        "filter": 0,
+        "max_bits_high_water": 64,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 0
+      },
+      "id": "sink",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "cone",
+      "refusal": null,
+      "sequence": 4,
+      "status": "answered",
+      "wall_ms": 0.034024,
+      "work": {
+        "after": 1224,
+        "before": 1224,
+        "used": 0
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 176,
+        "coincident_fact": 67,
+        "coincident_separation": 0,
+        "exact": 27,
+        "filter": 524,
+        "max_bits_high_water": 128,
+        "not_exact": 0,
+        "refined": 172,
+        "refused": 0,
+        "total": 966
+      },
+      "id": "countersink",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "boolean",
+      "refusal": null,
+      "sequence": 5,
+      "status": "answered",
+      "wall_ms": 5.641259,
+      "work": {
+        "after": 8335,
+        "before": 1224,
+        "used": 7111
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 5,
+        "coincident_fact": 0,
+        "coincident_separation": 0,
+        "exact": 8,
+        "filter": 10,
+        "max_bits_high_water": 128,
+        "not_exact": 0,
+        "refined": 0,
+        "refused": 0,
+        "total": 23
+      },
+      "id": "hole-pattern",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "pattern",
+      "refusal": null,
+      "sequence": 6,
+      "status": "answered",
+      "wall_ms": 0.5779230000000001,
+      "work": {
+        "after": 21973,
+        "before": 8335,
+        "used": 13638
+      }
+    },
+    {
+      "decisions": {
+        "coincident_exact": 423,
+        "coincident_fact": 390,
+        "coincident_separation": 0,
+        "exact": 157,
+        "filter": 4527,
+        "max_bits_high_water": 1024,
+        "not_exact": 1,
+        "refined": 378,
+        "refused": 0,
+        "total": 5876
+      },
+      "id": "drilled",
+      "kernel": "brep",
+      "local_tolerances": null,
+      "marks": [],
+      "operation": "boolean",
+      "refusal": {
+        "code": "intersect.unsupported-pair",
+        "detail": "parallel cone/torus minor-angle quarter has no certified sign: certified enclosure retained at the first exhausted limit"
+      },
+      "sequence": 7,
+      "status": "refused",
+      "wall_ms": 483.33602599999995,
+      "work": {
+        "after": 3471214,
+        "before": 21973,
+        "used": 3449241
+      }
+    }
+  ],
+  "refusal": {
+    "code": "intersect.unsupported-pair",
+    "detail": "parallel cone/torus minor-angle quarter has no certified sign: certified enclosure retained at the first exhausted limit",
+    "stage": null,
+    "step": "drilled"
+  },
+  "status": "refused"
+}

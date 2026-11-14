@@ -1,0 +1,64 @@
+{
+  "baseline": "f4db345f2e7c51835d1ebeba9f6446d117144117",
+  "sources": [
+    {
+      "path": "tools/step-regressions/test_m10_spline_boolean.py",
+      "sha256": "ca815a391ac0e5e9b1ea029d3e87972f910394023b98851c0bf4093d64085656"
+    },
+    {
+      "path": "crates/catallax-features/tests/fixtures/m10-smooth-loft.json",
+      "sha256": "af434784e69da7a5e87a92504deddf1909781ae455f910650071c44be33fb1bb"
+    },
+    {
+      "path": "crates/catallax-features/tests/fixtures/loft-spline-prism.json",
+      "sha256": "c878864b9b24808e3407041f8ad900ba54172ee630851a0b73e7116ec2e4596c"
+    },
+    {
+      "path": "crates/catallax-import/tests/fixtures/m27-loft-occt.step",
+      "sha256": "39654619680385eeb84418d7ec62f230d8a8e73afc205012feda5274d7df6f3e"
+    },
+    {
+      "path": "crates/catallax-intersect/tests/patch_plane.rs",
+      "sha256": "1402d0a23a5035c8eb1f4e64e9bfd217b8036a1d39771d2bd2f1bb0c473176d2"
+    },
+    {
+      "path": "crates/catallax-intersect/tests/patch_quadric.rs",
+      "sha256": "63c44d7da7c1cd1c22c161fbe2798ebb68ff4c93a3303359c4a85e44b9feadb0"
+    },
+    {
+      "path": "crates/catallax-intersect/examples/tangent_touch.rs",
+      "sha256": "bd51b243a63b29740200f2cb23497add13a3b79286325a09af89766357e855df"
+    },
+    {
+      "path": "crates/catallax-intersect/examples/tangent_touch/fixtures.rs",
+      "sha256": "6a35c9cfb13d8912452d01c34990ab6bbfdb0ce328f8ec53830e9d568da8b4eb"
+    },
+    {
+      "path": "crates/catallax-intersect/examples/tangent_touch/solver.rs",
+      "sha256": "02894817c44a2251ca3c54e84558de65ca299493e4a94c6c320a5b3c3dd3fdd8"
+    },
+    {
+      "path": "docs/M10-BOOLEAN-QUALIFICATION.md",
+      "sha256": "8818920b94aa7e1acc8cdfed571b7966ef9cebbd6cfd83716872f93a1b3ff1bf"
+    },
+    {
+      "path": "docs/M8-LATER-CUTS.md",
+      "sha256": "18e5dd51bf77e7af74c1430731b8c15074eb1ee94305408d0505ffa0ddf24f52"
+    },
+    {
+      "path": "docs/research/tangent-touch.md",
+      "sha256": "cfbd02c9f69d73c4b0d3702c9f9ad89f78bd3ebb01d4763812293751c1c64d05"
+    },
+    {
+      "path": "docs/prototypes/tangent-touch.md",
+      "sha256": "8ade453d39319dcdfe2adad8605dd4b6f89fd0610f640177770b3592d274509e"
+    }
+  ],
+  "build_attempt": {
+    "command": "nice -n 10 cargo build --release -p catallax-cli --bins -j 2",
+    "exit": 127,
+    "stderr": "nice: cargo: No such file or directory"
+  },
+  "binary": "${P02_BINARY_ROOT}/target/release/catallax-verify",
+  "binary_sha256": "1dfe54e616aee1aa353b3f6a07933ab4451f44a8791cf53ec4c748ffd6f48128"
+}

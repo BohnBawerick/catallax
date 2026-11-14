@@ -1,0 +1,1187 @@
+[
+  {
+    "id": "M10-001",
+    "name": "side-subtract",
+    "status": "refused",
+    "refusal": {
+      "code": "step.unsupported-geometry",
+      "detail": "geometry has no specified STEP form",
+      "stage": null,
+      "step": null
+    },
+    "work": {
+      "exhausted": false,
+      "limit": 20000000,
+      "used": 8219519
+    },
+    "response_equal_excluding_diagnostic_times_and_manifest_stats": true,
+    "step_bytes_equal": true,
+    "artifacts": [
+      {
+        "worker_count": 1,
+        "files": {
+          "artifact.json": "6ece3e54eb55065bd72b5c143bdee188ae4376a8f2b94538ec8a8bb32012e282",
+          "manifest.json": "7cdf5d076d41c130e80a96cf70cf383e5f9ed539ba524aba2f09b623edc5bbdd",
+          "operations.json": "4cf39704474a0bd7c915d962e66f19cd4300354db3a084e5976150c485ca19e8",
+          "question.json": "f38b7db5b66faeecf1ae29338f1b0b3caa121485b36ac19a25fcf58f97bc1d66",
+          "request.json": "884ffc3807d356cce5a5596390b4a790b596426dd5b786e66c73ce8c7869ee52",
+          "response.json": "f756d1bb9259f28618cb5cc834f1e1a219b6a66c3ba1d25e912f0b4a8f6cf284"
+        },
+        "step_present": false
+      },
+      {
+        "worker_count": 4,
+        "files": {
+          "artifact.json": "06105c5e352cf2e1aa395d0f983f559d5a6ad0944672e984f40c943e65ff262b",
+          "manifest.json": "7cdf5d076d41c130e80a96cf70cf383e5f9ed539ba524aba2f09b623edc5bbdd",
+          "operations.json": "b58097f2447f9273417283902a6a21678aa451422bbcaeea2a194f5d34b05010",
+          "question.json": "f38b7db5b66faeecf1ae29338f1b0b3caa121485b36ac19a25fcf58f97bc1d66",
+          "request.json": "c031611cfae26371c11e7d066041fde597cce9de39d7a210afce8705a549af40",
+          "response.json": "de5d9705afd9a0b1e6a1dcfc2a065378030fc9a637f8a1b0b1f62f773dd97a9c"
+        },
+        "step_present": false
+      }
+    ]
+  },
+  {
+    "id": "M10-002",
+    "name": "side-union",
+    "status": "refused",
+    "refusal": {
+      "code": "step.unsupported-geometry",
+      "detail": "geometry has no specified STEP form",
+      "stage": null,
+      "step": null
+    },
+    "work": {
+      "exhausted": false,
+      "limit": 20000000,
+      "used": 8219568
+    },
+    "response_equal_excluding_diagnostic_times_and_manifest_stats": true,
+    "step_bytes_equal": true,
+    "artifacts": [
+      {
+        "worker_count": 1,
+        "files": {
+          "artifact.json": "216f016930db6bf1846838060e2fc76f66fbc8021fc1c50c56d324dc127fff19",
+          "manifest.json": "7cdf5d076d41c130e80a96cf70cf383e5f9ed539ba524aba2f09b623edc5bbdd",
+          "operations.json": "4a052b2328565e6dec3176e65b8a303ea50758a1aabf40b067f6cfa959f78f70",
+          "question.json": "0ffe19ffa59debefcd62bdeb07f619834f38810957b269a633295460d24c8319",
+          "request.json": "87a8dc2269e0ba60df83f52bd3c774bfaaad31521640104fd52db8877400e787",
+          "response.json": "da43085ab3023b56c22c68353d7ef8dd4db462ec52df00a2184c3850f81f52bc"
+        },
+        "step_present": false
+      },
+      {
+        "worker_count": 4,
+        "files": {
+          "artifact.json": "e57631f6c03641324816d305c66e440a5e7bdfdc46a3b0dfc328e3fd7f4c3b99",
+          "manifest.json": "7cdf5d076d41c130e80a96cf70cf383e5f9ed539ba524aba2f09b623edc5bbdd",
+          "operations.json": "ee51a80fe77d287701396a44485c4b595731a1772ad94a746ace68de14200559",
+          "question.json": "0ffe19ffa59debefcd62bdeb07f619834f38810957b269a633295460d24c8319",
+          "request.json": "07b299569c9316e292971393491e4f168af88df86bf0782bf258c552faf608f7",
+          "response.json": "15382b27202a76e21b210efc6e9571924b7fd250d08f450241970117356e1777"
+        },
+        "step_present": false
+      }
+    ]
+  },
+  {
+    "id": "M10-003",
+    "name": "side-intersect",
+    "status": "refused",
+    "refusal": {
+      "code": "step.unsupported-geometry",
+      "detail": "geometry has no specified STEP form",
+      "stage": null,
+      "step": null
+    },
+    "work": {
+      "exhausted": false,
+      "limit": 20000000,
+      "used": 8214023
+    },
+    "response_equal_excluding_diagnostic_times_and_manifest_stats": true,
+    "step_bytes_equal": true,
+    "artifacts": [
+      {
+        "worker_count": 1,
+        "files": {
+          "artifact.json": "2cc42675be63d81a40e71d4c8e862b0defabfc90d914f3d10d7a5ec7e1d5763a",
+          "manifest.json": "7cdf5d076d41c130e80a96cf70cf383e5f9ed539ba524aba2f09b623edc5bbdd",
+          "operations.json": "9aa8178c07e3147049e79eaabc337b79ffaf1cdb4fc931e50be2cf67c1c1690d",
+          "question.json": "b0c058f48db4a103b1e1eb75d296b404d6a20ce78b730540c262dc00b256e88f",
+          "request.json": "853ff8c74ece732fd1d238623edf3291ba81cdf8a4cf309c4c7c63f9816a23e1",
+          "response.json": "3e0becdef565e8a06dc4174d1df70fde5e518c3116ae025fba734f51a12d2ad4"
+        },
+        "step_present": false
+      },
+      {
+        "worker_count": 4,
+        "files": {
+          "artifact.json": "d1bd556efacd80ca07671f23425f1495369f2581eb90f3d23c399b76955ab7f3",
+          "manifest.json": "7cdf5d076d41c130e80a96cf70cf383e5f9ed539ba524aba2f09b623edc5bbdd",
+          "operations.json": "e35fa67993de53116596c73ab801f9967a958ad0c7e22360b1bc1d5b2f8ec6b1",
+          "question.json": "b0c058f48db4a103b1e1eb75d296b404d6a20ce78b730540c262dc00b256e88f",
+          "request.json": "6f73b19aae4074538b579b52fa54d6e7279e12815e9dd4e1c0df67c324eb146b",
+          "response.json": "e9d4787e22285704d25eb2f1d64906f6664bd335b65c5fdbc35ba7403ca4559d"
+        },
+        "step_present": false
+      }
+    ]
+  },
+  {
+    "id": "M10-004",
+    "name": "top-subtract",
+    "status": "refused",
+    "refusal": {
+      "code": "numbers.operation-budget",
+      "detail": "operation work allowance exhausted",
+      "stage": null,
+      "step": null
+    },
+    "work": {
+      "exhausted": true,
+      "limit": 20000000,
+      "used": 19999916
+    },
+    "response_equal_excluding_diagnostic_times_and_manifest_stats": true,
+    "step_bytes_equal": true,
+    "artifacts": [
+      {
+        "worker_count": 1,
+        "files": {
+          "artifact.json": "30a6ecd9f7e786f03c562a66660dc4ea51589e3f75450053072a39b6e261e524",
+          "manifest.json": "2d245ab79ac356c913cb0016e9c0869749cabe8000c1faa761179eed95445111",
+          "operations.json": "c2c4cab66e9708e47b296bcf04900a6746c37e20c021fed6f0997ecd3fe18b53",
+          "question.json": "dc53511cad0ae2e0820ea296be5ec6078c5c32829ae55f95361f9b026480e79e",
+          "request.json": "3e8ed5e595211a23d85030bd8ceb92bc7d1a64796209376ef984b336f847905c",
+          "response.json": "496f957fe00282460dae80a076f893be93ecbe191ab0216e2b6b8f49754bd055"
+        },
+        "step_present": false
+      },
+      {
+        "worker_count": 4,
+        "files": {
+          "artifact.json": "e56703ad1a9a8e74663014268ea3dde03450a300dadfaaf827d1688b218c9c10",
+          "manifest.json": "2d245ab79ac356c913cb0016e9c0869749cabe8000c1faa761179eed95445111",
+          "operations.json": "5068b53f2d19b327b238a59462168f75102e1d5446dbef63a9e78fb0210975a4",
+          "question.json": "dc53511cad0ae2e0820ea296be5ec6078c5c32829ae55f95361f9b026480e79e",
+          "request.json": "b223c4a9fbf80049bb77aa2bef9733198066e0e22ecbbc7a8719ba3ae3c7a8a7",
+          "response.json": "c8b58e80c683f0349d0082a8003c2ac9f580488b37f0625dae471a74a8baf3e1"
+        },
+        "step_present": false
+      }
+    ]
+  },
+  {
+    "id": "M10-005",
+    "name": "top-union",
+    "status": "refused",
+    "refusal": {
+      "code": "numbers.operation-budget",
+      "detail": "operation work allowance exhausted",
+      "stage": null,
+      "step": null
+    },
+    "work": {
+      "exhausted": true,
+      "limit": 20000000,
+      "used": 19999916
+    },
+    "response_equal_excluding_diagnostic_times_and_manifest_stats": true,
+    "step_bytes_equal": true,
+    "artifacts": [
+      {
+        "worker_count": 1,
+        "files": {
+          "artifact.json": "21de2d9fba017b99d36bdb46791fc110874083c3e491c90d96481246966583b5",
+          "manifest.json": "2d245ab79ac356c913cb0016e9c0869749cabe8000c1faa761179eed95445111",
+          "operations.json": "8a755b211ffff056327328a97943297189675257b0a161f37cdfb2ab54fe6495",
+          "question.json": "b196171f228398a063a77e7abb35d6116bf9a2c4a8a442d16f43a781472b5f72",
+          "request.json": "f24998e3a7789c40fda83b9b1db613118fef55b97b22b76a4f655c413715c2a3",
+          "response.json": "906efcc7999f83cbb6c15d11fc8702896d5ded66bebfaa22270f850223049933"
+        },
+        "step_present": false
+      },
+      {
+        "worker_count": 4,
+        "files": {
+          "artifact.json": "1e0af5fd7834ef359ccfca49816bbd873fdfd8c2be51ef2eaa0a02c96825f8ea",
+          "manifest.json": "2d245ab79ac356c913cb0016e9c0869749cabe8000c1faa761179eed95445111",
+          "operations.json": "d5246969d9704a4c25ebc9912e3f670c30d82841c7fe2288488e2bc338b23dbb",
+          "question.json": "b196171f228398a063a77e7abb35d6116bf9a2c4a8a442d16f43a781472b5f72",
+          "request.json": "8affb7d7244694faec05197221011a3259ff3ecacb882e6031799dcc5ae692c6",
+          "response.json": "fe9a62690accfb2230968cb68f375c3ec1c7ada1c4fea828de7392c4c9036659"
+        },
+        "step_present": false
+      }
+    ]
+  },
+  {
+    "id": "M10-006",
+    "name": "top-intersect",
+    "status": "refused",
+    "refusal": {
+      "code": "numbers.operation-budget",
+      "detail": "operation work allowance exhausted",
+      "stage": null,
+      "step": null
+    },
+    "work": {
+      "exhausted": true,
+      "limit": 20000000,
+      "used": 19999916
+    },
+    "response_equal_excluding_diagnostic_times_and_manifest_stats": true,
+    "step_bytes_equal": true,
+    "artifacts": [
+      {
+        "worker_count": 1,
+        "files": {
+          "artifact.json": "cc08e18ee8d6d201a1329f02c9e0021b77e2dcf9445fd76965e41dabc8ad7fd3",
+          "manifest.json": "2d245ab79ac356c913cb0016e9c0869749cabe8000c1faa761179eed95445111",
+          "operations.json": "733bc3f0e64ea590ca0bc0b3304a5b3236e55e97f41aa3d6952db84a66d78b9a",
+          "question.json": "6e2bfec24ad996fe67fa46c596e5e6bc64b74f38ccf0f39a02b84cd4a50bb7df",
+          "request.json": "9053857d40428c102f990f496e6c94985f2ce0d2c055388a02388481afa71b19",
+          "response.json": "823b89a86d65e98d355f5c0e23414451c51364fb3b9c245c8d078ebd944d4cfa"
+        },
+        "step_present": false
+      },
+      {
+        "worker_count": 4,
+        "files": {
+          "artifact.json": "97f2ff36496a3609ec44ec5ab3e1da899176327d6efdbfc8d341b86084ab5ad7",
+          "manifest.json": "2d245ab79ac356c913cb0016e9c0869749cabe8000c1faa761179eed95445111",
+          "operations.json": "51c94b6054e954de89e0a3c171a50f40714bd94c37e3a5c3550900081e317359",
+          "question.json": "6e2bfec24ad996fe67fa46c596e5e6bc64b74f38ccf0f39a02b84cd4a50bb7df",
+          "request.json": "fbe2dd2c9d3a1d607a3bc4b9dbc1a50a4961ba7c67e37c58bb276c5f58232f80",
+          "response.json": "7565c3064fdc3952bd37240f8886e688b9ba6a7e7c836d35eb7fc3d0eed4c12c"
+        },
+        "step_present": false
+      }
+    ]
+  },
+  {
+    "id": "M10-007",
+    "name": "through-cut",
+    "status": "refused",
+    "refusal": {
+      "code": "step.unsupported-geometry",
+      "detail": "geometry has no specified STEP form",
+      "stage": null,
+      "step": null
+    },
+    "work": {
+      "exhausted": false,
+      "limit": 20000000,
+      "used": 2527978
+    },
+    "response_equal_excluding_diagnostic_times_and_manifest_stats": true,
+    "step_bytes_equal": true,
+    "artifacts": [
+      {
+        "worker_count": 1,
+        "files": {
+          "artifact.json": "edae3a8025fc9cc62f5a7dfcd781e54c542f44a790260c1ff0588d8b3574a43b",
+          "manifest.json": "7cdf5d076d41c130e80a96cf70cf383e5f9ed539ba524aba2f09b623edc5bbdd",
+          "operations.json": "b4a466f2a9be34c1b47966f77669463f5ab167a1b42e90ab02edaed77be50571",
+          "question.json": "8def59e44418832e165796941e77b3ee542c143c4b4871f67dfd207eee438d3c",
+          "request.json": "9ec679d21fe008283516553dce524dae4473f38b10d5139ed08191d5e1e5398e",
+          "response.json": "4c2d6225601f6bf05be98e709f213975ec9bd104892d9b2576d8f7f975c56517"
+        },
+        "step_present": false
+      },
+      {
+        "worker_count": 4,
+        "files": {
+          "artifact.json": "bf8894c4a521d49abadbfb2006d9856728344ffcc604168894562852a1c1ef23",
+          "manifest.json": "7cdf5d076d41c130e80a96cf70cf383e5f9ed539ba524aba2f09b623edc5bbdd",
+          "operations.json": "97a661eca1049b971beeffd20d28620fddd0e9e0b592ce2207e1bf1a5e99eda6",
+          "question.json": "8def59e44418832e165796941e77b3ee542c143c4b4871f67dfd207eee438d3c",
+          "request.json": "33bff85c91ad2c919d98c1c66f9be386bf0aa73a409cf11a9466b27b9f1298ea",
+          "response.json": "9b3f40983003799eb8514425e1a2d2b82376021637c3cca54142bf01905c2b30"
+        },
+        "step_present": false
+      }
+    ]
+  },
+  {
+    "id": "M10-008",
+    "name": "m7-cut",
+    "status": "refused",
+    "refusal": {
+      "code": "numbers.geometric-gap-unproven",
+      "detail": "a complete rational patch needs one boundary loop",
+      "stage": null,
+      "step": null
+    },
+    "work": {
+      "exhausted": false,
+      "limit": 20000000,
+      "used": 1802159
+    },
+    "response_equal_excluding_diagnostic_times_and_manifest_stats": true,
+    "step_bytes_equal": true,
+    "artifacts": [
+      {
+        "worker_count": 1,
+        "files": {
+          "artifact.json": "f5c6d3904884999a7966586d52dee468b00b2ca44c46b23195c76b9f07e56019",
+          "manifest.json": "bba35d6e4edc3edd5214d6bf91b5b55fc31c141824e7e26681457648a863c7b4",
+          "operations.json": "2683d3f12596bff931a66459894bffeb5faefb4ac9f916b6c0264b82b627e623",
+          "question.json": "87358a121d1ebb97ffe5d497e41c751db4d1a1ea8fae8d7bbe5fc8135e5ddb5a",
+          "request.json": "b6b090337c363fd07691ae9a3e849a73eae66462f1b80167500bb2cf297e1404",
+          "response.json": "8b604a12dd7eb5ca963b9a96568ae279a479495cfc6a5c920a861e7abd189627"
+        },
+        "step_present": false
+      },
+      {
+        "worker_count": 4,
+        "files": {
+          "artifact.json": "3a3de30011f6f4c627f8b548fedaf954c80877e6931ccc76737f8cf18f139cea",
+          "manifest.json": "bba35d6e4edc3edd5214d6bf91b5b55fc31c141824e7e26681457648a863c7b4",
+          "operations.json": "332d57b6bb260329c897bc129248ae4df2cf98dfe332d94c1d18c095779c3349",
+          "question.json": "87358a121d1ebb97ffe5d497e41c751db4d1a1ea8fae8d7bbe5fc8135e5ddb5a",
+          "request.json": "cd0c6bc52509a46dd56cc69dd09d119d8d5cb89f8760ddbdd1c0c6966cf9438f",
+          "response.json": "b48ba6f24745d1e81474f54233cf89b8d269726bb5088af086bd2b177a0a1843"
+        },
+        "step_present": false
+      }
+    ]
+  },
+  {
+    "id": "M10-009",
+    "name": "import-subtract",
+    "status": "refused",
+    "refusal": {
+      "code": "intersect.parametric-coincidence",
+      "detail": "different spline definitions require a finite curve-equivalence proof",
+      "stage": null,
+      "step": "cut"
+    },
+    "work": {
+      "exhausted": false,
+      "limit": 20000000,
+      "used": 115984
+    },
+    "response_equal_excluding_diagnostic_times_and_manifest_stats": true,
+    "step_bytes_equal": true,
+    "artifacts": [
+      {
+        "worker_count": 1,
+        "files": {
+          "artifact.json": "5400e7013d49ab50435c57fe119133448c3f8c3c451079e191b0a6152a73763d",
+          "manifest.json": "0c2dc6affadd751c741fc684293cff30d638b84be605d1c13f4925ea3d45bf59",
+          "operations.json": "812ed0fa2605ccd4c9c80609055bcb73a9b1d0f4212da0f4a7cf6f3460e8490e",
+          "question.json": "5ee5cda5d898548d58e01e00ad914e960a7fa955b99c5f8798357c25581ed8de",
+          "request.json": "165a03722560f6694a64279d18cc9edb5cf8fc171209e8b5a7b412e39e3838e4",
+          "response.json": "d0ce773ea4d3555f40d8023bd5d04d6cf4e663b886fbabcccbbd3f96c9804b8d"
+        },
+        "step_present": false
+      },
+      {
+        "worker_count": 4,
+        "files": {
+          "artifact.json": "41284c5d5dd6ed641d32a4724091089c57001304c5753e5db09bf129b0ba3fcf",
+          "manifest.json": "0c2dc6affadd751c741fc684293cff30d638b84be605d1c13f4925ea3d45bf59",
+          "operations.json": "8cd5ff5d208731e29ab625fc00864f1c46907d4663dbf65fe83b77ffd14a6628",
+          "question.json": "5ee5cda5d898548d58e01e00ad914e960a7fa955b99c5f8798357c25581ed8de",
+          "request.json": "36cfce8a3815eaee184bb7f8c9b67c794010da2c0f17713a695ac025bef1907c",
+          "response.json": "dfd17592eefd127dabc3313037c727e814060be72a2c7fb92fec7a0ad396e901"
+        },
+        "step_present": false
+      }
+    ]
+  },
+  {
+    "id": "M10-010",
+    "name": "import-union",
+    "status": "refused",
+    "refusal": {
+      "code": "intersect.parametric-coincidence",
+      "detail": "different spline definitions require a finite curve-equivalence proof",
+      "stage": null,
+      "step": "cut"
+    },
+    "work": {
+      "exhausted": false,
+      "limit": 20000000,
+      "used": 115984
+    },
+    "response_equal_excluding_diagnostic_times_and_manifest_stats": true,
+    "step_bytes_equal": true,
+    "artifacts": [
+      {
+        "worker_count": 1,
+        "files": {
+          "artifact.json": "4df091eebb7db21c06a65d4cd484a5a3e34ed314d382fe82d887126df79524e6",
+          "manifest.json": "0c2dc6affadd751c741fc684293cff30d638b84be605d1c13f4925ea3d45bf59",
+          "operations.json": "39eef038c1f5a19186a92b26af8cc16b5eddf56dbcba998d47675b7d0ffea749",
+          "question.json": "2337200d2854d465bcdf77d60ebd36e21c054db6912719e37b8e2c6a6a1487af",
+          "request.json": "96c5afe0d1046976ac24a413c7160ff4f940c2ccc1b2b7317d8d94a7d51b5a8d",
+          "response.json": "6be88413bfd1ce423e0665df9d9b6a3bd246184cd20f89f3cf9a94110a92d74a"
+        },
+        "step_present": false
+      },
+      {
+        "worker_count": 4,
+        "files": {
+          "artifact.json": "c4dbc642b3982a87307ca8a22fa9cbaee35466cb20d9c04340b48504aa9c622e",
+          "manifest.json": "0c2dc6affadd751c741fc684293cff30d638b84be605d1c13f4925ea3d45bf59",
+          "operations.json": "e8468747dfaa117214e4e768acfcc412eeb8731641d6dc290ec908066300921f",
+          "question.json": "2337200d2854d465bcdf77d60ebd36e21c054db6912719e37b8e2c6a6a1487af",
+          "request.json": "8a5fbc1834b56973fe8b925d6f692c5aef9385e0e0dc62398ff4b5cfa2f09404",
+          "response.json": "53b1371a2575649b532495de773b73c01d23f411c586e3176fae5a91027f3ae0"
+        },
+        "step_present": false
+      }
+    ]
+  },
+  {
+    "id": "M10-011",
+    "name": "import-intersect",
+    "status": "refused",
+    "refusal": {
+      "code": "intersect.parametric-coincidence",
+      "detail": "different spline definitions require a finite curve-equivalence proof",
+      "stage": null,
+      "step": "cut"
+    },
+    "work": {
+      "exhausted": false,
+      "limit": 20000000,
+      "used": 115984
+    },
+    "response_equal_excluding_diagnostic_times_and_manifest_stats": true,
+    "step_bytes_equal": true,
+    "artifacts": [
+      {
+        "worker_count": 1,
+        "files": {
+          "artifact.json": "d080f1a4da9db547d884365790695ea5a46d11191c6adc888401d819ac753b51",
+          "manifest.json": "0c2dc6affadd751c741fc684293cff30d638b84be605d1c13f4925ea3d45bf59",
+          "operations.json": "e787eb3ad7f050ab552e163f5ca14e4a4aa787e4538ca5982a83a94db6084568",
+          "question.json": "7852f15a64738aad74bcc9640d00de2f4ba113911f0ed5ffd9a2b72919ca0ac1",
+          "request.json": "94b2c983fa9ca0b00b918e239697f3d0b8830a1bb060ee4cd4104adfc5fdecd1",
+          "response.json": "2aa84a80ab7231571226f83b6b16eee429e8a5638a4bf0e2942ff19e640f1910"
+        },
+        "step_present": false
+      },
+      {
+        "worker_count": 4,
+        "files": {
+          "artifact.json": "1cc04617c2e8ded161be6fd9e41738d6d857fb9a1159a91a06b17176092b6a45",
+          "manifest.json": "0c2dc6affadd751c741fc684293cff30d638b84be605d1c13f4925ea3d45bf59",
+          "operations.json": "6a8840905a1c2a1c3fa69c25a7397ee8c17efcfbb48f8aa2508feb593d9c9a2f",
+          "question.json": "7852f15a64738aad74bcc9640d00de2f4ba113911f0ed5ffd9a2b72919ca0ac1",
+          "request.json": "895359da973421a8569809040aa4fa445f83780615e2df4571a3702b33f0fa6f",
+          "response.json": "ee127434d80af583a25ed24b560d3ca1cdc9b1e3896d05d5d0597567f549d9a6"
+        },
+        "step_present": false
+      }
+    ]
+  },
+  {
+    "id": "M10-012",
+    "name": "spline-pair-subtract",
+    "status": "refused",
+    "refusal": {
+      "code": "intersect.unsupported-pair",
+      "detail": "rational atlas with rational atlas: surface pair is outside piece 4 coverage",
+      "stage": null,
+      "step": "cut"
+    },
+    "work": {
+      "exhausted": false,
+      "limit": 20000000,
+      "used": 74693
+    },
+    "response_equal_excluding_diagnostic_times_and_manifest_stats": true,
+    "step_bytes_equal": true,
+    "artifacts": [
+      {
+        "worker_count": 1,
+        "files": {
+          "artifact.json": "3e017d25e6248b4f703d5b36575f8b256572de30a846a0ba661c176c08fc066b",
+          "manifest.json": "4f07f204ea814b1ea01f23ea737dbcee0a6ce1cffaf014d6de3edf21fa480f09",
+          "operations.json": "2c5375ba3f4b6dda8452b7e7907b207620e7f80bcd860e6f1ef00d97f1b160dc",
+          "question.json": "87a64ccaa55b748e1c586b768e0863513cc30c0dde54c3864db503fb7f122316",
+          "request.json": "85fa92bfd31001364f98376b48efe107095060a83646c63d1b2096d3ed0ba602",
+          "response.json": "8ffc67e70805889d388c523349e62fccaa940ea256ceed844066f3e4a9927b35"
+        },
+        "step_present": false
+      },
+      {
+        "worker_count": 4,
+        "files": {
+          "artifact.json": "6e53903a1578431bf18cddc7f338eba7f68c6460c5e4ede44104787be86b4d0c",
+          "manifest.json": "4f07f204ea814b1ea01f23ea737dbcee0a6ce1cffaf014d6de3edf21fa480f09",
+          "operations.json": "e01dec2638d3c55acc1f2567f05c9a6df4510bdb306a1d49bd67baaed9f1db05",
+          "question.json": "87a64ccaa55b748e1c586b768e0863513cc30c0dde54c3864db503fb7f122316",
+          "request.json": "f0c0bb327597b5a49f41e434f514ef70267ada2164683918a9d7f799fc50e752",
+          "response.json": "046a99d2d0a0569311883fd3fec4301194ae90d6e24bbc7fd89984a8c3014e08"
+        },
+        "step_present": false
+      }
+    ]
+  },
+  {
+    "id": "M10-013",
+    "name": "spline-pair-union",
+    "status": "refused",
+    "refusal": {
+      "code": "intersect.unsupported-pair",
+      "detail": "rational atlas with rational atlas: surface pair is outside piece 4 coverage",
+      "stage": null,
+      "step": "cut"
+    },
+    "work": {
+      "exhausted": false,
+      "limit": 20000000,
+      "used": 74693
+    },
+    "response_equal_excluding_diagnostic_times_and_manifest_stats": true,
+    "step_bytes_equal": true,
+    "artifacts": [
+      {
+        "worker_count": 1,
+        "files": {
+          "artifact.json": "d22c9aa67666c9a0110d7bd62dfa3c0b22f059985ddd6ac789ade0347400a13d",
+          "manifest.json": "4f07f204ea814b1ea01f23ea737dbcee0a6ce1cffaf014d6de3edf21fa480f09",
+          "operations.json": "e1c3891385f127d07ef626d77e1a56ffa4c8ba613dde6a9e4fbd745b2394151e",
+          "question.json": "cbf59b092bab4808ef44a4a02442b6d44802f5393201b4b4ddf46ee567e63c7c",
+          "request.json": "400dc35adf88a311174b8ed18cc386e9adc6a794e0df126320eb9807a01c04d7",
+          "response.json": "941d8e2b0f9cdf7b406fe488d56728e05c9f2e8fe519819fe88ede4704878003"
+        },
+        "step_present": false
+      },
+      {
+        "worker_count": 4,
+        "files": {
+          "artifact.json": "6dddb01d8f8b91e23a8518ed36c372d84418dd11eff43a163d925d8a2695b62b",
+          "manifest.json": "4f07f204ea814b1ea01f23ea737dbcee0a6ce1cffaf014d6de3edf21fa480f09",
+          "operations.json": "0949bca5822fa045218d3b431f67ba0147031e86676c06198925fae84e381072",
+          "question.json": "cbf59b092bab4808ef44a4a02442b6d44802f5393201b4b4ddf46ee567e63c7c",
+          "request.json": "278077b46256bedf7bd2ca99cad657488ead390ce992f108d042586c9a493fda",
+          "response.json": "7980fc884174b8229c29a3a696a1612dc34f9bca127eac842da0e3b5cd2dcec4"
+        },
+        "step_present": false
+      }
+    ]
+  },
+  {
+    "id": "M10-014",
+    "name": "spline-pair-intersect",
+    "status": "refused",
+    "refusal": {
+      "code": "intersect.unsupported-pair",
+      "detail": "rational atlas with rational atlas: surface pair is outside piece 4 coverage",
+      "stage": null,
+      "step": "cut"
+    },
+    "work": {
+      "exhausted": false,
+      "limit": 20000000,
+      "used": 74693
+    },
+    "response_equal_excluding_diagnostic_times_and_manifest_stats": true,
+    "step_bytes_equal": true,
+    "artifacts": [
+      {
+        "worker_count": 1,
+        "files": {
+          "artifact.json": "31d26afe93a5f12c1ae4865a89e343c1316b9f5a0c33d630de5e1141219e9726",
+          "manifest.json": "4f07f204ea814b1ea01f23ea737dbcee0a6ce1cffaf014d6de3edf21fa480f09",
+          "operations.json": "2d61d39a88890c96aa93301292039c6072ae21b02b02355f9611395f05b4c5db",
+          "question.json": "dcb54d47c3a58f422130acb8529158730f1edede2a67cf3032d9346f3368abee",
+          "request.json": "15ec4f6849382498668b100cbde89355b99b013c56d6d7d4611edde81300593a",
+          "response.json": "47b71ff13759122ce873b2a75f9f7089a7ccd88cbc4ae22f2c3d961e64bec662"
+        },
+        "step_present": false
+      },
+      {
+        "worker_count": 4,
+        "files": {
+          "artifact.json": "b8cc9ef85ba2c01889df8a76d0de82969ecc531ad69513f2c282ee9f0cac1ec0",
+          "manifest.json": "4f07f204ea814b1ea01f23ea737dbcee0a6ce1cffaf014d6de3edf21fa480f09",
+          "operations.json": "2276896d975fececcc7b59db5d605742f9e35f5e15b8558f7aef8ffe54fdfa74",
+          "question.json": "dcb54d47c3a58f422130acb8529158730f1edede2a67cf3032d9346f3368abee",
+          "request.json": "49a9e467debb607bf6e6f7415719b3db462d25a6479cb44a6f075ccc60789d12",
+          "response.json": "73cffe3f2517a3b523cee065f3314d4d8c8e06a4b96d4b5c995d5ce7125d5f62"
+        },
+        "step_present": false
+      }
+    ]
+  },
+  {
+    "id": "k01-wall-hole",
+    "name": null,
+    "status": "refused",
+    "refusal": {
+      "code": "numbers.operation-budget",
+      "detail": "operation work allowance exhausted",
+      "stage": null,
+      "step": null
+    },
+    "work": {
+      "exhausted": true,
+      "limit": 20000000,
+      "used": 19999980
+    },
+    "response_equal_excluding_diagnostic_times_and_manifest_stats": true,
+    "step_bytes_equal": true,
+    "artifacts": [
+      {
+        "worker_count": 1,
+        "files": {
+          "artifact.json": "9267b5b48e61684a738dee30a6e310865636ceef5e48d164f6ef8fdfab4b74f4",
+          "manifest.json": "2d245ab79ac356c913cb0016e9c0869749cabe8000c1faa761179eed95445111",
+          "operations.json": "94bf953b88008551489fe14e473197b959c6c19e7c60a3bc0a7bb35fe0c3e8b9",
+          "question.json": "70d34af7d5b22c5bc8bc5c596bfe174916fe8f6a3f4f2d9cc54755df4458bdc3",
+          "request.json": "342b55279903f23dbd683f3ab4c87121a618368deda320564186f9059393aa24",
+          "response.json": "d158517d52adc8863dc7f39e0e94771737579e3eda29415793629e3c52314fb1"
+        },
+        "step_present": false
+      },
+      {
+        "worker_count": 4,
+        "files": {
+          "artifact.json": "3fe4e3fe1b5c47f0f49d25313a71a6a6c6e698bf5f98c2229edb3e69fc2fc8b3",
+          "manifest.json": "2d245ab79ac356c913cb0016e9c0869749cabe8000c1faa761179eed95445111",
+          "operations.json": "91f7baf13bd5237156beee0efa5cec311fbf5284aab5152e2e901c0c2017e353",
+          "question.json": "70d34af7d5b22c5bc8bc5c596bfe174916fe8f6a3f4f2d9cc54755df4458bdc3",
+          "request.json": "0c7b820f380501f180c53f6c0b92692e6cd590027225a13362fab0f66da4d288",
+          "response.json": "82ecba339cd25fae7a6a020e85d3d0d161df40ad236b484ce2a42b528814662b"
+        },
+        "step_present": false
+      }
+    ]
+  },
+  {
+    "id": "k02-top-slot",
+    "name": null,
+    "status": "refused",
+    "refusal": {
+      "code": "intersect.parametric-surface",
+      "detail": "traced section curve with fitted rolling-envelope spline: a line contact on this finite spline is not a separated transverse crossing",
+      "stage": null,
+      "step": "later-cut"
+    },
+    "work": {
+      "exhausted": false,
+      "limit": 20000000,
+      "used": 2180807
+    },
+    "response_equal_excluding_diagnostic_times_and_manifest_stats": true,
+    "step_bytes_equal": true,
+    "artifacts": [
+      {
+        "worker_count": 1,
+        "files": {
+          "artifact.json": "4ffc260976050d98d0e9c108009601ed9b93db45c1c6199290df235663a8deb9",
+          "manifest.json": "d9a74f0a0275391faf25371c3fa5bc2a14bfa1dc30ba5f5733e6a654c0f7c3e7",
+          "operations.json": "d22111bfc731193cb126a8935b81e8f011dcf485200e206a5b7c61e4c9b7f662",
+          "question.json": "8fbba9d5c9d6adffd29ebef71906249641d675f8b4cceaeb808bb4de590324a8",
+          "request.json": "25e73cb90145895f9f7eebd33cdaa948253e1ee7a9c1431587652198566a62cd",
+          "response.json": "59fe7da723017ab5358dc3f0d397a8b40b9e6a01e30ec1a8b38ee0d68c22e99a"
+        },
+        "step_present": false
+      },
+      {
+        "worker_count": 4,
+        "files": {
+          "artifact.json": "057c024a66150352dd6bdb0e2b395126be3ff9234c6b84ebe260d512b33d35be",
+          "manifest.json": "d9a74f0a0275391faf25371c3fa5bc2a14bfa1dc30ba5f5733e6a654c0f7c3e7",
+          "operations.json": "abc0207602610203685ea1b046d76a3ef437890dcefb8bd4d51060f95b463eed",
+          "question.json": "8fbba9d5c9d6adffd29ebef71906249641d675f8b4cceaeb808bb4de590324a8",
+          "request.json": "3f5948bb519de15755bff911301503c0a015d0e64b4dcb40a0c0dbf655689ac7",
+          "response.json": "3cb972bbe3a58565987d283dd3ca0cabae08d6472927091dec6ccecadd1ee4e5"
+        },
+        "step_present": false
+      }
+    ]
+  },
+  {
+    "id": "k03-rim-notch",
+    "name": null,
+    "status": "refused",
+    "refusal": {
+      "code": "numbers.operation-budget",
+      "detail": "operation work allowance exhausted",
+      "stage": null,
+      "step": null
+    },
+    "work": {
+      "exhausted": true,
+      "limit": 20000000,
+      "used": 20000000
+    },
+    "response_equal_excluding_diagnostic_times_and_manifest_stats": true,
+    "step_bytes_equal": true,
+    "artifacts": [
+      {
+        "worker_count": 1,
+        "files": {
+          "artifact.json": "1db2bb8405b1d7e300fbdd8e7d5dfc276d3ee4ea888bc8633304e30ca14fbc50",
+          "manifest.json": "2d245ab79ac356c913cb0016e9c0869749cabe8000c1faa761179eed95445111",
+          "operations.json": "a7bdd35b36c863a79fb3a0e6d839b50ae8c40c17d0c4ea940b31ec65378d8dd4",
+          "question.json": "b9a7235f6bd72f05ee917165df57c4acb033b0bc19cfb6fc5dc2d138b7ba6541",
+          "request.json": "23aa9f6bb59bf8ef9aeef74af07ad60c700f5dd16a38b8274d560a5d8e4c0d3b",
+          "response.json": "b79d9c6c3ed4dd7b4f1396ab2ce17a3f395c88e53754ddc81399944166ad23b1"
+        },
+        "step_present": false
+      },
+      {
+        "worker_count": 4,
+        "files": {
+          "artifact.json": "67e1e4210c882fe167e5f7a1d147e4155ad453fcff058b445ab5640f332cb197",
+          "manifest.json": "2d245ab79ac356c913cb0016e9c0869749cabe8000c1faa761179eed95445111",
+          "operations.json": "e573cf1d8e858a50fceca9728535b4185274c7928384266f26733eb39bb2645b",
+          "question.json": "b9a7235f6bd72f05ee917165df57c4acb033b0bc19cfb6fc5dc2d138b7ba6541",
+          "request.json": "92d6a215dca83947584f0e0f7856be3eb4e06b00e681cdcd45594d3ca2b8e7df",
+          "response.json": "1c6f634ae414f85f9a2ddb90f9f465dda49caa35032e42ec3632c1bc24b86260"
+        },
+        "step_present": false
+      }
+    ]
+  },
+  {
+    "id": "k04-torus-pocket",
+    "name": null,
+    "status": "refused",
+    "refusal": {
+      "code": "numbers.operation-budget",
+      "detail": "operation work allowance exhausted",
+      "stage": null,
+      "step": null
+    },
+    "work": {
+      "exhausted": true,
+      "limit": 20000000,
+      "used": 19999976
+    },
+    "response_equal_excluding_diagnostic_times_and_manifest_stats": true,
+    "step_bytes_equal": true,
+    "artifacts": [
+      {
+        "worker_count": 1,
+        "files": {
+          "artifact.json": "96af283d56b76469887c9e6210039771686a74b61afba494b9c8af64a154dc89",
+          "manifest.json": "2d245ab79ac356c913cb0016e9c0869749cabe8000c1faa761179eed95445111",
+          "operations.json": "f070bba28c778b36027a80f99d37280438506aa8091dfcb2540fd749b7938d18",
+          "question.json": "d3fd3ae558f7893cc70cdcb555638f0447ff71ffd92b072a611065821521d08a",
+          "request.json": "2d5d721abd2dfe8f317d08941cc3d168ec46ffd80951f3409a62e78fbc7927cd",
+          "response.json": "6079fa4156eeacc4b86c45b473faad0dcf15c0372f86dc44145f94e7f56e7bd6"
+        },
+        "step_present": false
+      },
+      {
+        "worker_count": 4,
+        "files": {
+          "artifact.json": "dcbee2acff8160adfe2af36c18b1a0b289824c3cae19fedf54901bdfbeedb313",
+          "manifest.json": "2d245ab79ac356c913cb0016e9c0869749cabe8000c1faa761179eed95445111",
+          "operations.json": "5a3fe28c29dbb2d50b261b0ac6beb4ef48cff73425ad6df5d8160dbd34bdcce6",
+          "question.json": "d3fd3ae558f7893cc70cdcb555638f0447ff71ffd92b072a611065821521d08a",
+          "request.json": "1da43ab6660c83e264e40d1cb181bcfd8514bff76773011838121706d1ca53a3",
+          "response.json": "39dbd6b80e6d445d20bef55a60516418d3eb7ddaa4b675d48f9fb0c9dd1a63c4"
+        },
+        "step_present": false
+      }
+    ]
+  },
+  {
+    "id": "k05-plane-notch",
+    "name": null,
+    "status": "refused",
+    "refusal": {
+      "code": "numbers.operation-budget",
+      "detail": "operation work allowance exhausted",
+      "stage": null,
+      "step": null
+    },
+    "work": {
+      "exhausted": true,
+      "limit": 20000000,
+      "used": 19990133
+    },
+    "response_equal_excluding_diagnostic_times_and_manifest_stats": true,
+    "step_bytes_equal": true,
+    "artifacts": [
+      {
+        "worker_count": 1,
+        "files": {
+          "artifact.json": "39d6acd0ebc4794abad40c8e64f18a0d0b39408b3d760d4014caf3b0e4dc7533",
+          "manifest.json": "2d245ab79ac356c913cb0016e9c0869749cabe8000c1faa761179eed95445111",
+          "operations.json": "968d491b2cb0ef9ba6298d941126bc75362f418205737c2ff710f23ef5e799ef",
+          "question.json": "0c9d0753d2d49b00a5d33832f392fb4c11f6027ce2ff82a033dd03982a8f6670",
+          "request.json": "64b9e5bcbee35ee7f98217bf44fd3d759e168bff6c9783846900c179fd3ce526",
+          "response.json": "b8df01f472fa54231fcf2525061e9c67042068205ae7011dbe8a3dec939ab1d7"
+        },
+        "step_present": false
+      },
+      {
+        "worker_count": 4,
+        "files": {
+          "artifact.json": "07d6180ad49e851e2400ecc8dbf63ee9bc43aa0af1e26b280494bb5e519ecf1c",
+          "manifest.json": "2d245ab79ac356c913cb0016e9c0869749cabe8000c1faa761179eed95445111",
+          "operations.json": "be624be01ef3e4877685b40e597e50c367613f3999db668365b170e25d24fa74",
+          "question.json": "0c9d0753d2d49b00a5d33832f392fb4c11f6027ce2ff82a033dd03982a8f6670",
+          "request.json": "26fc916a22d8e8a18ee1b272dd1ab0ceca35e77e86e3a9f6adacc1ebff3fdc8b",
+          "response.json": "138a5338e26c38fd59b2d76d196471424479593bd0df6d0b29b05344754abd8f"
+        },
+        "step_present": false
+      }
+    ]
+  },
+  {
+    "id": "k06-cylinder-drill",
+    "name": null,
+    "status": "refused",
+    "refusal": {
+      "code": "numbers.operation-budget",
+      "detail": "operation work allowance exhausted",
+      "stage": null,
+      "step": null
+    },
+    "work": {
+      "exhausted": true,
+      "limit": 20000000,
+      "used": 19999951
+    },
+    "response_equal_excluding_diagnostic_times_and_manifest_stats": true,
+    "step_bytes_equal": true,
+    "artifacts": [
+      {
+        "worker_count": 1,
+        "files": {
+          "artifact.json": "60da30158853951aced46bc87162b7725b9b1d26c77c79fb511b63a65cf1a0cb",
+          "manifest.json": "2d245ab79ac356c913cb0016e9c0869749cabe8000c1faa761179eed95445111",
+          "operations.json": "d9224cd84f942431ffbec062cbf34c71a45105ba5c94771526a0fa03ef689cd7",
+          "question.json": "46a07aab26ea7a7c613ba0e814e82523e941edb01f208090a1db1e485c025bd3",
+          "request.json": "fc02cddee37ee7983fc10acc43865751569b4eca6697706bea3daa997330afb3",
+          "response.json": "cee2f0d4080f842e3a8df723efd32b4095152c778676472d98df1add4f9999bc"
+        },
+        "step_present": false
+      },
+      {
+        "worker_count": 4,
+        "files": {
+          "artifact.json": "86382e790f06b9195dd313b8aa077fd64ef098c53b13c59b724d4cde44d0d926",
+          "manifest.json": "2d245ab79ac356c913cb0016e9c0869749cabe8000c1faa761179eed95445111",
+          "operations.json": "8e74bf30516f0e60315ed042d34bd9a3786c00e06b236457556974cb3acfee7b",
+          "question.json": "46a07aab26ea7a7c613ba0e814e82523e941edb01f208090a1db1e485c025bd3",
+          "request.json": "14dbaa770fd5f140f1e049871e2fa070ac532b70df866264509ca13cab788dbb",
+          "response.json": "97d3be0981812ef4955f8bfe6d39b0fe0afbbd330e9e994883685945aba94b16"
+        },
+        "step_present": false
+      }
+    ]
+  },
+  {
+    "id": "k07-cone-drill",
+    "name": null,
+    "status": "refused",
+    "refusal": {
+      "code": "numbers.operation-budget",
+      "detail": "operation work allowance exhausted",
+      "stage": null,
+      "step": null
+    },
+    "work": {
+      "exhausted": true,
+      "limit": 20000000,
+      "used": 19926846
+    },
+    "response_equal_excluding_diagnostic_times_and_manifest_stats": true,
+    "step_bytes_equal": true,
+    "artifacts": [
+      {
+        "worker_count": 1,
+        "files": {
+          "artifact.json": "ea2f2eb283aeadf4b582647883a8082dfd14d207dffa8da8d4be58b5c8323067",
+          "manifest.json": "2d245ab79ac356c913cb0016e9c0869749cabe8000c1faa761179eed95445111",
+          "operations.json": "baae1b2190bdfc3ee9988fdb13b96ff800581d5ba3f0ce78703f10155679a122",
+          "question.json": "33414fdbab1ff197442f784085b45e1e630d85690272896e0ad6183b3a3fbd87",
+          "request.json": "5d716335a43d66bc9bd582aca79bf9c409e9f343fd2ff7bc0487e393c0df4172",
+          "response.json": "14fc64a3093afc0f558584faec68c0beec44a341b6094c019157e3c03d0022ff"
+        },
+        "step_present": false
+      },
+      {
+        "worker_count": 4,
+        "files": {
+          "artifact.json": "8a537ed21498d8a0d56faa5824612f2bc4569bba349970da1d6c2833fc47a5ab",
+          "manifest.json": "2d245ab79ac356c913cb0016e9c0869749cabe8000c1faa761179eed95445111",
+          "operations.json": "d21b1a8b91842c7c2f55f1fa86d47a298e779990db778a471fcd335e1e6898cf",
+          "question.json": "33414fdbab1ff197442f784085b45e1e630d85690272896e0ad6183b3a3fbd87",
+          "request.json": "f58d7124d23e5609296ad72a87266189640934ccc808ff443fd02b3ecfaaf33f",
+          "response.json": "8ac0b916d6ce6d0b8ee8071d0b2f1fc362db5d7aee0b07e5d79c3d6e2b12cd48"
+        },
+        "step_present": false
+      }
+    ]
+  },
+  {
+    "id": "k08-sphere-dimple",
+    "name": null,
+    "status": "refused",
+    "refusal": {
+      "code": "numbers.operation-budget",
+      "detail": "operation work allowance exhausted",
+      "stage": null,
+      "step": null
+    },
+    "work": {
+      "exhausted": true,
+      "limit": 20000000,
+      "used": 19995283
+    },
+    "response_equal_excluding_diagnostic_times_and_manifest_stats": true,
+    "step_bytes_equal": true,
+    "artifacts": [
+      {
+        "worker_count": 1,
+        "files": {
+          "artifact.json": "558fb22d44d325b35c9f586fc322c40a7019e8ce61038f5e6c4521d11934c299",
+          "manifest.json": "2d245ab79ac356c913cb0016e9c0869749cabe8000c1faa761179eed95445111",
+          "operations.json": "99d333475596dc80870ebf46c0c1d6b17b0a3980fdcf18b2ec3c0c53cf59e0f1",
+          "question.json": "7b76e8a1e26070b653ea5bb49094e1d69fe271a08de3d28af96070a272a55244",
+          "request.json": "70586b63b5a9009c8e3651b9955ea1ffecd791082416d9795deb9e8d7b5ead67",
+          "response.json": "b084a11f3bce52f7dbff3227f29536005f61bf393f025d59354fc42a2dbc05b3"
+        },
+        "step_present": false
+      },
+      {
+        "worker_count": 4,
+        "files": {
+          "artifact.json": "62b83713e6b7842a328bcdb0047cf0631a9e34e4106351e167c034419a0e036c",
+          "manifest.json": "2d245ab79ac356c913cb0016e9c0869749cabe8000c1faa761179eed95445111",
+          "operations.json": "c3415d0523803e78710fdb17414fbc1936ccfa192b4922ce8af59605b8f939d6",
+          "question.json": "7b76e8a1e26070b653ea5bb49094e1d69fe271a08de3d28af96070a272a55244",
+          "request.json": "beb2bdb54fce752a8ff3090cf6d5fb8cd8560c81345e547e642b0c4393d651f6",
+          "response.json": "a23d13fe9acb162424fcc511f44f57099fa1034b227b97a8713621f77482ecb3"
+        },
+        "step_present": false
+      }
+    ]
+  },
+  {
+    "id": "k09-ring-groove",
+    "name": null,
+    "status": "refused",
+    "refusal": {
+      "code": "numbers.operation-budget",
+      "detail": "operation work allowance exhausted",
+      "stage": null,
+      "step": null
+    },
+    "work": {
+      "exhausted": true,
+      "limit": 20000000,
+      "used": 19988811
+    },
+    "response_equal_excluding_diagnostic_times_and_manifest_stats": true,
+    "step_bytes_equal": true,
+    "artifacts": [
+      {
+        "worker_count": 1,
+        "files": {
+          "artifact.json": "d218b6bed441baee4d3d3d562ae41a813aea14bb16933b2b34c84d4e03012d29",
+          "manifest.json": "2d245ab79ac356c913cb0016e9c0869749cabe8000c1faa761179eed95445111",
+          "operations.json": "a56b9f69741fc71f15f534c0cbe7629bfb03ea749fda3e5d13cb125ebc45a765",
+          "question.json": "9a1dd23c104c0f732b915b6e5c60e576104cede3c17f90b46331dcf63fb36e5a",
+          "request.json": "ede3d2d7528e5aa6594972d343c2828ffc7a1af4a679d4410ce8410c8eede053",
+          "response.json": "1e9f53635faac19c8a1e09269782bff3ad67063db8b50daeba89db9517f3a2c6"
+        },
+        "step_present": false
+      },
+      {
+        "worker_count": 4,
+        "files": {
+          "artifact.json": "3e918bf7a2700fa784c86309239961abc66143ec42d844c9ccda5315aac9d69e",
+          "manifest.json": "2d245ab79ac356c913cb0016e9c0869749cabe8000c1faa761179eed95445111",
+          "operations.json": "328576f11ab88def2268781b5d3809e85192ecabe7d33c6f2573766968d8354c",
+          "question.json": "9a1dd23c104c0f732b915b6e5c60e576104cede3c17f90b46331dcf63fb36e5a",
+          "request.json": "cb0c4e982df6e8d9b4219b952bfd636581f9468145a5cdfee0361361d3bd208b",
+          "response.json": "d46b93059f90cabedb4bc671e6ca22f8c67a4df3193f837e5e8d98519c59fbd9"
+        },
+        "step_present": false
+      }
+    ]
+  },
+  {
+    "id": "k10-axis-section",
+    "name": null,
+    "status": "refused",
+    "refusal": {
+      "code": "numbers.operation-budget",
+      "detail": "operation work allowance exhausted",
+      "stage": null,
+      "step": null
+    },
+    "work": {
+      "exhausted": true,
+      "limit": 20000000,
+      "used": 19999276
+    },
+    "response_equal_excluding_diagnostic_times_and_manifest_stats": true,
+    "step_bytes_equal": true,
+    "artifacts": [
+      {
+        "worker_count": 1,
+        "files": {
+          "artifact.json": "39c91ac06a447671f0b658fb811f345248873b5f114c308041b5d738aed93bc5",
+          "manifest.json": "2d245ab79ac356c913cb0016e9c0869749cabe8000c1faa761179eed95445111",
+          "operations.json": "661417f37e4806a00c9ac45bd7a969156ff9e519dd5651ccf8e3366c98940910",
+          "question.json": "d0c90c0babfcc0596a82aa21260847cdad930567d2233127d14076bf41360f0e",
+          "request.json": "b800760335c8dd7829ee2f51d7bdd5c26d9c89cd257e57a25a9a51f7e1826351",
+          "response.json": "e1f12fecd1761dc048c841afead7b4af97e5e938ef864568343ee3ed5c7933f7"
+        },
+        "step_present": false
+      },
+      {
+        "worker_count": 4,
+        "files": {
+          "artifact.json": "e5210102b3ae17557d493c280e1a3083879bdf29fe183a4742be7c4c4430cc3e",
+          "manifest.json": "2d245ab79ac356c913cb0016e9c0869749cabe8000c1faa761179eed95445111",
+          "operations.json": "4cc4f0087fd335ab2011524c1ed09a39913bd890038edc3da991e0965bc56bf5",
+          "question.json": "d0c90c0babfcc0596a82aa21260847cdad930567d2233127d14076bf41360f0e",
+          "request.json": "c0c8491f1b15924b307e8ab1a183d0d65afb7da2a5e0205b760af23403b4cd25",
+          "response.json": "e5d065a524c09dabc682b4709c3f91bf1ad0d549dc8652c426b330298d015a68"
+        },
+        "step_present": false
+      }
+    ]
+  },
+  {
+    "id": "k11-offset-section",
+    "name": null,
+    "status": "refused",
+    "refusal": {
+      "code": "numbers.operation-budget",
+      "detail": "operation work allowance exhausted",
+      "stage": null,
+      "step": null
+    },
+    "work": {
+      "exhausted": true,
+      "limit": 20000000,
+      "used": 19998787
+    },
+    "response_equal_excluding_diagnostic_times_and_manifest_stats": true,
+    "step_bytes_equal": true,
+    "artifacts": [
+      {
+        "worker_count": 1,
+        "files": {
+          "artifact.json": "ad7c730dad52329dc6c4f9e6a0012603df87a5b2199086e381125461d3130d89",
+          "manifest.json": "2d245ab79ac356c913cb0016e9c0869749cabe8000c1faa761179eed95445111",
+          "operations.json": "6a031efb69d41e9b6cef94a15a3d7df135c981b658525f3a94fafe17424e01b4",
+          "question.json": "783a1e8c7978145569feb65e1747a60fd754a77bb4af75165e0e1e32211b7892",
+          "request.json": "31f71a24e50d017057984afeb1acb2e00ee109110e50a8fe1827144ea89c3875",
+          "response.json": "ec6a8968817c662f9502463ceefc002f1ebbf1bb7a0e151b8f0328e4f252994d"
+        },
+        "step_present": false
+      },
+      {
+        "worker_count": 4,
+        "files": {
+          "artifact.json": "d33391323f4170f03989382badcef3e669d163f3275bb299a3821022da53eda6",
+          "manifest.json": "2d245ab79ac356c913cb0016e9c0869749cabe8000c1faa761179eed95445111",
+          "operations.json": "5b5c0acf884882f8a2902d84572b61d9073da059862e2c63f47814c37494b347",
+          "question.json": "783a1e8c7978145569feb65e1747a60fd754a77bb4af75165e0e1e32211b7892",
+          "request.json": "660e983fc32b5cb5002f77d778a03f7e6e73ace200087982e80222f12379cad6",
+          "response.json": "cd4801728a208a99d413315395d3331a8b2c0799c86ba26ab1c1cdfa46e22ef6"
+        },
+        "step_present": false
+      }
+    ]
+  },
+  {
+    "id": "k12-far-disjoint",
+    "name": null,
+    "status": "answered",
+    "refusal": null,
+    "work": {
+      "exhausted": false,
+      "limit": 20000000,
+      "used": 8267193
+    },
+    "response_equal_excluding_diagnostic_times_and_manifest_stats": true,
+    "step_bytes_equal": true,
+    "artifacts": [
+      {
+        "worker_count": 1,
+        "files": {
+          "answer.step": "82741ddc845c2860b6f7ff73a78c8703787db48584482f2cb6ff263354e2c22b",
+          "artifact.json": "811ed56d15b6aef365589bbeed0102c575f63c6898bba51debae040729343356",
+          "manifest.json": "a6a25a7cc1e0edcd182305954c9b528129b16120e61c8f636eeb15105695d9da",
+          "operations.json": "e5c2d91b7c3ac8e57288d792574e9236ceacc885ae848824ed888b3629d80b74",
+          "question.json": "0f8e9c9dfddd2d4a68c9c4e1701c71ac74e76c5c9e947403b06e9fb0a5e3d8ea",
+          "request.json": "de9fe9f7668f0f53d0dbf13cb250d6bd7ee98d5647027f64c0bac277fda54316",
+          "response.json": "3712a8c7b2eba4f88a07d7ad6ab4dc17c43d9ab61cb246005554dc31480e7bf8"
+        },
+        "step_present": true
+      },
+      {
+        "worker_count": 4,
+        "files": {
+          "answer.step": "82741ddc845c2860b6f7ff73a78c8703787db48584482f2cb6ff263354e2c22b",
+          "artifact.json": "205ed45d032869719626f63a0b92a21ef6068bce77f14ba82ddac5db80e3dd81",
+          "manifest.json": "a6a25a7cc1e0edcd182305954c9b528129b16120e61c8f636eeb15105695d9da",
+          "operations.json": "8656407465eeffc71beca64dce2e6ffd6d9806c34486b43e6372bb5753636c68",
+          "question.json": "0f8e9c9dfddd2d4a68c9c4e1701c71ac74e76c5c9e947403b06e9fb0a5e3d8ea",
+          "request.json": "eaf678a0969e2eb234fee99e3f05efa3d8cb764d586ddfee78ef05ad9493d066",
+          "response.json": "98b44cc88cc82cd3d1d5f209fc96bc0bea11834058a30bc8e54481b259969a6b"
+        },
+        "step_present": true
+      }
+    ]
+  },
+  {
+    "id": "k13-fillet-first",
+    "name": null,
+    "status": "refused",
+    "refusal": {
+      "code": "intersect.unsupported-pair",
+      "detail": "parallel cone/torus minor-angle quarter has no certified sign: certified enclosure retained at the first exhausted limit",
+      "stage": null,
+      "step": "drilled"
+    },
+    "work": {
+      "exhausted": false,
+      "limit": 20000000,
+      "used": 3471214
+    },
+    "response_equal_excluding_diagnostic_times_and_manifest_stats": true,
+    "step_bytes_equal": true,
+    "artifacts": [
+      {
+        "worker_count": 1,
+        "files": {
+          "artifact.json": "2bbef73dffe5c4f53b46d3e33ebda1afc86edea59289c54204e78df4935c922f",
+          "manifest.json": "054e13ab10dee21a6bbf65901018c0d0cac1a18af5dca1dace3666e2c42a3171",
+          "operations.json": "c428f8ae3946b251e03008e1dd216e414fa8e4213a8518ea6636dc9db198fb5e",
+          "question.json": "eb4b346df821c6656e1536b80cc848213c667be581c616a2bd835c3cddb6f7b0",
+          "request.json": "d3f72a53effceb420af3a74d3b366933c15d22fc882e825cba3f297ce3fc3834",
+          "response.json": "a9f768c01b84a2de6123f2c497371425116a292fc04caf810d4bcf0de3aeff5a"
+        },
+        "step_present": false
+      },
+      {
+        "worker_count": 4,
+        "files": {
+          "artifact.json": "6a5a579ba05c75e9eb13958d61556c1c0ea91312ddf65b22fc1178d498340ea1",
+          "manifest.json": "054e13ab10dee21a6bbf65901018c0d0cac1a18af5dca1dace3666e2c42a3171",
+          "operations.json": "84a8b3dec2f92135d110e4bb324684c279b83482792c8bd7c2fd03c7af16b53c",
+          "question.json": "eb4b346df821c6656e1536b80cc848213c667be581c616a2bd835c3cddb6f7b0",
+          "request.json": "19f0b5969cbf4aca6f216b8a2451867c889e05f8ac99efa148afcff1212e24d3",
+          "response.json": "bebe14d949f4e670d7097024908e3c8c7c4968a3c00a444763e9826b8107dbfa"
+        },
+        "step_present": false
+      }
+    ]
+  }
+]

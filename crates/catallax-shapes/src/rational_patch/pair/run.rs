@@ -150,8 +150,11 @@ enum Slot {
     Done(Box<Result<Processed, Refusal>>, Option<Charges>),
 }
 
+// One lock guards every slot. The writer waits on `changed` for slot after
+// slot, and a condition variable must always be used with the same mutex:
+// macOS panics on a second one.
 struct Board {
-    slots: Vec<Mutex<Slot>>,
+    slots: Mutex<Vec<Slot>>,
     changed: Condvar,
     next: AtomicUsize,
 }
@@ -181,7 +184,7 @@ fn run_level(
             .collect();
     };
     let board = Board {
-        slots: (0..pairs.len()).map(|_| Mutex::new(Slot::Open)).collect(),
+        slots: Mutex::new((0..pairs.len()).map(|_| Slot::Open).collect()),
         changed: Condvar::new(),
         next: AtomicUsize::new(0),
     };
@@ -245,15 +248,15 @@ fn explore(
             return;
         }
         {
-            let mut slot = locked(&board.slots[index]);
-            if !matches!(*slot, Slot::Open) {
+            let mut slots = locked(&board.slots);
+            if !matches!(slots[index], Slot::Open) {
                 continue;
             }
-            *slot = Slot::Taken;
+            slots[index] = Slot::Taken;
         }
         let (value, charges) =
             catallax_numbers::record(|| process(ctx, &pairs[index], snapshot, worker));
-        *locked(&board.slots[index]) = Slot::Done(Box::new(value), charges);
+        locked(&board.slots)[index] = Slot::Done(Box::new(value), charges);
         board.changed.notify_all();
     }
 }
@@ -269,28 +272,28 @@ fn take(
     wait: bool,
     dec: &mut Decider,
 ) -> Result<Processed, Refusal> {
-    let mut slot = locked(&board.slots[index]);
+    let mut slots = locked(&board.slots);
     loop {
-        match &*slot {
+        match &slots[index] {
             Slot::Open if !wait => {
-                *slot = Slot::Writer;
-                drop(slot);
+                slots[index] = Slot::Writer;
+                drop(slots);
                 return process(ctx, &pairs[index], snapshot, dec);
             }
             Slot::Open | Slot::Taken => {
-                slot = board
+                slots = board
                     .changed
-                    .wait(slot)
+                    .wait(slots)
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
             }
             Slot::Writer => unreachable!("the writer takes each pair once"),
             Slot::Done(..) => break,
         }
     }
-    let Slot::Done(value, charges) = std::mem::replace(&mut *slot, Slot::Writer) else {
+    let Slot::Done(value, charges) = std::mem::replace(&mut slots[index], Slot::Writer) else {
         unreachable!("matched above");
     };
-    drop(slot);
+    drop(slots);
     if let Some(charges) = charges
         && charges.adopt(dec)
     {

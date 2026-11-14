@@ -16,8 +16,11 @@ enum Slot<T> {
     Done(Box<Result<T, Refusal>>, Option<Charges>),
 }
 
+// One lock guards every slot. The writer waits on `changed` for slot after
+// slot, and a condition variable must always be used with the same mutex:
+// macOS panics on a second one.
 struct Board<T> {
-    slots: Vec<Mutex<Slot<T>>>,
+    slots: Mutex<Vec<Slot<T>>>,
     changed: Condvar,
     next: AtomicUsize,
 }
@@ -39,7 +42,7 @@ where
         return (0..count).map(|index| task(index, dec)).collect();
     };
     let board = Board {
-        slots: (0..count).map(|_| Mutex::new(Slot::Open)).collect(),
+        slots: Mutex::new((0..count).map(|_| Slot::Open).collect()),
         changed: Condvar::new(),
         next: AtomicUsize::new(0),
     };
@@ -82,18 +85,16 @@ where
             return;
         }
         let index = board.next.fetch_add(1, Ordering::Relaxed);
-        if index >= board.slots.len() {
-            return;
-        }
         {
-            let mut slot = locked(&board.slots[index]);
-            if !matches!(*slot, Slot::Open) {
-                continue;
+            let mut slots = locked(&board.slots);
+            match slots.get(index) {
+                None => return,
+                Some(Slot::Open) => slots[index] = Slot::Taken,
+                Some(_) => continue,
             }
-            *slot = Slot::Taken;
         }
         let (value, charges) = catallax_numbers::record(|| task(index, worker));
-        *locked(&board.slots[index]) = Slot::Done(Box::new(value), charges);
+        locked(&board.slots)[index] = Slot::Done(Box::new(value), charges);
         board.changed.notify_all();
     }
 }
@@ -108,32 +109,63 @@ fn take<T, F>(
 where
     F: Fn(usize, &mut Decider) -> Result<T, Refusal>,
 {
-    let mut slot = locked(&board.slots[index]);
+    let mut slots = locked(&board.slots);
     loop {
-        match &*slot {
+        match &slots[index] {
             Slot::Open if !wait => {
-                *slot = Slot::Writer;
-                drop(slot);
+                slots[index] = Slot::Writer;
+                drop(slots);
                 return task(index, dec);
             }
             Slot::Open | Slot::Taken => {
-                slot = board
+                slots = board
                     .changed
-                    .wait(slot)
+                    .wait(slots)
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
             }
             Slot::Writer => unreachable!("the writer takes each task once"),
             Slot::Done(..) => break,
         }
     }
-    let Slot::Done(value, charges) = std::mem::replace(&mut *slot, Slot::Writer) else {
+    let Slot::Done(value, charges) = std::mem::replace(&mut slots[index], Slot::Writer) else {
         unreachable!("matched above");
     };
-    drop(slot);
+    drop(slots);
     if let Some(charges) = charges
         && charges.adopt(dec)
     {
         return *value;
     }
     task(index, dec)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::num::NonZeroUsize;
+    use std::time::Duration;
+
+    // Helpers prove the tasks while the writer waits for each one in turn, so
+    // the writer waits on the board for task after task. Every wait must use
+    // the one lock the condition variable has seen: macOS panics on another.
+    #[test]
+    fn the_writer_waits_for_task_after_task_on_one_lock() {
+        struct Restore;
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                catallax_numbers::set_threads(None);
+                catallax_numbers::set_run_ahead_wait(false);
+            }
+        }
+        let _restore = Restore;
+        catallax_numbers::set_threads(NonZeroUsize::new(4));
+        catallax_numbers::set_run_ahead_wait(true);
+        // Later tasks take longer, so the writer finds each one unfinished.
+        let task = |index: usize, _: &mut Decider| {
+            std::thread::sleep(Duration::from_millis(10 * (index as u64 + 1)));
+            Ok(index)
+        };
+        let done = in_order(8, task, &mut Decider::default()).unwrap();
+        assert_eq!(done, (0..8).collect::<Vec<_>>());
+    }
 }

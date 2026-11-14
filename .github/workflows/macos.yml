@@ -1,0 +1,40 @@
+name: macos threads
+
+# The kernel's run-ahead helpers wait on condition variables. On macOS the
+# standard library's pthread condition variable panics when one is used with
+# two mutexes; Linux futexes accept that misuse silently, so only a macOS run
+# catches it. These tests drive every run-ahead site with helper threads.
+
+on:
+  pull_request:
+  push:
+    branches: [main, 'release/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-threads-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  run-ahead:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run-ahead boards and caches
+        run: >-
+          cargo test --locked --release
+          -p catallax-numbers -p catallax-step -p catallax-field -p catallax-measure -p catallax-shapes
+          --lib
+      - name: Spline fillets and patch pairs at 1, 2 and 4 workers
+        run: cargo test --locked --release -p catallax-shapes --test spline_fillet --test patch_pair

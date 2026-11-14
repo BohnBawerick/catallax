@@ -57,7 +57,12 @@ pub fn face_placement(
         origin.plus(&normal.scaled(&offset.clone().into())),
         dec,
     )?;
-    Ok(pose.then(&crate::profile::placement(placement, dec)?))
+    let placement = crate::profile::placement(placement, dec)?;
+    // Avoid algebraic zero terms when a copy does not move the tool.
+    if placement.same_motion(&Pose::identity(), dec)? {
+        return Ok(pose);
+    }
+    Ok(pose.then(&placement))
 }
 
 /// Face extrusion coordinates are local XY, not another world-space frame.

@@ -31,6 +31,37 @@ fn cut_profile() -> Value {
 }
 
 #[test]
+fn identity_copy_placements_keep_rational_face_axes() {
+    let normal = RVector3::new(2.into(), 0.into(), 3.into());
+    let x = RVector3::new(0.into(), 1.into(), 0.into());
+    let plane = catallax_shapes::Plane {
+        origin: RPoint3::new(3.into(), 0.into(), 2.into()).into(),
+        normal: normal.clone().into(),
+        ref_dir: x.clone().into(),
+    };
+    for scale in [1, -2] {
+        let mut placement = catallax_recipe::Pose::identity();
+        placement.rotation[0] = Number::from(scale);
+        let pose = catallax_features::face_placement(
+            std::slice::from_ref(&plane),
+            &normal,
+            &x,
+            &Rational::zero(),
+            &placement,
+            &mut Decider::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            pose.rotation.matrix()[1]
+                .each_ref()
+                .map(|v| v.as_rational()),
+            [Some(1.into()), Some(0.into()), Some(0.into())]
+        );
+        assert_eq!(pose.translation.y.as_rational(), Some(0.into()));
+    }
+}
+
+#[test]
 fn rounded_frame_does_not_preserve_the_supporting_plane() {
     let converted = convert(&recipe(
         vec![
@@ -106,7 +137,12 @@ fn face_mounted_cut_opens_supporting_plane() {
         distance: Number::from(-150),
         placement: catallax_recipe::Pose::identity(),
     };
-    let built = catallax_features::evaluate(&converted.recipe, &mut Decider::default()).unwrap();
+    let (built, work) =
+        catallax_numbers::with_operation_budget(catallax_app::DEFAULT_BUILD_WORK, || {
+            catallax_features::evaluate(&converted.recipe, &mut Decider::default())
+        });
+    eprintln!("face-mounted cut work: {work:?}");
+    let built = built.unwrap();
     let tool = &converted.steps["Tool"];
     let start_caps: Vec<_> = built
         .model

@@ -1,15 +1,17 @@
 # P04 executed validation
 
+Publication-sanitized transcription. Original bytes are retained in authorized private scratch; no tests or builds were repeated for this correction. `<P04_WORKTREE>` is the isolated repository worktree. Before reproducing the command, set `CARGO_HOME_DIR` and `RUSTUP_HOME_DIR` to the existing authorized Cargo and Rustup roots; `<DEFAULT_RUSTUP_HOME>` denotes the inaccessible default root from the original launch diagnostic. These substitutions preserve command semantics without publishing host locations.
+
 Baseline: `f4db345f2e7c51835d1ebeba9f6446d117144117`, 2026-11-14 UTC.
-Worktree: `/workspace/p04-catallax`; branch `phase1/P04-port-consumers`.
+Worktree: `<P04_WORKTREE>`; branch `phase1/P04-port-consumers`.
 Compiler: `rustc 1.100.0 (0ef1bc386 2026-11-09)`.
 
 ## Rust saved-gate subset
 
-Executed successfully, exit 0:
+Executed successfully, exit 0 (original execution; command shown with portable location substitutions):
 
 ```sh
-CARGO_HOME=/workspace/.cargo RUSTUP_HOME=/workspace/.rustup /workspace/.cargo/bin/cargo test --offline -p catallax-trace --test drop_curve --test intersector --test curve_surface --test surface_drop --test curve_on_surface
+CARGO_HOME="$CARGO_HOME_DIR" RUSTUP_HOME="$RUSTUP_HOME_DIR" "$CARGO_HOME_DIR/bin/cargo" test --offline -p catallax-trace --test drop_curve --test intersector --test curve_surface --test surface_drop --test curve_on_surface
 ```
 
 | Integration target | Passed | Failed | Test harness elapsed seconds |
@@ -22,7 +24,7 @@ CARGO_HOME=/workspace/.cargo RUSTUP_HOME=/workspace/.rustup /workspace/.cargo/bi
 
 This is a transcription of observed tool output, not a retained raw stdout log. Total 17 tests passed. The harnesses include their existing 1/2/4-worker checks where coded; no blanket all-thread qualification is inferred. The drop gate still expects two `drefuse` rows. No saved expectations or binary64 allowances were edited. No CLI/Boolean request, STEP, external import, local oracle, sanitizer or memory-fault probe was run. Times are harness observations on a shared cloud machine, not performance acceptance.
 
-Initial launch diagnostics: plain `cargo` was absent from PATH (exit 127). Calling `/workspace/.cargo/bin/cargo` without the saved-environment roots failed to create `/home/agent/.rustup` (exit 1, read-only filesystem). Setting the existing authorized `/workspace/.cargo` and `/workspace/.rustup` roots allowed the offline command above. No permissions changed or escalation requested. Cargo emitted the pre-existing CLI dual-bin manifest warning; it compiled `libm` and `catallax-trace` locally.
+Initial launch diagnostics: plain `cargo` was absent from PATH (exit 127). Calling `<CARGO_HOME_DIR>/bin/cargo` without the saved-environment roots failed to create `<DEFAULT_RUSTUP_HOME>` (exit 1, read-only filesystem). Setting the existing authorized `<CARGO_HOME_DIR>` and `<RUSTUP_HOME_DIR>` roots allowed the offline command above. No permissions changed or escalation requested. Cargo emitted the pre-existing CLI dual-bin manifest warning; it compiled `libm` and `catallax-trace` locally.
 
 ## Static and baseline checks
 

@@ -804,5 +804,6 @@
       "path": "docs/THIRD-PARTY.md",
       "sha256": "e3356f63cb9336c553151fd1724a8d6fb0579ff634d4c6c6318d9b73f798473b"
     }
-  ]
+  ],
+  "publication_sanitization": "Publication-sanitized metadata copy. Source paths are repository-relative; baseline source bytes and their SHA-256 digests are unchanged. Original artifact bytes retained in authorized private scratch. No new execution evidence."
 }

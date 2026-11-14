@@ -1,5 +1,7 @@
 # P04 — remaining port calls and Phase 1 consumers
 
+Publication-sanitized copy: machine-specific locations are portable placeholders; original bytes are retained in authorized private scratch. Historical results and baseline source identities are unchanged.
+
 ## Decision supported by this report
 
 Steps 1–9 are landed in the frozen main ancestry, with tracked Rust units and saved differential gates. That means the historical dependency-order slices landed, not that every SMLib path works or any Phase 1 milestone is qualified. The three named omissions are still explicit `NotPorted(Intersect)` returns.
@@ -11,7 +13,7 @@ The B01–B03 card definitions are not present in the tracked sources searched a
 ## Baseline, scope and method
 
 - Repository: `BohnBawerick/catallax` only. Remote `main` observed with `git ls-remote origin refs/heads/main`, then fetched and frozen to `f4db345f2e7c51835d1ebeba9f6446d117144117` on 2026-11-14 UTC. Later remote movement does not change this report's baseline.
-- Isolated worktree `/workspace/p04-catallax`, branch `phase1/P04-port-consumers`, created from that exact commit. Original `work` checkout and older branches preserved.
+- Isolated worktree `<P04_WORKTREE>`, branch `phase1/P04-port-consumers`, created from that exact commit. Original `work` checkout and older branches preserved.
 - Read tracked sources, fixture READMEs, saved text rows and generator descriptions; inspected first-parent commit ancestry for landed claims. No donor source repository, companion repository, private corpus, retained raw oracle directory, C++ build/execution, hosted gate or CI reads were used.
 - No `AGENTS.md` or `.agents/skills/SKILL.md` was found in the repository; `.agents` contained no files. The verification skill in `.claude/skills/verify-catallax/SKILL.md` was read for context; this report does not perform CLI/STEP qualification and does not invoke its full qualification workflow.
 - Source hashes and exact saved-fixture row counts are in `evidence/phase1/P04/source-manifest.json`. Rust saved-gate execution is recorded separately in `evidence/phase1/P04/VALIDATION.md`. Historical measurements quoted below remain source reports, not new oracle observations.

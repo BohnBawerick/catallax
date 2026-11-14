@@ -18,8 +18,11 @@ enum Slot<T> {
     Abandoned,
 }
 
+// One lock guards every slot. The writer waits on `changed` for slot after
+// slot, and a condition variable must always be used with the same mutex:
+// macOS panics on a second one.
 struct Board<T> {
-    slots: Vec<Mutex<Slot<T>>>,
+    slots: Mutex<Vec<Slot<T>>>,
     changed: Condvar,
     next: AtomicUsize,
     // Helpers still taking items. A waiting writer stops waiting for an open
@@ -57,7 +60,7 @@ where
         return ControlFlow::Continue(());
     };
     let board = Board {
-        slots: (0..items.len()).map(|_| Mutex::new(Slot::Open)).collect(),
+        slots: Mutex::new((0..items.len()).map(|_| Slot::Open).collect()),
         changed: Condvar::new(),
         next: AtomicUsize::new(0),
         exploring: AtomicUsize::new(0),
@@ -104,15 +107,13 @@ fn explore<I, T>(
     evaluate: &(impl Fn(&I, &mut Decider) -> T + Sync),
     worker: &mut Decider,
 ) {
-    // Every path out, a panic included, leaves the board. Taking each slot's
-    // lock before the notice reaches a writer that is about to wait on one.
+    // Every path out, a panic included, leaves the board. Taking the slots'
+    // lock before the notice reaches a writer that is about to wait.
     struct Leave<'b, T>(&'b Board<T>);
     impl<T> Drop for Leave<'_, T> {
         fn drop(&mut self) {
             self.0.exploring.fetch_sub(1, Ordering::SeqCst);
-            for slot in &self.0.slots {
-                drop(locked(slot));
-            }
+            drop(locked(&self.0.slots));
             self.0.changed.notify_all();
         }
     }
@@ -121,11 +122,11 @@ fn explore<I, T>(
     struct Settle<'b, T>(&'b Board<T>, usize);
     impl<T> Drop for Settle<'_, T> {
         fn drop(&mut self) {
-            let mut slot = locked(&self.0.slots[self.1]);
-            if matches!(*slot, Slot::Taken) {
-                *slot = Slot::Abandoned;
+            let mut slots = locked(&self.0.slots);
+            if matches!(slots[self.1], Slot::Taken) {
+                slots[self.1] = Slot::Abandoned;
             }
-            drop(slot);
+            drop(slots);
             self.0.changed.notify_all();
         }
     }
@@ -139,15 +140,15 @@ fn explore<I, T>(
             return;
         }
         {
-            let mut slot = locked(&board.slots[index]);
-            if !matches!(*slot, Slot::Open) {
+            let mut slots = locked(&board.slots);
+            if !matches!(slots[index], Slot::Open) {
                 continue;
             }
-            *slot = Slot::Taken;
+            slots[index] = Slot::Taken;
         }
         let settle = Settle(board, index);
         let (value, charges) = catallax_numbers::record(|| evaluate(&items[index], worker));
-        *locked(&board.slots[index]) = Slot::Done(Box::new(value), charges);
+        locked(&board.slots)[index] = Slot::Done(Box::new(value), charges);
         drop(settle);
     }
 }
@@ -162,33 +163,33 @@ fn take<I, T>(
     evaluate: &impl Fn(&I, &mut Decider) -> T,
     dec: &mut Decider,
 ) -> T {
-    let mut slot = locked(&board.slots[index]);
+    let mut slots = locked(&board.slots);
     loop {
-        match &*slot {
+        match &slots[index] {
             Slot::Open if !wait || board.exploring.load(Ordering::SeqCst) == 0 => {
-                *slot = Slot::Writer;
-                drop(slot);
+                slots[index] = Slot::Writer;
+                drop(slots);
                 return evaluate(&items[index], dec);
             }
             Slot::Abandoned => {
-                *slot = Slot::Writer;
-                drop(slot);
+                slots[index] = Slot::Writer;
+                drop(slots);
                 return evaluate(&items[index], dec);
             }
             Slot::Open | Slot::Taken => {
-                slot = board
+                slots = board
                     .changed
-                    .wait(slot)
+                    .wait(slots)
                     .unwrap_or_else(PoisonError::into_inner);
             }
             Slot::Writer => unreachable!("the writer takes each item once"),
             Slot::Done(..) => break,
         }
     }
-    let Slot::Done(value, charges) = std::mem::replace(&mut *slot, Slot::Writer) else {
+    let Slot::Done(value, charges) = std::mem::replace(&mut slots[index], Slot::Writer) else {
         unreachable!("matched above");
     };
-    drop(slot);
+    drop(slots);
     if let Some(charges) = charges
         && charges.adopt(dec)
     {
@@ -251,6 +252,41 @@ mod tests {
         // Every item reaches the writer in order.
         assert_eq!(*locked(&consumed), (0..16).collect::<Vec<_>>());
         panicked
+    }
+
+    // Helpers evaluate the items while the writer waits for each one in turn,
+    // so the writer waits on the board for item after item. Every wait must
+    // use the one lock the condition variable has seen: macOS panics on
+    // another.
+    #[test]
+    fn the_writer_waits_for_item_after_item_on_one_lock() {
+        struct Restore;
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                catallax_numbers::set_threads(None);
+                catallax_numbers::set_run_ahead_wait(false);
+            }
+        }
+        let _restore = Restore;
+        catallax_numbers::set_threads(NonZeroUsize::new(4));
+        catallax_numbers::set_run_ahead_wait(true);
+        let items: Vec<u64> = (0..8).collect();
+        let mut consumed = Vec::new();
+        // Later items take longer, so the writer finds each one unfinished.
+        let flow = in_order(
+            &items,
+            |&item, _| {
+                std::thread::sleep(Duration::from_millis(10 * (item + 1)));
+                item
+            },
+            &mut Decider::default(),
+            |_, value, _| {
+                consumed.push(value);
+                ControlFlow::<()>::Continue(())
+            },
+        );
+        assert_eq!(flow, ControlFlow::Continue(()));
+        assert_eq!(consumed, items);
     }
 
     #[test]

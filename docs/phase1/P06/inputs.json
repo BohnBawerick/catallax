@@ -1,0 +1,1340 @@
+{
+  "baseline": "f4db345f2e7c51835d1ebeba9f6446d117144117",
+  "canonical_edited_recipe_encoding": "UTF-8 json.dumps(sort_keys=True, indent=2) plus LF; informational hash, not a copied recipe",
+  "census_archive_pin": {
+    "archive_bytes": 1594129754,
+    "archive_md5": "695388be7a278c7798c8c8ae239772ac",
+    "archive_sha256": "52e6dd1b6fa38e3cd99af59b662370829129540030975919c3e256dce6ad1dbe",
+    "licence_scope": "aggregate analysis under dataset MIT grant; per-model source exceptions not individually verified",
+    "seed": 20261111
+  },
+  "evidence_kind": "static source inspection; no new geometry execution",
+  "format": "catallax-phase1-p06-input-pin/1",
+  "ordered_inputs": [
+    {
+      "additional_edit_chain": null,
+      "chain": [
+        {
+          "intent": "construct",
+          "ordinal": 0,
+          "source": "parts/P1-bracket.json"
+        },
+        {
+          "definition_source": ".claude/skills/verify-catallax/scripts/head-to-head/cases/P1-bracket.json",
+          "edit": {
+            "path": [
+              "radius"
+            ],
+            "step": "boss",
+            "value": "9"
+          },
+          "edited_recipe_canonical_sha256": "3bae7a040e106f7910d971637180f26fd6443530b163d9d2d98d9383657560bd",
+          "intent": "rebuild complete edited recipe",
+          "old_value": "8",
+          "ordinal": 1,
+          "reference_edit": {
+            "command": "parameters.change",
+            "params": {
+              "expression": "9",
+              "name": "edit_value"
+            }
+          }
+        }
+      ],
+      "chain_policy": "Construct full original, then full edited recipe; no successful prefix substitution.",
+      "construction_operations": [
+        {
+          "id": "plate-profile",
+          "op": "sketch"
+        },
+        {
+          "id": "plate",
+          "op": "extrude"
+        },
+        {
+          "id": "flange-profile",
+          "op": "sketch"
+        },
+        {
+          "id": "flange",
+          "op": "extrude"
+        },
+        {
+          "id": "base",
+          "op": "boolean"
+        },
+        {
+          "id": "boss",
+          "op": "cylinder"
+        },
+        {
+          "id": "bossed",
+          "op": "boolean"
+        },
+        {
+          "id": "bore",
+          "op": "cylinder"
+        },
+        {
+          "id": "bored",
+          "op": "boolean"
+        },
+        {
+          "id": "bolt-0",
+          "op": "cylinder"
+        },
+        {
+          "id": "bolt-cut-0",
+          "op": "boolean"
+        },
+        {
+          "id": "bolt-1",
+          "op": "cylinder"
+        },
+        {
+          "id": "bolt-cut-1",
+          "op": "boolean"
+        },
+        {
+          "id": "bolt-2",
+          "op": "cylinder"
+        },
+        {
+          "id": "bolt-cut-2",
+          "op": "boolean"
+        },
+        {
+          "id": "bolt-3",
+          "op": "cylinder"
+        },
+        {
+          "id": "bolt-cut-3",
+          "op": "boolean"
+        },
+        {
+          "id": "slot-tool-0",
+          "op": "cylinder"
+        },
+        {
+          "id": "slot-cut-0",
+          "op": "boolean"
+        },
+        {
+          "id": "slot-tool-1",
+          "op": "cylinder"
+        },
+        {
+          "id": "slot-cut-1",
+          "op": "boolean"
+        },
+        {
+          "id": "slot-tool-2",
+          "op": "cylinder"
+        },
+        {
+          "id": "slot-cut-2",
+          "op": "boolean"
+        },
+        {
+          "id": "slot-tool-3",
+          "op": "cylinder"
+        },
+        {
+          "id": "slot-cut-3",
+          "op": "boolean"
+        },
+        {
+          "id": "slot-tool-4",
+          "op": "cylinder"
+        },
+        {
+          "id": "slot-cut-4",
+          "op": "boolean"
+        },
+        {
+          "id": "slot-tool-5",
+          "op": "cylinder"
+        },
+        {
+          "id": "slot-cut-5",
+          "op": "boolean"
+        },
+        {
+          "id": "slot-tool-6",
+          "op": "cylinder"
+        },
+        {
+          "id": "slot-cut-6",
+          "op": "boolean"
+        },
+        {
+          "id": "slot-tool-7",
+          "op": "cylinder"
+        },
+        {
+          "id": "slot-cut-7",
+          "op": "boolean"
+        },
+        {
+          "id": "slot-middle",
+          "op": "block"
+        },
+        {
+          "id": "bracket",
+          "op": "boolean"
+        }
+      ],
+      "id": "P1",
+      "license": "MIT (repository LICENSE)",
+      "order": 1,
+      "recipe": "parts/P1-bracket.json",
+      "reference_intent": "Same scalar value, placement, complete target and result as committed reference case; operation graphs may differ; equivalence unexecuted.",
+      "result": "bracket",
+      "status": "one committed edit pinned; longer edit sequence undefined"
+    },
+    {
+      "additional_edit_chain": null,
+      "chain": [
+        {
+          "intent": "construct",
+          "ordinal": 0,
+          "source": "parts/P2-collar.json"
+        },
+        {
+          "definition_source": ".claude/skills/verify-catallax/scripts/head-to-head/cases/P2-collar.json",
+          "edit": {
+            "path": [
+              "distance"
+            ],
+            "step": "collar",
+            "value": "0.75"
+          },
+          "edited_recipe_canonical_sha256": "4540c23dc1e0c25f29ce31246ce69ad168ea036a2f410d6cdf994e93a6c3dc33",
+          "intent": "rebuild complete edited recipe",
+          "old_value": "1",
+          "ordinal": 1,
+          "reference_edit": {
+            "command": "parameters.change",
+            "params": {
+              "expression": "0.75",
+              "name": "edit_value"
+            }
+          }
+        }
+      ],
+      "chain_policy": "Construct full original, then full edited recipe; no successful prefix substitution.",
+      "construction_operations": [
+        {
+          "id": "section",
+          "op": "sketch"
+        },
+        {
+          "id": "ring",
+          "op": "revolve"
+        },
+        {
+          "id": "collar",
+          "op": "chamfer"
+        }
+      ],
+      "id": "P2",
+      "license": "MIT (repository LICENSE)",
+      "order": 2,
+      "recipe": "parts/P2-collar.json",
+      "reference_intent": "Same scalar value, placement, complete target and result as committed reference case; operation graphs may differ; equivalence unexecuted.",
+      "result": "collar",
+      "status": "one committed edit pinned; longer edit sequence undefined"
+    },
+    {
+      "additional_edit_chain": null,
+      "chain": [
+        {
+          "intent": "construct",
+          "ordinal": 0,
+          "source": "parts/P3-filleted-boss.json"
+        },
+        {
+          "definition_source": ".claude/skills/verify-catallax/scripts/head-to-head/cases/P3-filleted-boss.json",
+          "edit": {
+            "path": [
+              "radius"
+            ],
+            "step": "junction",
+            "value": "2.5"
+          },
+          "edited_recipe_canonical_sha256": "287886e7d74744163b82576619f3f1c537bc9e2dc19f5beebdda4edc5f1b8660",
+          "intent": "rebuild complete edited recipe",
+          "old_value": "2",
+          "ordinal": 1,
+          "reference_edit": {
+            "command": "parameters.change",
+            "params": {
+              "expression": "2.5",
+              "name": "edit_value"
+            }
+          }
+        }
+      ],
+      "chain_policy": "Construct full original, then full edited recipe; no successful prefix substitution.",
+      "construction_operations": [
+        {
+          "id": "block",
+          "op": "block"
+        },
+        {
+          "id": "boss",
+          "op": "cylinder"
+        },
+        {
+          "id": "joined",
+          "op": "boolean"
+        },
+        {
+          "id": "junction",
+          "op": "fillet"
+        },
+        {
+          "id": "rounded",
+          "op": "fillet"
+        }
+      ],
+      "id": "P3",
+      "license": "MIT (repository LICENSE)",
+      "order": 3,
+      "recipe": "parts/P3-filleted-boss.json",
+      "reference_intent": "Same scalar value, placement, complete target and result as committed reference case; operation graphs may differ; equivalence unexecuted.",
+      "result": "rounded",
+      "status": "one committed edit pinned; longer edit sequence undefined"
+    },
+    {
+      "additional_edit_chain": null,
+      "chain": [
+        {
+          "intent": "construct",
+          "ordinal": 0,
+          "source": "parts/P4-shelled-tray.json"
+        },
+        {
+          "definition_source": ".claude/skills/verify-catallax/scripts/head-to-head/cases/P4-shelled-tray.json",
+          "edit": {
+            "path": [
+              "thickness"
+            ],
+            "step": "tray",
+            "value": "1.5"
+          },
+          "edited_recipe_canonical_sha256": "4ca0798fd1232dc009b8087fa3763e410a64fe5c606c4eaa0f857497b77832d9",
+          "intent": "rebuild complete edited recipe",
+          "old_value": "2",
+          "ordinal": 1,
+          "reference_edit": {
+            "command": "parameters.change",
+            "params": {
+              "expression": "1.5",
+              "name": "edit_value"
+            }
+          }
+        }
+      ],
+      "chain_policy": "Construct full original, then full edited recipe; no successful prefix substitution.",
+      "construction_operations": [
+        {
+          "id": "blank",
+          "op": "block"
+        },
+        {
+          "id": "tray",
+          "op": "shell"
+        },
+        {
+          "id": "rounding",
+          "op": "cylinder"
+        },
+        {
+          "id": "rounded",
+          "op": "boolean"
+        }
+      ],
+      "id": "P4",
+      "license": "MIT (repository LICENSE)",
+      "order": 4,
+      "recipe": "parts/P4-shelled-tray.json",
+      "reference_intent": "Same scalar value, placement, complete target and result as committed reference case; operation graphs may differ; equivalence unexecuted.",
+      "result": "rounded",
+      "status": "one committed edit pinned; longer edit sequence undefined"
+    },
+    {
+      "additional_edit_chain": null,
+      "chain": [
+        {
+          "intent": "construct",
+          "ordinal": 0,
+          "source": "parts/P5-flanged-housing.json"
+        },
+        {
+          "definition_source": ".claude/skills/verify-catallax/scripts/head-to-head/cases/P5-flanged-housing.json",
+          "edit": {
+            "path": [
+              "radius"
+            ],
+            "step": "filleted",
+            "value": "2.5"
+          },
+          "edited_recipe_canonical_sha256": "ed1b642f8e1e2c1740108d7604771a9d5d81538eb43e4b35c34f5cfe0229c99d",
+          "intent": "rebuild complete edited recipe",
+          "old_value": "2",
+          "ordinal": 1,
+          "reference_edit": {
+            "command": "parameters.change",
+            "params": {
+              "expression": "2.5",
+              "name": "edit_value"
+            }
+          }
+        }
+      ],
+      "chain_policy": "Construct full original, then full edited recipe; no successful prefix substitution.",
+      "construction_operations": [
+        {
+          "id": "section",
+          "op": "sketch"
+        },
+        {
+          "id": "housing",
+          "op": "revolve"
+        },
+        {
+          "id": "drill",
+          "op": "cylinder"
+        },
+        {
+          "id": "sink",
+          "op": "cone"
+        },
+        {
+          "id": "countersink",
+          "op": "boolean"
+        },
+        {
+          "id": "hole-pattern",
+          "op": "pattern"
+        },
+        {
+          "id": "drilled",
+          "op": "boolean"
+        },
+        {
+          "id": "filleted",
+          "op": "fillet"
+        }
+      ],
+      "id": "P5",
+      "license": "MIT (repository LICENSE)",
+      "order": 5,
+      "recipe": "parts/P5-flanged-housing.json",
+      "reference_intent": "Same scalar value, placement, complete target and result as committed reference case; operation graphs may differ; equivalence unexecuted.",
+      "result": "filleted",
+      "status": "one committed edit pinned; longer edit sequence undefined"
+    },
+    {
+      "additional_edit_chain": null,
+      "chain": [
+        {
+          "intent": "construct",
+          "ordinal": 0,
+          "source": "parts/P6-lattice-bracket.json"
+        }
+      ],
+      "chain_policy": "Construct full original, then full edited recipe; no successful prefix substitution.",
+      "construction_operations": [
+        {
+          "id": "stock",
+          "op": "block"
+        },
+        {
+          "id": "notch",
+          "op": "block"
+        },
+        {
+          "id": "envelope",
+          "op": "boolean"
+        },
+        {
+          "id": "base-core",
+          "op": "block"
+        },
+        {
+          "id": "flange-core",
+          "op": "block"
+        },
+        {
+          "id": "cavity",
+          "op": "boolean"
+        },
+        {
+          "id": "shell",
+          "op": "boolean"
+        },
+        {
+          "id": "base-fill",
+          "op": "block"
+        },
+        {
+          "id": "flange-fill",
+          "op": "block"
+        },
+        {
+          "id": "fill-region",
+          "op": "boolean"
+        },
+        {
+          "id": "infill",
+          "op": "lattice"
+        },
+        {
+          "id": "filled",
+          "op": "boolean"
+        },
+        {
+          "id": "bore",
+          "op": "cylinder"
+        },
+        {
+          "id": "part",
+          "op": "boolean"
+        }
+      ],
+      "id": "P6",
+      "license": "MIT (repository LICENSE)",
+      "missing": [
+        "P6 parameter edit and ordered continuation",
+        "reference lattice/Boolean full-target definition and edit"
+      ],
+      "order": 6,
+      "recipe": "parts/P6-lattice-bracket.json",
+      "result": "part",
+      "status": "construction pinned; edit and reference implementation missing"
+    },
+    {
+      "additional_edit_chain": null,
+      "chain": [],
+      "chain_policy": "Construct full original, then full edited recipe; no successful prefix substitution.",
+      "id": "P7",
+      "license": "MIT (repository LICENSE)",
+      "missing": [
+        "fixed recipe, dimensions, placements and operation order",
+        "parameter edit and ordered continuation",
+        "reference full-target operation and edit definitions"
+      ],
+      "name": "field-driven bracket with gyroid infill",
+      "order": 7,
+      "recipe": null,
+      "status": "named intent only"
+    },
+    {
+      "additional_edit_chain": null,
+      "chain": [],
+      "chain_policy": "Construct full original, then full edited recipe; no successful prefix substitution.",
+      "id": "P8",
+      "license": "MIT (repository LICENSE)",
+      "missing": [
+        "fixed recipe, dimensions, placements and operation order",
+        "parameter edit and ordered continuation",
+        "reference full-target operation and edit definitions"
+      ],
+      "name": "helical spring and threaded boss",
+      "order": 8,
+      "recipe": null,
+      "status": "named intent only"
+    },
+    {
+      "additional_edit_chain": null,
+      "chain": [],
+      "chain_policy": "Construct full original, then full edited recipe; no successful prefix substitution.",
+      "id": "P9",
+      "license": "MIT (repository LICENSE)",
+      "missing": [
+        "fixed recipe, dimensions, placements and operation order",
+        "parameter edit and ordered continuation",
+        "reference full-target operation and edit definitions"
+      ],
+      "name": "lofted duct",
+      "order": 9,
+      "recipe": null,
+      "status": "named intent only"
+    },
+    {
+      "additional_edit_chain": null,
+      "chain": [],
+      "chain_policy": "Construct full original, then full edited recipe; no successful prefix substitution.",
+      "id": "P10",
+      "license": "MIT (repository LICENSE)",
+      "missing": [
+        "fixed recipe, dimensions, placements and operation order",
+        "parameter edit and ordered continuation",
+        "reference full-target operation and edit definitions"
+      ],
+      "name": "topology-optimised bracket",
+      "order": 10,
+      "recipe": null,
+      "status": "named intent only"
+    },
+    {
+      "census_observation": {
+        "all_face_kinds_buildable": "True",
+        "assembly_or_mapping_entities": "0",
+        "bodies": "1",
+        "bspline": "0",
+        "chamfer_count": "",
+        "cone": "0",
+        "coverage_complete": "True",
+        "cylinder": "2",
+        "data_section_scan_complete": "True",
+        "data_sections": "1",
+        "feature_count_status": "unknown_no_feature_history_in_step",
+        "fillet_count": "",
+        "missing_references": "0",
+        "model_id": "00000131",
+        "needs_spline_faces": "False",
+        "other": "0",
+        "outcome": "admitted",
+        "plane": "2",
+        "rational_bspline": "0",
+        "referenced_faces": "4",
+        "refusal_code": "",
+        "refusal_kind": "",
+        "solid_entities": "1",
+        "source_parse": "parsed",
+        "sphere": "0",
+        "torus": "0",
+        "unknown_representation_items": "0",
+        "unreferenced_faces": "0",
+        "unresolved": "0",
+        "unresolved_faces": "0",
+        "unsupported_data_sections": "0",
+        "work_limit": "20000000",
+        "work_used": "55486"
+      },
+      "chain": [
+        {
+          "intent": "import complete unchanged STEP; definition only, not executed",
+          "ordinal": 0
+        }
+      ],
+      "historical_export_step_sha256": "68298f942c71eae9bc3567f45134baba2a24231c9e8be2e39a17650db47f9666",
+      "historical_m5_status": "answered",
+      "id": "ABC 00000131",
+      "license": "dataset MIT grant reported by R8; individual source exceptions unresolved; no raw redistribution",
+      "missing": [
+        "public individual source-byte hash/authorized input",
+        "specific ordered post-import edit definition",
+        "reference import/edit definition"
+      ],
+      "model_id": "00000131",
+      "order": 11,
+      "reference_intent": "same immutable source bytes, placement and edit in both kernels; currently not executable",
+      "selection": "ten answering M5 controls in published order; excludes refused candidate 00000549",
+      "source": "ABC chunk 0000 STEP v00; see R8 provenance",
+      "source_geometry_availability": "not accessed; individual raw hashes absent from inspected public scoreboard/census",
+      "source_geometry_sha256": null,
+      "status": "identity pinned; edit comparison blocked"
+    },
+    {
+      "census_observation": {
+        "all_face_kinds_buildable": "True",
+        "assembly_or_mapping_entities": "0",
+        "bodies": "1",
+        "bspline": "0",
+        "chamfer_count": "",
+        "cone": "2",
+        "coverage_complete": "True",
+        "cylinder": "1",
+        "data_section_scan_complete": "True",
+        "data_sections": "1",
+        "feature_count_status": "unknown_no_feature_history_in_step",
+        "fillet_count": "",
+        "missing_references": "0",
+        "model_id": "00000173",
+        "needs_spline_faces": "False",
+        "other": "0",
+        "outcome": "admitted",
+        "plane": "2",
+        "rational_bspline": "0",
+        "referenced_faces": "5",
+        "refusal_code": "",
+        "refusal_kind": "",
+        "solid_entities": "1",
+        "source_parse": "parsed",
+        "sphere": "0",
+        "torus": "0",
+        "unknown_representation_items": "0",
+        "unreferenced_faces": "0",
+        "unresolved": "0",
+        "unresolved_faces": "0",
+        "unsupported_data_sections": "0",
+        "work_limit": "20000000",
+        "work_used": "62620"
+      },
+      "chain": [
+        {
+          "intent": "import complete unchanged STEP; definition only, not executed",
+          "ordinal": 0
+        }
+      ],
+      "historical_export_step_sha256": "5ed07bb6cb81feb54edf9eff299508de970bd6afcf7f1068812f51a2048fe6fa",
+      "historical_m5_status": "answered",
+      "id": "ABC 00000173",
+      "license": "dataset MIT grant reported by R8; individual source exceptions unresolved; no raw redistribution",
+      "missing": [
+        "public individual source-byte hash/authorized input",
+        "specific ordered post-import edit definition",
+        "reference import/edit definition"
+      ],
+      "model_id": "00000173",
+      "order": 12,
+      "reference_intent": "same immutable source bytes, placement and edit in both kernels; currently not executable",
+      "selection": "ten answering M5 controls in published order; excludes refused candidate 00000549",
+      "source": "ABC chunk 0000 STEP v00; see R8 provenance",
+      "source_geometry_availability": "not accessed; individual raw hashes absent from inspected public scoreboard/census",
+      "source_geometry_sha256": null,
+      "status": "identity pinned; edit comparison blocked"
+    },
+    {
+      "census_observation": {
+        "all_face_kinds_buildable": "True",
+        "assembly_or_mapping_entities": "0",
+        "bodies": "1",
+        "bspline": "0",
+        "chamfer_count": "",
+        "cone": "0",
+        "coverage_complete": "True",
+        "cylinder": "0",
+        "data_section_scan_complete": "True",
+        "data_sections": "1",
+        "feature_count_status": "unknown_no_feature_history_in_step",
+        "fillet_count": "",
+        "missing_references": "0",
+        "model_id": "00000190",
+        "needs_spline_faces": "False",
+        "other": "0",
+        "outcome": "admitted",
+        "plane": "6",
+        "rational_bspline": "0",
+        "referenced_faces": "6",
+        "refusal_code": "",
+        "refusal_kind": "",
+        "solid_entities": "1",
+        "source_parse": "parsed",
+        "sphere": "0",
+        "torus": "0",
+        "unknown_representation_items": "0",
+        "unreferenced_faces": "0",
+        "unresolved": "0",
+        "unresolved_faces": "0",
+        "unsupported_data_sections": "0",
+        "work_limit": "20000000",
+        "work_used": "296"
+      },
+      "chain": [
+        {
+          "intent": "import complete unchanged STEP; definition only, not executed",
+          "ordinal": 0
+        }
+      ],
+      "historical_export_step_sha256": "c01c8b73db96a1d721de24bbacee4e20d0b82ab23b445bcf44d85b1b7edbe0aa",
+      "historical_m5_status": "answered",
+      "id": "ABC 00000190",
+      "license": "dataset MIT grant reported by R8; individual source exceptions unresolved; no raw redistribution",
+      "missing": [
+        "public individual source-byte hash/authorized input",
+        "specific ordered post-import edit definition",
+        "reference import/edit definition"
+      ],
+      "model_id": "00000190",
+      "order": 13,
+      "reference_intent": "same immutable source bytes, placement and edit in both kernels; currently not executable",
+      "selection": "ten answering M5 controls in published order; excludes refused candidate 00000549",
+      "source": "ABC chunk 0000 STEP v00; see R8 provenance",
+      "source_geometry_availability": "not accessed; individual raw hashes absent from inspected public scoreboard/census",
+      "source_geometry_sha256": null,
+      "status": "identity pinned; edit comparison blocked"
+    },
+    {
+      "census_observation": {
+        "all_face_kinds_buildable": "True",
+        "assembly_or_mapping_entities": "0",
+        "bodies": "1",
+        "bspline": "0",
+        "chamfer_count": "",
+        "cone": "0",
+        "coverage_complete": "True",
+        "cylinder": "2",
+        "data_section_scan_complete": "True",
+        "data_sections": "1",
+        "feature_count_status": "unknown_no_feature_history_in_step",
+        "fillet_count": "",
+        "missing_references": "0",
+        "model_id": "00000405",
+        "needs_spline_faces": "False",
+        "other": "0",
+        "outcome": "admitted",
+        "plane": "2",
+        "rational_bspline": "0",
+        "referenced_faces": "4",
+        "refusal_code": "",
+        "refusal_kind": "",
+        "solid_entities": "1",
+        "source_parse": "parsed",
+        "sphere": "0",
+        "torus": "0",
+        "unknown_representation_items": "0",
+        "unreferenced_faces": "0",
+        "unresolved": "0",
+        "unresolved_faces": "0",
+        "unsupported_data_sections": "0",
+        "work_limit": "20000000",
+        "work_used": "64482"
+      },
+      "chain": [
+        {
+          "intent": "import complete unchanged STEP; definition only, not executed",
+          "ordinal": 0
+        }
+      ],
+      "historical_export_step_sha256": "776ae5dee870beb22b9463c235223ecf87728f8f8f9a8dfdb0d66484711a5383",
+      "historical_m5_status": "answered",
+      "id": "ABC 00000405",
+      "license": "dataset MIT grant reported by R8; individual source exceptions unresolved; no raw redistribution",
+      "missing": [
+        "public individual source-byte hash/authorized input",
+        "specific ordered post-import edit definition",
+        "reference import/edit definition"
+      ],
+      "model_id": "00000405",
+      "order": 14,
+      "reference_intent": "same immutable source bytes, placement and edit in both kernels; currently not executable",
+      "selection": "ten answering M5 controls in published order; excludes refused candidate 00000549",
+      "source": "ABC chunk 0000 STEP v00; see R8 provenance",
+      "source_geometry_availability": "not accessed; individual raw hashes absent from inspected public scoreboard/census",
+      "source_geometry_sha256": null,
+      "status": "identity pinned; edit comparison blocked"
+    },
+    {
+      "census_observation": {
+        "all_face_kinds_buildable": "True",
+        "assembly_or_mapping_entities": "0",
+        "bodies": "1",
+        "bspline": "0",
+        "chamfer_count": "",
+        "cone": "0",
+        "coverage_complete": "True",
+        "cylinder": "0",
+        "data_section_scan_complete": "True",
+        "data_sections": "1",
+        "feature_count_status": "unknown_no_feature_history_in_step",
+        "fillet_count": "",
+        "missing_references": "0",
+        "model_id": "00000511",
+        "needs_spline_faces": "False",
+        "other": "0",
+        "outcome": "admitted",
+        "plane": "6",
+        "rational_bspline": "0",
+        "referenced_faces": "6",
+        "refusal_code": "",
+        "refusal_kind": "",
+        "solid_entities": "1",
+        "source_parse": "parsed",
+        "sphere": "0",
+        "torus": "0",
+        "unknown_representation_items": "0",
+        "unreferenced_faces": "0",
+        "unresolved": "0",
+        "unresolved_faces": "0",
+        "unsupported_data_sections": "0",
+        "work_limit": "20000000",
+        "work_used": "296"
+      },
+      "chain": [
+        {
+          "intent": "import complete unchanged STEP; definition only, not executed",
+          "ordinal": 0
+        }
+      ],
+      "historical_export_step_sha256": "d3abc3d9158720ebfdade0c7d3e15e082ff60622165346177dc5c0c9c23df7c7",
+      "historical_m5_status": "answered",
+      "id": "ABC 00000511",
+      "license": "dataset MIT grant reported by R8; individual source exceptions unresolved; no raw redistribution",
+      "missing": [
+        "public individual source-byte hash/authorized input",
+        "specific ordered post-import edit definition",
+        "reference import/edit definition"
+      ],
+      "model_id": "00000511",
+      "order": 15,
+      "reference_intent": "same immutable source bytes, placement and edit in both kernels; currently not executable",
+      "selection": "ten answering M5 controls in published order; excludes refused candidate 00000549",
+      "source": "ABC chunk 0000 STEP v00; see R8 provenance",
+      "source_geometry_availability": "not accessed; individual raw hashes absent from inspected public scoreboard/census",
+      "source_geometry_sha256": null,
+      "status": "identity pinned; edit comparison blocked"
+    },
+    {
+      "census_observation": {
+        "all_face_kinds_buildable": "True",
+        "assembly_or_mapping_entities": "0",
+        "bodies": "1",
+        "bspline": "0",
+        "chamfer_count": "",
+        "cone": "0",
+        "coverage_complete": "True",
+        "cylinder": "0",
+        "data_section_scan_complete": "True",
+        "data_sections": "1",
+        "feature_count_status": "unknown_no_feature_history_in_step",
+        "fillet_count": "",
+        "missing_references": "0",
+        "model_id": "00000605",
+        "needs_spline_faces": "False",
+        "other": "0",
+        "outcome": "admitted",
+        "plane": "6",
+        "rational_bspline": "0",
+        "referenced_faces": "6",
+        "refusal_code": "",
+        "refusal_kind": "",
+        "solid_entities": "1",
+        "source_parse": "parsed",
+        "sphere": "0",
+        "torus": "0",
+        "unknown_representation_items": "0",
+        "unreferenced_faces": "0",
+        "unresolved": "0",
+        "unresolved_faces": "0",
+        "unsupported_data_sections": "0",
+        "work_limit": "20000000",
+        "work_used": "296"
+      },
+      "chain": [
+        {
+          "intent": "import complete unchanged STEP; definition only, not executed",
+          "ordinal": 0
+        }
+      ],
+      "historical_export_step_sha256": "bf09c22c888643515e829ecc4e09cc34d321b908b18a6a4df13db37860815b32",
+      "historical_m5_status": "answered",
+      "id": "ABC 00000605",
+      "license": "dataset MIT grant reported by R8; individual source exceptions unresolved; no raw redistribution",
+      "missing": [
+        "public individual source-byte hash/authorized input",
+        "specific ordered post-import edit definition",
+        "reference import/edit definition"
+      ],
+      "model_id": "00000605",
+      "order": 16,
+      "reference_intent": "same immutable source bytes, placement and edit in both kernels; currently not executable",
+      "selection": "ten answering M5 controls in published order; excludes refused candidate 00000549",
+      "source": "ABC chunk 0000 STEP v00; see R8 provenance",
+      "source_geometry_availability": "not accessed; individual raw hashes absent from inspected public scoreboard/census",
+      "source_geometry_sha256": null,
+      "status": "identity pinned; edit comparison blocked"
+    },
+    {
+      "census_observation": {
+        "all_face_kinds_buildable": "True",
+        "assembly_or_mapping_entities": "0",
+        "bodies": "1",
+        "bspline": "0",
+        "chamfer_count": "",
+        "cone": "0",
+        "coverage_complete": "True",
+        "cylinder": "3",
+        "data_section_scan_complete": "True",
+        "data_sections": "1",
+        "feature_count_status": "unknown_no_feature_history_in_step",
+        "fillet_count": "",
+        "missing_references": "0",
+        "model_id": "00000632",
+        "needs_spline_faces": "False",
+        "other": "0",
+        "outcome": "admitted",
+        "plane": "3",
+        "rational_bspline": "0",
+        "referenced_faces": "6",
+        "refusal_code": "",
+        "refusal_kind": "",
+        "solid_entities": "1",
+        "source_parse": "parsed",
+        "sphere": "0",
+        "torus": "0",
+        "unknown_representation_items": "0",
+        "unreferenced_faces": "0",
+        "unresolved": "0",
+        "unresolved_faces": "0",
+        "unsupported_data_sections": "0",
+        "work_limit": "20000000",
+        "work_used": "116512"
+      },
+      "chain": [
+        {
+          "intent": "import complete unchanged STEP; definition only, not executed",
+          "ordinal": 0
+        }
+      ],
+      "historical_export_step_sha256": "5b54728366647912b2bcd85d9e204ca2ae8343234019d82e0cdf638c6c55e0e1",
+      "historical_m5_status": "answered",
+      "id": "ABC 00000632",
+      "license": "dataset MIT grant reported by R8; individual source exceptions unresolved; no raw redistribution",
+      "missing": [
+        "public individual source-byte hash/authorized input",
+        "specific ordered post-import edit definition",
+        "reference import/edit definition"
+      ],
+      "model_id": "00000632",
+      "order": 17,
+      "reference_intent": "same immutable source bytes, placement and edit in both kernels; currently not executable",
+      "selection": "ten answering M5 controls in published order; excludes refused candidate 00000549",
+      "source": "ABC chunk 0000 STEP v00; see R8 provenance",
+      "source_geometry_availability": "not accessed; individual raw hashes absent from inspected public scoreboard/census",
+      "source_geometry_sha256": null,
+      "status": "identity pinned; edit comparison blocked"
+    },
+    {
+      "census_observation": {
+        "all_face_kinds_buildable": "True",
+        "assembly_or_mapping_entities": "0",
+        "bodies": "1",
+        "bspline": "0",
+        "chamfer_count": "",
+        "cone": "0",
+        "coverage_complete": "True",
+        "cylinder": "1",
+        "data_section_scan_complete": "True",
+        "data_sections": "1",
+        "feature_count_status": "unknown_no_feature_history_in_step",
+        "fillet_count": "",
+        "missing_references": "0",
+        "model_id": "00000633",
+        "needs_spline_faces": "False",
+        "other": "0",
+        "outcome": "admitted",
+        "plane": "6",
+        "rational_bspline": "0",
+        "referenced_faces": "7",
+        "refusal_code": "",
+        "refusal_kind": "",
+        "solid_entities": "1",
+        "source_parse": "parsed",
+        "sphere": "0",
+        "torus": "0",
+        "unknown_representation_items": "0",
+        "unreferenced_faces": "0",
+        "unresolved": "0",
+        "unresolved_faces": "0",
+        "unsupported_data_sections": "0",
+        "work_limit": "20000000",
+        "work_used": "45054"
+      },
+      "chain": [
+        {
+          "intent": "import complete unchanged STEP; definition only, not executed",
+          "ordinal": 0
+        }
+      ],
+      "historical_export_step_sha256": "4b6f4a8f7b0be8c545a3fe7273bdcff5297ab38453a6871187fc553305862d88",
+      "historical_m5_status": "answered",
+      "id": "ABC 00000633",
+      "license": "dataset MIT grant reported by R8; individual source exceptions unresolved; no raw redistribution",
+      "missing": [
+        "public individual source-byte hash/authorized input",
+        "specific ordered post-import edit definition",
+        "reference import/edit definition"
+      ],
+      "model_id": "00000633",
+      "order": 18,
+      "reference_intent": "same immutable source bytes, placement and edit in both kernels; currently not executable",
+      "selection": "ten answering M5 controls in published order; excludes refused candidate 00000549",
+      "source": "ABC chunk 0000 STEP v00; see R8 provenance",
+      "source_geometry_availability": "not accessed; individual raw hashes absent from inspected public scoreboard/census",
+      "source_geometry_sha256": null,
+      "status": "identity pinned; edit comparison blocked"
+    },
+    {
+      "census_observation": {
+        "all_face_kinds_buildable": "True",
+        "assembly_or_mapping_entities": "0",
+        "bodies": "1",
+        "bspline": "0",
+        "chamfer_count": "",
+        "cone": "0",
+        "coverage_complete": "True",
+        "cylinder": "0",
+        "data_section_scan_complete": "True",
+        "data_sections": "1",
+        "feature_count_status": "unknown_no_feature_history_in_step",
+        "fillet_count": "",
+        "missing_references": "0",
+        "model_id": "00000695",
+        "needs_spline_faces": "False",
+        "other": "0",
+        "outcome": "admitted",
+        "plane": "6",
+        "rational_bspline": "0",
+        "referenced_faces": "6",
+        "refusal_code": "",
+        "refusal_kind": "",
+        "solid_entities": "1",
+        "source_parse": "parsed",
+        "sphere": "0",
+        "torus": "0",
+        "unknown_representation_items": "0",
+        "unreferenced_faces": "0",
+        "unresolved": "0",
+        "unresolved_faces": "0",
+        "unsupported_data_sections": "0",
+        "work_limit": "20000000",
+        "work_used": "296"
+      },
+      "chain": [
+        {
+          "intent": "import complete unchanged STEP; definition only, not executed",
+          "ordinal": 0
+        }
+      ],
+      "historical_export_step_sha256": "9f9f732eecfa398292598018ec14b5ea870be8a393e1337c9ebed6bebba22d97",
+      "historical_m5_status": "answered",
+      "id": "ABC 00000695",
+      "license": "dataset MIT grant reported by R8; individual source exceptions unresolved; no raw redistribution",
+      "missing": [
+        "public individual source-byte hash/authorized input",
+        "specific ordered post-import edit definition",
+        "reference import/edit definition"
+      ],
+      "model_id": "00000695",
+      "order": 19,
+      "reference_intent": "same immutable source bytes, placement and edit in both kernels; currently not executable",
+      "selection": "ten answering M5 controls in published order; excludes refused candidate 00000549",
+      "source": "ABC chunk 0000 STEP v00; see R8 provenance",
+      "source_geometry_availability": "not accessed; individual raw hashes absent from inspected public scoreboard/census",
+      "source_geometry_sha256": null,
+      "status": "identity pinned; edit comparison blocked"
+    },
+    {
+      "census_observation": {
+        "all_face_kinds_buildable": "True",
+        "assembly_or_mapping_entities": "0",
+        "bodies": "1",
+        "bspline": "0",
+        "chamfer_count": "",
+        "cone": "0",
+        "coverage_complete": "True",
+        "cylinder": "1",
+        "data_section_scan_complete": "True",
+        "data_sections": "1",
+        "feature_count_status": "unknown_no_feature_history_in_step",
+        "fillet_count": "",
+        "missing_references": "0",
+        "model_id": "00000821",
+        "needs_spline_faces": "False",
+        "other": "0",
+        "outcome": "admitted",
+        "plane": "2",
+        "rational_bspline": "0",
+        "referenced_faces": "3",
+        "refusal_code": "",
+        "refusal_kind": "",
+        "solid_entities": "1",
+        "source_parse": "parsed",
+        "sphere": "0",
+        "torus": "0",
+        "unknown_representation_items": "0",
+        "unreferenced_faces": "0",
+        "unresolved": "0",
+        "unresolved_faces": "0",
+        "unsupported_data_sections": "0",
+        "work_limit": "20000000",
+        "work_used": "41766"
+      },
+      "chain": [
+        {
+          "intent": "import complete unchanged STEP; definition only, not executed",
+          "ordinal": 0
+        }
+      ],
+      "historical_export_step_sha256": "154c59fd78606e6db72df73caee66c60c81cdbd6656ab198fc96458bac2da3f1",
+      "historical_m5_status": "answered",
+      "id": "ABC 00000821",
+      "license": "dataset MIT grant reported by R8; individual source exceptions unresolved; no raw redistribution",
+      "missing": [
+        "public individual source-byte hash/authorized input",
+        "specific ordered post-import edit definition",
+        "reference import/edit definition"
+      ],
+      "model_id": "00000821",
+      "order": 20,
+      "reference_intent": "same immutable source bytes, placement and edit in both kernels; currently not executable",
+      "selection": "ten answering M5 controls in published order; excludes refused candidate 00000549",
+      "source": "ABC chunk 0000 STEP v00; see R8 provenance",
+      "source_geometry_availability": "not accessed; individual raw hashes absent from inspected public scoreboard/census",
+      "source_geometry_sha256": null,
+      "status": "identity pinned; edit comparison blocked"
+    }
+  ],
+  "reference_release_pin": {
+    "archive_sha256": "24f87864f9b06aa3788f114725ea81e24968ab08f8ec8eaa4d56bf4a0b0f1fb8",
+    "binary_sha256": "b334c87706833af67fe3b32e86c0c41938baa07f367a78e0a14ef6afc2de04be",
+    "license": "Apache-2.0",
+    "member": "solidcraft-0.21.0-linux-x86_64/bin/solidcraft-cli",
+    "source": "https://github.com/tangency-labs/solidcraft",
+    "url": "https://github.com/tangency-labs/solidcraft/releases/download/v0.21.0/solidcraft-0.21.0-linux-x86_64.tar.gz",
+    "version": "v0.21.0"
+  },
+  "repository": "BohnBawerick/catallax",
+  "source_files": [
+    {
+      "git_revision": "f4db345f2e7c51835d1ebeba9f6446d117144117",
+      "path": ".claude/skills/verify-catallax/scripts/head-to-head/README.md",
+      "sha256": "1d71d532b5cfbd37982a6dc0b989e2c186906c6bf1a17068906b6d48a45dc18b"
+    },
+    {
+      "git_revision": "f4db345f2e7c51835d1ebeba9f6446d117144117",
+      "path": ".claude/skills/verify-catallax/scripts/head-to-head/cases/P1-bracket.json",
+      "sha256": "d689ba5c1a8e18f0be6a8223f505236c2c97740b00963f7f2b8d2e2dadd0a092"
+    },
+    {
+      "git_revision": "f4db345f2e7c51835d1ebeba9f6446d117144117",
+      "path": ".claude/skills/verify-catallax/scripts/head-to-head/cases/P2-collar.json",
+      "sha256": "02eabafea8ce8c091ce47c5d92fb9ea49211d5c134e2785c8fbe783175f92119"
+    },
+    {
+      "git_revision": "f4db345f2e7c51835d1ebeba9f6446d117144117",
+      "path": ".claude/skills/verify-catallax/scripts/head-to-head/cases/P3-filleted-boss.json",
+      "sha256": "25df5c24c998c3257cd6132e95820daca6eb00c69c1e061c696710e32a9e684e"
+    },
+    {
+      "git_revision": "f4db345f2e7c51835d1ebeba9f6446d117144117",
+      "path": ".claude/skills/verify-catallax/scripts/head-to-head/cases/P4-shelled-tray.json",
+      "sha256": "1e431394227c97d7c0d4f523f599505e6c286ddbac10d0aaac595793ad818d00"
+    },
+    {
+      "git_revision": "f4db345f2e7c51835d1ebeba9f6446d117144117",
+      "path": ".claude/skills/verify-catallax/scripts/head-to-head/cases/P5-flanged-housing.json",
+      "sha256": "fd37865201c07b1fa753b0903fd44984dfb44cf834fadee6de16a056fb5ce32f"
+    },
+    {
+      "git_revision": "f4db345f2e7c51835d1ebeba9f6446d117144117",
+      "path": ".claude/skills/verify-catallax/scripts/head-to-head/pali_parts.dart",
+      "sha256": "773abf97680875abb8b9ecb3ca27d0a1137db96893f184e39ed13055e711b6a5"
+    },
+    {
+      "git_revision": "f4db345f2e7c51835d1ebeba9f6446d117144117",
+      "path": ".claude/skills/verify-catallax/scripts/head-to-head/python_tools.py",
+      "sha256": "8b66c916bdb920d5f839c3c670325255bfcc13b5ff5d5f83e4e3892eee8cf77c"
+    },
+    {
+      "git_revision": "f4db345f2e7c51835d1ebeba9f6446d117144117",
+      "path": ".claude/skills/verify-catallax/scripts/head-to-head/reference.json",
+      "sha256": "5a8047737cf5158c83a1e1732df2ce64c8b9bbe363bc4545f0405fcdc9cc9886"
+    },
+    {
+      "git_revision": "f4db345f2e7c51835d1ebeba9f6446d117144117",
+      "path": ".claude/skills/verify-catallax/scripts/head-to-head/targets.py",
+      "sha256": "d4fa1b6665dbb54ec68cd9d027463ced42e0b6335e1f9d0e3eed01fa95a51a14"
+    },
+    {
+      "git_revision": "f4db345f2e7c51835d1ebeba9f6446d117144117",
+      "path": ".claude/skills/verify-catallax/scripts/head-to-head/tools.json",
+      "sha256": "1041ae83206cee229e77e74ca98d0f6fe1eb8efa9b848237bf44830dbb8911ab"
+    },
+    {
+      "git_revision": "f4db345f2e7c51835d1ebeba9f6446d117144117",
+      "path": "LICENSE",
+      "sha256": "37052c27a6d48aad2469351802eda08bfe1299f4a8678ab6267c82a6f516e863"
+    },
+    {
+      "git_revision": "f4db345f2e7c51835d1ebeba9f6446d117144117",
+      "path": "NOTICE",
+      "sha256": "92b2bf6b4778d4adc3b17ff4d78f95c02c3ba597d877d81cd863ee04c2f5f1c1"
+    },
+    {
+      "git_revision": "f4db345f2e7c51835d1ebeba9f6446d117144117",
+      "path": "docs/TARGET-PARTS.md",
+      "sha256": "c724fcc943e47bfbf814af14858741a79acace954246ba4e9273dc722615e599"
+    },
+    {
+      "git_revision": "f4db345f2e7c51835d1ebeba9f6446d117144117",
+      "path": "docs/milestones/M5-scoreboard.json",
+      "sha256": "54ac8955089e0eb7a96c57f28c3e1e902c30d3b29d6cf7c414fab8342a63682b"
+    },
+    {
+      "git_revision": "f4db345f2e7c51835d1ebeba9f6446d117144117",
+      "path": "docs/milestones/M5-scoreboard.md",
+      "sha256": "03f8c05f7662b953c2fee4250e6e4784c87ea7aabd5441ff74b5b190bf390ea6"
+    },
+    {
+      "git_revision": "f4db345f2e7c51835d1ebeba9f6446d117144117",
+      "path": "docs/milestones/R8-public-step-census.csv",
+      "sha256": "894f3437827917a8bcb1befe15339d944e68a75ffd45e107a9ed150df11b7eec"
+    },
+    {
+      "git_revision": "f4db345f2e7c51835d1ebeba9f6446d117144117",
+      "path": "docs/milestones/R8-public-step-census.json",
+      "sha256": "3bd1c45c3678cbc47defefc51974228903976ae0c287dd04d42347b32f55b1d0"
+    },
+    {
+      "git_revision": "f4db345f2e7c51835d1ebeba9f6446d117144117",
+      "path": "docs/milestones/R8-public-step-census.md",
+      "sha256": "d469310e903be85e60473c6b3668b85b479bc00d5de56290afef1ddaf0758158"
+    },
+    {
+      "git_revision": "f4db345f2e7c51835d1ebeba9f6446d117144117",
+      "path": "parts/P1-bracket.json",
+      "sha256": "1e705deb5a709d2fea99c4b750cf290c72c39d4bf2fc6561bbe65ece1f430d5c"
+    },
+    {
+      "git_revision": "f4db345f2e7c51835d1ebeba9f6446d117144117",
+      "path": "parts/P2-collar.json",
+      "sha256": "4f5fecc16dc9fb6461df9192dcc52ba79a1d8da5ade795d6dfd8cd4cf5c1a712"
+    },
+    {
+      "git_revision": "f4db345f2e7c51835d1ebeba9f6446d117144117",
+      "path": "parts/P3-filleted-boss.json",
+      "sha256": "57e4be2653f8fe2858a6dd95001e530aa1837e80e1d74e5404c0d7e708eae787"
+    },
+    {
+      "git_revision": "f4db345f2e7c51835d1ebeba9f6446d117144117",
+      "path": "parts/P4-shelled-tray.json",
+      "sha256": "94eda6ca26261257497ee8c2747f956e4b33806e100101111ece65d857d510fd"
+    },
+    {
+      "git_revision": "f4db345f2e7c51835d1ebeba9f6446d117144117",
+      "path": "parts/P5-flanged-housing.json",
+      "sha256": "db85284055d5426d867eec527c39e7fbd0ecdf817e3f826846063550b00036de"
+    },
+    {
+      "git_revision": "f4db345f2e7c51835d1ebeba9f6446d117144117",
+      "path": "parts/P6-lattice-bracket.json",
+      "sha256": "f0850664cdcf93d2e42a2826d10a7b9c36de6f0404748af502bff51bb74ccdf2"
+    },
+    {
+      "git_revision": "f4db345f2e7c51835d1ebeba9f6446d117144117",
+      "path": "parts/README.md",
+      "sha256": "6fe6ec700b2aa5f5bc59b685ed9bfc83d6bd8b2d046aa97e4ceeac39c92e9f9f"
+    },
+    {
+      "git_revision": "f4db345f2e7c51835d1ebeba9f6446d117144117",
+      "path": "parts/edit-checks.json",
+      "sha256": "253cc7007ab2dce07c89018b1dab81ff973c17ac6773301ea163ebcc27f43b1b"
+    },
+    {
+      "git_revision": "f4db345f2e7c51835d1ebeba9f6446d117144117",
+      "path": "tools/research/m5_scoreboard.py",
+      "sha256": "a200e291ae7cb13cad941d435925164dd988ab295e71f9b6e864e59daa82ccf0"
+    },
+    {
+      "git_revision": "f4db345f2e7c51835d1ebeba9f6446d117144117",
+      "path": "tools/research/r8_step_census.py",
+      "sha256": "b5182a6058dde781ae41f50b828402a767ffc598a1ff0f1c476f07dc599dbccd"
+    }
+  ]
+}

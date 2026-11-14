@@ -168,6 +168,58 @@ class ReplayTransitionTests(unittest.TestCase):
         approval = self.correction(before, after)
         self.assertEqual(self.compare([before], [after], corrections=[approval])["corrections"], 1)
 
+    def test_stable_digit_and_bound_only_changes_are_enumerated(self):
+        for bound_only in (False, True):
+            with self.subTest(bound_only=bound_only):
+                before = self.case(f"before-{bound_only}", step=b"S(1.0000000000)",
+                                   step_fields={"max_deviation": "1e-8"})
+                after = self.case(f"after-{bound_only}",
+                                  step=b"S(1.0000000000)" if bound_only else b"S(1.0000000001)",
+                                  step_fields={"max_deviation": "5e-9" if bound_only else "1e-8"})
+                approval = self.correction(before, after, ["step.max_deviation"] if bound_only else [])
+                approval["class"] = "stable-last-digit"
+                result = self.compare([before], [after], corrections=[approval])
+                self.assertEqual(result, {"cases": 1, "equal": False, "failures": [],
+                                          "upgrades": 0, "corrections": 1})
+
+    def test_stable_digit_rows_cannot_authorize_other_changes(self):
+        for mutation in ("topology", "measurement", "status", "bound-increase", "negative-bound",
+                         "outside-bound", "nonnumeric-text", "other-output", "allowance", "step-count"):
+            with self.subTest(mutation=mutation):
+                before = self.case(mutation + "-before", step=b"S(1.0000000000)",
+                                   step_fields={"max_deviation": "1e-8"})
+                after = self.case(mutation + "-after", step=b"S(1.0000000001)",
+                                  step_fields={"max_deviation": "1e-8"})
+                path = Path(after["path"])
+                manifest = release.read_json(path / "manifest.json")
+                fields = []
+                if mutation == "topology":
+                    manifest["result"] = 2
+                elif mutation == "measurement":
+                    manifest["properties"] = {"volume": {"lo": "1", "hi": "2"}}
+                elif mutation == "status":
+                    manifest["status"] = "refused"
+                elif mutation in ("bound-increase", "negative-bound"):
+                    manifest["step"]["max_deviation"] = "2e-8" if mutation == "bound-increase" else "-1e-8"
+                    fields = ["step.max_deviation"]
+                elif mutation == "outside-bound":
+                    (path / "answer.step").write_bytes(b"S(2.0000000000)")
+                elif mutation == "nonnumeric-text":
+                    (path / "answer.step").write_bytes(b"T(1.0000000001)")
+                elif mutation == "other-output":
+                    (path / "display.obj").write_bytes(b"changed")
+                elif mutation == "allowance":
+                    request = release.read_json(path / "request.json")
+                    release.write_json(path / "request.json", request | {"max_work": 101})
+                else:
+                    manifest["step"]["added_edges"] = 1
+                    fields = ["step.added_edges"]
+                release.write_json(path / "manifest.json", manifest)
+                approval = self.correction(before, after, fields)
+                approval["class"] = "stable-last-digit"
+                with self.assertRaises(ValueError):
+                    self.compare([before], [after], corrections=[approval])
+
     def test_reviewed_fingerprints_cannot_hide_unrelated_manifest_or_output_changes(self):
         for field in ("result", "properties", "marks", "display.obj", "print.stl", "answer.igs"):
             with self.subTest(field=field), tempfile.TemporaryDirectory() as directory:

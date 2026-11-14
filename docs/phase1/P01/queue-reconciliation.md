@@ -2,9 +2,13 @@
 
 Read-only Firstmate mailbox scan, seq 1–1285, followed by an empty terminal page. No replies, acknowledgements, subscriptions or queue mutations. Metadata only is retained in `evidence/phase1/P01/queue-inventory.json`; unrelated or sensitive message bodies are not republished. Repository queue sources read: archived plan §§11.3, 11.4, 13.2 and ROADMAP phase/order/closed-work sections.
 
-## Inventory limitation
+## Coordinator-defined historical census
 
-The assignment specifies **29 historical pending directives/dispositions**, not 29 active jobs. The exact selection rule or list of those 29 IDs is unavailable. This scan finds **32** pending records after excluding messages containing “fleet report”; removing five report-correction records (897, 899, 901, 908, 910) yields **27**, not 29. These are transparent filters, not a reconstruction of the missing selection. The remaining pending fleet/report rows are informational records and cannot establish live work. An explicit 29-ID list or canonical queue report is required for exact row-for-row reconciliation. Do not invent two additional directives or silently discard three records to force the expected count.
+The coordinator's verified earlier census defines **29 historical pending directive/disposition records** as the 32 non-fleet pending records minus three nonrouted records: seq **3, 5 and 410**. The five correction records **897, 899, 901, 908 and 910 remain within the 29**. This corrects the earlier missing-selection/count discrepancy; no mailbox rescan was performed for this correction.
+
+Exact 29 sequences: **62, 64, 65, 146, 248, 296, 513, 743, 820, 821, 822, 823, 828, 831, 897, 899, 901, 908, 910, 968, 969, 984, 988, 1000, 1012, 1023, 1024, 1149, 1155**.
+
+This is a historical pending-record classification, not 29 verified live jobs or 29 definitively stale jobs. Mailbox pending status establishes neither execution state nor technical acceptance. The metadata manifest records the coordinator-defined selection and the three excluded nonrouted records. The table below preserves distinctions for all 32 inspected records; seq 3, 5 and 410 are context outside the 29-record census.
 
 ## Classification of available non-fleet pending records
 

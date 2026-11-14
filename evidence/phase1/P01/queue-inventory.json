@@ -3,19 +3,9 @@
   "terminal_empty_page": true,
   "total_rows": 1283,
   "pending_rows": 167,
-  "filter": "status=pending and content does not contain case-insensitive 'fleet report'",
-  "selected_count": 32,
+  "filter": "status=pending and content does not contain case-insensitive 'fleet report', excluding nonrouted seq 3, 5 and 410; retain correction records 897, 899, 901, 908 and 910",
+  "selected_count": 29,
   "selected": [
-    {
-      "seq": 3,
-      "id": "msg_058ac9a5d2b0c441",
-      "created_at": "2026-10-15T06:55:24.606438Z"
-    },
-    {
-      "seq": 5,
-      "id": "msg_efd09a989b7b1e5e",
-      "created_at": "2026-10-15T09:47:13.065100Z"
-    },
     {
       "seq": 62,
       "id": "msg_495cf9de0f960965",
@@ -45,11 +35,6 @@
       "seq": 296,
       "id": "msg_462e569a231efaa3",
       "created_at": "2026-10-25T16:52:29.041660Z"
-    },
-    {
-      "seq": 410,
-      "id": "msg_7402d303a78ca976",
-      "created_at": "2026-10-26T08:45:00.871272Z"
     },
     {
       "seq": 513,
@@ -165,6 +150,25 @@
       "seq": 1155,
       "id": "msg_9bec9c5fa80ab5e4",
       "created_at": "2026-11-10T19:10:46.940150Z"
+    }
+  ],
+  "non_fleet_pending_count": 32,
+  "selection_provenance": "Coordinator-provided verified earlier census; correction supplied without a mailbox rescan",
+  "excluded_nonrouted": [
+    {
+      "seq": 3,
+      "id": "msg_058ac9a5d2b0c441",
+      "created_at": "2026-10-15T06:55:24.606438Z"
+    },
+    {
+      "seq": 5,
+      "id": "msg_efd09a989b7b1e5e",
+      "created_at": "2026-10-15T09:47:13.065100Z"
+    },
+    {
+      "seq": 410,
+      "id": "msg_7402d303a78ca976",
+      "created_at": "2026-10-26T08:45:00.871272Z"
     }
   ]
 }

@@ -61,8 +61,8 @@ pub struct NumericalFace {
     pub surface: Surface,
     /// Material normal relative to the support normal.
     pub sense: Sense,
-    /// Ordered finite loops. This first path admits exactly one simple outer loop.
-    /// Later trim admission may support holes without changing this definition.
+    /// Ordered finite loops: one simple outer loop and optionally one interior hole.
+    /// The hole runs opposite to the outer loop and may not touch its boundary.
     pub loops: Vec<Vec<NumericalTrim>>,
 }
 
@@ -386,29 +386,38 @@ fn build_inner(
                 dec,
             )?;
         }
-        if face.loops.len() != 1 {
+        if face.loops.is_empty() || face.loops.len() > 2 {
             return Err(bad(
                 "trim",
-                "this admission path requires exactly one finite loop per face",
+                "this admission path requires an outer loop and at most one hole",
             ));
         }
-        let mut uses = Vec::new();
-        for trim in &face.loops[0] {
-            dec.charge_work(1)?;
-            let edge = *edges
-                .get(trim.edge)
-                .ok_or_else(|| bad("definition", "trim names an invalid edge index"))?;
-            uses.push(model.add_coedge(Coedge {
-                edge,
-                sense: trim.sense,
-            }));
+        // Validate the newly admitted second boundary before building its
+        // coedges. A duplicated outer loop remains an invalid trim, as in N01.
+        if face.loops.len() == 2 {
+            check_loops(face, dec)?;
+            check_distinct_boundary_vertices(face, &definition.edges, dec)?;
         }
-        let loop_ = model.add_loop(Loop::Coedges(uses));
+        let mut loops = Vec::new();
+        for boundary in &face.loops {
+            let mut uses = Vec::new();
+            for trim in boundary {
+                dec.charge_work(1)?;
+                let edge = *edges
+                    .get(trim.edge)
+                    .ok_or_else(|| bad("definition", "trim names an invalid edge index"))?;
+                uses.push(model.add_coedge(Coedge {
+                    edge,
+                    sense: trim.sense,
+                }));
+            }
+            loops.push(model.add_loop(Loop::Coedges(uses)));
+        }
         let surface = model.geom_mut().add_surface(face.surface.clone());
         faces.push(model.add_face(Face {
             surface,
             sense: face.sense,
-            loops: vec![loop_],
+            loops,
         }));
     }
     let shell = model.add_shell(Shell { faces });
@@ -458,12 +467,24 @@ fn build_inner(
         });
     }
     for face in &definition.faces {
-        check_loop(face, dec)?;
+        if face.loops.len() == 1 {
+            check_loops(face, dec)?;
+        }
         checks.push(NumericalCheck::Passed {
             name: "trim.simple-oriented-parameter-loop".into(),
             scope: face.key.clone(),
         });
-        for (index, trim) in face.loops[0].iter().enumerate() {
+        if face.loops.len() == 2 {
+            checks.push(NumericalCheck::Passed {
+                name: "trim.hole-contained-disjoint".into(),
+                scope: face.key.clone(),
+            });
+            checks.push(NumericalCheck::Passed {
+                name: "trim.boundary-endpoints-disjoint".into(),
+                scope: face.key.clone(),
+            });
+        }
+        for (index, trim) in face.loops.iter().flatten().enumerate() {
             let edge = &definition.edges[trim.edge];
             let [a, b] = if trim.sense == Sense::Same {
                 edge.parameters.each_ref()
@@ -532,8 +553,13 @@ fn intersects(a: &[Rational; 2], b: &[Rational; 2], c: &[Rational; 2], d: &[Rati
     .map(|v| v.sign());
     signs.iter().all(|s| *s != Sign::Zero) && signs[0] != signs[1] && signs[2] != signs[3]
 }
-fn check_loop(face: &NumericalFace, dec: &mut Decider) -> Result<(), Refusal> {
-    let n = face.loops[0].len();
+fn check_loop(
+    face: &NumericalFace,
+    boundary: &[NumericalTrim],
+    hole: bool,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    let n = boundary.len();
     if n < 3 {
         return Err(bad(
             "trim",
@@ -541,10 +567,10 @@ fn check_loop(face: &NumericalFace, dec: &mut Decider) -> Result<(), Refusal> {
         ));
     }
     let mut area = Rational::zero();
-    for (i, trim) in face.loops[0].iter().enumerate() {
+    for (i, trim) in boundary.iter().enumerate() {
         dec.charge_work(1)?;
         let [a, b] = &trim.uv;
-        if a == b || *b != face.loops[0][(i + 1) % n].uv[0] {
+        if a == b || *b != boundary[(i + 1) % n].uv[0] {
             return Err(bad(
                 "trim",
                 format!("{} has an empty or open parameter edge", face.key),
@@ -563,7 +589,7 @@ fn check_loop(face: &NumericalFace, dec: &mut Decider) -> Result<(), Refusal> {
             }
         }
         area = area + (&a[0] * &b[1] - &a[1] * &b[0]);
-        let next = &face.loops[0][(i + 1) % n].uv[1];
+        let next = &boundary[(i + 1) % n].uv[1];
         if on_segment(a, b, next) || on_segment(b, next, a) {
             return Err(bad("trim", "adjacent parameter edges overlap or reverse"));
         }
@@ -572,13 +598,13 @@ fn check_loop(face: &NumericalFace, dec: &mut Decider) -> Result<(), Refusal> {
                 continue;
             }
             dec.charge_work(1)?;
-            let [c, d] = &face.loops[0][j].uv;
+            let [c, d] = &boundary[j].uv;
             if intersects(a, b, c, d) {
                 return Err(bad("trim", "parameter loop crosses or touches itself"));
             }
         }
     }
-    let wanted = if face.sense == Sense::Same {
+    let wanted = if (face.sense == Sense::Same) != hole {
         Sign::Positive
     } else {
         Sign::Negative
@@ -590,4 +616,169 @@ fn check_loop(face: &NumericalFace, dec: &mut Decider) -> Result<(), Refusal> {
         ));
     }
     Ok(())
+}
+
+// UV polygons alone do not establish separation of their topological walks:
+// explicit sewing can unify endpoint IDs while leaving the UV trims unchanged.
+fn check_distinct_boundary_vertices(
+    face: &NumericalFace,
+    edges: &[NumericalEdge],
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    let mut previous = BTreeSet::new();
+    for boundary in &face.loops {
+        let mut walked = BTreeSet::new();
+        for trim in boundary {
+            dec.charge_work(1)?;
+            let edge = edges
+                .get(trim.edge)
+                .ok_or_else(|| bad("definition", "trim names an invalid edge index"))?;
+            // Sense reverses the traversal, but both endpoints are walked.
+            walked.extend(edge.vertices);
+        }
+        if !previous.is_disjoint(&walked) {
+            return Err(bad("trim", "outer and hole boundaries share an endpoint"));
+        }
+        previous.extend(walked);
+    }
+    Ok(())
+}
+
+fn check_loops(face: &NumericalFace, dec: &mut Decider) -> Result<(), Refusal> {
+    for (i, boundary) in face.loops.iter().enumerate() {
+        check_loop(face, boundary, i != 0, dec)?;
+    }
+    if face.loops.len() == 2 {
+        let outer = &face.loops[0];
+        let hole = &face.loops[1];
+        for a in outer {
+            for b in hole {
+                dec.charge_work(1)?;
+                if intersects(&a.uv[0], &a.uv[1], &b.uv[0], &b.uv[1]) {
+                    return Err(bad("trim", "hole crosses or touches the outer loop"));
+                }
+            }
+        }
+        // Boundaries are disjoint and individually simple. One strict interior
+        // witness therefore places this entire hole inside the outer polygon.
+        let point = &hole[0].uv[0];
+        let mut inside = false;
+        for edge in outer {
+            dec.charge_work(1)?;
+            let [a, b] = &edge.uv;
+            if (a[1] > point[1]) != (b[1] > point[1])
+                && (orient(a, b, point).sign() == Sign::Positive) == (b[1] > a[1])
+            {
+                inside = !inside;
+            }
+        }
+        if !inside {
+            return Err(bad("trim", "hole is not strictly inside the outer loop"));
+        }
+    }
+    Ok(())
+}
+
+/// Sews explicitly paired endpoint vertices, then admits a separate numerical body.
+/// Each pair is `[keeper, removed]` in the input vertex table. Pairs must be
+/// disjoint; there is no transitive, nearest-neighbour or automatic gap search.
+/// Removed endpoints are relocated onto the keeper only within the stated local
+/// tolerance, recorded with N01's actual point-movement history, and their edge
+/// references are unified. The removed key remains in history; the keeper key
+/// identifies the retained vertex. Carriers and trims are never moved.
+///
+/// All checks and repairs share one active request allowance. Rebuilding the
+/// sewn shell checks topology, every finite loop and every required sample.
+/// Excessive gaps, crossing loops, collapsed edges or invalid pairs return a
+/// refusal with no partial body. The borrowed input is never mutated.
+/// Even a zero-gap result is numerical, with no new proof or export authority.
+pub fn sew(
+    input: &NumericalDefinition,
+    pairs: &[[usize; 2]],
+    options: NumericalOptions,
+    dec: &mut Decider,
+) -> Result<NumericalBody, Refusal> {
+    guarded(|| {
+        precision_allowed(dec)?;
+        if options.tolerance_mm.sign() != Sign::Positive {
+            return Err(bad("definition", "sewing needs a positive local tolerance"));
+        }
+        keys(input.vertices.iter().map(|v| v.key.as_str()), dec)?;
+        let mut definition = input.clone();
+        let mut seen = BTreeSet::new();
+        let mut remove = BTreeSet::new();
+        let mut repairs = Vec::new();
+        let mut mapping: Vec<_> = (0..definition.vertices.len()).collect();
+        for &[keeper, removed] in pairs {
+            dec.charge_work(1)?;
+            if keeper >= mapping.len()
+                || removed >= mapping.len()
+                || keeper == removed
+                || !seen.insert(keeper)
+                || !seen.insert(removed)
+            {
+                return Err(bad(
+                    "definition",
+                    "sewing pairs must name disjoint distinct vertices",
+                ));
+            }
+            let before = definition.vertices[removed].position.clone();
+            let after = definition.vertices[keeper].position.clone();
+            let movement = distance(&point_box(&before), &point_box(&after));
+            if movement > options.tolerance_mm {
+                return Err(bad(
+                    "repair-tolerance-exceeded",
+                    "sewing gap exceeds the local tolerance",
+                ));
+            }
+            if before != after {
+                repairs.push(NumericalRepair::VertexMoved {
+                    vertex: definition.vertices[removed].key.clone(),
+                    before,
+                    after,
+                    distance_upper_mm: movement,
+                });
+            }
+            mapping[removed] = keeper;
+            remove.insert(removed);
+        }
+        let mut compact = vec![0; mapping.len()];
+        let mut retained = Vec::new();
+        for (index, vertex) in definition.vertices.iter().enumerate() {
+            dec.charge_work(1)?;
+            if !remove.contains(&index) {
+                compact[index] = retained.len();
+                retained.push(vertex.clone());
+            }
+        }
+        for edge in &mut definition.edges {
+            dec.charge_work(1)?;
+            for vertex in &mut edge.vertices {
+                let target = *mapping
+                    .get(*vertex)
+                    .ok_or_else(|| bad("definition", "edge names an invalid vertex"))?;
+                *vertex = compact[target];
+            }
+        }
+        definition.vertices = retained;
+        let mut body = build_inner(definition, options, repairs, dec)?;
+        let mut checks = body.evidence.checks().to_vec();
+        for &[keeper, removed] in pairs {
+            dec.charge_work(1)?;
+            checks.push(NumericalCheck::Passed {
+                name: "sewing.explicit-vertex-pair".into(),
+                scope: format!(
+                    "{} -> {}",
+                    input.vertices[removed].key, input.vertices[keeper].key
+                ),
+            });
+        }
+        body.evidence = NumericalEvidence::new(
+            body.options.tolerance_mm.clone(),
+            checks,
+            body.evidence.repairs().to_vec(),
+        )?;
+        dec.check_deadline()?;
+        Ok(body)
+    })
 }

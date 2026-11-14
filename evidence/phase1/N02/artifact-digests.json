@@ -1,0 +1,101 @@
+{
+  "baseline": "f26c898c94582dd640c754b210cca796071416d4",
+  "prerequisites": {
+    "N01": {
+      "pr": 603,
+      "merge": "f26c898c94582dd640c754b210cca796071416d4"
+    },
+    "P02": {
+      "pr": 599,
+      "merge": "416f4b46780a7cba576a44395da343f0e1be137d"
+    }
+  },
+  "method": "SHA-256 of current N02 source, documentation and retained records; this manifest is not self-hashed. Original sibling captures remain unchanged at repair_base. P2/ contains repaired captures and before/after execution summary. Numerical debug captures are not a stable wire schema.",
+  "files": [
+    {
+      "path": "crates/catallax-topology/src/numerical.rs",
+      "sha256": "15633cfdaf7a6735f87e20abd50c72b7c669d740ae1d1e5f79c241d52430de7c"
+    },
+    {
+      "path": "crates/catallax-topology/tests/numerical_trim.rs",
+      "sha256": "bb67872b3ee6cf823386ee790f5a2ee0cf627aadfa3dab67a03a4bd123813fc5"
+    },
+    {
+      "path": "docs/interface-changes/2026-11-14-numerical-trim-sewing.md",
+      "sha256": "d60222cbd0f1775919ec76f74467ee159b43ab8b12823140f83279178f544c5f"
+    },
+    {
+      "path": "docs/phase1/N02/REPORT.md",
+      "sha256": "92a284af7b0dfc1ec03c6713ed5e7e6947dd979fc7d9361863bc5d6b7431b4a6"
+    },
+    {
+      "path": "evidence/phase1/N02/P2/VALIDATION.md",
+      "sha256": "e88758a1b58c2082b1d4b6e7875d63f1c83eb809b009c58dc60e94a94cd3f993"
+    },
+    {
+      "path": "evidence/phase1/N02/P2/crossing-refusal.txt",
+      "sha256": "c4497b5807ac99e7cc03bf843a74e8586faf99b8db2ee6043c643fa69fd54006"
+    },
+    {
+      "path": "evidence/phase1/N02/P2/excessive-gap-refusal.txt",
+      "sha256": "4db32096a1aadcf1b7cbf5fa6609878305ced893f20f9b1333f57253be1e393f"
+    },
+    {
+      "path": "evidence/phase1/N02/P2/near-gap.txt",
+      "sha256": "a68d9563bb0331fbec0f09f2594be3d4888fd5950013264530c225cd34742e0a"
+    },
+    {
+      "path": "evidence/phase1/N02/P2/outside-refusal.txt",
+      "sha256": "fde2b238d65eb004ca74ddb59187d4c33ff61a9767216523feab986931850ebc"
+    },
+    {
+      "path": "evidence/phase1/N02/P2/reversed-refusal.txt",
+      "sha256": "c0557af74d888d2a6967acf7b91675d8bcaafe5d0952179ddfe440f91d22a555"
+    },
+    {
+      "path": "evidence/phase1/N02/P2/self-crossing-refusal.txt",
+      "sha256": "3d9bfe17367da76e74e726e9c35b24bc4497bcdbb531dd3bd9fdec2bcea17661"
+    },
+    {
+      "path": "evidence/phase1/N02/P2/shared-endpoints-refusal.txt",
+      "sha256": "3de62fae91aaba2f352ae086263b130cc9b52acc7bbff3168ab7f7ec1921da7a"
+    },
+    {
+      "path": "evidence/phase1/N02/P2/touching-refusal.txt",
+      "sha256": "c4497b5807ac99e7cc03bf843a74e8586faf99b8db2ee6043c643fa69fd54006"
+    },
+    {
+      "path": "evidence/phase1/N02/VALIDATION.md",
+      "sha256": "e38e4a772ecfba017dde0394da932167375108e7d306364e81202816c3a14ec6"
+    },
+    {
+      "path": "evidence/phase1/N02/crossing-refusal.txt",
+      "sha256": "c4497b5807ac99e7cc03bf843a74e8586faf99b8db2ee6043c643fa69fd54006"
+    },
+    {
+      "path": "evidence/phase1/N02/excessive-gap-refusal.txt",
+      "sha256": "4db32096a1aadcf1b7cbf5fa6609878305ced893f20f9b1333f57253be1e393f"
+    },
+    {
+      "path": "evidence/phase1/N02/near-gap.txt",
+      "sha256": "e1da0c5842e5cf40b562926d3618c07fdd83b39ce1c61670fb69cda92d2f5c75"
+    },
+    {
+      "path": "evidence/phase1/N02/outside-refusal.txt",
+      "sha256": "fde2b238d65eb004ca74ddb59187d4c33ff61a9767216523feab986931850ebc"
+    },
+    {
+      "path": "evidence/phase1/N02/reversed-refusal.txt",
+      "sha256": "c0557af74d888d2a6967acf7b91675d8bcaafe5d0952179ddfe440f91d22a555"
+    },
+    {
+      "path": "evidence/phase1/N02/self-crossing-refusal.txt",
+      "sha256": "3d9bfe17367da76e74e726e9c35b24bc4497bcdbb531dd3bd9fdec2bcea17661"
+    },
+    {
+      "path": "evidence/phase1/N02/touching-refusal.txt",
+      "sha256": "c4497b5807ac99e7cc03bf843a74e8586faf99b8db2ee6043c643fa69fd54006"
+    }
+  ],
+  "repair_base": "fec7e989c4ae0c2a9b2f96ed1835e036eaa0a7bc"
+}

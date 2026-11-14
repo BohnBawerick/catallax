@@ -1,5 +1,10 @@
 # N02 executed validation and retained evidence
 
+Historical implementation record at `fec7e989c4ae0c2a9b2f96ed1835e036eaa0a7bc`.
+The original capture files below are preserved unchanged. For the P2 correction,
+current four-test outcomes and changed work counts, see [P2/VALIDATION.md](P2/VALIDATION.md).
+The original tooling/test totals below were not rerun as a broad repair campaign.
+
 Baseline: `f26c898c94582dd640c754b210cca796071416d4`.
 Branch: `dot/n02-numerical-trim-sewing`.
 Date: 2026-11-14 UTC.

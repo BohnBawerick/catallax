@@ -396,6 +396,7 @@ fn build_inner(
         // coedges. A duplicated outer loop remains an invalid trim, as in N01.
         if face.loops.len() == 2 {
             check_loops(face, dec)?;
+            check_distinct_boundary_vertices(face, &definition.edges, dec)?;
         }
         let mut loops = Vec::new();
         for boundary in &face.loops {
@@ -476,6 +477,10 @@ fn build_inner(
         if face.loops.len() == 2 {
             checks.push(NumericalCheck::Passed {
                 name: "trim.hole-contained-disjoint".into(),
+                scope: face.key.clone(),
+            });
+            checks.push(NumericalCheck::Passed {
+                name: "trim.boundary-endpoints-disjoint".into(),
                 scope: face.key.clone(),
             });
         }
@@ -609,6 +614,32 @@ fn check_loop(
             "trim",
             "parameter loop orientation disagrees with material normal",
         ));
+    }
+    Ok(())
+}
+
+// UV polygons alone do not establish separation of their topological walks:
+// explicit sewing can unify endpoint IDs while leaving the UV trims unchanged.
+fn check_distinct_boundary_vertices(
+    face: &NumericalFace,
+    edges: &[NumericalEdge],
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    let mut previous = BTreeSet::new();
+    for boundary in &face.loops {
+        let mut walked = BTreeSet::new();
+        for trim in boundary {
+            dec.charge_work(1)?;
+            let edge = edges
+                .get(trim.edge)
+                .ok_or_else(|| bad("definition", "trim names an invalid edge index"))?;
+            // Sense reverses the traversal, but both endpoints are walked.
+            walked.extend(edge.vertices);
+        }
+        if !previous.is_disjoint(&walked) {
+            return Err(bad("trim", "outer and hole boundaries share an endpoint"));
+        }
+        previous.extend(walked);
     }
     Ok(())
 }

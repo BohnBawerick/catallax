@@ -303,3 +303,118 @@ fn sewing_and_admission_share_the_callers_allowance() {
     assert!(answer.is_err());
     assert!(work.exhausted);
 }
+
+#[test]
+fn sewing_outer_and_hole_endpoints_refuses_without_mutating_input() {
+    let mut input = tube();
+    let scale = q("0.001");
+    let real_scale = scale.clone().into();
+    for vertex in &mut input.vertices {
+        for coordinate in &mut vertex.position {
+            *coordinate = &*coordinate * &scale;
+        }
+    }
+    for edge in &mut input.edges {
+        let Curve::Line(line) = &mut edge.curve else {
+            panic!("line")
+        };
+        for coordinate in [
+            &mut line.origin.x,
+            &mut line.origin.y,
+            &mut line.origin.z,
+            &mut line.dir.x,
+            &mut line.dir.y,
+            &mut line.dir.z,
+        ] {
+            *coordinate = &*coordinate * &real_scale;
+        }
+    }
+    for face in &mut input.faces {
+        let Surface::Plane(plane) = &mut face.surface else {
+            panic!("plane")
+        };
+        for coordinate in [
+            &mut plane.origin.x,
+            &mut plane.origin.y,
+            &mut plane.origin.z,
+        ] {
+            *coordinate = &*coordinate * &real_scale;
+        }
+        for trim in face.loops.iter_mut().flatten() {
+            for point in &mut trim.uv {
+                for coordinate in point {
+                    *coordinate = &*coordinate * &scale;
+                }
+            }
+        }
+    }
+    let find = |position: [&str; 3]| {
+        input
+            .vertices
+            .iter()
+            .position(|v| v.position == position.map(q))
+            .unwrap()
+    };
+    let pairs = [
+        [find(["0", "0", "0.001"]), find(["0.001", "0.001", "0.001"])],
+        [
+            find(["0.004", "0", "0.001"]),
+            find(["0.003", "0.001", "0.001"]),
+        ],
+    ];
+    for [keeper, removed] in pairs {
+        let squared = (0..3).fold(q("0"), |sum, i| {
+            let delta = &input.vertices[keeper].position[i] - &input.vertices[removed].position[i];
+            sum + &delta * &delta
+        });
+        assert_eq!(squared, q("0.000002"));
+        assert!(squared < (&options().tolerance_mm * &options().tolerance_mm));
+    }
+    let original = numerical::build(input.clone(), options(), &mut Decider::default()).unwrap();
+    let count = original.counts();
+    assert_eq!(
+        count.vertices as i64 - count.edges as i64 + count.faces as i64 - 2,
+        0
+    );
+    let remap = |v| {
+        pairs
+            .iter()
+            .find(|pair| pair[1] == v)
+            .map_or(v, |pair| pair[0])
+    };
+    assert!(
+        input
+            .edges
+            .iter()
+            .all(|e| remap(e.vertices[0]) != remap(e.vertices[1]))
+    );
+    let before = format!("{input:?}");
+    let (answer, work) = with_operation_budget(20_000_000, || {
+        numerical::sew(&input, &pairs, options(), &mut Decider::default())
+    });
+    assert_eq!(format!("{input:?}"), before);
+    assert!(!work.exhausted);
+    if let Ok(body) = &answer {
+        let count = body.counts();
+        println!(
+            "N02 P2 observed=accepted vertices={} edges={} faces={} euler={} work={}",
+            count.vertices,
+            count.edges,
+            count.faces,
+            count.vertices as i64 - count.edges as i64 + count.faces as i64 - 2,
+            work.used
+        );
+    }
+    assert!(
+        answer.is_err(),
+        "outer and hole loops must not share walked endpoint IDs after sewing"
+    );
+    let refusal = answer.unwrap_err();
+    assert_eq!(refusal.code, "numerical.invalid-trim");
+    assert!(refusal.detail.contains("share an endpoint"));
+    println!(
+        "N02 P2 observed=refused code={} work={} input=unchanged",
+        refusal.code, work.used
+    );
+    record("shared-endpoints-refusal", format!("{refusal:#?}\n"));
+}

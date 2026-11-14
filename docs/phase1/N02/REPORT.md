@@ -1,5 +1,11 @@
 # N02: one numerical trim and endpoint-sewing family
 
+P2 correction to PR #605 at `fec7e989c4ae0c2a9b2f96ed1835e036eaa0a7bc`:
+numerical admission now rejects outer/hole loops sharing walked endpoint IDs
+after sewing. The review's scaled two-join witness was executed and confirmed:
+before repair it accepted a shell with Euler characteristic -2; after repair it
+refuses without mutating input. See [before/after evidence](../../../evidence/phase1/N02/P2/VALIDATION.md).
+
 The public square-tube fixture builds with two-loop top and bottom faces. A split
 endpoint 0.005 mm away sews under the explicitly local 0.01 mm tolerance; a
 0.02 mm gap refuses. Crossing/touching/outside holes, reversed orientation and
@@ -34,7 +40,8 @@ and artifacts are preserved. Neither #604 nor its review is part of this work.
 describes the bounded API. [Numerical admission](../../../crates/catallax-topology/src/numerical.rs)
 now stores both loops, checks their opposite orientations, rejects inclusive
 boundary intersections and checks strict hole containment using rational
-parameter-space predicates. It retains N01's outer-loop checks and patch-domain
+parameter-space predicates. A separate check also rejects shared walked endpoint
+IDs across the two loops, including IDs unified by sewing. It retains N01's outer-loop checks and patch-domain
 containment. A duplicate outer loop still refuses as `numerical.invalid-trim`.
 Only one hole is admitted; no general region/Boolean proof machinery is added.
 
@@ -81,8 +88,8 @@ records the mapping but no fictitious movement repair.
 | Reused, identical or invalid vertex indices | `numerical.invalid-definition` |
 | Request allowance 1 | Refusal and exhausted accounting; no nested/reset allowance |
 
-The near-gap [retained definition and evidence](../../../evidence/phase1/N02/near-gap.txt)
-are actual Rust debug records captured by the test's opt-in evidence sink, not a
+The near-gap [retained definition and evidence](../../../evidence/phase1/N02/P2/near-gap.txt)
+are actual repaired Rust debug records captured by the test's opt-in evidence sink, not a
 new stable wire schema. Refusal records in the same directory are actual debug
 outputs. [Validation](../../../evidence/phase1/N02/VALIDATION.md) separates executed
 checks from prior evidence and remaining gates.

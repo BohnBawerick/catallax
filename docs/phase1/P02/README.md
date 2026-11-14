@@ -27,6 +27,24 @@ questions and artifacts. The stock driver used workers 1 then 4, with
 Config's unused default `max_work` is 100M; each portable question and actual
 response retains its explicit 20M request allowance. No cache evidence is used.
 
+### Portable publication copies
+
+Files listed in `evidence/phase1/P02/publication.json` are sanitized portable
+copies, not original raw logs. Original captures are retained privately outside
+the repository. `${P02_CHECKOUT}` replaces the capture's absolute evidence
+checkout location. `${P02_BINARY_ROOT}` replaces the separate checkout location
+containing the observed binary. Expand these tokens to local paths before using
+the recorded command arrays. Request `out` paths retain their historical
+temporary directory names under the portable checkout token.
+
+`publish.py` applies these replacements from a private capture, records every
+sanitized file, runs `analyze.py` and regenerates `SHA256SUMS`. Supply the private
+capture directory and its original `--checkout-root` and `--binary-root` paths.
+It does not execute the driver or kernel. Comparison digests and `SHA256SUMS`
+describe the published bytes. Case keys retain their original driver identities;
+source, binary, input and STEP hashes remain unchanged. No host names were
+present in the captured records. Responses, work and geometry bytes are unchanged.
+
 A fresh build was attempted and failed with exit 127 because Cargo is absent.
 The pre-existing release binary identifies baseline f4db345 and passes doctor
 with request contract `catallax-request/1`. Its SHA-256 is

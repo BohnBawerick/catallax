@@ -59,6 +59,6 @@
     "exit": 127,
     "stderr": "nice: cargo: No such file or directory"
   },
-  "binary": "/workspace/catallax/target/release/catallax-verify",
+  "binary": "${P02_BINARY_ROOT}/target/release/catallax-verify",
   "binary_sha256": "1dfe54e616aee1aa353b3f6a07933ab4451f44a8791cf53ec4c748ffd6f48128"
 }

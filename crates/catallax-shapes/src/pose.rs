@@ -92,6 +92,34 @@ impl Rotation {
         }
     }
 
+    /// Aligns local Z with `normal` and local X with the projection of `x_direction`.
+    pub fn from_frame(
+        normal: &Vector3,
+        x_direction: &Vector3,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        math::validate_vector(normal, dec)?;
+        math::validate_vector(x_direction, dec)?;
+        let norm = normal.norm_squared();
+        if math::sign(&norm, dec)? == Sign::Zero {
+            return Err(Refusal::new("shapes.zero-normal", "frame normal is zero"));
+        }
+        let x = x_direction.minus(&normal.scaled(&(&x_direction.dot(normal) / &norm)));
+        let x_norm = x.norm_squared();
+        if math::sign(&x_norm, dec)? == Sign::Zero {
+            return Err(Refusal::new(
+                "shapes.parallel-frame",
+                "frame X direction is parallel to its normal",
+            ));
+        }
+        let z = normal.scaled(&(Real::one() / norm.sqrt()));
+        let x = x.scaled(&(Real::one() / x_norm.sqrt()));
+        let y = z.cross(&x);
+        Ok(Self {
+            matrix: [[x.x, y.x, z.x], [x.y, y.y, z.y], [x.z, y.z, z.z]],
+        })
+    }
+
     /// The identity rotation.
     pub fn identity() -> Self {
         let zero = Real::zero();

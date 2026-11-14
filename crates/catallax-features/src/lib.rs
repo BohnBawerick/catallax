@@ -107,7 +107,9 @@ pub use evaluate::{
 };
 pub use extrude::extrude;
 pub use offset_fit::{EllipticOffsetFit, OffsetSpanBound, fit_elliptic_offset};
-pub use placement::{copy_origin, mirror_placement, pattern_placement};
+pub use placement::{
+    check_face_profile, copy_origin, face_placement, mirror_placement, pattern_placement,
+};
 pub use profile::Profile;
 pub use revolve::revolve;
 pub use stock::evaluate_canonical_stock;

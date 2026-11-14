@@ -1,0 +1,4 @@
+Refusal {
+    code: "numerical.invalid-trim",
+    detail: "hole crosses or touches the outer loop",
+}

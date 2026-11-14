@@ -23,6 +23,7 @@ STEP_CORRECTION_FIELDS = {"step.added_edges", "step.added_vertices", "step.max_d
 REFUSAL_STAGE_FIELDS = {"refusal.step", "refusal.stage", "refusal.detail"}
 REVIEWED_REFUSAL_FIELDS = REFUSAL_STAGE_FIELDS | {"refusal.code", "question_id"}
 STEP_CLASS, REFUSAL_CLASS = "invalid-to-valid-step", "same-code-refusal-stage"
+LAST_DIGIT_CLASS = "stable-last-digit"
 REVIEWED_REFUSAL_CLASS = "reviewed-refusal-change"
 REFUSAL_SCOPES = {REFUSAL_CLASS: REFUSAL_STAGE_FIELDS, REVIEWED_REFUSAL_CLASS: REVIEWED_REFUSAL_FIELDS}
 # The wider release replay: every recipe in `parts/`, every application-loop
@@ -112,12 +113,12 @@ def read_corrections():
     require(isinstance(document["corrections"], list), "corrections must be a list")
     seen = set()
     for row in document["corrections"]:
-        require(isinstance(row, dict) and row.get("class") in (STEP_CLASS, *REFUSAL_SCOPES),
+        require(isinstance(row, dict) and row.get("class") in (STEP_CLASS, LAST_DIGIT_CLASS, *REFUSAL_SCOPES),
                 "unsupported correction class")
         # A refusal publishes no STEP, so a refusal-stage row has no STEP evidence to bind.
         keys = {"index", "class", "request_sha256", "before_sha256", "after_sha256",
                 "manifest_fields", "sources"}
-        require(set(row) == (keys | {"evidence"} if row["class"] == STEP_CLASS else keys),
+        require(set(row) == (keys | {"evidence"} if row["class"] in (STEP_CLASS, LAST_DIGIT_CLASS) else keys),
                 "unexpected correction fields")
         require(type(row["index"]) is int and 0 <= row["index"] < COUNT and row["index"] not in seen,
                 "invalid or duplicate correction index")
@@ -126,10 +127,11 @@ def read_corrections():
                     for key in ("request_sha256", "before_sha256", "after_sha256")),
                 "invalid correction digest")
         fields = row["manifest_fields"]
-        scope = STEP_CORRECTION_FIELDS if row["class"] == STEP_CLASS else REFUSAL_SCOPES[row["class"]]
+        scope = (STEP_CORRECTION_FIELDS if row["class"] in (STEP_CLASS, LAST_DIGIT_CLASS)
+                 else REFUSAL_SCOPES[row["class"]])
         require(isinstance(fields, list) and all(isinstance(field, str) for field in fields) and
                 len(fields) == len(set(fields)) and set(fields) <= scope and
-                (row["class"] == STEP_CLASS or fields) and
+                (row["class"] in (STEP_CLASS, LAST_DIGIT_CLASS) or fields) and
                 (row["class"] != REVIEWED_REFUSAL_CLASS or "refusal.code" in fields),
                 "unsupported correction manifest scope")
         sources = row["sources"]
@@ -141,7 +143,7 @@ def read_corrections():
                     isinstance(source["commit"], str) and re.fullmatch(r"[0-9a-f]{40}", source["commit"]),
                     "invalid correction source")
         require(len({source["pr"] for source in sources}) == len(sources), "duplicate correction source")
-        if row["class"] != STEP_CLASS:
+        if row["class"] not in (STEP_CLASS, LAST_DIGIT_CLASS):
             continue
         evidence = row["evidence"]
         require(isinstance(evidence, dict) and set(evidence) == {
@@ -167,6 +169,10 @@ def compare_baseline(driver, baseline, candidate, upgrades, corrections):
     require(len(approvals) == len(upgrades) and len(repairs) == len(corrections),
             "duplicate replay approval")
     require(not approvals.keys() & repairs.keys(), "overlapping replay approvals")
+    if any(row["class"] == LAST_DIGIT_CLASS for row in corrections):
+        spec = importlib.util.spec_from_file_location("catallax_merge_checks", ROOT / "tools/checks/checks.py")
+        digit_checks = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(digit_checks)
     used, corrected = set(), set()
     for failure in result["failures"]:
         require(failure["cause"] in ("manifest", "step-bytes"),
@@ -210,7 +216,7 @@ def compare_baseline(driver, baseline, candidate, upgrades, corrections):
         elif old_manifest["status"] == new_manifest["status"] == "answered":
             require(index in repairs, "replay differs; unlisted output correction")
             row = repairs[index]
-            require(row["class"] == STEP_CLASS, "unsupported correction class")
+            require(row["class"] in (STEP_CLASS, LAST_DIGIT_CLASS), "unsupported correction class")
             require(row["request_sha256"] == driver.digest(request) and
                     row["before_sha256"] == answer_digest(driver, old) and
                     row["after_sha256"] == answer_digest(driver, new), "approved correction differs")
@@ -227,8 +233,12 @@ def compare_baseline(driver, baseline, candidate, upgrades, corrections):
                     "correction changes unapproved manifest scope")
             require((old / "answer.step").is_file() and (new / "answer.step").is_file(),
                     "correction requires both STEP files")
+            if row["class"] == LAST_DIGIT_CLASS:
+                require(not digit_checks.last_digit_errors(old, new, driver),
+                        "stable-digit correction exceeds its stated accuracy")
             old_step, new_step = [sha256(path / "answer.step") for path in (old, new)]
-            require(old_step != new_step and old_step == row["evidence"]["before_step_sha256"] and
+            require((row["class"] == LAST_DIGIT_CLASS or old_step != new_step) and
+                    old_step == row["evidence"]["before_step_sha256"] and
                     new_step == row["evidence"]["after_step_sha256"], "correction STEP evidence differs")
             require(all(
                 (sha256(old / name) if (old / name).exists() else None) ==

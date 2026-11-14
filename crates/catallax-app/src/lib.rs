@@ -16,6 +16,9 @@ pub mod lifecycle;
 pub mod loops;
 /// Separate numerical admission and continuation, with finite trims and actual checks.
 /// Numerical results never enter the exact evaluation checkpoint. Export is separate.
+/// These producers never label their output exact or bounded. The shared generic
+/// result constructors still trust callers, who can explicitly mislabel a body
+/// or its sampled values. See [`NumericalBody`] for this guarantee's limits.
 ///
 /// ```compile_fail
 /// use catallax_app::NumericalBody;

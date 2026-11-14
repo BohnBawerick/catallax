@@ -101,8 +101,15 @@ impl Default for NumericalOptions {
 /// Later numerical consumers may rely on the retained definition, stable keys,
 /// stated tolerance, completed check records and ordered repair history. Each
 /// continuation rebuilds and rechecks a new body; failure leaves this body intact.
-/// No exact Incident facts are inferred from samples. This type has no conversion
-/// to an exact answer, bounded answer, or exact evaluation checkpoint.
+/// No exact Incident facts are inferred from samples. The numerical build and
+/// continuation paths return this type with [`NumericalEvidence`], never an exact
+/// or bounded answer. There is no conversion to an exact evaluation checkpoint.
+///
+/// This guarantee applies to these producers, not to arbitrary caller code.
+/// The shared generic `Answer` and `BoundedEvidence` constructors still trust
+/// their callers. An explicit caller can mislabel a numerical body as exact or
+/// a sampled value as a complete bound. Preventing that misuse requires a separate
+/// change to producer-owned result authority; this API does not claim that fence.
 ///
 /// Acceptance examples for this first path:
 /// - A structurally closed, consistently oriented shell with simple finite u/v

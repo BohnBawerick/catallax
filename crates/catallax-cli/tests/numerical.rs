@@ -57,6 +57,34 @@ fn a_failed_check_never_serializes_partial_geometry_or_step_authority() {
 mod numerical_cases;
 
 #[test]
+fn numerical_producers_keep_zero_and_nonzero_samples_numerical() {
+    use catallax_app::{NumericalBody, NumericalOptions, build_numerical};
+    use catallax_numbers::Decider;
+    use numerical_cases::fixture;
+
+    for residual in ["0", "0.001"] {
+        // Pin the producer's result and evidence types, not caller-made wrappers.
+        let result: Result<NumericalBody, Refusal> = build_numerical(
+            fixture(residual),
+            NumericalOptions::default(),
+            &mut Decider::default(),
+        );
+        let evidence: &NumericalEvidence = result.as_ref().unwrap().evidence();
+        let record = numerical_build_summary(&result);
+        assert_eq!(record["status"], "numerical");
+        assert_eq!(record["proof"], "numerical");
+        assert_eq!(record["exact"], false);
+        assert_eq!(record["numerical"], numerical_evidence_summary(evidence));
+        assert!(record["step"].is_null());
+        for object in [&record, &record["numerical"]] {
+            for key in ["bounded", "measured_bound", "whole_body_bound"] {
+                assert!(object.get(key).is_none());
+            }
+        }
+    }
+}
+
+#[test]
 fn a_real_build_serializes_checks_and_repairs_but_never_a_step_result() {
     use catallax_app::{NumericalOptions, build_numerical};
     use catallax_numbers::Decider;

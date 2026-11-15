@@ -69,6 +69,8 @@ pub mod fillet_corner;
 pub mod hole;
 /// Explicit transactional STEP replacement and bounded multiple-solid admission.
 pub mod import_edit;
+/// Verified, atomic replacement of every STEP import using one immutable file.
+pub mod import_replace;
 /// Lattice cell templates and parameter checks, shared with the field kernel.
 pub mod lattice;
 mod loft;

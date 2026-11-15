@@ -36,6 +36,52 @@ pub struct StepReplacement {
     pub faces: BTreeMap<String, Vec<String>>,
 }
 
+pub(crate) fn import_decisions(
+    sha256: &str,
+    choices: &BTreeMap<String, String>,
+) -> Result<Vec<catallax_import::Decision>, Refusal> {
+    let digest = sha256
+        .get(..12)
+        .ok_or_else(|| Refusal::new("import.invalid-decision", "invalid source digest"))?;
+    let prefix = format!("repair:{digest}:");
+    choices
+        .iter()
+        .map(|(question, value)| {
+            let id = question.strip_prefix(&prefix).filter(|id| {
+                id.strip_prefix('g')
+                    .or_else(|| id.strip_prefix('p'))
+                    .is_some_and(|index| {
+                        !index.is_empty() && index.bytes().all(|c| c.is_ascii_digit())
+                    })
+            });
+            match (id, value.as_str()) {
+                (Some(id), "decline") => Ok(catallax_import::Decision::Decline {
+                    id: id.to_string(),
+                }),
+                (Some(id), value) if value.starts_with("accept:") => {
+                    let (tolerance, approver) = value["accept:".len()..]
+                        .split_once(':')
+                        .ok_or_else(|| {
+                            Refusal::new(
+                                "import.invalid-decision",
+                                format!("question {question}: acceptance needs a tolerance and approver"),
+                            )
+                        })?;
+                    Ok(catallax_import::Decision::Accept {
+                        id: id.to_string(),
+                        tolerance_mm: tolerance.to_string(),
+                        approver: approver.to_string(),
+                    })
+                }
+                _ => Err(Refusal::new(
+                    "import.invalid-decision",
+                    format!("question {question}: expected decline or accept:<tolerance-mm>:<approver> for these bytes"),
+                )),
+            }
+        })
+        .collect()
+}
+
 fn refusal(kind: &'static str, detail: impl Into<String>) -> Refusal {
     Refusal::new(kind, detail)
 }

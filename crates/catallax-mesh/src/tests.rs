@@ -1472,3 +1472,23 @@ fn rendering_answer_preserves_a_proved_mesh() {
     assert_eq!(answer.value.source_marks, strict.marks);
     assert_eq!(answer.marks, strict.marks);
 }
+#[test]
+fn surface_boundary_validation_refuses_a_missing_display_facet() {
+    let source = catallax_import::read_step(include_bytes!(
+        "../../catallax-import/tests/fixtures/surface-square.step"
+    ))
+    .unwrap();
+    let mut model = Model::new();
+    let body = catallax_import::build_file(&mut model, &source, None).unwrap()[0];
+    let mut mesh = crate::mesh_body(&model, body, &Default::default(), &mut Decider::default())
+        .unwrap()
+        .value;
+    crate::triangulate::check_surface(&model, body, &mesh).unwrap();
+    assert!(mesh.triangles.pop().is_some());
+    assert_eq!(
+        crate::triangulate::check_surface(&model, body, &mesh)
+            .unwrap_err()
+            .code,
+        "mesh.precision-or-budget"
+    );
+}

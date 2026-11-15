@@ -203,6 +203,28 @@ pub(super) fn collect(
             add_event(&mut result, key, &group, ordinal, root, tolerance, dec)?
         }
     }
+    let mut owned = BTreeMap::new();
+    let mut records: Vec<NumericalFiniteEvent> = Vec::new();
+    for mut record in result.records {
+        dec.charge_work(1)?;
+        if let Some(vertex) = record.vertex {
+            if let Some(index) = owned.get(&vertex).copied() {
+                let event: &mut NumericalFiniteEvent = &mut records[index];
+                event.point_only &= record.point_only;
+                event.hits.extend(record.hits);
+                continue;
+            }
+            record.key = format!("{}/meeting", result.vertices[vertex].key);
+            owned.insert(vertex, records.len());
+        }
+        records.push(record);
+    }
+    result.records = records;
+    result.checks.push(NumericalCheck::Passed {
+        name: "finite.unique-owned-event-vertices".into(),
+        scope: key.into(),
+    });
+    dec.check_deadline()?;
     Ok(result)
 }
 

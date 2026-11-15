@@ -122,6 +122,7 @@ fn separated_and_point_only_faces_are_supported_without_short_edges() {
     assert!(contact.events[0].point_only);
     assert!(contact.events[0].vertex.is_some());
     assert_eq!(contact.events[0].hits.len(), 4);
+    assert_eq!(contact.events[0].key, "cone-test/corner-0-0/meeting");
     assert!(contact.cylinder_trims.is_empty());
     assert!(contact.native_trims.is_empty());
 }

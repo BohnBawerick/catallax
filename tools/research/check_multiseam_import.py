@@ -181,6 +181,7 @@ def main():
     parser.add_argument("--example-binary", type=Path, required=True)
     parser.add_argument("--example-sha256", required=True)
     parser.add_argument("--source-revision", required=True)
+    parser.add_argument("--phased-authored", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument(
         "--raw-helper",
@@ -189,6 +190,10 @@ def main():
         / "tools/step-regressions/check_numerical_step.py",
     )
     args = parser.parse_args()
+    assert (
+        sha(args.raw_helper) == "5633cdcf16efc13f328ed85b33a738f6a9296e2afb925f4c64bbed7c91025376"
+    )
+    assert OCP.__version__ == "8.0.1.1"
     sys.path.insert(0, str(args.raw_helper.parent))
     from check_numerical_step import raw_solid, state, topology, volume
 
@@ -303,6 +308,19 @@ def main():
         pass
     else:
         raise AssertionError("exchanged source-local vertex identities were accepted")
+    phased = raw_solid(args.phased_authored)
+    assert BRepCheck_Analyzer(phased).IsValid()
+    assert abs(volume(phased) - (16 - math.pi)) < 1e-9
+    assert topology(phased) == dict(
+        solids=1, faces=7, edges=15, vertices=10, two_loop_faces=2, euler_with_face_holes=0
+    )
+    assert state(phased, (0, 0, 0.5)) == "outside" and state(phased, (1.5, 0, 0.5)) == "inside"
+    # Keep the actual shape properties private. Public artifacts retain checked
+    # relationships, source-local identities and hashes, rather than coordinates.
+    public_artifacts = [
+        {k: v for k, v in artifact.items() if k not in ["volume_mm3", "centroid_mm"]}
+        for artifact in artifacts
+    ]
     report = dict(
         format="catallax-multiseam-qualification/1",
         model_id="00003390",
@@ -331,10 +349,15 @@ def main():
             roots=roots,
             transferred=transferred,
             valid=True,
-            volume_mm3=volume(reference),
+            exported_volume_matches_within_relative="1e-8",
         ),
-        source_step=artifacts[0],
-        pose_step=artifacts[1],
+        source_step=public_artifacts[0],
+        pose_step=public_artifacts[1],
+        pose_volume_matches_within_relative="1e-9",
+        centroid_shift_3_5_7_mm_checked=True,
+        phased_authored=dict(
+            sha256=sha(args.phased_authored), raw_valid=True, volume_and_material_checked=True
+        ),
         material_probes=probes,
         complete_body_bound="unestablished",
         catallax_boolean_qualified=False,

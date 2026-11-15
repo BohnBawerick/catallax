@@ -50,40 +50,59 @@ fn equivalent_closed_rim_directions_and_periods_emit_the_same_step() {
         )
         .unwrap()
     };
-    let expected = export(fixture::bore());
     // The negative direction is the real 00003390 failure. Period shifts also
     // exercise the natural range which a STEP reader reconstructs from vertices.
-    for (direction, periods) in [(1, -1), (1, 1), (-1, -1), (-1, 0), (-1, 1)] {
-        let mut definition = fixture::bore();
-        let index = definition
+    for phased in [false, true] {
+        let mut baseline = fixture::bore();
+        let index = baseline
             .edges
             .iter()
             .position(|edge| edge.key == "rim-0")
             .unwrap();
-        let phase = &period * &Rational::from_i64(periods);
-        definition.edges[index].parameters = [
-            phase.clone(),
-            &phase + &(&period * &Rational::from_i64(direction)),
-        ];
-        if direction < 0 {
-            for trim in definition
-                .faces
-                .iter_mut()
-                .flat_map(|face| face.loops.iter_mut().flatten())
-            {
-                if trim.edge == index {
-                    trim.sense = match trim.sense {
-                        Sense::Same => Sense::Reversed,
-                        Sense::Reversed => Sense::Same,
-                    };
+        let start = if phased {
+            let catallax_shapes::Curve::Circle(circle) = &mut baseline.edges[index].curve else {
+                unreachable!()
+            };
+            circle.ref_dir = catallax_shapes::RVector3::new(0.into(), 1.into(), 0.into()).to_real();
+            -(&period / &Rational::from_i64(4))
+        } else {
+            Rational::zero()
+        };
+        baseline.edges[index].parameters = [start.clone(), &start + &period];
+        let expected = export(baseline.clone());
+        if phased && let Ok(path) = std::env::var("CATALLAX_ANALYTIC_EVIDENCE") {
+            std::fs::write(
+                std::path::Path::new(&path).join("periodic-bore-phased.step"),
+                expected.bytes(),
+            )
+            .unwrap();
+        }
+        for (direction, periods) in [(1, -1), (1, 1), (-1, -1), (-1, 0), (-1, 1)] {
+            let mut definition = baseline.clone();
+            let phase = &start + &(&period * &Rational::from_i64(periods));
+            definition.edges[index].parameters = [
+                phase.clone(),
+                &phase + &(&period * &Rational::from_i64(direction)),
+            ];
+            if direction < 0 {
+                for trim in definition
+                    .faces
+                    .iter_mut()
+                    .flat_map(|face| face.loops.iter_mut().flatten())
+                {
+                    if trim.edge == index {
+                        trim.sense = match trim.sense {
+                            Sense::Same => Sense::Reversed,
+                            Sense::Reversed => Sense::Same,
+                        };
+                    }
                 }
             }
+            let file = export(definition);
+            assert!(
+                file.bytes() == expected.bytes(),
+                "phased={phased}, direction={direction}, periods={periods}"
+            );
         }
-        let file = export(definition);
-        assert_eq!(
-            file.bytes(),
-            expected.bytes(),
-            "direction={direction}, periods={periods}"
-        );
     }
 }

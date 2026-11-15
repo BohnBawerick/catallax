@@ -629,7 +629,7 @@ pub(super) fn build(
     checks.extend(parameter_checks);
     let emitted = NumericalEvidence::new(body.options().tolerance_mm.clone(), checks, Vec::new())?;
     let mut faces = Vec::new();
-    for (index, face) in body.definition().faces.iter().enumerate() {
+    for (index, face) in d.faces.iter().enumerate() {
         let mut bounds = Vec::new();
         for (i, boundary) in face.loops.iter().enumerate() {
             let mut uses = Vec::new();

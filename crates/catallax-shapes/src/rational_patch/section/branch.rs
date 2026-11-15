@@ -823,7 +823,7 @@ mod tests {
             &mut dec,
         )
         .unwrap();
-        let plane = |x| {
+        let plane = |x: i64| {
             SectionSurface::Plane(Plane {
                 origin: Point3::new(x.into(), Real::zero(), Real::zero()),
                 normal: Vector3::new(Real::one(), Real::one(), Real::zero()),

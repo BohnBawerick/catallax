@@ -130,6 +130,7 @@ pub struct StepFaceRegion {
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Default)]
 pub struct StepReport {
     /// Proven upper bound, in millimetres, on the distance between exported and exact geometry.
+    /// Approximate parameter-map marks restrict this to the certified components.
     pub max_deviation: Rational,
     /// Proven upper bound, in millimetres, on the distance between the file and
     /// the exact definition: `max_deviation` plus the worst measured fit bound
@@ -195,6 +196,14 @@ fn with_definition_deviation(
     bodies: &[BodyId],
     mut answer: catallax_numbers::Answer<StepReport>,
 ) -> catallax_numbers::Answer<StepReport> {
+    if answer
+        .marks
+        .iter()
+        .any(|mark| mark.code == "step.approximate-pipe-end")
+    {
+        answer.value.definition_deviation = None;
+        return answer;
+    }
     let fit = bodies
         .iter()
         .filter_map(|body| catallax_topology::fitted_face_bound(model, *body))
@@ -239,7 +248,9 @@ fn write_prepared<W: Write>(
     out: &mut W,
     face_regions: bool,
 ) -> Answered<StepReport> {
-    let prepared = regularize::prepare(model, bodies, options, dec)?;
+    let prepared = observe("step.regularize", &"export", dec, |dec| {
+        regularize::prepare(model, bodies, options, dec)
+    })?;
     let answer = if let Some(prepared) = prepared {
         export::Exporter::new(&prepared.model, options, dec)
             .face_regions(face_regions)
@@ -259,9 +270,22 @@ fn write_prepared<W: Write>(
     })
 }
 
+pub(crate) fn observe<T>(
+    operation: &str,
+    id: &impl ToString,
+    dec: &mut Decider,
+    run: impl FnOnce(&mut Decider) -> Result<T, catallax_numbers::Refusal>,
+) -> Result<T, catallax_numbers::Refusal> {
+    let span = catallax_numbers::OperationSpan::begin("brep", id, operation, dec);
+    let result = run(dec);
+    span.finish(dec, result.as_ref().err(), None);
+    result
+}
+
 /// Writes a certified body with rolling-envelope faces. `max_deviation` bounds
 /// the file against the represented model; compose it with the model's
-/// definition certificate. A bound over the requested tolerance writes nothing.
+/// definition certificate. An absent complete-file bound or a bound over the
+/// requested tolerance refuses without writing.
 pub fn write_rolling_junction_step<W: Write>(
     model: &Model,
     body: BodyId,
@@ -282,6 +306,12 @@ pub fn write_rolling_junction_step<W: Write>(
         dec,
         &mut bytes,
     )?;
+    if answer.value.definition_deviation.is_none() {
+        return Err(catallax_numbers::Refusal::new(
+            "step.complete-file-bound-unestablished",
+            "the approximate export has only component bounds, not a uniform complete-file bound",
+        ));
+    }
     if answer.value.max_deviation > options.file_tolerance {
         return Err(catallax_numbers::Refusal::new(
             "step.tolerance-not-reached",

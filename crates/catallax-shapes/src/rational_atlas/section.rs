@@ -37,6 +37,26 @@ impl RationalAtlas {
         surface: &SectionSurface,
         dec: &mut Decider,
     ) -> Result<AtlasSection, Refusal> {
+        self.section_search(surface, false, dec)
+    }
+
+    /// Complete sections whose retained cells also have strict power-form
+    /// transverse derivative bounds for Taylor tracing. Refines the same
+    /// section search without changing ordinary query admission or allowances.
+    pub fn sections_for_tracing(
+        &self,
+        surface: &SectionSurface,
+        dec: &mut Decider,
+    ) -> Result<AtlasSection, Refusal> {
+        self.section_search(surface, true, dec)
+    }
+
+    fn section_search(
+        &self,
+        surface: &SectionSurface,
+        trace_ready: bool,
+        dec: &mut Decider,
+    ) -> Result<AtlasSection, Refusal> {
         surface.validate(dec)?;
         let charts: Arc<[RationalPatch]> =
             self.charts().iter().map(|c| c.patch().clone()).collect();
@@ -66,7 +86,7 @@ impl RationalAtlas {
                     .then(|| self.source().domain()[axis].map(Clone::clone))
             }),
         };
-        let section = search_cover(&cover, surface, dec)?;
+        let section = search_cover(&cover, surface, trace_ready, dec)?;
         Ok(AtlasSection {
             branches: section.branches,
             points: section.points,

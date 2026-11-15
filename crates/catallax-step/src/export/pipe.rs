@@ -41,9 +41,32 @@ impl Exporter<'_> {
     ) -> Result<(), Refusal> {
         for body in bodies {
             for face in self.model.faces_of_body(body) {
-                if self.rolling_pipe(face).is_some() {
+                if let Some(pipe) = self.rolling_pipe(face) {
                     let rows = pipe_rows(self.model, face, self.dec)?;
-                    for (row, (edge, _)) in rows.ok_or_else(unsupported)?.iter().enumerate() {
+                    let partial = catallax_topology::partial_pipe_rows(self.model, face, self.dec)?;
+                    let rotate = if let Some([(rail, _), _]) = partial {
+                        let start = self.model.edge(rail).start.ok_or_else(unsupported)?;
+                        let point = self.model.geom().position(self.model.vertex(start).point);
+                        let side = point.minus(&pipe.law().base).dot(&pipe.law().side);
+                        let positive = self.positive(&side)?;
+                        positive != self.rail_forward(rail, &pipe)?
+                    } else {
+                        false
+                    };
+                    let surface = self.model.face(face).surface;
+                    if self
+                        .pipe_rotations
+                        .insert(surface, rotate)
+                        .is_some_and(|old| old != rotate)
+                    {
+                        return Err(Refusal::new(
+                            "step.unsupported-geometry",
+                            "pipe faces sharing a carrier need different export seams",
+                        ));
+                    }
+                    for (row, (edge, _)) in
+                        rows.or(partial).ok_or_else(unsupported)?.iter().enumerate()
+                    {
                         self.pipe_rails.insert(*edge, (face, row));
                     }
                 }
@@ -200,7 +223,24 @@ impl Exporter<'_> {
         }
     }
 
-    fn positive(&mut self, value: &Real) -> Result<bool, Refusal> {
+    pub(super) fn partial_pipe_sense(&mut self, id: FaceId) -> Result<Option<bool>, Refusal> {
+        let Some([(rail, _), _]) = catallax_topology::partial_pipe_rows(self.model, id, self.dec)?
+        else {
+            return Ok(None);
+        };
+        let pipe = self.rolling_pipe(id).ok_or_else(unsupported)?;
+        let controls = pipe.carrier().controls();
+        let along = controls[3].minus(&controls[0]);
+        let across = controls[1].minus(&controls[0]);
+        let law = pipe.law();
+        let chart_along_ray =
+            self.positive(&(&along.cross(&across).dot(&law.normal) * &law.reach))?;
+        Ok(Some(
+            chart_along_ray == pipe_outward(self.model, id, rail, self.dec)?,
+        ))
+    }
+
+    pub(super) fn positive(&mut self, value: &Real) -> Result<bool, Refusal> {
         match self.dec.sign(value) {
             Outcome::Proven(StrictSign::Positive) => Ok(true),
             Outcome::Proven(StrictSign::Negative) => Ok(false),

@@ -208,6 +208,17 @@ fn pipe_ring(
     if edge.start != edge.end {
         return Ok(None);
     }
+    pipe_rail(model, rails, coedge, dec)
+}
+
+fn pipe_rail(
+    model: &Model,
+    rails: &[(Curve, bool); 2],
+    coedge: crate::CoedgeId,
+    dec: &mut Decider,
+) -> Result<Option<(EdgeId, bool, Sense)>, Refusal> {
+    let use_ = model.coedge(coedge);
+    let edge = model.edge(use_.edge);
     let actual = match model.geom().curve(edge.curve) {
         Curve::Ellipse(actual) => actual,
         Curve::BSpline(actual) => {
@@ -269,6 +280,54 @@ pub fn pipe_rows(
     }
     Ok(match found {
         [Some(plane), Some(wall)] => Some([plane, wall]),
+        _ => None,
+    })
+}
+
+/// The two finite ellipse rails of a pipe closed by shared wall sections.
+pub fn partial_pipe_rows(
+    model: &Model,
+    face: FaceId,
+    dec: &mut Decider,
+) -> Result<Option<[(EdgeId, Sense); 2]>, Refusal> {
+    let Surface::BSpline(SplineSupport::RollingPipe(pipe)) =
+        model.geom().surface(model.face(face).surface)
+    else {
+        return Ok(None);
+    };
+    let [boundary] = model.face(face).loops.as_slice() else {
+        return Ok(None);
+    };
+    let Loop::Coedges(coedges) = model.loop_(*boundary) else {
+        return Ok(None);
+    };
+    if coedges.len() != 4 || pipe.is_conical() {
+        return Ok(None);
+    }
+    let rails = rails(pipe, dec)?;
+    let mut found = [None; 2];
+    let mut sections = 0;
+    for coedge in coedges {
+        let use_ = model.coedge(*coedge);
+        let edge = model.edge(use_.edge);
+        if edge.start.is_none() || edge.end.is_none() || edge.start == edge.end {
+            return Ok(None);
+        }
+        let actual = model.geom().curve(edge.curve);
+        if matches!(actual, Curve::PatchSection(_)) {
+            sections += 1;
+            continue;
+        }
+        let Some((_, planar, _)) = pipe_rail(model, &rails, *coedge, dec)? else {
+            return Ok(None);
+        };
+        let row = usize::from(!planar);
+        if found[row].replace((use_.edge, use_.sense)).is_some() {
+            return Ok(None);
+        }
+    }
+    Ok(match found {
+        [Some(plane), Some(wall)] if sections == 2 => Some([plane, wall]),
         _ => None,
     })
 }

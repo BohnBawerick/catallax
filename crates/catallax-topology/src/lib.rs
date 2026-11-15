@@ -36,8 +36,8 @@ pub use oblique_draft::DraftedCylinder;
 pub use rational_atlas::{AtlasFaceGroup, ChartExpansion, coalesce_rational_charts};
 pub use rational_patch::RationalPatchFace;
 pub use rolling_junction::{
-    band_cap, envelope_retains_chart, envelope_rows, pipe_outward, pipe_rows, saddle_added,
-    saddle_rows,
+    band_cap, envelope_retains_chart, envelope_rows, partial_pipe_rows, pipe_outward, pipe_rows,
+    saddle_added, saddle_rows,
 };
 pub use rolling_mitre::RollingMitreBand;
 pub use spline_prism::SplinePrism;

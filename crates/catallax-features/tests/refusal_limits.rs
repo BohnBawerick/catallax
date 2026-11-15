@@ -75,7 +75,9 @@ fn opposing_shell_walls_consuming_the_cavity_still_succeed() {
 
 #[test]
 fn an_uncovered_end_reports_an_unknown_maximum_without_inventing_a_bound() {
-    let recipe = Recipe::parse(&case("partial-oblique").to_string()).unwrap();
+    let mut value = case("partial-oblique");
+    value["steps"][4]["pose"]["translation"][0] = json!("3");
+    let recipe = Recipe::parse(&value.to_string()).unwrap();
     let BuildError::Geometry { refusal, .. } = evaluate(&recipe, &mut decider()).unwrap_err()
     else {
         panic!("expected geometric coverage refusal");

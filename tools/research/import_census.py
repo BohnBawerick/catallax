@@ -100,6 +100,14 @@ def observe(binary, path, key, expected_hash, raw, timeout, baseline):
         'source_to_result_max_mm': imported.get('source_to_result_max_mm'),
         'source_change_count': imported.get('source_change_count'),
         'source_admission_method': imported.get('source_admission_method'),
+        'source_pair_disjoint_count': (None if imported.get('source_intersection_checks') is None else
+                                      sum(check['status'] == 'disjoint' for check in
+                                          imported['source_intersection_checks'])),
+        'source_pair_unresolved': (None if imported.get('source_intersection_checks') is None else
+                                  [{'solid': check['solid'], 'faces': check['faces'],
+                                   'code': check['refusal']['code']} for check in
+                                  imported['source_intersection_checks']
+                                  if check['status'] == 'unresolved']),
         'max_checked_residual_mm': imported.get('max_checked_residual_mm'),
         'referenced_faces': source.get('referenced_faces'),
         'face_kinds': source.get('face_kinds', {}),
@@ -110,6 +118,8 @@ def observe(binary, path, key, expected_hash, raw, timeout, baseline):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--binary', type=Path, required=True)
+    parser.add_argument('--build-record', type=Path, required=True,
+                        help='actual clean-checkout Cargo artifact record from build_import_observer.py')
     parser.add_argument('--sources', type=Path, required=True)
     parser.add_argument('--selection', type=Path, required=True,
                         help='private original [model_id, archive_member] selection')
@@ -154,11 +164,22 @@ def main():
     subprocess.run(['git', '-C', str(ROOT), 'diff', '--quiet', 'HEAD'], check=True)
     source_revision = subprocess.check_output(
         ['git', '-C', str(ROOT), 'rev-parse', 'HEAD'], text=True).strip()
+    build_record = json.loads(args.build_record.read_text())
+    assert build_record['format'] == 'catallax-census-observer-build/1'
+    assert build_record['source_revision'] == source_revision
+    assert build_record['binary_sha256'] == digest(args.binary)
+    assert Path(build_record['artifact_path']).resolve() == args.binary.resolve()
+    assert build_record['observer_sha256'] == digest(ROOT / 'crates/catallax-import/examples/r8_census.rs')
+    assert build_record['cargo_lock_sha256'] == digest(ROOT / 'Cargo.lock')
+    assert build_record['git_tree'] == subprocess.check_output(
+        ['git', '-C', str(ROOT), 'rev-parse', 'HEAD^{tree}'], text=True).strip()
     identity = {
         'schema': 'catallax-numerical-import-census/2', 'seed': SEED,
         'denominator': COUNT, 'binary_sha256': digest(args.binary),
         'collector_sha256': digest(Path(__file__)),
         'source_revision': source_revision,
+        'build_record': build_record, 'build_record_sha256': digest(args.build_record),
+        'source_root': str(args.sources.resolve()),
         'observer_sha256': digest(ROOT / 'crates/catallax-import/examples/r8_census.rs'),
         'rustc': subprocess.check_output(['rustc', '--version'], text=True).strip(),
         'source_hash_manifest_sha256': HASH_MANIFEST,

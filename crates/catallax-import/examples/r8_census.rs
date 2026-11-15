@@ -405,6 +405,9 @@ fn evaluate_numerical(bytes: &[u8]) -> Value {
             let source_admission_method = imported
                 .source_admission()
                 .map(|record| record.method.as_str());
+            let source_intersection_checks = imported
+                .source_admission()
+                .map(|record| &record.intersection_checks);
             let checked_max = imported
                 .bodies()
                 .iter()
@@ -435,7 +438,8 @@ fn evaluate_numerical(bytes: &[u8]) -> Value {
                 "bodies":imported.bodies().len(),"exact":false,"tolerances_mm":tolerances,
                 "source_to_result_max_mm":bounds,"complete_body_bound":"unestablished",
                 "source_change_count":imported.record().changes.len(),
-                "source_admission_method":source_admission_method,"max_checked_residual_mm":checked_max})
+                "source_admission_method":source_admission_method,"max_checked_residual_mm":checked_max,
+                "source_intersection_checks":source_intersection_checks})
         }
         Err(ImportError::Source(refusal)) => {
             eprintln!("{}", serde_json::to_string(&refusal).unwrap());

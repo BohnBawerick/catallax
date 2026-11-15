@@ -7,9 +7,9 @@ use catallax_topology::numerical::{NumericalFace, NumericalTrim};
 mod native;
 mod payload;
 
-type PcurveUse<'a> = (usize, &'a NumericalTrim);
+pub(super) type PcurveUse<'a> = (usize, &'a NumericalTrim);
 
-fn pcurve_uses<'a>(
+pub(super) fn pcurve_uses<'a>(
     faces: &'a [NumericalFace],
     edge_count: usize,
     dec: &mut Decider,

@@ -25,6 +25,32 @@ pub struct NumericalSourceAdmission {
     pub tolerance_mm: Rational,
     /// Versioned source interpretation and repair method.
     pub method: String,
+    /// Every within-solid source face pair, in source order. A tolerated
+    /// incidence prerequisite is unresolved only for pairs using that face.
+    /// Separate solids are not compared, matching the existing import policy.
+    pub intersection_checks: Vec<NumericalSourcePairCheck>,
+}
+
+/// Source intersection coverage retained separately from numerical samples.
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum NumericalSourcePairCheck {
+    /// The existing exact source checker decided this finite pair disjoint.
+    Disjoint {
+        /// Stable source solid name.
+        solid: String,
+        /// Stable source face names, in source order.
+        faces: [String; 2],
+    },
+    /// The source pair could not be checked exactly. This grants no separation.
+    Unresolved {
+        /// Stable source solid name.
+        solid: String,
+        /// Stable source face names, in source order.
+        faces: [String; 2],
+        /// The actual typed incidence prerequisite or undecided pair refusal.
+        refusal: Box<ImportRefusal>,
+    },
 }
 
 /// A source refusal or a numerical admission refusal. Neither contains partial geometry.

@@ -34,9 +34,14 @@ violation is preserved; a missing exact certificate may use numerical checks.
 The body and its STEP stay numerical even when every sampled residual is zero.
 Pointwise check maxima are not complete source-to-result or whole-body bounds.
 Global self-intersection freedom and continuous between-sample separation remain
-unestablished. The existing exact source check still refuses a crossing it finds;
-its unavailable exact-incidence prerequisite is replaced by the stated numerical
-checks. The finite planar STEP writer retains its existing path and controls.
+unestablished. The existing exact source checker runs independently on every
+within-solid pair whose planar incidence prerequisites hold, including every
+unaffected solid. A tolerated incidence gap only leaves pairs using that face
+unresolved; all undecided pairs and their typed reasons remain in
+`intersection_checks` under `retained_shared_analytic_boundaries/2`. Any detected
+crossing refuses the whole import. Separate solids are not compared, following
+the existing import policy. Numerical samples do not resolve those exact source
+pairs. The finite planar STEP writer retains its existing path and controls.
 
 The analytic STEP helper writes explicit cylindrical pcurves and checks actual
 decimal geometry, including STEP frame normalization and projected references.

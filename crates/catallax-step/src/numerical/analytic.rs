@@ -510,28 +510,26 @@ pub(super) fn build(
     };
     let mut edges = Vec::new();
     let mut parameter_checks = Vec::new();
+    let uses = curved::pcurve_uses(&d.faces, d.edges.len(), w.dec)?;
     for (index, edge) in d.edges.iter().enumerate() {
         let mut pcurves = Vec::new();
-        for (f, face) in d.faces.iter().enumerate() {
-            if !matches!(face.surface, Surface::Cylinder(_)) {
-                continue;
-            }
-            for trim in face
-                .loops
-                .iter()
-                .flatten()
-                .filter(|trim| trim.edge == index)
-            {
-                let ends = if trim.sense == Sense::Same {
-                    trim.uv.clone()
-                } else {
-                    [trim.uv[1].clone(), trim.uv[0].clone()]
-                };
-                let (curve, actual) =
-                    pcurve(&mut w, &mut parameter, surfaces[f], &edge.parameters, &ends)?;
-                parameter_checks.push(pcurve_checks(edge, face, &actual, w.dec)?);
-                pcurves.push(curve);
-            }
+        for (f, trim) in &uses[index] {
+            let face = &d.faces[*f];
+            w.dec.charge_work(1)?;
+            let ends = if trim.sense == Sense::Same {
+                trim.uv.clone()
+            } else {
+                [trim.uv[1].clone(), trim.uv[0].clone()]
+            };
+            let (curve, actual) = pcurve(
+                &mut w,
+                &mut parameter,
+                surfaces[*f],
+                &edge.parameters,
+                &ends,
+            )?;
+            parameter_checks.push(pcurve_checks(edge, face, &actual, w.dec)?);
+            pcurves.push(curve);
         }
         let curve = if pcurves.is_empty() {
             geometry[index]

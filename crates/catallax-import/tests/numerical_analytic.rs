@@ -1,4 +1,5 @@
 //! Actual Part 21 circular edges keep shared identity through numerical admission.
+mod common;
 #[path = "../../catallax-topology/tests/common/analytic.rs"]
 mod fixture;
 
@@ -70,6 +71,105 @@ fn checked(bytes: &[u8], tolerance: &str) -> Result<StepImport, numerical::Impor
     )
 }
 
+fn combine_sources(first: &[u8], second: &str) -> Vec<u8> {
+    let first = std::str::from_utf8(first).unwrap();
+    let split = first.rfind("ENDSEC;").unwrap();
+    let data = second
+        .split_once("DATA;\n")
+        .unwrap()
+        .1
+        .split_once("ENDSEC;")
+        .unwrap()
+        .0;
+    let offset = first
+        .lines()
+        .filter_map(|line| line.strip_prefix('#'))
+        .map(|line| line.split_once('=').unwrap().0.parse::<u64>().unwrap())
+        .max()
+        .unwrap();
+    let mut shifted = String::new();
+    let mut chars = data.chars().peekable();
+    while let Some(ch) = chars.next() {
+        shifted.push(ch);
+        if ch == '#' {
+            let mut digits = String::new();
+            while chars.peek().is_some_and(char::is_ascii_digit) {
+                digits.push(chars.next().unwrap());
+            }
+            shifted.push_str(&(digits.parse::<u64>().unwrap() + offset).to_string());
+        }
+    }
+    format!("{}{}{}", &first[..split], shifted, &first[split..]).into_bytes()
+}
+
+#[test]
+fn an_incidence_gap_cannot_hide_a_crossing_in_another_solid_in_either_order() {
+    let gapped = displaced_wall("0.000001");
+    let mut soup = common::Soup::new();
+    soup.box_(["0", "0", "0"], ["2", "2", "2"]);
+    soup.box_(["1", "1", "1"], ["3", "3", "3"]);
+    let crossing = soup.finish();
+    let combined = combine_sources(&gapped, &crossing);
+    let text = std::str::from_utf8(&combined).unwrap();
+    let shells = text
+        .lines()
+        .filter(|line| line.contains("=CLOSED_SHELL("))
+        .collect::<Vec<_>>();
+    let face_refs = shells
+        .iter()
+        .flat_map(|line| references(line))
+        .map(|id| format!("#{id}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let name = shells[0].split_once('=').unwrap().0;
+    let same_solid = text
+        .replace(
+            shells[0],
+            &format!("{name}=CLOSED_SHELL('',({face_refs}));"),
+        )
+        .into_bytes();
+    for source in [
+        combined,
+        same_solid,
+        combine_sources(crossing.as_bytes(), std::str::from_utf8(&gapped).unwrap()),
+    ] {
+        let result = checked(&source, "0.01");
+        assert!(
+            matches!(
+                result,
+                Err(numerical::ImportError::Source(
+                    catallax_import::ImportRefusal::SelfIntersecting { .. }
+                ))
+            ),
+            "{result:?}"
+        );
+    }
+}
+
+#[test]
+fn source_pair_coverage_includes_every_unaffected_solid() {
+    let source = combine_sources(
+        &displaced_wall("0.000001"),
+        &common::box_step(common::BoxFixture::new(["2", "3", "4"])),
+    );
+    let recognized = catallax_import::read_step(&source).unwrap();
+    let StepImport::Numerical(imported) = checked(&source, "0.01").unwrap() else {
+        panic!("expected numerical bodies")
+    };
+    assert_eq!(imported.bodies().len(), 2);
+    let checks = &imported.source_admission().unwrap().intersection_checks;
+    assert_eq!(checks.len(), 10 + 15);
+    let untouched = checks
+        .iter()
+        .filter(|check| {
+            matches!(check,
+        numerical::NumericalSourcePairCheck::Disjoint { solid, .. }
+        if solid == &recognized.solids[1].name)
+        })
+        .count();
+    assert_eq!(untouched, 15);
+}
+
 #[test]
 fn curved_dependency_rebuilds_finite_parameters_and_retains_shared_vertices() {
     let source = displaced_wall("0.000001");
@@ -78,7 +178,28 @@ fn curved_dependency_rebuilds_finite_parameters_and_retains_shared_vertices() {
         panic!("expected numerical admission")
     };
     let admission = imported.source_admission().unwrap();
-    assert_eq!(admission.method, "retained_shared_analytic_boundaries/1");
+    assert_eq!(admission.method, "retained_shared_analytic_boundaries/2");
+    assert_eq!(admission.intersection_checks.len(), 10);
+    assert!(
+        admission
+            .intersection_checks
+            .iter()
+            .any(|check| matches!(check, numerical::NumericalSourcePairCheck::Disjoint { .. }))
+    );
+    let recognized = catallax_import::read_step(&source).unwrap();
+    let affected = recognized.solids[0].faces.iter().find(|face|
+        matches!(&face.surface, catallax_import::Surface::Plane(frame) if frame.origin[1] == q("0.000001")))
+        .unwrap().name.clone();
+    for check in &admission.intersection_checks {
+        if let numerical::NumericalSourcePairCheck::Unresolved { faces, refusal, .. } = check
+            && matches!(
+                refusal.as_ref(),
+                catallax_import::ImportRefusal::NotSolid { .. }
+            )
+        {
+            assert!(faces.contains(&affected));
+        }
+    }
     assert_eq!(admission.tolerance_mm, q("0.01"));
     assert!(
         matches!(&admission.strict_refusal,catallax_import::ImportRefusal::PlanarRepairNotVerified { detail } if detail.stage=="nearest_feature" && detail.feature_size_squared_mm2.is_none())

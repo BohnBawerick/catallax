@@ -312,6 +312,71 @@ fn definition(solid: &Solid, dec: &mut Decider) -> Result<n::NumericalDefinition
     Ok(result)
 }
 
+fn charge_face(face: &crate::Face, dec: &mut Decider) -> Result<(), ImportError> {
+    dec.charge_work(1)?;
+    for boundary in &face.loops {
+        dec.charge_work(1 + boundary.edges.len() as u64)?;
+    }
+    Ok(())
+}
+
+/// Reuse the source checker on independent pairs so one failed incidence
+/// prerequisite cannot suppress checks of other faces or later solids.
+fn intersection_checks(
+    file: &crate::StepFile,
+    dec: &mut Decider,
+) -> Result<Vec<NumericalSourcePairCheck>, ImportError> {
+    let mut checks = Vec::new();
+    for solid in &file.solids {
+        let mut incidence = Vec::new();
+        for face in &solid.faces {
+            charge_face(face, dec)?;
+            incidence.push(crate::intersect::planar_incidence_error(face));
+            dec.check_deadline()?;
+        }
+        for (i, a) in solid.faces.iter().enumerate() {
+            for (j, b) in solid.faces.iter().enumerate().skip(i + 1) {
+                dec.charge_work(1)?;
+                let faces = [a.name.clone(), b.name.clone()];
+                let unresolved =
+                    if let Some(refusal) = incidence[i].as_ref().or(incidence[j].as_ref()) {
+                        Some(refusal.clone())
+                    } else {
+                        // Charge the retained tables before cloning/setup. The
+                        // existing checker meters its exact geometric arithmetic.
+                        charge_face(a, dec)?;
+                        charge_face(b, dec)?;
+                        let pair = Solid {
+                            name: solid.name.clone(),
+                            faces: vec![a.clone(), b.clone()],
+                        };
+                        let result = crate::intersect::check_solid(&pair);
+                        dec.check_deadline()?;
+                        match result {
+                            Ok(()) => None,
+                            Err(refusal @ ImportRefusal::SelfIntersectionNotVerified { .. }) => {
+                                Some(refusal)
+                            }
+                            Err(refusal) => return Err(refusal.into()),
+                        }
+                    };
+                checks.push(match unresolved {
+                    Some(refusal) => NumericalSourcePairCheck::Unresolved {
+                        solid: solid.name.clone(),
+                        faces,
+                        refusal: Box::new(refusal),
+                    },
+                    None => NumericalSourcePairCheck::Disjoint {
+                        solid: solid.name.clone(),
+                        faces,
+                    },
+                });
+            }
+        }
+    }
+    Ok(checks)
+}
+
 pub(super) fn import(
     bytes: &[u8],
     verified_sha256: &str,
@@ -347,13 +412,7 @@ pub(super) fn import(
         // that separate family receives its own complete qualification.
         return Err(refusal.into());
     }
-    match crate::check_self_intersection(&file) {
-        Ok(()) => {}
-        // This is the failed exact source-incidence prerequisite being replaced
-        // by numerical checks. As in N01, samples establish no global body proof.
-        Err(ImportRefusal::NotSolid { detail }) if detail.contains("exactly") => {}
-        Err(error) => return Err(error.into()),
-    }
+    let intersection_checks = intersection_checks(&file, dec)?;
     let mut bodies = Vec::new();
     for solid in &file.solids {
         bodies.push((
@@ -382,7 +441,8 @@ pub(super) fn import(
         source_admission: Some(NumericalSourceAdmission {
             strict_refusal: refusal,
             tolerance_mm: options.tolerance_mm.clone(),
-            method: "retained_shared_analytic_boundaries/1".into(),
+            method: "retained_shared_analytic_boundaries/2".into(),
+            intersection_checks,
         }),
     })))
 }

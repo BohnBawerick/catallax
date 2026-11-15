@@ -61,6 +61,8 @@ impl fmt::Display for Number {
 
 impl Serialize for Number {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        catallax_numbers::transfer::charge_json_number(&self.0)
+            .map_err(serde::ser::Error::custom)?;
         serializer.serialize_str(&self.canonical())
     }
 }

@@ -20,6 +20,8 @@ work-span = ["work-profile"]
 [dependencies]
 catallax-transfer-derive = { path = "../catallax-transfer-derive" }
 sha2 = "0.10"
+serde = "1"
+serde_json = "1"
 im.workspace = true
 num-bigint = "0.4"
 num-integer = "0.1"

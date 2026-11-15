@@ -307,6 +307,8 @@ dependencies = [
  "num-integer",
  "num-traits",
  "rug",
+ "serde",
+ "serde_json",
  "sha2",
 ]
 

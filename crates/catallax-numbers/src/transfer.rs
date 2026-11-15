@@ -17,6 +17,9 @@ use std::{
 const MAGIC: &[u8; 8] = b"CXBODY\0\0";
 const VERSION: u32 = 1;
 
+mod json;
+pub use json::charge_json_number;
+
 pub fn invalid(detail: &str) -> Refusal {
     Refusal::new("handover.invalid-data", detail)
 }
@@ -34,8 +37,7 @@ macro_rules! transfer_json {
     ($($ty:ty),* $(,)?) => {$ (
         impl $crate::transfer::Codec for $ty {
             fn write(&self, writer: &mut $crate::transfer::Writer) -> Result<(), $crate::Refusal> {
-                let bytes = serde_json::to_vec(self).map_err(|_| $crate::transfer::invalid("metadata encoding failed"))?;
-                $crate::transfer::Codec::write(&bytes, writer)
+                writer.json(self)
             }
             fn read(reader: &mut $crate::transfer::Reader<'_>) -> Result<Self, $crate::Refusal> {
                 let bytes = <Vec<u8> as $crate::transfer::Codec>::read(reader)?;
@@ -48,6 +50,17 @@ macro_rules! transfer_json {
 type Factory = fn(&mut Reader<'_>) -> Result<Box<dyn Any>, Refusal>;
 type Emit = Box<dyn FnOnce(&mut Writer) -> Result<(), Refusal>>;
 type HandleRanges = RefCell<HashMap<TypeId, (Option<usize>, Option<u32>)>>;
+
+fn reserve<T>(decider: &mut Decider, values: &mut Vec<T>, extra: usize) -> Result<(), Refusal> {
+    if extra > values.capacity().saturating_sub(values.len()) {
+        decider.charge_work(values.len() as u64)?;
+        values
+            .try_reserve(extra)
+            .map_err(|_| Refusal::new("handover.resource-limit", "transfer allocation failed"))?;
+        decider.check_deadline()?;
+    }
+    Ok(())
+}
 
 #[derive(Default)]
 pub struct Registry {
@@ -63,8 +76,8 @@ impl Registry {
     }
 }
 
-#[derive(Default)]
-pub struct Writer {
+pub struct Writer<'a> {
+    decider: &'a mut Decider,
     bytes: Vec<u8>,
     keys: HashMap<(TypeId, usize), u32>,
     pending: Vec<Option<(&'static str, Emit)>>,
@@ -73,7 +86,23 @@ pub struct Writer {
     active: Option<usize>,
 }
 
-impl Writer {
+impl<'a> Writer<'a> {
+    pub fn new(decider: &'a mut Decider) -> Self {
+        Self {
+            decider,
+            bytes: Vec::new(),
+            keys: HashMap::new(),
+            pending: Vec::new(),
+            owners: Vec::new(),
+            dependencies: Vec::new(),
+            active: None,
+        }
+    }
+
+    pub fn charge(&mut self, units: usize) -> Result<(), Refusal> {
+        self.decider.charge_work(units as u64)
+    }
+
     pub fn bytes_written(&self) -> usize {
         self.bytes.len()
     }
@@ -84,12 +113,27 @@ impl Writer {
         owner: Box<dyn Any>,
         emit: Emit,
     ) -> Result<(), Refusal> {
+        self.charge(1)?;
         let key = (TypeId::of::<T>(), pointer);
         let id = match self.keys.get(&key) {
             Some(id) => *id,
             None => {
                 let id = u32::try_from(self.pending.len())
                     .map_err(|_| invalid("too many shared objects"))?;
+                self.charge(4)?;
+                if self.keys.len() == self.keys.capacity() {
+                    self.charge(self.keys.len())?;
+                    self.keys.try_reserve(1).map_err(|_| {
+                        Refusal::new(
+                            "handover.resource-limit",
+                            "transfer index allocation failed",
+                        )
+                    })?;
+                    self.decider.check_deadline()?;
+                }
+                reserve(self.decider, &mut self.owners, 1)?;
+                reserve(self.decider, &mut self.pending, 1)?;
+                reserve(self.decider, &mut self.dependencies, 1)?;
                 self.keys.insert(key, id);
                 // A mutable cache may replace its Arc while later records are written.
                 self.owners.push(owner);
@@ -99,13 +143,19 @@ impl Writer {
             }
         };
         if let Some(active) = self.active {
+            self.charge(1)?;
+            reserve(self.decider, &mut self.dependencies[active], 1)?;
             self.dependencies[active].push(id as usize);
         }
         id.write(self)
     }
 
-    pub fn raw(&mut self, bytes: &[u8]) {
+    pub fn raw(&mut self, bytes: &[u8]) -> Result<(), Refusal> {
+        self.charge(bytes.len())?;
+        reserve(self.decider, &mut self.bytes, bytes.len())?;
+        self.decider.check_deadline()?;
         self.bytes.extend_from_slice(bytes);
+        Ok(())
     }
 }
 
@@ -164,68 +214,92 @@ impl Reader<'_> {
 }
 
 pub fn encode<T: Codec>(body: &T, decider: &mut Decider) -> Result<Vec<u8>, Refusal> {
-    let mut writer = Writer::default();
-    body.write(&mut writer)?;
-    let root = std::mem::take(&mut writer.bytes);
-    let mut records = Vec::new();
-    let mut i = 0;
-    while i < writer.pending.len() {
-        decider.charge_work(1)?;
-        writer.active = Some(i);
-        let (tag, emit) = writer.pending[i]
-            .take()
-            .ok_or_else(|| invalid("missing shared object"))?;
-        emit(&mut writer)?;
-        records.push((tag, std::mem::take(&mut writer.bytes)));
-        i += 1;
-    }
-    // Iterative postorder preserves graph sharing without recursive traversal.
-    let mut order = Vec::new();
-    let mut state = vec![0_u8; records.len()];
-    for start in 0..records.len() {
-        let mut stack = vec![(start, false)];
-        while let Some((id, exit)) = stack.pop() {
-            if exit {
-                state[id] = 2;
-                order.push(id);
-            } else if state[id] != 2 {
-                if state[id] == 1 {
-                    return Err(invalid("cyclic shared definitions"));
-                }
-                state[id] = 1;
-                stack.push((id, true));
-                for &child in writer.dependencies[id].iter().rev() {
-                    if state[child] != 2 {
-                        stack.push((child, false));
+    let (root, records, order) = {
+        let mut writer = Writer::new(decider);
+        body.write(&mut writer)?;
+        let root = std::mem::take(&mut writer.bytes);
+        let mut records = Vec::new();
+        let mut i = 0;
+        while i < writer.pending.len() {
+            writer.charge(1)?;
+            writer.active = Some(i);
+            let (tag, emit) = writer.pending[i]
+                .take()
+                .ok_or_else(|| invalid("missing shared object"))?;
+            emit(&mut writer)?;
+            writer.charge(1)?;
+            reserve(writer.decider, &mut records, 1)?;
+            records.push((tag, std::mem::take(&mut writer.bytes)));
+            i += 1;
+        }
+        // Iterative postorder preserves graph sharing without recursive traversal.
+        writer.charge(records.len())?;
+        let mut order = Vec::new();
+        let mut state = vec![0_u8; records.len()];
+        writer.charge(records.len())?;
+        for start in 0..records.len() {
+            if state[start] == 2 {
+                continue;
+            }
+            writer.charge(1)?;
+            let mut stack = vec![(start, false)];
+            while let Some((id, exit)) = stack.pop() {
+                writer.charge(1)?;
+                if exit {
+                    state[id] = 2;
+                    reserve(writer.decider, &mut order, 1)?;
+                    order.push(id);
+                } else if state[id] != 2 {
+                    if state[id] == 1 {
+                        return Err(invalid("cyclic shared definitions"));
+                    }
+                    state[id] = 1;
+                    reserve(writer.decider, &mut stack, 1)?;
+                    stack.push((id, true));
+                    writer.charge(writer.dependencies[id].len())?;
+                    for &child in writer.dependencies[id].iter().rev() {
+                        if state[child] != 2 {
+                            reserve(writer.decider, &mut stack, 1)?;
+                            stack.push((child, false));
+                        }
                     }
                 }
             }
         }
-    }
-    let mut output = Writer::default();
-    output.raw(MAGIC);
+        (root, records, order)
+    };
+    let mut output = Writer::new(decider);
+    output.raw(MAGIC)?;
     VERSION.write(&mut output)?;
-    type_name::<T>().to_string().write(&mut output)?;
-    let tags: BTreeSet<_> = records.iter().map(|r| r.0).collect();
+    type_name::<T>().write(&mut output)?;
+    output.charge(records.len())?;
+    let mut tags = BTreeSet::new();
+    for (tag, _) in &records {
+        output.charge(tag.len())?;
+        tags.insert(*tag);
+    }
+    output.charge(tags.len())?;
     let tags: Vec<_> = tags.into_iter().collect();
     tags.len().write(&mut output)?;
+    output.charge(tags.len())?;
     for tag in &tags {
-        tag.to_string().write(&mut output)?;
+        (*tag).write(&mut output)?;
     }
     records.len().write(&mut output)?;
+    output.charge(order.len())?;
     for id in order {
         (id as u32).write(&mut output)?;
         tags.binary_search(&records[id].0)
             .map_err(|_| invalid("missing record type"))?
             .write(&mut output)?;
         records[id].1.len().write(&mut output)?;
-        output.raw(&records[id].1);
+        output.raw(&records[id].1)?;
     }
     root.len().write(&mut output)?;
-    output.raw(&root);
-    decider.charge_work(output.bytes.len() as u64)?;
+    output.raw(&root)?;
+    output.charge(output.bytes.len())?;
     let digest = Sha256::digest(&output.bytes);
-    output.raw(&digest);
+    output.raw(&digest)?;
     Ok(output.bytes)
 }
 
@@ -342,7 +416,7 @@ pub fn decode<T: Codec>(bytes: &[u8], decider: &mut Decider) -> Result<T, Refusa
 macro_rules! integer {
     ($($ty:ty),*) => {$ (
         impl Codec for $ty {
-            fn write(&self, w: &mut Writer) -> Result<(), Refusal> { w.raw(&self.to_le_bytes()); Ok(()) }
+            fn write(&self, w: &mut Writer) -> Result<(), Refusal> { w.raw(&self.to_le_bytes())?; Ok(()) }
             fn read(r: &mut Reader<'_>) -> Result<Self, Refusal> {
                 let bytes = r.take(std::mem::size_of::<Self>())?;
                 Ok(Self::from_le_bytes(bytes.try_into().map_err(|_| invalid("invalid scalar width"))?))
@@ -362,8 +436,11 @@ impl Codec for usize {
 }
 impl Codec for num_bigint::BigInt {
     fn write(&self, w: &mut Writer) -> Result<(), Refusal> {
+        let length = self.bits().saturating_div(8).saturating_add(1);
+        w.decider.charge_work(length)?;
         let bytes = self.to_signed_bytes_le();
-        bytes.write(w)
+        bytes.len().write(w)?;
+        w.raw(&bytes)
     }
     fn read(r: &mut Reader<'_>) -> Result<Self, Refusal> {
         Ok(Self::from_signed_bytes_le(&Vec::<u8>::read(r)?))
@@ -411,7 +488,7 @@ impl Codec for bool {
 impl Codec for String {
     fn write(&self, w: &mut Writer) -> Result<(), Refusal> {
         self.len().write(w)?;
-        w.raw(self.as_bytes());
+        w.raw(self.as_bytes())?;
         Ok(())
     }
     fn read(r: &mut Reader<'_>) -> Result<Self, Refusal> {
@@ -441,6 +518,7 @@ impl<T: Codec> Codec for Option<T> {
 }
 impl<T: Codec> Codec for Vec<T> {
     fn write(&self, w: &mut Writer) -> Result<(), Refusal> {
+        w.charge(self.len())?;
         self.len().write(w)?;
         for x in self {
             x.write(w)?;
@@ -457,6 +535,7 @@ impl<T: Codec> Codec for Vec<T> {
 }
 impl<T: Codec, const N: usize> Codec for [T; N] {
     fn write(&self, w: &mut Writer) -> Result<(), Refusal> {
+        w.charge(self.len())?;
         for x in self {
             x.write(w)?;
         }
@@ -475,6 +554,7 @@ impl<T: Codec, const N: usize> Codec for [T; N] {
 }
 impl<T: Codec> Codec for Arc<T> {
     fn write(&self, w: &mut Writer) -> Result<(), Refusal> {
+        w.charge(3)?;
         let value = self.clone();
         w.shared::<Self>(
             Arc::as_ptr(self) as usize,
@@ -498,11 +578,13 @@ impl<T: Codec> Codec for Arc<T> {
 }
 impl<T: Codec> Codec for Arc<[T]> {
     fn write(&self, w: &mut Writer) -> Result<(), Refusal> {
+        w.charge(3)?;
         let value = self.clone();
         w.shared::<Self>(
             Arc::as_ptr(self) as *const () as usize,
             Box::new(self.clone()),
             Box::new(move |w| {
+                w.charge(value.len())?;
                 value.len().write(w)?;
                 for x in value.iter() {
                     x.write(w)?;
@@ -615,6 +697,7 @@ impl<A: Codec, B: Codec, C: Codec, D: Codec> Codec for (A, B, C, D) {
 
 impl<K: Codec + Ord, V: Codec> Codec for BTreeMap<K, V> {
     fn write(&self, w: &mut Writer) -> Result<(), Refusal> {
+        w.charge(self.len())?;
         self.len().write(w)?;
         for (k, v) in self {
             k.write(w)?;
@@ -639,6 +722,7 @@ impl<K: Codec + Ord, V: Codec> Codec for BTreeMap<K, V> {
 }
 impl<T: Codec + Ord> Codec for BTreeSet<T> {
     fn write(&self, w: &mut Writer) -> Result<(), Refusal> {
+        w.charge(self.len())?;
         self.len().write(w)?;
         for x in self {
             x.write(w)?;
@@ -661,6 +745,7 @@ impl<T: Codec + Ord> Codec for BTreeSet<T> {
 }
 impl<T: Codec + Clone> Codec for im::Vector<T> {
     fn write(&self, w: &mut Writer) -> Result<(), Refusal> {
+        w.charge(self.len())?;
         self.len().write(w)?;
         for x in self {
             x.write(w)?;
@@ -676,6 +761,7 @@ impl<T: Codec + Clone> Codec for im::Vector<T> {
 }
 impl<K: Codec + Clone + Ord, V: Codec + Clone> Codec for im::OrdMap<K, V> {
     fn write(&self, w: &mut Writer) -> Result<(), Refusal> {
+        w.charge(self.len())?;
         self.len().write(w)?;
         for (k, v) in self {
             k.write(w)?;
@@ -693,6 +779,7 @@ impl<K: Codec + Clone + Ord, V: Codec + Clone> Codec for im::OrdMap<K, V> {
 }
 impl<T: Codec + Clone + Ord> Codec for im::OrdSet<T> {
     fn write(&self, w: &mut Writer) -> Result<(), Refusal> {
+        w.charge(self.len())?;
         self.len().write(w)?;
         for x in self {
             x.write(w)?;
@@ -711,7 +798,8 @@ impl<T: Codec + Clone + Ord> Codec for im::OrdSet<T> {
 // repeated imports reuse them and arbitrary input cannot leak unbounded memory.
 impl Codec for &'static str {
     fn write(&self, w: &mut Writer) -> Result<(), Refusal> {
-        self.to_string().write(w)
+        self.len().write(w)?;
+        w.raw(self.as_bytes())
     }
     fn read(r: &mut Reader<'_>) -> Result<Self, Refusal> {
         static STRINGS: OnceLock<Mutex<BTreeSet<&'static str>>> = OnceLock::new();
@@ -818,7 +906,8 @@ mod tests {
     fn registered_objects_stay_alive_until_the_snapshot_finishes() {
         let value = Arc::new(42_u64);
         let weak = Arc::downgrade(&value);
-        let mut writer = Writer::default();
+        let mut decider = Decider::default();
+        let mut writer = Writer::new(&mut decider);
         value.write(&mut writer).unwrap();
         drop(value);
         let (_, emit) = writer.pending[0].take().unwrap();
@@ -826,5 +915,100 @@ mod tests {
         assert_eq!(weak.upgrade().as_deref(), Some(&42));
         drop(writer);
         assert!(weak.upgrade().is_none());
+    }
+
+    #[test]
+    fn collection_walks_stop_before_visiting_a_large_payload() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static VISITED: AtomicUsize = AtomicUsize::new(0);
+        struct Probe;
+        impl Codec for Probe {
+            fn write(&self, w: &mut Writer) -> Result<(), Refusal> {
+                VISITED.fetch_add(1, Ordering::Relaxed);
+                1_u8.write(w)
+            }
+            fn read(_: &mut Reader<'_>) -> Result<Self, Refusal> {
+                unreachable!()
+            }
+        }
+        let values: Vec<_> = (0..100_000).map(|_| Probe).collect();
+        let (result, work) =
+            crate::with_operation_budget(16, || encode(&values, &mut Decider::default()));
+        assert!(result.is_err());
+        assert!(work.exhausted);
+        assert_eq!(VISITED.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn json_walks_and_string_scans_refuse_before_materialization() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static VISITED: AtomicUsize = AtomicUsize::new(0);
+        struct Probe;
+        impl serde::Serialize for Probe {
+            fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                VISITED.fetch_add(1, Ordering::Relaxed);
+                serializer.serialize_u8(1)
+            }
+        }
+        let values: Vec<_> = (0..100_000).map(|_| Probe).collect();
+        let (result, work) = crate::with_operation_budget(16, || {
+            let mut decider = Decider::default();
+            let mut writer = Writer::new(&mut decider);
+            writer.json(&values)
+        });
+        assert!(result.is_err());
+        assert!(work.exhausted);
+        assert_eq!(VISITED.load(Ordering::Relaxed), 0);
+        let text = "unescaped-text".repeat(100_000);
+        let ((result, written), work) = crate::with_operation_budget(16, || {
+            let mut decider = Decider::default();
+            let mut writer = Writer::new(&mut decider);
+            (writer.json(&text), writer.bytes_written())
+        });
+        assert!(result.is_err());
+        assert!(work.exhausted);
+        assert_eq!(written, 0);
+    }
+
+    #[test]
+    fn integer_conversion_is_charged_before_allocating_encoded_digits() {
+        let value: num_bigint::BigInt = num_bigint::BigInt::from(1_u8) << 1_000_000_u32;
+        let ((result, written), work) = crate::with_operation_budget(16, || {
+            let mut decider = Decider::default();
+            let mut writer = Writer::new(&mut decider);
+            (value.write(&mut writer), writer.bytes_written())
+        });
+        assert!(result.is_err());
+        assert!(work.exhausted);
+        assert_eq!(written, 0);
+    }
+
+    #[test]
+    fn metered_json_keeps_the_version_one_bytes() {
+        struct Metadata(Vec<String>);
+        impl Codec for Metadata {
+            fn write(&self, w: &mut Writer) -> Result<(), Refusal> {
+                w.json(&self.0)
+            }
+            fn read(r: &mut Reader<'_>) -> Result<Self, Refusal> {
+                Ok(Self(serde_json::from_slice(&Vec::<u8>::read(r)?).unwrap()))
+            }
+        }
+        let value = Metadata(vec!["line\nquote\"".into(), "é".into()]);
+        let json = serde_json::to_vec(&value.0).unwrap();
+        let kind = type_name::<Metadata>();
+        let mut legacy = MAGIC.to_vec();
+        legacy.extend(VERSION.to_le_bytes());
+        legacy.extend((kind.len() as u64).to_le_bytes());
+        legacy.extend(kind.as_bytes());
+        legacy.extend(0_u64.to_le_bytes());
+        legacy.extend(0_u64.to_le_bytes());
+        legacy.extend((8 + json.len() as u64).to_le_bytes());
+        legacy.extend((json.len() as u64).to_le_bytes());
+        legacy.extend(json);
+        legacy.extend(Sha256::digest(&legacy).as_slice());
+        assert_eq!(encode(&value, &mut Decider::default()).unwrap(), legacy);
+        let restored: Metadata = decode(&legacy, &mut Decider::default()).unwrap();
+        assert_eq!(restored.0, value.0);
     }
 }

@@ -54,6 +54,10 @@ should accept transfers from their own kernel build. Changes to record fields,
 variant order, or type names require a format-version bump.
 
 Transfer charges the active request allowance through `Decider::charge_work`.
+The encoder charges before variable-length walks, integer conversion, buffer
+growth, record copies and hashing. Metadata JSON streams through the same
+meter, with checks before string escaping and collection visits. It uses the
+existing lengths and integer bit lengths, without a size-estimation pass.
 Without an active allowance it uses the application default. Input scanning,
 decoding and rational restoration consume work; import does not obtain a fresh
 allowance inside an existing request. Journals, read observers and thread fork

@@ -406,7 +406,7 @@ fn tiny_remaining_allowance_stops_before_a_large_root_is_materialized() {
     let ((result, written), work) = with_operation_budget(80, || {
         let mut decider = Decider::default();
         decider.charge_work(64).unwrap();
-        let mut writer = Writer::default();
+        let mut writer = Writer::new(&mut decider);
         let result = source.write(&mut writer);
         (result, writer.bytes_written())
     });

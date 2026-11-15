@@ -15,7 +15,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let problem = document.get("problem").unwrap_or(&document);
     let recipe = Recipe::parse(&problem.to_string())?;
     let source = catallax_features::evaluate(&recipe, &mut Decider::default())?;
-    let bytes = write_body(&source, &mut Decider::default())?;
+    let export_start = Instant::now();
+    let (bytes, export_work) = with_operation_budget(catallax_app::DEFAULT_BUILD_WORK, || {
+        write_body(&source, &mut Decider::default())
+    });
+    let bytes = bytes?;
+    let export_us = export_start.elapsed().as_micros();
     let mut imports_us = Vec::new();
     let mut import_work = Vec::new();
     for _ in 0..7 {
@@ -33,6 +38,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         serde_json::json!({
             "part": recipe.name, "bytes": bytes.len(), "imports_us": imports_us,
             "import_work": import_work,
+            "export_us": export_us, "export_work": export_work.used,
         })
     );
     Ok(())

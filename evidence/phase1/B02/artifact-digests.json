@@ -1,0 +1,53 @@
+{
+  "baseline": "3a2f4e0c65feae548f4980d5c520a0c330acf6fb",
+  "method": "SHA-256 of current B02 source/docs and historical baseline capture plus P2 helper before/after execution summary; this manifest is not self-hashed. Original baseline source identities remain unchanged. No application qualification is inferred.",
+  "artifacts": [
+    {
+      "path": "crates/catallax-trace/src/surface_trace.rs",
+      "sha256": "34f1c97a05d4ebaf1f8c9316e412963a811b84a14fea8c8f628db97aa9b13684"
+    },
+    {
+      "path": "crates/catallax-trace/tests/b02_seam.rs",
+      "sha256": "bbe5784bbde7c3a9518470ff01f7915313c3cf0244f221285baeea44085c4aea"
+    },
+    {
+      "path": "crates/catallax-trace/tests/support/b02_parameter.rs",
+      "sha256": "684fae32a528798dae009af685cae5c73eb0beedda4ef35851ac8ea73faf3ac5"
+    },
+    {
+      "path": "docs/phase1/B02/SEAM-RANGE.md",
+      "sha256": "3bea6b72393e21de8380dd5210d3d70c0d4d5c9980c6898359e211ff915e90ff"
+    },
+    {
+      "path": "evidence/phase1/B02/P2/VALIDATION.md",
+      "sha256": "f9c618509a48443ab084a6865252fb655e09b8f15c1bbcc90bd0abb5cf758afa"
+    },
+    {
+      "path": "evidence/phase1/B02/VALIDATION.md",
+      "sha256": "dbda3293df411ad51577524af6df443682cff93ae34a17f359fdfdef86f42a2f"
+    },
+    {
+      "path": "evidence/phase1/B02/baseline-regression.txt",
+      "sha256": "9e515950843ec3aa78e0b613e7195001d85d2828b43e2a580b350e8be4e7cee0"
+    }
+  ],
+  "baseline_sources": [
+    {
+      "path": "crates/catallax-trace/src/surface_trace.rs",
+      "sha256": "cff006120ce8aa3daf7492eb2ea65e3b439d68b5b6685525c7545d25109417d8"
+    },
+    {
+      "path": "crates/catallax-trace/src/surface_intersector.rs",
+      "sha256": "c1aaf4e2cb294d72dfbeacc0d630c7cf5fded7289f58863bff77d2fd51efb573"
+    },
+    {
+      "path": "docs/phase1/P04/PORT-CONSUMERS.md",
+      "sha256": "e0e03e8b5d1ad317f13712bdac617c810efcafd0640b1761a86d3750fd7b493f"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/drop-curve/generate.py",
+      "sha256": "ec977f9f0a6bef7c32199485a67e8e31ca998914e7be01819ec98e0b429e46f0"
+    }
+  ],
+  "repair_base": "32e460b40e6918b0c42d1666446217cd7ffb67b6"
+}

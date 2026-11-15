@@ -1,0 +1,24 @@
+Publication-sanitized baseline output. Original retained privately. Host locations replaced by <B02_WORKTREE>.
+warning: crates/catallax-cli/Cargo.toml: file `<B02_WORKTREE>/crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+warning: `catallax-cli` (manifest) generated 1 warning
+   Compiling catallax-trace v0.1.5 (<B02_WORKTREE>/crates/catallax-trace)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.26s
+     Running tests/b02_seam.rs (target/debug/build/catallax-trace/0edbaa6927ad49be/out/b02_seam-0edbaa6927ad49be)
+
+running 1 test
+
+thread 'seam_ranges_are_complete_clipped_and_period_translated' (4696) panicked at crates/catallax-trace/tests/b02_seam.rs:156:29:
+Case { closed_v: false, reverse: false, swap: false, trim: 0, shift: 0.0 }: NotPorted(Intersect)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test seam_ranges_are_complete_clipped_and_period_translated ... FAILED
+
+failures:
+
+failures:
+    seam_ranges_are_complete_clipped_and_period_translated
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.04s
+
+error: test failed, to rerun pass `-p catallax-trace --test b02_seam`

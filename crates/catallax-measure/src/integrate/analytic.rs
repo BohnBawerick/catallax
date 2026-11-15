@@ -14,6 +14,41 @@ use catallax_numbers::{Ball, Rational, Real, Sign};
 mod endpoints;
 mod reduced;
 
+// A circle permits any oriented basis in its plane. A raw construction
+// reference can have an irrational length even when a rational unit frame
+// exists. The fallback is the rational rotation carrying +z to the unit normal.
+fn circle_basis(
+    normal: &RVector3,
+    reference: &RVector3,
+    radius_sq: &Rational,
+) -> Option<(RVector3, RVector3)> {
+    let second = normal.cross(reference);
+    if reference.norm_squared().is_zero() || second.norm_squared().is_zero() {
+        return None;
+    }
+    if let (Some(a), Some(b)) = (
+        sqrt(&(radius_sq / &reference.norm_squared())),
+        sqrt(&(radius_sq / &second.norm_squared())),
+    ) {
+        return Some((scale(reference, &a), scale(&second, &b)));
+    }
+    let radius = sqrt(radius_sq)?;
+    let length = sqrt(&normal.norm_squared())?;
+    let n = scale(normal, &length.recip()?);
+    let denominator = &Rational::one() + &n.z;
+    let u = if denominator.is_zero() {
+        RVector3::new(Rational::one(), Rational::zero(), Rational::zero())
+    } else {
+        RVector3::new(
+            &Rational::one() - &(&(&n.x * &n.x) / &denominator),
+            -(&(&n.x * &n.y) / &denominator),
+            -n.x.clone(),
+        )
+    };
+    let v = n.cross(&u);
+    Some((scale(&u, &radius), scale(&v, &radius)))
+}
+
 // cos(theta)^2 = 1 - sin(theta)^2, so the cosine degree is at most one.
 #[derive(Clone, Default)]
 struct Polynomial(BTreeMap<(u32, u32), Rational>);
@@ -281,12 +316,7 @@ impl Program {
                 let normal = circle.normal.as_rational()?;
                 let reference = circle.ref_dir.as_rational()?;
                 let radius_sq = circle.radius_sq.as_rational()?;
-                let u = scale(
-                    &reference,
-                    &sqrt(&(&radius_sq / &reference.norm_squared()))?,
-                );
-                let second = normal.cross(&reference);
-                let v = scale(&second, &sqrt(&(&radius_sq / &second.norm_squared()))?);
+                let (u, v) = circle_basis(&normal, &reference, &radius_sq)?;
                 Some(trigonometric_inputs(
                     &center,
                     &u,
@@ -441,6 +471,21 @@ fn trigonometric_inputs(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn circle_basis_can_replace_an_irrational_length_reference() {
+        for (normal, reference) in [
+            (vector(0, 0, -12), vector(1, 1, 0)),
+            (vector(3, 4, 12), vector(48, 39, -25)),
+        ] {
+            let (u, v) = circle_basis(&normal, &reference, &Rational::one()).unwrap();
+            assert_eq!(u.norm_squared(), Rational::one());
+            assert_eq!(v.norm_squared(), Rational::one());
+            assert!(u.dot(&v).is_zero());
+            assert!(u.cross(&v).cross(&normal).norm_squared().is_zero());
+            assert_eq!(u.cross(&v).dot(&normal).sign(), Sign::Positive);
+        }
+    }
+
     use super::*;
     use crate::surface::{self, Property};
     use catallax_numbers::{BudgetPolicy, Decider};
@@ -478,7 +523,12 @@ mod tests {
         )
         .unwrap()
         .boundary;
-        for reference in [vector(1, 0, 0), vector(3, 4, 0), vector(-3, -4, 0)] {
+        for reference in [
+            vector(1, 0, 0),
+            vector(3, 4, 0),
+            vector(-3, -4, 0),
+            vector(1, 1, 0),
+        ] {
             let curve = Curve::Circle(
                 Circle::new(
                     (point(0, 0, 0)).into(),

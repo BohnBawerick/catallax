@@ -418,3 +418,29 @@ fn sewing_outer_and_hole_endpoints_refuses_without_mutating_input() {
     );
     record("shared-endpoints-refusal", format!("{refusal:#?}\n"));
 }
+
+#[test]
+fn continuation_retains_source_sewing_checks() {
+    let mut input = tube();
+    let pair = split(&mut input, "0.005");
+    let source = numerical::sew(&input, &[pair], options(), &mut Decider::default()).unwrap();
+    let edited = source
+        .replace_surface(
+            "f0",
+            source.definition().faces[0].surface.clone(),
+            &mut Decider::default(),
+        )
+        .unwrap();
+    assert_eq!(edited.history().len(), 1);
+    assert_eq!(edited.history()[0].evidence, *source.evidence());
+    assert!(edited.history()[0].evidence.checks().iter().any(
+        |c| matches!(c, NumericalCheck::Passed { name, .. } if name == "sewing.explicit-vertex-pair")
+    ));
+    assert_eq!(
+        edited.source_definition().vertices.len(),
+        input.vertices.len()
+    );
+    assert!(!edited.evidence().checks().iter().any(
+        |c| matches!(c, NumericalCheck::Passed { name, .. } if name == "sewing.explicit-vertex-pair")
+    ));
+}

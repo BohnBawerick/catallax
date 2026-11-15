@@ -47,3 +47,7 @@ harness = false
 [[example]]
 name = "generated_recipe_checks"
 test = true
+
+[[example]]
+name = "numerical_replay"
+test = true

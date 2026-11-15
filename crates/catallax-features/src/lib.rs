@@ -73,6 +73,8 @@ pub mod import_edit;
 pub mod lattice;
 mod loft;
 mod mesh_import;
+/// Separate checked numerical edit definitions and replay.
+pub mod numerical;
 mod offset_fit;
 mod placement;
 mod planar_distance;
@@ -103,7 +105,8 @@ pub use certified::{
 pub use draft_build::ConsumedFace;
 pub use evaluate::{
     BuildError, Built, EvaluationCheckpoint, ImportFiles, StandIn, evaluate, evaluate_certified,
-    evaluate_incremental, evaluate_incremental_with_files, evaluate_with_files,
+    evaluate_incremental, evaluate_incremental_with_files, evaluate_numerical, evaluate_with_files,
+    replay_numerical,
 };
 pub use extrude::extrude;
 pub use offset_fit::{EllipticOffsetFit, OffsetSpanBound, fit_elliptic_offset};

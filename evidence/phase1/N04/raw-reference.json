@@ -1,0 +1,29 @@
+{
+  "format": "catallax-n04-raw-reference/1",
+  "ocp_version": "7.8.1.1",
+  "sha256": "c7a5861e3dbdd011ef397a02701073e3eab136818cc7ba324fae881e40fd670b",
+  "healing": false,
+  "same_parameter": false,
+  "raw_valid": true,
+  "topology": {
+    "solids": 1,
+    "faces": 10,
+    "edges": 24,
+    "vertices": 16,
+    "two_loop_faces": 2,
+    "euler_with_face_holes": 0
+  },
+  "volume_mm3": 18.0,
+  "material_probes": {
+    "kept_wall": "inside",
+    "later_removed_wall": "inside",
+    "cut_away": "outside",
+    "hole": "outside",
+    "outside": "outside",
+    "new_cap": "boundary"
+  },
+  "subsequent_cut": {
+    "valid": true,
+    "volume_mm3": 15.0
+  }
+}

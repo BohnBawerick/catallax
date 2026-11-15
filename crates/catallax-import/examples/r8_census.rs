@@ -523,6 +523,16 @@ mod tests {
     }
 
     #[test]
+    fn numerical_admissions_report_the_stored_body_kind() {
+        let source =
+            common::box_with_placement(5, Some(["0.000001", "0", "1"]), Some(["1", "0", "0"]));
+        let row = evaluate_numerical(source.as_bytes());
+        assert_eq!(row["outcome"], "admitted");
+        assert_eq!(row["import_category"], "numerical approximate");
+        assert_eq!(row["body_kinds"], json!({"solid": 1}));
+    }
+
+    #[test]
     fn clean_box_counts_and_imports_through_the_recipe_entry() {
         let bytes = common::box_step(common::BoxFixture::new(["1", "2", "3"]));
         let row = census(bytes.as_bytes());

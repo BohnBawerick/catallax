@@ -269,16 +269,15 @@ def observe(binary, source, baseline, folder, timeout):
         expected_body_count=int(baseline["bodies"]),
         observed_body_count=admission["bodies"],
     )
+    cause = response["refusal"]["code"] if response["outcome"] == "refused" else None
+    if cause is not None and cause.startswith("observer."):
+        return row | dict(outcome="process_error", cause=cause)
     if admission["bodies"] != int(baseline["bodies"]):
         return row | dict(
             outcome="admission_changed", cause="body_count_differs_from_frozen_admission"
         )
     if response["outcome"] == "refused":
-        cause = response["refusal"]["code"]
-        return row | dict(
-            outcome="process_error" if cause.startswith("observer.") else "export_refused",
-            cause=cause,
-        )
+        return row | dict(outcome="export_refused", cause=cause)
     assert response["outcome"] == "complete" and len(response["files"]) == admission["bodies"]
     remaining = timeout - (time.monotonic() - start)
     if remaining <= 0:

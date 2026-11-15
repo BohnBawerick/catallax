@@ -2,6 +2,7 @@
 
 import copy
 import hashlib
+from itertools import product
 import json
 from pathlib import Path
 import sys
@@ -96,8 +97,12 @@ class ValidityTests(unittest.TestCase):
             summary(self.admissions, self.rows)
 
     def test_observer_faults_are_process_errors_and_prevent_complete_census(self):
-        for cause in ["observer.write", "observer.reread", "observer.byte-identity"]:
-            with self.subTest(cause=cause), tempfile.TemporaryDirectory() as directory:
+        for cause, bodies in product(
+            ["observer.write", "observer.reread", "observer.byte-identity"], [2, 3]
+        ):
+            with self.subTest(
+                cause=cause, bodies=bodies
+            ), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 source = root / "source.step"
                 source.write_bytes(b"classification fixture")
@@ -109,7 +114,7 @@ class ValidityTests(unittest.TestCase):
                     outcome="admitted",
                     work_limit=WORK,
                     work_used=1,
-                    bodies=2,
+                    bodies=bodies,
                     import_category="certified",
                 )
                 response = dict(
@@ -132,6 +137,8 @@ class ValidityTests(unittest.TestCase):
                 result = observe(producer, source, baseline, root / "capture", 5)
                 self.assertEqual(result["outcome"], "process_error")
                 self.assertEqual(result["cause"], cause)
+                self.assertEqual(result["expected_body_count"], 2)
+                self.assertEqual(result["observed_body_count"], bodies)
                 admissions = self.admissions | {"00000000": baseline}
                 report = summary(admissions, [result, *self.rows[1:]])
                 self.assertFalse(report["complete"])

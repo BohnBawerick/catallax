@@ -323,9 +323,16 @@ fn check_proposal_rows(
         ));
     }
     // Native ruled sources store two axial controls at every angular pole.
-    for (pole, rows) in surface.control_points().chunks_exact(2).enumerate() {
+    let bits = |value: f64| if value == 0.0 { 0 } else { value.to_bits() };
+    for (pole, rows) in surface
+        .control_points()
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .enumerate()
+    {
         dec.charge_work(1)?;
-        if rows[0].coordinates == rows[1].coordinates {
+        if rows[0].coordinates.map(bits) == rows[1].coordinates.map(bits) {
             return Err(Refusal::new(
                 "intersect.numerical-native-proposal-collapse",
                 format!(
@@ -657,6 +664,40 @@ mod tests {
             .unwrap();
             assert!(check_proposal_rows(&proposal, 0, &mut dec).is_ok());
         }
+    }
+
+    #[test]
+    fn proposal_guard_treats_signed_underflow_zeros_as_collapsed_rows() {
+        let mut dec = Decider::default();
+        let tiny = Rational::parse(&format!("1/1{}", "0".repeat(400))).unwrap();
+        let frame = Frame::new(
+            Point3::new(s(0), s(0), s(0)),
+            &Vector3::new(s(0), s(1), s(0)),
+            &Vector3::new(s(1), s(0), s(0)),
+            &mut dec,
+        )
+        .unwrap();
+        let source = source(
+            &frame,
+            &[-&tiny, tiny],
+            [&s(1), &s(1)],
+            "underflow-control",
+            &Rational::from_ratio(1, 10_000_000).unwrap(),
+            &mut dec,
+        )
+        .unwrap();
+        let proposal = crate::pair::trace_candidates::surface(
+            &source.surface,
+            &Isometry::identity(),
+            &mut dec,
+        )
+        .unwrap();
+        assert_eq!(
+            check_proposal_rows(&proposal, 0, &mut dec)
+                .unwrap_err()
+                .code,
+            "intersect.numerical-native-proposal-collapse"
+        );
     }
 
     #[test]

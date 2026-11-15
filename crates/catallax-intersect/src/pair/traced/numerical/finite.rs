@@ -311,7 +311,7 @@ mod tests {
             }
             assert!(!work.exhausted, "{work:?}");
             assert_eq!(
-                result.err().map(|fault| fault.code).as_deref(),
+                result.err().map(|fault| fault.code),
                 Some("intersect.numerical-native-proposal-collapse")
             );
         }

@@ -163,20 +163,31 @@ fn finite_distance_face(model: &Model, face: FaceId) -> bool {
         })
 }
 
+fn source_role(origin: &catallax_recipe::Origin) -> &catallax_recipe::Role {
+    let mut role = &origin.role;
+    while let catallax_recipe::Role::Copy { of, .. } = role {
+        role = &of.role;
+    }
+    role
+}
+
 fn distance_generated(model: &Model, face: FaceId) -> bool {
     model.face_origins(face).iter().any(|origin| {
-        let mut role = &origin.role;
-        while let catallax_recipe::Role::Copy { of, .. } = role {
-            role = &of.role;
-        }
         matches!(
-            role,
+            source_role(origin),
             catallax_recipe::Role::Round { .. }
                 | catallax_recipe::Role::RoundCorner { .. }
                 | catallax_recipe::Role::Inner { .. }
                 | catallax_recipe::Role::Offset { .. }
         )
     })
+}
+
+fn fillet_corner(model: &Model, face: FaceId) -> bool {
+    model
+        .face_origins(face)
+        .iter()
+        .any(|origin| matches!(source_role(origin), catallax_recipe::Role::Corner { .. }))
 }
 
 fn analytic_carrier(
@@ -246,7 +257,14 @@ pub(crate) fn measure(
     let elliptic_rims = elliptic_cylinder_rims(model, faces);
     let mut exact: [Rational; 5] = std::array::from_fn(|_| Rational::zero());
     let mut pending = Vec::new();
-    let reduce_distance = faces.iter().any(|face| distance_generated(model, *face));
+    let reduce_conics = faces.iter().any(|face| {
+        distance_generated(model, *face)
+            || (fillet_corner(model, *face)
+                && matches!(
+                    model.geom().surface(model.face(*face).surface),
+                    Surface::Torus(_) | Surface::TorusSheet(_)
+                ))
+    });
     for id in faces {
         if let Some(planar) = planar::face(model, *id, anchor, property) {
             match property {
@@ -357,7 +375,7 @@ pub(crate) fn measure(
         let surface = sheets.get(&id).unwrap_or(surface);
         let analytic_only = finite_distance_face(model, id);
         let rectangle = match surface {
-            Surface::Torus(torus) if analytic_only => {
+            Surface::Torus(torus) if analytic_only || fillet_corner(model, id) => {
                 let domain = match traces.torus_rectangles.entry(id) {
                     Entry::Occupied(entry) => entry.into_mut(),
                     Entry::Vacant(entry) => entry.insert(
@@ -507,7 +525,7 @@ pub(crate) fn measure(
                             } else {
                                 None
                             };
-                        if (reduce_distance || traces.native_conics)
+                        if (reduce_conics || traces.native_conics)
                             && torus.is_none()
                             && exact.is_none()
                             && analytic.is_none()
@@ -519,7 +537,7 @@ pub(crate) fn measure(
                             } else {
                                 analytic_carrier(model, edge.curve, dec)?
                             };
-                            if reduce_distance || carrier.is_some() {
+                            if reduce_conics || carrier.is_some() {
                                 integral = compiled.boundary.analytic_reduced(
                                     carrier.as_ref().unwrap_or(model.geom().curve(edge.curve)),
                                     &model.geom().position(from),

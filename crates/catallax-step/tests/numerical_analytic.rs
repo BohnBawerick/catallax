@@ -139,6 +139,7 @@ fn distant_periodic_coordinates_and_exhausted_writers_return_no_file() {
 fn partial_circle_exchange_uses_the_reader_parameter_chart() {
     let period = Ball::pi(128).mid() * q("2");
     for quarter_turns in [0, 1, 2, 3] {
+        let mut canonical_bytes = None;
         for turns in [-1, 0, 1] {
             let mut definition = quarter();
             let reference = match quarter_turns {
@@ -177,6 +178,11 @@ fn partial_circle_exchange_uses_the_reader_parameter_chart() {
             file.check_written(file.bytes(), &mut Decider::default())
                 .unwrap();
             assert_eq!(file.report().counts, [5, 9, 6]);
+            if let Some(bytes) = &canonical_bytes {
+                assert_eq!(file.bytes(), bytes, "equivalent periodic arc chart");
+            } else {
+                canonical_bytes = Some(file.bytes().to_vec());
+            }
             save(
                 &format!("quarter-chart-{quarter_turns}-{turns}.step"),
                 file.bytes(),

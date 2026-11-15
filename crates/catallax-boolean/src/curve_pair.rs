@@ -194,6 +194,9 @@ pub(crate) fn meetings(
     )? {
         return Ok(Meetings::Coincident);
     }
+    if let Some(answer) = patch::native_line_meetings(model, a, b, dec)? {
+        return Ok(answer);
+    }
     let mut result = Vec::new();
     let finite = match catallax_intersect::bezier_section_line_points(model.geom(), a, b, dec)? {
         Some(points) => Some(points),

@@ -6,7 +6,17 @@ use catallax_shapes::{
     BSplineCurve, Plane, SectionHits, SectionSurface, Sphere, Surface, SurfaceId,
 };
 
+mod finite_line;
 mod spline;
+
+pub(super) fn native_line_meetings(
+    model: &mut Model,
+    a: CurveId,
+    b: CurveId,
+    dec: &mut Decider,
+) -> Result<Option<Meetings>, Refusal> {
+    finite_line::meetings(model, a, b, dec)
+}
 
 pub(crate) enum FinitePlanePoints {
     Contained,

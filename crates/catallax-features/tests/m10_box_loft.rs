@@ -252,6 +252,59 @@ fn box_loft_retained_trace_progress_is_identical_on_every_worker_count() {
 }
 
 #[test]
+fn isolated_roof_contact_preserves_the_subtracted_solid() {
+    for height in ["3", "3000001/1000000"] {
+        for reverse in [false, true] {
+            let ((), work) = with_operation_budget(20_000_000, || {
+                let mut steps = loft_steps();
+                steps.push(json!({"id":"box","op":"block","size":["10","10","1"],
+                    "pose":{"rotation":["1","0","0","0"],
+                    "translation":["-3",height,"1/2"]}}));
+                let (target, tool) = if reverse {
+                    ("box", "loft")
+                } else {
+                    ("loft", "box")
+                };
+                let mut dec = Decider::default();
+                let source =
+                    catallax_features::evaluate(&recipe(steps.clone(), target), &mut dec).unwrap();
+                steps.push(json!({"id":"cut","op":"boolean","kind":"subtract",
+                    "target":target,"tool":tool}));
+                let mut result =
+                    catallax_features::evaluate(&recipe(steps, "cut"), &mut dec).unwrap();
+                assert_eq!(
+                    result.model.counts(result.result),
+                    source.model.counts(source.result)
+                );
+                assert!(result.model.check(result.result).is_empty());
+                assert_eq!(
+                    result.model.body(result.result).kind,
+                    catallax_topology::BodyKind::Solid
+                );
+                assert_eq!(result.model.body(result.result).lumps.len(), 1);
+                for (y, inside) in [(1, !reverse), (4, reverse)] {
+                    let expected = if inside {
+                        catallax_boolean::Containment::Inside
+                    } else {
+                        catallax_boolean::Containment::Outside
+                    };
+                    let point = Point3::new(Real::from_i64(2), Real::from_i64(y), Real::one());
+                    assert!(matches!(
+                        catallax_boolean::classify_point(&mut result.model, result.result, &point, &mut dec),
+                        catallax_numbers::Outcome::Proven(actual) if actual == expected
+                    ));
+                }
+            });
+            assert!(
+                !work.exhausted,
+                "height={height}, reverse={reverse}: {} units",
+                work.used
+            );
+        }
+    }
+}
+
+#[test]
 fn through_all_cut_keeps_one_solid_with_two_openings() {
     let mut steps = loft_steps();
     steps.push(json!({"id":"hole","op":"sketch",

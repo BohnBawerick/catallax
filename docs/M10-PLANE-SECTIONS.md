@@ -21,9 +21,11 @@ that graph gives every open component and closed loop.
 
 This search runs without a candidate. It finds the hill's loop one millionth
 of a millimetre below the peak even when the pinned tracer returns no curve.
-At the exact hilltop it refuses with `intersect.patch-plane-tangent` and names
-`(5/2, 5/2, 225/256)`, at parameters `(3/2, 3/2)`. Other unresolved contacts
-and exhausted allowances remain typed refusals.
+At the exact hilltop it retains one isolated contact at `(5/2, 5/2, 225/256)`,
+at parameters `(3/2, 3/2)`. The [isolated-contact check](interface-changes/2026-11-15-isolated-plane-contacts.md)
+proves that one-sided Bernstein cells have no zeros except their retained
+corners. Other unresolved contacts and exhausted allowances remain typed
+refusals.
 
 Membership uses exact patch inversion and the component's cells. Open order
 and closed cyclic order follow the cell traversal. Tangents use the implicit
@@ -69,11 +71,11 @@ cargo test -p catallax-intersect --test patch_plane -- --nocapture
 The regression cases include the rational loft's exact endpoints, the tight
 and default C++ candidates, a candidate shifted by `1e-3`, an end cap that
 stops short, two wavy open branches, the hill loop and tiny loop, exact tangent
-refusal, an empty cut above the hilltop and work exhaustion. Fixture provenance
+contact, an empty cut above the hilltop and work exhaustion. Fixture provenance
 and regeneration are in the [oracle fixture notes](../crates/catallax-intersect/tests/fixtures/patch-plane/README.md).
 Raw evidence retained privately.
 
-The measured regression operations, including patch admission, are below.
+The original measured regression operations, including patch admission, are below.
 The allowance remains 20,000,000 units for every row.
 
 | Case | Result | Operation units |

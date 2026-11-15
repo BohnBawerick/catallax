@@ -51,3 +51,7 @@ test = true
 [[example]]
 name = "numerical_replay"
 test = true
+
+[[example]]
+name = "import_material_edit"
+test = true

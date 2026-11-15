@@ -7,9 +7,11 @@ import tempfile
 import unittest
 
 from OCP.BRepCheck import BRepCheck_Analyzer
+from OCP.BRepClass3d import BRepClass3d_SolidClassifier
+from OCP.gp import gp_Pnt
 from OCP.BRepGProp import BRepGProp
 from OCP.GProp import GProp_GProps
-from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_VERTEX
+from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_VERTEX, TopAbs_IN, TopAbs_OUT
 
 from test_loopless_faces import BINARY, DRIVER, raw_solid, unique
 
@@ -60,14 +62,23 @@ class ObliqueFilletImports(unittest.TestCase):
         source = root / f'{name}.json'
         source.write_text(json.dumps(recipe))
         out = root / name
+        partial = name.startswith('partial-')
         completed = subprocess.run(
             [str(DRIVER), 'run', str(source), '--source', 'recipe', '--binary',
-             str(BINARY), '--out', str(out), '--fresh', '--workers', '1', '--json'],
+             str(BINARY), '--out', str(out), '--fresh', '--workers', '1',
+             '--max-work', str(1_000_000_000 if partial else 20_000_000), '--json'],
             capture_output=True, text=True, check=True)
         self.assertEqual(json.loads(completed.stdout)['outcomes'], {'answered': 1})
         case = json.loads((out / 'run.json').read_text())['cases'][0]
         manifest = case['response']['manifest']
-        self.assertEqual(manifest['marks'], [])
+        if partial:
+            self.assertEqual([mark['code'] for mark in manifest['marks']],
+                             ['step.approximate-pipe-end'])
+            self.assertFalse(manifest['exact'])
+            self.assertNotIn('bounded', manifest['step'])
+            self.assertTrue(manifest['step']['approximate'])
+        else:
+            self.assertEqual(manifest['marks'], [])
         self.assertEqual(manifest['result']['faces_by_kind'].get('rolling-pipe', 0),
                          int(recipe['result'] != 'joined'))
         shape = raw_solid(Path(case['path']) / 'answer.step')
@@ -79,6 +90,27 @@ class ObliqueFilletImports(unittest.TestCase):
         properties = GProp_GProps()
         BRepGProp.VolumePropertiesGK_s(shape, properties, 1e-6, False, False)
         return properties.Mass()
+
+    def test_partial_rim_material_survives_a_radius_edit(self):
+        fixture = Path(__file__).resolve().parents[2] / 'evidence/phase1/P03/inputs/partial-oblique.json'
+        recipe = json.loads(fixture.read_text())
+        with tempfile.TemporaryDirectory(prefix='catallax-partial-oblique-') as temporary:
+            root = Path(temporary)
+            volumes = []
+            for radius, lip in [('0.5', TopAbs_IN), ('0.75', TopAbs_OUT)]:
+                recipe['steps'][-1]['radius'] = radius
+                shape = self.read(root, f'partial-{radius}', recipe)
+                volumes.append(self.volume(shape))
+                for point, want in [((1, 0, 4), TopAbs_IN),
+                                    ((-0.01, 0, 4), TopAbs_OUT),
+                                    ((0.01, 4.7, 7.5), TopAbs_IN),
+                                    ((0.01, 4.99, 7.8), TopAbs_OUT),
+                                    ((4.95, 0, 4.7), lip)]:
+                    found = BRepClass3d_SolidClassifier(shape, gp_Pnt(*point), 1e-7)
+                    self.assertEqual(found.State(), want, (radius, point))
+            self.assertGreater(volumes[1], 0)
+            self.assertLess(volumes[1], volumes[0])
+            self.assertLess(volumes[0], 100 * math.pi - 28000 / 527)
 
     def test_rims(self):
         with tempfile.TemporaryDirectory(prefix='catallax-oblique-fillet-') as temporary:

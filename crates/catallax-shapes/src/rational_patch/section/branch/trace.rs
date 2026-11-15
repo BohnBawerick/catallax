@@ -26,18 +26,26 @@ impl PatchSectionBranch {
         dec: &mut Decider,
     ) -> Result<Vec<SectionTracePiece>, Refusal> {
         let before = dec.stats().coincident_separation;
-        let endpoint = |point: &Point3, dec: &mut Decider| -> Result<(Real, [Real; 2]), Refusal> {
-            let (cell, fraction, at) = self.locate(point, dec)?.ok_or_else(|| {
-                failure("trace endpoint is outside its retained section component")
-            })?;
-            let at = match at {
-                Some(at) => at,
-                None => self.cells[cell].ends
-                    [usize::from(exact_sign(&fraction, dec)? != Sign::Zero)]
-                .clone(),
+        let endpoint =
+            |name: &str, point: &Point3, dec: &mut Decider| -> Result<(Real, [Real; 2]), Refusal> {
+                let span = catallax_numbers::OperationSpan::begin(
+                    "brep",
+                    &name,
+                    "section.trace-endpoint",
+                    dec,
+                );
+                let (cell, fraction, at) = self.locate(point, dec)?.ok_or_else(|| {
+                    failure("trace endpoint is outside its retained section component")
+                })?;
+                let at = match at {
+                    Some(at) => at,
+                    None => self.cells[cell].ends
+                        [usize::from(exact_sign(&fraction, dec)? != Sign::Zero)]
+                    .clone(),
+                };
+                span.finish(dec, None, None);
+                Ok((Real::from_i64(cell as i64) + fraction, at))
             };
-            Ok((Real::from_i64(cell as i64) + fraction, at))
-        };
         let count = Real::from_i64(self.cells.len() as i64);
         let (start, mut end, start_at, end_at) = match (from, to) {
             (None, None) if self.closed => (
@@ -47,8 +55,8 @@ impl PatchSectionBranch {
                 self.cells.last().unwrap().ends[1].clone(),
             ),
             (Some(from), Some(to)) => {
-                let (start, start_at) = endpoint(from, dec)?;
-                let (end, end_at) = endpoint(to, dec)?;
+                let (start, start_at) = endpoint("start", from, dec)?;
+                let (end, end_at) = endpoint("end", to, dec)?;
                 (start, end, start_at, end_at)
             }
             _ => return Err(failure("an open section trace needs both finite endpoints")),
@@ -62,6 +70,12 @@ impl PatchSectionBranch {
             }
             end = &end + &count;
         }
+        let assembly = catallax_numbers::OperationSpan::begin(
+            "brep",
+            &"section",
+            "section.trace-assembly",
+            dec,
+        );
         let mut pieces = Vec::new();
         for turn in 0..=usize::from(self.closed) {
             for (index, cell) in self.cells.iter().enumerate() {
@@ -115,6 +129,7 @@ impl PatchSectionBranch {
                 "section trace clipping needs exact endpoint ownership",
             ));
         }
+        assembly.finish(dec, None, None);
         Ok(pieces)
     }
 }
@@ -252,9 +267,12 @@ impl SectionTracePiece {
         found.ok_or_else(|| failure("section trace selected no transverse root"))
     }
 
-    /// Taylor coefficient enclosures valid at every parameter in `t`. The
-    /// implicit-function recurrence divides only by a strict transverse bound.
-    pub fn taylor(&self, t: &Ball, order: usize, dec: &Decider) -> Result<Vec<[Ball; 3]>, Refusal> {
+    fn parameter_series(
+        &self,
+        t: &Ball,
+        order: usize,
+        dec: &Decider,
+    ) -> Result<[Vec<Ball>; 2], Refusal> {
         let at = self.parameters(t, dec)?;
         let bits = t.precision();
         let zero = || Ball::from_rational(&Rational::zero(), bits);
@@ -279,11 +297,54 @@ impl SectionTracePiece {
                     })?;
             }
         }
+        Ok(parameters)
+    }
+
+    /// Taylor enclosures of the retained source chart coordinates.
+    pub fn parameter_taylor(
+        &self,
+        t: &Ball,
+        order: usize,
+        dec: &Decider,
+    ) -> Result<Vec<[Ball; 2]>, Refusal> {
+        let parameters = self.parameter_series(t, order, dec)?;
+        Ok((0..=order)
+            .map(|i| [parameters[0][i].clone(), parameters[1][i].clone()])
+            .collect())
+    }
+
+    /// Taylor coefficient enclosures valid at every parameter in `t`. The
+    /// implicit-function recurrence divides only by a strict transverse bound.
+    pub fn taylor(&self, t: &Ball, order: usize, dec: &Decider) -> Result<Vec<[Ball; 3]>, Refusal> {
+        let parameters = self.parameter_series(t, order, dec)?;
+        let bits = t.precision();
+        let zero = || Ball::from_rational(&Rational::zero(), bits);
+        let cell = self.cell();
         let span = self.branch.span(cell);
         let mut homogeneous = Vec::with_capacity(4);
         for coordinate in &span.coordinates {
             homogeneous.push(series(coordinate, &parameters, order, bits, dec)?);
         }
+        // A B-spline denominator is a convex blend of its positive weights.
+        let mut low: Option<Rational> = None;
+        let mut high: Option<Rational> = None;
+        for weight in self.branch.charts[cell.chart].carrier().weights() {
+            let bound = dec.enclose_at(weight, bits)?;
+            low = Some(low.map_or_else(|| bound.lo(), |old| old.min(bound.lo())));
+            high = Some(high.map_or_else(|| bound.hi(), |old| old.max(bound.hi())));
+        }
+        let low = homogeneous[3][0]
+            .lo()
+            .max(low.expect("nonempty spline weights"));
+        let high = homogeneous[3][0]
+            .hi()
+            .min(high.expect("nonempty spline weights"));
+        if low > high {
+            return Err(failure(
+                "section trace denominator left its spline weight bounds",
+            ));
+        }
+        homogeneous[3][0] = Ball::from_rational(&low, bits).hull(&Ball::from_rational(&high, bits));
         let mut result: Vec<[Ball; 3]> = Vec::with_capacity(order + 1);
         for n in 0..=order {
             let mut xyz: [Ball; 3] = std::array::from_fn(|_| zero());

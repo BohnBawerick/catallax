@@ -636,6 +636,10 @@ fn ring_end(
     if edge.start == edge.end {
         return Err(end("an arc strip whose two ends meet at one vertex"));
     }
+    if let Some((feet, curve)) = fillet_ring_end::pipe_geometry(model, run, third, old, dec)? {
+        let [a, b] = feet;
+        return Ok((a, b, RingEndCurve::Section(curve, Sense::Same)));
+    }
     if let Some(end) = fillet_ring_end::geometry(model, run, third, old, dec)? {
         let [a, b] = end.feet;
         let sense = if matches!(run.definition.supports[0], Surface::Plane(_)) {
@@ -3145,6 +3149,9 @@ fn build_strips(
                 let ring = matches!(
                     &runs[*i].definition.contacts,
                     [Curve::Circle(_), Curve::Circle(_)]
+                ) || matches!(
+                    runs[*i].definition.surface,
+                    Surface::BSpline(SplineSupport::RollingPipe(_))
                 );
                 let curved = matches!(
                     model.geom().surface(model.face(third).surface),

@@ -84,9 +84,15 @@ pub struct StepSummary {
     /// Present only for a rule-bound export without an exact proof.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bounded: Option<crate::BoundedSummary>,
+    /// True when a numerical parameter map has no complete file bound.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approximate: Option<bool>,
+    /// Limits the deviation field to certified components when present.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deviation_scope: Option<&'static str>,
     /// File name inside the output directory.
     pub file: String,
-    /// Proven upper bound on deviation, in millimetres.
+    /// Proven deviation in millimetres, restricted by `deviation_scope` if present.
     pub max_deviation: String,
     /// Intersection branches written as splines.
     pub approximated_curves: usize,
@@ -117,8 +123,12 @@ impl StepSummary {
             ),
             OperationResult::Refused(refusal) => return Err(refusal.clone()),
         };
+        let approximate = matches!(result, OperationResult::Proven(answer)
+            if answer.marks.iter().any(|mark| mark.code == "step.approximate-pipe-end"));
         Ok(Self {
             bounded,
+            approximate: approximate.then_some(true),
+            deviation_scope: approximate.then_some("certified-components-only"),
             file: file.into(),
             max_deviation: report.max_deviation.to_decimal_bounds(40).1,
             approximated_curves: report.approximated_curves,

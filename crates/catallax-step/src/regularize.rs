@@ -262,16 +262,27 @@ fn find(
     if limit < Rational::zero() {
         return Ok(None);
     }
-    if let Some(contact) = find_gap(model, shell, options, &limit, dec)? {
+    if let Some(contact) = crate::observe("step.regularize.gap", &shell.index(), dec, |dec| {
+        find_gap(model, shell, options, &limit, dec)
+    })? {
         return Ok(Some(Repair::Gap(contact)));
     }
-    if let Some(ribbon) = ribbon::find(model, shell, options, &limit, dec)? {
+    if let Some(ribbon) = crate::observe("step.regularize.ribbon", &shell.index(), dec, |dec| {
+        ribbon::find(model, shell, options, &limit, dec)
+    })? {
         return Ok(Some(Repair::Ribbon(ribbon)));
     }
-    if let Some(wedge) = wedge::find(model, shell, options, &limit, dec)? {
+    if let Some(wedge) = crate::observe("step.regularize.wedge", &shell.index(), dec, |dec| {
+        wedge::find(model, shell, options, &limit, dec)
+    })? {
         return Ok(Some(Repair::Wedge(wedge)));
     }
-    Ok(short::find(model, shell, options, dec)?.map(Repair::Short))
+    Ok(
+        crate::observe("step.regularize.short", &shell.index(), dec, |dec| {
+            short::find(model, shell, options, dec)
+        })?
+        .map(Repair::Short),
+    )
 }
 
 fn find_gap(

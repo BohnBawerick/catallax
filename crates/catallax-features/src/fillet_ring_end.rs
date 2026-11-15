@@ -11,6 +11,124 @@
 use super::*;
 use catallax_shapes::BSplineCurve;
 
+/// Keep the exact pipe-plane section as the single boundary of both faces.
+pub(super) fn pipe_geometry(
+    model: &Model,
+    run: &Run,
+    wall: FaceId,
+    old: VertexId,
+    dec: &mut Decider,
+) -> Result<Option<([Point3; 2], Curve)>, Refusal> {
+    use catallax_shapes::{RationalAtlas, SectionSurface, spline_tools::RationalSplineSurface};
+
+    let Surface::BSpline(SplineSupport::RollingPipe(pipe)) = &run.definition.surface else {
+        return Ok(None);
+    };
+    let unsupported = || {
+        Refusal::new(
+            UNSUPPORTED_END,
+            "a pipe end needs a regular vertical-wall section",
+        )
+    };
+    let Surface::Plane(plane) = model.geom().surface(model.face(wall).surface) else {
+        return Err(unsupported());
+    };
+    let law = pipe.law();
+    if pipe.is_conical()
+        || !run.definition.convex
+        || sign(&plane.normal.cross(&law.across).norm_squared(), dec)? != Sign::Zero
+        || sign(&law.base.minus(&plane.origin).dot(&plane.normal), dec)? != Sign::Zero
+    {
+        return Err(unsupported());
+    }
+    let at = model.geom().position(model.vertex(old).point);
+    let side = sign(&at.minus(&law.base).dot(&law.side), dec)?;
+    let centre = match side {
+        Sign::Positive => 1,
+        Sign::Negative => 3,
+        Sign::Zero => return Err(unsupported()),
+    };
+    let source = pipe.carrier();
+    let mut rational = |value: &Real| dec.rational_value(value)?.ok_or_else(unsupported);
+    let controls = source
+        .controls()
+        .iter()
+        .map(|p| Ok([rational(&p.x)?, rational(&p.y)?, rational(&p.z)?]))
+        .collect::<Result<Vec<_>, Refusal>>()?;
+    let weights = source
+        .weights()
+        .iter()
+        .map(&mut rational)
+        .collect::<Result<Vec<_>, _>>()?;
+    let source = RationalSplineSurface::new(
+        source.degrees(),
+        source.knots().map(<[_]>::to_vec),
+        source.control_count(),
+        controls,
+        weights,
+        dec,
+    )?;
+    let low = Rational::from_ratio(4 * centre - 1, 4).unwrap();
+    let high = Rational::from_ratio(4 * centre + 1, 4).unwrap();
+    let zero = Rational::zero();
+    let one = Rational::one();
+    let source = source.extracted([[&low, &high], [&zero, &one]], dec)?;
+    // Local knots avoid cancellation in the retained section's power basis.
+    let carrier = RationalSplineSurface::new(
+        source.degrees(),
+        [
+            source.knots()[0]
+                .iter()
+                .map(|knot| (knot - &low) / (&high - &low))
+                .collect(),
+            source.knots()[1].to_vec(),
+        ],
+        source.control_count(),
+        source.controls().to_vec(),
+        source.weights().to_vec(),
+        dec,
+    )?
+    .to_surface(dec)?;
+    let atlases = RationalAtlas::partition_with_polynomial_bounds(carrier, [false; 2], dec)?;
+    let [atlas] = atlases.as_slice() else {
+        return Err(unsupported());
+    };
+    let section = atlas.sections_for_tracing(&SectionSurface::Plane(plane.clone()), dec)?;
+    let [branch] = section.branches() else {
+        return Err(unsupported());
+    };
+    let mut branch = branch.clone();
+    let parameters = branch.parameter_endpoints();
+    if sign(&parameters[0][1], dec)? != Sign::Zero {
+        branch = branch.reversed();
+    }
+    let parameters = branch.parameter_endpoints();
+    if branch.is_closed()
+        || sign(&parameters[0][1], dec)? != Sign::Zero
+        || sign(&(&parameters[1][1] - &Real::one()), dec)? != Sign::Zero
+    {
+        return Err(unsupported());
+    }
+    let radial_sq = &law.offset.square() - &(&law.radius * &law.tilt).square();
+    if sign(&radial_sq, dec)? != Sign::Positive {
+        return Err(unsupported());
+    }
+    let side = Real::from_i64(if side == Sign::Positive { 1 } else { -1 });
+    // The plane rail has axial offset reach*r/along; the wall rail has none.
+    // These are the same section ends without cancelled chart-root expressions.
+    let mut feet = [
+        law.base
+            .plus(&law.axis.scaled(&(&(&law.reach * &law.radius) / &law.along)))
+            .plus(&law.side.scaled(&(&side * &radial_sq.sqrt()))),
+        law.base.plus(&law.side.scaled(&(&side * &law.body))),
+    ];
+    if !matches!(run.definition.supports[0], Surface::Plane(_)) {
+        feet.swap(0, 1);
+        branch = branch.reversed();
+    }
+    Ok(Some((feet, Curve::PatchSection(branch))))
+}
+
 pub(super) struct End {
     pub(super) feet: [Point3; 2],
     pub(super) curve: Curve,

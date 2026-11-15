@@ -578,6 +578,10 @@ fn evaluate(
         match exported {
             Ok(answer) => {
                 let report = answer.value;
+                let approximate = answer
+                    .marks
+                    .iter()
+                    .any(|mark| mark.code == "step.approximate-pipe-end");
                 write_step_regularizations(out_dir, &report)?;
                 manifest
                     .marks
@@ -600,6 +604,8 @@ fn evaluate(
                 }
                 manifest.step = Some(StepSummary {
                     bounded: None,
+                    approximate: approximate.then_some(true),
+                    deviation_scope: approximate.then_some("certified-components-only"),
                     file: "answer.step".into(),
                     max_deviation,
                     approximated_curves: report.approximated_curves,
@@ -735,6 +741,9 @@ pub(crate) fn result_summary(
             catallax_intersect::CurveForm::Circle { .. } => "circle",
             catallax_intersect::CurveForm::Ellipse { .. } => "ellipse",
             catallax_intersect::CurveForm::Branch => "intersection",
+            catallax_intersect::CurveForm::PatchSection(_) if extended && exact_bands != 0 => {
+                "intersection"
+            }
             catallax_intersect::CurveForm::PatchSection(_)
             | catallax_intersect::CurveForm::PatchPair(_)
                 if certified =>

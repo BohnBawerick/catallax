@@ -70,7 +70,10 @@ fn prepare_framed(
 ) -> Result<Option<Prepared>, Refusal> {
     if !reframe {
         // A band has a seam, and a wall it winds round must cut there.
-        let Some(framed) = frames::band_walls(model, bodies, dec)? else {
+        let Some(framed) = crate::observe("step.chart-frames", &"export", dec, |dec| {
+            frames::band_walls(model, bodies, dec)
+        })?
+        else {
             return prepare_charts(
                 model,
                 bodies.iter().copied(),
@@ -436,7 +439,9 @@ fn prepare_charts(
             if let std::collections::btree_map::Entry::Vacant(entry) =
                 prepared.plan.written_vertices.entry(vertex)
             {
-                let point = number::vertex(&prepared.model, vertex, options, dec)?;
+                let point = crate::observe("step.vertex-rounding", &vertex.index(), dec, |dec| {
+                    number::vertex(&prepared.model, vertex, options, dec)
+                })?;
                 if point.error() > options.curve_tolerance.abs() {
                     return Ok(None);
                 }
@@ -513,6 +518,9 @@ fn unchanged_planar_boundary(model: &Model, face: FaceId, wide: bool) -> bool {
                         | Curve::Circle(_)
                         | Curve::Ellipse(_)
                         | Curve::BSpline(_) => true,
+                        Curve::PatchSection(section) => {
+                            matches!(section.surface(), catallax_shapes::SectionSurface::Plane(_))
+                        }
                         Curve::Intersection(curve) => {
                             curve
                                 .surfaces
@@ -601,7 +609,9 @@ pub(crate) fn prepare_regular(
         if coupled {
             touching.insert(face);
         }
-        let mut meridian = chart::meridian(&mut geometry, model, face, coupled, dec)?;
+        let mut meridian = crate::observe("step.chart-meridian", &face.index(), dec, |dec| {
+            chart::meridian(&mut geometry, model, face, coupled, dec)
+        })?;
         if matches!(
             geometry.store.surface(model.face(face).surface),
             Surface::Torus(_) | Surface::TorusSheet(_)
@@ -614,11 +624,15 @@ pub(crate) fn prepare_regular(
         {
             return Ok(None);
         }
-        cuts.add(&geometry, &mut meridian, dec)?;
+        crate::observe("step.chart-cuts", &face.index(), dec, |dec| {
+            cuts.add(&geometry, &mut meridian, dec)
+        })?;
         meridians.insert(face, meridian);
     }
     cuts.rings(&mut geometry, model, meridians.keys().copied());
-    let splits = cuts.prepare(&mut geometry, model, dec)?;
+    let splits = crate::observe("step.chart-splitting", &"export", dec, |dec| {
+        cuts.prepare(&mut geometry, model, dec)
+    })?;
     let mut prepared = model.clone();
     *prepared.geom_mut() = geometry.store;
     let splits = splits.apply(&mut prepared);

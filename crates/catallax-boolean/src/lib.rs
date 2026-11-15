@@ -28,6 +28,7 @@ mod geometry;
 mod germ;
 mod graph;
 mod imprinting;
+pub mod numerical;
 mod point_identity;
 mod points;
 mod probe_path;

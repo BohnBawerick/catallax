@@ -57,7 +57,8 @@ fn the_loft_crossing_reaches_approximate_step_with_its_hole() {
             body.evidence().tolerance_mm()
         );
         assert!(file.report().spline_rounding.is_some());
-        assert!(file.report().emitted_evidence.checks().iter().any(|check| matches!(check,NumericalCheck::Passed {name,..} if name=="trim.sampled-hole-contained-disjoint")));
+        assert!(file.report().emitted_evidence.checks().iter().any(|check| matches!(check,NumericalCheck::Passed {name,scope} if name=="trim.hole-contained-disjoint" && scope==&body.definition().faces[0].key)));
+        assert!(file.report().emitted_evidence.checks().iter().any(|check| matches!(check,NumericalCheck::Passed {name,..} if name=="trim.sampled-simple-oriented-parameter-loop")));
         let output = std::env::temp_dir().join(format!(
             "catallax-numerical-curved-{}.step",
             std::process::id()

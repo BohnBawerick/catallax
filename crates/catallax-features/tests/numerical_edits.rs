@@ -83,9 +83,9 @@ fn volume(d: &catallax_topology::numerical::NumericalDefinition) -> catallax_num
                 let b = points[i];
                 let c = points[i + 1];
                 six = six
-                    + &a[0] * (&b[1] * &c[2] - &b[2] * &c[1])
-                    + &a[1] * (&b[2] * &c[0] - &b[0] * &c[2])
-                    + &a[2] * (&b[0] * &c[1] - &b[1] * &c[0]);
+                    + a[0].clone() * (&b[1] * &c[2] - &b[2] * &c[1])
+                    + a[1].clone() * (&b[2] * &c[0] - &b[0] * &c[2])
+                    + a[2].clone() * (&b[0] * &c[1] - &b[1] * &c[0]);
             }
         }
     }
@@ -130,6 +130,17 @@ fn dimension_then_cut_replays_origins_repairs_current_checks_and_step() {
         assert_eq!(a.evidence, b.evidence);
     }
     assert_eq!(step(replay.body()), step(final_body.body()));
+    let exported = catallax_step::numerical::build(
+        replay.body(),
+        &Default::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    assert_eq!(exported.report().original_definition.vertices.len(), 17);
+    assert_eq!(exported.report().source_history.len(), 2);
+    let direct_replay =
+        catallax_features::replay_numerical(&saved, &mut Decider::default()).unwrap();
+    assert_eq!(direct_replay.body().evidence(), replay.body().evidence());
     assert_eq!(volume(original.body().definition()), q("12"));
     if let Ok(dir) = std::env::var("CATALLAX_N04_CAPTURE") {
         std::fs::write(std::path::Path::new(&dir).join("recipe.json"), saved).unwrap();
@@ -219,7 +230,7 @@ fn lower_cut_and_cyclic_coordinate_frame_preserve_the_hole_and_material() {
     let mut r = recipe();
     for v in &mut r.source.vertices {
         v.position.rotate_right(1);
-        v.position[0] = &v.position[0] + q("10");
+        v.position[0] = &v.position[0] + &q("10");
     }
     for e in &mut r.source.edges {
         let Curve::Line(l) = &mut e.curve else {

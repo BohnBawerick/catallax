@@ -40,12 +40,20 @@ pub struct NumericalEdit {
 #[derive(Clone, Debug)]
 pub enum NumericalOperation {
     /// Change the total size on one coordinate axis, anchored at its lower extent.
-    Resize { axis: usize, length_mm: Rational },
+    Resize {
+        /// Coordinate axis, 0 through 2.
+        axis: usize,
+        /// Positive total size in millimetres.
+        length_mm: Rational,
+    },
     /// Remove a half-space from a two-layer straight prism. The cap retains its
     /// source origins and adds this edit's cap origin. No general Boolean claim.
     Cut {
+        /// Extrusion axis, 0 through 2.
         axis: usize,
+        /// Plane coordinate strictly between the two caps, in millimetres.
         at_mm: Rational,
+        /// Keep material below the plane; false keeps material above it.
         keep_lower: bool,
     },
 }
@@ -58,9 +66,11 @@ pub struct NumericalBuilt {
     origins: BTreeMap<String, BTreeSet<String>>,
 }
 impl NumericalBuilt {
+    /// Current checked geometry and its earlier checked states.
     pub fn body(&self) -> &NumericalBody {
         &self.body
     }
+    /// Source, sewing pairs, edits and per-stage controls for save/replay.
     pub fn recipe(&self) -> &NumericalRecipe {
         &self.recipe
     }

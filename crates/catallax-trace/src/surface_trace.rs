@@ -2290,10 +2290,21 @@ impl Intersector<'_> {
                 continue;
             }
             let iso = surface.iso_curve(axis, value)?;
-            // SMLib ignores the trim's status.
-            let curve = match iso.trim(interval, ZONE_TOL_3D) {
-                Ok(trimmed) => trimmed.curve,
-                Err(crate::curve_edit::TrimRefusal::Failed(_)) => iso,
+            let seam_side = if axis == 0 {
+                self.closed_u[s]
+            } else {
+                self.closed_v[s]
+            };
+            let curve = if seam_side {
+                // The owning UV uses the native varying parameter. Do not
+                // erase that identity while constructing the source side.
+                trim_native_parameter(&iso, interval)?
+            } else {
+                // SMLib ignores the trim's status on this legacy path.
+                match iso.trim(interval, ZONE_TOL_3D) {
+                    Ok(trimmed) => trimmed.curve,
+                    Err(crate::curve_edit::TrimRefusal::Failed(_)) => iso,
+                }
             };
             curves.push(SideCurve::Spline(curve));
         }
@@ -2410,6 +2421,20 @@ fn trim_to(curve: &BSplineCurve, interval: Extent1) -> Result<BSplineCurve, Solv
     }
 }
 
+// Short-span removal can redistribute the surviving knots. Without a retained
+// remap, a native `(seam, t)` UV and zero owning drop are no longer justified.
+// The flag is conservative: refuse even if removal ultimately changed nothing.
+fn trim_native_parameter(
+    curve: &BSplineCurve,
+    interval: Extent1,
+) -> Result<BSplineCurve, SolverRefusal> {
+    match curve.trim(interval, ZONE_TOL_3D) {
+        Ok(trimmed) if !trimmed.short_spans => Ok(trimmed.curve),
+        Ok(_) => Err(SolverRefusal::NotPorted(SolverOperation::Intersect)),
+        Err(crate::curve_edit::TrimRefusal::Failed(fault)) => Err(SolverRefusal::Failed(fault)),
+    }
+}
+
 impl Tracer {
     /// The long-range branch of `FindBoundaryStartPoints`: a side of
     /// surface `s` lying in the other surface over a range becomes an
@@ -2421,6 +2446,7 @@ impl Tracer {
         &mut self,
         intersector: &Intersector<'_>,
         side: &SideCurve,
+        source_side: (usize, usize),
         mut solution: crate::solution::Solution,
         curves: &mut Vec<IntersectionCurve>,
         edge_crossings: &mut Vec<TsectPoint>,
@@ -2452,10 +2478,59 @@ impl Tracer {
             min: solution.start.parameters[0],
             max: solution.end.parameters[0],
         };
-        let mut curve = trim_to(&copy, trim)?;
+        let (owner, side_index) = source_side;
+        let native_identity = if side_index % 2 == 0 {
+            intersector.closed_u[owner]
+        } else {
+            intersector.closed_v[owner]
+        };
+        let clip = |curve: &BSplineCurve, interval| {
+            if native_identity {
+                trim_native_parameter(curve, interval)
+            } else {
+                trim_to(curve, interval)
+            }
+        };
+        let mut curve = clip(&copy, trim)?;
         let mut uv: Vec<BSplineCurve> = Vec::with_capacity(2);
         let mut distances = [0.0; 2];
         for target in 0..2 {
+            let (owner, side_index) = source_side;
+            let axis = side_index % 2;
+            let closed = if axis == 0 {
+                intersector.closed_u[owner]
+            } else {
+                intersector.closed_v[owner]
+            };
+            if target == owner && closed {
+                // This curve is the requested domain's own iso-boundary,
+                // not an arbitrary curve being inverted onto a closed
+                // surface. Retain its side identity instead of asking the
+                // drop solver to choose between the two seam parameters.
+                let domain = intersector.domains[owner];
+                let boundary = if side_index < 2 {
+                    domain.min
+                } else {
+                    domain.max
+                };
+                let interval = curve.natural_interval();
+                let at = |t| {
+                    if axis == 0 {
+                        Vector3::new(boundary.x, t, 0.0)
+                    } else {
+                        Vector3::new(t, boundary.y, 0.0)
+                    }
+                };
+                let start = at(interval.min);
+                let end = at(interval.max);
+                if !domain.contains_point(Vector2::new(start.x, start.y), 0.0)
+                    || !domain.contains_point(Vector2::new(end.x, end.y), 0.0)
+                {
+                    return Err(Fault::InvalidInput.into());
+                }
+                uv.push(crate::line::Line::segment(start, end, true, Some(interval))?.make_nurb()?);
+                continue;
+            }
             let dropped = crate::surface_drop_curve::drop_and_trim_curve(
                 intersector.surfaces[target],
                 intersector.domains[target],
@@ -2475,9 +2550,9 @@ impl Tracer {
             let uv_interval = uv_curve.natural_interval();
             if !trim.is_contained_by(uv_interval, 0.0) {
                 trim = uv_interval;
-                curve = trim_to(&curve, trim)?;
+                curve = clip(&curve, trim)?;
                 if target == 1 {
-                    uv[0] = trim_to(&uv[0], trim)?;
+                    uv[0] = clip(&uv[0], trim)?;
                 }
             }
             uv.push(uv_curve);
@@ -2592,6 +2667,7 @@ impl Tracer {
                             self.side_range_curve(
                                 intersector,
                                 side,
+                                (s, index),
                                 solution,
                                 curves,
                                 &mut edge_crossings,
@@ -2740,3 +2816,7 @@ mod trim_tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/support/b02_parameter.rs"]
+mod b02_parameter;

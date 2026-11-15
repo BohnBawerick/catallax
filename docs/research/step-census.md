@@ -18,22 +18,24 @@ A first attempt on 11 November stopped before measuring, because the archive cou
 ## Result
 
 The complete export qualification records **322 of the original 3,000 files
-(10.7%) with raw-OCCT-valid STEP exports**, beside **2,701 of 3,000 (90.0%)
+(10.7%) with STEP exports valid after OCCT builder internal pcurve healing**, beside **2,701 of 3,000 (90.0%)
 healed-valid solids in OpenCASCADE**. These are different methods: native exports
-use the raw builder with healing off; the reference reads the original sources
-with normal transfer/default healing and its default tolerances. They are not a
+use direct `StepToTopoDS_Builder` construction, which can project vertices and
+repair pcurves internally; the reference reads the original sources with normal
+transfer/default ShapeFix healing and its default tolerances. Neither figure
+establishes validity without healing. They are not a
 common-tolerance or source-fidelity benchmark.
 
-The conditioning step is **400 admitted files, of which 322 are export-valid
-(80.5%), 61 raw-invalid, 16 export-refused and one timed out**. All 400 imports
-reproduced their expected body sets (808 bodies). Each file counts only when all
-of its bodies export and pass the raw solid check. The complete
+The conditioning step is **400 admitted files, of which 322 are valid after builder healing
+(80.5%), 61 invalid after that construction, 16 export-refused and one timed out**. All 400 imports
+reproduced their expected body counts (808 bodies). Each file counts only when all
+of its bodies export and pass the post-builder solid check. The complete
 [3,000-ID result table](step-census-export-validity/results.csv),
 [build/capture manifest](step-census-export-validity/results.json),
 [paired reference comparison](step-census-export-validity/comparison.json) and
 [protocol](step-census-export-validity/README.md) retain every outcome. All ten
 [retained P06 real controls](step-census-export-validity/retained-real-controls.json)
-are raw-valid.
+are valid after builder internal healing.
 
 The writer refusals are 15 `step.numerical-gap` and one aggregate export work
 limit. The timeout is `00004777` during export, after import completed. Its export
@@ -41,7 +43,7 @@ work and resulting validity remain unknown; no partial output earns credit.
 There are no process errors or changed admissions. The separate byte/unit audit
 rechecked the actual Cargo artifact, all 400 durable source hashes, every declared
 written STEP hash and millimetre/radian units. It checked 699 written body files;
-677 reached raw reader completion (580 valid bodies, 97 invalid). Valid bodies
+677 reached builder/reader completion (580 valid bodies, 97 invalid). Valid bodies
 inside an invalid multi-solid file do not count as a valid file.
 
 The measured observer producer is
@@ -56,7 +58,7 @@ The earlier **admission-only** census has 400 full source-coverage imports
 (13.33%), beside the previous 378 (12.60%), 276 (9.20%) and original 186
 (6.20%, about 6%). Its complete 3,000 terminal observations remain unchanged at
 producer `51e9c0ffa13efcbcfb5c004b152e4c6014c6b5c1`. Historical admission counts
-below do not establish raw export validity for those earlier producers.
+below do not establish post-builder export validity for those earlier producers.
 
 | Admission outcome | 11 November | Prior checkpoint | Analytic repair | Periodic repair |
 |---|---:|---:|---:|---:|
@@ -151,7 +153,7 @@ establish global between-sample separation or a complete source/body bound. The
 new circular-hole clearance is a separate bounded local check. Existing local
 source-to-derivative bounds and pointwise residuals retain separate columns; an
 absent source bound is not zero. These statements describe the admission capture.
-The current export qualification adds structural raw STEP checks for its frozen
+The current export qualification adds structural post-builder STEP checks for its frozen
 400 full inputs; it does not establish an arbitrary edit, material agreement or
 a complete source/body bound for every file. The
 [periodic qualification](../phase1/import-periodic-numerical/README.md) retains
@@ -257,7 +259,7 @@ the private original selection has SHA-256
 All captures read the durable private source corpus. Every source hash is
 checked before and after its observation. The
 [ten fixed P06 capability sources](step-census/retained-controls.json) remain
-retained privately with original bytes and hashes; all ten still import fully and pass the current raw export check.
+retained privately with original bytes and hashes; all ten still import fully and pass the current post-builder export check.
 Only public model IDs, hashes, diagnostic scopes and aggregate metadata are
 published, under the [existing licence scope](../milestones/R8-public-step-census.md#source-and-licence-scope).
 
@@ -273,7 +275,7 @@ The export qualification instead binds observer producer
 `9f7648a9fe63060a274889d1f261fd5e80502c05c208af101134ced8299ecd77` and result CSV
 `7a8556150ba70f17d4bd15a7ca11fc7750822407b2469aaae22ab910f718ad69`.
 Its separate import and aggregate export allowances are each 20M; the whole-file
-native-plus-raw-reader observation remains capped at 60 seconds. Complete
+native-plus-builder observation remains capped at 60 seconds. Complete
 [build and collection commands](step-census-export-validity/README.md#build-and-capture)
 use the actual Cargo artifact and unchanged reviewed production code.
 
@@ -320,7 +322,7 @@ and source hash, complete terminal coverage, native build identity, category
 consistency and the ten retained controls before writing publication artifacts.
 
 The historical admission validation includes 48 scoped release controls, eight observer controls,
-six collector/public-path controls, raw OCCT checks on both fixed real workflows,
+six collector/public-path controls, direct OCCT builder checks (including internal healing) on both fixed real workflows,
 the Linux format gate and CI-selected eighteen-crate all-target Clippy. Reference
 validation includes five actual authored solid/sheet/open-shell/edge/unreadable
 controls. Six comparison controls reject changed/missing/duplicate sources,
@@ -328,13 +330,13 @@ wrong build attribution, surface-as-solid publication and leaked paths while
 preserving partial/timeout unknowns. Public artifacts were independently checked
 for counts, hashes and path omission.
 
-The export qualification adds eight integrity controls, two native observer
-controls and actual raw-reader checks on both authored bodies. Partial manifests,
+The export qualification adds ten integrity controls, two native observer
+controls and actual post-builder checks on both authored bodies. Partial manifests,
 changed STEP bytes, changed body count and source hash are rejected. An authored
 mixed valid/invalid pair cannot qualify the file. The Linux formatting gate and
 exact CI-selected nineteen-package all-target Clippy passed. The separate census
 audit verified all 3,000 IDs/hashes, the frozen 400/808 population, actual Cargo
-build identity, 322/61/16/1 totals, paired reference outcomes, ten retained real
+build identity, 322/61/16/1 post-builder totals (including internal healing), paired reference outcomes, ten retained real
 controls, unknown timeout work and public path/geometry omission.
 
 ## Sources

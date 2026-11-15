@@ -1,14 +1,14 @@
 # Frozen admission export validity
 
 The complete capture records **322 of the original 3,000 files (10.7%) with
-raw-OCCT-valid STEP exports**, beside **2,701 of 3,000 (90.0%) healed-valid**
+STEP exports valid after OCCT builder internal pcurve healing**, beside **2,701 of 3,000 (90.0%) healed-valid**
 results from the existing same-source OpenCASCADE reference.
 
-The conditioning step is **400 admitted files, of which 322 are raw-valid
-(80.5%), 61 raw-invalid, 16 export-refused and one timed out**. All 400 imports
-reproduced their expected body sets. The frozen inputs contain 808 bodies; one
+The conditioning step is **400 admitted files, of which 322 are valid after builder healing
+(80.5%), 61 invalid after that construction, 16 export-refused and one timed out**. All 400 imports
+reproduced their expected body counts. The frozen inputs contain 808 bodies; one
 valid body never qualifies an otherwise invalid multi-solid file. All ten
-[retained P06 controls](retained-real-controls.json) are raw-valid.
+[retained P06 controls](retained-real-controls.json) are valid after builder internal healing.
 
 [Results](results.csv), the [actual build/capture manifest](results.json),
 [reference comparison](comparison.json), [authored controls](authored-controls.json)
@@ -72,8 +72,8 @@ python tools/research/export_validity_census.py collect \
 Import has the unchanged 20M kernel allowance. The aggregate export of all
 bodies has a separate 20M allowance. Both stage counters are retained; observer
 I/O, metadata hashing and OCCT work are outside the kernel counter. The external
-60-second observation covers native import/export and the subsequent raw reader
-for the whole file. Each native request has one kernel worker. Raw readers run
+60-second observation covers native import/export and the subsequent OCCT builder/reader
+for the whole file. Each native request has one kernel worker. Builder reads run
 in separate processes, avoiding shared OCCT reader settings between file workers.
 
 `--resume` requires identical input/build/protocol identity. Existing terminal
@@ -90,21 +90,35 @@ unchanged.
 
 ## What qualifies a file
 
-The raw reader reuses
+The observer reuses
 [the numerical STEP protocol](../../../tools/step-regressions/check_numerical_step.py):
 explicit `StepToTopoDS_Builder`, millimetre/radian factors `(1,1,1)`, precision
-and maximum tolerance `1e-7` mm, and no root transfer, ShapeFix, sewing or
-SameParameter call. Each exported body must produce one explicit solid, and
+and maximum tolerance `1e-7` mm, with no observer-added root transfer, ShapeFix,
+sewing or SameParameter pass.
+This does not disable processing inside the OCCT builder.
+OCCT 8's [edge-loop construction](https://github.com/Open-Cascade-SAS/OCCT/blob/V8_0_0/src/DataExchange/TKDESTEP/StepToTopoDS/StepToTopoDS_TranslateEdgeLoop.cxx#L787-L818)
+projects vertex parameters through `ShapeFix_EdgeProjAux` and invokes pcurve checks.
+Its [pcurve checker](https://github.com/Open-Cascade-SAS/OCCT/blob/V8_0_0/src/DataExchange/TKXSBase/XSAlgo/XSAlgo_ShapeProcessor.cxx#L317-L468)
+can use `ShapeFix_Edge::FixSameParameter` and rebuild or replace pcurves.
+The reported validity therefore includes OCCT's internal healing; it does not
+establish raw or unhealed validity of the emitted STEP geometry.
+Each exported body must produce one explicit solid, and
 `BRepCheck_Analyzer` must find its whole shape valid. Actual file hashes and
 unchanged input bytes are checked independently of the observer's declaration.
 
 A file qualifies only when the complete exported body set matches its frozen
-admission and **every** body is raw-valid. One valid body cannot qualify a
-multi-solid file. Outcomes remain distinct:
+admission and **every** body is valid after builder internal healing. One valid body cannot qualify a
+multi-solid file.
+The frozen capture's `raw_*` outcome/field names and `exported_step_healing:false`
+and `exported_step_same_parameter:false` flags are preserved byte for byte.
+Those legacy names/flags describe this direct-builder protocol and the observer's
+lack of an additional repair pass; they do not assert that OCCT performed no
+internal healing.
+Outcomes remain distinct:
 
-- `raw_valid`: all expected bodies were exported and pass the raw solid check.
-- `raw_invalid`: an exported body fails the raw whole-shape validity check.
-- `raw_reader_refused`: the raw reader cannot construct the required solid.
+- `raw_valid`: all expected bodies were exported and pass the post-builder solid check.
+- `raw_invalid`: an exported body fails the post-builder whole-shape validity check.
+- `raw_reader_refused`: the builder/reader cannot construct the required solid.
 - `export_refused`: a production writer returns a refusal, including work limits.
 - `reimport_refused` or `admission_changed`: the frozen admission cannot be
   reproduced with its expected body set.
@@ -119,13 +133,13 @@ retain their original partial/refused/timeout interpretation and receive
 not promoted to full results.
 
 `complete:true` requires all 400 terminal observations, matching source hashes,
-the entire expected body set for every raw-valid file, and no process errors.
+the entire expected body set for every builder-valid file, and no process errors.
 An incomplete result has no headline percentage. Public extracts omit source
 geometry, raw diagnostics, private archive member names and workstation paths.
 
 ## Interpretation
 
-The final comparison must publish the raw-valid count out of 3,000 beside the
+The final comparison must publish the count valid after builder internal healing out of 3,000 beside the
 400 admission-only count and the existing **2,701 OCCT healed-valid** results.
 The reference capture uses normal transfer/default healing and its own default
 tolerances; it is a separate method, not a common-tolerance benchmark. Reuse its

@@ -101,14 +101,69 @@ impl<'a> Roots<'a> {
                 let point = a.plus(&b.minus(&a).scaled(&Real::from(v.clone())));
                 Ok(Owner {
                     uv: [u.clone(), v],
-                    xyz: [&point.x, &point.y, &point.z]
-                        .map(|coordinate| interval(coordinate, dec).map(|b| b.mid()))
-                        .into_iter()
-                        .collect::<Result<Vec<_>, Refusal>>()?
-                        .try_into()
-                        .map_err(|_| unreachable!())?,
+                    xyz: [
+                        interval(&point.x, dec)?.mid(),
+                        interval(&point.y, dec)?.mid(),
+                        interval(&point.z, dec)?.mid(),
+                    ],
                 })
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn close_generator_roots_keep_distinct_owners_inside_the_physical_tolerance() {
+        let mut dec = Decider::default();
+        let carrier = Cylinder {
+            origin: Point3::new(0.into(), 11.into(), 0.into()),
+            axis: Vector3::new(0.into(), 1.into(), 0.into()),
+            radius_sq: 1.into(),
+            ref_dir: Vector3::new(1.into(), 0.into(), 0.into()),
+        };
+        let tolerance = Rational::parse("1e-7").unwrap();
+        let source = NumericalCylinderSource::new(
+            &carrier,
+            [q(0), q(1)],
+            NumericalOptions {
+                tolerance_mm: tolerance.clone(),
+            },
+            &mut dec,
+        )
+        .unwrap();
+        let tool = Cylinder {
+            origin: Point3::new(
+                0.into(),
+                Rational::from_ratio(23, 2).unwrap().into(),
+                0.into(),
+            ),
+            axis: Vector3::new(1.into(), 0.into(), 0.into()),
+            radius_sq: Rational::parse("1e-18").unwrap().into(),
+            ref_dir: Vector3::new(0.into(), 1.into(), 0.into()),
+        };
+        let mut roots = Roots {
+            source: source.source(),
+            cylinder: &tool,
+            cache: BTreeMap::new(),
+        };
+        let delta = Rational::parse("1e-9").unwrap();
+        let middle = Rational::from_ratio(23, 2).unwrap();
+        let lower = roots
+            .owner(q(0), &[q(1), &middle - &delta, q(0)], &tolerance, &mut dec)
+            .unwrap();
+        let upper = roots
+            .owner(q(0), &[q(1), &middle + &delta, q(0)], &tolerance, &mut dec)
+            .unwrap();
+        assert_eq!((lower.0, upper.0), (0, 1));
+        assert!(lower.1.uv[1] < upper.1.uv[1]);
+        assert!(
+            roots
+                .owner(q(0), &[q(1), middle, q(0)], &tolerance, &mut dec)
+                .is_err()
+        );
     }
 }

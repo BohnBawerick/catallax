@@ -1,0 +1,243 @@
+{
+  "archive_sha256": "52e6dd1b6fa38e3cd99af59b662370829129540030975919c3e256dce6ad1dbe",
+  "binary_sha256": "9ccb569796585b8f027fae87410045e2d081591b1a9a6716c0dbdaaf580d3009",
+  "public_controls": [
+    {
+      "control": "oblique_tube",
+      "file_sha256": "b5af3fddb801e25badb19196eb5fb518cfc8e43accfaa721d288486f52025be6",
+      "input_bytes_unchanged": true,
+      "material_probes_checked": true,
+      "raw_import_valid": true,
+      "topology": {
+        "edges": 24,
+        "euler_with_face_holes": 0,
+        "faces": 10,
+        "solids": 1,
+        "two_loop_faces": 2,
+        "vertices": 16
+      }
+    },
+    {
+      "control": "three_component_tube",
+      "file_sha256": "cf01192bde9c17de7b7e15f574e6a2a71349b2f36492e6caaebe3aa1de5955e8",
+      "input_bytes_unchanged": true,
+      "material_probes_checked": true,
+      "raw_import_valid": true,
+      "topology": {
+        "edges": 24,
+        "euler_with_face_holes": 0,
+        "faces": 10,
+        "solids": 1,
+        "two_loop_faces": 2,
+        "vertices": 16
+      }
+    }
+  ],
+  "reference": {
+    "builder_max_tolerance_mm": "1e-7",
+    "builder_precision_mm": "1e-7",
+    "healing": false,
+    "ocp_version": "8.0.1.1",
+    "raw_builder": "StepToTopoDS_Builder with explicit identity StepData_Factors",
+    "same_parameter": false
+  },
+  "rows": [
+    {
+      "body_counts": {
+        "edges": 12,
+        "faces": 6,
+        "vertices": 8
+      },
+      "edited_step": {
+        "bytes": 6916,
+        "category": "numerical approximate",
+        "checks": [
+          "source.retained-line-endpoints-and-plane-incidence",
+          "file.decimal-model-numerical-admission",
+          "file.canonical-byte-identity",
+          "file.planar-seam-contract",
+          "file.approximate-category-no-global-bound"
+        ],
+        "complete_body_bound": "unestablished",
+        "input_bytes_unchanged": true,
+        "max_direction_ratio_rounding_error": "0",
+        "max_scalar_rounding_error_mm": "331595655029/1250000000000000000000000000",
+        "raw_import_valid": true,
+        "scalar_rounding_limit_mm": "1/10000000",
+        "sha256": "5b0dcc45e1dd03b8be8cb689078f14b108084b626f05845c12de8fe5532f2b6a",
+        "source_history_stages": 1,
+        "topology": {
+          "edges": 12,
+          "euler_with_face_holes": 2,
+          "faces": 6,
+          "solids": 1,
+          "two_loop_faces": 0,
+          "vertices": 8
+        }
+      },
+      "exact": false,
+      "model_id": "00000022",
+      "pose_translation_checked": true,
+      "reference_pose_volume_preserved": true,
+      "repaired_definition_sha256": "36c11025bc4f4e6513b936de03cdc39d4e3e7909b82dc6fbae764efaee0cafc8",
+      "same_source_and_repaired_definition_as_admission": true,
+      "solid_work": [
+        {
+          "edited_export": 112150,
+          "pose_rebuild": 85455,
+          "source_export": 112422
+        }
+      ],
+      "source_sha256": "9ed73f7963a68aec2121a1308385a8dc76041ff634870b28e9bc684c0ef3b4cc",
+      "source_step": {
+        "bytes": 6923,
+        "category": "numerical approximate",
+        "checks": [
+          "source.retained-line-endpoints-and-plane-incidence",
+          "file.decimal-model-numerical-admission",
+          "file.canonical-byte-identity",
+          "file.planar-seam-contract",
+          "file.approximate-category-no-global-bound"
+        ],
+        "complete_body_bound": "unestablished",
+        "input_bytes_unchanged": true,
+        "max_direction_ratio_rounding_error": "0",
+        "max_scalar_rounding_error_mm": "331595655029/1250000000000000000000000000",
+        "raw_import_valid": true,
+        "scalar_rounding_limit_mm": "1/10000000",
+        "sha256": "2d51f7f3800368225a845ffef881549f592308148ad812fbf1b8573ef78d943f",
+        "source_history_stages": 0,
+        "topology": {
+          "edges": 12,
+          "euler_with_face_holes": 2,
+          "faces": 6,
+          "solids": 1,
+          "two_loop_faces": 0,
+          "vertices": 8
+        }
+      },
+      "source_to_result_upper_mm": [
+        "0.000000000001",
+        "0.000000000001",
+        "0.000000000001"
+      ],
+      "status": "complete_numerical_workflow",
+      "tolerance_mm": "0.01",
+      "work": {
+        "import": 396094
+      },
+      "work_limit": 20000000,
+      "work_used": 706121
+    },
+    {
+      "body_counts": {
+        "edges": 12,
+        "faces": 6,
+        "vertices": 8
+      },
+      "edited_step": {
+        "bytes": 7654,
+        "category": "numerical approximate",
+        "checks": [
+          "source.retained-line-endpoints-and-plane-incidence",
+          "file.decimal-model-numerical-admission",
+          "file.canonical-byte-identity",
+          "file.planar-seam-contract",
+          "file.approximate-category-no-global-bound"
+        ],
+        "complete_body_bound": "unestablished",
+        "input_bytes_unchanged": true,
+        "max_direction_ratio_rounding_error": "168866456900931/540918712317943000000000000000000",
+        "max_scalar_rounding_error_mm": "0",
+        "raw_import_valid": true,
+        "scalar_rounding_limit_mm": "1/10000000",
+        "sha256": "67d7cb8c0b9f5a2317e21d5ec1103fa84176d9e71df3e7b644ff24118fd58450",
+        "source_history_stages": 1,
+        "topology": {
+          "edges": 12,
+          "euler_with_face_holes": 2,
+          "faces": 6,
+          "solids": 1,
+          "two_loop_faces": 0,
+          "vertices": 8
+        }
+      },
+      "exact": false,
+      "model_id": "00000134",
+      "pose_translation_checked": true,
+      "reference_pose_volume_preserved": true,
+      "repaired_definition_sha256": "1cebcc6bb25ec601f757f1a2ddf379e2f237da199537fc533cfa061cf8825abd",
+      "same_source_and_repaired_definition_as_admission": true,
+      "solid_work": [
+        {
+          "edited_export": 112233,
+          "pose_rebuild": 84295,
+          "source_export": 112237
+        }
+      ],
+      "source_sha256": "20dbc78663bed9c687b3b6635e6c232651fcf85b5425abb1eb416ab27761dcc3",
+      "source_step": {
+        "bytes": 7656,
+        "category": "numerical approximate",
+        "checks": [
+          "source.retained-line-endpoints-and-plane-incidence",
+          "file.decimal-model-numerical-admission",
+          "file.canonical-byte-identity",
+          "file.planar-seam-contract",
+          "file.approximate-category-no-global-bound"
+        ],
+        "complete_body_bound": "unestablished",
+        "input_bytes_unchanged": true,
+        "max_direction_ratio_rounding_error": "168866456900931/540918712317943000000000000000000",
+        "max_scalar_rounding_error_mm": "0",
+        "raw_import_valid": true,
+        "scalar_rounding_limit_mm": "1/10000000",
+        "sha256": "b3f6597ffa83bf5a465b36de499fcaa1eabc277eca77a5403bb2abeb86e6a1f2",
+        "source_history_stages": 0,
+        "topology": {
+          "edges": 12,
+          "euler_with_face_holes": 2,
+          "faces": 6,
+          "solids": 1,
+          "two_loop_faces": 0,
+          "vertices": 8
+        }
+      },
+      "source_to_result_upper_mm": [
+        "0.000000000001",
+        "0.000000000001",
+        "0.000000000001",
+        "0.000000000001",
+        "0.000000000001"
+      ],
+      "status": "complete_numerical_workflow",
+      "tolerance_mm": "0.01",
+      "work": {
+        "import": 803183
+      },
+      "work_limit": 20000000,
+      "work_used": 1111948
+    }
+  ],
+  "schema": "catallax-oblique-step-controls/1",
+  "scope": "two fixed real workflow qualifications and authored planar controls; not a complete census or spline Boolean qualification",
+  "seed": 20261111,
+  "source_revision": "e89c4c9a012ee78de48e19a4fcbd04d13e3f4788",
+  "unchanged_planar_controls": [
+    {
+      "byte_equal_to_pre_extension_control": true,
+      "control": "legacy-block",
+      "sha256": "7148692d5d9b552c6c93484699740718d056ea6654889792f2b1f7d7ee3d3c2f"
+    },
+    {
+      "byte_equal_to_pre_extension_control": true,
+      "control": "two-loop",
+      "sha256": "7f3778332cb35917fbe5c4f840a6cd0d97f8e98cb069f207c1c28e528a456738"
+    },
+    {
+      "byte_equal_to_pre_extension_control": true,
+      "control": "repaired",
+      "sha256": "715713ed356758392c51639f87ad3852618e7e50e033d7dc46e91f9474e413b7"
+    }
+  ]
+}

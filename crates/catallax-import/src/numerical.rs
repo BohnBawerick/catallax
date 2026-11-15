@@ -25,6 +25,8 @@ pub struct NumericalSourceAdmission {
     pub tolerance_mm: Rational,
     /// Versioned source interpretation and repair method.
     pub method: String,
+    /// Explicit changes to source topology; source geometry is retained.
+    pub topology_repairs: Vec<NumericalTopologyRepair>,
     /// Every within-solid source face pair, in source order. A tolerated
     /// incidence prerequisite is unresolved only for pairs using that face.
     /// Separate solids are not compared, matching the existing import policy.
@@ -33,6 +35,24 @@ pub struct NumericalSourceAdmission {
     pub optional_exact_work_reserved: u64,
     /// Actual work used inside that collective proof allowance.
     pub optional_exact_work_used: u64,
+}
+
+/// A derived cylinder seam joins two retained noncontractible source rims.
+/// Its two coedges share one new 3D line and differ by one UV period.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct NumericalTopologyRepair {
+    /// Source solid name.
+    pub solid: String,
+    /// Source cylindrical face name.
+    pub face: String,
+    /// Original complete circular rim edge names, in joined boundary order.
+    pub source_rim_edges: [String; 2],
+    /// Original rim anchor vertex names; no new vertex positions are introduced.
+    pub source_vertices: [String; 2],
+    /// Derived edge key, distinct from source entity names.
+    pub derived_seam_edge: String,
+    /// The two former one-edge loops become one bounded parameter cell.
+    pub method: String,
 }
 
 /// Source intersection coverage retained separately from numerical samples.

@@ -11,7 +11,7 @@ The [26 October 2026 print decision](ARCHITECTURE.md#print-accuracy-and-routes-d
 ## 1. What Catallax is
 
 Catallax is an open-source geometry kernel under the MIT licence.
-It is the kernel for SolidDraft and for anyone else who wants it.
+It is the kernel for SolidDraft, designed for the features SolidDraft's users drive as it grows toward the most usable of SolidWorks's parametric modelling and nTopology's implicit modelling. Anyone may use it; generalising it for others comes after it carries one application well.
 It serves the mechanical industry: machined parts, printed parts, drawings, STEP exchange with other CAD tools, FEA and large assemblies.
 
 Catallax is a new public repository, exported from the existing B-rep implementation without its Git history. The original repository remains the source for separately reviewed fixes during the transition.
@@ -35,12 +35,16 @@ Catallax is a new public repository, exported from the existing B-rep implementa
 
 The two kernels agree exactly on exact regions. Permitted approximations carry the proved bounds below.
 Geometry creation uses one modelling tolerance of 1 nm, which is 0.000001 mm, for sameness and decisions.
-A tolerance is allowed only in two cases, and both are cases of necessity.
+For results published as proven, a tolerance is allowed only in the following two cases, and both are cases of necessity. The separate numerical route below does not widen these proven-result exceptions or their caps.
 
 1. Shapes needing a different representation in the B-rep or in STEP, including general curved-face offsets and fillets. Both kernels retain the exact definition. The B-rep may carry a certified polynomial or rational B-spline surface beside it. Each approximated face records its proved local tolerance: 100 nm target and 1 µm hard cap for kernel-made approximations; 10 µm for imports unless the user explicitly accepts and records a looser limit for that file. A local tolerance is also at most a tenth of the shortest neighbouring edge or narrowest neighbouring face. The body's certificate proves exact agreement except for the listed approximated/imported faces and bounded decisions, with complete coverage, orientation and valid topology. A permitted face approximation does not also have to meet a universal 1 nm whole-result bound. Later operations remeasure against the retained exact definition, so tolerances do not grow by inheritance. Display and export record separate output errors and accuracy requirements. Field-only features remain field-only unless an explicit conversion meets its contract.
 2. A decision that takes too long to prove. This is allowed only after the B-rep kernel has proven that the gap behind the decision is smaller than 1 nm. exact-brep already has this outcome, "not exact, with a proven bound". The 1 nm limit is new.
 
 Decide once and reuse the record; merge objects declared the same; retain each local tolerance; and check topology before publication as proven. Never clamp a measured tolerance to its cap. [ARCHITECTURE.md](ARCHITECTURE.md#composable-geometric-error-decision-of-2026-10-22) defines composition and the measurement, comparison and STEP hand-offs for these scoped certificates. Section 3.3 permits an explicitly unproved preview before that proof completes.
+
+Where exact proof is unavailable, [ROADMAP milestone 1.1](../ROADMAP.md#plan) permits separately marked numerical geometry under a stated tolerance fixed before the operation. Retain the generating definition, completed checks with their actual scope and sample locations, and any measured repair history. Numerical results remain separate from proven results and from bounded answers that require a complete bound over their declared scope. Zero sampled residuals do not promote a numerical result to either category. Local pointwise distance enclosures, sampled maxima and parameter-space trim checks do not establish a whole-face or whole-body bound, global self-intersection freedom or separation. Report only the evidence actually established; do not add repair movements into an asserted bound on the current body.
+
+The landed [checked numerical build contract](interface-changes/2026-11-15-checked-numerical-build-results.md) and [trim/sewing extension](interface-changes/2026-11-14-numerical-trim-sewing.md) provide separate numerical bodies and evidence within their documented families. Their producers report `exact: false`; [producer guarantees](interface-changes/2026-11-15-numerical-producer-guarantees.md) do not prevent every explicit misuse of generic answer constructors. They grant no exact checkpoint or existing STEP-export authority. Numerical STEP output is a roadmap requirement: an implemented numerical writer must validate its output and mark it approximate before delivery. N01/N02 do not implement that writer; this requirement does not qualify N03 or any broader approximate export. Numerical admission does not change the existing modelling tolerances, proven local caps or work allowances.
 
 Display and export accuracy are output settings, not modelling tolerances. Print accuracy defaults to 0.01 mm and may be changed explicitly for an output under section 5.1. A chosen coarser output does not relax the model's 1 nm decisions, approximation target or local caps.
 
@@ -63,16 +67,18 @@ About 20 codes of this second kind exist in the code today, including `boolean.c
 Until the kernel covers such a case, the user sees a failure like a SolidWorks rebuild error, and the case goes on the list of kernel bugs to fix. A print refusal also explains the limiting stage and the accuracy/resource trade-off under section 5.1; it must not be a bare failure or claim the geometry is impossible merely because a cap was reached.
 The user never sees a half-built state presented as a proven result and never needs to know a kernel exists. If proof of an already visible preview fails, the app marks it failed and shows the typed refusal for that edit.
 
+Report refusal latency against its applicable preview or background-proof target. Missing a local tolerance cap is unfinished coverage, not impossible geometry. A refusal that misses its clock target is also a performance bug; record it while clock acceptance waits for Phase 5. Fix hangs now rather than deferring them with speed acceptance.
+
 ### 3.3 Display
 
 The kernel that owns a feature builds it and shows it.
 Extrudes, holes and fillets belong to the B-rep kernel.
 Lattices, gyroids and graded density belong to the field kernel.
-The other kernel builds its version only when a requested output or an on-demand comparison needs it.
+The other kernel builds its version only when a requested output or an on-demand comparison needs it. Both kernels describe the same geometry, including imported parts; either may supply a faster preview route under the status rules below. The B-rep retains ownership of STEP export and drawings.
 
-Preview/display has its own budget for construction preview, display mesh, edge polylines and names needed for selection. The targets are 100 ms for stock solids, 500 ms for booleans and 1,000 ms for a recipe-feature click, measured through the visible selectable edit. A separate background proof budget covers certificates, whole-face deviation bounds, exact requested measurements, export validation and requested field comparison. Its target remains 2,000 ms for the complete requested background job. Proof never blocks the preview click and may be postponed.
+Preview/display has its own budget for construction preview, display mesh, edge polylines and names needed for selection. The targets are 100 ms for stock solids, 500 ms for booleans and 1,000 ms for a recipe-feature click, measured through the visible selectable edit. A separate background proof budget covers certificates, whole-face deviation bounds, exact requested measurements, export validation and requested field comparison. Its target remains 2,000 ms for the complete requested background job. Proof never blocks the preview click and may be postponed. These click- and proof-clock targets become acceptance gates in [Phase 5](../ROADMAP.md#plan); earlier capability acceptance retains the correctness and output gates in section 10.
 
-A preview uses the same immutable recipe revision and exact definitions as the eventual proof, but need not use the same representation or construction route. It is clearly labelled `unproved` until proof confirms it or replaces it with the proven result. Selection names belong to that revision and are resolved against the completed result; they are not proof. A newer edit invalidates the earlier pairing, and a late proof cannot overwrite it. A previous body may remain visible as the previous revision, not as a preview of new geometry. On model-proof failure, mark the preview `failed` with the typed refusal. Exports, requested measurements and anything published as proven still wait for their applicable proof. An output-specific failure does not invalidate an already proved model.
+A preview uses the same immutable recipe revision and exact definitions as the eventual proof, but need not use the same representation or construction route. It is clearly labelled `unproved` until proof confirms it or replaces it with the proven result. Selection names belong to that revision and are resolved against the completed result; they are not proof. A newer edit invalidates the earlier pairing, and a late proof cannot overwrite it. A previous body may remain visible as the previous revision, not as a preview of new geometry. On model-proof failure, mark the preview `failed` with the typed refusal. Exports, requested measurements and anything published as proven still wait for their applicable proof. An output-specific failure does not invalidate an already proved model. A separately marked numerical model follows section 3.1 and its own output validation; a preview alone never grants numerical export authority.
 
 Keep the 1M scoreboard, 20M application and 100M verification-request allowances unchanged. Separating preview and proof must not reset, duplicate or enlarge a caller's deterministic allowance. All modelling tolerances, approximation targets and caps stay unchanged. Display/export accuracy remains an output setting; section 5.1 governs explicit print choices. A proven answer is never wrong.
 
@@ -100,7 +106,7 @@ The field's second-kernel comparison runs only when the user or a verification r
 
 For a requested comparison, the field builds supported steps independently. Where it cannot yet build a step, it may take over the certified B-rep result, explicitly labelling that step non-independent and reporting which later steps it checked independently. Unsupported takeover or missing proof remains unresolved or a typed refusal. The report must not call partial independent coverage full agreement.
 
-Each approximated face still needs whole-face deviation bounds against its own exact definition. Two-sided per-face distance routines may supply that local proof without rebuilding the whole part in the second kernel. A sampled comparison never substitutes for it. If proof or a requested comparison finds a model failure, the edited feature and its preview are marked failed with the typed refusal, and the case goes on the kernel bug list.
+Each approximated face published as proven still needs whole-face deviation bounds against its own exact definition. Numerical evidence follows the separate scope rules in section 3.1. Two-sided per-face distance routines may supply that local proof without rebuilding the whole part in the second kernel. A sampled comparison never substitutes for it. If proof or a requested comparison finds a model failure, the edited feature and its preview are marked failed with the typed refusal, and the case goes on the kernel bug list.
 
 The app never checks by asking the B-rep kernel point by point.
 In an earlier measured run exact-brep took 1 to 25 ms per point on ordinary parts, so a useful check of that kind would take 10 seconds to 4 minutes per edit.
@@ -115,7 +121,7 @@ Recommended: Jev is an optional helper in SolidDraft, not a dependency of the MI
 
 ### 3.7 Kept from exact-brep
 
-- The same question gives the same answer on every machine and at every thread count.
+- Exact results stay identical on every machine and at every thread count. Only explicitly unproved previews that never export may vary in their last digit; this exception grants no variation in proven answers or authoritative geometry.
 - No unsafe code.
 - Derived geometry is stored by its definition, and coordinates are only a cache.
 - A proven answer is never wrong.
@@ -123,11 +129,11 @@ Recommended: Jev is an optional helper in SolidDraft, not a dependency of the MI
 ### 3.8 Target
 
 Reasonably good, comparable to OpenCASCADE, SMLib and the Rust kernels.
-The former 1-in-10,000 programme and its grid-cell product goals are retired.
+The former 1-in-10,000 programme and its grid-cell product goals are retired. Target parts that rebuild in SolidDraft with no wrong answer are milestones toward the target and the published scoreboard. Click-speed and proof-clock acceptance wait for Phase 5; correctness, completed proof, export, naming and application gates remain in force.
 
 ### 3.9 Threads
 
-Rust's safe threads run rebuilds and checks in the background, so the user is never blocked.
+Rust's safe threads run rebuilds and checks in the background, so the user is never blocked. Ordinary hardware or GPU arithmetic may vary in the last digit only for the explicitly unproved, non-exportable previews described in section 3.7; exact results retain full determinism.
 
 ## 4. Features
 
@@ -181,7 +187,7 @@ The 1 nm modelling tolerance, 100 nm approximation target, 1 µm kernel-made cap
 1. A recipe language with one mathematical definition per operation, and names given by the operation that made each face and edge.
 2. A B-rep version of every B-rep-native feature, with the necessity surfaces from section 3.1 held exactly by their definition.
 3. A field version of every feature, including imports, with the recipe's faces kept selectable.
-4. Conversion in both directions on demand. Field to B-rep at a chosen accuracy, plus the stand-in. B-rep to field.
+4. Conversion in both directions on demand, only when it meets its contract. A field-only feature stays field-only if conversion cannot meet that contract. Field to B-rep conversion at a chosen accuracy and the section 7 stand-in are distinct outputs; a stand-in is not full conversion of the field geometry. B-rep to field follows the same scoped hand-off requirements.
 5. Meshes from both kernels at a chosen accuracy.
 6. The on-demand surface comparison and requested hand-off checks from section 3.5.
 7. The queries FEA and interference checks need: inside or outside, distance and surface direction. Exact mass from the B-rep side.
@@ -193,11 +199,11 @@ The 1 nm modelling tolerance, 100 nm approximation target, 1 µm kernel-made cap
 - **Stand-in for very large parts.** When a full conversion would be huge, STEP and drawings use a stand-in the way nTop does it: the outer envelope plus bodies that match the mass, centre of gravity and inertia. nTop's example lattice cube was over 600 MB as STEP and under 30 kB in its own format. nTop suggests full conversion only up to about 10,000 beams or 1,000 gyroid cells. The size that switches to the stand-in is not decided yet.
 - **Printing.** Slices, 3MF or STL under section 5.1. Ordinary parts use a print-qualified tessellation of the proven B-rep; field parts use adaptive certified cells. The chosen accuracy and cap travel with the file, and an output that cannot fit returns an explicit trade-off for the user to choose.
 - **STEP import.** The imported body enters the recipe as a fixed piece. The field kernel computes its field from it. Jev decides whether small gaps and offsets are intended or noise from the system that wrote the file.
-- **Mesh and scan import.** An AI model writes a recipe from the mesh, following the CAD-Recode and CADFit research. A numeric fit refines the dimensions. Jev picks the intent among measured options. The B-rep kernel builds the result exactly, and the app measures and shows the deviation. No published method guarantees a tolerance, so the measured deviation is the guarantee.
+- **Mesh and scan import.** Aim for a clean, workable part with the smallest deviation, as B-rep and as field, without requiring a reconstructed recipe or feature tree. Use classic fitting first; use learned segmentation such as DualBrep only if classic fitting is insufficient. Never silently treat a scan as a solid. Report deviation in both directions, its measurement scope and whether it is sampled evidence or a complete bound under section 3.1. Matching RECIPE section 4.19.1 wording requires a separate coordinated change; this decision does not perform a broad recipe migration.
 
 ## 8. Outside this PRD for now
 
-- **FEA.** The field kernel gives the solver inside or outside, distance and surface direction. How the solver works gets its own discussion.
+- **FEA.** Remains parked under [ROADMAP milestone 4.5](../ROADMAP.md#phase-4-field-lattices-printing-and-scans) until the owner restarts it. The field kernel gives the solver inside or outside, distance and surface direction. How the solver works gets its own discussion. The historical FEA-first order is not adopted.
 - Rotation and rendering throughput beyond the preview/display targets in section 3.3. Measure those separately before deciding whether more work is needed.
 - **Large-assembly display.** Research found that CAD tools draw big assemblies as meshes with level of detail, lazy loading and instancing. No CAD viewer was found that draws assemblies from SDFs. In assemblies the field kernel's role is interference and clearance.
 
@@ -255,23 +261,28 @@ An independent tester built without seeing the kernel's code tests the B-rep hal
 
 ### 9.4 SolidDraft
 
-SolidDraft is the application this kernel serves. Integration must use the shared operation definitions, persistent names and hand-off checks in this PRD. The kernel remains usable independently of that application.
+SolidDraft uses Catallax only; its kernel slot is not swappable. Integrate each kernel operation into the app as it lands, using minimal adapters for the shared operation definitions, persistent names and hand-off checks. No broad recipe-format migration is authorised by this decision. Coordinate any necessary RECIPE section 6 wording separately. The kernel remains usable independently of SolidDraft.
 
 ## 10. Direction, in order
 
 1. Publish the clean Catallax repository and align its design, architecture and plan with this PRD.
-2. Continue independent B-rep testing and review subsequent fixes without changing the exchange contract in this publication.
+2. Integrate each Catallax operation into SolidDraft as it lands, with the minimal adapters and gates in section 9.4. Continue independent B-rep testing and review subsequent fixes without changing the exchange contract in this publication.
 3. Define the recipe language. Both kernels and consuming applications need the same definitions and names.
 4. Grow the field kernel toward B-rep feature parity and provide the on-demand background comparison. Required cross-kernel hand-offs wait for their scoped proof, but an ordinary B-rep click does not wait for a second build.
 5. Widen the kernels along the feature list in section 4 using the shared definitions. A narrow B-rep feature may land with its own proof before field parity; it need not land in both kernels together. Requested comparison reports independent and taken-over steps as section 3.5 requires. Field-only features remain owned and built by the field.
-6. Integrate Catallax into SolidDraft once it covers the operations the application needs.
-7. Add the field-only features, the export levels and the stand-in, then FEA and interference. FEA is designed in its own discussion first.
+6. Add the field-only features, the export levels and the distinct stand-in. Clash and clearance follow the current roadmap. FEA remains parked until an owner restart decision; no FEA-first ordering is introduced.
 
-Target-part and milestone acceptance follows [PLAN sections 9 and 10.1](TARGET-PARTS.md): preview/display meets the interactive targets, background proof completes within its separate budget, and the existing export, name-survival and application checks pass. List field comparison as an on-demand check with its coverage and outcome, not a universal landing or built gate. Preview alone does not count as a built part.
+Target-part and milestone acceptance follows the [current roadmap](../ROADMAP.md#plan) and [target-part contracts](TARGET-PARTS.md). Capability milestones require a completed build within the applicable fixed work allowance, with its declared result category and evidence, and the existing correctness, proof, export, name-survival and application checks. Numerical status does not satisfy a gate requiring a proven result, a whole-body bound or a validated export. Click- and proof-clock acceptance wait for Phase 5; proof completion itself does not wait. List field comparison as an on-demand check with its coverage and outcome, not a universal landing or built gate. Preview alone does not count as a built part.
 
 Prioritise cheaper-proof research: proof from recorded construction facts, certificate caching and reuse across edits, proof scoped to requested exports or measurements, and coarse certificates refined on demand. These are research candidates, not decided designs or weaker accuracy requirements.
 
-## 11. Open items
+## 11. Decisions and remaining open items
+
+The 50-second acceptance question is closed: the existing fixed deterministic work allowance selects verification outcomes, not machine load or elapsed time. Keep the separate 1M scoreboard, 20M application and 100M verification-request allowances and legacy compatibility policy unchanged. The legacy commands retain their 50-second behavior for compatibility. Closing acceptance does not remove compatibility; removal of legacy-deadline compatibility text remains an open owner decision. The original deadline observation below is retained verbatim as historical context for that separate policy question.
+
+The tolerance decision of 23 October (proposal 3) and on-demand comparison decision of 26 October (proposal 5) were already applied in sections 3.1 and 3.5; they are not new decisions or duplicate implementation work. The separately marked numerical route above is the subsequent scoped direction.
+
+Remaining items:
 
 - The size at which export switches to the stand-in.
 - The recipe language, including rebuild-stable names.

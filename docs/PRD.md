@@ -2,7 +2,7 @@
 
 Published 22 October 2026. The [research notes](research/) give the sources behind this direction.
 
-This document sets the direction for Catallax. It describes requirements and planned features, not a claim that they are already implemented.
+[ROADMAP.md](../ROADMAP.md) is authoritative wherever it conflicts with this PRD, by the owner's decision of 15 November 2026. It sets the order, checkpoints, current scope and recorded status. This PRD retains compatible product requirements; it does not claim that planned work is complete.
 
 The [26 October 2026 decision](ARCHITECTURE.md#preview-and-deferred-proof-decision-of-2026-10-26) separates preview/display from deferred proof and makes second-kernel comparison on demand. This changes the build direction, not the current public API or what counts as proven.
 
@@ -14,7 +14,7 @@ Catallax is an open-source geometry kernel under the MIT licence.
 It is the kernel for SolidDraft, designed for the features SolidDraft's users drive as it grows toward the most usable of SolidWorks's parametric modelling and nTopology's implicit modelling. Anyone may use it; generalising it for others comes after it carries one application well.
 It serves the mechanical industry: machined parts, printed parts, drawings, STEP exchange with other CAD tools, FEA and large assemblies.
 
-Catallax is a new public repository, exported from the existing B-rep implementation without its Git history. The original repository remains the source for separately reviewed fixes during the transition.
+Catallax was published from the existing B-rep implementation without its Git history. Further fixes arrive as reviewed Catallax changes; current scope and status are recorded in ROADMAP.md.
 
 ## 2. The model
 
@@ -27,7 +27,7 @@ Catallax is a new public repository, exported from the existing B-rep implementa
 | Kernel | Jobs |
 |---|---|
 | B-rep | STEP export, ordinary-part printing, drawings, CAM, exact dimensions, exact mass properties, mates |
-| Field | FEA without meshing, field features for printing such as lattices, gyroids and graded density, interference and clearance checks, booleans that never fail |
+| Field | FEA without meshing, field features for printing such as lattices, gyroids and graded density, interference and clearance checks, booleans under the applicable coverage and result contracts |
 
 ## 3. Rules
 
@@ -60,7 +60,7 @@ Examples from exact-brep today:
 |---|---|
 | `intersect.traced-pair-required` | A general intersecting cone or torus pose outside the current closed-form paths |
 | `boolean.imprint-ambiguous` | Two pipes of the same diameter crossing at right angles |
-| `numbers.deadline` | A whole operation running past 50 seconds, such as the near-miss cases |
+| `numbers.operation-budget` | A request exhausting its fixed deterministic work allowance |
 | `measure.accuracy-not-reached` | A volume or centroid that could not be proven to the requested accuracy |
 
 About 20 codes of this second kind exist in the code today, including `boolean.classify-ambiguous`, `boolean.merge-ambiguous`, `numbers.budget-exhausted` and `numbers.precision-limit`.
@@ -71,14 +71,11 @@ Report refusal latency against its applicable preview or background-proof target
 
 ### 3.3 Display
 
-The kernel that owns a feature builds it and shows it.
-Extrudes, holes and fillets belong to the B-rep kernel.
-Lattices, gyroids and graded density belong to the field kernel.
-The other kernel builds its version only when a requested output or an on-demand comparison needs it. Both kernels describe the same geometry, including imported parts; either may supply a faster preview route under the status rules below. The B-rep retains ownership of STEP export and drawings.
+Both kernels act on the same geometry, imported parts included. The faster kernel does the job within its supported scope and result contract; the B-rep owns STEP export and drawings, and the field owns lattices, gyroids and graded density. A requested output or on-demand comparison may require the other representation. Unsupported routes still report their named refusals; selecting a faster route does not promote numerical results or previews to proven geometry.
 
 Preview/display has its own budget for construction preview, display mesh, edge polylines and names needed for selection. The targets are 100 ms for stock solids, 500 ms for booleans and 1,000 ms for a recipe-feature click, measured through the visible selectable edit. A separate background proof budget covers certificates, whole-face deviation bounds, exact requested measurements, export validation and requested field comparison. Its target remains 2,000 ms for the complete requested background job. Proof never blocks the preview click and may be postponed. These click- and proof-clock targets become acceptance gates in [Phase 5](../ROADMAP.md#plan); earlier capability acceptance retains the correctness and output gates in section 10.
 
-A preview uses the same immutable recipe revision and exact definitions as the eventual proof, but need not use the same representation or construction route. It is clearly labelled `unproved` until proof confirms it or replaces it with the proven result. Selection names belong to that revision and are resolved against the completed result; they are not proof. A newer edit invalidates the earlier pairing, and a late proof cannot overwrite it. A previous body may remain visible as the previous revision, not as a preview of new geometry. On model-proof failure, mark the preview `failed` with the typed refusal. Exports, requested measurements and anything published as proven still wait for their applicable proof. An output-specific failure does not invalidate an already proved model. A separately marked numerical model follows section 3.1 and its own output validation; a preview alone never grants numerical export authority.
+A preview uses the same immutable recipe revision and exact definitions as the eventual proof, but need not use the same representation or construction route. It is clearly labelled `unproved` until proof confirms it or replaces it with the proven result. Selection names belong to that revision and are resolved against the completed result; they are not proof. A newer edit invalidates the earlier pairing, and a late proof cannot overwrite it. A previous body may remain visible as the previous revision, not as a preview of new geometry. On model-proof failure, mark the preview `failed` with the typed refusal. Exports, requested measurements and anything published as proven still wait for their applicable proof. An output-specific failure does not invalidate an already proved model. A part built numerically within its stated tolerance shows as finished with its numerical status and completed checks, distinct from proven or bounded status. It follows section 3.1 and its own output validation; a preview alone never grants numerical export authority.
 
 Keep the 1M scoreboard, 20M application and 100M verification-request allowances unchanged. Separating preview and proof must not reset, duplicate or enlarge a caller's deterministic allowance. All modelling tolerances, approximation targets and caps stay unchanged. Display/export accuracy remains an output setting; section 5.1 governs explicit print choices. A proven answer is never wrong.
 
@@ -137,12 +134,14 @@ Rust's safe threads run rebuilds and checks in the background, so the user is ne
 
 ## 4. Features
 
+This table describes product roles, not completion. Supported families and remaining work follow ROADMAP's “Where we are” and milestones; exact, numerical, bounded and preview statuses retain section 3.1's distinct claims.
+
 | Feature | B-rep kernel | Field kernel |
 |---|---|---|
 | Sketch, extrude, revolve | Exact | Exact, from a formula |
-| Hole, countersink | Exact. Coaxial cylindrical countersinks now work through booleans; general poses and the named hole feature remain unfinished | Exact |
-| Boolean | Exact. This is exact-brep's core | Exact, never fails |
-| Fillet or chamfer on an edge between faces the recipe defines | Exact for flat to flat and for a flat face meeting a perpendicular hole. A fillet between two curved faces is held exactly by its definition and becomes a spline only in the STEP file | Exact rolling ball, because the recipe names both faces. Slower between two curved faces |
+| Hole, countersink | Exact where supported; remaining general holes follow milestone 1.4 | Exact |
+| Boolean | Exact. This is exact-brep's core | Exact where supported; unsupported coverage remains a named refusal |
+| Fillet or chamfer on an edge between faces the recipe defines | Exact for flat to flat and for a flat face meeting a perpendicular hole. Curved fillets retain their definition and may use a fitted B-rep carrier under section 3.1; general mixed and spline families follow milestones 1.4 and 1.5 | Exact rolling ball, because the recipe names both faces. Slower between two curved faces |
 | Shell, offset, thicken | Exact for planes, cylinders, spheres and tori | Simple only where the field is a true distance. After booleans it is not, so the field measures distance from the faces themselves |
 | Draft | Exact. Planes stay planes and cylinders become cones | Exact |
 | Sweep, loft | Exact spline faces | Distance to the faces is computed numerically, so it is slower |
@@ -156,7 +155,7 @@ Rust's safe threads run rebuilds and checks in the background, so the user is ne
 
 | Output | Served by | Hand-off point |
 |---|---|---|
-| Display of one part | The kernel that owns the feature | No |
+| Display of one part | Whichever kernel is faster within its supported scope and status contract | No |
 | Display of a big assembly | Meshes with level of detail, from either kernel | No |
 | Picking faces and edges | B-rep faces, or recipe-defined faces in the field | No. Freeform field surfaces have nothing to pick |
 | STEP | B-rep, at the accuracy chosen at export | Yes, when the part has field features |
@@ -211,9 +210,9 @@ The 1 nm modelling tolerance, 100 nm approximation target, 1 µm kernel-made cap
 
 ### 9.1 exact-brep becomes the B-rep half
 
-Use the new public [Catallax repository](https://github.com/BohnBawerick/catallax). Export the existing B-rep code without history, rename the workspace and keep the legacy exchange contract working. Further source fixes arrive as reviewed Catallax pull requests, not an implicit sync. The field kernel and recipe language are new work.
+At publication, the [Catallax repository](https://github.com/BohnBawerick/catallax) received the B-rep code without history, with renamed workspace and preserved exchange formats. Further source fixes arrive as reviewed Catallax pull requests, not an implicit sync. The field kernel and recipe language were new work at that point; ROADMAP records their current scope.
 
-What carries over unchanged from exact-brep, about 32,000 lines of Rust:
+The original publication carried over the following from exact-brep, about 32,000 lines of Rust. This is historical provenance, not a current capability inventory:
 
 - exact numbers and certified decisions with work budgets;
 - plane, cylinder, cone, sphere and torus builders, with shapes stored by definition;
@@ -232,7 +231,7 @@ What changes in exact-brep's design documents (`docs/DESIGN.md`, `docs/ARCHITECT
 - speed per click now matters, because the kernel serves an interactive CAD tool;
 - faces and edges named by the operation that made them.
 
-What the B-rep half still lacks:
+The original publication listed these gaps. Several now have supported families in ROADMAP's “Where we are”; this historical list must not be read as current absence or completion of the remaining general cases:
 
 - general cones and tori in booleans beyond the closed-form and coaxial paths;
 - sketch-based features: profile, extrude, revolve;
@@ -242,7 +241,7 @@ What the B-rep half still lacks:
 - patterns and mirror;
 - meshes for display;
 - STEP import;
-- seam curves in STEP for interoperability with other CAD tools. The existing exchange contract forbids them, so adding them requires a versioned contract change;
+- seam curves in STEP for interoperability with other CAD tools. The historical exchange forbade them; current consumers must follow their applicable versioned seam contract;
 - the export accuracy levels and the stand-in.
 
 ### 9.2 New pieces
@@ -265,32 +264,35 @@ SolidDraft uses Catallax only; its kernel slot is not swappable. Integrate each 
 
 ## 10. Direction, in order
 
-1. Publish the clean Catallax repository and align its design, architecture and plan with this PRD.
-2. Integrate each Catallax operation into SolidDraft as it lands, with the minimal adapters and gates in section 9.4. Continue independent B-rep testing and review subsequent fixes without changing the exchange contract in this publication.
-3. Define the recipe language. Both kernels and consuming applications need the same definitions and names.
-4. Grow the field kernel toward B-rep feature parity and provide the on-demand background comparison. Required cross-kernel hand-offs wait for their scoped proof, but an ordinary B-rep click does not wait for a second build.
-5. Widen the kernels along the feature list in section 4 using the shared definitions. A narrow B-rep feature may land with its own proof before field parity; it need not land in both kernels together. Requested comparison reports independent and taken-over steps as section 3.5 requires. Field-only features remain owned and built by the field.
-6. Add the field-only features, the export levels and the distinct stand-in. Clash and clearance follow the current roadmap. FEA remains parked until an owner restart decision; no FEA-first ordering is introduced.
+Follow [ROADMAP's phase order and checkpoints](../ROADMAP.md#plan):
+
+1. Phase 0 closes the release and its evidence without claiming that preparation alone qualifies it.
+2. Phase 1 closes numerical modelling under stated tolerances, real-file import, spline cuts and joins, everyday edge/wall families and spline fillets. Integrate each operation into SolidDraft as it lands, browser first, with section 9.4's minimal adapters and unchanged result gates.
+3. Phase 2 adds the NURBS toolkit, surface bodies, general sweeps and direct edits in the roadmap's order and dependencies.
+4. Phase 3 covers drawing views, assemblies/exchange, clash/clearance/mass and the remaining modelling lines.
+5. Phase 4 covers field preview, field parity, lattices/printing and imports/scans in both kernels. FEA remains parked until the owner restarts it at a checkpoint. Field parity never blocks a narrow B-rep feature; requested comparisons and hand-offs retain section 3.5's coverage requirements.
+6. Phase 5 addresses speed and simplification, GPU work, Windows packages and signed downloads. Use every core by design with deterministic result assembly; clock acceptance waits for this phase. App-alongside and standing lanes follow ROADMAP throughout.
+
+At checkpoints, stop new work, merge or park running work with its limits recorded, gather the scoreboard/census/refusals and update the roadmap; the owner chooses the next phase's order. A wrong proven answer stops work on that method immediately.
 
 Target-part and milestone acceptance follows the [current roadmap](../ROADMAP.md#plan) and [target-part contracts](TARGET-PARTS.md). Capability milestones require a completed build within the applicable fixed work allowance, with its declared result category and evidence, and the existing correctness, proof, export, name-survival and application checks. Numerical status does not satisfy a gate requiring a proven result, a whole-body bound or a validated export. Click- and proof-clock acceptance wait for Phase 5; proof completion itself does not wait. List field comparison as an on-demand check with its coverage and outcome, not a universal landing or built gate. Preview alone does not count as a built part.
 
-Prioritise cheaper-proof research: proof from recorded construction facts, certificate caching and reuse across edits, proof scoped to requested exports or measurements, and coarse certificates refined on demand. These are research candidates, not decided designs or weaker accuracy requirements.
+Cheaper-proof and simplification work follows Phase 5 and the measured order in ROADMAP, retaining proofs from construction, prepared bounds, reuse and coarse-to-fine refinement where valid. No independent body checker, proof verifier, durable proof-job machinery or bounded-modelling contract project is scheduled: ROADMAP closes or rejects those projects. Existing proof, output-validation and evidence-scope requirements remain obligations of any result that claims them; this does not reopen a separate certificate-system build.
 
 ## 11. Decisions and remaining open items
 
-The 50-second acceptance question is closed: the existing fixed deterministic work allowance selects verification outcomes, not machine load or elapsed time. Keep the separate 1M scoreboard, 20M application and 100M verification-request allowances and legacy compatibility policy unchanged. The legacy commands retain their 50-second behavior for compatibility. Closing acceptance does not remove compatibility; removal of legacy-deadline compatibility text remains an open owner decision. The original deadline observation below is retained verbatim as historical context for that separate policy question.
+The obsolete 50-second individual clock is not an acceptance rule. The existing fixed deterministic work allowance selects verification outcomes, not machine load or elapsed time. The application edit allowance stays 20M; retain the separate historical 1M scoreboard and 100M verification-request contracts. Clock time never fails a change before Phase 5; record latency and fix hangs now. This documentation decision does not claim that an implementation has changed.
 
 The tolerance decision of 23 October (proposal 3) and on-demand comparison decision of 26 October (proposal 5) were already applied in sections 3.1 and 3.5; they are not new decisions or duplicate implementation work. The separately marked numerical route above is the subsequent scoped direction.
 
 Remaining items:
 
 - The size at which export switches to the stand-in.
-- The recipe language, including rebuild-stable names.
+- Remaining recipe-language and rebuild-stable-name requirements follow the applicable roadmap milestones; the recipe language itself already exists.
 - Whether the field kernel builds on Fidget, a Rust field engine under MPL-2.0, or is written from scratch. This was not discussed. MPL-2.0 keeps its own files under MPL inside an MIT project.
 - The FEA design.
 - The on-screen speed measurement.
-- The current 50-second `numbers.deadline` cutoff can answer or refuse the same question depending on machine load. This conflicts with the same-answer rule; resolution needs a separate design and contract change, not a code change in this publication.
-- Enforcing and composing complete exact/exception certificates over the inherited mark APIs, with the 1 nm decision limit and recorded local face caps.
+- Any unsupported exact/exception evidence needed by a scoped result or output must be reported honestly under section 3.1. This is not an open project to build the certificate systems closed by ROADMAP.
 
 ## Sources
 

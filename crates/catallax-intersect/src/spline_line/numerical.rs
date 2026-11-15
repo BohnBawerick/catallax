@@ -2,6 +2,7 @@
 
 use catallax_numbers::{
     Ball, Decider, NumericalCheck, NumericalEvidence, NumericalSample, Rational, Refusal, Sign,
+    operation_budget_active, with_operation_budget,
 };
 use catallax_shapes::{BSplineCurve, CurveId, GeomStore, Line, Point3};
 
@@ -171,6 +172,19 @@ fn refine(
 /// and clamped Newton refinement. Overlap intervals and unresolved cells refuse.
 /// This query never publishes incidence facts or supplies exact Boolean points.
 pub fn numerical_spline_line_points(
+    geom: &GeomStore,
+    a: CurveId,
+    b: CurveId,
+    dec: &mut Decider,
+) -> Result<Option<NumericalSplineLineMeetings>, Refusal> {
+    if operation_budget_active() {
+        return query(geom, a, b, dec);
+    }
+    let (result, _) = with_operation_budget(20_000_000, || query(geom, a, b, dec));
+    result
+}
+
+fn query(
     geom: &GeomStore,
     a: CurveId,
     b: CurveId,

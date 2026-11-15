@@ -466,7 +466,7 @@ fn build_inner(
         if !analytic::supports(&face.surface) {
             return Err(bad(
                 "unsupported",
-                "numerical admission supports planes, finite cylindrical charts and embedded rational patches",
+                "numerical admission supports planes, finite cylinder or cone charts and embedded rational patches",
             ));
         }
         analytic::validate_surface(&face.surface, dec)?;

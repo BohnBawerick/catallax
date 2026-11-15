@@ -803,6 +803,7 @@ pub(super) fn import(
         )
         .into());
     }
+    let continuation_options = cones::continuation_options(&file, options, dec)?;
     let intersection_checks = intersection_checks(&file, OPTIONAL_EXACT_WORK, dec)?;
     let mut bodies = Vec::new();
     let mut topology_repairs = Vec::new();
@@ -811,7 +812,7 @@ pub(super) fn import(
             solid.name.clone(),
             n::build(
                 definition(solid, &mut topology_repairs, dec)?,
-                options.clone(),
+                continuation_options.clone(),
                 dec,
             )?,
         ));

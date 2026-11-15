@@ -112,3 +112,33 @@ pub(super) fn same_generator(
     let delta = crate::exact::sub(end, start);
     Ok(cone.contains_line(start, &delta))
 }
+
+/// Keep the fitted carrier and numerical residual inside one cap and feature limit.
+pub(super) fn continuation_options(
+    file: &crate::StepFile,
+    options: &n::NumericalOptions,
+    dec: &mut Decider,
+) -> Result<n::NumericalOptions, ImportError> {
+    let mut result = options.clone();
+    for (_, face) in file.named_faces() {
+        if !matches!(face.surface, crate::Surface::Cone(..)) {
+            continue;
+        }
+        dec.charge_work(1)?;
+        let cone = fitted(face)?;
+        let feature = catallax_numbers::Ball::from_rational(&cone.feature2, 256)
+            .sqrt()
+            .expect("positive feature")
+            .lo();
+        let limit = options
+            .tolerance_mm
+            .clone()
+            .min(feature / Rational::from_i64(10));
+        let remainder = &limit - &cone.deviation.1;
+        if remainder.sign() != Sign::Positive {
+            return Err(Refusal::new("import.numerical-tolerance", "fitted cone leaves no numerical residual allowance within the cap and feature limit").into());
+        }
+        result.tolerance_mm = result.tolerance_mm.min(remainder);
+    }
+    Ok(result)
+}

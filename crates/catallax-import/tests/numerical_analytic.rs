@@ -326,4 +326,22 @@ fn a_gapped_cone_retains_its_fitted_carrier_and_records_both_tolerances() {
     let tolerances = &imported.record().face_tolerances;
     assert_eq!(tolerances.len(), 1);
     assert!(q(&tolerances[0].deviation_upper_mm) < q("1e-9"));
+    let body = &imported.bodies()[0].1;
+    assert!(&body.options().tolerance_mm + &q(&tolerances[0].deviation_upper_mm) <= q("0.01"));
+    let mut reaches_apex = body.definition().clone();
+    for face in &mut reaches_apex.faces {
+        if matches!(face.surface, catallax_shapes::Surface::Cone(_)) {
+            for uv in face.loops.iter_mut().flatten().flat_map(|t| &mut t.uv) {
+                uv[1] = q("0");
+            }
+        }
+    }
+    let refusal = n::build(
+        reaches_apex,
+        body.options().clone(),
+        &mut Decider::default(),
+    )
+    .unwrap_err();
+    assert_eq!(refusal.code, "numerical.invalid-trim");
+    assert!(refusal.detail.contains("above its apex"));
 }

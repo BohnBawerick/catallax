@@ -17,56 +17,55 @@ A first attempt on 11 November stopped before measuring, because the archive cou
 
 ## Result
 
-The complete export comparison records **354 of the original 3,000 files
-(11.8%) with STEP exports valid after OCCT builder construction, which can heal
-pcurves internally**, beside **2,701 of 3,000 (90.0%) valid after normal OCCT
-transfer and default ShapeFix healing**.
-Neither number establishes unhealed validity, source fidelity or a
-common-tolerance comparison.
+The complete frozen-population export comparison records **361 of the original
+3,000 files (12.03%) with STEP exports valid after OCCT builder construction,
+which can heal pcurves internally**, beside **2,701 of 3,000 (90.0%) valid after
+normal OCCT transfer and default ShapeFix healing**. Neither number establishes
+unhealed validity, source fidelity or a common-tolerance comparison.
 
-The conditioning step is **400 admitted files, of which 354 are valid after
-builder construction (88.5%), 29 invalid, 16 export-refused and one timed out**.
+The conditioning step is **400 admitted files, of which 361 are valid after
+builder construction (90.25%), 22 invalid, 16 export-refused and one timed out**.
 All 400 imports reproduce their expected body counts (808 bodies).
 A file counts only when every expected body exports and passes whole-solid
 validity after builder processing.
-The [complete comparison](step-census-arc-parameters/README.md),
-[3,000-ID table](step-census-arc-parameters/results.csv),
-[candidate manifest](step-census-arc-parameters/results.json),
-[matched-main table](step-census-arc-parameters/matched-main.csv) and
-[paired outcomes](step-census-arc-parameters/comparison.json) retain all observations.
+The [complete comparison](step-census-cylinder-seams/README.md),
+[3,000-ID table](step-census-cylinder-seams/results.csv),
+[candidate manifest](step-census-cylinder-seams/results.json),
+[matched-control manifest](step-census-cylinder-seams/matched-control.json) and
+[paired outcomes](step-census-cylinder-seams/comparison.json) retain all observations.
 
-The isolated finite-circle exporter repair recovers **32 actual files with no
-regressions** from the matched main control's 322 valid results (10.7% of 3,000).
-Main had intervening kernel changes since the older 322-file producer, so the
-control was built and measured separately on the same main base as the repair.
-Its outcomes and emitted STEP hashes reproduce the older capture; import work
-counters differ.
+The isolated cylindrical-seam ordering repair recovers **seven actual files with
+no losses** from a matched control's 354 valid results. It changes only the
+starting point of a closed STEP edge loop. All 699 written body-file graphs
+remain identical when cyclic loop starts are normalized; 21 byte streams change.
 Candidate and control import work, source hashes, body counts and categories
-agree on all 400 inputs.
-The only changed production path is the analytic numerical STEP writer.
-The diagnostic group of 44 files with whole-period UV jumps was not published
-as a predicted recovery count.
+agree on all 400 inputs. The only changed production path is the analytic
+numerical STEP writer. The previous wire-closure diagnostic group contained 19
+files; that group size was not treated as a predicted recovery count.
+The prior [finite-circle comparison](step-census-arc-parameters/README.md)
+retains its distinct matched 322 to 354 measurement and 32 verified recoveries.
 
 The refusals remain 15 `step.numerical-gap` and one aggregate export work limit.
 File `00004777` again times out during export after import completed.
 Its export work and resulting validity remain unknown.
 All ten retained P06 controls remain valid after builder construction, including
-its possible internal healing.
+its possible internal healing. Actual part `00000363` retains both solids,
+matching the normal source-reference volumes and all 90 material probes.
 The independent audit checks all 400 durable source hashes and 699 declared
-written body files; 677 reach builder checks, with 613 valid and 64 invalid bodies.
+written body files; 677 reach builder checks, with 625 valid and 52 invalid bodies.
 Valid bodies inside invalid multi-solid files earn no file credit.
 
 The measured repair producer is
-**`3651cd367cbb2f5d28118b06c6431193eb1b0d62`**, with executable SHA-256
-`17b928c6ee2bb18e522f3676a7db52fdfd64f2bb6dc6b323f137c87a3b2917bc`.
-The matched control producer is **`a207ea676f52ee077cbb186674407dea3e64e1d0`**,
-with production kernel **`f0abed8ed0ec5b8cc66626d60141bc69e99e5823`**.
+**`7563b40c48229cfd57407351f716c3a01867d2a2`**, with executable SHA-256
+`58128174b490ab39d1aa2927251a4a3769f90dcc5f91528befbb815497b8be25`.
+The matched control producer is **`0902b99f3e30893ce11cfb3d69488d55f93b2d92`**,
+with production kernel **`621cb33775218515db99a6399065b4abe8261e54`**.
+Its CSV is byte-identical to the earlier 354-file capture.
 The prior [322-file export capture](step-census-export-validity/README.md) remains
 unchanged with its distinct producer and protocol identity.
 The original seed, source hashes and 3,000-file denominator are unchanged;
 the 2,600 inputs outside the frozen admissions were not reevaluated for new
-admissions.
-Later publication/rebase heads are distinct from these measured producers.
+admissions. Later publication/rebase heads are distinct from measured producers.
 
 The earlier **admission-only** census has 400 full source-coverage imports
 (13.33%), beside the previous 378 (12.60%), 276 (9.20%) and original 186

@@ -18,10 +18,10 @@ come from the same checksum-pinned ABC chunk and seed `20261111` as the 3,000-fi
 census. Geometry and full source/response records remain private under the
 [existing source and licence scope](../../milestones/R8-public-step-census.md#source-and-licence-scope).
 
-Both complete import/edit/export workflows still refuse at the existing N03
-writer's oblique line/frame limit. These are two successful source admissions,
-not complete workflow qualifications or a new census import share. The separate
-writer extension and actual edited STEP round trips remain necessary.
+At this admission producer, both complete import/edit/export workflows refused
+at N03's oblique line/frame limit. These results record successful source
+admission. The [subsequent writer qualification](../import-oblique-step/README.md)
+records the complete real-file workflows; neither record is a new census share.
 
 All 270 import all-target tests and the complete `ci/run fmt` gate passed on the
 work PC at the producer revision. Nine focused numerical controls pass locally,

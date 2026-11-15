@@ -41,12 +41,30 @@ impl Exporter<'_> {
     ) -> Result<(), Refusal> {
         for body in bodies {
             for face in self.model.faces_of_body(body) {
-                if self.rolling_pipe(face).is_some() {
+                if let Some(pipe) = self.rolling_pipe(face) {
                     let rows = pipe_rows(self.model, face, self.dec)?;
-                    if rows.is_none()
-                        && catallax_topology::partial_pipe_rows(self.model, face, self.dec)?
-                            .is_some()
+                    let partial = catallax_topology::partial_pipe_rows(self.model, face, self.dec)?;
+                    let rotate = if let Some([(rail, _), _]) = partial {
+                        let start = self.model.edge(rail).start.ok_or_else(unsupported)?;
+                        let point = self.model.geom().position(self.model.vertex(start).point);
+                        let side = point.minus(&pipe.law().base).dot(&pipe.law().side);
+                        let positive = self.positive(&side)?;
+                        positive != self.rail_forward(rail, &pipe)?
+                    } else {
+                        false
+                    };
+                    let surface = self.model.face(face).surface;
+                    if self
+                        .pipe_rotations
+                        .insert(surface, rotate)
+                        .is_some_and(|old| old != rotate)
                     {
+                        return Err(Refusal::new(
+                            "step.unsupported-geometry",
+                            "pipe faces sharing a carrier need different export seams",
+                        ));
+                    }
+                    if rows.is_none() && partial.is_some() {
                         continue;
                     }
                     for (row, (edge, _)) in rows.ok_or_else(unsupported)?.iter().enumerate() {

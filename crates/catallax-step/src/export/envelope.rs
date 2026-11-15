@@ -79,10 +79,22 @@ impl Exporter<'_> {
                 envelope.carrier().clone(),
                 envelope.enclosed_controls(self.dec)?,
             ),
-            Surface::BSpline(SplineSupport::RollingPipe(pipe)) => (
-                pipe.carrier().clone(),
-                evened_weights(pipe.enclosed_controls(self.dec)?, pipe.carrier())?,
-            ),
+            Surface::BSpline(SplineSupport::RollingPipe(pipe)) => {
+                let carrier = pipe.carrier().clone();
+                let mut controls = evened_weights(pipe.enclosed_controls(self.dec)?, &carrier)?;
+                if self.pipe_rotations.get(&id) == Some(&true) {
+                    // Move the periodic seam outside the finite half-band.
+                    let [columns, rows] = carrier.control_count();
+                    let unique = columns - 1;
+                    controls = (0..columns)
+                        .flat_map(|column| {
+                            let at = (column + unique / 2) % unique;
+                            controls[at * rows..(at + 1) * rows].iter().cloned()
+                        })
+                        .collect();
+                }
+                (carrier, controls)
+            }
             Surface::BSpline(SplineSupport::RollingSaddle(saddle)) => (
                 saddle.carrier().clone(),
                 saddle.enclosed_controls(self.dec)?,

@@ -1,29 +1,42 @@
 //! Retained curved carriers and all physical loops in an approximate artifact.
 
 use super::*;
-use catallax_shapes::SplineSupport;
-use catallax_topology::numerical::{NumericalFace, NumericalTrim};
+use catallax_shapes::{BSplineCurve, SplineSupport};
+use catallax_topology::numerical::{NumericalFace, NumericalNativeTrim, NumericalTrim};
+use std::collections::BTreeMap;
 
 mod native;
 mod payload;
 
-pub(super) type PcurveUse<'a> = (usize, &'a NumericalTrim);
+pub(super) type PcurveUse<'a> = (usize, &'a NumericalTrim, Option<&'a BSplineCurve>);
 
 pub(super) fn pcurve_uses<'a>(
     faces: &'a [NumericalFace],
+    native_trims: &'a [NumericalNativeTrim],
     edge_count: usize,
     dec: &mut Decider,
 ) -> Result<Vec<Vec<PcurveUse<'a>>>, Refusal> {
     dec.charge_work(edge_count as u64)?;
     let mut uses = vec![Vec::new(); edge_count];
+    let mut native = BTreeMap::new();
+    for trim in native_trims {
+        dec.charge_work(1)?;
+        native.insert(
+            (trim.face.as_str(), trim.boundary, trim.use_index),
+            &trim.curve,
+        );
+    }
     for (index, face) in faces.iter().enumerate() {
         dec.charge_work(1)?;
-        for boundary in &face.loops {
+        for (boundary_index, boundary) in face.loops.iter().enumerate() {
             dec.charge_work(1)?;
-            for trim in boundary {
+            for (use_index, trim) in boundary.iter().enumerate() {
                 dec.charge_work(1)?;
-                if !matches!(face.surface, Surface::Plane(_)) {
-                    uses[trim.edge].push((index, trim));
+                let curve = native
+                    .get(&(face.key.as_str(), boundary_index, use_index))
+                    .copied();
+                if !matches!(face.surface, Surface::Plane(_)) || curve.is_some() {
+                    uses[trim.edge].push((index, trim, curve));
                 }
             }
         }
@@ -104,7 +117,12 @@ pub(super) fn build(
         "GEOMETRIC_REPRESENTATION_CONTEXT",
         vec![text("''"), text("''"), text("2")],
     );
-    let uses = pcurve_uses(&definition.faces, definition.edges.len(), w.dec)?;
+    let uses = pcurve_uses(
+        &definition.faces,
+        payload.body.native_trims(),
+        definition.edges.len(),
+        w.dec,
+    )?;
     let mut edges = Vec::new();
     for (index, edge) in definition.edges.iter().enumerate() {
         let curve = match &edge.curve {
@@ -117,8 +135,18 @@ pub(super) fn build(
             _ => return Err(bad("unsupported", "unprepared numerical STEP edge")),
         };
         let mut pcurves = Vec::new();
-        for (face_index, trim) in &uses[index] {
+        for (face_index, trim, native_curve) in &uses[index] {
             w.dec.charge_work(1)?;
+            if let Some(curve) = native_curve {
+                pcurves.push(native::native_pcurve(
+                    &mut w,
+                    surfaces[*face_index],
+                    context,
+                    &edge.parameters,
+                    curve,
+                )?);
+                continue;
+            }
             let mut uv = trim.uv.clone();
             if trim.sense == Sense::Reversed {
                 uv.reverse()
@@ -194,7 +222,8 @@ pub(super) fn build(
         "MANIFOLD_SOLID_BREP",
         vec![text("'numerical approximate'"), shell.into()],
     );
-    w.finish(
+    let emitted_native_trims = payload.body.native_trims().to_vec();
+    let mut artifact = w.finish(
         solid,
         body,
         payload.body.evidence().clone(),
@@ -206,7 +235,9 @@ pub(super) fn build(
             "file.curved-seam-contract".into(),
             "file.approximate-category-no-global-bound".into(),
         ],
-    )
+    )?;
+    artifact.report.emitted_native_trims = emitted_native_trims;
+    Ok(artifact)
 }
 
 #[cfg(test)]
@@ -236,13 +267,13 @@ mod tests {
         // Each explicit reservation also pays Decider's cancellation checkpoint.
         let expected = 32 + 1 + 2 * (32 + 32 + 32 * 16);
         let (result, work) = with_operation_budget(expected, || {
-            pcurve_uses(&faces, 32, &mut Decider::default())
+            pcurve_uses(&faces, &[], 32, &mut Decider::default())
         });
         assert!(result.unwrap().iter().all(Vec::is_empty));
         assert_eq!(work.used, expected);
         assert!(!work.exhausted);
         let (result, work) = with_operation_budget(expected - 1, || {
-            pcurve_uses(&faces, 32, &mut Decider::default())
+            pcurve_uses(&faces, &[], 32, &mut Decider::default())
         });
         assert!(result.is_err());
         assert!(work.exhausted);

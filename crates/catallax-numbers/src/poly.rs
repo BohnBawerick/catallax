@@ -9,7 +9,7 @@ use std::{
 };
 
 /// Univariate polynomial, lowest degree first, with trailing zeros removed.
-#[derive(Clone, PartialEq, Eq, Hash, Debug, Default)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Default, catallax_numbers::Transfer)]
 pub struct UPoly {
     coefficients: Vec<Rational>,
 }
@@ -382,7 +382,7 @@ impl UPoly {
 }
 
 /// A monomial, ordered by total degree and then lexicographic exponents.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, catallax_numbers::Transfer)]
 pub struct Monomial {
     exponents: Vec<u32>,
 }
@@ -417,7 +417,7 @@ impl PartialOrd for Monomial {
 }
 
 /// Canonical multivariate polynomial in a fixed number of variables.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, catallax_numbers::Transfer)]
 pub struct MPoly {
     nvars: usize,
     terms: BTreeMap<Monomial, Rational>,

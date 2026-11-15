@@ -6,7 +6,7 @@ use num_traits::{Signed, ToPrimitive, Zero};
 use std::{fmt, str::FromStr};
 
 /// Exact sign of an exact value.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, catallax_numbers::Transfer)]
 pub enum Sign {
     /// Below zero.
     Negative,
@@ -48,7 +48,9 @@ impl fmt::Display for ParseNumberError {
 impl std::error::Error for ParseNumberError {}
 
 /// Arbitrary-precision signed integer.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Default)]
+#[derive(
+    Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Default, catallax_numbers::Transfer,
+)]
 pub struct Integer(pub(crate) BigInt);
 impl Integer {
     /// Zero.

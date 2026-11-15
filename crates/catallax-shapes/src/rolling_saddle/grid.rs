@@ -32,7 +32,7 @@ const MAX_CUTS: u32 = 12;
 
 // A grid in the law's frame, with the chart parameter of each column. Columns are
 // even only on a uniform carrier.
-#[derive(Debug)]
+#[derive(Debug, catallax_numbers::Transfer)]
 pub(super) struct LocalGrid {
     pub(super) grid: EnvelopeGrid,
     pub(super) parameters: Vec<Rational>,

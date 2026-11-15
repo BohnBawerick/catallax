@@ -18,7 +18,7 @@ use catallax_numbers::{Outcome, ZeroProof};
 
 pub(super) type Rows = [[Vec<Real>; 4]; 3];
 
-#[derive(Debug)]
+#[derive(Debug, catallax_numbers::Transfer)]
 pub(super) struct Exact {
     pub knots: [Rational; 3],
     // Row zero uses the wide frame; rows one and two use the narrow frame,

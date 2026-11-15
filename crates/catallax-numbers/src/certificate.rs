@@ -56,7 +56,7 @@ impl ModellingTolerance {
 }
 
 /// Units declared by a geometric caller, never inferred from a `Real` expression.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, catallax_numbers::Transfer)]
 pub enum EvidenceUnit {
     /// Distance or coordinate in millimetres.
     Millimetres,
@@ -73,7 +73,7 @@ pub enum EvidenceUnit {
 }
 
 /// An outward rational magnitude bound and its declared units.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, catallax_numbers::Transfer)]
 pub struct EvidenceBound {
     /// Nonnegative upper bound. Imported records must be checked before use.
     pub upper: Rational,

@@ -16,7 +16,7 @@ mod line;
 // A proposal bound, not a tolerance: an unfinished search only leaves a miss unproved.
 const HULL_SEARCH_STEPS: usize = 64;
 
-#[derive(Debug)]
+#[derive(Debug, catallax_numbers::Transfer)]
 struct Data {
     carrier: BSplineSurface,
     definition: EllipticOffsetDefinition,
@@ -28,7 +28,7 @@ struct Data {
     transport: Option<Transport>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, catallax_numbers::Transfer)]
 struct Transport {
     source: SplineSurface,
     pose: Isometry,
@@ -38,7 +38,7 @@ struct Transport {
 /// A checked finite, outward-oriented spline sweep. Unlike raw control data,
 /// this support carries regularity, convex embedding and full target coverage.
 /// It does not prove the validity or recipe identity of a body using the patch.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct SplineSurface {
     data: Arc<Data>,
 }
@@ -47,7 +47,7 @@ pub struct SplineSurface {
 /// geometric queries. Each producer supplies its own checked chart family;
 /// raw control data alone do not authorize surface-side decisions.
 #[non_exhaustive]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub enum SplineSupport {
     /// Exact regular normal extrusion of a quadratic or cubic Bezier span.
     BezierExtrusion(crate::BezierExtrusion),

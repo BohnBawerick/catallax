@@ -10,7 +10,7 @@ use std::sync::Arc;
 mod inverse;
 mod line;
 
-#[derive(Debug)]
+#[derive(Debug, catallax_numbers::Transfer)]
 struct Data {
     controls: Vec<Point3>,
     direction: Vector3,
@@ -24,7 +24,7 @@ struct Data {
 /// A finite quadratic or cubic Bezier span extruded normally to its plane.
 /// Monotone projection proves injectivity; endpoint tangents prove regularity
 /// where the interior projection derivative may tend to zero.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct BezierExtrusion {
     data: Arc<Data>,
 }

@@ -11,6 +11,8 @@
 pub mod assembly;
 mod certified;
 pub mod curves;
+/// Versioned body transfer between independent kernels.
+pub mod handover;
 /// Revision-bound preview delivery and caller-scheduled proof.
 pub mod lifecycle;
 pub mod loops;

@@ -219,7 +219,7 @@ fn across_terms(p: &[Terms; 3]) -> [Terms; 3] {
     ]
 }
 
-#[derive(Debug)]
+#[derive(Debug, catallax_numbers::Transfer)]
 struct Data {
     origin: Point3,
     axes: [Vector3; 2],
@@ -239,7 +239,7 @@ struct Data {
 
 /// The exact band of a ball narrower than two equal rounds, rolling over the
 /// mitre where they meet from a straight strip's end to the mitre's apex.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct RollingMitre {
     data: Arc<Data>,
 }

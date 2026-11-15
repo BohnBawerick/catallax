@@ -11,7 +11,7 @@ use serde_json::Value;
 use crate::{Built, ImportFiles, evaluate_with_files};
 
 /// One source solid's membership after applying the recipe placement.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, catallax_numbers::Transfer)]
 pub struct ImportedSolid {
     /// Source entity key in the immutable file: STEP `#...` or IGES `D...`.
     pub entity: String,

@@ -23,7 +23,7 @@ pub struct AtlasFaceGroup {
 /// not selectable model topology. The constructor proves that coalescing only
 /// removes chart seams and joins exact boundary curves; it proves no new global
 /// nonintersection claim about an arbitrary caller-assembled input body.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct ChartExpansion {
     pub(crate) body: BodyId,
     pub(crate) faces: BTreeMap<FaceId, FaceId>,

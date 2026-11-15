@@ -10,7 +10,7 @@ type Location = (usize, Real, [Real; 4]);
 
 /// One complete regular component with both source covers and its exact graph
 /// pieces. Only a successful complete patch-pair meeting can construct it.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct PatchPairCurve {
     pieces: Arc<[PairTracePiece]>,
 }

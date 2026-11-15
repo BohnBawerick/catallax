@@ -68,7 +68,7 @@ impl Hit {
 }
 
 /// Boundary-root authority retained for the opt-in queryable curve view.
-#[derive(Debug)]
+#[derive(Debug, catallax_numbers::Transfer)]
 pub(super) struct CoordinateWitness {
     root: IsolatedRoot,
     coordinates: [Option<(usize, Rational)>; 4],

@@ -49,7 +49,7 @@ pub struct TopologyFault {
 }
 
 /// Topology over a geometry store. Write-once.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, catallax_numbers::Transfer)]
 pub struct Model {
     geom: GeomStore,
     vertices: Arena<Vertex>,
@@ -68,12 +68,15 @@ pub struct Model {
     pub(crate) chart_expansions: OrdMap<BodyId, std::sync::Arc<crate::ChartExpansion>>,
     pub(crate) face_expansions: OrdMap<FaceId, std::sync::Arc<[FaceId]>>,
     // What has been added since `journal_begin`, while a journal is kept.
+    #[transfer(skip)]
     journal: Option<TopoJournal>,
     // What this model and its copies have been asked since `watch`.
+    #[transfer(skip)]
     watch: catallax_numbers::Watch<TopoRead>,
     // Work-span observation only: which copy of the model last changed each
     // side-table entry, tagged by table in the high bits.
     #[cfg(feature = "work-span")]
+    #[transfer(skip)]
     span: catallax_numbers::work_span::Entries,
 }
 

@@ -35,25 +35,27 @@ const TRIAL_PRIMES: [i64; 168] = {
 };
 
 /// Exact rational, or a single real root in an open rational interval.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct Algebraic {
     pub(crate) repr: AlgebraicRepr,
 }
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub(crate) enum AlgebraicRepr {
     Rational(Rational),
     Root(Arc<AlgebraicRoot>),
 }
 
+#[derive(catallax_numbers::Transfer)]
 pub(crate) struct AlgebraicRoot {
     pub polynomial: UPoly,
     pub lo: Rational,
     pub hi: Rational,
     pub enclosures: Mutex<BTreeMap<u32, Arc<RootEnclosure>>>,
     // The run-ahead fork count when this root was made (`ahead.rs`).
+    #[transfer(skip)]
     pub epoch: u64,
 }
-#[derive(Debug)]
+#[derive(Debug, catallax_numbers::Transfer)]
 pub(crate) struct RootEnclosure {
     pub ball: Ball,
     pub cost: u64,

@@ -127,7 +127,7 @@ fn real(value: &Rational) -> Real {
 }
 
 /// Which contact component the law charts.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, catallax_numbers::Transfer)]
 pub enum SaddleRing {
     /// The narrow offset passes through the wide one: `t` charts one of two rings.
     Through,
@@ -144,7 +144,7 @@ pub enum SaddleRing {
 }
 
 /// The side of a cylinder the ball sits on.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, catallax_numbers::Transfer)]
 pub enum BallSide {
     /// Outside the cylinder, so the offset radius grows.
     Outside,
@@ -163,7 +163,7 @@ impl BallSide {
 /// The numbers of a [`RollingSaddleDefinition`], for code that integrates over the
 /// law. `across`, `along` and `axis` are the frame of the module note, and may be
 /// left-handed on a mirrored copy.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct SaddleLaw {
     /// The narrow axis's closest point to the wide axis.
     pub foot: Point3,
@@ -240,7 +240,7 @@ impl SaddleLaw {
 
 /// The exact law of a constant-radius ball resting on two nonparallel
 /// cylinders: a regular closed ring or an equal-radius pole-to-pole band.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct RollingSaddleDefinition {
     origin: Point3,
     foot: Point3,
@@ -731,6 +731,7 @@ impl Constants {
 }
 
 // The law at one station, as jets in the chart parameter.
+#[derive(catallax_numbers::Transfer)]
 struct Rows {
     height: Jet,
     lift: Jet,
@@ -885,7 +886,7 @@ fn rows(
 }
 
 /// Hermite data of the fitted rows at one chart node.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 struct Node {
     u: Rational,
     values: [Rational; ROWS],
@@ -1381,7 +1382,7 @@ fn build(
 
 // Enclosed homogeneous controls in the wide frame, u-major. Rigid copies share
 // one net, so no consumer pays to enclose a moved carrier again.
-#[derive(Debug)]
+#[derive(Debug, catallax_numbers::Transfer)]
 struct Net {
     bits: u32,
     controls: Vec<[Ball; 4]>,
@@ -1530,12 +1531,12 @@ fn check_carrier(net: &Net, carrier: &BSplineSurface, dec: &Decider) -> Result<(
 /// A rolling-ball band over `[-1, 3] x [0, 1]`, from the wide rail to the
 /// narrow one. Regular rings close in `u`; an equal-cylinder crossing band
 /// instead collapses each `u` end to one contact.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct RollingSaddle {
     data: Arc<Data>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, catallax_numbers::Transfer)]
 struct Data {
     definition: RollingSaddleDefinition,
     construction: Construction,
@@ -1546,7 +1547,7 @@ struct Data {
     reversing: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 enum Construction {
     Fitted(Vec<Node>),
     Crossing(Arc<collapsed::Exact>),

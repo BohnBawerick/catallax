@@ -21,7 +21,7 @@ pub type LumpId = Handle<Lump>;
 pub type BodyId = Handle<Body>;
 
 /// Direction relative to an underlying direction.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, catallax_numbers::Transfer)]
 pub enum Sense {
     /// The same direction.
     Same,
@@ -30,14 +30,14 @@ pub enum Sense {
 }
 
 /// A vertex: a point stored by definition.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, catallax_numbers::Transfer)]
 pub struct Vertex {
     /// The point.
     pub point: PointId,
 }
 
 /// An edge on a curve. Both ends `None` is a ring edge over a whole closed curve.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, catallax_numbers::Transfer)]
 pub struct Edge {
     /// The curve.
     pub curve: CurveId,
@@ -50,7 +50,7 @@ pub struct Edge {
 }
 
 /// One use of an edge by a loop.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, catallax_numbers::Transfer)]
 pub struct Coedge {
     /// The edge.
     pub edge: EdgeId,
@@ -59,7 +59,7 @@ pub struct Coedge {
 }
 
 /// A boundary of a face.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, catallax_numbers::Transfer)]
 pub enum Loop {
     /// A closed cycle of coedges.
     Coedges(Vec<CoedgeId>),
@@ -68,7 +68,7 @@ pub enum Loop {
 }
 
 /// A face on a surface. Zero loops means the whole closed surface.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, catallax_numbers::Transfer)]
 pub struct Face {
     /// The surface.
     pub surface: SurfaceId,
@@ -79,14 +79,14 @@ pub struct Face {
 }
 
 /// A connected set of faces.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, catallax_numbers::Transfer)]
 pub struct Shell {
     /// The faces.
     pub faces: Vec<FaceId>,
 }
 
 /// One connected piece of material: an outer shell and its voids.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, catallax_numbers::Transfer)]
 pub struct Lump {
     /// Outer shell first, then voids.
     pub shells: Vec<ShellId>,
@@ -94,7 +94,7 @@ pub struct Lump {
 
 /// What a body is.
 #[non_exhaustive]
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, catallax_numbers::Transfer)]
 pub enum BodyKind {
     /// A solid with zero or more lumps.
     Solid,
@@ -103,7 +103,7 @@ pub enum BodyKind {
 }
 
 /// A body: lumps plus the marks of the operations that produced it.
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, catallax_numbers::Transfer)]
 pub struct Body {
     /// What the body is.
     pub kind: BodyKind,

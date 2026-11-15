@@ -36,6 +36,31 @@ const CRATES: [&str; 7] = [
 const MACHINERY: [&str; 2] = ["catallax-numbers/src/ahead.rs", "catallax-step/src/uv.rs"];
 
 const KNOWN: &[(&str, &str, Kind)] = &[
+    // Bounded diagnostic-code storage, never a geometric proof. Every read
+    // charges its input bytes before lookup, whether the code is warm or cold.
+    (
+        "catallax-numbers/src/transfer.rs",
+        "STRINGS",
+        Kind::Uncharged,
+    ),
+    // Metadata export installs and restores this mode on its own thread.
+    (
+        "catallax-numbers/src/transfer/json.rs",
+        "NUMBER_METER",
+        Kind::PerThread,
+    ),
+    // A fresh stack-local borrow of the encoder's decider for each JSON value.
+    (
+        "catallax-numbers/src/transfer/json.rs",
+        "decider",
+        Kind::PerThread,
+    ),
+    // Carries only this encoding scope's first refusal, never a cached proof.
+    (
+        "catallax-numbers/src/transfer/json.rs",
+        "refusal",
+        Kind::RequestFailure,
+    ),
     // Certificates kept on a root. A worker records its cold proofs instead.
     (
         "catallax-numbers/src/algebraic.rs",

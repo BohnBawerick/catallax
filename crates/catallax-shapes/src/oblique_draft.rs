@@ -17,7 +17,7 @@ fn unit(v: &Vector3) -> Vector3 {
     v.scaled(&(&Real::one() / &math::exact_sqrt(&v.norm_squared())))
 }
 
-#[derive(Debug)]
+#[derive(Debug, catallax_numbers::Transfer)]
 struct Data {
     origin: Point3,
     axis: Vector3,
@@ -33,7 +33,7 @@ struct Data {
 /// A finite exact ruled draft annulus with complete positive polar sections.
 /// Construction retains the unsquared radial branch, including the axis's
 /// interior side; the quartic equation alone is not its definition.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct ObliqueDraft {
     data: Arc<Data>,
 }

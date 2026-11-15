@@ -16,7 +16,7 @@ pub use section::AtlasSection;
 type Domain = [[Rational; 2]; 2];
 
 /// One certified chart and its exact G1 identifications within a logical face.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct AtlasChart {
     patch: RationalPatch,
     neighbors: [Option<usize>; 4],
@@ -34,7 +34,7 @@ impl AtlasChart {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, catallax_numbers::Transfer)]
 struct Data {
     source: BSplineSurface,
     charts: Vec<AtlasChart>,
@@ -43,7 +43,7 @@ struct Data {
 
 /// One connected G1 logical face, covered by regular exact rational charts.
 /// This proves chart regularity and gluing, not global body admissibility.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct RationalAtlas {
     data: Arc<Data>,
 }

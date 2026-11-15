@@ -124,7 +124,7 @@ fn spine(detail: impl Into<String>) -> Refusal {
 /// `sides[k]` places the ball's centre at `P + sides[k] r N/|N|` on patch
 /// `k`, with `N = P_u x P_v`. With outward normals, a ball inside the
 /// material of a convex edge has both sides negative.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct SplineFilletDefinition {
     supports: [RationalPatch; 2],
     radius: Rational,
@@ -138,7 +138,7 @@ pub struct SplineFilletDefinition {
 /// `support`'s parameter `parameter` equals `value`. The fit puts a node of
 /// `tau` there and gives the rail that parameter exactly, so the rail meets
 /// the line at a rational point.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, catallax_numbers::Transfer)]
 pub struct RailBorder {
     /// The support, first or second.
     pub support: usize,
@@ -233,7 +233,7 @@ impl SplineFilletDefinition {
 /// One span of a rail: the Bernstein coefficients of the support's two
 /// parameters as cubics in `tau` over the span. The rail is the support at
 /// these parameters, exactly.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, catallax_numbers::Transfer)]
 pub struct RailSpan {
     /// The span of `tau`.
     pub tau: [Rational; 2],
@@ -243,7 +243,7 @@ pub struct RailSpan {
 }
 
 /// Fit data at one node of `tau`: value and slope of each fitted row.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, catallax_numbers::Transfer)]
 struct Node {
     tau: Rational,
     values: [Rational; ROWS],
@@ -260,14 +260,14 @@ const MIDDLE: usize = 3;
 const WEIGHT: usize = 6;
 
 /// A checked rolling-ball fillet face between two rational spline faces.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct SplineFillet {
     data: Arc<Data>,
 }
 
 /// One placed copy: everything the fit proved, shared by every copy, and
 /// the carrier and supports moved by the copy's frame.
-#[derive(Debug)]
+#[derive(Debug, catallax_numbers::Transfer)]
 struct Data {
     fit: Arc<Fitted>,
     carrier: BSplineSurface,
@@ -277,7 +277,7 @@ struct Data {
 }
 
 /// What the fit proved, in the frame it was fitted in.
-#[derive(Debug)]
+#[derive(Debug, catallax_numbers::Transfer)]
 struct Fitted {
     definition: SplineFilletDefinition,
     nodes: Vec<Node>,

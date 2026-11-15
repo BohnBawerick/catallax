@@ -74,6 +74,10 @@ pub struct Writer {
 }
 
 impl Writer {
+    pub fn bytes_written(&self) -> usize {
+        self.bytes.len()
+    }
+
     fn shared<T: 'static>(
         &mut self,
         pointer: usize,

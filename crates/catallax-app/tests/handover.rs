@@ -388,3 +388,35 @@ fn worker_build_and_mesh_can_be_adopted_with_warm_geometry_caches() {
         assert_eq!(format!("{:?}", source.display), format!("{display:?}"));
     }
 }
+
+#[test]
+fn tiny_remaining_allowance_stops_before_a_large_root_is_materialized() {
+    use catallax_numbers::transfer::{Codec, Writer};
+    let mut source = build(&block());
+    for _ in 0..100_000 {
+        source.model.add_body(catallax_topology::Body {
+            kind: catallax_topology::BodyKind::Empty,
+            lumps: Vec::new(),
+            marks: Default::default(),
+        });
+    }
+    assert!(source.model.check(source.result).is_empty());
+    let bytes = write_body(&source, &mut Decider::default()).unwrap();
+    assert!(bytes.len() > 2_000_000);
+    let ((result, written), work) = with_operation_budget(80, || {
+        let mut decider = Decider::default();
+        decider.charge_work(64).unwrap();
+        let mut writer = Writer::default();
+        let result = source.write(&mut writer);
+        (result, writer.bytes_written())
+    });
+    assert!(
+        result.is_err(),
+        "root serialization escaped the request meter"
+    );
+    assert!(work.exhausted);
+    assert!(
+        written <= 16,
+        "materialized {written} bytes with only 16 work units left"
+    );
+}

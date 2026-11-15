@@ -474,8 +474,8 @@ pub(crate) struct CoverSection {
     pub search: SectionSearch,
 }
 
-/// The complete regular section over every chart of a cover. Arc ends join
-/// by exact shared parameters; an open end must lie on a physical border.
+/// Complete regular arcs and certified isolated contacts over a chart cover.
+/// Arc ends join exactly; an open end must lie on a physical border.
 pub(crate) fn search_cover(
     cover: &Cover,
     surface: &SectionSurface,
@@ -631,7 +631,8 @@ pub(crate) fn search_cover(
                             }
                         }
                         if one_side && let Crossing::Corner(contact) = crossings.remove(0) {
-                            corner_contacts.push(contact);
+                            let point = span.point(&contact);
+                            corner_contacts.push((contact, point));
                             record.empty_cells += 1;
                             classified = true;
                             break;
@@ -716,7 +717,7 @@ pub(crate) fn search_cover(
         }
         endpoints.push(ids);
     }
-    for mut contact in corner_contacts {
+    for (mut contact, point) in corner_contacts {
         for (axis, wrap) in cover.wrap.iter().enumerate() {
             if let Some([lo, hi]) = wrap
                 && contact[axis].rational_ref() == Some(hi)
@@ -724,13 +725,21 @@ pub(crate) fn search_cover(
                 contact[axis] = Real::from(lo.clone());
             }
         }
-        let mut joined = false;
+        let mut accounted = false;
         for vertex in &vertices {
-            joined |= same_uv(&contact, vertex, dec)?;
+            accounted |= same_uv(&contact, vertex, dec)?;
         }
-        if !joined {
+        if !accounted {
+            for certified in &points {
+                if exact_sign(&point.minus(certified).norm_squared(), dec)? == Sign::Zero {
+                    accounted = true;
+                    break;
+                }
+            }
+        }
+        if !accounted {
             return Err(failure(
-                "an isolated corner contact needs a separate contact certificate",
+                "a corner contact needs an arc or an isolated-point certificate",
             ));
         }
     }
@@ -866,6 +875,13 @@ mod tests {
                 )
                 .unwrap()
         );
-        assert!(search(&patch, &plane(0), &mut dec).is_err());
+        let contact = search(&patch, &plane(0), &mut dec).unwrap();
+        assert!(contact.branches().is_empty());
+        let [point] = contact.points() else {
+            panic!("one certified corner point");
+        };
+        assert!(dec.sign(&point.x).is_coincident());
+        assert!(dec.sign(&point.y).is_coincident());
+        assert!(dec.sign(&point.z).is_coincident());
     }
 }

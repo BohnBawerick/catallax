@@ -74,6 +74,10 @@ fn refused(code: &str, detail: impl ToString) -> Value {
 }
 
 fn request_refused(request: &Request, code: &str, detail: impl ToString) -> Value {
+    if request.format == "catallax-request/1" && crate::numerical_step::is_problem(&request.problem)
+    {
+        return crate::numerical_step::refused(code, detail);
+    }
     if request.source == "print"
         || (request.source == "field" && request.problem["format"] == "catallax-print/1")
     {
@@ -100,14 +104,18 @@ pub fn answer(request: &Request) -> std::io::Result<Value> {
     let started = Instant::now();
     // Intersection plans retain shared expression nodes in thread-local caches.
     // A fresh thread prevents previous requests from changing memoized work.
-    let mut response = std::thread::scope(|scope| {
+    let response = std::thread::scope(|scope| {
         std::thread::Builder::new()
             .name("catallax-request".into())
             .stack_size(8 * 1024 * 1024)
             .spawn_scoped(scope, || answer_isolated(request))?
             .join()
             .map_err(|_| std::io::Error::other("request thread panicked"))?
-    })?;
+    });
+    if response.is_err() && crate::numerical_step::is_problem(&request.problem) {
+        let _ = fs::remove_file(request.out.join("answer.step"));
+    }
+    let mut response = response?;
     response["wall_ms"] = json!(started.elapsed().as_secs_f64() * 1000.0);
     Ok(response)
 }
@@ -220,6 +228,9 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
         let mut value = refused("cli.invalid-request", "expected catallax-request/1");
         value["status"] = json!("invalid-question");
         return Ok(value);
+    }
+    if crate::numerical_step::is_problem(&request.problem) {
+        return crate::numerical_step::evaluate(&request.problem, &request.source, &request.out);
     }
     match request.source.as_str() {
         "print" => crate::printing::evaluate(&request.problem, &request.out, false),

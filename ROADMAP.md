@@ -18,11 +18,11 @@ Dates appear only on finished work. Nothing ahead has a date.
 - Earlier plans named milestones M1 to M35. [The table at the end](#old-milestone-names) maps each old name to its number here, so old notes still resolve.
 - Jobs marked * need a machine to themselves. They are timing and GPU jobs.
 - **One owner per slice.** Phase 1 runs as five slices: 1.1 with 1.3, 1.2, 1.4, 1.5, and the app. One strong worker owns each slice until its "done when" line is met. The listed cards are a map, not a queue. The owner lands the slice as several PRs, each one reviewable step with green checks.
-- **Numerical first.** Where an exact proof is missing or costly, build within a stated tolerance, as OpenCASCADE and SMLib do. Mark the result and its STEP approximate, and record the tolerance and the checks passed. An exact proof is a later upgrade, made where it is cheap. A numerical result is never labelled exact.
+- **Numerical first.** An exact proof counts as unavailable when it is missing or too costly. Then build within a tolerance stated before the operation, as OpenCASCADE and SMLib do. Check the result separately at that tolerance, mark it and its STEP approximate, and record the tolerance and the checks passed. An exact proof is a later upgrade, made where it is cheap. A numerical result is never labelled exact.
 - Before writing a new algorithm, check how OpenCASCADE and SMLib solve it, and say in the PR which approach you follow.
 - **The allowance never stops work before phase 5.** A step over 20M records its measured work per stage and joins the list of cases for phase 5. The allowance number does not change.
 - A SolidDraft feedback list goes to one worker as one PR, or two when the kernel changes too.
-- Codex cloud reviews and advises. It does not author PRs.
+- On the phase 1 slices, Codex cloud reviews and advises. It does not author PRs.
 
 **Lessons, 15 Nov.** From the first ten hours of phase 1:
 - Tiny cards cost more than they changed. Setup, build, a 50-minute CI queue and review rounds outweighed each change.
@@ -91,8 +91,8 @@ Twelve things neither reference kernel does are not in the count. They include a
 ### Phase 1: close the three biggest gaps against OpenCASCADE
 
 **1.1 Numerical modelling under stated tolerances**
-- Doing: where an exact proof is missing or costly, the kernel builds the geometry numerically within a stated tolerance. Each result records its tolerance, the checks it passed and any repair. Its STEP file is written and marked approximate.
-- Why here: it is the base under all three gaps. Real files miss exact rules by micrometres. Spline Booleans stop on a gap or a coincidence they cannot prove. OpenCASCADE and SMLib work to a tolerance throughout. We will work to one only where the exact proof is missing.
+- Doing: where an exact proof is unavailable, because it is missing or too costly, the kernel builds the geometry numerically within a stated tolerance. Each result records its tolerance, the checks it passed and any repair. Its STEP file is written and marked approximate.
+- Why here: it is the base under all three gaps. Real files miss exact rules by micrometres. Spline Booleans stop on a gap or a coincidence they cannot prove. OpenCASCADE and SMLib work to a tolerance throughout. We will work to one only where the exact proof is missing or too costly.
 - Unlocks: milestones 1.2, 1.3 and 1.5 below, and the first bounded-answer rule, for [tangent contact](docs/research/tangent-touch.md).
 - Done when: one curved housing builds as a chain of loft, spline cut, fillet and one more edit. Its STEP opens in OpenCASCADE with healing off and takes an edit there.
 

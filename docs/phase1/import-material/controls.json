@@ -1,0 +1,118 @@
+{
+  "binary_sha256": "fd15d276bbc5bf2d3f7011190590bd89cd004f09d43b75d3bfc368e6c0134728",
+  "format": "catallax-import-material-controls/1",
+  "model_id": "00000022",
+  "other_history_and_request_checks_work": 639122,
+  "platform": "Linux work-PC",
+  "positive_control": {
+    "after": {
+      "category": "numerical approximate",
+      "checks": 87,
+      "complete_body_bound": "unestablished",
+      "file": "control-after.step",
+      "history_stages": 1,
+      "repairs": 1,
+      "sha256": "49bd3a54b460f69206d80e0eda57991229931fa49e3f0e53a51539373cfbf67b",
+      "source_history_stages": 1
+    },
+    "before": {
+      "category": "numerical approximate",
+      "checks": 88,
+      "complete_body_bound": "unestablished",
+      "file": "control-before.step",
+      "history_stages": 0,
+      "repairs": 1,
+      "sha256": "715713ed356758392c51639f87ad3852618e7e50e033d7dc46e91f9474e413b7",
+      "source_history_stages": 0
+    },
+    "exact": false,
+    "expected_after_volume_mm3": "24",
+    "expected_before_volume_mm3": "12",
+    "expected_delta_mm3": "12",
+    "history_retained": true,
+    "replay_checked": true,
+    "status": "numerical"
+  },
+  "protected_history_stages": 1,
+  "real": {
+    "before": {
+      "category": "numerical approximate",
+      "checks": 43,
+      "complete_body_bound": "unestablished",
+      "file": "real-before.step",
+      "history_stages": 1,
+      "repairs": 0,
+      "sha256": "5b0dcc45e1dd03b8be8cb689078f14b108084b626f05845c12de8fe5532f2b6a",
+      "source_history_stages": 1
+    },
+    "exact": false,
+    "material_delta_applied": false,
+    "preserved_after_refusal": {
+      "category": "numerical approximate",
+      "checks": 43,
+      "complete_body_bound": "unestablished",
+      "file": "real-after-refusal.step",
+      "history_stages": 1,
+      "repairs": 0,
+      "sha256": "5b0dcc45e1dd03b8be8cb689078f14b108084b626f05845c12de8fe5532f2b6a",
+      "source_history_stages": 1
+    },
+    "prior_geometry_and_history_unchanged": true,
+    "refusal": {
+      "code": "features.numerical-unsupported",
+      "detail": "edit/replay requires rational lines and unit coordinate-axis plane frames; cuts require a two-layer straight prism"
+    },
+    "status": "refused"
+  },
+  "reference": {
+    "authored_control": {
+      "after_sha256": "49bd3a54b460f69206d80e0eda57991229931fa49e3f0e53a51539373cfbf67b",
+      "before_sha256": "715713ed356758392c51639f87ad3852618e7e50e033d7dc46e91f9474e413b7",
+      "history_retained": true,
+      "material_probes_checked": true,
+      "raw_before_and_after_valid": true,
+      "replay_checked": true,
+      "volume_after_mm3": "24",
+      "volume_before_mm3": "12",
+      "volume_delta_mm3": "12"
+    },
+    "builder_max_tolerance_mm": "1e-7",
+    "builder_precision_mm": "1e-7",
+    "format": "catallax-import-material-check/1",
+    "healing": false,
+    "input_bytes_unchanged": true,
+    "model_id": "00000022",
+    "ocp_version": "8.0.1.1",
+    "real_material_delta_applied": false,
+    "real_prior_geometry_and_history_unchanged": true,
+    "real_raw_before_and_preserved_valid": true,
+    "real_refusal": {
+      "code": "features.numerical-unsupported",
+      "detail": "edit/replay requires rational lines and unit coordinate-axis plane frames; cuts require a two-layer straight prism"
+    },
+    "real_status": "refused",
+    "repaired_definition_sha256": "36c11025bc4f4e6513b936de03cdc39d4e3e7909b82dc6fbae764efaee0cafc8",
+    "same_parameter": false,
+    "source_sha256": "9ed73f7963a68aec2121a1308385a8dc76041ff634870b28e9bc684c0ef3b4cc"
+  },
+  "repaired_definition_sha256": "36c11025bc4f4e6513b936de03cdc39d4e3e7909b82dc6fbae764efaee0cafc8",
+  "requested_edit": {
+    "axis": 0,
+    "expected_delta_volume_ratio": "1",
+    "expected_volume_ratio": "2",
+    "kind": "resize"
+  },
+  "source_revision": "65db0c50bc3b2988567215b153cd8769570dde2a",
+  "source_sha256": "9ed73f7963a68aec2121a1308385a8dc76041ff634870b28e9bc684c0ef3b4cc",
+  "stages": {
+    "after_step": 112150,
+    "before_step": 112150,
+    "import": 396094,
+    "material_edit": 170826,
+    "pose": 85423,
+    "positive_control": 2327682
+  },
+  "tolerance_mm": "1/100",
+  "work_limit": 20000000,
+  "work_used": 3843447
+}

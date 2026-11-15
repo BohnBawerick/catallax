@@ -1,0 +1,115 @@
+{
+  "format": "catallax-n03-raw-reference/1",
+  "ocp_version": "7.8.1.1",
+  "python_version": "3.12.14",
+  "cases": [
+    {
+      "file": "two-loop.step",
+      "sha256": "7f3778332cb35917fbe5c4f840a6cd0d97f8e98cb069f207c1c28e528a456738",
+      "category": "numerical approximate",
+      "healing": false,
+      "raw_builder": "StepToTopoDS_Builder with explicit identity StepData_Factors",
+      "same_parameter": false,
+      "unit_factors": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "read_maxprecision_mode": 0,
+      "builder_precision_mm": "1e-7",
+      "builder_max_tolerance_mm": "1e-7",
+      "raw_import": {
+        "valid": true,
+        "topology": {
+          "solids": 1,
+          "faces": 10,
+          "edges": 24,
+          "vertices": 16,
+          "two_loop_faces": 2,
+          "euler_with_face_holes": 0
+        },
+        "volume_mm3": 11.999999999999998,
+        "material_probes": {
+          "kept_wall": "inside",
+          "removed_wall": "inside",
+          "hole": "outside",
+          "outside": "outside"
+        }
+      },
+      "subsequent_cut": {
+        "valid": true,
+        "topology": {
+          "solids": 1,
+          "faces": 10,
+          "edges": 24,
+          "vertices": 16,
+          "two_loop_faces": 2,
+          "euler_with_face_holes": 0
+        },
+        "volume_mm3": 10.0,
+        "material_probes": {
+          "kept_wall": "inside",
+          "removed_wall": "outside",
+          "hole": "outside",
+          "outside": "outside"
+        },
+        "new_boundary_probe": "boundary"
+      },
+      "input_bytes_unchanged": true
+    },
+    {
+      "file": "repaired.step",
+      "sha256": "715713ed356758392c51639f87ad3852618e7e50e033d7dc46e91f9474e413b7",
+      "category": "numerical approximate",
+      "healing": false,
+      "raw_builder": "StepToTopoDS_Builder with explicit identity StepData_Factors",
+      "same_parameter": false,
+      "unit_factors": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "read_maxprecision_mode": 0,
+      "builder_precision_mm": "1e-7",
+      "builder_max_tolerance_mm": "1e-7",
+      "raw_import": {
+        "valid": true,
+        "topology": {
+          "solids": 1,
+          "faces": 10,
+          "edges": 24,
+          "vertices": 16,
+          "two_loop_faces": 2,
+          "euler_with_face_holes": 0
+        },
+        "volume_mm3": 11.999999999999998,
+        "material_probes": {
+          "kept_wall": "inside",
+          "removed_wall": "inside",
+          "hole": "outside",
+          "outside": "outside"
+        }
+      },
+      "subsequent_cut": {
+        "valid": true,
+        "topology": {
+          "solids": 1,
+          "faces": 10,
+          "edges": 24,
+          "vertices": 16,
+          "two_loop_faces": 2,
+          "euler_with_face_holes": 0
+        },
+        "volume_mm3": 10.0,
+        "material_probes": {
+          "kept_wall": "inside",
+          "removed_wall": "outside",
+          "hole": "outside",
+          "outside": "outside"
+        },
+        "new_boundary_probe": "boundary"
+      },
+      "input_bytes_unchanged": true
+    }
+  ]
+}

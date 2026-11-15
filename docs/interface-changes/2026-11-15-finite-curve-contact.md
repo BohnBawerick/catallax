@@ -17,14 +17,17 @@ both transverse constraints and filters every root to its finite span.
 Partial overlaps still require interval ownership and refuse as isolated points.
 
 `numerical_spline_line_points` handles higher-degree algebraic coefficients
-through a separate numerical result. Its preset tolerance is 1e-7 mm. It
+through a separate numerical result. Its preset tolerance is 1e-7 mm, or 0.1 nm. It
 examines closed knot-span intervals using 128-bit Bezier control enclosures,
 rejects separated transverse control hulls, subdivides the remaining intervals
 and refines candidates with clamped Newton steps. Each returned rational point
 is checked against the retained spline and line. The result records both
 parameters, residual samples and the number of examined cells. Overlap or
 unresolved cells refuse. Adjacent candidate intervals merge at the numerical
-resolution; this is not an exact root count or a topology certificate.
+resolution; this is not an exact root count or a topology certificate. A complete
+span with identically zero homogeneous line constraints refuses before leaf
+acceptance, including when its entire image is smaller than a leaf. An unresolved
+flat initial span also refuses as possible overlap.
 
 Numerical points do not enter the exact Boolean meeting adapter. The return
 type carries `NumericalEvidence`, has no exact-answer conversion and publishes

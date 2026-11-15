@@ -1,8 +1,8 @@
 //! Finite subdivision and Newton refinement without exact incidence authority.
 
 use catallax_numbers::{
-    Ball, Decider, NumericalCheck, NumericalEvidence, NumericalSample, Rational, Refusal, Sign,
-    operation_budget_active, with_operation_budget,
+    Ball, Decider, NumericalCheck, NumericalEvidence, NumericalSample, Rational, Real, Refusal,
+    Sign, operation_budget_active, with_operation_budget,
 };
 use catallax_shapes::{BSplineCurve, CurveId, GeomStore, Line, Point3};
 
@@ -197,8 +197,24 @@ fn query(
     let leaf_size = &tolerance / &Rational::from_i64(8);
     let flat_limit = &tolerance / &Rational::from_i64(1_000_000);
     let frame = Frame::new(line, dec)?;
+    let constraints = super::constraints_on_axis(line, frame.axis, dec)?;
     let mut pending = Vec::new();
     for (span, [lo, hi]) in curve.spans() {
+        let coordinates = curve.query_span_polynomials(span, dec)?;
+        let mut coincident = true;
+        for factors in &constraints {
+            let equation = crate::spline_arithmetic::cut(&coordinates, factors, dec)?;
+            coincident &= equation
+                .terms()
+                .iter()
+                .all(|(_, coefficient)| coefficient.same_definition(&Real::zero()));
+        }
+        if coincident {
+            return Err(Refusal::new(
+                "intersect.spline-line-overlap",
+                "the complete finite span has identically zero line constraints; interval ownership is required",
+            ));
+        }
         let hull =
             crate::span_hull::SpanHull::new(curve, span, [lo.clone().into(), hi.clone().into()]);
         let controls = hull.span_controls(BITS, dec)?;
@@ -240,7 +256,7 @@ fn query(
             .iter()
             .fold(Rational::zero(), |sum, x| sum + x.hi() - x.lo());
         let derivatives = frame.transverse(&jet.first, true);
-        if diameter > leaf_size
+        if (cell.depth == 0 || diameter > leaf_size)
             && residual.iter().all(|r| upper(r) <= flat_limit)
             && derivatives
                 .iter()

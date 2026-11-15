@@ -44,9 +44,17 @@ fn line_axis(line: &Line, dec: &mut Decider) -> Result<usize, Refusal> {
 // For nonzero d[k], the two equations
 // d[k](X[j] - O[j]W) - d[j](X[k] - O[k]W) = 0 characterize the line.
 fn constraints(line: &Line, dec: &mut Decider) -> Result<[[Real; 4]; 2], Refusal> {
+    let axis = line_axis(line, dec)?;
+    constraints_on_axis(line, axis, dec)
+}
+
+fn constraints_on_axis(
+    line: &Line,
+    axis: usize,
+    dec: &mut Decider,
+) -> Result<[[Real; 4]; 2], Refusal> {
     let origin = [&line.origin.x, &line.origin.y, &line.origin.z];
     let direction = [&line.dir.x, &line.dir.y, &line.dir.z];
-    let axis = line_axis(line, dec)?;
     let mut result = Vec::new();
     for other in (0..3).filter(|&other| other != axis) {
         let mut coefficients = std::array::from_fn(|_| Real::zero());

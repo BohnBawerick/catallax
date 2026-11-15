@@ -79,7 +79,7 @@ fn the_public_partial_oblique_rim_builds_and_exports_after_a_radius_edit() {
             .into_iter()
             .filter_map(|edge| built.model.edge_name(built.result, edge))
             .collect();
-        edges.sort();
+        edges.sort_by(|a, b| a.between().cmp(&b.between()));
         assert_eq!(edges.len(), 9);
         if let Some(original) = &original_names {
             assert_eq!(original, &names);

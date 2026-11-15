@@ -2,6 +2,8 @@
 
 use super::*;
 
+mod planar;
+
 pub(super) fn points(
     piece: &PairTracePiece,
     span: &Span,
@@ -73,6 +75,10 @@ pub(super) fn points(
         } else if high == Sign::Zero {
             points.push(endpoint(piece, 1));
         } else if low == order && high == order {
+            if let Some(point) = planar::point(piece, span, other, side, axis, &root, dec)? {
+                points.push(point);
+                continue;
+            }
             let mut equations: Vec<_> = piece
                 .system
                 .polynomials

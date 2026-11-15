@@ -133,3 +133,66 @@ fn a_mixed_import_collects_boundaries_as_surfaces_without_claiming_solid_materia
     assert!(!body.display.value.triangles.is_empty());
     assert!(built.model.check(built.result).is_empty());
 }
+
+#[test]
+fn a_weighted_spline_sheet_displays_picks_measures_and_exports_as_a_surface() {
+    let source = include_str!("../../catallax-import/tests/fixtures/spline-roof.step")
+        .replace(
+            "#118=CLOSED_SHELL('',(#64,#73,#82,#91,#100,#117));",
+            "#118=OPEN_SHELL('',(#117));",
+        )
+        .replace(
+            "#119=MANIFOLD_SOLID_BREP('weighted spline roof',#118);",
+            "#119=SHELL_BASED_SURFACE_MODEL('',(#118));",
+        )
+        .replace(
+            "ADVANCED_BREP_SHAPE_REPRESENTATION",
+            "MANIFOLD_SURFACE_SHAPE_REPRESENTATION",
+        );
+    let body = build(source.as_bytes());
+    let built = body.checkpoint.built();
+    assert_eq!(built.model.body(built.result).kind, BodyKind::Surface);
+    assert_eq!(body.names.faces.len(), 1);
+    assert!(!body.display.value.triangles.is_empty());
+    for triangle in &body.display.value.triangles {
+        assert!(body.names.faces.contains_key(&triangle.face));
+    }
+    for edge in body.names.edges.keys() {
+        assert_eq!(
+            body.edge_curve(*edge, &mut Decider::default())
+                .unwrap()
+                .edge,
+            *edge
+        );
+    }
+    assert!(
+        catallax_measure::bounding_box(
+            &built.model,
+            built.result,
+            &Accuracy::default(),
+            &mut Decider::default()
+        )
+        .unwrap()
+        .value
+        .is_some()
+    );
+    let mut bytes = Vec::new();
+    let report = catallax_step::write_step(
+        &built.model,
+        &[built.result],
+        &Default::default(),
+        &mut Decider::default(),
+        &mut bytes,
+    )
+    .unwrap();
+    assert_eq!(report.value.solids, 0);
+    let source = catallax_import::read_step(&bytes).unwrap();
+    assert!(source.solids.is_empty());
+    assert!(matches!(
+        source.surface_models[0].shells[0].faces[0].surface,
+        catallax_import::Surface::BSpline(_)
+    ));
+    let reopened = build(&bytes);
+    let rebuilt = reopened.checkpoint.built();
+    assert_eq!(rebuilt.model.body(rebuilt.result).kind, BodyKind::Surface);
+}

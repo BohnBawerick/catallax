@@ -163,7 +163,7 @@ fn source_pair_coverage_includes_every_unaffected_solid() {
         .iter()
         .filter(|check| {
             matches!(check,
-        numerical::NumericalSourcePairCheck::Disjoint { solid, .. }
+        numerical::NumericalSourcePairCheck::CheckedNoCrossing { solid, .. }
         if solid == &recognized.solids[1].name)
         })
         .count();
@@ -180,12 +180,10 @@ fn curved_dependency_rebuilds_finite_parameters_and_retains_shared_vertices() {
     let admission = imported.source_admission().unwrap();
     assert_eq!(admission.method, "retained_shared_analytic_boundaries/2");
     assert_eq!(admission.intersection_checks.len(), 10);
-    assert!(
-        admission
-            .intersection_checks
-            .iter()
-            .any(|check| matches!(check, numerical::NumericalSourcePairCheck::Disjoint { .. }))
-    );
+    assert!(admission.intersection_checks.iter().any(|check| matches!(
+        check,
+        numerical::NumericalSourcePairCheck::CheckedNoCrossing { .. }
+    )));
     let recognized = catallax_import::read_step(&source).unwrap();
     let affected = recognized.solids[0].faces.iter().find(|face|
         matches!(&face.surface, catallax_import::Surface::Plane(frame) if frame.origin[1] == q("0.000001")))

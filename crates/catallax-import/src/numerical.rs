@@ -29,18 +29,25 @@ pub struct NumericalSourceAdmission {
     /// incidence prerequisite is unresolved only for pairs using that face.
     /// Separate solids are not compared, matching the existing import policy.
     pub intersection_checks: Vec<NumericalSourcePairCheck>,
+    /// Prepaid work per optional exact pair attempt, from the shared request.
+    pub exact_pair_work_allowance: u64,
 }
 
 /// Source intersection coverage retained separately from numerical samples.
 #[derive(Clone, Debug, serde::Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum NumericalSourcePairCheck {
-    /// The existing exact source checker decided this finite pair disjoint.
-    Disjoint {
+    /// The source checker passed this pair under its existing permitted contact
+    /// rules. This does not assert separated boundaries.
+    CheckedNoCrossing {
         /// Stable source solid name.
         solid: String,
         /// Stable source face names, in source order.
         faces: [String; 2],
+        /// Actual work used inside the prepaid exact attempt.
+        exact_attempt_work_used: u64,
+        /// Work prepaid from the enclosing request, including unused work.
+        exact_attempt_work_reserved: u64,
     },
     /// The source pair could not be checked exactly. This grants no separation.
     Unresolved {
@@ -50,6 +57,10 @@ pub enum NumericalSourcePairCheck {
         faces: [String; 2],
         /// The actual typed incidence prerequisite or undecided pair refusal.
         refusal: Box<ImportRefusal>,
+        /// Actual exact-attempt work, or zero for a failed incidence prerequisite.
+        exact_attempt_work_used: u64,
+        /// Work prepaid from the enclosing request, including unused work.
+        exact_attempt_work_reserved: u64,
     },
 }
 

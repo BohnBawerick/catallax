@@ -35,6 +35,30 @@ def save(path, value):
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + '\n')
 
 
+def public_manifest(report):
+    """Explicit public fields; raw build logs and machine paths remain private."""
+    fields = '''schema seed denominator binary_sha256 collector_sha256 source_revision observer_sha256
+        rustc source_hash_manifest_sha256 selection_sha256 baseline_csv_sha256 prior_csv_sha256
+        archive_sha256 archive_md5 archive_bytes observation_timeout_seconds workers per_import_workers
+        per_import_work_limit verification_byte_work full_definition partial_definition scope complete
+        evaluated per_model_csv_sha256 baseline_outcomes outcomes baseline_first_refusals after_fix_causes
+        import_categories outcome_transitions prior_outcomes prior_first_causes prior_outcome_transitions
+        recovered_since_prior_model_ids lost_prior_full_model_ids numerical_source_methods
+        recovered_full_model_ids lost_full_model_ids full_import_share_percent build_record_sha256'''.split()
+    result = {key: report[key] for key in fields if key in report}
+    if 'build_record' in report:
+        record = report['build_record']
+        fields = '''format source_revision git_tree build_command binary_sha256 cargo_json_sha256
+            cargo_lock_sha256 build_tool_sha256 observer_sha256 rustc'''.split()
+        result['build_record'] = {key: record[key] for key in fields if key in record}
+        artifact = record.get('cargo_artifact', {})
+        result['build_record']['cargo_artifact'] = {key: artifact[key] for key in
+            ['profile', 'features', 'fresh'] if key in artifact}
+        result['build_record']['cargo_artifact']['target'] = {key: artifact['target'][key] for key in
+            ['name', 'kind', 'crate_types', 'edition'] if key in artifact.get('target', {})}
+    return result
+
+
 def baseline_outcome(row):
     if row['outcome'] == 'admitted':
         return 'full' if row['coverage_complete'] == 'True' else 'partial'
@@ -100,8 +124,13 @@ def observe(binary, path, key, expected_hash, raw, timeout, baseline):
         'source_to_result_max_mm': imported.get('source_to_result_max_mm'),
         'source_change_count': imported.get('source_change_count'),
         'source_admission_method': imported.get('source_admission_method'),
-        'source_pair_disjoint_count': (None if imported.get('source_intersection_checks') is None else
-                                      sum(check['status'] == 'disjoint' for check in
+        'source_pair_work_allowance': imported.get('source_exact_pair_work_allowance'),
+        'source_pair_work_used': sum(check.get('exact_attempt_work_used', 0) for check in
+                                     (imported.get('source_intersection_checks') or [])),
+        'source_pair_work_reserved': sum(check.get('exact_attempt_work_reserved', 0) for check in
+                                         (imported.get('source_intersection_checks') or [])),
+        'source_pair_checked_count': (None if imported.get('source_intersection_checks') is None else
+                                      sum(check['status'] == 'checked_no_crossing' for check in
                                           imported['source_intersection_checks'])),
         'source_pair_unresolved': (None if imported.get('source_intersection_checks') is None else
                                   [{'solid': check['solid'], 'faces': check['faces'],
@@ -265,6 +294,7 @@ def main():
                                       if row['baseline_outcome'] == 'full' and row['outcome'] != 'full'],
               'full_import_share_percent': f'{100 * outcomes["full"] / COUNT:.6f}'}
     save(args.out / 'summary.json', report)
+    save(args.out / 'public-summary.json', public_manifest(report))
     save(args.out / 'ordered-rows.json', ordered)
     print(json.dumps(report, sort_keys=True), flush=True)
     assert complete, 'process errors or missing results; not a complete census'

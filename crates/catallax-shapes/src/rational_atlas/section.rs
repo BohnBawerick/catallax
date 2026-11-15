@@ -2,18 +2,27 @@
 
 use super::*;
 use crate::rational_patch::{Cover, search_cover, vanishing_side_row};
-use crate::{PatchSectionBranch, Point3, SectionSearch, SectionSurface};
+use crate::{BSplineCurve, PatchSectionBranch, Point3, SectionSearch, SectionSurface};
 
-/// A complete checked section of one logical atlas face. Every component is a
-/// cell-cover branch over the face's charts, joined across chart seams.
+mod axis;
+
+/// A complete checked section of one logical atlas face, retaining rational
+/// components or cell-cover branches joined across chart seams.
 #[derive(Clone, Debug)]
 pub struct AtlasSection {
     branches: Vec<PatchSectionBranch>,
     points: Vec<Point3>,
+    curves: Vec<(BSplineCurve, bool)>,
     search: SectionSearch,
 }
 
 impl AtlasSection {
+    /// Finite rational components and their exact odd/even crossing parity.
+    pub fn curves(&self) -> impl Iterator<Item = (&BSplineCurve, bool)> {
+        self.curves
+            .iter()
+            .map(|(curve, crossing)| (curve, *crossing))
+    }
     /// Isolated contacts retained by the complete cell search.
     pub fn points(&self) -> &[Point3] {
         &self.points
@@ -58,6 +67,7 @@ impl RationalAtlas {
         dec: &mut Decider,
     ) -> Result<AtlasSection, Refusal> {
         surface.validate(dec)?;
+        let start = dec.stats().work;
         let charts: Arc<[RationalPatch]> =
             self.charts().iter().map(|c| c.patch().clone()).collect();
         for chart in charts.iter() {
@@ -67,6 +77,19 @@ impl RationalAtlas {
                     "the section contains a whole chart boundary row",
                 ));
             }
+        }
+        if matches!(surface, SectionSurface::Plane(_))
+            && let Some(curves) = axis::section(self, surface, dec)?
+        {
+            return Ok(AtlasSection {
+                branches: Vec::new(),
+                points: Vec::new(),
+                curves,
+                search: SectionSearch {
+                    work: dec.stats().work - start,
+                    ..SectionSearch::default()
+                },
+            });
         }
         let sides = [
             SplineBoundary::UMin,
@@ -90,6 +113,7 @@ impl RationalAtlas {
         Ok(AtlasSection {
             branches: section.branches,
             points: section.points,
+            curves: Vec::new(),
             search: section.search,
         })
     }

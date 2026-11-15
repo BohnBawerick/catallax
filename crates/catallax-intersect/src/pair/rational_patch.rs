@@ -4,7 +4,7 @@ use super::{Contact, CurveForm, Plan, Spec};
 use crate::math::sign;
 use catallax_numbers::{Decider, Real, Refusal, Sign};
 use catallax_shapes::{
-    BSplineCurve, PatchSectionBranch, RationalAtlas, RationalPatch, SectionSurface,
+    BSplineCurve, PatchSectionBranch, RationalAtlas, RationalPatch, SectionSurface, Surface,
 };
 
 fn reversed(curve: &BSplineCurve, dec: &mut Decider) -> Result<BSplineCurve, Refusal> {
@@ -27,11 +27,29 @@ pub(super) fn section(
     dec: &mut Decider,
 ) -> Result<Plan, Refusal> {
     let section = patch.sections(surface, dec)?;
-    let carrier = surface.surface();
     let mut plan = Plan::empty();
     plan.points.extend_from_slice(section.points());
     push_branches(&mut plan, section.branches(), swap, dec)?;
-    for (curve, crossing) in section.curves() {
+    rational_curves(
+        plan,
+        surface,
+        &Surface::BSpline(patch.clone().into()),
+        section.curves(),
+        swap,
+        dec,
+    )
+}
+
+fn rational_curves<'a>(
+    mut plan: Plan,
+    surface: &SectionSurface,
+    patch: &Surface,
+    curves: impl Iterator<Item = (&'a BSplineCurve, bool)>,
+    swap: bool,
+    dec: &mut Decider,
+) -> Result<Plan, Refusal> {
+    let carrier = surface.surface();
+    for (curve, crossing) in curves {
         let [lo, hi] = curve.domain();
         let middle = Real::from_rational((lo + hi).mul_pow2(-1));
         let reverse = if crossing {
@@ -103,8 +121,8 @@ pub(super) fn push_branches(
     Ok(())
 }
 
-/// Sections of a joined atlas face. Every component is a cell-cover branch
-/// over the face's charts, with isolated contacts retained separately.
+/// Sections of a joined atlas face, retaining finite rational components,
+/// cell-cover branches and isolated contacts.
 pub(super) fn atlas(
     surface: &SectionSurface,
     atlas: &RationalAtlas,
@@ -112,11 +130,15 @@ pub(super) fn atlas(
     dec: &mut Decider,
 ) -> Result<Plan, Refusal> {
     let section = atlas.sections(surface, dec)?;
-    if section.branches().is_empty() && section.points().is_empty() {
-        return Ok(Plan::disjoint());
-    }
     let mut plan = Plan::empty();
     plan.points.extend_from_slice(section.points());
     push_branches(&mut plan, section.branches(), swap, dec)?;
-    Ok(plan)
+    rational_curves(
+        plan,
+        surface,
+        &Surface::BSpline(atlas.clone().into()),
+        section.curves(),
+        swap,
+        dec,
+    )
 }

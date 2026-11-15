@@ -9,6 +9,57 @@ fn q(n: i64, d: i64) -> Real {
     Rational::from_ratio(n, d).unwrap().into()
 }
 
+#[test]
+fn native_straight_spline_meetings_keep_finite_ends_and_operand_senses() {
+    let ((), work) = with_operation_budget(20_000_000, || {
+        let mut dec = Decider::default();
+        for reverse in [false, true] {
+            for (z, expected) in [(q(1, 2), 1), (q(2, 1), 0)] {
+                let mut model = Model::new();
+                let mut ends = vec![
+                    Point3::new(q(0, 1), q(0, 1), q(0, 1)),
+                    Point3::new(q(0, 1), q(0, 1), q(1, 1)),
+                ];
+                if reverse {
+                    ends.reverse();
+                }
+                let line = BSplineCurve::new(
+                    1,
+                    [0, 0, 1, 1].map(Rational::from_i64).to_vec(),
+                    ends,
+                    vec![Real::one(); 2],
+                    &mut dec,
+                )
+                .unwrap();
+                let curved = BSplineCurve::new(
+                    2,
+                    [0, 0, 0, 1, 1, 1].map(Rational::from_i64).to_vec(),
+                    vec![
+                        Point3::new(q(-1, 1), q(1, 1), z.clone()),
+                        Point3::new(q(0, 1), q(-1, 1), z.clone()),
+                        Point3::new(q(1, 1), q(1, 1), z.clone()),
+                    ],
+                    vec![Real::one(); 3],
+                    &mut dec,
+                )
+                .unwrap();
+                let a = model.geom_mut().add_curve(Curve::BSpline(line));
+                let b = model.geom_mut().add_curve(Curve::BSpline(curved));
+                for (a, b) in [(a, b), (b, a)] {
+                    let points = positions(&mut model, a, b, &mut dec);
+                    assert_eq!(points.len(), expected);
+                    for point in points {
+                        exact_zero(&point.x, &mut dec);
+                        exact_zero(&point.y, &mut dec);
+                        exact_zero(&(&point.z - &z), &mut dec);
+                    }
+                }
+            }
+        }
+    });
+    assert!(!work.exhausted, "{} units", work.used);
+}
+
 fn plane() -> SectionSurface {
     SectionSurface::Plane(Plane {
         origin: Point3::new(Real::zero(), Real::zero(), q(5, 2)),

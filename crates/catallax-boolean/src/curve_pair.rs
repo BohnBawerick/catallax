@@ -17,6 +17,7 @@ use catallax_topology::Model;
 use crate::geometry::{canonical_point, coincident, refusal, sign};
 
 mod patch;
+pub(crate) use patch::{FinitePlanePoints, finite_spline_plane_points};
 #[cfg(test)]
 mod patch_tests;
 
@@ -192,6 +193,9 @@ pub(crate) fn meetings(
         "boolean.imprint-ambiguous",
     )? {
         return Ok(Meetings::Coincident);
+    }
+    if let Some(answer) = patch::native_line_meetings(model, a, b, dec)? {
+        return Ok(answer);
     }
     let mut result = Vec::new();
     let finite = match catallax_intersect::bezier_section_line_points(model.geom(), a, b, dec)? {

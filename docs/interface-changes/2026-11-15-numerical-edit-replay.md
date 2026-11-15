@@ -14,7 +14,9 @@ from exact recipes and checkpoints. The recipe retains an immutable source,
 explicit sewing pairs, source tolerance and ordered edits with their own controls.
 The first edits support coordinate-axis dimension changes on rational planar
 bodies with unit coordinate frames, and half-space cuts across two-layer straight
-prisms. Cuts move the selected cap, retain its source origin and add an edit cap
+prisms. Cut admission checks retained line directions and exact axial endpoint
+coordinates as well as nominal vertex alignment. Tilted or displaced traces refuse.
+Cuts move the selected cap, retain its source origin and add an edit cap
 origin. The finite outer and hole loops remain explicit. Unsupported geometry,
 nonpositive dimensions and out-of-range cuts refuse. This is a bounded operation
 family, not general numerical Boolean coverage.
@@ -22,7 +24,7 @@ family, not general numerical Boolean coverage.
 `NumericalRecipe::to_json` and `parse` save generating definitions as
 `catallax-numerical-recipe/1`. `replay_numerical` parses and rechecks the source,
 sewing and every edit under one active request allowance, or the unchanged 20M
-default. Saved checks are not trusted. `NumericalBuilt::edit` borrows the previous
+default. Input bytes are charged before JSON decoding starts. Saved checks are not trusted. `NumericalBuilt::edit` borrows the previous
 result and returns a complete new result only on success. Failed checks, precision
 limits and exhausted work return no partial result.
 
@@ -38,8 +40,11 @@ cargo run --release -p catallax-features --example numerical_replay -- saved.jso
 ```
 
 It shares 20M work across replay and STEP construction. It publishes approximate
-STEP only after those checks pass, rereads the written bytes and removes stale
-output on refusal. The JSON summary reports current tolerance, prior-stage
+STEP only after those checks pass. It writes a unique adjacent staging file,
+rereads and verifies its bytes, then atomically renames it to the output path.
+Input/output identity is checked before publication and refusal cleanup, including
+symlink and Unix hard-link aliases. Refusal removes stale output only after that
+guard passes. Staging files are removed on success and failure. The JSON summary reports current tolerance, prior-stage
 controls, repair counts, origins and deterministic work. This example does not add
 a numerical route to the existing request protocol or the app checkpoint system.
 

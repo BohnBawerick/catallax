@@ -57,8 +57,9 @@ fn stage(output: &Path, bytes: &[u8]) -> io::Result<StagedFile> {
         .create_new(true)
         .open(&path)?;
     let staged = StagedFile(path);
-    file.write_all(bytes)?;
-    file.sync_all()?;
+    let written = file.write_all(bytes).and_then(|()| file.sync_all());
+    drop(file);
+    written?;
     Ok(staged)
 }
 

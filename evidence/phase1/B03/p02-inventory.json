@@ -1,0 +1,1700 @@
+{
+  "baseline": "48a6d53d57300d7b248e45a3aa86ebca6ad7f06d",
+  "method": "Static extraction of existing public P02 evidence; no requests rerun. Recipe names resolved through wrappers in portable questions. Complete responses/operations referenced with hashes. No current internal reachability inferred.",
+  "cases": [
+    {
+      "id": "M10-001",
+      "name": "side-subtract",
+      "status": "refused",
+      "refusal": {
+        "code": "step.unsupported-geometry",
+        "detail": "geometry has no specified STEP form",
+        "stage": null,
+        "step": null
+      },
+      "work": {
+        "exhausted": false,
+        "limit": 20000000,
+        "used": 8219519
+      },
+      "current_fallback_attribution": "unproved; historical operation log has no internal drop-branch trace",
+      "published_worker_records": [
+        {
+          "workers": 1,
+          "case_key": "9fdcd997acb4d9a16c9458ebbafcd35bd9863868d512abbd552775f99c1f5090",
+          "refused_operations": [
+            {
+              "decisions": {
+                "coincident_exact": 26,
+                "coincident_fact": 0,
+                "coincident_separation": 0,
+                "exact": 0,
+                "filter": 172,
+                "max_bits_high_water": 128,
+                "not_exact": 0,
+                "refined": 36,
+                "refused": 0,
+                "total": 234
+              },
+              "id": "cut",
+              "kernel": "brep",
+              "local_tolerances": null,
+              "marks": [],
+              "operation": "step",
+              "refusal": {
+                "code": "step.unsupported-geometry",
+                "detail": "geometry has no specified STEP form"
+              },
+              "sequence": 7,
+              "status": "refused",
+              "wall_ms": 5.970815,
+              "work": {
+                "after": 8219519,
+                "before": 8175141,
+                "used": 44378
+              }
+            }
+          ],
+          "files": [
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/9fdcd997acb4d9a16c9458ebbafcd35bd9863868d512abbd552775f99c1f5090/question.json",
+              "sha256": "f38b7db5b66faeecf1ae29338f1b0b3caa121485b36ac19a25fcf58f97bc1d66"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/9fdcd997acb4d9a16c9458ebbafcd35bd9863868d512abbd552775f99c1f5090/response.json",
+              "sha256": "f756d1bb9259f28618cb5cc834f1e1a219b6a66c3ba1d25e912f0b4a8f6cf284"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/9fdcd997acb4d9a16c9458ebbafcd35bd9863868d512abbd552775f99c1f5090/operations.json",
+              "sha256": "4cf39704474a0bd7c915d962e66f19cd4300354db3a084e5976150c485ca19e8"
+            }
+          ]
+        },
+        {
+          "workers": 4,
+          "case_key": "9fdcd997acb4d9a16c9458ebbafcd35bd9863868d512abbd552775f99c1f5090",
+          "refused_operations": [
+            {
+              "decisions": {
+                "coincident_exact": 26,
+                "coincident_fact": 0,
+                "coincident_separation": 0,
+                "exact": 0,
+                "filter": 172,
+                "max_bits_high_water": 128,
+                "not_exact": 0,
+                "refined": 36,
+                "refused": 0,
+                "total": 234
+              },
+              "id": "cut",
+              "kernel": "brep",
+              "local_tolerances": null,
+              "marks": [],
+              "operation": "step",
+              "refusal": {
+                "code": "step.unsupported-geometry",
+                "detail": "geometry has no specified STEP form"
+              },
+              "sequence": 7,
+              "status": "refused",
+              "wall_ms": 5.725707,
+              "work": {
+                "after": 8219519,
+                "before": 8175141,
+                "used": 44378
+              }
+            }
+          ],
+          "files": [
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/9fdcd997acb4d9a16c9458ebbafcd35bd9863868d512abbd552775f99c1f5090/question.json",
+              "sha256": "f38b7db5b66faeecf1ae29338f1b0b3caa121485b36ac19a25fcf58f97bc1d66"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/9fdcd997acb4d9a16c9458ebbafcd35bd9863868d512abbd552775f99c1f5090/response.json",
+              "sha256": "de5d9705afd9a0b1e6a1dcfc2a065378030fc9a637f8a1b0b1f62f773dd97a9c"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/9fdcd997acb4d9a16c9458ebbafcd35bd9863868d512abbd552775f99c1f5090/operations.json",
+              "sha256": "b58097f2447f9273417283902a6a21678aa451422bbcaeea2a194f5d34b05010"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M10-002",
+      "name": "side-union",
+      "status": "refused",
+      "refusal": {
+        "code": "step.unsupported-geometry",
+        "detail": "geometry has no specified STEP form",
+        "stage": null,
+        "step": null
+      },
+      "work": {
+        "exhausted": false,
+        "limit": 20000000,
+        "used": 8219568
+      },
+      "current_fallback_attribution": "unproved; historical operation log has no internal drop-branch trace",
+      "published_worker_records": [
+        {
+          "workers": 1,
+          "case_key": "b7eba13f244da2a2a934e499846107716a5c4f9b7ba3bc546185e957b325f2ec",
+          "refused_operations": [
+            {
+              "decisions": {
+                "coincident_exact": 26,
+                "coincident_fact": 0,
+                "coincident_separation": 0,
+                "exact": 0,
+                "filter": 172,
+                "max_bits_high_water": 128,
+                "not_exact": 0,
+                "refined": 36,
+                "refused": 0,
+                "total": 234
+              },
+              "id": "cut",
+              "kernel": "brep",
+              "local_tolerances": null,
+              "marks": [],
+              "operation": "step",
+              "refusal": {
+                "code": "step.unsupported-geometry",
+                "detail": "geometry has no specified STEP form"
+              },
+              "sequence": 7,
+              "status": "refused",
+              "wall_ms": 5.296752,
+              "work": {
+                "after": 8219568,
+                "before": 8175190,
+                "used": 44378
+              }
+            }
+          ],
+          "files": [
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/b7eba13f244da2a2a934e499846107716a5c4f9b7ba3bc546185e957b325f2ec/question.json",
+              "sha256": "0ffe19ffa59debefcd62bdeb07f619834f38810957b269a633295460d24c8319"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/b7eba13f244da2a2a934e499846107716a5c4f9b7ba3bc546185e957b325f2ec/response.json",
+              "sha256": "da43085ab3023b56c22c68353d7ef8dd4db462ec52df00a2184c3850f81f52bc"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/b7eba13f244da2a2a934e499846107716a5c4f9b7ba3bc546185e957b325f2ec/operations.json",
+              "sha256": "4a052b2328565e6dec3176e65b8a303ea50758a1aabf40b067f6cfa959f78f70"
+            }
+          ]
+        },
+        {
+          "workers": 4,
+          "case_key": "b7eba13f244da2a2a934e499846107716a5c4f9b7ba3bc546185e957b325f2ec",
+          "refused_operations": [
+            {
+              "decisions": {
+                "coincident_exact": 26,
+                "coincident_fact": 0,
+                "coincident_separation": 0,
+                "exact": 0,
+                "filter": 172,
+                "max_bits_high_water": 128,
+                "not_exact": 0,
+                "refined": 36,
+                "refused": 0,
+                "total": 234
+              },
+              "id": "cut",
+              "kernel": "brep",
+              "local_tolerances": null,
+              "marks": [],
+              "operation": "step",
+              "refusal": {
+                "code": "step.unsupported-geometry",
+                "detail": "geometry has no specified STEP form"
+              },
+              "sequence": 7,
+              "status": "refused",
+              "wall_ms": 6.099707,
+              "work": {
+                "after": 8219568,
+                "before": 8175190,
+                "used": 44378
+              }
+            }
+          ],
+          "files": [
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/b7eba13f244da2a2a934e499846107716a5c4f9b7ba3bc546185e957b325f2ec/question.json",
+              "sha256": "0ffe19ffa59debefcd62bdeb07f619834f38810957b269a633295460d24c8319"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/b7eba13f244da2a2a934e499846107716a5c4f9b7ba3bc546185e957b325f2ec/response.json",
+              "sha256": "15382b27202a76e21b210efc6e9571924b7fd250d08f450241970117356e1777"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/b7eba13f244da2a2a934e499846107716a5c4f9b7ba3bc546185e957b325f2ec/operations.json",
+              "sha256": "ee51a80fe77d287701396a44485c4b595731a1772ad94a746ace68de14200559"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M10-003",
+      "name": "side-intersect",
+      "status": "refused",
+      "refusal": {
+        "code": "step.unsupported-geometry",
+        "detail": "geometry has no specified STEP form",
+        "stage": null,
+        "step": null
+      },
+      "work": {
+        "exhausted": false,
+        "limit": 20000000,
+        "used": 8214023
+      },
+      "current_fallback_attribution": "unproved; historical operation log has no internal drop-branch trace",
+      "published_worker_records": [
+        {
+          "workers": 1,
+          "case_key": "f48db80dd6a4df052fa1f563208e864a7903823ec6cb13f27b55cd8a23782a3a",
+          "refused_operations": [
+            {
+              "decisions": {
+                "coincident_exact": 24,
+                "coincident_fact": 0,
+                "coincident_separation": 0,
+                "exact": 0,
+                "filter": 156,
+                "max_bits_high_water": 128,
+                "not_exact": 0,
+                "refined": 12,
+                "refused": 0,
+                "total": 192
+              },
+              "id": "cut",
+              "kernel": "brep",
+              "local_tolerances": null,
+              "marks": [],
+              "operation": "step",
+              "refusal": {
+                "code": "step.unsupported-geometry",
+                "detail": "geometry has no specified STEP form"
+              },
+              "sequence": 7,
+              "status": "refused",
+              "wall_ms": 4.348014,
+              "work": {
+                "after": 8214023,
+                "before": 8171004,
+                "used": 43019
+              }
+            }
+          ],
+          "files": [
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/f48db80dd6a4df052fa1f563208e864a7903823ec6cb13f27b55cd8a23782a3a/question.json",
+              "sha256": "b0c058f48db4a103b1e1eb75d296b404d6a20ce78b730540c262dc00b256e88f"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/f48db80dd6a4df052fa1f563208e864a7903823ec6cb13f27b55cd8a23782a3a/response.json",
+              "sha256": "3e0becdef565e8a06dc4174d1df70fde5e518c3116ae025fba734f51a12d2ad4"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/f48db80dd6a4df052fa1f563208e864a7903823ec6cb13f27b55cd8a23782a3a/operations.json",
+              "sha256": "9aa8178c07e3147049e79eaabc337b79ffaf1cdb4fc931e50be2cf67c1c1690d"
+            }
+          ]
+        },
+        {
+          "workers": 4,
+          "case_key": "f48db80dd6a4df052fa1f563208e864a7903823ec6cb13f27b55cd8a23782a3a",
+          "refused_operations": [
+            {
+              "decisions": {
+                "coincident_exact": 24,
+                "coincident_fact": 0,
+                "coincident_separation": 0,
+                "exact": 0,
+                "filter": 156,
+                "max_bits_high_water": 128,
+                "not_exact": 0,
+                "refined": 12,
+                "refused": 0,
+                "total": 192
+              },
+              "id": "cut",
+              "kernel": "brep",
+              "local_tolerances": null,
+              "marks": [],
+              "operation": "step",
+              "refusal": {
+                "code": "step.unsupported-geometry",
+                "detail": "geometry has no specified STEP form"
+              },
+              "sequence": 7,
+              "status": "refused",
+              "wall_ms": 5.421867000000001,
+              "work": {
+                "after": 8214023,
+                "before": 8171004,
+                "used": 43019
+              }
+            }
+          ],
+          "files": [
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/f48db80dd6a4df052fa1f563208e864a7903823ec6cb13f27b55cd8a23782a3a/question.json",
+              "sha256": "b0c058f48db4a103b1e1eb75d296b404d6a20ce78b730540c262dc00b256e88f"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/f48db80dd6a4df052fa1f563208e864a7903823ec6cb13f27b55cd8a23782a3a/response.json",
+              "sha256": "e9d4787e22285704d25eb2f1d64906f6664bd335b65c5fdbc35ba7403ca4559d"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/f48db80dd6a4df052fa1f563208e864a7903823ec6cb13f27b55cd8a23782a3a/operations.json",
+              "sha256": "e35fa67993de53116596c73ab801f9967a958ad0c7e22360b1bc1d5b2f8ec6b1"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M10-004",
+      "name": "top-subtract",
+      "status": "refused",
+      "refusal": {
+        "code": "numbers.operation-budget",
+        "detail": "operation work allowance exhausted",
+        "stage": null,
+        "step": null
+      },
+      "work": {
+        "exhausted": true,
+        "limit": 20000000,
+        "used": 19999916
+      },
+      "current_fallback_attribution": "unproved; historical operation log has no internal drop-branch trace",
+      "published_worker_records": [
+        {
+          "workers": 1,
+          "case_key": "dfccf1c4a0d648cbc2144b3d02f728bb2d574025a879740e95b13ea040fd46de",
+          "refused_operations": [
+            {
+              "decisions": {
+                "coincident_exact": 5425,
+                "coincident_fact": 372,
+                "coincident_separation": 0,
+                "exact": 729,
+                "filter": 43916,
+                "max_bits_high_water": 256,
+                "not_exact": 0,
+                "refined": 1618,
+                "refused": 1,
+                "total": 52392
+              },
+              "id": "cut",
+              "kernel": "brep",
+              "local_tolerances": null,
+              "marks": [],
+              "operation": "boolean",
+              "refusal": {
+                "code": "numbers.operation-budget",
+                "detail": "operation work allowance exhausted"
+              },
+              "sequence": 5,
+              "status": "refused",
+              "wall_ms": 860.60178,
+              "work": {
+                "after": 19999916,
+                "before": 37346,
+                "used": 19962570
+              }
+            }
+          ],
+          "files": [
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/dfccf1c4a0d648cbc2144b3d02f728bb2d574025a879740e95b13ea040fd46de/question.json",
+              "sha256": "dc53511cad0ae2e0820ea296be5ec6078c5c32829ae55f95361f9b026480e79e"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/dfccf1c4a0d648cbc2144b3d02f728bb2d574025a879740e95b13ea040fd46de/response.json",
+              "sha256": "496f957fe00282460dae80a076f893be93ecbe191ab0216e2b6b8f49754bd055"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/dfccf1c4a0d648cbc2144b3d02f728bb2d574025a879740e95b13ea040fd46de/operations.json",
+              "sha256": "c2c4cab66e9708e47b296bcf04900a6746c37e20c021fed6f0997ecd3fe18b53"
+            }
+          ]
+        },
+        {
+          "workers": 4,
+          "case_key": "dfccf1c4a0d648cbc2144b3d02f728bb2d574025a879740e95b13ea040fd46de",
+          "refused_operations": [
+            {
+              "decisions": {
+                "coincident_exact": 5425,
+                "coincident_fact": 372,
+                "coincident_separation": 0,
+                "exact": 729,
+                "filter": 43916,
+                "max_bits_high_water": 256,
+                "not_exact": 0,
+                "refined": 1618,
+                "refused": 1,
+                "total": 52392
+              },
+              "id": "cut",
+              "kernel": "brep",
+              "local_tolerances": null,
+              "marks": [],
+              "operation": "boolean",
+              "refusal": {
+                "code": "numbers.operation-budget",
+                "detail": "operation work allowance exhausted"
+              },
+              "sequence": 5,
+              "status": "refused",
+              "wall_ms": 1564.530069,
+              "work": {
+                "after": 19999916,
+                "before": 37346,
+                "used": 19962570
+              }
+            }
+          ],
+          "files": [
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/dfccf1c4a0d648cbc2144b3d02f728bb2d574025a879740e95b13ea040fd46de/question.json",
+              "sha256": "dc53511cad0ae2e0820ea296be5ec6078c5c32829ae55f95361f9b026480e79e"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/dfccf1c4a0d648cbc2144b3d02f728bb2d574025a879740e95b13ea040fd46de/response.json",
+              "sha256": "c8b58e80c683f0349d0082a8003c2ac9f580488b37f0625dae471a74a8baf3e1"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/dfccf1c4a0d648cbc2144b3d02f728bb2d574025a879740e95b13ea040fd46de/operations.json",
+              "sha256": "5068b53f2d19b327b238a59462168f75102e1d5446dbef63a9e78fb0210975a4"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M10-005",
+      "name": "top-union",
+      "status": "refused",
+      "refusal": {
+        "code": "numbers.operation-budget",
+        "detail": "operation work allowance exhausted",
+        "stage": null,
+        "step": null
+      },
+      "work": {
+        "exhausted": true,
+        "limit": 20000000,
+        "used": 19999916
+      },
+      "current_fallback_attribution": "unproved; historical operation log has no internal drop-branch trace",
+      "published_worker_records": [
+        {
+          "workers": 1,
+          "case_key": "c82299db4ad01921c3b3bd40e25caf4d43ed4e1e1e3350b5c787aec33d8e4b81",
+          "refused_operations": [
+            {
+              "decisions": {
+                "coincident_exact": 5425,
+                "coincident_fact": 372,
+                "coincident_separation": 0,
+                "exact": 729,
+                "filter": 43916,
+                "max_bits_high_water": 256,
+                "not_exact": 0,
+                "refined": 1618,
+                "refused": 1,
+                "total": 52392
+              },
+              "id": "cut",
+              "kernel": "brep",
+              "local_tolerances": null,
+              "marks": [],
+              "operation": "boolean",
+              "refusal": {
+                "code": "numbers.operation-budget",
+                "detail": "operation work allowance exhausted"
+              },
+              "sequence": 5,
+              "status": "refused",
+              "wall_ms": 858.229829,
+              "work": {
+                "after": 19999916,
+                "before": 37346,
+                "used": 19962570
+              }
+            }
+          ],
+          "files": [
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/c82299db4ad01921c3b3bd40e25caf4d43ed4e1e1e3350b5c787aec33d8e4b81/question.json",
+              "sha256": "b196171f228398a063a77e7abb35d6116bf9a2c4a8a442d16f43a781472b5f72"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/c82299db4ad01921c3b3bd40e25caf4d43ed4e1e1e3350b5c787aec33d8e4b81/response.json",
+              "sha256": "906efcc7999f83cbb6c15d11fc8702896d5ded66bebfaa22270f850223049933"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/c82299db4ad01921c3b3bd40e25caf4d43ed4e1e1e3350b5c787aec33d8e4b81/operations.json",
+              "sha256": "8a755b211ffff056327328a97943297189675257b0a161f37cdfb2ab54fe6495"
+            }
+          ]
+        },
+        {
+          "workers": 4,
+          "case_key": "c82299db4ad01921c3b3bd40e25caf4d43ed4e1e1e3350b5c787aec33d8e4b81",
+          "refused_operations": [
+            {
+              "decisions": {
+                "coincident_exact": 5425,
+                "coincident_fact": 372,
+                "coincident_separation": 0,
+                "exact": 729,
+                "filter": 43916,
+                "max_bits_high_water": 256,
+                "not_exact": 0,
+                "refined": 1618,
+                "refused": 1,
+                "total": 52392
+              },
+              "id": "cut",
+              "kernel": "brep",
+              "local_tolerances": null,
+              "marks": [],
+              "operation": "boolean",
+              "refusal": {
+                "code": "numbers.operation-budget",
+                "detail": "operation work allowance exhausted"
+              },
+              "sequence": 5,
+              "status": "refused",
+              "wall_ms": 910.692066,
+              "work": {
+                "after": 19999916,
+                "before": 37346,
+                "used": 19962570
+              }
+            }
+          ],
+          "files": [
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/c82299db4ad01921c3b3bd40e25caf4d43ed4e1e1e3350b5c787aec33d8e4b81/question.json",
+              "sha256": "b196171f228398a063a77e7abb35d6116bf9a2c4a8a442d16f43a781472b5f72"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/c82299db4ad01921c3b3bd40e25caf4d43ed4e1e1e3350b5c787aec33d8e4b81/response.json",
+              "sha256": "fe9a62690accfb2230968cb68f375c3ec1c7ada1c4fea828de7392c4c9036659"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/c82299db4ad01921c3b3bd40e25caf4d43ed4e1e1e3350b5c787aec33d8e4b81/operations.json",
+              "sha256": "d5246969d9704a4c25ebc9912e3f670c30d82841c7fe2288488e2bc338b23dbb"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M10-006",
+      "name": "top-intersect",
+      "status": "refused",
+      "refusal": {
+        "code": "numbers.operation-budget",
+        "detail": "operation work allowance exhausted",
+        "stage": null,
+        "step": null
+      },
+      "work": {
+        "exhausted": true,
+        "limit": 20000000,
+        "used": 19999916
+      },
+      "current_fallback_attribution": "unproved; historical operation log has no internal drop-branch trace",
+      "published_worker_records": [
+        {
+          "workers": 1,
+          "case_key": "016dc92865ca6e947318e1230d8873c8a409715777d304046dedd79a885500f2",
+          "refused_operations": [
+            {
+              "decisions": {
+                "coincident_exact": 5425,
+                "coincident_fact": 372,
+                "coincident_separation": 0,
+                "exact": 729,
+                "filter": 43916,
+                "max_bits_high_water": 256,
+                "not_exact": 0,
+                "refined": 1618,
+                "refused": 1,
+                "total": 52392
+              },
+              "id": "cut",
+              "kernel": "brep",
+              "local_tolerances": null,
+              "marks": [],
+              "operation": "boolean",
+              "refusal": {
+                "code": "numbers.operation-budget",
+                "detail": "operation work allowance exhausted"
+              },
+              "sequence": 5,
+              "status": "refused",
+              "wall_ms": 854.011117,
+              "work": {
+                "after": 19999916,
+                "before": 37346,
+                "used": 19962570
+              }
+            }
+          ],
+          "files": [
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/016dc92865ca6e947318e1230d8873c8a409715777d304046dedd79a885500f2/question.json",
+              "sha256": "6e2bfec24ad996fe67fa46c596e5e6bc64b74f38ccf0f39a02b84cd4a50bb7df"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/016dc92865ca6e947318e1230d8873c8a409715777d304046dedd79a885500f2/response.json",
+              "sha256": "823b89a86d65e98d355f5c0e23414451c51364fb3b9c245c8d078ebd944d4cfa"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/016dc92865ca6e947318e1230d8873c8a409715777d304046dedd79a885500f2/operations.json",
+              "sha256": "733bc3f0e64ea590ca0bc0b3304a5b3236e55e97f41aa3d6952db84a66d78b9a"
+            }
+          ]
+        },
+        {
+          "workers": 4,
+          "case_key": "016dc92865ca6e947318e1230d8873c8a409715777d304046dedd79a885500f2",
+          "refused_operations": [
+            {
+              "decisions": {
+                "coincident_exact": 5425,
+                "coincident_fact": 372,
+                "coincident_separation": 0,
+                "exact": 729,
+                "filter": 43916,
+                "max_bits_high_water": 256,
+                "not_exact": 0,
+                "refined": 1618,
+                "refused": 1,
+                "total": 52392
+              },
+              "id": "cut",
+              "kernel": "brep",
+              "local_tolerances": null,
+              "marks": [],
+              "operation": "boolean",
+              "refusal": {
+                "code": "numbers.operation-budget",
+                "detail": "operation work allowance exhausted"
+              },
+              "sequence": 5,
+              "status": "refused",
+              "wall_ms": 961.766926,
+              "work": {
+                "after": 19999916,
+                "before": 37346,
+                "used": 19962570
+              }
+            }
+          ],
+          "files": [
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/016dc92865ca6e947318e1230d8873c8a409715777d304046dedd79a885500f2/question.json",
+              "sha256": "6e2bfec24ad996fe67fa46c596e5e6bc64b74f38ccf0f39a02b84cd4a50bb7df"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/016dc92865ca6e947318e1230d8873c8a409715777d304046dedd79a885500f2/response.json",
+              "sha256": "7565c3064fdc3952bd37240f8886e688b9ba6a7e7c836d35eb7fc3d0eed4c12c"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/016dc92865ca6e947318e1230d8873c8a409715777d304046dedd79a885500f2/operations.json",
+              "sha256": "51c94b6054e954de89e0a3c171a50f40714bd94c37e3a5c3550900081e317359"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M10-007",
+      "name": "through-cut",
+      "status": "refused",
+      "refusal": {
+        "code": "step.unsupported-geometry",
+        "detail": "geometry has no specified STEP form",
+        "stage": null,
+        "step": null
+      },
+      "work": {
+        "exhausted": false,
+        "limit": 20000000,
+        "used": 2527978
+      },
+      "current_fallback_attribution": "unproved; historical operation log has no internal drop-branch trace",
+      "published_worker_records": [
+        {
+          "workers": 1,
+          "case_key": "032bbe456cafbf5b31419440c989e2d3132e20854cda2e7992cebea4fa0eed1d",
+          "refused_operations": [
+            {
+              "decisions": {
+                "coincident_exact": 2,
+                "coincident_fact": 0,
+                "coincident_separation": 0,
+                "exact": 0,
+                "filter": 16,
+                "max_bits_high_water": 576,
+                "not_exact": 0,
+                "refined": 24,
+                "refused": 0,
+                "total": 42
+              },
+              "id": "cut",
+              "kernel": "brep",
+              "local_tolerances": null,
+              "marks": [],
+              "operation": "step",
+              "refusal": {
+                "code": "step.unsupported-geometry",
+                "detail": "geometry has no specified STEP form"
+              },
+              "sequence": 7,
+              "status": "refused",
+              "wall_ms": 1.707438,
+              "work": {
+                "after": 2527978,
+                "before": 2526697,
+                "used": 1281
+              }
+            }
+          ],
+          "files": [
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/032bbe456cafbf5b31419440c989e2d3132e20854cda2e7992cebea4fa0eed1d/question.json",
+              "sha256": "8def59e44418832e165796941e77b3ee542c143c4b4871f67dfd207eee438d3c"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/032bbe456cafbf5b31419440c989e2d3132e20854cda2e7992cebea4fa0eed1d/response.json",
+              "sha256": "4c2d6225601f6bf05be98e709f213975ec9bd104892d9b2576d8f7f975c56517"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/032bbe456cafbf5b31419440c989e2d3132e20854cda2e7992cebea4fa0eed1d/operations.json",
+              "sha256": "b4a466f2a9be34c1b47966f77669463f5ab167a1b42e90ab02edaed77be50571"
+            }
+          ]
+        },
+        {
+          "workers": 4,
+          "case_key": "032bbe456cafbf5b31419440c989e2d3132e20854cda2e7992cebea4fa0eed1d",
+          "refused_operations": [
+            {
+              "decisions": {
+                "coincident_exact": 2,
+                "coincident_fact": 0,
+                "coincident_separation": 0,
+                "exact": 0,
+                "filter": 16,
+                "max_bits_high_water": 576,
+                "not_exact": 0,
+                "refined": 24,
+                "refused": 0,
+                "total": 42
+              },
+              "id": "cut",
+              "kernel": "brep",
+              "local_tolerances": null,
+              "marks": [],
+              "operation": "step",
+              "refusal": {
+                "code": "step.unsupported-geometry",
+                "detail": "geometry has no specified STEP form"
+              },
+              "sequence": 7,
+              "status": "refused",
+              "wall_ms": 1.6803180000000002,
+              "work": {
+                "after": 2527978,
+                "before": 2526697,
+                "used": 1281
+              }
+            }
+          ],
+          "files": [
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/032bbe456cafbf5b31419440c989e2d3132e20854cda2e7992cebea4fa0eed1d/question.json",
+              "sha256": "8def59e44418832e165796941e77b3ee542c143c4b4871f67dfd207eee438d3c"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/032bbe456cafbf5b31419440c989e2d3132e20854cda2e7992cebea4fa0eed1d/response.json",
+              "sha256": "9b3f40983003799eb8514425e1a2d2b82376021637c3cca54142bf01905c2b30"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/032bbe456cafbf5b31419440c989e2d3132e20854cda2e7992cebea4fa0eed1d/operations.json",
+              "sha256": "97a661eca1049b971beeffd20d28620fddd0e9e0b592ce2207e1bf1a5e99eda6"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M10-008",
+      "name": "m7-cut",
+      "status": "refused",
+      "refusal": {
+        "code": "numbers.geometric-gap-unproven",
+        "detail": "a complete rational patch needs one boundary loop",
+        "stage": null,
+        "step": null
+      },
+      "work": {
+        "exhausted": false,
+        "limit": 20000000,
+        "used": 1802159
+      },
+      "current_fallback_attribution": "unproved; historical operation log has no internal drop-branch trace",
+      "published_worker_records": [
+        {
+          "workers": 1,
+          "case_key": "8e7ea19b9cda2e00ff69a23f469843f688c71282d1231f380b6b01910fea8abb",
+          "refused_operations": [
+            {
+              "decisions": {
+                "coincident_exact": 0,
+                "coincident_fact": 0,
+                "coincident_separation": 0,
+                "exact": 0,
+                "filter": 0,
+                "max_bits_high_water": 128,
+                "not_exact": 0,
+                "refined": 0,
+                "refused": 0,
+                "total": 0
+              },
+              "id": "cut",
+              "kernel": "brep",
+              "local_tolerances": null,
+              "marks": [],
+              "operation": "step",
+              "refusal": {
+                "code": "numbers.geometric-gap-unproven",
+                "detail": "a complete rational patch needs one boundary loop"
+              },
+              "sequence": 6,
+              "status": "refused",
+              "wall_ms": 0.628768,
+              "work": {
+                "after": 1802159,
+                "before": 1802159,
+                "used": 0
+              }
+            }
+          ],
+          "files": [
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/8e7ea19b9cda2e00ff69a23f469843f688c71282d1231f380b6b01910fea8abb/question.json",
+              "sha256": "87358a121d1ebb97ffe5d497e41c751db4d1a1ea8fae8d7bbe5fc8135e5ddb5a"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/8e7ea19b9cda2e00ff69a23f469843f688c71282d1231f380b6b01910fea8abb/response.json",
+              "sha256": "8b604a12dd7eb5ca963b9a96568ae279a479495cfc6a5c920a861e7abd189627"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/8e7ea19b9cda2e00ff69a23f469843f688c71282d1231f380b6b01910fea8abb/operations.json",
+              "sha256": "2683d3f12596bff931a66459894bffeb5faefb4ac9f916b6c0264b82b627e623"
+            }
+          ]
+        },
+        {
+          "workers": 4,
+          "case_key": "8e7ea19b9cda2e00ff69a23f469843f688c71282d1231f380b6b01910fea8abb",
+          "refused_operations": [
+            {
+              "decisions": {
+                "coincident_exact": 0,
+                "coincident_fact": 0,
+                "coincident_separation": 0,
+                "exact": 0,
+                "filter": 0,
+                "max_bits_high_water": 128,
+                "not_exact": 0,
+                "refined": 0,
+                "refused": 0,
+                "total": 0
+              },
+              "id": "cut",
+              "kernel": "brep",
+              "local_tolerances": null,
+              "marks": [],
+              "operation": "step",
+              "refusal": {
+                "code": "numbers.geometric-gap-unproven",
+                "detail": "a complete rational patch needs one boundary loop"
+              },
+              "sequence": 6,
+              "status": "refused",
+              "wall_ms": 0.750276,
+              "work": {
+                "after": 1802159,
+                "before": 1802159,
+                "used": 0
+              }
+            }
+          ],
+          "files": [
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/8e7ea19b9cda2e00ff69a23f469843f688c71282d1231f380b6b01910fea8abb/question.json",
+              "sha256": "87358a121d1ebb97ffe5d497e41c751db4d1a1ea8fae8d7bbe5fc8135e5ddb5a"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/8e7ea19b9cda2e00ff69a23f469843f688c71282d1231f380b6b01910fea8abb/response.json",
+              "sha256": "b48ba6f24745d1e81474f54233cf89b8d269726bb5088af086bd2b177a0a1843"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/8e7ea19b9cda2e00ff69a23f469843f688c71282d1231f380b6b01910fea8abb/operations.json",
+              "sha256": "332d57b6bb260329c897bc129248ae4df2cf98dfe332d94c1d18c095779c3349"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M10-009",
+      "name": "import-subtract",
+      "status": "refused",
+      "refusal": {
+        "code": "intersect.parametric-coincidence",
+        "detail": "different spline definitions require a finite curve-equivalence proof",
+        "stage": null,
+        "step": "cut"
+      },
+      "work": {
+        "exhausted": false,
+        "limit": 20000000,
+        "used": 115984
+      },
+      "current_fallback_attribution": "unproved; historical operation log has no internal drop-branch trace",
+      "published_worker_records": [
+        {
+          "workers": 1,
+          "case_key": "d8241adb0bcfe835b7d61926acdd7692f3e99d3c59881c69f11cd864259a1c69",
+          "refused_operations": [
+            {
+              "decisions": {
+                "coincident_exact": 18,
+                "coincident_fact": 0,
+                "coincident_separation": 0,
+                "exact": 7,
+                "filter": 218,
+                "max_bits_high_water": 128,
+                "not_exact": 0,
+                "refined": 0,
+                "refused": 0,
+                "total": 243
+              },
+              "id": "cut",
+              "kernel": "brep",
+              "local_tolerances": null,
+              "marks": [],
+              "operation": "boolean",
+              "refusal": {
+                "code": "intersect.parametric-coincidence",
+                "detail": "different spline definitions require a finite curve-equivalence proof"
+              },
+              "sequence": 2,
+              "status": "refused",
+              "wall_ms": 0.47496,
+              "work": {
+                "after": 115984,
+                "before": 114370,
+                "used": 1614
+              }
+            }
+          ],
+          "files": [
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/d8241adb0bcfe835b7d61926acdd7692f3e99d3c59881c69f11cd864259a1c69/question.json",
+              "sha256": "5ee5cda5d898548d58e01e00ad914e960a7fa955b99c5f8798357c25581ed8de"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/d8241adb0bcfe835b7d61926acdd7692f3e99d3c59881c69f11cd864259a1c69/response.json",
+              "sha256": "d0ce773ea4d3555f40d8023bd5d04d6cf4e663b886fbabcccbbd3f96c9804b8d"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/d8241adb0bcfe835b7d61926acdd7692f3e99d3c59881c69f11cd864259a1c69/operations.json",
+              "sha256": "812ed0fa2605ccd4c9c80609055bcb73a9b1d0f4212da0f4a7cf6f3460e8490e"
+            }
+          ]
+        },
+        {
+          "workers": 4,
+          "case_key": "d8241adb0bcfe835b7d61926acdd7692f3e99d3c59881c69f11cd864259a1c69",
+          "refused_operations": [
+            {
+              "decisions": {
+                "coincident_exact": 18,
+                "coincident_fact": 0,
+                "coincident_separation": 0,
+                "exact": 7,
+                "filter": 218,
+                "max_bits_high_water": 128,
+                "not_exact": 0,
+                "refined": 0,
+                "refused": 0,
+                "total": 243
+              },
+              "id": "cut",
+              "kernel": "brep",
+              "local_tolerances": null,
+              "marks": [],
+              "operation": "boolean",
+              "refusal": {
+                "code": "intersect.parametric-coincidence",
+                "detail": "different spline definitions require a finite curve-equivalence proof"
+              },
+              "sequence": 2,
+              "status": "refused",
+              "wall_ms": 0.5274179999999999,
+              "work": {
+                "after": 115984,
+                "before": 114370,
+                "used": 1614
+              }
+            }
+          ],
+          "files": [
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/d8241adb0bcfe835b7d61926acdd7692f3e99d3c59881c69f11cd864259a1c69/question.json",
+              "sha256": "5ee5cda5d898548d58e01e00ad914e960a7fa955b99c5f8798357c25581ed8de"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/d8241adb0bcfe835b7d61926acdd7692f3e99d3c59881c69f11cd864259a1c69/response.json",
+              "sha256": "dfd17592eefd127dabc3313037c727e814060be72a2c7fb92fec7a0ad396e901"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/d8241adb0bcfe835b7d61926acdd7692f3e99d3c59881c69f11cd864259a1c69/operations.json",
+              "sha256": "8cd5ff5d208731e29ab625fc00864f1c46907d4663dbf65fe83b77ffd14a6628"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M10-010",
+      "name": "import-union",
+      "status": "refused",
+      "refusal": {
+        "code": "intersect.parametric-coincidence",
+        "detail": "different spline definitions require a finite curve-equivalence proof",
+        "stage": null,
+        "step": "cut"
+      },
+      "work": {
+        "exhausted": false,
+        "limit": 20000000,
+        "used": 115984
+      },
+      "current_fallback_attribution": "unproved; historical operation log has no internal drop-branch trace",
+      "published_worker_records": [
+        {
+          "workers": 1,
+          "case_key": "2c9e5c69fc8d50ba0564b7f734322de9066fff526ef3c05cb2fee14c22a0e165",
+          "refused_operations": [
+            {
+              "decisions": {
+                "coincident_exact": 18,
+                "coincident_fact": 0,
+                "coincident_separation": 0,
+                "exact": 7,
+                "filter": 218,
+                "max_bits_high_water": 128,
+                "not_exact": 0,
+                "refined": 0,
+                "refused": 0,
+                "total": 243
+              },
+              "id": "cut",
+              "kernel": "brep",
+              "local_tolerances": null,
+              "marks": [],
+              "operation": "boolean",
+              "refusal": {
+                "code": "intersect.parametric-coincidence",
+                "detail": "different spline definitions require a finite curve-equivalence proof"
+              },
+              "sequence": 2,
+              "status": "refused",
+              "wall_ms": 0.486551,
+              "work": {
+                "after": 115984,
+                "before": 114370,
+                "used": 1614
+              }
+            }
+          ],
+          "files": [
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/2c9e5c69fc8d50ba0564b7f734322de9066fff526ef3c05cb2fee14c22a0e165/question.json",
+              "sha256": "2337200d2854d465bcdf77d60ebd36e21c054db6912719e37b8e2c6a6a1487af"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/2c9e5c69fc8d50ba0564b7f734322de9066fff526ef3c05cb2fee14c22a0e165/response.json",
+              "sha256": "6be88413bfd1ce423e0665df9d9b6a3bd246184cd20f89f3cf9a94110a92d74a"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/2c9e5c69fc8d50ba0564b7f734322de9066fff526ef3c05cb2fee14c22a0e165/operations.json",
+              "sha256": "39eef038c1f5a19186a92b26af8cc16b5eddf56dbcba998d47675b7d0ffea749"
+            }
+          ]
+        },
+        {
+          "workers": 4,
+          "case_key": "2c9e5c69fc8d50ba0564b7f734322de9066fff526ef3c05cb2fee14c22a0e165",
+          "refused_operations": [
+            {
+              "decisions": {
+                "coincident_exact": 18,
+                "coincident_fact": 0,
+                "coincident_separation": 0,
+                "exact": 7,
+                "filter": 218,
+                "max_bits_high_water": 128,
+                "not_exact": 0,
+                "refined": 0,
+                "refused": 0,
+                "total": 243
+              },
+              "id": "cut",
+              "kernel": "brep",
+              "local_tolerances": null,
+              "marks": [],
+              "operation": "boolean",
+              "refusal": {
+                "code": "intersect.parametric-coincidence",
+                "detail": "different spline definitions require a finite curve-equivalence proof"
+              },
+              "sequence": 2,
+              "status": "refused",
+              "wall_ms": 0.7055520000000001,
+              "work": {
+                "after": 115984,
+                "before": 114370,
+                "used": 1614
+              }
+            }
+          ],
+          "files": [
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/2c9e5c69fc8d50ba0564b7f734322de9066fff526ef3c05cb2fee14c22a0e165/question.json",
+              "sha256": "2337200d2854d465bcdf77d60ebd36e21c054db6912719e37b8e2c6a6a1487af"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/2c9e5c69fc8d50ba0564b7f734322de9066fff526ef3c05cb2fee14c22a0e165/response.json",
+              "sha256": "53b1371a2575649b532495de773b73c01d23f411c586e3176fae5a91027f3ae0"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/2c9e5c69fc8d50ba0564b7f734322de9066fff526ef3c05cb2fee14c22a0e165/operations.json",
+              "sha256": "e8468747dfaa117214e4e768acfcc412eeb8731641d6dc290ec908066300921f"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M10-011",
+      "name": "import-intersect",
+      "status": "refused",
+      "refusal": {
+        "code": "intersect.parametric-coincidence",
+        "detail": "different spline definitions require a finite curve-equivalence proof",
+        "stage": null,
+        "step": "cut"
+      },
+      "work": {
+        "exhausted": false,
+        "limit": 20000000,
+        "used": 115984
+      },
+      "current_fallback_attribution": "unproved; historical operation log has no internal drop-branch trace",
+      "published_worker_records": [
+        {
+          "workers": 1,
+          "case_key": "719346627aec78e64f6030e5f7d4f395e6a3b7fb254b6fbff04b4abbaf0679cd",
+          "refused_operations": [
+            {
+              "decisions": {
+                "coincident_exact": 18,
+                "coincident_fact": 0,
+                "coincident_separation": 0,
+                "exact": 7,
+                "filter": 218,
+                "max_bits_high_water": 128,
+                "not_exact": 0,
+                "refined": 0,
+                "refused": 0,
+                "total": 243
+              },
+              "id": "cut",
+              "kernel": "brep",
+              "local_tolerances": null,
+              "marks": [],
+              "operation": "boolean",
+              "refusal": {
+                "code": "intersect.parametric-coincidence",
+                "detail": "different spline definitions require a finite curve-equivalence proof"
+              },
+              "sequence": 2,
+              "status": "refused",
+              "wall_ms": 0.49056800000000006,
+              "work": {
+                "after": 115984,
+                "before": 114370,
+                "used": 1614
+              }
+            }
+          ],
+          "files": [
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/719346627aec78e64f6030e5f7d4f395e6a3b7fb254b6fbff04b4abbaf0679cd/question.json",
+              "sha256": "7852f15a64738aad74bcc9640d00de2f4ba113911f0ed5ffd9a2b72919ca0ac1"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/719346627aec78e64f6030e5f7d4f395e6a3b7fb254b6fbff04b4abbaf0679cd/response.json",
+              "sha256": "2aa84a80ab7231571226f83b6b16eee429e8a5638a4bf0e2942ff19e640f1910"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/719346627aec78e64f6030e5f7d4f395e6a3b7fb254b6fbff04b4abbaf0679cd/operations.json",
+              "sha256": "e787eb3ad7f050ab552e163f5ca14e4a4aa787e4538ca5982a83a94db6084568"
+            }
+          ]
+        },
+        {
+          "workers": 4,
+          "case_key": "719346627aec78e64f6030e5f7d4f395e6a3b7fb254b6fbff04b4abbaf0679cd",
+          "refused_operations": [
+            {
+              "decisions": {
+                "coincident_exact": 18,
+                "coincident_fact": 0,
+                "coincident_separation": 0,
+                "exact": 7,
+                "filter": 218,
+                "max_bits_high_water": 128,
+                "not_exact": 0,
+                "refined": 0,
+                "refused": 0,
+                "total": 243
+              },
+              "id": "cut",
+              "kernel": "brep",
+              "local_tolerances": null,
+              "marks": [],
+              "operation": "boolean",
+              "refusal": {
+                "code": "intersect.parametric-coincidence",
+                "detail": "different spline definitions require a finite curve-equivalence proof"
+              },
+              "sequence": 2,
+              "status": "refused",
+              "wall_ms": 0.5910569999999999,
+              "work": {
+                "after": 115984,
+                "before": 114370,
+                "used": 1614
+              }
+            }
+          ],
+          "files": [
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/719346627aec78e64f6030e5f7d4f395e6a3b7fb254b6fbff04b4abbaf0679cd/question.json",
+              "sha256": "7852f15a64738aad74bcc9640d00de2f4ba113911f0ed5ffd9a2b72919ca0ac1"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/719346627aec78e64f6030e5f7d4f395e6a3b7fb254b6fbff04b4abbaf0679cd/response.json",
+              "sha256": "ee127434d80af583a25ed24b560d3ca1cdc9b1e3896d05d5d0597567f549d9a6"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/719346627aec78e64f6030e5f7d4f395e6a3b7fb254b6fbff04b4abbaf0679cd/operations.json",
+              "sha256": "6a8840905a1c2a1c3fa69c25a7397ee8c17efcfbb48f8aa2508feb593d9c9a2f"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M10-012",
+      "name": "spline-pair-subtract",
+      "status": "refused",
+      "refusal": {
+        "code": "intersect.unsupported-pair",
+        "detail": "rational atlas with rational atlas: surface pair is outside piece 4 coverage",
+        "stage": null,
+        "step": "cut"
+      },
+      "work": {
+        "exhausted": false,
+        "limit": 20000000,
+        "used": 74693
+      },
+      "current_fallback_attribution": "unproved; historical operation log has no internal drop-branch trace",
+      "published_worker_records": [
+        {
+          "workers": 1,
+          "case_key": "322fbeea0959f36f138975c50d36a187fae068aaffb72e37909dd665431aae35",
+          "refused_operations": [
+            {
+              "decisions": {
+                "coincident_exact": 0,
+                "coincident_fact": 0,
+                "coincident_separation": 0,
+                "exact": 0,
+                "filter": 28,
+                "max_bits_high_water": 128,
+                "not_exact": 0,
+                "refined": 0,
+                "refused": 0,
+                "total": 28
+              },
+              "id": "cut",
+              "kernel": "brep",
+              "local_tolerances": null,
+              "marks": [],
+              "operation": "boolean",
+              "refusal": {
+                "code": "intersect.unsupported-pair",
+                "detail": "rational atlas with rational atlas: surface pair is outside piece 4 coverage"
+              },
+              "sequence": 8,
+              "status": "refused",
+              "wall_ms": 0.058861,
+              "work": {
+                "after": 74693,
+                "before": 74581,
+                "used": 112
+              }
+            }
+          ],
+          "files": [
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/322fbeea0959f36f138975c50d36a187fae068aaffb72e37909dd665431aae35/question.json",
+              "sha256": "87a64ccaa55b748e1c586b768e0863513cc30c0dde54c3864db503fb7f122316"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/322fbeea0959f36f138975c50d36a187fae068aaffb72e37909dd665431aae35/response.json",
+              "sha256": "8ffc67e70805889d388c523349e62fccaa940ea256ceed844066f3e4a9927b35"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/322fbeea0959f36f138975c50d36a187fae068aaffb72e37909dd665431aae35/operations.json",
+              "sha256": "2c5375ba3f4b6dda8452b7e7907b207620e7f80bcd860e6f1ef00d97f1b160dc"
+            }
+          ]
+        },
+        {
+          "workers": 4,
+          "case_key": "322fbeea0959f36f138975c50d36a187fae068aaffb72e37909dd665431aae35",
+          "refused_operations": [
+            {
+              "decisions": {
+                "coincident_exact": 0,
+                "coincident_fact": 0,
+                "coincident_separation": 0,
+                "exact": 0,
+                "filter": 28,
+                "max_bits_high_water": 128,
+                "not_exact": 0,
+                "refined": 0,
+                "refused": 0,
+                "total": 28
+              },
+              "id": "cut",
+              "kernel": "brep",
+              "local_tolerances": null,
+              "marks": [],
+              "operation": "boolean",
+              "refusal": {
+                "code": "intersect.unsupported-pair",
+                "detail": "rational atlas with rational atlas: surface pair is outside piece 4 coverage"
+              },
+              "sequence": 8,
+              "status": "refused",
+              "wall_ms": 0.064631,
+              "work": {
+                "after": 74693,
+                "before": 74581,
+                "used": 112
+              }
+            }
+          ],
+          "files": [
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/322fbeea0959f36f138975c50d36a187fae068aaffb72e37909dd665431aae35/question.json",
+              "sha256": "87a64ccaa55b748e1c586b768e0863513cc30c0dde54c3864db503fb7f122316"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/322fbeea0959f36f138975c50d36a187fae068aaffb72e37909dd665431aae35/response.json",
+              "sha256": "046a99d2d0a0569311883fd3fec4301194ae90d6e24bbc7fd89984a8c3014e08"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/322fbeea0959f36f138975c50d36a187fae068aaffb72e37909dd665431aae35/operations.json",
+              "sha256": "e01dec2638d3c55acc1f2567f05c9a6df4510bdb306a1d49bd67baaed9f1db05"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M10-013",
+      "name": "spline-pair-union",
+      "status": "refused",
+      "refusal": {
+        "code": "intersect.unsupported-pair",
+        "detail": "rational atlas with rational atlas: surface pair is outside piece 4 coverage",
+        "stage": null,
+        "step": "cut"
+      },
+      "work": {
+        "exhausted": false,
+        "limit": 20000000,
+        "used": 74693
+      },
+      "current_fallback_attribution": "unproved; historical operation log has no internal drop-branch trace",
+      "published_worker_records": [
+        {
+          "workers": 1,
+          "case_key": "5b3f18d5b9cdc90e34e23f38a965c42b2da36c10c7fb7aa5e9a5708fce21650e",
+          "refused_operations": [
+            {
+              "decisions": {
+                "coincident_exact": 0,
+                "coincident_fact": 0,
+                "coincident_separation": 0,
+                "exact": 0,
+                "filter": 28,
+                "max_bits_high_water": 128,
+                "not_exact": 0,
+                "refined": 0,
+                "refused": 0,
+                "total": 28
+              },
+              "id": "cut",
+              "kernel": "brep",
+              "local_tolerances": null,
+              "marks": [],
+              "operation": "boolean",
+              "refusal": {
+                "code": "intersect.unsupported-pair",
+                "detail": "rational atlas with rational atlas: surface pair is outside piece 4 coverage"
+              },
+              "sequence": 8,
+              "status": "refused",
+              "wall_ms": 0.052679000000000004,
+              "work": {
+                "after": 74693,
+                "before": 74581,
+                "used": 112
+              }
+            }
+          ],
+          "files": [
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/5b3f18d5b9cdc90e34e23f38a965c42b2da36c10c7fb7aa5e9a5708fce21650e/question.json",
+              "sha256": "cbf59b092bab4808ef44a4a02442b6d44802f5393201b4b4ddf46ee567e63c7c"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/5b3f18d5b9cdc90e34e23f38a965c42b2da36c10c7fb7aa5e9a5708fce21650e/response.json",
+              "sha256": "941d8e2b0f9cdf7b406fe488d56728e05c9f2e8fe519819fe88ede4704878003"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/5b3f18d5b9cdc90e34e23f38a965c42b2da36c10c7fb7aa5e9a5708fce21650e/operations.json",
+              "sha256": "e1c3891385f127d07ef626d77e1a56ffa4c8ba613dde6a9e4fbd745b2394151e"
+            }
+          ]
+        },
+        {
+          "workers": 4,
+          "case_key": "5b3f18d5b9cdc90e34e23f38a965c42b2da36c10c7fb7aa5e9a5708fce21650e",
+          "refused_operations": [
+            {
+              "decisions": {
+                "coincident_exact": 0,
+                "coincident_fact": 0,
+                "coincident_separation": 0,
+                "exact": 0,
+                "filter": 28,
+                "max_bits_high_water": 128,
+                "not_exact": 0,
+                "refined": 0,
+                "refused": 0,
+                "total": 28
+              },
+              "id": "cut",
+              "kernel": "brep",
+              "local_tolerances": null,
+              "marks": [],
+              "operation": "boolean",
+              "refusal": {
+                "code": "intersect.unsupported-pair",
+                "detail": "rational atlas with rational atlas: surface pair is outside piece 4 coverage"
+              },
+              "sequence": 8,
+              "status": "refused",
+              "wall_ms": 0.08774499999999999,
+              "work": {
+                "after": 74693,
+                "before": 74581,
+                "used": 112
+              }
+            }
+          ],
+          "files": [
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/5b3f18d5b9cdc90e34e23f38a965c42b2da36c10c7fb7aa5e9a5708fce21650e/question.json",
+              "sha256": "cbf59b092bab4808ef44a4a02442b6d44802f5393201b4b4ddf46ee567e63c7c"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/5b3f18d5b9cdc90e34e23f38a965c42b2da36c10c7fb7aa5e9a5708fce21650e/response.json",
+              "sha256": "7980fc884174b8229c29a3a696a1612dc34f9bca127eac842da0e3b5cd2dcec4"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/5b3f18d5b9cdc90e34e23f38a965c42b2da36c10c7fb7aa5e9a5708fce21650e/operations.json",
+              "sha256": "0949bca5822fa045218d3b431f67ba0147031e86676c06198925fae84e381072"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M10-014",
+      "name": "spline-pair-intersect",
+      "status": "refused",
+      "refusal": {
+        "code": "intersect.unsupported-pair",
+        "detail": "rational atlas with rational atlas: surface pair is outside piece 4 coverage",
+        "stage": null,
+        "step": "cut"
+      },
+      "work": {
+        "exhausted": false,
+        "limit": 20000000,
+        "used": 74693
+      },
+      "current_fallback_attribution": "unproved; historical operation log has no internal drop-branch trace",
+      "published_worker_records": [
+        {
+          "workers": 1,
+          "case_key": "f1d1d63b736ab54c58a17f8dc1cc57487e9945bf4a268a5c23e38836e923e650",
+          "refused_operations": [
+            {
+              "decisions": {
+                "coincident_exact": 0,
+                "coincident_fact": 0,
+                "coincident_separation": 0,
+                "exact": 0,
+                "filter": 28,
+                "max_bits_high_water": 128,
+                "not_exact": 0,
+                "refined": 0,
+                "refused": 0,
+                "total": 28
+              },
+              "id": "cut",
+              "kernel": "brep",
+              "local_tolerances": null,
+              "marks": [],
+              "operation": "boolean",
+              "refusal": {
+                "code": "intersect.unsupported-pair",
+                "detail": "rational atlas with rational atlas: surface pair is outside piece 4 coverage"
+              },
+              "sequence": 8,
+              "status": "refused",
+              "wall_ms": 0.047679,
+              "work": {
+                "after": 74693,
+                "before": 74581,
+                "used": 112
+              }
+            }
+          ],
+          "files": [
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/f1d1d63b736ab54c58a17f8dc1cc57487e9945bf4a268a5c23e38836e923e650/question.json",
+              "sha256": "dcb54d47c3a58f422130acb8529158730f1edede2a67cf3032d9346f3368abee"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/f1d1d63b736ab54c58a17f8dc1cc57487e9945bf4a268a5c23e38836e923e650/response.json",
+              "sha256": "47b71ff13759122ce873b2a75f9f7089a7ccd88cbc4ae22f2c3d961e64bec662"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-1/cases/f1d1d63b736ab54c58a17f8dc1cc57487e9945bf4a268a5c23e38836e923e650/operations.json",
+              "sha256": "2d61d39a88890c96aa93301292039c6072ae21b02b02355f9611395f05b4c5db"
+            }
+          ]
+        },
+        {
+          "workers": 4,
+          "case_key": "f1d1d63b736ab54c58a17f8dc1cc57487e9945bf4a268a5c23e38836e923e650",
+          "refused_operations": [
+            {
+              "decisions": {
+                "coincident_exact": 0,
+                "coincident_fact": 0,
+                "coincident_separation": 0,
+                "exact": 0,
+                "filter": 28,
+                "max_bits_high_water": 128,
+                "not_exact": 0,
+                "refined": 0,
+                "refused": 0,
+                "total": 28
+              },
+              "id": "cut",
+              "kernel": "brep",
+              "local_tolerances": null,
+              "marks": [],
+              "operation": "boolean",
+              "refusal": {
+                "code": "intersect.unsupported-pair",
+                "detail": "rational atlas with rational atlas: surface pair is outside piece 4 coverage"
+              },
+              "sequence": 8,
+              "status": "refused",
+              "wall_ms": 0.060674,
+              "work": {
+                "after": 74693,
+                "before": 74581,
+                "used": 112
+              }
+            }
+          ],
+          "files": [
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/f1d1d63b736ab54c58a17f8dc1cc57487e9945bf4a268a5c23e38836e923e650/question.json",
+              "sha256": "dcb54d47c3a58f422130acb8529158730f1edede2a67cf3032d9346f3368abee"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/f1d1d63b736ab54c58a17f8dc1cc57487e9945bf4a268a5c23e38836e923e650/response.json",
+              "sha256": "73cffe3f2517a3b523cee065f3314d4d8c8e06a4b96d4b5c995d5ce7125d5f62"
+            },
+            {
+              "path": "evidence/phase1/P02/m10-workers-4/cases/f1d1d63b736ab54c58a17f8dc1cc57487e9945bf4a268a5c23e38836e923e650/operations.json",
+              "sha256": "2276896d975fececcc7b59db5d605742f9e35f5e15b8558f7aef8ffe54fdfa74"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

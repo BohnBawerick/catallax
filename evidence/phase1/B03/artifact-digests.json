@@ -1,0 +1,56 @@
+{
+  "baseline": "48a6d53d57300d7b248e45a3aa86ebca6ad7f06d",
+  "method": "SHA-256 of public B03 artifacts and selected baseline inputs. This manifest is not self-hashed. P02 inventory is static evidence extraction, not executed requests.",
+  "artifacts": [
+    {
+      "path": "crates/catallax-trace/tests/b03_drop_inventory.rs",
+      "sha256": "29e978deb9f51f347a8112b878511e1c88c9e95977611300cb5d3d107dd2da7c"
+    },
+    {
+      "path": "docs/phase1/B03/INVENTORY.md",
+      "sha256": "869ced769619bc40748c7d9b6fcf2885cd81a6c2c70d674029d7029a6028db7c"
+    },
+    {
+      "path": "evidence/phase1/B03/VALIDATION.md",
+      "sha256": "bbfc1a2b677d346920bb91225db9e4f1a9b612cc4b8932a8c18d8e4ad86326f1"
+    },
+    {
+      "path": "evidence/phase1/B03/p02-inventory.json",
+      "sha256": "aa7f362611b67fd85053a7ef1af689350f1360d695fdd8dd86bbb332fa113306"
+    }
+  ],
+  "sources": [
+    {
+      "path": "docs/phase1/P04/PORT-CONSUMERS.md",
+      "sha256": "e0e03e8b5d1ad317f13712bdac617c810efcafd0640b1761a86d3750fd7b493f"
+    },
+    {
+      "path": "evidence/phase1/P02/m10.jsonl",
+      "sha256": "821d05aaf64bd96c47c42366ada277d02d1099359ad4b56191f7052e28bc9f02"
+    },
+    {
+      "path": "evidence/phase1/P02/comparison.json",
+      "sha256": "56b5616a21fc04103d4389e84f7543b07eda70a78f3d101624eba80d7a6a4e73"
+    },
+    {
+      "path": "crates/catallax-trace/src/surface_drop_curve.rs",
+      "sha256": "bd4b48cba01696304b1e34cd2b4f5c8698667c699a6f618c8fe8a09b68f394e9"
+    },
+    {
+      "path": "crates/catallax-trace/src/surface_trace.rs",
+      "sha256": "34f1c97a05d4ebaf1f8c9316e412963a811b84a14fea8c8f628db97aa9b13684"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/drop-curve/README.md",
+      "sha256": "d7f6ef3f0a63cbdb2c940111233a86aeddfdd769e61425daf2b452c07788bd3a"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/drop-curve/generate.py",
+      "sha256": "ec977f9f0a6bef7c32199485a67e8e31ca998914e7be01819ec98e0b429e46f0"
+    },
+    {
+      "path": "crates/catallax-trace/tests/fixtures/drop-curve/cases.txt",
+      "sha256": "3f44e1021da9ed5a93ed8059821b00a71a06ad1c46975127e7e533719272b76a"
+    }
+  ]
+}

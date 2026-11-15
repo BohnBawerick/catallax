@@ -1,8 +1,8 @@
 //! Standalone wasm smoke module compiled by ci/wasm-clocks, without native dev dependencies.
 use catallax_numbers::{
-    AheadSite, Decider, Helpers, OperationSpan, Real, RunAhead, ValuesAhead,
-    record_operation_path, set_run_ahead_loops, set_run_ahead_wait, set_threads, threads,
-    with_operation_budget, with_operation_log,
+    AheadSite, Decider, Helpers, OperationSpan, Real, RunAhead, ValuesAhead, record_operation_path,
+    set_run_ahead_loops, set_run_ahead_wait, set_threads, threads, with_operation_budget,
+    with_operation_log,
 };
 
 #[unsafe(no_mangle)]
@@ -17,7 +17,8 @@ pub extern "C" fn operation_log() {
     };
     let (plain, plain_work) = with_operation_budget(100_000, decide);
     for _ in 0..2 {
-        let ((logged, entries), work) = with_operation_budget(100_000, || with_operation_log(decide));
+        let ((logged, entries), work) =
+            with_operation_budget(100_000, || with_operation_log(decide));
         assert_eq!(logged, plain);
         assert_eq!(work.used, plain_work.used);
         assert!(work.used > 0 && !work.exhausted);
@@ -40,8 +41,14 @@ pub extern "C" fn run_ahead() {
     let mut ahead = RunAhead::new(&SITE, &dec, 3);
     let mut values = ValuesAhead::<usize>::new(&SITE, &dec, 3);
     for index in 0..3 {
-        ahead.at(index, || panic!("browser requested worker body"));
-        assert!(values.take(index, &mut dec, || panic!("browser requested worker value")).is_none());
+        ahead.at::<fn(usize, &mut Decider)>(index, || panic!("browser requested worker body"));
+        assert!(
+            values
+                .take::<fn(usize, &mut Decider) -> usize>(index, &mut dec, || panic!(
+                    "browser requested worker value"
+                ))
+                .is_none()
+        );
     }
     set_run_ahead_loops(false);
     set_run_ahead_wait(false);
@@ -50,13 +57,24 @@ pub extern "C" fn run_ahead() {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn display() {
-    use catallax_field::{Plan, display::{Diagnostics, Options, mesh_plan, mesh_plan_reported}};
+    use catallax_field::{
+        Plan,
+        display::{Diagnostics, Options, mesh_plan, mesh_plan_reported},
+    };
     use catallax_recipe::{Operation, Pose, Recipe, Step, StepId};
     let id = StepId::new("box").unwrap();
-    let plan = Plan::compile(&Recipe::new("browser", vec![Step {
-        id: id.clone(),
-        op: Operation::Block { size: [2.into(), 3.into(), 4.into()], pose: Pose::identity() },
-    }], id)).unwrap();
+    let plan = Plan::compile(&Recipe::new(
+        "browser",
+        vec![Step {
+            id: id.clone(),
+            op: Operation::Block {
+                size: [2.into(), 3.into(), 4.into()],
+                pose: Pose::identity(),
+            },
+        }],
+        id,
+    ))
+    .unwrap();
     let options = Options::default();
     let (plain, plain_work) = with_operation_budget(100_000_000, || {
         mesh_plan(&plan, &options, &mut Decider::default()).unwrap()
@@ -77,7 +95,12 @@ pub extern "C" fn display() {
     assert_eq!(diagnostics.total.elapsed, None);
     assert_eq!(diagnostics.common.elapsed, None);
     for support in diagnostics.supports {
-        for cost in [support.total, support.classification, support.queries, support.emission] {
+        for cost in [
+            support.total,
+            support.classification,
+            support.queries,
+            support.emission,
+        ] {
             assert_eq!(cost.elapsed, None);
         }
     }

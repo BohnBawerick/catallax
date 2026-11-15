@@ -18,7 +18,7 @@ for package in numbers field recipe; do
   externs+=(--extern "catallax_${package}=$lib")
 done
 rustc --edition 2024 --target wasm32-unknown-unknown --crate-type cdylib \
-  "$root/tools/checks/wasm-clocks.rs" "${externs[@]}" -L "dependency=$deps" -o "$scratch/clocks.wasm"
+  "$root/tools/checks/wasm-clocks.rs" "${externs[@]}" -L "dependency=$deps" -L "dependency=$target_dir/debug/deps" -o "$scratch/clocks.wasm"
 node - "$scratch/clocks.wasm" <<'JS'
 const fs = require('node:fs');
 Error.stackTraceLimit = 30;

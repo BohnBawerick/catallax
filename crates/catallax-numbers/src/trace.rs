@@ -187,15 +187,17 @@ mod tests {
             (result, dec.stats().clone())
         };
         let (plain, plain_work) = crate::with_operation_budget(100_000, decide);
-        let ((logged, entries), logged_work) = crate::with_operation_budget(100_000, || {
-            with_operation_log(decide)
-        });
+        let ((logged, entries), logged_work) =
+            crate::with_operation_budget(100_000, || with_operation_log(decide));
         assert_eq!(format!("{plain:?}"), format!("{logged:?}"));
         assert_eq!(plain_work.used, logged_work.used);
         assert!(!logged_work.exhausted);
         assert!(logged_work.used > 0);
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].work_after - entries[0].work_before, logged_work.used);
+        assert_eq!(
+            entries[0].work_after - entries[0].work_before,
+            logged_work.used
+        );
         assert!(entries[0].wall_ms.is_some_and(|ms| ms >= 0.0));
     }
 

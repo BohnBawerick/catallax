@@ -662,3 +662,21 @@ fn compact(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hole_containment_charges_each_outer_polygon_visit() {
+        let polygon: Vec<_> = (0..16)
+            .flat_map(|_| [[q(0), q(0)], [q(1), q(0)], [q(1), q(1)], [q(0), q(1)]])
+            .collect();
+        let (_, work) =
+            catallax_numbers::with_operation_budget(8, || inside(&[q(0), q(0)], &polygon));
+        assert!(
+            work.exhausted,
+            "outer polygon traversal escaped its allowance: {work:?}"
+        );
+    }
+}

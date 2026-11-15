@@ -1,3 +1,5 @@
+//! Surface imports through display, picking and material-operation guards.
+
 use catallax_app::build_incremental_with_files;
 use catallax_features::ImportFiles;
 use catallax_import::sha256_hex;
@@ -23,6 +25,12 @@ fn build(source: &[u8]) -> catallax_app::IncrementalApplicationBody {
     )
     .unwrap();
     let files = ImportFiles::from([(hash, source)]);
+    assert_eq!(
+        catallax_field::Plan::compile_with_files_checked(&recipe, &files, &mut Decider::default())
+            .unwrap_err()
+            .code,
+        "field.import-domain"
+    );
     build_incremental_with_files(
         &recipe,
         None,

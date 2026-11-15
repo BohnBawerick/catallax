@@ -8,6 +8,48 @@ use std::{
 };
 static NEXT: AtomicUsize = AtomicUsize::new(0);
 
+#[test]
+fn a_surface_import_remains_typed_in_the_command_and_written_step() {
+    let source = include_str!("../../catallax-import/tests/fixtures/surface-square.step");
+    let hash = catallax_import::sha256_hex(source.as_bytes());
+    let problem = json!({"format":"catallax-import-recipe/1", "files":{hash.clone():source},
+        "recipe":{"format":"catallax-recipe/3", "name":"surface import",
+            "steps":[{"id":"sheet", "op":"import_step",
+                "file":{"name":"surface.step", "sha256":hash},
+                "pose":{"rotation":["1","0","0","0"], "translation":["0","0","0"]}}],
+            "result":"sheet"}});
+    let dir = std::env::temp_dir().join(format!(
+        "catallax-surface-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let mut child = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+        .arg("stream")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut input = child.stdin.take().unwrap();
+    writeln!(input, "{}", json!({"format":"catallax-request/1", "source":"recipe", "problem":problem, "max_work":20_000_000, "out":dir})).unwrap();
+    drop(input);
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+    let response: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(response["manifest"]["status"], "answered", "{response}");
+    assert_eq!(response["manifest"]["result"]["kind"], "surface");
+    let bytes = fs::read(dir.join("answer.step")).unwrap();
+    let source = catallax_import::read_step(&bytes).unwrap();
+    assert!(source.solids.is_empty());
+    assert_eq!(source.surface_models.len(), 1);
+    let mut model = catallax_topology::Model::new();
+    let bodies = catallax_import::build_file(&mut model, &source, None).unwrap();
+    assert_eq!(
+        model.body(bodies[0]).kind,
+        catallax_topology::BodyKind::Surface
+    );
+    fs::remove_dir_all(dir).unwrap();
+}
+
 fn question() -> Value {
     json!({"format":"exact-brep-question/2","id":"stream-test",
         "operands":{"a":{"shape":"block","size":["1","2","3"]}},

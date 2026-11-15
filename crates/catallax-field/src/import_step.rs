@@ -511,6 +511,11 @@ impl Plan {
         })?;
         let model = &built.model;
         let body = built.result;
+        if model.body(body).kind == catallax_topology::BodyKind::Surface {
+            return Err(unsupported(
+                "a surface body has no material interior to compile as a solid field",
+            ));
+        }
         if let Some(op) = closed_primitive(model, body)? {
             let (leaf, faces) = geometry::compile(&op, &step.id, dec)?;
             let [face] = faces.as_slice() else {

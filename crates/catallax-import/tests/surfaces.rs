@@ -1,3 +1,5 @@
+//! Surface-model recognition, typed operations and STEP round trips.
+
 mod common;
 
 use catallax_boolean::{BoolOp, boolean};

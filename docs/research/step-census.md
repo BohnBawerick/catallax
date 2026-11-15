@@ -119,8 +119,10 @@ OCP 8.0.1.1. Source bytes are checked before and after every observation. The
 | Total observed | 3,000 | 100% |
 
 Opening a non-null transferred shape was observed for **2,993 files**, including
-five that later timed out. An opening checkpoint does not establish completed
-healing, validity, complete source coverage or a solid. The other six timeouts
+four that later timed out and one that failed during `shape_fix`. Thus 2,988
+completed opened results plus four opened timeouts and one opened failure make
+2,993 observed openings. An opening checkpoint does not establish completed
+healing, validity, complete source coverage or a solid. The other seven timeouts
 have no observed opening. Root transfer counts and whole-shape/solid checks are
 retained separately. Empty cells mean unobserved, not a successful check.
 

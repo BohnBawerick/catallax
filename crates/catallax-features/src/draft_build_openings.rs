@@ -8,6 +8,10 @@ use crate::{
 use catallax_numbers::Sign;
 use catallax_shapes::Plane;
 
+#[cfg(test)]
+#[path = "draft_build_openings_tests.rs"]
+mod tests;
+
 #[derive(Clone)]
 pub(super) struct Opening {
     pub cell: ConvexCell,
@@ -19,13 +23,14 @@ fn bad(detail: &str) -> Refusal {
     Refusal::new("draft.unsupported-arrangement", detail)
 }
 
-fn edges(model: &Model, wire: LoopId) -> Result<Vec<EdgeId>, Refusal> {
+fn edges(model: &Model, wire: LoopId, dec: &mut Decider) -> Result<Vec<EdgeId>, Refusal> {
     let Loop::Coedges(coedges) = model.loop_(wire) else {
         return Err(bad("a polygonal opening needs finite straight wires"));
     };
     coedges
         .iter()
         .map(|coedge| {
+            dec.charge_work(1)?;
             let edge = model.coedge(*coedge).edge;
             let e = model.edge(edge);
             if !matches!(model.geom().curve(e.curve), Curve::Line(_))
@@ -37,6 +42,73 @@ fn edges(model: &Model, wire: LoopId) -> Result<Vec<EdgeId>, Refusal> {
             Ok(edge)
         })
         .collect()
+}
+
+struct SideIndex {
+    owners: BTreeMap<EdgeId, Option<FaceId>>,
+    counts: BTreeMap<FaceId, usize>,
+}
+
+struct CapWire {
+    id: LoopId,
+    edges: Vec<EdgeId>,
+    walls: BTreeSet<FaceId>,
+}
+
+fn index_work(entries: usize) -> u64 {
+    u64::from(entries.max(1).ilog2()) + 1
+}
+
+impl SideIndex {
+    fn new(
+        model: &Model,
+        faces: impl Iterator<Item = FaceId>,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        let mut index = Self {
+            owners: BTreeMap::new(),
+            counts: BTreeMap::new(),
+        };
+        for face in faces {
+            dec.charge_work(1)?;
+            let wires = &model.face(face).loops;
+            if wires.len() != 1 {
+                return Err(bad("a through opening side needs one finite wire"));
+            }
+            let edges = edges(model, wires[0], dec)?;
+            dec.charge_work(index_work(index.counts.len()))?;
+            index.counts.insert(face, edges.len());
+            for edge in edges {
+                dec.charge_work(index_work(index.owners.len()))?;
+                index
+                    .owners
+                    .entry(edge)
+                    .and_modify(|owner| {
+                        if *owner != Some(face) {
+                            *owner = None;
+                        }
+                    })
+                    .or_insert(Some(face));
+            }
+        }
+        Ok(index)
+    }
+
+    fn resolve(&self, model: &Model, id: LoopId, dec: &mut Decider) -> Result<CapWire, Refusal> {
+        let edges = edges(model, id, dec)?;
+        let mut walls = BTreeSet::new();
+        for edge in &edges {
+            dec.charge_work(index_work(self.owners.len()) + index_work(walls.len()))?;
+            match self.owners.get(edge) {
+                Some(Some(face)) => {
+                    walls.insert(*face);
+                }
+                Some(None) => return Err(bad("a polygonal opening edge has several side walls")),
+                None => return Err(bad("a polygonal opening edge has no side wall")),
+            }
+        }
+        Ok(CapWire { id, edges, walls })
+    }
 }
 
 fn plane(model: &Model, face: FaceId) -> PlaneFace {
@@ -70,73 +142,67 @@ pub(super) fn extract(
             return Err(bad("polygonal through openings need perpendicular caps"));
         }
     }
-    let wires = |cap: FaceId| {
-        model
-            .face(cap)
-            .loops
-            .iter()
-            .skip(1)
-            .filter(|wire| !holes.contains(wire))
-            .copied()
-            .collect::<Vec<_>>()
+    let wires = |cap: FaceId, dec: &mut Decider| -> Result<Vec<LoopId>, Refusal> {
+        let mut found = Vec::new();
+        for wire in model.face(cap).loops.iter().skip(1) {
+            dec.charge_work(index_work(holes.len()))?;
+            if !holes.contains(wire) {
+                found.push(*wire);
+            }
+        }
+        Ok(found)
     };
-    let first = wires(caps[0]);
-    let second = wires(caps[1]);
+    let first = wires(caps[0], dec)?;
+    let second = wires(caps[1], dec)?;
     if first.len() != second.len() {
         return Err(bad("polygonal through openings need matching cap wires"));
     }
-    let side_faces: Vec<_> = planes
-        .iter()
-        .filter(|face| !caps.contains(face))
-        .map(|face| {
-            let wires = &model.face(*face).loops;
-            if wires.len() != 1 {
-                return Err(bad("a through opening side needs one finite wire"));
-            }
-            Ok((*face, edges(model, wires[0])?))
-        })
-        .collect::<Result<_, Refusal>>()?;
-    let owners = |wire: LoopId| -> Result<BTreeSet<FaceId>, Refusal> {
-        edges(model, wire)?
-            .iter()
-            .map(|edge| {
-                let mut owners = side_faces.iter().filter(|(_, edges)| edges.contains(edge));
-                let Some((face, _)) = owners.next() else {
-                    return Err(bad("a polygonal opening edge has no side wall"));
-                };
-                if owners.next().is_some() {
-                    return Err(bad("a polygonal opening edge has several side walls"));
-                }
-                Ok(*face)
-            })
-            .collect()
+    let sides = SideIndex::new(
+        model,
+        planes.iter().filter(|face| !caps.contains(face)).copied(),
+        dec,
+    )?;
+    let resolve = |wires: Vec<LoopId>, dec: &mut Decider| {
+        wires
+            .into_iter()
+            .map(|wire| sides.resolve(model, wire, dec))
+            .collect::<Result<Vec<_>, Refusal>>()
     };
+    let first = resolve(first, dec)?;
+    let second = resolve(second, dec)?;
+    let mut opposite = BTreeMap::new();
+    for (i, wire) in second.iter().enumerate() {
+        dec.charge_work((wire.walls.len() as u64).max(1) * index_work(opposite.len()))?;
+        opposite
+            .entry(wire.walls.clone())
+            .and_modify(|candidate| *candidate = None)
+            .or_insert(Some(i));
+    }
     let mut removed = BTreeSet::new();
     let mut matched = BTreeSet::new();
     let mut openings = Vec::new();
     for a in first {
-        let walls = owners(a)?;
-        if walls.len() < 3 || walls.len() != edges(model, a)?.len() {
+        let walls = &a.walls;
+        if walls.len() < 3 || walls.len() != a.edges.len() {
             return Err(bad("a polygonal opening needs distinct side walls"));
         }
-        let mut candidates = Vec::new();
-        for b in &second {
-            if owners(*b)? == walls {
-                candidates.push(*b);
-            }
-        }
-        let [b] = candidates.as_slice() else {
+        dec.charge_work((walls.len() as u64).max(1) * index_work(opposite.len()))?;
+        let Some(Some(b)) = opposite.get(walls) else {
             return Err(bad("a polygonal opening has no unique opposite cap wire"));
         };
-        if !matched.insert(*b) || walls.iter().any(|wall| !removed.insert(*wall)) {
+        let b = &second[*b];
+        dec.charge_work(index_work(matched.len()))?;
+        if !matched.insert(b.id) {
             return Err(bad("polygonal openings share a physical wall"));
         }
         let mut faces = cap_planes.to_vec();
-        for wall in &walls {
+        for wall in walls {
+            dec.charge_work(index_work(removed.len()) + index_work(sides.counts.len()))?;
+            if !removed.insert(*wall) {
+                return Err(bad("polygonal openings share a physical wall"));
+            }
             let mut face = plane(model, *wall);
-            if sign(&face.plane.normal.dot(axis), dec)? != Sign::Zero
-                || side_faces.iter().find(|(f, _)| f == wall).unwrap().1.len() != 4
-            {
+            if sign(&face.plane.normal.dot(axis), dec)? != Sign::Zero || sides.counts[wall] != 4 {
                 return Err(bad(
                     "a polygonal opening needs prismatic quadrilateral sides",
                 ));
@@ -146,9 +212,10 @@ pub(super) fn extract(
         }
         let cell = ConvexCell::new(faces, dec)?;
         let mut physical = BTreeSet::new();
-        for wire in [a, *b] {
-            for edge in edges(model, wire)? {
-                let edge = model.edge(edge);
+        for wire in [&a, b] {
+            for edge in &wire.edges {
+                dec.charge_work(2 * index_work(physical.len()))?;
+                let edge = model.edge(*edge);
                 physical.extend([edge.start.unwrap(), edge.end.unwrap()]);
             }
         }
@@ -167,13 +234,14 @@ pub(super) fn extract(
                 ));
             }
         }
-        holes.extend([a, *b]);
+        holes.extend([a.id, b.id]);
         openings.push(Opening {
             cell,
-            wires: [(caps[0], a), (caps[1], *b)],
-            walls: walls.into_iter().collect(),
+            wires: [(caps[0], a.id), (caps[1], b.id)],
+            walls: walls.iter().copied().collect(),
         });
     }
+    dec.charge_work(planes.len() as u64 * index_work(removed.len()))?;
     Ok((
         planes
             .iter()

@@ -71,7 +71,7 @@ pub(super) fn shell(
     let faces = model.faces_of_body(body);
     let inventory = catallax_numbers::OperationSpan::begin(
         "brep",
-        step,
+        &format!("{step}.opening-inventory"),
         "distance.shell.opening-inventory",
         dec,
     );
@@ -164,7 +164,7 @@ pub(super) fn shell(
     } else {
         let span = catallax_numbers::OperationSpan::begin(
             "brep",
-            step,
+            &format!("{step}.prismatic-cavity"),
             "distance.shell.prismatic-cavity",
             dec,
         );
@@ -216,10 +216,10 @@ pub(super) fn shell(
         // transverse distance to its side walls. Its closed convex offset supplies
         // planar strips and circular corner sectors. Rounded end patches lie beyond
         // that interval and cannot replace a physical opening rim.
-        for opening in openings {
+        for (i, opening) in openings.into_iter().enumerate() {
             let offset = catallax_numbers::OperationSpan::begin(
                 "brep",
-                step,
+                &format!("{step}.opening-offset.{i}"),
                 "distance.shell.opening-offset",
                 dec,
             );
@@ -243,7 +243,7 @@ pub(super) fn shell(
             });
             let cut = catallax_numbers::OperationSpan::begin(
                 "brep",
-                step,
+                &format!("{step}.opening-cavity.{i}"),
                 "distance.shell.opening-cavity",
                 dec,
             );
@@ -260,7 +260,12 @@ pub(super) fn shell(
         }
         hollow
     };
-    let cut = catallax_numbers::OperationSpan::begin("brep", step, "distance.shell.material", dec);
+    let cut = catallax_numbers::OperationSpan::begin(
+        "brep",
+        &format!("{step}.material"),
+        "distance.shell.material",
+        dec,
+    );
     let result =
         catallax_boolean::boolean(model, body, hollow, catallax_boolean::BoolOp::Subtract, dec)
             .map_err(|e| e.refusal)?

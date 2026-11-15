@@ -430,7 +430,11 @@ pub(crate) fn measure(
                         } else {
                             None
                         };
-                        let exact = if exact.is_none() {
+                        // Keep ordinary cylinder property enclosures stable.
+                        // Finite distance trims need the analytic generator.
+                        let exact = if exact.is_none()
+                            && (analytic_only || matches!(surface, Surface::Cone(_)))
+                        {
                             generator(surface, model, edge.curve, dec)?
                         } else {
                             exact

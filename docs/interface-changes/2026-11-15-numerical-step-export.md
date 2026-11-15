@@ -12,11 +12,15 @@ catallax_step::numerical::build(&body, &options, &mut decider)
 ```
 
 `body` is N01/N02's checked `NumericalBody`. The first family is one retained
-closed shell with finite axis-aligned line edges and rational, orthogonal unit
-axis plane frames, including N02's outer-loop/one-hole faces. Source line,
-vertex and trim endpoint values must agree in retained rational coordinates.
-Merely tolerated source gaps refuse instead of being healed. Curved carriers,
-non-axis frames and unsupported bodies refuse; a geometrically flat spline is
+closed shell with finite rational line edges and rational orthogonal plane
+frames, including oblique directions and N02's outer-loop/one-hole faces.
+Source line endpoints and plane incidence must agree in retained rational world
+coordinates. The original coordinate-plane path also retains its exact trim
+endpoint check. Oblique trims use inverse coordinates on the actual written
+orthonormal frame, checked numerically rather than equating rational UV midpoints
+with exact real parameters. No world-space source point is moved.
+Merely tolerated source geometric gaps refuse instead of being healed. Curved
+carriers and unsupported bodies refuse; a geometrically flat spline is
 not silently replaced by a plane. No mesh or inferred edge/loop topology is used.
 
 The private artifact bytes are STEP AP242, explicitly labelled `catallax numerical
@@ -32,6 +36,14 @@ whole-curve, whole-face or whole-body bound. Both source and payload evidence
 remain numerical, including at zero residual. Existing generic-constructor trust
 limitations from N01 still apply; this producer grants no exact/bounded authority.
 
+Oblique `DIRECTION` ratios are scaled by their maximum absolute component before
+decimal selection. The new report field `max_direction_ratio_rounding_error`
+records their dimensionless rounding error separately from written lengths;
+it is neither an angular nor a spatial bound. STEP normalizes direction ratios.
+Oblique lines use unit vector magnitude and retain their explicit finite edge
+vertices and orientation, with a corresponding change of local parameter scale.
+Coordinate lines keep the existing magnitude representation.
+
 `NumericalStepOptions` fixes the product name, 1..17 significant digits and a
 positive scalar-rounding limit before export. Defaults are 17 digits and 1e-7 mm
 per written length scalar, independently of source tolerance. No retry increases
@@ -46,6 +58,10 @@ edges and malformed/crossing/touching hole loops after rounding, rather than
 using source checks as file checks. This is a checked decimal-value model, not a
 new global self-intersection certificate. The byte buffer also meets the existing
 planar seam syntax contract. No curved pcurve-planning certificate is reused.
+The oblique payload reconstructs STEP's normalized directions and projects its
+written reference direction perpendicular to its written plane normal, following
+OCCT's `StepToGeom::MakeAxis2Placement` and `gp_Ax2` construction. It independently
+rechecks that selected decimal geometry through N01/N02 at the fixed tolerance.
 
 Callers obtain bytes via `artifact.bytes()` and provenance via `artifact.report()`.
 After writing, `artifact.check_written(&reread_bytes, &mut decider)` checks complete

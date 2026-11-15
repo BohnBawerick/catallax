@@ -2,7 +2,7 @@
 //! No exact answer, complete bound, model extraction or healing is provided.
 use crate::graph::{Field, Graph, Id, boolean, refs, string, text};
 use catallax_numbers::{
-    Decider, NumericalEvidence, Rational, Refusal, Sign, operation_budget_active,
+    Decider, NumericalEvidence, Rational, Real, Refusal, Sign, operation_budget_active,
     with_operation_budget,
 };
 use catallax_shapes::{Curve, Point3, Surface, Vector3};
@@ -52,6 +52,9 @@ pub struct NumericalStepReport {
     pub scalar_rounding_limit_mm: Rational,
     /// Actual maximum rounding error among written length scalars only.
     pub max_scalar_rounding_error_mm: Rational,
+    /// Maximum rounding error of normalized DIRECTION ratios, dimensionless.
+    /// This is not an angular or spatial deviation bound.
+    pub max_direction_ratio_rounding_error: Rational,
     /// Stored faces, explicit edges and vertices, with no inferred topology.
     pub counts: [usize; 3],
     /// Checks performed by this writer, distinct from external reference checks.
@@ -143,15 +146,12 @@ fn rational_point(p: &Point3) -> Result<[Rational; 3], Refusal> {
 fn rational_vector(p: &Vector3) -> Result<[Rational; 3], Refusal> {
     rational_point(&Point3::new(p.x.clone(), p.y.clone(), p.z.clone()))
 }
-fn axis(v: &[Rational; 3], unit: bool) -> Result<usize, Refusal> {
+fn axis(v: &[Rational; 3], unit: bool) -> Option<usize> {
     let nonzero: Vec<_> = v.iter().enumerate().filter(|(_, q)| !q.is_zero()).collect();
     if nonzero.len() != 1 || (unit && nonzero[0].1.abs() != Rational::one()) {
-        return Err(bad(
-            "unsupported",
-            "first numerical writer needs axis-aligned lines and unit orthogonal plane frames",
-        ));
+        return None;
     }
-    Ok(nonzero[0].0)
+    Some(nonzero[0].0)
 }
 fn cross(a: &[Rational; 3], b: &[Rational; 3]) -> [Rational; 3] {
     [
@@ -178,6 +178,137 @@ fn point_from(p: &[Rational; 3]) -> Point3 {
         p[2].clone().into(),
     )
 }
+
+fn arithmetic(
+    a: &Rational,
+    b: &Rational,
+    op: char,
+    dec: &mut Decider,
+) -> Result<Rational, Refusal> {
+    dec.reserve_exact_arithmetic(a, b, matches!(op, '*' | '/'))?;
+    Ok(match op {
+        '+' => a + b,
+        '-' => a - b,
+        '*' => a * b,
+        '/' => a / b,
+        _ => unreachable!(),
+    })
+}
+fn dot(a: &[Rational; 3], b: &[Rational; 3], dec: &mut Decider) -> Result<Rational, Refusal> {
+    let mut result = Rational::zero();
+    for i in 0..3 {
+        let product = arithmetic(&a[i], &b[i], '*', dec)?;
+        result = arithmetic(&result, &product, '+', dec)?;
+    }
+    Ok(result)
+}
+fn difference(
+    a: &[Rational; 3],
+    b: &[Rational; 3],
+    dec: &mut Decider,
+) -> Result<[Rational; 3], Refusal> {
+    Ok([
+        arithmetic(&a[0], &b[0], '-', dec)?,
+        arithmetic(&a[1], &b[1], '-', dec)?,
+        arithmetic(&a[2], &b[2], '-', dec)?,
+    ])
+}
+fn charged_cross(
+    a: &[Rational; 3],
+    b: &[Rational; 3],
+    dec: &mut Decider,
+) -> Result<[Rational; 3], Refusal> {
+    let mut result = std::array::from_fn(|_| Rational::zero());
+    for (i, q) in result.iter_mut().enumerate() {
+        let (j, k) = ((i + 1) % 3, (i + 2) % 3);
+        let x = arithmetic(&a[j], &b[k], '*', dec)?;
+        let y = arithmetic(&a[k], &b[j], '*', dec)?;
+        *q = arithmetic(&x, &y, '-', dec)?;
+    }
+    Ok(result)
+}
+struct DirectionValues {
+    values: [Rational; 3],
+    tokens: [String; 3],
+    error: Rational,
+}
+// STEP DIRECTION ratios are dimensionless and normalized by the reader. Scale
+// them before decimal selection; never put their error in the length report.
+fn direction_values(
+    v: &[Rational; 3],
+    options: &NumericalStepOptions,
+    dec: &mut Decider,
+) -> Result<DirectionValues, Refusal> {
+    if axis(v, false).is_some() {
+        let values = v.each_ref().map(|q| {
+            if q.is_zero() {
+                Rational::zero()
+            } else if q.sign() == Sign::Positive {
+                Rational::one()
+            } else {
+                -Rational::one()
+            }
+        });
+        let tokens = values.each_ref().map(|q| {
+            if q.is_zero() {
+                "0."
+            } else if q.sign() == Sign::Positive {
+                "1."
+            } else {
+                "-1."
+            }
+            .to_owned()
+        });
+        return Ok(DirectionValues {
+            values,
+            tokens,
+            error: Rational::zero(),
+        });
+    }
+    let mut scale = Rational::zero();
+    for q in v {
+        dec.reserve_exact_arithmetic(q, &scale, true)?;
+        scale = scale.max(q.abs());
+    }
+    if scale.is_zero() {
+        return Err(bad("rounding-topology", "direction vanished"));
+    }
+    let mut result = DirectionValues {
+        values: std::array::from_fn(|_| Rational::zero()),
+        tokens: std::array::from_fn(|_| String::new()),
+        error: Rational::zero(),
+    };
+    for (i, q) in v.iter().enumerate() {
+        let ratio = arithmetic(q, &scale, '/', dec)?;
+        dec.charge_work(1)?;
+        let number = crate::number::rational(&ratio, options.significant_digits);
+        dec.reserve_exact_arithmetic(&result.error, &number.error, true)?;
+        result.error = result.error.max(number.error);
+        result.values[i] = written(&ratio, options)?;
+        result.tokens[i] = number.text;
+    }
+    Ok(result)
+}
+fn inverse_uv(
+    plane: &catallax_shapes::Plane,
+    p: &[Rational; 3],
+    dec: &mut Decider,
+) -> Result<[Rational; 2], Refusal> {
+    let origin = rational_point(&plane.origin)?;
+    let x = rational_vector(&plane.ref_dir)?;
+    let y = charged_cross(&rational_vector(&plane.normal)?, &x, dec)?;
+    let delta = difference(p, &origin, dec)?;
+    let mut uv = [Rational::zero(), Rational::zero()];
+    for (i, axis) in [&x, &y].into_iter().enumerate() {
+        let squared = dot(axis, axis, dec)?;
+        if squared.sign() != Sign::Positive {
+            return Err(bad("rounding-topology", "written plane frame vanished"));
+        }
+        let value = &Real::from(dot(&delta, axis, dec)?) / &Real::from(squared).sqrt();
+        uv[i] = dec.enclose_budgeted_at(&value, 128)?.mid();
+    }
+    Ok(uv)
+}
 // Same IDs/loops, and only values actually selected for serialization. The UVs
 // below are inverse coordinates on emitted planar frames, not inferred topology.
 fn emitted_checks(
@@ -200,22 +331,33 @@ fn emitted_checks(
         };
         let mut origin = rational_point(&line.origin)?;
         let mut dir = rational_vector(&line.dir)?;
-        let a = axis(&dir, false)?;
         for q in &mut origin {
             *q = written(q, options)?;
         }
-        let magnitude = written(&dir[a].abs(), options)?;
-        dir[a] = if dir[a].sign() == Sign::Negative {
-            -magnitude
+        if let Some(a) = axis(&dir, false) {
+            let magnitude = written(&dir[a].abs(), options)?;
+            dir[a] = if dir[a].sign() == Sign::Negative {
+                -magnitude
+            } else {
+                magnitude
+            };
+            if dir[a].is_zero() {
+                return Err(bad("rounding-topology", "line direction vanished"));
+            }
+            edge.parameters = std::array::from_fn(|i| {
+                (&d.vertices[edge.vertices[i]].position[a] - &origin[a]) / dir[a].clone()
+            });
         } else {
-            magnitude
-        };
-        if dir[a].is_zero() {
-            return Err(bad("rounding-topology", "line direction vanished"));
+            // Unit magnitude in STEP and these retained rational ratios define
+            // the same oriented line carrier. Its finite parameters are local
+            // inverse coordinates; EDGE_CURVE keeps the explicit vertex IDs.
+            dir = direction_values(&dir, options, dec)?.values;
+            let squared = dot(&dir, &dir, dec)?;
+            for i in 0..2 {
+                let delta = difference(&d.vertices[edge.vertices[i]].position, &origin, dec)?;
+                edge.parameters[i] = arithmetic(&dot(&delta, &dir, dec)?, &squared, '/', dec)?;
+            }
         }
-        edge.parameters = std::array::from_fn(|i| {
-            (&d.vertices[edge.vertices[i]].position[a] - &origin[a]) / dir[a].clone()
-        });
         line.origin = point_from(&origin);
         line.dir = Vector3::new(
             dir[0].clone().into(),
@@ -233,7 +375,30 @@ fn emitted_checks(
             *q = written(q, options)?;
         }
         plane.origin = point_from(&origin);
-        let x = rational_vector(&plane.ref_dir)?;
+        let mut x = rational_vector(&plane.ref_dir)?;
+        let normal = rational_vector(&plane.normal)?;
+        let coordinate_frame = axis(&normal, true).is_some() && axis(&x, true).is_some();
+        if !coordinate_frame {
+            let normal = direction_values(&normal, options, dec)?.values;
+            let reference = direction_values(&x, options, dec)?.values;
+            // gp_Ax2 projects the written reference onto the written normal's
+            // perpendicular plane. Reconstruct that actual STEP frame.
+            let y = charged_cross(&normal, &reference, dec)?;
+            x = charged_cross(&y, &normal, dec)?;
+            if dot(&x, &x, dec)?.is_zero() {
+                return Err(bad("rounding-topology", "written plane axes are parallel"));
+            }
+            plane.normal = Vector3::new(
+                normal[0].clone().into(),
+                normal[1].clone().into(),
+                normal[2].clone().into(),
+            );
+            plane.ref_dir = Vector3::new(
+                x[0].clone().into(),
+                x[1].clone().into(),
+                x[2].clone().into(),
+            );
+        }
         let y = cross(&rational_vector(&plane.normal)?, &x);
         for trim in face.loops.iter_mut().flatten() {
             let edge = &d.edges[trim.edge];
@@ -242,14 +407,18 @@ fn emitted_checks(
             } else {
                 [edge.vertices[1], edge.vertices[0]]
             };
-            trim.uv = std::array::from_fn(|i| {
-                let p = &d.vertices[endpoints[i]].position;
-                [&x, &y].map(|axis| {
-                    (0..3).fold(Rational::zero(), |sum, k| {
-                        sum + (&p[k] - &origin[k]) * axis[k].clone()
+            for (i, endpoint) in endpoints.into_iter().enumerate() {
+                let p = &d.vertices[endpoint].position;
+                trim.uv[i] = if coordinate_frame {
+                    [&x, &y].map(|axis| {
+                        (0..3).fold(Rational::zero(), |sum, k| {
+                            sum + (&p[k] - &origin[k]) * axis[k].clone()
+                        })
                     })
-                })
-            });
+                } else {
+                    inverse_uv(plane, p, dec)?
+                };
+            }
         }
     }
     Ok(
@@ -264,6 +433,7 @@ struct Writer<'a> {
     options: &'a NumericalStepOptions,
     dec: &'a mut Decider,
     error: Rational,
+    direction_error: Rational,
 }
 impl Writer<'_> {
     fn scalar(&mut self, q: &Rational) -> Result<Field, Refusal> {
@@ -287,32 +457,24 @@ impl Writer<'_> {
             .graph
             .add("CARTESIAN_POINT", vec![text("''"), Field::List(xyz)]))
     }
-    fn direction(&mut self, q: &[Rational; 3]) -> Id {
-        self.graph.add(
+    fn direction(&mut self, q: &[Rational; 3]) -> Result<Id, Refusal> {
+        let values = direction_values(q, self.options, self.dec)?;
+        self.direction_error = self.direction_error.clone().max(values.error);
+        Ok(self.graph.add(
             "DIRECTION",
             vec![
                 text("''"),
-                Field::List(
-                    q.iter()
-                        .map(|q| {
-                            text(if q.is_zero() {
-                                "0."
-                            } else if q.sign() == Sign::Positive {
-                                "1."
-                            } else {
-                                "-1."
-                            })
-                        })
-                        .collect(),
-                ),
+                Field::List(values.tokens.into_iter().map(text).collect()),
             ],
-        )
+        ))
     }
 }
 /// Builds a separate approximate numerical STEP artifact for N02's finite planar
-/// linear family. Source endpoint/trim coordinates must agree exactly in retained
-/// rational values; a merely tolerated gap refuses rather than being healed.
-/// Curved carriers, non-axis frames and unsupported numerical bodies refuse.
+/// linear family, including oblique rational lines and plane frames. Retained
+/// line endpoints and plane incidence must agree in rational world coordinates;
+/// a merely tolerated geometric gap refuses rather than being healed. Oblique
+/// trims are reparameterized on the actual written orthonormal STEP frames.
+/// Curved carriers and unsupported numerical bodies refuse.
 /// Both loops and all shared source edge/vertex identities are serialized.
 /// The source tolerance is metadata, not a STEP global uncertainty or body bound.
 /// The caller's allowance covers all work; no global policy is changed.
@@ -347,6 +509,7 @@ fn build_inner(
         options,
         dec,
         error: Rational::zero(),
+        direction_error: Rational::zero(),
     };
     let mut vertices = Vec::new();
     for vertex in &d.vertices {
@@ -367,7 +530,6 @@ fn build_inner(
         };
         let origin = rational_point(&line.origin)?;
         let dir = rational_vector(&line.dir)?;
-        axis(&dir, false)?;
         for (i, t) in edge.parameters.iter().enumerate() {
             let value = std::array::from_fn::<_, 3, _>(|k| &origin[k] + &(&dir[k] * t));
             if value != d.vertices[edge.vertices[i]].position {
@@ -378,8 +540,12 @@ fn build_inner(
             }
         }
         let point = w.point(&origin)?;
-        let direction = w.direction(&dir);
-        let magnitude = w.scalar(&dir.iter().find(|v| !v.is_zero()).unwrap().abs())?;
+        let direction = w.direction(&dir)?;
+        let magnitude = if let Some(a) = axis(&dir, false) {
+            w.scalar(&dir[a].abs())?
+        } else {
+            w.scalar(&Rational::one())?
+        };
         let vector = w
             .graph
             .add("VECTOR", vec![text("''"), direction.into(), magnitude]);
@@ -410,13 +576,14 @@ fn build_inner(
         let origin = rational_point(&plane.origin)?;
         let normal = rational_vector(&plane.normal)?;
         let x = rational_vector(&plane.ref_dir)?;
-        if axis(&normal, true)? == axis(&x, true)? {
+        let coordinate_frame = axis(&normal, true).is_some() && axis(&x, true).is_some();
+        if coordinate_frame && axis(&normal, true) == axis(&x, true) {
             return Err(bad("unsupported", "plane axes must be orthogonal"));
         }
         let y = cross(&normal, &x);
         let point = w.point(&origin)?;
-        let n = w.direction(&normal);
-        let reference = w.direction(&x);
+        let n = w.direction(&normal)?;
+        let reference = w.direction(&x)?;
         let placement = w.graph.add(
             "AXIS2_PLACEMENT_3D",
             vec![text("''"), point.into(), n.into(), reference.into()],
@@ -436,11 +603,18 @@ fn build_inner(
                     [edge.vertices[1], edge.vertices[0]]
                 };
                 for i in 0..2 {
-                    let uv = &trim.uv[i];
-                    let value = std::array::from_fn::<_, 3, _>(|k| {
-                        &origin[k] + &(&x[k] * &uv[0]) + (&y[k] * &uv[1])
-                    });
-                    if value != d.vertices[endpoint[i]].position {
+                    let position = &d.vertices[endpoint[i]].position;
+                    let agrees = if coordinate_frame {
+                        let uv = &trim.uv[i];
+                        let value = std::array::from_fn::<_, 3, _>(|k| {
+                            &origin[k] + &(&x[k] * &uv[0]) + (&y[k] * &uv[1])
+                        });
+                        value == *position
+                    } else {
+                        let delta = difference(position, &origin, w.dec)?;
+                        dot(&normal, &delta, w.dec)?.is_zero()
+                    };
+                    if !agrees {
                         return Err(bad(
                             "gap",
                             "retained trim and plane endpoint differ; no export healing",
@@ -483,7 +657,7 @@ fn build_inner(
         "MANIFOLD_SOLID_BREP",
         vec![text("'numerical approximate'"), shell.into()],
     );
-    let description = format!(
+    let mut description = format!(
         "catallax numerical approximate;source={};source_tolerance_mm={};source_checks={};source_repairs={};complete_body_bound=unestablished;max_scalar_rounding_error_mm={}",
         d.name,
         body.options().tolerance_mm,
@@ -491,6 +665,12 @@ fn build_inner(
         body.evidence().repairs().len(),
         w.error
     );
+    if !w.direction_error.is_zero() {
+        description.push_str(&format!(
+            ";max_direction_ratio_rounding_error={}",
+            w.direction_error
+        ));
+    }
     let mut file = w.graph.write(&[solid], |roots| {
         // Reuse AP242 product/unit framing, not its exact-model uncertainty claim.
         crate::export::approximate_header(&options.product_name, roots, &description)
@@ -508,9 +688,10 @@ fn build_inner(
             emitted_evidence,
             scalar_rounding_limit_mm: options.max_scalar_rounding_error_mm.clone(),
             max_scalar_rounding_error_mm: w.error,
+            max_direction_ratio_rounding_error: w.direction_error,
             counts: [count.faces, count.edges, count.vertices],
             checks: vec![
-                "source.retained-endpoint-and-trim-consistency".into(),
+                "source.retained-line-endpoints-and-plane-incidence".into(),
                 "file.decimal-model-numerical-admission".into(),
                 "file.canonical-byte-identity".into(),
                 "file.planar-seam-contract".into(),

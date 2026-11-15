@@ -487,6 +487,67 @@ fn reference(
     ))
 }
 
+// Select a chart from the complete boundary alone, at fixed precision.
+// This gives query-independent winding labels and certifies the omitted
+// parallel clear. Zero group homology gives its cylinder-end cell label zero.
+fn torus_chart<const CACHE: bool>(
+    model: &Model,
+    surface: &Surface,
+    loop_groups: &[Vec<LoopId>],
+    surface_id: Option<catallax_shapes::SurfaceId>,
+    bits: u32,
+    work: &mut SamplingWork<'_>,
+    dec: &mut Decider,
+) -> Result<(Projection, i64), Refusal> {
+    let loops: Vec<_> = loop_groups.iter().flatten().copied().collect();
+    let mut found = None;
+    for choice in 0..crate::geometry::DIRECTION_ATTEMPTS {
+        let projection = Projection::new(surface, i64::from(choice))?;
+        match build::<CACHE>(
+            model,
+            &loops,
+            (&projection, surface_id.map(|id| (id, i64::from(choice)))),
+            &[],
+            bits,
+            work,
+            dec,
+        ) {
+            Ok(polygons) => {
+                let mut offset = 0;
+                for group in loop_groups {
+                    let end = offset
+                        + group
+                            .iter()
+                            .filter(|l| matches!(model.loop_(**l), Loop::Coedges(_)))
+                            .count();
+                    let traversal = polygons[offset..end]
+                        .iter()
+                        .flatten()
+                        .fold(Rational::zero(), |sum, (a, b)| sum + (&b[0] - &a[0]));
+                    if !traversal.is_zero() {
+                        return Err(refusal(
+                            "boolean.torus-chart-required",
+                            "torus boundary group has nonzero homology in the selected cylinder chart",
+                        ));
+                    }
+                    offset = end;
+                }
+                found = Some((projection, i64::from(choice)));
+                break;
+            }
+            Err(e) if e.code == "boolean.classify-ambiguous" => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    let chart = found.ok_or_else(|| {
+        refusal(
+            "boolean.torus-chart-required",
+            "no tube parallel was certified clear of the torus boundary",
+        )
+    })?;
+    Ok(chart)
+}
+
 impl RegionCache {
     /// Runs a loop item on a thread that is ahead of the writer, on a copy of
     /// `base` and with a copy of this cache, which is the loop's cache as it
@@ -566,6 +627,23 @@ impl RegionCache {
         };
         let limit = dec.policy().max_precision_bits.max(1);
         let mut bits = limit.min(128);
+        let torus_chart = if matches!(surface, Surface::Torus(_)) {
+            let chart = torus_chart::<CACHE>(
+                model,
+                surface,
+                loop_groups,
+                surface_id,
+                bits,
+                &mut work,
+                dec,
+            )?;
+            if chart.0.on_torus_pole(&model.geom().position(point), dec)? {
+                return Ok(vec![0; loop_groups.len()]);
+            }
+            Some(chart)
+        } else {
+            None
+        };
         loop {
             let width = Rational::one().mul_pow2(-i64::from(bits / 2));
             #[cfg(feature = "work-span")]
@@ -601,7 +679,14 @@ impl RegionCache {
                 1
             };
             for choice in 0..choices {
-                let projection = Projection::certified(surface, i64::from(choice), dec)?;
+                let (projection, chart_choice) = if let Some((projection, choice)) = &torus_chart {
+                    (projection.clone(), *choice)
+                } else {
+                    (
+                        Projection::certified(surface, i64::from(choice), dec)?,
+                        i64::from(choice),
+                    )
+                };
                 if let Some(pole) = projection.pole_point()
                     && !off_carriers(model, &loops, &pole, dec)?
                 {
@@ -625,7 +710,7 @@ impl RegionCache {
                 let polygons = match build::<CACHE>(
                     model,
                     &loops,
-                    (&projection, surface_id.map(|id| (id, i64::from(choice)))),
+                    (&projection, surface_id.map(|id| (id, chart_choice))),
                     &queries,
                     bits,
                     &mut work,
@@ -787,6 +872,29 @@ impl RegionCache {
                 })
                 .collect();
             let mut compute = || {
+                if let Surface::Torus(torus) = &surface
+                    && crate::torus_region::signature(model, torus, &groups, point, dec)?.is_none()
+                {
+                    let mut work = SamplingWork {
+                        traces: &mut self.traces,
+                        remaining: MAX_SAMPLE_CELLS,
+                    };
+                    let bits = dec.policy().max_precision_bits.clamp(1, 128);
+                    let (chart, _) = if PROBE {
+                        torus_chart::<false>(model, &surface, &groups, None, bits, &mut work, dec)?
+                    } else {
+                        torus_chart::<true>(
+                            model,
+                            &surface,
+                            &groups,
+                            Some(f.surface),
+                            bits,
+                            &mut work,
+                            dec,
+                        )?
+                    };
+                    return Ok(vec![crate::torus_region::target(model, face, &chart, dec)?]);
+                }
                 crate::points::left_probe(model, face, &barriers, dec, |model, p, _, dec| {
                     Ok(Some(if PROBE {
                         self.signatures(model, &surface, &groups, p, dec)?

@@ -489,14 +489,7 @@ fn build_inner(
     );
     let mut file = w.graph.write(&[solid], |roots| {
         // Reuse AP242 product/unit framing, not its exact-model uncertainty claim.
-        crate::export::header(&options.product_name, roots, "0.")
-            .lines()
-            .filter(|line| !line.starts_with("#13="))
-            .collect::<Vec<_>>()
-            .join("\n")
-            .replace("'catallax export'", &string(&description))
-            .replace("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#13))", "")
-            + "\n"
+        crate::export::approximate_header(&options.product_name, roots, &description)
     });
     file.push_str("ENDSEC;\nEND-ISO-10303-21;\n");
     let emitted_evidence = emitted_checks(body, options, w.dec)?;

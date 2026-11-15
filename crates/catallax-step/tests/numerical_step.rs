@@ -291,3 +291,33 @@ fn n03_flat_spline_carrier_is_a_typed_refusal_not_a_mesh_or_plane_shortcut() {
         "step.numerical-unsupported"
     );
 }
+
+#[test]
+fn n03_product_name_round_trips_header_replacement_text() {
+    for name in [
+        "catallax export",
+        "part GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#13))",
+    ] {
+        let options = NumericalStepOptions {
+            product_name: name.into(),
+            ..Default::default()
+        };
+        let artifact =
+            numerical::build(&control(false), &options, &mut Decider::default()).unwrap();
+        artifact
+            .check_written(artifact.bytes(), &mut Decider::default())
+            .unwrap();
+        let text = std::str::from_utf8(artifact.bytes()).unwrap();
+        let product = text
+            .lines()
+            .find_map(|line| line.strip_prefix("#4=PRODUCT("))
+            .unwrap();
+        assert_eq!(product.split('\'').nth(1).unwrap(), name);
+        assert_eq!(product.split('\'').nth(3).unwrap(), name);
+        let representation = text
+            .lines()
+            .find_map(|line| line.strip_prefix("#16=ADVANCED_BREP_SHAPE_REPRESENTATION("))
+            .unwrap();
+        assert_eq!(representation.split('\'').nth(1).unwrap(), name);
+    }
+}

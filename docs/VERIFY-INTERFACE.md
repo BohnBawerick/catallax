@@ -6,6 +6,12 @@
 
 The [13 November bounded-answer contract](interface-changes/2026-11-13-bounded-answers.md) adds the public `verification::operation_result_summary` serializer and advertises `catallax-operation-result/1` in `about`. Its `proof` is `proven`, `bounded` or `refused`. Bounded records include the named rule, preset level and measured bound against the kept definition, with exact rational strings and explicit units and scope. `Status::Bounded` and optional `bounded` records in geometric manifests and STEP summaries preserve this distinction. Existing adapters do not produce bounded results yet. Their existing manifest and artifact bytes are unchanged; no request can select a rule or override a level.
 
+Recipe and question STEP exports of partial oblique cylindrical fillet ends carry `step.approximate-pipe-end` when their end parameter maps are qualified numerically.
+These manifests set `exact: false` and `step.approximate: true`; `step.deviation_scope: "certified-components-only"` restricts `max_deviation` to the bounded fitting and rounding components.
+They carry no complete-body bound or `bounded` evidence record.
+The STEP header marks the parameter maps approximate and omits the global uncertainty entity.
+The recipe verification adapter also records the requested distance tolerance in `step.requested_tolerance_mm`.
+
 Build with `cargo build --release -p catallax-cli --bins`. `catallax-verify about` prints protocol versions, sources, kernel identity and the default work allowance. `catallax-verify stream` reads one UTF-8 JSON object per line on stdin and flushes one response per line on stdout. EOF shuts down the process. Each line is a complete independent request. Diagnostics go to stderr. A worker processes requests in order; independent workers may process different requests concurrently.
 
 ```json

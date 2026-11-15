@@ -75,7 +75,7 @@ class ObliqueFilletImports(unittest.TestCase):
             self.assertEqual([mark['code'] for mark in manifest['marks']],
                              ['step.approximate-pipe-end'])
             self.assertFalse(manifest['exact'])
-            self.assertFalse(manifest['step']['bounded'])
+            self.assertNotIn('bounded', manifest['step'])
             self.assertTrue(manifest['step']['approximate'])
         else:
             self.assertEqual(manifest['marks'], [])

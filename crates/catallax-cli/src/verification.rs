@@ -581,7 +581,6 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
                         step = json!({"file":"answer.step","max_deviation":report.max_deviation.to_decimal_bounds(40).1,
                             "approximated_curves":report.approximated_curves,"added_vertices":report.added_vertices,"added_edges":report.added_edges});
                         if approximate {
-                            step["bounded"] = json!(false);
                             step["approximate"] = json!(true);
                             step["deviation_scope"] = json!("certified-components-only");
                             step["requested_tolerance_mm"] = json!(

@@ -178,7 +178,7 @@ fn curved_dependency_rebuilds_finite_parameters_and_retains_shared_vertices() {
         panic!("expected numerical admission")
     };
     let admission = imported.source_admission().unwrap();
-    assert_eq!(admission.method, "retained_shared_analytic_boundaries/2");
+    assert_eq!(admission.method, "retained_shared_analytic_boundaries/3");
     assert_eq!(admission.intersection_checks.len(), 10);
     assert!(admission.intersection_checks.iter().any(|check| matches!(
         check,

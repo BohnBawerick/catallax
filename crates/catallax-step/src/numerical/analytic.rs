@@ -535,7 +535,11 @@ pub(super) fn build(
             geometry[index]
         } else {
             w.graph.add(
-                "SURFACE_CURVE",
+                if uses[index].len() == 2 && uses[index][0].0 == uses[index][1].0 {
+                    "SEAM_CURVE"
+                } else {
+                    "SURFACE_CURVE"
+                },
                 vec![
                     text(string(&edge.key)),
                     geometry[index].into(),

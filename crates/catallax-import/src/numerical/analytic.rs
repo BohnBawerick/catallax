@@ -182,9 +182,9 @@ fn curve(
             ))
         }
         crate::Curve::Circle(frame, radius) => {
-            if edge.start.point == edge.end.point {
+            if edge.start.point == edge.end.point && edge.start.name != edge.end.name {
                 return Err(unsupported(
-                    "closed circle edges require an explicit periodic seam construction",
+                    "coincident circle endpoints need the same explicit source vertex",
                 ));
             }
             let mut ts = Vec::new();
@@ -215,7 +215,11 @@ fn curve(
     }
 }
 
-fn definition(solid: &Solid, dec: &mut Decider) -> Result<n::NumericalDefinition, ImportError> {
+fn definition(
+    solid: &Solid,
+    repairs: &mut Vec<NumericalTopologyRepair>,
+    dec: &mut Decider,
+) -> Result<n::NumericalDefinition, ImportError> {
     let mut result = n::NumericalDefinition {
         name: solid.name.clone(),
         vertices: Vec::new(),
@@ -280,14 +284,20 @@ fn definition(solid: &Solid, dec: &mut Decider) -> Result<n::NumericalDefinition
                             start[0] = near(start[0].clone(), &previous.uv[1][0], dec)?;
                         }
                         let edge = &result.edges[index];
-                        let t = (&edge.parameters[0] + &edge.parameters[1]) / Rational::from_i64(2);
-                        let p = edge
-                            .curve
-                            .evaluate(&Ball::from_rational(&t, BITS), dec)?
-                            .ok_or_else(|| unsupported("analytic edge has no evaluator"))?;
-                        let p = p.each_ref().map(Ball::mid);
-                        let middle = near(parameters(&p, face, dec)?[0].clone(), &start[0], dec)?;
-                        end[0] = near(end[0].clone(), &middle, dec)?;
+                        if edge.vertices[0] == edge.vertices[1] {
+                            end[0] = &start[0] + &rim_delta(source, face, forward, dec)?;
+                        } else {
+                            let t =
+                                (&edge.parameters[0] + &edge.parameters[1]) / Rational::from_i64(2);
+                            let p = edge
+                                .curve
+                                .evaluate(&Ball::from_rational(&t, BITS), dec)?
+                                .ok_or_else(|| unsupported("analytic edge has no evaluator"))?;
+                            let p = p.each_ref().map(Ball::mid);
+                            let middle =
+                                near(parameters(&p, face, dec)?[0].clone(), &start[0], dec)?;
+                            end[0] = near(end[0].clone(), &middle, dec)?;
+                        }
                     }
                     trims.push(n::NumericalTrim {
                         edge: index,
@@ -302,6 +312,9 @@ fn definition(solid: &Solid, dec: &mut Decider) -> Result<n::NumericalDefinition
                 loops.push(trims);
             }
         }
+        if matches!(face.surface, crate::Surface::Cylinder(..)) {
+            join_rims(&mut result, &mut loops, solid, face, repairs, dec)?;
+        }
         result.faces.push(n::NumericalFace {
             key: face.name.clone(),
             surface: carrier,
@@ -314,6 +327,120 @@ fn definition(solid: &Solid, dec: &mut Decider) -> Result<n::NumericalDefinition
         });
     }
     Ok(result)
+}
+
+// This first periodic family has coaxial complete circles and existing anchors
+// on one cylinder generatrix. It needs neither projection nor vertex splitting.
+fn rim_delta(
+    edge: &crate::OrientedEdge,
+    face: &crate::Face,
+    forward: bool,
+    dec: &mut Decider,
+) -> Result<Rational, ImportError> {
+    use crate::planar_arithmetic as a;
+    let (crate::Curve::Circle(circle, r), crate::Surface::Cylinder(cylinder, radius)) =
+        (&edge.curve, &face.surface)
+    else {
+        return Err(unsupported(
+            "a periodic cylindrical rim must be a complete circle",
+        ));
+    };
+    let offset = a::sub(&circle.origin, &cylinder.origin, dec)?;
+    let parallel = a::cross(&circle.axis, &cylinder.axis, dec)?;
+    let centered = a::cross(&offset, &cylinder.axis, dec)?;
+    if r != radius || parallel.iter().chain(&centered).any(|q| !q.is_zero()) {
+        return Err(unsupported(
+            "periodic rims require retained coaxial equal-radius circles",
+        ));
+    }
+    let aligned = a::dot(&circle.axis, &cylinder.axis, dec)?.sign() == Sign::Positive;
+    Ok(if (edge.curve_same_sense == forward) == aligned {
+        turn()
+    } else {
+        -turn()
+    })
+}
+
+fn join_rims(
+    definition: &mut n::NumericalDefinition,
+    loops: &mut Vec<Vec<n::NumericalTrim>>,
+    solid: &Solid,
+    face: &crate::Face,
+    repairs: &mut Vec<NumericalTopologyRepair>,
+    dec: &mut Decider,
+) -> Result<(), ImportError> {
+    use crate::planar_arithmetic as a;
+    if loops.len() != 2 || loops.iter().any(|boundary| boundary.len() != 1) {
+        return Ok(());
+    }
+    dec.charge_work(1)?;
+    let first = loops[0][0].clone();
+    let mut second = loops[1][0].clone();
+    let rims = [
+        &definition.edges[first.edge],
+        &definition.edges[second.edge],
+    ];
+    if rims
+        .iter()
+        .any(|e| e.vertices[0] != e.vertices[1] || !matches!(e.curve, Curve::Circle(_)))
+    {
+        return Ok(());
+    }
+    let vertices = [rims[0].vertices[0], rims[1].vertices[0]];
+    let start = &definition.vertices[vertices[0]].position;
+    let end = &definition.vertices[vertices[1]].position;
+    let delta = a::sub(end, start, dec)?;
+    let crate::Surface::Cylinder(frame, _) = &face.surface else {
+        unreachable!()
+    };
+    if delta.iter().all(Rational::is_zero)
+        || a::cross(&delta, &frame.axis, dec)?
+            .iter()
+            .any(|q| !q.is_zero())
+        || &first.uv[1][0] - &first.uv[0][0] != &second.uv[0][0] - &second.uv[1][0]
+    {
+        return Err(unsupported(
+            "periodic rim anchors must share one generatrix with opposite winding",
+        ));
+    }
+    let shift = &first.uv[1][0] - &second.uv[0][0];
+    for uv in &mut second.uv {
+        uv[0] = &uv[0] + &shift;
+    }
+    let seam = definition.edges.len();
+    let key = format!("derived:{}:periodic-seam", face.name);
+    repairs.push(NumericalTopologyRepair {
+        solid: solid.name.clone(),
+        face: face.name.clone(),
+        source_rim_edges: rims.map(|edge| edge.key.clone()),
+        source_vertices: vertices.map(|v| definition.vertices[v].key.clone()),
+        derived_seam_edge: key.clone(),
+        method: "paired_cylinder_generatrix/1".into(),
+    });
+    definition.edges.push(n::NumericalEdge {
+        key,
+        curve: Curve::Line(Line {
+            origin: point(start),
+            dir: vector(&delta),
+        }),
+        parameters: [Rational::zero(), Rational::one()],
+        vertices,
+    });
+    *loops = vec![vec![
+        first.clone(),
+        n::NumericalTrim {
+            edge: seam,
+            sense: Sense::Same,
+            uv: [first.uv[1].clone(), second.uv[0].clone()],
+        },
+        second.clone(),
+        n::NumericalTrim {
+            edge: seam,
+            sense: Sense::Reversed,
+            uv: [second.uv[1].clone(), first.uv[0].clone()],
+        },
+    ]];
+    Ok(())
 }
 
 fn charge_face(face: &crate::Face, dec: &mut Decider) -> Result<(), ImportError> {
@@ -634,10 +761,15 @@ pub(super) fn import(
     }
     let intersection_checks = intersection_checks(&file, OPTIONAL_EXACT_WORK, dec)?;
     let mut bodies = Vec::new();
+    let mut topology_repairs = Vec::new();
     for solid in &file.solids {
         bodies.push((
             solid.name.clone(),
-            n::build(definition(solid, dec)?, options.clone(), dec)?,
+            n::build(
+                definition(solid, &mut topology_repairs, dec)?,
+                options.clone(),
+                dec,
+            )?,
         ));
     }
     if bodies.is_empty() {
@@ -661,7 +793,8 @@ pub(super) fn import(
         source_admission: Some(NumericalSourceAdmission {
             strict_refusal: refusal,
             tolerance_mm: options.tolerance_mm.clone(),
-            method: "retained_shared_analytic_boundaries/2".into(),
+            method: "retained_shared_analytic_boundaries/3".into(),
+            topology_repairs,
             intersection_checks: intersection_checks.pairs,
             optional_exact_work_reserved: intersection_checks.optional_work_reserved,
             optional_exact_work_used: intersection_checks.optional_work_used,

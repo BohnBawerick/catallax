@@ -97,7 +97,7 @@ fn run(out: &Path, case: &str, control: &str) -> Result<Value, String> {
     let report = file.report();
     let rounding = report.spline_rounding.as_ref().unwrap();
     Ok(json!({
-        "status":"numerical","category":"approximate","case":case,"control":control,
+        "status":"numerical","category":"approximate","exact":false,"case":case,"control":control,
         "counts":report.counts,"two_loop_faces":report.source_definition.faces.iter().filter(|face| face.loops.len()==2).count(),
         "bytes":file.bytes().len(),"source_evidence":evidence(&report.source_evidence),"emitted_evidence":evidence(&report.emitted_evidence),
         "file_checks":report.checks,"max_scalar_rounding_error_mm":report.max_scalar_rounding_error_mm.to_string(),
@@ -142,7 +142,7 @@ fn main() -> ExitCode {
                 Err(reason) => reason,
                 Ok(_) => "operation work allowance exhausted".into(),
             };
-            json!({"status":"refused","case":args[1],"control":control,"reason":reason})
+            json!({"status":"refused","exact":false,"case":args[1],"control":control,"reason":reason})
         }
     };
     response["work"] =

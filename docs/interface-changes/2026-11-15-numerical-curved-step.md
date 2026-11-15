@@ -7,3 +7,15 @@ The curved path reconstructs the decimal controls, knots, weights, finite parame
 `NumericalStepReport::spline_rounding` is `Some(NumericalSplineRounding)` for this path and `None` for the existing planar line path. It records the maximum parameter error in native parameter units and the maximum dimensionless weight error. These values are separate from the length-scalar error and normalized direction-ratio error. Unchecked native curve closure and self-intersection flags are written as unknown.
 
 The artifact and STEP description remain numerical and approximate. The tolerance governs the recorded checks; sample maxima and scalar rounding errors do not establish a whole-body deviation bound. Internal file checks cover byte identity and the seam representation contract. Raw OpenCASCADE import and edit acceptance require the separate reference check on the actual file.
+
+The `numerical_loft_cut` example builds the actual near-contact loft and recorded M10-008 through this API at an explicit 20M allowance and 1e-7 mm tolerance. It saves the generating recipe, complete source/emitted numerical checks and stage work beside the STEP. Its reversed- and missing-hole controls remove a prior output before admission, and publish a refusal response with no STEP.
+
+```sh
+cargo run --release -p catallax-step --example numerical_loft_cut -- /tmp/numerical-curved/tiny tiny
+cargo run --release -p catallax-step --example numerical_loft_cut -- /tmp/numerical-curved/m10-008 m10-008
+cargo run --release -p catallax-step --example numerical_loft_cut -- /tmp/numerical-curved/reverse-hole m10-008 reverse-hole
+cargo run --release -p catallax-step --example numerical_loft_cut -- /tmp/numerical-curved/missing-hole m10-008 missing-hole
+python3 tools/step-regressions/check_numerical_curved_step.py /tmp/numerical-curved
+```
+
+The two invalid controls exit 1. The raw checker requires OCP 8 and checks finite topology, physical void/material witnesses, volume, healing-off import and a later OCCT cut on both actual files. It also verifies both refused outputs contain no stale STEP. The main exact `catallax-step/1` request adapter retains its existing contract; this example exposes the separate numerical Rust path.

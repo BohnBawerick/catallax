@@ -116,6 +116,42 @@ fn clamps_uniform_and_simple_knotted_step_encodings_exactly() {
 }
 
 #[test]
+fn repeated_knot_entries_preserve_the_exact_expanded_curve_and_surface() {
+    let original = std::str::from_utf8(SOURCE).unwrap();
+    let expected = read_step(SOURCE).unwrap();
+    let curve = original.replace(
+        "B_SPLINE_CURVE_WITH_KNOTS((3,3),(0.1,0.9),.UNSPECIFIED.)",
+        "B_SPLINE_CURVE_WITH_KNOTS((1,2,1,2),(0.1,0.1,0.9,0.9),.UNSPECIFIED.)",
+    );
+    assert_ne!(curve, original);
+    assert_eq!(read_step(curve.as_bytes()).unwrap(), expected);
+    let surface = original.replace(
+        "B_SPLINE_SURFACE_WITH_KNOTS((3,3),(3,3),(0.1,0.9),(0.2,0.8),.UNSPECIFIED.)",
+        "B_SPLINE_SURFACE_WITH_KNOTS((1,2,1,2),(2,1,2,1),(0.1,0.1,0.9,0.9),(0.2,0.2,0.8,0.8),.UNSPECIFIED.)",
+    );
+    assert_ne!(surface, original);
+    assert_eq!(read_step(surface.as_bytes()).unwrap(), expected);
+}
+
+#[test]
+fn repeated_knot_entries_cannot_hide_excessive_multiplicity_or_descending_values() {
+    let original = std::str::from_utf8(SOURCE).unwrap();
+    for encoding in [
+        "B_SPLINE_CURVE_WITH_KNOTS((3,1,2),(0.1,0.1,0.9),.UNSPECIFIED.)",
+        "B_SPLINE_CURVE_WITH_KNOTS((1,2,1,2),(0.1,0.9,0.1,0.9),.UNSPECIFIED.)",
+    ] {
+        let source = original.replace(
+            "B_SPLINE_CURVE_WITH_KNOTS((3,3),(0.1,0.9),.UNSPECIFIED.)",
+            encoding,
+        );
+        assert!(matches!(
+            read_step(source.as_bytes()),
+            Err(ImportRefusal::Malformed { .. })
+        ));
+    }
+}
+
+#[test]
 fn refuses_malformed_nets_and_exhausted_work_without_partial_source_data() {
     let original = std::str::from_utf8(SOURCE).unwrap();
     for (from, to) in [

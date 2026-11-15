@@ -66,8 +66,9 @@ fn expanded(
         if m == 0 || knots.len().checked_add(m).is_none_or(|n| n > expected) {
             return Err(malformed("invalid knot multiplicity or expanded count"));
         }
-        if previous.as_ref().is_some_and(|p| p >= &value) {
-            return Err(malformed("distinct knots must increase strictly"));
+        // Repeated entries contribute to one multiplicity in the expanded knot vector.
+        if previous.as_ref().is_some_and(|p| p > &value) {
+            return Err(malformed("knots must not decrease"));
         }
         previous = Some(value.clone());
         for _ in 0..m {

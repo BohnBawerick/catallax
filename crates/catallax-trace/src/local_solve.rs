@@ -420,6 +420,7 @@ impl<E: EvalFunction> LocalSolve1d<E> {
         let mut e: f64 = 0.0;
         let mut iter: u64 = 1;
         while iter <= self.max_iter {
+            crate::surface_work::checkpoint(crate::surface_work::Kind::Local, 1)?;
             let tol1 = tol * x.abs() + ZEPS;
             let tol2 = 2.0 * tol1;
             let mut fall_back = true;
@@ -710,6 +711,7 @@ impl<E: EvalFunction> LocalSolve1d<E> {
         let mut queue = IterationQueue::new();
         self.iter = 0;
         while self.iter < self.max_iter {
+            crate::surface_work::checkpoint(crate::surface_work::Kind::Local, 1)?;
             if self.curr.f_of_t < 0.0 {
                 self.have_lower_bracket = true;
                 if self.curr.f_of_t > self.lower_bracket_f {
@@ -1147,6 +1149,7 @@ impl<E: EvalNFunctions> LocalSolveNd<E> {
 
         self.current_iteration = 0;
         while self.current_iteration < self.maximum_iterations {
+            crate::surface_work::checkpoint(crate::surface_work::Kind::Local, 1)?;
             for value in equations.iter_mut() {
                 *value = -*value;
             }
@@ -1160,6 +1163,7 @@ impl<E: EvalNFunctions> LocalSolveNd<E> {
             let mut have_good_step = false;
             let mut step_scale = 1.0;
             'line_search: while !have_good_step {
+                crate::surface_work::checkpoint(crate::surface_work::Kind::Local, 1)?;
                 let mut step_size = 0.0;
                 have_good_step = true;
                 for ii in 0..count {

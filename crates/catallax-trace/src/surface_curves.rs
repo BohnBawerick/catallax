@@ -83,6 +83,32 @@ fn flat(uv: Vector2) -> Vector3 {
     Vector3::new(uv.x, uv.y, 0.0)
 }
 
+fn output_span(
+    intersector: &Intersector<'_>,
+    first: &TsectPoint,
+    last: &TsectPoint,
+) -> Result<[TsectPoint; 2], SolverRefusal> {
+    let mut points = [*first, *last];
+    if intersector.check_output_spans {
+        for endpoint in 0..2 {
+            for s in 0..2 {
+                let at = points[endpoint].uv[s];
+                let toward = points[1 - endpoint].uv[s];
+                let domain = intersector.domains[s];
+                let side = |a: f64, b: f64, upper: f64| b > a || (b == a && a < upper);
+                let sides = [
+                    side(at.x, toward.x, domain.max.x),
+                    side(at.y, toward.y, domain.max.y),
+                ];
+                let [_, du, dv] = first_derivatives(intersector.surfaces[s], at, sides)?;
+                points[endpoint].uv_deriv[s] =
+                    crate::curve_surface::drop_vector(du, dv, points[endpoint].curve_tangent)?;
+            }
+        }
+    }
+    Ok(points)
+}
+
 impl IntersectionCurve {
     /// A touching curve: degenerate curves at `point` and at the
     /// parameters `uv` on each surface.
@@ -156,6 +182,7 @@ impl Intersector<'_> {
     ) -> Result<bool, SolverRefusal> {
         let tolerance = self.approx_tolerance;
         for (index, entry) in curves.iter().enumerate() {
+            crate::surface_work::checkpoint(crate::surface_work::Kind::Trace, 1)?;
             if skip == Some(index) {
                 continue;
             }
@@ -294,6 +321,7 @@ impl Tracer {
         let mut planar = [vec![flat(first.uv[0])], vec![flat(first.uv[1])]];
         let mut i = 1;
         while i < points.len() {
+            crate::surface_work::checkpoint(crate::surface_work::Kind::Trace, 1)?;
             let previous = &points[i - 1];
             let mut current = &points[i];
             if i == points.len() - 2 {
@@ -301,10 +329,19 @@ impl Tracer {
                 let delta = current.curve_parameter - previous.curve_parameter;
                 let final_delta = last.curve_parameter - current.curve_parameter;
                 if final_delta / delta < 0.1 {
-                    i += 1;
-                    current = last;
+                    let merge = if intersector.check_output_spans {
+                        let [start, mut checked] = output_span(intersector, previous, last)?;
+                        intersector.test_span_accuracy(&start, &mut checked)?.0
+                    } else {
+                        true
+                    };
+                    if merge {
+                        i += 1;
+                        current = last;
+                    }
                 }
             }
+            let [previous, current] = output_span(intersector, previous, current)?;
             if current.tangent_plane_angle > angle {
                 angle = current.tangent_plane_angle;
             }
@@ -381,6 +418,7 @@ impl Tracer {
         curves: &mut Vec<IntersectionCurve>,
     ) -> Result<(), SolverRefusal> {
         for guess in intersector.interior_guesses(trees)? {
+            crate::surface_work::checkpoint(crate::surface_work::Kind::Trace, 1)?;
             if normal_angle_degrees(intersector, guess)? < 5.0 {
                 continue;
             }
@@ -720,6 +758,43 @@ impl Intersector<'_> {
     /// its leaf pairs on overlapping domains are dropped. Remaining unported
     /// paths return [`SolverRefusal::NotPorted`].
     pub fn do_intersection(&self) -> Result<Vec<IntersectionCurve>, SolverRefusal> {
+        self.intersection_inner()
+    }
+
+    /// Runs the same search with deterministic checkpoints in its nested
+    /// searches, local solves, evaluations and trace/output loops. The callback
+    /// receives the caller's absolute deadline with each reservation and returns
+    /// false when the allowance or deadline is spent.
+    /// Cancellation discards every partial curve, even if a ported helper
+    /// catches its internal failure. Unmetered callers keep their behavior.
+    pub fn do_intersection_with_work(
+        &self,
+        deadline: Option<std::time::Instant>,
+        callback: fn(u64, Option<std::time::Instant>) -> bool,
+    ) -> (
+        Result<Vec<IntersectionCurve>, SolverRefusal>,
+        crate::surface_work::WorkReport,
+    ) {
+        let scope = match crate::surface_work::Scope::enter(callback, deadline) {
+            Ok(scope) => scope,
+            Err(fault) => {
+                return (
+                    Err(fault.into()),
+                    crate::surface_work::WorkReport::default(),
+                );
+            }
+        };
+        let result = self.intersection_inner();
+        let report = scope.report();
+        let result = if report.cancelled {
+            Err(Fault::Degenerate.into())
+        } else {
+            result
+        };
+        (result, report)
+    }
+
+    fn intersection_inner(&self) -> Result<Vec<IntersectionCurve>, SolverRefusal> {
         let trees = self.trees()?;
         let Some(overlap) = self.overlap_box(&trees)? else {
             return Ok(Vec::new());
@@ -745,6 +820,7 @@ impl Intersector<'_> {
             tracer.find_boundary_start_points(self, overlap.bbox, &mut curves)?;
         }
         while let Some(start) = tracer.start_points.pop() {
+            crate::surface_work::checkpoint(crate::surface_work::Kind::Trace, 1)?;
             tracer.trace_direction = 1.0;
             let count = curves.len();
             let input_direction = tracer.trace_direction;
@@ -772,6 +848,7 @@ impl Intersector<'_> {
         tracer.find_interior_curves(self, &trees, &mut curves)?;
         let mut index = 0;
         while index < curves.len() {
+            crate::surface_work::checkpoint(crate::surface_work::Kind::Trace, 1)?;
             if curves[index].curve.is_degenerate(EFF_ZERO) {
                 // SMLib ignores this evaluation's status.
                 let point = curves[index].curve.evaluate_point(0.0).unwrap_or_default();

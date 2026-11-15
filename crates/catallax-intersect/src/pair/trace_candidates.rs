@@ -26,7 +26,7 @@ fn approximate(value: &Real) -> Result<f64, Refusal> {
     Ok(value)
 }
 
-fn surface(
+pub(super) fn surface(
     source: &BSplineSurface,
     map: &Isometry,
     dec: &mut Decider,

@@ -210,6 +210,23 @@ impl ObliqueAnnularBound {
         self.separation
     }
 
+    pub(crate) fn require_separated(&self) -> Result<(), Refusal> {
+        if self.separation == AnnularSeparation::Separated {
+            Ok(())
+        } else {
+            Err(self.publication_refusal())
+        }
+    }
+
+    pub(crate) fn contains_interior(
+        &self,
+        point: &Point3,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        Ok(self.walls[0].contains_interior(point, dec)?
+            && self.walls[1].support.side_at(point, dec)? == Sign::Positive)
+    }
+
     fn publication_refusal(&self) -> Refusal {
         let code = match self.separation {
             AnnularSeparation::Separated => "draft.unsupported-oblique-annulus",

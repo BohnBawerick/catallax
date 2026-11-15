@@ -99,3 +99,58 @@ pub(super) fn assemble(
     catallax_topology::DraftedCylinder::check(model, body, dec)?;
     Ok(body)
 }
+
+pub(super) fn assemble_annular(
+    model: &mut Model,
+    cell: &ObliqueAnnularBound,
+    dec: &mut Decider,
+) -> Result<BodyId, Refusal> {
+    cell.require_separated()?;
+    let mut faces = Vec::with_capacity(4);
+    let mut paths = [Vec::new(), Vec::new()];
+    for i in 0..2 {
+        let mut cap_paths = Vec::with_capacity(2);
+        for (j, ring) in cell.cap_intersections()[i].1.iter().enumerate() {
+            let curve = model.geom_mut().add_curve(Curve::BSpline(ring.clone()));
+            let edge = model.add_edge(Edge {
+                curve,
+                sense: Sense::Same,
+                start: None,
+                end: None,
+            });
+            let cap_sense = if i == j { Sense::Reversed } else { Sense::Same };
+            cap_paths.push(vec![(edge, cap_sense)]);
+            paths[j].push(vec![(edge, crate::extrude::reverse(cap_sense))]);
+        }
+        let (plane, origins) = &cell.walls()[0].caps[i];
+        faces.push(crate::extrude::face(
+            model,
+            Surface::Plane(plane.clone()),
+            Sense::Same,
+            cap_paths,
+            None,
+            origins.clone(),
+        ));
+    }
+    for (j, (wall, paths)) in cell.walls().iter().zip(paths).enumerate() {
+        faces.push(crate::extrude::face(
+            model,
+            Surface::BSpline(SplineSupport::ObliqueDraft(wall.support.clone())),
+            if j == 0 { Sense::Same } else { Sense::Reversed },
+            paths,
+            None,
+            wall.origins.clone(),
+        ));
+    }
+    let shell = model.add_shell(Shell { faces });
+    let lump = model.add_lump(Lump {
+        shells: vec![shell],
+    });
+    let body = model.add_body(Body {
+        kind: BodyKind::Solid,
+        lumps: vec![lump],
+        marks: Default::default(),
+    });
+    catallax_topology::DraftedCylinder::check(model, body, dec)?;
+    Ok(body)
+}

@@ -44,7 +44,7 @@ fn ring(model: &Model, face: FaceId, index: usize) -> Result<(EdgeId, Sense), Re
     Ok((c.edge, c.sense))
 }
 
-/// A complete represented solid with one embedded ruled annulus and two disks.
+/// A complete ruled solid with two disks or two annular caps and a through hole.
 /// The checked carrier proves star-shaped, convex horizontal sections; it does
 /// not claim the entire solid is convex or replace a missing trim by its hull.
 #[derive(Clone, Copy, Debug)]
@@ -53,6 +53,7 @@ pub struct DraftedCylinder<'a> {
     support: &'a ObliqueDraft,
     faces: [FaceId; 3],
     rings: [EdgeId; 2],
+    hole: Option<(&'a ObliqueDraft, FaceId, [EdgeId; 2])>,
 }
 impl<'a> DraftedCylinder<'a> {
     /// Checks all shells, faces, exact shared rows and oriented cap domains.
@@ -67,19 +68,25 @@ impl<'a> DraftedCylinder<'a> {
         };
         let fs = &model.shell(*shell).faces;
         if entity.kind != BodyKind::Solid
-            || fs.len() != 3
+            || !(3..=4).contains(&fs.len())
             || !model.check(body).is_empty()
-            || fs[0] == fs[1]
-            || fs[0] == fs[2]
-            || fs[1] == fs[2]
+            || fs.iter().collect::<std::collections::BTreeSet<_>>().len() != fs.len()
         {
-            return Err(bad("ruled cell is not one valid three-face solid"));
+            return Err(bad("ruled cell is not one valid three- or four-face solid"));
         }
         let mut side = None;
+        let mut hole = None;
         for &f in fs {
             match model.geom().surface(model.face(f).surface) {
-                Surface::BSpline(SplineSupport::ObliqueDraft(s)) if side.is_none() => {
+                Surface::BSpline(SplineSupport::ObliqueDraft(s))
+                    if model.face(f).sense == Sense::Same && side.is_none() =>
+                {
                     side = Some((f, s))
+                }
+                Surface::BSpline(SplineSupport::ObliqueDraft(s))
+                    if model.face(f).sense == Sense::Reversed && hole.is_none() =>
+                {
+                    hole = Some((f, s))
                 }
                 Surface::Plane(_) => (),
                 _ => return Err(bad("ruled cell contains an extra or unsupported carrier")),
@@ -89,9 +96,37 @@ impl<'a> DraftedCylinder<'a> {
         if model.face(side).sense != Sense::Same || model.face(side).loops.len() != 2 {
             return Err(bad("ruled side has incorrect sense or incomplete trims"));
         }
+        if let Some((inner, s)) = hole {
+            if model.face(inner).loops.len() != 2
+                || sign(&s.origin().minus(support.origin()).norm_squared(), dec)? != Sign::Zero
+                || sign(&(s.axis().dot(support.axis()) - Real::one()), dec)? != Sign::Zero
+                || sign(&(s.across().dot(support.across()) - Real::one()), dec)? != Sign::Zero
+            {
+                return Err(bad(
+                    "ruled hole does not share the complete outer frame and height",
+                ));
+            }
+            for i in 0..2 {
+                if sign(&(&s.heights()[i] - &support.heights()[i]), dec)? != Sign::Zero {
+                    return Err(bad("ruled hole has a different finite height"));
+                }
+            }
+            let lean = ((&support.lean()[0] - &s.lean()[0]).square()
+                + (&support.lean()[1] - &s.lean()[1]).square())
+            .sqrt();
+            for height in support.heights() {
+                if sign(
+                    &(&(&support.amplitude(height) - &s.amplitude(height)) - &lean),
+                    dec,
+                )? != Sign::Positive
+                {
+                    return Err(bad("ruled hole touches or crosses the outer wall"));
+                }
+            }
+        }
         let mut caps = [None, None];
         for &f in fs {
-            if f == side {
+            if f == side || hole.is_some_and(|(inner, _)| f == inner) {
                 continue;
             }
             let face = model.face(f);
@@ -116,7 +151,7 @@ impl<'a> DraftedCylinder<'a> {
                 Sign::Zero => return Err(bad("zero cap normal")),
             };
             if caps[slot].replace(f).is_some()
-                || face.loops.len() != 1
+                || face.loops.len() != 1 + usize::from(hole.is_some())
                 || normal * sense(face.sense) != [-1, 1][slot]
             {
                 return Err(bad("ruled cap is duplicated, incomplete or reversed"));
@@ -126,50 +161,22 @@ impl<'a> DraftedCylinder<'a> {
             return Err(bad("ruled cell is missing a cap"));
         };
         let faces = [lower, upper, side];
-        let mut rings = Vec::with_capacity(2);
-        for i in 0..2 {
-            let (e, s) = ring(model, faces[i], 0)?;
-            let edge = model.edge(e);
-            let Curve::BSpline(curve) = model.geom().curve(edge.curve) else {
-                return Err(bad("ruled cap ring is not the exact spline row"));
-            };
-            let expected = BSplineCurve::boundary(
-                support.carrier(),
-                [SplineBoundary::VMin, SplineBoundary::VMax][i],
-            );
-            if !curve.same_definition(&expected)
-                || curve.is_closed() != Some(true)
-                || sense(edge.sense) * sense(s) != [-1, 1][i]
-            {
-                return Err(bad(
-                    "ruled cap ring differs from its complete oriented boundary row",
-                ));
-            }
-            rings.push(e);
-        }
-        if rings[0] == rings[1] {
-            return Err(bad("ruled cell uses one edge for different caps"));
-        }
-        let mut used = [false, false];
-        for i in 0..2 {
-            let (e, s) = ring(model, side, i)?;
-            let j = rings
-                .iter()
-                .position(|x| *x == e)
-                .ok_or_else(|| bad("ruled side is detached from its cap"))?;
-            if std::mem::replace(&mut used[j], true)
-                || sense(model.edge(e).sense) * sense(s) != [1, -1][j]
-            {
-                return Err(bad(
-                    "ruled side does not use both rings opposite their cap uses",
-                ));
-            }
+        let rings = check_rings(model, faces, support, 0)?;
+        let hole = hole
+            .map(|(face, support)| {
+                check_rings(model, [lower, upper, face], support, 1)
+                    .map(|rings| (support, face, rings))
+            })
+            .transpose()?;
+        if hole.is_some_and(|(_, _, inner)| rings.iter().any(|edge| inner.contains(edge))) {
+            return Err(bad("ruled hole reuses an exterior edge"));
         }
         Ok(Self {
             model,
             support,
             faces,
-            rings: [rings[0], rings[1]],
+            rings,
+            hole,
         })
     }
     /// Returns a checked cell only when this body's own faces contain its side.
@@ -208,10 +215,24 @@ impl<'a> DraftedCylinder<'a> {
         if band == Sign::Positive {
             return Ok(band);
         }
-        Ok(match self.support.side_at(p, dec)? {
+        Ok(match self.radial_side(p, dec)? {
             Sign::Negative => band,
             s => s,
         })
+    }
+    fn radial_side(&self, p: &Point3, dec: &mut Decider) -> Result<Sign, Refusal> {
+        let outer = self.support.side_at(p, dec)?;
+        if outer != Sign::Negative {
+            return Ok(outer);
+        }
+        if let Some((inner, _, _)) = self.hole {
+            return Ok(match inner.side_at(p, dec)? {
+                Sign::Negative => Sign::Positive,
+                Sign::Zero => Sign::Zero,
+                Sign::Positive => Sign::Negative,
+            });
+        }
+        Ok(outer)
     }
     fn band(&self, p: &Point3, dec: &mut Decider) -> Result<Sign, Refusal> {
         let z = self.support.coordinates(p)[2].clone();
@@ -233,21 +254,68 @@ impl<'a> DraftedCylinder<'a> {
         p: &Point3,
         dec: &mut Decider,
     ) -> Result<Sign, Refusal> {
-        if f == self.faces[2] {
+        if f == self.faces[2] || self.hole.is_some_and(|(_, inner, _)| f == inner) {
             self.band(p, dec)
         } else {
-            self.support.side_at(p, dec)
+            self.radial_side(p, dec)
         }
     }
-    /// Exact retained ruled support.
+    /// Exact retained exterior ruled support.
     pub fn support(&self) -> &'a ObliqueDraft {
         self.support
     }
-    /// Lower cap, upper cap and ruled side, in material order.
+    /// Inner support, reversed material face and complete lower/upper rings.
+    pub fn hole(&self) -> Option<(&'a ObliqueDraft, FaceId, [EdgeId; 2])> {
+        self.hole
+    }
+    /// Positive lower bound on wall separation within every transverse section.
+    /// Export and display must keep their combined displacement below this bound.
+    pub fn section_clearance(&self, dec: &mut Decider) -> Result<Option<Real>, Refusal> {
+        let Some((inner, _, _)) = self.hole else {
+            return Ok(None);
+        };
+        let minimum = |a: Real, b: Real, dec: &mut Decider| -> Result<Real, Refusal> {
+            Ok(if sign(&(&a - &b), dec)? == Sign::Positive {
+                b
+            } else {
+                a
+            })
+        };
+        let lean = (inner.lean()[0].square() + inner.lean()[1].square()).sqrt();
+        let radius = &minimum(
+            inner.amplitude(&inner.heights()[0]),
+            inner.amplitude(&inner.heights()[1]),
+            dec,
+        )? - &lean;
+        let delta = ((&self.support.lean()[0] - &inner.lean()[0]).square()
+            + (&self.support.lean()[1] - &inner.lean()[1]).square())
+        .sqrt();
+        let gap = minimum(
+            self.support.amplitude(&inner.heights()[0]) - inner.amplitude(&inner.heights()[0]),
+            self.support.amplitude(&inner.heights()[1]) - inner.amplitude(&inner.heights()[1]),
+            dec,
+        )? - delta;
+        // A segment shorter than radius/2 stays away from the axis, where the
+        // inner radial residual has Lipschitz bound 1 + 2*|lean|/radius.
+        minimum(
+            &radius / &Real::from_i64(2),
+            gap / (Real::one() + Real::from_i64(2) * lean / radius),
+            dec,
+        )
+        .map(Some)
+    }
+    /// Exact volume divided by pi, with the through hole removed.
+    pub fn volume_over_pi(&self) -> Real {
+        let outer = self.support.volume_over_pi();
+        self.hole.map_or(outer.clone(), |(inner, _, _)| {
+            outer - inner.volume_over_pi()
+        })
+    }
+    /// Lower cap, upper cap and exterior ruled side, in material order.
     pub fn faces(&self) -> [FaceId; 3] {
         self.faces
     }
-    /// Complete lower and upper physical rings.
+    /// Complete lower and upper exterior physical rings.
     pub fn rings(&self) -> [EdgeId; 2] {
         self.rings
     }
@@ -255,4 +323,53 @@ impl<'a> DraftedCylinder<'a> {
     pub fn model(&self) -> &'a Model {
         self.model
     }
+}
+
+fn check_rings(
+    model: &Model,
+    faces: [FaceId; 3],
+    support: &ObliqueDraft,
+    wall: usize,
+) -> Result<[EdgeId; 2], Refusal> {
+    let direction = if wall == 0 { 1 } else { -1 };
+    let mut rings = Vec::with_capacity(2);
+    for i in 0..2 {
+        let (e, s) = ring(model, faces[i], wall)?;
+        let edge = model.edge(e);
+        let Curve::BSpline(curve) = model.geom().curve(edge.curve) else {
+            return Err(bad("ruled cap ring is not the exact spline row"));
+        };
+        let expected = BSplineCurve::boundary(
+            support.carrier(),
+            [SplineBoundary::VMin, SplineBoundary::VMax][i],
+        );
+        if !curve.same_definition(&expected)
+            || curve.is_closed() != Some(true)
+            || sense(edge.sense) * sense(s) != direction * [-1, 1][i]
+        {
+            return Err(bad(
+                "ruled cap ring differs from its complete oriented boundary row",
+            ));
+        }
+        rings.push(e);
+    }
+    if rings[0] == rings[1] {
+        return Err(bad("ruled cell uses one edge for different caps"));
+    }
+    let mut used = [false, false];
+    for i in 0..2 {
+        let (e, s) = ring(model, faces[2], i)?;
+        let j = rings
+            .iter()
+            .position(|x| *x == e)
+            .ok_or_else(|| bad("ruled side is detached from its cap"))?;
+        if std::mem::replace(&mut used[j], true)
+            || sense(model.edge(e).sense) * sense(s) != direction * [1, -1][j]
+        {
+            return Err(bad(
+                "ruled side does not use both rings opposite their cap uses",
+            ));
+        }
+    }
+    Ok([rings[0], rings[1]])
 }

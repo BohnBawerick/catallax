@@ -149,6 +149,56 @@ class ObliqueDraftOracles(unittest.TestCase):
         volume = closed_volume(directory / 'display.obj')
         self.assertAlmostEqual(volume, 401 * math.pi / 3, delta=0.5)
 
+    def test_annular_caps_preserve_the_hole_without_healing(self):
+        base = json.loads((ROOT / 'crates/catallax-features/tests/fixtures/draft-annular/oblique-bound.json').read_text())
+        results = []
+        for name, selected, radius, tangent in [
+            ('annular-both', ['wall', 'bore'], 8, 1),
+            ('annular-outer', ['wall'], 8, 1),
+            ('annular-inner', ['bore'], 8, 1),
+            ('annular-negative', ['wall', 'bore'], 8, -1),
+            ('annular-radius-edit', ['wall', 'bore'], 9, 1),
+        ]:
+            with self.subTest(name=name):
+                recipe = deepcopy(base)
+                recipe['steps'][0]['loops'][0][0]['radius'] = str(radius)
+                recipe['steps'][2]['angle'] = str(45 * tangent)
+                recipe['steps'][2]['faces'] = [
+                    {'face': {'step': 'base', 'role': {'side': {'segment': segment}}}}
+                    for segment in selected
+                ]
+                factors = []
+                for segment, r, material in [('wall', radius, 1), ('bore', 4, -1)]:
+                    t = tangent * material if segment in selected else 0
+                    a, b = Fraction(r + t), Fraction(-t)
+                    lean = Fraction(-r * t, 8)
+                    factors.append(2*a*a + 4*a*b + Fraction(8, 3)*b*b + lean*lean)
+                oracle = float(factors[0] - factors[1]) * math.pi
+                directory, manifest = self.run_case(name, recipe, 'recipe')
+                self.assertEqual(manifest['status'], 'answered', manifest)
+                self.assertTrue(manifest['exact'])
+                shapes = raw_shapes(directory / 'answer.step')
+                self.assertEqual(len(shapes), 1)
+                shape = shapes[0]
+                self.assertTrue(BRepCheck_Analyzer(shape).IsValid(), name)
+                props = GProp_GProps()
+                error = BRepGProp.VolumePropertiesGK_s(shape, props, 1e-12, True, False, False, False, False)
+                self.assertGreaterEqual(error, 0)
+                self.assertAlmostEqual(props.Mass(), oracle, delta=1e-7)
+                for xyz, expected in [((0, 0, 1), TopAbs_OUT), ((5, 0, 1), TopAbs_IN),
+                                      ((0, 0, 0), TopAbs_OUT), ((5, 0, 3), TopAbs_OUT)]:
+                    self.assertEqual(BRepClass3d_SolidClassifier(shape, gp_Pnt(*xyz), 1e-7).State(), expected)
+                printed, print_manifest = self.run_case(name + '-display', {
+                    'format': 'catallax-print/1', 'recipe': recipe,
+                    'route': 'brep', 'tolerance': '1/10',
+                }, 'print')
+                self.assertEqual(print_manifest['status'], 'answered', print_manifest)
+                display_volume = closed_volume(printed / 'display.obj')
+                self.assertAlmostEqual(display_volume, oracle, delta=0.5)
+                results.append({'case': name, 'raw_valid': True, 'volume_mm3': props.Mass(),
+                                'oracle_mm3': oracle, 'display_volume_mm3': display_volume})
+        (self.proof / 'annular-raw-oracles.json').write_text(json.dumps(results, indent=2) + '\n')
+
 
 if __name__ == '__main__':
     unittest.main()

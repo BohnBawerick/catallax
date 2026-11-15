@@ -1,5 +1,6 @@
 //! Rational ruled draft export using the spline writer's shared chart topology.
 use super::*;
+use catallax_shapes::ObliqueDraft;
 use catallax_topology::DraftedCylinder;
 
 pub(crate) fn write<W: Write>(
@@ -13,7 +14,51 @@ pub(crate) fn write<W: Write>(
         return Err(bad("negative file tolerance"));
     }
     let view = DraftedCylinder::check(model, body, dec)?;
-    let support = view.support();
+    let (rounded, weights, charts) = round_support(view.support(), options, dec)?;
+    let hole = if let Some((support, face, _)) = view.hole() {
+        let (inner, inner_weights, inner_charts) = round_support(support, options, dec)?;
+        for i in 0..2 {
+            if sign(
+                &rounded.centers[i].minus(&inner.centers[i]).norm_squared(),
+                dec,
+            )? != Sign::Zero
+            {
+                return Err(bad("rounded annular walls have different cap planes"));
+            }
+        }
+        let displacement = Real::from_rational((&rounded.bound + &inner.bound).mul_pow2(1));
+        let clearance = view.section_clearance(dec)?.unwrap();
+        if sign(&(clearance - displacement), dec)? != Sign::Positive {
+            return Err(bad("rounded annular walls exceed their separation bound"));
+        }
+        Some(RoundedHole {
+            face,
+            rounded: inner,
+            charts: inner_charts,
+            weights: inner_weights,
+        })
+    } else {
+        None
+    };
+    write_rounded(
+        model,
+        view.faces(),
+        rounded,
+        charts,
+        4,
+        Some(&weights),
+        hole,
+        options,
+        dec,
+        out,
+    )
+}
+
+fn round_support(
+    support: &ObliqueDraft,
+    options: &CertifiedSplineStepOptions,
+    dec: &mut Decider,
+) -> Result<(Rounded, Vec<Real>, Charts), Refusal> {
     let axis = integer_direction(support.axis())?;
     let reference = integer_direction(support.across())?;
     let minor = integer_direction(&axis.cross(&reference))?;
@@ -111,17 +156,125 @@ pub(crate) fn write<W: Write>(
         bound,
     };
     let charts = open_charts(carrier.knots()[0], 4)?;
-    write_rounded(
-        model,
-        view.faces(),
-        rounded,
-        charts,
-        4,
-        Some(&weights),
-        options,
-        dec,
-        out,
-    )
+    Ok((rounded, weights, charts))
+}
+
+pub(super) struct HoleGraph {
+    pub(super) rings: [[Id; 2]; 2],
+    pub(super) faces: Vec<Field>,
+    pub(super) face_map: Vec<StepFaceRegion>,
+}
+
+pub(super) fn append_hole(
+    graph: &mut Graph,
+    hole: &RoundedHole,
+    context: Id,
+) -> Result<HoleGraph, Refusal> {
+    let mut controls: Vec<[Id; 2]> = Vec::with_capacity(hole.rounded.controls.len());
+    for (index, pair) in hole.rounded.controls.iter().enumerate() {
+        controls.push(if index + 1 == hole.rounded.controls.len() {
+            controls[0]
+        } else {
+            [point(graph, &pair[0])?, point(graph, &pair[1])?]
+        });
+    }
+    let charts = &hole.charts;
+    let rows = [&controls[..=charts.cut], &controls[charts.cut..]];
+    let weights = [&hole.weights[..=charts.cut], &hole.weights[charts.cut..]];
+    let mut sides = Vec::with_capacity(2);
+    let mut arcs = Vec::with_capacity(2);
+    for i in 0..2 {
+        let (multiplicities, knots) = knot_fields(&charts.knots[i])?;
+        sides.push(surface(
+            graph,
+            rows[i],
+            4,
+            weights[i],
+            &multiplicities,
+            &knots,
+        )?);
+        arcs.push([
+            curve(graph, rows[i], 0, 4, weights[i], &multiplicities, &knots)?,
+            curve(graph, rows[i], 1, 4, weights[i], &multiplicities, &knots)?,
+        ]);
+    }
+    let corners = [controls[0], controls[charts.cut]];
+    let vertices =
+        corners.map(|pair| pair.map(|row| graph.add("VERTEX_POINT", vec![text("''"), row.into()])));
+    let mut rings = [[None; 2]; 2];
+    for i in 0..2 {
+        for cap in 0..2 {
+            let pc = pcurve_line(
+                graph,
+                sides[i],
+                context,
+                ["0.".to_owned(), format!("{cap}.")],
+                "(1.,0.)",
+            );
+            rings[i][cap] = Some(edge_curve(
+                graph,
+                [vertices[i][cap], vertices[1 - i][cap]],
+                arcs[i][cap],
+                vec![pc],
+            ));
+        }
+    }
+    let rings = rings.map(|pair| pair.map(Option::unwrap));
+    let mut joins = Vec::with_capacity(2);
+    for i in 0..2 {
+        let curve = graph.add(
+            "B_SPLINE_CURVE_WITH_KNOTS",
+            vec![
+                text("''"),
+                text("1"),
+                refs(corners[i]),
+                text(".UNSPECIFIED."),
+                boolean(false),
+                boolean(false),
+                text("(2,2)"),
+                text("(0.,1.)"),
+                text(".UNSPECIFIED."),
+            ],
+        );
+        let parameters = if i == 0 {
+            [&charts.domains[0][0], &charts.domains[1][1]]
+        } else {
+            [&charts.domains[0][1], &charts.domains[1][0]]
+        };
+        let mut pcurves = Vec::with_capacity(2);
+        for (surface, value) in sides.iter().zip(parameters) {
+            pcurves.push(pcurve_line(
+                graph,
+                *surface,
+                context,
+                [parameter(value)?, "0.".to_owned()],
+                "(0.,1.)",
+            ));
+        }
+        joins.push(edge_curve(graph, vertices[i], curve, pcurves));
+    }
+    let mut faces = Vec::with_capacity(2);
+    let mut face_map = Vec::with_capacity(2);
+    for (i, domain) in charts.domains.iter().cloned().enumerate() {
+        let uses = [
+            (joins[i], true),
+            (rings[i][1], true),
+            (joins[1 - i], false),
+            (rings[i][0], false),
+        ];
+        let name = format!("face_{}_patch_{i}", hole.face.index());
+        faces.push(advanced_face(graph, &name, &uses, sides[i], false));
+        face_map.push(StepFaceRegion {
+            face: hole.face,
+            file_region: name,
+            file_domain: Some([domain, [Rational::zero(), Rational::one()]]),
+        });
+    }
+    Ok(HoleGraph {
+        rings,
+        faces,
+        face_map,
+    })
 }
 
 fn choose(n: usize, k: usize) -> i64 {

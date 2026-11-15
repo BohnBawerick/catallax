@@ -527,7 +527,7 @@ pub fn volume(
 ) -> Answered<Enclosure> {
     if let Some(cell) = catallax_topology::DraftedCylinder::of_body(model, body, dec)? {
         accuracy.validate();
-        let factor = cell.support().volume_over_pi();
+        let factor = cell.volume_over_pi();
         let maximum = dec.policy().max_precision_bits;
         if maximum == 0 {
             return Err(Refusal::new(

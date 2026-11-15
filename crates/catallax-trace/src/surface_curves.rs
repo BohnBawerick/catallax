@@ -258,7 +258,23 @@ impl Tracer {
         intersector: &Intersector<'_>,
         curves: &mut Vec<IntersectionCurve>,
     ) -> Result<(), SolverRefusal> {
-        let points = std::mem::take(&mut self.curve_points);
+        let mut points = std::mem::take(&mut self.curve_points);
+        if intersector.check_output_spans {
+            for point in &mut points {
+                if point.kind != PointKind::Crossing {
+                    continue;
+                }
+                let previous = *point;
+                intersector.compute_point_values(previous.uv, point, None, None, None, 1.)?;
+                if point.kind != previous.kind {
+                    return Err(Fault::Degenerate.into());
+                }
+                if point.curve_tangent.dot(previous.curve_tangent) < 0. {
+                    point.curve_tangent = -point.curve_tangent;
+                    point.uv_deriv = [-point.uv_deriv[0], -point.uv_deriv[1]];
+                }
+            }
+        }
         let tolerance = intersector.approx_tolerance;
         let Some(first) = points.first() else {
             return Ok(());
@@ -301,8 +317,16 @@ impl Tracer {
                 let delta = current.curve_parameter - previous.curve_parameter;
                 let final_delta = last.curve_parameter - current.curve_parameter;
                 if final_delta / delta < 0.1 {
-                    i += 1;
-                    current = last;
+                    let merge = if intersector.check_output_spans {
+                        let mut checked = *last;
+                        intersector.test_span_accuracy(previous, &mut checked)?.0
+                    } else {
+                        true
+                    };
+                    if merge {
+                        i += 1;
+                        current = last;
+                    }
                 }
             }
             if current.tangent_plane_angle > angle {

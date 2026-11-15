@@ -45,6 +45,9 @@ pub struct Intersector<'a> {
     pub angle_tolerance: f64,
     /// `m_dThisApproxTol3d`.
     pub approx_tolerance: f64,
+    /// Refresh endpoint derivatives and check final-span merges before fitting.
+    /// The default preserves SMLib's unproved candidate output.
+    pub check_output_spans: bool,
     /// `m_dSteppingParallelTolRadians`.
     pub stepping_parallel_tolerance: f64,
     /// `m_dStartParallelTolRadians`.
@@ -133,6 +136,7 @@ impl<'a> Intersector<'a> {
             use_surface_edges: [true, true],
             angle_tolerance: 20.0 * PI / 180.0,
             approx_tolerance: size / 1000.0,
+            check_output_spans: false,
             stepping_parallel_tolerance: EFF_ZERO,
             start_parallel_tolerance: 1.0e-4 * PI / 180.0,
             self_intersection: std::ptr::eq(surface1, surface2),

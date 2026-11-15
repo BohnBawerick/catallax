@@ -8,6 +8,9 @@ use catallax_numbers::{
 
 const BITS: u32 = 128;
 
+#[cfg(test)]
+mod fit_tests;
+
 /// Native cone/cylinder parameter windows with their original analytic sources.
 /// Checks and rounded controls remain numerical. This is not an exact pair plan,
 /// a branch count, a Boolean result or a complete body deviation bound.

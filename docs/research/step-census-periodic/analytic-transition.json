@@ -1,0 +1,52 @@
+{
+  "actual_recovered_model_ids": [
+    "00000363",
+    "00000540",
+    "00000717",
+    "00000848",
+    "00001857",
+    "00002345",
+    "00002998",
+    "00003390",
+    "00003660",
+    "00004333",
+    "00004454",
+    "00005140",
+    "00005497",
+    "00005897",
+    "00006691",
+    "00007188",
+    "00008682",
+    "00009073",
+    "00009306",
+    "00009319",
+    "00009321",
+    "00009839"
+  ],
+  "all_source_hashes_and_ids_matched": true,
+  "binary_sha256": "d6d645568442d5943e3325a209a98ef2b386077aca623de21a9ab63de6d1e6e2",
+  "categories": {
+    "certified": 190,
+    "numerical approximate": 213
+  },
+  "complete": true,
+  "current_csv_sha256": "b08224a6f919405de46d35896d8d682febbd10c36495d34759f4958c80be3bd7",
+  "denominator": 3000,
+  "format": "catallax-periodic-analytic-transition/1",
+  "lost_prior_analytic_full_model_ids": [],
+  "outcomes": {
+    "full": 400,
+    "partial": 3,
+    "refused": 2595,
+    "timeout": 2
+  },
+  "prior_analytic_csv_sha256": "d6f6d6674a70d4a7506b73859e5d875164b6047e5b420839308d09c9d476d7a5",
+  "prior_source_revision": "d78cb705d85a6d98391a5469a4e086cf353804e8",
+  "recovered_original_first_refusals": {
+    "not_solid": 3,
+    "resource_limit": 3,
+    "self_intersecting": 16
+  },
+  "source_revision": "51e9c0ffa13efcbcfb5c004b152e4c6014c6b5c1",
+  "source_topology_repair_count": 44
+}

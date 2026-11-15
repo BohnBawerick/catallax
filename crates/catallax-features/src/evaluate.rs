@@ -1545,3 +1545,27 @@ mod import_refusal_tests {
         assert!(uncovered.undecided().is_none());
     }
 }
+
+/// Evaluate the opt-in numerical source and its edits atomically. Every stage shares
+/// the active request allowance, or the unchanged 20M default. No exact checkpoint
+/// or bounded-answer conversion is made.
+pub fn evaluate_numerical(
+    recipe: &crate::numerical::NumericalRecipe,
+    dec: &mut Decider,
+) -> Result<crate::numerical::NumericalBuilt, Refusal> {
+    if catallax_numbers::operation_budget_active() {
+        return crate::numerical::evaluate(recipe, dec);
+    }
+    let (result, work) =
+        catallax_numbers::with_operation_budget(catallax_topology::numerical::DEFAULT_WORK, || {
+            crate::numerical::evaluate(recipe, dec)
+        });
+    if work.exhausted {
+        Err(Refusal::new(
+            "numbers.operation-budget",
+            "numerical edits exhausted their shared work allowance",
+        ))
+    } else {
+        result
+    }
+}

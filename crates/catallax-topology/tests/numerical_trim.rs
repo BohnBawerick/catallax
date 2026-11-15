@@ -431,8 +431,16 @@ fn continuation_retains_source_sewing_checks() {
             &mut Decider::default(),
         )
         .unwrap();
-    assert!(
-        format!("{edited:?}").contains("sewing.explicit-vertex-pair"),
-        "a later edit discarded the source sewing checks"
+    assert_eq!(edited.history().len(), 1);
+    assert_eq!(edited.history()[0].evidence, *source.evidence());
+    assert!(edited.history()[0].evidence.checks().iter().any(
+        |c| matches!(c, NumericalCheck::Passed { name, .. } if name == "sewing.explicit-vertex-pair")
+    ));
+    assert_eq!(
+        edited.source_definition().vertices.len(),
+        input.vertices.len()
     );
+    assert!(!edited.evidence().checks().iter().any(
+        |c| matches!(c, NumericalCheck::Passed { name, .. } if name == "sewing.explicit-vertex-pair")
+    ));
 }

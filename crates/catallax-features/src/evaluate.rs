@@ -1514,38 +1514,6 @@ fn import_refusal(error: catallax_import::ImportRefusal) -> Refusal {
     Refusal::new(code, format!("{error:?}")).keeping_any(undecided)
 }
 
-#[cfg(test)]
-mod import_refusal_tests {
-    use super::*;
-    use catallax_numbers::{NotExact, Rational};
-
-    // An undecided self-intersection pair keeps the decision it stopped on in
-    // the kernel's refusal; an uncovered pair keeps none.
-    #[test]
-    fn an_undecided_import_pair_keeps_its_decision() {
-        let decision = NotExact {
-            bound: Rational::from_ratio(1, 1 << 20).unwrap(),
-            code: "numbers.precision-limit",
-            detail: "order along an arc".into(),
-        };
-        let pair = |refusal: Refusal| {
-            import_refusal(
-                catallax_import::ImportRefusal::SelfIntersectionNotVerified {
-                    solid: "#1".into(),
-                    faces: ["#2".into(), "#3".into()],
-                    reason: refusal.to_string(),
-                    refusal: Some(Box::new(refusal)),
-                },
-            )
-        };
-        let refusal = pair(Refusal::from(decision.clone()));
-        assert_eq!(refusal.code, "import.self-intersection-not-verified");
-        assert_eq!(refusal.undecided(), Some(&decision));
-        let uncovered = pair(Refusal::new("import.pair-undecided", "an unbounded face"));
-        assert!(uncovered.undecided().is_none());
-    }
-}
-
 /// Evaluate the opt-in numerical source and its edits atomically. Every stage shares
 /// the active request allowance, or the unchanged 20M default. No exact checkpoint
 /// or bounded-answer conversion is made.
@@ -1581,5 +1549,37 @@ fn numerical_request<T>(run: impl FnOnce() -> Result<T, Refusal>) -> Result<T, R
         ))
     } else {
         result
+    }
+}
+
+#[cfg(test)]
+mod import_refusal_tests {
+    use super::*;
+    use catallax_numbers::{NotExact, Rational};
+
+    // An undecided self-intersection pair keeps the decision it stopped on in
+    // the kernel's refusal; an uncovered pair keeps none.
+    #[test]
+    fn an_undecided_import_pair_keeps_its_decision() {
+        let decision = NotExact {
+            bound: Rational::from_ratio(1, 1 << 20).unwrap(),
+            code: "numbers.precision-limit",
+            detail: "order along an arc".into(),
+        };
+        let pair = |refusal: Refusal| {
+            import_refusal(
+                catallax_import::ImportRefusal::SelfIntersectionNotVerified {
+                    solid: "#1".into(),
+                    faces: ["#2".into(), "#3".into()],
+                    reason: refusal.to_string(),
+                    refusal: Some(Box::new(refusal)),
+                },
+            )
+        };
+        let refusal = pair(Refusal::from(decision.clone()));
+        assert_eq!(refusal.code, "import.self-intersection-not-verified");
+        assert_eq!(refusal.undecided(), Some(&decision));
+        let uncovered = pair(Refusal::new("import.pair-undecided", "an unbounded face"));
+        assert!(uncovered.undecided().is_none());
     }
 }

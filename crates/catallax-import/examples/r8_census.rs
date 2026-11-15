@@ -373,6 +373,83 @@ fn evaluate(bytes: &[u8]) -> Value {
     observation
 }
 
+fn evaluate_numerical(bytes: &[u8]) -> Value {
+    use catallax_import::numerical::{ImportError, StepImport};
+    let (result, work) = with_operation_budget(IMPORT_WORK, || {
+        catallax_import::numerical::import_step(
+            bytes,
+            &sha256_hex(bytes),
+            &StepId::new("r8-import").unwrap(),
+            &catallax_topology::numerical::NumericalOptions::default(),
+            &mut catallax_numbers::Decider::default(),
+        )
+    });
+    let result = if work.exhausted {
+        Err(ImportError::Source(ImportRefusal::ResourceLimit))
+    } else {
+        result
+    };
+    let mut observation = match result {
+        Ok(StepImport::Certified(imported)) => {
+            let model = imported.model();
+            let tolerances = imported.bodies().iter().flat_map(|body|model.body(*body).marks.iter())
+                .filter(|mark|mark.code.starts_with("import.incidence-"))
+                .map(|mark|json!({"code":mark.code,"bound_mm":mark.bound.to_decimal_exact().expect("recorded decimal"),"definition":mark.detail})).collect::<Vec<_>>();
+            json!({"stage":"import","outcome":"admitted","import_category":"certified",
+                "bodies":imported.bodies().len(),"local_incidence_tolerances":tolerances})
+        }
+        Ok(StepImport::Numerical(imported)) => {
+            let source_admission_method = imported
+                .source_admission()
+                .map(|record| record.method.as_str());
+            let checked_max = imported
+                .bodies()
+                .iter()
+                .flat_map(|(_, body)| body.evidence().checks())
+                .flat_map(|check| match check {
+                    catallax_numbers::NumericalCheck::Samples { samples, .. } => samples.as_slice(),
+                    _ => &[],
+                })
+                .map(|sample| &sample.distance_upper_mm)
+                .max()
+                .map(ToString::to_string);
+            let bounds = imported
+                .record()
+                .face_tolerances
+                .iter()
+                .map(|bound| {
+                    catallax_numbers::Rational::parse(&bound.deviation_upper_mm)
+                        .expect("producer bound")
+                })
+                .max()
+                .map(|bound| bound.to_string());
+            let tolerances = imported
+                .bodies()
+                .iter()
+                .map(|(_, body)| body.options().tolerance_mm.to_string())
+                .collect::<BTreeSet<_>>();
+            json!({"stage":"import","outcome":"admitted","import_category":"numerical approximate",
+                "bodies":imported.bodies().len(),"exact":false,"tolerances_mm":tolerances,
+                "source_to_result_max_mm":bounds,"complete_body_bound":"unestablished",
+                "source_change_count":imported.record().changes.len(),
+                "source_admission_method":source_admission_method,"max_checked_residual_mm":checked_max})
+        }
+        Err(ImportError::Source(refusal)) => {
+            eprintln!("{}", serde_json::to_string(&refusal).unwrap());
+            json!({"stage":"import","outcome":"refused",
+                "refusal_code":serde_json::to_value(&refusal).unwrap()["code"],"refusal_kind":refusal_kind(&refusal)})
+        }
+        Err(ImportError::Numerical(refusal)) => {
+            eprintln!("{}", json!({"code":refusal.code,"detail":refusal.detail}));
+            json!({"stage":"import","outcome":"refused",
+                "refusal_code":refusal.code,"refusal_kind":refusal.code})
+        }
+    };
+    observation["work_used"] = json!(work.used);
+    observation["work_limit"] = json!(IMPORT_WORK);
+    observation
+}
+
 fn emit(value: Value) {
     println!("{value}");
     io::stdout().flush().unwrap();
@@ -380,7 +457,7 @@ fn emit(value: Value) {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args_os().skip(1);
-    let path = args.next().ok_or("expected one STEP input")?;
+    let mut path = args.next().ok_or("expected one STEP input")?;
     if path == "--refusal-detail" {
         let bytes = std::fs::read(args.next().ok_or("expected STEP input")?)?;
         let saved = std::fs::read(args.next().ok_or("expected saved refusal JSON")?)?;
@@ -388,10 +465,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         emit(refusal_detail::inspect(&bytes, &refusal)?);
         return Ok(());
     }
+    let numerical = path == "--numerical";
+    if numerical {
+        path = args.next().ok_or("expected STEP input after --numerical")?;
+    }
+    if args.next().is_some() {
+        return Err("expected one STEP input".into());
+    }
     let bytes = std::fs::read(path)?;
     // Checkpoint source counts before import, so a timeout cannot erase them.
     emit(census(&bytes));
-    emit(evaluate(&bytes));
+    emit(if numerical {
+        evaluate_numerical(&bytes)
+    } else {
+        evaluate(&bytes)
+    });
     Ok(())
 }
 

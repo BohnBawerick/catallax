@@ -1,0 +1,68 @@
+{
+  "authored": {
+    "material_probes_checked": true,
+    "quarter_volume_mm3": "pi/4",
+    "raw_before_and_pose_valid": true,
+    "reference_cut_valid": true,
+    "reference_cut_volume_mm3": "sqrt(3)/8+pi/12"
+  },
+  "binary_sha256": "4eac1eb9b948a6cb1cf9c373218f6aab2f42dc3433030845c54bbe0e833a8930",
+  "format": "catallax-analytic-numerical-workflow/1",
+  "healing": false,
+  "ocp_version": "8.0.1.1",
+  "real_parts": [
+    {
+      "edited_step_sha256": "1645c1deb9fca73089748e7496d37d7c345781a21e4c684ab6e5b460927af7be",
+      "import_work": 143428,
+      "model_id": "00001818",
+      "pose_volume_and_centroid_checked": true,
+      "raw_before_and_edited_valid": true,
+      "source_sha256": "29d669186fc4d6de574f656544e24d0066a2f4ee32accb6679d7de24664e32fa",
+      "source_step_sha256": "36870d0f479acaab06aed6c945966ffb07e5a3d725cadbe7cfe4e6d1f7710655",
+      "stages": {
+        "edited_export": 190585,
+        "pose_rebuild": 99899,
+        "source_export": 190858
+      },
+      "topology": {
+        "edges": 12,
+        "euler_with_face_holes": 2,
+        "faces": 6,
+        "solids": 1,
+        "two_loop_faces": 0,
+        "vertices": 8
+      },
+      "work_limit": 20000000,
+      "work_used": 624770
+    },
+    {
+      "edited_step_sha256": "98fcc19f8cd806ab3c9d49e5e4dd83482b8e91a323f6e880415e1a131bee4ced",
+      "import_work": 144895,
+      "model_id": "00009734",
+      "pose_volume_and_centroid_checked": true,
+      "raw_before_and_edited_valid": true,
+      "source_sha256": "ac7d5ece45cff986ec2c630618d0dc8fecb1ad1218267f79b9f0d99ead08f833",
+      "source_step_sha256": "f9df22cc64b67115f3325e51bd9431f2280764cd7e08e0a960773c8adc58ba95",
+      "stages": {
+        "edited_export": 207677,
+        "pose_rebuild": 98955,
+        "source_export": 207699
+      },
+      "topology": {
+        "edges": 12,
+        "euler_with_face_holes": 2,
+        "faces": 6,
+        "solids": 1,
+        "two_loop_faces": 0,
+        "vertices": 8
+      },
+      "work_limit": 20000000,
+      "work_used": 659226
+    }
+  ],
+  "same_parameter": false,
+  "scope": "two actual coupled planar/cylinder sources; numerical import, pose, approximate STEP and direct raw reference checks; no whole-body approximation bound",
+  "seed": 20261111,
+  "source_hash_manifest_sha256": "3323e104c377023846073a05d7e164ca1082dc3dcf32cc046eee897401454cc7",
+  "source_revision": "2f2e5b8b02481f80d3286eddae16ccea9eeef78b"
+}

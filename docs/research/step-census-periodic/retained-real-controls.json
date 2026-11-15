@@ -1,0 +1,68 @@
+{
+  "controls": [
+    {
+      "import_category": "certified",
+      "model_id": "00000131",
+      "outcome": "full",
+      "source_sha256": "fde1162a6bc2f0631564cb88b09fe98435d5d91e28b8c93c3ada871b6b826fbf"
+    },
+    {
+      "import_category": "certified",
+      "model_id": "00000173",
+      "outcome": "full",
+      "source_sha256": "e9e6ed7e80f621e605560b7080903775c380e5410a62bc3d138b8fd682570c7a"
+    },
+    {
+      "import_category": "certified",
+      "model_id": "00000190",
+      "outcome": "full",
+      "source_sha256": "dffe2bf5f8be19d9fdde693be54c4f6c4732d2d333edd2dbd7cdd7cb05163948"
+    },
+    {
+      "import_category": "certified",
+      "model_id": "00000405",
+      "outcome": "full",
+      "source_sha256": "855b700371c3ac43bc8764e03d94e688bf5df7a0be4c29576bfe6dcb8086c0f2"
+    },
+    {
+      "import_category": "certified",
+      "model_id": "00000511",
+      "outcome": "full",
+      "source_sha256": "50a920f6fd50aedf1afacc1c19cc3b4722a7f4a11dd293fa4d42916e696e09d5"
+    },
+    {
+      "import_category": "certified",
+      "model_id": "00000605",
+      "outcome": "full",
+      "source_sha256": "913d6be2f284c3ddded0e37ccd44ac9393b575c800cdf7812a09482071ed56d9"
+    },
+    {
+      "import_category": "certified",
+      "model_id": "00000632",
+      "outcome": "full",
+      "source_sha256": "4b28e439ccd5e4f736aae147aa07df2b33c8bc2c139bd3318f8be1d60241051a"
+    },
+    {
+      "import_category": "certified",
+      "model_id": "00000633",
+      "outcome": "full",
+      "source_sha256": "74a532c12724abc77aa5c2a2e4b89f166c66aebdbd8d02deab18294cdb7f0edd"
+    },
+    {
+      "import_category": "certified",
+      "model_id": "00000695",
+      "outcome": "full",
+      "source_sha256": "5a9660c0f13e03afc6bdda7aacebe565790c2019bdc0deb288a3e921a448995f"
+    },
+    {
+      "import_category": "certified",
+      "model_id": "00000821",
+      "outcome": "full",
+      "source_sha256": "222f5bd1ba5f202853a68902c88edfa49ca12a09bb57809ac8c29adf782a6ee0"
+    }
+  ],
+  "format": "catallax-periodic-retained-real-controls/1",
+  "scope": "same ten P06 real source files, unchanged bytes and full source coverage; no new edit/export claim for these ten",
+  "source_hash_manifest_sha256": "3323e104c377023846073a05d7e164ca1082dc3dcf32cc046eee897401454cc7",
+  "source_revision": "51e9c0ffa13efcbcfb5c004b152e4c6014c6b5c1"
+}

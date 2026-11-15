@@ -284,6 +284,19 @@ impl TracePiece {
         (Rational::zero(), Rational::one())
     }
 
+    /// Source chart jets when this piece retains a finite patch section.
+    pub fn section_parameters(
+        &self,
+        t: &Ball,
+        order: usize,
+        dec: &Decider,
+    ) -> Result<Option<Vec<[Ball; 2]>>, Refusal> {
+        match &self.coords {
+            TraceCoordinates::Section(piece) => piece.parameter_taylor(t, order, dec).map(Some),
+            _ => Ok(None),
+        }
+    }
+
     /// Proven enclosure of the point at parameter `t`, or a deadline refusal.
     pub fn evaluate(&self, t: &Ball, dec: &Decider) -> Result<[Ball; 3], Refusal> {
         Ok(self.enclose_jets(t, 0, dec)?.remove(0))

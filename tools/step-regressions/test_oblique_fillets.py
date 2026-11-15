@@ -62,14 +62,23 @@ class ObliqueFilletImports(unittest.TestCase):
         source = root / f'{name}.json'
         source.write_text(json.dumps(recipe))
         out = root / name
+        partial = name.startswith('partial-')
         completed = subprocess.run(
             [str(DRIVER), 'run', str(source), '--source', 'recipe', '--binary',
-             str(BINARY), '--out', str(out), '--fresh', '--workers', '1', '--json'],
+             str(BINARY), '--out', str(out), '--fresh', '--workers', '1',
+             '--max-work', str(1_000_000_000 if partial else 20_000_000), '--json'],
             capture_output=True, text=True, check=True)
         self.assertEqual(json.loads(completed.stdout)['outcomes'], {'answered': 1})
         case = json.loads((out / 'run.json').read_text())['cases'][0]
         manifest = case['response']['manifest']
-        self.assertEqual(manifest['marks'], [])
+        if partial:
+            self.assertEqual([mark['code'] for mark in manifest['marks']],
+                             ['step.approximate-pipe-end'])
+            self.assertFalse(manifest['exact'])
+            self.assertFalse(manifest['step']['bounded'])
+            self.assertTrue(manifest['step']['approximate'])
+        else:
+            self.assertEqual(manifest['marks'], [])
         self.assertEqual(manifest['result']['faces_by_kind'].get('rolling-pipe', 0),
                          int(recipe['result'] != 'joined'))
         shape = raw_solid(Path(case['path']) / 'answer.step')

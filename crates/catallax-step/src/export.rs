@@ -23,6 +23,8 @@ mod linear_fillet;
 mod mitre;
 #[path = "export/pipe.rs"]
 mod pipe;
+#[path = "export/pipe_end.rs"]
+mod pipe_end;
 #[path = "export/rational_patch.rs"]
 mod rational_patch;
 #[path = "export/saddle.rs"]
@@ -97,6 +99,7 @@ pub(crate) struct Exporter<'a> {
     envelopes: BTreeMap<SurfaceId, Rc<envelope::Written>>,
     pipe_rails: BTreeMap<EdgeId, (FaceId, usize)>,
     pipe_rotations: BTreeMap<SurfaceId, bool>,
+    approximate_pipe_ends: bool,
     saddle_rails: BTreeMap<EdgeId, (FaceId, usize)>,
     linear_rows: BTreeMap<EdgeId, linear_fillet::Row>,
     linear_faces: BTreeMap<FaceId, [Option<EdgeId>; 4]>,
@@ -128,6 +131,7 @@ impl<'a> Exporter<'a> {
             envelopes: BTreeMap::new(),
             pipe_rails: BTreeMap::new(),
             pipe_rotations: BTreeMap::new(),
+            approximate_pipe_ends: false,
             saddle_rails: BTreeMap::new(),
             linear_rows: BTreeMap::new(),
             linear_faces: BTreeMap::new(),
@@ -619,6 +623,7 @@ impl<'a> Exporter<'a> {
         };
         let capture = self.has_chart_edge(id, topology);
         let mut geometry = None;
+        let mut end_pcurve = None;
         let (curve, bounds, same, error) = if let Some(curve) = self.analytic_curve(source.curve)? {
             if curve.line_origin.is_some() {
                 check_written_line(&start.point, &end.point)?;
@@ -674,7 +679,7 @@ impl<'a> Exporter<'a> {
                 catallax_intersect::trace(self.model.geom(), source.curve, from, to, dec)
             })?
             .value;
-            let (fit, spans) = if capture {
+            let (fit, spans) = if capture || pipe_section {
                 let (fit, spans) = crate::observe("step.fit", &id.index(), self.dec, |dec| {
                     crate::fit::fit_with_ranges(
                         &trace,
@@ -703,6 +708,14 @@ impl<'a> Exporter<'a> {
                     None,
                 )
             };
+            if pipe_section {
+                end_pcurve = Some(self.pipe_end_pcurve(
+                    id,
+                    &trace,
+                    &fit,
+                    spans.as_ref().expect("pipe section fitting ranges"),
+                )?);
+            }
             let points = fit
                 .points
                 .iter()
@@ -734,13 +747,13 @@ impl<'a> Exporter<'a> {
                     text(".UNSPECIFIED."),
                 ],
             );
-            if let Some(spans) = spans {
+            if let Some(spans) = spans.filter(|_| capture) {
                 geometry = Some(charts::Geometry::spline(&fit, trace, spans));
             }
             self.report.approximated_curves += 1;
             (curve, fit.bounds, true, fit.error)
         };
-        let rail = self.rail_pcurve(id)?;
+        let rail = self.rail_pcurve(id)?.or(end_pcurve);
         let curve = if let Some(ring) = self
             .bands
             .rings
@@ -1868,12 +1881,18 @@ impl<'a> Exporter<'a> {
         let mut output = self.graph.write(&solids, |numbers| {
             if envelope.is_some() {
                 stand_in_header(&self.options.product_name, numbers, &uncertainty)
+            } else if self.approximate_pipe_ends {
+                approximate_header(&self.options.product_name, numbers, "approximate pipe end parameter maps; requested distance tolerance applies to samples and fitted components; complete_body_bound=unestablished")
             } else {
                 header(&self.options.product_name, numbers, &uncertainty)
             }
         });
         output.push_str("ENDSEC;\nEND-ISO-10303-21;\n");
         let mut answer = Answer::exact((output, self.report));
+        if self.approximate_pipe_ends {
+            // The value is a category flag, not an invented distance bound.
+            answer.marks.push(Mark::new("step.approximate-pipe-end", BoundKind::Value, Rational::one(), "numerically qualified end-section parameter maps; complete file bound unestablished"));
+        }
         if answer.value.1.max_deviation > self.options.curve_tolerance {
             answer.marks.push(Mark::new(
                 "step.tolerance-not-reached",

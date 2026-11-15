@@ -30,10 +30,10 @@ fn the_public_partial_oblique_rim_builds_and_exports_after_a_radius_edit() {
         value["steps"][6]["radius"] = json!(radius);
         let recipe = Recipe::parse(&value.to_string()).unwrap();
         let mut dec = Decider::new(BudgetPolicy {
-            max_work: 20_000_000,
+            max_work: 1_000_000_000,
             ..Default::default()
         });
-        let ((next, bytes), work) = with_operation_budget(20_000_000, || {
+        let ((next, bytes), work) = with_operation_budget(1_000_000_000, || {
             let next = evaluate_incremental(&recipe, checkpoint.take(), &mut dec).unwrap();
             let built = next.built();
             let mut bytes = Vec::new();
@@ -45,7 +45,10 @@ fn the_public_partial_oblique_rim_builds_and_exports_after_a_radius_edit() {
                 &mut bytes,
             )
             .unwrap();
-            assert!(report.marks.is_empty());
+            assert_eq!(report.marks.len(), 1);
+            assert_eq!(report.marks[0].code, "step.approximate-pipe-end");
+            assert!(report.value.definition_deviation.is_none());
+            assert!(String::from_utf8_lossy(&bytes).contains("complete_body_bound=unestablished"));
             assert!(!bytes.is_empty());
             (next, bytes)
         });

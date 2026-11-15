@@ -130,6 +130,7 @@ pub struct StepFaceRegion {
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Default)]
 pub struct StepReport {
     /// Proven upper bound, in millimetres, on the distance between exported and exact geometry.
+    /// Approximate parameter-map marks restrict this to the certified components.
     pub max_deviation: Rational,
     /// Proven upper bound, in millimetres, on the distance between the file and
     /// the exact definition: `max_deviation` plus the worst measured fit bound
@@ -195,6 +196,14 @@ fn with_definition_deviation(
     bodies: &[BodyId],
     mut answer: catallax_numbers::Answer<StepReport>,
 ) -> catallax_numbers::Answer<StepReport> {
+    if answer
+        .marks
+        .iter()
+        .any(|mark| mark.code == "step.approximate-pipe-end")
+    {
+        answer.value.definition_deviation = None;
+        return answer;
+    }
     let fit = bodies
         .iter()
         .filter_map(|body| catallax_topology::fitted_face_bound(model, *body))

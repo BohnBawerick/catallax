@@ -267,9 +267,12 @@ impl SectionTracePiece {
         found.ok_or_else(|| failure("section trace selected no transverse root"))
     }
 
-    /// Taylor coefficient enclosures valid at every parameter in `t`. The
-    /// implicit-function recurrence divides only by a strict transverse bound.
-    pub fn taylor(&self, t: &Ball, order: usize, dec: &Decider) -> Result<Vec<[Ball; 3]>, Refusal> {
+    fn parameter_series(
+        &self,
+        t: &Ball,
+        order: usize,
+        dec: &Decider,
+    ) -> Result<[Vec<Ball>; 2], Refusal> {
         let at = self.parameters(t, dec)?;
         let bits = t.precision();
         let zero = || Ball::from_rational(&Rational::zero(), bits);
@@ -294,6 +297,29 @@ impl SectionTracePiece {
                     })?;
             }
         }
+        Ok(parameters)
+    }
+
+    /// Taylor enclosures of the retained source chart coordinates.
+    pub fn parameter_taylor(
+        &self,
+        t: &Ball,
+        order: usize,
+        dec: &Decider,
+    ) -> Result<Vec<[Ball; 2]>, Refusal> {
+        let parameters = self.parameter_series(t, order, dec)?;
+        Ok((0..=order)
+            .map(|i| [parameters[0][i].clone(), parameters[1][i].clone()])
+            .collect())
+    }
+
+    /// Taylor coefficient enclosures valid at every parameter in `t`. The
+    /// implicit-function recurrence divides only by a strict transverse bound.
+    pub fn taylor(&self, t: &Ball, order: usize, dec: &Decider) -> Result<Vec<[Ball; 3]>, Refusal> {
+        let parameters = self.parameter_series(t, order, dec)?;
+        let bits = t.precision();
+        let zero = || Ball::from_rational(&Rational::zero(), bits);
+        let cell = self.cell();
         let span = self.branch.span(cell);
         let mut homogeneous = Vec::with_capacity(4);
         for coordinate in &span.coordinates {

@@ -578,6 +578,10 @@ fn evaluate(
         match exported {
             Ok(answer) => {
                 let report = answer.value;
+                let approximate = answer
+                    .marks
+                    .iter()
+                    .any(|mark| mark.code == "step.approximate-pipe-end");
                 write_step_regularizations(out_dir, &report)?;
                 manifest
                     .marks
@@ -599,7 +603,7 @@ fn evaluate(
                     ));
                 }
                 manifest.step = Some(StepSummary {
-                    bounded: None,
+                    bounded: approximate.then_some(false),
                     file: "answer.step".into(),
                     max_deviation,
                     approximated_curves: report.approximated_curves,

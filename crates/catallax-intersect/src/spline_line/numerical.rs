@@ -584,6 +584,14 @@ mod tests {
             origin: point("0", "0"),
             dir: Vector3::new(Real::one(), Real::zero(), Real::zero()),
         }));
+        assert_eq!(
+            numerical_spline_line_points(&geom, curve, line, &mut dec)
+                .unwrap()
+                .unwrap()
+                .points()
+                .len(),
+            1
+        );
         let (answer, _) = with_operation_budget(0, || {
             numerical_spline_line_points(&geom, curve, line, &mut dec)
         });

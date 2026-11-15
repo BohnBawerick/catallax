@@ -4,6 +4,8 @@ use super::*;
 use crate::rational_patch::boundary_rows;
 use crate::{Plane, SectionHits};
 
+mod rows;
+
 fn missing(detail: &str) -> Refusal {
     Refusal::new("intersect.patch-pair-plane", detail)
 }
@@ -173,6 +175,16 @@ impl PatchPairCurve {
                             store(&mut points, point, dec)?;
                         }
                     }
+                }
+                continue;
+            }
+            let row_points = match rows::points(piece, piece.first(), &cut, 0, dec)? {
+                Some(points) => Some(points),
+                None => rows::points(piece, second, &second_cut, 1, dec)?,
+            };
+            if let Some(candidates) = row_points {
+                for point in candidates {
+                    store(&mut points, point, dec)?;
                 }
                 continue;
             }

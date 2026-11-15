@@ -23,18 +23,3 @@ pub(super) fn eval(poly: &RealPoly, at: &[Ball], dec: &Decider) -> Result<Ball, 
         .collect();
     shifted(poly, &middle).eval_ball(&local, dec)
 }
-
-pub(super) fn series(
-    poly: &RealPoly,
-    at: &[Vec<Ball>],
-    order: usize,
-    bits: u32,
-    dec: &Decider,
-) -> Result<Vec<Ball>, Refusal> {
-    let middle: Vec<_> = at.iter().map(|row| row[0].mid()).collect();
-    let mut local = at.to_vec();
-    for (row, centre) in local.iter_mut().zip(&middle) {
-        row[0] = &row[0] - &Ball::from_rational(centre, bits);
-    }
-    crate::rational_patch::trace_series::series(&shifted(poly, &middle), &local, order, bits, dec)
-}

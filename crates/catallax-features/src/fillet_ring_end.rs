@@ -19,7 +19,7 @@ pub(super) fn pipe_geometry(
     old: VertexId,
     dec: &mut Decider,
 ) -> Result<Option<([Point3; 2], Curve)>, Refusal> {
-    use catallax_shapes::{RationalPatch, RationalSplineSurface, SectionSurface};
+    use catallax_shapes::{RationalPatch, SectionSurface, spline_tools::RationalSplineSurface};
 
     let Surface::BSpline(SplineSupport::RollingPipe(pipe)) = &run.definition.surface else {
         return Ok(None);

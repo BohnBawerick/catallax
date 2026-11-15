@@ -1,10 +1,24 @@
 {
   "catallax_boolean_qualified": false,
   "centroid_shift_3_5_7_mm_checked": true,
-  "checker_sha256": "d9568e632dc9c707e1be7eaa8935819aef52ae68b73e50c949a7e0e27e907fb6",
+  "checker_sha256": "0bcad427495c68b87e38fd246a77706f9dacf43ac1693eda7b24b5778a319161",
   "closed_circle_identity": "retained_center_axis_radius_and_endpoint; reference_phase_may_rotate",
+  "closed_circle_phase_checks": {
+    "edited_step": {
+      "angular_limit_rad": "1/1000000000000",
+      "count": 4,
+      "distance_limit_mm": "1/1000000000",
+      "max_tangent_bound_mm": "0"
+    },
+    "source_step": {
+      "angular_limit_rad": "1/1000000000000",
+      "count": 4,
+      "distance_limit_mm": "1/1000000000",
+      "max_tangent_bound_mm": "0"
+    }
+  },
   "complete_body_bound": "unestablished",
-  "example_binary_sha256": "ca103c7a8f352e1d4308b4cabd3027b823494e79a59a3bf1e4b70c2dcaa685cc",
+  "example_binary_sha256": "7b1afdbd566a5837f21cdbe48ecae016950308c43f2e12e376b9931a594e2978",
   "exported_step_healing": false,
   "exported_step_same_parameter": false,
   "format": "catallax-multiseam-qualification/1",
@@ -57,8 +71,24 @@
     }
   },
   "pose_volume_matches_within_relative": "1e-9",
+  "precision_authored": [
+    {
+      "raw_valid": true,
+      "role": "shifted_center",
+      "sha256": "d401325092f75a7b8b9656c7e32c9d3c841349379538246ce5765dfacad0a2da",
+      "significant_digits": 17,
+      "volume_and_material_checked": true
+    },
+    {
+      "raw_valid": true,
+      "role": "oblique_anchor",
+      "sha256": "e83cfc8e31a1d703ee4fb628cc22a95584f0456e187130fd91fca324b36e1d9c",
+      "significant_digits": 17,
+      "volume_and_material_checked": true
+    }
+  ],
   "raw_builder_sha256": "5633cdcf16efc13f328ed85b33a738f6a9296e2afb925f4c64bbed7c91025376",
-  "response_sha256": "df293da1c92dd4386cd3da03413d4b2947dd8b45fab9887312fc29ad1dc2492d",
+  "response_sha256": "0117cd4f4730067d395bc9c126f1b492e9d92a47680bac152089a44bded53d32",
   "revision_binary_association": "author_attested_frozen_offload_artifact",
   "source_identity_swap_rejected": true,
   "source_reference": {
@@ -69,7 +99,7 @@
     "transferred": 1,
     "valid": true
   },
-  "source_revision": "c9eb5861241fe67a7c3b8504ce62a588a9aa5a49",
+  "source_revision": "ebc7dc5a96f0efdce82f3f6f47fbc89d9b79c82a",
   "source_sha256": "9ee5c0862a70c2f7eef35ce8bf61fb1a748fc173fa6c6b606745a9842e36e4a7",
   "source_step": {
     "raw_valid": true,
@@ -85,9 +115,9 @@
   },
   "source_unit_to_mm": 1000,
   "stages": {
-    "edited_export": 604563,
+    "edited_export": 604611,
     "pose_rebuild": 391599,
-    "source_export": 604772
+    "source_export": 604820
   },
   "tolerance_mm": "1/100",
   "topology_repairs": [
@@ -121,5 +151,5 @@
     }
   ],
   "work_limit": 20000000,
-  "work_used": 3156586
+  "work_used": 3156682
 }

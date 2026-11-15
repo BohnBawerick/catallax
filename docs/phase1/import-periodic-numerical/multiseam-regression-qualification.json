@@ -9,7 +9,7 @@
     "volume_mm3": "16-pi"
   },
   "checker_sha256": "e1db9b850d3c1860d946b5b5218c1c9be38c6c0cc9e18c6570839c91b054f338",
-  "example_binary_sha256": "ca103c7a8f352e1d4308b4cabd3027b823494e79a59a3bf1e4b70c2dcaa685cc",
+  "example_binary_sha256": "7b1afdbd566a5837f21cdbe48ecae016950308c43f2e12e376b9931a594e2978",
   "format": "catallax-periodic-numerical-workflow/1",
   "healing": false,
   "named_source_response_hash_equals_input_file": true,
@@ -80,9 +80,9 @@
       "source_sha256": "8b138ab5f82850b19b017f86283b8074a88c7a271c4c4a01576a610bbfa7b40e",
       "source_step_sha256": "8d947d029b3edc662d372f6206775ea0eae5bbd6d88f249d6093a5a65d446323",
       "stages": {
-        "edited_export": 219638,
+        "edited_export": 219662,
         "pose_rebuild": 125741,
-        "source_export": 219674
+        "source_export": 219698
       },
       "topology": {
         "edges": 15,
@@ -109,11 +109,11 @@
         }
       ],
       "work_limit": 20000000,
-      "work_used": 1755117
+      "work_used": 1755165
     }
   ],
   "response_source_hashes_checked_against_original_pins": true,
   "same_parameter": false,
-  "source_revision": "c9eb5861241fe67a7c3b8504ce62a588a9aa5a49",
+  "source_revision": "ebc7dc5a96f0efdce82f3f6f47fbc89d9b79c82a",
   "source_unit_to_mm": 1000
 }

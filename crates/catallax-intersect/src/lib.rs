@@ -34,7 +34,11 @@ mod spline_germ;
 mod spline_line;
 pub use spline_germ::native_spline_normal_acceleration;
 mod spline_plane;
-pub use spline_line::native_spline_line_points;
+pub use query::native_spline_line_segment;
+pub use spline_line::{
+    NumericalSplineLineMeetings, NumericalSplineLinePoint, native_spline_line_points,
+    numerical_spline_line_points,
+};
 
 /// How two objects meet along a component or at a point.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]

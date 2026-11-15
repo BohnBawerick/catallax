@@ -131,6 +131,20 @@ fn degrees(poly: &RealPoly, dec: &mut Decider) -> Result<[u32; 2], Refusal> {
     Ok(result)
 }
 
+pub(crate) fn axis_section(
+    patch: &RationalPatch,
+    surface: &SectionSurface,
+    dec: &mut Decider,
+) -> Result<Option<RationalPatchSection>, Refusal> {
+    for span in &patch.data.spans {
+        let degree = degrees(&surface.equation(span), dec)?;
+        if degree[0] != 0 && degree[1] != 0 {
+            return Ok(None);
+        }
+    }
+    patch.sections(surface, dec).map(Some)
+}
+
 fn in_range(value: &Real, domain: &[Rational; 2], dec: &mut Decider) -> Result<bool, Refusal> {
     Ok(
         exact_sign(&(value - &Real::from_rational(domain[0].clone())), dec)? != Sign::Negative

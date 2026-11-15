@@ -19,7 +19,7 @@ REFUSALS = (
     *(['numbers.operation-budget'] * 3),
     'step.unsupported-geometry',
     'numbers.geometric-gap-unproven',
-    *(['intersect.parametric-coincidence'] * 3),
+    *(['intersect.parametric-surface'] * 3),
     *(['intersect.unsupported-pair'] * 3),
 )
 
@@ -167,6 +167,9 @@ class M10SplineBooleanTests(unittest.TestCase):
                             imported = [op for op in operations if op['operation'] == 'import_step']
                             self.assertEqual(len(imported), 1)
                             self.assertEqual(imported[0]['status'], 'answered')
+                            self.assertEqual(manifest['refusal']['detail'],
+                                             'spline curve with rational patch: this intersection '
+                                             'needs a finite parametric surface solver')
                         if name.startswith(('top-', 'import-', 'spline-pair-')):
                             self.assertEqual(operations[-1]['id'], 'cut')
                             self.assertEqual(operations[-1]['operation'], 'boolean')

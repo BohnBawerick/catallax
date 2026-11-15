@@ -2,9 +2,60 @@
 
 use super::*;
 use catallax_numbers::{RealPoly, ZeroProof};
-use catallax_shapes::{BSplineCurve, Plane, SectionHits, SectionSurface, Sphere};
+use catallax_shapes::{
+    BSplineCurve, Plane, SectionHits, SectionSurface, Sphere, Surface, SurfaceId,
+};
 
+mod finite_line;
 mod spline;
+
+pub(super) fn native_line_meetings(
+    model: &mut Model,
+    a: CurveId,
+    b: CurveId,
+    dec: &mut Decider,
+) -> Result<Option<Meetings>, Refusal> {
+    finite_line::meetings(model, a, b, dec)
+}
+
+pub(crate) enum FinitePlanePoints {
+    Contained,
+    Points(Vec<Point3>),
+}
+
+/// Complete finite point sets for clipping, without two-sided contact labels.
+pub(crate) fn finite_spline_plane_points(
+    model: &Model,
+    curve: CurveId,
+    surface: SurfaceId,
+    dec: &mut Decider,
+) -> Result<Option<FinitePlanePoints>, Refusal> {
+    let (Curve::BSpline(spline), Surface::Plane(plane)) =
+        (model.geom().curve(curve), model.geom().surface(surface))
+    else {
+        return Ok(None);
+    };
+    if sign(
+        &plane.normal.norm_squared(),
+        dec,
+        "boolean.patch-section-meetings",
+    )? == Sign::Zero
+    {
+        return Err(unresolved("a finite plane query needs a nonzero normal"));
+    }
+    // Retained extrusion sections have a complete source solver before span substitution.
+    if catallax_intersect::is_bezier_extrusion_section(model.geom(), curve, dec)? {
+        return Ok(None);
+    }
+    let equation = model
+        .geom()
+        .implicit(surface)
+        .ok_or_else(|| unresolved("the finite plane has no polynomial equation"))?;
+    Ok(Some(match spline::hits(spline, equation, dec)? {
+        None => FinitePlanePoints::Contained,
+        Some(points) => FinitePlanePoints::Points(points),
+    }))
+}
 
 fn unresolved(detail: &str) -> Refusal {
     refusal("boolean.patch-section-meetings", detail)

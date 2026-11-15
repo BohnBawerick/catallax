@@ -1,8 +1,13 @@
 //! Complete finite spline-line meetings and exact support nonidentity.
 
 use crate::spline_arithmetic::{arithmetic, cut, difference, quotient, value};
-use catallax_numbers::{Decider, Real, Refusal, Sign};
+use catallax_numbers::{Decider, Rational, Real, Refusal, Sign};
 use catallax_shapes::{BSplineCurve, Curve, CurveId, GeomStore, Line, Point3};
+
+mod numerical;
+pub use numerical::{
+    NumericalSplineLineMeetings, NumericalSplineLinePoint, numerical_spline_line_points,
+};
 
 fn missing(detail: &str) -> Refusal {
     Refusal::new("intersect.spline-line", detail)
@@ -21,24 +26,35 @@ fn pair(geom: &GeomStore, a: CurveId, b: CurveId) -> Option<(&BSplineCurve, &Lin
     }
 }
 
+fn line_axis(line: &Line, dec: &mut Decider) -> Result<usize, Refusal> {
+    dec.charge_work(1)?;
+    let origin = [&line.origin.x, &line.origin.y, &line.origin.z];
+    let direction = [&line.dir.x, &line.dir.y, &line.dir.z];
+    for value in origin.into_iter().chain(direction) {
+        dec.enclose(value, &Rational::one())?;
+    }
+    for (axis, value) in direction.into_iter().enumerate() {
+        if sign(value, dec)? != Sign::Zero {
+            return Ok(axis);
+        }
+    }
+    Err(missing("a line direction must be nonzero"))
+}
+
 // For nonzero d[k], the two equations
 // d[k](X[j] - O[j]W) - d[j](X[k] - O[k]W) = 0 characterize the line.
 fn constraints(line: &Line, dec: &mut Decider) -> Result<[[Real; 4]; 2], Refusal> {
+    let axis = line_axis(line, dec)?;
+    constraints_on_axis(line, axis, dec)
+}
+
+fn constraints_on_axis(
+    line: &Line,
+    axis: usize,
+    dec: &mut Decider,
+) -> Result<[[Real; 4]; 2], Refusal> {
     let origin = [&line.origin.x, &line.origin.y, &line.origin.z];
     let direction = [&line.dir.x, &line.dir.y, &line.dir.z];
-    if origin
-        .iter()
-        .chain(direction.iter())
-        .any(|value| value.rational_ref().is_none())
-    {
-        return Err(missing(
-            "finite spline-line queries need rational line coefficients",
-        ));
-    }
-    let axis = direction
-        .iter()
-        .position(|value| !value.rational_ref().unwrap().is_zero())
-        .ok_or_else(|| missing("a line direction must be nonzero"))?;
     let mut result = Vec::new();
     for other in (0..3).filter(|&other| other != axis) {
         let mut coefficients = std::array::from_fn(|_| Real::zero());
@@ -58,25 +74,12 @@ pub(super) fn different(
     b: CurveId,
     dec: &mut Decider,
 ) -> Result<bool, Refusal> {
-    let Some((curve, line)) = pair(geom, a, b) else {
+    let Some((_, line)) = pair(geom, a, b) else {
         return Ok(false);
     };
-    let constraints = constraints(line, dec)?;
-    for (span, _) in curve.spans() {
-        let coordinates = curve.query_span_polynomials(span, dec)?;
-        for constraint in &constraints {
-            let equation = cut(&coordinates, constraint, dec)?;
-            for (_, coefficient) in equation.terms() {
-                if sign(&coefficient, dec)? != Sign::Zero {
-                    // W is positive and the span has an interval with interior.
-                    // A nonzero numerator cannot vanish throughout that interval.
-                    return Ok(true);
-                }
-            }
-        }
-    }
+    line_axis(line, dec)?;
     // The closed finite knot domain and positive weights bound the spline.
-    // Even when every span lies on the line, their complete sets differ.
+    // A valid nonzero line is unbounded, even on the same straight support.
     Ok(true)
 }
 
@@ -89,7 +92,7 @@ fn same_position(a: &Point3, b: &Point3, dec: &mut Decider) -> Result<bool, Refu
     Ok(true)
 }
 
-/// Complete isolated meetings of a finite native B-spline and a rational line,
+/// Complete isolated meetings of a finite native B-spline and an exact line,
 /// in either input order. Other curve pairs return None. An overlap interval
 /// refuses; it is never replaced by a finite selection of points.
 /// No incidence facts are published by this query.
@@ -111,15 +114,25 @@ pub fn native_spline_line_points(
             cut(&coordinates, &constraints[1], dec)?,
         ];
         let mut selected = None;
+        let mut unsupported = false;
         for (index, equation) in equations.iter().enumerate() {
-            let rational = equation.rational().ok_or_else(|| {
-                missing("finite spline-line meetings need rational homogeneous cut coefficients")
-            })?;
-            if !rational.is_zero() && selected.is_none() {
-                selected = Some(index);
+            let Some(degree) = equation.total_degree(dec)? else {
+                continue;
+            };
+            if degree > 2 && equation.rational().is_none() {
+                unsupported = true;
+                continue;
+            }
+            if selected.is_none_or(|(_, old_degree)| degree < old_degree) {
+                selected = Some((index, degree));
             }
         }
-        let Some(selected) = selected else {
+        let Some((selected, _)) = selected else {
+            if unsupported {
+                return Err(missing(
+                    "higher-degree algebraic spline-line meetings need a complete root solver",
+                ));
+            }
             return Err(Refusal::new(
                 "intersect.spline-line-overlap",
                 format!(
@@ -212,6 +225,55 @@ mod tests {
             origin: point(0, y, z),
             dir: catallax_shapes::Vector3::new(Real::one(), Real::zero(), Real::zero()),
         }))
+    }
+
+    #[test]
+    fn algebraic_line_coefficients_keep_exact_finite_meetings_and_separation() {
+        let ((), work) = with_operation_budget(20_000_000, || {
+            let mut dec = Decider::default();
+            let mut geom = GeomStore::new();
+            let half = Real::from_rational(Rational::from_ratio(1, 2).unwrap());
+            let root = half.sqrt();
+            let curve = BSplineCurve::new(
+                2,
+                [0, 0, 0, 1, 1, 1].map(Rational::from_i64).to_vec(),
+                vec![
+                    point(0, 0, 0),
+                    Point3::new(half.clone(), Real::zero(), Real::zero()),
+                    point(1, 1, 0),
+                ],
+                vec![Real::one(); 3],
+                &mut dec,
+            )
+            .unwrap();
+            let curve = geom.add_curve(Curve::BSpline(curve));
+            for (x, expected) in [(root.clone(), 1), (&root * &Real::from_i64(3), 0)] {
+                let line = geom.add_curve(Curve::Line(Line {
+                    origin: Point3::new(x, half.clone(), Real::zero()),
+                    dir: catallax_shapes::Vector3::new(
+                        Real::from_i64(2).sqrt(),
+                        Real::zero(),
+                        Real::one(),
+                    ),
+                }));
+                for (a, b) in [(curve, line), (line, curve)] {
+                    assert!(matches!(
+                        crate::same_curve(&geom, a, b, &mut dec),
+                        Outcome::Proven(_)
+                    ));
+                    let points = native_spline_line_points(&geom, a, b, &mut dec)
+                        .unwrap()
+                        .unwrap();
+                    assert_eq!(points.len(), expected);
+                    for p in points {
+                        assert_eq!(sign(&(&p.x - &root), &mut dec).unwrap(), Sign::Zero);
+                        assert_eq!(sign(&(&p.y - &half), &mut dec).unwrap(), Sign::Zero);
+                        assert_eq!(sign(&p.z, &mut dec).unwrap(), Sign::Zero);
+                    }
+                }
+            }
+        });
+        assert!(!work.exhausted, "{} units", work.used);
     }
 
     #[test]

@@ -58,7 +58,11 @@ impl SpanHull {
     }
 
     // The span's own Bezier controls, as the blossom at its two knots.
-    fn span_controls(&self, bits: u32, dec: &Decider) -> Result<Vec<Homogeneous>, Refusal> {
+    pub(crate) fn span_controls(
+        &self,
+        bits: u32,
+        dec: &Decider,
+    ) -> Result<Vec<Homogeneous>, Refusal> {
         let (curve, span) = (&self.curve, self.span);
         let degree = curve.degree();
         let knots = curve.knots();

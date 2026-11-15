@@ -4,7 +4,7 @@ use super::*;
 use catallax_shapes::BSplineCurve;
 use catallax_trace::{
     global_solver::SolverRefusal,
-    spline::{BSplineCurve as FloatCurve, PointForm},
+    spline::{BSplineCurve as FloatCurve, BSplineSurface as FloatSurface, PointForm},
     surface_curves::{CurveKind, IntersectionCurve},
     surface_intersector::Intersector,
     surface_work::WorkReport,
@@ -18,6 +18,7 @@ pub struct NumericalIntersectionPiece {
     curve: BSplineCurve,
     uv: [BSplineCurve; 2],
     kind: CurveKind,
+    source_domains: [[[Rational; 2]; 2]; 2],
 }
 
 impl NumericalIntersectionPiece {
@@ -28,6 +29,12 @@ impl NumericalIntersectionPiece {
     /// Retained UV fits in the source operand order and the same native domain.
     pub fn uv(&self) -> &[BSplineCurve; 2] {
         &self.uv
+    }
+    /// Requested source rectangles for this fit, in operand order. Shared chart
+    /// boundaries may report the same physical contact more than once. These
+    /// records preserve that ownership rather than deleting reported pieces.
+    pub fn source_domains(&self) -> &[[[Rational; 2]; 2]; 2] {
+        &self.source_domains
     }
     /// The tracer's numerical meeting classification.
     pub fn kind(&self) -> CurveKind {
@@ -231,9 +238,11 @@ fn check_piece(
             let v =
                 at.y.rational_ref()
                     .ok_or_else(|| invalid("a retained UV coefficient lost rational identity"))?;
-            for (parameter, domain) in [u, v].into_iter().zip(sources[k].domain()) {
-                if parameter < domain[0] || parameter > domain[1] {
-                    return Err(invalid("a sampled UV fit leaves its finite source domain"));
+            for (parameter, domain) in [u, v].into_iter().zip(&piece.source_domains[k]) {
+                if parameter < &domain[0] || parameter > &domain[1] {
+                    return Err(invalid(
+                        "a sampled UV fit leaves its requested finite rectangle",
+                    ));
                 }
             }
             let on = sources[k].evaluate_box([u, u], [v, v], BITS, dec)?;
@@ -303,6 +312,41 @@ fn trace_with_caller(
     intersector.do_intersection_with_work(dec.deadline(), pay_trace_work)
 }
 
+fn check_proposal_rows(
+    surface: &FloatSurface,
+    index: usize,
+    dec: &mut Decider,
+) -> Result<NumericalCheck, Refusal> {
+    if surface.counts()[1] != 2 || surface.degrees()[1] != 1 {
+        return Err(invalid(
+            "a native proposal changed its ruled axial control layout",
+        ));
+    }
+    // Native ruled sources store two axial controls at every angular pole.
+    let bits = |value: f64| if value == 0.0 { 0 } else { value.to_bits() };
+    for (pole, rows) in surface
+        .control_points()
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .enumerate()
+    {
+        dec.charge_work(1)?;
+        if rows[0].coordinates.map(bits) == rows[1].coordinates.map(bits) {
+            return Err(Refusal::new(
+                "intersect.numerical-native-proposal-collapse",
+                format!(
+                    "source-{index} native angular pole {pole} has indistinguishable binary64 axial controls; finite source and shared frame remain unchanged"
+                ),
+            ));
+        }
+    }
+    Ok(NumericalCheck::Passed {
+        name: "native.proposal-distinct-axial-controls".into(),
+        scope: format!("source-{index}"),
+    })
+}
+
 fn build_intersection(
     surfaces: [&Surface; 2],
     dec: &mut Decider,
@@ -312,53 +356,106 @@ fn build_intersection(
         return Ok(None);
     };
     let after_windows = catallax_numbers::current_operation_work().used;
+    search(windows, false, started, after_windows, dec).map(Some)
+}
+
+pub(super) fn search(
+    windows: NumericalNativeWindows,
+    quarters: bool,
+    started: u64,
+    after_windows: u64,
+    dec: &mut Decider,
+) -> Result<NumericalNativeIntersection, Refusal> {
     let a =
         crate::pair::trace_candidates::surface(&windows.sources[0], &Isometry::identity(), dec)?;
     let b =
         crate::pair::trace_candidates::surface(&windows.sources[1], &Isometry::identity(), dec)?;
-    dec.charge_work(1)?;
-    let mut intersector = Intersector::new(&a, a.natural_domain(), &b, b.natural_domain());
-    intersector.approx_tolerance = windows.evidence.tolerance_mm().to_f64_nearest() / 4.;
-    intersector.check_output_spans = true;
-    let after_setup = catallax_numbers::current_operation_work().used;
-    let (fits, trace_work) = trace_with_caller(&intersector, dec);
-    let after_trace = catallax_numbers::current_operation_work().used;
-    if trace_work.cancelled {
-        dec.charge_work(0)?;
-        return Err(invalid(
-            "numerical native tracing cancelled without a retained result",
-        ));
-    }
-    let fits = fits.map_err(|fault| invalid(format!("native numerical trace: {fault:?}")))?;
+    let proposal_checks = [
+        check_proposal_rows(&a, 0, dec)?,
+        check_proposal_rows(&b, 1, dec)?,
+    ];
+    let after_sources = catallax_numbers::current_operation_work().used;
+    let mut setup = after_sources - after_windows;
     let carriers = [
         Carrier::new(&windows.originals[0], dec)?,
         Carrier::new(&windows.originals[1], dec)?,
     ];
     let mut pieces = Vec::new();
     let mut checks = windows.evidence.checks().to_vec();
-    for (index, fit) in fits.into_iter().enumerate() {
-        let [Some(a), Some(b)] = fit.uv_curves else {
-            return Err(invalid(
-                "a reported piece needs both retained UV definitions",
-            ));
-        };
-        let piece = NumericalIntersectionPiece {
-            curve: retained(&fit.curve, 3, dec)?,
-            uv: [retained(&a, 2, dec)?, retained(&b, 2, dec)?],
-            kind: fit.kind,
-        };
-        checks.extend(check_piece(
-            &piece,
-            &windows.sources,
-            &carriers,
-            index,
-            dec,
-        )?);
-        pieces.push(piece);
+    checks.extend(proposal_checks);
+    let mut trace_work = WorkReport::default();
+    let mut tracing = 0;
+    let ranges: Vec<[i64; 2]> = if quarters {
+        (0..4).map(|i| [i, i + 1]).collect()
+    } else {
+        vec![[0, 4]]
+    };
+    for ar in &ranges {
+        for br in &ranges {
+            let before_setup = catallax_numbers::current_operation_work().used;
+            dec.charge_work(1)?;
+            let domains = [*ar, *br].map(|u| [u.map(r), [r(0), r(1)]]);
+            let float_domains = domains.each_ref().map(|d| {
+                catallax_trace::extent::Extent2::new(
+                    catallax_trace::vector::Vector2::new(
+                        d[0][0].to_f64_nearest(),
+                        d[1][0].to_f64_nearest(),
+                    ),
+                    catallax_trace::vector::Vector2::new(
+                        d[0][1].to_f64_nearest(),
+                        d[1][1].to_f64_nearest(),
+                    ),
+                )
+            });
+            // These exact integer rectangles lie in both natural domains.
+            // Intersector::new falls back to a natural domain on empty overlap.
+            let mut intersector = Intersector::new(&a, float_domains[0], &b, float_domains[1]);
+            intersector.approx_tolerance = windows.evidence.tolerance_mm().to_f64_nearest() / 4.;
+            intersector.check_output_spans = true;
+            let before_trace = catallax_numbers::current_operation_work().used;
+            setup += before_trace - before_setup;
+            let (fits, report) = trace_with_caller(&intersector, dec);
+            tracing += catallax_numbers::current_operation_work().used - before_trace;
+            add_report(&mut trace_work, report);
+            if report.cancelled {
+                dec.charge_work(0)?;
+                return Err(invalid(
+                    "numerical native tracing cancelled without a retained result",
+                ));
+            }
+            let fits =
+                fits.map_err(|fault| invalid(format!("native numerical trace: {fault:?}")))?;
+            for fit in fits {
+                let [Some(a), Some(b)] = fit.uv_curves else {
+                    return Err(invalid(
+                        "a reported piece needs both retained UV definitions",
+                    ));
+                };
+                let piece = NumericalIntersectionPiece {
+                    curve: retained(&fit.curve, 3, dec)?,
+                    uv: [retained(&a, 2, dec)?, retained(&b, 2, dec)?],
+                    kind: fit.kind,
+                    source_domains: domains.clone(),
+                };
+                checks.extend(check_piece(
+                    &piece,
+                    &windows.sources,
+                    &carriers,
+                    pieces.len(),
+                    dec,
+                )?);
+                pieces.push(piece);
+            }
+        }
     }
     checks.push(NumericalCheck::Passed {
         name: "native.retained-every-reported-piece".into(),
-        scope: "finite-window-search".into(),
+        scope: if quarters {
+            "sixteen-finite-quarter-pairs"
+        } else {
+            "finite-window-search"
+        }
+        .into(),
     });
     let samples: usize = checks
         .iter()
@@ -372,17 +469,29 @@ fn build_intersection(
     let finished = catallax_numbers::current_operation_work().used;
     let work_stages = NumericalNativeWork {
         windows: after_windows - started,
-        setup: after_setup - after_windows,
-        tracing: after_trace - after_setup,
-        fit_checks: finished - after_trace,
+        setup,
+        tracing,
+        fit_checks: finished - after_windows - setup - tracing,
     };
-    Ok(Some(NumericalNativeIntersection {
+    Ok(NumericalNativeIntersection {
         windows,
         pieces,
         evidence,
         trace_work,
         work_stages,
-    }))
+    })
+}
+
+fn add_report(total: &mut WorkReport, report: WorkReport) {
+    total.attempted += report.attempted;
+    total.accepted += report.accepted;
+    total.search_branches += report.search_branches;
+    total.local_iterations += report.local_iterations;
+    total.surface_evaluations += report.surface_evaluations;
+    total.curve_evaluations += report.curve_evaluations;
+    total.source_items += report.source_items;
+    total.trace_visits += report.trace_visits;
+    total.cancelled |= report.cancelled;
 }
 
 #[cfg(test)]
@@ -435,7 +544,7 @@ mod tests {
                 assert_eq!(piece.curve().domain(), piece.uv()[0].domain());
                 assert_eq!(piece.curve().domain(), piece.uv()[1].domain());
             }
-            assert_eq!(result.evidence().checks().len(), 5 + 4 * 2 + 1);
+            assert_eq!(result.evidence().checks().len(), 5 + 2 + 4 * 2 + 1);
             eprintln!(
                 "numerical native query reverse={reverse} total_work={} trace={:?}",
                 work.used,
@@ -522,6 +631,73 @@ mod tests {
             assert_eq!(report, complete);
         });
         assert!(!work.exhausted, "{work:?}");
+    }
+
+    #[test]
+    fn proposal_guard_distinguishes_thin_origin_rows_and_far_representable_rows() {
+        for (origin, span) in [
+            (r(0), Rational::from_ratio(1, 1_000_000_000).unwrap()),
+            (r(1_000_000_000), r(1)),
+        ] {
+            let mut dec = Decider::default();
+            let frame = Frame::new(
+                Point3::new(s(0), Real::from(origin), s(0)),
+                &Vector3::new(s(0), s(1), s(0)),
+                &Vector3::new(s(1), s(0), s(0)),
+                &mut dec,
+            )
+            .unwrap();
+            let source = source(
+                &frame,
+                &[r(0), span],
+                [&s(1), &s(1)],
+                "control",
+                &Rational::from_ratio(1, 10_000_000).unwrap(),
+                &mut dec,
+            )
+            .unwrap();
+            let proposal = crate::pair::trace_candidates::surface(
+                &source.surface,
+                &Isometry::identity(),
+                &mut dec,
+            )
+            .unwrap();
+            assert!(check_proposal_rows(&proposal, 0, &mut dec).is_ok());
+        }
+    }
+
+    #[test]
+    fn proposal_guard_treats_signed_underflow_zeros_as_collapsed_rows() {
+        let mut dec = Decider::default();
+        let tiny = Rational::parse(&format!("1/1{}", "0".repeat(400))).unwrap();
+        let frame = Frame::new(
+            Point3::new(s(0), s(0), s(0)),
+            &Vector3::new(s(0), s(1), s(0)),
+            &Vector3::new(s(1), s(0), s(0)),
+            &mut dec,
+        )
+        .unwrap();
+        let source = source(
+            &frame,
+            &[-&tiny, tiny],
+            [&s(1), &s(1)],
+            "underflow-control",
+            &Rational::from_ratio(1, 10_000_000).unwrap(),
+            &mut dec,
+        )
+        .unwrap();
+        let proposal = crate::pair::trace_candidates::surface(
+            &source.surface,
+            &Isometry::identity(),
+            &mut dec,
+        )
+        .unwrap();
+        assert_eq!(
+            check_proposal_rows(&proposal, 0, &mut dec)
+                .unwrap_err()
+                .code,
+            "intersect.numerical-native-proposal-collapse"
+        );
     }
 
     #[test]

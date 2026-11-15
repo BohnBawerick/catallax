@@ -9,10 +9,12 @@ use catallax_numbers::{
 const BITS: u32 = 128;
 
 mod checked;
+mod finite;
 pub use checked::{
     NumericalIntersectionPiece, NumericalNativeIntersection, NumericalNativeWork,
     numerical_native_intersection,
 };
+pub use finite::numerical_native_finite_intersection;
 
 #[cfg(test)]
 mod fit_tests;
@@ -27,6 +29,7 @@ pub struct NumericalNativeWindows {
     evidence: NumericalEvidence,
     cone_heights: [Rational; 2],
     cylinder_parameters: [Rational; 2],
+    cylinder_origin: Point3,
     control_rounding_mm: Rational,
 }
 
@@ -43,13 +46,19 @@ impl NumericalNativeWindows {
     pub fn evidence(&self) -> &NumericalEvidence {
         &self.evidence
     }
-    /// Strict positive cone-height window enclosing possible meetings.
+    /// Strict positive cone-height window searched by this query.
     pub fn cone_heights(&self) -> &[Rational; 2] {
         &self.cone_heights
     }
-    /// Cylinder coordinates about the axis projection of the cone apex.
+    /// Signed millimetres along the unit cylinder axis from `cylinder_origin`.
     pub fn cylinder_parameters(&self) -> &[Rational; 2] {
         &self.cylinder_parameters
+    }
+    /// Origin used by the retained cylinder source. Global support searches use
+    /// the cone apex projection. Finite face searches use the original cylinder
+    /// origin so different cone faces share one cylinder parameter frame.
+    pub fn cylinder_origin(&self) -> &Point3 {
+        &self.cylinder_origin
     }
     /// Maximum L1 rounding error of one Cartesian control, in millimetres.
     /// The original positive weights and native knots are unchanged.
@@ -261,16 +270,15 @@ fn build(
     surfaces: [&Surface; 2],
     dec: &mut Decider,
 ) -> Result<Option<NumericalNativeWindows>, Refusal> {
-    let (cone, cylinder, swap) = match surfaces {
-        [Surface::Cone(cone), Surface::Cylinder(cylinder)] => (cone, cylinder, false),
-        [Surface::Cylinder(cylinder), Surface::Cone(cone)] => (cone, cylinder, true),
+    let (cone, cylinder) = match surfaces {
+        [Surface::Cone(cone), Surface::Cylinder(cylinder)] => (cone, cylinder),
+        [Surface::Cylinder(cylinder), Surface::Cone(cone)] => (cone, cylinder),
         _ => return Ok(None),
     };
     dec.charge_work(1)?;
     if dec.policy().max_precision_bits < BITS {
         return Err(bad("native numerical windows require 128-bit enclosures"));
     }
-    let tolerance = Rational::from_ratio(1, 10_000_000).unwrap();
     let radius = cylinder.radius();
     let radius_bound = enclosure(&radius, dec)?;
     let slope_bound = enclosure(&cone.slope, dec)?;
@@ -324,10 +332,37 @@ fn build(
     }
     let cylinder_bound = (&r(1) + &slope_bound.hi()) * heights[1].clone() + r(1);
     let cylinder_parameters = [-&cylinder_bound, cylinder_bound];
-    let mut checks = vec![NumericalCheck::Passed {
+    let checks = vec![NumericalCheck::Passed {
         name: "native.retained-full-parameter-window".into(),
         scope: "cone-cylinder".into(),
     }];
+    assemble(
+        surfaces,
+        heights,
+        cylinder_parameters,
+        cone_frame,
+        cylinder_frame,
+        checks,
+        dec,
+    )
+}
+
+fn assemble(
+    surfaces: [&Surface; 2],
+    heights: [Rational; 2],
+    cylinder_parameters: [Rational; 2],
+    cone_frame: Frame,
+    cylinder_frame: Frame,
+    mut checks: Vec<NumericalCheck>,
+    dec: &mut Decider,
+) -> Result<Option<NumericalNativeWindows>, Refusal> {
+    let (cone, cylinder, swap) = match surfaces {
+        [Surface::Cone(cone), Surface::Cylinder(cylinder)] => (cone, cylinder, false),
+        [Surface::Cylinder(cylinder), Surface::Cone(cone)] => (cone, cylinder, true),
+        _ => return Ok(None),
+    };
+    let radius = cylinder.radius();
+    let tolerance = Rational::from_ratio(1, 10_000_000).unwrap();
     let radii = heights
         .each_ref()
         .map(|h| &cone.slope * &Real::from(h.clone()));
@@ -381,6 +416,7 @@ fn build(
         evidence,
         cone_heights: heights,
         cylinder_parameters,
+        cylinder_origin: cylinder_frame.origin,
         control_rounding_mm: rounding,
     }))
 }

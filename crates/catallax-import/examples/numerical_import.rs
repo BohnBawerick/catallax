@@ -76,11 +76,27 @@ fn file(body: &n::NumericalBody, path: &Path, dec: &mut Decider) -> Result<Value
         std::fs::read(path).map_err(|e| json!({"stage":"reread","detail":e.to_string()}))?;
     file.check_written(&bytes, dec)
         .map_err(|e| error("reread-check", e))?;
+    let phase_bounds = file
+        .report()
+        .emitted_evidence
+        .checks()
+        .iter()
+        .filter_map(|check| match check {
+            NumericalCheck::Samples { name, samples, .. }
+                if name == "file.closed-circle-zero-phase-tangent-bound" =>
+            {
+                Some(samples)
+            }
+            _ => None,
+        })
+        .flat_map(|samples| samples.iter().map(|sample| &sample.distance_upper_mm))
+        .collect::<Vec<_>>();
     Ok(
         json!({"sha256":sha256_hex(&bytes),"bytes":bytes.len(),"category":"numerical approximate",
         "checks":file.report().checks,"scalar_rounding_limit_mm":file.report().scalar_rounding_limit_mm.to_string(),
         "max_scalar_rounding_error_mm":file.report().max_scalar_rounding_error_mm.to_string(),
         "max_direction_ratio_rounding_error":file.report().max_direction_ratio_rounding_error.to_string(),
+        "closed_circle_phase_checks":{"count":phase_bounds.len(),"max_tangent_bound_mm":phase_bounds.iter().max().map(ToString::to_string),"angular_limit_rad":"1/1000000000000","distance_limit_mm":"1/1000000000"},
         "source_history_stages":file.report().source_history.len(),"complete_body_bound":"unestablished"}),
     )
 }

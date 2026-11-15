@@ -124,3 +124,89 @@ same 3,000 sources fully (13.33%), retaining all 378 prior full imports and addi
 22 actual files with 44 recorded seams. That population count comes from all
 3,000 terminal observations, separately from this named-part edit/STEP check.
 The earlier prototype census remains private and contributes no current claim.
+
+## Two seams in one real solid: STEP range repair
+
+Census source `00003390`, SHA-256
+`9ee5c0862a70c2f7eef35ce8bf61fb1a748fc173fa6c6b606745a9842e36e4a7`,
+is one of the 400 admission-only results. It retains one solid with 16 faces,
+40 source edges and 28 source vertices, plus two recorded derived seams.
+The [before capture](multiseam-before.json) imports and exports under the frozen
+`51e9c0ffa13efcbcfb5c004b152e4c6014c6b5c1` producer, but its source STEP is
+raw-invalid: source face `#46` has a wire orientation result of
+`BRepCheck_NotClosed`. A descending complete-circle parameter span was used for
+its pcurve while the reader reconstructed an ascending natural full turn.
+Before-fix pose STEP validity was not measured.
+
+This repair follows OCCT's
+[edge translation](https://github.com/Open-Cascade-SAS/OCCT/blob/V8_0_0/src/DataExchange/TKDESTEP/StepToTopoDS/StepToTopoDS_TranslateEdge.cxx)
+and [STEP edge writer](https://github.com/Open-Cascade-SAS/OCCT/blob/V8_0_0/src/DataExchange/TKDESTEP/TopoDSToStep/TopoDSToStep_MakeStepEdge.cxx):
+STEP edges do not carry their native parameter range, so vertex projection and
+periodic range reconstruction must agree with their pcurves. The bounded
+analytic writer puts a complete circle's reference phase at its existing shared
+endpoint and uses the ascending natural turn. It retains the geometric center,
+axis, radius and source vertex. Reversing a native edge direction also reverses
+every coedge sense, preserving the physical boundary walk. The reference ray uses the written center and rounded endpoint. After direction
+rounding, an interval check requires the positive ray and bounds the residual
+phase by `1e-12` radians and its tangential displacement by the smaller of
+`1e-9` mm and the requested scalar rounding cap. This separate numerical selector
+check is tighter than source tolerance and can conservatively refuse an export.
+The angular cap follows OCCT [Precision::Angular](https://github.com/Open-Cascade-SAS/OCCT/blob/V8_0_0/src/FoundationClasses/TKernel/Precision/Precision.hxx);
+the physical cap stays below the raw builder precision. The final serializer
+uses that validated rounded definition. Partial circular arcs keep their
+existing parameterization. This is an export repair; import admission and its
+20M allowance are unchanged. It uses no general projection/tracer path from the
+P04 SMLib consumer map above.
+
+The [fixed capture](multiseam-qualification.json) pins kernel producer
+`ebc7dc5a96f0efdce82f3f6f47fbc89d9b79c82a`, executable/checker hashes and both actual
+STEP hashes. Both exports pass raw OCCT validity without healing, sewing or
+SameParameter. A separately labelled normal OCCT transfer of the actual source
+may run healing; it supplies the independent volume/material reference. Source
+and exported volume agree within relative `1e-8`; pose volume agrees within
+relative `1e-9`, and centroid translation is checked within `1e-8` mm. Each
+repaired bore has a void and stock probe before and after translation `(3,5,7)` mm.
+
+The checker compares every source-local face, edge and vertex identity, all
+source vertex positions within actual scalar rounding bounds, retained analytic
+carriers, face-edge incidence, both derived seam endpoints and their opposite
+uses. Complete-circle reference phases may rotate while their geometric
+carriers and retained endpoints agree; partial circle reference frames remain
+checked. A geometrically unchanged file with exchanged vertex identities is
+rejected. These source-local checks do not establish correspondence between
+changed source files. Public captures omit source coordinates and shape
+properties; geometry stays in private proof storage.
+
+Import, source STEP, pose rebuild and edited STEP use respectively 1,555,652,
+604,820, 391,599 and 604,611 work, totalling 3,156,682 under the unchanged 20M
+allowance. Linux formatting checks and 23 scoped native STEP tests passed,
+including ten equivalent direction/period/phase variants. The nonzero-phase, shifted-center and oblique-anchor authored bores also pass
+raw validity, volume and material checks at 17 digits. A four-digit shifted-center
+control verifies alignment against the written center. A four-digit oblique
+reference that cannot establish the phase is refused with
+`step.numerical-closed-circle-phase`; the same source exports at 17 digits.
+The four-digit controls qualify phase checking, not full raw STEP validity at
+that precision. The real part records four passed phase checks in each export. All three
+earlier real workflows pass again in the separate
+[post-fix regression capture](multiseam-regression-qualification.json); their
+historical captures above remain unchanged.
+
+The revision-to-executable association in these named captures remains
+**author-attested**. The checker verifies the supplied executable hash, input
+source hash, response source identity and actual STEP artifacts; it does not
+independently establish build or run origin. No complete-body deviation bound,
+arbitrary edit or Catallax Boolean is qualified. This named repair does not
+supply an export-validity count for the 400 admissions. That count requires a
+separate complete per-file measurement and will be published beside the
+admission-only count.
+
+```sh
+python tools/research/check_multiseam_import.py \
+  --source 00003390.step --capture PRIVATE_CAPTURE \
+  --source-revision ebc7dc5a96f0efdce82f3f6f47fbc89d9b79c82a \
+  --example-binary numerical_import \
+  --example-sha256 7b1afdbd566a5837f21cdbe48ecae016950308c43f2e12e376b9931a594e2978 \
+  --phased-authored periodic-bore-phased.step \
+  --precision-authored periodic-bore-shifted-center.step periodic-bore-oblique-anchor.step \
+  --out qualification.json
+```

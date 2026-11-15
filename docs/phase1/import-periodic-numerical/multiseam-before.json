@@ -1,0 +1,27 @@
+{
+  "cause": "descending_closed_circle_range_and_reader_reconstructed_ascending_turn",
+  "example_binary_sha256": "40a277e035e03df9e33c06d42a9becaa87debe2abf5c9a55cc9827a0ad682191",
+  "exported_step_healing": false,
+  "exported_step_same_parameter": false,
+  "failing_source_face": "#46",
+  "format": "catallax-multiseam-before/1",
+  "import_work": 1555652,
+  "model_id": "00003390",
+  "ocp_version": "8.0.1.1",
+  "pose_step_raw_valid": null,
+  "pose_step_sha256": "3f35a64d7560b3cad3ef529d52b728eeb5b8a597a21d9955d9e42598e4e2d50b",
+  "pose_step_validity_status": "not_measured_before_fix",
+  "raw_builder_sha256": "5633cdcf16efc13f328ed85b33a738f6a9296e2afb925f4c64bbed7c91025376",
+  "source_revision": "51e9c0ffa13efcbcfb5c004b152e4c6014c6b5c1",
+  "source_sha256": "9ee5c0862a70c2f7eef35ce8bf61fb1a748fc173fa6c6b606745a9842e36e4a7",
+  "source_step_raw_valid": false,
+  "source_step_sha256": "1c6246d46b9781a84a440ef44f44f7295610bcb7390758c73e896d69c5c67fcd",
+  "stages": {
+    "edited_export": 604220,
+    "pose_rebuild": 391599,
+    "source_export": 604429
+  },
+  "wire_orientation_status": "BRepCheck_NotClosed",
+  "work_limit": 20000000,
+  "work_used": 3155900
+}

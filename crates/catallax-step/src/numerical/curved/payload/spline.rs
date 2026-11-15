@@ -69,7 +69,7 @@ pub(super) fn surface(
         .into_iter()
         .collect::<Result<Vec<_>, _>>()?
         .try_into()
-        .map_err(|_| unreachable!())?;
+        .expect("two knot axes");
     let controls = source
         .controls()
         .iter()

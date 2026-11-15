@@ -89,7 +89,7 @@ fn direction(
         .into_iter()
         .collect::<Result<Vec<_>, _>>()?
         .try_into()
-        .map_err(|_| unreachable!())?;
+        .expect("fixed coordinate count");
     if values.iter().all(Rational::is_zero) {
         return Err(bad("rounding-topology", "written direction vanished"));
     }
@@ -136,7 +136,7 @@ pub(super) fn build(
             .into_iter()
             .collect::<Result<Vec<_>, _>>()?
             .try_into()
-            .map_err(|_| unreachable!())?;
+            .expect("fixed coordinate count");
         if edge.parameters[0] == edge.parameters[1] {
             return Err(bad("rounding-topology", "finite edge parameters collapsed"));
         }

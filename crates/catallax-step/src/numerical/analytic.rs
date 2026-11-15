@@ -682,12 +682,25 @@ pub(super) fn build(
                 [edge.vertices[1], edge.vertices[0]]
             };
             for (i, index) in ends.into_iter().enumerate() {
-                trim.uv[i] = uv(
-                    &face.surface,
-                    &d.vertices[index].position,
-                    &trim.uv[i],
-                    w.dec,
-                )?;
+                // A toleranced vertex can be slightly off its circle's plane.
+                // Project the written finite carrier, rather than that vertex,
+                // to avoid turning a circular isoparameter into a sloped line.
+                // Keep shared vertices and the old periodic branch; numerical
+                // admission and actual pcurve-distance checks still apply.
+                let position = if matches!(face.surface, Surface::Cylinder(_))
+                    && matches!(edge.curve, Curve::Circle(_))
+                    && edge.vertices[0] != edge.vertices[1]
+                {
+                    let end = if trim.sense == Sense::Same { i } else { 1 - i };
+                    let point = edge
+                        .curve
+                        .evaluate(&Ball::from_rational(&edge.parameters[end], BITS), w.dec)?
+                        .ok_or_else(|| bad("unsupported", "finite circle has no evaluator"))?;
+                    std::array::from_fn(|axis| point[axis].mid())
+                } else {
+                    d.vertices[index].position.clone()
+                };
+                trim.uv[i] = uv(&face.surface, &position, &trim.uv[i], w.dec)?;
             }
         }
     }

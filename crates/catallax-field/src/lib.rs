@@ -492,6 +492,52 @@ impl Plan {
                         )?;
                         plan.feature(built, dec)?
                     }
+                    Operation::ExtrudeOnFace {
+                        profile,
+                        body,
+                        face,
+                        normal_direction,
+                        x_direction,
+                        offset,
+                        distance,
+                        placement,
+                    } => {
+                        let profile = &profiles[profile];
+                        catallax_features::check_face_profile(&profile.pose, dec)?;
+                        let boundary = planar_face::recovery::skin(&plan, steps[body], dec)?;
+                        let planes = boundary
+                            .patches
+                            .into_iter()
+                            .filter(|patch| patch.origins.iter().any(|origin| face.matches(origin)))
+                            .map(|patch| patch.plane)
+                            .collect::<Vec<_>>();
+                        let [x, y, z] = x_direction.0.each_ref().map(|n| n.value().clone());
+                        let [nx, ny, nz] = normal_direction.0.each_ref().map(|n| n.value().clone());
+                        let map = catallax_features::face_placement(
+                            &planes,
+                            &RVector3::new(nx, ny, nz),
+                            &RVector3::new(x, y, z),
+                            offset.value(),
+                            placement,
+                            dec,
+                        )?;
+                        let map = Isometry::from(&map);
+                        let mut built = features::Feature::extrude(
+                            profile,
+                            &step.id,
+                            Some(distance.value()),
+                            None,
+                            false,
+                            dec,
+                        )?;
+                        if let Some((feature, faces)) = &mut built {
+                            feature.transform(&map)?;
+                            for face in faces {
+                                geometry::face_geometry(face, map.surface(&face.surface), dec)?;
+                            }
+                        }
+                        plan.feature(built, dec)?
+                    }
                     Operation::ExtrudeThrough {
                         target,
                         profile,

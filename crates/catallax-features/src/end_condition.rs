@@ -51,9 +51,6 @@ fn centroid(poly: &[P]) -> P {
 fn qpoint(p: &[Rational; 2]) -> P {
     p.clone().map(Real::from)
 }
-fn zero_vec() -> RVector3 {
-    RVector3::zero()
-}
 fn vector(v: &catallax_recipe::Vector3) -> RVector3 {
     let [x, y, z] = v.0.each_ref().map(|n| n.value().clone());
     RVector3::new(x, y, z)

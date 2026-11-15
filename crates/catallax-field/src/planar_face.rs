@@ -1,6 +1,6 @@
 //! One polygonal planar face swept from independent field definitions.
 
-mod recovery;
+pub(crate) mod recovery;
 mod sweep;
 
 use catallax_numbers::{Decider, Rational, Refusal};

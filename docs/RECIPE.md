@@ -20,7 +20,7 @@ A value is one of four kinds:
 
 | Kind | Made by | Read by |
 |---|---|---|
-| profile | `sketch` | `extrude`, `extrude_through`, `extrude_to`, `extrude_next`, `revolve`, `sweep`, `loft` |
+| profile | `sketch` | `extrude`, `extrude_on_face`, `extrude_through`, `extrude_to`, `extrude_next`, `revolve`, `sweep`, `loft` |
 | path | `path` | `sweep` |
 | body | solid operations below | the operations that act on solids |
 | scan | `scan_import` | application reconstruction and deviation queries; no solid operation |
@@ -192,8 +192,8 @@ Each operation's section lists the roles it makes. All of them:
 
 | Role | Made by | Fields |
 |---|---|---|
-| `start`, `end` | block, cylinder, cone, extrude, extrude_to, extrude_next, revolve, sweep, loft; extrude_through makes only `start` when one-sided | none |
-| `side` | stock solids, extrude, extrude_through, extrude_to, extrude_next, revolve, sweep, loft | `segment`; a fixed segment id for stock solids; for a sweep also `path` |
+| `start`, `end` | block, cylinder, cone, extrude, extrude_on_face, extrude_to, extrude_next, revolve, sweep, loft; extrude_through makes only `start` when one-sided | none |
+| `side` | stock solids, extrude, extrude_on_face, extrude_through, extrude_to, extrude_next, revolve, sweep, loft | `segment`; a fixed segment id for stock solids; for a sweep also `path` |
 | `envelope` | sweep | `path` |
 | `hole` | hole | `at` (placement id), `part` |
 | `blend` | fillet | `edge` (edge name) |
@@ -408,6 +408,29 @@ Normal circular sweeps retain each side cylinder's exact squared radius. A ratio
 **Impossible.** `d = 0`. `w = 0`. `w` parallel to the sketch plane, `w · n = 0`, which gives zero thickness.
 
 - **A negative distance is allowed.** It extrudes the other way, and `start` stays in the sketch plane. Flipping the direction is then a parameter edit that keeps every name. The alternative is requiring `d > 0`, as SolidDraft's slot does, and flipping by `direction`. One sign rule is less to explain, but a flip becomes a different kind of edit.
+
+#### Face-mounted extrusion
+
+`extrude_on_face` retains a supporting face instead of reconstructing its plane from display coordinates.
+
+| Parameter | Value |
+|---|---|
+| `profile` | sketch step in local XY, with identity placement |
+| `body` | body carrying the supporting face |
+| `face` | origin pattern; all matches must be planar and share one supporting plane |
+| `normal_direction` | selects the normal with a positive dot product against this direction |
+| `x_direction` | nonzero direction whose projection onto the plane defines local X |
+| `offset` | signed distance along the selected unit normal |
+| `distance` | signed sweep length along that normal, not zero |
+| `placement` | optional model-space pose applied after attachment; identity by default |
+
+Let `n` be the exact unit normal selected by `normal_direction` and `o` the projection of world zero onto the supporting plane. Normalize the projection of `x_direction` onto the plane to obtain `x`; set `y = n × x`. A profile point `(u,v)` starts at `o + offset n + u x + v y`. Sweep it by `distance n`. Normalization may be algebraic. No rational-quaternion fit or geometric tolerance changes the supporting plane.
+
+Feature copies keep the profile local and compose their model-space pose into `placement`. The carrier body is a reference context, bound through the instance's `origins` map, not the accumulating Boolean target. Copying the carrier in the same feature graph, sharing its local profile with a world-space feature, and reflected feature copies are refused.
+
+The field interpreter recovers the carrier's certified planar boundary before resolving an origin. Removed faces cannot supply a plane. A carrier outside that recovery path is refused rather than resolved from stale face candidates.
+
+Both kernels build the local sweep and apply this exact rigid placement. Names are the same `start`, `end` and `side` roles as `extrude`. A missing face, nonplanar match, conflicting planes, tangential normal direction, parallel X direction, nonlocal profile or zero distance is refused. The result is a tool body, not an automatic union or subtraction.
 
 #### 4.1.1 Through-all cut
 

@@ -245,6 +245,35 @@ mod tests {
         }
     }
     #[test]
+    fn existing_outer_wall_uses_its_original_origin_radius_and_axis_span() {
+        let outer = Cylinder {
+            origin: Point3::new(0.into(), 0.into(), 0.into()),
+            axis: Vector3::new(0.into(), 1.into(), 0.into()),
+            radius_sq: 144.into(),
+            ref_dir: Vector3::new(1.into(), 0.into(), 0.into()),
+        };
+        let mut dec = Decider::default();
+        let descriptor =
+            NumericalCylinderSource::new(&outer, [q(0), q(12)], options(), &mut dec).unwrap();
+        for (v, y) in [(q(0), q(0)), (q(1), q(12))] {
+            let point = descriptor
+                .source
+                .evaluate_box([&q(0), &q(0)], [&v, &v], 128, &dec)
+                .unwrap();
+            for (actual, expected) in point.iter().zip([q(12), y, q(0)]) {
+                assert!(actual.lo() <= expected && actual.hi() >= expected)
+            }
+        }
+        assert_eq!(descriptor.quarters.len(), 4);
+        assert_eq!(
+            descriptor
+                .signed_mm_at_v(&Rational::from_ratio(1, 2).unwrap())
+                .unwrap(),
+            q(6)
+        );
+    }
+
+    #[test]
     fn standalone_descriptor_is_identical_at_one_two_and_four_workers() {
         let jobs = [
             ("10", false, "49"),

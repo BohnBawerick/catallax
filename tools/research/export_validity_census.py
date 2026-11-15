@@ -495,7 +495,7 @@ def collect(args):
                 admission_outcome=admitted["outcome"],
                 baseline_first_refusal=admitted["baseline_first_refusal"],
                 admission_after_fix_cause=admitted["after_fix_cause"],
-                validity_outcome=observed.get("outcome", "not_admitted"),
+                validity_outcome=observed.get("outcome", "outside_frozen_full_population"),
             )
             row["exported_step_hashes"] = json.dumps(
                 observed.get("exported_step_hashes", []), separators=(",", ":")

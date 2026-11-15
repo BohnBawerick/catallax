@@ -259,7 +259,7 @@ fn n03_options_and_request_allowance_refuse_without_promotion() {
 }
 
 #[test]
-fn n03_flat_spline_carrier_is_a_typed_refusal_not_a_mesh_or_plane_shortcut() {
+fn n03_flat_spline_carrier_keeps_its_native_step_geometry_and_trims() {
     use catallax_numbers::Real;
     use catallax_shapes::{BSplineSurface, Point3, RationalPatch, Surface};
     let mut d = n02::tube();
@@ -284,12 +284,18 @@ fn n03_flat_spline_carrier_is_a_typed_refusal_not_a_mesh_or_plane_shortcut() {
         }
     }
     let body = source::build(d, NumericalOptions::default(), &mut dec).unwrap();
-    assert_eq!(
-        numerical::build(&body, &NumericalStepOptions::default(), &mut dec)
-            .unwrap_err()
-            .code,
-        "step.numerical-unsupported"
-    );
+    let artifact = numerical::build(&body, &NumericalStepOptions::default(), &mut dec).unwrap();
+    let text = std::str::from_utf8(artifact.bytes()).unwrap();
+    assert!(text.contains("RATIONAL_B_SPLINE_SURFACE("));
+    assert!(text.contains("=PCURVE("));
+    assert_eq!(text.matches("=PLANE(").count(), body.counts().faces - 1);
+    assert_eq!(text.matches("=FACE_BOUND(").count(), 2);
+    assert!(artifact.report().spline_rounding.is_some());
+    assert!(matches!(
+        artifact.report().source_definition.faces[0].surface,
+        Surface::BSpline(_)
+    ));
+    artifact.check_written(artifact.bytes(), &mut dec).unwrap();
 }
 
 #[test]

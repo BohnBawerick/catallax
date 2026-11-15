@@ -234,7 +234,26 @@ pub(super) fn build(
             }
         }
     }
-    let emitted = catallax_topology::numerical::build(definition, body.options().clone(), dec)?;
+    let mut native_trims = body.native_trims().to_vec();
+    if !native_trims.is_empty() {
+        let mut intervals = std::collections::BTreeMap::new();
+        for edge in &body.definition().edges {
+            dec.charge_work(1)?;
+            intervals.insert(edge.key.as_str(), &edge.parameters);
+        }
+        for trim in &mut native_trims {
+            let parameters = intervals
+                .get(trim.edge.as_str())
+                .ok_or_else(|| bad("rounding-topology", "native trim lost its stable edge"))?;
+            trim.curve = spline::uv_curve(&trim.curve, parameters, &mut errors, options, dec)?;
+        }
+    }
+    let emitted = catallax_topology::numerical::build_with_native_trims(
+        definition,
+        native_trims,
+        body.options().clone(),
+        dec,
+    )?;
     Ok(Payload {
         body: emitted,
         lines,

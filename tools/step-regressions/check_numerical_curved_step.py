@@ -9,12 +9,14 @@ import json
 from pathlib import Path
 
 import OCP
-from OCP.BRepAdaptor import BRepAdaptor_Curve
+from OCP.BRep import BRep_Tool
+from OCP.BRepAdaptor import BRepAdaptor_Curve, BRepAdaptor_Surface
 from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
 from OCP.BRepCheck import BRepCheck_Analyzer
 from OCP.BRepClass3d import BRepClass3d_SolidClassifier
 from OCP.BRepGProp import BRepGProp
 from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
+from OCP.GeomAbs import GeomAbs_BSplineCurve
 from OCP.GProp import GProp_GProps
 from OCP.gp import gp_Pnt
 from OCP.TopAbs import (TopAbs_EDGE, TopAbs_FACE, TopAbs_IN, TopAbs_ON,
@@ -86,11 +88,64 @@ def check(root, name, counts, expected_volume, material, void, cut_x):
             'work_stages': response['work_stages']}
 
 
+def check_native_uv(root):
+    result = check(root, 'native', [9, 18, 12], 43. / 3.,
+                   [2., .5, 1.5], [2., 1.5, 1.5], .5)
+    response = json.loads((root / 'native/response.json').read_text())
+    bindings = response['native_trims']
+    assert bindings['original'] == bindings['source']
+    assert len(bindings['source']) == len(bindings['emitted']) == 2
+    for source, emitted in zip(bindings['source'], bindings['emitted']):
+        for key in ['face', 'boundary', 'use_index', 'edge', 'degree']:
+            assert source[key] == emitted[key]
+        assert source['knots'][0] == '-1' and source['knots'][-1] == '2'
+        assert emitted['knots'][0] == '0' and emitted['knots'][-1] == '1'
+    shape = raw_solid(root / 'native/answer.step')
+    residual, mapping_error, uses = 0., 0., 0
+    for item in unique(shape, TopAbs_FACE):
+        face = TopoDS.Face(item)
+        surface = BRepAdaptor_Surface(face)
+        for item in unique(face, TopAbs_EDGE):
+            edge = TopoDS.Edge(item)
+            curve = BRepAdaptor_Curve(edge)
+            if curve.GetType() != GeomAbs_BSplineCurve or curve.Degree() != 3:
+                continue
+            uses += 1
+            lo, hi = curve.FirstParameter(), curve.LastParameter()
+            assert abs(lo) < 1e-12 and abs(hi - 1.) < 1e-12
+            pcurve = BRep_Tool.CurveOnSurface_s(edge, face, lo, hi)
+            assert pcurve is not None, 'native pcurve missing after raw import'
+            first, last = curve.Value(lo), curve.Value(hi)
+            for i in range(33):
+                t = i / 32.
+                point = curve.Value(t)
+                share = t / 2. + 1.5 * t * t - t * t * t
+                expected = gp_Pnt(*(a + share * (b - a) for a, b in
+                                    zip(first.Coord(), last.Coord())))
+                mapping_error = max(mapping_error, point.Distance(expected))
+                uv = pcurve.Value(t)
+                residual = max(residual, point.Distance(surface.Value(uv.X(), uv.Y())))
+    assert uses == 2 and residual <= 1e-7 and mapping_error <= 1e-7
+    controls = []
+    for name in ['missing', 'reversed', 'partial', 'wrong', 'stale', 'duplicate']:
+        out = root / name
+        response = json.loads((out / 'response.json').read_text())
+        assert response['status'] == 'refused' and not response['work']['exhausted']
+        assert not (out / 'answer.step').exists(), (name, 'stale STEP remains')
+        controls.append({'control': name, 'refused': True, 'no_stale_step': True,
+                         'reason': response['reason'], 'work': response['work']})
+    result['native_uv'] = {'uses': uses, 'sampled_same_parameter_residual_mm': residual,
+                           'sampled_cubic_mapping_error_mm': mapping_error,
+                           'controls': controls}
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('root', type=Path)
     parser.add_argument('--out', type=Path)
     parser.add_argument('--repeated-endpoint', type=Path)
+    parser.add_argument('--native-uv-root', type=Path)
     args = parser.parse_args()
     cases = [check(args.root, 'tiny', [7, 12, 8], 16.,
                    [2., 1., 1.5], [2., 1.9999995, 1.5], 1.),
@@ -106,6 +161,8 @@ def main():
                          'no_stale_step': True, 'reason': response['reason'],
                          'work': response['work']})
     report = {'cases': cases, 'controls': controls}
+    if args.native_uv_root:
+        report['native_uv'] = check_native_uv(args.native_uv_root)
     if args.repeated_endpoint:
         shape = raw_solid(args.repeated_endpoint)
         assert BRepCheck_Analyzer(shape).IsValid(), 'repeated-endpoint raw import invalid'

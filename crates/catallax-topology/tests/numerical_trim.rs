@@ -533,3 +533,6 @@ fn curved_hole_sampling_does_not_claim_containment_between_nodes() {
     });
     assert!(!work.exhausted, "{} work units", work.used);
 }
+
+#[path = "numerical_trim/native.rs"]
+mod native;

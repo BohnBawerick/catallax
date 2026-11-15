@@ -91,9 +91,13 @@ Those fields do not establish unhealed validity.
 ## Validation and limits
 
 Validation on 15 November 2026 UTC used Rust 1.99.1 and OCP 8.0.1.1.
-Five native analytic tests pass, including twelve equivalent periodic charts,
+Seven native analytic tests pass, including twelve equivalent periodic charts,
 pose rebuild, unchanged distant-chart and exhausted-work refusals, and a
 four-digit oblique phase refusal with a passing seventeen-digit control.
+Forward and reverse finite arcs whose distinct source endpoints coalesce when
+written return the registered `step.numerical-rounding-topology` refusal.
+These controls reproduce both former unregistered-refusal panics; the fix changes
+only that failure path and leaves the frozen successful capture unchanged.
 The [authored qualification](authored-controls.json) checks fifteen actual STEP
 files, their topology and volume, and 45 material probes.
 Fresh and frozen fixture bytes agree.

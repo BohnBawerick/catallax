@@ -332,7 +332,7 @@ fn rounded_curves(
                     let extent = &ts[1 - anchor];
                     if extent.sign() != Sign::Positive || extent >= &period {
                         return Err(bad(
-                            "arc-range",
+                            "rounding-topology",
                             "written distinct endpoints do not select a positive arc below one turn",
                         ));
                     }

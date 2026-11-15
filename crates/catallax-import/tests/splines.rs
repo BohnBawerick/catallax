@@ -134,7 +134,30 @@ fn repeated_knot_entries_preserve_the_exact_expanded_curve_and_surface() {
 }
 
 #[test]
-fn repeated_knot_entries_cannot_hide_excessive_multiplicity_or_descending_values() {
+fn redundant_endpoint_controls_have_zero_support_and_preserve_the_weighted_curve() {
+    let original = std::str::from_utf8(SOURCE).unwrap();
+    let source = original
+        .replace(
+            "B_SPLINE_CURVE(2,(#5,#44,#6)",
+            "B_SPLINE_CURVE(2,(#1,#5,#44,#6,#2)",
+        )
+        .replace(
+            "B_SPLINE_CURVE_WITH_KNOTS((3,3),(0.1,0.9)",
+            "B_SPLINE_CURVE_WITH_KNOTS((2,2,2,2),(0.1,0.1,0.9,0.9)",
+        )
+        .replace(
+            "RATIONAL_B_SPLINE_CURVE((1.,2.,1.))",
+            "RATIONAL_B_SPLINE_CURVE((1.,1.,2.,1.,1.))",
+        );
+    assert_ne!(source, original);
+    assert_eq!(
+        read_step(source.as_bytes()).unwrap(),
+        read_step(SOURCE).unwrap()
+    );
+}
+
+#[test]
+fn repeated_knot_entries_cannot_hide_a_missing_active_span_or_descending_values() {
     let original = std::str::from_utf8(SOURCE).unwrap();
     for encoding in [
         "B_SPLINE_CURVE_WITH_KNOTS((3,1,2),(0.1,0.1,0.9),.UNSPECIFIED.)",

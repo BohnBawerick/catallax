@@ -15,6 +15,14 @@ struct Piece {
     crossing: bool,
 }
 
+fn unavailable<T>(rows: bool, detail: &str) -> Result<Option<T>, Refusal> {
+    if rows {
+        Err(Refusal::new("intersect.atlas-section-row", detail))
+    } else {
+        Ok(None)
+    }
+}
+
 fn same_at(a: &[Real; 2], b: &[Real; 2], dec: &mut Decider) -> Result<bool, Refusal> {
     for axis in 0..2 {
         if exact_sign(&(&a[axis] - &b[axis]), dec)? != Sign::Zero {
@@ -106,6 +114,7 @@ fn same_piece(
 fn components(
     pieces: &[Piece],
     ends: &[End],
+    join_rows: bool,
     dec: &mut Decider,
 ) -> Result<Option<Vec<(BSplineCurve, bool)>>, Refusal> {
     let mut incident = vec![Vec::new(); ends.len()];
@@ -115,8 +124,17 @@ fn components(
         }
     }
     for (end, incident) in ends.iter().zip(&incident) {
-        if incident.len() > 2 || (incident.len() == 1 && !end.physical) {
-            return Ok(None);
+        if incident.len() > 2 {
+            return unavailable(
+                join_rows,
+                "a boundary-row junction has more than two finite germs",
+            );
+        }
+        if incident.len() == 1 && !end.physical {
+            return unavailable(
+                join_rows,
+                "a boundary-row component ends before a physical border",
+            );
         }
     }
     let mut used = vec![false; pieces.len()];
@@ -150,7 +168,10 @@ fn components(
         while let Some(&(index, side)) = incident[at].iter().find(|&&(index, _)| !used[index]) {
             let piece = &pieces[index];
             if piece.crossing != crossing {
-                return Ok(None);
+                return unavailable(
+                    join_rows,
+                    "joined boundary-row germs disagree on crossing parity",
+                );
             }
             used[index] = true;
             chain.push((piece.curve.clone(), side == 0));
@@ -158,7 +179,10 @@ fn components(
         }
         // Multiple one-sided higher-order germs need a two-sided contact proof.
         if chain.len() > 1 && !crossing {
-            return Ok(None);
+            return unavailable(
+                join_rows,
+                "joined higher-order row germs need a two-sided contact check",
+            );
         }
         let curve = if chain.len() == 1 && chain[0].1 {
             chain.pop().expect("one complete piece").0
@@ -170,7 +194,10 @@ fn components(
             let first = curve.point_at(&Real::from_rational(lo.clone()), dec)?;
             let last = curve.point_at(&Real::from_rational(hi.clone()), dec)?;
             if exact_sign(&first.minus(&last).norm_squared(), dec)? == Sign::Zero {
-                return Ok(None);
+                return unavailable(
+                    join_rows,
+                    "geometric closure has no owned periodic row identification",
+                );
             }
         }
         result.push((curve, crossing));
@@ -188,10 +215,16 @@ pub(super) fn section(
     let mut ends = Vec::new();
     for chart in atlas.charts() {
         let Some(section) = axis_section(chart.patch(), surface, dec)? else {
-            return Ok(None);
+            return unavailable(
+                join_rows,
+                "a chart boundary row needs complete remainder coverage",
+            );
         };
         if !section.points().is_empty() || !section.branches().is_empty() {
-            return Ok(None);
+            return unavailable(
+                join_rows,
+                "a chart boundary row has additional non-rational components",
+            );
         }
         let curves: Vec<_> = section.curves().collect();
         if !join_rows && !curves.is_empty() && !pieces.is_empty() {
@@ -202,7 +235,10 @@ pub(super) fn section(
             for (side, bound) in curve.domain().into_iter().enumerate() {
                 let point = curve.point_at(&Real::from_rational(bound.clone()), dec)?;
                 let Some(at) = chart.patch().parameters_at(&point, dec)? else {
-                    return Ok(None);
+                    return unavailable(
+                        join_rows,
+                        "a boundary-row endpoint has no proved source parameter owner",
+                    );
                 };
                 nodes[side] = endpoint(atlas, chart, at, &mut ends, dec)?;
                 if !join_rows && !ends[nodes[side]].physical {
@@ -215,7 +251,10 @@ pub(super) fn section(
                 let reverse = old.ends == [nodes[1], nodes[0]];
                 if (forward || reverse) && same_piece(&old.curve, curve, forward, dec)? {
                     if old.crossing != crossing {
-                        return Ok(None);
+                        return unavailable(
+                            join_rows,
+                            "duplicate boundary-row copies disagree on crossing parity",
+                        );
                     }
                     duplicate = true;
                     break;
@@ -230,5 +269,5 @@ pub(super) fn section(
             }
         }
     }
-    components(&pieces, &ends, dec)
+    components(&pieces, &ends, join_rows, dec)
 }

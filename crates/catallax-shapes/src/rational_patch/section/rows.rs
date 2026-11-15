@@ -50,6 +50,9 @@ pub(super) fn section(
     surface: &SectionSurface,
     dec: &mut Decider,
 ) -> Result<Option<RationalPatchSection>, Refusal> {
+    if !matches!(surface, SectionSurface::Plane(_)) {
+        return Ok(None);
+    }
     surface.validate(dec)?;
     let mut curves = Vec::new();
     for span in &patch.data.spans {

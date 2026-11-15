@@ -33,8 +33,9 @@ integration remain in the app slice. The earlier explicit editorial
 
 ## Actual controls
 
-Producer: `6198c9346c175285eadf6594406c23a9dcce806b` on the Linux work PC,
-revalidated after the oblique writer merged onto main.
+Producer: `27d0d8157b460f6f388ffdef74f9c92e91920cef` on the Linux work PC,
+revalidated after metering all rebuild source verification and retaining typed
+refusal evidence.
 [real-controls.json](real-controls.json) pins the executable and both source
 hashes for all ten fixed P06/M5 capability parts. Only actual Part 21 entity
 addresses were shifted by 1,000,000,000; geometry, strings and comments were
@@ -46,14 +47,18 @@ edge or vertex was left unnamed in these controls, and there were no unresolved
 references. Each saved replacement recipe reopens and rebuilds; the retained old
 recipe also replays with its old origins. Each complete qualification, including
 the original build and both replays, stays under the unchanged 20M allowance.
-Measured replacement work ranges from 51,281 to 506,289 units.
+Measured replacement work ranges from 68,300 to 521,231 units; the largest
+complete qualification uses 1,059,706 units.
 
-Ten authored controls cover the missing legacy selected-solid transaction,
+Eleven authored controls cover the missing legacy selected-solid transaction,
 two selected solids in one changed file, reordered source solids, saved/reopened
 revisions, nested copy/edge/vertex/touching/setback references, fixed face and
 adjacency filters, changed geometry behind reused numbers, duplicate geometry,
-stale decisions, corrupt bytes and exhaustion. All 34 scoped release import
-tests pass, including the legacy import, selector, IGES and seamed-file controls.
+stale decisions, corrupt bytes and exhaustion, including a later unchanged
+source with insufficient remaining work to hash its bytes. All 35 scoped release
+import tests pass, including the legacy import, selector, IGES and seamed-file
+controls. Three additional release unit controls retain underlying refusal codes,
+typed undecided evidence and source/rebuild stage context, including exhaustion.
 The Linux format gate and CI-selected eighteen-crate all-target Clippy pass.
 
 Build the `catallax-features` example `import_file_replacement` in release mode.

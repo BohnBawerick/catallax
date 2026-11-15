@@ -40,21 +40,6 @@ fn the_public_partial_oblique_rim_builds_and_exports_after_a_radius_edit() {
                 "[DEBUG-e02] radius {radius} geometry ends at {} work",
                 dec.stats().work
             );
-            assert!(built.model.check(built.result).is_empty());
-            assert_eq!(built.model.faces_of_body(built.result).len(), 5);
-            let mut caps = 0;
-            for edge in built.model.edges_of_body(built.result) {
-                if let Curve::PatchSection(section) =
-                    built.model.geom().curve(built.model.edge(edge).curve)
-                {
-                    caps += 1;
-                    assert_eq!(built.model.coedges_of_edge(edge).len(), 2);
-                    for point in section.endpoints() {
-                        assert!(dec.sign(&point.x).is_coincident());
-                    }
-                }
-            }
-            assert_eq!(caps, 2);
             let mut bytes = Vec::new();
             let report = catallax_step::write_step(
                 &built.model,
@@ -74,6 +59,22 @@ fn the_public_partial_oblique_rim_builds_and_exports_after_a_radius_edit() {
         });
         assert!(!work.exhausted, "{radius}: {work:?}");
         let built = next.built();
+        let mut query_dec = Decider::default();
+        assert!(built.model.check(built.result).is_empty());
+        assert_eq!(built.model.faces_of_body(built.result).len(), 5);
+        let mut caps = 0;
+        for edge in built.model.edges_of_body(built.result) {
+            if let Curve::PatchSection(section) =
+                built.model.geom().curve(built.model.edge(edge).curve)
+            {
+                caps += 1;
+                assert_eq!(built.model.coedges_of_edge(edge).len(), 2);
+                for point in section.endpoints() {
+                    assert!(query_dec.sign(&point.x).is_coincident());
+                }
+            }
+        }
+        assert_eq!(caps, 2);
         let names = face_names(built);
         assert!(
             names

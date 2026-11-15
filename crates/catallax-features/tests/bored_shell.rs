@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use catallax_features::{BuildError, Built, evaluate};
+use catallax_features::{BuildError, Built, evaluate, evaluate_incremental};
 use catallax_mesh::{Mesh, MeshOptions, PreviewOptions, mesh_body, preview_mesh_body};
 use catallax_numbers::{Ball, Decider, Outcome, Rational, with_operation_budget};
 use catallax_recipe::{Recipe, Role};
@@ -342,4 +342,206 @@ fn kernel_and_soliddraft_display_levels_keep_the_cavity_open_and_selectable() {
     assert!(!work.exhausted, "{work:?}");
     assert!(report.marks.is_empty());
     assert!(bytes.starts_with(b"ISO-10303-21;"));
+}
+
+fn side_document() -> Value {
+    serde_json::from_str(include_str!("fixtures/bored-side-shell.json")).unwrap()
+}
+
+fn step_bytes(built: &Built) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    let report = catallax_step::write_step(
+        &built.model,
+        &[built.result],
+        &Default::default(),
+        &mut Decider::default(),
+        &mut bytes,
+    )
+    .unwrap();
+    assert!(report.marks.is_empty());
+    assert!(bytes.starts_with(b"ISO-10303-21;"));
+    bytes
+}
+
+fn side_rim(built: &Built) {
+    let recipe = parse(&side_document());
+    let reference = &recipe.steps[2].op;
+    let catallax_recipe::Operation::Shell { open, .. } = reference else {
+        unreachable!()
+    };
+    let faces: Vec<_> = built
+        .model
+        .faces_of_body(built.result)
+        .into_iter()
+        .filter(|face| open[0].matches_origins(built.model.face_origins(*face)))
+        .collect();
+    assert_eq!(faces.len(), 1, "one finite face rings the side opening");
+    let face = built.model.face(faces[0]);
+    assert_eq!(
+        face.loops.len(),
+        2,
+        "the side rim has outer and cavity wires"
+    );
+    for wire in &face.loops {
+        let catallax_topology::Loop::Coedges(wire) = built.model.loop_(*wire) else {
+            panic!("a rectangular rim needs edges")
+        };
+        assert_eq!(wire.len(), 4);
+        for coedge in wire {
+            let edge = built.model.edge(built.model.coedge(*coedge).edge);
+            assert!(
+                edge.start.is_some() && edge.end.is_some(),
+                "rim edges are finite"
+            );
+        }
+    }
+    assert!(built.model.check(built.result).is_empty());
+}
+
+#[test]
+fn side_open_bore_shell_has_a_finite_rim_and_thickness_after_edit() {
+    let mut source = side_document();
+    let mut prefix = source.clone();
+    prefix["steps"].as_array_mut().unwrap().pop();
+    prefix["result"] = json!("bored");
+    let checkpoint = evaluate_incremental(&parse(&prefix), None, &mut Decider::default()).unwrap();
+    let saved_source = step_bytes(checkpoint.built());
+    let mut previous_names = None;
+    let mut previous_build = None;
+    for thickness in ["2", "3/2"] {
+        source["steps"][2]["thickness"] = json!(thickness);
+        // First append to a cached source, then edit the complete prior build.
+        let (result, work) = with_operation_budget(WORK, || {
+            evaluate_incremental(
+                &parse(&source),
+                previous_build.take().or_else(|| Some(checkpoint.clone())),
+                &mut Decider::default(),
+            )
+            .unwrap()
+        });
+        assert!(!work.exhausted, "{work:?}");
+        let mut built = result.built().clone();
+        side_rim(&built);
+        location(&mut built, ["1", "10", "6"], false);
+        location(&mut built, ["10", "10", "1"], true);
+        location(&mut built, ["10", "10", "3"], false);
+        location(&mut built, ["10", "10", "11"], true);
+        location(&mut built, ["10", "1", "6"], true);
+        location(&mut built, ["39", "10", "6"], true);
+        location(&mut built, ["20", "15", "6"], false);
+        location(&mut built, ["24", "15", "6"], true);
+        location(&mut built, ["26", "15", "6"], false);
+        let mut names = Vec::new();
+        let mut inner_bore = 0;
+        for face in built.model.faces_of_body(built.result) {
+            for origin in built.model.face_origins(face) {
+                names.push(origin.clone());
+                if let Role::Inner { of } = &origin.role
+                    && of.step.as_str() == "bored"
+                {
+                    let Surface::Cylinder(cylinder) =
+                        built.model.geom().surface(built.model.face(face).surface)
+                    else {
+                        unreachable!()
+                    };
+                    let radius = q("3") + q(thickness);
+                    assert_eq!(
+                        Decider::default()
+                            .rational_value(&cylinder.radius_sq)
+                            .unwrap(),
+                        Some(&radius * &radius)
+                    );
+                    inner_bore += 1;
+                }
+            }
+        }
+        assert_eq!(inner_bore, 1);
+        names.sort();
+        if let Some(previous) = previous_names {
+            assert_eq!(names, previous);
+        }
+        previous_names = Some(names);
+        let t = q(thickness);
+        let twice = &t + &t;
+        let height = &q("12") - &twice;
+        let width = &q("40") - &t;
+        let depth = &q("30") - &twice;
+        let cavity = &(&width * &depth) * &height;
+        let radius = &q("3") + &t;
+        volume(
+            &built,
+            q("14400") - cavity,
+            &radius * &radius * height - q("108"),
+        );
+        assert_eq!(
+            step_bytes(&built),
+            step_bytes(&build(&source)),
+            "edit equals a fresh rebuild"
+        );
+        assert_eq!(
+            step_bytes(checkpoint.built()),
+            saved_source,
+            "the cached input is immutable"
+        );
+        previous_build = Some(result);
+    }
+}
+
+#[test]
+fn side_open_multiple_bores_and_rigid_placement_keep_their_holes() {
+    let mut source = side_document();
+    source["steps"][1]["at"] = json!([
+        {"id":"left","point":["12","15","12"],"direction":["0","0","-1"]},
+        {"id":"right","point":["28","15","12"],"direction":["0","0","-1"]}
+    ]);
+    let mut built = build(&source);
+    side_rim(&built);
+    location(&mut built, ["12", "15", "6"], false);
+    location(&mut built, ["28", "15", "6"], false);
+    location(&mut built, ["16", "15", "6"], true);
+    location(&mut built, ["24", "15", "6"], true);
+    volume(&built, q("6496"), q("184"));
+
+    source = side_document();
+    source["steps"][0]["pose"] = json!({
+        "rotation":["3/5","4/5","0","0"], "translation":["7","-5","11"]
+    });
+    source["steps"][1]["at"][0]["point"] = json!(["27", "-518/25", "551/25"]);
+    source["steps"][1]["at"][0]["direction"] = json!(["0", "24/25", "7/25"]);
+    let mut built = build(&source);
+    side_rim(&built);
+    location(&mut built, ["8", "-339/25", "473/25"], false);
+    location(&mut built, ["27", "-374/25", "593/25"], false);
+    location(&mut built, ["31", "-374/25", "593/25"], true);
+    location(&mut built, ["33", "-374/25", "593/25"], false);
+    volume(&built, q("6496"), q("92"));
+}
+
+#[test]
+fn side_opening_refuses_multiple_openings_and_nonprismatic_side_walls() {
+    let mut source = side_document();
+    source["steps"][2]["open"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"face":{"step":"stock","role":"end"}}));
+    unsupported(&source);
+
+    source = side_document();
+    let mut shell = source["steps"].as_array_mut().unwrap().pop().unwrap();
+    source["steps"].as_array_mut().unwrap().push(json!({
+        "id":"drafted", "op":"draft", "body":"bored",
+        "faces":[{"face":{"step":"stock","role":{"side":{"segment":"x_max"}}}}],
+        "pull":["0","0","1"],
+        "neutral":{"point":["0","0","0"],"normal":["0","0","1"]},
+        "angle":"45"
+    }));
+    source["result"] = json!("drafted");
+    let _drafted = build(&source);
+    shell["body"] = json!("drafted");
+    source["steps"].as_array_mut().unwrap().push(shell);
+    source["result"] = json!("shell");
+    let error = evaluate(&parse(&source), &mut Decider::default()).unwrap_err();
+    assert!(matches!(error, BuildError::Geometry { refusal, .. }
+        if refusal.code == "distance.unsupported-envelope"
+        && refusal.detail.contains("every side plane parallel")));
 }

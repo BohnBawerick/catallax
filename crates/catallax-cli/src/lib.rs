@@ -735,6 +735,9 @@ pub(crate) fn result_summary(
             catallax_intersect::CurveForm::Circle { .. } => "circle",
             catallax_intersect::CurveForm::Ellipse { .. } => "ellipse",
             catallax_intersect::CurveForm::Branch => "intersection",
+            catallax_intersect::CurveForm::PatchSection(_) if extended && exact_bands != 0 => {
+                "intersection"
+            }
             catallax_intersect::CurveForm::PatchSection(_)
             | catallax_intersect::CurveForm::PatchPair(_)
                 if certified =>

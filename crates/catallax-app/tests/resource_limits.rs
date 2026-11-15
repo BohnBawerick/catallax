@@ -99,7 +99,20 @@ fn resource_child() {
     } else if case == "bracket-drawing" {
         options.chord_tolerance = "16158836963098553/10000000000000000000".parse().unwrap();
     }
-    let result = build_soliddraft(&input.to_string(), &options, &mut Decider::default());
+    let build = || build_soliddraft(&input.to_string(), &options, &mut Decider::default());
+    let result = if case == "huge" {
+        // The 12-second process cap uses the 20M target as its caller allowance.
+        // The standalone 100M guard is exercised in rebuild_work.
+        let (answer, work) =
+            catallax_numbers::with_operation_budget(catallax_app::TARGET_BUILD_WORK, build);
+        if work.exhausted {
+            Err(Error::ResourceLimit)
+        } else {
+            answer
+        }
+    } else {
+        build()
+    };
     match result {
         Ok(body) => {
             assert_ne!(

@@ -29,7 +29,8 @@ pub struct WorkAllocation {
 
 impl WorkAllocation {
     /// Splits the existing application default. Returns `None` for a preview
-    /// cap above the total. Explicit caller budgets may use the public fields.
+    /// cap above the total. This always reserves the 100M application total.
+    /// Callers with a smaller allowance must set explicit caps in the public fields.
     pub fn application(preview: u64) -> Option<Self> {
         Some(Self {
             preview,

@@ -1,12 +1,12 @@
-//! Canonical P1 fits the eager application's default request allowance.
-use catallax_app::{DEFAULT_BUILD_WORK, build};
+//! Canonical P1 retains its 20M speed-phase baseline.
+use catallax_app::{DEFAULT_BUILD_WORK, TARGET_BUILD_WORK, build};
 use catallax_mesh::MeshOptions;
 use catallax_numbers::{Decider, Rational, set_threads, with_operation_budget};
 use catallax_recipe::Recipe;
 use std::num::NonZeroUsize;
 
 #[test]
-fn canonical_p1_builds_with_display_inside_the_default_allowance_at_every_thread_count() {
+fn canonical_p1_builds_with_display_inside_the_target_allowance_at_every_thread_count() {
     let recipe = Recipe::parse(include_str!("../../../parts/P1-bracket.json")).unwrap();
     let options = MeshOptions {
         chord_tolerance: Rational::parse("0.01").unwrap(),
@@ -17,11 +17,11 @@ fn canonical_p1_builds_with_display_inside_the_default_allowance_at_every_thread
     let mut reference = None;
     for threads in [1, 2, 4] {
         set_threads(NonZeroUsize::new(threads));
-        let (body, work) = with_operation_budget(DEFAULT_BUILD_WORK, || {
+        let (body, work) = with_operation_budget(TARGET_BUILD_WORK, || {
             build(&recipe, &options, &mut Decider::default()).unwrap()
         });
         assert!(!work.exhausted);
-        assert!(work.used <= DEFAULT_BUILD_WORK);
+        assert!(work.used <= TARGET_BUILD_WORK);
         assert!(body.built.model.check(body.built.result).is_empty());
         assert!(body.display.marks.is_empty());
         assert_eq!(body.names.faces.len(), 19);
@@ -35,7 +35,10 @@ fn canonical_p1_builds_with_display_inside_the_default_allowance_at_every_thread
         } else {
             reference = Some(snapshot);
         }
-        println!("{threads} threads: {} work units", work.used);
+        println!(
+            "{threads} threads: {} work units within the 20M target",
+            work.used
+        );
     }
     set_threads(None);
 }

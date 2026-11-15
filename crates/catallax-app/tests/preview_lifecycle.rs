@@ -664,3 +664,22 @@ fn progressive_target_diagnostics() {
         println!("{row}");
     }
 }
+
+#[test]
+fn target_budget_callers_reserve_explicit_preview_and_proof_caps() {
+    let controller = Controller::default();
+    let caps = WorkAllocation {
+        preview: 10_000_000,
+        proof: 10_000_000,
+    };
+    let (job, work) = with_operation_budget(catallax_app::TARGET_BUILD_WORK, || {
+        start(&controller, 4, caps, &MeshOptions::default())
+    });
+    assert!(!work.exhausted);
+    assert_eq!(work.used, catallax_app::TARGET_BUILD_WORK);
+    assert!(job.prove(&mut Decider::default()).publish());
+    let snapshot = controller.latest().unwrap();
+    assert!(matches!(snapshot.status(), Status::Confirmed(_)));
+    assert!(!snapshot.work().over_target());
+    assert_eq!(snapshot.work().allocation.proof, 10_000_000);
+}

@@ -289,3 +289,41 @@ fn a_caller_deadline_keeps_its_actual_refusal_code() {
         matches!(result,Err(numerical::ImportError::Numerical(ref refusal)) if refusal.code=="numbers.deadline")
     );
 }
+
+#[test]
+fn a_gapped_cone_retains_its_fitted_carrier_and_records_both_tolerances() {
+    let mut soup = common::Soup::new();
+    soup.cone(["0", "0", "0"], "1", "30.", Ok(("3", "2.732050808")));
+    let source = common::in_degrees(&soup.finish());
+    let plane = source.lines().find(|s| s.contains("=PLANE(")).unwrap();
+    let placement = references(plane)[0];
+    let placement = source
+        .lines()
+        .find(|s| s.starts_with(&format!("#{placement}=")))
+        .unwrap();
+    let origin = references(placement)[0];
+    let original = source
+        .lines()
+        .find(|s| s.starts_with(&format!("#{origin}=")))
+        .unwrap();
+    let gapped = source.replace(
+        original,
+        &format!("#{origin}=CARTESIAN_POINT('',(0.,0.,0.000001));"),
+    );
+    let (result, work) = with_operation_budget(20_000_000, || checked(gapped.as_bytes(), "0.01"));
+    assert!(!work.exhausted, "{work:?}");
+    let StepImport::Numerical(imported) = result.unwrap() else {
+        panic!("expected marked numerical continuation")
+    };
+    assert_eq!(imported.bodies().len(), 1);
+    let admission = imported.source_admission().unwrap();
+    assert_eq!(admission.tolerance_mm, q("0.01"));
+    assert_eq!(admission.topology_repairs.len(), 1);
+    assert_eq!(
+        admission.topology_repairs[0].method,
+        "paired_cone_generatrix/1"
+    );
+    let tolerances = &imported.record().face_tolerances;
+    assert_eq!(tolerances.len(), 1);
+    assert!(q(&tolerances[0].deviation_upper_mm) < q("1e-9"));
+}

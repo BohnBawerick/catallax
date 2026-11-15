@@ -13,6 +13,7 @@ use catallax_topology::{BodyId, Model, Sense, numerical as n};
 use crate::{ImportRefusal, RepairRecord, Solid, Vec3};
 
 mod analytic;
+mod cones;
 
 /// Numerical reconstruction of finite parameter trims, retaining the immutable
 /// source's shared vertices and analytic carriers. No geometric displacement or
@@ -215,6 +216,9 @@ fn import_inner(
                 source_sha256: expected_sha256.to_owned(),
             })));
         }
+        Err(error) if cones::eligible(bytes, &error, dec)? => {
+            return analytic::import(bytes, expected_sha256, error, options, dec);
+        }
         Err(ImportRefusal::NotSolid { detail }) if detail.contains("exactly") => {}
         Err(error) if analytic::eligible(&error) => {
             return analytic::import(bytes, expected_sha256, error, options, dec);
@@ -241,6 +245,9 @@ fn import_inner(
         None,
     ) {
         Ok(imported) => imported,
+        Err(error) if cones::eligible(bytes, &error, dec)? => {
+            return analytic::import(bytes, expected_sha256, error, options, dec);
+        }
         Err(error) if analytic::eligible(&error) => {
             return analytic::import(bytes, expected_sha256, error, options, dec);
         }

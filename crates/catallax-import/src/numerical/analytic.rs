@@ -24,7 +24,7 @@ pub(super) fn eligible(error: &ImportRefusal) -> bool {
     }
 }
 
-fn coordinates(
+pub(super) fn coordinates(
     p: &Vec3,
     frame: &crate::Placement,
     dec: &mut Decider,
@@ -47,7 +47,7 @@ fn coordinates(
     Ok(result.try_into().unwrap())
 }
 
-fn angle(x: &Ball, y: &Ball) -> Result<Rational, ImportError> {
+pub(super) fn angle(x: &Ball, y: &Ball) -> Result<Rational, ImportError> {
     if y.lo().is_zero() && y.hi().is_zero() {
         if x.lo().sign() == Sign::Positive {
             return Ok(Rational::zero());
@@ -66,7 +66,7 @@ fn angle(x: &Ball, y: &Ball) -> Result<Rational, ImportError> {
     Ok(value.mid())
 }
 
-fn turn() -> Rational {
+pub(super) fn turn() -> Rational {
     Ball::pi(BITS).mid() * Rational::from_i64(2)
 }
 
@@ -111,9 +111,10 @@ fn surface(face: &crate::Face) -> Result<(Surface, &crate::Placement), ImportErr
             }),
             frame,
         ),
+        crate::Surface::Cone(frame, ..) => (cones::surface(face)?, frame),
         _ => {
             return Err(unsupported(
-                "the retained analytic source family requires planes and cylinders",
+                "the retained analytic source family requires planes, cylinders or fitted cones",
             ));
         }
     })
@@ -124,6 +125,9 @@ fn parameters(
     face: &crate::Face,
     dec: &mut Decider,
 ) -> Result<[Rational; 2], ImportError> {
+    if matches!(face.surface, crate::Surface::Cone(..)) {
+        return cones::parameters(p, face, dec);
+    }
     let (_, frame) = surface(face)?;
     let [x, y, z] = coordinates(p, frame, dec)?;
     Ok(if matches!(face.surface, crate::Surface::Plane(_)) {
@@ -279,7 +283,10 @@ fn definition(
                     };
                     let mut start = parameters(a, face, dec)?;
                     let mut end = parameters(b, face, dec)?;
-                    if matches!(face.surface, crate::Surface::Cylinder(..)) {
+                    if matches!(
+                        face.surface,
+                        crate::Surface::Cylinder(..) | crate::Surface::Cone(..)
+                    ) {
                         if let Some(previous) = trims.last() {
                             start[0] = near(start[0].clone(), &previous.uv[1][0], dec)?;
                         }
@@ -312,7 +319,10 @@ fn definition(
                 loops.push(trims);
             }
         }
-        if matches!(face.surface, crate::Surface::Cylinder(..)) {
+        if matches!(
+            face.surface,
+            crate::Surface::Cylinder(..) | crate::Surface::Cone(..)
+        ) {
             join_rims(&mut result, &mut loops, solid, face, repairs, dec)?;
         }
         result.faces.push(n::NumericalFace {
@@ -338,6 +348,9 @@ fn rim_delta(
     dec: &mut Decider,
 ) -> Result<Rational, ImportError> {
     use crate::planar_arithmetic as a;
+    if matches!(face.surface, crate::Surface::Cone(..)) {
+        return cones::rim_delta(edge, face, forward, dec);
+    }
     let (crate::Curve::Circle(circle, r), crate::Surface::Cylinder(cylinder, radius)) =
         (&edge.curve, &face.surface)
     else {
@@ -390,13 +403,15 @@ fn join_rims(
     let start = &definition.vertices[vertices[0]].position;
     let end = &definition.vertices[vertices[1]].position;
     let delta = a::sub(end, start, dec)?;
-    let crate::Surface::Cylinder(frame, _) = &face.surface else {
-        unreachable!()
+    let same_generator = match &face.surface {
+        crate::Surface::Cylinder(frame, _) => a::cross(&delta, &frame.axis, dec)?
+            .iter()
+            .all(Rational::is_zero),
+        crate::Surface::Cone(..) => cones::same_generator(face, start, end)?,
+        _ => unreachable!(),
     };
     if delta.iter().all(Rational::is_zero)
-        || a::cross(&delta, &frame.axis, dec)?
-            .iter()
-            .any(|q| !q.is_zero())
+        || !same_generator
         || &first.uv[1][0] - &first.uv[0][0] != &second.uv[0][0] - &second.uv[1][0]
     {
         return Err(unsupported(
@@ -415,7 +430,12 @@ fn join_rims(
         source_rim_edges: rims.map(|edge| edge.key.clone()),
         source_vertices: vertices.map(|v| definition.vertices[v].key.clone()),
         derived_seam_edge: key.clone(),
-        method: "paired_cylinder_generatrix/1".into(),
+        method: if matches!(face.surface, crate::Surface::Cone(..)) {
+            "paired_cone_generatrix/1"
+        } else {
+            "paired_cylinder_generatrix/1"
+        }
+        .into(),
     });
     definition.edges.push(n::NumericalEdge {
         key,
@@ -752,17 +772,36 @@ pub(super) fn import(
         .iter()
         .flat_map(|solid| &solid.faces)
         .any(|face| {
-            matches!(face.surface, crate::Surface::Cylinder(..))
-                || face
-                    .loops
-                    .iter()
-                    .flat_map(|bound| &bound.edges)
-                    .any(|edge| matches!(edge.curve, crate::Curve::Circle(..)))
+            matches!(
+                face.surface,
+                crate::Surface::Cylinder(..) | crate::Surface::Cone(..)
+            ) || face
+                .loops
+                .iter()
+                .flat_map(|bound| &bound.edges)
+                .any(|edge| matches!(edge.curve, crate::Curve::Circle(..)))
         })
     {
         // Keep the previous planar-only policy and its export controls until
         // that separate family receives its own complete qualification.
         return Err(refusal.into());
+    }
+    let face_tolerances = file
+        .solids
+        .iter()
+        .map(crate::cone::tolerances)
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    if face_tolerances.iter().any(|bound| {
+        Rational::parse(&bound.deviation_upper_mm).expect("producer bound") > options.tolerance_mm
+    }) {
+        return Err(Refusal::new(
+            "import.numerical-tolerance",
+            "fitted cone deviation exceeds the requested tolerance",
+        )
+        .into());
     }
     let intersection_checks = intersection_checks(&file, OPTIONAL_EXACT_WORK, dec)?;
     let mut bodies = Vec::new();
@@ -788,7 +827,7 @@ pub(super) fn import(
         },
         derivative: None,
         changes: Vec::new(),
-        face_tolerances: Vec::new(),
+        face_tolerances,
         source_incidence: Vec::new(),
         cylinder_radius: Vec::new(),
     };

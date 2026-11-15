@@ -465,15 +465,15 @@ mod tests {
         for scale in [Rational::from_ratio(1, 2).unwrap(), r(3)] {
             let surfaces = [
                 Surface::Cone(Cone {
-                    apex: Point3::new(Real::from(r(3) + r(11) * &scale), s(-7), s(2)),
+                    apex: Point3::new(Real::from(r(3) + &r(11) * &scale), s(-7), s(2)),
                     axis: Vector3::new(s(-1), s(0), s(0)),
                     slope: s(1),
                     ref_dir: Vector3::new(s(0), s(1), s(0)),
                 }),
                 Surface::Cylinder(Cylinder {
                     origin: Point3::new(
-                        Real::from(r(3) - r(12) * &scale),
-                        Real::from(r(-7) + r(10) * &scale),
+                        Real::from(r(3) - &r(12) * &scale),
+                        Real::from(r(-7) + &r(10) * &scale),
                         s(2),
                     ),
                     axis: Vector3::new(s(1), s(0), s(0)),

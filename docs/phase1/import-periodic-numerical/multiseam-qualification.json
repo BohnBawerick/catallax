@@ -1,0 +1,155 @@
+{
+  "catallax_boolean_qualified": false,
+  "centroid_shift_3_5_7_mm_checked": true,
+  "checker_sha256": "0bcad427495c68b87e38fd246a77706f9dacf43ac1693eda7b24b5778a319161",
+  "closed_circle_identity": "retained_center_axis_radius_and_endpoint; reference_phase_may_rotate",
+  "closed_circle_phase_checks": {
+    "edited_step": {
+      "angular_limit_rad": "1/1000000000000",
+      "count": 4,
+      "distance_limit_mm": "1/1000000000",
+      "max_tangent_bound_mm": "0"
+    },
+    "source_step": {
+      "angular_limit_rad": "1/1000000000000",
+      "count": 4,
+      "distance_limit_mm": "1/1000000000",
+      "max_tangent_bound_mm": "0"
+    }
+  },
+  "complete_body_bound": "unestablished",
+  "example_binary_sha256": "7b1afdbd566a5837f21cdbe48ecae016950308c43f2e12e376b9931a594e2978",
+  "exported_step_healing": false,
+  "exported_step_same_parameter": false,
+  "format": "catallax-multiseam-qualification/1",
+  "identity": {
+    "derived_seams": 2,
+    "faces": 16,
+    "retained_source_edges": 40,
+    "vertices": 28
+  },
+  "import_work": 1555652,
+  "material_probes": [
+    {
+      "before_and_pose_match": true,
+      "expected": "outside",
+      "face": "#46"
+    },
+    {
+      "before_and_pose_match": true,
+      "expected": "inside",
+      "face": "#46"
+    },
+    {
+      "before_and_pose_match": true,
+      "expected": "outside",
+      "face": "#50"
+    },
+    {
+      "before_and_pose_match": true,
+      "expected": "inside",
+      "face": "#50"
+    }
+  ],
+  "model_id": "00003390",
+  "ocp_version": "8.0.1.1",
+  "phased_authored": {
+    "raw_valid": true,
+    "sha256": "7250070f34f589403b29dce710837582f06eee91dbdf06c618b52dfb9c24b45b",
+    "volume_and_material_checked": true
+  },
+  "pose_step": {
+    "raw_valid": true,
+    "sha256": "d3981added00297655da0b93739e7c7ef5fec00fd038ea902c9ccfafbc0e8f2e",
+    "topology": {
+      "edges": 42,
+      "euler_with_face_holes": -2,
+      "faces": 16,
+      "solids": 1,
+      "two_loop_faces": 4,
+      "vertices": 28
+    }
+  },
+  "pose_volume_matches_within_relative": "1e-9",
+  "precision_authored": [
+    {
+      "raw_valid": true,
+      "role": "shifted_center",
+      "sha256": "d401325092f75a7b8b9656c7e32c9d3c841349379538246ce5765dfacad0a2da",
+      "significant_digits": 17,
+      "volume_and_material_checked": true
+    },
+    {
+      "raw_valid": true,
+      "role": "oblique_anchor",
+      "sha256": "e83cfc8e31a1d703ee4fb628cc22a95584f0456e187130fd91fca324b36e1d9c",
+      "significant_digits": 17,
+      "volume_and_material_checked": true
+    }
+  ],
+  "raw_builder_sha256": "5633cdcf16efc13f328ed85b33a738f6a9296e2afb925f4c64bbed7c91025376",
+  "response_sha256": "0117cd4f4730067d395bc9c126f1b492e9d92a47680bac152089a44bded53d32",
+  "revision_binary_association": "author_attested_frozen_offload_artifact",
+  "source_identity_swap_rejected": true,
+  "source_reference": {
+    "exported_volume_matches_within_relative": "1e-8",
+    "healing_may_run": true,
+    "method": "normal_STEPControl_Reader_TransferRoots_defaults",
+    "roots": 1,
+    "transferred": 1,
+    "valid": true
+  },
+  "source_revision": "ebc7dc5a96f0efdce82f3f6f47fbc89d9b79c82a",
+  "source_sha256": "9ee5c0862a70c2f7eef35ce8bf61fb1a748fc173fa6c6b606745a9842e36e4a7",
+  "source_step": {
+    "raw_valid": true,
+    "sha256": "c17a6170e0b65c0b3007df09f56bcba7f40c9616ebcb82a3dcc73ef0b43e872a",
+    "topology": {
+      "edges": 42,
+      "euler_with_face_holes": -2,
+      "faces": 16,
+      "solids": 1,
+      "two_loop_faces": 4,
+      "vertices": 28
+    }
+  },
+  "source_unit_to_mm": 1000,
+  "stages": {
+    "edited_export": 604611,
+    "pose_rebuild": 391599,
+    "source_export": 604820
+  },
+  "tolerance_mm": "1/100",
+  "topology_repairs": [
+    {
+      "derived_seam_edge": "derived:#46:periodic-seam",
+      "face": "#46",
+      "method": "paired_cylinder_generatrix/1",
+      "solid": "#73",
+      "source_rim_edges": [
+        "#364",
+        "#365"
+      ],
+      "source_vertices": [
+        "#432",
+        "#434"
+      ]
+    },
+    {
+      "derived_seam_edge": "derived:#50:periodic-seam",
+      "face": "#50",
+      "method": "paired_cylinder_generatrix/1",
+      "solid": "#73",
+      "source_rim_edges": [
+        "#372",
+        "#373"
+      ],
+      "source_vertices": [
+        "#446",
+        "#448"
+      ]
+    }
+  ],
+  "work_limit": 20000000,
+  "work_used": 3156682
+}

@@ -313,6 +313,63 @@ struct ParameterRounding {
     // than this diagnostic maximum, enforce the source tolerance.
     error: Rational,
 }
+
+fn closed_circle_parameters(
+    definition: &mut NumericalDefinition,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    let period = Ball::pi(BITS).mid() * Rational::from_i64(2);
+    let mut reversed = Vec::new();
+    for (index, edge) in definition.edges.iter_mut().enumerate() {
+        dec.charge_work(1)?;
+        if edge.vertices[0] != edge.vertices[1] || !matches!(edge.curve, Curve::Circle(_)) {
+            continue;
+        }
+        if (&edge.parameters[1] - &edge.parameters[0]).abs() != period {
+            return Err(bad(
+                "rounding-topology",
+                "closed circle must retain one complete turn",
+            ));
+        }
+        let mut phase = edge.parameters[0].clone();
+        // A STEP EDGE_CURVE does not carry this parameter range. OCCT projects
+        // the shared endpoint and reconstructs the ascending natural full turn.
+        // Its pcurve must use that same range. Changing an edge's direction also
+        // changes every coedge sense, retaining each physical boundary walk.
+        for _ in 0..4 {
+            if phase.sign() == Sign::Negative {
+                phase = arithmetic(&phase, &period, '+', dec)?;
+            } else if phase >= period {
+                phase = arithmetic(&phase, &period, '-', dec)?;
+            } else {
+                break;
+            }
+        }
+        if phase.sign() == Sign::Negative || phase >= period {
+            return Err(bad(
+                "unsupported",
+                "closed circle phase is outside the natural turn",
+            ));
+        }
+        if edge.parameters[1] < edge.parameters[0] {
+            reversed.push(index);
+        }
+        edge.parameters = [phase.clone(), arithmetic(&phase, &period, '+', dec)?];
+    }
+    for face in &mut definition.faces {
+        dec.charge_work(1)?;
+        for trim in face.loops.iter_mut().flatten() {
+            dec.charge_work(1)?;
+            if reversed.binary_search(&trim.edge).is_ok() {
+                trim.sense = match trim.sense {
+                    Sense::Same => Sense::Reversed,
+                    Sense::Reversed => Sense::Same,
+                };
+            }
+        }
+    }
+    Ok(())
+}
 impl ParameterRounding {
     fn scalar(&mut self, q: &Rational, w: &mut Writer<'_>) -> Result<(Field, Rational), Refusal> {
         w.dec.charge_work(1)?;
@@ -487,6 +544,7 @@ pub(super) fn build(
     }
     let surfaces = rounded_surfaces(&mut w, &mut d)?;
     let geometry = rounded_curves(&mut w, &mut d)?;
+    closed_circle_parameters(&mut d, w.dec)?;
     for face in &mut d.faces {
         for trim in face.loops.iter_mut().flatten() {
             let edge = &d.edges[trim.edge];

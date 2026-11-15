@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import csv
 import hashlib
 import json
+import os
 from pathlib import Path, PurePosixPath
 import subprocess
 
@@ -46,7 +47,8 @@ def observe(binary, path, key, expected_hash, raw, timeout, baseline):
     with stdout.open('wb') as out, stderr.open('wb') as err:
         try:
             process = subprocess.run([str(binary), '--numerical', str(path)],
-                                     stdout=out, stderr=err, timeout=timeout, check=False)
+                                     stdout=out, stderr=err, timeout=timeout, check=False,
+                                     env={**os.environ, 'CATALLAX_THREADS': '1'})
             outcome = 'process_error' if process.returncode else 'missing_result'
         except subprocess.TimeoutExpired:
             outcome = 'timeout'
@@ -144,6 +146,7 @@ def main():
         'archive_md5': baseline_manifest['archive_md5'],
         'archive_bytes': baseline_manifest['archive_bytes'],
         'observation_timeout_seconds': args.timeout, 'workers': args.workers,
+        'per_import_workers': 1,
         'per_import_work_limit': 20_000_000,
         'full_definition': 'admitted with complete source coverage',
         'partial_definition': 'admitted with unverified source coverage',
@@ -178,9 +181,16 @@ def main():
     assert digest(args.binary) == identity['binary_sha256'], 'binary changed during run'
     assert set(rows) == set(baseline)
     ordered = [rows[key] for key in sorted(rows)]
+    with (args.out / 'census.csv').open('w', newline='') as table:
+        writer = csv.DictWriter(table, fieldnames=list(ordered[0]))
+        writer.writeheader()
+        for row in ordered:
+            writer.writerow({key: json.dumps(value, sort_keys=True) if isinstance(value, (list, dict))
+                             else value for key, value in row.items()})
     outcomes = Counter(row['outcome'] for row in ordered)
     complete = set(outcomes).issubset({'full', 'partial', 'refused', 'timeout'})
     report = {**identity, 'complete': complete, 'evaluated': len(rows),
+              'per_model_csv_sha256': digest(args.out / 'census.csv'),
               'baseline_outcomes': dict(Counter(row['baseline_outcome'] for row in ordered)),
               'outcomes': dict(outcomes),
               'baseline_first_refusals': dict(Counter(row['baseline_first_refusal'] for row in ordered

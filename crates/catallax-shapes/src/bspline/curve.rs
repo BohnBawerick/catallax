@@ -12,7 +12,7 @@ use std::sync::Arc;
 mod construction;
 
 /// One clamped boundary of a tensor-product surface. A view shares its controls.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, catallax_numbers::Transfer)]
 pub enum SplineBoundary {
     /// First u row; the curve parameter is v.
     UMin,
@@ -39,7 +39,7 @@ impl SplineBoundary {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, catallax_numbers::Transfer)]
 struct Owned {
     degree: usize,
     knots: Arc<[Rational]>,
@@ -50,13 +50,13 @@ struct Owned {
     nets: [Option<Net>; 3],
     transport: Option<CurveTransport>,
 }
-#[derive(Debug)]
+#[derive(Debug, catallax_numbers::Transfer)]
 struct CurveTransport {
     source: BSplineCurve,
     pose: Isometry,
     inverse: Isometry,
 }
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 enum Definition {
     Boundary {
         surface: BSplineSurface,
@@ -67,7 +67,7 @@ enum Definition {
 
 /// Finite positive-weight B-spline curve. A surface-boundary view does not fit,
 /// copy or independently move an edge. Regularity and closure are separate proofs.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct BSplineCurve {
     definition: Definition,
     query_curve: Option<Arc<BSplineCurve>>,

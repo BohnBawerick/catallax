@@ -313,7 +313,7 @@ impl Halve for [Ball; 4] {
 }
 
 /// Grid over the chart, u-major. Boundary rows are the carrier's own rows.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct EnvelopeGrid {
     /// Grid lines along `u`.
     pub columns: usize,

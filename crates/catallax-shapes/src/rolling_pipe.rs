@@ -132,7 +132,7 @@ impl Bernstein {
 /// The exact frame and numbers of a pipe, for consumers that integrate over it.
 /// `m(t) = cos t across + sin t side`, and ball centres are
 /// `base + cos t (offset across + lift axis) + sin t offset side`.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct PipeLaw {
     /// Point on the cylinder axis in the plane's offset.
     pub base: Point3,
@@ -167,7 +167,7 @@ pub struct PipeLaw {
     pub scale: Real,
 }
 
-#[derive(Debug)]
+#[derive(Debug, catallax_numbers::Transfer)]
 struct Data {
     law: PipeLaw,
     carrier: BSplineSurface,
@@ -175,7 +175,7 @@ struct Data {
 
 /// The exact blend of a closed regular contact branch between a plane and a
 /// cylinder that meet obliquely.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct RollingPipe {
     data: Arc<Data>,
 }

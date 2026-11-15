@@ -3,7 +3,7 @@
 use catallax_numbers::{Rational, Real};
 
 /// A point with exact rational coordinates.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, catallax_numbers::Transfer)]
 pub struct RPoint3 {
     /// x coordinate.
     pub x: Rational,
@@ -14,7 +14,7 @@ pub struct RPoint3 {
 }
 
 /// A vector with exact rational components. Directions are not normalised.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, catallax_numbers::Transfer)]
 pub struct RVector3 {
     /// x component.
     pub x: Rational,
@@ -25,7 +25,7 @@ pub struct RVector3 {
 }
 
 /// A point with exact real coordinates.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct Point3 {
     /// x coordinate.
     pub x: Real,
@@ -36,7 +36,7 @@ pub struct Point3 {
 }
 
 /// A vector with exact real components.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct Vector3 {
     /// x component.
     pub x: Real,

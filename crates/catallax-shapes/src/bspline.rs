@@ -82,6 +82,7 @@ fn validate_controls(
     Ok((minimum.expect("validated nonempty control net"), constant))
 }
 
+#[derive(catallax_numbers::Transfer)]
 struct HomogeneousData {
     controls: Vec<Point3>,
     weights: Arc<[Real]>,
@@ -150,7 +151,7 @@ fn positive_weight_bound(weight: &Real, dec: &mut Decider) -> Result<Rational, R
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 struct Net {
     degrees: [usize; 2],
     knots: [Arc<[Rational]>; 2],
@@ -350,7 +351,7 @@ fn de_boor<P: DeBoorParameter>(
     Ok(values.pop().expect("nonempty de Boor control row"))
 }
 
-#[derive(Debug)]
+#[derive(Debug, catallax_numbers::Transfer)]
 struct Data {
     degrees: [usize; 2],
     knots: [Arc<[Rational]>; 2],
@@ -368,7 +369,7 @@ struct Data {
 /// Positive weights prove a positive rational denominator over every span.
 /// Construction validates the representation, not regularity or injectivity.
 /// Topology must also prove joins, orientation and finite-domain correspondence.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct BSplineSurface {
     data: Arc<Data>,
 }

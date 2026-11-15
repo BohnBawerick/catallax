@@ -25,7 +25,7 @@ const SUBDIVISIONS: i64 = 8;
 const BITS: u32 = 128;
 
 /// A retained vertex definition in millimetres.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct NumericalVertex {
     /// Stable key, unique among this definition's vertices.
     pub key: String,
@@ -34,7 +34,7 @@ pub struct NumericalVertex {
 }
 
 /// A finite edge, with parameters in vertex order.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct NumericalEdge {
     /// Stable key, unique among edges.
     pub key: String,
@@ -47,7 +47,7 @@ pub struct NumericalEdge {
 }
 
 /// One edge use and its explicit finite trim on a face.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct NumericalTrim {
     /// Index in the edge table.
     pub edge: usize,
@@ -59,7 +59,7 @@ pub struct NumericalTrim {
 }
 
 /// One oriented surface and its finite parameter boundaries.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct NumericalFace {
     /// Stable key, unique among faces. It survives a surface replacement.
     pub key: String,
@@ -76,7 +76,7 @@ pub struct NumericalFace {
 
 /// Immutable generating data retained by a checked numerical body.
 /// Indices reference these tables; stable keys identify entities across rebuilds.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct NumericalDefinition {
     /// Definition name for diagnostics.
     pub name: String,
@@ -89,7 +89,7 @@ pub struct NumericalDefinition {
 }
 
 /// Stated controls, fixed before a numerical build starts.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, catallax_numbers::Transfer)]
 pub struct NumericalOptions {
     /// Maximum accepted distance at each checked location, in millimetres.
     /// This is not a promised global deviation bound.
@@ -147,7 +147,7 @@ impl Default for NumericalOptions {
 /// use catallax_topology::numerical::NumericalBody;
 /// fn promote(body: NumericalBody) -> Answer<NumericalBody> { body.into() }
 /// ```
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct NumericalBody {
     source: NumericalDefinition,
     history: Vec<NumericalHistory>,
@@ -159,7 +159,7 @@ pub struct NumericalBody {
 }
 
 /// A previous checked state. Its checks apply to this definition and tolerance only.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct NumericalHistory {
     /// The generating definition at this stage.
     pub definition: NumericalDefinition,

@@ -1,5 +1,7 @@
 //! Handles, write-once arenas and the geometry store.
 
+mod transfer;
+
 use im::{OrdMap, OrdSet, Vector};
 use std::cmp::Ordering;
 use std::fmt;
@@ -220,7 +222,7 @@ pub type CurveId = Handle<Curve>;
 pub type PointId = Handle<PointDef>;
 
 /// Names a geometric object in the fact book.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, catallax_numbers::Transfer)]
 pub enum GeomKey {
     /// A surface.
     Surface(SurfaceId),
@@ -231,7 +233,7 @@ pub enum GeomKey {
 }
 
 /// Which side of a surface, relative to its normal.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, catallax_numbers::Transfer)]
 pub enum Side {
     /// The side the normal points to (implicit positive).
     Front,
@@ -247,7 +249,7 @@ pub struct Apart;
 /// change once added, so a clone sharing a cell with this store needs the same
 /// equations. Whether a cell is filled is not part of the store's value, so the
 /// debug form leaves the cells out.
-#[derive(Clone, Default)]
+#[derive(Clone, Default, catallax_numbers::Transfer)]
 struct EquationCells(Vector<OnceLock<Option<Vec<RealPoly>>>>);
 
 impl fmt::Debug for EquationCells {
@@ -257,7 +259,7 @@ impl fmt::Debug for EquationCells {
 }
 
 /// The write-once store of surfaces, curves and points, with its fact book.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, catallax_numbers::Transfer)]
 pub struct GeomStore {
     surfaces: Arena<Surface>,
     curves: Arena<Curve>,
@@ -268,12 +270,15 @@ pub struct GeomStore {
     approximate_points: Vector<[f64; 3]>,
     closed_conic_supports: OrdMap<CurveId, OrdSet<SurfaceId>>,
     // What has been added since `journal_begin`, while a journal is kept.
+    #[transfer(skip)]
     journal: Option<GeomJournal>,
     // What this store and its copies have been asked since `watch`.
+    #[transfer(skip)]
     watch: Watch<GeomRead>,
     // Work-span observation only: which copy of the store last changed each
     // curve's conic support entry.
     #[cfg(feature = "work-span")]
+    #[transfer(skip)]
     conic_span: catallax_numbers::work_span::Entries,
 }
 

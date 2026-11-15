@@ -14,7 +14,7 @@ use crate::profile::sign;
 mod parallel;
 
 /// The exact generating definition of one elementary fillet strip.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct FilletDefinition {
     /// Persistent selected-edge or continued-junction origin.
     pub origin: Origin,

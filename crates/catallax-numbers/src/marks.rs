@@ -3,7 +3,7 @@
 use crate::Rational;
 
 /// What a mark's bound measures.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, catallax_numbers::Transfer)]
 pub enum BoundKind {
     /// A length in model units.
     Distance,
@@ -14,7 +14,7 @@ pub enum BoundKind {
 }
 
 /// The record of one not-exact answer.
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, catallax_numbers::Transfer)]
 pub struct Mark {
     /// Stable reason code.
     pub code: &'static str,
@@ -45,7 +45,7 @@ impl Mark {
 }
 
 /// Ordered list of marks.
-#[derive(Clone, PartialEq, Debug, Default)]
+#[derive(Clone, PartialEq, Debug, Default, catallax_numbers::Transfer)]
 pub struct MarkLog {
     marks: Vec<Mark>,
 }

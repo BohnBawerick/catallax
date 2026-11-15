@@ -11,14 +11,14 @@ const SIDES: [SplineBoundary; 4] = [
     SplineBoundary::VMax,
 ];
 
-#[derive(Debug)]
+#[derive(Debug, catallax_numbers::Transfer)]
 pub(super) struct OriginalUnit {
     pub(super) span: Span,
     pub(super) physical: [bool; 4],
     pub(super) charts: Vec<usize>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, catallax_numbers::Transfer)]
 pub(super) struct OriginalAtlas {
     pub(super) atlas: RationalAtlas,
     pub(super) units: Vec<OriginalUnit>,

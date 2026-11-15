@@ -5,7 +5,7 @@ use catallax_numbers::{Decider, Real, Refusal, Sign};
 use crate::{EllipticCylinder, Isometry, Pose, Surface, math};
 
 /// Chosen side of the outward-oriented elliptic-cylinder support.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, catallax_numbers::Transfer)]
 pub enum OffsetSide {
     /// Positive distance along the original outward normal.
     Outward,
@@ -19,7 +19,7 @@ pub enum OffsetSide {
 /// certificate. Inward offsets still need a regular-domain and branch proof.
 /// The original support and unsigned distance match the field measuring stick's
 /// `FaceDefinition::Offset` fields; the side must also survive in the producer.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct EllipticOffsetDefinition {
     original: Surface,
     distance: Real,

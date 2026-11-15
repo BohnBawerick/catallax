@@ -26,7 +26,7 @@ pub struct SectionSearch {
     pub work: u64,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 struct ArcCell {
     chart: usize,
     span: usize,
@@ -37,7 +37,7 @@ struct ArcCell {
 
 /// One exact connected regular component, selected by its ordered cell cover.
 /// The fitted candidate is never used as the geometric definition.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct PatchSectionBranch {
     charts: Arc<[RationalPatch]>,
     surface: SectionSurface,

@@ -11,12 +11,12 @@ use std::{collections::BTreeMap, sync::Arc};
 /// Construction order is graded lexicographic monomial order, then immutable
 /// expression order within each coefficient sum. Neither construction identity
 /// nor the number of stored terms decides mathematical equality or degree.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct RealPoly {
     coefficients: Coefficients,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 enum Coefficients {
     Rational(MPoly),
     Algebraic {

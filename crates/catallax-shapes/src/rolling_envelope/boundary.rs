@@ -22,7 +22,7 @@ pub enum BoundaryRow {
 }
 
 /// Piecewise cubic Hermite parameter data over strictly increasing knots.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct ParameterTable {
     /// Chart parameters of the row.
     pub knots: Vec<Rational>,

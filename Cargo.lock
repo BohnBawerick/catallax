@@ -301,11 +301,15 @@ dependencies = [
 name = "catallax-numbers"
 version = "0.1.5"
 dependencies = [
+ "catallax-transfer-derive",
  "im",
  "num-bigint",
  "num-integer",
  "num-traits",
  "rug",
+ "serde",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]
@@ -373,6 +377,15 @@ name = "catallax-trace"
 version = "0.1.5"
 dependencies = [
  "libm",
+]
+
+[[package]]
+name = "catallax-transfer-derive"
+version = "0.1.5"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]

@@ -36,7 +36,7 @@ const MAX_PROOF_DEPTH: u32 = 24;
 type Domain = [[Rational; 2]; 2];
 type BezierSpanView<'a> = (&'a Domain, &'a [[Real; 4]]);
 
-#[derive(Debug)]
+#[derive(Debug, catallax_numbers::Transfer)]
 struct Span {
     indices: [usize; 2],
     domain: Domain,
@@ -98,19 +98,19 @@ impl Span {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 struct ProjectionCell {
     domain: Domain,
     lower: Rational,
 }
 
-#[derive(Debug)]
+#[derive(Debug, catallax_numbers::Transfer)]
 struct BezierSpan {
     domain: Domain,
     controls: Vec<[Real; 4]>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, catallax_numbers::Transfer)]
 struct Data {
     carrier: BSplineSurface,
     domain: Domain,
@@ -129,7 +129,7 @@ struct Data {
 /// The positive symmetric-Jacobian bound proves both regularity and injectivity
 /// over the complete knot rectangle, including piecewise-smooth knot joins.
 /// A failed proof is an implementation gap, never an impossible-geometry claim.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct RationalPatch {
     data: Arc<Data>,
 }

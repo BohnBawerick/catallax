@@ -5,7 +5,7 @@ use catallax_numbers::{Ball, Decider, Rational, Real, RealPoly, Refusal, Sign, S
 
 /// The kind of a surface.
 #[non_exhaustive]
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, catallax_numbers::Transfer)]
 pub enum SurfaceKind {
     /// Plane.
     Plane,
@@ -26,7 +26,7 @@ pub enum SurfaceKind {
 }
 
 /// The domain of a surface parameter.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, catallax_numbers::Transfer)]
 pub enum ParamKind {
     /// All reals.
     Line,
@@ -43,7 +43,7 @@ pub enum ParamKind {
 }
 
 /// A plane, oriented by its normal.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct Plane {
     /// Parameter origin.
     pub origin: Point3,
@@ -54,7 +54,7 @@ pub struct Plane {
 }
 
 /// A circular cylinder, oriented away from its axis.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct Cylinder {
     /// Axis point where `v = 0`.
     pub origin: Point3,
@@ -67,7 +67,7 @@ pub struct Cylinder {
 }
 
 /// The nappe of a circular cone in its axis direction.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct Cone {
     /// Apex.
     pub apex: Point3,
@@ -80,7 +80,7 @@ pub struct Cone {
 }
 
 /// A sphere, oriented outwards.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct Sphere {
     /// Centre.
     pub center: Point3,
@@ -93,7 +93,7 @@ pub struct Sphere {
 }
 
 /// A ring torus with `0 < minor < major`.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct Torus {
     /// Centre.
     pub center: Point3,
@@ -113,7 +113,7 @@ pub struct Torus {
 /// self-intersecting inner sheet is not part of this support, so its side is
 /// that of the outer tube, `(rho - major)^2 + z^2 - minor^2`, not the sign of
 /// the complete quartic carrier. It has no global polynomial equation.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct TorusSheet {
     /// Centre.
     pub center: Point3,
@@ -128,7 +128,7 @@ pub struct TorusSheet {
 }
 
 /// An elliptic cylinder, oriented away from its axis.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct EllipticCylinder {
     /// Axis point where `v = 0`.
     pub origin: Point3,
@@ -396,7 +396,7 @@ impl EllipticCylinder {
 
 /// An analytic support or certified finite parametric support. Face trims belong to topology.
 #[non_exhaustive]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub enum Surface {
     /// Plane.
     Plane(Plane),

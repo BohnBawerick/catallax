@@ -5,7 +5,7 @@ use catallax_numbers::IsolatedRoot;
 use crate::{CurveId, Point3, SurfaceId};
 
 /// The definition of a point.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub enum PointDef {
     /// An exact point, retaining validated input or construction expressions.
     Explicit(Point3),
@@ -14,7 +14,7 @@ pub enum PointDef {
 }
 
 /// Where these objects meet, and which point of the meeting.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct Meet {
     /// The objects that meet.
     pub of: MeetOf,
@@ -23,7 +23,7 @@ pub struct Meet {
 }
 
 /// The objects a point is defined to lie on.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, catallax_numbers::Transfer)]
 pub enum MeetOf {
     /// Two or more surfaces.
     Surfaces(Vec<SurfaceId>),
@@ -34,7 +34,7 @@ pub enum MeetOf {
 }
 
 /// Which point of a meeting.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub enum Position {
     /// Exact closed-form coordinates.
     Closed(Point3),

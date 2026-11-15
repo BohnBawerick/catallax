@@ -5,7 +5,7 @@ use catallax_numbers::{Ball, Decider, Real, RealPoly, Refusal, Sign};
 
 /// The kind of a curve.
 #[non_exhaustive]
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, catallax_numbers::Transfer)]
 pub enum CurveKind {
     /// Straight line.
     Line,
@@ -24,7 +24,7 @@ pub enum CurveKind {
 }
 
 /// A line `origin + t dir`.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct Line {
     /// Parameter origin.
     pub origin: Point3,
@@ -33,7 +33,7 @@ pub struct Line {
 }
 
 /// A circle, counter-clockwise when viewed from its normal tip.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct Circle {
     /// Centre.
     pub center: Point3,
@@ -46,7 +46,7 @@ pub struct Circle {
 }
 
 /// An ellipse, counter-clockwise when viewed from its normal tip.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct Ellipse {
     /// Centre.
     pub center: Point3,
@@ -62,7 +62,7 @@ pub struct Ellipse {
 
 /// A connected regular component of the named surfaces through its witness.
 /// Natural direction is `grad f0 x grad f1`.
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, catallax_numbers::Transfer)]
 pub struct IntersectionCurve {
     /// Defining surface pair.
     pub surfaces: [SurfaceId; 2],
@@ -142,7 +142,7 @@ impl Ellipse {
 
 /// An exact analytic or B-spline curve, or a certified intersection component.
 #[non_exhaustive]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub enum Curve {
     /// Line.
     Line(Line),

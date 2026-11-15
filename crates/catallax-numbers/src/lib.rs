@@ -6,6 +6,13 @@
 //!
 //! The contract is `docs/pieces/01-numbers-and-decisions.md`.
 
+extern crate self as catallax_numbers;
+
+#[doc(hidden)]
+pub mod transfer;
+#[doc(hidden)]
+pub use catallax_transfer_derive::Transfer;
+
 #[macro_use]
 mod macros;
 

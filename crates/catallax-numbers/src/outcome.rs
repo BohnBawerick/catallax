@@ -60,7 +60,7 @@ impl<T> Outcome<T> {
 }
 
 /// A sign that is proven non-zero.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, catallax_numbers::Transfer)]
 pub enum StrictSign {
     /// Below zero.
     Negative,
@@ -78,7 +78,7 @@ pub enum StrictOrder {
 }
 
 /// How a zero was proven.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, catallax_numbers::Transfer)]
 pub enum ZeroProof {
     /// Exact rational evaluation gave zero.
     ExactArithmetic,

@@ -4,11 +4,11 @@ use crate::{Algebraic, Ball, Interval, IsolatedRoot, Rational};
 use std::sync::{Arc, LazyLock, OnceLock};
 
 /// Exact real expression. Cloning shares its immutable definition and caches.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct Real {
     pub(crate) node: Arc<Node>,
 }
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub(crate) enum Expr {
     Rational(Rational),
     Algebraic(Algebraic),
@@ -22,6 +22,7 @@ pub(crate) enum Expr {
     Square(Real),
     Pow(Real, u32),
 }
+#[derive(catallax_numbers::Transfer)]
 pub(crate) struct Node {
     pub expr: Expr,
     pub approx: Interval,
@@ -37,6 +38,7 @@ pub(crate) struct Node {
     rational_possible: bool,
     // Run-ahead bookkeeping (`ahead.rs`): the fork count when this node was
     // made. It is not part of the definition, and no decision reads it.
+    #[transfer(skip)]
     pub(crate) epoch: u64,
 }
 

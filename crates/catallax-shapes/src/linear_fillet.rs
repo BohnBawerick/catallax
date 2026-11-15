@@ -21,7 +21,7 @@ fn unit(v: &Vector3) -> Vector3 {
     v.scaled(&(&Real::one() / &math::exact_sqrt(&v.norm_squared())))
 }
 
-#[derive(Debug)]
+#[derive(Debug, catallax_numbers::Transfer)]
 struct Data {
     supports: [Plane; 2],
     same_sense: [bool; 2],
@@ -42,7 +42,7 @@ struct Data {
 /// A checked exact variable-radius band, with its oriented input edge and law.
 /// The interior chart is embedded and regular. At a zero endpoint its closed
 /// parameter rectangle has the usual cone-apex quotient on that boundary row.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct LinearFillet {
     data: Arc<Data>,
 }

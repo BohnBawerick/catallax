@@ -126,7 +126,7 @@ pub(crate) fn curve_hulls_disjoint(
 const MAX_CELLS: usize = 1 << 16;
 
 /// The certificate that accepted a cell pair.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, catallax_numbers::Transfer)]
 pub enum PairCertificate {
     /// The 2026 field on the first patch's parameters stays in the open
     /// half-plane `d . (x, y) > 0` for this direction `d`.
@@ -141,7 +141,7 @@ pub enum PairCertificate {
 /// An exact meeting point on the border of a cell pair: parameters `u, v`
 /// on the first patch and `s, t` on the second. Fixed coordinates are exact
 /// rationals; the rest are coordinates of an exactly isolated system root.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct PairPoint {
     parameters: [Real; 4],
     enclosure: [[Rational; 2]; 4],
@@ -162,7 +162,7 @@ impl PairPoint {
 }
 
 /// One certified arc of a branch inside one cell pair.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct PairArc {
     /// First retained source unit: a chart, or an original tensor span.
     pub first_chart: usize,
@@ -183,7 +183,7 @@ pub struct PairArc {
 }
 
 /// One connected component of the meeting, as the ordered arcs that cover it.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct PatchPairBranch {
     arcs: Arc<[PairArc]>,
     closed: bool,
@@ -210,7 +210,7 @@ impl PatchPairBranch {
 }
 
 /// Counts and work of one complete search, for the record.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, catallax_numbers::Transfer)]
 pub struct PatchPairSearch {
     /// First-patch cells examined.
     pub cells: usize,
@@ -241,7 +241,7 @@ pub struct PatchPairSearch {
 
 /// The complete checked meeting of two rational patches, or of their exact
 /// offsets.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct PatchPairIntersection {
     first: RetainedSource,
     /// The first side's offset distance, when it is an offset.

@@ -11,7 +11,7 @@ mod pi_constant;
 use binary::Binary;
 
 /// Binary midpoint-radius enclosure with a working precision in bits.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct Ball {
     mid: Binary,
     rad: Binary,

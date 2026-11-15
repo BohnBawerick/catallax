@@ -742,6 +742,11 @@ pub(super) fn import(
     }
     dec.charge_work(bytes.len() as u64)?;
     let file = crate::read_step(bytes)?;
+    if !file.surface_models.is_empty() {
+        return Err(unsupported(
+            "numerical analytic continuation must retain every surface model and its surface body kind",
+        ));
+    }
     if !file
         .solids
         .iter()

@@ -104,7 +104,7 @@ pub(super) fn push_branches(
 }
 
 /// Sections of a joined atlas face. Every component is a cell-cover branch
-/// over the face's charts; there are no isolated contact points.
+/// over the face's charts, with isolated contacts retained separately.
 pub(super) fn atlas(
     surface: &SectionSurface,
     atlas: &RationalAtlas,
@@ -112,10 +112,11 @@ pub(super) fn atlas(
     dec: &mut Decider,
 ) -> Result<Plan, Refusal> {
     let section = atlas.sections(surface, dec)?;
-    if section.branches().is_empty() {
+    if section.branches().is_empty() && section.points().is_empty() {
         return Ok(Plan::disjoint());
     }
     let mut plan = Plan::empty();
+    plan.points.extend_from_slice(section.points());
     push_branches(&mut plan, section.branches(), swap, dec)?;
     Ok(plan)
 }

@@ -71,10 +71,17 @@ fn complete_search_finds_every_open_arc_loop_and_tangent_contact() {
         });
         assert!(!work.exhausted, "{case}: {} units", work.used);
         if case == "tangent" {
-            let refusal = result.unwrap_err();
-            assert_eq!(refusal.code, "intersect.patch-plane-tangent");
-            assert!(refusal.detail.contains("(5/2, 5/2, 225/256)"));
-            println!("WORK {case}: {} units; {}", work.used, refusal.detail);
+            let section = result.unwrap();
+            assert!(section.branches().is_empty());
+            assert!(section.curves().next().is_none());
+            assert_eq!(section.points().len(), 1);
+            equal(
+                &section.points()[0],
+                &p("5/2", "5/2", "225/256"),
+                &mut Decider::default(),
+            );
+            assert!(section.search().unwrap().contact_cells > 0);
+            println!("WORK {case}: {} units; one isolated contact", work.used);
             continue;
         }
         let section = result.unwrap();
@@ -110,10 +117,6 @@ fn intersection_pair_returns_exact_branches_and_answers_parameter_queries() {
                 } else {
                     intersect_surfaces(&mut geom, a, b, &mut dec)
                 };
-                if case == "tangent" {
-                    assert_eq!(result.unwrap_err().code, "intersect.patch-plane-tangent");
-                    return;
-                }
                 let answer = result.unwrap();
                 assert!(answer.is_exact());
                 if case == "above" {
@@ -123,6 +126,14 @@ fn intersection_pair_returns_exact_branches_and_answers_parameter_queries() {
                 let SurfacePair::Meets(components) = answer.value else {
                     panic!("expected exact branch components")
                 };
+                if case == "tangent" {
+                    assert_eq!(components.len(), 1);
+                    let Component::Point { point } = components[0] else {
+                        panic!("expected the isolated hilltop contact")
+                    };
+                    equal(&geom.position(point), &p("5/2", "5/2", "225/256"), &mut dec);
+                    return;
+                }
                 assert_eq!(components.len(), if case == "wavy" { 2 } else { 1 });
                 for component in components {
                     let Component::Curve {

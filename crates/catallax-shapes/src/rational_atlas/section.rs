@@ -9,10 +9,15 @@ use crate::{PatchSectionBranch, SectionSearch, SectionSurface};
 #[derive(Clone, Debug)]
 pub struct AtlasSection {
     branches: Vec<PatchSectionBranch>,
+    points: Vec<Point3>,
     search: SectionSearch,
 }
 
 impl AtlasSection {
+    /// Isolated contacts retained by the complete cell search.
+    pub fn points(&self) -> &[Point3] {
+        &self.points
+    }
     /// Exact connected components, open between physical borders or closed.
     pub fn branches(&self) -> &[PatchSectionBranch] {
         &self.branches
@@ -61,7 +66,11 @@ impl RationalAtlas {
                     .then(|| self.source().domain()[axis].map(Clone::clone))
             }),
         };
-        let (branches, search) = search_cover(&cover, surface, dec)?;
-        Ok(AtlasSection { branches, search })
+        let section = search_cover(&cover, surface, dec)?;
+        Ok(AtlasSection {
+            branches: section.branches,
+            points: section.points,
+            search: section.search,
+        })
     }
 }

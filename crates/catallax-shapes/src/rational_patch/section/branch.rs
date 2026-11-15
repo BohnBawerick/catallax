@@ -9,6 +9,7 @@ mod tube;
 pub use tube::{SectionBranchApproximation, SectionCandidate};
 mod trace;
 pub use trace::SectionTracePiece;
+mod contact;
 
 /// Counts for the candidate-independent complete cell search.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -17,6 +18,8 @@ pub struct SectionSearch {
     pub empty_cells: usize,
     /// Cells certified to contain exactly one regular arc.
     pub arc_cells: usize,
+    /// Cells whose only zeros are retained isolated corner contacts.
+    pub contact_cells: usize,
     /// Deepest binary split, counted from each knot span.
     pub depth: u32,
     /// Deterministic decision work, including exact boundary roots and joins.
@@ -457,15 +460,21 @@ pub(super) fn search(
         physical: vec![[true; 4]],
         wrap: [None, None],
     };
-    let (branches, search) = search_cover(&cover, surface, dec)?;
+    let section = search_cover(&cover, surface, dec)?;
     Ok(RationalPatchSection {
         patch: patch.clone(),
         surface: surface.clone(),
         curves: Vec::new(),
-        points: Vec::new(),
-        branches,
-        search: Some(search),
+        points: section.points,
+        branches: section.branches,
+        search: Some(section.search),
     })
+}
+
+pub(crate) struct CoverSection {
+    pub branches: Vec<PatchSectionBranch>,
+    pub points: Vec<Point3>,
+    pub search: SectionSearch,
 }
 
 /// The complete regular section over every chart of a cover. Arc ends join
@@ -474,10 +483,11 @@ pub(crate) fn search_cover(
     cover: &Cover,
     surface: &SectionSurface,
     dec: &mut Decider,
-) -> Result<(Vec<PatchSectionBranch>, SectionSearch), Refusal> {
+) -> Result<CoverSection, Refusal> {
     let start = dec.stats().work;
     let mut record = SectionSearch::default();
     let mut arcs = Vec::new();
+    let mut points: Vec<Point3> = Vec::new();
     for (ci, patch) in cover.charts.iter().enumerate() {
         let [du, dv] = patch.carrier().degrees();
         for (si, span) in patch.data.spans.iter().enumerate() {
@@ -499,6 +509,31 @@ pub(crate) fn search_cover(
                 record.depth = record.depth.max(net.depth);
                 if uniform(&net.values, dec)?.is_some() {
                     record.empty_cells += 1;
+                    continue;
+                }
+                if matches!(surface, SectionSurface::Plane(_))
+                    && let Some(corners) = contact::corners(&net, dec)?
+                {
+                    let isolated = !corners.is_empty();
+                    for at in corners {
+                        let point = span.point(&at);
+                        let mut duplicate = false;
+                        for previous in &points {
+                            if exact_sign(&point.minus(previous).norm_squared(), dec)? == Sign::Zero
+                            {
+                                duplicate = true;
+                                break;
+                            }
+                        }
+                        if !duplicate {
+                            points.push(point);
+                        }
+                    }
+                    if isolated {
+                        record.contact_cells += 1;
+                    } else {
+                        record.empty_cells += 1;
+                    }
                     continue;
                 }
                 let mut classified = false;
@@ -548,6 +583,8 @@ pub(crate) fn search_cover(
                 if exact_sign(&equation.eval_real(&at), dec)? == Sign::Zero
                     && exact_sign(&equation.partial(0).eval_real(&at), dec)? == Sign::Zero
                     && exact_sign(&equation.partial(1).eval_real(&at), dec)? == Sign::Zero
+                    && !(matches!(surface, SectionSurface::Plane(_))
+                        && contact::definite_hessian(&equation, &at, dec)?)
                 {
                     let point = span.point(&at);
                     let display = |v: &Real| {
@@ -568,7 +605,12 @@ pub(crate) fn search_cover(
                     ));
                 }
                 if net.depth >= MAX_PROOF_DEPTH
-                    || record.empty_cells + record.arc_cells + pending.len() + 2 > MAX_PROOF_CELLS
+                    || record.empty_cells
+                        + record.arc_cells
+                        + record.contact_cells
+                        + pending.len()
+                        + 2
+                        > MAX_PROOF_CELLS
                 {
                     return Err(surface.unresolved(
                         "the complete section cell search reached its unchanged proof allowance",
@@ -671,5 +713,9 @@ pub(crate) fn search_cover(
         });
     }
     record.work = dec.stats().work - start;
-    Ok((branches, record))
+    Ok(CoverSection {
+        branches,
+        points,
+        search: record,
+    })
 }

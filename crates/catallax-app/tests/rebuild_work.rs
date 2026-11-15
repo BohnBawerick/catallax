@@ -169,7 +169,7 @@ fn deferred_display_preserves_refusal_codes_and_caller_allowances() {
 
 #[test]
 fn deferred_display_keeps_the_default_application_guard() {
-    let recipe = cylinder(500_000);
+    let recipe = cylinder(5_000_000);
     let options = MeshOptions::default();
     let eager = build_incremental(&recipe, None, &options, &mut Decider::default()).unwrap_err();
     assert_eq!(eager.code(), "application.work-limit");
@@ -182,4 +182,36 @@ fn deferred_display_keeps_the_default_application_guard() {
             .code(),
         eager.code()
     );
+}
+
+#[test]
+fn large_display_above_target_completes_and_reports_stage_work() {
+    use catallax_app::{
+        DEFAULT_BUILD_WORK, TARGET_BUILD_WORK,
+        lifecycle::{WorkAllocation, WorkReport},
+    };
+    use catallax_numbers::OperationWork;
+
+    let recipe = cylinder(500_000);
+    let options = MeshOptions::default();
+    let eager = build_incremental(&recipe, None, &options, &mut Decider::default()).unwrap();
+    let deferred =
+        build_incremental_without_display(&recipe, None, &mut Decider::default()).unwrap();
+    let (display, work) = with_operation_budget(DEFAULT_BUILD_WORK, || {
+        deferred.display(&options, &mut Decider::default())
+    });
+    let display = display.unwrap();
+    assert_eq!(display.value, eager.display.value);
+    assert!(!work.exhausted);
+    assert!(work.used > TARGET_BUILD_WORK);
+    assert!(work.used < DEFAULT_BUILD_WORK);
+    let report = WorkReport {
+        allocation: WorkAllocation::application(0).unwrap(),
+        preview: OperationWork {
+            used: 0,
+            exhausted: false,
+        },
+        proof: Some(work),
+    };
+    assert!(report.over_target());
 }

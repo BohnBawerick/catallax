@@ -183,13 +183,16 @@ fn answer_isolated(request: &Request) -> std::io::Result<Value> {
                 measured_faces.next().map(|face| json!([face]))
             } else { None },
             "refusal":entry.refusal.as_ref().map(|r| json!({"code":r.code,"detail":r.detail})),
-            "work":{"before":entry.work_before,"after":entry.work_after,"used":entry.work_after-entry.work_before},
+            "work":{"before":entry.work_before,"after":entry.work_after,"used":entry.work_after-entry.work_before,"target":catallax_app::TARGET_BUILD_WORK,
+                "over_target":entry.work_after-entry.work_before > catallax_app::TARGET_BUILD_WORK},
             "wall_ms":entry.wall_ms});
         if let Some(path) = entry.path { value["path"] = json!(path); }
         value
     }).collect();
     let log = json!({"format":"catallax-operation-log/1","status":manifest["status"],
-        "refusal":manifest["refusal"],"marks":manifest["marks"],"operations":operations});
+        "refusal":manifest["refusal"],"marks":manifest["marks"],
+        "work":{"used":work.used,"target":catallax_app::TARGET_BUILD_WORK,
+            "over_target":work.used > catallax_app::TARGET_BUILD_WORK},"operations":operations});
     fs::write(
         request.out.join("operations.json"),
         serde_json::to_vec_pretty(&log)?,
@@ -203,7 +206,7 @@ fn answer_isolated(request: &Request) -> std::io::Result<Value> {
     )?;
     let response = json!({"format":"catallax-response/1", "manifest":manifest,
         "operation_log":log,
-        "work":{"used":work.used,"limit":request.max_work,"exhausted":work.exhausted},
+        "work":work_summary(work, request.max_work),
         "wall_ms":0});
     fs::write(
         request.out.join("manifest.json"),
@@ -672,4 +675,10 @@ fn lattice_preview(
         },
         "marks":[],"refusal":null,"step":null
     }))
+}
+
+fn work_summary(work: catallax_numbers::OperationWork, limit: u64) -> Value {
+    json!({"used":work.used,"limit":limit,"exhausted":work.exhausted,
+        "target":catallax_app::TARGET_BUILD_WORK,
+        "over_target":work.used > catallax_app::TARGET_BUILD_WORK})
 }

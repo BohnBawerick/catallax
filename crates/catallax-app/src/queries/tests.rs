@@ -378,3 +378,19 @@ fn construction_marks_survive_each_query() {
         assert!(marks.iter().any(|m| m == &mark));
     }
 }
+
+#[test]
+fn query_default_admits_work_above_target_and_refuses_above_allowance() {
+    let model = Model::default();
+    let answer = super::query(&model, &[], || {
+        Decider::default().charge_work(crate::TARGET_BUILD_WORK + 1)?;
+        Ok(Answer::with_marks((), Default::default()))
+    });
+    assert!(answer.is_ok());
+    let refusal = super::query(&model, &[], || {
+        let _ = Decider::default().charge_work(crate::DEFAULT_BUILD_WORK + 1);
+        Ok(Answer::with_marks((), Default::default()))
+    })
+    .unwrap_err();
+    assert_eq!(refusal.refusal.code, "application.work-limit");
+}

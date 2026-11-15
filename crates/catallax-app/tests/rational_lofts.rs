@@ -234,7 +234,7 @@ fn circles(radii: &[&str], heights: &[&str]) -> Value {
 /// `r(v)` at height `z(v)`, both natural cubics through the authored values.
 /// The volume is `pi` times the integral of `r^2 z'`, which is positive here.
 fn circular_loft_has_exact_mass(value: &Value, volume: &str, height: &str) {
-    // The application entry applies its unchanged 20M allowance and reports
+    // The application entry applies its 100M allowance and reports
     // `ResourceLimit` when it is exhausted.
     let app = build(value);
     picking_is_physical(&app);

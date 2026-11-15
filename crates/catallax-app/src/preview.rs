@@ -42,7 +42,7 @@ pub struct PreviewApplicationBody {
 /// Charge this call to the caller's preview/display allowance, separately from
 /// any later proof request. An active allowance always takes precedence; this
 /// call never resets, duplicates, or enlarges it. Without one, the usual
-/// [`crate::DEFAULT_BUILD_WORK`] application limit applies.
+/// 100M [`crate::DEFAULT_BUILD_WORK`] application limit applies.
 pub fn preview_body(
     built: &Built,
     options: &PreviewOptions,

@@ -65,6 +65,35 @@ pub(super) fn curve(w: &mut Writer<'_>, curve: &BSplineCurve) -> Result<Id, Refu
     ]))
 }
 
+pub(super) fn finite_curve(
+    w: &mut Writer<'_>,
+    spline: &BSplineCurve,
+    parameters: &[Rational; 2],
+) -> Result<Id, Refusal> {
+    let basis = curve(w, spline)?;
+    let mut interval = parameters.clone();
+    interval.sort();
+    let trims = interval
+        .iter()
+        .map(|q| {
+            w.dec.charge_work(1)?;
+            let token = crate::number::rational(q, w.options.significant_digits).text;
+            Ok(Field::List(vec![text(format!("PARAMETER_VALUE({token})"))]))
+        })
+        .collect::<Result<Vec<_>, Refusal>>()?;
+    Ok(w.graph.add(
+        "TRIMMED_CURVE",
+        vec![
+            text("''"),
+            basis.into(),
+            trims[0].clone(),
+            trims[1].clone(),
+            boolean(true),
+            text(".PARAMETER."),
+        ],
+    ))
+}
+
 pub(super) fn surface(w: &mut Writer<'_>, surface: &BSplineSurface) -> Result<Id, Refusal> {
     let points = surface
         .controls()

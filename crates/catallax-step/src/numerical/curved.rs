@@ -2,9 +2,34 @@
 
 use super::*;
 use catallax_shapes::SplineSupport;
+use catallax_topology::numerical::{NumericalFace, NumericalTrim};
 
 mod native;
 mod payload;
+
+type PcurveUse<'a> = (usize, &'a NumericalTrim);
+
+fn pcurve_uses<'a>(
+    faces: &'a [NumericalFace],
+    edge_count: usize,
+    dec: &mut Decider,
+) -> Result<Vec<Vec<PcurveUse<'a>>>, Refusal> {
+    dec.charge_work(edge_count as u64)?;
+    let mut uses = vec![Vec::new(); edge_count];
+    for (index, face) in faces.iter().enumerate() {
+        dec.charge_work(1)?;
+        for boundary in &face.loops {
+            dec.charge_work(1)?;
+            for trim in boundary {
+                dec.charge_work(1)?;
+                if !matches!(face.surface, Surface::Plane(_)) {
+                    uses[trim.edge].push((index, trim));
+                }
+            }
+        }
+    }
+    Ok(uses)
+}
 
 fn direction(w: &mut Writer<'_>, values: &[Rational; 3]) -> Result<Id, Refusal> {
     let tokens = values
@@ -79,6 +104,7 @@ pub(super) fn build(
         "GEOMETRIC_REPRESENTATION_CONTEXT",
         vec![text("''"), text("''"), text("2")],
     );
+    let uses = pcurve_uses(&definition.faces, definition.edges.len(), w.dec)?;
     let mut edges = Vec::new();
     for (index, edge) in definition.edges.iter().enumerate() {
         let curve = match &edge.curve {
@@ -87,32 +113,23 @@ pub(super) fn build(
                 payload.lines[index].as_ref().expect("prepared line"),
                 &edge.key,
             )?,
-            Curve::BSpline(spline) => native::curve(&mut w, spline)?,
+            Curve::BSpline(spline) => native::finite_curve(&mut w, spline, &edge.parameters)?,
             _ => return Err(bad("unsupported", "unprepared numerical STEP edge")),
         };
         let mut pcurves = Vec::new();
-        for (face_index, face) in definition.faces.iter().enumerate() {
-            if matches!(face.surface, Surface::Plane(_)) {
-                continue;
+        for (face_index, trim) in &uses[index] {
+            w.dec.charge_work(1)?;
+            let mut uv = trim.uv.clone();
+            if trim.sense == Sense::Reversed {
+                uv.reverse()
             }
-            for trim in face
-                .loops
-                .iter()
-                .flatten()
-                .filter(|trim| trim.edge == index)
-            {
-                let mut uv = trim.uv.clone();
-                if trim.sense == Sense::Reversed {
-                    uv.reverse()
-                }
-                pcurves.push(native::pcurve(
-                    &mut w,
-                    surfaces[face_index],
-                    context,
-                    &edge.parameters,
-                    uv,
-                )?);
-            }
+            pcurves.push(native::pcurve(
+                &mut w,
+                surfaces[*face_index],
+                context,
+                &edge.parameters,
+                uv,
+            )?);
         }
         let geometry = if pcurves.is_empty() {
             curve
@@ -190,4 +207,44 @@ pub(super) fn build(
             "file.approximate-category-no-global-bound".into(),
         ],
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use catallax_numbers::with_operation_budget;
+    use catallax_shapes::Plane;
+
+    #[test]
+    fn pcurve_index_charges_skipped_planar_uses_once() {
+        let trim = NumericalTrim {
+            edge: 0,
+            sense: Sense::Same,
+            uv: std::array::from_fn(|_| std::array::from_fn(|_| Rational::zero())),
+        };
+        let face = NumericalFace {
+            key: "planar".into(),
+            surface: Surface::Plane(Plane {
+                origin: Point3::new(0.into(), 0.into(), 0.into()),
+                normal: Vector3::new(0.into(), 0.into(), 1.into()),
+                ref_dir: Vector3::new(1.into(), 0.into(), 0.into()),
+            }),
+            sense: Sense::Same,
+            loops: vec![vec![trim; 16]],
+        };
+        let faces = vec![face; 32];
+        // Each explicit reservation also pays Decider's cancellation checkpoint.
+        let expected = 32 + 1 + 2 * (32 + 32 + 32 * 16);
+        let (result, work) = with_operation_budget(expected, || {
+            pcurve_uses(&faces, 32, &mut Decider::default())
+        });
+        assert!(result.unwrap().iter().all(Vec::is_empty));
+        assert_eq!(work.used, expected);
+        assert!(!work.exhausted);
+        let (result, work) = with_operation_budget(expected - 1, || {
+            pcurve_uses(&faces, 32, &mut Decider::default())
+        });
+        assert!(result.is_err());
+        assert!(work.exhausted);
+    }
 }

@@ -137,3 +137,59 @@ fn recorded_m10_008_keeps_its_hole_and_rejects_broken_loop_controls() {
     });
     assert!(!work.exhausted, "{} work units", work.used);
 }
+
+#[path = "common/n03_tube.rs"]
+mod tube;
+
+#[test]
+fn repeated_endpoint_carrier_keeps_the_admitted_finite_traversal() {
+    use catallax_numbers::Real;
+    use catallax_shapes::{BSplineCurve, Curve, Point3};
+    let mut dec = Decider::default();
+    let mut definition = tube::tube();
+    let edge = &definition.edges[0];
+    let point = |id: usize| {
+        let p = &definition.vertices[id].position;
+        Point3::new(
+            p[0].clone().into(),
+            p[1].clone().into(),
+            p[2].clone().into(),
+        )
+    };
+    let a = point(edge.vertices[0]);
+    let b = point(edge.vertices[1]);
+    let c = Point3::new(9.into(), 9.into(), 9.into());
+    definition.edges[0].curve = Curve::BSpline(
+        BSplineCurve::new(
+            1,
+            [0, 0, 1, 2, 3, 4, 4].map(Rational::from).to_vec(),
+            vec![a.clone(), b.clone(), c, a, b],
+            vec![Real::one(); 5],
+            &mut dec,
+        )
+        .unwrap(),
+    );
+    let body = numerical::build(
+        definition,
+        NumericalOptions {
+            tolerance_mm: tube::q("1/10000000"),
+        },
+        &mut dec,
+    )
+    .unwrap();
+    let file = step::build(&body, &NumericalStepOptions::default(), &mut dec).unwrap();
+    let text = std::str::from_utf8(file.bytes()).unwrap();
+    assert!(
+        text.contains("=TRIMMED_CURVE("),
+        "finite admitted interval missing from STEP"
+    );
+    assert!(text.contains("PARAMETER_VALUE(0.)") && text.contains("PARAMETER_VALUE(1.)"));
+    if let Ok(directory) = std::env::var("CATALLAX_N03_CAPTURE") {
+        std::fs::write(
+            std::path::Path::new(&directory).join("repeated-endpoint.step"),
+            file.bytes(),
+        )
+        .unwrap();
+    }
+    file.check_written(file.bytes(), &mut dec).unwrap();
+}

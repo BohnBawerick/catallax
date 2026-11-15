@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 
 import OCP
+from OCP.BRepAdaptor import BRepAdaptor_Curve
 from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
 from OCP.BRepCheck import BRepCheck_Analyzer
 from OCP.BRepClass3d import BRepClass3d_SolidClassifier
@@ -18,6 +19,7 @@ from OCP.GProp import GProp_GProps
 from OCP.gp import gp_Pnt
 from OCP.TopAbs import (TopAbs_EDGE, TopAbs_FACE, TopAbs_IN, TopAbs_ON,
                        TopAbs_OUT, TopAbs_SOLID, TopAbs_VERTEX, TopAbs_WIRE)
+from OCP.TopoDS import TopoDS
 from test_loopless_faces import raw_solid, unique
 
 
@@ -88,6 +90,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('root', type=Path)
     parser.add_argument('--out', type=Path)
+    parser.add_argument('--repeated-endpoint', type=Path)
     args = parser.parse_args()
     cases = [check(args.root, 'tiny', [7, 12, 8], 16.,
                    [2., 1., 1.5], [2., 1.9999995, 1.5], 1.),
@@ -103,6 +106,21 @@ def main():
                          'no_stale_step': True, 'reason': response['reason'],
                          'work': response['work']})
     report = {'cases': cases, 'controls': controls}
+    if args.repeated_endpoint:
+        shape = raw_solid(args.repeated_endpoint)
+        assert BRepCheck_Analyzer(shape).IsValid(), 'repeated-endpoint raw import invalid'
+        assert topology(shape) == dict(solids=1, faces=10, edges=24, vertices=16, two_loop_faces=2)
+        assert abs(volume(shape) - 12.) < 1e-7, 'unadmitted traversal changed material'
+        for edge in unique(shape, TopAbs_EDGE):
+            curve = BRepAdaptor_Curve(TopoDS.Edge_s(edge))
+            lo, hi = curve.FirstParameter(), curve.LastParameter()
+            for i in range(9):
+                point = curve.Value(lo + (hi - lo) * i / 8)
+                assert -1e-7 <= point.X() <= 4. + 1e-7
+                assert -1e-7 <= point.Y() <= 4. + 1e-7
+                assert -1e-7 <= point.Z() <= 1. + 1e-7, 'unadmitted off-plane carrier span used'
+        report['repeated_endpoint'] = {'raw_valid': True, 'volume_mm3': volume(shape),
+                                       'finite_edge_samples_in_body': True, 'healing': False}
     if args.out:
         args.out.write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps(report))

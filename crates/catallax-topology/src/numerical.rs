@@ -16,6 +16,8 @@ use crate::{
 
 mod analytic;
 mod curved;
+mod native;
+pub use native::{NumericalNativeTrim, build_with_native_trims};
 mod source;
 pub use source::definition_from_model;
 
@@ -53,7 +55,8 @@ pub struct NumericalTrim {
     pub edge: usize,
     /// Direction relative to the edge's vertex order.
     pub sense: Sense,
-    /// U/v endpoints in traversal order. Patch trims interpolate linearly.
+    /// U/v endpoints in traversal order. Patch trims interpolate linearly unless
+    /// this use has a retained [`NumericalNativeTrim`].
     /// A native spline on a plane retains its projected curve between them.
     pub uv: [[Rational; 2]; 2],
 }
@@ -132,9 +135,12 @@ impl Default for NumericalOptions {
 ///
 /// Nine equally spaced locations per coedge, including its endpoints, are checked
 /// against its retained face parameters. Planar circular/spline edges use projected curve
-/// samples; other trims use their linear u/v segment. Every edge endpoint is
+/// samples; other ordinary trims use their linear u/v segment. Retained native
+/// UV curves use endpoints and eight subdivisions of each clipped 3D/UV knot
+/// span at the same finite native parameter. Their endpoint correspondence is
+/// checked in millimetres against the declared loop endpoints. Every edge endpoint is
 /// checked against its vertex. These are pointwise distance enclosures, not bounds
-/// between samples. For projected spline walks, loop simplicity and hole placement
+/// between samples. For projected or retained native UV walks, loop simplicity and hole placement
 /// refer to the sampled polygon. Continuous containment and disjointness remain
 /// unresolved and have no unqualified check entry.
 /// The checks do not establish whole-body separation, global self-intersection
@@ -150,6 +156,8 @@ impl Default for NumericalOptions {
 #[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct NumericalBody {
     source: NumericalDefinition,
+    source_native_trims: Vec<NumericalNativeTrim>,
+    native_trims: Vec<NumericalNativeTrim>,
     history: Vec<NumericalHistory>,
     definition: NumericalDefinition,
     options: NumericalOptions,
@@ -163,6 +171,8 @@ pub struct NumericalBody {
 pub struct NumericalHistory {
     /// The generating definition at this stage.
     pub definition: NumericalDefinition,
+    /// Native parameter curves checked at this stage.
+    pub native_trims: Vec<NumericalNativeTrim>,
     /// The controls used at this stage.
     pub options: NumericalOptions,
     /// The checks and cumulative repair history at this stage.
@@ -186,17 +196,15 @@ impl NumericalBody {
         options: NumericalOptions,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
-        guarded(|| {
-            let mut next = build_inner(definition, options, self.evidence.repairs().to_vec(), dec)?;
-            next.inherit(self);
-            Ok(next)
-        })
+        self.rebuild_with_native_trims(definition, self.native_trims.clone(), options, dec)
     }
     fn inherit(&mut self, previous: &Self) {
         self.source = previous.source.clone();
+        self.source_native_trims = previous.source_native_trims.clone();
         self.history = previous.history.clone();
         self.history.push(NumericalHistory {
             definition: previous.definition.clone(),
+            native_trims: previous.native_trims.clone(),
             options: previous.options.clone(),
             evidence: previous.evidence.clone(),
         });
@@ -281,7 +289,13 @@ impl NumericalBody {
                     distance_upper_mm: movement,
                 });
             }
-            let mut next = build_inner(definition, self.options.clone(), repairs, dec)?;
+            let mut next = build_inner(
+                definition,
+                self.native_trims.clone(),
+                self.options.clone(),
+                repairs,
+                dec,
+            )?;
             next.inherit(self);
             Ok(next)
         })
@@ -297,7 +311,7 @@ pub fn build(
     options: NumericalOptions,
     dec: &mut Decider,
 ) -> Result<NumericalBody, Refusal> {
-    guarded(|| build_inner(definition, options, Vec::new(), dec))
+    guarded(|| build_inner(definition, Vec::new(), options, Vec::new(), dec))
 }
 
 fn guarded<T>(run: impl FnOnce() -> Result<T, Refusal>) -> Result<T, Refusal> {
@@ -361,6 +375,7 @@ fn keys<'a>(values: impl Iterator<Item = &'a str>, dec: &mut Decider) -> Result<
 
 fn build_inner(
     definition: NumericalDefinition,
+    native_trims: Vec<NumericalNativeTrim>,
     options: NumericalOptions,
     repairs: Vec<NumericalRepair>,
     dec: &mut Decider,
@@ -376,6 +391,7 @@ fn build_inner(
     keys(definition.vertices.iter().map(|v| v.key.as_str()), dec)?;
     keys(definition.edges.iter().map(|e| e.key.as_str()), dec)?;
     keys(definition.faces.iter().map(|f| f.key.as_str()), dec)?;
+    let native = native::Index::new(&definition, &native_trims, dec)?;
     let mut model = Model::new();
     let vertices: Vec<_> = definition
         .vertices
@@ -440,7 +456,7 @@ fn build_inner(
         }));
     }
     let mut faces = Vec::new();
-    for face in &definition.faces {
+    for (face_index, face) in definition.faces.iter().enumerate() {
         dec.charge_work(1)?;
         if !analytic::supports(&face.surface) {
             return Err(bad(
@@ -466,7 +482,14 @@ fn build_inner(
         // Validate the newly admitted second boundary before building its
         // coedges. A duplicated outer loop remains an invalid trim, as in N01.
         if face.loops.len() == 2 {
-            analytic::check_loops(face, &definition.edges, &options.tolerance_mm, dec)?;
+            native::check_loops(
+                face_index,
+                face,
+                &definition.edges,
+                &native,
+                &options.tolerance_mm,
+                dec,
+            )?;
             check_distinct_boundary_vertices(face, &definition.edges, dec)?;
         }
         let mut loops = Vec::new();
@@ -537,11 +560,18 @@ fn build_inner(
             samples,
         });
     }
-    for face in &definition.faces {
+    for (face_index, face) in definition.faces.iter().enumerate() {
         if face.loops.len() == 1 {
-            analytic::check_loops(face, &definition.edges, &options.tolerance_mm, dec)?;
+            native::check_loops(
+                face_index,
+                face,
+                &definition.edges,
+                &native,
+                &options.tolerance_mm,
+                dec,
+            )?;
         }
-        let sampled = analytic::projected(face, &definition.edges);
+        let sampled = native.has_face(face_index) || analytic::projected(face, &definition.edges);
         checks.push(NumericalCheck::Passed {
             name: if sampled {
                 "trim.sampled-simple-oriented-parameter-loop"
@@ -572,8 +602,28 @@ fn build_inner(
                 scope: face.key.clone(),
             });
         }
-        for (index, trim) in face.loops.iter().flatten().enumerate() {
+        for (index, (boundary_index, use_index, trim)) in face
+            .loops
+            .iter()
+            .enumerate()
+            .flat_map(|(b, row)| row.iter().enumerate().map(move |(u, t)| (b, u, t)))
+            .enumerate()
+        {
             let edge = &definition.edges[trim.edge];
+            if let Some(curve) = native.get(face_index, boundary_index, use_index) {
+                let (samples, endpoints) = native::samples(face, trim, edge, curve, dec)?;
+                checks.push(NumericalCheck::Samples {
+                    name: "trim.native-endpoint-position".into(),
+                    scope: format!("face {:?}, edge {:?}, use {index}", face.key, edge.key),
+                    samples: endpoints,
+                });
+                checks.push(NumericalCheck::Samples {
+                    name: "trim.edge-surface-distance".into(),
+                    scope: format!("face {:?}, edge {:?}, use {index}", face.key, edge.key),
+                    samples,
+                });
+                continue;
+            }
             let [a, b] = if trim.sense == Sense::Same {
                 edge.parameters.each_ref()
             } else {
@@ -615,6 +665,8 @@ fn build_inner(
     dec.check_deadline()?;
     Ok(NumericalBody {
         source: definition.clone(),
+        source_native_trims: native_trims.clone(),
+        native_trims,
         history: Vec::new(),
         definition,
         options,
@@ -854,7 +906,7 @@ pub fn sew(
             }
         }
         definition.vertices = retained;
-        let mut body = build_inner(definition, options, repairs, dec)?;
+        let mut body = build_inner(definition, Vec::new(), options, repairs, dec)?;
         body.source = input.clone();
         let mut checks = body.evidence.checks().to_vec();
         for &[keeper, removed] in pairs {

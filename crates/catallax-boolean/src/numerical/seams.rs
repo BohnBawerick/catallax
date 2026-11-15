@@ -58,7 +58,7 @@ impl<'a> Roots<'a> {
         if gap > tolerance
             || distances
                 .get(1)
-                .is_some_and(|(next, _)| gap * q(2) >= *next)
+                .is_some_and(|(next, _)| gap * &q(2) >= *next)
         {
             return Err(bad(
                 "finite cone seam needs separated root ownership refinement",
@@ -89,7 +89,7 @@ impl<'a> Roots<'a> {
                 (
                     vec![0],
                     offset.norm_squared()
-                        - &self.cylinder.radius_sq * self.cylinder.axis.norm_squared(),
+                        - &self.cylinder.radius_sq * &self.cylinder.axis.norm_squared(),
                 ),
             ],
         );

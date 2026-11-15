@@ -11,6 +11,8 @@ use catallax_topology::{
     numerical::{DEFAULT_WORK, NumericalBody},
 };
 
+mod analytic;
+
 /// Controls fixed before a numerical export. They do not change source tolerance.
 #[derive(Clone, Debug)]
 pub struct NumericalStepOptions {
@@ -483,7 +485,13 @@ pub fn build(
     options: &NumericalStepOptions,
     dec: &mut Decider,
 ) -> Result<NumericalStep, Refusal> {
-    guarded(|| build_inner(body, options, dec))
+    guarded(|| {
+        if analytic::applies(body) {
+            analytic::build(body, options, dec)
+        } else {
+            build_inner(body, options, dec)
+        }
+    })
 }
 fn build_inner(
     body: &NumericalBody,

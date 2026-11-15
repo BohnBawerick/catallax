@@ -27,10 +27,10 @@ fn curve_range(edge: &OrientedEdge, direction: &Vec3) -> [Rational; 2] {
                 radius
             };
             // The L1 norm bounds the Euclidean support radius in every frame.
-            let spread = radius
-                * direction
-                    .iter()
-                    .fold(Rational::zero(), |sum, component| sum + component.abs());
+            let norm = direction
+                .iter()
+                .fold(Rational::zero(), |sum, component| sum + component.abs());
+            let spread = radius * &norm;
             let center = dot(&placement.origin, direction);
             [&center - &spread, center + spread]
         }
@@ -80,8 +80,8 @@ impl Reader<'_> {
             })?;
         // Direction ratios rescale v positively without changing the carrier or its normal.
         let norm_sq = dot(&direction, &direction);
-        let lo = (boundary_lo - profile_hi) / &norm_sq;
-        let hi = (boundary_hi - profile_lo) / norm_sq;
+        let lo = &(boundary_lo - profile_hi) / &norm_sq;
+        let hi = &(boundary_hi - profile_lo) / &norm_sq;
         if lo >= hi {
             return Err(malformed(format!(
                 "extrusion #{id} has no finite surface interval"

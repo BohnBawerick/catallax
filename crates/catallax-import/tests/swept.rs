@@ -1,3 +1,5 @@
+//! Exact STEP spline extrusion reading and finite-domain checks.
+
 use catallax_import::{ImportRefusal, Surface, read_step};
 use catallax_numbers::{Decider, Rational};
 
@@ -55,6 +57,18 @@ fn extrusion_zero_vector_is_malformed() {
         read_step(source.as_bytes()),
         Err(ImportRefusal::Malformed { .. })
     ));
+}
+
+#[test]
+fn spline_trim_bulges_beyond_its_endpoints_stay_inside_the_surface_domain() {
+    let source = source("(0.,1.,0.)")
+        .replace("#49=EDGE_CURVE('',#13,#15,#48,.T.);", "#49=EDGE_CURVE('',#13,#15,#201,.T.);")
+        .replace("ENDSEC;\nEND-ISO-10303-21;", "#200=CARTESIAN_POINT('',(0.,3.,1.));\n#201=B_SPLINE_CURVE_WITH_KNOTS('',2,(#5,#200,#7),.UNSPECIFIED.,.F.,.F.,(3,3),(0.,1.),.UNSPECIFIED.);\nENDSEC;\nEND-ISO-10303-21;");
+    let file = read_step(source.as_bytes()).unwrap();
+    let Surface::BSpline(surface) = &file.solids[0].faces.last().unwrap().surface else {
+        panic!("extrusion must map to a tensor spline");
+    };
+    assert_eq!(surface.geometry.controls()[1][1], q("3"));
 }
 
 #[test]

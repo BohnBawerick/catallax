@@ -64,10 +64,14 @@ fn revolved(
     let mut meter = Decider::new(*dec.policy());
     meter.set_deadline(dec.deadline());
     meter.charge_work(1).map_err(spline::source_error)?;
-    let s = dot(axis, axis);
-    if s.is_zero() {
+    meter.charge_work(3).map_err(spline::source_error)?;
+    let scale = axis.iter().map(Rational::abs).max().expect("three ratios");
+    if scale.is_zero() {
         return Err(malformed("revolution axis must not be zero"));
     }
+    // Positive rational rescaling bounds s to [1, 3], so no arc exceeds 120 degrees.
+    let direction: Vec3 = std::array::from_fn(|i| &axis[i] / &scale);
+    let s = dot(&direction, &direction);
     let one = Rational::one();
     let two = Rational::from_i64(2);
     let next = &one + &s;
@@ -81,8 +85,8 @@ fn revolved(
         .zip(profile.geometry.weights())
     {
         meter.charge_work(1).map_err(spline::source_error)?;
-        let k = cross(axis, &sub(point, origin));
-        let l = cross(axis, &k);
+        let k = cross(&direction, &sub(point, origin));
+        let l = cross(&direction, &k);
         let negative_k = k.each_ref().map(|value| -value.clone());
         for row in 0..9 {
             meter.charge_work(1).map_err(spline::source_error)?;

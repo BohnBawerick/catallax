@@ -245,3 +245,22 @@ fn a_curved_rational_meridian_keeps_its_weights_coupled_to_rotation() {
         }
     }
 }
+
+#[test]
+fn proportional_axis_ratios_produce_the_same_bounded_control_net() {
+    let make = |axis| {
+        geometry(&source(
+            axis,
+            "5.,-2.,3.",
+            ["7.,-4.,3.", "10.,-1.,3."],
+            true,
+        ))
+    };
+    let expected = make("1.,1.,0.");
+    for axis in [
+        "1000000000000.,1000000000000.,0.",
+        "0.000000000001,0.000000000001,0.",
+    ] {
+        assert_eq!(make(axis), expected);
+    }
+}

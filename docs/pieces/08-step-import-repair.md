@@ -72,7 +72,9 @@ For `SURFACE_OF_REVOLUTION`, the reader follows the STEP swept-curve and `AXIS1_
 An omitted axis direction defaults to z.
 Four rational quadratic spans rotate each meridian control through one turn.
 The rotation weights multiply the meridian weights, and the meridian knots remain unchanged.
-Axis ratios avoid rounding an irrational unit axis.
+A positive rational rescaling sets the largest axis component magnitude to one.
+The four angular spans then stay within 120 degrees, and each rotation weight stays between one and four.
+This avoids rounding an irrational unit axis or introducing extreme weights from an arbitrary direction magnitude.
 The angular coordinate is a positive reparameterization of a full turn, so the source surface orientation is preserved.
 The generating curve's parameterization remains the surface's v coordinate.
 Control generation, weight multiplication and knot copying use the caller's allowance and deadline.

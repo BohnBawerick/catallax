@@ -112,6 +112,25 @@ struct Cell {
     lo: Rational,
     hi: Rational,
     depth: usize,
+    transverse: [Vec<Ball>; 2],
+}
+
+fn split(controls: &[Ball], dec: &mut Decider) -> Result<[Vec<Ball>; 2], Refusal> {
+    let half = scalar(&Rational::from_ratio(1, 2).unwrap());
+    let mut row = controls.to_vec();
+    let mut left = vec![row[0].clone()];
+    let mut right = vec![row[row.len() - 1].clone()];
+    while row.len() > 1 {
+        dec.charge_work(row.len() as u64)?;
+        row = row
+            .windows(2)
+            .map(|pair| &(&pair[0] + &pair[1]) * &half)
+            .collect();
+        left.push(row[0].clone());
+        right.push(row[row.len() - 1].clone());
+    }
+    right.reverse();
+    Ok([left, right])
 }
 struct Candidate {
     lo: Rational,
@@ -164,19 +183,39 @@ pub fn numerical_spline_line_points(
     let leaf_size = &tolerance / &Rational::from_i64(8);
     let flat_limit = &tolerance / &Rational::from_i64(1_000_000);
     let frame = Frame::new(line, dec)?;
-    let mut pending: Vec<_> = curve
-        .spans()
-        .map(|(_, [lo, hi])| Cell {
+    let mut pending = Vec::new();
+    for (span, [lo, hi]) in curve.spans() {
+        let hull =
+            crate::span_hull::SpanHull::new(curve, span, [lo.clone().into(), hi.clone().into()]);
+        let controls = hull.span_controls(BITS, dec)?;
+        let transverse = std::array::from_fn(|j| {
+            controls
+                .iter()
+                .map(|p| {
+                    let other = &p[frame.other[j]] - &(&frame.origin[frame.other[j]] * &p[3]);
+                    let axis = &p[frame.axis] - &(&frame.origin[frame.axis] * &p[3]);
+                    &other - &(&frame.ratio[j] * &axis)
+                })
+                .collect()
+        });
+        pending.push(Cell {
             lo: lo.clone(),
             hi: hi.clone(),
             depth: 0,
-        })
-        .collect();
+            transverse,
+        });
+    }
     let mut candidates = Vec::<Candidate>::new();
     let mut cells = 0;
     while let Some(cell) = pending.pop() {
         dec.charge_work(64)?;
         cells += 1;
+        if cell.transverse.iter().any(|net| {
+            net.iter().all(|p| p.lo().sign() == Sign::Positive)
+                || net.iter().all(|p| p.hi().sign() == Sign::Negative)
+        }) {
+            continue;
+        }
         let jet = curve.jet_box([&cell.lo, &cell.hi], BITS, dec)?;
         let residual = frame.transverse(&jet.value, false);
         if residual.iter().any(|r| !contains_zero(r)) {
@@ -211,15 +250,19 @@ pub fn numerical_spline_line_points(
             ));
         } else {
             let middle = midpoint(&cell.lo, &cell.hi);
+            let [left_a, right_a] = split(&cell.transverse[0], dec)?;
+            let [left_b, right_b] = split(&cell.transverse[1], dec)?;
             pending.push(Cell {
                 lo: middle.clone(),
                 hi: cell.hi,
                 depth: cell.depth + 1,
+                transverse: [right_a, right_b],
             });
             pending.push(Cell {
                 lo: cell.lo,
                 hi: middle,
                 depth: cell.depth + 1,
+                transverse: [left_a, left_b],
             });
         }
     }

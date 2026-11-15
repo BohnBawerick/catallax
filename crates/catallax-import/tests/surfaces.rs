@@ -287,3 +287,41 @@ fn surface_topology_rejects_nonmanifold_edge_use_and_empty_models() {
         ));
     }
 }
+
+#[test]
+fn a_declared_closed_surface_shell_cannot_have_boundary_edges() {
+    let source = SQUARE.replace("#31=OPEN_SHELL", "#31=CLOSED_SHELL");
+    let file = read_step(source.as_bytes()).unwrap();
+    assert!(file.surface_models[0].shells[0].closed);
+    assert!(matches!(
+        build_file(&mut Model::new(), &file, None),
+        Err(ImportRefusal::NotSolid { .. })
+    ));
+}
+
+#[test]
+fn an_unhandled_face_model_sibling_cannot_disappear_from_the_representation() {
+    let extra = SQUARE
+        .split("DATA;\n")
+        .nth(1)
+        .unwrap()
+        .split("ENDSEC;")
+        .next()
+        .unwrap()
+        .replace('#', "#900")
+        .replace("(0.,0.,0.)", "(10.,0.,0.)")
+        .replace("(2.,0.,0.)", "(12.,0.,0.)")
+        .replace("(2.,3.,0.)", "(12.,3.,0.)")
+        .replace("(0.,3.,0.)", "(10.,3.,0.)")
+        .replace("OPEN_SHELL", "CONNECTED_FACE_SET")
+        .replace("SHELL_BASED_SURFACE_MODEL", "FACE_BASED_SURFACE_MODEL");
+    let source = SQUARE
+        .replace("('',(#32),#34)", "('',(#32,#90032),#34)")
+        .replace(
+            "ENDSEC;\nEND-ISO-10303-21;",
+            &format!("{extra}ENDSEC;\nEND-ISO-10303-21;"),
+        );
+    assert!(matches!(read_step(source.as_bytes()),
+        Err(ImportRefusal::Unsupported { type_name, .. })
+        if type_name == "FACE_BASED_SURFACE_MODEL"));
+}

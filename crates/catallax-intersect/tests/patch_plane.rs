@@ -438,79 +438,90 @@ fn same_exact_answers_with_one_two_and_four_workers() {
 
 #[test]
 fn a_regular_line_and_a_separate_plane_contact_survive_in_both_orders() {
-    use catallax_shapes::BSplineSurface;
-    for swap in [false, true] {
-        let ((), work) = with_operation_budget(20_000_000, || {
-            let mut dec = Decider::default();
-            // z = (u - 2/3) ((u - 1/4)^2 + (v - 1/2)^2).
-            let heights = [
-                ["-5/24", "1/8", "-5/24"],
-                ["1/144", "25/144", "1/144"],
-                ["-1/6", "-1/6", "-1/6"],
-                ["13/48", "5/48", "13/48"],
-            ];
-            let mut controls = Vec::new();
-            for (i, row) in heights.iter().enumerate() {
-                for (j, height) in row.iter().enumerate() {
-                    controls.push(Point3::new(
-                        Rational::from_ratio(i as i64, 3).unwrap().into(),
-                        Rational::from_ratio(j as i64, 2).unwrap().into(),
-                        r(height).into(),
-                    ));
+    use catallax_shapes::{BSplineSurface, RationalAtlas};
+    for as_atlas in [false, true] {
+        for swap in [false, true] {
+            let ((), work) = with_operation_budget(20_000_000, || {
+                let mut dec = Decider::default();
+                // z = (u - 2/3) ((u - 1/4)^2 + (v - 1/2)^2).
+                let heights = [
+                    ["-5/24", "1/8", "-5/24"],
+                    ["1/144", "25/144", "1/144"],
+                    ["-1/6", "-1/6", "-1/6"],
+                    ["13/48", "5/48", "13/48"],
+                ];
+                let mut controls = Vec::new();
+                for (i, row) in heights.iter().enumerate() {
+                    for (j, height) in row.iter().enumerate() {
+                        controls.push(Point3::new(
+                            Rational::from_ratio(i as i64, 3).unwrap().into(),
+                            Rational::from_ratio(j as i64, 2).unwrap().into(),
+                            r(height).into(),
+                        ));
+                    }
                 }
-            }
-            let patch = RationalPatch::new(
-                BSplineSurface::new(
-                    [3, 2],
-                    [
-                        ["0", "0", "0", "0", "1", "1", "1", "1"].map(r).to_vec(),
-                        ["0", "0", "0", "1", "1", "1"].map(r).to_vec(),
-                    ],
-                    [4, 3],
-                    controls,
-                    vec![Real::one(); 12],
+                let patch = RationalPatch::new(
+                    BSplineSurface::new(
+                        [3, 2],
+                        [
+                            ["0", "0", "0", "0", "1", "1", "1", "1"].map(r).to_vec(),
+                            ["0", "0", "0", "1", "1", "1"].map(r).to_vec(),
+                        ],
+                        [4, 3],
+                        controls,
+                        vec![Real::one(); 12],
+                        &mut dec,
+                    )
+                    .unwrap(),
                     &mut dec,
                 )
-                .unwrap(),
-                &mut dec,
-            )
-            .unwrap();
-            let mut geom = GeomStore::new();
-            let a = geom.add_surface(Surface::BSpline(patch.into()));
-            let b = geom.add_surface(Surface::Plane(Plane {
-                origin: p("0", "0", "0"),
-                normal: Vector3::new(Real::zero(), Real::zero(), Real::one()),
-                ref_dir: Vector3::new(Real::one(), Real::zero(), Real::zero()),
-            }));
-            let answer = if swap {
-                intersect_surfaces(&mut geom, b, a, &mut dec)
-            } else {
-                intersect_surfaces(&mut geom, a, b, &mut dec)
-            }
-            .unwrap();
-            assert!(answer.is_exact());
-            let SurfacePair::Meets(components) = answer.value else {
-                panic!("expected one line and one isolated point");
-            };
-            assert_eq!(components.len(), 2);
-            let mut curves = 0;
-            let mut points = 0;
-            for component in components {
-                match component {
-                    Component::Point { point } => {
-                        points += 1;
-                        equal(&geom.position(point), &p("1/4", "1/2", "0"), &mut dec);
-                    }
-                    Component::Curve { curve, contact, .. } => {
-                        curves += 1;
-                        assert_eq!(contact, Contact::Crossing);
-                        let witness = geom.add_point(PointDef::Explicit(p("2/3", "1/3", "0")));
-                        assert!(on_curve(&geom, curve, witness, &mut dec).is_coincident());
+                .unwrap();
+                let mut geom = GeomStore::new();
+                let surface = if as_atlas {
+                    let mut atlases =
+                        RationalAtlas::partition(patch.carrier().clone(), [false; 2], &mut dec)
+                            .unwrap();
+                    assert_eq!(atlases.len(), 1);
+                    Surface::BSpline(atlases.pop().unwrap().into())
+                } else {
+                    Surface::BSpline(patch.into())
+                };
+                let a = geom.add_surface(surface);
+                let b = geom.add_surface(Surface::Plane(Plane {
+                    origin: p("0", "0", "0"),
+                    normal: Vector3::new(Real::zero(), Real::zero(), Real::one()),
+                    ref_dir: Vector3::new(Real::one(), Real::zero(), Real::zero()),
+                }));
+                let answer = if swap {
+                    intersect_surfaces(&mut geom, b, a, &mut dec)
+                } else {
+                    intersect_surfaces(&mut geom, a, b, &mut dec)
+                }
+                .unwrap();
+                assert!(answer.is_exact());
+                let SurfacePair::Meets(components) = answer.value else {
+                    panic!("expected one line and one isolated point");
+                };
+                assert_eq!(components.len(), 2);
+                let mut curves = 0;
+                let mut points = 0;
+                for component in components {
+                    match component {
+                        Component::Point { point } => {
+                            points += 1;
+                            equal(&geom.position(point), &p("1/4", "1/2", "0"), &mut dec);
+                        }
+                        Component::Curve { curve, contact, .. } => {
+                            curves += 1;
+                            assert_eq!(contact, Contact::Crossing);
+                            let witness = geom.add_point(PointDef::Explicit(p("2/3", "1/3", "0")));
+                            assert!(on_curve(&geom, curve, witness, &mut dec).is_coincident());
+                        }
                     }
                 }
-            }
-            assert_eq!((curves, points), (1, 1));
-        });
-        assert!(!work.exhausted, "swap={swap}: {work:?}");
+                assert_eq!((curves, points), (1, 1));
+            });
+            assert!(!work.exhausted, "swap={swap}: {work:?}");
+        }
     }
 }

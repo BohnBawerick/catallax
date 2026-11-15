@@ -682,25 +682,12 @@ pub(super) fn build(
                 [edge.vertices[1], edge.vertices[0]]
             };
             for (i, index) in ends.into_iter().enumerate() {
-                // A toleranced vertex can be slightly off its circle's plane.
-                // Project the written finite carrier, rather than that vertex,
-                // to avoid turning a circular isoparameter into a sloped line.
-                // Keep shared vertices and the old periodic branch; numerical
-                // admission and actual pcurve-distance checks still apply.
-                let position = if matches!(face.surface, Surface::Cylinder(_))
-                    && matches!(edge.curve, Curve::Circle(_))
-                    && edge.vertices[0] != edge.vertices[1]
-                {
-                    let end = if trim.sense == Sense::Same { i } else { 1 - i };
-                    let point = edge
-                        .curve
-                        .evaluate(&Ball::from_rational(&edge.parameters[end], BITS), w.dec)?
-                        .ok_or_else(|| bad("unsupported", "finite circle has no evaluator"))?;
-                    std::array::from_fn(|axis| point[axis].mid())
-                } else {
-                    d.vertices[index].position.clone()
-                };
-                trim.uv[i] = uv(&face.surface, &position, &trim.uv[i], w.dec)?;
+                trim.uv[i] = uv(
+                    &face.surface,
+                    &d.vertices[index].position,
+                    &trim.uv[i],
+                    w.dec,
+                )?;
             }
         }
     }
@@ -720,11 +707,29 @@ pub(super) fn build(
         for (f, trim, _) in &uses[index] {
             let face = &d.faces[*f];
             w.dec.charge_work(1)?;
-            let ends = if trim.sense == Sense::Same {
+            let mut ends = if trim.sense == Sense::Same {
                 trim.uv.clone()
             } else {
                 [trim.uv[1].clone(), trim.uv[0].clone()]
             };
+            if matches!(face.surface, Surface::Cylinder(_))
+                && matches!(edge.curve, Curve::Circle(_))
+                && edge.vertices[0] != edge.vertices[1]
+            {
+                // Keep the canonical shared-vertex walk used for admission.
+                // Derive this actual pcurve from the written finite carrier:
+                // a toleranced vertex off the circle's plane must not turn an
+                // isoparameter into a sloped line. Independently rounded pcurve
+                // distance checks below still include both finite endpoints.
+                for (end, parameter) in edge.parameters.iter().enumerate() {
+                    let point = edge
+                        .curve
+                        .evaluate(&Ball::from_rational(parameter, BITS), w.dec)?
+                        .ok_or_else(|| bad("unsupported", "finite circle has no evaluator"))?;
+                    let position = std::array::from_fn(|axis| point[axis].mid());
+                    ends[end] = uv(&face.surface, &position, &ends[end], w.dec)?;
+                }
+            }
             let (curve, actual) = pcurve(
                 &mut w,
                 &mut parameter,

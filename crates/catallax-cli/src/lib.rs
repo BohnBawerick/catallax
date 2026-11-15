@@ -668,6 +668,12 @@ pub(crate) fn exact_rational_splines(model: &Model, body: BodyId) -> bool {
         }
     }
     found
+        || model.edges_of_body(body).into_iter().any(|edge| {
+            matches!(
+                model.geom().curve(model.edge(edge).curve),
+                catallax_shapes::Curve::BSpline(_)
+            )
+        })
 }
 
 pub(crate) fn result_summary(

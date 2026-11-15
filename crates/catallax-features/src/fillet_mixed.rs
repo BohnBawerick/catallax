@@ -9,9 +9,8 @@
 //! takes its `corner.vertex` name.
 //!
 //! Both passes reuse the ordinary strip construction with its own proofs.
-//! Only vertices where every incident edge is selected take this route; a
-//! mixed vertex that leaves an edge out keeps the strip construction's
-//! refusal.
+//! Unselected input edges stop the second pass's tangent chain. Its torus
+//! ends against the actual end wall, retaining the remaining sharp edge.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -65,8 +64,7 @@ fn descends(
 }
 
 /// Builds the operation in a concave and then a convex pass when some
-/// selected vertex mixes the two, or `None` when none does or a mixed vertex
-/// leaves an incident edge unselected.
+/// selected vertex mixes the two, or `None` when none does.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn build(
     model: &mut Model,
@@ -110,14 +108,11 @@ pub(super) fn build(
         if kinds.len() != 2 {
             continue;
         }
-        if incident.iter().any(|edge| !convexity.contains_key(edge)) {
-            return Ok(None);
-        }
         let Some(name) = model.vertex_name(body, vertex) else {
             return Ok(None);
         };
         for edge in &incident {
-            if convexity[edge] {
+            if convexity.get(edge) != Some(&false) {
                 continue;
             }
             let own: Vec<_> = input_uses[edge].iter().map(|(f, _)| *f).collect();
@@ -148,7 +143,17 @@ pub(super) fn build(
         .filter(|edge| convexity[edge])
         .collect();
     let (rounded, mut definitions) = strips_of(
-        model, body, concave, radius, true, closure, step, earlier, consumed, dec,
+        model,
+        body,
+        concave,
+        radius,
+        true,
+        &[],
+        closure,
+        step,
+        earlier,
+        consumed,
+        dec,
     )?;
     // The boundary arc each concave blend leaves at a mixed vertex: between
     // its blend face and one of the vertex's other faces.
@@ -199,8 +204,25 @@ pub(super) fn build(
             second.push(edge);
         }
     }
+    let unselected: Vec<_> = input_uses
+        .keys()
+        .copied()
+        .filter(|edge| !selected.contains(edge))
+        .collect();
+    let mut stopped = Vec::new();
+    for edge in rounded_uses.keys().copied() {
+        for input in &unselected {
+            // Concave trimming can merge coplanar faces and change the
+            // preferred origin pair. Geometric ancestry still identifies
+            // the surviving sharp piece independently of that spelling.
+            if descends(model, edge, *input, dec)? {
+                stopped.push(edge);
+                break;
+            }
+        }
+    }
     let (result, later) = strips_of(
-        model, rounded, second, radius, true, closure, step, &known, consumed, dec,
+        model, rounded, second, radius, true, &stopped, closure, step, &known, consumed, dec,
     )?;
     let corner = |origin: &Origin| -> Option<Origin> {
         let Role::Blend { edge } = &origin.role else {

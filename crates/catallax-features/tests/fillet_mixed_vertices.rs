@@ -1,7 +1,7 @@
 //! Convex fillets roll over the concave blends they meet at a mixed vertex.
 
 use catallax_boolean::{Containment, classify_point};
-use catallax_features::{BuildError, evaluate};
+use catallax_features::evaluate;
 use catallax_numbers::{BudgetPolicy, Decider, Outcome, Rational};
 use catallax_recipe::{Recipe, Role};
 use catallax_shapes::{RPoint3, Surface};
@@ -92,23 +92,152 @@ fn every_edge_of_the_l_rounds_with_a_torus_at_each_mixed_vertex() {
     assert_eq!(corners.len(), 12);
 }
 
-#[test]
-fn a_mixed_vertex_with_an_unselected_edge_keeps_its_refusal() {
+fn partial_input() -> Value {
     let mut value = input();
     let between = |a: Value, b: Value| json!({"between": [a, b]});
     let end = json!({"step": "base", "role": "end"});
     let side = json!({"step": "wall", "role": {"side": {"segment": "y_max"}}});
     let x_min = json!({"step": "base", "role": {"side": {"segment": "x_min"}}});
     value["steps"][3]["edges"] = json!([between(end.clone(), side), between(end, x_min)]);
+    value
+}
+
+#[test]
+fn a_mixed_vertex_with_an_unselected_edge_keeps_that_edge_sharp() {
+    let value = partial_input();
     let recipe = Recipe::parse(&value.to_string()).unwrap();
-    let error = evaluate(&recipe, &mut decider()).unwrap_err();
-    let BuildError::Geometry { refusal, .. } = error else {
-        panic!("expected a construction refusal, got {error:?}");
-    };
+    let mut built = evaluate(&recipe, &mut decider()).unwrap();
+    assert!(built.model.check(built.result).is_empty());
+    let sharp = catallax_recipe::EdgeName::new(
+        serde_json::from_value(json!({"step":"base","role":{"side":{"segment":"x_min"}}})).unwrap(),
+        serde_json::from_value(json!({"step":"wall","role":{"side":{"segment":"y_max"}}})).unwrap(),
+    )
+    .unwrap();
     assert!(
-        refusal.code.starts_with("fillet.unsupported"),
-        "{refusal:?}"
+        built
+            .model
+            .edges_of_body(built.result)
+            .iter()
+            .any(|edge| built.model.edge_name(built.result, *edge).as_ref() == Some(&sharp))
     );
+    assert_eq!(built.model.faces_of_body(built.result).len(), 11);
+    let tori: Vec<_> = built
+        .model
+        .faces_of_body(built.result)
+        .into_iter()
+        .filter(|face| {
+            matches!(
+                built.model.geom().surface(built.model.face(*face).surface),
+                Surface::Torus(_)
+            )
+        })
+        .collect();
+    assert_eq!(tori.len(), 1);
+    assert!(built.model.face_origins(tori[0]).iter().all(
+        |origin| origin.step.as_str() == "round" && matches!(origin.role, Role::Corner { .. })
+    ));
+    for (coordinates, expected) in [
+        (["1/20", "99/20", "9"], Some(Containment::Inside)),
+        (["0", "5", "9"], None),
+        (["1/100", "24/5", "24/5"], Some(Containment::Outside)),
+        (["10", "26/5", "26/5"], Some(Containment::Inside)),
+    ] {
+        let [x, y, z] = coordinates.map(|n| Rational::parse(n).unwrap());
+        let actual = classify_point(
+            &mut built.model,
+            built.result,
+            &RPoint3::new(x, y, z),
+            &mut decider(),
+        );
+        assert!(
+            match (&actual, expected) {
+                (Outcome::Proven(found), Some(expected)) => *found == expected,
+                (Outcome::ProvenCoincident(_), None) => true,
+                _ => false,
+            },
+            "at {coordinates:?}: {actual:?}"
+        );
+    }
+}
+
+#[test]
+fn the_partial_mixed_corner_is_independent_of_rational_placement() {
+    use catallax_shapes::{Pose, RVector3, Rotation};
+    let mut value = partial_input();
+    let rotation = Rotation::from_quaternion(1.into(), 2.into(), 3.into(), 4.into()).unwrap();
+    let translation = RVector3::new(
+        Rational::parse("7/3").unwrap(),
+        Rational::parse("-11/7").unwrap(),
+        Rational::parse("13/5").unwrap(),
+    );
+    let pose = Pose::from_rational(rotation, translation);
+    for i in [0, 1] {
+        value["steps"][i]["pose"] =
+            json!({"rotation":["1","2","3","4"],"translation":["7/3","-11/7","13/5"]});
+    }
+    let recipe = Recipe::parse(&value.to_string()).unwrap();
+    let mut built = evaluate(&recipe, &mut decider()).unwrap();
+    assert!(built.model.check(built.result).is_empty());
+    assert_eq!(built.model.faces_of_body(built.result).len(), 11);
+    for (xyz, expected) in [
+        (["1/20", "99/20", "9"], Containment::Inside),
+        (["1/100", "24/5", "24/5"], Containment::Outside),
+    ] {
+        let [x, y, z] = xyz.map(|n| Rational::parse(n).unwrap());
+        let world = pose.apply_rational_point(&RPoint3::new(x, y, z)).unwrap();
+        let actual = classify_point(&mut built.model, built.result, &world, &mut decider());
+        assert!(
+            matches!(actual,Outcome::Proven(found) if found==expected),
+            "{xyz:?}: {actual:?}"
+        );
+    }
+}
+
+#[test]
+fn radius_edits_keep_origins_and_incremental_raw_step_for_partial_and_all_selected() {
+    fn names(built: &catallax_features::Built) -> Vec<String> {
+        let mut names: Vec<_> = built
+            .model
+            .faces_of_body(built.result)
+            .into_iter()
+            .map(|face| serde_json::to_string(built.model.face_origins(face)).unwrap())
+            .collect();
+        names.sort();
+        names
+    }
+    fn step(built: &catallax_features::Built) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        catallax_step::write_step(
+            &built.model,
+            &[built.result],
+            &Default::default(),
+            &mut decider(),
+            &mut bytes,
+        )
+        .unwrap();
+        catallax_step::check_seams(&bytes).unwrap();
+        bytes
+    }
+    for mut value in [partial_input(), input()] {
+        let recipe = Recipe::parse(&value.to_string()).unwrap();
+        let checkpoint =
+            catallax_features::evaluate_incremental(&recipe, None, &mut decider()).unwrap();
+        let origins = names(checkpoint.built());
+        let before = step(checkpoint.built());
+        value["steps"][3]["radius"] = json!("3/4");
+        let recipe = Recipe::parse(&value.to_string()).unwrap();
+        let fresh = evaluate(&recipe, &mut decider()).unwrap();
+        let edited =
+            catallax_features::evaluate_incremental(&recipe, Some(checkpoint), &mut decider())
+                .unwrap();
+        assert!(fresh.model.check(fresh.result).is_empty());
+        assert!(edited.built().model.check(edited.built().result).is_empty());
+        assert_eq!(origins, names(&fresh));
+        assert_eq!(origins, names(edited.built()));
+        let after = step(edited.built());
+        assert_ne!(before, after, "the radius edit must change geometry");
+        assert_eq!(after, step(&fresh), "incremental and fresh raw STEP");
+    }
 }
 
 #[test]

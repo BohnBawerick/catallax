@@ -139,3 +139,77 @@ fn source_vertex_displacement_above_tolerance_is_refused() {
         );
     }
 }
+
+#[test]
+fn tiny_tilted_carriers_keep_existing_flat_pcurves() {
+    for oblique in [false, true] {
+        for phase in 0..4 {
+            for (noise, tilt) in ["-1e-14", "-1e-16", "1e-16", "1e-14"].iter().enumerate() {
+                let mut definition = chart(phase);
+                for edge in &mut definition.edges {
+                    if let Curve::Circle(circle) = &mut edge.curve {
+                        circle.normal = RVector3::new(q("0"), q(tilt), q("1")).to_real();
+                    }
+                }
+                let face = definition.faces.last_mut().unwrap();
+                let Surface::Cylinder(cylinder) = &mut face.surface else {
+                    unreachable!()
+                };
+                let offset = q("37.3578654636477");
+                cylinder.axis = RVector3::new(q("0"), q("0"), q("-1")).to_real();
+                cylinder.origin.z = Real::from(-&offset);
+                for uv in face
+                    .loops
+                    .iter_mut()
+                    .flatten()
+                    .flat_map(|trim| &mut trim.uv)
+                {
+                    uv[0] = -&uv[0];
+                    uv[1] = -(&uv[1] + &offset);
+                }
+                if oblique {
+                    definition = rotated(definition);
+                }
+                let body = n::build(
+                    definition,
+                    n::NumericalOptions::default(),
+                    &mut Decider::default(),
+                )
+                .unwrap();
+                let file = output::build(
+                    &body,
+                    &NumericalStepOptions::default(),
+                    &mut Decider::default(),
+                )
+                .unwrap();
+                file.check_written(file.bytes(), &mut Decider::default())
+                    .unwrap();
+                assert_eq!(file.report().counts, [5, 9, 6]);
+                if let Ok(path) = std::env::var("CATALLAX_ANALYTIC_EVIDENCE") {
+                    let name = format!("tilted-oblique-{oblique}-phase-{phase}-noise-{noise}.step");
+                    std::fs::write(std::path::Path::new(&path).join(name), file.bytes()).unwrap();
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn circle_tilt_above_source_tolerance_is_refused() {
+    for tilt in ["-0.02", "0.02"] {
+        let mut definition = chart(1);
+        for edge in &mut definition.edges {
+            if let Curve::Circle(circle) = &mut edge.curve {
+                circle.normal = RVector3::new(q("0"), q(tilt), q("1")).to_real();
+            }
+        }
+        assert!(
+            n::build(
+                definition,
+                n::NumericalOptions::default(),
+                &mut Decider::default(),
+            )
+            .is_err()
+        );
+    }
+}

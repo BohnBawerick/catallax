@@ -45,7 +45,7 @@ pub struct Intersector<'a> {
     pub angle_tolerance: f64,
     /// `m_dThisApproxTol3d`.
     pub approx_tolerance: f64,
-    /// Refresh endpoint derivatives and check final-span merges before fitting.
+    /// Use interior-side endpoint derivatives and check final-span merges.
     /// The default preserves SMLib's unproved candidate output.
     pub check_output_spans: bool,
     /// `m_dSteppingParallelTolRadians`.

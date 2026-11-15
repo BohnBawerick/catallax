@@ -83,6 +83,32 @@ fn flat(uv: Vector2) -> Vector3 {
     Vector3::new(uv.x, uv.y, 0.0)
 }
 
+fn output_span(
+    intersector: &Intersector<'_>,
+    first: &TsectPoint,
+    last: &TsectPoint,
+) -> Result<[TsectPoint; 2], SolverRefusal> {
+    let mut points = [*first, *last];
+    if intersector.check_output_spans {
+        for endpoint in 0..2 {
+            for s in 0..2 {
+                let at = points[endpoint].uv[s];
+                let toward = points[1 - endpoint].uv[s];
+                let domain = intersector.domains[s];
+                let side = |a: f64, b: f64, upper: f64| b > a || (b == a && a < upper);
+                let sides = [
+                    side(at.x, toward.x, domain.max.x),
+                    side(at.y, toward.y, domain.max.y),
+                ];
+                let [_, du, dv] = first_derivatives(intersector.surfaces[s], at, sides)?;
+                points[endpoint].uv_deriv[s] =
+                    crate::curve_surface::drop_vector(du, dv, points[endpoint].curve_tangent)?;
+            }
+        }
+    }
+    Ok(points)
+}
+
 impl IntersectionCurve {
     /// A touching curve: degenerate curves at `point` and at the
     /// parameters `uv` on each surface.
@@ -258,23 +284,7 @@ impl Tracer {
         intersector: &Intersector<'_>,
         curves: &mut Vec<IntersectionCurve>,
     ) -> Result<(), SolverRefusal> {
-        let mut points = std::mem::take(&mut self.curve_points);
-        if intersector.check_output_spans {
-            for point in &mut points {
-                if point.kind != PointKind::Crossing {
-                    continue;
-                }
-                let previous = *point;
-                intersector.compute_point_values(previous.uv, point, None, None, None, 1.)?;
-                if point.kind != previous.kind {
-                    return Err(Fault::Degenerate.into());
-                }
-                if point.curve_tangent.dot(previous.curve_tangent) < 0. {
-                    point.curve_tangent = -point.curve_tangent;
-                    point.uv_deriv = [-point.uv_deriv[0], -point.uv_deriv[1]];
-                }
-            }
-        }
+        let points = std::mem::take(&mut self.curve_points);
         let tolerance = intersector.approx_tolerance;
         let Some(first) = points.first() else {
             return Ok(());
@@ -318,8 +328,8 @@ impl Tracer {
                 let final_delta = last.curve_parameter - current.curve_parameter;
                 if final_delta / delta < 0.1 {
                     let merge = if intersector.check_output_spans {
-                        let mut checked = *last;
-                        intersector.test_span_accuracy(previous, &mut checked)?.0
+                        let [start, mut checked] = output_span(intersector, previous, last)?;
+                        intersector.test_span_accuracy(&start, &mut checked)?.0
                     } else {
                         true
                     };
@@ -329,6 +339,7 @@ impl Tracer {
                     }
                 }
             }
+            let [previous, current] = output_span(intersector, previous, current)?;
             if current.tangent_plane_angle > angle {
                 angle = current.tangent_plane_angle;
             }

@@ -60,7 +60,8 @@ seven N03 tests. Positive UV-roundoff and negative actual plane/endpoint gaps ar
 separate controls; coarse decimal geometry must pass its own fixed-tolerance
 checks. The work-PC Linux format gate, all 270 import tests and all 135 release
 STEP tests pass, with eight pre-existing ignored STEP tests. CI-selected
-import/STEP reverse-consumer all-target Clippy passes before publication.
+all-target Clippy passes for all eighteen crates selected by the writer and its
+new reference checker, including the reverse consumers and numeric dependencies.
 
 Before implementing the extension, inspected OCCT's
 [`GeomToStep_MakeVector`](https://raw.githubusercontent.com/Open-Cascade-SAS/OCCT/V7_9_2/src/GeomToStep/GeomToStep_MakeVector.cxx),

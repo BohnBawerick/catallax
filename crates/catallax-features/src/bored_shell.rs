@@ -14,6 +14,9 @@ use crate::{
 
 use super::bad;
 
+#[path = "bored_shell/prismatic.rs"]
+mod prismatic;
+
 fn domain(error: Refusal) -> Refusal {
     if error.code.starts_with("draft.") {
         error.with_code("distance.unsupported-envelope")
@@ -66,11 +69,24 @@ pub(super) fn shell(
     dec: &mut Decider,
 ) -> Result<Option<BodyId>, Refusal> {
     let faces = model.faces_of_body(body);
-    let Some((skin, mut bores)) =
+    let inventory = catallax_numbers::OperationSpan::begin(
+        "brep",
+        &format!("{step}.opening-inventory"),
+        "distance.shell.opening-inventory",
+        dec,
+    );
+    let Some(source) =
         crate::draft_build::bored_distance_skin(model, &faces, dec).map_err(domain)?
     else {
+        inventory.finish(dec, None, None);
         return Ok(None);
     };
+    inventory.finish(dec, None, None);
+    let crate::draft_build::BoredDistanceSource {
+        skin,
+        mut bores,
+        openings,
+    } = source;
     // The filled skin omits cap holes. It cannot answer a nearest-face tie or
     // adjacency to their circular rims, so do not resolve those on filled trims.
     for reference in open {
@@ -143,30 +159,119 @@ pub(super) fn shell(
     // Touching envelopes require a different arrangement, not clipped radii.
     let caps =
         certify_bores(cavity.faces.iter().map(|f| &f.plane), &cylinders, dec).map_err(domain)?;
-    let mut hollow = cavity.build(model);
-    for bore in bores {
-        let mut ends = caps.map(|i| axis_point(&bore.cylinder, &cavity.faces[i].plane));
-        if sign(&ends[1].minus(&ends[0]).dot(&bore.cylinder.axis), dec)? == Sign::Negative {
-            ends.swap(0, 1);
-        }
-        let tool = super::cylinder(
-            model,
-            &CylinderSkin {
-                cylinder: bore.cylinder,
-                ends,
-                origins: [Vec::new(), Vec::new(), bore.origins],
-            },
+    let direct = if openings.is_empty() {
+        None
+    } else {
+        let span = catallax_numbers::OperationSpan::begin(
+            "brep",
+            &format!("{step}.prismatic-cavity"),
+            "distance.shell.prismatic-cavity",
+            dec,
         );
-        hollow =
-            catallax_boolean::boolean(model, hollow, tool, catallax_boolean::BoolOp::Subtract, dec)
-                .map_err(|e| e.refusal)?
-                .body;
-    }
-    Ok(Some(
+        let marks = model.body(body).marks.clone();
+        let result = prismatic::build(
+            model,
+            &cavity,
+            prismatic::Holes {
+                bores: &bores,
+                polygons: &openings,
+                caps,
+                marks,
+            },
+            thickness,
+            step,
+            dec,
+        )?;
+        span.finish(dec, None, None);
+        result
+    };
+    let hollow = if let Some(hollow) = direct {
+        hollow
+    } else {
+        let mut hollow = cavity.build(model);
+        for bore in bores {
+            let mut ends = caps.map(|i| axis_point(&bore.cylinder, &cavity.faces[i].plane));
+            if sign(&ends[1].minus(&ends[0]).dot(&bore.cylinder.axis), dec)? == Sign::Negative {
+                ends.swap(0, 1);
+            }
+            let tool = super::cylinder(
+                model,
+                &CylinderSkin {
+                    cylinder: bore.cylinder,
+                    ends,
+                    origins: [Vec::new(), Vec::new(), bore.origins],
+                },
+            );
+            hollow = catallax_boolean::boolean(
+                model,
+                hollow,
+                tool,
+                catallax_boolean::BoolOp::Subtract,
+                dec,
+            )
+            .map_err(|e| e.refusal)?
+            .body;
+        }
+        // Within the original cap interval, distance to a prismatic void equals
+        // transverse distance to its side walls. Its closed convex offset supplies
+        // planar strips and circular corner sectors. Rounded end patches lie beyond
+        // that interval and cannot replace a physical opening rim.
+        for (i, opening) in openings.into_iter().enumerate() {
+            let offset = catallax_numbers::OperationSpan::begin(
+                "brep",
+                &format!("{step}.opening-offset.{i}"),
+                "distance.shell.opening-offset",
+                dec,
+            );
+            let tool = crate::rounded_polyhedron::build(
+                model,
+                &opening,
+                thickness,
+                step,
+                model.body(body).marks.clone(),
+                dec,
+            )?;
+            offset.finish(dec, None, None);
+            model.map_face_origins(tool, |origin| match origin.role {
+                Role::Round { .. } | Role::RoundCorner { .. } => origin.clone(),
+                _ => Origin {
+                    step: step.clone(),
+                    role: Role::Inner {
+                        of: Box::new(origin.clone()),
+                    },
+                },
+            });
+            let cut = catallax_numbers::OperationSpan::begin(
+                "brep",
+                &format!("{step}.opening-cavity.{i}"),
+                "distance.shell.opening-cavity",
+                dec,
+            );
+            hollow = catallax_boolean::boolean(
+                model,
+                hollow,
+                tool,
+                catallax_boolean::BoolOp::Subtract,
+                dec,
+            )
+            .map_err(|error| error.refusal)?
+            .body;
+            cut.finish(dec, None, None);
+        }
+        hollow
+    };
+    let cut = catallax_numbers::OperationSpan::begin(
+        "brep",
+        &format!("{step}.material"),
+        "distance.shell.material",
+        dec,
+    );
+    let result =
         catallax_boolean::boolean(model, body, hollow, catallax_boolean::BoolOp::Subtract, dec)
             .map_err(|e| e.refusal)?
-            .body,
-    ))
+            .body;
+    cut.finish(dec, None, None);
+    Ok(Some(result))
 }
 
 #[cfg(test)]

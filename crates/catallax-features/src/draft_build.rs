@@ -22,6 +22,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 #[path = "draft_build_oblique.rs"]
 mod oblique_build;
+#[path = "draft_build_openings.rs"]
+mod openings;
+
+use crate::polyhedron::ConvexCell;
 
 /// Removed face history, separate from selectable surviving origins.
 #[derive(Clone, Debug)]
@@ -65,6 +69,7 @@ struct BoredSource {
     skin: Skin,
     planes: Vec<FaceId>,
     bores: Vec<SourceBore>,
+    openings: Vec<openings::Opening>,
 }
 
 /// A preserved cone's sense, the cap holding its mouth ring, and its shared ring.
@@ -98,7 +103,7 @@ struct BossedSource {
 
 enum Cell {
     Annular(Box<AnnularCell>),
-    Bored(Box<BoredCell>, Vec<BoundBore>),
+    Bored(Box<BoredCell>, Vec<BoundBore>, Vec<openings::Opening>),
     Bossed(Box<BossedCell>, Box<[BoreRing; 2]>, Vec<BoundBore>),
     Planar(PlanarCell),
     Round(Box<RoundCell>),
@@ -112,7 +117,17 @@ impl Cell {
     fn contains_interior(&self, point: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
         match self {
             Self::Annular(cell) => cell.contains_interior(point, dec),
-            Self::Bored(cell, ..) => cell.contains_interior(point, dec),
+            Self::Bored(cell, _, openings) => {
+                if !cell.contains_interior(point, dec)? {
+                    return Ok(false);
+                }
+                for opening in openings {
+                    if !self::openings::outside(&opening.cell, point, dec)? {
+                        return Ok(false);
+                    }
+                }
+                Ok(true)
+            }
             Self::Bossed(cell, ..) => cell.contains_interior(point, dec),
             Self::Planar(cell) => cell.contains_interior(point, dec),
             Self::Round(cell) => cell.contains_interior(point, dec),
@@ -170,7 +185,7 @@ impl Cell {
                 )
                 .cloned()
                 .collect(),
-            Self::Bored(cell, ..) => Self::Planar(cell.outer.clone())
+            Self::Bored(cell, _, openings) => Self::Planar(cell.outer.clone())
                 .origins()
                 .into_iter()
                 .chain(
@@ -182,6 +197,12 @@ impl Cell {
                     cell.head
                         .iter()
                         .flat_map(|(head, _)| head.origins.iter().cloned()),
+                )
+                .chain(
+                    openings
+                        .iter()
+                        .flat_map(|opening| &opening.cell.faces)
+                        .flat_map(|face| face.origins.iter().cloned()),
                 )
                 .collect(),
             Self::Bossed(cell, ..) => Self::Planar(cell.outer.clone())
@@ -275,7 +296,7 @@ impl Cell {
     fn assemble(&self, model: &mut Model, dec: &mut Decider) -> Result<BodyId, Refusal> {
         Ok(match self {
             Self::Annular(cell) => assemble_annular(model, cell),
-            Self::Bored(cell, bores) => assemble_bored(model, cell, bores),
+            Self::Bored(cell, bores, openings) => assemble_bored(model, cell, bores, openings),
             Self::Bossed(cell, rings, bores) => assemble_bossed(model, cell, rings, bores),
             Self::Planar(cell) => assemble(model, cell, &[], Vec::new()),
             Self::Round(cell) => assemble_round(model, cell),
@@ -980,7 +1001,11 @@ fn countersunk_rings(
 /// Recognises planar faces around inward walls, each trimmed by two complete
 /// rings, or around one wall opened by one inward cone through a shared ring. Any
 /// other shape returns `None`, keeping its established route.
-fn bored_source(model: &Model, faces: &[FaceId]) -> Result<Option<BoredSource>, Refusal> {
+fn bored_source(
+    model: &Model,
+    faces: &[FaceId],
+    dec: &mut Decider,
+) -> Result<Option<BoredSource>, Refusal> {
     let unsupported = || {
         Refusal::new(
             "draft.unsupported-arrangement",
@@ -1027,30 +1052,59 @@ fn bored_source(model: &Model, faces: &[FaceId]) -> Result<Option<BoredSource>, 
             head,
         });
     }
-    // A blind floor or a shoulder has only rings. Every bore needs the same two
-    // separate caps, each holding one outer wire and exactly these rings.
+    // Every bore shares the same two caps. Additional polygonal cap holes must
+    // match complete prismatic voids before their walls leave the outer skin.
     if caps.len() != 2
         || caps
             .iter()
-            .any(|cap| model.face(*cap).loops.len() != bores.len() + 1)
+            .any(|cap| model.face(*cap).loops.len() < bores.len() + 1)
     {
         return Err(unsupported());
+    }
+    let mut openings = Vec::new();
+    if caps
+        .iter()
+        .any(|cap| model.face(*cap).loops.len() > bores.len() + 1)
+    {
+        if !cones.is_empty() {
+            return Err(unsupported());
+        }
+        let Surface::Cylinder(cylinder) = model.geom().surface(model.face(bores[0].wall).surface)
+        else {
+            unreachable!("bore walls are cylinders")
+        };
+        let caps: Vec<_> = caps.into_iter().collect();
+        (planes, openings) = openings::extract(
+            model,
+            &planes,
+            [caps[0], caps[1]],
+            &mut holes,
+            &cylinder.axis,
+            dec,
+        )?;
     }
     let skin = planar_skin(model, &planes, &holes)?;
     Ok(Some(BoredSource {
         skin,
         planes,
         bores,
+        openings,
     }))
 }
 
 /// Reuses the physical through-bore inventory for distance construction. The
 /// filled planar skin is convex; every bore is finite, internal and separated.
+pub(crate) struct BoredDistanceSource {
+    pub skin: Skin,
+    pub bores: Vec<Bore>,
+    pub openings: Vec<ConvexCell>,
+}
+
 pub(crate) fn bored_distance_skin(
     model: &Model,
     faces: &[FaceId],
     dec: &mut Decider,
-) -> Result<Option<(Skin, Vec<Bore>)>, Refusal> {
+) -> Result<Option<BoredDistanceSource>, Refusal> {
     if !faces.iter().any(|face| {
         model.face(*face).sense == Sense::Reversed
             && matches!(
@@ -1060,7 +1114,7 @@ pub(crate) fn bored_distance_skin(
     }) {
         return Ok(None);
     }
-    let Some(source) = bored_source(model, faces)? else {
+    let Some(source) = bored_source(model, faces, dec)? else {
         return Ok(None);
     };
     if source.bores.iter().any(|bore| bore.head.is_some()) {
@@ -1079,7 +1133,15 @@ pub(crate) fn bored_distance_skin(
         &cylinders,
         dec,
     )?;
-    Ok(Some((source.skin, bores)))
+    Ok(Some(BoredDistanceSource {
+        skin: source.skin,
+        bores,
+        openings: source
+            .openings
+            .into_iter()
+            .map(|opening| opening.cell)
+            .collect(),
+    }))
 }
 
 /// Recognises planar faces around one outward wall that rises from a hole in one
@@ -1302,8 +1364,20 @@ fn bored_cell(
         }
         None => BoredCell::new(outer, bores, definition, dec)?,
     };
+    openings::certify(
+        cell.outer
+            .supports
+            .iter()
+            .map(|support| support.plane.clone()),
+        &cell.bores[0].cylinder.axis,
+        &source.openings,
+        dec,
+    )?;
     let bound = bind_bores(model, &source.bores, &cell, None)?;
-    Ok((chosen, Cell::Bored(Box::new(cell), bound)))
+    Ok((
+        chosen,
+        Cell::Bored(Box::new(cell), bound, source.openings.clone()),
+    ))
 }
 
 /// The planar base under an unchanged boss and with any unchanged bore, proved
@@ -1489,9 +1563,17 @@ fn assemble_bossed(
     assemble(model, &cell.outer, &holes, walls)
 }
 
-fn assemble_bored(model: &mut Model, cell: &BoredCell, bound: &[BoundBore]) -> BodyId {
+fn assemble_bored(
+    model: &mut Model,
+    cell: &BoredCell,
+    bound: &[BoundBore],
+    openings: &[openings::Opening],
+) -> BodyId {
     let head = cell.head.as_ref().map(|(head, _)| head);
-    let (holes, walls) = bore_faces(model, &cell.bores, head, bound);
+    let (mut holes, mut walls) = bore_faces(model, &cell.bores, head, bound);
+    for opening in openings {
+        openings::append(model, opening, &bound[0], &mut holes, &mut walls);
+    }
     assemble(model, &cell.outer, &holes, walls)
 }
 
@@ -1702,7 +1784,7 @@ pub(crate) fn build(
         let selected = skin.resolve_faces(refs, dec)?;
         let chosen = selected.iter().map(|i| source_faces[*i]).collect();
         (chosen, planar(&skin, &selected, definition, dec)?)
-    } else if let Some(source) = bored_source(model, &source_faces)? {
+    } else if let Some(source) = bored_source(model, &source_faces, dec)? {
         let (chosen, cell) = bored_cell(model, &source, refs, definition, dec)?;
         (chosen, vec![cell])
     } else if let Some(source) = bossed_source(model, &source_faces)? {
@@ -1799,6 +1881,7 @@ pub(crate) fn build(
         radius = radius.max(cell.radius(dec)?);
         let component = cell.assemble(model, dec)?;
         result.lumps.extend_from_slice(&model.body(component).lumps);
+        result.marks.extend(&model.body(component).marks);
     }
     for face in source_faces {
         let source = model.face_origins(face);

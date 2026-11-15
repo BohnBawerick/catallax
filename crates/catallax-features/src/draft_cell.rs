@@ -31,6 +31,39 @@ fn value(plane: &Plane, point: &Point3) -> Real {
     point.minus(&plane.origin).dot(&plane.normal)
 }
 
+// An axial incident plane fixes one coordinate directly. Retaining that value
+// avoids carrying cancelling determinants into STEP directions and zero tests.
+fn axial_coordinates(point: Point3, planes: [&Plane; 3]) -> Point3 {
+    let mut coordinates = [point.x, point.y, point.z];
+    let mut fixed = [false; 3];
+    let zero = |value: &Real| value.rational_ref().is_some_and(|q| q.is_zero());
+    for plane in planes {
+        let normal = [&plane.normal.x, &plane.normal.y, &plane.normal.z];
+        let active: Vec<_> = (0..3).filter(|i| !zero(normal[*i])).collect();
+        if let [i] = active.as_slice() {
+            coordinates[*i] = [&plane.origin.x, &plane.origin.y, &plane.origin.z][*i].clone();
+            fixed[*i] = true;
+        }
+    }
+    let unknown: Vec<_> = (0..3).filter(|i| !fixed[*i]).collect();
+    if let [i] = unknown.as_slice() {
+        for plane in planes {
+            let normal = [&plane.normal.x, &plane.normal.y, &plane.normal.z];
+            if zero(normal[*i]) {
+                continue;
+            }
+            let origin = [&plane.origin.x, &plane.origin.y, &plane.origin.z];
+            let offset = (0..3).filter(|j| j != i).fold(Real::zero(), |sum, j| {
+                sum + &(&coordinates[j] - origin[j]) * normal[j]
+            });
+            coordinates[*i] = origin[*i] - &(&offset / normal[*i]);
+            break;
+        }
+    }
+    let [x, y, z] = coordinates;
+    Point3::new(x, y, z)
+}
+
 /// Orders a convex face from its first vertex, counterclockwise about the
 /// outward normal. Each boundary edge lies on one other support, so the order
 /// needs no exact zero proofs. `None` when the supports do not determine it.
@@ -139,7 +172,7 @@ impl PlanarCell {
                         .plus(&c.normal.cross(&a.normal).scaled(&offset(b)))
                         .plus(&a.normal.cross(&b.normal).scaled(&offset(c)))
                         .scaled(&(&Real::one() / &determinant));
-                    let point = Point3::origin().plus(&vector);
+                    let point = axial_coordinates(Point3::origin().plus(&vector), [a, b, c]);
                     let mut inside = true;
                     for (index, support) in supports.iter().enumerate() {
                         if index != i

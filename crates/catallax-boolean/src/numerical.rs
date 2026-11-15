@@ -1,8 +1,284 @@
-//! Numerical sources for open face consumers, separate from exact incidence.
+//! Open numerical face partitions, separate from exact Boolean incidence.
 
-use catallax_numbers::{Decider, NumericalCheck, NumericalEvidence, Rational, Refusal};
-use catallax_shapes::{BSplineSurface, Cylinder, RationalPatch, SplineSupport, Surface};
-use catallax_topology::numerical::NumericalOptions;
+use catallax_intersect::{NumericalNativeIntersection, NumericalNativeWork};
+use catallax_numbers::{
+    Ball, Decider, NumericalCheck, NumericalEvidence, NumericalSample, Rational, Real, Refusal,
+    Sign,
+};
+use catallax_shapes::{
+    BSplineCurve, BSplineSurface, Circle, Cone, Curve, Cylinder, Point3, RationalPatch,
+    SplineSupport, Surface, Vector3,
+};
+use catallax_topology::{
+    CoedgeId, EdgeId, FaceId, LoopId, Model, Sense,
+    numerical::{NumericalDefinition, NumericalNativeTrim, NumericalOptions},
+};
+
+mod band;
+mod events;
+mod material;
+mod partition;
+#[cfg(test)]
+mod tests;
+
+const BITS: u32 = 128;
+
+/// One original complete circular ring and its use on the input cone face.
+#[derive(Clone, Debug)]
+pub struct NumericalConeRing {
+    /// Original input loop, coedge and edge identities.
+    pub original_loop: LoopId,
+    /// Original edge-use identity.
+    pub coedge: CoedgeId,
+    /// Original edge identity, for sharing with adjacent cap/wall assembly.
+    pub edge: EdgeId,
+    /// Original traversal relative to its circle carrier.
+    pub sense: Sense,
+    /// Original edge direction relative to the circle carrier.
+    pub edge_sense: Sense,
+    /// Original analytic definition, including its parameter-origin direction.
+    pub circle: Circle,
+    /// Height used by the retained finite cone source.
+    pub height_mm: Rational,
+    /// Enclosure of the original circle centre's axial height.
+    pub original_height_mm: [Rational; 2],
+}
+
+/// A retained ring segment linked to the original analytic boundary.
+#[derive(Clone, Debug)]
+pub struct NumericalRingLink {
+    /// Local edge index in the open definition.
+    pub edge: usize,
+    /// Index in the partition's original ring table.
+    pub ring: usize,
+    /// The retained cone source's native angular coordinates in edge order.
+    pub source_u: [Rational; 2],
+    /// Original circle angles in radians, enclosed separately at both ends.
+    /// These are unwrapped in the source traversal, so a periodic seam stays explicit.
+    pub original_parameters_rad: [[Rational; 2]; 2],
+}
+
+/// One occurrence of a finite meeting, with its original native addresses.
+#[derive(Clone, Debug)]
+pub struct NumericalFiniteHit {
+    /// Index of the retained intersection piece.
+    pub piece: usize,
+    /// Original native parameter of that piece.
+    pub parameter: Rational,
+    /// Retained cone and cylinder coordinates at that parameter.
+    pub uv: [[Rational; 2]; 2],
+    /// Requested rectangles for the producing search, in cone/cylinder order.
+    pub requested_domains: [[[Rational; 2]; 2]; 2],
+}
+
+/// One physical finite event, including all duplicate quarter reports.
+#[derive(Clone, Debug)]
+pub struct NumericalFiniteEvent {
+    /// Stable identity within this input face, derived from boundary ownership.
+    pub key: String,
+    /// Local vertex to share during assembly, if the event enters a retained loop.
+    pub vertex: Option<usize>,
+    /// True for a point contact with no nonconstant fitted incident arc.
+    pub point_only: bool,
+    /// Every reported native address, without replacing the retained definitions.
+    pub hits: Vec<NumericalFiniteHit>,
+}
+
+/// A retained tool-side UV definition for the caller's cylinder wall assembly.
+#[derive(Clone, Debug)]
+pub struct NumericalCylinderTrim {
+    /// Retained intersection piece and local shared 3D edge.
+    pub piece: usize,
+    /// Index in the partition's edge table.
+    pub edge: usize,
+    /// Canonical cylinder quarter ID, independent of the cone face key.
+    pub quarter: usize,
+    /// The unchanged native UV definition, before a final wall-use address exists.
+    pub curve: BSplineCurve,
+}
+
+/// Work measured by this call, excluding the caller's recipe prefix.
+#[derive(Clone, Copy, Debug)]
+pub struct NumericalFaceWork {
+    /// Reading and checking original rings and rounding finite heights.
+    pub boundaries: u64,
+    /// Source construction, tracing and independent retained-fit checks.
+    pub intersection: NumericalNativeWork,
+    /// Admission of the retained cone and cylinder quarter patches.
+    pub charts: u64,
+    /// Finite ownership, explicit endpoint joins and kept loop construction.
+    pub topology: u64,
+}
+
+/// An open face partition. The caller must assemble and admit the complete shell.
+/// All geometry and checks remain numerical; this grants no exact incidence or
+/// STEP authority. Original sources, unused contacts and actual checks remain
+/// available alongside the open topology for save/replay and final reporting.
+#[derive(Clone, Debug)]
+pub struct NumericalFacePartition {
+    /// Vertices, edges and retained cone regions with the input face sense.
+    pub definition: NumericalDefinition,
+    /// Native UV curves bound to stable cone face/loop/use addresses.
+    pub native_trims: Vec<NumericalNativeTrim>,
+    /// Every original 3D/UV fit, source definition and independent producer check.
+    pub intersection: NumericalNativeIntersection,
+    /// Original ring ownership and native interval links for adjacent faces.
+    pub rings: Vec<NumericalConeRing>,
+    /// Every retained segment of an original ring.
+    pub ring_links: Vec<NumericalRingLink>,
+    /// Finite meetings, including duplicate seam contacts and explicit vertex ownership.
+    pub events: Vec<NumericalFiniteEvent>,
+    /// Canonical cylinder quarters for the caller's wall assembly.
+    pub cylinder_quarters: Vec<NumericalCylinderQuarter>,
+    /// Unbound tool-side UV templates, retaining their original native parameter.
+    pub cylinder_trims: Vec<NumericalCylinderTrim>,
+    /// Preset tolerance, actual sampled checks and explicit endpoint repairs.
+    pub evidence: NumericalEvidence,
+    /// Actual work per stage, under the caller's allowance and deadline.
+    pub work: NumericalFaceWork,
+}
+
+fn bad(detail: impl Into<String>) -> Refusal {
+    Refusal::new("boolean.numerical-cone-trim", detail)
+}
+fn q(value: i64) -> Rational {
+    Rational::from_i64(value)
+}
+fn interval(value: &Real, dec: &mut Decider) -> Result<Ball, Refusal> {
+    dec.enclose_budgeted_at(value, BITS)
+}
+fn unit(value: &Vector3, dec: &mut Decider) -> Result<Vector3, Refusal> {
+    let length = value.norm_squared().sqrt();
+    if interval(&length, dec)?.lo().sign() != Sign::Positive {
+        return Err(bad("a retained frame direction vanished"));
+    }
+    Ok(value.scaled(&(&Real::one() / &length)))
+}
+fn upper(value: &Ball) -> Rational {
+    value.lo().abs().max(value.hi().abs())
+}
+fn distance(a: &[Ball; 3], b: &[Ball; 3]) -> Result<Rational, Refusal> {
+    let d: [Ball; 3] = std::array::from_fn(|i| &a[i] - &b[i]);
+    Ok((d[0].square() + d[1].square() + d[2].square())
+        .sqrt()
+        .ok_or_else(|| bad("endpoint distance is unresolved"))?
+        .hi())
+}
+fn patch(source: &BSplineSurface, quarter: usize, dec: &mut Decider) -> Result<Surface, Refusal> {
+    let knots = source.knots();
+    let span = source
+        .span_indices()
+        .nth(quarter)
+        .ok_or_else(|| bad("missing retained quarter"))?;
+    let bounds =
+        std::array::from_fn(|axis| [&knots[axis][span[axis]], &knots[axis][span[axis] + 1]]);
+    let retained = source.bezier_patch(span, bounds, dec)?;
+    Ok(Surface::BSpline(SplineSupport::RationalPatch(
+        RationalPatch::new(retained, dec)?,
+    )))
+}
+
+/// Clips one complete circular cone band against a finite cylindrical tool.
+/// The tool interval is signed millimetres along its unit axis from its original
+/// origin. Reuse the same tool and interval for both cone faces. `None` means an
+/// unsupported input face family. A supported separated or point-only face
+/// returns `Some` with its retained region and actual numerical evidence.
+/// The result is open topology; final cap/wall assembly and admission are required.
+pub fn clip_cone_cylinder_face(
+    model: &Model,
+    cone_face: FaceId,
+    face_key: &str,
+    tool: &Cylinder,
+    tool_axis_parameters_mm: [Rational; 2],
+    options: NumericalOptions,
+    dec: &mut Decider,
+) -> Result<Option<NumericalFacePartition>, Refusal> {
+    let run = |dec: &mut Decider| {
+        build_face(
+            model,
+            cone_face,
+            face_key,
+            tool,
+            tool_axis_parameters_mm,
+            options,
+            dec,
+        )
+    };
+    if catallax_numbers::operation_budget_active() {
+        return run(dec);
+    }
+    let (result, work) = catallax_numbers::with_operation_budget(20_000_000, || run(dec));
+    if work.exhausted {
+        return Err(Refusal::new(
+            "numbers.operation-budget",
+            "finite numerical face partition exhausted its operation allowance",
+        ));
+    }
+    result
+}
+
+fn build_face(
+    model: &Model,
+    face: FaceId,
+    key: &str,
+    tool: &Cylinder,
+    tool_parameters: [Rational; 2],
+    options: NumericalOptions,
+    dec: &mut Decider,
+) -> Result<Option<NumericalFacePartition>, Refusal> {
+    let start = catallax_numbers::current_operation_work().used;
+    let Surface::Cone(cone) = model.geom().surface(model.face(face).surface) else {
+        return Ok(None);
+    };
+    if key.is_empty() || options.tolerance_mm.sign() != Sign::Positive {
+        return Err(bad("face key and positive preset tolerance are required"));
+    }
+    let Some((rings, mut checks)) = band::read(model, face, cone, &options.tolerance_mm, dec)?
+    else {
+        return Ok(None);
+    };
+    let heights = [rings[0].height_mm.clone(), rings[1].height_mm.clone()];
+    let before_intersection = catallax_numbers::current_operation_work().used;
+    let originals = [Surface::Cone(cone.clone()), Surface::Cylinder(tool.clone())];
+    let intersection = catallax_intersect::numerical_native_finite_intersection(
+        [&originals[0], &originals[1]],
+        heights,
+        tool_parameters.clone(),
+        dec,
+    )?
+    .expect("cone/cylinder family checked above");
+    checks.extend_from_slice(intersection.evidence().checks());
+    let before_charts = catallax_numbers::current_operation_work().used;
+    let cone_quarters = (0..4)
+        .map(|i| patch(&intersection.windows().sources()[0], i, dec))
+        .collect::<Result<Vec<_>, _>>()?;
+    let cylinder_quarters = (0..4)
+        .map(|i| {
+            Ok(NumericalCylinderQuarter {
+                id: i,
+                surface: patch(&intersection.windows().sources()[1], i, dec)?,
+                axis_parameters_mm: tool_parameters.clone(),
+            })
+        })
+        .collect::<Result<Vec<_>, Refusal>>()?;
+    let before_topology = catallax_numbers::current_operation_work().used;
+    let mut result = partition::Input {
+        key,
+        sense: model.face(face).sense,
+        tool,
+        intersection,
+        rings,
+        cone_quarters,
+        cylinder_quarters,
+        options,
+        checks,
+    }
+    .build(dec)?;
+    result.work.boundaries = before_intersection - start;
+    result.work.charts = before_topology - before_charts;
+    result.work.topology = catallax_numbers::current_operation_work().used - before_topology;
+    Ok(Some(result))
+}
 
 /// A canonical cylinder chart, independent of a cone face or assembly key.
 #[derive(Clone, Debug)]
@@ -208,7 +484,7 @@ fn build(
 }
 
 #[cfg(test)]
-mod tests {
+mod cylinder_tests {
     use super::*;
     use catallax_numbers::{Real, with_operation_budget};
     use catallax_shapes::{Cone, Point3, Vector3};

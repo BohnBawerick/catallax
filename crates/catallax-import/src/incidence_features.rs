@@ -282,7 +282,7 @@ pub(crate) fn feature_size2(face: &Face) -> Result<Rational, String> {
 }
 #[cfg(test)]
 #[path = "../tests/common/mod.rs"]
-mod common;
+pub(crate) mod common;
 
 #[cfg(test)]
 mod tests {

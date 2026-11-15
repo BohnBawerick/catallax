@@ -98,6 +98,40 @@ class QualificationTests(unittest.TestCase):
                 with self.assertRaisesRegex(q.EvidenceError, 'numerical category'):
                     q.validate_archive(archive, key, self.driver)
 
+    def test_numerical_archive_binds_step_tolerance_to_request(self):
+        problem = {'format': 'catallax-numerical-step/1', 'tolerance_mm': '1/10000000',
+                   'recipe': {'format': 'catallax-recipe/3', 'name': 'numerical block',
+                              'steps': [{'id': 'box', 'op': 'block', 'size': ['1', '2', '3'],
+                                         'pose': {'rotation': ['1', '0', '0', '0'],
+                                                  'translation': ['0', '0', '0']}}],
+                              'result': 'box'}}
+        source = self.work / 'numerical.json'
+        write(source, problem)
+        args = self.args_for(inputs=[str(source)])
+        self.assertTrue(q.qualify(args, self.driver)['equal'])
+        key = q.reuse_key(args, self.driver)
+        q.validate_archive(args.out, key, self.driver)
+        for index, value in enumerate(('1/100', '0', '-1', 'invalid', 0.0000001, None,
+                                       '2/20000000')):
+            with self.subTest(tolerance=value):
+                archive = Path(shutil.copytree(args.out, self.work / ('tolerance-' + str(index))))
+                def change_tolerance(directory, report):
+                    response = json.loads((directory / 'response.json').read_text())
+                    if value is None:
+                        response['manifest']['step'].pop('tolerance_mm')
+                    else:
+                        response['manifest']['step']['tolerance_mm'] = value
+                    write(directory / 'response.json', response)
+                    write(directory / 'manifest.json', response['manifest'])
+                for run in ('baseline1', 'baseline2', 'baseline4',
+                            'candidate1', 'candidate2', 'candidate4'):
+                    self.mutate_case(archive, change_tolerance, run_name=run)
+                if value == '2/20000000':
+                    q.validate_archive(archive, key, self.driver)
+                else:
+                    with self.assertRaises(q.EvidenceError):
+                        q.validate_archive(archive, key, self.driver)
+
     def reseal(self, archive):
         record = json.loads((archive / 'archive.json').read_text())
         record['files'] = q.inventory(archive, self.driver)

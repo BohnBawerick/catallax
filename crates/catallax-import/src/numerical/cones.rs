@@ -18,7 +18,16 @@ pub(super) fn eligible(
     };
     dec.charge_work(bytes.len() as u64)?;
     let file = crate::read_step(bytes)?;
+    in_file(&file, entity, dec)
+}
+
+pub(super) fn in_file(
+    file: &crate::StepFile,
+    entity: Option<&str>,
+    dec: &mut Decider,
+) -> Result<bool, ImportError> {
     for (_, face) in file.named_faces() {
+        dec.charge_work(1)?;
         if !matches!(face.surface, crate::Surface::Cone(..)) {
             continue;
         }

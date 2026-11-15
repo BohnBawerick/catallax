@@ -208,7 +208,7 @@ fn import_inner(
         }
     })?;
     let mut model = Model::new();
-    match crate::import_step_bodies(&mut model, bytes, expected_sha256, step) {
+    let strict_refusal = match crate::import_step_bodies(&mut model, bytes, expected_sha256, step) {
         Ok(bodies) => {
             return Ok(StepImport::Certified(Box::new(CertifiedImport {
                 model,
@@ -219,12 +219,14 @@ fn import_inner(
         Err(error) if cones::eligible(bytes, &error, dec)? => {
             return analytic::import(bytes, expected_sha256, error, options, dec);
         }
-        Err(ImportRefusal::NotSolid { detail }) if detail.contains("exactly") => {}
+        Err(error @ ImportRefusal::NotSolid { .. }) if matches!(&error, ImportRefusal::NotSolid { detail } if detail.contains("exactly")) => {
+            error
+        }
         Err(error) if analytic::eligible(&error) => {
             return analytic::import(bytes, expected_sha256, error, options, dec);
         }
         Err(error) => return Err(error.into()),
-    }
+    };
     if options.tolerance_mm.sign() != Sign::Positive
         || options.tolerance_mm > crate::gap::auto_cap()
     {
@@ -234,9 +236,13 @@ fn import_inner(
         )
         .into());
     }
+    let file = crate::read_step(bytes)?;
+    if cones::in_file(&file, None, dec)? {
+        return analytic::import(bytes, expected_sha256, strict_refusal, options, dec);
+    }
     let imported = match crate::repair::apply_file(
         &mut Model::new(),
-        crate::read_step(bytes)?,
+        file,
         expected_sha256,
         "source.step",
         &Default::default(),

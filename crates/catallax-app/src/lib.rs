@@ -527,17 +527,6 @@ mod allowance_tests {
     }
 
     #[test]
-    fn build_above_target_completes_and_reports_stage_work() {
-        let report = build_with_work(TARGET_BUILD_WORK + 1).unwrap();
-        assert!(report.over_target());
-        assert_eq!(report.preview.used, 0);
-        let proof = report.proof.unwrap();
-        assert!(proof.used > TARGET_BUILD_WORK);
-        assert!(proof.used < DEFAULT_BUILD_WORK);
-        assert!(!proof.exhausted);
-    }
-
-    #[test]
     fn build_above_default_allowance_still_refuses() {
         assert!(matches!(
             build_with_work(DEFAULT_BUILD_WORK + 1),

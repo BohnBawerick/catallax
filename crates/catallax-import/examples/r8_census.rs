@@ -6,7 +6,7 @@ use std::io::{self, Write};
 use catallax_import::{ImportRefusal, import_step_bodies, sha256_hex};
 use catallax_numbers::with_operation_budget;
 use catallax_recipe::StepId;
-use catallax_topology::Model;
+use catallax_topology::{BodyId, BodyKind, Model};
 use serde_json::{Value, json};
 
 // Reuse the production syntax parser, without stopping at geometry recognition.
@@ -342,6 +342,20 @@ fn refusal_kind(refusal: &ImportRefusal) -> String {
     }
 }
 
+fn body_kinds(model: &Model, bodies: &[BodyId]) -> BTreeMap<&'static str, usize> {
+    let mut counts = BTreeMap::new();
+    for body in bodies {
+        let kind = match model.body(*body).kind {
+            BodyKind::Solid => "solid",
+            BodyKind::Surface => "surface",
+            BodyKind::Empty => "empty",
+            _ => "unknown",
+        };
+        *counts.entry(kind).or_default() += 1;
+    }
+    counts
+}
+
 fn evaluate(bytes: &[u8]) -> Value {
     let mut model = Model::new();
     let step = StepId::new("r8-import").unwrap();
@@ -358,7 +372,8 @@ fn evaluate(bytes: &[u8]) -> Value {
             let tolerances=bodies.iter().flat_map(|body|model.body(*body).marks.iter())
                 .filter(|mark|mark.code.starts_with("import.incidence-"))
                 .map(|mark|json!({"code":mark.code,"bound_mm":mark.bound.to_decimal_exact().expect("recorded decimal"),"definition":mark.detail})).collect::<Vec<_>>();
-            json!({"stage": "import", "outcome": "admitted", "bodies": bodies.len(),"local_incidence_tolerances":tolerances})
+            json!({"stage": "import", "outcome": "admitted", "bodies": bodies.len(),
+                "body_kinds":body_kinds(&model, &bodies),"local_incidence_tolerances":tolerances})
         }
         Err(refusal) => {
             // Full diagnostics stay in the private stderr file, never the table.
@@ -399,7 +414,7 @@ fn evaluate_numerical(bytes: &[u8]) -> Value {
                 .filter(|mark|mark.code.starts_with("import.incidence-"))
                 .map(|mark|json!({"code":mark.code,"bound_mm":mark.bound.to_decimal_exact().expect("recorded decimal"),"definition":mark.detail})).collect::<Vec<_>>();
             json!({"stage":"import","outcome":"admitted","import_category":"certified",
-                "bodies":imported.bodies().len(),"local_incidence_tolerances":tolerances})
+                "bodies":imported.bodies().len(),"body_kinds":body_kinds(model, imported.bodies()),"local_incidence_tolerances":tolerances})
         }
         Ok(StepImport::Numerical(imported)) => {
             let source_admission_method = imported
@@ -496,6 +511,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn admitted_surface_models_report_the_actual_body_kind() {
+        let source = include_bytes!("../tests/fixtures/surface-square.step");
+        for row in [evaluate(source), evaluate_numerical(source)] {
+            assert_eq!(row["outcome"], "admitted");
+            assert_eq!(row["bodies"], 1);
+            assert_eq!(row["body_kinds"], json!({"surface": 1}));
+        }
+    }
 
     #[test]
     fn clean_box_counts_and_imports_through_the_recipe_entry() {

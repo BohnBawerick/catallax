@@ -228,3 +228,71 @@ fn a_cubic_loft_row_keeps_its_finite_span_after_cancellation() {
     });
     assert!(!work.exhausted, "{} work units", work.used);
 }
+
+#[test]
+fn a_cubic_seam_uses_both_inward_signs_for_crossing_parity() {
+    for opposite in [true, false] {
+        for reversed in [false, true] {
+            let ((), work) = with_operation_budget(20_000_000, || {
+                let mut dec = Decider::default();
+                let mut controls = Vec::new();
+                for (u, height) in [
+                    (q("0"), if opposite { -1 } else { 1 }),
+                    (q("1/3"), 0),
+                    (q("1"), 0),
+                    (q("5/3"), 0),
+                    (q("2"), 1),
+                ] {
+                    for v in 0..2 {
+                        controls.push(Point3::new(
+                            u.clone(),
+                            Real::from_i64(v),
+                            Real::from_i64(height * (1 + v)),
+                        ));
+                    }
+                }
+                let source = BSplineSurface::new(
+                    [3, 1],
+                    [
+                        [0, 0, 0, 0, 1, 2, 2, 2, 2].map(Rational::from_i64).to_vec(),
+                        [0, 0, 1, 1].map(Rational::from_i64).to_vec(),
+                    ],
+                    [5, 2],
+                    controls,
+                    vec![Real::one(); 10],
+                    &mut dec,
+                )
+                .unwrap();
+                let mut atlases =
+                    RationalAtlas::partition(source, [false, false], &mut dec).unwrap();
+                assert_eq!(atlases.len(), 1);
+                let section = atlases
+                    .remove(0)
+                    .sections(&plane(2, Real::zero(), reversed), &mut dec)
+                    .unwrap();
+                let curves: Vec<_> = section.curves().collect();
+                assert_eq!(curves.len(), 1);
+                assert_eq!(
+                    curves[0].1, opposite,
+                    "opposite={opposite}, reversed={reversed}"
+                );
+                for (parameter, v) in curves[0].0.domain().into_iter().zip([0, 1]) {
+                    let point = curves[0]
+                        .0
+                        .point_at(&parameter.clone().into(), &mut dec)
+                        .unwrap();
+                    assert!(equal(
+                        &point,
+                        &Point3::new(1.into(), v.into(), 0.into()),
+                        &mut dec
+                    ));
+                }
+            });
+            assert!(
+                !work.exhausted,
+                "opposite={opposite}, reversed={reversed}: {} work units",
+                work.used
+            );
+        }
+    }
+}

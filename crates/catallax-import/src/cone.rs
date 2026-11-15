@@ -89,6 +89,10 @@ pub(crate) fn rim_cone(face: &Face) -> Result<Option<RimCone>, ImportRefusal> {
     if axis_norm2.is_zero() {
         return Err(unsupported(face, "axis is zero"));
     }
+    let (tan, cos) = tangent(face, angle)?;
+    let norm = Ball::from_rational(&axis_norm2, BITS)
+        .sqrt()
+        .expect("positive axis norm");
     let height = |point: &Vec3| &dot(&sub(point, &p.origin), &axis) / &axis_norm2;
     let on_axis = |point: &Vec3| is_zero(&cross(&sub(point, &p.origin), &axis));
     // Each end is (axial height, radius); an apex has radius zero.
@@ -110,13 +114,12 @@ pub(crate) fn rim_cone(face: &Face) -> Result<Option<RimCone>, ImportRefusal> {
                         let parallel = is_zero(&cross(&c.axis, &axis));
                         rim_witnesses &= parallel && on_axis(&c.origin);
                         if !parallel {
-                            // Any circle point projects at most r / |axis| from its centre.
-                            let norm = Ball::from_rational(&axis_norm2, BITS)
+                            let tilt = cross(&c.axis, &axis);
+                            let reach2 = &(r * r) * &dot(&tilt, &tilt)
+                                / (&(&axis_norm2 * &axis_norm2) * &dot(&c.axis, &c.axis));
+                            let reach = Ball::from_rational(&reach2, BITS)
                                 .sqrt()
-                                .expect("positive axis");
-                            let reach = Ball::from_rational(r, BITS)
-                                .checked_div(&norm)
-                                .expect("positive norm")
+                                .expect("circle projection")
                                 .hi();
                             heights.extend([&h - &reach, &h + &reach]);
                         }
@@ -128,11 +131,19 @@ pub(crate) fn rim_cone(face: &Face) -> Result<Option<RimCone>, ImportRefusal> {
                         // Positive weights keep the entire curve inside this hull.
                         heights.extend(c.geometry.controls().iter().map(height));
                     }
-                    Curve::Ellipse(..) => {
-                        return Err(unsupported(
-                            face,
-                            "elliptical trim needs numerical admission",
-                        ));
+                    Curve::Ellipse(c, major, minor) => {
+                        let y = cross(&c.axis, &c.ref_dir);
+                        let xh = dot(&c.ref_dir, &axis);
+                        let yh = dot(&y, &axis);
+                        let x2 = &(&(major * major) * &(&xh * &xh)) / &dot(&c.ref_dir, &c.ref_dir);
+                        let y2 = &(&(minor * minor) * &(&yh * &yh)) / &dot(&y, &y);
+                        let reach2 = &(&x2 + &y2) / &(&axis_norm2 * &axis_norm2);
+                        let reach = Ball::from_rational(&reach2, BITS)
+                            .sqrt()
+                            .expect("ellipse projection")
+                            .hi();
+                        let h = height(&c.origin);
+                        heights.extend([&h - &reach, &h + &reach]);
                     }
                 }
             }
@@ -151,10 +162,24 @@ pub(crate) fn rim_cone(face: &Face) -> Result<Option<RimCone>, ImportRefusal> {
         }
     }
     if ends.len() < 2 {
-        return Err(unsupported(
-            face,
-            "bounds do not determine two axial sections",
-        ));
+        let (Some(low), Some(high)) = (heights.iter().min(), heights.iter().max()) else {
+            return Err(unsupported(face, "bounds have no finite axial extent"));
+        };
+        if low == high {
+            return Err(unsupported(face, "bounds have no finite axial extent"));
+        }
+        // A trim need not contain two parallels. Round the declared slope to
+        // 17 significant decimal digits and certify it over the full trim hull.
+        let decimal_slope = (tan.clone() * norm.clone()).mid().to_decimal_bounds(17).0;
+        let slope = Rational::parse(&decimal_slope).expect("decimal slope");
+        let (base_height, base_radius) = ends
+            .first()
+            .cloned()
+            .unwrap_or_else(|| (Rational::zero(), radius.clone()));
+        ends = [low, high]
+            .map(|h| (h.clone(), &base_radius + &(&slope * &(h - &base_height))))
+            .into();
+        rim_witnesses = false;
     }
     let (mut lo, mut hi) = (ends.first().unwrap().clone(), ends.last().unwrap().clone());
     if lo.0 > hi.0 {
@@ -182,10 +207,6 @@ pub(crate) fn rim_cone(face: &Face) -> Result<Option<RimCone>, ImportRefusal> {
     // and the smaller of the two is its distance to the double cone, a lower
     // bound on the face's deviation. Where the declared radius is nonnegative
     // the nearer line is the declared nappe's own.
-    let (tan, cos) = tangent(face, angle)?;
-    let norm = Ball::from_rational(&axis_norm2, BITS)
-        .sqrt()
-        .expect("positive axis norm");
     heights.extend([lo.0.clone(), hi.0.clone()]);
     let domain_lo = heights.iter().min().expect("rim heights").clone();
     let domain_hi = heights.iter().max().expect("rim heights").clone();
@@ -397,6 +418,20 @@ mod tests {
                 edges: vec![lower, line("#bc", b, c), upper, line("#da", d, a)],
             }],
         )
+    }
+
+    #[test]
+    fn one_parallel_and_a_finite_trim_hull_determine_a_certified_cone() {
+        let mut f = sector();
+        let edge = &mut f.loops[0].edges[2];
+        edge.curve = Curve::Line(
+            edge.start.point.clone(),
+            sub(&edge.end.point, &edge.start.point),
+        );
+        let cone = rim_cone(&f).unwrap().unwrap();
+        assert_eq!(cone.deviation.0, q("0"));
+        assert!(cone.deviation.1 <= q("1e-12"));
+        assert!(cone.slope > q("0.577350269189") && cone.slope < q("0.577350269190"));
     }
 
     #[test]

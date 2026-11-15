@@ -858,7 +858,7 @@ fn a_cached_round_records_its_contact_phase() {
         .filter(|p| p.operation == "fillet.contact")
         .collect();
     assert!(!contact.is_empty(), "fillet.contact was not recorded");
-    let total: f64 = contact.iter().map(|p| p.wall_ms).sum();
+    let total: f64 = contact.iter().map(|p| p.wall_ms.unwrap()).sum();
     eprintln!("fillet.contact={total:.3}ms over {} spans", contact.len());
 }
 

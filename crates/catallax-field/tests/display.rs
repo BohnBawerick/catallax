@@ -269,22 +269,24 @@ fn stage_clocks_change_no_display_bytes_or_work() {
     assert_eq!(obj(&timed.unwrap()), obj(&untimed.unwrap()));
     assert_eq!(timed_work.used, untimed_work.used);
     assert_eq!(diagnostics.total.work, untimed_work.used);
-    assert!(diagnostics.total.elapsed > std::time::Duration::ZERO);
+    assert!(diagnostics.total.elapsed.unwrap() > std::time::Duration::ZERO);
     assert!(
         diagnostics
             .supports
             .iter()
             .any(|s| s.classification.cells > 0)
     );
-    let supports: std::time::Duration = diagnostics.supports.iter().map(|s| s.total.elapsed).sum();
+    let supports: std::time::Duration = diagnostics.supports.iter().map(|s| s.total.elapsed.unwrap()).sum();
     assert_eq!(
-        diagnostics.common.elapsed + supports,
+        Some(diagnostics.common.elapsed.unwrap() + supports),
         diagnostics.total.elapsed
     );
     for support in &diagnostics.supports {
         let stages =
-            support.classification.elapsed + support.queries.elapsed + support.emission.elapsed;
-        assert!(stages <= support.total.elapsed, "{support:?}");
+            support.classification.elapsed.unwrap()
+                + support.queries.elapsed.unwrap()
+                + support.emission.elapsed.unwrap();
+        assert!(stages <= support.total.elapsed.unwrap(), "{support:?}");
     }
 }
 

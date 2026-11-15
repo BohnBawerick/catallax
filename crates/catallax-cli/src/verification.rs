@@ -635,7 +635,7 @@ fn display_diagnostics(
     let cost = |c: &catallax_field::display::Cost| {
         json!({
             "cells":c.cells,"max_depth":c.max_depth,"decisions":c.decisions,"work":c.work,
-            "wall_ms":milliseconds(c.elapsed)
+            "wall_ms":c.elapsed.map(milliseconds)
         })
     };
     let faces:Vec<_> = report.faces.iter().map(|f|json!({

@@ -56,7 +56,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Compare operation outcomes, not dispatch counts or cumulative work prefixes.
     // Actual total work and final decision counters remain in their own files.
     for operation in &mut operations {
-        operation.wall_ms = 0.0;
+        operation.wall_ms = Some(0.0);
         operation.work_before = 0;
         operation.work_after = 0;
         operation.before = Default::default();

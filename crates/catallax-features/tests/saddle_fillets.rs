@@ -610,7 +610,7 @@ fn a_cached_ring_and_loop_record_their_phases() {
         for phase in ["fillet.contact", "fillet.fitting", "fillet.trimming"] {
             let measured: Vec<_> = phases.iter().filter(|p| p.operation == phase).collect();
             assert!(!measured.is_empty(), "{phase} was not recorded");
-            let total: f64 = measured.iter().map(|p| p.wall_ms).sum();
+            let total: f64 = measured.iter().map(|p| p.wall_ms.unwrap()).sum();
             eprintln!("{name}: {phase}={total:.3}ms over {} spans", measured.len());
         }
         let start = std::time::Instant::now();

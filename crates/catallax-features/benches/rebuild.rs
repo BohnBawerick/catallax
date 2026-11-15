@@ -377,7 +377,7 @@ fn main() {
         );
         if flag("--assert-budget") && !distinct {
             assert!(
-                cuts[29].wall_ms <= 1.5 * cuts[1].wall_ms,
+                cuts[29].wall_ms.unwrap() <= 1.5 * cuts[1].wall_ms.unwrap(),
                 "cut30/cut2 > 1.5"
             );
         }

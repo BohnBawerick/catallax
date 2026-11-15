@@ -50,7 +50,7 @@ mod system;
 mod tower;
 mod trace;
 mod watch;
-pub use trace::{OperationEntry, OperationSpan, record_operation_path, with_operation_log};
+pub use trace::{OperationEntry, OperationSpan, record_operation_path, wall_clock_start, with_operation_log};
 #[cfg(feature = "work-span")]
 pub mod work_span;
 

@@ -456,14 +456,14 @@ pub(crate) fn fit<P: Parametric + Sync>(
     // The walk below is the whole fit, in order, on this thread. Helper
     // threads only compute spans the walk is likely to reach; the walk adopts
     // a finished one with the work it charged, or computes the span itself.
-    let began = std::time::Instant::now();
+    let began = catallax_numbers::wall_clock_start();
     let mut helpers = None;
     let mut asked = false;
     // A test that compares complete replays asks for helpers at once and lets
     // them finish first, so that the walk adopts every span.
     let wait = catallax_numbers::run_ahead_waits();
     while !walk.done() {
-        if !asked && (wait || began.elapsed() >= ALONE) {
+        if !asked && (wait || began.is_some_and(|at| at.elapsed() >= ALONE)) {
             asked = true;
             helpers = catallax_numbers::Helpers::new(dec);
             if helpers.is_some() {

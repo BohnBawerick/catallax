@@ -566,7 +566,11 @@ pub fn mesh_plan_reported(
     report.common.elapsed = report
         .total
         .elapsed
-        .saturating_sub(report.supports.iter().map(|s| s.total.elapsed).sum());
+        .and_then(|total| {
+            let supports: Option<std::time::Duration> =
+                report.supports.iter().map(|s| s.total.elapsed).sum();
+            supports.map(|supports| total.saturating_sub(supports))
+        });
     result
 }
 

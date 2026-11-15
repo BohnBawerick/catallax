@@ -208,6 +208,17 @@ fn pipe_ring(
     if edge.start != edge.end {
         return Ok(None);
     }
+    pipe_rail(model, rails, coedge, dec)
+}
+
+fn pipe_rail(
+    model: &Model,
+    rails: &[(Curve, bool); 2],
+    coedge: crate::CoedgeId,
+    dec: &mut Decider,
+) -> Result<Option<(EdgeId, bool, Sense)>, Refusal> {
+    let use_ = model.coedge(coedge);
+    let edge = model.edge(use_.edge);
     let actual = match model.geom().curve(edge.curve) {
         Curve::Ellipse(actual) => actual,
         Curve::BSpline(actual) => {
@@ -307,12 +318,10 @@ pub fn partial_pipe_rows(
             sections += 1;
             continue;
         }
-        let Some(row) = rails
-            .iter()
-            .position(|(rail, _)| actual.same_definition(rail))
-        else {
+        let Some((_, planar, _)) = pipe_rail(model, &rails, *coedge, dec)? else {
             return Ok(None);
         };
+        let row = usize::from(!planar);
         if found[row].replace((use_.edge, use_.sense)).is_some() {
             return Ok(None);
         }

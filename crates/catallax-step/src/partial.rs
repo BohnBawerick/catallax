@@ -513,6 +513,9 @@ fn unchanged_planar_boundary(model: &Model, face: FaceId, wide: bool) -> bool {
                         | Curve::Circle(_)
                         | Curve::Ellipse(_)
                         | Curve::BSpline(_) => true,
+                        Curve::PatchSection(section) => matches!(
+                            section.surface(), catallax_shapes::SectionSurface::Plane(_)
+                        ),
                         Curve::Intersection(curve) => {
                             curve
                                 .surfaces

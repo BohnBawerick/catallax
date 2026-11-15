@@ -34,7 +34,11 @@ pub(super) fn pipe_geometry(
         return Err(unsupported());
     };
     let law = pipe.law();
-    if pipe.is_conical() || sign(&plane.normal.dot(&law.axis), dec)? != Sign::Zero {
+    if pipe.is_conical()
+        || !run.definition.convex
+        || sign(&plane.normal.cross(&law.across).norm_squared(), dec)? != Sign::Zero
+        || sign(&law.base.minus(&plane.origin).dot(&plane.normal), dec)? != Sign::Zero
+    {
         return Err(unsupported());
     }
     let at = model.geom().position(model.vertex(old).point);

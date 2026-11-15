@@ -52,16 +52,26 @@ fn turn() -> Rational {
     Ball::pi(BITS).mid() * Rational::from_i64(2)
 }
 
-fn near(mut value: Rational, previous: &Rational) -> Rational {
+fn near(
+    mut value: Rational,
+    previous: &Rational,
+    dec: &mut Decider,
+) -> Result<Rational, ImportError> {
     let period = turn();
     let half = Ball::pi(BITS).mid();
-    while &value - previous > half {
-        value = &value - &period;
+    for _ in 0..4 {
+        let delta = crate::planar_arithmetic::arithmetic(&value, previous, '-', dec)?;
+        if delta > half {
+            value = crate::planar_arithmetic::arithmetic(&value, &period, '-', dec)?;
+        } else if delta < -&half {
+            value = crate::planar_arithmetic::arithmetic(&value, &period, '+', dec)?;
+        } else {
+            return Ok(value);
+        }
     }
-    while previous - &value > half {
-        value = &value + &period;
-    }
-    value
+    Err(unsupported(
+        "analytic boundary requires a distant periodic chart",
+    ))
 }
 
 fn surface(face: &crate::Face) -> Result<(Surface, &crate::Placement), ImportError> {
@@ -249,7 +259,7 @@ fn definition(solid: &Solid, dec: &mut Decider) -> Result<n::NumericalDefinition
                     let mut end = parameters(b, face, dec)?;
                     if matches!(face.surface, crate::Surface::Cylinder(..)) {
                         if let Some(previous) = trims.last() {
-                            start[0] = near(start[0].clone(), &previous.uv[1][0]);
+                            start[0] = near(start[0].clone(), &previous.uv[1][0], dec)?;
                         }
                         let edge = &result.edges[index];
                         let t = (&edge.parameters[0] + &edge.parameters[1]) / Rational::from_i64(2);
@@ -258,8 +268,8 @@ fn definition(solid: &Solid, dec: &mut Decider) -> Result<n::NumericalDefinition
                             .evaluate(&Ball::from_rational(&t, BITS), dec)?
                             .ok_or_else(|| unsupported("analytic edge has no evaluator"))?;
                         let p = p.each_ref().map(Ball::mid);
-                        let middle = near(parameters(&p, face, dec)?[0].clone(), &start[0]);
-                        end[0] = near(end[0].clone(), &middle);
+                        let middle = near(parameters(&p, face, dec)?[0].clone(), &start[0], dec)?;
+                        end[0] = near(end[0].clone(), &middle, dec)?;
                     }
                     trims.push(n::NumericalTrim {
                         edge: index,

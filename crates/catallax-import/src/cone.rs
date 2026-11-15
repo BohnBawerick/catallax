@@ -241,6 +241,14 @@ pub(crate) fn rim_cone(face: &Face) -> Result<Option<RimCone>, ImportRefusal> {
             feature2 = feature2.min(r * r);
         }
     }
+    // A partial rim can bound a sliver much narrower than its radius or height.
+    for edge in face.loops.iter().flat_map(|bound| &bound.edges) {
+        let chord = sub(&edge.end.point, &edge.start.point);
+        let length2 = dot(&chord, &chord);
+        if !length2.is_zero() {
+            feature2 = feature2.min(length2);
+        }
+    }
     if &(&deviation.1 * &deviation.1) * &Rational::from_i64(100) > feature2 {
         return Err(not_solid(format!(
             "conical face {}: a {} mm deviation is not below a tenth of its nearest feature",
@@ -471,6 +479,27 @@ mod tests {
         });
         assert!(
             matches!(rim_cone(&f), Err(ImportRefusal::NotSolid { detail }) if detail.contains("automatic cap"))
+        );
+    }
+
+    #[test]
+    fn a_narrow_partial_rim_uses_its_chord_as_a_feature_limit() {
+        let mut f = sector();
+        let t = q("1e-10");
+        let denominator = &q("1") + &(&t * &t);
+        let x = &(&q("1") - &(&t * &t)) / &denominator;
+        let y = &(&q("2") * &t) / &denominator;
+        for edge in &mut f.loops[0].edges {
+            for v in [&mut edge.start, &mut edge.end] {
+                if v.name == "#b" || v.name == "#c" {
+                    let radius = v.point[1].clone();
+                    v.point[0] = &radius * &x;
+                    v.point[1] = &radius * &y;
+                }
+            }
+        }
+        assert!(
+            matches!(rim_cone(&f), Err(ImportRefusal::NotSolid { detail }) if detail.contains("nearest feature"))
         );
     }
 

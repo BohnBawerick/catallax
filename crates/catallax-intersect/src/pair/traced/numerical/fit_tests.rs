@@ -1,3 +1,4 @@
+use super::checked::pay_trace_work;
 use super::*;
 use catallax_numbers::current_operation_work;
 use catallax_trace::{surface_curves::IntersectionCurve, surface_intersector::Intersector};
@@ -77,8 +78,7 @@ fn checked_flush_refreshes_coupled_endpoint_derivatives() {
         assert!(old_residual > Rational::from_ratio(1, 1_000_000).unwrap());
         intersector.check_output_spans = true;
         let start = current_operation_work().used;
-        let (after, trace_work) = intersector
-            .do_intersection_with_work(|units| Decider::default().charge_work(units).is_ok());
+        let (after, trace_work) = intersector.do_intersection_with_work(None, pay_trace_work);
         let trace_bill = current_operation_work().used - start;
         let after = after.unwrap();
         assert!(!trace_work.cancelled);
@@ -121,8 +121,7 @@ fn checked_flush_refreshes_coupled_endpoint_derivatives() {
     intersector.check_output_spans = true;
     for limit in [0, trace_bill / 2, trace_bill - 1, trace_bill] {
         let ((result, report), budget) = with_operation_budget(limit, || {
-            intersector
-                .do_intersection_with_work(|units| Decider::default().charge_work(units).is_ok())
+            intersector.do_intersection_with_work(None, pay_trace_work)
         });
         if limit < trace_bill {
             assert!(result.is_err(), "cancelled trace kept partial curves");

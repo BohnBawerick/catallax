@@ -41,10 +41,14 @@ pub(crate) mod test_deadline {
         time::{Duration, Instant},
     };
 
+    /// The numerical loop whose checkpoints advance the deterministic clock.
     #[derive(Clone, Copy, PartialEq, Eq)]
     pub enum Point {
+        /// Decider enclosure/deadline checkpoints.
         Enclosure,
+        /// Inner numerical work checkpoints.
         Work,
+        /// Definedness checks.
         Definedness,
     }
 
@@ -73,10 +77,12 @@ pub(crate) mod test_deadline {
 
     // Freeze time until a chosen inner loop has made progress, then cross the
     // deadline. Thread-local state and RAII keep parallel tests and panics isolated.
-    #[cfg(test)]
-    pub struct Deadline;
-    #[cfg(test)]
+    /// A thread-local deterministic deadline guard for development tests.
+    pub struct Deadline {
+        thread: std::marker::PhantomData<std::rc::Rc<()>>,
+    }
     impl Deadline {
+        /// Freeze time until this many checkpoints, then expire the deadline.
         pub fn after(point: Point, checks: usize) -> Self {
             assert!(checks > 1);
             CLOCK.with(|slot| {
@@ -86,18 +92,21 @@ pub(crate) mod test_deadline {
                     remaining: checks,
                 }));
             });
-            Self
+            Self {
+                thread: std::marker::PhantomData,
+            }
         }
 
+        /// Deadline value to install on the caller's Decider.
         pub fn instant(&self) -> Instant {
             Instant::now()
         }
 
+        /// Verify the selected inner loop reached expiry.
         pub fn assert_expired(&self) {
             CLOCK.with(|slot| assert_eq!(slot.get().unwrap().remaining, 0));
         }
     }
-    #[cfg(test)]
     impl Drop for Deadline {
         fn drop(&mut self) {
             CLOCK.with(|slot| slot.set(None));

@@ -70,6 +70,9 @@ pub use certificate::{
     GeometricProof, ImportToleranceAcceptance, LocalException, LocalToleranceSettings,
     ModellingTolerance, ProofContext, RecordedChoice, RegionCertificate,
 };
+#[cfg(feature = "test-deadline")]
+#[doc(hidden)]
+pub use decider::test_deadline::{Deadline as TestDeadline, Point as TestDeadlinePoint};
 pub use decider::{BudgetPolicy, Decider, DecisionStats};
 pub use facts::{Fact, FactBook, FactKind, FactOrigin, FactRead};
 pub use integer::{Integer, ParseErrorKind, ParseNumberError, Sign};

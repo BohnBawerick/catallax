@@ -1,6 +1,6 @@
 //! Work checkpoints enabled only for a metered surface intersection.
 
-use std::cell::Cell;
+use std::{cell::Cell, time::Instant};
 
 use crate::Fault;
 
@@ -39,7 +39,8 @@ pub(crate) enum Kind {
 
 #[derive(Clone, Copy)]
 struct State {
-    callback: fn(u64) -> bool,
+    callback: fn(u64, Option<Instant>) -> bool,
+    deadline: Option<Instant>,
     report: WorkReport,
 }
 
@@ -65,7 +66,7 @@ pub(crate) fn checkpoint(kind: Kind, units: u64) -> Result<(), Fault> {
         };
         *count = count.saturating_add(units);
         state.report.attempted = state.report.attempted.saturating_add(units);
-        state.report.cancelled = !(state.callback)(units);
+        state.report.cancelled = !(state.callback)(units, state.deadline);
         if !state.report.cancelled {
             state.report.accepted = state.report.accepted.saturating_add(units);
         }
@@ -81,13 +82,17 @@ pub(crate) fn checkpoint(kind: Kind, units: u64) -> Result<(), Fault> {
 pub(crate) struct Scope;
 
 impl Scope {
-    pub(crate) fn enter(callback: fn(u64) -> bool) -> Result<Self, Fault> {
+    pub(crate) fn enter(
+        callback: fn(u64, Option<Instant>) -> bool,
+        deadline: Option<Instant>,
+    ) -> Result<Self, Fault> {
         ACTIVE.with(|active| {
             if active.get().is_some() {
                 return Err(Fault::InvalidInput);
             }
             active.set(Some(State {
                 callback,
+                deadline,
                 report: WorkReport::default(),
             }));
             Ok(Self)

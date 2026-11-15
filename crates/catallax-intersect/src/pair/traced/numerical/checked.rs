@@ -3,8 +3,9 @@
 use super::*;
 use catallax_shapes::BSplineCurve;
 use catallax_trace::{
+    global_solver::SolverRefusal,
     spline::{BSplineCurve as FloatCurve, PointForm},
-    surface_curves::CurveKind,
+    surface_curves::{CurveKind, IntersectionCurve},
     surface_intersector::Intersector,
     surface_work::WorkReport,
 };
@@ -289,6 +290,19 @@ pub fn numerical_native_intersection(
     result
 }
 
+pub(super) fn pay_trace_work(units: u64, deadline: Option<std::time::Instant>) -> bool {
+    let mut meter = Decider::default();
+    meter.set_deadline(deadline);
+    meter.charge_work(units).is_ok()
+}
+
+fn trace_with_caller(
+    intersector: &Intersector<'_>,
+    dec: &Decider,
+) -> (Result<Vec<IntersectionCurve>, SolverRefusal>, WorkReport) {
+    intersector.do_intersection_with_work(dec.deadline(), pay_trace_work)
+}
+
 fn build_intersection(
     surfaces: [&Surface; 2],
     dec: &mut Decider,
@@ -307,8 +321,7 @@ fn build_intersection(
     intersector.approx_tolerance = windows.evidence.tolerance_mm().to_f64_nearest() / 4.;
     intersector.check_output_spans = true;
     let after_setup = catallax_numbers::current_operation_work().used;
-    let (fits, trace_work) = intersector
-        .do_intersection_with_work(|units| Decider::default().charge_work(units).is_ok());
+    let (fits, trace_work) = trace_with_caller(&intersector, dec);
     let after_trace = catallax_numbers::current_operation_work().used;
     if trace_work.cancelled {
         dec.charge_work(0)?;
@@ -458,6 +471,57 @@ mod tests {
             );
             assert!(!work.exhausted, "{work:?}");
         }
+    }
+
+    #[test]
+    fn a_caller_deadline_expires_during_native_tracing_without_spending_the_work_limit() {
+        let ((), work) = with_operation_budget(20_000_000, || {
+            let surfaces = axial();
+            let mut dec = Decider::default();
+            let windows = numerical_native_windows([&surfaces[0], &surfaces[1]], &mut dec)
+                .unwrap()
+                .unwrap();
+            let a = crate::pair::trace_candidates::surface(
+                &windows.sources[0],
+                &Isometry::identity(),
+                &mut dec,
+            )
+            .unwrap();
+            let b = crate::pair::trace_candidates::surface(
+                &windows.sources[1],
+                &Isometry::identity(),
+                &mut dec,
+            )
+            .unwrap();
+            let mut intersector = Intersector::new(&a, a.natural_domain(), &b, b.natural_domain());
+            intersector.approx_tolerance = 2.5e-8;
+            intersector.check_output_spans = true;
+            let (baseline, complete) = trace_with_caller(&intersector, &dec);
+            let pieces = baseline.unwrap().len();
+            let callbacks = complete.accepted - complete.source_items + 2;
+            let clock = catallax_numbers::TestDeadline::after(
+                catallax_numbers::TestDeadlinePoint::Enclosure,
+                usize::try_from(callbacks / 2).unwrap(),
+            );
+            dec.set_deadline(Some(clock.instant()));
+            let (expired, cancelled) = trace_with_caller(&intersector, &dec);
+            eprintln!("mid-trace deadline report: {cancelled:?}");
+            assert!(
+                expired.is_err(),
+                "trace retained output after caller expiry: {cancelled:?}"
+            );
+            assert!(cancelled.cancelled);
+            assert!(cancelled.search_branches > 0 && cancelled.trace_visits > 0);
+            assert!(cancelled.accepted < complete.accepted);
+            assert!(!catallax_numbers::current_operation_work().exhausted);
+            clock.assert_expired();
+            assert_eq!(dec.charge_work(0).unwrap_err().code, "numbers.deadline");
+            dec.set_deadline(None);
+            let (recovered, report) = trace_with_caller(&intersector, &dec);
+            assert_eq!(recovered.unwrap().len(), pieces);
+            assert_eq!(report, complete);
+        });
+        assert!(!work.exhausted, "{work:?}");
     }
 
     #[test]

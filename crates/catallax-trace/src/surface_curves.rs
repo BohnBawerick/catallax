@@ -763,17 +763,19 @@ impl Intersector<'_> {
 
     /// Runs the same search with deterministic checkpoints in its nested
     /// searches, local solves, evaluations and trace/output loops. The callback
-    /// returns false when the caller's allowance or deadline is spent.
+    /// receives the caller's absolute deadline with each reservation and returns
+    /// false when the allowance or deadline is spent.
     /// Cancellation discards every partial curve, even if a ported helper
     /// catches its internal failure. Unmetered callers keep their behavior.
     pub fn do_intersection_with_work(
         &self,
-        callback: fn(u64) -> bool,
+        deadline: Option<std::time::Instant>,
+        callback: fn(u64, Option<std::time::Instant>) -> bool,
     ) -> (
         Result<Vec<IntersectionCurve>, SolverRefusal>,
         crate::surface_work::WorkReport,
     ) {
-        let scope = match crate::surface_work::Scope::enter(callback) {
+        let scope = match crate::surface_work::Scope::enter(callback, deadline) {
             Ok(scope) => scope,
             Err(fault) => {
                 return (

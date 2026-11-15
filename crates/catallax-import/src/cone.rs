@@ -7,6 +7,8 @@
 //! Its whole-face deviation from the declared cone is certified, accepted only
 //! within the automatic cap and recorded as the face's local tolerance.
 
+use std::collections::BTreeMap;
+
 use catallax_numbers::{Ball, Rational, Real, Sign};
 
 use crate::build::{chains, seam_points};
@@ -158,6 +160,45 @@ pub(crate) fn rim_cone(face: &Face) -> Result<Option<RimCone>, ImportRefusal> {
             .filter(|p| on_axis(p) && height(p) != ends[0].0)
             .collect();
         if let [apex] = apexes.as_slice() {
+            ends.push((height(apex), Rational::zero()));
+        }
+    }
+    if ends.len() == 1 {
+        // A pointed sector closes two distinct generators at a shared vertex,
+        // without a complete rim, repeated seam or explicit vertex loop.
+        let mut candidates = Vec::new();
+        let mut generators = BTreeMap::<Vec3, Vec<&Vec3>>::new();
+        let mut dec = catallax_numbers::Decider::default();
+        for edge in face.loops.iter().flat_map(|bound| &bound.edges) {
+            dec.charge_work(1)
+                .map_err(|_| ImportRefusal::ResourceLimit)?;
+            if let Curve::Line(_, direction) = &edge.curve {
+                for vertex in [&edge.start, &edge.end] {
+                    generators
+                        .entry(vertex.point.clone())
+                        .or_default()
+                        .push(direction);
+                }
+            }
+        }
+        let cap2 = &auto_cap() * &auto_cap();
+        for (point, directions) in generators {
+            let h = height(&point);
+            let radial = cross(&sub(&point, &p.origin), &axis);
+            let distance2 = &dot(&radial, &radial) / &axis_norm2;
+            if h == ends[0].0 || distance2 > cap2 {
+                continue;
+            }
+            if directions
+                .iter()
+                .skip(1)
+                .any(|d| !is_zero(&cross(directions[0], d)))
+            {
+                candidates.push(point);
+            }
+        }
+        if let [apex] = candidates.as_slice() {
+            rim_witnesses &= on_axis(apex);
             ends.push((height(apex), Rational::zero()));
         }
     }
@@ -418,6 +459,37 @@ mod tests {
                 edges: vec![lower, line("#bc", b, c), upper, line("#da", d, a)],
             }],
         )
+    }
+
+    #[test]
+    fn a_pointed_sector_uses_the_shared_generator_vertex_as_its_apex() {
+        let mut f = sector();
+        let apex = Vertex {
+            name: "#apex".into(),
+            point: [q("0"), q("0"), q("-1.732050808")],
+        };
+        let lower = f.loops[0].edges[0].clone();
+        let generator = |name: &str, start: Vertex, end: Vertex| OrientedEdge {
+            edge: name.into(),
+            curve: Curve::Line(start.point.clone(), sub(&end.point, &start.point)),
+            start,
+            end,
+            curve_same_sense: true,
+            forward: true,
+        };
+        f.loops[0].edges = vec![
+            lower.clone(),
+            generator("#to-apex", lower.end.clone(), apex.clone()),
+            generator("#from-apex", apex.clone(), lower.start.clone()),
+        ];
+        let cone = rim_cone(&f).unwrap().unwrap();
+        assert_eq!(cone.apex, apex.point);
+        assert!(cone.deviation.1 < q("1e-9"));
+        for edge in &f.loops[0].edges {
+            if let Curve::Line(origin, direction) = &edge.curve {
+                assert!(cone.contains_line(origin, direction));
+            }
+        }
     }
 
     #[test]

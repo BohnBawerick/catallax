@@ -8,6 +8,7 @@ use catallax_shapes::{
 };
 
 pub(super) mod fitted;
+pub(crate) mod numerical;
 pub(super) mod sphere;
 mod window;
 

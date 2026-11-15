@@ -2,7 +2,7 @@
 
 use super::*;
 use catallax_numbers::RealPoly;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, btree_map::Entry};
 
 #[derive(Clone)]
 pub(super) struct Owner {
@@ -35,11 +35,10 @@ impl<'a> Roots<'a> {
         tolerance: &Rational,
         dec: &mut Decider,
     ) -> Result<(usize, Owner), Refusal> {
-        if !self.cache.contains_key(&u) {
-            let roots = self.build(&u, dec)?;
-            self.cache.insert(u.clone(), roots);
-        }
-        let roots = &self.cache[&u];
+        let roots = match self.cache.entry(u.clone()) {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => entry.insert(Self::build(self.source, self.cylinder, &u, dec)?),
+        };
         let mut distances = roots
             .iter()
             .enumerate()
@@ -71,16 +70,21 @@ impl<'a> Roots<'a> {
         Ok((*index, owner))
     }
 
-    fn build(&self, u: &Rational, dec: &mut Decider) -> Result<Vec<Owner>, Refusal> {
+    fn build(
+        source: &BSplineSurface,
+        cylinder: &Cylinder,
+        u: &Rational,
+        dec: &mut Decider,
+    ) -> Result<Vec<Owner>, Refusal> {
         let endpoints = [q(0), q(1)].map(|v| {
-            self.source
+            source
                 .evaluate_box([u, u], [&v, &v], BITS, dec)
                 .map(|point| point.map(|coordinate| Real::from(coordinate.mid())))
         });
         let [a, b] = endpoints;
         let [a, b] = [a?, b?].map(|p| Point3::new(p[0].clone(), p[1].clone(), p[2].clone()));
-        let direction = b.minus(&a).cross(&self.cylinder.axis);
-        let offset = a.minus(&self.cylinder.origin).cross(&self.cylinder.axis);
+        let direction = b.minus(&a).cross(&cylinder.axis);
+        let offset = a.minus(&cylinder.origin).cross(&cylinder.axis);
         let polynomial = RealPoly::from_terms(
             1,
             vec![
@@ -88,8 +92,7 @@ impl<'a> Roots<'a> {
                 (vec![1], Real::from(2) * offset.dot(&direction)),
                 (
                     vec![0],
-                    offset.norm_squared()
-                        - &self.cylinder.radius_sq * &self.cylinder.axis.norm_squared(),
+                    offset.norm_squared() - &cylinder.radius_sq * &cylinder.axis.norm_squared(),
                 ),
             ],
         );

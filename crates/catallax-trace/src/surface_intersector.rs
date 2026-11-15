@@ -145,6 +145,15 @@ impl<'a> Intersector<'a> {
 
     /// Both surfaces' caches in one arena.
     pub fn trees(&self) -> Result<IntersectorTrees, SolverRefusal> {
+        for surface in self.surfaces {
+            let items = surface.control_points().len()
+                + surface
+                    .knots()
+                    .iter()
+                    .map(|knots| knots.len())
+                    .sum::<usize>();
+            crate::surface_work::checkpoint(crate::surface_work::Kind::Source, items as u64)?;
+        }
         let first = cache_of(self.surfaces[0])?;
         let second = cache_of(self.surfaces[1])?;
         let mut trees = SearchTrees::new();

@@ -74,6 +74,7 @@ pub mod surface_offset;
 pub mod surface_solve;
 pub mod surface_surface;
 pub mod surface_trace;
+pub mod surface_work;
 pub mod vector;
 
 /// Why a ported routine produced no value.

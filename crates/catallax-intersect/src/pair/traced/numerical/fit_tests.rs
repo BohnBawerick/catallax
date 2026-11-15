@@ -75,8 +75,50 @@ fn checked_flush_refreshes_coupled_endpoint_derivatives() {
         let old_residual = sampled_residual(&before, sources, &dec);
         assert!(old_residual > Rational::from_ratio(1, 1_000_000).unwrap());
         intersector.check_output_spans = true;
-        let after = intersector.do_intersection().unwrap();
+        let (after, trace_work) = intersector
+            .do_intersection_with_work(|units| Decider::default().charge_work(units).is_ok());
+        let after = after.unwrap();
+        assert!(!trace_work.cancelled);
+        assert_eq!(trace_work.accepted, trace_work.attempted);
+        assert!(trace_work.search_branches > 0);
+        assert!(trace_work.local_iterations > 0);
+        assert!(trace_work.surface_evaluations > 0);
+        assert!(trace_work.curve_evaluations > 0);
+        assert!(trace_work.source_items > 0);
+        assert!(trace_work.trace_visits > 0);
         assert_eq!(before.len(), after.len());
+        let unmetered = intersector.do_intersection().unwrap();
+        for (a, b) in after.iter().zip(&unmetered) {
+            assert_eq!(a.curve.knots(), b.curve.knots());
+            assert_eq!(a.curve.control_points(), b.curve.control_points());
+            for (a, b) in a.uv_curves.iter().zip(&b.uv_curves) {
+                let (a, b) = (a.as_ref().unwrap(), b.as_ref().unwrap());
+                assert_eq!(a.knots(), b.knots());
+                assert_eq!(a.control_points(), b.control_points());
+            }
+        }
+        for limit in [
+            0,
+            trace_work.accepted / 2,
+            trace_work.accepted - 1,
+            trace_work.accepted,
+        ] {
+            let ((result, report), budget) = with_operation_budget(limit, || {
+                intersector.do_intersection_with_work(|units| {
+                    Decider::default().charge_work(units).is_ok()
+                })
+            });
+            if limit < trace_work.accepted {
+                assert!(result.is_err(), "cancelled trace kept partial curves");
+                assert!(report.cancelled);
+                assert!(budget.exhausted);
+            } else {
+                assert_eq!(result.unwrap().len(), after.len());
+                assert_eq!(report, trace_work);
+                assert!(!budget.exhausted);
+            }
+        }
+        eprintln!("metered native fit work: {trace_work:?}");
         let new_residual = sampled_residual(&after, sources, &dec);
         eprintln!(
             "coupled residual before={} after={}",

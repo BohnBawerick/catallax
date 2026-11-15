@@ -603,7 +603,9 @@ fn evaluate(
                     ));
                 }
                 manifest.step = Some(StepSummary {
-                    bounded: approximate.then_some(false),
+                    bounded: None,
+                    approximate: approximate.then_some(true),
+                    deviation_scope: approximate.then_some("certified-components-only"),
                     file: "answer.step".into(),
                     max_deviation,
                     approximated_curves: report.approximated_curves,

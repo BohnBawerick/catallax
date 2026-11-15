@@ -94,9 +94,9 @@ def load(paths, source, adapter=None):
                     if source not in ('auto', 'iges'):
                         raise ValueError(f'{file}: iges wrappers require the iges source')
                     problems.append({'source': 'iges', 'problem': value})
-                elif fmt == 'catallax-step/1':
+                elif fmt in ('catallax-step/1', 'catallax-numerical-step/1'):
                     if source not in ('auto', 'recipe'):
-                        raise ValueError(f'{file}: seamed STEP wrappers require the recipe source')
+                        raise ValueError(f'{file}: STEP wrappers require the recipe source')
                     problems.append({'source': 'recipe', 'problem': value})
                 elif fmt == 'catallax-print/1':
                     if source not in ('auto', 'field', 'print'):
@@ -124,7 +124,8 @@ def classification(item):
         problem = problem['edited_recipe']
     if kind == 'print':
         kind = 'field'
-    if problem.get('format') in ('catallax-print/1', 'catallax-stand-in/1', 'catallax-iges/1'):
+    if problem.get('format') in ('catallax-print/1', 'catallax-stand-in/1', 'catallax-iges/1',
+                               'catallax-step/1', 'catallax-numerical-step/1'):
         problem = problem['recipe']
     if kind == 'question':
         kind = 'boolean' if problem.get('steps') else 'stock'

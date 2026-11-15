@@ -69,6 +69,35 @@ class QualificationTests(unittest.TestCase):
     def archive_copy(self):
         return Path(shutil.copytree(self.archive, self.work / 'archive'))
 
+    def test_numerical_archive_rejects_promotion_even_with_resealed_hashes(self):
+        problem = {'format': 'catallax-numerical-step/1', 'tolerance_mm': '1/10000000',
+                   'recipe': {'format': 'catallax-recipe/3', 'name': 'numerical block',
+                              'steps': [{'id': 'box', 'op': 'block', 'size': ['1', '2', '3'],
+                                         'pose': {'rotation': ['1', '0', '0', '0'],
+                                                  'translation': ['0', '0', '0']}}],
+                              'result': 'box'}}
+        source = self.work / 'numerical.json'
+        write(source, problem)
+        args = self.args_for(inputs=[str(source)])
+        result = q.qualify(args, self.driver)
+        self.assertTrue(result['equal'], result)
+        run = json.loads((Path(args.out) / 'baseline1/run.json').read_text())
+        manifest = run['cases'][0]['response']['manifest']
+        self.assertEqual(manifest['status'], 'answered')
+        self.assertEqual(manifest['proof'], 'numerical')
+        key = q.reuse_key(args, self.driver)
+        for field, value in [('exact', True), ('proof', 'proven'), ('category', 'bounded')]:
+            with self.subTest(field=field):
+                archive = Path(shutil.copytree(args.out, self.work / ('promoted-' + field)))
+                def promote(directory, report):
+                    response = json.loads((directory / 'response.json').read_text())
+                    response['manifest'][field] = value
+                    write(directory / 'response.json', response)
+                    write(directory / 'manifest.json', response['manifest'])
+                self.mutate_case(archive, promote)
+                with self.assertRaisesRegex(q.EvidenceError, 'numerical category'):
+                    q.validate_archive(archive, key, self.driver)
+
     def reseal(self, archive):
         record = json.loads((archive / 'archive.json').read_text())
         record['files'] = q.inventory(archive, self.driver)

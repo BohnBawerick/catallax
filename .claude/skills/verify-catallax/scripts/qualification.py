@@ -277,8 +277,12 @@ def audit_run(path, items, binary_hash, workers, cores, driver, default_max_work
         log = read(directory / 'operations.json')
         require(response == case['response'] and response['manifest'] == manifest and
                 response['operation_log'] == log, 'response/manifest/log disagreement')
+        numerical = (item['source'] == 'recipe' and
+                     item['problem'].get('format') == 'catallax-numerical-step/1')
+        formats = ('catallax-numerical-manifest/1',) if numerical else (
+            'catallax-manifest/3', 'catallax-manifest/4', 'catallax-manifest/5')
         require(response['format'] == 'catallax-response/1' and
-                manifest['format'] in ('catallax-manifest/3', 'catallax-manifest/4', 'catallax-manifest/5') and
+                manifest['format'] in formats and
                 type(manifest['exact']) is bool and isinstance(manifest['marks'], list) and
                 manifest['status'] in ('answered', 'refused') and
                 log['format'] == 'catallax-operation-log/1' and log['status'] == manifest['status'], 'invalid outcome')
@@ -309,6 +313,23 @@ def audit_run(path, items, binary_hash, workers, cores, driver, default_max_work
         require(bool(manifest.get('step')) == ('answer.step' in artifacts), 'STEP presence')
         if manifest.get('step'):
             require(manifest['step']['file'] == 'answer.step', 'STEP artifact name')
+        if numerical:
+            require(manifest['exact'] is False and manifest['category'] == 'approximate' and
+                    manifest['proof'] == ('numerical' if manifest['status'] == 'answered' else 'refused'),
+                    'numerical category must not become exact or bounded')
+            if manifest['status'] == 'answered':
+                require(manifest['step']['category'] == 'approximate' and
+                        manifest['step']['complete_body_bound'] == 'unestablished' and
+                        manifest['numerical']['complete_body_bound'] == 'unestablished',
+                        'numerical samples must not become a complete bound')
+                for scope in ('source', 'emitted'):
+                    require(bound(manifest['numerical'][scope]['tolerance_mm']) ==
+                            bound(item['problem']['tolerance_mm']) and
+                            isinstance(manifest['numerical'][scope]['checks'], list) and
+                            bool(manifest['numerical'][scope]['checks']), 'numerical checks and preset tolerance')
+                require(manifest['step']['sha256'] == artifacts['answer.step'] and
+                        manifest['step']['bytes'] == (directory / 'answer.step').stat().st_size,
+                        'numerical STEP artifact identity')
         for field, filename in (('iges', 'answer.igs'), ('printing', 'print.stl')):
             require(bool(manifest.get(field)) == (filename in artifacts), 'export presence')
             if manifest.get(field):

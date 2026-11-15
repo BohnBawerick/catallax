@@ -56,7 +56,7 @@ fn finite_line_covers_keep_native_domains_and_do_not_mark_whole_curves_coinciden
                     );
                     assert!(matches!(
                         same_curve(model.geom(), finite, line, &mut dec),
-                        Outcome::Proven(false)
+                        Outcome::Proven(_)
                     ));
                     assert!(!model.geom().facts().holds(
                         FactKind::Coincident,

@@ -147,7 +147,8 @@ fn first_hit(
                     error
                 },
             )? {
-                crate::curve_pair::Meetings::Coincident => return Ok(None),
+                crate::curve_pair::Meetings::Coincident
+                | crate::curve_pair::Meetings::Covered(_) => return Ok(None),
                 crate::curve_pair::Meetings::Points(points) => points,
             }
         } else {

@@ -104,7 +104,7 @@ pub(super) fn adjacent(
         let (from, to) = natural_ends(&fork, edge_id);
         let station = |point: &Point3| point.minus(p).dot(&delta) / squared.clone();
         let blocked = match meetings(&mut fork, path, edge.curve, dec)? {
-            Meetings::Coincident => {
+            Meetings::Coincident | Meetings::Covered(_) => {
                 let (Some(from), Some(to)) = (from, to) else {
                     return Ok(Some(false));
                 };

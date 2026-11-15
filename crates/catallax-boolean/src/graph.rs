@@ -14,7 +14,9 @@ use catallax_numbers::{
     Answer, Answered, Ball, Decider, Fact, FactKind, FactOrigin, MarkLog, Outcome, Refusal,
     StrictOrder, ZeroProof,
 };
-use catallax_shapes::{CurveId, GeomKey, Meet, MeetOf, PointDef, PointId, Position, SurfaceId};
+use catallax_shapes::{
+    Curve, CurveId, GeomKey, Meet, MeetOf, PointDef, PointId, Position, SurfaceId,
+};
 use catallax_topology::{BodyId, BodyKind, FaceId, Loop, Model, VertexId};
 use std::collections::{BTreeMap, BTreeSet};
 

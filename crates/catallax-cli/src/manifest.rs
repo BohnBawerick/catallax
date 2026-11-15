@@ -41,7 +41,7 @@ pub struct Bound {
 /// Counts of the answer body.
 #[derive(Clone, PartialEq, Eq, Debug, serde::Serialize)]
 pub struct ResultSummary {
-    /// `solid` or `empty`.
+    /// `solid`, `surface` or `empty`.
     pub kind: String,
     /// Lumps.
     pub lumps: usize,

@@ -15,9 +15,19 @@ pub(super) fn write<W: Write>(
     let mut edges = BTreeMap::new();
     let mut added_edges = 0;
     let mut added_vertices = 0;
+    let mut prepared = model.clone();
     for body in bodies {
         if let Some(cover) = model.chart_expansion(*body) {
-            expanded.push(cover.body());
+            let covered = if model.body(*body).kind == catallax_topology::BodyKind::Surface
+                && model.body(cover.body()).kind != catallax_topology::BodyKind::Surface
+            {
+                let mut surface = model.body(cover.body()).clone();
+                surface.kind = catallax_topology::BodyKind::Surface;
+                prepared.add_body(surface)
+            } else {
+                cover.body()
+            };
+            expanded.push(covered);
             for face in model.faces_of_body(cover.body()) {
                 faces.insert(face, cover.face(face));
             }
@@ -34,7 +44,7 @@ pub(super) fn write<W: Write>(
             expanded.push(*body);
         }
     }
-    let mut answer = write_prepared(model, &expanded, options, dec, out, true)?;
+    let mut answer = write_prepared(&prepared, &expanded, options, dec, out, true)?;
     answer.value.added_edges += added_edges;
     answer.value.added_vertices += added_vertices;
     for region in &mut answer.value.face_map {

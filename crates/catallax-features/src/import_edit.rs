@@ -5,12 +5,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use catallax_numbers::{Decider, Refusal};
 use catallax_recipe::{FileRef, Operation, Recipe, StepId};
-use catallax_topology::{BodyId, Model};
+use catallax_topology::{BodyId, BodyKind, Model};
 use serde_json::Value;
 
 use crate::{Built, ImportFiles, evaluate_with_files};
 
-/// One source solid's membership after applying the recipe placement.
+/// One source body's membership after applying the recipe placement.
 #[derive(Clone, Debug, PartialEq, Eq, catallax_numbers::Transfer)]
 pub struct ImportedSolid {
     /// Source entity key in the immutable file: STEP `#...` or IGES `D...`.
@@ -154,9 +154,8 @@ pub fn replace_step(
             .read(bytes)
             .map_err(|e| refusal("import.replace-source", format!("{e:?}")))?;
         Ok(source
-            .solids
-            .into_iter()
-            .flat_map(|s| s.faces.into_iter().map(|f| f.name))
+            .named_faces()
+            .map(|(_, face)| face.name.clone())
             .collect())
     };
     let old = keys(&edit.old_sha256)?;
@@ -255,8 +254,8 @@ fn rewrite(value: &mut Value, edit: &StepReplacement) -> Result<(), Refusal> {
     Ok(())
 }
 
-/// Strict box separation or a boundary and containment proof permits collecting
-/// unchanged source lumps without merging membership or duplicating material.
+/// Collects source boundaries. A collection containing surfaces asserts no material.
+/// Collections of solids require separation before their material can be combined.
 pub(crate) fn collect_solids(
     model: &mut Model,
     bodies: &[(String, BodyId)],
@@ -265,31 +264,40 @@ pub(crate) fn collect_solids(
     let Some((_, first)) = bodies.first() else {
         return Err(Refusal::new(
             "import.not-solid",
-            "no closed solid was imported",
+            "no supported body was imported",
         ));
     };
     if bodies.len() == 1 {
         return Ok(*first);
     }
+    let surfaces = bodies
+        .iter()
+        .any(|(_, body)| model.body(*body).kind == BodyKind::Surface);
     let mut boxes: Vec<catallax_measure::BoundingBox> = Vec::new();
-    for (index, (name, id)) in bodies.iter().enumerate() {
-        let bounds = catallax_measure::bounding_box(model, *id, &Default::default(), dec)?
-            .value
-            .ok_or_else(|| Refusal::new("import.not-solid", format!("{name} has no bounds")))?;
-        for (other, b) in boxes.iter().enumerate() {
-            if !(0..3).any(|axis| bounds.max[axis] < b.min[axis] || b.max[axis] < bounds.min[axis])
-            {
-                prove_separate(model, bodies[other].1, *id, dec).map_err(|error| {
-                    separation_refusal(
-                        error,
-                        &format!("{} and {}", bodies[other].0, bodies[index].0),
-                    )
-                })?;
+    if !surfaces {
+        for (index, (name, id)) in bodies.iter().enumerate() {
+            let bounds = catallax_measure::bounding_box(model, *id, &Default::default(), dec)?
+                .value
+                .ok_or_else(|| Refusal::new("import.not-solid", format!("{name} has no bounds")))?;
+            for (other, b) in boxes.iter().enumerate() {
+                if !(0..3)
+                    .any(|axis| bounds.max[axis] < b.min[axis] || b.max[axis] < bounds.min[axis])
+                {
+                    prove_separate(model, bodies[other].1, *id, dec).map_err(|error| {
+                        separation_refusal(
+                            error,
+                            &format!("{} and {}", bodies[other].0, bodies[index].0),
+                        )
+                    })?;
+                }
             }
+            boxes.push(bounds);
         }
-        boxes.push(bounds);
     }
     let mut result = model.body(*first).clone();
+    if surfaces {
+        result.kind = BodyKind::Surface;
+    }
     for (_, id) in &bodies[1..] {
         result.lumps.extend_from_slice(&model.body(*id).lumps);
         result.marks.extend(&model.body(*id).marks);

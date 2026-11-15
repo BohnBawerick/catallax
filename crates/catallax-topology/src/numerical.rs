@@ -214,6 +214,10 @@ impl NumericalBody {
     pub fn evidence(&self) -> &NumericalEvidence {
         &self.evidence
     }
+    /// Stored topological kind, without exposing the model to exact consumers.
+    pub fn kind(&self) -> BodyKind {
+        self.model.body(self.body).kind
+    }
     /// Counts of the stored B-rep. No mesh stands in for this body.
     pub fn counts(&self) -> EntityCounts {
         self.model.counts(self.body)

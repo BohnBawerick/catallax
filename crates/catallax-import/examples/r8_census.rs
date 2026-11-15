@@ -6,7 +6,7 @@ use std::io::{self, Write};
 use catallax_import::{ImportRefusal, import_step_bodies, sha256_hex};
 use catallax_numbers::with_operation_budget;
 use catallax_recipe::StepId;
-use catallax_topology::Model;
+use catallax_topology::{BodyId, BodyKind, Model};
 use serde_json::{Value, json};
 
 // Reuse the production syntax parser, without stopping at geometry recognition.
@@ -342,6 +342,23 @@ fn refusal_kind(refusal: &ImportRefusal) -> String {
     }
 }
 
+fn body_kind(kind: BodyKind) -> &'static str {
+    match kind {
+        BodyKind::Solid => "solid",
+        BodyKind::Surface => "surface",
+        BodyKind::Empty => "empty",
+        _ => "unknown",
+    }
+}
+
+fn body_kinds(model: &Model, bodies: &[BodyId]) -> BTreeMap<&'static str, usize> {
+    let mut counts = BTreeMap::new();
+    for body in bodies {
+        *counts.entry(body_kind(model.body(*body).kind)).or_default() += 1;
+    }
+    counts
+}
+
 fn evaluate(bytes: &[u8]) -> Value {
     let mut model = Model::new();
     let step = StepId::new("r8-import").unwrap();
@@ -358,7 +375,8 @@ fn evaluate(bytes: &[u8]) -> Value {
             let tolerances=bodies.iter().flat_map(|body|model.body(*body).marks.iter())
                 .filter(|mark|mark.code.starts_with("import.incidence-"))
                 .map(|mark|json!({"code":mark.code,"bound_mm":mark.bound.to_decimal_exact().expect("recorded decimal"),"definition":mark.detail})).collect::<Vec<_>>();
-            json!({"stage": "import", "outcome": "admitted", "bodies": bodies.len(),"local_incidence_tolerances":tolerances})
+            json!({"stage": "import", "outcome": "admitted", "bodies": bodies.len(),
+                "body_kinds":body_kinds(&model, &bodies),"local_incidence_tolerances":tolerances})
         }
         Err(refusal) => {
             // Full diagnostics stay in the private stderr file, never the table.
@@ -399,9 +417,13 @@ fn evaluate_numerical(bytes: &[u8]) -> Value {
                 .filter(|mark|mark.code.starts_with("import.incidence-"))
                 .map(|mark|json!({"code":mark.code,"bound_mm":mark.bound.to_decimal_exact().expect("recorded decimal"),"definition":mark.detail})).collect::<Vec<_>>();
             json!({"stage":"import","outcome":"admitted","import_category":"certified",
-                "bodies":imported.bodies().len(),"local_incidence_tolerances":tolerances})
+                "bodies":imported.bodies().len(),"body_kinds":body_kinds(model, imported.bodies()),"local_incidence_tolerances":tolerances})
         }
         Ok(StepImport::Numerical(imported)) => {
+            let mut kinds = BTreeMap::<_, usize>::new();
+            for (_, body) in imported.bodies() {
+                *kinds.entry(body_kind(body.kind())).or_default() += 1;
+            }
             let source_admission_method = imported
                 .source_admission()
                 .map(|record| record.method.as_str());
@@ -435,7 +457,7 @@ fn evaluate_numerical(bytes: &[u8]) -> Value {
                 .map(|(_, body)| body.options().tolerance_mm.to_string())
                 .collect::<BTreeSet<_>>();
             json!({"stage":"import","outcome":"admitted","import_category":"numerical approximate",
-                "bodies":imported.bodies().len(),"exact":false,"tolerances_mm":tolerances,
+                "bodies":imported.bodies().len(),"body_kinds":kinds,"exact":false,"tolerances_mm":tolerances,
                 "source_to_result_max_mm":bounds,"complete_body_bound":"unestablished",
                 "source_change_count":imported.record().changes.len(),
                 "source_admission_method":source_admission_method,"max_checked_residual_mm":checked_max,
@@ -496,6 +518,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn admitted_surface_models_report_the_actual_body_kind() {
+        let source = include_bytes!("../tests/fixtures/surface-square.step");
+        for row in [evaluate(source), evaluate_numerical(source)] {
+            assert_eq!(row["outcome"], "admitted");
+            assert_eq!(row["bodies"], 1);
+            assert_eq!(row["body_kinds"], json!({"surface": 1}));
+        }
+    }
+
+    #[test]
+    fn numerical_admissions_report_the_stored_body_kind() {
+        let source =
+            common::box_with_placement(5, Some(["0.000001", "0", "1"]), Some(["1", "0", "0"]));
+        let row = evaluate_numerical(source.as_bytes());
+        assert_eq!(row["outcome"], "admitted");
+        assert_eq!(row["import_category"], "numerical approximate");
+        assert_eq!(row["body_kinds"], json!({"solid": 1}));
+    }
 
     #[test]
     fn clean_box_counts_and_imports_through_the_recipe_entry() {

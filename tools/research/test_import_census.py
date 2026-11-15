@@ -63,6 +63,13 @@ class ObservationTests(unittest.TestCase):
                 'import_category': 'certified', 'work_used': 100,
                 'work_limit': 20_000_000}
 
+    def test_admitted_body_kinds_survive_collection(self):
+        for kinds in [{'surface': 1}, {'solid': 1, 'surface': 2}]:
+            imported = {**self.admitted(), 'body_kinds': kinds,
+                        'bodies': sum(kinds.values())}
+            row = self.observe(self.source(), imported)
+            self.assertEqual(row.get('body_kinds'), kinds)
+
     def test_unverified_source_coverage_is_partial(self):
         row = self.observe(self.source(False), self.admitted())
         self.assertEqual(row['outcome'], 'partial')

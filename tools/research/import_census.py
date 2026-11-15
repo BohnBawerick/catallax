@@ -118,6 +118,7 @@ def observe(binary, path, key, expected_hash, raw, timeout, baseline):
         'coverage_complete': source.get('coverage_complete') is True,
         'source_parse': source.get('source_parse', 'unobserved'),
         'bodies': imported.get('bodies'),
+        'body_kinds': imported.get('body_kinds'),
         'work_used': imported.get('work_used'),
         'work_limit': imported.get('work_limit'),
         'tolerances_mm': imported.get('tolerances_mm', []),

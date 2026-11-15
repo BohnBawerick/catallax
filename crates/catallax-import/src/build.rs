@@ -21,7 +21,8 @@ use catallax_topology::{
 
 use crate::exact::{cross, dot, is_zero, sub, unit};
 use crate::{
-    Curve, Face as StepFace, ImportRefusal, OrientedEdge, Placement, Solid, StepFile, Surface, Vec3,
+    Curve, Face as StepFace, ImportRefusal, OrientedEdge, Placement, Solid, StepFile, Surface,
+    SurfaceModel, Vec3,
 };
 
 fn not_solid(detail: impl Into<String>) -> ImportRefusal {
@@ -45,7 +46,7 @@ fn vector(v: &Vec3) -> Vector3 {
     RVector3::new(v[0].clone(), v[1].clone(), v[2].clone()).to_real()
 }
 
-/// Builds every solid of a file into `model`, one body each, in file order.
+/// Builds each solid and surface model into its own typed body.
 /// Faces carry the origin `{step, imported: {key: "#n"}}` when `step` is given.
 pub fn build_file(
     model: &mut Model,
@@ -53,10 +54,61 @@ pub fn build_file(
     step: Option<&StepId>,
 ) -> Result<Vec<BodyId>, ImportRefusal> {
     let repair = file.solids.iter().any(has_spline);
-    file.solids
+    let mut bodies = file
+        .solids
         .iter()
         .map(|solid| build_solid_with_repair(model, solid, step, repair))
-        .collect()
+        .collect::<Result<Vec<_>, _>>()?;
+    for surface in &file.surface_models {
+        bodies.push(build_surface_model(model, surface, step)?);
+    }
+    Ok(bodies)
+}
+
+/// Builds surface shells without asserting an enclosed material region.
+pub fn build_surface_model(
+    model: &mut Model,
+    source: &SurfaceModel,
+    step: Option<&StepId>,
+) -> Result<BodyId, ImportRefusal> {
+    let mut lumps = Vec::new();
+    for shell in &source.shells {
+        let faces = build_source_faces(model, &shell.name, &shell.faces, step)?;
+        if shell.closed {
+            let mut uses = BTreeMap::<EdgeId, usize>::new();
+            for face in &faces {
+                for boundary in &model.face(*face).loops {
+                    if let Loop::Coedges(coedges) = model.loop_(*boundary) {
+                        for coedge in coedges {
+                            *uses.entry(model.coedge(*coedge).edge).or_default() += 1;
+                        }
+                    }
+                }
+            }
+            if uses.values().any(|count| *count != 2) {
+                return Err(not_solid(format!(
+                    "declared closed surface shell {} has boundary edges",
+                    shell.name
+                )));
+            }
+        }
+        let shell = model.add_shell(Shell { faces });
+        lumps.push(model.add_lump(Lump {
+            shells: vec![shell],
+        }));
+    }
+    let body = model.add_body(Body {
+        kind: BodyKind::Surface,
+        lumps,
+        marks: MarkLog::new(),
+    });
+    if let Some(fault) = model.check(body).first() {
+        return Err(not_solid(format!(
+            "{} in surface model {}: {}",
+            fault.code, source.name, fault.detail
+        )));
+    }
+    Ok(body)
 }
 
 /// Builds one solid into `model` and checks its topology.
@@ -121,7 +173,11 @@ fn build_solid_with_repair(
 }
 
 fn has_spline(solid: &Solid) -> bool {
-    solid.faces.iter().any(|face| {
+    has_spline_faces(&solid.faces)
+}
+
+fn has_spline_faces(faces: &[StepFace]) -> bool {
+    faces.iter().any(|face| {
         matches!(face.surface, Surface::BSpline(_))
             || face
                 .loops
@@ -137,34 +193,7 @@ fn build_solid_exact(
     step: Option<&StepId>,
     marks: &MarkLog,
 ) -> Result<BodyId, ImportRefusal> {
-    let has_spline = has_spline(solid);
-    if !has_spline {
-        crate::intersect::check_solid(solid)?;
-    }
-    let mut b = Builder::new(model, false);
-    let mut faces = Vec::new();
-    for face in &solid.faces {
-        let origins = step
-            .map(|step| {
-                vec![Origin {
-                    step: step.clone(),
-                    role: Role::Imported {
-                        key: face.name.clone(),
-                    },
-                }]
-            })
-            .unwrap_or_default();
-        faces.push(b.face(face, origins)?);
-    }
-    if has_spline {
-        crate::intersect::check_solid_with_scratch(
-            solid,
-            Some(crate::curved::Scratch {
-                model: model.clone(),
-                faces: faces.clone(),
-            }),
-        )?;
-    }
+    let faces = build_source_faces(model, &solid.name, &solid.faces, step)?;
     let shell = model.add_shell(Shell { faces });
     let lump = model.add_lump(Lump {
         shells: vec![shell],
@@ -181,6 +210,44 @@ fn build_solid_exact(
         )));
     }
     Ok(body)
+}
+
+fn build_source_faces(
+    model: &mut Model,
+    name: &str,
+    source: &[StepFace],
+    step: Option<&StepId>,
+) -> Result<Vec<catallax_topology::FaceId>, ImportRefusal> {
+    let has_spline = has_spline_faces(source);
+    if !has_spline {
+        crate::intersect::check_faces(name, source, None)?;
+    }
+    let mut b = Builder::new(model, false);
+    let mut faces = Vec::new();
+    for face in source {
+        let origins = step
+            .map(|step| {
+                vec![Origin {
+                    step: step.clone(),
+                    role: Role::Imported {
+                        key: face.name.clone(),
+                    },
+                }]
+            })
+            .unwrap_or_default();
+        faces.push(b.face(face, origins)?);
+    }
+    if has_spline {
+        crate::intersect::check_faces(
+            name,
+            source,
+            Some(crate::curved::Scratch {
+                model: model.clone(),
+                faces: faces.clone(),
+            }),
+        )?;
+    }
+    Ok(faces)
 }
 
 type Joined = (EdgeId, [Option<VertexId>; 2]);
@@ -221,10 +288,10 @@ impl<'a> Builder<'a> {
 /// admission and incidence checks. No body is built.
 pub(crate) fn scratch_faces(
     model: &mut Model,
-    solid: &Solid,
+    faces: &[StepFace],
 ) -> Result<Vec<catallax_topology::FaceId>, ImportRefusal> {
     let mut b = Builder::new(model, true);
-    solid.faces.iter().map(|f| b.face(f, Vec::new())).collect()
+    faces.iter().map(|f| b.face(f, Vec::new())).collect()
 }
 
 impl Builder<'_> {

@@ -44,7 +44,7 @@ pub mod scan;
 mod spline_build;
 mod spline_embedding;
 
-pub use build::{build_file, build_solid};
+pub use build::{build_file, build_solid, build_surface_model};
 pub use consume::{import_iges_bodies, import_step_bodies, sha256_hex};
 pub use gap::{ImportOptions, propose, propose_source};
 pub use iges::{SourceFormat, read_iges, read_iges_with_decider};

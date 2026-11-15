@@ -696,6 +696,7 @@ impl Reader<'_> {
         Ok(StepFile {
             mm_per_unit: self.scale.clone(),
             solids,
+            surface_models: Vec::new(),
         })
     }
 

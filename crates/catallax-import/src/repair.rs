@@ -155,6 +155,9 @@ pub fn apply_source(
             )),
         })?;
         for (_, body) in &imported.bodies {
+            if candidate.body(*body).kind == catallax_topology::BodyKind::Surface {
+                continue;
+            }
             let measured = volume(
                 &candidate,
                 *body,
@@ -490,6 +493,13 @@ pub(crate) fn apply_file(
         ));
     }
 
+    for surface in &work.surface_models {
+        bodies.push((
+            surface.name.clone(),
+            crate::build_surface_model(&mut built_model, surface, step)?,
+        ));
+    }
+
     if let Some((moved, feature)) = &cleaned {
         // Outward: the recorded bound is never below the proven movement.
         let upper = moved.to_decimal_bounds(20).1;
@@ -802,68 +812,79 @@ pub fn canonical_bytes(file: &StepFile) -> Vec<u8> {
     out.push_str(&format!("unit {}\n", file.mm_per_unit));
     for solid in &file.solids {
         out.push_str(&format!("solid {}\n", solid.name));
-        for face in &solid.faces {
-            let surface = match &face.surface {
-                Surface::Plane(p) => format!("plane {}", placement(p)),
-                Surface::Cylinder(p, r) => format!("cylinder {} {r}", placement(p)),
-                Surface::Cone45(p, r) => format!("cone45 {} {r}", placement(p)),
-                Surface::Cone(p, r, a) => format!(
-                    "cone {} {r} {} {}",
-                    placement(p),
-                    a.value,
-                    if a.degrees { "deg" } else { "rad" }
-                ),
-                Surface::Sphere(p, r) => format!("sphere {} {r}", placement(p)),
-                Surface::Torus(p, a, b) => format!("torus {} {a} {b}", placement(p)),
-                Surface::BSpline(s) => format!(
-                    "spline {} {} {} {} {} {}|{}",
-                    s.geometry.degrees()[0],
-                    s.geometry.degrees()[1],
-                    spline_numbers(s.geometry.knots()[0]),
-                    spline_numbers(s.geometry.knots()[1]),
-                    spline_points(s.geometry.controls()),
-                    spline_numbers(s.geometry.weights()),
-                    spline_flags(&[s.closed[0], s.closed[1], s.self_intersect])
-                ),
-            };
-            out.push_str(&format!(
-                "face {} {} {surface}\n",
-                face.name, face.same_sense
-            ));
-            for bound in &face.loops {
-                out.push_str(&format!("bound {} {}\n", bound.outer, bound.orientation));
-                if let Some(v) = &bound.vertex {
-                    out.push_str(&format!("vertex {}|{}\n", v.name, v3(&v.point)));
-                }
-                for e in &bound.edges {
-                    let curve = match &e.curve {
-                        Curve::Line(o, d) => format!("line {}|{}", v3(o), v3(d)),
-                        Curve::Circle(p, r) => format!("circle {} {r}", placement(p)),
-                        Curve::Ellipse(p, a, b) => format!("ellipse {} {a} {b}", placement(p)),
-                        Curve::BSpline(c) => format!(
-                            "spline {} {} {} {}|{}",
-                            c.geometry.degree(),
-                            spline_numbers(c.geometry.knots()),
-                            spline_points(c.geometry.controls()),
-                            spline_numbers(c.geometry.weights()),
-                            spline_flags(&[c.closed, c.self_intersect])
-                        ),
-                    };
-                    out.push_str(&format!(
-                        "edge {} {} {} {}|{} {}|{} {curve}\n",
-                        e.edge,
-                        e.forward,
-                        e.curve_same_sense,
-                        e.start.name,
-                        v3(&e.start.point),
-                        e.end.name,
-                        v3(&e.end.point)
-                    ));
-                }
-            }
+        canonical_faces(&mut out, &solid.faces);
+    }
+    for surface in &file.surface_models {
+        out.push_str(&format!("surface {}\n", surface.name));
+        for shell in &surface.shells {
+            out.push_str(&format!("shell {} {}\n", shell.name, shell.closed));
+            canonical_faces(&mut out, &shell.faces);
         }
     }
     out.into_bytes()
+}
+
+fn canonical_faces(out: &mut String, faces: &[crate::Face]) {
+    for face in faces {
+        let surface = match &face.surface {
+            Surface::Plane(p) => format!("plane {}", placement(p)),
+            Surface::Cylinder(p, r) => format!("cylinder {} {r}", placement(p)),
+            Surface::Cone45(p, r) => format!("cone45 {} {r}", placement(p)),
+            Surface::Cone(p, r, a) => format!(
+                "cone {} {r} {} {}",
+                placement(p),
+                a.value,
+                if a.degrees { "deg" } else { "rad" }
+            ),
+            Surface::Sphere(p, r) => format!("sphere {} {r}", placement(p)),
+            Surface::Torus(p, a, b) => format!("torus {} {a} {b}", placement(p)),
+            Surface::BSpline(s) => format!(
+                "spline {} {} {} {} {} {}|{}",
+                s.geometry.degrees()[0],
+                s.geometry.degrees()[1],
+                spline_numbers(s.geometry.knots()[0]),
+                spline_numbers(s.geometry.knots()[1]),
+                spline_points(s.geometry.controls()),
+                spline_numbers(s.geometry.weights()),
+                spline_flags(&[s.closed[0], s.closed[1], s.self_intersect])
+            ),
+        };
+        out.push_str(&format!(
+            "face {} {} {surface}\n",
+            face.name, face.same_sense
+        ));
+        for bound in &face.loops {
+            out.push_str(&format!("bound {} {}\n", bound.outer, bound.orientation));
+            if let Some(v) = &bound.vertex {
+                out.push_str(&format!("vertex {}|{}\n", v.name, v3(&v.point)));
+            }
+            for e in &bound.edges {
+                let curve = match &e.curve {
+                    Curve::Line(o, d) => format!("line {}|{}", v3(o), v3(d)),
+                    Curve::Circle(p, r) => format!("circle {} {r}", placement(p)),
+                    Curve::Ellipse(p, a, b) => format!("ellipse {} {a} {b}", placement(p)),
+                    Curve::BSpline(c) => format!(
+                        "spline {} {} {} {}|{}",
+                        c.geometry.degree(),
+                        spline_numbers(c.geometry.knots()),
+                        spline_points(c.geometry.controls()),
+                        spline_numbers(c.geometry.weights()),
+                        spline_flags(&[c.closed, c.self_intersect])
+                    ),
+                };
+                out.push_str(&format!(
+                    "edge {} {} {} {}|{} {}|{} {curve}\n",
+                    e.edge,
+                    e.forward,
+                    e.curve_same_sense,
+                    e.start.name,
+                    v3(&e.start.point),
+                    e.end.name,
+                    v3(&e.end.point)
+                ));
+            }
+        }
+    }
 }
 
 /// Rebuilds a STEP import from the source bytes and a persisted record.

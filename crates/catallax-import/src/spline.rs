@@ -152,6 +152,15 @@ fn normalize_curve_ends(
     if weights.len() != controls.len() || first_drop + last_drop >= controls.len() {
         return Err(malformed("invalid spline endpoint padding"));
     }
+    for weight in weights[..first_drop]
+        .iter()
+        .chain(&weights[weights.len() - last_drop..])
+    {
+        meter.charge_work(1).map_err(source_error)?;
+        if weight <= &Rational::zero() {
+            return Err(malformed("weights must be strictly positive"));
+        }
+    }
     // These endpoint basis functions have zero support on the active domain.
     // As in StepToGeom, discard their controls and matching weights with the extra knots.
     meter

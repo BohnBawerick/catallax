@@ -133,6 +133,9 @@ fn norm_squared(v: &Vec3) -> Rational {
 /// and a conservative squared nearest-feature size of the cleaned file.
 /// `None` when the file carries spline data, which this bound does not cover.
 pub(crate) fn bound(file: &StepFile, cleaned: &Cleaned) -> Option<(Rational, Rational)> {
+    if !file.surface_models.is_empty() {
+        return None;
+    }
     let mut directions = Vec::new();
     let mut feature: Option<Rational> = None;
     let mut smaller = |q: Rational| {

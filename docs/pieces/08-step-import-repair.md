@@ -34,11 +34,34 @@ These repairs use `catallax-import-repair/3` and an explicit `projected_vertex_b
 
 ## Supported first path
 
-Files: AP203/AP214/AP242 `MANIFOLD_SOLID_BREP` with one `CLOSED_SHELL`, in millimetres, inches or metres (exact conversion).
+Files: AP203/AP214/AP242 `MANIFOLD_SOLID_BREP` with one `CLOSED_SHELL`, and `SHELL_BASED_SURFACE_MODEL` containing open or closed shells, in millimetres, inches or metres (exact conversion).
 
-Surfaces: `PLANE`, `CYLINDRICAL_SURFACE`, `CONICAL_SURFACE`, `SPHERICAL_SURFACE`, `TOROIDAL_SURFACE`. Curves: `LINE`, `CIRCLE`, `ELLIPSE`, and `SURFACE_CURVE` or `SEAM_CURVE` read through their 3D curve (parameter-space curves are ignored). A `CONICAL_SURFACE` at exactly 45 degrees in a degree context is built exactly as declared. At any other semi-angle, in degrees or radians, tan(semi-angle) is irrational, so no decimal rim away from the placement plane lies exactly on the declared cone. Such a cone is built through the face's two coaxial rim circles, or through its rim and its apex. The apex is a `VERTEX_LOOP`, or the end of a seam on the axis. That cone has a rational slope. Its whole-face deviation from the declared cone is certified. The largest radial miss at the two ends gives the upper bound. The lower bound is an end's distance to the declared double cone: the smaller of its misses from the two nappes' lines in the meridian plane, times cos(semi-angle). The cone is accepted automatically only when the upper bound fits the 0.01 mm automatic cap and a tenth of the face's nearest feature. The feature is the axial span or a nonzero rim radius. The deviation is recorded in `face_tolerances`. Beyond either limit the file is refused as `not_solid`, with both bounds in the detail. A sphere or torus face whose bounds reduce to seams, or to one `VERTEX_LOOP` on the surface, is the complete surface. Circles on spheres and torus parallels and meridians are checked exactly. A `VERTEX_LOOP` elsewhere is refused. Several `MANIFOLD_SOLID_BREP` entities import as separate bodies, which acceptance test 2 needs. Offset, swept, voids, shell models and assemblies are refused with the entity id and type. A face with a single `FACE_BOUND` and no `FACE_OUTER_BOUND` is read with that bound as its outer boundary, as Catallax's own exporter writes it. Decimals read as exact rationals; no float enters a decision.
+Surfaces: `PLANE`, `CYLINDRICAL_SURFACE`, `CONICAL_SURFACE`, `SPHERICAL_SURFACE`, `TOROIDAL_SURFACE`. Curves: `LINE`, `CIRCLE`, `ELLIPSE`, and `SURFACE_CURVE` or `SEAM_CURVE` read through their 3D curve (parameter-space curves are ignored). A `CONICAL_SURFACE` at exactly 45 degrees in a degree context is built exactly as declared. At any other semi-angle, in degrees or radians, tan(semi-angle) is irrational, so no decimal rim away from the placement plane lies exactly on the declared cone. Such a cone is built through the face's two coaxial rim circles, or through its rim and its apex. The apex is a `VERTEX_LOOP`, or the end of a seam on the axis. That cone has a rational slope. Its whole-face deviation from the declared cone is certified. The largest radial miss at the two ends gives the upper bound. The lower bound is an end's distance to the declared double cone: the smaller of its misses from the two nappes' lines in the meridian plane, times cos(semi-angle). The cone is accepted automatically only when the upper bound fits the 0.01 mm automatic cap and a tenth of the face's nearest feature. The feature is the axial span or a nonzero rim radius. The deviation is recorded in `face_tolerances`. Beyond either limit the file is refused as `not_solid`, with both bounds in the detail. A sphere or torus face whose bounds reduce to seams, or to one `VERTEX_LOOP` on the surface, is the complete surface. Circles on spheres and torus parallels and meridians are checked exactly. A `VERTEX_LOOP` elsewhere is refused. Several `MANIFOLD_SOLID_BREP` entities import as separate bodies, which acceptance test 2 needs. Bounded rational spline extrusions read as tensor surfaces. Other extrusion profiles, revolution surfaces, offsets, voids and assemblies still reach typed refusals where their reader or admission path is missing. A face with a single `FACE_BOUND` and no `FACE_OUTER_BOUND` is read with that bound as its outer boundary, as Catallax's own exporter writes it. Decimals read as exact rationals; no float enters a decision.
 
 Face keys are the `ADVANCED_FACE` entity names, as in `docs/RECIPE.md` section 4.18.
+
+### Surface bodies
+
+`StepFile.surface_models` retains surface models separately from `StepFile.solids`.
+Each surface model builds as `BodyKind::Surface`, with each shell in its own lump and no assertion of enclosed material.
+A closed shell declared inside a surface model stays a surface body.
+Boundary edges have one use; interior edges have two opposite uses.
+Surface validation checks boundary cycles, edge connectivity, vertex fans and the Euler characteristic with boundary components included.
+The display mesh must match the B-rep boundary segments, so permitting an open sheet does not permit missing display facets.
+
+Surface bodies support area, bounds, edge queries, display, picking and STEP export through the ordinary entries.
+Volume, solid centroid, inertia and mass properties refuse with `measure.not-solid`.
+Boolean operations refuse with `boolean.not-solid` before identity, empty or separated-operand shortcuts.
+Solid-field compilation refuses with `field.import-domain`.
+STEP output uses `SHELL_BASED_SURFACE_MODEL` with open or closed shell entities determined from actual edge use, and reports zero solids for a surface-only body.
+The command manifest reports `result.kind: "surface"`.
+
+The lower-level file entry keeps mixed solid and surface inputs as separate typed bodies.
+A recipe that collects both kinds returns a surface boundary collection without asserting combined material; selecting a source solid still returns that solid.
+Surface models do not enter solid seam-closing or binary-noise repair.
+The numerical fallback refuses a continuation that would omit a surface model rather than return only its sibling solids.
+The geometry admission and tolerance requirements for each face remain in force.
+Acceptance entries are `catallax-import --test surfaces`, `catallax-app --test surface_import`, and the surface command case in `catallax-cli --test verification`.
 
 ### Spline source recognition and preview
 

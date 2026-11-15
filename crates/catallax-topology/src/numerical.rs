@@ -14,6 +14,7 @@ use crate::{
     Vertex,
 };
 
+mod analytic;
 mod curved;
 mod source;
 pub use source::definition_from_model;
@@ -402,6 +403,7 @@ fn build_inner(
                     ));
                 }
             }
+            Curve::Circle(circle) => analytic::validate_circle(circle, &edge.parameters, dec)?,
             _ => {
                 return Err(bad(
                     "unsupported",
@@ -432,15 +434,13 @@ fn build_inner(
     let mut faces = Vec::new();
     for face in &definition.faces {
         dec.charge_work(1)?;
-        if !matches!(
-            face.surface,
-            Surface::Plane(_) | Surface::BSpline(SplineSupport::RationalPatch(_))
-        ) {
+        if !analytic::supports(&face.surface) {
             return Err(bad(
                 "unsupported",
                 "numerical admission currently supports planes and embedded rational patches",
             ));
         }
+        analytic::validate_surface(&face.surface, dec)?;
         if let Surface::Plane(plane) = &face.surface {
             catallax_shapes::Plane::new(
                 plane.origin.clone(),
@@ -458,7 +458,7 @@ fn build_inner(
         // Validate the newly admitted second boundary before building its
         // coedges. A duplicated outer loop remains an invalid trim, as in N01.
         if face.loops.len() == 2 {
-            curved::check_loops(face, &definition.edges, dec)?;
+            analytic::check_loops(face, &definition.edges, dec)?;
             check_distinct_boundary_vertices(face, &definition.edges, dec)?;
         }
         let mut loops = Vec::new();
@@ -531,9 +531,9 @@ fn build_inner(
     }
     for face in &definition.faces {
         if face.loops.len() == 1 {
-            curved::check_loops(face, &definition.edges, dec)?;
+            analytic::check_loops(face, &definition.edges, dec)?;
         }
-        let sampled = curved::projected(face, &definition.edges);
+        let sampled = analytic::projected(face, &definition.edges);
         checks.push(NumericalCheck::Passed {
             name: if sampled {
                 "trim.sampled-simple-oriented-parameter-loop"
@@ -577,11 +577,7 @@ fn build_inner(
                     .curve
                     .evaluate(&Ball::from_rational(&t, BITS), dec)?
                     .ok_or_else(|| bad("unsupported", "edge has no parameter evaluator"))?;
-                if i != 0
-                    && i != SUBDIVISIONS
-                    && matches!(edge.curve, Curve::BSpline(_))
-                    && matches!(face.surface, Surface::Plane(_))
-                {
+                if i != 0 && i != SUBDIVISIONS && analytic::projected_edge(face, edge) {
                     uv = curved::parameters(&face.surface, &p, dec)?;
                 }
                 let q = face.surface.evaluate(

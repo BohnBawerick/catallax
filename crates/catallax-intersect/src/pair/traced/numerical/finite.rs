@@ -188,6 +188,89 @@ mod tests {
     }
 
     #[test]
+    fn two_cone_faces_share_the_original_cylinder_source_in_either_order() {
+        let surfaces = axial(r(10));
+        let mut other = surfaces.clone();
+        let Surface::Cone(cone) = &mut other[0] else {
+            unreachable!()
+        };
+        cone.apex = Point3::new(s(0), s(23), s(0));
+        cone.axis = Vector3::new(s(0), s(-1), s(0));
+        let query = |pair| {
+            numerical_native_finite_intersection(
+                pair,
+                [r(11), r(12)],
+                [r(-64), r(64)],
+                &mut Decider::default(),
+            )
+            .unwrap()
+            .unwrap()
+        };
+        let first = query([&surfaces[0], &surfaces[1]]);
+        let second = query([&other[1], &other[0]]);
+        assert!(first.windows().sources()[1].same_definition(&second.windows().sources()[0]));
+        assert_eq!(
+            first.windows().cylinder_parameters(),
+            second.windows().cylinder_parameters()
+        );
+        assert_eq!(
+            first.windows().cylinder_origin().y.as_rational(),
+            Some(r(12))
+        );
+        assert_eq!(
+            second.windows().cylinder_origin().y.as_rational(),
+            Some(r(12))
+        );
+    }
+
+    #[test]
+    fn finite_crossing_keeps_its_native_intervals_after_algebraic_pose_and_scale() {
+        use catallax_trace::surface_curves::CurveKind;
+        let root = s(2).sqrt();
+        let axis = Vector3::new(&s(1) / &root, &s(1) / &root, s(0));
+        let radial = Vector3::new(&s(1) / &root, -(&s(1) / &root), s(0));
+        for scale in [Rational::from_ratio(1, 2).unwrap(), r(3)] {
+            let at = Point3::new(s(3), s(-7), s(2));
+            let cone = Surface::Cone(Cone {
+                apex: at.plus(&axis.scaled(&Real::from(-(&r(11) * &scale)))),
+                axis: axis.clone(),
+                slope: s(1),
+                ref_dir: radial.clone(),
+            });
+            let cylinder = Surface::Cylinder(Cylinder {
+                origin: at.plus(&axis.scaled(&Real::from(&r(12) * &scale))).plus(
+                    &radial.scaled(&Real::from(Rational::from_ratio(21, 2).unwrap() * &scale)),
+                ),
+                axis: axis.scaled(&s(-1)),
+                radius_sq: Real::from(&scale * &scale),
+                ref_dir: radial.clone(),
+            });
+            let (result, work) = with_operation_budget(20_000_000, || {
+                numerical_native_finite_intersection(
+                    [&cone, &cylinder],
+                    [&r(11) * &scale, &r(12) * &scale],
+                    [&r(10) * &scale, &r(13) * &scale],
+                    &mut Decider::default(),
+                )
+            });
+            let result = result.unwrap().unwrap();
+            assert!(!work.exhausted, "{work:?}");
+            assert_eq!(
+                result
+                    .pieces()
+                    .iter()
+                    .filter(|p| p.kind() == CurveKind::Crossing)
+                    .count(),
+                2
+            );
+            assert_eq!(
+                result.evidence().tolerance_mm(),
+                &Rational::from_ratio(1, 10_000_000).unwrap()
+            );
+        }
+    }
+
+    #[test]
     fn invalid_bands_and_caller_exhaustion_do_not_fall_back_to_natural_domains() {
         let surfaces = axial(r(10));
         for (cone, cylinder) in [

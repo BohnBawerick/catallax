@@ -335,8 +335,8 @@ pub(super) fn search(
         crate::pair::trace_candidates::surface(&windows.sources[0], &Isometry::identity(), dec)?;
     let b =
         crate::pair::trace_candidates::surface(&windows.sources[1], &Isometry::identity(), dec)?;
-    dec.charge_work(1)?;
-    let after_setup = catallax_numbers::current_operation_work().used;
+    let after_sources = catallax_numbers::current_operation_work().used;
+    let mut setup = after_sources - after_windows;
     let carriers = [
         Carrier::new(&windows.originals[0], dec)?,
         Carrier::new(&windows.originals[1], dec)?,
@@ -352,6 +352,7 @@ pub(super) fn search(
     };
     for ar in &ranges {
         for br in &ranges {
+            let before_setup = catallax_numbers::current_operation_work().used;
             dec.charge_work(1)?;
             let domains = [*ar, *br].map(|u| [u.map(r), [r(0), r(1)]]);
             let float_domains = domains.each_ref().map(|d| {
@@ -372,6 +373,7 @@ pub(super) fn search(
             intersector.approx_tolerance = windows.evidence.tolerance_mm().to_f64_nearest() / 4.;
             intersector.check_output_spans = true;
             let before_trace = catallax_numbers::current_operation_work().used;
+            setup += before_trace - before_setup;
             let (fits, report) = trace_with_caller(&intersector, dec);
             tracing += catallax_numbers::current_operation_work().used - before_trace;
             add_report(&mut trace_work, report);
@@ -427,9 +429,9 @@ pub(super) fn search(
     let finished = catallax_numbers::current_operation_work().used;
     let work_stages = NumericalNativeWork {
         windows: after_windows - started,
-        setup: after_setup - after_windows,
+        setup,
         tracing,
-        fit_checks: finished - after_setup - tracing,
+        fit_checks: finished - after_windows - setup - tracing,
     };
     Ok(NumericalNativeIntersection {
         windows,

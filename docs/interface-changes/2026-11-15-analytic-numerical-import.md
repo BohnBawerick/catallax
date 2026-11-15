@@ -9,11 +9,18 @@ of the source cap or neighbouring-feature limit remains a refusal.
 `NumericalImport::source_admission()` returns an optional
 `NumericalSourceAdmission` with the actual strict refusal, fixed tolerance and
 versioned reconstruction method. The method
-`retained_shared_analytic_boundaries/1` preserves source vertices and carriers.
+`retained_shared_analytic_boundaries/2` preserves source vertices and carriers.
 Its source record contains no invented whole-face bound or derivative hash.
 Body evidence lists actual structure, orientation, finite-loop and residual
 checks; its empty movement history means no 3D vertex was moved. The reconstructed
 parameters and source interpretation remain separate from geometric movement.
+
+`intersection_checks` records every within-solid source face pair in source order.
+The existing exact checker runs independently on each pair whose planar incidence
+prerequisites hold. A gap only leaves pairs using its affected face unresolved;
+it cannot skip other face pairs or later solids. Each unresolved entry retains
+the actual typed prerequisite or undecided refusal. A detected crossing refuses
+the whole import. Separate solids are not compared, matching the existing policy.
 
 N01's numerical definition now accepts finite circular arcs and finite
 cylindrical charts. A circular arc must span less than one turn. A cylindrical
@@ -32,6 +39,8 @@ common-unit geometric bound. Actual 3D distance samples enforce tolerance. It
 stays separate from length-scalar and 3D direction-ratio errors.
 Files remain marked numerical approximate without a global uncertainty claim.
 The existing finite planar writer and exact exporter keep their paths.
+Analytic and curved writers share one charged edge-use indexing pass, including
+all skipped planar faces, loops and uses; emission preserves source order.
 
 No exact model extraction or exact-incidence fact is added. The unchanged 20M
 request allowance covers admission and every continuation/export stage. Source

@@ -104,7 +104,8 @@ fn run(bytes: &[u8], expected_sha256: &str, out: &Path) -> Result<Value, Value> 
     let admission = imported.source_admission().map(|record| {
         json!({
         "method":record.method,"tolerance_mm":record.tolerance_mm.to_string(),
-        "strict_refusal":record.strict_refusal,"shared_3d_geometry":"retained",
+        "strict_refusal":record.strict_refusal,"intersection_checks":record.intersection_checks,
+        "cross_solid_pairs":"not_compared_by_import_policy","shared_3d_geometry":"retained",
         "parameter_trims":"rebuilt","complete_body_bound":"unestablished"})
     });
     let mut solids = Vec::new();

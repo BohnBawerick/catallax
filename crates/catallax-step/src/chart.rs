@@ -106,6 +106,15 @@ fn rail_event(
     if one_side(sides[0], 0..count) {
         return Ok(Rail::Clear);
     }
+    // The whole control hull is valid for every positive-weight spline.
+    // Consecutive degree-sized windows are Bezier spans only when every
+    // interior knot has full degree multiplicity. Otherwise use exact cuts.
+    if rail.knots()[degree + 1..count]
+        .chunks(degree)
+        .any(|knots| knots.iter().any(|knot| knot != &knots[0]))
+    {
+        return Ok(Rail::Unresolved);
+    }
     let behind = |range: std::ops::Range<usize>| {
         range
             .into_iter()
@@ -756,5 +765,60 @@ impl Plan {
             written_vertices: Default::default(),
             coaxial_circles: false,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn non_bezier_control_windows_do_not_certify_a_clear_meridian() {
+        let mut dec = Decider::default();
+        let fraction = |n, d| Real::from(Rational::from_ratio(n, d).unwrap());
+        let spline = BSplineCurve::new(
+            2,
+            vec![
+                0.into(),
+                0.into(),
+                0.into(),
+                Rational::from_ratio(1, 3).unwrap(),
+                Rational::from_ratio(2, 3).unwrap(),
+                1.into(),
+                1.into(),
+                1.into(),
+            ],
+            vec![
+                Point3::new(2.into(), 1.into(), 0.into()),
+                Point3::new(2.into(), 1.into(), 0.into()),
+                Point3::new(fraction(-1, 10), fraction(1, 10), 0.into()),
+                Point3::new(fraction(-1, 10), fraction(-8, 5), 0.into()),
+                Point3::new(fraction(-1, 10), (-2).into(), 0.into()),
+            ],
+            vec![Real::one(); 5],
+            &mut dec,
+        )
+        .unwrap();
+        let origin = Point3::origin();
+        let axis = Vector3::new(0.into(), 0.into(), 1.into());
+        let reference = Vector3::new(1.into(), 0.into(), 0.into());
+        assert!(matches!(
+            rail_event(&spline, &origin, &axis, &reference, &mut dec).unwrap(),
+            Rail::Unresolved
+        ));
+        let mut geometry = Geometry::new(&Model::new(), true);
+        let curve = geometry.store.add_curve(Curve::BSpline(spline));
+        let plane = geometry
+            .plane(origin, axis.cross(&reference), axis, &mut dec)
+            .unwrap();
+        let hits = geometry.intersections(curve, plane, &mut dec).unwrap();
+        let CurveSurface::Meets(hits) = hits.as_ref() else {
+            panic!("the exact fallback must find the crossing");
+        };
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].contact, Contact::Crossing);
+        let point = geometry.store.position(hits[0].point);
+        assert!(exact_zero(&(&point.x - &fraction(13, 80)), &mut dec).unwrap());
+        assert!(exact_zero(&point.y, &mut dec).unwrap());
     }
 }

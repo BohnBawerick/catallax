@@ -396,9 +396,12 @@ impl Projection {
                 let minor = dec.enclose_at(minor, p[0].precision())?;
                 let twice_major = &major * &Ball::from_rational(&r(2), p[0].precision());
                 let norm = &(&x.square() + &y.square()) + &height.square();
-                let tube = (norm - major.square() - minor.square())
-                    .checked_div(&twice_major)
-                    .expect("ring torus major radius is positive");
+                let Some(tube) = (norm - major.square() - minor.square()).checked_div(&twice_major)
+                else {
+                    // Positivity of the exact radius does not ensure its
+                    // enclosure at the requested precision excludes zero.
+                    return Ok(None);
+                };
                 let c = dec.enclose_at(&pole[0], p[0].precision())?;
                 let s = dec.enclose_at(&pole[1], p[0].precision())?;
                 let denominator = minor - (&c * &tube + &s * &height);
@@ -509,6 +512,30 @@ pub(crate) fn winding(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn torus_projection_leaves_an_unresolved_positive_radius_ambiguous() {
+        let mut dec = Decider::default();
+        let major = (Real::one() + Real::from(Rational::one().mul_pow2(-200))).sqrt() - Real::one();
+        let x = Rational::from_i64(3).mul_pow2(-202);
+        let torus = Surface::Torus(catallax_shapes::Torus {
+            center: Point3::origin(),
+            axis: Vector3::new(0.into(), 0.into(), 1.into()),
+            ref_dir: Vector3::new(1.into(), 0.into(), 0.into()),
+            major: major.clone(),
+            minor: Real::from(x.clone()) - major.clone(),
+        });
+        assert!(dec.enclose_at(&major, 64).unwrap().contains_zero());
+        let projection = Projection::new(&torus, 0).unwrap();
+        let point =
+            [x, Rational::zero(), Rational::zero()].map(|value| Ball::from_rational(&value, 64));
+        assert!(
+            projection
+                .project_certified(&point, &mut dec)
+                .unwrap()
+                .is_none()
+        );
+    }
 
     #[test]
     fn torus_cylinder_chart_certifies_tube_coordinates_and_omitted_parallel() {

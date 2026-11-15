@@ -108,6 +108,10 @@ fn loops_go_to_workers() -> bool {
 /// [`set_threads`]. The count never changes an answer, a refusal or a work
 /// count; it changes how long they take.
 pub fn threads() -> usize {
+    // Bare browser wasm has neither worker threads nor a monotonic clock.
+    if cfg!(all(target_arch = "wasm32", target_os = "unknown")) {
+        return 1;
+    }
     match FORCED_THREADS.load(Ordering::Relaxed) {
         0 => default_threads(),
         count => count,

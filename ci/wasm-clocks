@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Run the browser clock regression without wasm-bindgen or browser dependencies.
+set -euo pipefail
+root=$(git -C "$(dirname -- "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)
+target_dir=${CARGO_TARGET_DIR:-$root/target}
+export CARGO_TARGET_DIR=$target_dir
+scratch=$(mktemp -d)
+trap 'rm -rf -- "$scratch"' EXIT
+(
+  cd -- "$root"
+  cargo build --lib --target wasm32-unknown-unknown \
+    -p catallax-app -p catallax-compare -p catallax-import -p catallax-step -p catallax-iges
+)
+deps=$target_dir/wasm32-unknown-unknown/debug/deps
+externs=()
+for package in numbers field recipe; do
+  lib=$(find "$deps" -name "libcatallax_${package}-*.rlib" -print -quit)
+  externs+=(--extern "catallax_${package}=$lib")
+done
+rustc --edition 2024 --target wasm32-unknown-unknown --crate-type cdylib \
+  "$root/tools/checks/wasm-clocks.rs" "${externs[@]}" -L "dependency=$deps" -L "dependency=$target_dir/debug/deps" -o "$scratch/clocks.wasm"
+node - "$scratch/clocks.wasm" <<'JS'
+const fs = require('node:fs');
+Error.stackTraceLimit = 30;
+(async () => {
+  const {instance} = await WebAssembly.instantiate(fs.readFileSync(process.argv[2]), {});
+  for (const name of ['operation_log', 'run_ahead', 'display']) {
+    instance.exports[name]();
+    console.log(`${name}: passed in wasm32-unknown-unknown`);
+  }
+})().catch(error => { console.error(error); process.exitCode = 1; });
+JS

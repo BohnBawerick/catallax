@@ -21,7 +21,7 @@ fn path_metadata_preserves_the_exact_operation_outcome_dump() {
         assert_eq!(entries.len(), 1);
         let entry = &mut entries[0];
         assert_eq!(entry.path, path);
-        entry.wall_ms = 0.0;
+        entry.wall_ms = Some(0.0);
         assert_eq!(
             format!("{entry:#?}\n"),
             include_str!("fixtures/operation-entry-debug.txt")

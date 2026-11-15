@@ -2,6 +2,20 @@
 use crate::{Decider, DecisionStats, MarkLog, Refusal};
 use std::{cell::RefCell, fmt, time::Instant};
 
+/// Starts an observational clock, or returns `None` on bare browser wasm.
+/// This clock must never change an answer or a deterministic work count.
+#[doc(hidden)]
+pub fn wall_clock_start() -> Option<Instant> {
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    {
+        None
+    }
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    {
+        Some(Instant::now())
+    }
+}
+
 thread_local! {
     static LOG: RefCell<Option<Vec<OperationEntry>>> = const { RefCell::new(None) };
     static PATH: RefCell<Option<&'static str>> = const { RefCell::new(None) };
@@ -29,15 +43,16 @@ pub struct OperationEntry {
     pub work_before: u64,
     /// Request work count at operation exit.
     pub work_after: u64,
-    /// Observed elapsed time; never used for a decision.
-    pub wall_ms: f64,
+    /// Observed elapsed time; absent without a platform clock, never used for a decision.
+    pub wall_ms: Option<f64>,
 }
 
 // Preserve the established operation-outcome dump. Path annotations remain
 // available to the structured operation log through the public field.
 impl fmt::Debug for OperationEntry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("OperationEntry")
+        let mut entry = f.debug_struct("OperationEntry");
+        entry
             .field("kernel", &self.kernel)
             .field("id", &self.id)
             .field("operation", &self.operation)
@@ -46,9 +61,11 @@ impl fmt::Debug for OperationEntry {
             .field("marks", &self.marks)
             .field("refusal", &self.refusal)
             .field("work_before", &self.work_before)
-            .field("work_after", &self.work_after)
-            .field("wall_ms", &self.wall_ms)
-            .finish()
+            .field("work_after", &self.work_after);
+        if let Some(wall_ms) = self.wall_ms {
+            entry.field("wall_ms", &wall_ms);
+        }
+        entry.finish()
     }
 }
 
@@ -74,7 +91,7 @@ pub fn with_operation_log<T>(run: impl FnOnce() -> T) -> (T, Vec<OperationEntry>
 
 /// A no-allocation disabled span. Only an active recorder copies names or stats.
 pub struct OperationSpan(
-    Option<(OperationEntry, Instant, Option<&'static str>)>,
+    Option<(OperationEntry, Option<Instant>, Option<&'static str>)>,
     // Held only so the work-span region closes with the operation.
     #[cfg(feature = "work-span")]
     #[allow(dead_code)]
@@ -103,11 +120,11 @@ impl OperationSpan {
                         after: None,
                         marks: MarkLog::new(),
                         refusal: None,
-                        wall_ms: 0.0,
+                        wall_ms: None,
                         work_before: crate::operation::used(),
                         work_after: crate::operation::used(),
                     },
-                    Instant::now(),
+                    wall_clock_start(),
                     PATH.with(|path| path.replace(None)),
                 )
             })
@@ -135,7 +152,7 @@ impl Drop for OperationSpan {
             #[cfg(feature = "work-profile")]
             crate::profile::leave_section();
             entry.path = PATH.with(|path| path.replace(previous));
-            entry.wall_ms = started.elapsed().as_secs_f64() * 1000.0;
+            entry.wall_ms = started.map(|at| at.elapsed().as_secs_f64() * 1000.0);
             entry.work_after = crate::operation::used();
             LOG.with(|log| {
                 if let Some(entries) = log.borrow_mut().as_mut() {
@@ -159,6 +176,30 @@ pub fn record_operation_path(path: &'static str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn observations_preserve_numeric_outcomes_and_work() {
+        let decide = || {
+            let mut dec = Decider::default();
+            let span = OperationSpan::begin("brep", &"check", "check", &dec);
+            let result = dec.sign(&crate::Real::from_i64(2).sqrt());
+            span.finish(&dec, None, None);
+            (result, dec.stats().clone())
+        };
+        let (plain, plain_work) = crate::with_operation_budget(100_000, decide);
+        let ((logged, entries), logged_work) =
+            crate::with_operation_budget(100_000, || with_operation_log(decide));
+        assert_eq!(format!("{plain:?}"), format!("{logged:?}"));
+        assert_eq!(plain_work.used, logged_work.used);
+        assert!(!logged_work.exhausted);
+        assert!(logged_work.used > 0);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            entries[0].work_after - entries[0].work_before,
+            logged_work.used
+        );
+        assert!(entries[0].wall_ms.is_some_and(|ms| ms >= 0.0));
+    }
 
     #[test]
     fn path_annotations_are_nested_thread_local_and_spend_no_work() {

@@ -287,7 +287,7 @@ fn intersection_removes_exactly_the_two_tips_on_a_cached_input() {
     for name in ["fillet.contact", "fillet.sections", "fillet.trimming"] {
         let measured: Vec<_> = phases.iter().filter(|p| p.operation == name).collect();
         assert!(!measured.is_empty(), "{name} was not recorded");
-        let total: f64 = measured.iter().map(|p| p.wall_ms).sum();
+        let total: f64 = measured.iter().map(|p| p.wall_ms.unwrap()).sum();
         eprintln!("{name}={total:.3}ms over {} spans", measured.len());
     }
 }
@@ -528,7 +528,7 @@ fn a_flat_on_a_cylinder_loses_exactly_its_two_edges_on_a_cached_input() {
     for name in ["fillet.contact", "fillet.sections", "fillet.trimming"] {
         let measured: Vec<_> = phases.iter().filter(|p| p.operation == name).collect();
         assert!(!measured.is_empty(), "{name} was not recorded");
-        let total: f64 = measured.iter().map(|p| p.wall_ms).sum();
+        let total: f64 = measured.iter().map(|p| p.wall_ms.unwrap()).sum();
         eprintln!("{name}={total:.3}ms over {} spans", measured.len());
     }
 }

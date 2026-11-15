@@ -300,6 +300,114 @@ fn collar(moved: bool, point: [&str; 3], direction: [&str; 3]) -> Recipe {
     .unwrap()
 }
 
+mod cylinder_span {
+    use super::*;
+    use catallax_features::hole::HoleTool;
+    use catallax_recipe::{HolePart, Operation};
+
+    fn compile(recipe: &Recipe, bound: &str) -> HoleTool {
+        let Operation::Hole {
+            at,
+            diameter,
+            depth,
+            tip,
+            head,
+            ..
+        } = &recipe.steps.last().unwrap().op
+        else {
+            panic!("expected a final Hole step")
+        };
+        HoleTool::new(
+            &at[0],
+            diameter.value(),
+            depth,
+            tip,
+            head.as_ref(),
+            &q(bound),
+            &mut Decider::default(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn through_span_uses_authored_origin_and_preserves_both_part_intervals() {
+        for (point, direction, extent) in [
+            (["10", "12", "0"], ["0", "-1", "0"], "49"),
+            (["21/2", "12", "0"], ["0", "-1", "0"], "99/2"),
+            (["21/2", "12", "0"], ["1", "-1", "1"], "99/2"),
+        ] {
+            let tool = compile(&collar(false, point, direction), "26");
+            let span = tool.cylinder_span().unwrap();
+            assert_eq!(span.interval_mm, [-q(extent), q(extent)]);
+            assert_eq!(span.bands.len(), 2);
+            assert_eq!(span.bands[0].part, HolePart::Entry);
+            assert_eq!(span.bands[0].interval_mm, [-q(extent), q("0")]);
+            assert_eq!(span.bands[1].part, HolePart::Wall);
+            assert_eq!(span.bands[1].interval_mm, [q("0"), q(extent)]);
+            for (actual, expected) in [
+                (&span.cylinder.origin.x, point[0]),
+                (&span.cylinder.origin.y, point[1]),
+                (&span.cylinder.origin.z, point[2]),
+            ] {
+                assert_eq!(actual.as_rational(), Some(q(expected)));
+            }
+        }
+    }
+
+    #[test]
+    fn posed_algebraic_axis_and_compiled_seam_are_retained() {
+        for moved in [false, true] {
+            let tool = compile(&collar(moved, ["21/2", "12", "0"], ["1", "-1", "1"]), "100");
+            let span = tool.cylinder_span().unwrap();
+            for (actual, expected) in [
+                (&span.cylinder.axis.x, &tool.axis.x),
+                (&span.cylinder.axis.y, &tool.axis.y),
+                (&span.cylinder.axis.z, &tool.axis.z),
+                (&span.cylinder.ref_dir.x, &tool.reference.x),
+                (&span.cylinder.ref_dir.y, &tool.reference.y),
+                (&span.cylinder.ref_dir.z, &tool.reference.z),
+            ] {
+                assert!(actual.same_definition(expected));
+            }
+            assert!(span.cylinder.axis.x.as_rational().is_none());
+            let norm = Decider::default()
+                .enclose_at(&span.cylinder.axis.norm_squared(), 128)
+                .unwrap();
+            assert!(norm.lo() <= q("1") && norm.hi() >= q("1"));
+            assert!(norm.hi() - norm.lo() < q("1e-30"));
+        }
+    }
+
+    #[test]
+    fn heads_and_conical_tips_do_not_collapse_into_one_cylinder() {
+        let plain =
+            serde_json::to_value(collar(false, ["9", "12", "0"], ["0", "-1", "0"])).unwrap();
+        for (depth, tip, head) in [
+            (json!({"blind":"4"}), json!({"cone":"118"}), None),
+            (
+                json!("through"),
+                json!("flat"),
+                Some(json!({"counterbore":{"diameter":"4","depth":"2"}})),
+            ),
+            (
+                json!("through"),
+                json!("flat"),
+                Some(json!({"countersink":{"diameter":"4","angle":"82"}})),
+            ),
+        ] {
+            let mut value = plain.clone();
+            let hole = &mut value["steps"][3];
+            hole["depth"] = depth;
+            hole["tip"] = tip;
+            if let Some(head) = head {
+                hole["head"] = head;
+            }
+            let recipe = Recipe::parse(&value.to_string()).unwrap();
+            assert!(compile(&recipe, "26").cylinder_span().is_none());
+        }
+    }
+}
+
 #[test]
 fn a_plain_hole_strictly_inside_a_bevel_ring_builds() {
     // The hole's radial extent is [a - 1, a + 1] and each bevel's is [11, 12].

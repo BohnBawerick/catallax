@@ -134,3 +134,53 @@ fn distant_periodic_coordinates_and_exhausted_writers_return_no_file() {
     assert_eq!(refusal.code, "step.numerical-unsupported");
     assert!(refusal.detail.contains("periodic chart"));
 }
+
+#[test]
+fn partial_circle_exchange_uses_the_reader_parameter_chart() {
+    let period = Ball::pi(128).mid() * q("2");
+    for quarter_turns in [0, 1, 2, 3] {
+        for turns in [-1, 0, 1] {
+            let mut definition = quarter();
+            let reference = match quarter_turns {
+                0 => [1, 0, 0],
+                1 => [0, 1, 0],
+                2 => [-1, 0, 0],
+                _ => [0, -1, 0],
+            };
+            let phase = &(&period * &q(&turns.to_string()))
+                - &(&period * &q(&format!("{quarter_turns}/4")));
+            for edge in &mut definition.edges {
+                if let Curve::Circle(circle) = &mut edge.curve {
+                    circle.ref_dir = catallax_shapes::RVector3::new(
+                        reference[0].into(),
+                        reference[1].into(),
+                        reference[2].into(),
+                    )
+                    .to_real();
+                    for parameter in &mut edge.parameters {
+                        *parameter = &*parameter + &phase;
+                    }
+                }
+            }
+            let body = n::build(
+                definition,
+                n::NumericalOptions::default(),
+                &mut Decider::default(),
+            )
+            .unwrap();
+            let file = output::build(
+                &body,
+                &NumericalStepOptions::default(),
+                &mut Decider::default(),
+            )
+            .unwrap();
+            file.check_written(file.bytes(), &mut Decider::default())
+                .unwrap();
+            assert_eq!(file.report().counts, [5, 9, 6]);
+            save(
+                &format!("quarter-chart-{quarter_turns}-{turns}.step"),
+                file.bytes(),
+            );
+        }
+    }
+}

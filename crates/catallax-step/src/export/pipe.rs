@@ -43,6 +43,12 @@ impl Exporter<'_> {
             for face in self.model.faces_of_body(body) {
                 if self.rolling_pipe(face).is_some() {
                     let rows = pipe_rows(self.model, face, self.dec)?;
+                    if rows.is_none()
+                        && catallax_topology::partial_pipe_rows(self.model, face, self.dec)?
+                            .is_some()
+                    {
+                        continue;
+                    }
                     for (row, (edge, _)) in rows.ok_or_else(unsupported)?.iter().enumerate() {
                         self.pipe_rails.insert(*edge, (face, row));
                     }
@@ -198,6 +204,23 @@ impl Exporter<'_> {
             Surface::BSpline(SplineSupport::RollingPipe(pipe)) => Some(pipe.clone()),
             _ => None,
         }
+    }
+
+    pub(super) fn partial_pipe_sense(&mut self, id: FaceId) -> Result<Option<bool>, Refusal> {
+        let Some([(rail, _), _]) = catallax_topology::partial_pipe_rows(self.model, id, self.dec)?
+        else {
+            return Ok(None);
+        };
+        let pipe = self.rolling_pipe(id).ok_or_else(unsupported)?;
+        let controls = pipe.carrier().controls();
+        let along = controls[3].minus(&controls[0]);
+        let across = controls[1].minus(&controls[0]);
+        let law = pipe.law();
+        let chart_along_ray =
+            self.positive(&(&along.cross(&across).dot(&law.normal) * &law.reach))?;
+        Ok(Some(
+            chart_along_ray == pipe_outward(self.model, id, rail, self.dec)?,
+        ))
     }
 
     fn positive(&mut self, value: &Real) -> Result<bool, Refusal> {

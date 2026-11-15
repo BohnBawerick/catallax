@@ -72,7 +72,9 @@ pub(super) fn pipe_geometry(
         .extracted([[&low, &high], [&zero, &one]], dec)?
         .to_surface(dec)?;
     let atlases = RationalAtlas::partition_with_polynomial_bounds(carrier, [false; 2], dec)?;
-    let [atlas] = atlases.as_slice() else { return Err(unsupported()); };
+    let [atlas] = atlases.as_slice() else {
+        return Err(unsupported());
+    };
     let section = atlas.sections(&SectionSurface::Plane(plane.clone()), dec)?;
     let [branch] = section.branches() else {
         return Err(unsupported());

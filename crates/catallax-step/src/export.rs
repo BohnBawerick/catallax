@@ -1486,8 +1486,12 @@ impl<'a> Exporter<'a> {
         let face = self.model.face(id).clone();
         let mut bounds = Vec::new();
         let mut boundary_extent: Option<Bounds> = None;
-        let mut pipe_same = None;
-        if let Some(pipe) = self.rolling_pipe(id) {
+        let partial_pipe_same = self.partial_pipe_sense(id)?;
+        let mut pipe_same = partial_pipe_same.map(|same| same != reverse);
+        if let Some(pipe) = self
+            .rolling_pipe(id)
+            .filter(|_| partial_pipe_same.is_none())
+        {
             let (loop_entity, extent, same) = self.pipe_loop(id, &pipe, topology)?;
             boundary_extent = Some(extent);
             let same = same != reverse;

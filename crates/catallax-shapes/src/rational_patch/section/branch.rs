@@ -386,12 +386,9 @@ fn uniform(values: &[Real], dec: &mut Decider) -> Result<Option<Sign>, Refusal> 
 fn variation(values: &[Real], dec: &mut Decider) -> Result<Option<usize>, Refusal> {
     let mut previous = None;
     let mut changes = 0;
-    for (i, value) in values.iter().enumerate() {
+    for value in values {
         let sign = exact_sign(value, dec)?;
         if sign == Sign::Zero {
-            if i == 0 || i + 1 == values.len() {
-                return Ok(None);
-            }
             continue;
         }
         if previous.is_some_and(|s| s != sign) {
@@ -399,7 +396,7 @@ fn variation(values: &[Real], dec: &mut Decider) -> Result<Option<usize>, Refusa
         }
         previous = Some(sign);
     }
-    Ok(Some(changes))
+    Ok(previous.map(|_| changes))
 }
 fn same_uv(a: &[Real; 2], b: &[Real; 2], dec: &mut Decider) -> Result<bool, Refusal> {
     for i in 0..2 {
@@ -488,6 +485,7 @@ pub(crate) fn search_cover(
     let mut record = SectionSearch::default();
     let mut arcs = Vec::new();
     let mut points: Vec<Point3> = Vec::new();
+    let mut corner_contacts = Vec::new();
     for (ci, patch) in cover.charts.iter().enumerate() {
         let [du, dv] = patch.carrier().degrees();
         for (si, span) in patch.data.spans.iter().enumerate() {
@@ -544,9 +542,31 @@ pub(crate) fn search_cover(
                     let mut crossings = Vec::new();
                     let mut unresolved = false;
                     for (edge, values) in net.edges().iter().enumerate() {
+                        let first = exact_sign(&values[0], dec)? == Sign::Zero;
+                        let last = exact_sign(values.last().unwrap(), dec)? == Sign::Zero;
                         match variation(values, dec)? {
-                            Some(0) => (),
-                            Some(1) => crossings.push(edge),
+                            Some(0) => {
+                                for (end, zero) in [first, last].into_iter().enumerate() {
+                                    if zero {
+                                        let mut at = net
+                                            .domain
+                                            .each_ref()
+                                            .map(|bounds| Real::from(bounds[edge % 2].clone()));
+                                        at[1 - edge / 2] =
+                                            Real::from(net.domain[1 - edge / 2][end].clone());
+                                        let mut duplicate = false;
+                                        for old in &crossings {
+                                            duplicate |= same_uv(old, &at, dec)?;
+                                        }
+                                        if !duplicate {
+                                            crossings.push(at);
+                                        }
+                                    }
+                                }
+                            }
+                            Some(1) if !first && !last => {
+                                crossings.push(edge_root(&equation, &net.domain, edge, dec)?)
+                            }
                             _ => {
                                 unresolved = true;
                                 break;
@@ -562,8 +582,11 @@ pub(crate) fn search_cover(
                         break;
                     }
                     if crossings.len() == 2 {
-                        let a = edge_root(&equation, &net.domain, crossings[0], dec)?;
-                        let b = edge_root(&equation, &net.domain, crossings[1], dec)?;
+                        let a = crossings.remove(0);
+                        let b = crossings.remove(0);
+                        if exact_sign(&(&a[1 - solved] - &b[1 - solved]), dec)? == Sign::Zero {
+                            continue;
+                        }
                         arcs.push(ArcCell {
                             chart: ci,
                             span: si,
@@ -574,6 +597,26 @@ pub(crate) fn search_cover(
                         record.arc_cells += 1;
                         classified = true;
                         break;
+                    }
+                    if crossings.len() == 1 {
+                        let mut side = None;
+                        let mut one_side = true;
+                        for value in &net.values {
+                            let sign = exact_sign(value, dec)?;
+                            if sign != Sign::Zero {
+                                if side.is_some_and(|old| old != sign) {
+                                    one_side = false;
+                                    break;
+                                }
+                                side = Some(sign);
+                            }
+                        }
+                        if one_side {
+                            corner_contacts.push(crossings.remove(0));
+                            record.empty_cells += 1;
+                            classified = true;
+                            break;
+                        }
                     }
                 }
                 if classified {
@@ -654,6 +697,24 @@ pub(crate) fn search_cover(
         }
         endpoints.push(ids);
     }
+    for mut contact in corner_contacts {
+        for (axis, wrap) in cover.wrap.iter().enumerate() {
+            if let Some([lo, hi]) = wrap
+                && contact[axis].rational_ref() == Some(hi)
+            {
+                contact[axis] = Real::from(lo.clone());
+            }
+        }
+        let mut joined = false;
+        for vertex in &vertices {
+            joined |= same_uv(&contact, vertex, dec)?;
+        }
+        if !joined {
+            return Err(failure(
+                "an isolated corner contact needs a separate contact certificate",
+            ));
+        }
+    }
     for adjacent in &links {
         if adjacent.len() == 2 {
             continue;
@@ -731,4 +792,61 @@ pub(crate) fn search_cover(
         points: isolated,
         search: record,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{BSplineSurface, Vector3};
+
+    #[test]
+    fn a_regular_section_joins_exact_cell_corners() {
+        let mut dec = Decider::default();
+        let knots = vec![
+            Rational::zero(),
+            Rational::zero(),
+            Rational::one(),
+            Rational::one(),
+        ];
+        let patch = RationalPatch::new(
+            BSplineSurface::new(
+                [1, 1],
+                [knots.clone(), knots],
+                [2, 2],
+                [[0, 0, 0], [0, 1, 0], [1, 0, 0], [1, 1, 0]]
+                    .map(|[x, y, z]| Point3::new(x.into(), y.into(), z.into()))
+                    .to_vec(),
+                vec![Real::one(); 4],
+                &mut dec,
+            )
+            .unwrap(),
+            &mut dec,
+        )
+        .unwrap();
+        let plane = |x| {
+            SectionSurface::Plane(Plane {
+                origin: Point3::new(x.into(), Real::zero(), Real::zero()),
+                normal: Vector3::new(Real::one(), Real::one(), Real::zero()),
+                ref_dir: Vector3::new(Real::zero(), Real::zero(), Real::one()),
+            })
+        };
+        let section = search(&patch, &plane(1), &mut dec).unwrap();
+        let [branch] = section.branches() else {
+            panic!("one open diagonal");
+        };
+        assert!(!branch.is_closed());
+        assert!(
+            branch
+                .contains(
+                    &Point3::new(
+                        Real::from(Rational::from_ratio(1, 2).unwrap()),
+                        Real::from(Rational::from_ratio(1, 2).unwrap()),
+                        Real::zero(),
+                    ),
+                    &mut dec
+                )
+                .unwrap()
+        );
+        assert!(search(&patch, &plane(0), &mut dec).is_err());
+    }
 }

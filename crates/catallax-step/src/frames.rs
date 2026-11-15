@@ -105,8 +105,11 @@ pub(crate) fn band_walls(
         for face in model.faces_of_body(body) {
             match model.geom().surface(model.face(face).surface) {
                 Surface::BSpline(SplineSupport::RollingPipe(pipe)) => {
-                    let [_, (rail, _)] = pipe_rows(model, face, dec)?.ok_or_else(refused)?;
-                    frame(rail, pipe.law().across.clone(), &mut frames);
+                    if let Some([_, (rail, _)]) = pipe_rows(model, face, dec)? {
+                        frame(rail, pipe.law().across.clone(), &mut frames);
+                    } else if catallax_topology::partial_pipe_rows(model, face, dec)?.is_none() {
+                        return Err(refused());
+                    }
                 }
                 Surface::BSpline(SplineSupport::RollingSaddle(saddle)) => {
                     let [(wide, _), (narrow, _)] = saddle_rows(model, face).ok_or_else(refused)?;

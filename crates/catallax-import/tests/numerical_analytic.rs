@@ -1,0 +1,130 @@
+//! Actual Part 21 circular edges keep shared identity through numerical admission.
+#[path = "../../catallax-topology/tests/common/analytic.rs"]
+mod fixture;
+
+use catallax_import::{
+    numerical::{self, StepImport},
+    sha256_hex,
+};
+use catallax_numbers::{Decider, with_operation_budget};
+use catallax_recipe::StepId;
+use catallax_step::numerical::{self as output, NumericalStepOptions};
+use catallax_topology::numerical as n;
+use fixture::{q, quarter};
+
+fn references(line: &str) -> Vec<u64> {
+    line.split_once('=')
+        .unwrap()
+        .1
+        .split('#')
+        .skip(1)
+        .map(|s| {
+            s.chars()
+                .take_while(char::is_ascii_digit)
+                .collect::<String>()
+                .parse()
+                .unwrap()
+        })
+        .collect()
+}
+fn displaced_wall(delta: &str) -> Vec<u8> {
+    let body = n::build(
+        quarter(),
+        n::NumericalOptions::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let file = output::build(
+        &body,
+        &NumericalStepOptions::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let text = std::str::from_utf8(file.bytes()).unwrap();
+    let plane = text.lines().find(|s| s.contains("=PLANE('f2',")).unwrap();
+    let placement = references(plane)[0];
+    let placement = text
+        .lines()
+        .find(|s| s.starts_with(&format!("#{placement}=")))
+        .unwrap();
+    let origin = references(placement)[0];
+    let original = text
+        .lines()
+        .find(|s| s.starts_with(&format!("#{origin}=")))
+        .unwrap();
+    text.replace(
+        original,
+        &format!("#{origin}=CARTESIAN_POINT('',(0.,{delta},0.));"),
+    )
+    .into_bytes()
+}
+fn checked(bytes: &[u8], tolerance: &str) -> Result<StepImport, numerical::ImportError> {
+    numerical::import_step(
+        bytes,
+        &sha256_hex(bytes),
+        &StepId::new("analytic-source").unwrap(),
+        &n::NumericalOptions {
+            tolerance_mm: q(tolerance),
+        },
+        &mut Decider::default(),
+    )
+}
+
+#[test]
+fn curved_dependency_rebuilds_finite_parameters_and_retains_shared_vertices() {
+    let source = displaced_wall("0.000001");
+    let before = source.clone();
+    let StepImport::Numerical(imported) = checked(&source, "0.01").unwrap() else {
+        panic!("expected numerical admission")
+    };
+    let admission = imported.source_admission().unwrap();
+    assert_eq!(admission.method, "retained_shared_analytic_boundaries/1");
+    assert_eq!(admission.tolerance_mm, q("0.01"));
+    assert!(
+        matches!(&admission.strict_refusal,catallax_import::ImportRefusal::PlanarRepairNotVerified { detail } if detail.stage=="nearest_feature" && detail.feature_size_squared_mm2.is_none())
+    );
+    let body = &imported.bodies()[0].1;
+    let counts = body.counts();
+    assert_eq!((counts.faces, counts.edges, counts.vertices), (5, 9, 6));
+    assert_eq!(
+        body.definition()
+            .vertices
+            .iter()
+            .map(|v| v.position.clone())
+            .collect::<std::collections::BTreeSet<_>>(),
+        quarter()
+            .vertices
+            .iter()
+            .map(|v| v.position.clone())
+            .collect::<std::collections::BTreeSet<_>>()
+    );
+    assert_eq!(source, before);
+    assert_eq!(imported.record().source.sha256, sha256_hex(&source));
+    assert!(imported.record().face_tolerances.is_empty());
+    assert!(imported.record().derivative.is_none());
+    let step = output::build(
+        body,
+        &NumericalStepOptions::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    assert!(
+        std::str::from_utf8(step.bytes())
+            .unwrap()
+            .contains("numerical approximate")
+    );
+}
+
+#[test]
+fn over_cap_residual_and_a_smaller_requested_tolerance_refuse() {
+    assert!(checked(&displaced_wall("0.0101"), "0.01").is_err());
+    assert!(checked(&displaced_wall("0.000001"), "0.0000001").is_err());
+    assert!(checked(&displaced_wall("0.000001"), "0.0101").is_err());
+}
+
+#[test]
+fn exhausted_analytic_imports_return_no_body() {
+    let source = displaced_wall("0.000001");
+    let (result, work) = with_operation_budget(1, || checked(&source, "0.01"));
+    assert!(result.is_err() && work.exhausted);
+}

@@ -152,8 +152,7 @@ fn import_inner(
             })));
         }
         Err(ImportRefusal::NotSolid { detail }) if detail.contains("exactly") => {}
-        Err(error @ ImportRefusal::PlanarRepairNotVerified { .. }) if matches!(&error, ImportRefusal::PlanarRepairNotVerified { detail } if detail.stage == "curved_dependency") =>
-        {
+        Err(error) if analytic::eligible(&error) => {
             return analytic::import(bytes, error, options, dec);
         }
         Err(error) => return Err(error.into()),
@@ -178,8 +177,7 @@ fn import_inner(
         None,
     ) {
         Ok(imported) => imported,
-        Err(error @ ImportRefusal::PlanarRepairNotVerified { .. }) if matches!(&error, ImportRefusal::PlanarRepairNotVerified { detail } if detail.stage == "curved_dependency") =>
-        {
+        Err(error) if analytic::eligible(&error) => {
             return analytic::import(bytes, error, options, dec);
         }
         Err(error) => return Err(error.into()),

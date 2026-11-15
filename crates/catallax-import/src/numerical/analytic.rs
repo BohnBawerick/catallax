@@ -6,6 +6,20 @@ use catallax_shapes::{Circle, Cylinder};
 
 const BITS: u32 = 128;
 
+pub(super) fn eligible(error: &ImportRefusal) -> bool {
+    let ImportRefusal::PlanarRepairNotVerified { detail } = error else {
+        return false;
+    };
+    match detail.stage.as_str() {
+        "curved_dependency" | "source_cover" | "vertex_constraints" | "shared_edge"
+        | "plane_refit" => true,
+        // A missing certificate can take the numerical route. A measured,
+        // violated neighbouring-feature limit remains an honest refusal.
+        "nearest_feature" => detail.feature_size_squared_mm2.is_none(),
+        _ => false,
+    }
+}
+
 fn coordinates(
     p: &Vec3,
     frame: &crate::Placement,
@@ -315,6 +329,23 @@ pub(super) fn import(
     }
     dec.charge_work(bytes.len() as u64)?;
     let file = crate::read_step(bytes)?;
+    if !file
+        .solids
+        .iter()
+        .flat_map(|solid| &solid.faces)
+        .any(|face| {
+            matches!(face.surface, crate::Surface::Cylinder(..))
+                || face
+                    .loops
+                    .iter()
+                    .flat_map(|bound| &bound.edges)
+                    .any(|edge| matches!(edge.curve, crate::Curve::Circle(..)))
+        })
+    {
+        // Keep the previous planar-only policy and its export controls until
+        // that separate family receives its own complete qualification.
+        return Err(refusal.into());
+    }
     match crate::check_self_intersection(&file) {
         Ok(()) => {}
         // This is the failed exact source-incidence prerequisite being replaced

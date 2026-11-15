@@ -308,6 +308,9 @@ fn rounded_curves(w: &mut Writer<'_>, d: &mut NumericalDefinition) -> Result<Vec
 }
 
 struct ParameterRounding {
+    // Lexical selector error across parameter coefficients with different units.
+    // It is no common-unit geometric bound; actual 3D distance samples, rather
+    // than this diagnostic maximum, enforce the source tolerance.
     error: Rational,
 }
 impl ParameterRounding {

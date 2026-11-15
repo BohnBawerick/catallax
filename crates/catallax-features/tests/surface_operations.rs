@@ -44,9 +44,9 @@ fn evaluate(operation: Value) -> Result<catallax_features::Built, BuildError> {
 }
 
 fn refuses(operation: Value) {
-    let error = evaluate(operation)
-        .err()
-        .expect("surface operand must refuse");
+    let Err(error) = evaluate(operation) else {
+        panic!("surface operand must refuse");
+    };
     let BuildError::Geometry { refusal, .. } = error else {
         panic!("expected geometry refusal, got {error:?}");
     };

@@ -772,10 +772,11 @@ pub(crate) fn result_summary(
         *edges_by_kind.entry(name.into()).or_insert(0) += 1;
     }
     Ok(ResultSummary {
-        kind: if model.body(body).kind == BodyKind::Empty {
-            "empty"
-        } else {
-            "solid"
+        kind: match model.body(body).kind {
+            BodyKind::Empty => "empty",
+            BodyKind::Solid => "solid",
+            BodyKind::Surface => "surface",
+            _ => return Err(Refusal::new("cli.unsupported-body", "unknown body kind")),
         }
         .into(),
         lumps: counts.lumps,

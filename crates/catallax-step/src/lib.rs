@@ -328,7 +328,7 @@ pub fn write_rolling_junction_step<W: Write>(
 
 /// Writes a massless surface envelope and separately selected unit-density
 /// surrogate solids. This opt-in representation contains no material metadata.
-/// Ordinary [`write_step`] remains the solid-only exchange.
+/// Ordinary [`write_step`] preserves each input's solid or surface body kind.
 pub fn write_stand_in_step<W: Write>(
     model: &Model,
     envelope: BodyId,

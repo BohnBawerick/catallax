@@ -6,12 +6,25 @@ use std::collections::BTreeMap;
 
 pub(super) fn build(
     model: &Model,
+    source: BodyId,
     expansion: &ChartExpansion,
     options: &MeshOptions,
     dec: &mut Decider,
 ) -> Answered<Mesh> {
     catallax_numbers::reuse_operation_enclosures();
-    let mut answer = mesh_body(model, expansion.body(), options, dec)?;
+    let prepared = (model.body(source).kind == catallax_topology::BodyKind::Surface
+        && model.body(expansion.body()).kind != catallax_topology::BodyKind::Surface)
+        .then(|| {
+            let mut prepared = model.clone();
+            let mut body = model.body(expansion.body()).clone();
+            body.kind = catallax_topology::BodyKind::Surface;
+            let body = prepared.add_body(body);
+            (prepared, body)
+        });
+    let (mesh_model, body) = prepared
+        .as_ref()
+        .map_or((model, expansion.body()), |(model, body)| (model, *body));
+    let mut answer = mesh_body(mesh_model, body, options, dec)?;
     remap(model, expansion, &mut answer.value)?;
     Ok(answer)
 }

@@ -150,6 +150,7 @@ fn signature(mut face: Face, dec: &mut Decider) -> Result<Vec<u8>, Refusal> {
     }
     let bytes = crate::canonical_bytes(&StepFile {
         mm_per_unit: Rational::one(), // recognized coordinates are already mm
+        surface_models: Vec::new(),
         solids: vec![Solid {
             name: String::new(),
             faces: vec![face],
@@ -188,38 +189,36 @@ type Inventory = BTreeMap<SourceEntity, Option<Vec<u8>>>;
 
 fn inventory(source: &SourceSnapshot, dec: &mut Decider) -> Result<Inventory, Refusal> {
     let mut result = BTreeMap::new();
-    for solid in &source.file.solids {
-        let verified = !source.unverified.contains(&solid.name);
-        for face in &solid.faces {
+    for (body, face) in source.file.named_faces() {
+        let verified = !source.unverified.contains(body);
+        dec.charge_work(1)?;
+        let address = SourceEntity {
+            kind: EntityKind::Face,
+            solid: body.into(),
+            key: face.name.clone(),
+        };
+        let geometry = verified.then(|| signature(face.clone(), dec)).transpose()?;
+        if result.insert(address, geometry).is_some() {
+            return Err(Refusal::new(
+                "import.correspondence-duplicate-face",
+                "the accepted source repeats a face address within one solid",
+            ));
+        }
+        for edge in face.loops.iter().flat_map(|boundary| &boundary.edges) {
             dec.charge_work(1)?;
             let address = SourceEntity {
-                kind: EntityKind::Face,
-                solid: solid.name.clone(),
-                key: face.name.clone(),
+                kind: EntityKind::Edge,
+                solid: body.into(),
+                key: edge.edge.clone(),
             };
-            let geometry = verified.then(|| signature(face.clone(), dec)).transpose()?;
-            if result.insert(address, geometry).is_some() {
+            let geometry = verified.then(|| edge_signature(edge, dec)).transpose()?;
+            if let Some(previous) = result.insert(address, geometry.clone())
+                && previous != geometry
+            {
                 return Err(Refusal::new(
-                    "import.correspondence-duplicate-face",
-                    "the accepted source repeats a face address within one solid",
+                    "import.correspondence-inconsistent-edge",
+                    "one accepted edge address has different complete definitions",
                 ));
-            }
-            for edge in face.loops.iter().flat_map(|boundary| &boundary.edges) {
-                dec.charge_work(1)?;
-                let address = SourceEntity {
-                    kind: EntityKind::Edge,
-                    solid: solid.name.clone(),
-                    key: edge.edge.clone(),
-                };
-                let geometry = verified.then(|| edge_signature(edge, dec)).transpose()?;
-                if let Some(previous) = result.insert(address, geometry.clone())
-                    && previous != geometry
-                {
-                    return Err(Refusal::new(
-                        "import.correspondence-inconsistent-edge",
-                        "one accepted edge address has different complete definitions",
-                    ));
-                }
             }
         }
     }

@@ -17,7 +17,7 @@ use catallax_shapes::{CurveId, PointDef, PointId};
 use catallax_topology::{EdgeId, FaceId, Loop, Model, Sense};
 
 use crate::exact::{cross, dot, is_zero, sub, unit};
-use crate::{Curve, Face, Solid, Surface, Vec3};
+use crate::{Curve, Face, Surface, Vec3};
 
 /// Why a pair could not be decided: the engine's refusal, which keeps the
 /// undecided decision it stopped on with its `numbers.*` code and bound, or
@@ -464,9 +464,9 @@ pub(crate) struct Scratch {
     pub faces: Vec<FaceId>,
 }
 
-pub(crate) fn scratch(solid: &Solid) -> Result<Scratch, NotVerified> {
+pub(crate) fn scratch(faces: &[Face]) -> Result<Scratch, NotVerified> {
     let mut model = Model::new();
-    let faces = crate::build::scratch_faces(&mut model, solid).map_err(|e| {
+    let faces = crate::build::scratch_faces(&mut model, faces).map_err(|e| {
         Refusal::new(
             "import.pair-setup",
             format!("the faces could not be set up for the intersection engine: {e:?}"),

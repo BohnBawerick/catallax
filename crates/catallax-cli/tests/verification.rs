@@ -8,6 +8,60 @@ use std::{
 };
 static NEXT: AtomicUsize = AtomicUsize::new(0);
 
+#[test]
+fn a_surface_import_remains_typed_in_the_command_and_written_step() {
+    use sha2::Digest;
+    let digest = |bytes: &[u8]| format!("{:x}", sha2::Sha256::digest(bytes));
+    let source = include_str!("../../catallax-import/tests/fixtures/surface-square.step");
+    let hash = digest(source.as_bytes());
+    let problem = json!({"format":"catallax-import-recipe/1", "files":{hash.clone():source},
+        "recipe":{"format":"catallax-recipe/3", "name":"surface import",
+            "steps":[{"id":"sheet", "op":"import_step",
+                "file":{"name":"surface.step", "sha256":hash},
+                "pose":{"rotation":["1","0","0","0"], "translation":["0","0","0"]}}],
+            "result":"sheet"}});
+    let dir = std::env::temp_dir().join(format!(
+        "catallax-surface-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let mut child = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+        .arg("stream")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut input = child.stdin.take().unwrap();
+    writeln!(input, "{}", json!({"format":"catallax-request/1", "source":"recipe", "problem":problem, "max_work":20_000_000, "out":dir})).unwrap();
+    drop(input);
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+    let response: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(response["manifest"]["status"], "answered", "{response}");
+    assert_eq!(response["manifest"]["result"]["kind"], "surface");
+    let bytes = fs::read(dir.join("answer.step")).unwrap();
+    assert!(
+        std::str::from_utf8(&bytes)
+            .unwrap()
+            .contains("SHELL_BASED_SURFACE_MODEL")
+    );
+    let hash = digest(&bytes);
+    let mut recipe = problem["recipe"].clone();
+    recipe["steps"][0]["file"]["sha256"] = json!(hash);
+    let files = catallax_features::ImportFiles::from([(hash, bytes.as_slice())]);
+    let built = catallax_features::evaluate_with_files(
+        &catallax_recipe::Recipe::parse(&recipe.to_string()).unwrap(),
+        &files,
+        &mut catallax_numbers::Decider::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        built.model.body(built.result).kind,
+        catallax_topology::BodyKind::Surface
+    );
+    fs::remove_dir_all(dir).unwrap();
+}
+
 fn question() -> Value {
     json!({"format":"exact-brep-question/2","id":"stream-test",
         "operands":{"a":{"shape":"block","size":["1","2","3"]}},

@@ -194,6 +194,7 @@ pub fn mass_properties(
     accuracy: &Accuracy,
     dec: &mut Decider,
 ) -> Answered<MassProperties> {
+    require_solid(model, body)?;
     if junction::of(model, body)?.is_some() {
         return Err(Refusal::new(
             "measure.unsupported-surface",
@@ -248,6 +249,7 @@ fn base_properties(
     traces: &mut engine::TraceCache,
     dec: &mut Decider,
 ) -> Answered<VolumeAreaCentroid> {
+    require_solid(model, body)?;
     accuracy.validate();
     if let Some(junction) = junction::of(model, body)? {
         return junction.properties(model, accuracy, junction::Scope::Represented, traces, dec);
@@ -305,6 +307,7 @@ pub fn blend_definition_properties(
     accuracy: &Accuracy,
     dec: &mut Decider,
 ) -> Answered<VolumeAreaCentroid> {
+    require_solid(model, body)?;
     accuracy.validate();
     junction::of(model, body)?
         .ok_or_else(|| {
@@ -333,6 +336,7 @@ pub fn centroid(
     accuracy: &Accuracy,
     dec: &mut Decider,
 ) -> Answered<Option<[Enclosure; 3]>> {
+    require_solid(model, body)?;
     accuracy.validate();
     // A fitted blend's centre is the junction's, which encloses both the exact
     // definition and the fitted carriers, as `volume_area_centroid` states it.
@@ -369,6 +373,7 @@ pub fn inertia(
     accuracy: &Accuracy,
     dec: &mut Decider,
 ) -> Answered<Option<InertiaTensor>> {
+    require_solid(model, body)?;
     if junction::of(model, body)?.is_some() {
         return Err(Refusal::new(
             "measure.unsupported-surface",
@@ -525,6 +530,7 @@ pub fn volume(
     accuracy: &Accuracy,
     dec: &mut Decider,
 ) -> Answered<Enclosure> {
+    require_solid(model, body)?;
     if let Some(cell) = catallax_topology::DraftedCylinder::of_body(model, body, dec)? {
         accuracy.validate();
         let factor = cell.volume_over_pi();
@@ -753,18 +759,33 @@ pub fn edge_heights(
     bounds::edge_heights(model, edge, origin, direction, dec)
 }
 
-fn solid_faces(model: &Model, body: BodyId) -> Result<Vec<FaceId>, Refusal> {
-    let body = model
-        .chart_expansion(body)
-        .filter(|cover| cover.needs_cells())
-        .map_or(body, catallax_topology::ChartExpansion::body);
+fn require_solid(model: &Model, body: BodyId) -> Result<(), Refusal> {
     match model.body(body).kind {
-        BodyKind::Solid | BodyKind::Empty => Ok(model.faces_of_body(body)),
+        BodyKind::Solid | BodyKind::Empty => Ok(()),
         _ => Err(Refusal::new(
             "measure.not-solid",
             "measurement requires a solid or empty body",
         )),
     }
+}
+
+fn body_faces(model: &Model, body: BodyId) -> Result<Vec<FaceId>, Refusal> {
+    let body = model
+        .chart_expansion(body)
+        .filter(|cover| cover.needs_cells())
+        .map_or(body, catallax_topology::ChartExpansion::body);
+    match model.body(body).kind {
+        BodyKind::Solid | BodyKind::Surface | BodyKind::Empty => Ok(model.faces_of_body(body)),
+        _ => Err(Refusal::new(
+            "measure.unsupported-body",
+            "measurement requires a supported boundary representation",
+        )),
+    }
+}
+
+fn solid_faces(model: &Model, body: BodyId) -> Result<Vec<FaceId>, Refusal> {
+    require_solid(model, body)?;
+    body_faces(model, body)
 }
 
 fn scalar(
@@ -776,10 +797,16 @@ fn scalar(
     dec: &mut Decider,
 ) -> Answered<Enclosure> {
     accuracy.validate();
-    if let Some(junction) = junction::of(model, body)? {
+    let faces = if property == surface::Property::Area {
+        body_faces(model, body)?
+    } else {
+        solid_faces(model, body)?
+    };
+    if model.body(body).kind != BodyKind::Surface
+        && let Some(junction) = junction::of(model, body)?
+    {
         return junction.scalar(model, accuracy, property, traces, dec);
     }
-    let faces = solid_faces(model, body)?;
     if model.body(body).kind == BodyKind::Empty {
         return Ok(Answer::exact(Enclosure::exact(Rational::zero())));
     }

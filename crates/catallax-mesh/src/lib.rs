@@ -182,7 +182,7 @@ pub fn mesh_body(
         .chart_expansion(body)
         .filter(|cover| cover.needs_cells())
     {
-        return rational_atlas::build(model, expansion, options, dec);
+        return rational_atlas::build(model, body, expansion, options, dec);
     }
     if options
         .angular_deviation

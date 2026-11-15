@@ -4,7 +4,7 @@ use catallax_numbers::{
     Answer, Answered, Decider, Interval, Outcome, Rational, Real, RealPoly, Refusal, StrictSign,
 };
 use catallax_shapes::{Curve, Sphere, Surface, Vector3};
-use catallax_topology::{BodyId, FaceId, Loop, Model, Sense};
+use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense};
 use spade::{
     ConstrainedDelaunayTriangulation, HasPosition, HierarchyHintGenerator, Point2,
     PositionInTriangulation, Triangulation,
@@ -1225,6 +1225,41 @@ fn compact(mesh: &mut Mesh) {
 }
 
 pub(crate) fn check_closed(mesh: &Mesh) -> Result<(), Refusal> {
+    check_boundary(mesh, &BTreeSet::new())
+}
+
+pub(crate) fn check_surface(model: &Model, body: BodyId, mesh: &Mesh) -> Result<(), Refusal> {
+    let mut uses = BTreeMap::<EdgeId, usize>::new();
+    for face in model.faces_of_body(body) {
+        for boundary in &model.face(face).loops {
+            if let Loop::Coedges(coedges) = model.loop_(*boundary) {
+                for coedge in coedges {
+                    *uses.entry(model.coedge(*coedge).edge).or_default() += 1;
+                }
+            }
+        }
+    }
+    let traces: BTreeMap<_, _> = mesh
+        .edges
+        .iter()
+        .map(|edge| (edge.edge, &edge.vertices))
+        .collect();
+    let mut boundary = BTreeSet::new();
+    for (edge, count) in uses {
+        if count != 1 {
+            continue;
+        }
+        let Some(vertices) = traces.get(&edge).filter(|vertices| vertices.len() >= 2) else {
+            return Err(failure("a surface B-rep boundary has no mesh polyline"));
+        };
+        for ends in vertices.windows(2) {
+            boundary.insert((ends[0].min(ends[1]), ends[0].max(ends[1])));
+        }
+    }
+    check_boundary(mesh, &boundary)
+}
+
+fn check_boundary(mesh: &Mesh, boundary: &BTreeSet<(usize, usize)>) -> Result<(), Refusal> {
     let mut uses = BTreeMap::<(usize, usize), (usize, i32)>::new();
     for t in &mesh.triangles {
         for i in 0..3 {
@@ -1234,7 +1269,14 @@ pub(crate) fn check_closed(mesh: &Mesh) -> Result<(), Refusal> {
             entry.1 += if a < b { 1 } else { -1 };
         }
     }
-    if uses.values().any(|&(n, winding)| n != 2 || winding != 0) {
+    if uses.iter().any(|(edge, &(n, winding))| {
+        if boundary.contains(edge) {
+            n != 1
+        } else {
+            n != 2 || winding != 0
+        }
+    }) || boundary.iter().any(|edge| !uses.contains_key(edge))
+    {
         return Err(failure(
             "periodic or trimmed triangulation did not close consistently",
         ));
@@ -1613,7 +1655,11 @@ fn build_junction(
             }
         }
     }
-    check_closed(&boundaries.mesh)?;
+    if model.body(body).kind == catallax_topology::BodyKind::Surface {
+        check_surface(model, body, &boundaries.mesh)?;
+    } else {
+        check_closed(&boundaries.mesh)?;
+    }
     compact(&mut boundaries.mesh);
     Ok((boundaries.mesh, boundaries.marks))
 }

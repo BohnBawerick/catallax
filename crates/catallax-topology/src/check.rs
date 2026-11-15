@@ -21,6 +21,7 @@ pub(super) fn structure(model: &Model, body: BodyId) -> Vec<TopologyFault> {
 fn check_with_incidence(model: &Model, body: BodyId, exact_incidence: bool) -> Vec<TopologyFault> {
     let mut check = Checker {
         exact_incidence,
+        surface: model.body(body).kind == BodyKind::Surface,
         model,
         faults: Vec::new(),
         lumps: BTreeSet::new(),
@@ -32,7 +33,7 @@ fn check_with_incidence(model: &Model, body: BodyId, exact_incidence: bool) -> V
         vertex_shells: BTreeMap::new(),
     };
     let b = model.body(body);
-    if (b.kind == BodyKind::Solid && b.lumps.is_empty())
+    if (matches!(b.kind, BodyKind::Solid | BodyKind::Surface) && b.lumps.is_empty())
         || (b.kind == BodyKind::Empty && !b.lumps.is_empty())
     {
         check.fault("topology.body-kind", || {
@@ -59,6 +60,7 @@ fn check_with_incidence(model: &Model, body: BodyId, exact_incidence: bool) -> V
 
 struct Checker<'a> {
     exact_incidence: bool,
+    surface: bool,
     model: &'a Model,
     faults: Vec<TopologyFault>,
     lumps: BTreeSet<LumpId>,
@@ -164,7 +166,8 @@ impl Checker<'_> {
             self.face(f, index, s, &mut scan);
         }
         for (e, uses) in &scan.edges {
-            if uses.same != 1 || uses.reversed != 1 {
+            let boundary = self.surface && uses.same + uses.reversed == 1;
+            if !boundary && (uses.same != 1 || uses.reversed != 1) {
                 self.fault("topology.edge-use", || {
                     format!(
                         "edge {e:?} in shell {s:?} has {} same and {} reversed uses",
@@ -183,10 +186,112 @@ impl Checker<'_> {
         }
         let chi = scan.vertices.len() as i128 + scan.rings as i128 - scan.edges.len() as i128
             + scan.face_chi;
-        if chi > 2 || chi % 2 != 0 {
+        let boundaries = if self.surface {
+            self.surface_boundaries(s, &scan)
+        } else {
+            0
+        };
+        if chi + boundaries as i128 > 2 || (chi + boundaries as i128) % 2 != 0 {
             self.fault("topology.euler", || {
                 format!("shell {s:?} has Euler characteristic {chi}")
             });
+        }
+    }
+
+    fn surface_boundaries(&mut self, shell: ShellId, scan: &ShellScan) -> usize {
+        let mut boundary: BTreeMap<VertexId, Vec<VertexId>> = BTreeMap::new();
+        let mut rings = 0;
+        for (edge, uses) in &scan.edges {
+            let edge = self.model.edge(*edge);
+            if uses.same + uses.reversed != 1 {
+                continue;
+            }
+            match (edge.start, edge.end) {
+                (Some(a), Some(b)) => {
+                    boundary.entry(a).or_default().push(b);
+                    boundary.entry(b).or_default().push(a);
+                }
+                (None, None) => rings += 1,
+                _ => {}
+            }
+        }
+        for (vertex, neighbors) in &boundary {
+            if neighbors.len() != 2 {
+                self.fault("topology.boundary-vertex", || {
+                    format!(
+                        "vertex {vertex:?} in shell {shell:?} has {} boundary uses",
+                        neighbors.len()
+                    )
+                });
+            }
+        }
+        let mut seen = BTreeSet::new();
+        for vertex in boundary.keys() {
+            if seen.contains(vertex) {
+                continue;
+            }
+            rings += 1;
+            let mut pending = vec![*vertex];
+            while let Some(vertex) = pending.pop() {
+                if seen.insert(vertex) {
+                    pending.extend(boundary[&vertex].iter().copied());
+                }
+            }
+        }
+        self.surface_fans(shell);
+        rings
+    }
+
+    fn surface_fans(&mut self, shell: ShellId) {
+        let m = self.model;
+        let mut fans: BTreeMap<VertexId, BTreeMap<CoedgeId, BTreeSet<CoedgeId>>> = BTreeMap::new();
+        let mut endpoints: BTreeMap<(EdgeId, bool, VertexId), Vec<CoedgeId>> = BTreeMap::new();
+        for face in &m.shell(shell).faces {
+            for boundary in &m.face(*face).loops {
+                let Loop::Coedges(coedges) = m.loop_(*boundary) else {
+                    continue;
+                };
+                for (index, corner) in coedges.iter().copied().enumerate() {
+                    let outgoing = m.coedge(corner);
+                    let edge = m.edge(outgoing.edge);
+                    let start = outgoing.sense == Sense::Same;
+                    let Some(vertex) = (if start { edge.start } else { edge.end }) else {
+                        continue;
+                    };
+                    fans.entry(vertex).or_default().entry(corner).or_default();
+                    endpoints
+                        .entry((outgoing.edge, start, vertex))
+                        .or_default()
+                        .push(corner);
+                    let incoming = m.coedge(coedges[(index + coedges.len() - 1) % coedges.len()]);
+                    endpoints
+                        .entry((incoming.edge, incoming.sense == Sense::Reversed, vertex))
+                        .or_default()
+                        .push(corner);
+                }
+            }
+        }
+        // A node is a corner occurrence, so two wedges of one face stay distinct.
+        for ((_, _, vertex), corners) in endpoints {
+            if let [a, b] = corners.as_slice() {
+                let fan = fans.get_mut(&vertex).expect("endpoint has a corner");
+                fan.get_mut(a).expect("corner was registered").insert(*b);
+                fan.get_mut(b).expect("corner was registered").insert(*a);
+            }
+        }
+        for (vertex, fan) in fans {
+            let mut seen = BTreeSet::new();
+            let mut pending = vec![*fan.keys().next().expect("vertex has a corner")];
+            while let Some(corner) = pending.pop() {
+                if seen.insert(corner) {
+                    pending.extend(fan[&corner].iter().copied());
+                }
+            }
+            if seen.len() != fan.len() {
+                self.fault("topology.vertex-fan", || {
+                    format!("vertex {vertex:?} in shell {shell:?} has disconnected corner fans")
+                });
+            }
         }
     }
 

@@ -88,7 +88,7 @@ pub struct Shell {
 /// One connected piece of material: an outer shell and its voids.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, catallax_numbers::Transfer)]
 pub struct Lump {
-    /// Outer shell first, then voids.
+    /// For solids, the outer shell first, then voids. Surface shells enclose no material.
     pub shells: Vec<ShellId>,
 }
 
@@ -98,6 +98,8 @@ pub struct Lump {
 pub enum BodyKind {
     /// A solid with zero or more lumps.
     Solid,
+    /// A collection of bounded faces, with no assertion of enclosed material.
+    Surface,
     /// No material at all.
     Empty,
 }

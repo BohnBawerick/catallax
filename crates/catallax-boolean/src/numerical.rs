@@ -19,6 +19,7 @@ mod checks;
 mod events;
 mod material;
 mod partition;
+mod seams;
 #[cfg(test)]
 mod tests;
 

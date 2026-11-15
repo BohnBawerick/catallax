@@ -20,6 +20,7 @@ struct Occurrence {
     end: Option<usize>,
     xyz: [Rational; 3],
     domain: [usize; 2],
+    owner: Option<seams::Owner>,
 }
 
 pub(super) fn rational_point(point: Point3) -> Result<[Rational; 3], Refusal> {
@@ -105,6 +106,7 @@ pub(super) fn collect(
         }
     }
     let mut groups = BTreeMap::<String, Vec<Occurrence>>::new();
+    let mut seams = seams::Roots::new(intersection)?;
     for (index, piece) in intersection.pieces().iter().enumerate() {
         let point_only = point_piece(piece);
         for end in 0..if point_only { 1 } else { 2 } {
@@ -124,7 +126,14 @@ pub(super) fn collect(
                 quarter(&hit.requested_domains[0])?,
                 quarter(&hit.requested_domains[1])?,
             ];
-            let group = if boundary.iter().all(Option::is_none) {
+            let xyz = rational_point(piece.curve().point_at(&at, dec)?)?;
+            let owner = boundary[0]
+                .as_ref()
+                .map(|u| seams.owner(u.clone(), &xyz, tolerance, dec))
+                .transpose()?;
+            let group = if let Some((index, owner)) = &owner {
+                format!("cone-seam-{}/root-{index}", owner.uv[0])
+            } else if boundary.iter().all(Option::is_none) {
                 format!("interior-piece-{index}")
             } else {
                 let angular_owners = [
@@ -133,12 +142,12 @@ pub(super) fn collect(
                 ];
                 format!("boundary-{boundary:?}-angular-owners-{angular_owners:?}")
             };
-            eprintln!("native occurrence piece={index} end={end} point={point_only} domains={domain:?} uv={:?} group={group}", hit.uv.each_ref().map(|p|p.each_ref().map(Rational::to_f64_nearest)));
             groups.entry(group).or_default().push(Occurrence {
                 hit,
                 end: (!point_only).then_some(end),
-                xyz: rational_point(piece.curve().point_at(&at, dec)?)?,
+                xyz,
                 domain,
+                owner: owner.map(|(_, owner)| owner),
             });
         }
     }
@@ -225,6 +234,10 @@ pub(super) fn collect(
         name: "finite.unique-owned-event-vertices".into(),
         scope: key.into(),
     });
+    result.checks.push(NumericalCheck::Passed {
+        name: "finite.ordered-cone-generator-roots".into(),
+        scope: key.into(),
+    });
     dec.check_deadline()?;
     Ok(result)
 }
@@ -241,7 +254,12 @@ fn add_event(
     let first = occurrences
         .first()
         .ok_or_else(|| bad("empty finite event"))?;
-    let uv = normalized(first.hit.uv[0].clone());
+    let uv = normalized(
+        first
+            .owner
+            .as_ref()
+            .map_or_else(|| first.hit.uv[0].clone(), |owner| owner.uv.clone()),
+    );
     let point_only = occurrences.iter().all(|o| o.end.is_none());
     let domain = &first.hit.requested_domains[0];
     let on_cone_boundary = (0..2).any(|i| domain[i].contains(&first.hit.uv[0][i]));
@@ -253,7 +271,11 @@ fn add_event(
             let i = result.vertices.len();
             result.vertices.push(NumericalVertex {
                 key: name.clone(),
-                position: first.xyz.clone(),
+                position: first
+                    .owner
+                    .as_ref()
+                    .map_or(&first.xyz, |owner| &owner.xyz)
+                    .clone(),
             });
             result.uv.push(uv.clone());
             Some(i)

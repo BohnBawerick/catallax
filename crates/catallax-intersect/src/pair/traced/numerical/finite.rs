@@ -271,6 +271,46 @@ mod tests {
     }
 
     #[test]
+    fn far_origin_thin_band_refuses_binary64_row_collapse_before_tracing() {
+        let mut surfaces = axial(Rational::from_ratio(21, 2).unwrap());
+        let Surface::Cone(cone) = &mut surfaces[0] else {
+            unreachable!()
+        };
+        cone.apex = Point3::new(s(0), s(999_999_989), s(0));
+        let Surface::Cylinder(cylinder) = &mut surfaces[1] else {
+            unreachable!()
+        };
+        cylinder.origin = Point3::new(
+            Real::from(Rational::from_ratio(21, 2).unwrap()),
+            s(1_000_000_000),
+            s(0),
+        );
+        cylinder.axis = Vector3::new(s(0), s(1), s(0));
+        let (result, work) = with_operation_budget(20_000_000, || {
+            numerical_native_finite_intersection(
+                [&surfaces[0], &surfaces[1]],
+                [r(11), r(12)],
+                [r(0), Rational::from_ratio(1, 1_000_000_000).unwrap()],
+                &mut Decider::default(),
+            )
+        });
+        match &result {
+            Ok(Some(answer)) => eprintln!(
+                "thin far-origin query retained {} pieces after {} trace checkpoints",
+                answer.pieces().len(),
+                answer.trace_work().accepted
+            ),
+            Err(fault) => eprintln!("thin far-origin query: {}: {}", fault.code, fault.detail),
+            Ok(None) => panic!("expected supported cone/cylinder family"),
+        }
+        assert!(!work.exhausted, "{work:?}");
+        assert_eq!(
+            result.err().map(|fault| fault.code).as_deref(),
+            Some("intersect.numerical-native-proposal-collapse")
+        );
+    }
+
+    #[test]
     fn invalid_bands_and_caller_exhaustion_do_not_fall_back_to_natural_domains() {
         let surfaces = axial(r(10));
         for (cone, cylinder) in [

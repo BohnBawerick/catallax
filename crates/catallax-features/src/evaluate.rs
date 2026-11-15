@@ -587,40 +587,7 @@ fn evaluate_impl(
                     } else {
                         catallax_import::SourceFormat::Step
                     };
-                    let prefix = format!("repair:{}:", &file.sha256[..12]);
-                    let decisions = decisions
-                        .iter()
-                        .map(|(question, value)| {
-                            let id = question.strip_prefix(&prefix).filter(|id| {
-                                id.strip_prefix('g')
-                                    .or_else(|| id.strip_prefix('p'))
-                                    .is_some_and(|index| {
-                                        !index.is_empty() && index.bytes().all(|c| c.is_ascii_digit())
-                                    })
-                            });
-                            match (id, value.as_str()) {
-                                (Some(id), "decline") => Ok(catallax_import::Decision::Decline {
-                                    id: id.to_string(),
-                                }),
-                                (Some(id), value) if value.starts_with("accept:") => {
-                                    let (tolerance, approver) = value["accept:".len()..]
-                                        .split_once(':').ok_or_else(|| Refusal::new(
-                                            "import.invalid-decision",
-                                            format!("question {question}: acceptance needs a tolerance and approver"),
-                                        ))?;
-                                    Ok(catallax_import::Decision::Accept {
-                                        id: id.to_string(),
-                                        tolerance_mm: tolerance.to_string(),
-                                        approver: approver.to_string(),
-                                    })
-                                }
-                                _ => Err(Refusal::new(
-                                    "import.invalid-decision",
-                                    format!("question {question}: expected decline or accept:<tolerance-mm>:<approver> for these bytes"),
-                                )),
-                            }
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
+                    let decisions = crate::import_edit::import_decisions(&file.sha256, decisions)?;
                     let mut imported = catallax_import::apply_source(
                         model,
                         format,

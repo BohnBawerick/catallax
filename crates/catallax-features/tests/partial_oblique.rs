@@ -104,3 +104,57 @@ fn the_public_partial_oblique_rim_builds_and_exports_after_a_radius_edit() {
         checkpoint = Some(next);
     }
 }
+
+#[test]
+fn a_partial_pipe_cannot_publish_component_bounds_as_a_certified_file() {
+    let recipe = Recipe::parse(include_str!(
+        "../../../evidence/phase1/P03/inputs/partial-oblique.json"
+    ))
+    .unwrap();
+    let mut dec = Decider::new(BudgetPolicy {
+        max_work: 1_000_000_000,
+        ..Default::default()
+    });
+    let ((), work) = with_operation_budget(1_000_000_000, || {
+        let built = catallax_features::evaluate(&recipe, &mut dec).unwrap();
+        let mut bytes = Vec::new();
+        let refusal = catallax_step::write_rolling_junction_step(
+            &built.model,
+            built.result,
+            &Default::default(),
+            &mut dec,
+            &mut bytes,
+        )
+        .unwrap_err();
+        assert_eq!(refusal.code, "step.complete-file-bound-unestablished");
+        assert!(bytes.is_empty());
+    });
+    assert!(!work.exhausted, "{work:?}");
+}
+
+#[test]
+fn a_twenty_million_request_refuses_without_publishing_a_partial_file() {
+    let recipe = Recipe::parse(include_str!(
+        "../../../evidence/phase1/P03/inputs/partial-oblique.json"
+    ))
+    .unwrap();
+    let mut dec = Decider::new(BudgetPolicy {
+        max_work: 20_000_000,
+        ..Default::default()
+    });
+    let ((), work) = with_operation_budget(20_000_000, || {
+        let built = catallax_features::evaluate(&recipe, &mut dec).unwrap();
+        let mut bytes = Vec::new();
+        let refusal = catallax_step::write_step(
+            &built.model,
+            &[built.result],
+            &Default::default(),
+            &mut dec,
+            &mut bytes,
+        )
+        .unwrap_err();
+        assert_eq!(refusal.code, "numbers.operation-budget");
+        assert!(bytes.is_empty());
+    });
+    assert!(work.exhausted, "{work:?}");
+}

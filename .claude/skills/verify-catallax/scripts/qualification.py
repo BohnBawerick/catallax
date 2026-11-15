@@ -322,9 +322,11 @@ def audit_run(path, items, binary_hash, workers, cores, driver, default_max_work
                         manifest['step']['complete_body_bound'] == 'unestablished' and
                         manifest['numerical']['complete_body_bound'] == 'unestablished',
                         'numerical samples must not become a complete bound')
+                tolerance = bound(item['problem']['tolerance_mm'])
+                require(tolerance > 0 and bound(manifest['step'].get('tolerance_mm')) == tolerance,
+                        'numerical STEP tolerance differs from preset request')
                 for scope in ('source', 'emitted'):
-                    require(bound(manifest['numerical'][scope]['tolerance_mm']) ==
-                            bound(item['problem']['tolerance_mm']) and
+                    require(bound(manifest['numerical'][scope]['tolerance_mm']) == tolerance and
                             isinstance(manifest['numerical'][scope]['checks'], list) and
                             bool(manifest['numerical'][scope]['checks']), 'numerical checks and preset tolerance')
                 require(manifest['step']['sha256'] == artifacts['answer.step'] and

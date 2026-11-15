@@ -148,7 +148,7 @@ mod tests {
                     .count();
                 assert_eq!(crossings, if offset > r(10) { 2 } else { 0 });
                 assert_eq!(result.windows().cylinder_parameters(), &[r(10), r(13)]);
-                assert!(result.windows().cylinder_origin().x.as_rational() == Some(offset));
+                assert!(result.windows().cylinder_origin().x.as_rational() == Some(offset.clone()));
                 let stages = result.work_stages();
                 assert_eq!(
                     stages.windows + stages.setup + stages.tracing + stages.fit_checks,

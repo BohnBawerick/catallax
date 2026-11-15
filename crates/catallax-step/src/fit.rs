@@ -336,9 +336,9 @@ pub(crate) fn taylor_controls<const N: usize>(
 ) {
     use std::sync::LazyLock;
 
-    // The centered Taylor-to-Bernstein weights depend only on the degree.
-    // Keep them exact; reusing them must not alter a control's enclosure.
-    static WEIGHTS: LazyLock<[[Rational; DEGREE + 1]; DEGREE + 1]> = LazyLock::new(|| {
+    // Reflection gives w[n-j,k] = (-1)^k w[j,k]. Evaluate the even and odd
+    // terms once for each pair of controls, retaining exact interval endpoints.
+    static WEIGHTS: LazyLock<[[Rational; DEGREE + 1]; DEGREE / 2 + 1]> = LazyLock::new(|| {
         std::array::from_fn(|j| {
             std::array::from_fn(|k| {
                 (0..=k.min(j)).fold(Rational::zero(), |sum, l| {
@@ -361,18 +361,33 @@ pub(crate) fn taylor_controls<const N: usize>(
             .each_ref()
             .map(|coefficient| [&coefficient.lo() * &power, &coefficient.hi() * &power])
     });
-    for weights in WEIGHTS.iter() {
-        let mut control: [[Rational; 2]; N] =
-            std::array::from_fn(|_| [Rational::zero(), Rational::zero()]);
-        for (coefficient, weight) in scaled.iter().zip(weights) {
+    let mut controls: [[[Rational; 2]; N]; DEGREE + 1] =
+        std::array::from_fn(|_| std::array::from_fn(|_| [Rational::zero(), Rational::zero()]));
+    for (j, weights) in WEIGHTS.iter().enumerate() {
+        let mut parts: [[[Rational; 2]; N]; 2] =
+            std::array::from_fn(|_| std::array::from_fn(|_| [Rational::zero(), Rational::zero()]));
+        for (k, (coefficient, weight)) in scaled.iter().zip(weights).enumerate() {
+            if weight.is_zero() {
+                continue;
+            }
             for i in 0..N {
                 let a = &coefficient[i][0] * weight;
                 let b = &coefficient[i][1] * weight;
                 let (lower, upper) = if a <= b { (a, b) } else { (b, a) };
-                control[i][0] = &control[i][0] + &lower;
-                control[i][1] = &control[i][1] + &upper;
+                let interval = &mut parts[k % 2][i];
+                interval[0] = &interval[0] + &lower;
+                interval[1] = &interval[1] + &upper;
             }
         }
+        for i in 0..N {
+            let (even, odd) = (&parts[0][i], &parts[1][i]);
+            controls[j][i] = [&even[0] + &odd[0], &even[1] + &odd[1]];
+            if DEGREE - j != j {
+                controls[DEGREE - j][i] = [&even[0] - &odd[1], &even[1] - &odd[0]];
+            }
+        }
+    }
+    for control in controls {
         push(
             control
                 .each_ref()
@@ -402,3 +417,7 @@ pub(crate) fn bezier_power<const N: usize>(
 fn binomial(n: usize, k: usize) -> i64 {
     (0..k).fold(1, |v, i| v * (n - i) as i64 / (i + 1) as i64)
 }
+
+#[cfg(test)]
+#[path = "fit/tests.rs"]
+mod tests;

@@ -1,0 +1,56 @@
+{
+  "archive_sha256": "52e6dd1b6fa38e3cd99af59b662370829129540030975919c3e256dce6ad1dbe",
+  "by_import_category": {
+    "certified / raw_invalid": 9,
+    "certified / raw_valid": 177,
+    "certified / timeout": 1,
+    "numerical approximate / export_refused": 16,
+    "numerical approximate / raw_invalid": 52,
+    "numerical approximate / raw_valid": 145
+  },
+  "complete": true,
+  "conditioning": {
+    "admitted": 400,
+    "export_refused": 16,
+    "raw_invalid": 61,
+    "raw_valid": 322,
+    "raw_valid_share_of_admitted_percent": "80.5",
+    "timeout": 1
+  },
+  "denominator": 3000,
+  "export_result_csv_sha256": "7a8556150ba70f17d4bd15a7ca11fc7750822407b2469aaae22ab910f718ad69",
+  "format": "catallax-raw-export-reference-comparison/1",
+  "headline": {
+    "native_raw_export_valid": 322,
+    "native_share_percent": "10.7",
+    "occt_healed_valid": 2701,
+    "occt_share_percent": "90.0"
+  },
+  "paired_outcomes": {
+    "export_refused / healed_valid_solid": 16,
+    "outside_frozen_full_population / failed": 1,
+    "outside_frozen_full_population / healed_valid_solid": 2301,
+    "outside_frozen_full_population / open_shell": 44,
+    "outside_frozen_full_population / opened_other": 243,
+    "outside_frozen_full_population / timeout": 11,
+    "raw_invalid / healed_valid_solid": 61,
+    "raw_valid / healed_valid_solid": 322,
+    "timeout / healed_valid_solid": 1
+  },
+  "reference_comparison_csv_sha256": "67ce207e006407a0e6303fbc6f1db5100845f7e0a5985a381a4ba37a2cdd32d7",
+  "reference_manifest_sha256": "bece683af14ba421a1ab8be2c05d2d3d8d2d404befbabca43ec15487f5e82051",
+  "refusal_causes": {
+    "resource_limit": 1,
+    "step.numerical-gap": 15
+  },
+  "scope": "Frozen full-admission population; native raw export versus existing normal-transfer/default-healing reference, not a common-tolerance/source-fidelity benchmark",
+  "seed": 20261111,
+  "selection_sha256": "1b11410b220d5e8a3156794f6c8f9cc09091a43dcac9af801215fb3a38d571a5",
+  "source_hash_manifest_sha256": "3323e104c377023846073a05d7e164ca1082dc3dcf32cc046eee897401454cc7",
+  "timeout": {
+    "export_work": "unknown_after_timeout",
+    "import_completed": true,
+    "model_id": "00004777",
+    "stage": "export"
+  }
+}

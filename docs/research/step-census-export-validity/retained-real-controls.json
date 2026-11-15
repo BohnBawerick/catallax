@@ -1,0 +1,108 @@
+{
+  "controls": [
+    {
+      "expected_bodies": 1,
+      "exported_step_sha256": [
+        "68298f942c71eae9bc3567f45134baba2a24231c9e8be2e39a17650db47f9666"
+      ],
+      "model_id": "00000131",
+      "occt_reference_outcome": "healed_valid_solid",
+      "source_sha256": "fde1162a6bc2f0631564cb88b09fe98435d5d91e28b8c93c3ada871b6b826fbf",
+      "validity_outcome": "raw_valid"
+    },
+    {
+      "expected_bodies": 1,
+      "exported_step_sha256": [
+        "5ed07bb6cb81feb54edf9eff299508de970bd6afcf7f1068812f51a2048fe6fa"
+      ],
+      "model_id": "00000173",
+      "occt_reference_outcome": "healed_valid_solid",
+      "source_sha256": "e9e6ed7e80f621e605560b7080903775c380e5410a62bc3d138b8fd682570c7a",
+      "validity_outcome": "raw_valid"
+    },
+    {
+      "expected_bodies": 1,
+      "exported_step_sha256": [
+        "c01c8b73db96a1d721de24bbacee4e20d0b82ab23b445bcf44d85b1b7edbe0aa"
+      ],
+      "model_id": "00000190",
+      "occt_reference_outcome": "healed_valid_solid",
+      "source_sha256": "dffe2bf5f8be19d9fdde693be54c4f6c4732d2d333edd2dbd7cdd7cb05163948",
+      "validity_outcome": "raw_valid"
+    },
+    {
+      "expected_bodies": 1,
+      "exported_step_sha256": [
+        "776ae5dee870beb22b9463c235223ecf87728f8f8f9a8dfdb0d66484711a5383"
+      ],
+      "model_id": "00000405",
+      "occt_reference_outcome": "healed_valid_solid",
+      "source_sha256": "855b700371c3ac43bc8764e03d94e688bf5df7a0be4c29576bfe6dcb8086c0f2",
+      "validity_outcome": "raw_valid"
+    },
+    {
+      "expected_bodies": 1,
+      "exported_step_sha256": [
+        "d3abc3d9158720ebfdade0c7d3e15e082ff60622165346177dc5c0c9c23df7c7"
+      ],
+      "model_id": "00000511",
+      "occt_reference_outcome": "healed_valid_solid",
+      "source_sha256": "50a920f6fd50aedf1afacc1c19cc3b4722a7f4a11dd293fa4d42916e696e09d5",
+      "validity_outcome": "raw_valid"
+    },
+    {
+      "expected_bodies": 1,
+      "exported_step_sha256": [
+        "bf09c22c888643515e829ecc4e09cc34d321b908b18a6a4df13db37860815b32"
+      ],
+      "model_id": "00000605",
+      "occt_reference_outcome": "healed_valid_solid",
+      "source_sha256": "913d6be2f284c3ddded0e37ccd44ac9393b575c800cdf7812a09482071ed56d9",
+      "validity_outcome": "raw_valid"
+    },
+    {
+      "expected_bodies": 1,
+      "exported_step_sha256": [
+        "5b54728366647912b2bcd85d9e204ca2ae8343234019d82e0cdf638c6c55e0e1"
+      ],
+      "model_id": "00000632",
+      "occt_reference_outcome": "healed_valid_solid",
+      "source_sha256": "4b28e439ccd5e4f736aae147aa07df2b33c8bc2c139bd3318f8be1d60241051a",
+      "validity_outcome": "raw_valid"
+    },
+    {
+      "expected_bodies": 1,
+      "exported_step_sha256": [
+        "4b6f4a8f7b0be8c545a3fe7273bdcff5297ab38453a6871187fc553305862d88"
+      ],
+      "model_id": "00000633",
+      "occt_reference_outcome": "healed_valid_solid",
+      "source_sha256": "74a532c12724abc77aa5c2a2e4b89f166c66aebdbd8d02deab18294cdb7f0edd",
+      "validity_outcome": "raw_valid"
+    },
+    {
+      "expected_bodies": 1,
+      "exported_step_sha256": [
+        "9f9f732eecfa398292598018ec14b5ea870be8a393e1337c9ebed6bebba22d97"
+      ],
+      "model_id": "00000695",
+      "occt_reference_outcome": "healed_valid_solid",
+      "source_sha256": "5a9660c0f13e03afc6bdda7aacebe565790c2019bdc0deb288a3e921a448995f",
+      "validity_outcome": "raw_valid"
+    },
+    {
+      "expected_bodies": 1,
+      "exported_step_sha256": [
+        "154c59fd78606e6db72df73caee66c60c81cdbd6656ab198fc96458bac2da3f1"
+      ],
+      "model_id": "00000821",
+      "occt_reference_outcome": "healed_valid_solid",
+      "source_sha256": "222f5bd1ba5f202853a68902c88edfa49ca12a09bb57809ac8c29adf782a6ee0",
+      "validity_outcome": "raw_valid"
+    }
+  ],
+  "format": "catallax-frozen-export-validity-controls/1",
+  "result_csv_sha256": "7a8556150ba70f17d4bd15a7ca11fc7750822407b2469aaae22ab910f718ad69",
+  "scope": "raw export validity only; no per-file arbitrary edit/material claim",
+  "source_revision": "4b422bcf65092239f0eeb4581d916595e7697560"
+}

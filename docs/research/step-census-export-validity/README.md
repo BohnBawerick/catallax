@@ -1,9 +1,31 @@
 # Frozen admission export validity
 
-This protocol qualifies the exported STEP files of the **400 admission-only**
-results in the [complete periodic census](../step-census-periodic/results.json).
-Those fixed inputs contain 808 bodies. These are population counts, not an
-export-validity result. A headline requires a complete capture.
+The complete capture records **322 of the original 3,000 files (10.7%) with
+raw-OCCT-valid STEP exports**, beside **2,701 of 3,000 (90.0%) healed-valid**
+results from the existing same-source OpenCASCADE reference.
+
+The conditioning step is **400 admitted files, of which 322 are raw-valid
+(80.5%), 61 raw-invalid, 16 export-refused and one timed out**. All 400 imports
+reproduced their expected body sets. The frozen inputs contain 808 bodies; one
+valid body never qualifies an otherwise invalid multi-solid file. All ten
+[retained P06 controls](retained-real-controls.json) are raw-valid.
+
+[Results](results.csv), the [actual build/capture manifest](results.json),
+[reference comparison](comparison.json), [authored controls](authored-controls.json)
+and [separate byte/unit audit](independent-byte-audit.json) retain the evidence.
+The 16 writer refusals are 15 `step.numerical-gap` and one aggregate export work
+limit. The timeout is `00004777`, after import completed, during export; its
+export work is unknown and it receives no validity credit. Raw invalidity is a
+structural reader result, not a diagnosis of its underlying cause.
+
+The observer producer is `4b422bcf65092239f0eeb4581d916595e7697560`, with production
+kernel/exporter fixed at `f87c18ab1beb5e6fa74d74e9d0f06b8a24db0a38`. Its actual Cargo
+artifact is SHA-256
+`9f7648a9fe63060a274889d1f261fd5e80502c05c208af101134ced8299ecd77`.
+The result table hash is
+`7a8556150ba70f17d4bd15a7ca11fc7750822407b2469aaae22ab910f718ad69`.
+No new admission rule, surface-body result or reference rerun enters this
+comparison. The complete 3,000-file admission capture remains frozen separately.
 
 The original seed is 20261111 and the denominator remains 3,000. Input IDs and
 individual byte hashes come from the original

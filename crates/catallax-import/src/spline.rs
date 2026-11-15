@@ -66,8 +66,9 @@ fn expanded(
         if m == 0 || knots.len().checked_add(m).is_none_or(|n| n > expected) {
             return Err(malformed("invalid knot multiplicity or expanded count"));
         }
-        if previous.as_ref().is_some_and(|p| p >= &value) {
-            return Err(malformed("distinct knots must increase strictly"));
+        // Repeated entries contribute to one multiplicity in the expanded knot vector.
+        if previous.as_ref().is_some_and(|p| p > &value) {
+            return Err(malformed("knots must not decrease"));
         }
         previous = Some(value.clone());
         for _ in 0..m {
@@ -114,6 +115,57 @@ fn implicit(
         .collect()
 }
 
+fn normalize_curve_ends(
+    degree: usize,
+    knots: &mut Vec<Rational>,
+    controls: &mut Vec<Vec3>,
+    weights: &mut Vec<Rational>,
+    dec: &Decider,
+) -> Result<(), ImportRefusal> {
+    let Some(first) = knots.first() else {
+        return Ok(());
+    };
+    let mut meter = Decider::new(*dec.policy());
+    meter.set_deadline(dec.deadline());
+    let mut first_count = 0_usize;
+    for knot in knots.iter() {
+        meter.charge_work(1).map_err(source_error)?;
+        if knot != first {
+            break;
+        }
+        first_count += 1;
+    }
+    let last = knots.last().expect("nonempty knots");
+    let mut last_count = 0_usize;
+    for knot in knots.iter().rev() {
+        meter.charge_work(1).map_err(source_error)?;
+        if knot != last {
+            break;
+        }
+        last_count += 1;
+    }
+    let first_drop = first_count.saturating_sub(degree + 1);
+    let last_drop = last_count.saturating_sub(degree + 1);
+    if first_drop == 0 && last_drop == 0 {
+        return Ok(());
+    }
+    if weights.len() != controls.len() || first_drop + last_drop >= controls.len() {
+        return Err(malformed("invalid spline endpoint padding"));
+    }
+    // These endpoint basis functions have zero support on the active domain.
+    // As in StepToGeom, discard their controls and matching weights with the extra knots.
+    meter
+        .charge_work((controls.len() as u64).saturating_mul(2) + knots.len() as u64)
+        .map_err(source_error)?;
+    controls.truncate(controls.len() - last_drop);
+    weights.truncate(weights.len() - last_drop);
+    knots.truncate(knots.len() - last_drop);
+    drop(controls.drain(..first_drop));
+    drop(weights.drain(..first_drop));
+    drop(knots.drain(..first_drop));
+    meter.check_deadline().map_err(source_error)
+}
+
 // Complex instances omit inherited attributes in each subtype. Simple
 // instances include the representation-item name and all base attributes.
 fn base<'a>(e: &'a Entity, root: &str, kinds: &[&str]) -> Option<(&'a [Param], &'a str, usize)> {
@@ -148,7 +200,7 @@ impl Reader<'_> {
             return Ok(None);
         };
         let degree = integer(arg(a, offset)?)?;
-        let controls = list(arg(a, offset + 1)?)?
+        let mut controls = list(arg(a, offset + 1)?)?
             .iter()
             .map(|p| {
                 let Param::Ref(id) = p else {
@@ -159,7 +211,7 @@ impl Reader<'_> {
             .collect::<Result<Vec<_>, _>>()?;
         let closed = logical(arg(a, offset + 3)?)?;
         let self_intersect = logical(arg(a, offset + 4)?)?;
-        let knots = if kind == kinds[0] {
+        let mut knots = if kind == kinds[0] {
             let (args, start) = if offset == 1 {
                 (a, 6)
             } else {
@@ -175,13 +227,14 @@ impl Reader<'_> {
         } else {
             implicit(kind, degree, controls.len(), self.dec)?
         };
-        let weights = match e.part("RATIONAL_B_SPLINE_CURVE") {
+        let mut weights = match e.part("RATIONAL_B_SPLINE_CURVE") {
             Some(args) => list(arg(args, 0)?)?
                 .iter()
                 .map(number)
                 .collect::<Result<_, _>>()?,
             None => vec![Rational::one(); controls.len()],
         };
+        normalize_curve_ends(degree, &mut knots, &mut controls, &mut weights, self.dec)?;
         let geometry = RationalSplineCurve::new(degree, knots, controls, weights, self.dec)
             .map_err(source_error)?;
         let geometry = geometry.into_clamped(self.dec).map_err(source_error)?;

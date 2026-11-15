@@ -459,4 +459,47 @@ mod tests {
             assert!(!work.exhausted, "{work:?}");
         }
     }
+
+    #[test]
+    fn moved_rotated_and_scaled_native_queries_keep_the_preset_tolerance() {
+        for scale in [Rational::from_ratio(1, 2).unwrap(), r(3)] {
+            let surfaces = [
+                Surface::Cone(Cone {
+                    apex: Point3::new(Real::from(r(3) + r(11) * &scale), s(-7), s(2)),
+                    axis: Vector3::new(s(-1), s(0), s(0)),
+                    slope: s(1),
+                    ref_dir: Vector3::new(s(0), s(1), s(0)),
+                }),
+                Surface::Cylinder(Cylinder {
+                    origin: Point3::new(
+                        Real::from(r(3) - r(12) * &scale),
+                        Real::from(r(-7) + r(10) * &scale),
+                        s(2),
+                    ),
+                    axis: Vector3::new(s(1), s(0), s(0)),
+                    radius_sq: Real::from(&scale * &scale),
+                    ref_dir: Vector3::new(s(0), s(1), s(0)),
+                }),
+            ];
+            let (result, work) = with_operation_budget(20_000_000, || {
+                numerical_native_intersection([&surfaces[0], &surfaces[1]], &mut Decider::default())
+            });
+            let result = result.unwrap().unwrap();
+            assert!(!work.exhausted, "scale={scale}: {work:?}");
+            assert_eq!(result.pieces().len(), 2);
+            assert_eq!(
+                result.evidence().tolerance_mm(),
+                &Rational::from_ratio(1, 10_000_000).unwrap()
+            );
+            let stages = result.work_stages();
+            assert_eq!(
+                stages.windows + stages.setup + stages.tracing + stages.fit_checks,
+                work.used
+            );
+            eprintln!(
+                "moved/rotated native query scale={scale} total_work={} stages={stages:?}",
+                work.used
+            );
+        }
+    }
 }

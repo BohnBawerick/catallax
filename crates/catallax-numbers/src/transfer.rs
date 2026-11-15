@@ -68,12 +68,18 @@ pub struct Writer {
     bytes: Vec<u8>,
     keys: HashMap<(TypeId, usize), u32>,
     pending: Vec<Option<(&'static str, Emit)>>,
+    owners: Vec<Box<dyn Any>>,
     dependencies: Vec<Vec<usize>>,
     active: Option<usize>,
 }
 
 impl Writer {
-    fn shared<T: 'static>(&mut self, pointer: usize, emit: Emit) -> Result<(), Refusal> {
+    fn shared<T: 'static>(
+        &mut self,
+        pointer: usize,
+        owner: Box<dyn Any>,
+        emit: Emit,
+    ) -> Result<(), Refusal> {
         let key = (TypeId::of::<T>(), pointer);
         let id = match self.keys.get(&key) {
             Some(id) => *id,
@@ -81,6 +87,8 @@ impl Writer {
                 let id = u32::try_from(self.pending.len())
                     .map_err(|_| invalid("too many shared objects"))?;
                 self.keys.insert(key, id);
+                // A mutable cache may replace its Arc while later records are written.
+                self.owners.push(owner);
                 self.pending.push(Some((type_name::<T>(), emit)));
                 self.dependencies.push(Vec::new());
                 id
@@ -466,6 +474,7 @@ impl<T: Codec> Codec for Arc<T> {
         let value = self.clone();
         w.shared::<Self>(
             Arc::as_ptr(self) as usize,
+            Box::new(self.clone()),
             Box::new(move |w| value.as_ref().write(w)),
         )
     }
@@ -488,6 +497,7 @@ impl<T: Codec> Codec for Arc<[T]> {
         let value = self.clone();
         w.shared::<Self>(
             Arc::as_ptr(self) as *const () as usize,
+            Box::new(self.clone()),
             Box::new(move |w| {
                 value.len().write(w)?;
                 for x in value.iter() {
@@ -798,5 +808,19 @@ mod tests {
                 }
             });
         }
+    }
+
+    #[test]
+    fn registered_objects_stay_alive_until_the_snapshot_finishes() {
+        let value = Arc::new(42_u64);
+        let weak = Arc::downgrade(&value);
+        let mut writer = Writer::default();
+        value.write(&mut writer).unwrap();
+        drop(value);
+        let (_, emit) = writer.pending[0].take().unwrap();
+        emit(&mut writer).unwrap();
+        assert_eq!(weak.upgrade().as_deref(), Some(&42));
+        drop(writer);
+        assert!(weak.upgrade().is_none());
     }
 }

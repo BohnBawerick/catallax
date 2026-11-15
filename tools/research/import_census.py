@@ -124,11 +124,10 @@ def observe(binary, path, key, expected_hash, raw, timeout, baseline):
         'source_to_result_max_mm': imported.get('source_to_result_max_mm'),
         'source_change_count': imported.get('source_change_count'),
         'source_admission_method': imported.get('source_admission_method'),
-        'source_pair_work_allowance': imported.get('source_exact_pair_work_allowance'),
+        'source_optional_exact_work_reserved': imported.get('source_optional_exact_work_reserved'),
+        'source_optional_exact_work_used': imported.get('source_optional_exact_work_used'),
         'source_pair_work_used': sum(check.get('exact_attempt_work_used', 0) for check in
                                      (imported.get('source_intersection_checks') or [])),
-        'source_pair_work_reserved': sum(check.get('exact_attempt_work_reserved', 0) for check in
-                                         (imported.get('source_intersection_checks') or [])),
         'source_pair_checked_count': (None if imported.get('source_intersection_checks') is None else
                                       sum(check['status'] == 'checked_no_crossing' for check in
                                           imported['source_intersection_checks'])),

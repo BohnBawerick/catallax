@@ -29,8 +29,10 @@ pub struct NumericalSourceAdmission {
     /// incidence prerequisite is unresolved only for pairs using that face.
     /// Separate solids are not compared, matching the existing import policy.
     pub intersection_checks: Vec<NumericalSourcePairCheck>,
-    /// Prepaid work per optional exact pair attempt, from the shared request.
-    pub exact_pair_work_allowance: u64,
+    /// One collective prepayment for optional curved source-pair proofs.
+    pub optional_exact_work_reserved: u64,
+    /// Actual work used inside that collective proof allowance.
+    pub optional_exact_work_used: u64,
 }
 
 /// Source intersection coverage retained separately from numerical samples.
@@ -44,10 +46,8 @@ pub enum NumericalSourcePairCheck {
         solid: String,
         /// Stable source face names, in source order.
         faces: [String; 2],
-        /// Actual work used inside the prepaid exact attempt.
+        /// Work used by this pair check; shared preparation is recorded separately.
         exact_attempt_work_used: u64,
-        /// Work prepaid from the enclosing request, including unused work.
-        exact_attempt_work_reserved: u64,
     },
     /// The source pair could not be checked exactly. This grants no separation.
     Unresolved {
@@ -57,10 +57,8 @@ pub enum NumericalSourcePairCheck {
         faces: [String; 2],
         /// The actual typed incidence prerequisite or undecided pair refusal.
         refusal: Box<ImportRefusal>,
-        /// Actual exact-attempt work, or zero for a failed incidence prerequisite.
+        /// Work used by this pair check, or zero when no attempt completed.
         exact_attempt_work_used: u64,
-        /// Work prepaid from the enclosing request, including unused work.
-        exact_attempt_work_reserved: u64,
     },
 }
 

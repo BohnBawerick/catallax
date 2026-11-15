@@ -4,6 +4,11 @@ use crate::spline_arithmetic::{arithmetic, cut, difference, quotient, value};
 use catallax_numbers::{Decider, Rational, Real, Refusal, Sign};
 use catallax_shapes::{BSplineCurve, Curve, CurveId, GeomStore, Line, Point3};
 
+mod numerical;
+pub use numerical::{
+    NumericalSplineLineMeetings, NumericalSplineLinePoint, numerical_spline_line_points,
+};
+
 fn missing(detail: &str) -> Refusal {
     Refusal::new("intersect.spline-line", detail)
 }

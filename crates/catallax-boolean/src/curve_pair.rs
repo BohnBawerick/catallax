@@ -161,6 +161,24 @@ fn quadratic(poly: &RealPoly, x: &Real, dec: &mut Decider) -> Result<Vec<Real>, 
 pub(crate) enum Meetings {
     Coincident,
     Points(Vec<PointId>),
+    Covered(FiniteLineCover),
+}
+
+/// One whole finite source domain covered by a maximal line carrier.
+#[derive(Clone)]
+pub(crate) struct FiniteLineCover {
+    pub finite: CurveId,
+    pub carrier: CurveId,
+    pub ends: [PointId; 2],
+}
+
+pub(crate) fn finite_line_cover(
+    model: &mut Model,
+    a: CurveId,
+    b: CurveId,
+    dec: &mut Decider,
+) -> Result<Option<FiniteLineCover>, Refusal> {
+    patch::finite_line_cover(model, a, b, dec)
 }
 
 pub(crate) fn meetings(
@@ -196,6 +214,9 @@ pub(crate) fn meetings(
     }
     if let Some(answer) = patch::native_line_meetings(model, a, b, dec)? {
         return Ok(answer);
+    }
+    if let Some(cover) = finite_line_cover(model, a, b, dec)? {
+        return Ok(Meetings::Covered(cover));
     }
     let mut result = Vec::new();
     let finite = match catallax_intersect::bezier_section_line_points(model.geom(), a, b, dec)? {

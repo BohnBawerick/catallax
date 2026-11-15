@@ -7,6 +7,15 @@ use catallax_shapes::{
 };
 
 mod finite_line;
+
+pub(super) fn finite_line_cover(
+    model: &mut Model,
+    a: CurveId,
+    b: CurveId,
+    dec: &mut Decider,
+) -> Result<Option<FiniteLineCover>, Refusal> {
+    finite_line::cover(model, a, b, dec)
+}
 mod spline;
 
 pub(super) fn native_line_meetings(

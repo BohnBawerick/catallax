@@ -817,7 +817,7 @@ fn section_inputs(
         mut trimmed,
         pool,
         mut points,
-        mandatory,
+        mut mandatory,
         singular,
         supports,
         mut active,
@@ -829,6 +829,40 @@ fn section_inputs(
     // skipped carriers is neither a kept cut nor an isolated point.
     if overlapping_coincidence {
         active.fill(true);
+    }
+    let mut covered = BTreeMap::new();
+    let mut lines = Vec::new();
+    for (index, curve) in pool.iter().copied().enumerate() {
+        dec.charge_work(1)?;
+        if matches!(model.geom().curve(curve), Curve::Line(_)) {
+            lines.push((index, curve));
+        }
+    }
+    for (index, finite) in pool.iter().copied().enumerate() {
+        dec.charge_work(1)?;
+        if !matches!(model.geom().curve(finite), Curve::BSpline(_)) {
+            continue;
+        }
+        for &(owner, line) in &lines {
+            dec.charge_work(1)?;
+            if let Some(mut cover) = crate::curve_pair::finite_line_cover(model, finite, line, dec)?
+            {
+                for point in &mut cover.ends {
+                    *point = canonical_point(
+                        model,
+                        &mut points,
+                        *point,
+                        dec,
+                        "boolean.imprint-ambiguous",
+                    )?;
+                    mandatory.insert(*point);
+                }
+                active[index] = false;
+                active[owner] = true;
+                covered.insert(cover.finite, cover);
+                break;
+            }
+        }
     }
     let surfaces: Vec<SurfaceId> = first
         .iter()
@@ -850,6 +884,9 @@ fn section_inputs(
     let span_tasks = catallax_numbers::work_span::parallel("carrier hits");
     let mut ahead = catallax_numbers::run_ahead!(dec, pool.len());
     for (index, &curve) in pool.iter().enumerate() {
+        if covered.contains_key(&curve) {
+            continue;
+        }
         #[cfg(feature = "work-span")]
         let _span_task = span_tasks.task();
         // An inactive carrier has no potentially meeting generating face pair.
@@ -1014,6 +1051,9 @@ fn section_inputs(
     let span_tasks = catallax_numbers::work_span::parallel("carrier pieces");
     let mut ahead = catallax_numbers::values_ahead!(dec, pool.len());
     for (index, &curve) in pool.iter().enumerate() {
+        if covered.contains_key(&curve) {
+            continue;
+        }
         #[cfg(feature = "work-span")]
         let _span_task = span_tasks.task();
         let found = ahead.take_if(
@@ -1395,10 +1435,23 @@ fn carrier_pair(
     if skip {
         return Ok(());
     }
-    let crate::curve_pair::Meetings::Points(meetings) =
-        crate::curve_pair::meetings(model, pool[i], pool[j], dec)?
-    else {
-        return Ok(());
+    let meetings = match crate::curve_pair::meetings(model, pool[i], pool[j], dec)? {
+        crate::curve_pair::Meetings::Coincident => return Ok(()),
+        crate::curve_pair::Meetings::Points(points) => points,
+        crate::curve_pair::Meetings::Covered(cover) => {
+            for point in cover.ends {
+                if !coincident(
+                    on_curve(model.geom(), cover.carrier, point, dec),
+                    "boolean.imprint-ambiguous",
+                )? {
+                    return Err(refusal(
+                        "boolean.imprint-ambiguous",
+                        "finite cover endpoint left its line carrier",
+                    ));
+                }
+            }
+            cover.ends.to_vec()
+        }
     };
     for point in meetings {
         let canonical = canonical_point(model, points, point, dec, "boolean.imprint-ambiguous")?;

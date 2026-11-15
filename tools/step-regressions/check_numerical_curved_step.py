@@ -112,7 +112,7 @@ def main():
         assert topology(shape) == dict(solids=1, faces=10, edges=24, vertices=16, two_loop_faces=2)
         assert abs(volume(shape) - 12.) < 1e-7, 'unadmitted traversal changed material'
         for edge in unique(shape, TopAbs_EDGE):
-            curve = BRepAdaptor_Curve(TopoDS.Edge_s(edge))
+            curve = BRepAdaptor_Curve(TopoDS.Edge(edge))
             lo, hi = curve.FirstParameter(), curve.LastParameter()
             for i in range(9):
                 point = curve.Value(lo + (hi - lo) * i / 8)

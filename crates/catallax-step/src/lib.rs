@@ -27,6 +27,8 @@ mod graph;
 mod joint;
 mod junction;
 mod number;
+/// Separate numerical STEP artifacts; no exact or bounded answer conversion.
+pub mod numerical;
 mod partial;
 mod pcurve;
 mod poles;

@@ -1,0 +1,26 @@
+{
+  "bytes_reread_checked": true,
+  "complete_body_bound": null,
+  "counts": [
+    10,
+    24,
+    16
+  ],
+  "emitted_checks": 87,
+  "emitted_repairs": 0,
+  "exact": false,
+  "file": "two-loop.step",
+  "max_scalar_rounding_error_mm": "0",
+  "reference_check": "separate",
+  "result": "numerical",
+  "scalar_rounding_limit_mm": "1/10000000",
+  "source_checks": 87,
+  "source_name": "square-through-hole",
+  "source_repairs": 0,
+  "source_tolerance_mm": "1/100",
+  "work": {
+    "exhausted": false,
+    "limit": 20000000,
+    "used": 180462
+  }
+}

@@ -284,7 +284,8 @@ pub(crate) fn observe<T>(
 
 /// Writes a certified body with rolling-envelope faces. `max_deviation` bounds
 /// the file against the represented model; compose it with the model's
-/// definition certificate. A bound over the requested tolerance writes nothing.
+/// definition certificate. An absent complete-file bound or a bound over the
+/// requested tolerance refuses without writing.
 pub fn write_rolling_junction_step<W: Write>(
     model: &Model,
     body: BodyId,
@@ -305,6 +306,12 @@ pub fn write_rolling_junction_step<W: Write>(
         dec,
         &mut bytes,
     )?;
+    if answer.value.definition_deviation.is_none() {
+        return Err(catallax_numbers::Refusal::new(
+            "step.complete-file-bound-unestablished",
+            "the approximate export has only component bounds, not a uniform complete-file bound",
+        ));
+    }
     if answer.value.max_deviation > options.file_tolerance {
         return Err(catallax_numbers::Refusal::new(
             "step.tolerance-not-reached",

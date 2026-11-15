@@ -6,6 +6,24 @@ use crate::{Isometry, Point3, Pose, Vector3};
 use catallax_numbers::{Ball, Real, Sign};
 
 impl RationalAtlas {
+    /// Complete finite spline points across every retained chart. Containment
+    /// requires the whole spline domain; partial intervals remain explicit.
+    pub fn spline_hits(
+        &self,
+        spline: &crate::BSplineCurve,
+        dec: &mut Decider,
+    ) -> Result<Option<crate::SectionHits>, Refusal> {
+        crate::rational_patch::spline_points(
+            &self
+                .charts()
+                .iter()
+                .map(|chart| chart.patch())
+                .collect::<Vec<_>>(),
+            spline,
+            dec,
+        )
+    }
+
     /// World axes giving an injective projection when every chart has the
     /// same nonsingular affine coordinate pair in original source parameters.
     /// The axes preserve the source's parameter orientation for winding.

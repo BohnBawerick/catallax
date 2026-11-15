@@ -166,9 +166,10 @@ fn carrier_hits(
             complete.insert(surface, Vec::new());
             continue;
         }
-        if let Some(meeting) = crate::curve_pair::finite_plane_points(model, curve, surface, dec)? {
+        if let Some(meeting) = crate::curve_pair::finite_surface_points(model, curve, surface, dec)?
+        {
             validated = true;
-            if let crate::curve_pair::FinitePlanePoints::Points(positions) = meeting {
+            if let crate::curve_pair::FiniteSurfacePoints::Points(positions) = meeting {
                 let mut canonical = Vec::new();
                 for position in positions {
                     let point = model.geom_mut().add_point(PointDef::Meet(Meet {

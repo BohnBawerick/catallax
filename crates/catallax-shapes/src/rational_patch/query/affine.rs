@@ -8,11 +8,11 @@ pub(super) enum Preimage {
     Point([Real; 2]),
 }
 
-struct Frame {
-    axes: [usize; 2],
-    coordinates: [[Real; 3]; 2],
-    weight: Real,
-    determinant: Real,
+pub(super) struct Frame {
+    pub(super) axes: [usize; 2],
+    pub(super) coordinates: [[Real; 3]; 2],
+    pub(super) weight: Real,
+    pub(super) determinant: Real,
 }
 
 pub(super) fn arithmetic(
@@ -57,7 +57,7 @@ fn affine(poly: &RealPoly) -> Option<[Real; 3]> {
     Some(coefficients)
 }
 
-fn frame(span: &Span, dec: &mut Decider) -> Result<Option<Frame>, Refusal> {
+pub(super) fn frame(span: &Span, dec: &mut Decider) -> Result<Option<Frame>, Refusal> {
     let Some([weight, u, v]) = affine(&span.coordinates[3]) else {
         return Ok(None);
     };

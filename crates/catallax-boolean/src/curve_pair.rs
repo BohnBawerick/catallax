@@ -17,7 +17,7 @@ use catallax_topology::Model;
 use crate::geometry::{canonical_point, coincident, refusal, sign};
 
 mod patch;
-pub(crate) use patch::{FinitePlanePoints, finite_plane_points};
+pub(crate) use patch::{FiniteSurfacePoints, finite_surface_points};
 #[cfg(test)]
 mod patch_tests;
 

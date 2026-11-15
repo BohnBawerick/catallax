@@ -1,4 +1,4 @@
-//! Separate approximate STEP artifacts for checked numerical planar bodies.
+//! Separate approximate STEP artifacts for checked numerical bodies.
 //! No exact answer, complete bound, model extraction or healing is provided.
 use crate::graph::{Field, Graph, Id, boolean, refs, string, text};
 use catallax_numbers::{
@@ -10,6 +10,8 @@ use catallax_topology::{
     Sense,
     numerical::{DEFAULT_WORK, NumericalBody},
 };
+
+mod curved;
 
 /// Controls fixed before a numerical export. They do not change source tolerance.
 #[derive(Clone, Debug)]
@@ -30,6 +32,15 @@ impl Default for NumericalStepOptions {
             max_scalar_rounding_error_mm: Rational::from_ratio(1, 10_000_000).unwrap(),
         }
     }
+}
+/// Rounding of native spline parameters and weights, separate from lengths.
+#[derive(Clone, Debug, Default)]
+pub struct NumericalSplineRounding {
+    /// Maximum error in a knot, finite curve parameter or patch UV coordinate,
+    /// measured in that native parameter's units. No spatial bound is inferred.
+    pub max_parameter_error: Rational,
+    /// Maximum error of a dimensionless positive control weight.
+    pub max_weight_error: Rational,
 }
 /// Source and file checks with separate scopes; always a numerical result.
 #[derive(Clone, Debug)]
@@ -57,6 +68,8 @@ pub struct NumericalStepReport {
     pub max_direction_ratio_rounding_error: Rational,
     /// Stored faces, explicit edges and vertices, with no inferred topology.
     pub counts: [usize; 3],
+    /// Native spline rounding, when the curved writer is used.
+    pub spline_rounding: Option<NumericalSplineRounding>,
     /// Checks performed by this writer, distinct from external reference checks.
     pub checks: Vec<String>,
 }
@@ -84,7 +97,7 @@ impl NumericalStep {
         &self.report
     }
     /// Checks bytes reread from the actual output, including complete byte identity
-    /// to this checked artifact and the existing planar seam syntax contract.
+    /// to this checked artifact and the seam syntax contract.
     /// This is not an OCCT import, healing, geometric certification or proof.
     pub fn check_written(&self, reread: &[u8], dec: &mut Decider) -> Result<(), Refusal> {
         guarded(|| {
@@ -469,13 +482,11 @@ impl Writer<'_> {
         ))
     }
 }
-/// Builds a separate approximate numerical STEP artifact for N02's finite planar
-/// linear family, including oblique rational lines and plane frames. Retained
-/// line endpoints and plane incidence must agree in rational world coordinates;
-/// a merely tolerated geometric gap refuses rather than being healed. Oblique
-/// trims are reparameterized on the actual written orthonormal STEP frames.
-/// Curved carriers and unsupported numerical bodies refuse.
-/// Both loops and all shared source edge/vertex identities are serialized.
+/// Builds a separate approximate STEP artifact for a checked numerical body.
+/// The planar line family retains its rational incidence and oblique-frame
+/// checks. Native spline edges and rational patches recheck the decimal payload
+/// numerically under the body's stated tolerance, with all physical loops.
+/// Unsupported carriers refuse. No topology is inferred and no vertex is healed.
 /// The source tolerance is metadata, not a STEP global uncertainty or body bound.
 /// The caller's allowance covers all work; no global policy is changed.
 pub fn build(
@@ -503,6 +514,15 @@ fn build_inner(
     let count = body.counts();
     if count.shells != 1 || count.lumps != 1 {
         return Err(bad("unsupported", "one retained closed shell required"));
+    }
+    if d.edges
+        .iter()
+        .any(|edge| !matches!(edge.curve, Curve::Line(_)))
+        || d.faces
+            .iter()
+            .any(|face| !matches!(face.surface, Surface::Plane(_)))
+    {
+        return curved::build(body, options, dec);
     }
     let mut w = Writer {
         graph: Graph::default(),
@@ -650,48 +670,77 @@ fn build_inner(
         "MANIFOLD_SOLID_BREP",
         vec![text("'numerical approximate'"), shell.into()],
     );
-    let mut description = format!(
-        "catallax numerical approximate;source={};source_tolerance_mm={};source_checks={};source_repairs={};complete_body_bound=unestablished;max_scalar_rounding_error_mm={}",
-        d.name,
-        body.options().tolerance_mm,
-        body.evidence().checks().len(),
-        body.evidence().repairs().len(),
-        w.error
-    );
-    if !w.direction_error.is_zero() {
-        description.push_str(&format!(
-            ";max_direction_ratio_rounding_error={}",
-            w.direction_error
-        ));
-    }
-    let mut file = w.graph.write(&[solid], |roots| {
-        // Reuse AP242 product/unit framing, not its exact-model uncertainty claim.
-        crate::export::approximate_header(&options.product_name, roots, &description)
-    });
-    file.push_str("ENDSEC;\nEND-ISO-10303-21;\n");
     let emitted_evidence = emitted_checks(body, options, w.dec)?;
-    let artifact = NumericalStep {
-        bytes: file.into_bytes(),
-        report: NumericalStepReport {
-            original_definition: body.source_definition().clone(),
-            source_history: body.history().to_vec(),
-            source_name: d.name.clone(),
-            source_definition: d.clone(),
-            source_evidence: body.evidence().clone(),
-            emitted_evidence,
-            scalar_rounding_limit_mm: options.max_scalar_rounding_error_mm.clone(),
-            max_scalar_rounding_error_mm: w.error,
-            max_direction_ratio_rounding_error: w.direction_error,
-            counts: [count.faces, count.edges, count.vertices],
-            checks: vec![
-                "source.retained-line-endpoints-and-plane-incidence".into(),
-                "file.decimal-model-numerical-admission".into(),
-                "file.canonical-byte-identity".into(),
-                "file.planar-seam-contract".into(),
-                "file.approximate-category-no-global-bound".into(),
-            ],
-        },
-    };
-    artifact.check_written(artifact.bytes(), w.dec)?;
-    Ok(artifact)
+    w.finish(
+        solid,
+        body,
+        emitted_evidence,
+        None,
+        vec![
+            "source.retained-line-endpoints-and-plane-incidence".into(),
+            "file.decimal-model-numerical-admission".into(),
+            "file.canonical-byte-identity".into(),
+            "file.planar-seam-contract".into(),
+            "file.approximate-category-no-global-bound".into(),
+        ],
+    )
+}
+
+impl Writer<'_> {
+    fn finish(
+        self,
+        solid: Id,
+        body: &NumericalBody,
+        emitted_evidence: NumericalEvidence,
+        spline_rounding: Option<NumericalSplineRounding>,
+        checks: Vec<String>,
+    ) -> Result<NumericalStep, Refusal> {
+        let options = self.options;
+        let d = body.definition();
+        let count = body.counts();
+        let mut description = format!(
+            "catallax numerical approximate;source={};source_tolerance_mm={};source_checks={};source_repairs={};complete_body_bound=unestablished;max_scalar_rounding_error_mm={}",
+            d.name,
+            body.options().tolerance_mm,
+            body.evidence().checks().len(),
+            body.evidence().repairs().len(),
+            self.error
+        );
+        if !self.direction_error.is_zero() {
+            description.push_str(&format!(
+                ";max_direction_ratio_rounding_error={}",
+                self.direction_error
+            ));
+        }
+        if let Some(rounding) = &spline_rounding {
+            description.push_str(&format!(
+                ";max_native_parameter_rounding_error={};max_weight_rounding_error={}",
+                rounding.max_parameter_error, rounding.max_weight_error
+            ));
+        }
+        let mut file = self.graph.write(&[solid], |roots| {
+            // Reuse AP242 product/unit framing, not its exact-model uncertainty claim.
+            crate::export::approximate_header(&options.product_name, roots, &description)
+        });
+        file.push_str("ENDSEC;\nEND-ISO-10303-21;\n");
+        let artifact = NumericalStep {
+            bytes: file.into_bytes(),
+            report: NumericalStepReport {
+                original_definition: body.source_definition().clone(),
+                source_history: body.history().to_vec(),
+                source_name: d.name.clone(),
+                source_definition: d.clone(),
+                source_evidence: body.evidence().clone(),
+                emitted_evidence,
+                scalar_rounding_limit_mm: options.max_scalar_rounding_error_mm.clone(),
+                max_scalar_rounding_error_mm: self.error,
+                max_direction_ratio_rounding_error: self.direction_error,
+                counts: [count.faces, count.edges, count.vertices],
+                checks,
+                spline_rounding,
+            },
+        };
+        artifact.check_written(artifact.bytes(), self.dec)?;
+        Ok(artifact)
+    }
 }

@@ -10,9 +10,10 @@ const BITS: u32 = 128;
 
 pub(super) fn applies(body: &NumericalBody) -> bool {
     let d = body.definition();
-    d.edges
-        .iter()
-        .all(|edge| matches!(edge.curve, Curve::Line(_) | Curve::Circle(_)))
+    body.native_trims().is_empty()
+        && d.edges
+            .iter()
+            .all(|edge| matches!(edge.curve, Curve::Line(_) | Curve::Circle(_)))
         && d.faces
             .iter()
             .all(|face| matches!(face.surface, Surface::Plane(_) | Surface::Cylinder(_)))
@@ -515,10 +516,10 @@ pub(super) fn build(
     };
     let mut edges = Vec::new();
     let mut parameter_checks = Vec::new();
-    let uses = curved::pcurve_uses(&d.faces, d.edges.len(), w.dec)?;
+    let uses = curved::pcurve_uses(&d.faces, &[], d.edges.len(), w.dec)?;
     for (index, edge) in d.edges.iter().enumerate() {
         let mut pcurves = Vec::new();
-        for (f, trim) in &uses[index] {
+        for (f, trim, _) in &uses[index] {
             let face = &d.faces[*f];
             w.dec.charge_work(1)?;
             let ends = if trim.sense == Sense::Same {
@@ -631,6 +632,9 @@ pub(super) fn build(
         bytes: file.into_bytes(),
         report: NumericalStepReport {
             original_definition: body.source_definition().clone(),
+            original_native_trims: body.source_native_trims().to_vec(),
+            source_native_trims: body.native_trims().to_vec(),
+            emitted_native_trims: Vec::new(),
             source_history: body.history().to_vec(),
             source_name: body.definition().name.clone(),
             source_definition: body.definition().clone(),

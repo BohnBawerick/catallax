@@ -27,10 +27,32 @@ fn knots(w: &mut Writer<'_>, source: &[Rational]) -> Result<(Field, Field), Refu
 }
 
 pub(super) fn curve(w: &mut Writer<'_>, curve: &BSplineCurve) -> Result<Id, Refusal> {
-    let points = curve
-        .controls()
-        .map(|p| w.point(&rational_point(p)?))
-        .collect::<Result<Vec<_>, _>>()?;
+    curve_dimension(w, curve, false)
+}
+
+fn curve_dimension(w: &mut Writer<'_>, curve: &BSplineCurve, uv: bool) -> Result<Id, Refusal> {
+    let mut points = Vec::new();
+    for point in curve.controls() {
+        if uv {
+            let values = [&point.x, &point.y]
+                .map(|q| {
+                    q.as_rational()
+                        .ok_or_else(|| bad("unsupported", "decimal UV control is not rational"))
+                })
+                .into_iter()
+                .collect::<Result<Vec<_>, _>>()?;
+            let fields = values
+                .iter()
+                .map(|q| token(w, q))
+                .collect::<Result<Vec<_>, _>>()?;
+            points.push(
+                w.graph
+                    .add("CARTESIAN_POINT", vec![text("''"), Field::List(fields)]),
+            );
+        } else {
+            points.push(w.point(&rational_point(point)?)?);
+        }
+    }
     let weights = curve
         .weights()
         .map(|q| {
@@ -71,6 +93,10 @@ pub(super) fn finite_curve(
     parameters: &[Rational; 2],
 ) -> Result<Id, Refusal> {
     let basis = curve(w, spline)?;
+    finite_basis(w, basis, parameters)
+}
+
+fn finite_basis(w: &mut Writer<'_>, basis: Id, parameters: &[Rational; 2]) -> Result<Id, Refusal> {
     let mut interval = parameters.clone();
     interval.sort();
     let trims = interval
@@ -194,6 +220,25 @@ pub(super) fn pcurve(
     let representation = w.graph.add(
         "DEFINITIONAL_REPRESENTATION",
         vec![text("''"), refs([curve]), context.into()],
+    );
+    Ok(w.graph.add(
+        "PCURVE",
+        vec![text("''"), surface.into(), representation.into()],
+    ))
+}
+
+pub(super) fn native_pcurve(
+    w: &mut Writer<'_>,
+    surface: Id,
+    context: Id,
+    parameters: &[Rational; 2],
+    spline: &BSplineCurve,
+) -> Result<Id, Refusal> {
+    let basis = curve_dimension(w, spline, true)?;
+    let finite = finite_basis(w, basis, parameters)?;
+    let representation = w.graph.add(
+        "DEFINITIONAL_REPRESENTATION",
+        vec![text("''"), refs([finite]), context.into()],
     );
     Ok(w.graph.add(
         "PCURVE",

@@ -48,6 +48,12 @@ pub struct NumericalSplineRounding {
 pub struct NumericalStepReport {
     /// Original generating input, before any explicit sewing or later edits.
     pub original_definition: catallax_topology::numerical::NumericalDefinition,
+    /// Native parameter curves in the original generating input.
+    pub original_native_trims: Vec<catallax_topology::numerical::NumericalNativeTrim>,
+    /// Native parameter curves checked on the current source.
+    pub source_native_trims: Vec<catallax_topology::numerical::NumericalNativeTrim>,
+    /// Native parameter curves reconstructed from the emitted decimal values.
+    pub emitted_native_trims: Vec<catallax_topology::numerical::NumericalNativeTrim>,
     /// Earlier checked states. Their checks apply only to their own definitions.
     pub source_history: Vec<catallax_topology::numerical::NumericalHistory>,
     /// Retained generating definition name.
@@ -522,9 +528,10 @@ fn build_inner(
     if count.shells != 1 || count.lumps != 1 {
         return Err(bad("unsupported", "one retained closed shell required"));
     }
-    if d.edges
-        .iter()
-        .any(|edge| !matches!(edge.curve, Curve::Line(_)))
+    if !body.native_trims().is_empty()
+        || d.edges
+            .iter()
+            .any(|edge| !matches!(edge.curve, Curve::Line(_)))
         || d.faces
             .iter()
             .any(|face| !matches!(face.surface, Surface::Plane(_)))
@@ -734,6 +741,9 @@ impl Writer<'_> {
             bytes: file.into_bytes(),
             report: NumericalStepReport {
                 original_definition: body.source_definition().clone(),
+                original_native_trims: body.source_native_trims().to_vec(),
+                source_native_trims: body.native_trims().to_vec(),
+                emitted_native_trims: Vec::new(),
                 source_history: body.history().to_vec(),
                 source_name: d.name.clone(),
                 source_definition: d.clone(),

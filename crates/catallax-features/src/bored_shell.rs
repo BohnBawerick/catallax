@@ -2,7 +2,7 @@
 
 use catallax_numbers::{Decider, Real, Refusal, Sign};
 use catallax_recipe::{FaceRef, Origin, Role, StepId};
-use catallax_shapes::Surface;
+use catallax_shapes::{Surface, Vector3};
 use catallax_topology::{BodyId, Model};
 
 use crate::{
@@ -20,6 +20,41 @@ fn domain(error: Refusal) -> Refusal {
     } else {
         error
     }
+}
+
+// Preserve the established cap-only family. A side opening needs a separate
+// prismatic proof; perpendicular caps alone do not certify finite side distances.
+fn certify_openings(
+    cell: &ConvexCell,
+    selected: &[bool],
+    axis: &Vector3,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    let mut side_open = false;
+    for (face, selected) in cell.faces.iter().zip(selected) {
+        if *selected && sign(&face.plane.normal.cross(axis).norm_squared(), dec)? != Sign::Zero {
+            side_open = true;
+        }
+    }
+    if !side_open {
+        return Ok(());
+    }
+    if selected.iter().filter(|v| **v).count() != 1 {
+        return Err(bad(
+            "a bored prismatic shell supports one planar side opening",
+        ));
+    }
+    for face in &cell.faces {
+        let normal = &face.plane.normal;
+        if sign(&normal.cross(axis).norm_squared(), dec)? != Sign::Zero
+            && sign(&normal.dot(axis), dec)? != Sign::Zero
+        {
+            return Err(bad(
+                "a side-open bored shell needs every side plane parallel to its bore axes",
+            ));
+        }
+    }
+    Ok(())
 }
 
 pub(super) fn shell(
@@ -52,7 +87,7 @@ pub(super) fn shell(
         }
         if !reference.touching.is_empty() || (reference.near.is_some() && candidates > 1) {
             return Err(bad(
-                "bored shells need unambiguous cap references without adjacency filters",
+                "bored shells need unambiguous planar references without adjacency filters",
             ));
         }
         if curved {
@@ -72,27 +107,17 @@ pub(super) fn shell(
         dec,
     )?;
     let selected = cell.select(open, dec)?;
-    for (face, selected) in cell.faces.iter().zip(&selected) {
-        if *selected
-            && sign(
-                &face
-                    .plane
-                    .normal
-                    .cross(&bores[0].cylinder.axis)
-                    .norm_squared(),
-                dec,
-            )? != Sign::Zero
-        {
-            return Err(bad("bored shells open only their perpendicular end caps"));
-        }
-    }
+    certify_openings(&cell, &selected, &bores[0].cylinder.axis, dec)?;
     let cavity = cell.cavity(&selected, thickness, step, dec)?;
     if cavity.is_empty() {
         return Ok(Some(body));
     }
-    // Inside the original material, projection to a perpendicular cap cannot
-    // enter a bore. Kept outer-face witnesses therefore remain on physical faces;
-    // each bore contributes the radial distance to its complete finite wall.
+    // Projection to a perpendicular cap preserves the radial coordinate and
+    // cannot enter a bore. For a side opening, certify_openings also proves all
+    // side planes parallel to the bore axes: their complete supports miss every
+    // source bore. Together with cavity's finite-trim projection proof, minimum
+    // kept-plane witnesses remain on physical faces. Radial bore witnesses stay
+    // between the perpendicular caps and inside the strictly cleared envelope.
     for bore in &mut bores {
         let radius = &bore.cylinder.radius_sq.sqrt() + thickness;
         // Keep exact rational carriers on the analytic integration path instead
@@ -142,4 +167,71 @@ pub(super) fn shell(
             .map_err(|e| e.refusal)?
             .body,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use catallax_numbers::with_operation_budget;
+    use catallax_recipe::{Operation, Recipe};
+    use serde_json::{Value, json};
+
+    #[test]
+    fn side_open_refusals_add_nothing_to_the_input_model() {
+        let document: Value =
+            serde_json::from_str(include_str!("../tests/fixtures/bored-side-shell.json")).unwrap();
+        // Expanded r=5 touches/crosses the open x=0 plane, then the kept
+        // inset x=38 plane. The r=3 source bore remains strictly internal.
+        for (x, thickness, code) in [
+            ("5", "2", "distance.unsupported-envelope"),
+            ("4", "2", "distance.unsupported-envelope"),
+            ("33", "2", "distance.unsupported-envelope"),
+            ("34", "2", "distance.unsupported-envelope"),
+            ("pair-touch", "2", "distance.unsupported-envelope"),
+            ("pair-cross", "2", "distance.unsupported-envelope"),
+            ("20", "0", "distance.non-positive-thickness"),
+            ("20", "-1", "distance.non-positive-thickness"),
+        ] {
+            let mut source = document.clone();
+            if x.starts_with("pair-") {
+                let right = if x == "pair-touch" { "25" } else { "24" };
+                source["steps"][1]["at"] = json!([
+                    {"id":"left","point":["15","15","12"],"direction":["0","0","-1"]},
+                    {"id":"right","point":[right,"15","12"],"direction":["0","0","-1"]}
+                ]);
+            } else {
+                source["steps"][1]["at"][0]["point"][0] = json!(x);
+            }
+            source["steps"][2]["thickness"] = json!(thickness);
+            let mut recipe = Recipe::parse(&source.to_string()).unwrap();
+            let step = recipe.steps.pop().unwrap();
+            recipe.result = recipe.steps.last().unwrap().id.clone();
+            let (mut built, work) = with_operation_budget(20_000_000, || {
+                crate::evaluate(&recipe, &mut Decider::default()).unwrap()
+            });
+            assert!(!work.exhausted);
+            let Operation::Shell {
+                open, thickness, ..
+            } = step.op
+            else {
+                unreachable!()
+            };
+            built.model.journal_begin();
+            let error = crate::distance_build::shell(
+                &mut built.model,
+                built.result,
+                &open,
+                &thickness.value().clone().into(),
+                &step.id,
+                &mut Decider::default(),
+            )
+            .unwrap_err();
+            assert_eq!(error.code, code, "x={x}, t={thickness:?}: {error:?}");
+            assert!(
+                built.model.journal_end().is_empty(),
+                "a refusal must publish no model writes"
+            );
+            assert!(built.model.check(built.result).is_empty());
+        }
+    }
 }

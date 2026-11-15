@@ -21,6 +21,10 @@ An application compares `analysis.old_recipe_sha256` with its current revision
 before committing the result and retains the old revision and bytes for undo.
 Serialized reports are informational and are never accepted as transaction
 authority. The complete transaction shares the unchanged 20M work allowance.
+Rebuild source verification meters bytes before hashing and verifies each
+distinct source once per call, including unchanged imports and cached prefixes.
+Source and rebuild failures retain their underlying refusal code and typed
+undecided evidence with stage context.
 
 This is a kernel transaction for existing recipe imports. SolidDraft's document
 swap, unresolved-reference interaction, history UI and numerical-body group

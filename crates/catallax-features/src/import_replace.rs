@@ -15,7 +15,7 @@ use catallax_topology::Model;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{Built, ImportFiles, evaluate_with_files};
+use crate::{BuildError, Built, ImportFiles, evaluate_with_files};
 
 /// Replace all STEP import steps whose immutable source has the old digest.
 #[derive(Clone, Debug)]
@@ -103,7 +103,6 @@ fn error(kind: &str, detail: impl Into<String>) -> Refusal {
         "recipe" => "import.replace-recipe",
         "missing-source" => "import.replace-missing-source",
         "hash" => "import.replace-hash",
-        "source" => "import.replace-source",
         "file-not-found" => "import.replace-file-not-found",
         "decision-step" => "import.replace-decision-step",
         "reference" => "import.replace-reference",
@@ -115,6 +114,37 @@ fn error(kind: &str, detail: impl Into<String>) -> Refusal {
 
 struct Binding {
     faces: BTreeMap<String, String>,
+}
+
+fn source_refusal(error_value: catallax_import::ImportRefusal, stage: &str) -> Refusal {
+    let mut refusal = crate::evaluate::import_refusal(error_value);
+    refusal.detail = format!("{stage}: {}", refusal.detail);
+    refusal
+}
+
+fn rebuild_refusal(error_value: BuildError) -> Refusal {
+    match error_value {
+        BuildError::Geometry { step, mut refusal } => {
+            refusal.detail = format!("replacement rebuild step {step}: {}", refusal.detail);
+            refusal
+        }
+        error_value => error("build", error_value.to_string()),
+    }
+}
+
+fn checked_result(
+    result: Result<FileReplacementOutcome, Refusal>,
+    exhausted: bool,
+) -> Result<FileReplacementOutcome, Refusal> {
+    match result {
+        Ok(_) if exhausted => Err(Refusal::new(
+            "numbers.operation-budget",
+            "file replacement exhausted its operation allowance",
+        )),
+        // Keep the underlying code, stage context and undecided evidence even
+        // when the failing lower layer also exhausted the shared allowance.
+        result => result,
+    }
 }
 
 /// Recompute correspondence from actual source bytes, update every matching
@@ -133,24 +163,11 @@ pub fn replace_step_file(
 ) -> Result<FileReplacementOutcome, Refusal> {
     if operation_budget_active() {
         let result = replace_inner(recipe, edit, files, dec);
-        return if current_operation_work().exhausted {
-            Err(Refusal::new(
-                "numbers.operation-budget",
-                "file replacement exhausted its operation allowance",
-            ))
-        } else {
-            result
-        };
+        return checked_result(result, current_operation_work().exhausted);
     }
     let (result, work) =
         with_operation_budget(20_000_000, || replace_inner(recipe, edit, files, dec));
-    if work.exhausted {
-        return Err(Refusal::new(
-            "numbers.operation-budget",
-            "file replacement exhausted its operation allowance",
-        ));
-    }
-    result
+    checked_result(result, work.exhausted)
 }
 
 fn checked_bytes<'a>(
@@ -256,10 +273,10 @@ fn replace_inner(
     let new_bytes = checked_bytes(&edit.file.sha256, files, dec)?;
     let old = SourceFormat::Step
         .read(old_bytes)
-        .map_err(|e| error("source", format!("{e:?}")))?;
+        .map_err(|e| source_refusal(e, "old source read"))?;
     let new = SourceFormat::Step
         .read(new_bytes)
-        .map_err(|e| error("source", format!("{e:?}")))?;
+        .map_err(|e| source_refusal(e, "new source read"))?;
     let text = recipe.to_text();
     dec.charge_work(text.len() as u64)?;
     let mut analysis = FileReplacementAnalysis {
@@ -293,7 +310,7 @@ fn replace_inner(
             &old_choices,
             None,
         )
-        .map_err(|e| error("source", format!("{e:?}")))?;
+        .map_err(|e| source_refusal(e, &format!("old source import at step {}", step.id)))?;
         let b = catallax_import::apply(
             &mut Model::new(),
             new_bytes,
@@ -302,7 +319,7 @@ fn replace_inner(
             &new_choices,
             None,
         )
-        .map_err(|e| error("source", format!("{e:?}")))?;
+        .map_err(|e| source_refusal(e, &format!("new source import at step {}", step.id)))?;
         let correspondence = catallax_import::correspondence::compare(&a, &b, dec)?;
         let member = source_solid
             .as_deref()
@@ -379,8 +396,7 @@ fn replace_inner(
             .unwrap_or_default();
         *source_solid = result.new_source_solid.clone();
     }
-    let built =
-        evaluate_with_files(&candidate, files, dec).map_err(|e| error("build", e.to_string()))?;
+    let built = evaluate_with_files(&candidate, files, dec).map_err(rebuild_refusal)?;
     Ok(FileReplacementOutcome::Ready(Box::new(
         VerifiedFileReplacement { built, analysis },
     )))
@@ -451,4 +467,67 @@ fn rewrite(
         _ => {}
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod evidence_tests {
+    use super::*;
+    use catallax_numbers::{NotExact, Rational};
+
+    fn decision() -> NotExact {
+        NotExact {
+            bound: Rational::from_ratio(1, 1 << 20).unwrap(),
+            code: "numbers.precision-limit",
+            detail: "order along a finite arc".into(),
+        }
+    }
+
+    #[test]
+    fn source_refusal_keeps_underlying_code_and_decision_with_stage() {
+        let decision = decision();
+        let refusal = Refusal::from(decision.clone());
+        let error = catallax_import::ImportRefusal::SelfIntersectionNotVerified {
+            solid: "#1".into(),
+            faces: ["#2".into(), "#3".into()],
+            reason: refusal.to_string(),
+            refusal: Some(Box::new(refusal)),
+        };
+        let result = source_refusal(error, "old source import at step first");
+        assert_eq!(result.code, "import.self-intersection-not-verified");
+        assert_eq!(result.undecided(), Some(&decision));
+        assert!(result.detail.contains("old source import at step first"));
+    }
+
+    #[test]
+    fn rebuild_refusal_keeps_underlying_code_and_decision_with_step() {
+        let decision = decision();
+        let result = rebuild_refusal(BuildError::Geometry {
+            step: StepId::new("downstream").unwrap(),
+            refusal: Refusal::from(decision.clone()),
+        });
+        assert_eq!(result.code, "numbers.precision-limit");
+        assert_eq!(result.undecided(), Some(&decision));
+        assert!(
+            result
+                .detail
+                .contains("replacement rebuild step downstream")
+        );
+    }
+
+    #[test]
+    fn exhausted_request_retains_refusal_but_discards_an_outcome() {
+        let decision = decision();
+        let refusal = checked_result(Err(Refusal::from(decision.clone())), true).unwrap_err();
+        assert_eq!(refusal.code, "numbers.precision-limit");
+        assert_eq!(refusal.undecided(), Some(&decision));
+        let outcome = FileReplacementOutcome::NeedsResolution(FileReplacementAnalysis {
+            old_recipe_sha256: String::new(),
+            imports: Vec::new(),
+            unresolved_references: Vec::new(),
+        });
+        assert_eq!(
+            checked_result(Ok(outcome), true).unwrap_err().code,
+            "numbers.operation-budget"
+        );
+    }
 }

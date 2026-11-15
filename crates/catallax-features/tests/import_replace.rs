@@ -201,6 +201,46 @@ fn corrupt_bytes_and_exhaustion_return_no_candidate() {
 }
 
 #[test]
+fn unchanged_later_source_is_metered_before_hashing_during_replacement() {
+    use catallax_numbers::with_operation_budget;
+    let (old, new) = sources();
+    let original = recipe(old.as_bytes());
+    let edit = edit(old.as_bytes(), new.as_bytes());
+    let mut files = ImportFiles::from([
+        (edit.old_sha256.clone(), old.as_bytes()),
+        (edit.file.sha256.clone(), new.as_bytes()),
+    ]);
+    let (ready, baseline) = with_operation_budget(20_000_000, || {
+        replace_step_file(&original, &edit, &files, &mut Decider::default())
+    });
+    assert!(matches!(ready.unwrap(), FileReplacementOutcome::Ready(_)));
+    assert!(!baseline.exhausted);
+    // Leave enough for the complete small replacement and extra recipe fields,
+    // but less than the unchanged source's byte length. Its supplied bytes are
+    // intentionally corrupt: an unmetered hash reaches a mismatch instead.
+    let limit = baseline.used + 20_000;
+    let unchanged = boxes_step(&[BoxFixture::new(["11", "12", "13"])]);
+    let unchanged_hash = sha256_hex(unchanged.as_bytes());
+    let corrupt = vec![b' '; usize::try_from(limit * 2).unwrap()];
+    files.insert(unchanged_hash.clone(), &corrupt);
+    let mut value = serde_json::to_value(original).unwrap();
+    value["steps"].as_array_mut().unwrap().push(json!({
+        "id":"unchanged", "op":"import_step",
+        "file":{"name":"unchanged.step","sha256":unchanged_hash},
+        "pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}
+    }));
+    let recipe = Recipe::parse(&value.to_string()).unwrap();
+    let saved = recipe.to_text();
+    let (result, work) = with_operation_budget(limit, || {
+        replace_step_file(&recipe, &edit, &files, &mut Decider::default())
+    });
+    let refusal = result.unwrap_err();
+    assert!(work.exhausted, "unmetered source hash returned {refusal:?}");
+    assert_eq!(refusal.code, "numbers.operation-budget");
+    assert_eq!(recipe.to_text(), saved);
+}
+
+#[test]
 fn reordered_solid_entities_follow_verified_membership_instead_of_source_order() {
     let (old, _) = sources();
     let mut second = BoxFixture::new(["1", "1", "1"]);

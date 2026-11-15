@@ -30,7 +30,12 @@ accepted back by the kernel.
 
 The existing `import_edit::replace_step` contract is unchanged. The shared
 hash-bound decision decoder is extracted from recipe evaluation without changing
-its accepted decision format. The new transaction targets existing STEP recipe
+its accepted decision format. Each rebuild meters source bytes before hashing,
+once per distinct digest, including unchanged imports and retained prefix sources.
+Source and rebuild refusals keep their underlying codes and undecided evidence,
+with source-stage or failing-step context in their detail. Exhausted requests
+discard successful outcomes while retaining evidence on an existing refusal.
+The new transaction targets existing STEP recipe
 imports; it does not add a numerical-body cast into the exact evaluator.
 
 See [qualification and reproduction](../phase1/import-file-replacement/README.md)

@@ -12,6 +12,9 @@ use catallax_shapes::{
 };
 use catallax_topology::{Body, BodyId, BodyKind, Edge, Lump, Model, Sense, Shell, Vertex};
 
+mod cap;
+pub use cap::{CapCurve, cap_curve};
+
 /// One positive-height cylindrical or conical band of a drill tool.
 #[derive(Clone, Debug)]
 pub struct HoleBand {

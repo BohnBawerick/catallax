@@ -18,7 +18,12 @@ fn nonnegative(value: &Real, dec: &mut Decider) -> Result<bool, Refusal> {
 }
 
 // Polynomial operators do not reserve work for their eager rational arithmetic.
-fn exact(a: &Real, b: &Real, multiply: bool, dec: &mut Decider) -> Result<Real, Refusal> {
+pub(super) fn exact(
+    a: &Real,
+    b: &Real,
+    multiply: bool,
+    dec: &mut Decider,
+) -> Result<Real, Refusal> {
     if let (Some(a), Some(b)) = (a.rational_ref(), b.rational_ref()) {
         dec.reserve_exact_arithmetic(a, b, multiply)?;
     } else {

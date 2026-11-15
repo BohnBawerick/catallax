@@ -15,6 +15,19 @@ use std::sync::Arc;
 
 mod finite_line;
 
+/// Endpoints only when the complete finite spline point set is their segment.
+/// Positive weights, C0 continuity and the exact control hull prove coverage.
+pub fn native_spline_line_segment(
+    geom: &GeomStore,
+    curve: CurveId,
+    dec: &mut Decider,
+) -> Result<Option<[Point3; 2]>, Refusal> {
+    let Curve::BSpline(curve) = geom.curve(curve) else {
+        return Ok(None);
+    };
+    finite_line::endpoints(curve, dec)
+}
+
 pub(super) fn validate(
     geom: &GeomStore,
     c: CurveId,

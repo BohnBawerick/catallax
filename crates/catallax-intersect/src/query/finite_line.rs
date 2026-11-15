@@ -127,3 +127,10 @@ pub(super) fn same(
         (None, None) => Ok(None),
     }
 }
+
+pub(super) fn endpoints(
+    curve: &BSplineCurve,
+    dec: &mut Decider,
+) -> Result<Option<[Point3; 2]>, Refusal> {
+    Ok(segment(curve, dec)?.map(|segment| segment.ends))
+}

@@ -1,4 +1,4 @@
-//! A separate admission path for finite edges and linear parameter trims.
+//! Numerical admission of finite edges and explicit parameter boundaries.
 //! Exact constructors, incidence facts and checkpoints are not used for admission.
 
 use std::collections::BTreeSet;
@@ -52,11 +52,12 @@ pub struct NumericalTrim {
     pub edge: usize,
     /// Direction relative to the edge's vertex order.
     pub sense: Sense,
-    /// Linear u/v segment in traversal order, including both endpoints.
+    /// U/v endpoints in traversal order. Patch trims interpolate linearly.
+    /// A native spline on a plane retains its projected curve between them.
     pub uv: [[Rational; 2]; 2],
 }
 
-/// One oriented surface and its finite parameter polygon.
+/// One oriented surface and its finite parameter boundaries.
 #[derive(Clone, Debug)]
 pub struct NumericalFace {
     /// Stable key, unique among faces. It survives a surface replacement.
@@ -67,6 +68,7 @@ pub struct NumericalFace {
     pub sense: Sense,
     /// Ordered finite loops: one simple outer loop and optionally one interior hole.
     /// The hole runs opposite to the outer loop and may not touch its boundary.
+    /// Planar native-spline walks receive sampled parameter-polygon checks.
     pub loops: Vec<Vec<NumericalTrim>>,
 }
 

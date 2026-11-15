@@ -1,5 +1,9 @@
 # Finite-circle STEP parameter comparison
 
+The later [cylindrical seam-order comparison](../step-census-cylinder-seams/README.md)
+records 361 valid files after builder processing, with seven additional actual
+recoveries and no losses. The distinct 354-file capture below remains unchanged.
+
 The complete comparison records **354 of the original 3,000 files (11.8%) valid
 after OCCT builder construction, which can heal pcurves internally**, beside
 the retained **2,701 of 3,000 (90.0%) valid after normal OCCT transfer and default

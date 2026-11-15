@@ -1,0 +1,3816 @@
+{
+  "complete": true,
+  "cases": 224,
+  "valid_after_builder": 224,
+  "valid_with_expected_material": 224,
+  "rows": [
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase--1-reverse-false-start-0.step",
+      "sha256": "374b914c908c68d0c33041bee92aee5dc9ceaed38316244e1dcf93463feaf9fe",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase--1-reverse-false-start-1.step",
+      "sha256": "1f424d1bcce2df41aa81d84f0ee264e264b47f291f44e233751b140d2ce3d16d",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase--1-reverse-false-start-2.step",
+      "sha256": "f0a11945b298e1a7df76812d0bbdbb0cd95940af692420c712802d0ebbe41823",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase--1-reverse-false-start-3.step",
+      "sha256": "f0a11945b298e1a7df76812d0bbdbb0cd95940af692420c712802d0ebbe41823",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase--1-reverse-true-start-0.step",
+      "sha256": "95b983231dd3913086fa954f1b6a42658645e357264e77401454cd8cbe17d0a2",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase--1-reverse-true-start-1.step",
+      "sha256": "95b983231dd3913086fa954f1b6a42658645e357264e77401454cd8cbe17d0a2",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase--1-reverse-true-start-2.step",
+      "sha256": "2a165c8f1b1a660407d60471be441c20ad8003cd0da52b674566f948265339bc",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase--1-reverse-true-start-3.step",
+      "sha256": "e4fbf3b0c6344eabc913c641a0c29946f766cc8021b1beaa89d53d66c0f61f14",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase--2-reverse-false-start-0.step",
+      "sha256": "bbe536c976238f3f1dfd3c50d5dc9582745dfb87f0d1237da30cd76317589093",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase--2-reverse-false-start-1.step",
+      "sha256": "62b1337964131e21fe1857d0c9cf3946726853aedd9736662ccc6ca8b6ebd6e8",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase--2-reverse-false-start-2.step",
+      "sha256": "1bc428656feb2ec01d103dca33dea29fe38aa5b76a296ac7788e5928eb7007e4",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase--2-reverse-false-start-3.step",
+      "sha256": "1bc428656feb2ec01d103dca33dea29fe38aa5b76a296ac7788e5928eb7007e4",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase--2-reverse-true-start-0.step",
+      "sha256": "f1f7587a34cdcafad288418867fd78cc3b4cf00e2f6d12eb1aae3443e5f2ba1e",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase--2-reverse-true-start-1.step",
+      "sha256": "f1f7587a34cdcafad288418867fd78cc3b4cf00e2f6d12eb1aae3443e5f2ba1e",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase--2-reverse-true-start-2.step",
+      "sha256": "9942132d7a9c0bd3f7e94896da54eaa67808f5130d387a6a3e1bfa5edc2b9d4f",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase--2-reverse-true-start-3.step",
+      "sha256": "ab8c83aa0b0e938a882fa706d2ded88047b467cb468557fa5feb2e987d11dae5",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase--3-reverse-false-start-0.step",
+      "sha256": "e508ad300e387fb341e2287315ff0ff83e59df2d61984609d3b0ca360a837a73",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase--3-reverse-false-start-1.step",
+      "sha256": "5bde932c4204ded4109ac83fad706a6d25e67a1ea7b77cb178818c058024d821",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase--3-reverse-false-start-2.step",
+      "sha256": "6e0d76c7c761c5bedf9731c0001165106cfced085aea2f79f84e3c72ce9fbc04",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase--3-reverse-false-start-3.step",
+      "sha256": "6e0d76c7c761c5bedf9731c0001165106cfced085aea2f79f84e3c72ce9fbc04",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase--3-reverse-true-start-0.step",
+      "sha256": "b97ce332461a60230239770b194c86e21d586b64b5d6677dc543e8c01f549d86",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase--3-reverse-true-start-1.step",
+      "sha256": "b97ce332461a60230239770b194c86e21d586b64b5d6677dc543e8c01f549d86",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase--3-reverse-true-start-2.step",
+      "sha256": "0e01bf9a6d5a1a09488312068838551d57dbd38ec21e8ec238a7274dc22c0267",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase--3-reverse-true-start-3.step",
+      "sha256": "d333d2a1cd4696a49582c9456cc5b3424bd47955f1a8385e50cb8f56c36c4aea",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase-0-reverse-false-start-0.step",
+      "sha256": "68b659d31f43cd1f985a86a1b0820640013196760bdc038bf590d5600287d87d",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase-0-reverse-false-start-1.step",
+      "sha256": "8215fd190daa642ad210d4cdab6af65f3c4ab560bb401cb0b763cecf74234098",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase-0-reverse-false-start-2.step",
+      "sha256": "24f620e26dc0111ea3d4bbe33c63952b903d8df589c382c6f2f06c38821a6e1c",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase-0-reverse-false-start-3.step",
+      "sha256": "24f620e26dc0111ea3d4bbe33c63952b903d8df589c382c6f2f06c38821a6e1c",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase-0-reverse-true-start-0.step",
+      "sha256": "2ded6ef65aac19e45562709ff852eaafb883c342264ea538c2e4fb7b432b7f68",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase-0-reverse-true-start-1.step",
+      "sha256": "2ded6ef65aac19e45562709ff852eaafb883c342264ea538c2e4fb7b432b7f68",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase-0-reverse-true-start-2.step",
+      "sha256": "217c456553de0c692dca61316bb57cd7cdcfcee74cfc5471f06da16e26d27b2c",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase-0-reverse-true-start-3.step",
+      "sha256": "be16e9dbbdaac912f21c85cdacaa04c523c651ef88d8c85c24e4da77abad6988",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase-1-reverse-false-start-0.step",
+      "sha256": "420eec81878cd9a1c2c4c3aaa836a8b2b3edc34b597f927512dba3fe8fe588dd",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase-1-reverse-false-start-1.step",
+      "sha256": "ff82c8c14e91192a28bc79becb51221e560d68981c1c9c3c2f77aade5961c05b",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase-1-reverse-false-start-2.step",
+      "sha256": "3f30bdba84bbd07bccecaf31b1297ecc0ca9291550b77de0b6d2197d8877a23c",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase-1-reverse-false-start-3.step",
+      "sha256": "3f30bdba84bbd07bccecaf31b1297ecc0ca9291550b77de0b6d2197d8877a23c",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase-1-reverse-true-start-0.step",
+      "sha256": "ed4e5ead93f1baee1d8df0be59cca762b68fc6e9de621a6b2ae08f8912a9cc4a",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase-1-reverse-true-start-1.step",
+      "sha256": "ed4e5ead93f1baee1d8df0be59cca762b68fc6e9de621a6b2ae08f8912a9cc4a",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase-1-reverse-true-start-2.step",
+      "sha256": "8ce85bcdb6a0d90f91844277bec4f91ae1d2140ef26fe21b23c8e5f46bcc505f",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase-1-reverse-true-start-3.step",
+      "sha256": "c2bf146083475c322b3f7a0b1150fefe2afe28a1dec4dc23a241d05e1a6544c8",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase-2-reverse-false-start-0.step",
+      "sha256": "01df98495b779bd1e511784e275a0a8306be4da7a6763a6326ed2c1dfa520da4",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase-2-reverse-false-start-1.step",
+      "sha256": "d971f7563d5f3094e3c5e37b0b621b223e8f344913348fb3bcf7328d2c67e647",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase-2-reverse-false-start-2.step",
+      "sha256": "c67c7e697b332683c002cdaf5e1a9bc6ec71b7882f41c88ff00f515c10482917",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase-2-reverse-false-start-3.step",
+      "sha256": "c67c7e697b332683c002cdaf5e1a9bc6ec71b7882f41c88ff00f515c10482917",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase-2-reverse-true-start-0.step",
+      "sha256": "bd77d0afacac248eddacb471dcfcfe156f9065b12df39e55f9c674438ff01609",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase-2-reverse-true-start-1.step",
+      "sha256": "bd77d0afacac248eddacb471dcfcfe156f9065b12df39e55f9c674438ff01609",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase-2-reverse-true-start-2.step",
+      "sha256": "414402992ec01395856cab18d7ab624e61c56610efd901a6b111d806c466490b",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase-2-reverse-true-start-3.step",
+      "sha256": "ba6e0cb73058a8e7533d7b5acb5cb1db71b1297447ff6c21b0b653bca22856af",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase-3-reverse-false-start-0.step",
+      "sha256": "7492c9875248f942c3e1a920b894728a0abe3b11fcb92dbef06d3ad55791a3b6",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase-3-reverse-false-start-1.step",
+      "sha256": "b0655d5e8fdfdb065e5566d5f09d3be89500d1662bae2863457446da4a46a45e",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase-3-reverse-false-start-2.step",
+      "sha256": "7c523be521a9d33a282ff24295706b07b9165338eec565bca9ceb5b88c449a6b",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase-3-reverse-false-start-3.step",
+      "sha256": "7c523be521a9d33a282ff24295706b07b9165338eec565bca9ceb5b88c449a6b",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase-3-reverse-true-start-0.step",
+      "sha256": "1ce7e26e09d9c2770bbc33c442961d77d12d0898998cb1c02966e38918f228ae",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase-3-reverse-true-start-1.step",
+      "sha256": "1ce7e26e09d9c2770bbc33c442961d77d12d0898998cb1c02966e38918f228ae",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase-3-reverse-true-start-2.step",
+      "sha256": "f83388195b6e562d5c538e43e6933ee90ce69b5cd67d26a6b8429095bbcc1629",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis--1-phase-3-reverse-true-start-3.step",
+      "sha256": "bde8c35e19e79ffeed6035c9200a44fa094b5ef9ed76bfe3425d0bf9d3e4f230",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase--1-reverse-false-start-0.step",
+      "sha256": "afd8294a34da33f2a427123ec9dad05bdcdcc1871be9ab3cb8bb95d3663c63a9",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase--1-reverse-false-start-1.step",
+      "sha256": "f945117dc8a9ab9b30a6e2c064f90afe69fafe59f57b012536d88e9be0316492",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase--1-reverse-false-start-2.step",
+      "sha256": "0819465585cb8b3b57fc939a340ef0f5e63685157e14bbf44a4f4547d33132a6",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase--1-reverse-false-start-3.step",
+      "sha256": "0819465585cb8b3b57fc939a340ef0f5e63685157e14bbf44a4f4547d33132a6",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase--1-reverse-true-start-0.step",
+      "sha256": "db6bd1dccb7a0cef788d96abd3f7aced22e8a7c5238c84ce09876c126afc0494",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase--1-reverse-true-start-1.step",
+      "sha256": "db6bd1dccb7a0cef788d96abd3f7aced22e8a7c5238c84ce09876c126afc0494",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase--1-reverse-true-start-2.step",
+      "sha256": "acdec2092f65eed9043d684cfb32178fbb8e0939c8c65e668d8df754cee79b1c",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase--1-reverse-true-start-3.step",
+      "sha256": "7139f656731571bff7cf007ba3e67369619863ee06e545a0cabe6ea3cce69ee9",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase--2-reverse-false-start-0.step",
+      "sha256": "03cd09de90ecbb85d02aa66d496c991c3c5c72e521b90e80e53107444194cef5",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase--2-reverse-false-start-1.step",
+      "sha256": "ab6363b9a0481e0614dd8e55b5f29c8cf61884bcba92f5418ee56cdba7a39889",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase--2-reverse-false-start-2.step",
+      "sha256": "adf0cfa2fd34f28b1a695f11db736a83c72f077329a97f77b9a7b28ea4efe00b",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase--2-reverse-false-start-3.step",
+      "sha256": "adf0cfa2fd34f28b1a695f11db736a83c72f077329a97f77b9a7b28ea4efe00b",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase--2-reverse-true-start-0.step",
+      "sha256": "5713a551bbd2f45e6ee12133da1f03c3616db99183a1d157786a654d112eb057",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase--2-reverse-true-start-1.step",
+      "sha256": "5713a551bbd2f45e6ee12133da1f03c3616db99183a1d157786a654d112eb057",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase--2-reverse-true-start-2.step",
+      "sha256": "b420b28ab2f0907b45be3780fc0f5864f258f9cea0116f0a665fffb6fb42c0eb",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase--2-reverse-true-start-3.step",
+      "sha256": "8acf0a362f1e9869808cec29b506d3d89793aa8f879d0945971360cc34a624f5",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase--3-reverse-false-start-0.step",
+      "sha256": "571761f65c13d8794eda668168c19a808931016dbd2f6a733480b88ea1df902e",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase--3-reverse-false-start-1.step",
+      "sha256": "399d0de7501fabfe4757739bd4eec4a856147ac0e6b6572cb79e82bc8a1008bf",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase--3-reverse-false-start-2.step",
+      "sha256": "7cbf2b96bea3c2dc83ea03995fdae03394fa1bebd7d74b0facb66d2815d1d314",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase--3-reverse-false-start-3.step",
+      "sha256": "7cbf2b96bea3c2dc83ea03995fdae03394fa1bebd7d74b0facb66d2815d1d314",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase--3-reverse-true-start-0.step",
+      "sha256": "3adbde275568b264b880a7173df9d155fcfb9836f71d84d74fb77866f29351f1",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase--3-reverse-true-start-1.step",
+      "sha256": "3adbde275568b264b880a7173df9d155fcfb9836f71d84d74fb77866f29351f1",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase--3-reverse-true-start-2.step",
+      "sha256": "5cb40f5261bef1042fd1974e08804ecc9ee98a5aa902501a73126861619526c8",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase--3-reverse-true-start-3.step",
+      "sha256": "1b030eab90d4645e945ef5c79bc10f979f4f68c8820990162131ec5dcaf6ed9b",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase-0-reverse-false-start-0.step",
+      "sha256": "7250070f34f589403b29dce710837582f06eee91dbdf06c618b52dfb9c24b45b",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase-0-reverse-false-start-1.step",
+      "sha256": "a1d6234cf2747f7f6238eb9dd68b7c0da583dae30213d6041fd4a5bebe356156",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase-0-reverse-false-start-2.step",
+      "sha256": "6596201515004e2bc263684920f48ffbc58db3eeec8e7262cfcb3b672d8b1a28",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase-0-reverse-false-start-3.step",
+      "sha256": "6596201515004e2bc263684920f48ffbc58db3eeec8e7262cfcb3b672d8b1a28",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase-0-reverse-true-start-0.step",
+      "sha256": "cef5368d5164d16c54549e5ae944afb39e9c54e1b057bb4334bd47f91e1a3cdc",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase-0-reverse-true-start-1.step",
+      "sha256": "cef5368d5164d16c54549e5ae944afb39e9c54e1b057bb4334bd47f91e1a3cdc",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase-0-reverse-true-start-2.step",
+      "sha256": "545c363f9818897d9c545609736808003b1d1036cac1230019ceb3024e535ac9",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase-0-reverse-true-start-3.step",
+      "sha256": "b404125f3299f2724c980563f9df98b9621c1b389373723aa93011a7b723b7f0",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase-1-reverse-false-start-0.step",
+      "sha256": "0ffcf90a5fdf52596fdd405a32b9c85f0555fd30d25d1141e5ed8047eb36d6cc",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase-1-reverse-false-start-1.step",
+      "sha256": "1d3bf24c2638a043ccba18a27895497aea6cff2f6e611c5eca29fb207e2cd00b",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase-1-reverse-false-start-2.step",
+      "sha256": "341d2ab93ac270fdf2645881328323f03753e889c0441ed73b23a2e37f29d7ea",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase-1-reverse-false-start-3.step",
+      "sha256": "341d2ab93ac270fdf2645881328323f03753e889c0441ed73b23a2e37f29d7ea",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase-1-reverse-true-start-0.step",
+      "sha256": "02deeca5670046d9e5c060ffd1ea3ffd12fbc961cfaf4dde0965c71686b89612",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase-1-reverse-true-start-1.step",
+      "sha256": "02deeca5670046d9e5c060ffd1ea3ffd12fbc961cfaf4dde0965c71686b89612",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase-1-reverse-true-start-2.step",
+      "sha256": "7a1c7d57756094464f16e24862f2dfdf3c4defd341bf1296f7b1c83776cad796",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase-1-reverse-true-start-3.step",
+      "sha256": "d51c70a21884c7284e2bb3009c2cbf33c651c3f02319b609299cd547e170ab18",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase-2-reverse-false-start-0.step",
+      "sha256": "24f4fbbe644aeaa0ad6cd70af4ccccafad72454de6c06465a2a87bc98a7c11f2",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase-2-reverse-false-start-1.step",
+      "sha256": "3affd7d49a8e1a3ec05dea971293dbe7a811066b4bdb3b9e94b459eca8f38bee",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase-2-reverse-false-start-2.step",
+      "sha256": "f27761a75b8c785fcd98bfddc690d458b9924f9e23c56c9ab55931a5c74eb0a5",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase-2-reverse-false-start-3.step",
+      "sha256": "f27761a75b8c785fcd98bfddc690d458b9924f9e23c56c9ab55931a5c74eb0a5",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase-2-reverse-true-start-0.step",
+      "sha256": "befe480c1b48394d531baa9fcc6a8a979b7b4a45ae2ba1ca2bc0467d20c7bfa9",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase-2-reverse-true-start-1.step",
+      "sha256": "befe480c1b48394d531baa9fcc6a8a979b7b4a45ae2ba1ca2bc0467d20c7bfa9",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase-2-reverse-true-start-2.step",
+      "sha256": "d3b6356e861b6c53ae74d915c8620ba17393448369b734df59482e343264d269",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase-2-reverse-true-start-3.step",
+      "sha256": "7ee3c8caa3c69b2f83643fa01c5138a289392db1f777eb7858326869c398d20f",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase-3-reverse-false-start-0.step",
+      "sha256": "e37b246b13e81c389044d9a794255578f03c60a3d354148f1af9e27a7477fa4a",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase-3-reverse-false-start-1.step",
+      "sha256": "d2b9cbdea4ee5ca0ab0ef4a66b66ae5d0b3e7c8136d2ab6d606e424a714a4ba2",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase-3-reverse-false-start-2.step",
+      "sha256": "59d13107f674f212cf95e543c45d99e306f2814a6d75e2b2d9760c02b49a521e",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase-3-reverse-false-start-3.step",
+      "sha256": "59d13107f674f212cf95e543c45d99e306f2814a6d75e2b2d9760c02b49a521e",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase-3-reverse-true-start-0.step",
+      "sha256": "e00b0928071cb7de7b6fdeb6aba4dc795cac0999990c07bd82e37d5af8905857",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase-3-reverse-true-start-1.step",
+      "sha256": "e00b0928071cb7de7b6fdeb6aba4dc795cac0999990c07bd82e37d5af8905857",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase-3-reverse-true-start-2.step",
+      "sha256": "ba9401ec138ed7147023ad1c5fd751984808953296d09ebf7469b3f02aadbb77",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-false-axis-1-phase-3-reverse-true-start-3.step",
+      "sha256": "956986939c968ce9cf76812ba8a8d069fd2d4d19124f8057a011737d6815c872",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 12.858407346410205,
+      "expected_volume_mm3": 12.858407346410207,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 7,
+        "edges": 15,
+        "vertices": 10,
+        "two_loop_faces": 2,
+        "euler_with_face_holes": 0
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase--1-reverse-false-start-0.step",
+      "sha256": "5ee6686217e4135bbca27862846dc4d44f6e73b02101bdb06cf791ee022d4387",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase--1-reverse-false-start-1.step",
+      "sha256": "cc0b4248d3abd25ad7b68f5d0fbe5cf010cce943169d49fb78a2ebe084501668",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase--1-reverse-false-start-2.step",
+      "sha256": "03cd894b63ef28096ac1ec11aceb2885b8b4e8c501bea4b870901d7da67df637",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase--1-reverse-false-start-3.step",
+      "sha256": "5ee6686217e4135bbca27862846dc4d44f6e73b02101bdb06cf791ee022d4387",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase--1-reverse-true-start-0.step",
+      "sha256": "4a8663f954da66a992a0b629f061c8d201c0bf21d8e3b0660946eb9c4f073c4a",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase--1-reverse-true-start-1.step",
+      "sha256": "feed226e7c792f1aa9e7163f54179552d50ee6cd31eeb3b6fecccbe6efbe8255",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase--1-reverse-true-start-2.step",
+      "sha256": "feed226e7c792f1aa9e7163f54179552d50ee6cd31eeb3b6fecccbe6efbe8255",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase--1-reverse-true-start-3.step",
+      "sha256": "3010558a38fc2c3b61cf25abda4eed14857596e169f0b2dce08ef0d023c3acc4",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase--2-reverse-false-start-0.step",
+      "sha256": "983f3ceebfa907a518c11ae87833490456f2c7d5e8e2a79322d95140a18650f8",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase--2-reverse-false-start-1.step",
+      "sha256": "655b124baae635c0fc709057df16459c6eccda3dc9f0df057beb945bfb698e0d",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase--2-reverse-false-start-2.step",
+      "sha256": "cdbb02e5614b2256451600812b3ac71b3e71eccf50b8cfbbaa31f8ba5115111f",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase--2-reverse-false-start-3.step",
+      "sha256": "983f3ceebfa907a518c11ae87833490456f2c7d5e8e2a79322d95140a18650f8",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase--2-reverse-true-start-0.step",
+      "sha256": "3ec9f68ca130c2c4c73f06be71c63c02590877f422cd42328827092853993b90",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase--2-reverse-true-start-1.step",
+      "sha256": "ed1273139e2fea4e3fd6761d6b5d1e08e18f293e57d090d0cd0b5bead75bf4da",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase--2-reverse-true-start-2.step",
+      "sha256": "ed1273139e2fea4e3fd6761d6b5d1e08e18f293e57d090d0cd0b5bead75bf4da",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase--2-reverse-true-start-3.step",
+      "sha256": "dc35d4bb4be64c708c6b2e42f0c4ac8344db16e11c2bafec9f2caf545aad949c",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase--3-reverse-false-start-0.step",
+      "sha256": "779c81c15938f3afde0ae028367aabaa097174e9637ea5b8c2ec85b6a1ec2a74",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase--3-reverse-false-start-1.step",
+      "sha256": "50ba268acf607182ab2de3230537714c1adf8e067e2c8c56261fbeb87202a0d0",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase--3-reverse-false-start-2.step",
+      "sha256": "c6a75b0cdff5490f154da4543acdd98e69dfa10a443c9b2dceaa805314b9e088",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase--3-reverse-false-start-3.step",
+      "sha256": "779c81c15938f3afde0ae028367aabaa097174e9637ea5b8c2ec85b6a1ec2a74",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase--3-reverse-true-start-0.step",
+      "sha256": "7a646af9ed645e812b1d9895b93c370d45e6f34c4f221480ed54092d87610d8a",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase--3-reverse-true-start-1.step",
+      "sha256": "aff72ebddf0059da80b1fa1912bbb16a41aa7770ce62117c677df133cbc8cad0",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase--3-reverse-true-start-2.step",
+      "sha256": "aff72ebddf0059da80b1fa1912bbb16a41aa7770ce62117c677df133cbc8cad0",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase--3-reverse-true-start-3.step",
+      "sha256": "ed1ee2c56ebbd1fe8a61472a8a05c529964f8aa3344fd188c8247a33a94219bf",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase-0-reverse-false-start-0.step",
+      "sha256": "51b3d2ab5d46f15ad96234f946a0ade9c15f6d7b330a77104e0df05ffb9f527a",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase-0-reverse-false-start-1.step",
+      "sha256": "57352100b3e07f09ddc63909f5cc0b1820d1b0b98e88a21991060b3d3b125c41",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase-0-reverse-false-start-2.step",
+      "sha256": "6fad81011f5d59f6d9cc1b2c3d70f993cd31170a82b0cffb806a9a65f08a8be6",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase-0-reverse-false-start-3.step",
+      "sha256": "51b3d2ab5d46f15ad96234f946a0ade9c15f6d7b330a77104e0df05ffb9f527a",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase-0-reverse-true-start-0.step",
+      "sha256": "96841209baa0c3c850dd58208a91b9edd3aba09906231da7d7949ea1666a46f4",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase-0-reverse-true-start-1.step",
+      "sha256": "ee7c4c9d744c8fe314a70e68340998ad1e1bad15df16a87c3975c4cc5fccce57",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase-0-reverse-true-start-2.step",
+      "sha256": "ee7c4c9d744c8fe314a70e68340998ad1e1bad15df16a87c3975c4cc5fccce57",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase-0-reverse-true-start-3.step",
+      "sha256": "456865a1f498098fa6e9168b0855aa9fd4593990fc7c3095cbe4c7790208b3b4",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase-1-reverse-false-start-0.step",
+      "sha256": "62eba537dff78c5c22271e6e6ea3d8c39dc367fc77890c850e02ee3500021761",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase-1-reverse-false-start-1.step",
+      "sha256": "4dac21475d303d10cf46bb7f8353145242ab4e4ca895ec0f7ef755689ec17cd1",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase-1-reverse-false-start-2.step",
+      "sha256": "f9be89d7a6a82436da0babaa616a5247a023e813c36c7b5ede5ddb19dd943b18",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase-1-reverse-false-start-3.step",
+      "sha256": "62eba537dff78c5c22271e6e6ea3d8c39dc367fc77890c850e02ee3500021761",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase-1-reverse-true-start-0.step",
+      "sha256": "2be00eb30587e6194a0d0a7af3385b670a1c86235a533b05530b940799917ab5",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase-1-reverse-true-start-1.step",
+      "sha256": "48e479e3fbaa81746da6611530152c731b989227bb9f5b3fc376118dbbb93e8d",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase-1-reverse-true-start-2.step",
+      "sha256": "48e479e3fbaa81746da6611530152c731b989227bb9f5b3fc376118dbbb93e8d",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase-1-reverse-true-start-3.step",
+      "sha256": "86c0756228b41b64d0a6a09d915a05b25c162a60fa9cf41a9e67557f02dcdd5d",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase-2-reverse-false-start-0.step",
+      "sha256": "b6f8b0b98b0c840585cd4d5e8c8b1bfb016f0aec1fd290f32e4812e8371ff8bd",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.1415926535897922,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase-2-reverse-false-start-1.step",
+      "sha256": "ba50a4bec70fbdd8197aeef57f320e8330cc5fbd754746553542e4ba303096fd",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.1415926535897922,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase-2-reverse-false-start-2.step",
+      "sha256": "97436a777ae372db8db44fdf0da088fc61ecbfdb944ce4055559865b7634bd2d",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.1415926535897922,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase-2-reverse-false-start-3.step",
+      "sha256": "b6f8b0b98b0c840585cd4d5e8c8b1bfb016f0aec1fd290f32e4812e8371ff8bd",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.1415926535897922,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase-2-reverse-true-start-0.step",
+      "sha256": "3196c5ff2e04bc0f4fdd183795107d29c06654f65dddf660dcad75a39b8caab7",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.1415926535897922,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase-2-reverse-true-start-1.step",
+      "sha256": "815014975a49b49d4fe817c0a52bf58458e87e391719355067fd8acc746673a2",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.1415926535897922,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase-2-reverse-true-start-2.step",
+      "sha256": "815014975a49b49d4fe817c0a52bf58458e87e391719355067fd8acc746673a2",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.1415926535897922,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase-2-reverse-true-start-3.step",
+      "sha256": "38a82a653f84799e1bea7e67418a9f8a66f10c27f900064690dfebd2a8276777",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.1415926535897922,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase-3-reverse-false-start-0.step",
+      "sha256": "bf99dd9f6042ac5760c775dbe051a85a6d5920593d5e9324c75c03065a8bd2db",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.1415926535897922,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase-3-reverse-false-start-1.step",
+      "sha256": "5761eb5ccd89ff0e4fac59961a5dc62268129424e2d25e674c114a1a956d56b1",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.1415926535897922,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase-3-reverse-false-start-2.step",
+      "sha256": "14f22034b1417fcb11860f7755395c8f9366957d7425c2815df0942e2a4df65b",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.1415926535897922,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase-3-reverse-false-start-3.step",
+      "sha256": "bf99dd9f6042ac5760c775dbe051a85a6d5920593d5e9324c75c03065a8bd2db",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.1415926535897922,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase-3-reverse-true-start-0.step",
+      "sha256": "376484c1857884c5a40878e5377520ac957203426582c90cfef50e0893dc0661",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.1415926535897922,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase-3-reverse-true-start-1.step",
+      "sha256": "2a40c894c9189ee854e1cd881ae3deec29215a072e38185c08408b46f39e0503",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.1415926535897922,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase-3-reverse-true-start-2.step",
+      "sha256": "2a40c894c9189ee854e1cd881ae3deec29215a072e38185c08408b46f39e0503",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.1415926535897922,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis--1-phase-3-reverse-true-start-3.step",
+      "sha256": "eb8407f541f76507f294f88f59a73fd384d05a379d2714187d6883bb91172b7c",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.1415926535897922,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase--1-reverse-false-start-0.step",
+      "sha256": "9b9f0ba42a9a8f829e886a1875651e1ce1a28db664e961282623de2958ea04ef",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase--1-reverse-false-start-1.step",
+      "sha256": "4f79df19333380cd04bf5184418b3149aa27618e7361fd1f35e13f80d6785679",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase--1-reverse-false-start-2.step",
+      "sha256": "d33d991037f6573f0bd6b6c6c5190c01382d4e8854165f05469f6adc5c8de5ed",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase--1-reverse-false-start-3.step",
+      "sha256": "9b9f0ba42a9a8f829e886a1875651e1ce1a28db664e961282623de2958ea04ef",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase--1-reverse-true-start-0.step",
+      "sha256": "b8e6312f1155f2bb469dd8401c2271bb1153d6b80612249397feea3dd07bca97",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase--1-reverse-true-start-1.step",
+      "sha256": "ee75d7a670cf4a6d594ad80a06175c534aafa2ce8bec9e51bf8e5988603b09f4",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase--1-reverse-true-start-2.step",
+      "sha256": "ee75d7a670cf4a6d594ad80a06175c534aafa2ce8bec9e51bf8e5988603b09f4",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase--1-reverse-true-start-3.step",
+      "sha256": "8f95fcb3684963da0dc4b9821760f5fcde0f9c8f7c73a6d538b080ceb1e60c7c",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase--2-reverse-false-start-0.step",
+      "sha256": "0571a35346f1a64bc8940ece1d3f8298efdd567e9d8954b33c1168f320071b85",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.1415926535897922,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase--2-reverse-false-start-1.step",
+      "sha256": "3cffcdba7cec7afa712929c3d52c46c2e0a855049d70ddbd413b91336506cc81",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.1415926535897922,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase--2-reverse-false-start-2.step",
+      "sha256": "cb4a2f9ace90bd35afc7fd93653f1c8e28b97473b06046b86718ee077accf20d",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.1415926535897922,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase--2-reverse-false-start-3.step",
+      "sha256": "0571a35346f1a64bc8940ece1d3f8298efdd567e9d8954b33c1168f320071b85",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.1415926535897922,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase--2-reverse-true-start-0.step",
+      "sha256": "68d9dc1e253a74c4a377633affeb6bcb2ddf44522e2b5c3fbbe1aec0ef658f3c",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.1415926535897922,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase--2-reverse-true-start-1.step",
+      "sha256": "f0c815255b7b4d1e83b04848af4f8f841c30775ba27a3cb7095c9b186f6d41d8",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.1415926535897922,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase--2-reverse-true-start-2.step",
+      "sha256": "f0c815255b7b4d1e83b04848af4f8f841c30775ba27a3cb7095c9b186f6d41d8",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.1415926535897922,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase--2-reverse-true-start-3.step",
+      "sha256": "75f8596478ff30e444448d0e5260576ee268dcfbfc45a2aabb1593a3ba4c29a0",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.1415926535897922,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase--3-reverse-false-start-0.step",
+      "sha256": "432b21186919d75af254404f7da3a3eee9d1c00c94205de9c49662d9206a5787",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase--3-reverse-false-start-1.step",
+      "sha256": "a7968dc9eac592a70af44cc745f7235da4e6c386772c460f3ca54adbe1ec8cca",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase--3-reverse-false-start-2.step",
+      "sha256": "908497d461c528f95f0405d07158a0948d22d5899722f3343fb2f6c79562c3bc",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase--3-reverse-false-start-3.step",
+      "sha256": "432b21186919d75af254404f7da3a3eee9d1c00c94205de9c49662d9206a5787",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase--3-reverse-true-start-0.step",
+      "sha256": "53acd6a0004a9321f2d12423ed99113123913947c55ecd9e460548894b69f232",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase--3-reverse-true-start-1.step",
+      "sha256": "f18732896623c10f39f9642a8941bcee871562129ff7bce906d7a288d6d10f89",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase--3-reverse-true-start-2.step",
+      "sha256": "f18732896623c10f39f9642a8941bcee871562129ff7bce906d7a288d6d10f89",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase--3-reverse-true-start-3.step",
+      "sha256": "c3bc3911cde636bcbf49230668b0f45c7d3e79e1d8d39ceb91b001d429690e56",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase-0-reverse-false-start-0.step",
+      "sha256": "1b6a36d0900910bdd641dda287996dc4b83514fd0b6af84efaed8434fefd7166",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.1415926535897922,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase-0-reverse-false-start-1.step",
+      "sha256": "498d5a1488629ee0a43902d006348914afe6fe768c51fcdd1c70743a65b26c6c",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.1415926535897922,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase-0-reverse-false-start-2.step",
+      "sha256": "d3c5817068b3bcd43ef1f97f5fb0f0a9842559e88a9425d0d31ae611c7cad951",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.1415926535897922,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase-0-reverse-false-start-3.step",
+      "sha256": "1b6a36d0900910bdd641dda287996dc4b83514fd0b6af84efaed8434fefd7166",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.1415926535897922,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase-0-reverse-true-start-0.step",
+      "sha256": "c5eefb2e89cf2a38c8f7c0662c6ded30562efc97900a5e0672ea473ea99d0ec1",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.1415926535897922,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase-0-reverse-true-start-1.step",
+      "sha256": "eae865195003c82f2580350a95616666ae627410b76ddf8511ec3f1dcabfdd0a",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.1415926535897922,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase-0-reverse-true-start-2.step",
+      "sha256": "eae865195003c82f2580350a95616666ae627410b76ddf8511ec3f1dcabfdd0a",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.1415926535897922,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase-0-reverse-true-start-3.step",
+      "sha256": "90a0204f212ff2f64bf60e3ff9b3b52ff74bbcc4655c8b73f667b018cc359754",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.1415926535897922,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase-1-reverse-false-start-0.step",
+      "sha256": "e573910c9be13c837fd239245d8e2ffd99f172d66121765ad900cd253ef2fcc7",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase-1-reverse-false-start-1.step",
+      "sha256": "eb31bcc494ecc0bef9095d0ae2ae9af16b253b105fdd260bd9bbf92c3732560f",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase-1-reverse-false-start-2.step",
+      "sha256": "483f0e00dfd7d2f719297909729b2af216ac21c3a15425089589fce84195c17d",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase-1-reverse-false-start-3.step",
+      "sha256": "e573910c9be13c837fd239245d8e2ffd99f172d66121765ad900cd253ef2fcc7",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase-1-reverse-true-start-0.step",
+      "sha256": "65a44f51e7a64d27cd889aa601ed0b4ce6f27631e87a46e28a06ee8601446bf6",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase-1-reverse-true-start-1.step",
+      "sha256": "ff23f60ab6e9cedb0a5bda1d351fc3c85c4f25897fefe10b3eb9374d3487b8f2",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase-1-reverse-true-start-2.step",
+      "sha256": "ff23f60ab6e9cedb0a5bda1d351fc3c85c4f25897fefe10b3eb9374d3487b8f2",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase-1-reverse-true-start-3.step",
+      "sha256": "a7731f18b89f766caae1a9d4329beccce316375d0e197ab78159543ffb152ffe",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase-2-reverse-false-start-0.step",
+      "sha256": "0f0da72056b40f9e4895258b239538a968b509845838636dd9cf99d63a1fe9fd",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase-2-reverse-false-start-1.step",
+      "sha256": "8ccc302faf96f2780316a6172f2c48321ef00fbaecfb60b4a8aa7035e0c03b99",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase-2-reverse-false-start-2.step",
+      "sha256": "e465e501c8f9a0c905f9fcbe9195cc3ecca7ee6367f8d4da1d760b7ad3fce830",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase-2-reverse-false-start-3.step",
+      "sha256": "0f0da72056b40f9e4895258b239538a968b509845838636dd9cf99d63a1fe9fd",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase-2-reverse-true-start-0.step",
+      "sha256": "e69d63047f0d074a9c1d140042309c322cdc498dfdfd439ed3d8ed446f18798d",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase-2-reverse-true-start-1.step",
+      "sha256": "d31298cef02ea5f0b7a46337cfba34cc91cde3492b9e4ae7701ac1304e5e17f4",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase-2-reverse-true-start-2.step",
+      "sha256": "d31298cef02ea5f0b7a46337cfba34cc91cde3492b9e4ae7701ac1304e5e17f4",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase-2-reverse-true-start-3.step",
+      "sha256": "b2e092555365b6a37b21dd99aa0f4e1511332d78d69ccaec0ccc411d4f73ef3e",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase-3-reverse-false-start-0.step",
+      "sha256": "3d98f0255fa61055201cce875e067410c6934217e6170c6d9317f25fac27d6a6",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase-3-reverse-false-start-1.step",
+      "sha256": "e8a4bc2490f1ae1a0f794ad278f12e307bed98c74a13cc83547e366040640d32",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase-3-reverse-false-start-2.step",
+      "sha256": "cb7e1c1b3e7fc1baa865a1022c1efd7e02284e94ece92805515e0130cc5d9bfb",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase-3-reverse-false-start-3.step",
+      "sha256": "3d98f0255fa61055201cce875e067410c6934217e6170c6d9317f25fac27d6a6",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase-3-reverse-true-start-0.step",
+      "sha256": "17754a5441c049e050c3995b8e5943e2fa32e4979a5f2b6b20aa9bc8b024142b",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase-3-reverse-true-start-1.step",
+      "sha256": "734334c440d2bde0a991033ccbcbfb2b8a871fff048eae1265b18122b30736dd",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase-3-reverse-true-start-2.step",
+      "sha256": "734334c440d2bde0a991033ccbcbfb2b8a871fff048eae1265b18122b30736dd",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    },
+    {
+      "file": "cylinder-chart-outer-true-axis-1-phase-3-reverse-true-start-3.step",
+      "sha256": "dc7bad6614d8082edc031a21a2979dffa672814bd4ce42334b10376bedebb878",
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 3.141592653589793,
+      "expected_volume_mm3": 3.141592653589793,
+      "volume_matches": true,
+      "material_probes_passed": true,
+      "topology": {
+        "solids": 1,
+        "faces": 3,
+        "edges": 3,
+        "vertices": 2,
+        "two_loop_faces": 0,
+        "euler_with_face_holes": 2
+      }
+    }
+  ]
+}

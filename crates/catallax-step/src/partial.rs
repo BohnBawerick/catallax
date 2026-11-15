@@ -439,7 +439,9 @@ fn prepare_charts(
             if let std::collections::btree_map::Entry::Vacant(entry) =
                 prepared.plan.written_vertices.entry(vertex)
             {
-                let point = number::vertex(&prepared.model, vertex, options, dec)?;
+                let point = crate::observe("step.vertex-rounding", &vertex.index(), dec, |dec| {
+                    number::vertex(&prepared.model, vertex, options, dec)
+                })?;
                 if point.error() > options.curve_tolerance.abs() {
                     return Ok(None);
                 }

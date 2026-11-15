@@ -543,12 +543,6 @@ mod tests {
                         expected,
                         "scale={scale}, height={height}"
                     );
-                    if expected == 1 {
-                        let (answer, _) = with_operation_budget(0, || {
-                            numerical_spline_line_points(&geom, curve, line, &mut dec)
-                        });
-                        assert_eq!(answer.unwrap_err().code, "numbers.operation-budget");
-                    }
                 }
             });
             assert!(!work.exhausted, "scale={scale}: {} units", work.used);
@@ -557,5 +551,28 @@ mod tests {
                 work.used
             );
         }
+    }
+
+    #[test]
+    fn zero_work_cannot_return_numerical_points() {
+        let mut dec = Decider::default();
+        let mut geom = GeomStore::new();
+        let curve = BSplineCurve::new(
+            1,
+            [0, 0, 1, 1].map(Rational::from_i64).to_vec(),
+            vec![point("0", "-1"), point("1", "1")],
+            vec![Real::one(); 2],
+            &mut dec,
+        )
+        .unwrap();
+        let curve = geom.add_curve(Curve::BSpline(curve));
+        let line = geom.add_curve(Curve::Line(Line {
+            origin: point("0", "0"),
+            dir: Vector3::new(Real::one(), Real::zero(), Real::zero()),
+        }));
+        let (answer, _) = with_operation_budget(0, || {
+            numerical_spline_line_points(&geom, curve, line, &mut dec)
+        });
+        assert_eq!(answer.unwrap_err().code, "numbers.operation-budget");
     }
 }

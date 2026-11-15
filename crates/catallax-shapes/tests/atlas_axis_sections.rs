@@ -1,6 +1,6 @@
 //! Complete chart rows retain physical ends and shared seam ownership.
 
-use catallax_numbers::{Decider, Outcome, Rational, Real, with_operation_budget};
+use catallax_numbers::{Decider, Outcome, Rational, Real, ZeroProof, with_operation_budget};
 use catallax_shapes::{BSplineSurface, Plane, Point3, RationalAtlas, SectionSurface, Vector3};
 
 fn q(value: &str) -> Real {
@@ -60,7 +60,7 @@ fn plane(axis: usize, at: Real, reversed: bool) -> SectionSurface {
 fn equal(a: &Point3, b: &Point3, dec: &mut Decider) -> bool {
     matches!(
         dec.sign(&a.minus(b).norm_squared()),
-        Outcome::ProvenCoincident(_)
+        Outcome::ProvenCoincident(proof) if proof.proof != ZeroProof::SeparationBound
     )
 }
 
@@ -117,4 +117,65 @@ fn physical_rows_join_and_interior_seam_rows_have_one_owner() {
             }
         }
     }
+}
+
+fn ruled_row(extra_crossing: bool, dec: &mut Decider) -> RationalAtlas {
+    let mut controls = Vec::new();
+    for u in 0..2 {
+        for v in 0..3 {
+            let height = if extra_crossing {
+                Real::from_i64(v) - q("1/2")
+            } else {
+                Real::from_i64(2 + v)
+            };
+            controls.push(Point3::new(u.into(), Real::from_i64(u) * height, v.into()));
+        }
+    }
+    let source = BSplineSurface::new(
+        [1, 1],
+        [
+            [0, 0, 1, 1].map(Rational::from_i64).to_vec(),
+            [0, 0, 1, 2, 2].map(Rational::from_i64).to_vec(),
+        ],
+        [2, 3],
+        controls,
+        vec![Real::one(); 6],
+        dec,
+    )
+    .unwrap();
+    let mut atlases = RationalAtlas::partition(source, [false, false], dec).unwrap();
+    assert_eq!(atlases.len(), 1);
+    atlases.pop().unwrap()
+}
+
+#[test]
+fn row_factors_need_a_nonzero_remainder_over_the_whole_chart() {
+    let ((), work) = with_operation_budget(20_000_000, || {
+        let mut dec = Decider::default();
+        let atlas = ruled_row(false, &mut dec);
+        let cut = plane(1, Real::zero(), false);
+        let section = atlas.sections(&cut, &mut dec).unwrap();
+        let curves: Vec<_> = section.curves().collect();
+        assert_eq!(curves.len(), 1);
+        let (curve, crossing) = curves[0];
+        assert!(crossing);
+        assert_eq!(curve.spans().count(), 2);
+        let ends = curve
+            .domain()
+            .map(|t| curve.point_at(&t.clone().into(), &mut dec).unwrap());
+        assert!(equal(
+            &ends[0],
+            &Point3::new(0.into(), 0.into(), 0.into()),
+            &mut dec
+        ));
+        assert!(equal(
+            &ends[1],
+            &Point3::new(0.into(), 0.into(), 2.into()),
+            &mut dec
+        ));
+        let crossing = ruled_row(true, &mut dec);
+        let error = crossing.sections(&cut, &mut dec).unwrap_err();
+        assert_eq!(error.code, "intersect.atlas-section-row");
+    });
+    assert!(!work.exhausted, "{} work units", work.used);
 }

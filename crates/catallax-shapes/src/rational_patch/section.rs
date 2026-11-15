@@ -6,6 +6,7 @@ use catallax_numbers::Integer;
 
 mod branch;
 mod native_carrier;
+mod rows;
 mod surface;
 pub(crate) use branch::{Cover, search_cover};
 pub use branch::{
@@ -139,7 +140,7 @@ pub(crate) fn axis_section(
     for span in &patch.data.spans {
         let degree = degrees(&surface.equation(span), dec)?;
         if degree[0] != 0 && degree[1] != 0 {
-            return Ok(None);
+            return rows::section(patch, surface, dec);
         }
     }
     patch.sections(surface, dec).map(Some)

@@ -97,16 +97,3 @@ fn the_public_partial_oblique_rim_builds_and_exports_after_a_radius_edit() {
         checkpoint = Some(next);
     }
 }
-
-#[test]
-fn public_geometry_work() {
-    let recipe = Recipe::parse(include_str!("../../../evidence/phase1/P03/inputs/partial-oblique.json")).unwrap();
-    let mut dec = Decider::new(BudgetPolicy { max_work: 20_000_000, ..Default::default() });
-    let (built, work) = with_operation_budget(20_000_000, || catallax_features::evaluate(&recipe, &mut dec).unwrap());
-    eprintln!("[DEBUG-e02] geometry work {work:?}");
-    for edge in built.model.edges_of_body(built.result) {
-        if let Curve::PatchSection(section) = built.model.geom().curve(built.model.edge(edge).curve) {
-            eprintln!("[DEBUG-e02] section cells {}", section.witnesses().count());
-        }
-    }
-}

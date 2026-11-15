@@ -1,0 +1,88 @@
+{
+  "admission_csv_sha256": "b08224a6f919405de46d35896d8d682febbd10c36495d34759f4958c80be3bd7",
+  "admission_manifest_sha256": "f447f1a095ccc77e7d9fa5ee4bacc865eb4efb6119d429b372cfadd1a1dbda7e",
+  "admission_source_revision": "51e9c0ffa13efcbcfb5c004b152e4c6014c6b5c1",
+  "aggregate_export_work_limit": 20000000,
+  "archive_sha256": "52e6dd1b6fa38e3cd99af59b662370829129540030975919c3e256dce6ad1dbe",
+  "binary_sha256": "17b928c6ee2bb18e522f3676a7db52fdfd64f2bb6dc6b323f137c87a3b2917bc",
+  "build_record": {
+    "binary_sha256": "17b928c6ee2bb18e522f3676a7db52fdfd64f2bb6dc6b323f137c87a3b2917bc",
+    "build_command": [
+      "cargo",
+      "build",
+      "--release",
+      "-p",
+      "catallax-import",
+      "--example",
+      "export_import",
+      "--message-format=json"
+    ],
+    "cargo_artifact": {
+      "features": [],
+      "fresh": false,
+      "profile": {
+        "debug_assertions": false,
+        "debuginfo": 0,
+        "opt_level": "3",
+        "overflow_checks": false,
+        "test": false
+      },
+      "target": {
+        "crate_types": [
+          "bin"
+        ],
+        "edition": "2024",
+        "kind": [
+          "example"
+        ],
+        "name": "export_import"
+      }
+    },
+    "cargo_json_sha256": "21e0bc31bb91f5553eb17336380aca44725edc9f51457afeda76403dc18efe18",
+    "cargo_lock_sha256": "ff76362a0d2d034cd637ea5671510afb4761e1e5d800c92452c867581330186b",
+    "collector_sha256": "e2b9ef200b37aee8d8e5970fc0f6db6ce4a156584614ebaced92703584be1bba",
+    "git_tree": "c46b7e522299bce7ff2b779734cc7d73e52411e7",
+    "kernel_revision": "3651cd367cbb2f5d28118b06c6431193eb1b0d62",
+    "observer_sha256": "731ec3cd7c309a90b1bc8fe77f9a95b0174bd489e2cb841ca544d65a657cf607",
+    "raw_helper_sha256": "5633cdcf16efc13f328ed85b33a738f6a9296e2afb925f4c64bbed7c91025376",
+    "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+    "source_revision": "3651cd367cbb2f5d28118b06c6431193eb1b0d62"
+  },
+  "build_record_sha256": "f95d2f5bb41798bd0c09124c0c12813aa4e5a54af60806db5fae2db9d4efa9d8",
+  "complete": true,
+  "denominator": 3000,
+  "evaluated": 400,
+  "export_outcomes": {
+    "export_refused": 16,
+    "raw_invalid": 29,
+    "raw_valid": 354,
+    "timeout": 1
+  },
+  "exported_step_healing": false,
+  "exported_step_same_parameter": false,
+  "format": "catallax-frozen-admission-export-validity/1",
+  "frozen_admitted_inputs": 400,
+  "kernel_revision": "3651cd367cbb2f5d28118b06c6431193eb1b0d62",
+  "observation_timeout_seconds": 60,
+  "ocp_version": "8.0.1.1",
+  "output_unit_factors": [
+    1,
+    1,
+    1
+  ],
+  "per_import_work_limit": 20000000,
+  "per_import_workers": 1,
+  "per_model_csv_sha256": "0f9c1727baa480e4c4c9e446e9495fcfa891dfff0249a7acfbddbcc3e6928431",
+  "raw_helper_sha256": "5633cdcf16efc13f328ed85b33a738f6a9296e2afb925f4c64bbed7c91025376",
+  "raw_max_tolerance_mm": "1e-7",
+  "raw_precision_mm": "1e-7",
+  "raw_valid_files": 354,
+  "raw_valid_share_percent": "11.80",
+  "scope": "raw exported-solid validity; not source fidelity, arbitrary edit, material or full-body deviation qualification",
+  "seed": 20261111,
+  "selection_sha256": "1b11410b220d5e8a3156794f6c8f9cc09091a43dcac9af801215fb3a38d571a5",
+  "source_coverage": "frozen_full_admissions_only",
+  "source_hash_manifest_sha256": "3323e104c377023846073a05d7e164ca1082dc3dcf32cc046eee897401454cc7",
+  "source_revision": "3651cd367cbb2f5d28118b06c6431193eb1b0d62",
+  "workers": 2
+}

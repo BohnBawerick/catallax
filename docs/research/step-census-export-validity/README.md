@@ -1,5 +1,9 @@
 # Frozen admission export validity
 
+This is the retained initial export capture.
+The [finite-circle comparison](../step-census-arc-parameters/README.md) supersedes
+its result on the same frozen population; this file still owns the shared protocol.
+
 The complete capture records **322 of the original 3,000 files (10.7%) with
 STEP exports valid after OCCT builder internal pcurve healing**, beside **2,701 of 3,000 (90.0%) healed-valid**
 results from the existing same-source OpenCASCADE reference.

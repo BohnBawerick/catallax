@@ -255,20 +255,24 @@ fn rounded_curves(
                 )
             }
             Curve::Circle(circle) => {
-                // A full circle's 3D carrier has no distinguished reference
-                // phase. Put its retained endpoint at phase zero so a STEP
-                // reader reconstructs the same natural range as its pcurves.
-                // The center, axis, radius and source vertex remain unchanged.
-                let reference = if edge.vertices[0] == edge.vertices[1] {
-                    let center = round3(&rational_point(&circle.center)?, w.options)?;
-                    vector_from(&difference(
-                        &d.vertices[edge.vertices[0]].position,
-                        &center,
-                        w.dec,
-                    )?)
-                } else {
-                    circle.ref_dir.clone()
-                };
+                // EDGE_CURVE omits its range. Anchor the natural lower end at
+                // zero so neither a finite arc nor its pcurves cross the 3D
+                // carrier's periodic origin when a reader projects vertices.
+                // Only the reference phase changes: retain center, axis, radius,
+                // endpoint identities, finite walk and every face's UV chart.
+                let closed = edge.vertices[0] == edge.vertices[1];
+                let anchor = usize::from(!closed && edge.parameters[1] < edge.parameters[0]);
+                // Keep the existing bounded source-chart policy, even though
+                // the emitted frame no longer depends on its absolute phase.
+                if !closed {
+                    let _ = near(Rational::zero(), &edge.parameters[anchor], w.dec)?;
+                }
+                let center = round3(&rational_point(&circle.center)?, w.options)?;
+                let reference = vector_from(&difference(
+                    &d.vertices[edge.vertices[anchor]].position,
+                    &center,
+                    w.dec,
+                )?);
                 let WrittenFrame {
                     entity: frame,
                     origin: o,
@@ -291,15 +295,14 @@ fn rounded_curves(
                     radius_sq: Real::from(&radius * &radius),
                     ref_dir: vector_from(&x),
                 };
-                if edge.vertices[0] == edge.vertices[1] {
-                    phase_checks.push(closed_circle_phase(
-                        &circle,
-                        &radius,
-                        &d.vertices[edge.vertices[0]].position,
-                        &edge.key,
-                        w,
-                    )?);
-                }
+                phase_checks.push(circle_phase(
+                    &circle,
+                    &radius,
+                    &d.vertices[edge.vertices[anchor]].position,
+                    &edge.key,
+                    closed,
+                    w,
+                )?);
                 let mut ts = Vec::new();
                 for (i, index) in edge.vertices.into_iter().enumerate() {
                     let [a, b, _] = local(
@@ -308,7 +311,12 @@ fn rounded_curves(
                         &circle.ref_dir,
                         &d.vertices[index].position,
                     )?;
-                    ts.push(angle(&a, &b, &edge.parameters[i], w.dec)?);
+                    let reference = if closed {
+                        edge.parameters[i].clone()
+                    } else {
+                        arithmetic(&edge.parameters[i], &edge.parameters[anchor], '-', w.dec)?
+                    };
+                    ts.push(angle(&a, &b, &reference, w.dec)?);
                 }
                 // Keep the edge's actual oriented finite arc, including a seam
                 // crossing; changing a periodic branch does not change geometry.
@@ -318,6 +326,16 @@ fn rounded_curves(
                 }
                 if edge.parameters[0] > edge.parameters[1] && ts[1] >= ts[0] {
                     ts[1] = &ts[1] - &period;
+                }
+                if !closed {
+                    ts[anchor] = Rational::zero();
+                    let extent = &ts[1 - anchor];
+                    if extent.sign() != Sign::Positive || extent >= &period {
+                        return Err(bad(
+                            "rounding-topology",
+                            "written distinct endpoints do not select a positive arc below one turn",
+                        ));
+                    }
                 }
                 (id, Curve::Circle(circle), ts.try_into().unwrap())
             }
@@ -335,18 +353,25 @@ fn rounded_curves(
     Ok((result, phase_checks))
 }
 
-fn closed_circle_phase(
+fn circle_phase(
     circle: &Circle,
     radius: &Rational,
     vertex: &[Rational; 3],
     key: &str,
+    closed: bool,
     w: &mut Writer<'_>,
 ) -> Result<NumericalCheck, Refusal> {
+    let kind = if closed { "closed-circle" } else { "arc" };
+    let code = if closed {
+        "step.numerical-closed-circle-phase"
+    } else {
+        "step.numerical-arc-phase"
+    };
     w.dec.charge_work(1)?;
     let [x, y, _] = local(&circle.center, &circle.normal, &circle.ref_dir, vertex)?;
     if x.lo().sign() != Sign::Positive {
         return Err(Refusal::new(
-            "step.numerical-closed-circle-phase",
+            code,
             "written endpoint does not select the positive reference ray",
         ));
     }
@@ -365,12 +390,12 @@ fn closed_circle_phase(
         .min(Rational::from_ratio(1, 1_000_000_000).unwrap());
     if angle_upper > angular_limit || displacement > distance_limit {
         return Err(Refusal::new(
-            "step.numerical-closed-circle-phase",
+            code,
             "decimal direction does not establish the forced zero phase within its angular and physical selector limits",
         ));
     }
     Ok(NumericalCheck::Samples {
-        name: "file.closed-circle-zero-phase-tangent-bound".into(),
+        name: format!("file.{kind}-zero-phase-tangent-bound"),
         scope: format!("{key};angular_limit_rad=1e-12;distance_limit_mm={distance_limit}"),
         samples: vec![NumericalSample {
             parameters: vec![Rational::zero()],

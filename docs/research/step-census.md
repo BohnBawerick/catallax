@@ -17,42 +17,56 @@ A first attempt on 11 November stopped before measuring, because the archive cou
 
 ## Result
 
-The complete export qualification records **322 of the original 3,000 files
-(10.7%) with STEP exports valid after OCCT builder internal pcurve healing**, beside **2,701 of 3,000 (90.0%)
-healed-valid solids in OpenCASCADE**. These are different methods: native exports
-use direct `StepToTopoDS_Builder` construction, which can project vertices and
-repair pcurves internally; the reference reads the original sources with normal
-transfer/default ShapeFix healing and its default tolerances. Neither figure
-establishes validity without healing. They are not a
-common-tolerance or source-fidelity benchmark.
+The complete export comparison records **354 of the original 3,000 files
+(11.8%) with STEP exports valid after OCCT builder construction, which can heal
+pcurves internally**, beside **2,701 of 3,000 (90.0%) valid after normal OCCT
+transfer and default ShapeFix healing**.
+Neither number establishes unhealed validity, source fidelity or a
+common-tolerance comparison.
 
-The conditioning step is **400 admitted files, of which 322 are valid after builder healing
-(80.5%), 61 invalid after that construction, 16 export-refused and one timed out**. All 400 imports
-reproduced their expected body counts (808 bodies). Each file counts only when all
-of its bodies export and pass the post-builder solid check. The complete
-[3,000-ID result table](step-census-export-validity/results.csv),
-[build/capture manifest](step-census-export-validity/results.json),
-[paired reference comparison](step-census-export-validity/comparison.json) and
-[protocol](step-census-export-validity/README.md) retain every outcome. All ten
-[retained P06 real controls](step-census-export-validity/retained-real-controls.json)
-are valid after builder internal healing.
+The conditioning step is **400 admitted files, of which 354 are valid after
+builder construction (88.5%), 29 invalid, 16 export-refused and one timed out**.
+All 400 imports reproduce their expected body counts (808 bodies).
+A file counts only when every expected body exports and passes whole-solid
+validity after builder processing.
+The [complete comparison](step-census-arc-parameters/README.md),
+[3,000-ID table](step-census-arc-parameters/results.csv),
+[candidate manifest](step-census-arc-parameters/results.json),
+[matched-main table](step-census-arc-parameters/matched-main.csv) and
+[paired outcomes](step-census-arc-parameters/comparison.json) retain all observations.
 
-The writer refusals are 15 `step.numerical-gap` and one aggregate export work
-limit. The timeout is `00004777` during export, after import completed. Its export
-work and resulting validity remain unknown; no partial output earns credit.
-There are no process errors or changed admissions. The separate byte/unit audit
-rechecked the actual Cargo artifact, all 400 durable source hashes, every declared
-written STEP hash and millimetre/radian units. It checked 699 written body files;
-677 reached builder/reader completion (580 valid bodies, 97 invalid). Valid bodies
-inside an invalid multi-solid file do not count as a valid file.
+The isolated finite-circle exporter repair recovers **32 actual files with no
+regressions** from the matched main control's 322 valid results (10.7% of 3,000).
+Main had intervening kernel changes since the older 322-file producer, so the
+control was built and measured separately on the same main base as the repair.
+Its outcomes and emitted STEP hashes reproduce the older capture; import work
+counters differ.
+Candidate and control import work, source hashes, body counts and categories
+agree on all 400 inputs.
+The only changed production path is the analytic numerical STEP writer.
+The diagnostic group of 44 files with whole-period UV jumps was not published
+as a predicted recovery count.
 
-The measured observer producer is
-**`4b422bcf65092239f0eeb4581d916595e7697560`**, with production kernel/exporter fixed
-at **`f87c18ab1beb5e6fa74d74e9d0f06b8a24db0a38`**. Admission and exporter rules were
-not changed in this comparison. The original seed, source hashes and 3,000-file
-denominator are unchanged. The 2,600 inputs outside the frozen full-admission
-population were not tested for new admissions in this export qualification.
-Later publication/rebase heads do not inherit the measured producer identity.
+The refusals remain 15 `step.numerical-gap` and one aggregate export work limit.
+File `00004777` again times out during export after import completed.
+Its export work and resulting validity remain unknown.
+All ten retained P06 controls remain valid after builder construction, including
+its possible internal healing.
+The independent audit checks all 400 durable source hashes and 699 declared
+written body files; 677 reach builder checks, with 613 valid and 64 invalid bodies.
+Valid bodies inside invalid multi-solid files earn no file credit.
+
+The measured repair producer is
+**`3651cd367cbb2f5d28118b06c6431193eb1b0d62`**, with executable SHA-256
+`17b928c6ee2bb18e522f3676a7db52fdfd64f2bb6dc6b323f137c87a3b2917bc`.
+The matched control producer is **`a207ea676f52ee077cbb186674407dea3e64e1d0`**,
+with production kernel **`f0abed8ed0ec5b8cc66626d60141bc69e99e5823`**.
+The prior [322-file export capture](step-census-export-validity/README.md) remains
+unchanged with its distinct producer and protocol identity.
+The original seed, source hashes and 3,000-file denominator are unchanged;
+the 2,600 inputs outside the frozen admissions were not reevaluated for new
+admissions.
+Later publication/rebase heads are distinct from these measured producers.
 
 The earlier **admission-only** census has 400 full source-coverage imports
 (13.33%), beside the previous 378 (12.60%), 276 (9.20%) and original 186
@@ -269,15 +283,17 @@ Its actual Cargo observer artifact SHA-256 is
 `d6d645568442d5943e3325a209a98ef2b386077aca623de21a9ab63de6d1e6e2`.
 Its admission per-file CSV has SHA-256
 `b08224a6f919405de46d35896d8d682febbd10c36495d34759f4958c80be3bd7`.
-The export qualification instead binds observer producer
-`4b422bcf65092239f0eeb4581d916595e7697560`, approved production kernel/exporter
-`f87c18ab1beb5e6fa74d74e9d0f06b8a24db0a38`, executable
-`9f7648a9fe63060a274889d1f261fd5e80502c05c208af101134ced8299ecd77` and result CSV
-`7a8556150ba70f17d4bd15a7ca11fc7750822407b2469aaae22ab910f718ad69`.
-Its separate import and aggregate export allowances are each 20M; the whole-file
-native-plus-builder observation remains capped at 60 seconds. Complete
-[build and collection commands](step-census-export-validity/README.md#build-and-capture)
-use the actual Cargo artifact and unchanged reviewed production code.
+The current export comparison binds candidate producer
+`3651cd367cbb2f5d28118b06c6431193eb1b0d62`, actual executable
+`17b928c6ee2bb18e522f3676a7db52fdfd64f2bb6dc6b323f137c87a3b2917bc`, and CSV
+`0f9c1727baa480e4c4c9e446e9495fcfa891dfff0249a7acfbddbcc3e6928431`.
+The matched control producer `a207ea676f52ee077cbb186674407dea3e64e1d0` has executable
+`1c304cdcc090508bd8d9a533c37ffd6009263a0d862c7529e64e4b1019b4446f` and CSV
+`8e765971a02100100e4c2a1bb7b81046bd9b2d01d763f7a1ab8b13baf318be3f`.
+The separate import and aggregate export allowances remain 20M each under the
+same 60-second whole-file observation.
+The [comparison protocol and qualification](step-census-arc-parameters/README.md)
+retain actual build identity, commands and work per stage.
 
 The source/body fallback is numerical and opt-in at the kernel API. SolidDraft's
 numerical-group and replacement-reference UI work remains with the app slice.
@@ -336,12 +352,18 @@ changed STEP bytes, changed body count and source hash are rejected. An authored
 mixed valid/invalid pair cannot qualify the file. The Linux formatting gate and
 exact CI-selected nineteen-package all-target Clippy passed. The separate census
 audit verified all 3,000 IDs/hashes, the frozen 400/808 population, actual Cargo
-build identity, 322/61/16/1 post-builder totals (including internal healing), paired reference outcomes, ten retained real
+build identity, the earlier 322/61/16/1 post-builder totals (including internal healing), paired reference outcomes, ten retained real
 controls, unknown timeout work and public path/geometry omission.
+
+The finite-circle repair adds a complete matched-main frozen-400 observation,
+32 verified recoveries without losses, five native analytic controls and fifteen
+actual STEP/material controls.
+Its independent byte audit and per-stage work are retained with the
+[matched comparison](step-census-arc-parameters/README.md).
 
 ## Sources
 
-- [Current export-validity table](step-census-export-validity/results.csv), [manifest](step-census-export-validity/results.json), [paired comparison](step-census-export-validity/comparison.json), [admission table](step-census-periodic/results.csv), [admission manifest](step-census-periodic/results.json), [reference comparison](step-census-periodic/comparison.csv), [reference settings](step-census-periodic/occt-reference.json), [withdrawals from the initial analytic capture](step-census-analytic/initial-analytic-withdrawals.json)
+- [Current export-validity table](step-census-arc-parameters/results.csv), [manifest](step-census-arc-parameters/results.json), [matched comparison](step-census-arc-parameters/comparison.json), [prior export capture](step-census-export-validity/README.md), [admission table](step-census-periodic/results.csv), [admission manifest](step-census-periodic/results.json), [reference comparison](step-census-periodic/comparison.csv), [reference settings](step-census-periodic/occt-reference.json), [withdrawals from the initial analytic capture](step-census-analytic/initial-analytic-withdrawals.json)
 - [Prior 9.20% table](step-census/results.csv), [manifest](step-census/results.json), [source hashes](step-census/source-hashes.json), [retained controls](step-census/retained-controls.json)
 - [Original R8 census](../milestones/R8-public-step-census.md), [incidence follow-up](../milestones/R8-incidence-gaps.md), [spline certification follow-up](../milestones/R8-spline-certification.md)
 - OCCT [STEPControl_Reader](https://raw.githubusercontent.com/Open-Cascade-SAS/OCCT/V8_0_0/src/DataExchange/TKDESTEP/STEPControl/STEPControl_Reader.hxx) and [ShapeFix_Shape](https://raw.githubusercontent.com/Open-Cascade-SAS/OCCT/V8_0_0/src/ModelingAlgorithms/TKShHealing/ShapeFix/ShapeFix_Shape.hxx)

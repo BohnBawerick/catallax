@@ -1,5 +1,5 @@
 {
-  "binary_sha256": "7de3e65a562afea95f45f71e64d7efec371e3b3eef9fc75c9ed65997bc1d3e4f",
+  "binary_sha256": "bf7a9f5da07039cc1490439a2f41cda2d903636e646300b1ad13129743335537",
   "complete": true,
   "count": 10,
   "entity_id_offset": 1000000000,
@@ -200,5 +200,5 @@
   "schema": "catallax-file-replacement-controls/1",
   "scope": "ten fixed P06 capability sources; kernel file transaction and actual imported names, without application UI qualification",
   "source_hash_manifest_sha256": "3323e104c377023846073a05d7e164ca1082dc3dcf32cc046eee897401454cc7",
-  "source_revision": "ece5cecdec9ac343cdfdfd9f75adedcfc582a2d4"
+  "source_revision": "6198c9346c175285eadf6594406c23a9dcce806b"
 }

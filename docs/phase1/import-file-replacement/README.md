@@ -29,7 +29,8 @@ integration remain in the app slice. The earlier explicit editorial
 
 ## Actual controls
 
-Producer: `ece5cecdec9ac343cdfdfd9f75adedcfc582a2d4` on the Linux work PC.
+Producer: `6198c9346c175285eadf6594406c23a9dcce806b` on the Linux work PC,
+revalidated after the oblique writer merged onto main.
 [real-controls.json](real-controls.json) pins the executable and both source
 hashes for all ten fixed P06/M5 capability parts. Only actual Part 21 entity
 addresses were shifted by 1,000,000,000; geometry, strings and comments were

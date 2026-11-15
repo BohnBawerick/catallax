@@ -1,11 +1,11 @@
 //! Retain numerical cone/hole-carrier fits from actual recipe prefixes.
-//! Usage: numerical_hole_carriers OUT WORKERS [--check-supports] RECIPE.json...
+//! Usage: numerical_hole_carriers OUT WORKERS [--check-supports] [--finite-bands MIN MAX] RECIPE.json...
 
 use catallax_numbers::{
     Decider, Rational, Real, Sign, current_operation_work, with_operation_budget,
 };
 use catallax_shapes::{
-    BSplineCurve, BSplineSurface, Cylinder, Point3, RationalPatch, Surface, Vector3,
+    BSplineCurve, BSplineSurface, Curve, Cylinder, Point3, RationalPatch, Surface, Vector3,
 };
 use serde_json::{Value, json};
 use std::{path::Path, process::ExitCode};
@@ -81,11 +81,59 @@ fn support_charts(sources: &[BSplineSurface; 2], dec: &mut Decider) -> Result<Va
     Ok(json!(charts))
 }
 
+fn finite_cone_heights(
+    model: &catallax_topology::Model,
+    face: catallax_topology::FaceId,
+    cone: &catallax_shapes::Cone,
+    dec: &mut Decider,
+) -> Result<[Rational; 2], String> {
+    let mut heights = Vec::new();
+    for boundary in &model.face(face).loops {
+        let catallax_topology::Loop::Coedges(uses) = model.loop_(*boundary) else {
+            return Err("finite cone band requires circular boundary loops".into());
+        };
+        if uses.len() != 1 {
+            return Err("finite cone band example requires complete circular rings".into());
+        }
+        let edge = model.edge(model.coedge(uses[0]).edge);
+        let Curve::Circle(circle) = model.geom().curve(edge.curve) else {
+            return Err("finite cone band example requires circular boundaries".into());
+        };
+        let alignment = cone.axis.cross(&circle.normal).norm_squared();
+        if !dec.sign(&alignment).is_coincident() {
+            return Err("finite cone boundary plane is not perpendicular to its axis".into());
+        }
+        let height =
+            circle.center.minus(&cone.apex).dot(&cone.axis) / cone.axis.norm_squared().sqrt();
+        let interval = dec
+            .enclose_budgeted_at(&height, 128)
+            .map_err(|e| e.to_string())?;
+        let rounded = interval.mid();
+        let error = (&rounded - &interval.lo())
+            .abs()
+            .max((&interval.hi() - &rounded).abs());
+        if error > Rational::from_ratio(1, 160_000_000).unwrap() {
+            return Err(
+                "finite cone boundary rounding exceeds its physical tolerance share".into(),
+            );
+        }
+        heights.push(rounded);
+    }
+    heights.sort();
+    if heights.len() != 2 || heights[0] <= Rational::zero() || heights[0] >= heights[1] {
+        return Err(
+            "finite cone band example requires two distinct positive boundary heights".into(),
+        );
+    }
+    Ok([heights[0].clone(), heights[1].clone()])
+}
+
 fn query(
     recipe: &Value,
     face_index: usize,
     reverse: bool,
     check_supports: bool,
+    finite_bands: Option<[Rational; 2]>,
 ) -> Result<Value, String> {
     let mut prefix = recipe.clone();
     let hole = prefix["steps"]
@@ -138,15 +186,28 @@ fn query(
         radius_sq: Real::from(&radius * &radius),
         ref_dir: Vector3::new(rx, ry, rz),
     });
+    let heights = finite_bands
+        .as_ref()
+        .map(|_| finite_cone_heights(&built.model, *face, cone, &mut dec))
+        .transpose()?;
     let cone = Surface::Cone(cone.clone());
     let ordered = if reverse {
         [&cylinder, &cone]
     } else {
         [&cone, &cylinder]
     };
-    let result = catallax_intersect::numerical_native_intersection(ordered, &mut dec)
-        .map_err(|e| format!("{}: {}", e.code, e.detail))?
-        .ok_or("unsupported carrier pair")?;
+    let result = if let Some(parameters) = finite_bands {
+        catallax_intersect::numerical_native_finite_intersection(
+            ordered,
+            heights.expect("finite band heights checked above"),
+            parameters,
+            &mut dec,
+        )
+    } else {
+        catallax_intersect::numerical_native_intersection(ordered, &mut dec)
+    }
+    .map_err(|e| format!("{}: {}", e.code, e.detail))?
+    .ok_or("unsupported carrier pair")?;
     let windows = result.windows();
     let stages = result.work_stages();
     let mut report = json!({"format":"catallax-numerical-native-pair/1","proof":"numerical","exact":false,
@@ -154,7 +215,9 @@ fn query(
         "sources":windows.sources().iter().map(source).collect::<Vec<_>>(),
         "cone_heights":windows.cone_heights().each_ref().map(ToString::to_string),
         "cylinder_parameters":windows.cylinder_parameters().each_ref().map(ToString::to_string),
+        "cylinder_origin":[&windows.cylinder_origin().x,&windows.cylinder_origin().y,&windows.cylinder_origin().z].map(|q|q.as_rational().map_or_else(||format!("{q:?}"), |r|r.to_string())),
         "pieces":result.pieces().iter().map(|p|json!({"kind":format!("{:?}",p.kind()),
+            "requested_domains":p.source_domains().each_ref().map(|d|d.each_ref().map(|r|r.each_ref().map(ToString::to_string))),
             "curves":std::iter::once(p.curve()).chain(p.uv().iter()).map(curve).collect::<Vec<_>>()})).collect::<Vec<_>>(),
         "evidence":catallax_cli::numerical_evidence_summary(result.evidence()),
         "complete_body_bound":"unestablished","trace_checkpoints":format!("{:?}",result.trace_work()),
@@ -170,13 +233,27 @@ fn query(
 
 fn run() -> Result<(), String> {
     let mut args: Vec<_> = std::env::args().skip(1).collect();
-    let check_supports = args.get(2).is_some_and(|s| s == "--check-supports");
-    if check_supports {
-        args.remove(2);
+    let mut check_supports = false;
+    let mut finite_bands = None;
+    while let Some(flag) = args.get(2).filter(|s| s.starts_with("--")) {
+        match flag.as_str() {
+            "--check-supports" => {
+                check_supports = true;
+                args.remove(2);
+            }
+            "--finite-bands" if args.len() >= 5 => {
+                finite_bands = Some([
+                    Rational::parse(&args[3]).map_err(|_| "invalid finite cylinder minimum")?,
+                    Rational::parse(&args[4]).map_err(|_| "invalid finite cylinder maximum")?,
+                ]);
+                args.drain(2..5);
+            }
+            _ => return Err("unknown or incomplete numerical carrier option".into()),
+        }
     }
     if args.len() < 3 {
         return Err(
-            "usage: numerical_hole_carriers OUT WORKERS [--check-supports] RECIPE.json...".into(),
+            "usage: numerical_hole_carriers OUT WORKERS [--check-supports] [--finite-bands MIN MAX] RECIPE.json...".into(),
         );
     }
     let out = Path::new(&args[0]);
@@ -211,8 +288,9 @@ fn run() -> Result<(), String> {
     let mut rows = std::thread::scope(|scope| {
         let handles: Vec<_> = (0..workers).map(|rank| {
             let jobs = &jobs;
+            let finite_bands = &finite_bands;
             scope.spawn(move || jobs.iter().enumerate().filter(|(i, _)| i % workers == rank).map(|(index, (name, recipe, face, reverse))| {
-                let (result, work) = with_operation_budget(20_000_000, || query(recipe, *face, *reverse, check_supports));
+                let (result, work) = with_operation_budget(20_000_000, || query(recipe, *face, *reverse, check_supports, finite_bands.clone()));
                 let mut response = match result {
                     Ok(response) if !work.exhausted => response,
                     Ok(_) => json!({"proof":"refused","refusal":"operation allowance exhausted"}),

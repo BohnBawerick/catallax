@@ -505,6 +505,7 @@ impl<'a> Reader<'a> {
         let pl = || self.placement(reference(a, 1)?);
         Ok(match ty.as_str() {
             "PLANE" => Surface::Plane(pl()?),
+            "SURFACE_OF_REVOLUTION" => self.revolution(id)?,
             "CYLINDRICAL_SURFACE" => Surface::Cylinder(pl()?, self.positive(a, 2)?),
             "SPHERICAL_SURFACE" => Surface::Sphere(pl()?, self.positive(a, 2)?),
             "TOROIDAL_SURFACE" => {

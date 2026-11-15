@@ -654,12 +654,6 @@ impl<'a> Exporter<'a> {
                 .filter_map(|coedge| self.model.owner_of_coedge(coedge))
                 .any(|(_, face)| self.rolling_pipe(face).is_some());
             let order = if pipe_section { 3 } else { crate::fit::DEGREE };
-            if pipe_section {
-                eprintln!(
-                    "[DEBUG-e02] section trace begins at {} work",
-                    self.dec.stats().work
-                );
-            }
             let from = source.start.map(|v| self.model.vertex(v).point);
             let to = source.end.map(|v| self.model.vertex(v).point);
             let (from, to) = if source.sense == Sense::Same {
@@ -670,12 +664,6 @@ impl<'a> Exporter<'a> {
             let trace =
                 catallax_intersect::trace(self.model.geom(), source.curve, from, to, self.dec)?
                     .value;
-            if pipe_section {
-                eprintln!(
-                    "[DEBUG-e02] section fit begins at {} work",
-                    self.dec.stats().work
-                );
-            }
             let (fit, spans) = if capture {
                 let (fit, spans) = crate::fit::fit_with_ranges(
                     &trace,
@@ -701,12 +689,6 @@ impl<'a> Exporter<'a> {
                     None,
                 )
             };
-            if pipe_section {
-                eprintln!(
-                    "[DEBUG-e02] section fit ends at {} work",
-                    self.dec.stats().work
-                );
-            }
             let points = fit
                 .points
                 .iter()

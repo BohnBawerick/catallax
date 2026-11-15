@@ -36,10 +36,6 @@ fn the_public_partial_oblique_rim_builds_and_exports_after_a_radius_edit() {
         let ((next, bytes), work) = with_operation_budget(20_000_000, || {
             let next = evaluate_incremental(&recipe, checkpoint.take(), &mut dec).unwrap();
             let built = next.built();
-            eprintln!(
-                "[DEBUG-e02] radius {radius} geometry ends at {} work",
-                dec.stats().work
-            );
             let mut bytes = Vec::new();
             let report = catallax_step::write_step(
                 &built.model,
@@ -51,10 +47,6 @@ fn the_public_partial_oblique_rim_builds_and_exports_after_a_radius_edit() {
             .unwrap();
             assert!(report.marks.is_empty());
             assert!(!bytes.is_empty());
-            eprintln!(
-                "[DEBUG-e02] radius {radius} export ends at {} work",
-                dec.stats().work
-            );
             (next, bytes)
         });
         assert!(!work.exhausted, "{radius}: {work:?}");

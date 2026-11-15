@@ -1,4 +1,4 @@
-//! Piecewise degree-seven Taylor polynomials, converted to Bezier spans.
+//! Piecewise Taylor polynomials written as degree-seven Bezier spans.
 //! Each span carries a uniform Taylor remainder and a convex-hull bound for
 //! decimal rounding, enclosure width, and endpoint replacement.
 

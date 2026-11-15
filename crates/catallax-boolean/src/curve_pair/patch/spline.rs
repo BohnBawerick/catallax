@@ -127,10 +127,21 @@ pub(super) fn hits(
         let coordinates = curve.query_span_polynomials(span, dec)?;
         // Positive weights clear the denominator without losing a root.
         let equation = substitute(equation, &coordinates, dec)?;
-        let rational = equation.rational().ok_or_else(|| {
-            unresolved("finite spline/cutter meetings need rational homogeneous cut coefficients")
-        })?;
-        if rational.is_zero() {
+        let zero = if let Some(rational) = equation.rational() {
+            rational.is_zero()
+        } else {
+            match equation.total_degree(dec)? {
+                None => true,
+                Some(0) => continue,
+                Some(1 | 2) => false,
+                _ => {
+                    return Err(unresolved(
+                        "higher-degree finite spline/cutter meetings need rational homogeneous cut coefficients",
+                    ));
+                }
+            }
+        };
+        if zero {
             contained += 1;
             continue;
         }
@@ -157,6 +168,44 @@ pub(super) fn hits(
 mod tests {
     use super::*;
     use catallax_numbers::with_operation_budget;
+
+    #[test]
+    fn low_degree_algebraic_cut_coefficients_keep_exact_finite_roots() {
+        let ((), work) = with_operation_budget(20_000_000, || {
+            let mut dec = Decider::default();
+            let root = Real::from_i64(2).sqrt();
+            let curve = BSplineCurve::new(
+                2,
+                [0, 0, 0, 1, 1, 1].map(Rational::from_i64).to_vec(),
+                [-&root, Real::zero(), root]
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, z)| {
+                        Point3::new(
+                            Rational::from_ratio(i as i64, 2).unwrap().into(),
+                            Real::zero(),
+                            z,
+                        )
+                    })
+                    .collect(),
+                vec![Real::one(); 3],
+                &mut dec,
+            )
+            .unwrap();
+            let points = hits(&curve, &RealPoly::var(3, 2), &mut dec)
+                .unwrap()
+                .unwrap();
+            assert_eq!(points.len(), 1);
+            assert!(dec.sign(&points[0].z).is_coincident());
+            assert!(
+                dec.sign(
+                    &(&points[0].x - &Real::from_rational(Rational::from_ratio(1, 2).unwrap()))
+                )
+                .is_coincident()
+            );
+        });
+        assert!(!work.exhausted, "{} units", work.used);
+    }
 
     #[test]
     fn finite_point_queries_include_endpoint_and_even_order_roots() {

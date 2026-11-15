@@ -457,7 +457,7 @@ pub(super) fn search(
         physical: vec![[true; 4]],
         wrap: [None, None],
     };
-    let section = search_cover(&cover, surface, dec)?;
+    let section = search_cover(&cover, surface, false, dec)?;
     Ok(RationalPatchSection {
         patch: patch.clone(),
         surface: surface.clone(),
@@ -479,8 +479,13 @@ pub(crate) struct CoverSection {
 pub(crate) fn search_cover(
     cover: &Cover,
     surface: &SectionSurface,
+    trace_ready: bool,
     dec: &mut Decider,
 ) -> Result<CoverSection, Refusal> {
+    enum Crossing {
+        Edge(usize),
+        Corner([Real; 2]),
+    }
     let start = dec.stats().work;
     let mut record = SectionSearch::default();
     let mut arcs = Vec::new();
@@ -539,13 +544,15 @@ pub(crate) fn search_cover(
                     if uniform(&net.derivative(solved, dec)?, dec)?.is_none() {
                         continue;
                     }
-                    // Retained trace jets use this power-form enclosure too.
-                    let derivative = equation.partial(solved).eval_ball(
-                        &box_balls(&net.domain, dec.policy().max_precision_bits.min(128)),
-                        dec,
-                    )?;
-                    if derivative.sign().is_none() {
-                        continue;
+                    if trace_ready {
+                        // Retained trace jets also need a strict power-form bound.
+                        let derivative = equation.partial(solved).eval_ball(
+                            &box_balls(&net.domain, dec.policy().max_precision_bits.min(128)),
+                            dec,
+                        )?;
+                        if derivative.sign().is_none() {
+                            continue;
+                        }
                     }
                     let mut crossings = Vec::new();
                     let mut unresolved = false;
@@ -564,17 +571,17 @@ pub(crate) fn search_cover(
                                             Real::from(net.domain[1 - edge / 2][end].clone());
                                         let mut duplicate = false;
                                         for old in &crossings {
-                                            duplicate |= same_uv(old, &at, dec)?;
+                                            if let Crossing::Corner(old) = old {
+                                                duplicate |= same_uv(old, &at, dec)?;
+                                            }
                                         }
                                         if !duplicate {
-                                            crossings.push(at);
+                                            crossings.push(Crossing::Corner(at));
                                         }
                                     }
                                 }
                             }
-                            Some(1) if !first && !last => {
-                                crossings.push(edge_root(&equation, &net.domain, edge, dec)?)
-                            }
+                            Some(1) if !first && !last => crossings.push(Crossing::Edge(edge)),
                             _ => {
                                 unresolved = true;
                                 break;
@@ -590,8 +597,12 @@ pub(crate) fn search_cover(
                         break;
                     }
                     if crossings.len() == 2 {
-                        let a = crossings.remove(0);
-                        let b = crossings.remove(0);
+                        let point = |crossing, dec: &mut Decider| match crossing {
+                            Crossing::Edge(edge) => edge_root(&equation, &net.domain, edge, dec),
+                            Crossing::Corner(point) => Ok(point),
+                        };
+                        let a = point(crossings.remove(0), dec)?;
+                        let b = point(crossings.remove(0), dec)?;
                         if exact_sign(&(&a[1 - solved] - &b[1 - solved]), dec)? == Sign::Zero {
                             continue;
                         }
@@ -619,8 +630,8 @@ pub(crate) fn search_cover(
                                 side = Some(sign);
                             }
                         }
-                        if one_side {
-                            corner_contacts.push(crossings.remove(0));
+                        if one_side && let Crossing::Corner(contact) = crossings.remove(0) {
+                            corner_contacts.push(contact);
                             record.empty_cells += 1;
                             classified = true;
                             break;

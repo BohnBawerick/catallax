@@ -93,7 +93,7 @@ pub(super) fn pipe_geometry(
     let [atlas] = atlases.as_slice() else {
         return Err(unsupported());
     };
-    let section = atlas.sections(&SectionSurface::Plane(plane.clone()), dec)?;
+    let section = atlas.sections_for_tracing(&SectionSurface::Plane(plane.clone()), dec)?;
     let [branch] = section.branches() else {
         return Err(unsupported());
     };

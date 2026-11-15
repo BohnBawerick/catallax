@@ -95,6 +95,25 @@ fn clears(
     let curve_id = model.edge(edge).curve;
     match model.geom().curve(curve_id) {
         Curve::BSpline(curve) => clears_native(path, q, curve, dec),
+        Curve::PatchPair(branch) => {
+            let spline = path_curve(path, dec)?;
+            let Some(points) = branch.spline_points(&spline, dec)? else {
+                return Ok(false);
+            };
+            for point in points {
+                dec.charge_work(1)?;
+                let parameter = spline.unique_parameter_of(&point, dec)?.ok_or_else(|| {
+                    crate::geometry::refusal(
+                        "boolean.spline-face-probe",
+                        "retained path meeting lost its native preimage",
+                    )
+                })?;
+                if coefficient_sign(parameter.value(), dec)? != Sign::Zero {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
+        }
         Curve::PatchSection(branch) => {
             let equation = branch.surface().surface().implicit().ok_or_else(|| {
                 crate::geometry::refusal(
@@ -116,6 +135,50 @@ fn clears(
             Ok(false)
         }
     }
+}
+
+fn path_curve(path: &Path, dec: &mut Decider) -> Result<BSplineCurve, Refusal> {
+    let coordinates = [
+        &path.numerators[0],
+        &path.numerators[1],
+        &path.numerators[2],
+        &path.denominator,
+    ];
+    let degree = coordinates
+        .iter()
+        .map(|p| p.0.len() - 1)
+        .max()
+        .unwrap_or(0)
+        .max(1);
+    let coefficients =
+        coordinates.map(|p| (0..=degree).map(|i| p.coefficient(i)).collect::<Vec<_>>());
+    let mut controls = Vec::new();
+    let mut weights = Vec::new();
+    for i in 0..=degree {
+        dec.charge_work((degree as u64 + 1).checked_mul(4).ok_or_else(|| {
+            crate::geometry::refusal(
+                "boolean.spline-face-probe",
+                "path coefficient work bound overflowed",
+            )
+        })?)?;
+        let at = coefficients.each_ref().map(|p| bernstein(p, i));
+        if coefficient_sign(&at[3], dec)? != Sign::Positive {
+            return Err(crate::geometry::refusal(
+                "boolean.spline-face-probe",
+                "exact retained path requires positive Bernstein weights",
+            ));
+        }
+        controls.push(Point3::new(
+            &at[0] / &at[3],
+            &at[1] / &at[3],
+            &at[2] / &at[3],
+        ));
+        weights.push(at[3].clone());
+    }
+    let knots = std::iter::repeat_n(Rational::zero(), degree + 1)
+        .chain(std::iter::repeat_n(Rational::one(), degree + 1))
+        .collect();
+    BSplineCurve::new(degree, knots, controls, weights, dec)
 }
 
 fn on_patch(

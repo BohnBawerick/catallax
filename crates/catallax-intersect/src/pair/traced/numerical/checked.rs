@@ -1,0 +1,419 @@
+//! Retained numerical fits and finite sampled incidence checks.
+
+use super::*;
+use catallax_shapes::BSplineCurve;
+use catallax_trace::{
+    spline::{BSplineCurve as FloatCurve, PointForm},
+    surface_curves::CurveKind,
+    surface_intersector::Intersector,
+    surface_work::WorkReport,
+};
+use std::collections::BTreeSet;
+
+/// One fitted piece, with its native parameter and both retained UV definitions.
+/// Its kind is the numerical tracer's classification, not an exact model fact.
+#[derive(Clone, Debug)]
+pub struct NumericalIntersectionPiece {
+    curve: BSplineCurve,
+    uv: [BSplineCurve; 2],
+    kind: CurveKind,
+}
+
+impl NumericalIntersectionPiece {
+    /// Retained 3D fit over its original native domain.
+    pub fn curve(&self) -> &BSplineCurve {
+        &self.curve
+    }
+    /// Retained UV fits in the source operand order and the same native domain.
+    pub fn uv(&self) -> &[BSplineCurve; 2] {
+        &self.uv
+    }
+    /// The tracer's numerical meeting classification.
+    pub fn kind(&self) -> CurveKind {
+        self.kind
+    }
+}
+
+/// Every piece returned by one finite numerical search, with actual checks.
+/// Sampling establishes no complete branch-count or whole-curve error proof.
+#[derive(Clone, Debug)]
+pub struct NumericalNativeIntersection {
+    windows: NumericalNativeWindows,
+    pieces: Vec<NumericalIntersectionPiece>,
+    evidence: NumericalEvidence,
+    trace_work: WorkReport,
+}
+
+impl NumericalNativeIntersection {
+    /// Original analytic carriers and rounded native source definitions.
+    pub fn windows(&self) -> &NumericalNativeWindows {
+        &self.windows
+    }
+    /// All reported pieces, without candidate-seed selection or deduplication.
+    pub fn pieces(&self) -> &[NumericalIntersectionPiece] {
+        &self.pieces
+    }
+    /// Source checks, finite sampled UV ownership and both incidence residuals.
+    pub fn evidence(&self) -> &NumericalEvidence {
+        &self.evidence
+    }
+    /// Charged floating-trace visits. Exact validation work is charged separately
+    /// to the same ambient operation allowance.
+    pub fn trace_work(&self) -> WorkReport {
+        self.trace_work
+    }
+}
+
+fn invalid(detail: impl Into<String>) -> Refusal {
+    Refusal::new("intersect.numerical-native-fit", detail)
+}
+
+fn exact(value: f64) -> Result<Rational, Refusal> {
+    Rational::from_f64_exact(value)
+        .ok_or_else(|| invalid("a retained fit contains a nonfinite value"))
+}
+
+fn retained(
+    curve: &FloatCurve,
+    dimension: usize,
+    dec: &mut Decider,
+) -> Result<BSplineCurve, Refusal> {
+    if curve.dimension() != dimension {
+        return Err(invalid("a retained fit has the wrong coordinate dimension"));
+    }
+    let mut controls = Vec::new();
+    let mut weights = Vec::new();
+    for i in 0..curve.control_points().len() {
+        dec.charge_work(1)?;
+        let (point, weight) = curve
+            .control_point(i, PointForm::Euclidean)
+            .map_err(|fault| invalid(format!("invalid fitted control: {fault:?}")))?;
+        controls.push(Point3::new(
+            exact(point.x)?.into(),
+            exact(point.y)?.into(),
+            if dimension == 2 {
+                Real::zero()
+            } else {
+                exact(point.z)?.into()
+            },
+        ));
+        weights.push(exact(weight)?.into());
+    }
+    BSplineCurve::new(
+        curve.degree(),
+        curve
+            .knots()
+            .iter()
+            .copied()
+            .map(exact)
+            .collect::<Result<Vec<_>, _>>()?,
+        controls,
+        weights,
+        dec,
+    )
+}
+
+struct Carrier {
+    origin: [Ball; 3],
+    axis: [Ball; 3],
+    radius: Option<Ball>,
+    slope: Option<Ball>,
+}
+
+impl Carrier {
+    fn new(surface: &Surface, dec: &mut Decider) -> Result<Self, Refusal> {
+        let (origin, axis, radius, slope) = match surface {
+            Surface::Cone(cone) => (&cone.apex, &cone.axis, None, Some(cone.slope.clone())),
+            Surface::Cylinder(cylinder) => (
+                &cylinder.origin,
+                &cylinder.axis,
+                Some(cylinder.radius()),
+                None,
+            ),
+            _ => return Err(invalid("unexpected native carrier family")),
+        };
+        let axis = unit(axis, dec)?;
+        let mut enclose = |values: [&Real; 3]| -> Result<[Ball; 3], Refusal> {
+            Ok([
+                enclosure(values[0], dec)?,
+                enclosure(values[1], dec)?,
+                enclosure(values[2], dec)?,
+            ])
+        };
+        let origin = enclose([&origin.x, &origin.y, &origin.z])?;
+        let axis = enclose([&axis.x, &axis.y, &axis.z])?;
+        Ok(Self {
+            origin,
+            axis,
+            radius: radius.map(|v| enclosure(&v, dec)).transpose()?,
+            slope: slope.map(|v| enclosure(&v, dec)).transpose()?,
+        })
+    }
+
+    fn residual(&self, point: &[Ball; 3]) -> Result<Rational, Refusal> {
+        let offset: [Ball; 3] = std::array::from_fn(|k| &point[k] - &self.origin[k]);
+        let height = (&offset[0] * &self.axis[0])
+            + (&offset[1] * &self.axis[1])
+            + (&offset[2] * &self.axis[2]);
+        let radial: [Ball; 3] = std::array::from_fn(|k| &offset[k] - &(&height * &self.axis[k]));
+        let distance = (radial[0].square() + radial[1].square() + radial[2].square())
+            .sqrt()
+            .ok_or_else(|| invalid("a sampled radial distance was unresolved"))?;
+        let residual = if let Some(radius) = &self.radius {
+            &distance - radius
+        } else {
+            if height.lo().sign() != Sign::Positive {
+                return Err(invalid(
+                    "a sampled fit reaches the cone apex or opposite nappe",
+                ));
+            }
+            &distance - &(&height * self.slope.as_ref().expect("cone slope"))
+        };
+        Ok(absolute_upper(&residual))
+    }
+}
+
+fn check_piece(
+    piece: &NumericalIntersectionPiece,
+    sources: &[BSplineSurface; 2],
+    carriers: &[Carrier; 2],
+    index: usize,
+    dec: &mut Decider,
+) -> Result<Vec<NumericalCheck>, Refusal> {
+    for uv in &piece.uv {
+        if uv.domain() != piece.curve.domain() {
+            return Err(invalid("a UV fit changed the native 3D curve interval"));
+        }
+    }
+    let mut parameters = BTreeSet::new();
+    for (_, span) in piece.curve.spans() {
+        for i in 0..=4 {
+            parameters
+                .insert(span[0] + &((span[1] - span[0]) * Rational::from_ratio(i, 4).unwrap()));
+        }
+    }
+    let mut coupled = [Vec::new(), Vec::new()];
+    let mut analytic = [Vec::new(), Vec::new()];
+    for t in parameters {
+        dec.charge_work(1)?;
+        let point = piece.curve.evaluate_box([&t, &t], BITS, dec)?;
+        for k in 0..2 {
+            // These rational UV definitions can be evaluated exactly at the
+            // rational sample. No parameter clamp or boundary projection occurs.
+            let at = piece.uv[k].point_at(&Real::from(t.clone()), dec)?;
+            let u =
+                at.x.rational_ref()
+                    .ok_or_else(|| invalid("a retained UV coefficient lost rational identity"))?;
+            let v =
+                at.y.rational_ref()
+                    .ok_or_else(|| invalid("a retained UV coefficient lost rational identity"))?;
+            for (parameter, domain) in [u, v].into_iter().zip(sources[k].domain()) {
+                if parameter < domain[0] || parameter > domain[1] {
+                    return Err(invalid("a sampled UV fit leaves its finite source domain"));
+                }
+            }
+            let on = sources[k].evaluate_box([u, u], [v, v], BITS, dec)?;
+            let delta: [Ball; 3] = std::array::from_fn(|j| &point[j] - &on[j]);
+            let residual = (delta[0].square() + delta[1].square() + delta[2].square())
+                .sqrt()
+                .ok_or_else(|| invalid("a coupled sampled distance was unresolved"))?
+                .hi();
+            let location = vec![t.clone(), u.clone(), v.clone()];
+            coupled[k].push(NumericalSample {
+                parameters: location.clone(),
+                distance_upper_mm: residual,
+            });
+            analytic[k].push(NumericalSample {
+                parameters: location,
+                distance_upper_mm: carriers[k].residual(&point)?,
+            });
+        }
+    }
+    let mut checks = Vec::new();
+    for (k, (coupled, analytic)) in coupled.into_iter().zip(analytic).enumerate() {
+        let scope = format!("piece-{index}/source-{k}");
+        checks.push(NumericalCheck::Samples {
+            name: "native.fit-sampled-coupled-residual".into(),
+            scope: scope.clone(),
+            samples: coupled,
+        });
+        checks.push(NumericalCheck::Samples {
+            name: "native.fit-sampled-analytic-carrier-residual".into(),
+            scope,
+            samples: analytic,
+        });
+    }
+    Ok(checks)
+}
+
+/// Traces both full native windows at a preset 1e-7 mm tolerance. Every returned
+/// 3D/UV piece is retained and checked at endpoints and quarter-span locations.
+/// No exact incidence, complete cover proof or Boolean topology is published.
+pub fn numerical_native_intersection(
+    surfaces: [&Surface; 2],
+    dec: &mut Decider,
+) -> Result<Option<NumericalNativeIntersection>, Refusal> {
+    if operation_budget_active() {
+        return build_intersection(surfaces, dec);
+    }
+    let (result, work) = with_operation_budget(20_000_000, || build_intersection(surfaces, dec));
+    if work.exhausted {
+        return Err(Refusal::new(
+            "numbers.operation-budget",
+            "numerical native intersection exhausted its operation allowance",
+        ));
+    }
+    result
+}
+
+fn build_intersection(
+    surfaces: [&Surface; 2],
+    dec: &mut Decider,
+) -> Result<Option<NumericalNativeIntersection>, Refusal> {
+    let Some(windows) = numerical_native_windows(surfaces, dec)? else {
+        return Ok(None);
+    };
+    let a =
+        crate::pair::trace_candidates::surface(&windows.sources[0], &Isometry::identity(), dec)?;
+    let b =
+        crate::pair::trace_candidates::surface(&windows.sources[1], &Isometry::identity(), dec)?;
+    dec.charge_work(1)?;
+    let mut intersector = Intersector::new(&a, a.natural_domain(), &b, b.natural_domain());
+    intersector.approx_tolerance = windows.evidence.tolerance_mm().to_f64_nearest() / 4.;
+    intersector.check_output_spans = true;
+    let (fits, trace_work) = intersector
+        .do_intersection_with_work(|units| Decider::default().charge_work(units).is_ok());
+    if trace_work.cancelled {
+        dec.charge_work(0)?;
+        return Err(invalid(
+            "numerical native tracing cancelled without a retained result",
+        ));
+    }
+    let fits = fits.map_err(|fault| invalid(format!("native numerical trace: {fault:?}")))?;
+    let carriers = [
+        Carrier::new(&windows.originals[0], dec)?,
+        Carrier::new(&windows.originals[1], dec)?,
+    ];
+    let mut pieces = Vec::new();
+    let mut checks = windows.evidence.checks().to_vec();
+    for (index, fit) in fits.into_iter().enumerate() {
+        let [Some(a), Some(b)] = fit.uv_curves else {
+            return Err(invalid(
+                "a reported piece needs both retained UV definitions",
+            ));
+        };
+        let piece = NumericalIntersectionPiece {
+            curve: retained(&fit.curve, 3, dec)?,
+            uv: [retained(&a, 2, dec)?, retained(&b, 2, dec)?],
+            kind: fit.kind,
+        };
+        checks.extend(check_piece(
+            &piece,
+            &windows.sources,
+            &carriers,
+            index,
+            dec,
+        )?);
+        pieces.push(piece);
+    }
+    checks.push(NumericalCheck::Passed {
+        name: "native.retained-every-reported-piece".into(),
+        scope: "finite-window-search".into(),
+    });
+    let evidence = NumericalEvidence::new(windows.evidence.tolerance_mm().clone(), checks, vec![])?;
+    Ok(Some(NumericalNativeIntersection {
+        windows,
+        pieces,
+        evidence,
+        trace_work,
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn axial() -> [Surface; 2] {
+        [
+            Surface::Cone(Cone {
+                apex: Point3::new(s(0), s(-11), s(0)),
+                axis: Vector3::new(s(0), s(1), s(0)),
+                slope: s(1),
+                ref_dir: Vector3::new(s(1), s(0), s(0)),
+            }),
+            Surface::Cylinder(Cylinder {
+                origin: Point3::new(s(10), s(12), s(0)),
+                axis: Vector3::new(s(0), s(-1), s(0)),
+                radius_sq: s(1),
+                ref_dir: Vector3::new(s(1), s(0), s(0)),
+            }),
+        ]
+    }
+
+    #[test]
+    fn numerical_native_query_keeps_all_fits_and_checks_both_carriers() {
+        for reverse in [false, true] {
+            let surfaces = axial();
+            let ordered = if reverse {
+                [&surfaces[1], &surfaces[0]]
+            } else {
+                [&surfaces[0], &surfaces[1]]
+            };
+            let (result, work) = with_operation_budget(20_000_000, || {
+                numerical_native_intersection(ordered, &mut Decider::default())
+            });
+            let result = result.unwrap().unwrap();
+            assert!(!work.exhausted, "{work:?}");
+            assert_eq!(result.pieces().len(), 2);
+            assert!(!result.trace_work().cancelled);
+            assert!(result.trace_work().accepted > 1000);
+            assert_eq!(
+                result.evidence().tolerance_mm(),
+                &Rational::from_ratio(1, 10_000_000).unwrap()
+            );
+            assert_eq!(
+                matches!(result.windows().originals()[0], Surface::Cylinder(_)),
+                reverse
+            );
+            for piece in result.pieces() {
+                assert_eq!(piece.curve().domain(), piece.uv()[0].domain());
+                assert_eq!(piece.curve().domain(), piece.uv()[1].domain());
+            }
+            assert_eq!(result.evidence().checks().len(), 5 + 4 * 2 + 1);
+            eprintln!(
+                "numerical native query reverse={reverse} total_work={} trace={:?}",
+                work.used,
+                result.trace_work()
+            );
+            let (negative, work) = with_operation_budget(20_000_000, || {
+                let mut dec = Decider::default();
+                let mut piece = result.pieces()[0].clone();
+                let delta = Vector3::new(
+                    Real::from(Rational::from_ratio(1, 1000).unwrap()),
+                    s(0),
+                    s(0),
+                );
+                piece.curve = BSplineCurve::new(
+                    piece.curve.degree(),
+                    piece.curve.knots().to_vec(),
+                    piece.curve.controls().map(|p| p.plus(&delta)).collect(),
+                    piece.curve.weights().cloned().collect(),
+                    &mut dec,
+                )
+                .unwrap();
+                let carriers = [
+                    Carrier::new(&surfaces[usize::from(reverse)], &mut dec).unwrap(),
+                    Carrier::new(&surfaces[usize::from(!reverse)], &mut dec).unwrap(),
+                ];
+                let checks =
+                    check_piece(&piece, result.windows.sources(), &carriers, 0, &mut dec).unwrap();
+                NumericalEvidence::new(result.evidence().tolerance_mm().clone(), checks, vec![])
+            });
+            assert_eq!(
+                negative.unwrap_err().code,
+                "numbers.numerical-tolerance-exceeded"
+            );
+            assert!(!work.exhausted, "{work:?}");
+        }
+    }
+}

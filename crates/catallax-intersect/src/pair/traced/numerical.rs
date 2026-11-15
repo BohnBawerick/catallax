@@ -8,6 +8,11 @@ use catallax_numbers::{
 
 const BITS: u32 = 128;
 
+mod checked;
+pub use checked::{
+    NumericalIntersectionPiece, NumericalNativeIntersection, numerical_native_intersection,
+};
+
 #[cfg(test)]
 mod fit_tests;
 

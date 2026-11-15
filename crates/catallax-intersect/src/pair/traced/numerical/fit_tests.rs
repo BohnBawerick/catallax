@@ -120,7 +120,7 @@ fn checked_flush_refreshes_coupled_endpoint_derivatives() {
         0,
         trace_work.accepted / 2,
         trace_work.accepted - 1,
-        trace_work.accepted,
+        trace_work.accepted + 1,
     ] {
         let ((result, report), budget) = with_operation_budget(limit, || {
             intersector

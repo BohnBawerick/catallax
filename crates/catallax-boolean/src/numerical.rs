@@ -8,34 +8,77 @@ use catallax_topology::numerical::NumericalOptions;
 #[derive(Clone, Debug)]
 pub struct NumericalCylinderQuarter {
     /// Native quadrant, 0 through 3.
-    pub id: usize,
+    id: usize,
     /// Deterministic descriptor-local key. The caller supplies assembly identities.
-    pub key: String,
+    key: String,
     /// Retained embedded patch over native u=[id,id+1], v=[0,1].
-    pub surface: Surface,
+    surface: Surface,
     /// Signed millimetres at native v=0 and v=1 from the original tool origin.
-    pub axis_parameters_mm: [Rational; 2],
+    axis_parameters_mm: [Rational; 2],
+}
+
+impl NumericalCylinderQuarter {
+    /// Native quadrant, 0 through 3.
+    pub fn id(&self) -> usize {
+        self.id
+    }
+    /// Descriptor-local key; callers provide their own assembly identity.
+    pub fn key(&self) -> &str {
+        &self.key
+    }
+    /// Retained patch over native u=[id,id+1], v=[0,1].
+    pub fn surface(&self) -> &Surface {
+        &self.surface
+    }
+    /// Signed millimetres at native v=0 and v=1 about the original origin.
+    pub fn axis_parameters_mm(&self) -> &[Rational; 2] {
+        &self.axis_parameters_mm
+    }
 }
 
 /// A retained cylinder source and all four native quarter patches.
 /// Constructing it supplies numerical source/control checks and patch embedding
 /// checks. It does not construct a Boolean, admitted body or STEP result.
+/// Construction keeps the retained definition, interval, quarters and evidence
+/// together. Read-only accessors preserve that association.
+///
+/// ```compile_fail
+/// use catallax_boolean::numerical::NumericalCylinderSource;
+/// use catallax_numbers::Rational;
+/// fn change(mut source: NumericalCylinderSource) {
+///     source.axis_parameters_mm[1] = Rational::one();
+/// }
+/// ```
+/// ```compile_fail
+/// use catallax_boolean::numerical::NumericalCylinderSource;
+/// fn change(mut source: NumericalCylinderSource) { source.quarters.clear(); }
+/// ```
+/// ```compile_fail
+/// use catallax_boolean::numerical::NumericalCylinderSource;
+/// fn change(mut source: NumericalCylinderSource) {
+///     source.evidence = source.evidence().clone();
+/// }
+/// ```
+/// ```compile_fail
+/// use catallax_boolean::numerical::NumericalCylinderQuarter;
+/// fn change(mut quarter: NumericalCylinderQuarter) { quarter.key.clear(); }
+/// ```
 #[derive(Clone, Debug)]
 pub struct NumericalCylinderSource {
     /// Original analytic carrier, with the caller's origin, axis and seam.
-    pub original: Cylinder,
+    original: Cylinder,
     /// Complete finite numerical definition, without native knot changes.
-    pub source: BSplineSurface,
+    source: BSplineSurface,
     /// Signed millimetres at native v=0 and v=1 from the original origin.
-    pub axis_parameters_mm: [Rational; 2],
+    axis_parameters_mm: [Rational; 2],
     /// Canonical quarters in increasing native-u order.
-    pub quarters: Vec<NumericalCylinderQuarter>,
+    quarters: Vec<NumericalCylinderQuarter>,
     /// Preset tolerance and actual source/control/chart checks.
-    pub evidence: NumericalEvidence,
+    evidence: NumericalEvidence,
     /// Actual work for source construction and its checks.
-    pub source_work: u64,
+    source_work: u64,
     /// Actual work for admitting every retained quarter patch.
-    pub chart_work: u64,
+    chart_work: u64,
 }
 impl NumericalCylinderSource {
     /// Creates the same cylinder source used by finite cone intersections.
@@ -59,6 +102,34 @@ impl NumericalCylinderSource {
             ));
         }
         result
+    }
+    /// Original analytic cylinder, including its authored origin and seam.
+    pub fn original(&self) -> &Cylinder {
+        &self.original
+    }
+    /// Complete retained finite source, without changing native knots.
+    pub fn source(&self) -> &BSplineSurface {
+        &self.source
+    }
+    /// Signed millimetres at native v=0 and v=1 about the original origin.
+    pub fn axis_parameters_mm(&self) -> &[Rational; 2] {
+        &self.axis_parameters_mm
+    }
+    /// All four retained quarters in increasing native-u order.
+    pub fn quarters(&self) -> &[NumericalCylinderQuarter] {
+        &self.quarters
+    }
+    /// Actual source/control/chart checks at the preset tolerance.
+    pub fn evidence(&self) -> &NumericalEvidence {
+        &self.evidence
+    }
+    /// Measured source construction and check work.
+    pub fn source_work(&self) -> u64 {
+        self.source_work
+    }
+    /// Measured retained quarter admission and check work.
+    pub fn chart_work(&self) -> u64 {
+        self.chart_work
     }
     /// Maps a native v in [0,1] to signed millimetres about the original origin.
     pub fn signed_mm_at_v(&self, v: &Rational) -> Result<Rational, Refusal> {

@@ -1,0 +1,10 @@
+{
+  "actual_cargo_log_artifact_and_executable_checked": true,
+  "all_400_durable_source_hashes_rechecked": true,
+  "all_declared_written_step_hashes_and_mm_radian_units_checked": true,
+  "producer_head_and_clean_tree_checked": true,
+  "raw_checked_bodies": 677,
+  "raw_invalid_bodies": 97,
+  "raw_valid_bodies": 580,
+  "written_body_files_checked": 699
+}

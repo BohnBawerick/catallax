@@ -1,0 +1,17 @@
+{
+  "all_source_bodies_raw_valid": true,
+  "binary_sha256": "9f7648a9fe63060a274889d1f261fd5e80502c05c208af101134ced8299ecd77",
+  "changed_body_count_rejected": true,
+  "changed_step_bytes_rejected": true,
+  "format": "catallax-export-validity-authored-controls/1",
+  "mixed_body_outcomes": [
+    "raw_valid",
+    "raw_invalid"
+  ],
+  "one_invalid_body_does_not_qualify_file": true,
+  "partial_manifest_rejected": true,
+  "runner_sha256": "b8cc2e6b38dfdf2572276689aa346995f905e45ff30c850676de515f0e63450f",
+  "source_revision": "4b422bcf65092239f0eeb4581d916595e7697560",
+  "source_sha256": "54ee92814267dae2230ca0248afd63d7c36ab23aca90197601e1a39c5f6ec179",
+  "wrong_source_hash_refused_without_export": true
+}

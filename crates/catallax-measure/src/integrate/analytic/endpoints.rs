@@ -3,7 +3,9 @@
 use catallax_numbers::{Decider, Outcome, Rational, Real, Refusal, Sign, StrictSign};
 use catallax_shapes::{Curve, Point3};
 
-use super::{Analytic, Angle, Polynomial, Program, Value, scale, sqrt, trigonometric_inputs};
+use super::{
+    Analytic, Angle, Polynomial, Program, Value, circle_basis, scale, sqrt, trigonometric_inputs,
+};
 use crate::planar::{components, direction};
 
 fn sign(value: &Real, dec: &mut Decider) -> Result<Option<Sign>, Refusal> {
@@ -86,16 +88,21 @@ impl Program {
                 let center_r = center.as_rational().unwrap();
                 let normal_r = normal.as_rational().unwrap();
                 let reference_r = reference.as_rational().unwrap();
-                let Some(a) = sqrt(&(a2.as_rational().unwrap() / reference_r.norm_squared()))
-                else {
+                let basis = match curve {
+                    Curve::Circle(_) => {
+                        circle_basis(&normal_r, &reference_r, &a2.as_rational().unwrap())
+                    }
+                    _ => {
+                        let a = sqrt(&(a2.as_rational().unwrap() / reference_r.norm_squared()));
+                        let second = normal_r.cross(&reference_r);
+                        let b = sqrt(&(b2.as_rational().unwrap() / second.norm_squared()));
+                        a.zip(b)
+                            .map(|(a, b)| (scale(&reference_r, &a), scale(&second, &b)))
+                    }
+                };
+                let Some((u, v)) = basis else {
                     return Ok(None);
                 };
-                let second = normal_r.cross(&reference_r);
-                let Some(bb) = sqrt(&(b2.as_rational().unwrap() / second.norm_squared())) else {
-                    return Ok(None);
-                };
-                let u = scale(&reference_r, &a);
-                let v = scale(&second, &bb);
                 trigonometric_inputs(
                     &center_r,
                     &u,

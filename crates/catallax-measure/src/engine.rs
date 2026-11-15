@@ -431,7 +431,7 @@ pub(crate) fn measure(
                             None
                         };
                         let exact = if exact.is_none() {
-                            cone_generator(surface, model, edge.curve, dec)?
+                            generator(surface, model, edge.curve, dec)?
                         } else {
                             exact
                         };
@@ -1386,15 +1386,15 @@ fn torus_parallel(
     }))
 }
 
-fn cone_generator(
+fn generator(
     surface: &Surface,
     model: &Model,
     curve: catallax_shapes::CurveId,
     dec: &mut Decider,
 ) -> Result<Option<[Rational; 5]>, Refusal> {
-    let Surface::Cone(cone) = surface else {
+    if !matches!(surface, Surface::Cylinder(_) | Surface::Cone(_)) {
         return Ok(None);
-    };
+    }
     if !matches!(
         model.geom().curve(curve),
         catallax_shapes::Curve::Line(_) | catallax_shapes::Curve::Intersection(_)
@@ -1405,6 +1405,18 @@ fn cone_generator(
         catallax_intersect::curve_form(model.geom(), curve, dec)?
     else {
         return Ok(None);
+    };
+    if let Surface::Cylinder(cylinder) = surface {
+        return match dec.sign(&dir.cross(&cylinder.axis).norm_squared()) {
+            // Every cylindrical boundary form contains axis . (q x dq).
+            // A parallel generator makes it zero regardless of its origin.
+            Outcome::ProvenCoincident(_) => Ok(Some(std::array::from_fn(|_| Rational::zero()))),
+            Outcome::Refused(error) => Err(error),
+            _ => Ok(None),
+        };
+    }
+    let Surface::Cone(cone) = surface else {
+        unreachable!()
     };
     let dot = dir.dot(&cone.axis);
     let equation =

@@ -1,0 +1,194 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "Ordinary block with through bore and six-sided through cut then draft",
+  "steps": [
+    {
+      "id": "stock-section",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "line",
+            "id": "bottom",
+            "to": [
+              "40",
+              "0"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "right",
+            "to": [
+              "40",
+              "30"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "top",
+            "to": [
+              "0",
+              "30"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "left",
+            "to": [
+              "0",
+              "0"
+            ]
+          }
+        ],
+        [
+          {
+            "kind": "circle",
+            "id": "bore",
+            "centre": [
+              "10",
+              "15"
+            ],
+            "radius": "3"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "stock",
+      "op": "extrude",
+      "profile": "stock-section",
+      "distance": "12"
+    },
+    {
+      "id": "hex-section",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "line",
+            "id": "hex-0",
+            "to": [
+              "25",
+              "11"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "hex-1",
+            "to": [
+              "31",
+              "11"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "hex-2",
+            "to": [
+              "34",
+              "15"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "hex-3",
+            "to": [
+              "31",
+              "19"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "hex-4",
+            "to": [
+              "25",
+              "19"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "hex-5",
+            "to": [
+              "22",
+              "15"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "id": "hex-tool",
+      "op": "extrude",
+      "profile": "hex-section",
+      "distance": "12"
+    },
+    {
+      "id": "pierced",
+      "op": "boolean",
+      "kind": "subtract",
+      "target": "stock",
+      "tool": "hex-tool"
+    },
+    {
+      "id": "drafted",
+      "op": "draft",
+      "body": "pierced",
+      "faces": [
+        {
+          "face": {
+            "step": "stock",
+            "role": {
+              "side": {
+                "segment": "left"
+              }
+            }
+          }
+        }
+      ],
+      "pull": [
+        "0",
+        "0",
+        "1"
+      ],
+      "neutral": {
+        "point": [
+          "0",
+          "0",
+          "0"
+        ],
+        "normal": [
+          "0",
+          "0",
+          "1"
+        ]
+      },
+      "angle": "3"
+    }
+  ],
+  "result": "drafted"
+}

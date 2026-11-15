@@ -1,0 +1,195 @@
+{
+  "format": "catallax-recipe/5",
+  "name": "SolidDraft",
+  "result": "op_114",
+  "steps": [
+    {
+      "id": "op_1",
+      "loops": [
+        [
+          {
+            "id": "l0s0",
+            "kind": "line",
+            "to": [
+              "40",
+              "0"
+            ]
+          },
+          {
+            "id": "l0s1",
+            "kind": "line",
+            "to": [
+              "40",
+              "30"
+            ]
+          },
+          {
+            "id": "l0s2",
+            "kind": "line",
+            "to": [
+              "0",
+              "30"
+            ]
+          },
+          {
+            "id": "l0s3",
+            "kind": "line",
+            "to": [
+              "0",
+              "0"
+            ]
+          }
+        ]
+      ],
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "-1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "direction": [
+        "0",
+        "0",
+        "1"
+      ],
+      "distance": "12",
+      "id": "op_3",
+      "op": "extrude",
+      "profile": "op_1"
+    },
+    {
+      "at": [
+        {
+          "direction": [
+            "0",
+            "0",
+            "-1"
+          ],
+          "id": "h0",
+          "point": [
+            "10",
+            "15",
+            "12"
+          ]
+        }
+      ],
+      "depth": "through",
+      "diameter": "6",
+      "id": "op_31",
+      "op": "hole",
+      "target": "op_3",
+      "tip": "flat"
+    },
+    {
+      "id": "op_38",
+      "loops": [
+        [
+          {
+            "id": "l0s0",
+            "kind": "line",
+            "to": [
+              "31",
+              "20.196152422706632"
+            ]
+          },
+          {
+            "id": "l0s1",
+            "kind": "line",
+            "to": [
+              "25",
+              "20.196152422706632"
+            ]
+          },
+          {
+            "id": "l0s2",
+            "kind": "line",
+            "to": [
+              "22",
+              "15"
+            ]
+          },
+          {
+            "id": "l0s3",
+            "kind": "line",
+            "to": [
+              "24.999999999999996",
+              "9.80384757729337"
+            ]
+          },
+          {
+            "id": "l0s4",
+            "kind": "line",
+            "to": [
+              "31",
+              "9.803847577293368"
+            ]
+          },
+          {
+            "id": "l0s5",
+            "kind": "line",
+            "to": [
+              "34",
+              "15"
+            ]
+          }
+        ]
+      ],
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "-1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "12"
+        ]
+      }
+    },
+    {
+      "direction": [
+        "0",
+        "0",
+        "-1"
+      ],
+      "distance": "13.52451736608204",
+      "id": "op_40",
+      "op": "extrude",
+      "profile": "op_38"
+    },
+    {
+      "id": "op_80",
+      "kind": "subtract",
+      "op": "boolean",
+      "target": "op_31",
+      "tool": "op_40"
+    },
+    {
+      "body": "op_80",
+      "id": "op_114",
+      "op": "shell",
+      "open": [
+        {
+          "face": {
+            "role": "end",
+            "step": "op_3"
+          }
+        }
+      ],
+      "thickness": "1"
+    }
+  ]
+}

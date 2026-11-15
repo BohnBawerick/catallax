@@ -1,9 +1,10 @@
 //! Implicit graph pieces of the existing complete patch-pair cover.
 
 use super::*;
-use crate::rational_patch::trace_series::series;
 use std::collections::BTreeMap;
 
+mod bounds;
+use bounds::series;
 mod curve;
 pub use curve::PatchPairCurve;
 
@@ -225,10 +226,10 @@ impl PairTracePiece {
     fn jacobian_at(&self, at: &[Ball; 5], dec: &Decider) -> Result<[[Ball; 4]; 4], Refusal> {
         let row = |r| -> Result<[Ball; 4], Refusal> {
             Ok([
-                self.derivative(r, 0).eval_ball(at, dec)?,
-                self.derivative(r, 1).eval_ball(at, dec)?,
-                self.derivative(r, 2).eval_ball(at, dec)?,
-                self.derivative(r, 3).eval_ball(at, dec)?,
+                bounds::eval(self.derivative(r, 0), at, dec)?,
+                bounds::eval(self.derivative(r, 1), at, dec)?,
+                bounds::eval(self.derivative(r, 2), at, dec)?,
+                bounds::eval(self.derivative(r, 3), at, dec)?,
             ])
         };
         Ok([row(0)?, row(1)?, row(2)?, row(3)?])
@@ -290,10 +291,10 @@ impl PairTracePiece {
                 }
             });
             let residual = [
-                self.equation(0).eval_ball(&middle, dec)?,
-                self.equation(1).eval_ball(&middle, dec)?,
-                self.equation(2).eval_ball(&middle, dec)?,
-                self.equation(3).eval_ball(&middle, dec)?,
+                bounds::eval(self.equation(0), &middle, dec)?,
+                bounds::eval(self.equation(1), &middle, dec)?,
+                bounds::eval(self.equation(2), &middle, dec)?,
+                bounds::eval(self.equation(3), &middle, dec)?,
             ];
             let Some(factor) = Factor::new(self.jacobian_at(&all, dec)?, dec)? else {
                 break;

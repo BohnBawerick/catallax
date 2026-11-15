@@ -132,7 +132,9 @@ impl FaceBuilder<'_> {
         uv: Uv,
         boundary: Option<usize>,
     ) -> Result<usize, Refusal> {
-        if let Some(&index) = indices.get(&key(uv)) {
+        let at = self.place(uv);
+        let placed_key = key([at.x, at.y]);
+        if let Some(&index) = indices.get(&placed_key) {
             if boundary.is_some_and(|mesh| mesh != nodes[index].mesh) {
                 return Err(failure(
                     "distinct boundary vertices collapse in the display chart",
@@ -146,7 +148,7 @@ impl FaceBuilder<'_> {
         let node = self.node(uv, boundary)?;
         let index = nodes.len();
         nodes.push(node);
-        indices.insert(key(uv), index);
+        indices.insert(placed_key, index);
         Ok(index)
     }
 
@@ -217,7 +219,13 @@ impl FaceBuilder<'_> {
     }
 
     fn place(&self, uv: Uv) -> Point2<f64> {
-        Point2::new(uv[0], uv[1] * self.stretch)
+        let point = Point2::new(uv[0], uv[1] * self.stretch);
+        if self.unproved {
+            // Keep the sampled UV; only the CDT coordinates need Spade's range.
+            spade::mitigate_underflow(point)
+        } else {
+            point
+        }
     }
 
     fn free_point(&mut self, uv: Uv) -> Result<bool, Refusal> {
@@ -638,7 +646,7 @@ impl FaceBuilder<'_> {
                     let indices = nodes
                         .iter()
                         .enumerate()
-                        .map(|(i, node)| (key([node.uv.x, node.uv.y]), i))
+                        .map(|(i, node)| (key([node.at.x, node.at.y]), i))
                         .collect();
                     (nodes, indices)
                 });
@@ -1225,7 +1233,7 @@ fn compact(mesh: &mut Mesh) {
 }
 
 pub(crate) fn check_closed(mesh: &Mesh) -> Result<(), Refusal> {
-    check_boundary(mesh, &BTreeSet::new())
+    check_boundary(&mesh.triangles, &BTreeSet::new())
 }
 
 pub(crate) fn check_surface(model: &Model, body: BodyId, mesh: &Mesh) -> Result<(), Refusal> {
@@ -1256,12 +1264,15 @@ pub(crate) fn check_surface(model: &Model, body: BodyId, mesh: &Mesh) -> Result<
             boundary.insert((ends[0].min(ends[1]), ends[0].max(ends[1])));
         }
     }
-    check_boundary(mesh, &boundary)
+    check_boundary(&mesh.triangles, &boundary)
 }
 
-fn check_boundary(mesh: &Mesh, boundary: &BTreeSet<(usize, usize)>) -> Result<(), Refusal> {
+fn check_boundary(
+    triangles: &[Triangle],
+    boundary: &BTreeSet<(usize, usize)>,
+) -> Result<(), Refusal> {
     let mut uses = BTreeMap::<(usize, usize), (usize, i32)>::new();
-    for t in &mesh.triangles {
+    for t in triangles {
         for i in 0..3 {
             let (a, b) = (t.vertices[i], t.vertices[(i + 1) % 3]);
             let entry = uses.entry((a.min(b), a.max(b))).or_default();
@@ -1805,6 +1816,9 @@ pub(crate) fn build_preview(
             face,
             triangles: start..boundaries.mesh.triangles.len(),
         });
+    }
+    if boundaries.merged_vertices && model.body(body).kind == catallax_topology::BodyKind::Solid {
+        check_boundary(&boundaries.mesh.triangles, &BTreeSet::new())?;
     }
     Ok(boundaries.mesh)
 }

@@ -21,6 +21,7 @@ pub struct PreviewOptions {
     /// Target normal angle in radians. No whole-face bound is claimed.
     pub angular_deviation: Option<Rational>,
     /// Limit on generated vertices, including temporary periodic chart copies.
+    /// Also caps candidate visits and added edge references during vertex-weld repair.
     pub max_vertices: usize,
 }
 

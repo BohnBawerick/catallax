@@ -18,6 +18,8 @@ spade = "2.15"
 
 [dev-dependencies]
 catallax-boolean.workspace = true
+catallax-features.workspace = true
+catallax-recipe.workspace = true
 
 [lints]
 workspace = true

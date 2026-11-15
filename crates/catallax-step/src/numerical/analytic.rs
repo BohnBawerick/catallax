@@ -712,22 +712,31 @@ pub(super) fn build(
             } else {
                 [trim.uv[1].clone(), trim.uv[0].clone()]
             };
-            if matches!(face.surface, Surface::Cylinder(_))
-                && matches!(edge.curve, Curve::Circle(_))
+            if let (Surface::Cylinder(cylinder), Curve::Circle(circle)) =
+                (&face.surface, &edge.curve)
                 && edge.vertices[0] != edge.vertices[1]
+                && ends[0][1] != ends[1][1]
             {
-                // Keep the canonical shared-vertex walk used for admission.
-                // Derive this actual pcurve from the written finite carrier:
-                // a toleranced vertex off the circle's plane must not turn an
-                // isoparameter into a sloped line. Independently rounded pcurve
-                // distance checks below still include both finite endpoints.
-                for (end, parameter) in edge.parameters.iter().enumerate() {
-                    let point = edge
-                        .curve
-                        .evaluate(&Ball::from_rational(parameter, BITS), w.dec)?
-                        .ok_or_else(|| bad("unsupported", "finite circle has no evaluator"))?;
-                    let position = std::array::from_fn(|axis| point[axis].mid());
-                    ends[end] = uv(&face.surface, &position, &ends[end], w.dec)?;
+                // A circle normal parallel to the cylinder axis gives a
+                // constant-height pcurve (OCCT ProjLib_Cylinder::Project).
+                // This cheap check uses the written rational directions.
+                // Keep existing flat maps, tilted carriers, the finite U chart
+                // and the canonical shared-vertex walk used for admission.
+                let normal = rational_vector(&circle.normal)?;
+                let axis = rational_vector(&cylinder.axis)?;
+                if charged_cross(&normal, &axis, w.dec)?
+                    .iter()
+                    .all(Rational::is_zero)
+                {
+                    let [_, _, height] = local(
+                        &cylinder.origin,
+                        &cylinder.axis,
+                        &cylinder.ref_dir,
+                        &rational_point(&circle.center)?,
+                    )?;
+                    let height = height.mid();
+                    ends[0][1] = height.clone();
+                    ends[1][1] = height;
                 }
             }
             let (curve, actual) = pcurve(

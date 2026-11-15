@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::rational_patch::{Cover, search_cover, vanishing_side_row};
-use crate::{PatchSectionBranch, SectionSearch, SectionSurface};
+use crate::{PatchSectionBranch, Point3, SectionSearch, SectionSurface};
 
 /// A complete checked section of one logical atlas face. Every component is a
 /// cell-cover branch over the face's charts, joined across chart seams.

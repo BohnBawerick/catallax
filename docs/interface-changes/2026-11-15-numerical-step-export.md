@@ -11,16 +11,18 @@ catallax_step::numerical::build(&body, &options, &mut decider)
     -> Result<NumericalStep, Refusal>
 ```
 
-`body` is N01/N02's checked `NumericalBody`. The first family is one retained
+`body` is N01/N02's checked `NumericalBody`. The original planar-line family is one retained
 closed shell with finite rational line edges and rational orthogonal plane
 frames, including oblique directions and N02's outer-loop/one-hole faces.
 Source line endpoints and plane incidence must agree in retained rational world
 coordinates. Trims use inverse coordinates on the actual written
 orthonormal frame, checked numerically rather than equating rational UV midpoints
 with exact real parameters. No world-space source point is moved.
-Merely tolerated source geometric gaps refuse instead of being healed. Curved
-carriers and unsupported bodies refuse; a geometrically flat spline is
-not silently replaced by a plane. No mesh or inferred edge/loop topology is used.
+Merely tolerated source geometric gaps still refuse on that original path.
+Native spline edges and rational patches use the separate
+[curved numerical path](2026-11-15-numerical-curved-step.md), including flat
+splines retained as native spline surfaces. Both paths retain explicit edge/loop
+topology.
 
 The private artifact bytes are STEP AP242, explicitly labelled `catallax numerical
 approximate` in `FILE_DESCRIPTION` and the solid name. Source name, source local
@@ -35,7 +37,7 @@ whole-curve, whole-face or whole-body bound. Both source and payload evidence
 remain numerical, including at zero residual. Existing generic-constructor trust
 limitations from N01 still apply; this producer grants no exact/bounded authority.
 
-Oblique `DIRECTION` ratios are scaled by their maximum absolute component before
+On the original planar-line path, oblique `DIRECTION` ratios are scaled by their maximum absolute component before
 decimal selection. The new report field `max_direction_ratio_rounding_error`
 records their dimensionless rounding error separately from written lengths;
 it is neither an angular nor a spatial bound. STEP normalizes direction ratios.

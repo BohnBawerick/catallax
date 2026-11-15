@@ -126,7 +126,7 @@ fn decimal(token: &str) -> Result<Rational, Refusal> {
     };
     if let Some(e) = exponent {
         let value: i64 = e.parse().map_err(|_| bad())?;
-        if value.abs() > 400 {
+        if !(-400..=400).contains(&value) {
             return Err(bad());
         }
     }

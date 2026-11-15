@@ -98,6 +98,7 @@ Twelve things neither reference kernel does are not in the count. They include a
 
 **1.2 Real-file import**
 - Doing: opening real STEP files under those tolerances, analytic files first, then spline files. What still refuses is counted by cause.
+- Measured: the [same 3,000-file census](docs/research/step-census.md) now has 276 full source-coverage imports (9.20%), beside the previous 186 (6.20%, about 6%). The SolidDraft file-replacement reference work remains open on the app side.
 - Why here: it is the largest single gap, and it is the first thing a user meets: a bought-in part that will not open.
 - Unlocks: bought-in parts in every later feature, the ten real parts on the scoreboard, direct edits (2.4) and imports in the field (4.4).
 - Done when: the 3,000-file census is rerun and the share that imports is published beside the 6%. Replacing an imported file re-points every reference.

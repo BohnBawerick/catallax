@@ -289,6 +289,7 @@ pub fn encode<T: Codec>(body: &T, decider: &mut Decider) -> Result<Vec<u8>, Refu
     output.charge(order.len())?;
     for id in order {
         (id as u32).write(&mut output)?;
+        output.charge(tags.len().max(1).ilog2() as usize + 1)?;
         tags.binary_search(&records[id].0)
             .map_err(|_| invalid("missing record type"))?
             .write(&mut output)?;

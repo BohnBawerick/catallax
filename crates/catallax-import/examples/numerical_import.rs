@@ -60,7 +60,7 @@ fn pose_edit(body: &n::NumericalBody, dec: &mut Decider) -> Result<n::NumericalB
         };
         plane.origin = shifted(&plane.origin, &delta);
     }
-    n::build(definition, body.options().clone(), dec)
+    body.rebuild(definition, body.options().clone(), dec)
 }
 fn file(body: &n::NumericalBody, path: &Path, dec: &mut Decider) -> Result<Value, Value> {
     let file = export(body, &NumericalStepOptions::default(), dec).map_err(|e| error("step", e))?;
@@ -73,7 +73,9 @@ fn file(body: &n::NumericalBody, path: &Path, dec: &mut Decider) -> Result<Value
     Ok(
         json!({"sha256":sha256_hex(&bytes),"bytes":bytes.len(),"category":"numerical approximate",
         "checks":file.report().checks,"scalar_rounding_limit_mm":file.report().scalar_rounding_limit_mm.to_string(),
-        "max_scalar_rounding_error_mm":file.report().max_scalar_rounding_error_mm.to_string(),"complete_body_bound":"unestablished"}),
+        "max_scalar_rounding_error_mm":file.report().max_scalar_rounding_error_mm.to_string(),
+        "max_direction_ratio_rounding_error":file.report().max_direction_ratio_rounding_error.to_string(),
+        "source_history_stages":file.report().source_history.len(),"complete_body_bound":"unestablished"}),
     )
 }
 fn run(bytes: &[u8], out: &Path) -> Result<Value, Value> {

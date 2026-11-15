@@ -4,7 +4,7 @@
 mod tube;
 
 use catallax_numbers::{Decider, NumericalCheck, Rational, Real, with_operation_budget};
-use catallax_shapes::{Curve, Point3, Surface, Vector3};
+use catallax_shapes::{Curve, Point3, Pose, Rotation, Surface, Vector3};
 use catallax_step::numerical::{self, NumericalStepOptions};
 use catallax_topology::numerical::{self as source, NumericalDefinition, NumericalOptions};
 
@@ -142,4 +142,66 @@ fn oblique_export_preserves_the_source_endpoint_gap_refusal() {
         .code,
         "step.numerical-gap"
     );
+}
+
+#[test]
+fn successive_rotations_reconstruct_the_written_orthogonal_frame() {
+    let initial = source::build(
+        definition(),
+        NumericalOptions::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let pose = Pose {
+        rotation: Rotation::from_quaternion(
+            Rational::from_i64(2),
+            Rational::zero(),
+            Rational::zero(),
+            Rational::one(),
+        )
+        .unwrap(),
+        translation: Vector3::zero(),
+    };
+    let mut d = initial.definition().clone();
+    for vertex in &mut d.vertices {
+        let [x, y, z] = vertex.position.clone().map(Real::from);
+        let p = pose.apply_point(&Point3::new(x, y, z));
+        vertex.position = [&p.x, &p.y, &p.z].map(|q| q.as_rational().unwrap());
+    }
+    for edge in &mut d.edges {
+        let Curve::Line(line) = &mut edge.curve else {
+            unreachable!()
+        };
+        line.origin = pose.apply_point(&line.origin);
+        line.dir = pose.apply_vector(&line.dir);
+    }
+    for face in &mut d.faces {
+        let Surface::Plane(plane) = &mut face.surface else {
+            unreachable!()
+        };
+        plane.origin = pose.apply_point(&plane.origin);
+        plane.normal = pose.apply_vector(&plane.normal);
+        plane.ref_dir = pose.apply_vector(&plane.ref_dir);
+    }
+    let body = initial
+        .rebuild(d, NumericalOptions::default(), &mut Decider::default())
+        .unwrap();
+    let artifact = numerical::build(
+        &body,
+        &NumericalStepOptions::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    assert_eq!(artifact.report().counts, [10, 24, 16]);
+    assert_eq!(artifact.report().source_history.len(), 1);
+    assert!(artifact.report().max_direction_ratio_rounding_error > Rational::zero());
+    if let Some(directory) = std::env::var_os("CATALLAX_OBLIQUE_CAPTURE") {
+        let directory = std::path::PathBuf::from(directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("oblique-3d-tube.step");
+        std::fs::write(&path, artifact.bytes()).unwrap();
+        artifact
+            .check_written(&std::fs::read(path).unwrap(), &mut Decider::default())
+            .unwrap();
+    }
 }

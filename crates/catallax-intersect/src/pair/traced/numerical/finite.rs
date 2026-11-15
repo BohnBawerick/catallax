@@ -239,7 +239,7 @@ mod tests {
             });
             let cylinder = Surface::Cylinder(Cylinder {
                 origin: at.plus(&axis.scaled(&Real::from(&r(12) * &scale))).plus(
-                    &radial.scaled(&Real::from(Rational::from_ratio(21, 2).unwrap() * &scale)),
+                    &radial.scaled(&Real::from(&Rational::from_ratio(21, 2).unwrap() * &scale)),
                 ),
                 axis: axis.scaled(&s(-1)),
                 radius_sq: Real::from(&scale * &scale),

@@ -399,6 +399,20 @@ fn evaluate_numerical(bytes: &[u8]) -> Value {
                 "bodies":imported.bodies().len(),"local_incidence_tolerances":tolerances})
         }
         Ok(StepImport::Numerical(imported)) => {
+            let source_admission_method = imported
+                .source_admission()
+                .map(|record| record.method.as_str());
+            let checked_max = imported
+                .bodies()
+                .iter()
+                .flat_map(|(_, body)| body.evidence().checks())
+                .flat_map(|check| match check {
+                    catallax_numbers::NumericalCheck::Samples { samples, .. } => samples.as_slice(),
+                    _ => &[],
+                })
+                .map(|sample| &sample.distance_upper_mm)
+                .max()
+                .map(ToString::to_string);
             let bounds = imported
                 .record()
                 .face_tolerances
@@ -417,7 +431,8 @@ fn evaluate_numerical(bytes: &[u8]) -> Value {
             json!({"stage":"import","outcome":"admitted","import_category":"numerical approximate",
                 "bodies":imported.bodies().len(),"exact":false,"tolerances_mm":tolerances,
                 "source_to_result_max_mm":bounds,"complete_body_bound":"unestablished",
-                "source_change_count":imported.record().changes.len()})
+                "source_change_count":imported.record().changes.len(),
+                "source_admission_method":source_admission_method,"max_checked_residual_mm":checked_max})
         }
         Err(ImportError::Source(refusal)) => {
             eprintln!("{}", serde_json::to_string(&refusal).unwrap());

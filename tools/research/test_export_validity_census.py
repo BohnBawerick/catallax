@@ -1,9 +1,14 @@
 """A validity headline requires the fixed population and every body of every file."""
 
 import copy
+import hashlib
+import json
+from pathlib import Path
+import sys
+import tempfile
 import unittest
 
-from export_validity_census import population, public_build, summary
+from export_validity_census import WORK, observe, population, public_build, summary
 
 
 class ValidityTests(unittest.TestCase):
@@ -49,7 +54,13 @@ class ValidityTests(unittest.TestCase):
         for changed in [
             self.rows + [self.rows[0]],
             self.rows
-            + [dict(model_id="00000400", source_sha256=self.hashes["00000400"], outcome="timeout")],
+            + [
+                dict(
+                    model_id="00000400",
+                    source_sha256=self.hashes["00000400"],
+                    outcome="timeout",
+                )
+            ],
         ]:
             with self.assertRaises(AssertionError):
                 summary(self.admissions, changed)
@@ -60,7 +71,9 @@ class ValidityTests(unittest.TestCase):
 
     def test_one_valid_body_does_not_qualify_a_two_body_file(self):
         self.rows[0].update(
-            exported_body_count=1, raw_valid_solid_count=1, exported_step_hashes=["a" * 64]
+            exported_body_count=1,
+            raw_valid_solid_count=1,
+            exported_step_hashes=["a" * 64],
         )
         with self.assertRaisesRegex(AssertionError, "partial export"):
             summary(self.admissions, self.rows)
@@ -81,6 +94,89 @@ class ValidityTests(unittest.TestCase):
         self.rows[0]["outcome"] = "not_checked"
         with self.assertRaisesRegex(AssertionError, "unknown"):
             summary(self.admissions, self.rows)
+
+    def test_observer_faults_are_process_errors_and_prevent_complete_census(self):
+        for cause in ["observer.write", "observer.reread", "observer.byte-identity"]:
+            with self.subTest(cause=cause), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                source = root / "source.step"
+                source.write_bytes(b"classification fixture")
+                baseline = self.admissions["00000000"] | dict(
+                    source_sha256=hashlib.sha256(source.read_bytes()).hexdigest()
+                )
+                admission = dict(
+                    source_sha256=baseline["source_sha256"],
+                    outcome="admitted",
+                    work_limit=WORK,
+                    work_used=1,
+                    bodies=2,
+                    import_category="certified",
+                )
+                response = dict(
+                    stage="export",
+                    outcome="refused",
+                    source_sha256=baseline["source_sha256"],
+                    work_limit=WORK,
+                    work_used=1,
+                    files=[],
+                    refusal=dict(code=cause),
+                    **{"import": admission},
+                )
+                producer = root / "producer"
+                producer.write_text(
+                    f"#!{sys.executable}\nfrom pathlib import Path\nimport sys\n"
+                    "out = Path(sys.argv[3])\nout.mkdir()\n"
+                    f"(out / 'response.json').write_text({json.dumps(response)!r})\n"
+                )
+                producer.chmod(0o700)
+                result = observe(producer, source, baseline, root / "capture", 5)
+                self.assertEqual(result["outcome"], "process_error")
+                self.assertEqual(result["cause"], cause)
+                admissions = self.admissions | {"00000000": baseline}
+                report = summary(admissions, [result, *self.rows[1:]])
+                self.assertFalse(report["complete"])
+                self.assertIsNone(report["raw_valid_share_percent"])
+
+    def test_producer_timeout_checks_source_with_and_without_import_checkpoint(self):
+        for checkpoint in [False, True]:
+            for mutate in [False, True]:
+                with self.subTest(
+                    checkpoint=checkpoint, mutate=mutate
+                ), tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    source = root / "source.step"
+                    source.write_bytes(b"timeout fixture")
+                    baseline = self.admissions["00000000"] | dict(
+                        source_sha256=hashlib.sha256(source.read_bytes()).hexdigest()
+                    )
+                    admission = dict(
+                        stage="import",
+                        outcome="admitted",
+                        source_sha256=baseline["source_sha256"],
+                        work_used=1,
+                        import_category="certified",
+                        bodies=2,
+                    )
+                    producer = root / "producer"
+                    producer.write_text(
+                        f"#!{sys.executable}\nfrom pathlib import Path\nimport sys, time\n"
+                        + (f"print({json.dumps(admission)!r}, flush=True)\n" if checkpoint else "")
+                        + ("Path(sys.argv[1]).write_bytes(b'changed')\n" if mutate else "")
+                        + "time.sleep(60)\n"
+                    )
+                    producer.chmod(0o700)
+                    if mutate:
+                        with self.assertRaisesRegex(
+                            AssertionError, "source changed during observation"
+                        ):
+                            observe(producer, source, baseline, root / "capture", 2)
+                    else:
+                        result = observe(producer, source, baseline, root / "capture", 2)
+                        self.assertEqual(result["outcome"], "timeout")
+                        self.assertEqual(
+                            result["timeout_stage"],
+                            "export" if checkpoint else "import",
+                        )
 
     def test_original_population_cannot_change_or_hide_missing_hashes(self):
         with self.assertRaises(AssertionError):

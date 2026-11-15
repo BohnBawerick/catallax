@@ -80,6 +80,13 @@ in separate processes, avoiding shared OCCT reader settings between file workers
 observations, including timeouts, remain terminal. Process errors may be retried
 into a new private attempt directory. Prior captures are preserved. An export
 timeout cannot erase the flushed import checkpoint.
+The source digest is checked when the producer exits, including either timeout
+path.
+Observer write, reread and byte-integrity faults are process errors and cannot
+satisfy census completeness.
+These collector safeguards were added after the frozen capture; its recorded
+refusals contain no observer faults, and its data and producer identity remain
+unchanged.
 
 ## What qualifies a file
 
@@ -102,7 +109,7 @@ multi-solid file. Outcomes remain distinct:
 - `reimport_refused` or `admission_changed`: the frozen admission cannot be
   reproduced with its expected body set.
 - `timeout`: the fixed whole-file observation cap expired; its stage is retained.
-- `process_error`: missing results, protocol/schema failures or crashed processes
+- `process_error`: observer I/O/integrity faults, missing results, protocol/schema failures or crashed processes
   prevent a complete publication.
 
 The output table retains all 3,000 original IDs, their original first refusal

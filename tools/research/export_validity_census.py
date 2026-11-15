@@ -244,7 +244,8 @@ def observe(binary, source, baseline, folder, timeout):
                     observed_body_count=checkpoints[0]["bodies"],
                 )
             return row | dict(outcome="timeout", timeout_stage="import")
-    assert digest(source) == expected, (key, "source changed during observation")
+        finally:
+            assert digest(source) == expected, (key, "source changed during observation")
     if process.returncode or not (capture / "response.json").is_file():
         return row | dict(cause="producer_process_or_missing_response")
     response = json.loads((capture / "response.json").read_text())
@@ -273,7 +274,11 @@ def observe(binary, source, baseline, folder, timeout):
             outcome="admission_changed", cause="body_count_differs_from_frozen_admission"
         )
     if response["outcome"] == "refused":
-        return row | dict(outcome="export_refused", cause=response["refusal"]["code"])
+        cause = response["refusal"]["code"]
+        return row | dict(
+            outcome="process_error" if cause.startswith("observer.") else "export_refused",
+            cause=cause,
+        )
     assert response["outcome"] == "complete" and len(response["files"]) == admission["bodies"]
     remaining = timeout - (time.monotonic() - start)
     if remaining <= 0:

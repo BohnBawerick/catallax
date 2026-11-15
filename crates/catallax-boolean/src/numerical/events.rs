@@ -133,6 +133,7 @@ pub(super) fn collect(
                 ];
                 format!("boundary-{boundary:?}-angular-owners-{angular_owners:?}")
             };
+            eprintln!("native occurrence piece={index} end={end} point={point_only} domains={domain:?} uv={:?} group={group}", hit.uv.each_ref().map(|p|p.each_ref().map(Rational::to_f64_nearest)));
             groups.entry(group).or_default().push(Occurrence {
                 hit,
                 end: (!point_only).then_some(end),

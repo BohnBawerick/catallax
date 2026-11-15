@@ -91,7 +91,13 @@ class ObservationTests(unittest.TestCase):
             {'status': 'checked_no_crossing', 'solid': '#1', 'faces': ['#2', '#3']},
             {'status': 'unresolved', 'solid': '#1', 'faces': ['#2', '#4'],
              'refusal': {'code': 'not_solid', 'detail': 'private source diagnostic'}}]
+        imported['source_topology_repairs'] = [{'solid': '#1', 'face': '#2',
+            'source_rim_edges': ['#3', '#4'], 'source_vertices': ['#5', '#6'],
+            'derived_seam_edge': 'derived:#2:periodic-seam',
+            'method': 'paired_cylinder_generatrix/1'}]
         row = self.observe(self.source(), imported)
+        self.assertEqual(row['source_topology_repair_count'], 1)
+        self.assertEqual(json.loads(row['source_topology_repairs']), imported['source_topology_repairs'])
         self.assertEqual(row['outcome'], 'full')
         self.assertEqual(row['import_category'], 'numerical approximate')
         self.assertIsNone(row['source_to_result_max_mm'])

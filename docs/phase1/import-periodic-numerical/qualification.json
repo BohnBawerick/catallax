@@ -1,0 +1,139 @@
+{
+  "authored": {
+    "bore_void_and_stock_probes_checked": true,
+    "catallax_boolean_qualification": false,
+    "raw_valid": true,
+    "reference_boolean_cut_valid": true,
+    "reference_cut_volume_mm3": "8-pi/2",
+    "source_step_sha256": "2d7226194398d2dc517d0ca0e2d7746a1ac2d4c3ec07915a90e4296f96ed9765",
+    "volume_mm3": "16-pi"
+  },
+  "before": {
+    "frozen_analytic_census_cause": "import.numerical-unsupported-family",
+    "model_id": "00002345",
+    "original_first_refusal": "self_intersecting",
+    "raw_observation_sha256": "943cf10808e25b031e67f372f3f10cd7cee52881c1773d4efc7b182f94fb3cc0",
+    "refusal": {
+      "code": "import.numerical-unsupported-family",
+      "detail": "closed circle edges require an explicit periodic seam construction",
+      "stage": "import"
+    },
+    "source_revision": "dc0d7a4dab2c1e68feb52cb729800823ab4d97d3",
+    "source_sha256": "8b138ab5f82850b19b017f86283b8074a88c7a271c4c4a01576a610bbfa7b40e",
+    "status": "refused",
+    "work_limit": 20000000,
+    "work_used": 1045313
+  },
+  "capture_stage": "initial seam implementation, before continuous circle clearance and mandatory shared-seam periodic admission; later capture belongs in the complete matching census publication",
+  "checker_sha256": "8697ca4aafd2cee2d5d2b9042e4596b04af19e1223023b2ee9d29c880aa21455",
+  "example_binary_sha256": "06dc08ba97544644a64498a85f24ea1a9fc2a058c41118584d425432d9715d67",
+  "format": "catallax-periodic-numerical-workflow/1",
+  "healing": false,
+  "ocp_version": "8.0.1.1",
+  "raw_builder_sha256": "5633cdcf16efc13f328ed85b33a738f6a9296e2afb925f4c64bbed7c91025376",
+  "real_2345_independent_carrier_volume_and_material_checked": true,
+  "real_parts": [
+    {
+      "edited_step_sha256": "1645c1deb9fca73089748e7496d37d7c345781a21e4c684ab6e5b460927af7be",
+      "import_work": 1157201,
+      "material_probes_checked": false,
+      "model_id": "00001818",
+      "pose_volume_and_centroid_checked": true,
+      "raw_before_and_pose_valid": true,
+      "source_sha256": "29d669186fc4d6de574f656544e24d0066a2f4ee32accb6679d7de24664e32fa",
+      "source_step_sha256": "36870d0f479acaab06aed6c945966ffb07e5a3d725cadbe7cfe4e6d1f7710655",
+      "stages": {
+        "edited_export": 190682,
+        "pose_rebuild": 99903,
+        "source_export": 190955
+      },
+      "topology": {
+        "edges": 12,
+        "euler_with_face_holes": 2,
+        "faces": 6,
+        "solids": 1,
+        "two_loop_faces": 0,
+        "vertices": 8
+      },
+      "topology_repairs": [],
+      "work_limit": 20000000,
+      "work_used": 1638741
+    },
+    {
+      "edited_step_sha256": "98fcc19f8cd806ab3c9d49e5e4dd83482b8e91a323f6e880415e1a131bee4ced",
+      "import_work": 1159085,
+      "material_probes_checked": false,
+      "model_id": "00009734",
+      "pose_volume_and_centroid_checked": true,
+      "raw_before_and_pose_valid": true,
+      "source_sha256": "ac7d5ece45cff986ec2c630618d0dc8fecb1ad1218267f79b9f0d99ead08f833",
+      "source_step_sha256": "f9df22cc64b67115f3325e51bd9431f2280764cd7e08e0a960773c8adc58ba95",
+      "stages": {
+        "edited_export": 207786,
+        "pose_rebuild": 98963,
+        "source_export": 207808
+      },
+      "topology": {
+        "edges": 12,
+        "euler_with_face_holes": 2,
+        "faces": 6,
+        "solids": 1,
+        "two_loop_faces": 0,
+        "vertices": 8
+      },
+      "topology_repairs": [],
+      "work_limit": 20000000,
+      "work_used": 1673642
+    },
+    {
+      "edited_step_sha256": "d8f87dc50398495a4d38591a134500974828d3fb45530737588ab1a76a3fc48f",
+      "import_work": 1189708,
+      "material_probes_checked": true,
+      "model_id": "00002345",
+      "pose_volume_and_centroid_checked": true,
+      "raw_before_and_pose_valid": true,
+      "source_sha256": "8b138ab5f82850b19b017f86283b8074a88c7a271c4c4a01576a610bbfa7b40e",
+      "source_step_sha256": "b290afd332e4e361d3a4be4bc287b254d27891f8008340d4a8c30de2cf23fd04",
+      "stages": {
+        "edited_export": 219148,
+        "pose_rebuild": 125385,
+        "source_export": 219184
+      },
+      "topology": {
+        "edges": 15,
+        "euler_with_face_holes": 0,
+        "faces": 7,
+        "solids": 1,
+        "two_loop_faces": 2,
+        "vertices": 10
+      },
+      "topology_repairs": [
+        {
+          "derived_seam_edge": "derived:#35:periodic-seam",
+          "face": "#35",
+          "method": "paired_cylinder_generatrix/1",
+          "solid": "#46",
+          "source_rim_edges": [
+            "#183",
+            "#184"
+          ],
+          "source_vertices": [
+            "#210",
+            "#212"
+          ]
+        }
+      ],
+      "work_limit": 20000000,
+      "work_used": 1753425
+    }
+  ],
+  "same_parameter": false,
+  "source_revision": "7e5b506f3d9448ff664fe4473c921eadc268bca5",
+  "source_unit_to_mm": 1000,
+  "validation": {
+    "all_target_clippy_packages": 18,
+    "evidence_controls_passed": 12,
+    "full_census": "separate capture; no aggregate gain claimed here",
+    "scoped_release_controls_passed": 60
+  }
+}

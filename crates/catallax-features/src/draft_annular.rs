@@ -1,9 +1,10 @@
-//! A finite hollow axial cell; both radial graphs stay strictly separated.
+//! Finite hollow axial cells and checked oblique radial-separation bounds.
 
+use super::oblique::ObliqueCell;
 use crate::draft::{DraftDefinition, reduced, round::RoundCell, sign};
-use catallax_numbers::{Decider, Real, Refusal, Sign};
+use catallax_numbers::{Decider, Rational, Real, Refusal, Sign};
 use catallax_recipe::Origin;
-use catallax_shapes::{Cylinder, Plane, Point3, Surface};
+use catallax_shapes::{BSplineCurve, Cylinder, Plane, Point3, SplineBoundary, Surface};
 
 /// One complete source cylinder, with its material sense and saved selection.
 #[derive(Clone, Debug)]
@@ -32,65 +33,269 @@ fn unsupported(detail: &str) -> Refusal {
     Refusal::new("draft.unsupported-arrangement", detail)
 }
 
-impl AnnularCell {
-    /// Certifies the bounded annular slice before publishing any topology.
-    /// Folds, contacts, crossings and swallowed ends need a curved arrangement.
+/// Exact relation of the two radial laws over the complete finite height.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AnnularSeparation {
+    /// Every outer radius strictly exceeds the inner radius.
+    Separated,
+    /// The minimum radial gap is zero, with no negative gap.
+    Touching,
+    /// The gap takes both positive and negative values.
+    Crossing,
+    /// The outer radius never exceeds the inner radius.
+    Reversed,
+}
+
+/// Checked radial separation and explicit plane/wall intersections.
+/// This is a bound on two finite supports, never a publishable body or a
+/// shortest Euclidean wall-distance certificate. Cap topology remains unbuilt.
+#[derive(Clone, Debug)]
+pub struct ObliqueAnnularBound {
+    walls: [ObliqueCell; 2],
+    caps: [(Plane, [BSplineCurve; 2]); 2],
+    radial_gap: [Rational; 2],
+    separation: AnnularSeparation,
+    source_detail: String,
+}
+
+impl ObliqueAnnularBound {
+    /// Checks coaxial source walls, finite ruled laws and all four cap curves.
+    /// Zero neutral-axis rate and unsupported folds retain typed refusals.
     pub fn new(
-        mut walls: [AnnularWall; 2],
+        walls: [AnnularWall; 2],
         caps: [(Plane, Vec<Origin>); 2],
         definition: &DraftDefinition,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
-        if !walls[0].same_sense {
-            walls.swap(0, 1);
-        }
-        if !walls[0].same_sense || walls[1].same_sense {
-            return Err(unsupported("annular walls need opposite material senses"));
-        }
-        let origin = walls[0].cylinder.origin.clone();
-        for wall in &mut walls {
-            if sign(
-                &wall.cylinder.axis.cross(&definition.pull).norm_squared(),
-                dec,
-            )? != Sign::Zero
-                || sign(
-                    &wall
-                        .cylinder
-                        .origin
-                        .minus(&origin)
-                        .cross(&definition.pull)
-                        .norm_squared(),
-                    dec,
-                )? != Sign::Zero
-            {
-                return Err(unsupported(
-                    "annular walls must be coaxial and parallel to pull",
-                ));
-            }
-            // An axial origin shift does not change a cylinder. Use one frame
-            // so all endpoint and separation proofs have identical heights.
-            wall.cylinder.origin = origin.clone();
-        }
-        if sign(&walls[1].cylinder.radius_sq, dec)? != Sign::Positive
-            || sign(
-                &(&walls[0].cylinder.radius_sq - &walls[1].cylinder.radius_sq),
-                dec,
-            )? != Sign::Positive
-        {
-            return Err(unsupported(
-                "source annular radii must be positive and separated",
+        let mut walls = checked_source(walls, &caps, definition, dec)?;
+        let axis_rate = definition.neutral.normal.dot(&definition.pull);
+        let zero_rate = sign(&axis_rate, dec)? == Sign::Zero;
+        // A cylinder has no distinguished azimuth. Use one orthonormal frame
+        // for the two polar laws even if the source reference directions differ.
+        walls[1].cylinder.ref_dir = walls[0].cylinder.ref_dir.clone();
+        let tangent = reduced(&definition.sine / &definition.cosine, dec)?;
+        let span = caps[1]
+            .0
+            .origin
+            .minus(&caps[0].0.origin)
+            .dot(&definition.pull)
+            .square()
+            .sqrt();
+        let mut enclose = |value: &Real| -> Result<String, Refusal> {
+            let b = dec.enclose_budgeted_at(value, 128)?;
+            Ok(format!("[{},{}]", b.lo(), b.hi()))
+        };
+        let tilt = if zero_rate {
+            "undefined (neutral_axis_rate=0)".to_owned()
+        } else {
+            enclose(
+                &(definition
+                    .neutral
+                    .normal
+                    .cross(&definition.pull)
+                    .norm_squared()
+                    / axis_rate.square()),
+            )?
+        };
+        let source_detail = format!(
+            "outer_radius_squared_mm2={}; inner_radius_squared_mm2={}; selected_outer={}; selected_inner={}; tan_angle={}; cap_span_mm={}; neutral_transverse_ratio_squared={}",
+            enclose(&walls[0].cylinder.radius_sq)?,
+            enclose(&walls[1].cylinder.radius_sq)?,
+            walls[0].selected,
+            walls[1].selected,
+            enclose(&tangent)?,
+            enclose(&span)?,
+            tilt,
+        );
+        if zero_rate {
+            return Err(Refusal::new(
+                "draft.oblique-annulus-zero-neutral-rate",
+                format!(
+                    "{source_detail}; no closed transverse neutral curve; certified_radial_gap=undefined; body_published=false"
+                ),
             ));
         }
-        for (plane, _) in &caps {
-            if sign(&plane.normal.cross(&definition.pull).norm_squared(), dec)? != Sign::Zero {
-                return Err(unsupported("annular caps must be perpendicular to pull"));
+        let mut build = |wall: AnnularWall| {
+            let mut law = definition.clone();
+            if !wall.selected {
+                law.sine = Real::zero();
+                law.cosine = Real::one();
+            } else if !wall.same_sense {
+                law.sine = -law.sine;
+            }
+            ObliqueCell::new(&wall.cylinder, wall.origins, caps.clone(), &law, dec)
+        };
+        let [outer, inner] = walls;
+        let walls = [build(outer)?, build(inner)?];
+        let [outer, inner] = walls.each_ref().map(|wall| &wall.support);
+        let differences = outer
+            .heights()
+            .each_ref()
+            .map(|z| outer.amplitude(z) - inner.amplitude(z));
+        let lean = reduced(
+            ((&outer.lean()[0] - &inner.lean()[0]).square()
+                + (&outer.lean()[1] - &inner.lean()[1]).square())
+            .sqrt(),
+            dec,
+        )?;
+        let order = sign(&(&differences[1] - &differences[0]), dec)?;
+        let (lo, hi) = if order == Sign::Negative {
+            (1, 0)
+        } else {
+            (0, 1)
+        };
+        // The gap is affine in z and equals dA(z)+db*cos(u)+dc*sin(u).
+        // Its extrema on the entire closed domain are the two endpoint
+        // amplitudes plus/minus sqrt(db^2+dc^2), attained by unit rays.
+        let minimum = reduced(&differences[lo] - &lean, dec)?;
+        let maximum = reduced(&differences[hi] + &lean, dec)?;
+        let separation = match sign(&minimum, dec)? {
+            Sign::Positive => AnnularSeparation::Separated,
+            Sign::Zero => AnnularSeparation::Touching,
+            Sign::Negative if sign(&maximum, dec)? == Sign::Positive => AnnularSeparation::Crossing,
+            Sign::Negative => AnnularSeparation::Reversed,
+        };
+        let radial_gap = [
+            dec.enclose_budgeted_at(&minimum, 128)?.lo(),
+            dec.enclose_budgeted_at(&maximum, 128)?.hi(),
+        ];
+        let caps = std::array::from_fn(|i| {
+            let boundary = [SplineBoundary::VMin, SplineBoundary::VMax][i];
+            (
+                walls[0].caps[i].0.clone(),
+                std::array::from_fn(|j| {
+                    BSplineCurve::boundary(walls[j].support.carrier(), boundary)
+                }),
+            )
+        });
+        for (plane, rings) in &caps {
+            for ring in rings {
+                if ring.is_closed() != Some(true) {
+                    return Err(unsupported("oblique cap intersection is not closed"));
+                }
+                for point in ring.controls() {
+                    if sign(&point.minus(&plane.origin).dot(&plane.normal), dec)? != Sign::Zero {
+                        return Err(unsupported("oblique cap intersection leaves its plane"));
+                    }
+                }
             }
         }
-        let source_radii = [
-            walls[0].cylinder.radius_sq.clone(),
-            walls[1].cylinder.radius_sq.clone(),
-        ];
-        let selected = [walls[0].selected, walls[1].selected];
+        Ok(Self {
+            walls,
+            caps,
+            radial_gap,
+            separation,
+            source_detail,
+        })
+    }
+
+    /// Complete finite outer and inner laws in one axial and angular frame.
+    pub fn walls(&self) -> &[ObliqueCell; 2] {
+        &self.walls
+    }
+
+    /// Lower and upper cap planes, each with outer and inner exact intersections.
+    /// These complete carrier rows are curves, not assembled trimmed cap faces.
+    pub fn cap_intersections(&self) -> &[(Plane, [BSplineCurve; 2]); 2] {
+        &self.caps
+    }
+
+    /// Outward enclosure of every signed radial gap, in millimetres.
+    pub fn radial_gap(&self) -> &[Rational; 2] {
+        &self.radial_gap
+    }
+
+    /// Relation decided from exact extrema, independently of enclosure width.
+    pub fn separation(&self) -> AnnularSeparation {
+        self.separation
+    }
+
+    fn publication_refusal(&self) -> Refusal {
+        let code = match self.separation {
+            AnnularSeparation::Separated => "draft.unsupported-oblique-annulus",
+            AnnularSeparation::Touching => "draft.oblique-annulus-touching",
+            AnnularSeparation::Crossing => "draft.oblique-annulus-crossing",
+            AnnularSeparation::Reversed => "draft.oblique-annulus-reversed",
+        };
+        Refusal::new(
+            code,
+            format!(
+                "{}; separation={:?}; certified_radial_gap_mm=[{},{}]; cap_intersections=4 exact closed planar carrier rows; shared_trimmed_cap_rings=unbuilt; body_published=false",
+                self.source_detail, self.separation, self.radial_gap[0], self.radial_gap[1],
+            ),
+        )
+    }
+}
+
+fn checked_source(
+    mut walls: [AnnularWall; 2],
+    caps: &[(Plane, Vec<Origin>); 2],
+    definition: &DraftDefinition,
+    dec: &mut Decider,
+) -> Result<[AnnularWall; 2], Refusal> {
+    if !walls[0].same_sense {
+        walls.swap(0, 1);
+    }
+    if !walls[0].same_sense || walls[1].same_sense {
+        return Err(unsupported("annular walls need opposite material senses"));
+    }
+    let origin = walls[0].cylinder.origin.clone();
+    for wall in &mut walls {
+        if sign(
+            &wall.cylinder.axis.cross(&definition.pull).norm_squared(),
+            dec,
+        )? != Sign::Zero
+            || sign(
+                &wall
+                    .cylinder
+                    .origin
+                    .minus(&origin)
+                    .cross(&definition.pull)
+                    .norm_squared(),
+                dec,
+            )? != Sign::Zero
+        {
+            return Err(unsupported(
+                "annular walls must be coaxial and parallel to pull",
+            ));
+        }
+        // An axial origin shift does not change a cylinder. Use one frame
+        // so all endpoint and separation proofs have identical heights.
+        wall.cylinder.origin = origin.clone();
+    }
+    if sign(&walls[1].cylinder.radius_sq, dec)? != Sign::Positive
+        || sign(
+            &(&walls[0].cylinder.radius_sq - &walls[1].cylinder.radius_sq),
+            dec,
+        )? != Sign::Positive
+    {
+        return Err(unsupported(
+            "source annular radii must be positive and separated",
+        ));
+    }
+    for (plane, _) in caps {
+        if sign(&plane.normal.cross(&definition.pull).norm_squared(), dec)? != Sign::Zero {
+            return Err(unsupported("annular caps must be perpendicular to pull"));
+        }
+    }
+    Ok(walls)
+}
+
+impl AnnularCell {
+    /// Certifies the bounded annular slice before publishing any topology.
+    /// Folds, contacts, crossings and swallowed ends need a curved arrangement.
+    pub fn new(
+        walls: [AnnularWall; 2],
+        caps: [(Plane, Vec<Origin>); 2],
+        definition: &DraftDefinition,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        let walls = checked_source(walls, &caps, definition, dec)?;
+        let origin = walls[0].cylinder.origin.clone();
+        if walls.iter().any(|wall| wall.selected) && super::oblique::needed(definition, dec)? {
+            let bound = ObliqueAnnularBound::new(walls, caps, definition, dec)?;
+            return Err(bound.publication_refusal());
+        }
         let mut build = |wall: AnnularWall| -> Result<RoundCell, Refusal> {
             // An unchanged wall must not invent a neutral-curve requirement.
             let fixed = DraftDefinition {
@@ -113,50 +318,7 @@ impl AnnularCell {
                 // axis: a positive authored angle increases its radius.
                 law.sine = -law.sine;
             }
-            if let Err(refusal) = law.support(&Surface::Cylinder(wall.cylinder.clone()), true, dec)
-            {
-                if refusal.code != "draft.unsupported-oblique-neutral" {
-                    return Err(refusal);
-                }
-                let span = caps[1]
-                    .0
-                    .origin
-                    .minus(&caps[0].0.origin)
-                    .dot(&definition.pull)
-                    .square()
-                    .sqrt();
-                let tangent = reduced(&definition.sine / &definition.cosine, dec)?;
-                let axis_rate = definition.neutral.normal.dot(&definition.pull);
-                let tilt = if sign(&axis_rate, dec)? == Sign::Zero {
-                    "undefined (neutral_axis_rate=0)".to_owned()
-                } else {
-                    let tilt = definition
-                        .neutral
-                        .normal
-                        .cross(&definition.pull)
-                        .norm_squared()
-                        / axis_rate.square();
-                    let bound = dec.enclose_budgeted_at(&tilt, 128)?;
-                    format!("[{},{}]", bound.lo(), bound.hi())
-                };
-                let bounds = [&source_radii[0], &source_radii[1], &span, &tangent]
-                    .into_iter()
-                    .map(|value| {
-                        dec.enclose_budgeted_at(value, 128)
-                            .map(|bound| format!("[{},{}]", bound.lo(), bound.hi()))
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                return Err(Refusal::new(
-                    "draft.unsupported-oblique-annulus",
-                    format!(
-                        "annular oblique draft needs a whole-height, whole-angle radial separation proof and shared trimmed cap rings; \
-                         outer_radius_squared_mm2={}; inner_radius_squared_mm2={}; \
-                         selected_outer={}; selected_inner={}; cap_span_mm={}; \
-                         tan_angle={}; neutral_transverse_ratio_squared={}; certified_radial_gap=unknown",
-                        bounds[0], bounds[1], selected[0], selected[1], bounds[2], bounds[3], tilt,
-                    ),
-                ));
-            }
+            law.support(&Surface::Cylinder(wall.cylinder.clone()), true, dec)?;
             let original = RoundCell::new(
                 &wall.cylinder,
                 wall.origins.clone(),

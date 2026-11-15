@@ -280,14 +280,19 @@ fn folds_hollow_sections_and_unproved_remote_neutral_cuts_keep_typed_refusals() 
 }
 
 #[test]
-fn hollow_oblique_refusals_name_the_unproved_gap_with_source_numbers() {
+fn hollow_oblique_refusals_name_the_checked_gap_without_publishing() {
     use serde_json::json;
-    for selected in [vec!["wall"], vec!["bore"], vec!["wall", "bore"]] {
+    for (selected, gap) in [
+        (vec!["wall"], "[3,7]"),
+        (vec!["bore"], "[29/8,51/8]"),
+        (vec!["wall", "bore"], "[13/8,67/8]"),
+    ] {
         let mut source = document();
         source["steps"][0]["loops"]
             .as_array_mut()
             .unwrap()
-            .push(json!([{"kind":"circle","id":"bore","centre":["0","0"],"radius":"2"}]));
+            .push(json!([{"kind":"circle","id":"bore","centre":["0","0"],"radius":"3"}]));
+        source["steps"][2]["neutral"]["normal"] = json!(["1", "0", "8"]);
         source["steps"][2]["faces"] = json!(
             selected
                 .iter()
@@ -306,12 +311,16 @@ fn hollow_oblique_refusals_name_the_unproved_gap_with_source_numbers() {
         assert_eq!(refusal.code, "draft.unsupported-oblique-annulus");
         for text in [
             "outer_radius_squared_mm2=[64,64]".to_owned(),
-            "inner_radius_squared_mm2=[4,4]".to_owned(),
+            "inner_radius_squared_mm2=[9,9]".to_owned(),
             "cap_span_mm=[2,2]".to_owned(),
             "tan_angle=[1,1]".to_owned(),
             format!("selected_outer={}", selected.contains(&"wall")),
             format!("selected_inner={}", selected.contains(&"bore")),
-            "certified_radial_gap=unknown".to_owned(),
+            format!("certified_radial_gap_mm={gap}"),
+            "separation=Separated".to_owned(),
+            "cap_intersections=4 exact closed planar carrier rows".to_owned(),
+            "shared_trimmed_cap_rings=unbuilt".to_owned(),
+            "body_published=false".to_owned(),
         ] {
             assert!(
                 refusal.detail.contains(&text),
@@ -337,13 +346,10 @@ fn hollow_axial_neutral_names_coverage_without_dividing_by_zero() {
         panic!("expected geometric coverage refusal");
     };
     assert_eq!(refusal, Plan::compile(&recipe).unwrap_err());
-    assert_eq!(refusal.code, "draft.unsupported-oblique-annulus");
-    assert!(
-        refusal
-            .detail
-            .contains("neutral_transverse_ratio_squared=undefined (neutral_axis_rate=0)")
-    );
-    assert!(refusal.detail.contains("outer_radius_squared_mm2=[64,64]"));
+    assert_eq!(refusal.code, "draft.oblique-annulus-zero-neutral-rate");
+    assert!(refusal.detail.contains("neutral_axis_rate=0"));
+    assert!(refusal.detail.contains("certified_radial_gap=undefined"));
+    assert!(refusal.detail.contains("body_published=false"));
 }
 
 #[test]
@@ -370,5 +376,47 @@ fn the_quartic_axis_is_not_a_selectable_wall_or_a_false_cap_edge() {
             matches!(point_query.direction, catallax_field::Direction::Unique(_)),
             "{point_query:?}"
         );
+    }
+}
+
+#[test]
+fn annular_contacts_crossings_and_zero_neutral_rate_remain_distinct_in_both_evaluators() {
+    use serde_json::json;
+    for (rate, code, relation, gap) in [
+        (
+            "8",
+            "draft.unsupported-oblique-annulus",
+            "Separated",
+            "[1/2,15/2]",
+        ),
+        ("6", "draft.oblique-annulus-touching", "Touching", "[0,8]"),
+        ("4", "draft.oblique-annulus-crossing", "Crossing", "[-1,9]"),
+        ("0", "draft.oblique-annulus-zero-neutral-rate", "", ""),
+    ] {
+        let mut source: serde_json::Value =
+            serde_json::from_str(include_str!("fixtures/draft-annular/oblique-bound.json"))
+                .unwrap();
+        source["steps"][2]["neutral"]["normal"] = json!(["1", "0", rate]);
+        let recipe = from_document(&source);
+        let catallax_features::BuildError::Geometry { refusal, .. } =
+            evaluate(&recipe, &mut Decider::default()).unwrap_err()
+        else {
+            panic!("expected geometric refusal, never a body");
+        };
+        assert_eq!(refusal, Plan::compile(&recipe).unwrap_err());
+        assert_eq!(refusal.code, code);
+        assert!(refusal.detail.contains("body_published=false"));
+        if rate != "0" {
+            assert!(
+                refusal.detail.contains(&format!("separation={relation}")),
+                "{refusal:?}"
+            );
+            assert!(
+                refusal
+                    .detail
+                    .contains(&format!("certified_radial_gap_mm={gap}")),
+                "{refusal:?}"
+            );
+        }
     }
 }

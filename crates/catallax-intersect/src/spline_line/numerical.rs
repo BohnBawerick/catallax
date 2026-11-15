@@ -639,5 +639,25 @@ mod tests {
                 "intersect.spline-line-overlap"
             );
         }
+        let crossing = BSplineCurve::new(
+            1,
+            [0, 0, 1, 1].map(Rational::from_i64).to_vec(),
+            vec![
+                point("-1/1000000000", "-1/1000000000"),
+                point("1/1000000000", "1/1000000000"),
+            ],
+            vec![Real::one(); 2],
+            &mut dec,
+        )
+        .unwrap();
+        let crossing = geom.add_curve(Curve::BSpline(crossing));
+        assert_eq!(
+            numerical_spline_line_points(&geom, crossing, line, &mut dec)
+                .unwrap()
+                .unwrap()
+                .points()
+                .len(),
+            1
+        );
     }
 }

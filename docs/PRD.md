@@ -77,7 +77,7 @@ Preview/display has its own budget for construction preview, display mesh, edge 
 
 A preview uses the same immutable recipe revision and exact definitions as the eventual proof, but need not use the same representation or construction route. It is clearly labelled `unproved` until proof confirms it or replaces it with the proven result. Selection names belong to that revision and are resolved against the completed result; they are not proof. A newer edit invalidates the earlier pairing, and a late proof cannot overwrite it. A previous body may remain visible as the previous revision, not as a preview of new geometry. On model-proof failure, mark the preview `failed` with the typed refusal. Exports, requested measurements and anything published as proven still wait for their applicable proof. An output-specific failure does not invalidate an already proved model. A part built numerically within its stated tolerance shows as finished with its numerical status and completed checks, distinct from proven or bounded status. It follows section 3.1 and its own output validation; a preview alone never grants numerical export authority.
 
-Keep the 1M scoreboard, 20M application and 100M verification-request allowances unchanged. Separating preview and proof must not reset, duplicate or enlarge a caller's deterministic allowance. All modelling tolerances, approximation targets and caps stay unchanged. Display/export accuracy remains an output setting; section 5.1 governs explicit print choices. A proven answer is never wrong.
+Keep the 1M scoreboard, 20M application and 100M verification-request allowances unchanged. Until Phase 5 the application default is 100M, a temporary rule in [the roadmap](../ROADMAP.md#how-we-run-it). Separating preview and proof must not reset, duplicate or enlarge a caller's deterministic allowance. All modelling tolerances, approximation targets and caps stay unchanged. Display/export accuracy remains an output setting; section 5.1 governs explicit print choices. A proven answer is never wrong.
 
 ### 3.4 Hand-off points
 
@@ -179,7 +179,7 @@ When the request cannot fit, name the limiting stage and report requested accura
 
 The user explicitly chooses a new request; controls never weaken silently. A chosen 0.05 mm print must prove 0.05 mm and must not be reported as a 0.01 mm print. Successful files carry the chosen accuracy and cap in documented metadata, with a byte-bound manifest retaining the requested settings, achieved file-to-definition bound, units, encoding/rounding, preservation policy and completeness/topology/orientation status. For STL this needs an explicit header/consumer contract because STL standardizes neither units nor certified accuracy. A format that cannot retain the settings losslessly must not silently discard them.
 
-The 1 nm modelling tolerance, 100 nm approximation target, 1 µm kernel-made cap and other local limits remain unchanged, as do the distinct 1M/20M/100M work allowances. Raising a print cell cap does not raise a work allowance. Existing native-field qualification controls remain in force.
+The 1 nm modelling tolerance, 100 nm approximation target, 1 µm kernel-made cap and other local limits remain unchanged, as do the distinct 1M/20M/100M work allowances. Until Phase 5 the application default is 100M, a temporary rule in [the roadmap](../ROADMAP.md#how-we-run-it). Raising a print cell cap does not raise a work allowance. Existing native-field qualification controls remain in force.
 
 ## 6. What the kernel provides
 
@@ -281,7 +281,7 @@ Cheaper-proof and simplification work belongs in Phase 5, in the measured order 
 
 ## 11. Decisions and remaining open items
 
-The obsolete 50-second individual clock is not an acceptance rule. The existing fixed deterministic work allowance selects verification outcomes, not machine load or elapsed time. The application edit allowance stays 20M; retain the separate historical 1M scoreboard and 100M verification-request contracts. Clock time never fails a change before Phase 5; record latency and fix hangs now. This documentation decision does not claim that an implementation has changed.
+The obsolete 50-second individual clock is not an acceptance rule. The existing fixed deterministic work allowance selects verification outcomes, not machine load or elapsed time. The application edit allowance stays 20M; until Phase 5 the application default is 100M, a temporary rule in [the roadmap](../ROADMAP.md#how-we-run-it). Retain the separate historical 1M scoreboard and 100M verification-request contracts. Clock time never fails a change before Phase 5; record latency and fix hangs now. This documentation decision does not claim that an implementation has changed.
 
 The tolerance decision of 23 October (proposal 3) and on-demand comparison decision of 26 October (proposal 5) were already applied in sections 3.1 and 3.5; they are not new decisions or duplicate implementation work. The separately marked numerical route above is the subsequent scoped direction.
 

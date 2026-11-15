@@ -20,7 +20,7 @@ Dates appear only on finished work. Nothing ahead has a date.
 - **One owner per slice.** Phase 1 runs as five slices: 1.1 with 1.3, 1.2, 1.4, 1.5, and the app. One strong worker owns each slice until its "done when" line is met. The listed cards are a map, not a queue. The owner lands the slice as several PRs, each one reviewable step with green checks.
 - **Numerical first.** An exact proof counts as unavailable when it is missing or too costly. Then build within a tolerance stated before the operation, as OpenCASCADE and SMLib do. Check the result separately at that tolerance, mark it and its STEP approximate, and record the tolerance and the checks passed. An exact proof is a later upgrade, made where it is cheap. A numerical result is never labelled exact.
 - Before writing a new algorithm, check how OpenCASCADE and SMLib solve it, and say in the PR which approach you follow.
-- **The allowance never stops work before phase 5.** A step over 20M records its measured work per stage and joins the list of cases for phase 5. The allowance number does not change.
+- **The allowance until phase 5.** The application's default work allowance is 100M until phase 5, so slow parts still build in SolidDraft. 20M stays the target. Every edit over 20M records its measured work per stage and joins the list of cases for phase 5. A request still refuses at the allowance in force, and a refused step is not a completed build.
 - A SolidDraft feedback list goes to one worker as one PR, or two when the kernel changes too.
 - On the phase 1 slices, Codex cloud reviews and advises. It does not author PRs.
 
@@ -69,7 +69,7 @@ These set the order of phase 1.
 2. **Booleans on spline faces do not reach a file.** Side cuts on a loft build. All 14 recorded spline Boolean requests still refuse before a STEP file is written.
 3. **Fillets, shells and draft work on certified families only.** Edge and wall features are the weakest area at 39%, and no line in it is complete.
 
-A work unit counts exact arithmetic and is the same on every machine. The allowance per edit is 20 million units, about 2 to 4 seconds of proof work on one core.
+A work unit counts exact arithmetic and is the same on every machine. The target per edit is 20 million units, about 2 to 4 seconds of proof work on one core. Until phase 5 the application allows 100 million.
 
 Twelve things neither reference kernel does are not in the count. They include a proof behind each result, exact numbers, the same answer on every machine, the field kernel, lattices and scan to part.
 
@@ -194,7 +194,7 @@ Why last: the owner's ruling of 11 Nov. Clock targets were stalling capability w
 
 ## Rules that stay fixed between checkpoints
 
-- The allowance is 20M.
+- The allowance target is 20M. Until phase 5 the application default is 100M.
 - Proven, bounded and refused answers stay separate.
 - Kernel changes are general. No allowance or tolerance is loosened to make one case pass.
 - Clock time never fails a change before phase 5.
@@ -237,6 +237,7 @@ Why last: the owner's ruling of 11 Nov. Clock targets were stalling capability w
 | 14 Nov | Better algorithms. No proof-job machinery. | The point of a kernel is to create the geometry. |
 | 14 Nov | Numerical B-reps under stated tolerances where exact construction is unavailable. Each answer claims what its checks establish. Approximate STEP is written and marked. | Finish the part, honestly. |
 | 14 Nov | One roadmap with checkpoints. Most critical first: the biggest gaps against OpenCASCADE lead. The allowance stays 20M. Speed and GPU work last. | Stop changing direction between checkpoints, and work on what hurts most. |
+| 15 Nov | Until phase 5 the application's default allowance is 100M. 20M stays the target, and every edit over it is measured per stage and listed for phase 5. | Slow parts still build in SolidDraft while capability comes first. |
 
 ### Prototypes and research
 

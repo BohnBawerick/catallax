@@ -21,6 +21,7 @@ pub(super) fn structure(model: &Model, body: BodyId) -> Vec<TopologyFault> {
 fn check_with_incidence(model: &Model, body: BodyId, exact_incidence: bool) -> Vec<TopologyFault> {
     let mut check = Checker {
         exact_incidence,
+        surface: model.body(body).kind == BodyKind::Surface,
         model,
         faults: Vec::new(),
         lumps: BTreeSet::new(),
@@ -32,7 +33,7 @@ fn check_with_incidence(model: &Model, body: BodyId, exact_incidence: bool) -> V
         vertex_shells: BTreeMap::new(),
     };
     let b = model.body(body);
-    if (b.kind == BodyKind::Solid && b.lumps.is_empty())
+    if (matches!(b.kind, BodyKind::Solid | BodyKind::Surface) && b.lumps.is_empty())
         || (b.kind == BodyKind::Empty && !b.lumps.is_empty())
     {
         check.fault("topology.body-kind", || {
@@ -59,6 +60,7 @@ fn check_with_incidence(model: &Model, body: BodyId, exact_incidence: bool) -> V
 
 struct Checker<'a> {
     exact_incidence: bool,
+    surface: bool,
     model: &'a Model,
     faults: Vec<TopologyFault>,
     lumps: BTreeSet<LumpId>,
@@ -75,6 +77,7 @@ struct EdgeUse {
     same: usize,
     reversed: usize,
     first_face: usize,
+    last_face: usize,
 }
 
 struct ShellScan {
@@ -164,7 +167,8 @@ impl Checker<'_> {
             self.face(f, index, s, &mut scan);
         }
         for (e, uses) in &scan.edges {
-            if uses.same != 1 || uses.reversed != 1 {
+            let boundary = self.surface && uses.same + uses.reversed == 1;
+            if !boundary && (uses.same != 1 || uses.reversed != 1) {
                 self.fault("topology.edge-use", || {
                     format!(
                         "edge {e:?} in shell {s:?} has {} same and {} reversed uses",
@@ -183,11 +187,87 @@ impl Checker<'_> {
         }
         let chi = scan.vertices.len() as i128 + scan.rings as i128 - scan.edges.len() as i128
             + scan.face_chi;
-        if chi > 2 || chi % 2 != 0 {
+        let boundaries = if self.surface {
+            self.surface_boundaries(s, &scan)
+        } else {
+            0
+        };
+        if chi + boundaries as i128 > 2 || (chi + boundaries as i128) % 2 != 0 {
             self.fault("topology.euler", || {
                 format!("shell {s:?} has Euler characteristic {chi}")
             });
         }
+    }
+
+    fn surface_boundaries(&mut self, shell: ShellId, scan: &ShellScan) -> usize {
+        let mut boundary: BTreeMap<VertexId, Vec<VertexId>> = BTreeMap::new();
+        let mut fans: BTreeMap<VertexId, BTreeMap<usize, BTreeSet<usize>>> = BTreeMap::new();
+        let mut rings = 0;
+        for (edge, uses) in &scan.edges {
+            let edge = self.model.edge(*edge);
+            let interior = uses.same == 1 && uses.reversed == 1;
+            for vertex in [edge.start, edge.end].into_iter().flatten() {
+                let fan = fans.entry(vertex).or_default();
+                for (a, b) in [
+                    (uses.first_face, uses.last_face),
+                    (uses.last_face, uses.first_face),
+                ] {
+                    let neighbors = fan.entry(a).or_default();
+                    if interior {
+                        neighbors.insert(b);
+                    }
+                }
+            }
+            if uses.same + uses.reversed != 1 {
+                continue;
+            }
+            match (edge.start, edge.end) {
+                (Some(a), Some(b)) => {
+                    boundary.entry(a).or_default().push(b);
+                    boundary.entry(b).or_default().push(a);
+                }
+                (None, None) => rings += 1,
+                _ => {}
+            }
+        }
+        for (vertex, neighbors) in &boundary {
+            if neighbors.len() != 2 {
+                self.fault("topology.boundary-vertex", || {
+                    format!(
+                        "vertex {vertex:?} in shell {shell:?} has {} boundary uses",
+                        neighbors.len()
+                    )
+                });
+            }
+        }
+        let mut seen = BTreeSet::new();
+        for vertex in boundary.keys() {
+            if seen.contains(vertex) {
+                continue;
+            }
+            rings += 1;
+            let mut pending = vec![*vertex];
+            while let Some(vertex) = pending.pop() {
+                if seen.insert(vertex) {
+                    pending.extend(boundary[&vertex].iter().copied());
+                }
+            }
+        }
+        for (vertex, fan) in fans {
+            let mut seen = BTreeSet::new();
+            let mut pending = vec![*fan.keys().next().expect("edge has a face")];
+            while let Some(face) = pending.pop() {
+                if seen.insert(face) {
+                    pending.extend(fan[&face].iter().copied());
+                }
+            }
+            if seen.len() != fan.len() {
+                self.fault("topology.vertex-fan", || {
+                    format!("vertex {vertex:?} in shell {shell:?} has disconnected face fans")
+                });
+            }
+        }
+        rings
     }
 
     fn face(&mut self, f: FaceId, index: usize, s: ShellId, scan: &mut ShellScan) {
@@ -280,6 +360,7 @@ impl Checker<'_> {
                         }
                         self.incidence(GeomKey::Curve(edge.curve), GeomKey::Surface(face.surface));
                         let first_face = if let Some(uses) = scan.edges.get_mut(&coedge.edge) {
+                            uses.last_face = index;
                             match coedge.sense {
                                 Sense::Same => uses.same += 1,
                                 Sense::Reversed => uses.reversed += 1,
@@ -292,6 +373,7 @@ impl Checker<'_> {
                                     same: usize::from(coedge.sense == Sense::Same),
                                     reversed: usize::from(coedge.sense == Sense::Reversed),
                                     first_face: index,
+                                    last_face: index,
                                 },
                             );
                             scan.rings += usize::from(ring);

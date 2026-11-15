@@ -623,6 +623,7 @@ pub(crate) fn prepare(source: &Solid, measured: &crate::IncidenceGap) -> Result<
     let source_geometry_sha256 = crate::sha256_hex(&crate::canonical_bytes(&crate::StepFile {
         solids: vec![source.clone()],
         mm_per_unit: Rational::one(),
+        surface_models: Vec::new(),
     }));
     let mut marks = MarkLog::new();
     for (edge, (lo, hi, curve)) in records {

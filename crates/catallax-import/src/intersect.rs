@@ -240,25 +240,33 @@ pub(crate) fn check_solid_with_scratch(
     solid: &Solid,
     prepared: Option<crate::curved::Scratch>,
 ) -> Result<(), ImportRefusal> {
+    check_faces(&solid.name, &solid.faces, prepared)
+}
+
+pub(crate) fn check_faces(
+    name: &str,
+    faces: &[Face],
+    prepared: Option<crate::curved::Scratch>,
+) -> Result<(), ImportRefusal> {
     // A rim-defined cone beyond the automatic cap is refused with its numbers
     // before any pair is examined.
-    for face in &solid.faces {
+    for face in faces {
         crate::cone::rim_cone(face)?;
     }
-    let polys: Vec<Option<Poly>> = solid.faces.iter().map(poly).collect::<Result<_, _>>()?;
+    let polys: Vec<Option<Poly>> = faces.iter().map(poly).collect::<Result<_, _>>()?;
     for i in 0..polys.len() {
         for j in i + 1..polys.len() {
             if let (Some(a), Some(b)) = (&polys[i], &polys[j])
                 && faces_intersect(a, b)
             {
                 return Err(ImportRefusal::SelfIntersecting {
-                    solid: solid.name.clone(),
+                    solid: name.into(),
                     faces: [a.name.to_string(), b.name.to_string()],
                 });
             }
         }
     }
-    let bounds: Vec<_> = solid.faces.iter().map(crate::curved::face_bounds).collect();
+    let bounds: Vec<_> = faces.iter().map(crate::curved::face_bounds).collect();
     let mut scratch: Option<Result<crate::curved::Scratch, crate::curved::NotVerified>> =
         prepared.map(Ok);
     let mut dec = catallax_numbers::Decider::default();
@@ -273,7 +281,7 @@ pub(crate) fn check_solid_with_scratch(
             {
                 continue;
             }
-            match crate::hull::apart(&solid.faces[i], &solid.faces[j], &mut dec) {
+            match crate::hull::apart(&faces[i], &faces[j], &mut dec) {
                 Ok(true) => continue,
                 Ok(false) => {}
                 Err(refusal) => {
@@ -281,7 +289,7 @@ pub(crate) fn check_solid_with_scratch(
                     continue;
                 }
             }
-            let ready = scratch.get_or_insert_with(|| crate::curved::scratch(solid));
+            let ready = scratch.get_or_insert_with(|| crate::curved::scratch(faces));
             let outcome = match ready {
                 Ok(s) => {
                     let (fa, fb) = (s.faces[i], s.faces[j]);
@@ -292,8 +300,8 @@ pub(crate) fn check_solid_with_scratch(
             match outcome {
                 Ok(true) => {
                     return Err(ImportRefusal::SelfIntersecting {
-                        solid: solid.name.clone(),
-                        faces: [solid.faces[i].name.clone(), solid.faces[j].name.clone()],
+                        solid: name.into(),
+                        faces: [faces[i].name.clone(), faces[j].name.clone()],
                     });
                 }
                 Ok(false) => {}
@@ -306,8 +314,8 @@ pub(crate) fn check_solid_with_scratch(
     match unverified {
         None => Ok(()),
         Some((i, j, refusal)) => Err(ImportRefusal::SelfIntersectionNotVerified {
-            solid: solid.name.clone(),
-            faces: [solid.faces[i].name.clone(), solid.faces[j].name.clone()],
+            solid: name.into(),
+            faces: [faces[i].name.clone(), faces[j].name.clone()],
             reason: refusal.to_string(),
             refusal: Some(Box::new(refusal)),
         }),

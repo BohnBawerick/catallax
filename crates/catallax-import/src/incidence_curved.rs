@@ -570,6 +570,7 @@ pub(crate) fn prepare(source: &Solid) -> Result<Prepared, String> {
     let hash = crate::sha256_hex(&crate::canonical_bytes(&crate::StepFile {
         solids: vec![source.clone()],
         mm_per_unit: Rational::one(),
+        surface_models: Vec::new(),
     }));
     let mut marks = MarkLog::new();
     for (entity, (lo, hi)) in records {

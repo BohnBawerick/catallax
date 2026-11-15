@@ -74,6 +74,7 @@ fn inspect(bytes: &[u8], saved: &ImportRefusal) -> Result<Value, Box<dyn std::er
         "nonincident_boundary"
     } else {
         let pair = StepFile {
+            surface_models: Vec::new(),
             mm_per_unit: file.mm_per_unit.clone(),
             solids: vec![Solid {
                 name: source.name.clone(),

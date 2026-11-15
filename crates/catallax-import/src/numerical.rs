@@ -265,6 +265,11 @@ fn import_inner(
     let definition = imported.comparison.complete_definition().ok_or_else(|| {
         unsupported("the builder did not retain the complete repaired definition")
     })?;
+    if !definition.surface_models.is_empty() {
+        return Err(unsupported(
+            "numerical continuation must retain every surface model and its surface body kind",
+        ));
+    }
     let mut bodies = Vec::new();
     for solid in &definition.solids {
         let definition = planar_definition(solid, dec)?;

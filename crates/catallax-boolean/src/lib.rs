@@ -137,6 +137,18 @@ pub fn boolean(
     op: BoolOp,
     dec: &mut Decider,
 ) -> Result<BooleanAnswer, BooleanRefusal> {
+    if [a, b]
+        .iter()
+        .any(|body| !matches!(model.body(*body).kind, BodyKind::Solid | BodyKind::Empty))
+    {
+        return Err(BooleanRefusal {
+            stage: Stage::Intersect,
+            refusal: geometry::refusal(
+                "boolean.not-solid",
+                "boolean operands must be solid or empty",
+            ),
+        });
+    }
     // Appending is all a boolean does, so this snapshot shares the history.
     let snapshot = model.clone();
     let mut apart_proof = None;

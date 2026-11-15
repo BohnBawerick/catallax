@@ -1662,6 +1662,7 @@ impl<'a> Exporter<'a> {
         &mut self,
         id: ShellId,
         reverse: bool,
+        closed: bool,
         topology: &mut Topology,
     ) -> Result<Id, Refusal> {
         let mut faces = Vec::new();
@@ -1683,9 +1684,26 @@ impl<'a> Exporter<'a> {
             }
             span.finish(self.dec, None, None);
         }
-        Ok(self
-            .graph
-            .add("CLOSED_SHELL", vec![text("''"), refs(faces)]))
+        Ok(self.graph.add(
+            if closed { "CLOSED_SHELL" } else { "OPEN_SHELL" },
+            vec![text("''"), refs(faces)],
+        ))
+    }
+
+    fn shell_closed(&self, shell: ShellId) -> bool {
+        let mut uses = BTreeMap::<EdgeId, [usize; 2]>::new();
+        for face in &self.model.shell(shell).faces {
+            for boundary in &self.model.face(*face).loops {
+                if let Loop::Coedges(coedges) = self.model.loop_(*boundary) {
+                    for coedge in coedges {
+                        let coedge = self.model.coedge(*coedge);
+                        uses.entry(coedge.edge).or_default()
+                            [usize::from(coedge.sense == Sense::Reversed)] += 1;
+                    }
+                }
+            }
+        }
+        uses.values().all(|counts| *counts == [1, 1])
     }
 
     pub(crate) fn build(self, bodies: &[BodyId]) -> Answered<(String, StepReport)> {
@@ -1809,17 +1827,39 @@ impl<'a> Exporter<'a> {
             }
         }
         let mut solids = Vec::new();
+        let mut surfaces = false;
         for id in bodies {
             let body = self.model.body(*id);
             match body.kind {
                 BodyKind::Empty => continue,
                 BodyKind::Solid => {}
+                BodyKind::Surface => {
+                    let mut shells = Vec::new();
+                    for lump in &body.lumps {
+                        let mut topology = self.topology(&self.model.lump(*lump).shells);
+                        for shell in &self.model.lump(*lump).shells {
+                            shells.push(self.shell(
+                                *shell,
+                                false,
+                                self.shell_closed(*shell),
+                                &mut topology,
+                            )?);
+                        }
+                        self.finish_chart_edges(&topology)?;
+                    }
+                    solids.push(
+                        self.graph
+                            .add("SHELL_BASED_SURFACE_MODEL", vec![text("''"), refs(shells)]),
+                    );
+                    surfaces = true;
+                    continue;
+                }
                 _ => return Err(Refusal::new("step.not-solid", "body is not a solid")),
             }
             for lump in &body.lumps {
                 let lump = self.model.lump(*lump);
                 let mut topology = self.topology(&lump.shells);
-                let outer = self.shell(lump.shells[0], false, &mut topology)?;
+                let outer = self.shell(lump.shells[0], false, true, &mut topology)?;
                 let solid = if lump.shells.len() == 1 {
                     self.graph.add(
                         "MANIFOLD_SOLID_BREP",
@@ -1835,7 +1875,7 @@ impl<'a> Exporter<'a> {
                 } else {
                     let mut voids = Vec::new();
                     for shell in &lump.shells[1..] {
-                        let shell = self.shell(*shell, true, &mut topology)?;
+                        let shell = self.shell(*shell, true, true, &mut topology)?;
                         voids.push(self.graph.add(
                             "ORIENTED_CLOSED_SHELL",
                             vec![text("''"), text("*"), shell.into(), boolean(false)],
@@ -1863,7 +1903,7 @@ impl<'a> Exporter<'a> {
             for lump in &body.lumps {
                 let mut topology = self.topology(&self.model.lump(*lump).shells);
                 for (index, shell) in self.model.lump(*lump).shells.iter().enumerate() {
-                    shells.push(self.shell(*shell, index != 0, &mut topology)?);
+                    shells.push(self.shell(*shell, index != 0, true, &mut topology)?);
                 }
                 self.finish_chart_edges(&topology)?;
             }
@@ -1881,6 +1921,18 @@ impl<'a> Exporter<'a> {
         let mut output = self.graph.write(&solids, |numbers| {
             if envelope.is_some() {
                 stand_in_header(&self.options.product_name, numbers, &uncertainty)
+            } else if surfaces {
+                representation_header(
+                    &self.options.product_name,
+                    numbers,
+                    if self.approximate_pipe_ends { None } else { Some(&uncertainty) },
+                    if self.report.solids == 0 { "MANIFOLD_SURFACE_SHAPE_REPRESENTATION" } else { "SHAPE_REPRESENTATION" },
+                    if self.approximate_pipe_ends {
+                        "approximate pipe end parameter maps; requested distance tolerance applies to samples and fitted components; complete_body_bound=unestablished"
+                    } else {
+                        "catallax export"
+                    },
+                )
             } else if self.approximate_pipe_ends {
                 approximate_header(&self.options.product_name, numbers, "approximate pipe end parameter maps; requested distance tolerance applies to samples and fitted components; complete_body_bound=unestablished")
             } else {

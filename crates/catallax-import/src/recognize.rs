@@ -158,6 +158,26 @@ pub struct Solid {
     pub faces: Vec<Face>,
 }
 
+/// A shell in a surface model. Closure is a source declaration, not material.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct SurfaceShell {
+    /// Entity name of the shell.
+    pub name: String,
+    /// Whether the source spells this shell as `CLOSED_SHELL`.
+    pub closed: bool,
+    /// Faces in source order.
+    pub faces: Vec<Face>,
+}
+
+/// A shell-based surface model, including any closed shells declared as surfaces.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct SurfaceModel {
+    /// Entity name of the model.
+    pub name: String,
+    /// Its open or closed shells, without solid outer/void semantics.
+    pub shells: Vec<SurfaceShell>,
+}
+
 /// What a file contains, in millimetres.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct StepFile {
@@ -165,6 +185,30 @@ pub struct StepFile {
     pub mm_per_unit: Rational,
     /// The solids in file order.
     pub solids: Vec<Solid>,
+    /// Surface models, kept separate from material solids.
+    pub surface_models: Vec<SurfaceModel>,
+}
+
+impl StepFile {
+    /// Every face with its source model key, including surface-only models.
+    pub fn named_faces(&self) -> impl Iterator<Item = (&str, &Face)> {
+        self.solids
+            .iter()
+            .flat_map(|solid| {
+                solid
+                    .faces
+                    .iter()
+                    .map(move |face| (solid.name.as_str(), face))
+            })
+            .chain(self.surface_models.iter().flat_map(|surface| {
+                surface.shells.iter().flat_map(move |shell| {
+                    shell
+                        .faces
+                        .iter()
+                        .map(move |face| (surface.name.as_str(), face))
+                })
+            }))
+    }
 }
 
 /// Reads and recognizes a Part 21 file.
@@ -225,22 +269,21 @@ impl<'a> Reader<'a> {
 
     fn file(&self) -> Result<StepFile, ImportRefusal> {
         let mut solids = Vec::new();
+        let mut surface_models = Vec::new();
         for (&id, e) in self.g {
             match e.type_name() {
                 "MANIFOLD_SOLID_BREP" => solids.push(self.solid(id)?),
+                "SHELL_BASED_SURFACE_MODEL" => surface_models.push(self.surface_model(id)?),
                 "BREP_WITH_VOIDS"
                 | "BREP_WITH_VOIDS_AND_BOUNDS"
-                | "SHELL_BASED_SURFACE_MODEL"
                 | "NEXT_ASSEMBLY_USAGE_OCCURRENCE"
                 | "FACETED_BREP" => return Err(unsupported(id, e)),
                 _ => {}
             }
         }
-        // Multiple direct solids are supported, but occurrence placement is not.
-        // Never omit unsupported solid models or treat mapped instances as
-        // additional unplaced source solids. This guard is deliberately limited
-        // to the new multiple-direct-solid route; single-solid admission is unchanged.
-        if solids.len() > 1 {
+        // Direct models do not establish occurrence placement. Never duplicate
+        // mapped models at their unplaced source coordinates.
+        if solids.len() > 1 || !surface_models.is_empty() {
             for (&id, entity) in self.g {
                 if entity.parts.iter().any(|(name, _)| {
                     matches!(
@@ -255,12 +298,40 @@ impl<'a> Reader<'a> {
                 }
             }
         }
-        if solids.is_empty() {
-            return Err(malformed("no MANIFOLD_SOLID_BREP in the file"));
+        if solids.is_empty() && surface_models.is_empty() {
+            return Err(malformed("no supported solid or surface model in the file"));
         }
         Ok(StepFile {
             mm_per_unit: self.scale.clone(),
             solids,
+            surface_models,
+        })
+    }
+
+    fn surface_model(&self, id: u64) -> Result<SurfaceModel, ImportRefusal> {
+        let args = self.args(id, "SHELL_BASED_SURFACE_MODEL")?;
+        let mut shells = Vec::new();
+        for shell in ref_list(args, 1)? {
+            let e = self.entity(shell)?;
+            let closed = match e.type_name() {
+                "CLOSED_SHELL" => true,
+                "OPEN_SHELL" => false,
+                _ => return Err(unsupported(shell, e)),
+            };
+            let args = self.args(shell, e.type_name())?;
+            let mut faces = Vec::new();
+            for face in ref_list(args, 1)? {
+                faces.push(self.face(face)?);
+            }
+            shells.push(SurfaceShell {
+                name: format!("#{shell}"),
+                closed,
+                faces,
+            });
+        }
+        Ok(SurfaceModel {
+            name: format!("#{id}"),
+            shells,
         })
     }
 

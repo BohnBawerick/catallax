@@ -1,6 +1,8 @@
 //! N02 public polygonal tube and explicit endpoint-sewing controls.
-use catallax_numbers::{Decider, NumericalCheck, NumericalRepair, Rational, with_operation_budget};
-use catallax_shapes::{Curve, Line, Plane, Point3, Surface, Vector3};
+use catallax_numbers::{
+    Decider, NumericalCheck, NumericalRepair, Rational, Real, with_operation_budget,
+};
+use catallax_shapes::{BSplineCurve, Curve, Line, Plane, Point3, Surface, Vector3};
 use catallax_topology::{
     Sense,
     numerical::{
@@ -443,4 +445,91 @@ fn continuation_retains_source_sewing_checks() {
     assert!(!edited.evidence().checks().iter().any(
         |c| matches!(c, NumericalCheck::Passed { name, .. } if name == "sewing.explicit-vertex-pair")
     ));
+}
+
+#[test]
+fn curved_hole_sampling_does_not_claim_containment_between_nodes() {
+    let ((), work) = with_operation_budget(20_000_000, || {
+        let mut dec = Decider::default();
+        let mut input = tube();
+        let edge_index = input.faces[0].loops[1][0].edge;
+        let edge = &input.edges[edge_index];
+        let ends = edge
+            .vertices
+            .map(|index| input.vertices[index].position.clone());
+
+        // The excursion vanishes at all nine checked nodes but leaves the
+        // outer rectangle at 1/16. Controls come from its full polynomial.
+        let mut polynomial = vec![q("1")];
+        for node in 0..=8 {
+            let root = Rational::from_ratio(node, 8).unwrap();
+            let mut next = vec![q("0"); polynomial.len() + 1];
+            for (power, coefficient) in polynomial.iter().enumerate() {
+                next[power] = &next[power] - &(coefficient * &root);
+                next[power + 1] = &next[power + 1] + coefficient;
+            }
+            polynomial = next;
+        }
+        let at = q("1/16");
+        let value = polynomial
+            .iter()
+            .rev()
+            .fold(q("0"), |sum, coefficient| &(&sum * &at) + coefficient);
+        let scale = -(&q("2") / &value);
+        let degree = polynomial.len() - 1;
+        let mut controls = Vec::new();
+        for k in 0..=degree {
+            let share = Rational::from_ratio(k as i64, degree as i64).unwrap();
+            let mut position: [Rational; 3] = std::array::from_fn(|axis| {
+                &ends[0][axis] + &(&share * &(&ends[1][axis] - &ends[0][axis]))
+            });
+            let mut factor = q("1");
+            let mut bump = q("0");
+            for (power, coefficient) in polynomial.iter().enumerate().take(k + 1) {
+                if power > 0 {
+                    factor = &factor
+                        * &Rational::from_ratio(
+                            (k - power + 1) as i64,
+                            (degree - power + 1) as i64,
+                        )
+                        .unwrap();
+                }
+                bump = &bump + &(coefficient * &factor);
+            }
+            position[0] = &position[0] + &(&scale * &bump);
+            let [x, y, z] = position;
+            controls.push(Point3::new(x.into(), y.into(), z.into()));
+        }
+        let curve = BSplineCurve::new(
+            degree,
+            std::iter::repeat_n(q("0"), degree + 1)
+                .chain(std::iter::repeat_n(q("1"), degree + 1))
+                .collect(),
+            controls,
+            vec![Real::one(); degree + 1],
+            &mut dec,
+        )
+        .unwrap();
+        let witness = curve.point_at(&Real::from_rational(at), &mut dec).unwrap();
+        assert_eq!(witness.x.as_rational(), Some(q("-1")));
+        input.edges[edge_index].curve = Curve::BSpline(curve);
+        let body = numerical::build(input, options(), &mut dec).unwrap();
+        let checks = body.evidence().checks();
+        assert!(
+            !checks.iter().any(|check| matches!(check,
+                NumericalCheck::Passed { name, scope }
+                    if name == "trim.hole-contained-disjoint" && scope == "f0"
+            )),
+            "the actual curved hole leaves the outer loop between sample nodes"
+        );
+        assert!(checks.iter().any(|check| matches!(check,
+            NumericalCheck::Passed { name, scope }
+                if name == "trim.sampled-hole-contained-disjoint" && scope == "f0"
+        )));
+        assert!(checks.iter().any(|check| matches!(check,
+            NumericalCheck::Passed { name, scope }
+                if name == "trim.hole-contained-disjoint" && scope == "f1"
+        )));
+    });
+    assert!(!work.exhausted, "{} work units", work.used);
 }

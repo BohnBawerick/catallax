@@ -118,6 +118,7 @@ mod tests {
             (Rational::parse("9.999").unwrap(), 0),
             (r(10), 4),
             (Rational::parse("10.01").unwrap(), 4),
+            (Rational::parse("10.5").unwrap(), 4),
         ] {
             for reverse in [false, true] {
                 let surfaces = axial(offset.clone());

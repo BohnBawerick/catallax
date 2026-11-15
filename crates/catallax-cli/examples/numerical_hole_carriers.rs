@@ -210,12 +210,22 @@ fn query(
     .ok_or("unsupported carrier pair")?;
     let windows = result.windows();
     let stages = result.work_stages();
+    let original_doubles: Vec<_> = windows.originals().iter().map(|s| {
+        let vector = |v:&Vector3| [&v.x,&v.y,&v.z].map(Real::to_f64);
+        let point = |v:&Point3| [&v.x,&v.y,&v.z].map(Real::to_f64);
+        match s {
+            Surface::Cone(c) => json!({"kind":"cone","origin":point(&c.apex),"axis":vector(&c.axis),"ref_dir":vector(&c.ref_dir),"slope":c.slope.to_f64()}),
+            Surface::Cylinder(c) => json!({"kind":"cylinder","origin":point(&c.origin),"axis":vector(&c.axis),"ref_dir":vector(&c.ref_dir),"radius":c.radius().to_f64()}),
+            _ => unreachable!("native cone/cylinder producer"),
+        }
+    }).collect();
     let mut report = json!({"format":"catallax-numerical-native-pair/1","proof":"numerical","exact":false,
         "category":"approximate","cone_face":format!("{face:?}"),"reverse":reverse,
         "sources":windows.sources().iter().map(source).collect::<Vec<_>>(),
+        "original_analytic_doubles":original_doubles,
         "cone_heights":windows.cone_heights().each_ref().map(ToString::to_string),
         "cylinder_parameters":windows.cylinder_parameters().each_ref().map(ToString::to_string),
-        "cylinder_origin":[&windows.cylinder_origin().x,&windows.cylinder_origin().y,&windows.cylinder_origin().z].map(|q|q.as_rational().map_or_else(||format!("{q:?}"), |r|r.to_string())),
+        "cylinder_origin":([&windows.cylinder_origin().x,&windows.cylinder_origin().y,&windows.cylinder_origin().z].map(|q|q.as_rational().map_or_else(||format!("{q:?}"), |r|r.to_string()))),
         "pieces":result.pieces().iter().map(|p|json!({"kind":format!("{:?}",p.kind()),
             "requested_domains":p.source_domains().each_ref().map(|d|d.each_ref().map(|r|r.each_ref().map(ToString::to_string))),
             "curves":std::iter::once(p.curve()).chain(p.uv().iter()).map(curve).collect::<Vec<_>>()})).collect::<Vec<_>>(),

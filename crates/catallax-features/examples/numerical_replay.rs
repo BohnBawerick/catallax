@@ -10,14 +10,14 @@ fn run(input: &Path, output: &Path) -> Result<(), Box<dyn Error>> {
         let mut dec = Decider::default();
         let built = catallax_features::replay_numerical(&saved, &mut dec)?;
         let artifact = numerical::build(built.body(), &NumericalStepOptions::default(), &mut dec)?;
-        Ok::<_, catallax_numbers::Refusal>((built, artifact))
+        std::fs::write(output, artifact.bytes())?;
+        artifact.check_written(&std::fs::read(output)?, &mut dec)?;
+        Ok::<_, Box<dyn Error>>(built)
     });
-    let (built, artifact) = result?;
+    let built = result?;
     if work.exhausted {
         return Err("shared replay/export allowance exhausted".into());
     }
-    std::fs::write(output, artifact.bytes())?;
-    artifact.check_written(&std::fs::read(output)?, &mut Decider::default())?;
     println!(
         "{}",
         json!({"status":"numerical","exact":false,"step":"approximate",

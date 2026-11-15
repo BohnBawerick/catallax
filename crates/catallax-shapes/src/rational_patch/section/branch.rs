@@ -712,10 +712,23 @@ pub(crate) fn search_cover(
             closed: here == start,
         });
     }
+    let mut isolated = Vec::new();
+    for point in points {
+        let mut covered = false;
+        for branch in &branches {
+            if branch.contains(&point, dec)? {
+                covered = true;
+                break;
+            }
+        }
+        if !covered {
+            isolated.push(point);
+        }
+    }
     record.work = dec.stats().work - start;
     Ok(CoverSection {
         branches,
-        points,
+        points: isolated,
         search: record,
     })
 }

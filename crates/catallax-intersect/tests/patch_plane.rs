@@ -12,6 +12,37 @@ use catallax_shapes::{
 mod patch_fixtures;
 use patch_fixtures::{candidates, equal, height_patch, loft_like, p, r};
 
+#[allow(dead_code)]
+#[path = "../examples/tangent_touch/fixtures.rs"]
+mod contact_fixtures;
+
+#[test]
+fn isolated_interior_and_border_contacts_survive_exact_transforms() {
+    for (case, parameters) in [
+        ("bowl", ["0", "0"]),
+        ("boundary", ["1", "0"]),
+        ("hill", ["3/2", "3/2"]),
+    ] {
+        for copy in contact_fixtures::COPIES {
+            let ((), work) = with_operation_budget(20_000_000, || {
+                let mut dec = Decider::default();
+                let (patch, plane) = contact_fixtures::build(case, copy, &mut dec).unwrap();
+                let expected = patch
+                    .point_at(&parameters.map(|value| r(value).into()), &mut dec)
+                    .unwrap();
+                let section = patch
+                    .sections(&SectionSurface::Plane(plane), &mut dec)
+                    .unwrap();
+                assert!(section.branches().is_empty(), "{case} {copy}");
+                assert!(section.curves().next().is_none(), "{case} {copy}");
+                assert_eq!(section.points().len(), 1, "{case} {copy}");
+                equal(&section.points()[0], &expected, &mut dec);
+            });
+            assert!(!work.exhausted, "{case} {copy}: {} units", work.used);
+        }
+    }
+}
+
 fn cutting_plane(case: &str) -> Plane {
     if case == "loft" {
         return Plane {

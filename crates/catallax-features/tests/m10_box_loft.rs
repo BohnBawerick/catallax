@@ -270,7 +270,8 @@ fn isolated_roof_contact_preserves_the_subtracted_solid() {
                     catallax_features::evaluate(&recipe(steps.clone(), target), &mut dec).unwrap();
                 steps.push(json!({"id":"cut","op":"boolean","kind":"subtract",
                     "target":target,"tool":tool}));
-                let result = catallax_features::evaluate(&recipe(steps, "cut"), &mut dec).unwrap();
+                let mut result =
+                    catallax_features::evaluate(&recipe(steps, "cut"), &mut dec).unwrap();
                 assert_eq!(
                     result.model.counts(result.result),
                     source.model.counts(source.result)
@@ -281,6 +282,18 @@ fn isolated_roof_contact_preserves_the_subtracted_solid() {
                     catallax_topology::BodyKind::Solid
                 );
                 assert_eq!(result.model.body(result.result).lumps.len(), 1);
+                for (y, inside) in [(1, !reverse), (4, reverse)] {
+                    let expected = if inside {
+                        catallax_boolean::Containment::Inside
+                    } else {
+                        catallax_boolean::Containment::Outside
+                    };
+                    let point = Point3::new(Real::from_i64(2), Real::from_i64(y), Real::one());
+                    assert!(matches!(
+                        catallax_boolean::classify_point(&mut result.model, result.result, &point, &mut dec),
+                        catallax_numbers::Outcome::Proven(actual) if actual == expected
+                    ));
+                }
             });
             assert!(
                 !work.exhausted,

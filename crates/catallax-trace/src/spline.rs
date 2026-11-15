@@ -493,6 +493,7 @@ impl BSplineCurve {
     }
     /// `EvaluatePoint`, including the direct endpoint shortcut and parameter clamp.
     pub fn evaluate_point(&self, u: f64) -> Result<Vector3, Fault> {
+        crate::surface_work::checkpoint(crate::surface_work::Kind::Curve, 1)?;
         if !u.is_finite() {
             return Err(Fault::InvalidInput);
         }
@@ -536,6 +537,7 @@ impl BSplineCurve {
         if derivatives == 0 {
             return Ok(vec![self.evaluate_point(u)?]);
         }
+        crate::surface_work::checkpoint(crate::surface_work::Kind::Curve, 1)?;
         if derivatives > 4 || !u.is_finite() {
             return Err(Fault::InvalidInput);
         }

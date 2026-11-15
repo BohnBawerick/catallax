@@ -21,6 +21,7 @@ catallax-trace.workspace = true
 workspace = true
 
 [dev-dependencies]
+catallax-numbers = { workspace = true, features = ["test-deadline"] }
 rug = { version = "1.28", default-features = false, features = ["integer", "rational", "float", "std"] }
 
 [[bench]]

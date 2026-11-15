@@ -135,6 +135,7 @@ pub fn eval_point(
     uv: Vector2,
     sides: [bool; 2],
 ) -> Result<Vector3, Fault> {
+    crate::surface_work::checkpoint(crate::surface_work::Kind::Surface, 1)?;
     check_supported(surface)?;
     let [p, q] = surface.degrees();
     let [ku, kv] = surface.knots();
@@ -252,6 +253,7 @@ pub fn derivatives(
     if hu > MAX_DERIVATIVE || hv > MAX_DERIVATIVE {
         return Err(Fault::Degenerate);
     }
+    crate::surface_work::checkpoint(crate::surface_work::Kind::Surface, 1)?;
     check_supported(surface)?;
     let [p, q] = surface.degrees();
     let [knots_u, knots_v] = surface.knots();
@@ -582,6 +584,7 @@ fn evaluate_bounded(
 /// `SmBSplineSurface::EvaluatePoint`: the point at `uv`, unclamped.
 pub fn evaluate_point(surface: &BSplineSurface, uv: Vector2) -> Result<Vector3, Fault> {
     if let Some(frame) = surface.plane_frame() {
+        crate::surface_work::checkpoint(crate::surface_work::Kind::Surface, 1)?;
         // `SmPlane::EvaluatePoint` scales the parameter before the axis.
         let uv = if frame.domain.contains_point(uv, 0.0) {
             uv
@@ -604,6 +607,7 @@ fn plane_evaluate(
     upper: bool,
     clamp: bool,
 ) -> Result<Vec<Vector3>, Fault> {
+    crate::surface_work::checkpoint(crate::surface_work::Kind::Surface, 1)?;
     if upper && hu > hv {
         return Err(Fault::InvalidInput);
     }

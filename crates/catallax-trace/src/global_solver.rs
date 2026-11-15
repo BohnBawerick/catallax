@@ -623,6 +623,7 @@ impl<'a> GlobalSolver<'a> {
     ) -> Result<(), SolverRefusal> {
         let mut pending = vec![start];
         while let Some(branch) = pending.pop() {
+            crate::surface_work::checkpoint(crate::surface_work::Kind::Search, 1)?;
             if !hooks.branch_may_contain_answers(self, &branch)? {
                 continue;
             }

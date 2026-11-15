@@ -1134,6 +1134,7 @@ impl Intersector<'_> {
         curve_end: Option<Vector3>,
         trace_direction: f64,
     ) -> Result<StepOutcome, SolverRefusal> {
+        crate::surface_work::checkpoint(crate::surface_work::Kind::Trace, 1)?;
         let mut outcome = StepOutcome::default();
         if !self.domains[0].contains_point(previous.uv[0], EFF_ZERO)
             || !self.domains[1].contains_point(previous.uv[1], EFF_ZERO)

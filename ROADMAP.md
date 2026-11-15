@@ -65,7 +65,7 @@ The app has the Edit Suite frame, a full 2D sketcher, the part features above, 2
 
 These set the order of phase 1.
 
-1. **Most real STEP files do not open.** Of the same 3,000 public models, 276 import with full source coverage (9.20%, previously 186 or 6.20%). Three import partially, 2,719 return a named refusal and two time out. [The census](docs/research/step-census.md) records the original and current causes.
+1. **Most real STEP files do not open.** Of the same 3,000 public models, 378 import with full source coverage (12.60%, previously 276 or 9.20% and originally 186 or 6.20%). Three import partially, 2,617 return a named refusal and two time out. [The census](docs/research/step-census.md) records the original and current causes.
 2. **Booleans on spline faces do not reach a file.** Side cuts on a loft build. All 14 recorded spline Boolean requests still refuse before a STEP file is written.
 3. **Fillets, shells and draft work on certified families only.** Edge and wall features are the weakest area at 39%, and no line in it is complete.
 
@@ -98,7 +98,7 @@ Twelve things neither reference kernel does are not in the count. They include a
 
 **1.2 Real-file import**
 - Doing: opening real STEP files under those tolerances, analytic files first, then spline files. What still refuses is counted by cause.
-- Measured: the [same 3,000-file census](docs/research/step-census.md) now has 276 full source-coverage imports (9.20%), beside the previous 186 (6.20%, about 6%). The SolidDraft file-replacement reference work remains open on the app side.
+- Measured: the [same 3,000-file census](docs/research/step-census.md) now has 378 full source-coverage imports (12.60%), beside the previous 276 (9.20%) and original 186 (6.20%, about 6%). The SolidDraft file-replacement reference work remains open on the app side.
 - Why here: it is the largest single gap, and it is the first thing a user meets: a bought-in part that will not open.
 - Unlocks: bought-in parts in every later feature, the ten real parts on the scoreboard, direct edits (2.4) and imports in the field (4.4).
 - Done when: the 3,000-file census is rerun and the share that imports is published beside the 6%. Replacing an imported file re-points every reference.
@@ -256,7 +256,7 @@ Each entry links to a short file: what we were trying to achieve, why it was pro
 | [Spline against spline by the 2026 method](docs/research/spline-intersection-2026-method.md) | Adopted with a proof per cell | All 24 test pairs resolve inside 20M: 20 proved, 4 tangent contacts refused by name. |
 | [Spline fillets: the offset search](docs/research/spline-fillet-offset-search.md) | Route changed | The direct search hit its depth limit. The replacement rounds one loft edge within 59 nm. |
 | [Tangent-touch prototype](docs/research/tangent-touch.md) | Parked | Interior touches classify. A touch on a border is undecided. First candidate for a bounded answer. |
-| [Census of 3,000 public STEP files](docs/research/step-census.md) | Recorded | 276 full imports (9.20%) beside the previous 186 (6.20%); 3 partial, 2,719 refused, 2 timed out. Same seed, source hashes and denominator. |
+| [Census of 3,000 public STEP files](docs/research/step-census.md) | Recorded | 378 full imports (12.60%) beside the previous 276 (9.20%) and original 186 (6.20%); 3 partial, 2,617 refused, 2 timed out. Same seed, source hashes and denominator. |
 | [Cheaper proof on P1](docs/research/cheaper-proof-p1.md) | Adopted | 41.6M to 15.3M units by proofs from construction and reuse inside one request. |
 | [Proof-cost research](docs/research/proof-cost.md) | Recorded | No fixed allowance covers every input. Sampling alone is unsound. A GPU cannot rescue a work refusal. |
 | [Independent body checker audit](docs/research/body-checker-audit.md) | Closed | Checking can cost up to 25 times the build. The owner chose not to build certificate systems. |

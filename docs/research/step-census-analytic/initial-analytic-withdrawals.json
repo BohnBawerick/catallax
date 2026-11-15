@@ -1,0 +1,40 @@
+{
+  "current_csv_sha256": "d6f6d6674a70d4a7506b73859e5d875164b6047e5b420839308d09c9d476d7a5",
+  "current_full": 378,
+  "current_source_revision": "d78cb705d85a6d98391a5469a4e086cf353804e8",
+  "denominator": 3000,
+  "format": "catallax-initial-analytic-withdrawals/1",
+  "initial_csv_sha256": "e802e22cac197b0418d4f0f90c77a1ca178823460e07de3316c913900720bdfe",
+  "initial_full": 382,
+  "initial_source_revision": "9751e5a4a28e7eabbec6a276f9423f16d37ddf4c",
+  "lost_from_382": [
+    {
+      "after_fix_cause": "self_intersecting",
+      "model_id": "00001233",
+      "outcome": "refused",
+      "source_sha256": "28466117e5accabed5e681b1336f715bfaae96f592709ff08280517db84b1e30"
+    },
+    {
+      "after_fix_cause": "self_intersecting",
+      "model_id": "00005142",
+      "outcome": "refused",
+      "source_sha256": "9a1be5595ad40b40a49db0d57a64eeeb449d7b3cd3e0755c654ee506d0840f6d"
+    },
+    {
+      "after_fix_cause": "self_intersecting",
+      "model_id": "00007233",
+      "outcome": "refused",
+      "source_sha256": "3bfe58ae8db0ba113b36cfad4177895bbe8b35d67dce063fca4ff03b435fe51d"
+    },
+    {
+      "after_fix_cause": "self_intersecting",
+      "model_id": "00007433",
+      "outcome": "refused",
+      "source_sha256": "a48947011a082d4e3a4083bfe3529483202780698cb1e73bcdf0edd1d956688a"
+    }
+  ],
+  "new_over_382": [],
+  "seed": 20261111,
+  "selection_sha256": "1b11410b220d5e8a3156794f6c8f9cc09091a43dcac9af801215fb3a38d571a5",
+  "source_hash_manifest_sha256": "3323e104c377023846073a05d7e164ca1082dc3dcf32cc046eee897401454cc7"
+}

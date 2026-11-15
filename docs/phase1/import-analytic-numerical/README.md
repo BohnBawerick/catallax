@@ -70,12 +70,12 @@ six faces, twelve edges and eight vertices. Pose changes preserve volume and
 translate the measured centroid by 3, 5 and 7 mm. Each edited body retains one
 history stage. The original source bytes stay unchanged.
 
-At producer `2f2e5b8b02481f80d3286eddae16ccea9eeef78b`, work is:
+At producer `d78cb705d85a6d98391a5469a4e086cf353804e8`, work is:
 
 | Part | Import | Source STEP | Pose rebuild | Edited STEP | Whole qualification |
 |---|---:|---:|---:|---:|---:|
-| 00001818 | 143,428 | 190,858 | 99,899 | 190,585 | 624,770 |
-| 00009734 | 144,895 | 207,699 | 98,955 | 207,677 | 659,226 |
+| 00001818 | 1,157,179 | 190,951 | 99,899 | 190,678 | 1,638,707 |
+| 00009734 | 1,159,059 | 207,800 | 98,955 | 207,778 | 1,673,592 |
 
 All stages share the unchanged 20M request allowance. The third fixed source,
 `00002345`, still returns `import.numerical-unsupported-family`; no success is
@@ -106,7 +106,10 @@ also pins the prior complete 9.20% table, retains its outcomes/first causes and
 records actual transitions. It keeps full/partial/refused/timeout distinct;
 missing results or process errors prevent a complete publication. Its output is
 admission evidence and does not assert an edit or valid STEP for every admission.
-The full rerun and resulting before/after table are a separate publication step.
+The [complete rerun](../../research/step-census.md) admits 378 files fully
+(12.60%), 102 more than the prior 9.20% checkpoint, with no lost prior full
+imports. All 102 additional full imports previously stopped at
+`planar_repair_not_verified`; the per-file table records their actual identities.
 
 Raw source geometry stays private under the
 [existing licence scope](../../milestones/R8-public-step-census.md#source-and-licence-scope).

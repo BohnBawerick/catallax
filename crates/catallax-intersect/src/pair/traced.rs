@@ -10,7 +10,6 @@ use catallax_shapes::{
 pub(super) mod fitted;
 pub(crate) mod numerical;
 pub(super) mod sphere;
-mod window;
 
 pub(super) fn plan(a: &Surface, b: &Surface, dec: &mut Decider) -> Result<Plan, Refusal> {
     for (analytic, spline, swap) in [(a, b, false), (b, a, true)] {
@@ -444,9 +443,9 @@ fn cone_source(
     )
 }
 
-/// Complete finite native windows, with a strict lower height excluding the apex.
-/// Perpendicular axes retain their tighter projection bound. Other axes use
-/// their separation from the cone's generator directions.
+/// For perpendicular unit axes d (cone) and n (cylinder), a point on both
+/// has |(A-O).d + v| <= cylinder_radius. Thus every positive cone height
+/// is bounded. A strict positive lower height excludes the cone's apex.
 pub(super) fn cone_cylinder(
     cone: &Cone,
     cylinder: &Cylinder,
@@ -464,8 +463,12 @@ pub(super) fn cone_cylinder(
         }
         let cone_axis = axis(&cone.axis, dec)?;
         let cylinder_axis = axis(&cylinder.axis, dec)?;
-        let cosine = cone_axis.dot(&cylinder_axis);
-        let perpendicular = cosine.is_zero();
+        if !cone_axis.dot(&cylinder_axis).is_zero() {
+            return Err(Refusal::new(
+                "intersect.trace-native-window",
+                "nonperpendicular cone/cylinder axes need a certified bounded native window",
+            ));
+        }
         let apex = point(&cone.apex, dec)?;
         let origin = point(&cylinder.origin, dec)?;
         let offset = apex.minus(&origin).dot(&cylinder_axis);
@@ -482,11 +485,7 @@ pub(super) fn cone_cylinder(
             ));
         }
         let height_offset = radial.dot(&cone_axis);
-        let upper = if perpendicular {
-            &(-&height_offset) + &radius
-        } else {
-            window::height_upper(&slope, &radius, &radial, &cosine, dec)?
-        };
+        let upper = &(-&height_offset) + &radius;
         if upper.sign() == Sign::Negative {
             return Ok(Plan::disjoint());
         }
@@ -496,11 +495,7 @@ pub(super) fn cone_cylinder(
                 "the only possible retained cone height reaches its singular apex",
             ));
         }
-        let lower = if perpendicular {
-            &(-&height_offset) - &radius
-        } else {
-            r(0)
-        };
+        let lower = &(-&height_offset) - &radius;
         let lower = if lower.sign() == Sign::Positive {
             &lower / &r(2)
         } else {
@@ -521,11 +516,7 @@ pub(super) fn cone_cylinder(
             return Ok(Plan::disjoint());
         }
         let cone_upper = &upper + &r(1);
-        let cylinder_bound = if perpendicular {
-            &(&slope * &upper) + &r(1)
-        } else {
-            &(&(&r(1) + &slope) * &upper) + &r(1)
-        };
+        let cylinder_bound = &(&slope * &upper) + &r(1);
         let cone_map = frame(&cone_axis, &apex)?;
         let cylinder_map = frame(&cylinder_axis, &projected)?;
         let canonical_cone = SectionSurface::Cone(Cone {

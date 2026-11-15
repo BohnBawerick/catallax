@@ -27,6 +27,12 @@ class SplineCapShellStepTests(unittest.TestCase):
                 self.assertEqual(json.loads(result.stdout)['outcomes'], {'step.unsupported-geometry': 1})
                 case = json.loads((out / 'run.json').read_text())['cases'][0]
                 self.assertEqual(case['response']['manifest']['refusal']['code'], 'step.unsupported-geometry')
+                operations = case['response']['operation_log']['operations']
+                shell = [op for op in operations if op['operation'] == 'shell']
+                self.assertEqual(len(shell), 1)
+                self.assertEqual(shell[0]['status'], 'answered')
+                self.assertEqual(operations[-1]['operation'], 'step')
+                self.assertEqual(operations[-1]['refusal']['code'], 'step.unsupported-geometry')
                 self.assertFalse((Path(case['path']) / 'answer.step').exists())
 
 

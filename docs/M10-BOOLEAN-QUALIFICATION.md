@@ -74,6 +74,15 @@ classification nor sewing of those requests.
 
 ## Verification
 
+The 15 November finite-contact rerun moves M10-009 through M10-011 past the
+curve-equivalence gate. Import still completes in 114,370 units. Each request
+then refuses at `intersect.parametric-surface` after 149,620 total units,
+because a native spline/rational-patch query needs a finite surface solver.
+The requests still produce no STEP. The table above retains the earlier
+measurement pair; the executable regression now checks this later query and
+its detail. The spline cap-shell controls retain their qualified Bezier
+section solver and must complete construction before refusing STEP export.
+
 The end-to-end test runs fresh requests with request-worker/kernel-thread
 counts 1/1 and 4/4. It compares complete manifests, operation logs and work,
 excluding diagnostic timings and statistics. It requires the five constructed

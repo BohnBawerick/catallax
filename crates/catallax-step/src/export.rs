@@ -1639,6 +1639,12 @@ impl<'a> Exporter<'a> {
     ) -> Result<Id, Refusal> {
         let mut faces = Vec::new();
         for face in &self.model.shell(id).faces {
+            let span = catallax_numbers::OperationSpan::begin(
+                "brep",
+                &face.index(),
+                "step.face",
+                self.dec,
+            );
             if self
                 .chart_state
                 .as_ref()
@@ -1648,6 +1654,7 @@ impl<'a> Exporter<'a> {
             } else {
                 faces.push(self.face(*face, reverse, topology)?);
             }
+            span.finish(self.dec, None, None);
         }
         Ok(self
             .graph
@@ -1684,6 +1691,8 @@ impl<'a> Exporter<'a> {
                 state.fillet = true;
             }
         }
+        let span =
+            catallax_numbers::OperationSpan::begin("brep", &"export", "step.planning", self.dec);
         let trimmed_rows = self.plan_spline_fillets(bodies.iter().copied().chain(envelope))?;
         self.plan_rational_patches(bodies.iter().copied().chain(envelope))?;
         self.register_rows(trimmed_rows)?;
@@ -1691,12 +1700,11 @@ impl<'a> Exporter<'a> {
         self.plan_mitre_bands(bodies.iter().copied().chain(envelope))?;
         self.plan_pipe_rails(bodies.iter().copied().chain(envelope))?;
         self.plan_saddle_rails(bodies.iter().copied().chain(envelope))?;
+        span.finish(self.dec, None, None);
         if self.chart_state.is_none() {
-            self.bands = crate::band::Plan::prepare(
-                self.model,
-                bodies.iter().copied().chain(envelope),
-                self.dec,
-            )?;
+            self.bands = crate::observe("step.band-planning", &"export", self.dec, |dec| {
+                crate::band::Plan::prepare(self.model, bodies.iter().copied().chain(envelope), dec)
+            })?;
             // Work and precision failures cannot justify possibly unseamed legacy topology.
             // A trim passing close to a parameter pole can need many pcurve spans,
             // so try it again with every sphere on its perpendicular frame.
@@ -1726,33 +1734,36 @@ impl<'a> Exporter<'a> {
                                     .any(|origin| origin.role.name() == "blend")
                             })
                         });
-                    let charted = crate::partial::prepare(
-                        self.model,
-                        bodies.iter().copied().chain(envelope),
-                        self.options,
-                        reframe,
-                        &mut retry_frame,
-                        self.dec,
-                    )
-                    .and_then(|prepared| {
-                        let Some(mut prepared) = prepared else {
-                            return Ok(None);
-                        };
-                        prepared.plan.coaxial_circles = coaxial_circles;
-                        let (face_errors, edge_errors) =
-                            prepared.errors(self.face_errors.clone(), self.edge_errors.clone());
-                        let envelope = envelope.map(|_| prepared.bodies[bodies.len()]);
-                        Exporter::new(&prepared.model, self.options, self.dec)
-                            .fillet_scope(self.fillet)
-                            .regularizations(
-                                self.report.regularizations.clone(),
-                                face_errors,
-                                edge_errors,
+                    let charted =
+                        crate::observe("step.chart-preparation", &"export", self.dec, |dec| {
+                            crate::partial::prepare(
+                                self.model,
+                                bodies.iter().copied().chain(envelope),
+                                self.options,
+                                reframe,
+                                &mut retry_frame,
+                                dec,
                             )
-                            .charts(prepared.plan)
-                            .build_parts(&prepared.bodies[..bodies.len()], envelope)
-                            .map(Some)
-                    });
+                        })
+                        .and_then(|prepared| {
+                            let Some(mut prepared) = prepared else {
+                                return Ok(None);
+                            };
+                            prepared.plan.coaxial_circles = coaxial_circles;
+                            let (face_errors, edge_errors) =
+                                prepared.errors(self.face_errors.clone(), self.edge_errors.clone());
+                            let envelope = envelope.map(|_| prepared.bodies[bodies.len()]);
+                            Exporter::new(&prepared.model, self.options, self.dec)
+                                .fillet_scope(self.fillet)
+                                .regularizations(
+                                    self.report.regularizations.clone(),
+                                    face_errors,
+                                    edge_errors,
+                                )
+                                .charts(prepared.plan)
+                                .build_parts(&prepared.bodies[..bodies.len()], envelope)
+                                .map(Some)
+                        });
                     match charted {
                         Ok(Some(answer))
                             if answer.value.1.max_deviation <= self.options.curve_tolerance =>

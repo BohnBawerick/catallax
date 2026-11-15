@@ -239,7 +239,9 @@ fn write_prepared<W: Write>(
     out: &mut W,
     face_regions: bool,
 ) -> Answered<StepReport> {
-    let prepared = regularize::prepare(model, bodies, options, dec)?;
+    let prepared = observe("step.regularize", &"export", dec, |dec| {
+        regularize::prepare(model, bodies, options, dec)
+    })?;
     let answer = if let Some(prepared) = prepared {
         export::Exporter::new(&prepared.model, options, dec)
             .face_regions(face_regions)
@@ -257,6 +259,18 @@ fn write_prepared<W: Write>(
         value: report,
         marks: answer.marks,
     })
+}
+
+pub(crate) fn observe<T>(
+    operation: &str,
+    id: &impl ToString,
+    dec: &mut Decider,
+    run: impl FnOnce(&mut Decider) -> Result<T, catallax_numbers::Refusal>,
+) -> Result<T, catallax_numbers::Refusal> {
+    let span = catallax_numbers::OperationSpan::begin("brep", id, operation, dec);
+    let result = run(dec);
+    span.finish(dec, result.as_ref().err(), None);
+    result
 }
 
 /// Writes a certified body with rolling-envelope faces. `max_deviation` bounds

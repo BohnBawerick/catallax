@@ -539,6 +539,13 @@ pub(crate) fn search_cover(
                     if uniform(&net.derivative(solved, dec)?, dec)?.is_none() {
                         continue;
                     }
+                    // Retained trace jets use this power-form enclosure too.
+                    let derivative = equation.partial(solved).eval_ball(
+                        &box_balls(&net.domain, dec.policy().max_precision_bits.min(128)), dec,
+                    )?;
+                    if derivative.sign().is_none() {
+                        continue;
+                    }
                     let mut crossings = Vec::new();
                     let mut unresolved = false;
                     for (edge, values) in net.edges().iter().enumerate() {

@@ -13,6 +13,8 @@ use catallax_shapes::{
 };
 use std::sync::Arc;
 
+mod finite_line;
+
 pub(super) fn validate(
     geom: &GeomStore,
     c: CurveId,
@@ -498,6 +500,16 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
             Err(error) => return Outcome::Refused(error),
         }
         if let (Curve::BSpline(first), Curve::BSpline(second)) = (geom.curve(a), geom.curve(b)) {
+            match finite_line::same(first, second, dec) {
+                Ok(Some(true)) => {
+                    return Outcome::ProvenCoincident(catallax_numbers::Coincidence {
+                        proof: catallax_numbers::ZeroProof::Algebraic,
+                    });
+                }
+                Ok(Some(false)) => return Outcome::Proven(Apart),
+                Ok(None) => (),
+                Err(error) => return Outcome::Refused(error),
+            }
             match first.proves_control_hull_separation(second, dec) {
                 Ok(true) => return Outcome::Proven(Apart),
                 Ok(false) => (),

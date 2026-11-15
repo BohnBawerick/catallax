@@ -405,17 +405,19 @@ fn a_plain_hole_strictly_inside_a_bevel_ring_builds() {
 }
 
 #[test]
-fn a_hole_meeting_a_bevel_keeps_its_typed_refusal() {
+fn exact_holes_on_bevels_do_not_promote_numerical_fits() {
     let mut rows = Vec::new();
     for moved in [false, true] {
         // Exact contact at (11, 12, 0), then a genuine crossing curve.
         rows.push((
             collar(moved, ["10", "12", "0"], ["0", "-1", "0"]),
-            "intersect.trace-native-window",
+            "numbers.operation-budget",
+            true,
         ));
         rows.push((
             collar(moved, ["21/2", "12", "0"], ["0", "-1", "0"]),
-            "intersect.trace-native-window",
+            "numbers.operation-budget",
+            true,
         ));
     }
     // The skew unit axis is irrational, so exact rational source admission
@@ -423,11 +425,12 @@ fn a_hole_meeting_a_bevel_keeps_its_typed_refusal() {
     rows.push((
         collar(false, ["21/2", "12", "0"], ["1", "-1", "1"]),
         "intersect.trace-native-cover",
+        false,
     ));
-    for (recipe, code) in rows {
+    for (recipe, code, exhausted) in rows {
         let (built, work) =
             with_operation_budget(20_000_000, || evaluate(&recipe, &mut Decider::default()));
-        assert!(!work.exhausted, "{work:?}");
+        assert_eq!(work.exhausted, exhausted, "{work:?}");
         match built {
             Err(catallax_features::BuildError::Geometry { step, refusal }) => {
                 assert_eq!(step.as_str(), "drilled");

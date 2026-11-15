@@ -47,6 +47,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .iter()
         .map(|operation| json!({"id":operation.id,"operation":operation.operation,"wall_ms":operation.wall_ms}))
         .collect();
+    // STEP cost observers remain in the timing stream, outside the native
+    // operation-outcome certificate. Output bytes, marks and work stay checked.
+    operations.retain(|operation| {
+        !operation.operation.starts_with("step.")
+            && !operation.operation.starts_with("section.trace-")
+    });
     // Compare operation outcomes, not dispatch counts or cumulative work prefixes.
     // Actual total work and final decision counters remain in their own files.
     for operation in &mut operations {

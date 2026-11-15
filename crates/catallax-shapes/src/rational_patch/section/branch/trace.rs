@@ -26,18 +26,26 @@ impl PatchSectionBranch {
         dec: &mut Decider,
     ) -> Result<Vec<SectionTracePiece>, Refusal> {
         let before = dec.stats().coincident_separation;
-        let endpoint = |point: &Point3, dec: &mut Decider| -> Result<(Real, [Real; 2]), Refusal> {
-            let (cell, fraction, at) = self.locate(point, dec)?.ok_or_else(|| {
-                failure("trace endpoint is outside its retained section component")
-            })?;
-            let at = match at {
-                Some(at) => at,
-                None => self.cells[cell].ends
-                    [usize::from(exact_sign(&fraction, dec)? != Sign::Zero)]
-                .clone(),
+        let endpoint =
+            |name: &str, point: &Point3, dec: &mut Decider| -> Result<(Real, [Real; 2]), Refusal> {
+                let span = catallax_numbers::OperationSpan::begin(
+                    "brep",
+                    &name,
+                    "section.trace-endpoint",
+                    dec,
+                );
+                let (cell, fraction, at) = self.locate(point, dec)?.ok_or_else(|| {
+                    failure("trace endpoint is outside its retained section component")
+                })?;
+                let at = match at {
+                    Some(at) => at,
+                    None => self.cells[cell].ends
+                        [usize::from(exact_sign(&fraction, dec)? != Sign::Zero)]
+                    .clone(),
+                };
+                span.finish(dec, None, None);
+                Ok((Real::from_i64(cell as i64) + fraction, at))
             };
-            Ok((Real::from_i64(cell as i64) + fraction, at))
-        };
         let count = Real::from_i64(self.cells.len() as i64);
         let (start, mut end, start_at, end_at) = match (from, to) {
             (None, None) if self.closed => (
@@ -47,8 +55,8 @@ impl PatchSectionBranch {
                 self.cells.last().unwrap().ends[1].clone(),
             ),
             (Some(from), Some(to)) => {
-                let (start, start_at) = endpoint(from, dec)?;
-                let (end, end_at) = endpoint(to, dec)?;
+                let (start, start_at) = endpoint("start", from, dec)?;
+                let (end, end_at) = endpoint("end", to, dec)?;
                 (start, end, start_at, end_at)
             }
             _ => return Err(failure("an open section trace needs both finite endpoints")),
@@ -62,6 +70,12 @@ impl PatchSectionBranch {
             }
             end = &end + &count;
         }
+        let assembly = catallax_numbers::OperationSpan::begin(
+            "brep",
+            &"section",
+            "section.trace-assembly",
+            dec,
+        );
         let mut pieces = Vec::new();
         for turn in 0..=usize::from(self.closed) {
             for (index, cell) in self.cells.iter().enumerate() {
@@ -115,6 +129,7 @@ impl PatchSectionBranch {
                 "section trace clipping needs exact endpoint ownership",
             ));
         }
+        assembly.finish(dec, None, None);
         Ok(pieces)
     }
 }

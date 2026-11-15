@@ -661,31 +661,36 @@ impl<'a> Exporter<'a> {
             } else {
                 (to, from)
             };
-            let trace =
-                catallax_intersect::trace(self.model.geom(), source.curve, from, to, self.dec)?
-                    .value;
+            let trace = crate::observe("step.trace", &id.index(), self.dec, |dec| {
+                catallax_intersect::trace(self.model.geom(), source.curve, from, to, dec)
+            })?
+            .value;
             let (fit, spans) = if capture {
-                let (fit, spans) = crate::fit::fit_with_ranges(
-                    &trace,
-                    &start.point,
-                    &end.point,
-                    source.sense == Sense::Reversed,
-                    self.options,
-                    self.dec,
-                    order,
-                )?;
-                (fit, Some(spans))
-            } else {
-                (
-                    crate::fit::fit(
+                let (fit, spans) = crate::observe("step.fit", &id.index(), self.dec, |dec| {
+                    crate::fit::fit_with_ranges(
                         &trace,
                         &start.point,
                         &end.point,
                         source.sense == Sense::Reversed,
                         self.options,
-                        self.dec,
+                        dec,
                         order,
-                    )?,
+                    )
+                })?;
+                (fit, Some(spans))
+            } else {
+                (
+                    crate::observe("step.fit", &id.index(), self.dec, |dec| {
+                        crate::fit::fit(
+                            &trace,
+                            &start.point,
+                            &end.point,
+                            source.sense == Sense::Reversed,
+                            self.options,
+                            dec,
+                            order,
+                        )
+                    })?,
                     None,
                 )
             };

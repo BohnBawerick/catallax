@@ -342,16 +342,19 @@ fn refusal_kind(refusal: &ImportRefusal) -> String {
     }
 }
 
+fn body_kind(kind: BodyKind) -> &'static str {
+    match kind {
+        BodyKind::Solid => "solid",
+        BodyKind::Surface => "surface",
+        BodyKind::Empty => "empty",
+        _ => "unknown",
+    }
+}
+
 fn body_kinds(model: &Model, bodies: &[BodyId]) -> BTreeMap<&'static str, usize> {
     let mut counts = BTreeMap::new();
     for body in bodies {
-        let kind = match model.body(*body).kind {
-            BodyKind::Solid => "solid",
-            BodyKind::Surface => "surface",
-            BodyKind::Empty => "empty",
-            _ => "unknown",
-        };
-        *counts.entry(kind).or_default() += 1;
+        *counts.entry(body_kind(model.body(*body).kind)).or_default() += 1;
     }
     counts
 }
@@ -417,6 +420,10 @@ fn evaluate_numerical(bytes: &[u8]) -> Value {
                 "bodies":imported.bodies().len(),"body_kinds":body_kinds(model, imported.bodies()),"local_incidence_tolerances":tolerances})
         }
         Ok(StepImport::Numerical(imported)) => {
+            let mut kinds = BTreeMap::<_, usize>::new();
+            for (_, body) in imported.bodies() {
+                *kinds.entry(body_kind(body.kind())).or_default() += 1;
+            }
             let source_admission_method = imported
                 .source_admission()
                 .map(|record| record.method.as_str());
@@ -450,7 +457,7 @@ fn evaluate_numerical(bytes: &[u8]) -> Value {
                 .map(|(_, body)| body.options().tolerance_mm.to_string())
                 .collect::<BTreeSet<_>>();
             json!({"stage":"import","outcome":"admitted","import_category":"numerical approximate",
-                "bodies":imported.bodies().len(),"exact":false,"tolerances_mm":tolerances,
+                "bodies":imported.bodies().len(),"body_kinds":kinds,"exact":false,"tolerances_mm":tolerances,
                 "source_to_result_max_mm":bounds,"complete_body_bound":"unestablished",
                 "source_change_count":imported.record().changes.len(),
                 "source_admission_method":source_admission_method,"max_checked_residual_mm":checked_max,

@@ -8,9 +8,13 @@ use catallax_recipe::{BooleanKind, Operation, Recipe, RecipeError, Role, StepId,
 use catallax_shapes::{Isometry, RPoint3, RVector3};
 use catallax_topology::{BodyId, BodyKind, Model};
 use im::OrdMap;
-use std::{collections::BTreeMap, fmt, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt,
+    sync::Arc,
+};
 
-/// Immutable STEP and mesh source bytes, keyed by the SHA-256 saved in the recipe.
+/// Immutable STEP, IGES and mesh source bytes, keyed by the SHA-256 saved in the recipe.
 /// File names are labels, not paths the evaluator opens.
 pub type ImportFiles<'a> = BTreeMap<String, &'a [u8]>;
 
@@ -396,8 +400,9 @@ pub fn evaluate_with_files(
 /// Prefix equality includes step order, IDs and every operation parameter.
 /// A changed/removed prefix step, format or numeric policy discards the checkpoint
 /// and rebuilds from the start. Recipe metadata and result selection may change.
-/// Only executed suffix work is charged to the current request; cached prefix
-/// proofs were charged when that checkpoint was built. Certified builds are not
+/// Source-byte verification is charged on each call, including prefix sources.
+/// Only suffix geometry work is charged anew; cached prefix proofs were charged
+/// when that checkpoint was built. Certified builds are not
 /// accepted as checkpoints. Failures return no partial checkpoint.
 pub fn evaluate_incremental(
     recipe: &Recipe,
@@ -478,6 +483,7 @@ fn evaluate_impl(
     recipe.check().map_err(BuildError::Recipe)?;
     catallax_numbers::reuse_operation_enclosures();
 
+    let mut verified_sources = BTreeSet::new();
     for step in &recipe.steps {
         let (file, kind) = match &step.op {
             Operation::ImportStep { file, .. } => (file, "STEP"),
@@ -485,6 +491,9 @@ fn evaluate_impl(
             Operation::ImportMesh { file, .. } => (file, "mesh"),
             _ => continue,
         };
+        if !verified_sources.insert(file.sha256.as_str()) {
+            continue;
+        }
         let source = files.get(&file.sha256).ok_or_else(|| {
             BuildError::Recipe(RecipeError::Parse {
                 message: format!(
@@ -493,6 +502,11 @@ fn evaluate_impl(
                 ),
             })
         })?;
+        dec.charge_work(source.len() as u64)
+            .map_err(|refusal| BuildError::Geometry {
+                step: step.id.clone(),
+                refusal,
+            })?;
         let actual = catallax_import::sha256_hex(source);
         if actual != file.sha256 {
             return Err(BuildError::Recipe(RecipeError::Parse {
@@ -587,40 +601,7 @@ fn evaluate_impl(
                     } else {
                         catallax_import::SourceFormat::Step
                     };
-                    let prefix = format!("repair:{}:", &file.sha256[..12]);
-                    let decisions = decisions
-                        .iter()
-                        .map(|(question, value)| {
-                            let id = question.strip_prefix(&prefix).filter(|id| {
-                                id.strip_prefix('g')
-                                    .or_else(|| id.strip_prefix('p'))
-                                    .is_some_and(|index| {
-                                        !index.is_empty() && index.bytes().all(|c| c.is_ascii_digit())
-                                    })
-                            });
-                            match (id, value.as_str()) {
-                                (Some(id), "decline") => Ok(catallax_import::Decision::Decline {
-                                    id: id.to_string(),
-                                }),
-                                (Some(id), value) if value.starts_with("accept:") => {
-                                    let (tolerance, approver) = value["accept:".len()..]
-                                        .split_once(':').ok_or_else(|| Refusal::new(
-                                            "import.invalid-decision",
-                                            format!("question {question}: acceptance needs a tolerance and approver"),
-                                        ))?;
-                                    Ok(catallax_import::Decision::Accept {
-                                        id: id.to_string(),
-                                        tolerance_mm: tolerance.to_string(),
-                                        approver: approver.to_string(),
-                                    })
-                                }
-                                _ => Err(Refusal::new(
-                                    "import.invalid-decision",
-                                    format!("question {question}: expected decline or accept:<tolerance-mm>:<approver> for these bytes"),
-                                )),
-                            }
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
+                    let decisions = crate::import_edit::import_decisions(&file.sha256, decisions)?;
                     let mut imported = catallax_import::apply_source(
                         model,
                         format,
@@ -1551,7 +1532,7 @@ fn evaluate_impl(
     })
 }
 
-fn import_refusal(error: catallax_import::ImportRefusal) -> Refusal {
+pub(crate) fn import_refusal(error: catallax_import::ImportRefusal) -> Refusal {
     use catallax_import::ImportRefusal;
     let code = match &error {
         ImportRefusal::PlanarRepairNotVerified { .. } => "import.planar-repair-not-verified",

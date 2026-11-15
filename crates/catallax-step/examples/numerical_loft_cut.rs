@@ -5,6 +5,7 @@ use catallax_numbers::{
     with_operation_budget,
 };
 use catallax_recipe::Recipe;
+use catallax_shapes::{BSplineCurve, Curve, Point3, SplineSupport, Surface};
 use catallax_step::numerical::{self as step, NumericalStepOptions};
 use catallax_topology::{
     Sense,
@@ -21,6 +22,58 @@ fn evidence(source: &NumericalEvidence) -> Value {
         NumericalCheck::Samples {name,scope,samples} => json!({"kind":"samples","name":name,"scope":scope,"samples":samples.iter().map(|sample| json!({"parameters":sample.parameters.iter().map(ToString::to_string).collect::<Vec<_>>(),"distance_upper_mm":sample.distance_upper_mm.to_string()})).collect::<Vec<_>>()}),
     }).collect();
     json!({"tolerance_mm":source.tolerance_mm().to_string(),"checks":checks,"repair_count":source.repairs().len()})
+}
+
+fn nonuniform_edge(
+    definition: &mut numerical::NumericalDefinition,
+    dec: &mut Decider,
+) -> Result<Value, String> {
+    let (face, trim) = definition
+        .faces
+        .iter()
+        .filter(|f| matches!(f.surface, Surface::BSpline(SplineSupport::RationalPatch(_))))
+        .find_map(|f| {
+            f.loops
+                .iter()
+                .flatten()
+                .find(|t| {
+                    t.uv[0][0] == t.uv[1][0]
+                        && matches!(definition.edges[t.edge].curve, Curve::Line(_))
+                })
+                .map(|t| (f.key.clone(), t.clone()))
+        })
+        .ok_or("part has no linear generatrix on a curved face")?;
+    let edge = &mut definition.edges[trim.edge];
+    let endpoints = edge
+        .vertices
+        .map(|v| definition.vertices[v].position.clone());
+    let coefficients = ["2", "-7/2", "9/2", "-1"].map(|q| Rational::parse(q).unwrap());
+    let controls = coefficients
+        .iter()
+        .map(|c| {
+            let p: [Rational; 3] = std::array::from_fn(|a| {
+                &endpoints[0][a] + &(c * &(&endpoints[1][a] - &endpoints[0][a]))
+            });
+            let [x, y, z] = p;
+            Point3::new(x.into(), y.into(), z.into())
+        })
+        .collect();
+    edge.curve = Curve::BSpline(
+        BSplineCurve::new(
+            3,
+            [-1, -1, -1, -1, 2, 2, 2, 2]
+                .map(Rational::from_i64)
+                .to_vec(),
+            controls,
+            vec![1.into(); 4],
+            dec,
+        )
+        .map_err(|e| format!("{e:?}"))?,
+    );
+    edge.parameters = [0.into(), 1.into()];
+    Ok(
+        json!({"face":face,"edge":edge.key,"native_carrier_domain":["-1","2"],"finite_interval":["0","1"],"map":"t/2+3*t^2/2-t^3"}),
+    )
 }
 
 fn run(out: &Path, case: &str, control: &str) -> Result<Value, String> {
@@ -54,7 +107,14 @@ fn run(out: &Path, case: &str, control: &str) -> Result<Value, String> {
     let mut definition =
         numerical::definition_from_model(&built.model, built.result, name.into(), &mut dec)
             .map_err(|e| format!("{e:?}"))?;
-    if control != "source" {
+    if control == "native-uv-missing" {
+        let control_data = nonuniform_edge(&mut definition, &mut dec)?;
+        std::fs::write(
+            out.join("native-uv-control.json"),
+            serde_json::to_vec_pretty(&control_data).unwrap(),
+        )
+        .map_err(|e| e.to_string())?;
+    } else if control != "source" {
         let face = definition
             .faces
             .iter_mut()
@@ -112,12 +172,15 @@ fn main() -> ExitCode {
     let args: Vec<_> = std::env::args().skip(1).collect();
     if !(2..=3).contains(&args.len())
         || !matches!(args[1].as_str(), "tiny" | "m10-008")
-        || args
-            .get(2)
-            .is_some_and(|s| !matches!(s.as_str(), "source" | "reverse-hole" | "missing-hole"))
+        || args.get(2).is_some_and(|s| {
+            !matches!(
+                s.as_str(),
+                "source" | "reverse-hole" | "missing-hole" | "native-uv-missing"
+            )
+        })
     {
         eprintln!(
-            "usage: numerical_loft_cut OUTPUT_DIRECTORY tiny|m10-008 [source|reverse-hole|missing-hole]"
+            "usage: numerical_loft_cut OUTPUT_DIRECTORY tiny|m10-008 [source|reverse-hole|missing-hole|native-uv-missing]"
         );
         return ExitCode::from(2);
     }

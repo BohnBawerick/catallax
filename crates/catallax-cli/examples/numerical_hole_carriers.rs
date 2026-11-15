@@ -74,6 +74,9 @@ fn query(recipe: &Value, face_index: usize, reverse: bool) -> Result<Value, Stri
             },
         )
         .collect();
+    if cones.len() != 2 {
+        return Err("example expects exactly two cone faces in the prefix".into());
+    }
     let (face, cone) = cones.get(face_index).ok_or("prefix needs two cone faces")?;
     let at = hole["at"]
         .as_array()

@@ -14,6 +14,8 @@ use crate::part21::{Entity, Graph, Param, parse};
 
 #[path = "spline.rs"]
 mod spline;
+#[path = "swept.rs"]
+mod swept;
 
 /// Source spline curve. STEP logical flags are declarations, not proof.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -310,9 +312,15 @@ impl<'a> Reader<'a> {
                 vertex: None,
             });
         }
+        let surface_id = reference(a, 2)?;
+        let surface = if self.entity(surface_id)?.type_name() == "SURFACE_OF_LINEAR_EXTRUSION" {
+            self.linear_extrusion(surface_id, &loops)?
+        } else {
+            self.surface(surface_id)?
+        };
         Ok(Face {
             name: format!("#{id}"),
-            surface: self.surface(reference(a, 2)?)?,
+            surface,
             same_sense: boolean(a, 3)?,
             loops,
         })

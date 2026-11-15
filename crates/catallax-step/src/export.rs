@@ -1868,10 +1868,11 @@ fn check_written_line(start: &Point, end: &Point) -> Result<(), Refusal> {
     Ok(())
 }
 
+#[track_caller]
 fn unsupported() -> Refusal {
     Refusal::new(
         "step.unsupported-geometry",
-        "geometry has no specified STEP form",
+        format!("geometry has no specified STEP form [DEBUG-e02 {}]", std::panic::Location::caller()),
     )
 }
 

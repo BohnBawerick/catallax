@@ -12,6 +12,56 @@ use catallax_topology::{BodyId, Model, Sense, numerical as n};
 
 use crate::{ImportRefusal, RepairRecord, Solid, Vec3};
 
+mod analytic;
+
+/// Numerical reconstruction of finite parameter trims, retaining the immutable
+/// source's shared vertices and analytic carriers. No geometric displacement or
+/// complete source/body deviation bound is inferred from its sampled checks.
+#[derive(Clone, Debug)]
+pub struct NumericalSourceAdmission {
+    /// The strict attempt's actual refusal, before numerical admission.
+    pub strict_refusal: ImportRefusal,
+    /// Fixed maximum residual at each completed numerical check, in millimetres.
+    pub tolerance_mm: Rational,
+    /// Versioned source interpretation and repair method.
+    pub method: String,
+    /// Every within-solid source face pair, in source order. A tolerated
+    /// incidence prerequisite is unresolved only for pairs using that face.
+    /// Separate solids are not compared, matching the existing import policy.
+    pub intersection_checks: Vec<NumericalSourcePairCheck>,
+    /// One collective prepayment for optional curved source-pair proofs.
+    pub optional_exact_work_reserved: u64,
+    /// Actual work used inside that collective proof allowance.
+    pub optional_exact_work_used: u64,
+}
+
+/// Source intersection coverage retained separately from numerical samples.
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum NumericalSourcePairCheck {
+    /// The source checker passed this pair under its existing permitted contact
+    /// rules. This does not assert separated boundaries.
+    CheckedNoCrossing {
+        /// Stable source solid name.
+        solid: String,
+        /// Stable source face names, in source order.
+        faces: [String; 2],
+        /// Work used by this pair check; shared preparation is recorded separately.
+        exact_attempt_work_used: u64,
+    },
+    /// The source pair could not be checked exactly. This grants no separation.
+    Unresolved {
+        /// Stable source solid name.
+        solid: String,
+        /// Stable source face names, in source order.
+        faces: [String; 2],
+        /// The actual typed incidence prerequisite or undecided pair refusal.
+        refusal: Box<ImportRefusal>,
+        /// Work used by this pair check, or zero when no attempt completed.
+        exact_attempt_work_used: u64,
+    },
+}
+
 /// A source refusal or a numerical admission refusal. Neither contains partial geometry.
 #[derive(Clone, Debug)]
 pub enum ImportError {
@@ -60,6 +110,7 @@ impl CertifiedImport {
 pub struct NumericalImport {
     bodies: Vec<(String, n::NumericalBody)>,
     record: RepairRecord,
+    source_admission: Option<NumericalSourceAdmission>,
 }
 impl NumericalImport {
     /// Numerical bodies keyed by source solid. Zero residuals remain numerical.
@@ -69,6 +120,12 @@ impl NumericalImport {
     /// Complete source interpretation, source limits and source repair history.
     pub fn record(&self) -> &RepairRecord {
         &self.record
+    }
+    /// Actual numerical source interpretation, when finite analytic trims were
+    /// rebuilt without an exact planar derivative. Body evidence lists every
+    /// completed location and check; this record grants no exact incidence.
+    pub fn source_admission(&self) -> Option<&NumericalSourceAdmission> {
+        self.source_admission.as_ref()
     }
 }
 
@@ -120,16 +177,28 @@ fn import_inner(
     options: &n::NumericalOptions,
     dec: &mut Decider,
 ) -> Result<StepImport, ImportError> {
+    // Verification is part of this request, including a mismatch that would
+    // otherwise return before any geometry work. Do not hash an unmetered slice.
+    dec.charge_work(bytes.len() as u64).map_err(|refusal| {
+        if catallax_numbers::current_operation_work().exhausted {
+            ImportError::Source(ImportRefusal::ResourceLimit)
+        } else {
+            ImportError::Numerical(refusal)
+        }
+    })?;
     let mut model = Model::new();
     match crate::import_step_bodies(&mut model, bytes, expected_sha256, step) {
         Ok(bodies) => {
             return Ok(StepImport::Certified(Box::new(CertifiedImport {
                 model,
                 bodies,
-                source_sha256: crate::sha256_hex(bytes),
+                source_sha256: expected_sha256.to_owned(),
             })));
         }
         Err(ImportRefusal::NotSolid { detail }) if detail.contains("exactly") => {}
+        Err(error) if analytic::eligible(&error) => {
+            return analytic::import(bytes, expected_sha256, error, options, dec);
+        }
         Err(error) => return Err(error.into()),
     }
     if options.tolerance_mm.sign() != Sign::Positive
@@ -141,16 +210,22 @@ fn import_inner(
         )
         .into());
     }
-    let imported = crate::repair::apply_file(
+    let imported = match crate::repair::apply_file(
         &mut Model::new(),
         crate::read_step(bytes)?,
-        &crate::sha256_hex(bytes),
+        expected_sha256,
         "source.step",
         &Default::default(),
         &[],
         Some(step),
         None,
-    )?;
+    ) {
+        Ok(imported) => imported,
+        Err(error) if analytic::eligible(&error) => {
+            return analytic::import(bytes, expected_sha256, error, options, dec);
+        }
+        Err(error) => return Err(error.into()),
+    };
     if !imported.left_open.is_empty() {
         return Err(unsupported("the source repair left an open solid"));
     }
@@ -181,6 +256,7 @@ fn import_inner(
     Ok(StepImport::Numerical(Box::new(NumericalImport {
         bodies,
         record: imported.record,
+        source_admission: None,
     })))
 }
 

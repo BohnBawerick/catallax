@@ -1,4 +1,4 @@
-//! A separate admission path for finite line edges and linear parameter trims.
+//! A separate admission path for finite edges and linear parameter trims.
 //! Exact constructors, incidence facts and checkpoints are not used for admission.
 
 use std::collections::BTreeSet;
@@ -13,6 +13,10 @@ use crate::{
     Body, BodyId, BodyKind, Coedge, Edge, EntityCounts, Face, Loop, Lump, Model, Sense, Shell,
     Vertex,
 };
+
+mod curved;
+mod source;
+pub use source::definition_from_model;
 
 /// Shared default work limit for a numerical build or continuation.
 pub const DEFAULT_WORK: u64 = 20_000_000;
@@ -33,7 +37,7 @@ pub struct NumericalVertex {
 pub struct NumericalEdge {
     /// Stable key, unique among edges.
     pub key: String,
-    /// Retained carrier. This first admission path supports lines.
+    /// Retained line or finite native B-spline carrier.
     pub curve: Curve,
     /// Start and end indices in the vertex table.
     pub vertices: [usize; 2],
@@ -381,13 +385,26 @@ fn build_inner(
     let mut edges = Vec::new();
     for edge in &definition.edges {
         dec.charge_work(1)?;
-        let Curve::Line(line) = &edge.curve else {
-            return Err(bad(
-                "unsupported",
-                "numerical admission currently supports finite line edges",
-            ));
-        };
-        catallax_shapes::Line::new(line.origin.clone(), line.dir.clone(), dec)?;
+        match &edge.curve {
+            Curve::Line(line) => {
+                catallax_shapes::Line::new(line.origin.clone(), line.dir.clone(), dec)?;
+            }
+            Curve::BSpline(curve) => {
+                let [lo, hi] = curve.domain();
+                if edge.parameters.iter().any(|t| t < lo || t > hi) {
+                    return Err(bad(
+                        "definition",
+                        "edge parameters leave the retained spline domain",
+                    ));
+                }
+            }
+            _ => {
+                return Err(bad(
+                    "unsupported",
+                    "numerical admission requires a line or finite native B-spline edge",
+                ));
+            }
+        }
         if edge.vertices.iter().any(|i| *i >= vertices.len())
             || edge.parameters[0] == edge.parameters[1]
         {
@@ -437,7 +454,7 @@ fn build_inner(
         // Validate the newly admitted second boundary before building its
         // coedges. A duplicated outer loop remains an invalid trim, as in N01.
         if face.loops.len() == 2 {
-            check_loops(face, dec)?;
+            curved::check_loops(face, &definition.edges, dec)?;
             check_distinct_boundary_vertices(face, &definition.edges, dec)?;
         }
         let mut loops = Vec::new();
@@ -510,10 +527,15 @@ fn build_inner(
     }
     for face in &definition.faces {
         if face.loops.len() == 1 {
-            check_loops(face, dec)?;
+            curved::check_loops(face, &definition.edges, dec)?;
         }
         checks.push(NumericalCheck::Passed {
-            name: "trim.simple-oriented-parameter-loop".into(),
+            name: if curved::projected(face, &definition.edges) {
+                "trim.sampled-simple-oriented-parameter-loop"
+            } else {
+                "trim.simple-oriented-parameter-loop"
+            }
+            .into(),
             scope: face.key.clone(),
         });
         if face.loops.len() == 2 {
@@ -538,13 +560,20 @@ fn build_inner(
                 dec.charge_work(1)?;
                 let s = Rational::from_ratio(i, SUBDIVISIONS).expect("positive denominator");
                 let t = a + &((&s) * &(b - a));
-                let uv: [Rational; 2] = std::array::from_fn(|axis| {
+                let mut uv: [Rational; 2] = std::array::from_fn(|axis| {
                     &trim.uv[0][axis] + &(&s * &(&trim.uv[1][axis] - &trim.uv[0][axis]))
                 });
                 let p = edge
                     .curve
                     .evaluate(&Ball::from_rational(&t, BITS), dec)?
                     .ok_or_else(|| bad("unsupported", "edge has no parameter evaluator"))?;
+                if i != 0
+                    && i != SUBDIVISIONS
+                    && matches!(edge.curve, Curve::BSpline(_))
+                    && matches!(face.surface, Surface::Plane(_))
+                {
+                    uv = curved::parameters(&face.surface, &p, dec)?;
+                }
                 let q = face.surface.evaluate(
                     &Ball::from_rational(&uv[0], BITS),
                     &Ball::from_rational(&uv[1], BITS),

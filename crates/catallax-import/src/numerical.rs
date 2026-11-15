@@ -12,6 +12,21 @@ use catallax_topology::{BodyId, Model, Sense, numerical as n};
 
 use crate::{ImportRefusal, RepairRecord, Solid, Vec3};
 
+mod analytic;
+
+/// Numerical reconstruction of finite parameter trims, retaining the immutable
+/// source's shared vertices and analytic carriers. No geometric displacement or
+/// complete source/body deviation bound is inferred from its sampled checks.
+#[derive(Clone, Debug)]
+pub struct NumericalSourceAdmission {
+    /// The strict attempt's actual refusal, before numerical admission.
+    pub strict_refusal: ImportRefusal,
+    /// Fixed maximum residual at each completed numerical check, in millimetres.
+    pub tolerance_mm: Rational,
+    /// Versioned source interpretation and repair method.
+    pub method: String,
+}
+
 /// A source refusal or a numerical admission refusal. Neither contains partial geometry.
 #[derive(Clone, Debug)]
 pub enum ImportError {
@@ -60,6 +75,7 @@ impl CertifiedImport {
 pub struct NumericalImport {
     bodies: Vec<(String, n::NumericalBody)>,
     record: RepairRecord,
+    source_admission: Option<NumericalSourceAdmission>,
 }
 impl NumericalImport {
     /// Numerical bodies keyed by source solid. Zero residuals remain numerical.
@@ -69,6 +85,12 @@ impl NumericalImport {
     /// Complete source interpretation, source limits and source repair history.
     pub fn record(&self) -> &RepairRecord {
         &self.record
+    }
+    /// Actual numerical source interpretation, when finite analytic trims were
+    /// rebuilt without an exact planar derivative. Body evidence lists every
+    /// completed location and check; this record grants no exact incidence.
+    pub fn source_admission(&self) -> Option<&NumericalSourceAdmission> {
+        self.source_admission.as_ref()
     }
 }
 
@@ -130,6 +152,10 @@ fn import_inner(
             })));
         }
         Err(ImportRefusal::NotSolid { detail }) if detail.contains("exactly") => {}
+        Err(error @ ImportRefusal::PlanarRepairNotVerified { .. }) if matches!(&error, ImportRefusal::PlanarRepairNotVerified { detail } if detail.stage == "curved_dependency") =>
+        {
+            return analytic::import(bytes, error, options, dec);
+        }
         Err(error) => return Err(error.into()),
     }
     if options.tolerance_mm.sign() != Sign::Positive
@@ -141,7 +167,7 @@ fn import_inner(
         )
         .into());
     }
-    let imported = crate::repair::apply_file(
+    let imported = match crate::repair::apply_file(
         &mut Model::new(),
         crate::read_step(bytes)?,
         &crate::sha256_hex(bytes),
@@ -150,7 +176,14 @@ fn import_inner(
         &[],
         Some(step),
         None,
-    )?;
+    ) {
+        Ok(imported) => imported,
+        Err(error @ ImportRefusal::PlanarRepairNotVerified { .. }) if matches!(&error, ImportRefusal::PlanarRepairNotVerified { detail } if detail.stage == "curved_dependency") =>
+        {
+            return analytic::import(bytes, error, options, dec);
+        }
+        Err(error) => return Err(error.into()),
+    };
     if !imported.left_open.is_empty() {
         return Err(unsupported("the source repair left an open solid"));
     }
@@ -181,6 +214,7 @@ fn import_inner(
     Ok(StepImport::Numerical(Box::new(NumericalImport {
         bodies,
         record: imported.record,
+        source_admission: None,
     })))
 }
 

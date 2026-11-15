@@ -42,23 +42,29 @@ fn pose_edit(body: &n::NumericalBody, dec: &mut Decider) -> Result<n::NumericalB
     }
     for edge in &mut definition.edges {
         dec.charge_work(1)?;
-        let Curve::Line(line) = &mut edge.curve else {
-            return Err(Refusal::new(
-                "import.example-pose",
-                "pose control requires lines",
-            ));
-        };
-        line.origin = shifted(&line.origin, &delta);
+        match &mut edge.curve {
+            Curve::Line(line) => line.origin = shifted(&line.origin, &delta),
+            Curve::Circle(circle) => circle.center = shifted(&circle.center, &delta),
+            _ => {
+                return Err(Refusal::new(
+                    "import.example-pose",
+                    "pose control requires analytic lines or circles",
+                ));
+            }
+        }
     }
     for face in &mut definition.faces {
         dec.charge_work(1)?;
-        let Surface::Plane(plane) = &mut face.surface else {
-            return Err(Refusal::new(
-                "import.example-pose",
-                "pose control requires planes",
-            ));
-        };
-        plane.origin = shifted(&plane.origin, &delta);
+        match &mut face.surface {
+            Surface::Plane(plane) => plane.origin = shifted(&plane.origin, &delta),
+            Surface::Cylinder(cylinder) => cylinder.origin = shifted(&cylinder.origin, &delta),
+            _ => {
+                return Err(Refusal::new(
+                    "import.example-pose",
+                    "pose control requires planes or cylinders",
+                ));
+            }
+        }
     }
     body.rebuild(definition, body.options().clone(), dec)
 }
@@ -95,12 +101,18 @@ fn run(bytes: &[u8], out: &Path) -> Result<Value, Value> {
     let StepImport::Numerical(imported) = imported else {
         return Ok(json!({"status":"certified","work":{"import":import_work}}));
     };
+    let admission = imported.source_admission().map(|record| {
+        json!({
+        "method":record.method,"tolerance_mm":record.tolerance_mm.to_string(),
+        "strict_refusal":record.strict_refusal,"shared_3d_geometry":"retained",
+        "parameter_trims":"rebuilt","complete_body_bound":"unestablished"})
+    });
     let mut solids = Vec::new();
     for (index, (key, body)) in imported.bodies().iter().enumerate() {
         let before = current_operation_work().used;
         let original = file(body, &out.join(format!("solid-{index}.step")), &mut dec)
             .map_err(|refusal| json!({"stage":"source-step","cause":refusal,
-                "source_body":evidence(body),"source_record":imported.record(),"import_work":import_work}))?;
+                "source_body":evidence(body),"source_record":imported.record(),"source_admission":admission,"import_work":import_work}))?;
         let export_work = current_operation_work().used - before;
         let before = current_operation_work().used;
         let edited = pose_edit(body, &mut dec).map_err(|e| error("pose-edit", e))?;
@@ -117,7 +129,7 @@ fn run(bytes: &[u8], out: &Path) -> Result<Value, Value> {
             "work":{"source_export":export_work,"pose_rebuild":edit_work,"edited_export":edited_export_work}}));
     }
     Ok(
-        json!({"status":"numerical","proof":"numerical","exact":false,"source_record":imported.record(),
+        json!({"status":"numerical","proof":"numerical","exact":false,"source_record":imported.record(),"source_admission":admission,
         "tolerance_mm":"0.01","solids":solids,"work":{"import":import_work}}),
     )
 }

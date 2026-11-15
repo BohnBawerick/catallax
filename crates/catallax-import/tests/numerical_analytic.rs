@@ -152,3 +152,21 @@ fn source_bytes_are_charged_before_the_initial_verification_hash() {
         ))
     ));
 }
+
+#[test]
+fn a_caller_deadline_keeps_its_actual_refusal_code() {
+    let mut dec = Decider::default();
+    dec.set_deadline(Some(
+        std::time::Instant::now() - std::time::Duration::from_secs(1),
+    ));
+    let result = numerical::import_step(
+        b"not STEP",
+        &"0".repeat(64),
+        &StepId::new("expired-source").unwrap(),
+        &n::NumericalOptions::default(),
+        &mut dec,
+    );
+    assert!(
+        matches!(result,Err(numerical::ImportError::Numerical(ref refusal)) if refusal.code=="numbers.deadline")
+    );
+}

@@ -144,8 +144,13 @@ fn import_inner(
 ) -> Result<StepImport, ImportError> {
     // Verification is part of this request, including a mismatch that would
     // otherwise return before any geometry work. Do not hash an unmetered slice.
-    dec.charge_work(bytes.len() as u64)
-        .map_err(|_| ImportError::Source(ImportRefusal::ResourceLimit))?;
+    dec.charge_work(bytes.len() as u64).map_err(|refusal| {
+        if catallax_numbers::current_operation_work().exhausted {
+            ImportError::Source(ImportRefusal::ResourceLimit)
+        } else {
+            ImportError::Numerical(refusal)
+        }
+    })?;
     let mut model = Model::new();
     match crate::import_step_bodies(&mut model, bytes, expected_sha256, step) {
         Ok(bodies) => {

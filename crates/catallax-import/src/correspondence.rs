@@ -99,6 +99,10 @@ pub(crate) struct SourceSnapshot {
 }
 
 impl SourceSnapshot {
+    pub(crate) fn complete_definition(&self) -> Option<&StepFile> {
+        self.unverified.is_empty().then_some(&self.file)
+    }
+
     pub(crate) fn new(
         sha256: String,
         file: StepFile,

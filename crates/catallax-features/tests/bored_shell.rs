@@ -436,22 +436,22 @@ fn side_open_bore_shell_has_a_finite_rim_and_thickness_after_edit() {
         for face in built.model.faces_of_body(built.result) {
             for origin in built.model.face_origins(face) {
                 names.push(origin.clone());
-                if let Role::Inner { of } = &origin.role {
-                    if of.step.as_str() == "bored" {
-                        let Surface::Cylinder(cylinder) =
-                            built.model.geom().surface(built.model.face(face).surface)
-                        else {
-                            unreachable!()
-                        };
-                        let radius = q("3") + q(thickness);
-                        assert_eq!(
-                            Decider::default()
-                                .rational_value(&cylinder.radius_sq)
-                                .unwrap(),
-                            Some(&radius * &radius)
-                        );
-                        inner_bore += 1;
-                    }
+                if let Role::Inner { of } = &origin.role
+                    && of.step.as_str() == "bored"
+                {
+                    let Surface::Cylinder(cylinder) =
+                        built.model.geom().surface(built.model.face(face).surface)
+                    else {
+                        unreachable!()
+                    };
+                    let radius = q("3") + q(thickness);
+                    assert_eq!(
+                        Decider::default()
+                            .rational_value(&cylinder.radius_sq)
+                            .unwrap(),
+                        Some(&radius * &radius)
+                    );
+                    inner_bore += 1;
                 }
             }
         }

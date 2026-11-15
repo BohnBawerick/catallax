@@ -58,3 +58,39 @@ gap and an exhausted request return no result. Existing analytic crossing and
 source-pair isolation controls remain required. A full census after this repair
 must keep the original seed, source hashes and denominator and distinguish
 actual seam-repair admissions from other reader changes.
+
+## Executed qualification
+
+[qualification.json](qualification.json) binds the actual capture to kernel
+producer `7e5b506f3d9448ff664fe4473c921eadc268bca5`, example executable hash,
+independent checker hash and actual STEP bytes. The earlier observed refusal is
+bound separately to `dc0d7a4dab2c1e68feb52cb729800823ab4d97d3`. The named file now
+imports as one numerical body with 7 faces, 15 edges and 10 vertices. Import uses
+1,189,708 work; source STEP, pose rebuild and edited STEP use 219,184, 125,385 and
+219,148 respectively, totalling 1,753,425 under the unchanged 20M allowance.
+
+The work-PC run passed 60 scoped release controls and 12 evidence controls. Both
+actual exported files pass raw OCCT construction and whole-solid validity,
+without healing, sewing or SameParameter. A source-carrier calculation accounts
+for the source's metre units, checks the expected stock-minus-bore volume, and
+verifies bore-void, material and outside probes before and after the pose. The
+pose preserves volume and shifts the centroid by the requested translation. The
+two earlier analytic real controls remain raw-valid with unchanged STEP hashes.
+This qualifies a pose edit; it does not qualify arbitrary edits or a Catallax
+Boolean on the part.
+
+The authored bore's raw volume is `16-pi`, its bore is outside the material, and
+its stock probe is inside. An OCCT reference cut produces a raw-valid result of
+volume `8-pi/2` with the expected changed material probe. This is reference-kernel
+Boolean evidence only. Run the retained checker against the actual private
+captures with:
+
+```sh
+python tools/research/check_periodic_import.py \
+  --source-revision 7e5b506f3d9448ff664fe4473c921eadc268bca5 \
+  --capture CAPTURE --imports IMPORTS --real-source 00002345.step \
+  --example-binary numerical_import --out qualification.json
+```
+
+The full 3,000-file rerun is a separate capture on this frozen producer. No
+population recovery count is inferred from this single qualified part.

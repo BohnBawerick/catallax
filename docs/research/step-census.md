@@ -130,7 +130,8 @@ example in release mode and run:
 python3 -B tools/research/import_census.py --binary TARGET/release/examples/r8_census --sources PRIVATE_SOURCES --selection ORIGINAL_PRIVATE_SELECTION.json --source-hashes docs/phase1/import-census/source-hashes.json --out NEW_PRIVATE_CAPTURE --workers 4
 ```
 
-The release run uses Rust 1.100.0 on the Linux work PC, four independent observers
+The release run uses Rust 1.99.1 (`58cf8f9c3`, 13 October 2026), matching the run
+manifest, on the Linux work PC, four independent observers
 with one kernel worker each, the unchanged 20M per-import allowance, and the
 unchanged external 60-second observation cap. `full` requires returned bodies and
 complete source coverage; `partial` retains unverified source coverage. Timeouts

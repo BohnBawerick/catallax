@@ -5,7 +5,7 @@ use crate::{Ball, MPoly, Rational, Real, UPoly};
 use std::sync::Arc;
 
 /// Square system of at least one rational polynomial equation.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct PolySystem {
     equations: Vec<MPoly>,
 }
@@ -29,7 +29,7 @@ impl PolySystem {
     }
 }
 /// Closed rational box.
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug, catallax_numbers::Transfer)]
 pub struct RootBox {
     lo: Vec<Rational>,
     hi: Vec<Rational>,
@@ -57,7 +57,7 @@ impl RootBox {
     }
 }
 /// System and box certified to contain exactly one nonsingular solution.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct IsolatedRoot {
     pub(crate) system: Arc<PolySystem>,
     pub(crate) root_box: RootBox,

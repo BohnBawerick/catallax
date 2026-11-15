@@ -18,7 +18,7 @@ fn insert_station(values: &mut Vec<Real>, value: Real, dec: &mut Decider) -> Res
 }
 
 /// A bounded display grid together with its original knot-coordinate stations.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct RationalPatchGrid {
     /// Enclosed positions and the two-way file-independent chord bound.
     pub grid: EnvelopeGrid,
@@ -32,7 +32,7 @@ pub struct RationalPatchGrid {
 }
 
 /// A strong-monotonicity certificate for the piecewise-affine grid map.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct RationalGridEmbedding {
     lower: Rational,
     projection_norms: [Rational; 2],

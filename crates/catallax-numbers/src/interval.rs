@@ -5,7 +5,7 @@
 use crate::{Integer, Rational, StrictSign};
 
 /// Closed double interval. Arithmetic never stores NaN.
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, catallax_numbers::Transfer)]
 pub struct Interval {
     lo: f64,
     hi: f64,

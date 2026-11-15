@@ -9,7 +9,7 @@ use torus::torus_net;
 /// An analytic surface whose section of a rational patch has a complete
 /// parameter-cell search. Its implicit equation is substituted exactly into
 /// the patch's homogeneous coordinates.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub enum SectionSurface {
     /// Plane, with the cut equation linear in homogeneous coordinates.
     Plane(Plane),

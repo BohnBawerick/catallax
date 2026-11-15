@@ -427,7 +427,7 @@ fn on_arc(direction: &Pair, p: &Pair, q: &Pair, dec: &mut Decider) -> Result<boo
 
 /// The torus a ball sweeps rolling round a circle where two surfaces of
 /// revolution about the circle's axis meet, with its contact circles.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct RollingTorus {
     /// A ring torus, or the outer sheet of a horn or spindle torus when the
     /// circle of ball centres is no wider than the ball and the band between
@@ -441,7 +441,7 @@ pub struct RollingTorus {
 /// The half tube of a ball at the radius where two coaxial supports' offsets
 /// touch: a band of the ring torus between two parallels that are opposite
 /// ends of the tube's diameters.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct InscribedTorus {
     /// The whole ring torus. The band is the half through `middle`.
     pub torus: Torus,

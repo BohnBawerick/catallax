@@ -9,7 +9,7 @@ use catallax_shapes::{
 use crate::profile::sign;
 
 /// The immutable generating definition of a plane or conical chamfer strip.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct ChamferDefinition {
     /// Persistent bevel origin, independent of the setbacks.
     pub origin: Origin,

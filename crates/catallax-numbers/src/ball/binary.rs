@@ -7,7 +7,7 @@ use std::{
     ops::{Add, Mul, Neg, Sub},
 };
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, catallax_numbers::Transfer)]
 pub(super) struct Binary {
     mantissa: Integer,
     exponent: i64,

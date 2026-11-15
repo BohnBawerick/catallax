@@ -95,7 +95,7 @@ fn side_sign(side: BallSide) -> i64 {
 
 /// The exact law of a constant-radius ball resting on a sphere and on a
 /// cylinder whose axis misses the sphere's centre, along one regular ring.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct RollingSphereDefinition {
     centre: Point3,
     across: Vector3,
@@ -485,7 +485,7 @@ fn rows(k: &Constants, chart: i64, s: &Jet, fitted: Option<[&Jet; 2]>) -> Result
 }
 
 /// Hermite data of the fitted rows at one chart node.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 struct Node {
     u: Rational,
     values: [Rational; ROWS],
@@ -889,7 +889,7 @@ fn build(
 
 // Enclosed homogeneous controls in the sphere's frame, u-major. Rigid copies
 // share one net, so no consumer pays to enclose a moved carrier again.
-#[derive(Debug)]
+#[derive(Debug, catallax_numbers::Transfer)]
 struct Net {
     bits: u32,
     controls: Vec<[Ball; 4]>,
@@ -1007,12 +1007,12 @@ fn check_carrier(net: &Net, carrier: &BSplineSurface, dec: &Decider) -> Result<(
 
 /// A rolling-ball band over `[-1, 3] x [0, 1]`, from the sphere rail to the
 /// cylinder rail, closed in `u`.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct RollingSphere {
     data: Arc<Data>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, catallax_numbers::Transfer)]
 struct Data {
     definition: RollingSphereDefinition,
     nodes: Vec<Node>,

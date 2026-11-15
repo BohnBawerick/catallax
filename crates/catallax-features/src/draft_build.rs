@@ -24,7 +24,7 @@ use std::collections::{BTreeMap, BTreeSet};
 mod oblique_build;
 
 /// Removed face history, separate from selectable surviving origins.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct ConsumedFace {
     /// Draft or fillet operation that consumed the source face.
     pub step: StepId,

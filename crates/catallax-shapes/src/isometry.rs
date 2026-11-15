@@ -7,7 +7,7 @@ use crate::{
 use catallax_numbers::{Decider, Rational, Real, Refusal, sin_cos_degrees};
 
 /// An orthogonal affine map. Constructors establish orthogonality without fitting.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct Isometry {
     matrix: [[Real; 3]; 3],
     /// Translation applied after the orthogonal linear map.

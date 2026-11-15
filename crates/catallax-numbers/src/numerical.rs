@@ -3,7 +3,7 @@
 use crate::{Rational, Refusal, Sign};
 
 /// One evaluated parameter location, not an enclosure of the surrounding domain.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, catallax_numbers::Transfer)]
 pub struct NumericalSample {
     /// Curve parameter, optionally followed by surface u and v.
     pub parameters: Vec<Rational>,
@@ -12,7 +12,7 @@ pub struct NumericalSample {
 }
 
 /// A check performed by a numerical producer. Unperformed checks have no entry.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, catallax_numbers::Transfer)]
 pub enum NumericalCheck {
     /// A discrete check, such as closed edge uses or a simple parameter polygon.
     Passed {
@@ -33,7 +33,7 @@ pub enum NumericalCheck {
 }
 
 /// An actual repair, retained as history rather than a bound on a later body.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, catallax_numbers::Transfer)]
 pub enum NumericalRepair {
     /// A vertex relocation. The distance applies only to this point movement.
     VertexMoved {
@@ -58,7 +58,7 @@ pub enum NumericalRepair {
 /// use catallax_numbers::{BoundedEvidence, NumericalEvidence};
 /// fn promote(evidence: NumericalEvidence) -> BoundedEvidence { evidence.into() }
 /// ```
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, catallax_numbers::Transfer)]
 pub struct NumericalEvidence {
     tolerance_mm: Rational,
     checks: Vec<NumericalCheck>,

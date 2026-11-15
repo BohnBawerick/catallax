@@ -6,7 +6,7 @@ use std::collections::{BTreeSet, VecDeque};
 use crate::{Watch, ZeroProof};
 
 /// Kinds of recorded relation.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, catallax_numbers::Transfer)]
 pub enum FactKind {
     /// Same point set.
     Coincident,
@@ -23,7 +23,7 @@ pub enum FactKind {
 }
 
 /// Where a fact came from.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, catallax_numbers::Transfer)]
 pub enum FactOrigin {
     /// Guaranteed by the named constructing routine.
     Construction(&'static str),
@@ -32,7 +32,7 @@ pub enum FactOrigin {
 }
 
 /// One recorded relation between two keyed objects.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, catallax_numbers::Transfer)]
 pub struct Fact<K> {
     /// The relation.
     pub kind: FactKind,
@@ -76,7 +76,7 @@ pub enum FactRead<K> {
 }
 
 /// Append-only, deterministic store of facts.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct FactBook<K: Clone + Ord> {
     facts: Vector<Fact<K>>,
     keys: OrdSet<(FactKind, K, K, Option<K>)>,
@@ -84,20 +84,24 @@ pub struct FactBook<K: Clone + Ord> {
     classes: OrdMap<(FactKind, K), usize>,
     components: Vector<Component>,
     // What this book and its copies have been asked since `watch`.
+    #[transfer(skip)]
     watch: Watch<FactRead<K>>,
     // Work-span observation only: a dense number for each recorded subject,
     // so tangent and per-subject reads have their own dependency keys.
     #[cfg(feature = "work-span")]
+    #[transfer(skip)]
     subjects: OrdMap<K, u64>,
     #[cfg(feature = "work-span")]
+    #[transfer(skip)]
     span_nodes: crate::work_span::Entries,
     #[cfg(feature = "work-span")]
+    #[transfer(skip)]
     span_subjects: crate::work_span::Entries,
 }
 
 // Union by size bounds the read-only root walk. Incidence edges name roots,
 // not all historical copies of an equivalent geometric object.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 struct Component {
     parent: usize,
     size: usize,

@@ -18,7 +18,7 @@ use super::*;
 
 /// What one mouth sector adds relative to the unfilleted body, enclosed on the
 /// exact definition, independent of the fitted carrier.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct ContactMoments {
     /// Half the sector's angle at the cylinder axis.
     pub half_angle: Ball,

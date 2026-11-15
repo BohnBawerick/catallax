@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 mod curve;
 pub use curve::PatchPairCurve;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 struct Definition {
     first: RetainedSource,
     second: RetainedSource,
@@ -15,7 +15,7 @@ struct Definition {
     reconstruct: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, catallax_numbers::Transfer)]
 struct Equations {
     polynomials: [RealPoly; 3],
     jacobian: [[RealPoly; 4]; 3],
@@ -24,7 +24,7 @@ struct Equations {
 /// One producer-owned regular graph in four patch parameters. Its fifth
 /// polynomial variable is the unit trace parameter, not another unknown.
 /// The selected branch and its complete cell-pair certificate remain retained.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct PairTracePiece {
     definition: Arc<Definition>,
     arc: usize,

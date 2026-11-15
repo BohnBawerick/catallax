@@ -4,7 +4,7 @@ use crate::{Point3, RPoint3, RVector3, Vector3, math};
 use catallax_numbers::{Decider, Rational, Real, Refusal, Sign};
 
 /// A certified proper orthogonal rotation, retaining its exact matrix definition.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct Rotation {
     matrix: [[Real; 3]; 3],
 }
@@ -232,7 +232,7 @@ fn rational_apply(matrix: &[[&Rational; 3]; 3], vector: &[&Rational; 3]) -> [Rat
 }
 
 /// A validated rigid motion, with an exact algebraic translation.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct Pose {
     /// Proper orthogonal rotation.
     pub rotation: Rotation,

@@ -11,7 +11,7 @@ pub(super) enum Source<'a> {
     Original(&'a Arc<OriginalAtlas>),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub(super) enum RetainedSource {
     Patch(RationalPatch),
     Atlas(RationalAtlas),

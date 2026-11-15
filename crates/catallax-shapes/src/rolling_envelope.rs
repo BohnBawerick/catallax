@@ -49,7 +49,7 @@ fn magnitude(value: &Ball) -> Rational {
 
 // Coefficients are Taylor derivatives divided by factorial, over the entire
 // supplied parameter ball. Order four is what the Hermite remainder needs.
-#[derive(Clone)]
+#[derive(Clone, catallax_numbers::Transfer)]
 pub(crate) struct Jet(pub(crate) [Ball; 5]);
 impl Jet {
     pub(crate) fn constant(value: Ball) -> Self {
@@ -146,7 +146,7 @@ impl Jet {
 /// axis to the mouth centre; `across` completes the frame. The mouth edge's
 /// second face has outward normal `-edge[0] * radial + edge[1] * axis` in the
 /// mouth's meridian half-plane, so the ball stays on the edge, not that face.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct RollingEnvelopeDefinition {
     origin: Point3,
     axis: Vector3,
@@ -541,7 +541,7 @@ fn rows(k: &Constants, s: &Jet, fitted: Option<&Jet>) -> Result<Rows, Refusal> {
 }
 
 /// Hermite data of the fitted scalar rows at one chart node.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 struct Node {
     s: Rational,
     // Value then s-derivative: rail height, mouth reparametrisation, apex
@@ -751,12 +751,12 @@ const DEGREE: usize = 8;
 /// A finite checked rolling-ball envelope face. The carrier is the represented
 /// geometry over `[-1,1] x [0,1]`: `u` runs along the ball path from the
 /// negative to the positive transition, `v` from the cylinder rail to the mouth.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct RollingEnvelope {
     data: Arc<Data>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, catallax_numbers::Transfer)]
 struct Data {
     definition: RollingEnvelopeDefinition,
     nodes: Vec<Node>,
@@ -768,7 +768,7 @@ struct Data {
 
 // Enclosed homogeneous controls in the definition frame, u-major. Rigid copies
 // share one net, so no consumer pays to re-enclose a patterned carrier.
-#[derive(Debug)]
+#[derive(Debug, catallax_numbers::Transfer)]
 struct Net {
     bits: u32,
     controls: Vec<[Ball; 4]>,

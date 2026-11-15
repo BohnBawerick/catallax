@@ -52,3 +52,5 @@ pub use incidence::measure_incidence;
 pub use intersect::check_self_intersection;
 pub use recognize::*;
 pub use repair::{Imported, apply, apply_source, canonical_bytes, rebuild, rebuild_source};
+
+catallax_numbers::transfer_json!(RepairRecord);

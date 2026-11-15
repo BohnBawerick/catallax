@@ -19,7 +19,7 @@ use std::{
 pub type ImportFiles<'a> = BTreeMap<String, &'a [u8]>;
 
 /// A complete build. Intermediate input bodies remain immutable and queryable.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct Built {
     /// Geometry, topology and canonical face origin sets.
     pub model: Model,
@@ -42,7 +42,7 @@ pub struct Built {
 }
 
 /// A field-only step whose B-rep body is the envelope of its region.
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug, catallax_numbers::Transfer)]
 pub struct StandIn {
     /// The field-only step.
     pub step: StepId,

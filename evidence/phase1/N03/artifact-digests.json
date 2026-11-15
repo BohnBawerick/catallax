@@ -1,0 +1,100 @@
+{
+  "baseline": "ecad1812b339bb759d83ba8f057c927d69d393ec",
+  "prerequisites": {
+    "N02": "3e2a929e709c7916bfa8519e6cf5f7179cbc7cd5",
+    "E01_supplied_merge": "ecad1812b339bb759d83ba8f057c927d69d393ec"
+  },
+  "method": "SHA-256 of current N03 public code/docs, exact STEP bytes and retained source/emitted/reference records. Not self-hashed. Numerical evidence never supplies a complete body bound. Baseline sources are unchanged.",
+  "artifacts": [
+    {
+      "path": "crates/catallax-step/src/lib.rs",
+      "sha256": "d1fd45e72209ee0dbb9c77096bbd6a2419951271fb2f5f9639316c2f00fdc84c"
+    },
+    {
+      "path": "crates/catallax-step/src/numerical.rs",
+      "sha256": "b18f188561d849575590ba86ca4f74acc5ee1c761cacec960dd58fff72c6f7d3"
+    },
+    {
+      "path": "crates/catallax-step/tests/common/n03_tube.rs",
+      "sha256": "a744aab4a7c68d9dadcd988294ae5f6ed992ccbc7923339cd461b819e8e32b6f"
+    },
+    {
+      "path": "crates/catallax-step/tests/numerical_step.rs",
+      "sha256": "514902449216ec96c4445975673cf055eea84dd69e83913ef95dfb6766feb9ef"
+    },
+    {
+      "path": "docs/interface-changes/2026-11-15-numerical-step-export.md",
+      "sha256": "30c013058a852f8773f040d579d1ce5b026ab9f41b77990929ee257d59d6b641"
+    },
+    {
+      "path": "docs/phase1/N03/REPORT.md",
+      "sha256": "49eb4bad918adf29f7dd38457dc100acfdebc90d4354545003fa972c078eda45"
+    },
+    {
+      "path": "evidence/phase1/N03/VALIDATION.md",
+      "sha256": "60e51220eaf76b2637dd9357b81fd4140327d23b87391314c8c73967dd37c93b"
+    },
+    {
+      "path": "evidence/phase1/N03/legacy-block.step",
+      "sha256": "7148692d5d9b552c6c93484699740718d056ea6654889792f2b1f7d7ee3d3c2f"
+    },
+    {
+      "path": "evidence/phase1/N03/raw-reference.json",
+      "sha256": "435c48875317dd8ec6acf4d290ca3d1528e8b502b7a647a498aaa916d5394cb2"
+    },
+    {
+      "path": "evidence/phase1/N03/repaired-evidence.txt",
+      "sha256": "b2c49a979a6d674228f5419d8d5c6d352b94eb08549eb7dcee89d84f2f86feb5"
+    },
+    {
+      "path": "evidence/phase1/N03/repaired-report.json",
+      "sha256": "eb01153503c9cfadd22bd2c06d56c6da1c04ead3a74fa1311b4636088ab3b44d"
+    },
+    {
+      "path": "evidence/phase1/N03/repaired.step",
+      "sha256": "715713ed356758392c51639f87ad3852618e7e50e033d7dc46e91f9474e413b7"
+    },
+    {
+      "path": "evidence/phase1/N03/two-loop-evidence.txt",
+      "sha256": "8373375a4bec2c59d76d52dfff91bb13eed7981b35cdb9f480c17beca77f0ce3"
+    },
+    {
+      "path": "evidence/phase1/N03/two-loop-report.json",
+      "sha256": "fb55ea4b219956a40bbf08d98285335908b40309cda9f057568b52e14612308f"
+    },
+    {
+      "path": "evidence/phase1/N03/two-loop.step",
+      "sha256": "7f3778332cb35917fbe5c4f840a6cd0d97f8e98cb069f207c1c28e528a456738"
+    },
+    {
+      "path": "tools/step-regressions/check_numerical_step.py",
+      "sha256": "5633cdcf16efc13f328ed85b33a738f6a9296e2afb925f4c64bbed7c91025376"
+    }
+  ],
+  "baseline_sources": [
+    {
+      "path": "crates/catallax-topology/tests/numerical_trim.rs",
+      "sha256": "bb67872b3ee6cf823386ee790f5a2ee0cf627aadfa3dab67a03a4bd123813fc5"
+    },
+    {
+      "path": "crates/catallax-topology/src/numerical.rs",
+      "sha256": "15633cfdaf7a6735f87e20abd50c72b7c669d740ae1d1e5f79c241d52430de7c"
+    },
+    {
+      "path": "crates/catallax-step/src/export.rs",
+      "sha256": "0555d3293a24b0c992f3a51f10beba627c9026e8f65f1cee1b6f4f84df796863"
+    },
+    {
+      "path": "crates/catallax-step/src/pcurve.rs",
+      "sha256": "eeea84e7468bc227d5f2350e4b95a798222612db83d72247e249b1ab3f84457f"
+    },
+    {
+      "path": "tools/step-regressions/test_loopless_faces.py",
+      "sha256": "961ac5d22e2112617d5285068f5902f9489d5e671b975435811e5665b91f22e7"
+    },
+    {
+      "path": "docs/interface-changes/2026-11-15-checked-numerical-build-results.md",
+      "sha256": "63d816eeeeededf0be7b6eb3e54ed01073267095b9d3fba36576f0ea256e4123"
+    }
+  ]
+}

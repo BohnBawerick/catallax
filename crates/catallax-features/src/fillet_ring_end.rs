@@ -109,7 +109,19 @@ pub(super) fn pipe_geometry(
     {
         return Err(unsupported());
     }
-    let mut feet = branch.endpoints();
+    let radial_sq = &law.offset.square() - &(&law.radius * &law.tilt).square();
+    if sign(&radial_sq, dec)? != Sign::Positive {
+        return Err(unsupported());
+    }
+    let side = Real::from_i64(if side == Sign::Positive { 1 } else { -1 });
+    // The plane rail has axial offset reach*r/along; the wall rail has none.
+    // These are the same section ends without cancelled chart-root expressions.
+    let mut feet = [
+        law.base
+            .plus(&law.axis.scaled(&(&(&law.reach * &law.radius) / &law.along)))
+            .plus(&law.side.scaled(&(&side * &radial_sq.sqrt()))),
+        law.base.plus(&law.side.scaled(&(&side * &law.body))),
+    ];
     if !matches!(run.definition.supports[0], Surface::Plane(_)) {
         feet.swap(0, 1);
         branch = branch.reversed();

@@ -25,7 +25,8 @@ fn a_finite_tangent_interval_preserves_material_and_a_nearby_crossing_cuts_it() 
             input["result"] = json!("cut");
             let recipe = Recipe::parse(&input.to_string()).unwrap();
             let mut dec = Decider::default();
-            let mut built = catallax_features::evaluate(&recipe, &mut dec).unwrap();
+            let mut built = catallax_features::evaluate(&recipe, &mut dec)
+                .unwrap_or_else(|error| panic!("height={height}: {error:?}"));
             assert_eq!(built.model.body(built.result).kind, BodyKind::Solid);
             assert_eq!(built.model.body(built.result).lumps.len(), 1);
             assert!(built.model.check(built.result).is_empty());

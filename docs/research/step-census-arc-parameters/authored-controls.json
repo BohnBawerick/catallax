@@ -1,0 +1,241 @@
+{
+  "arc_phase_angular_cap_rad": "1/1000000000000",
+  "arc_phase_distance_cap_mm": "1/1000000000",
+  "arc_phase_evidence_count": 2,
+  "cases": [
+    {
+      "file": "quarter-chart-0--1.step",
+      "material_probes_passed": 3,
+      "sha256": "335a70ff918f7e3c316e34818b521b959b126c03a9044dc0c0ce1551423b66ee",
+      "topology": {
+        "edges": 9,
+        "euler_with_face_holes": 2,
+        "faces": 5,
+        "solids": 1,
+        "two_loop_faces": 0,
+        "vertices": 6
+      },
+      "valid_after_builder_internal_healing": true,
+      "volume_mm3": 0.7853981633974483
+    },
+    {
+      "file": "quarter-chart-0-0.step",
+      "material_probes_passed": 3,
+      "sha256": "335a70ff918f7e3c316e34818b521b959b126c03a9044dc0c0ce1551423b66ee",
+      "topology": {
+        "edges": 9,
+        "euler_with_face_holes": 2,
+        "faces": 5,
+        "solids": 1,
+        "two_loop_faces": 0,
+        "vertices": 6
+      },
+      "valid_after_builder_internal_healing": true,
+      "volume_mm3": 0.7853981633974483
+    },
+    {
+      "file": "quarter-chart-0-1.step",
+      "material_probes_passed": 3,
+      "sha256": "335a70ff918f7e3c316e34818b521b959b126c03a9044dc0c0ce1551423b66ee",
+      "topology": {
+        "edges": 9,
+        "euler_with_face_holes": 2,
+        "faces": 5,
+        "solids": 1,
+        "two_loop_faces": 0,
+        "vertices": 6
+      },
+      "valid_after_builder_internal_healing": true,
+      "volume_mm3": 0.7853981633974483
+    },
+    {
+      "file": "quarter-chart-1--1.step",
+      "material_probes_passed": 3,
+      "sha256": "335a70ff918f7e3c316e34818b521b959b126c03a9044dc0c0ce1551423b66ee",
+      "topology": {
+        "edges": 9,
+        "euler_with_face_holes": 2,
+        "faces": 5,
+        "solids": 1,
+        "two_loop_faces": 0,
+        "vertices": 6
+      },
+      "valid_after_builder_internal_healing": true,
+      "volume_mm3": 0.7853981633974483
+    },
+    {
+      "file": "quarter-chart-1-0.step",
+      "material_probes_passed": 3,
+      "sha256": "335a70ff918f7e3c316e34818b521b959b126c03a9044dc0c0ce1551423b66ee",
+      "topology": {
+        "edges": 9,
+        "euler_with_face_holes": 2,
+        "faces": 5,
+        "solids": 1,
+        "two_loop_faces": 0,
+        "vertices": 6
+      },
+      "valid_after_builder_internal_healing": true,
+      "volume_mm3": 0.7853981633974483
+    },
+    {
+      "file": "quarter-chart-1-1.step",
+      "material_probes_passed": 3,
+      "sha256": "335a70ff918f7e3c316e34818b521b959b126c03a9044dc0c0ce1551423b66ee",
+      "topology": {
+        "edges": 9,
+        "euler_with_face_holes": 2,
+        "faces": 5,
+        "solids": 1,
+        "two_loop_faces": 0,
+        "vertices": 6
+      },
+      "valid_after_builder_internal_healing": true,
+      "volume_mm3": 0.7853981633974483
+    },
+    {
+      "file": "quarter-chart-2--1.step",
+      "material_probes_passed": 3,
+      "sha256": "335a70ff918f7e3c316e34818b521b959b126c03a9044dc0c0ce1551423b66ee",
+      "topology": {
+        "edges": 9,
+        "euler_with_face_holes": 2,
+        "faces": 5,
+        "solids": 1,
+        "two_loop_faces": 0,
+        "vertices": 6
+      },
+      "valid_after_builder_internal_healing": true,
+      "volume_mm3": 0.7853981633974483
+    },
+    {
+      "file": "quarter-chart-2-0.step",
+      "material_probes_passed": 3,
+      "sha256": "335a70ff918f7e3c316e34818b521b959b126c03a9044dc0c0ce1551423b66ee",
+      "topology": {
+        "edges": 9,
+        "euler_with_face_holes": 2,
+        "faces": 5,
+        "solids": 1,
+        "two_loop_faces": 0,
+        "vertices": 6
+      },
+      "valid_after_builder_internal_healing": true,
+      "volume_mm3": 0.7853981633974483
+    },
+    {
+      "file": "quarter-chart-2-1.step",
+      "material_probes_passed": 3,
+      "sha256": "335a70ff918f7e3c316e34818b521b959b126c03a9044dc0c0ce1551423b66ee",
+      "topology": {
+        "edges": 9,
+        "euler_with_face_holes": 2,
+        "faces": 5,
+        "solids": 1,
+        "two_loop_faces": 0,
+        "vertices": 6
+      },
+      "valid_after_builder_internal_healing": true,
+      "volume_mm3": 0.7853981633974483
+    },
+    {
+      "file": "quarter-chart-3--1.step",
+      "material_probes_passed": 3,
+      "sha256": "335a70ff918f7e3c316e34818b521b959b126c03a9044dc0c0ce1551423b66ee",
+      "topology": {
+        "edges": 9,
+        "euler_with_face_holes": 2,
+        "faces": 5,
+        "solids": 1,
+        "two_loop_faces": 0,
+        "vertices": 6
+      },
+      "valid_after_builder_internal_healing": true,
+      "volume_mm3": 0.7853981633974483
+    },
+    {
+      "file": "quarter-chart-3-0.step",
+      "material_probes_passed": 3,
+      "sha256": "335a70ff918f7e3c316e34818b521b959b126c03a9044dc0c0ce1551423b66ee",
+      "topology": {
+        "edges": 9,
+        "euler_with_face_holes": 2,
+        "faces": 5,
+        "solids": 1,
+        "two_loop_faces": 0,
+        "vertices": 6
+      },
+      "valid_after_builder_internal_healing": true,
+      "volume_mm3": 0.7853981633974483
+    },
+    {
+      "file": "quarter-chart-3-1.step",
+      "material_probes_passed": 3,
+      "sha256": "335a70ff918f7e3c316e34818b521b959b126c03a9044dc0c0ce1551423b66ee",
+      "topology": {
+        "edges": 9,
+        "euler_with_face_holes": 2,
+        "faces": 5,
+        "solids": 1,
+        "two_loop_faces": 0,
+        "vertices": 6
+      },
+      "valid_after_builder_internal_healing": true,
+      "volume_mm3": 0.7853981633974483
+    },
+    {
+      "file": "quarter-cylinder.step",
+      "material_probes_passed": 3,
+      "sha256": "335a70ff918f7e3c316e34818b521b959b126c03a9044dc0c0ce1551423b66ee",
+      "topology": {
+        "edges": 9,
+        "euler_with_face_holes": 2,
+        "faces": 5,
+        "solids": 1,
+        "two_loop_faces": 0,
+        "vertices": 6
+      },
+      "valid_after_builder_internal_healing": true,
+      "volume_mm3": 0.7853981633974483
+    },
+    {
+      "file": "quarter-cylinder-moved.step",
+      "material_probes_passed": 3,
+      "sha256": "f62954061f44a04edf179fc620d678939023bfdfcd14913f8a3c7398d5cbbe43",
+      "topology": {
+        "edges": 9,
+        "euler_with_face_holes": 2,
+        "faces": 5,
+        "solids": 1,
+        "two_loop_faces": 0,
+        "vertices": 6
+      },
+      "valid_after_builder_internal_healing": true,
+      "volume_mm3": 0.7853981633974485
+    },
+    {
+      "file": "quarter-oblique-anchor.step",
+      "material_probes_passed": 3,
+      "sha256": "60c7f023ba2bb5b86578a9e49340e50ac161921bbc0c2d72340a190596f4712a",
+      "topology": {
+        "edges": 9,
+        "euler_with_face_holes": 2,
+        "faces": 5,
+        "solids": 1,
+        "two_loop_faces": 0,
+        "vertices": 6
+      },
+      "valid_after_builder_internal_healing": true,
+      "volume_mm3": 0.7853981633974483
+    }
+  ],
+  "fixture_producer_revision": "3651cd367cbb2f5d28118b06c6431193eb1b0d62",
+  "fixture_replay_bytes_equal": true,
+  "format": "catallax-finite-circle-exchange-controls/1",
+  "oblique_four_digit_phase_refused": "step.numerical-arc-phase",
+  "ocp_version": "8.0.1.1",
+  "raw_helper_sha256": "5633cdcf16efc13f328ed85b33a738f6a9296e2afb925f4c64bbed7c91025376",
+  "unhealed_validity_established": false,
+  "validity_includes_occt_builder_internal_healing": true,
+  "verification_revision": "02615a2e568da33b58cc568b73f9bc4e1e8e289a"
+}

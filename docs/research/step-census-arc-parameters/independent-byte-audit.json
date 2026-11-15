@@ -1,0 +1,31 @@
+{
+  "actual_cargo_log_artifact_and_executable_checked": true,
+  "all_3000_ids_hashes_and_denominator_checked": true,
+  "all_400_durable_source_hashes_rechecked": true,
+  "all_808_expected_bodies_reproduced": true,
+  "all_declared_step_hashes_and_mm_radian_units_checked": true,
+  "binary_sha256": "17b928c6ee2bb18e522f3676a7db52fdfd64f2bb6dc6b323f137c87a3b2917bc",
+  "builder_checked_bodies": 677,
+  "builder_invalid_bodies": 64,
+  "builder_valid_bodies": 613,
+  "complete": true,
+  "csv_sha256": "0f9c1727baa480e4c4c9e446e9495fcfa891dfff0249a7acfbddbcc3e6928431",
+  "matched_main_byte_audit": {
+    "actual_cargo_log_artifact_and_executable_checked": true,
+    "all_400_durable_source_hashes_rechecked": true,
+    "all_declared_written_step_hashes_and_mm_radian_units_checked": true,
+    "producer_head_and_clean_tree_checked": true,
+    "raw_checked_bodies": 677,
+    "raw_invalid_bodies": 97,
+    "raw_valid_bodies": 580,
+    "written_body_files_checked": 699
+  },
+  "matched_paired_outcomes_audited": true,
+  "only_production_change": [
+    "crates/catallax-step/src/numerical/analytic.rs"
+  ],
+  "only_production_change_relative_to": "a207ea676f52ee077cbb186674407dea3e64e1d0",
+  "source_revision": "3651cd367cbb2f5d28118b06c6431193eb1b0d62",
+  "validity_includes_occt_builder_internal_healing": true,
+  "written_body_files_checked": 699
+}

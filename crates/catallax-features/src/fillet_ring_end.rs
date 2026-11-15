@@ -19,7 +19,7 @@ pub(super) fn pipe_geometry(
     old: VertexId,
     dec: &mut Decider,
 ) -> Result<Option<([Point3; 2], Curve)>, Refusal> {
-    use catallax_shapes::{RationalPatch, SectionSurface, spline_tools::RationalSplineSurface};
+    use catallax_shapes::{RationalAtlas, SectionSurface, spline_tools::RationalSplineSurface};
 
     let Surface::BSpline(SplineSupport::RollingPipe(pipe)) = &run.definition.surface else {
         return Ok(None);
@@ -71,8 +71,8 @@ pub(super) fn pipe_geometry(
     let carrier = source
         .extracted([[&low, &high], [&zero, &one]], dec)?
         .to_surface(dec)?;
-    let patch = RationalPatch::new(carrier, dec)?;
-    let section = patch.sections(&SectionSurface::Plane(plane.clone()), dec)?;
+    let atlas = RationalAtlas::partition(carrier, false, false, dec)?;
+    let section = atlas.sections(&SectionSurface::Plane(plane.clone()), dec)?;
     let [branch] = section.branches() else {
         return Err(unsupported());
     };

@@ -1,7 +1,7 @@
 //! Open oblique rims share their end section with the vertical wall.
 
 use catallax_features::evaluate;
-use catallax_numbers::{BudgetPolicy, Decider};
+use catallax_numbers::{BudgetPolicy, Decider, with_operation_budget};
 use catallax_recipe::Recipe;
 
 #[test]
@@ -14,7 +14,9 @@ fn the_public_partial_oblique_rim_builds_and_exports() {
         max_work: 20_000_000,
         ..Default::default()
     });
-    let built = evaluate(&recipe, &mut dec).unwrap();
+    let (built, work) = with_operation_budget(20_000_000, || evaluate(&recipe, &mut dec));
+    let built = built.unwrap();
+    assert!(!work.exhausted);
     assert!(built.model.check(built.result).is_empty());
     let mut bytes = Vec::new();
     catallax_step::write_step(

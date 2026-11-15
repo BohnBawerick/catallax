@@ -149,30 +149,30 @@ mod tests {
             tolerance_mm: Rational::from_ratio(1, 10_000_000).unwrap(),
         }
     }
-    fn cylinder(skew: bool) -> Cylinder {
+    fn cylinder(offset: &str, skew: bool) -> Cylinder {
+        let axis = if skew {
+            Vector3::new(1.into(), (-1).into(), 1.into())
+                .scaled(&(&Real::one() / &Real::from(3).sqrt()))
+        } else {
+            Vector3::new(0.into(), (-1).into(), 0.into())
+        };
         Cylinder {
-            origin: Point3::new(
-                Real::from(Rational::from_ratio(21, 2).unwrap()),
-                12.into(),
-                0.into(),
-            ),
-            axis: if skew {
-                Vector3::new(1.into(), (-1).into(), 1.into())
-            } else {
-                Vector3::new(0.into(), (-1).into(), 0.into())
-            },
+            origin: Point3::new(Rational::parse(offset).unwrap().into(), 12.into(), 0.into()),
+            axis,
             radius_sq: 1.into(),
             ref_dir: Vector3::new(1.into(), 0.into(), 0.into()),
         }
     }
     #[test]
     fn standalone_cylinder_sources_match_finite_queries_in_native_parameters() {
-        for skew in [false, true] {
-            let cylinder = cylinder(skew);
-            let parameters = [
-                -Rational::from_ratio(99, 2).unwrap(),
-                Rational::from_ratio(99, 2).unwrap(),
-            ];
+        for (offset, skew, extent) in [
+            ("10", false, "49"),
+            ("10.5", false, "99/2"),
+            ("10.5", true, "99/2"),
+        ] {
+            let cylinder = cylinder(offset, skew);
+            let extent = Rational::parse(extent).unwrap();
+            let parameters = [-&extent, extent];
             let ((), work) = with_operation_budget(20_000_000, || {
                 let mut dec = Decider::default();
                 let source = NumericalCylinderSource::new(
@@ -194,6 +194,8 @@ mod tests {
                         .unwrap(),
                     q(0)
                 );
+                assert!(source.signed_mm_at_v(&q(-1)).is_err());
+                assert!(source.signed_mm_at_v(&q(2)).is_err());
                 for upper in [false, true] {
                     let cone = Surface::Cone(Cone {
                         apex: Point3::new(
@@ -235,7 +237,7 @@ mod tests {
                     assert!(patch.carrier().has_rational_definition());
                 }
                 eprintln!(
-                    "canonical cylinder skew={skew}: {} work",
+                    "canonical cylinder offset={offset} skew={skew}: {} work",
                     source.source_work + source.chart_work
                 );
             });
@@ -243,8 +245,83 @@ mod tests {
         }
     }
     #[test]
+    fn standalone_descriptor_is_identical_at_one_two_and_four_workers() {
+        let jobs = [
+            ("10", false, "49"),
+            ("10.5", false, "99/2"),
+            ("10.5", true, "99/2"),
+        ];
+        let build = |(offset, skew, extent): (&str, bool, &str)| {
+            let extent = Rational::parse(extent).unwrap();
+            NumericalCylinderSource::new(
+                &cylinder(offset, skew),
+                [-&extent, extent],
+                options(),
+                &mut Decider::default(),
+            )
+            .unwrap()
+        };
+        let baseline: Vec<_> = jobs.iter().copied().map(build).collect();
+        for workers in [1, 2, 4] {
+            let rows = std::thread::scope(|scope| {
+                let handles: Vec<_> = (0..workers)
+                    .map(|rank| {
+                        let jobs = &jobs;
+                        let build = &build;
+                        scope.spawn(move || {
+                            jobs.iter()
+                                .copied()
+                                .enumerate()
+                                .filter(|(i, _)| i % workers == rank)
+                                .map(|(i, job)| (i, build(job)))
+                                .collect::<Vec<_>>()
+                        })
+                    })
+                    .collect();
+                handles
+                    .into_iter()
+                    .flat_map(|handle| handle.join().unwrap())
+                    .collect::<Vec<_>>()
+            });
+            for (i, actual) in rows {
+                assert!(actual.source.same_definition(&baseline[i].source));
+                assert_eq!(actual.evidence, baseline[i].evidence);
+                assert_eq!(
+                    (actual.source_work, actual.chart_work),
+                    (baseline[i].source_work, baseline[i].chart_work)
+                );
+                for (a, b) in actual.quarters.iter().zip(&baseline[i].quarters) {
+                    assert_eq!(a.key, b.key);
+                    assert_eq!(a.axis_parameters_mm, b.axis_parameters_mm);
+                    let Surface::BSpline(SplineSupport::RationalPatch(a)) = &a.surface else {
+                        unreachable!()
+                    };
+                    let Surface::BSpline(SplineSupport::RationalPatch(b)) = &b.surface else {
+                        unreachable!()
+                    };
+                    assert!(a.carrier().same_definition(b.carrier()));
+                }
+            }
+        }
+    }
+    #[test]
+    fn canonical_source_honors_an_expired_caller_deadline() {
+        let (result, work) = with_operation_budget(20_000_000, || {
+            let mut dec = Decider::default();
+            dec.set_deadline(Some(std::time::Instant::now()));
+            NumericalCylinderSource::new(
+                &cylinder("10", false),
+                [q(-49), q(49)],
+                options(),
+                &mut dec,
+            )
+        });
+        assert_eq!(result.unwrap_err().code, "numbers.deadline");
+        assert!(!work.exhausted);
+    }
+    #[test]
     fn canonical_source_rejects_invalid_domains_and_honors_the_caller_limits() {
-        let cylinder = cylinder(false);
+        let cylinder = cylinder("10", false);
         for parameters in [[q(1), q(1)], [q(2), q(1)]] {
             assert!(
                 NumericalCylinderSource::new(

@@ -24,8 +24,10 @@ Changing the neutral-axis rate from 8 to 6 gives touching with gap `[0,8]` mm;
 rate 4 gives crossing with gap `[-1,9]` mm. Zero rate has no closed transverse
 neutral curve and is diagnosed before any division by that rate.
 
-B-rep evaluation and field compilation still publish nothing for these hollow
-oblique cases. A positive bound returns `draft.unsupported-oblique-annulus`,
+B-rep evaluation now consumes a positive bound to assemble the shared annular
+caps and both walls. See [hollow oblique draft](2026-11-15-hollow-oblique-draft.md).
+Field compilation still publishes nothing for these hollow oblique cases.
+Its positive bound returns `draft.unsupported-oblique-annulus`,
 with `separation=Separated`, `certified_radial_gap_mm=[lower,upper]`, four exact
 cap intersection rows, `shared_trimmed_cap_rings=unbuilt`, and
 `body_published=false`. Cap intersection curves do not certify assembled trimmed

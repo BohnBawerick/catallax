@@ -172,6 +172,13 @@ struct Rounded {
     bound: Rational,
 }
 
+struct RoundedHole {
+    face: catallax_topology::FaceId,
+    rounded: Rounded,
+    charts: Charts,
+    weights: Vec<Real>,
+}
+
 fn difference_bound(
     a: &Point3,
     b: &Point3,
@@ -548,6 +555,53 @@ fn advanced_face(
         .into()
 }
 
+fn annular_face(
+    graph: &mut Graph,
+    name: &str,
+    loops: [&[(Id, bool)]; 2],
+    surface: Id,
+    same: bool,
+) -> Field {
+    let mut bounds = Vec::with_capacity(2);
+    for (i, uses) in loops.into_iter().enumerate() {
+        let oriented: Vec<_> = uses
+            .iter()
+            .map(|(edge, forward)| {
+                graph.add(
+                    "ORIENTED_EDGE",
+                    vec![
+                        text("''"),
+                        text("*"),
+                        text("*"),
+                        (*edge).into(),
+                        boolean(*forward),
+                    ],
+                )
+            })
+            .collect();
+        let loop_ = graph.add("EDGE_LOOP", vec![text("''"), refs(oriented)]);
+        bounds.push(graph.add(
+            if i == 0 {
+                "FACE_OUTER_BOUND"
+            } else {
+                "FACE_BOUND"
+            },
+            vec![text("''"), loop_.into(), boolean(true)],
+        ));
+    }
+    graph
+        .add(
+            "ADVANCED_FACE",
+            vec![
+                text(string(name)),
+                refs(bounds),
+                surface.into(),
+                boolean(same),
+            ],
+        )
+        .into()
+}
+
 /// Writes the first checked finite polynomial spline-prism family as genuine
 /// `B_SPLINE_SURFACE_WITH_KNOTS` and shared `B_SPLINE_CURVE_WITH_KNOTS` entities.
 /// The one model side becomes two file faces with shared boundaries, recorded
@@ -577,6 +631,7 @@ pub fn write_spline_prism_step<W: Write>(
         charts,
         3,
         None,
+        None,
         options,
         dec,
         out,
@@ -591,6 +646,7 @@ fn write_rounded<W: Write>(
     charts: Charts,
     degree: usize,
     weights: Option<&[Real]>,
+    hole: Option<RoundedHole>,
     options: &CertifiedSplineStepOptions,
     dec: &mut Decider,
     out: &mut W,
@@ -761,6 +817,10 @@ fn write_rounded<W: Write>(
         Ok(edge_curve(graph, vertices[index], curve, lines))
     };
     let joins = [join(0, &mut graph)?, join(1, &mut graph)?];
+    let inner = hole
+        .as_ref()
+        .map(|hole| oblique::append_hole(&mut graph, hole, context))
+        .transpose()?;
     // `SplinePrism::check` proves the side has the surface's sense, travelling
     // the lower ring with increasing u and the upper ring against it. Each cap
     // uses its ring the opposite way, so one shell has one material side.
@@ -775,13 +835,27 @@ fn write_rounded<W: Write>(
         };
         let name = format!("face_{}", face.index());
         let same = model.face(face).sense == Sense::Same;
-        face_entities.push(advanced_face(&mut graph, &name, &uses, surface, same));
+        face_entities.push(if let Some(inner) = &inner {
+            let inner_uses = if index == 0 {
+                [(inner.rings[0][0], true), (inner.rings[1][0], true)]
+            } else {
+                [(inner.rings[1][1], false), (inner.rings[0][1], false)]
+            };
+            annular_face(&mut graph, &name, [&uses, &inner_uses], surface, same)
+        } else {
+            advanced_face(&mut graph, &name, &uses, surface, same)
+        });
         face_map.push(StepFaceRegion {
             face,
             file_region: name,
             file_domain: None,
         });
     }
+    if let Some(inner) = inner {
+        face_entities.extend(inner.faces);
+        face_map.extend(inner.face_map);
+    }
+    let count = if hole.is_some() { 2 } else { 1 };
     let side = faces[2];
     let same = model.face(side).sense == Sense::Same;
     for (index, domain) in charts.domains.iter().cloned().enumerate() {
@@ -810,13 +884,15 @@ fn write_rounded<W: Write>(
     out.write_all(file.as_bytes())
         .map_err(|error| Refusal::new("step.io-error", error.to_string()))?;
     Ok(Answer::exact(StepReport {
-        max_deviation: rounded.bound,
-        added_vertices: 4,
-        added_edges: 4,
+        max_deviation: hole.map_or(rounded.bound.clone(), |hole| {
+            rounded.bound.max(hole.rounded.bound)
+        }),
+        added_vertices: 4 * count,
+        added_edges: 4 * count,
         solids: 1,
-        faces: 4,
-        edges: 6,
-        vertices: 4,
+        faces: 2 + 2 * count,
+        edges: 6 * count,
+        vertices: 4 * count,
         face_map,
         ..StepReport::default()
     }))

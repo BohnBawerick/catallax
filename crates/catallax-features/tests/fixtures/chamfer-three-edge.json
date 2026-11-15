@@ -1,0 +1,24 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "Three bevels with one planar corner",
+  "steps": [
+    {
+      "id": "base",
+      "op": "block",
+      "size": ["10", "12", "8"],
+      "pose": {"rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "0"]}
+    },
+    {
+      "id": "bevel",
+      "op": "chamfer",
+      "body": "base",
+      "distance": "1",
+      "edges": [
+        {"between": [{"step": "base", "role": {"side": {"segment": "x_min"}}}, {"step": "base", "role": {"side": {"segment": "y_min"}}}]},
+        {"between": [{"step": "base", "role": {"side": {"segment": "x_min"}}}, {"step": "base", "role": "start"}]},
+        {"between": [{"step": "base", "role": {"side": {"segment": "y_min"}}}, {"step": "base", "role": "start"}]}
+      ]
+    }
+  ],
+  "result": "bevel"
+}

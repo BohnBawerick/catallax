@@ -3,6 +3,9 @@ use crate::{EdgeMesh, FaceMesh, Mesh, MeshOptions, Triangle, chart, failure};
 use catallax_numbers::{Answer, Answered, Decider, Rational, Refusal};
 use catallax_topology::{BodyId, DraftedCylinder, Model};
 
+#[path = "oblique_annular.rs"]
+mod annular;
+
 pub(crate) fn build(
     model: &Model,
     body: BodyId,
@@ -16,6 +19,9 @@ pub(crate) fn build(
         ));
     }
     let checked = DraftedCylinder::check(model, body, dec)?;
+    if checked.hole().is_some() {
+        return annular::build(model, body, checked, options, dec);
+    }
     let support = checked.support();
     let grid = support.display_grid(
         &options.chord_tolerance.mul_pow2(-2),

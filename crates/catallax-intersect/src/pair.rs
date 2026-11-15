@@ -908,6 +908,10 @@ fn uncached_plan(
         }
     }
     match (a, b) {
+        (
+            Surface::BSpline(catallax_shapes::SplineSupport::RationalAtlas(first)),
+            Surface::BSpline(catallax_shapes::SplineSupport::RationalAtlas(second)),
+        ) => rational_patch::atlas_pair(first, second, dec),
         (Surface::Plane(a), Surface::Plane(b)) => planes(a, b, dec),
         (
             Surface::Plane(p),

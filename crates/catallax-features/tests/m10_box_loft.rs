@@ -16,6 +16,48 @@ fn loft_steps() -> Vec<Value> {
     fixture["steps"].as_array().unwrap().clone()
 }
 
+#[test]
+fn two_spline_lofts_keep_the_subtracted_material_and_finite_branch_ends() {
+    let ((), work) = with_operation_budget(20_000_000, || {
+        let mut steps = loft_steps();
+        let mut other = loft_steps();
+        for step in &mut other {
+            step["id"] = json!(format!("other_{}", step["id"].as_str().unwrap()));
+            if step["op"] == "sketch" {
+                step["plane"]["translation"][0] = json!("1");
+            } else {
+                for section in step["sections"].as_array_mut().unwrap() {
+                    section["profile"] =
+                        json!(format!("other_{}", section["profile"].as_str().unwrap()));
+                }
+            }
+        }
+        steps.extend(other);
+        steps.push(json!({"id":"cut","op":"boolean","kind":"subtract","target":"loft","tool":"other_loft"}));
+        let mut dec = Decider::default();
+        let mut built = catallax_features::evaluate(&recipe(steps, "cut"), &mut dec).unwrap();
+        assert_eq!(
+            built.model.body(built.result).kind,
+            catallax_topology::BodyKind::Solid
+        );
+        assert!(built.model.check(built.result).is_empty());
+        for (x, expected) in [
+            ("1/2", catallax_boolean::Containment::Inside),
+            ("2", catallax_boolean::Containment::Outside),
+        ] {
+            let p = Point3::new(
+                Rational::parse(x).unwrap().into(),
+                Rational::parse("1/2").unwrap().into(),
+                Real::one(),
+            );
+            assert!(
+                matches!(catallax_boolean::classify_point(&mut built.model,built.result,&p,&mut dec),catallax_numbers::Outcome::Proven(actual) if actual==expected)
+            );
+        }
+    });
+    assert!(!work.exhausted, "{} work units", work.used);
+}
+
 fn recipe(steps: Vec<Value>, result: &str) -> Recipe {
     let value =
         json!({"format":"catallax-recipe/5","name":"m10 box loft","steps":steps,"result":result});

@@ -21,6 +21,9 @@ the inconsistent raw source. Solids left open by declined decisions remain
 unresolved. The strict builder's internal spline repair currently returns marks
 without its resulting finite definition; such marked solids also remain
 unresolved. No raw source definition is substituted for that missing result.
+An unavailable definition also prevents verified uniqueness for available
+definitions of the same kind in either import, reported as
+`unverified_multiplicity`; an unknown face alone does not affect edge multiplicity.
 
 Equality is deliberately conservative. Equivalent reparameterizations, loop
 rotations, support-frame changes, splits, merges and changed geometry can remain
@@ -31,6 +34,7 @@ exactly once in either `verified` or `unresolved`. Refusal returns no partial
 report. The existing active allowance applies, with 20M as the default when no
 request is active. Complete canonical representations are charged by byte size,
 including rational and spline data, and compared directly rather than by hash.
+Ambiguity candidates are charged before copying them into the report.
 
 `Imported` now contains private producer-owned comparison data. Callers continue
 obtaining it through `apply`, `apply_source` or `rebuild`; struct literals must

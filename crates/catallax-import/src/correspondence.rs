@@ -53,6 +53,9 @@ pub enum UnresolvedReason {
     ChangedOrRemoved,
     /// Equal definitions occur more than once in either source.
     AmbiguousGeometry,
+    /// An unavailable definition of the same kind could be another equal
+    /// definition, so uniqueness across both imports is not established.
+    UnverifiedMultiplicity,
     /// The solid was left open, or its builder repaired geometry internally
     /// without returning the resulting finite definitions to this comparator.
     UnverifiedGeometry,
@@ -260,6 +263,13 @@ fn compare_inner(
 ) -> Result<ReplacementCorrespondence, Refusal> {
     let old_entities = inventory(old, dec)?;
     let new_entities = inventory(new, dec)?;
+    let mut unavailable = BTreeSet::new();
+    for (entity, geometry) in old_entities.iter().chain(&new_entities) {
+        dec.charge_work(1)?;
+        if geometry.is_none() {
+            unavailable.insert(entity.kind);
+        }
+    }
     let group = |entities: &Inventory| {
         let mut groups = BTreeMap::<_, Vec<_>>::new();
         for (entity, geometry) in entities {
@@ -288,19 +298,27 @@ fn compare_inner(
             continue;
         };
         let key = (old.kind, geometry);
-        let candidates = new_groups.get(&key).cloned().unwrap_or_default();
-        if candidates.len() == 1 && old_groups[&key].len() == 1 {
+        let candidates = if let Some(group) = new_groups.get(&key) {
+            dec.charge_work(u64::try_from(group.len()).unwrap_or(u64::MAX))?;
+            group.clone()
+        } else {
+            Vec::new()
+        };
+        if candidates.len() == 1 && old_groups[&key].len() == 1 && !unavailable.contains(&old.kind)
+        {
             let new = candidates.into_iter().next().expect("one candidate");
             matched.insert(new.clone());
             verified.push(EntityCorrespondence { old, new });
         } else {
             unresolved.push(UnresolvedEntity {
-                old,
-                reason: if candidates.is_empty() {
+                reason: if unavailable.contains(&old.kind) {
+                    UnresolvedReason::UnverifiedMultiplicity
+                } else if candidates.is_empty() {
                     UnresolvedReason::ChangedOrRemoved
                 } else {
                     UnresolvedReason::AmbiguousGeometry
                 },
+                old,
                 candidates,
             });
         }

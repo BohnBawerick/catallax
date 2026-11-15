@@ -232,6 +232,91 @@ fn a_declined_solid_has_only_unresolved_entries() {
 }
 
 #[test]
+fn unavailable_peers_prevent_uniqueness_in_either_import() {
+    let source = boxes_step(&[
+        BoxFixture::new(["10", "20", "30"]),
+        BoxFixture::new(["10", "20", "30"]),
+    ]);
+    let placement = source
+        .lines()
+        .rfind(|line| line.contains("AXIS2_PLACEMENT_3D("))
+        .unwrap();
+    let axis = placement.split(',').nth(2).unwrap();
+    let prefix = format!("{axis}=");
+    let direction = source
+        .lines()
+        .find(|line| line.starts_with(&prefix))
+        .unwrap();
+    let source = source.replace(direction, &format!("{prefix}DIRECTION('',(0.000001,0,1));"));
+    let options = ImportOptions::default();
+    let proposals = propose(source.as_bytes(), &options).unwrap();
+    assert!(!proposals.proposals.is_empty());
+    let decisions = proposals
+        .proposals
+        .iter()
+        .map(|proposal| Decision::Decline {
+            id: proposal.id.clone(),
+        })
+        .collect::<Vec<_>>();
+    let partial = apply(
+        &mut Model::new(),
+        source.as_bytes(),
+        "mixed.step",
+        &options,
+        &decisions,
+        None,
+    )
+    .unwrap();
+    assert_eq!(partial.bodies.len(), 1);
+    assert_eq!(partial.left_open.len(), 1);
+    let complete = imported(box_step(BoxFixture::new(["10", "20", "30"])).as_bytes());
+    for (old, new, unavailable) in [(&complete, &partial, 0), (&partial, &complete, 18)] {
+        let report = compare(old, new, &mut Decider::default()).unwrap();
+        assert!(report.verified.is_empty());
+        assert_eq!(report.unresolved.len(), 18 + unavailable);
+        assert_eq!(
+            report
+                .unresolved
+                .iter()
+                .filter(|entry| entry.reason == UnresolvedReason::UnverifiedGeometry)
+                .count(),
+            unavailable
+        );
+        let mut known = report
+            .unresolved
+            .iter()
+            .filter(|entry| entry.reason != UnresolvedReason::UnverifiedGeometry);
+        assert_eq!(known.clone().count(), 18);
+        assert!(known.all(|entry| {
+            entry.reason == UnresolvedReason::UnverifiedMultiplicity && entry.candidates.len() == 1
+        }));
+    }
+}
+
+#[test]
+fn quadratic_ambiguity_output_obeys_the_work_allowance() {
+    let single = imported(box_step(BoxFixture::new(["2", "3", "4"])).as_bytes());
+    let (result, baseline) = with_operation_budget(20_000_000, || {
+        compare(&single, &single, &mut Decider::default())
+    });
+    assert_eq!(result.unwrap().verified.len(), 18);
+    let copies = 40;
+    let source = boxes_step(
+        &std::iter::repeat_with(|| BoxFixture::new(["2", "3", "4"]))
+            .take(copies)
+            .collect::<Vec<_>>(),
+    );
+    let repeated = imported(source.as_bytes());
+    // A linear multiple covers the linear inventories, but cannot authorize
+    // the quadratic ambiguity candidate output of identical repeated solids.
+    let (result, work) = with_operation_budget(baseline.used * copies as u64, || {
+        compare(&repeated, &repeated, &mut Decider::default())
+    });
+    assert!(work.exhausted);
+    assert_eq!(result.unwrap_err().code, "numbers.operation-budget");
+}
+
+#[test]
 fn public_record_edits_cannot_change_the_compared_source_identity() {
     let source = box_step(BoxFixture::new(["2", "3", "4"]));
     let mut old = imported(source.as_bytes());

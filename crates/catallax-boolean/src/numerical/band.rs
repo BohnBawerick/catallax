@@ -43,9 +43,9 @@ pub(super) fn read(
         let radial_error = &radius - &(&cone.slope * &height);
         let rounding = upper(&(&bound - &Ball::from_rational(&rounded, BITS)));
         let error = interval(&centre_error, dec)?.hi()
-            + interval(&(&Real::from(2) * &radius * &tilt), dec)?.hi()
+            + interval(&(&(&Real::from(2) * &radius) * &tilt), dec)?.hi()
             + upper(&interval(&radial_error, dec)?)
-            + (&q(1) + upper(&interval(&cone.slope, dec)?)) * rounding;
+            + (q(1) + upper(&interval(&cone.slope, dec)?)) * rounding;
         if error > tolerance / &q(16) {
             return Err(bad(
                 "original ring differs from the finite cone-band boundary beyond its tolerance share",
@@ -109,7 +109,7 @@ pub(super) fn angle(
         sine.checked_div(&cosine)
             .ok_or_else(|| bad("ring phase denominator vanished"))?
             .atan_checked(dec)?
-            + &pi
+            + pi.clone()
     } else {
         Ball::atan2(&sine, &cosine).ok_or_else(|| bad("ring phase is unresolved"))?
     };
@@ -125,9 +125,9 @@ pub(super) fn angle(
         .find(|i| u >= &q(*i) && u <= &q(*i + 1))
         .ok_or_else(|| bad("ring source parameter leaves the retained full circle"))?;
     let local = u - &q(quarter);
-    let h = (&q(7) * &local) / (&q(10) - &q(3) * &local);
+    let h = (&q(7) * &local) / (q(10) - &q(3) * &local);
     let angle = Ball::from_rational(&h, BITS).atan_checked(dec)? * Ball::from_rational(&q(2), BITS)
-        + &pi
+        + pi.clone()
             * Ball::from_rational(
                 &Rational::from_ratio(quarter, 2).expect("fixed denominator"),
                 BITS,

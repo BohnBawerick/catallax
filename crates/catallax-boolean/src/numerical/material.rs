@@ -64,8 +64,8 @@ impl CylinderSide {
         dec.charge_work(1)?;
         let point = source.evaluate_box([&uv[0], &uv[0]], [&uv[1], &uv[1]], BITS, dec)?;
         let radial = self.radial(&point);
-        let signed =
-            radial[0].square() + radial[1].square() + radial[2].square() - &self.radius_squared;
+        let signed = radial[0].square() + radial[1].square() + radial[2].square()
+            - self.radius_squared.clone();
         if signed.lo().sign() == Sign::Positive {
             Ok(true)
         } else if signed.hi().sign() == Sign::Negative {

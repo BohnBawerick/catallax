@@ -120,15 +120,19 @@ impl Default for NumericalOptions {
 ///   loops and all endpoint/trim samples within tolerance returns this type.
 /// - Zero sampled residual still returns a numerical body, never an exact proof.
 /// - A sampled maximum of 1/4500 mm passes a 0.01 mm tolerance; 1/45 mm refuses.
-/// - A missing coedge, crossing u/v loop, reversed loop, missing trim, unsupported
-///   carrier, or exhausted work refuses, even if other samples would pass.
+/// - A missing coedge, crossing checked u/v polygon, reversed loop, missing trim,
+///   unsupported carrier, or exhausted work refuses, even if other samples pass.
 /// - A vertex repair records its before/after positions and point displacement;
 ///   no repair is an explicit empty history. Historical distances do not become
 ///   a bound on the current body.
 ///
 /// Nine equally spaced locations per coedge, including its endpoints, are checked
-/// against its retained linear u/v trim. Every edge endpoint is checked against
-/// its vertex. These are pointwise distance enclosures, not bounds between samples.
+/// against its retained face parameters. Planar spline edges use projected curve
+/// samples; other trims use their linear u/v segment. Every edge endpoint is
+/// checked against its vertex. These are pointwise distance enclosures, not bounds
+/// between samples. For projected spline walks, loop simplicity and hole placement
+/// refer to the sampled polygon. Continuous containment and disjointness remain
+/// unresolved and have no unqualified check entry.
 /// The checks do not establish whole-body separation, global self-intersection
 /// freedom or a whole-body approximation bound. They grant no STEP export authority.
 /// Approximate export requires a numerical writer and its own output checks.
@@ -529,8 +533,9 @@ fn build_inner(
         if face.loops.len() == 1 {
             curved::check_loops(face, &definition.edges, dec)?;
         }
+        let sampled = curved::projected(face, &definition.edges);
         checks.push(NumericalCheck::Passed {
-            name: if curved::projected(face, &definition.edges) {
+            name: if sampled {
                 "trim.sampled-simple-oriented-parameter-loop"
             } else {
                 "trim.simple-oriented-parameter-loop"
@@ -540,7 +545,12 @@ fn build_inner(
         });
         if face.loops.len() == 2 {
             checks.push(NumericalCheck::Passed {
-                name: "trim.hole-contained-disjoint".into(),
+                name: if sampled {
+                    "trim.sampled-hole-contained-disjoint"
+                } else {
+                    "trim.hole-contained-disjoint"
+                }
+                .into(),
                 scope: face.key.clone(),
             });
             checks.push(NumericalCheck::Passed {

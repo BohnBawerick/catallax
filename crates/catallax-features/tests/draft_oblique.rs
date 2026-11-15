@@ -263,7 +263,7 @@ fn retention_uses_strict_material_picks_and_preserves_consumed_face_history() {
 }
 
 #[test]
-fn folds_hollow_sections_and_unproved_remote_neutral_cuts_keep_typed_refusals() {
+fn folds_and_unproved_remote_neutral_cuts_keep_typed_refusals() {
     use serde_json::json;
     let mut source = document();
     source["steps"][2]["neutral"]["normal"] = json!(["8", "0", "8"]);
@@ -276,11 +276,11 @@ fn folds_hollow_sections_and_unproved_remote_neutral_cuts_keep_typed_refusals() 
         .as_array_mut()
         .unwrap()
         .push(json!([{"kind":"circle","id":"bore","centre":["0","0"],"radius":"2"}]));
-    refuses(&source, "draft.unsupported-oblique-annulus");
+    evaluate(&from_document(&source), &mut Decider::default()).unwrap();
 }
 
 #[test]
-fn hollow_oblique_refusals_name_the_checked_gap_without_publishing() {
+fn hollow_oblique_builds_keep_the_checked_field_gap_diagnostic() {
     use serde_json::json;
     for (selected, gap) in [
         (vec!["wall"], "[3,7]"),
@@ -302,12 +302,9 @@ fn hollow_oblique_refusals_name_the_checked_gap_without_publishing() {
                 .collect::<Vec<_>>()
         );
         let recipe = from_document(&source);
-        let error = evaluate(&recipe, &mut Decider::default()).unwrap_err();
-        let catallax_features::BuildError::Geometry { refusal, .. } = error else {
-            panic!("expected geometric coverage refusal");
-        };
-        let field = Plan::compile(&recipe).unwrap_err();
-        assert_eq!(refusal, field);
+        let built = evaluate(&recipe, &mut Decider::default()).unwrap();
+        assert_eq!(built.model.faces_of_body(built.result).len(), 4);
+        let refusal = Plan::compile(&recipe).unwrap_err();
         assert_eq!(refusal.code, "draft.unsupported-oblique-annulus");
         for text in [
             "outer_radius_squared_mm2=[64,64]".to_owned(),
@@ -383,12 +380,6 @@ fn the_quartic_axis_is_not_a_selectable_wall_or_a_false_cap_edge() {
 fn annular_contacts_crossings_and_zero_neutral_rate_remain_distinct_in_both_evaluators() {
     use serde_json::json;
     for (rate, code, relation, gap) in [
-        (
-            "8",
-            "draft.unsupported-oblique-annulus",
-            "Separated",
-            "[1/2,15/2]",
-        ),
         ("6", "draft.oblique-annulus-touching", "Touching", "[0,8]"),
         ("4", "draft.oblique-annulus-crossing", "Crossing", "[-1,9]"),
         ("0", "draft.oblique-annulus-zero-neutral-rate", "", ""),
@@ -418,5 +409,162 @@ fn annular_contacts_crossings_and_zero_neutral_rate_remain_distinct_in_both_eval
                 "{refusal:?}"
             );
         }
+    }
+}
+
+#[test]
+fn separated_oblique_annulus_builds_shared_caps_and_preserves_the_hole() {
+    let recipe = Recipe::parse(include_str!("fixtures/draft-annular/oblique-bound.json")).unwrap();
+    let mut built = evaluate(&recipe, &mut Decider::default()).unwrap();
+    assert!(built.model.check(built.result).is_empty());
+    let faces = built.model.faces_of_body(built.result);
+    assert_eq!(faces.len(), 4);
+    assert!(faces.iter().all(|f| built.model.face(*f).loops.len() == 2));
+    let volume = catallax_measure::volume(
+        &built.model,
+        built.result,
+        &Default::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let oracle = Ball::pi(192) * Ball::from_rational(&q("387/4"), 192);
+    assert!(
+        volume.value.lo <= oracle.lo() && volume.value.hi >= oracle.hi(),
+        "{volume:?}"
+    );
+    let mesh = catallax_mesh::mesh_body(
+        &built.model,
+        built.result,
+        &Default::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    assert_eq!(mesh.value.faces.len(), 4);
+    assert_eq!(mesh.value.edges.len(), 4);
+    let mut bytes = Vec::new();
+    let step = catallax_step::write_step(
+        &built.model,
+        &[built.result],
+        &Default::default(),
+        &mut Decider::default(),
+        &mut bytes,
+    )
+    .unwrap();
+    assert_eq!(
+        (step.value.faces, step.value.edges, step.value.vertices),
+        (6, 12, 8)
+    );
+    assert!(bytes.starts_with(b"ISO-10303-21;"));
+    for (xyz, expected) in [
+        (["0", "0", "1"], Containment::Outside),
+        (["5", "0", "1"], Containment::Inside),
+        (["0", "0", "0"], Containment::Outside),
+        (["5", "0", "3"], Containment::Outside),
+    ] {
+        let [x, y, z] = xyz.map(q);
+        let point = RPoint3::new(x, y, z);
+        assert_eq!(
+            classify_point(
+                &mut built.model,
+                built.result,
+                &point,
+                &mut Decider::default()
+            ),
+            Outcome::Proven(expected),
+            "{xyz:?}"
+        );
+    }
+}
+
+#[test]
+fn oblique_annular_radius_edit_and_recipe_reopen_keep_face_and_edge_names() {
+    let mut source: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/draft-annular/oblique-bound.json")).unwrap();
+    let before = evaluate(&from_document(&source), &mut Decider::default()).unwrap();
+    let origins: Vec<_> = before
+        .model
+        .faces_of_body(before.result)
+        .iter()
+        .flat_map(|f| before.model.face_origins(*f))
+        .cloned()
+        .collect();
+    let edges: Vec<_> = before
+        .model
+        .edges_of_body(before.result)
+        .iter()
+        .map(|e| {
+            before
+                .model
+                .edge_name(before.result, *e)
+                .expect("named physical ring")
+        })
+        .collect();
+    source["steps"][0]["loops"][0][0]["radius"] = serde_json::json!("9");
+    let edited = from_document(&source);
+    let saved = edited.to_text();
+    let reopened = Recipe::parse(&saved).unwrap();
+    assert_eq!(reopened, edited);
+    let mut exports = Vec::new();
+    for recipe in [&edited, &reopened] {
+        let built = evaluate(recipe, &mut Decider::default()).unwrap();
+        for origin in &origins {
+            assert_eq!(built.model.faces_with_origin(built.result, origin).len(), 1);
+        }
+        for edge in &edges {
+            assert_eq!(built.model.edges_with_name(built.result, edge).len(), 1);
+        }
+        assert!(built.consumed.is_empty());
+        let mut bytes = Vec::new();
+        catallax_step::write_step(
+            &built.model,
+            &[built.result],
+            &Default::default(),
+            &mut Decider::default(),
+            &mut bytes,
+        )
+        .unwrap();
+        exports.push(bytes);
+    }
+    assert_eq!(exports[0], exports[1]);
+}
+
+#[test]
+fn oblique_annular_checker_rejects_a_filled_cap_reversed_hole_or_duplicate_ring() {
+    use catallax_topology::{Body, BodyKind, Lump, Sense, Shell};
+    let recipe = Recipe::parse(include_str!("fixtures/draft-annular/oblique-bound.json")).unwrap();
+    let built = evaluate(&recipe, &mut Decider::default()).unwrap();
+    for fault in 0..3 {
+        let mut model = built.model.clone();
+        let checked =
+            DraftedCylinder::check(&model, built.result, &mut Decider::default()).unwrap();
+        let face_id = if fault == 0 {
+            checked.faces()[0]
+        } else {
+            checked.hole().unwrap().1
+        };
+        let mut face = model.face(face_id).clone();
+        match fault {
+            0 => {
+                face.loops.pop();
+            }
+            1 => face.sense = Sense::Same,
+            _ => face.loops[1] = face.loops[0],
+        }
+        let mut faces = model.faces_of_body(built.result);
+        let slot = faces.iter().position(|f| *f == face_id).unwrap();
+        faces[slot] = model.add_face(face);
+        let shell = model.add_shell(Shell { faces });
+        let lump = model.add_lump(Lump {
+            shells: vec![shell],
+        });
+        let body = model.add_body(Body {
+            kind: BodyKind::Solid,
+            lumps: vec![lump],
+            marks: Default::default(),
+        });
+        assert!(
+            DraftedCylinder::check(&model, body, &mut Decider::default()).is_err(),
+            "fault {fault}"
+        );
     }
 }

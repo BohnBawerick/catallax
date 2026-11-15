@@ -16,6 +16,9 @@ use crate::{
 
 type Uses = BTreeMap<EdgeId, Vec<(FaceId, Sense)>>;
 
+#[path = "chamfer_corner.rs"]
+mod corner;
+
 fn bad(detail: &str) -> Refusal {
     Refusal::new("chamfer.unsupported-topology", detail)
 }
@@ -488,7 +491,11 @@ pub(crate) fn build(
                     }
                 }
             }
-            _ => return Err(bad("three selected strips at a vertex need a corner patch")),
+            [i, j, k] => {
+                let face = corner::three(model, body, old, [*i, *j, *k], &mut runs, step, dec)?;
+                edit.faces.push((runs[*i].faces[0], face));
+            }
+            _ => return Err(bad("a regular vertex has at most three selected strips")),
         }
     }
     for run in &runs {

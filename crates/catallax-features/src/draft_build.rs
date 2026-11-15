@@ -2,7 +2,7 @@
 
 use crate::draft::{
     DraftDefinition,
-    annular::{AnnularCell, AnnularWall},
+    annular::{AnnularCell, AnnularWall, ObliqueAnnularBound},
     arrangement::{Patch, Polyhedron, Skin},
     bored::{self, Bore, BoredCell, Head},
     bossed::{self, Boss, BossedCell},
@@ -104,6 +104,7 @@ enum Cell {
     Round(Box<RoundCell>),
     Polyhedral(Box<Polyhedron>),
     Oblique(Box<ObliqueCell>),
+    ObliqueAnnular(Box<ObliqueAnnularBound>),
     Capped(Box<CappedCylinder>),
 }
 
@@ -118,6 +119,7 @@ impl Cell {
             Self::Polyhedral(cell) => cell.contains_interior(point, dec),
             Self::Capped(cell) => cell.contains_interior(point, dec),
             Self::Oblique(cell) => cell.contains_interior(point, dec),
+            Self::ObliqueAnnular(cell) => cell.contains_interior(point, dec),
         }
     }
 
@@ -132,11 +134,22 @@ impl Cell {
             Self::Polyhedral(cell) => cell.anchored(&definition.neutral, dec),
             Self::Capped(cell) => cell.anchored(&definition.neutral, dec),
             Self::Oblique(cell) => cell.anchored(&definition.neutral, dec),
+            Self::ObliqueAnnular(cell) => cell.walls()[0].anchored(&definition.neutral, dec),
         }
     }
 
     fn origins(&self) -> BTreeSet<Origin> {
         match self {
+            Self::ObliqueAnnular(cell) => cell
+                .walls()
+                .iter()
+                .flat_map(|wall| {
+                    wall.origins
+                        .iter()
+                        .chain(wall.caps.iter().flat_map(|(_, names)| names))
+                })
+                .cloned()
+                .collect(),
             Self::Oblique(cell) => cell
                 .origins
                 .iter()
@@ -221,6 +234,7 @@ impl Cell {
         };
         match self {
             Self::Oblique(cell) => cell.bound_radius(dec),
+            Self::ObliqueAnnular(cell) => cell.walls()[0].bound_radius(dec),
             Self::Annular(cell) => Self::Round(Box::new(cell.outer.clone())).radius(dec),
             Self::Bored(cell, ..) => Self::Planar(cell.outer.clone()).radius(dec),
             Self::Bossed(cell, ..) => {
@@ -268,6 +282,7 @@ impl Cell {
             Self::Polyhedral(cell) => assemble_polyhedral(model, cell, dec)?,
             Self::Capped(cell) => assemble_capped(model, cell, dec)?,
             Self::Oblique(cell) => oblique_build::assemble(model, cell, dec)?,
+            Self::ObliqueAnnular(cell) => oblique_build::assemble_annular(model, cell, dec)?,
         })
     }
 }
@@ -290,7 +305,7 @@ fn round(
         .count()
         == 2
     {
-        return annular(model, faces, chosen, definition, dec).map(|c| Cell::Annular(Box::new(c)));
+        return annular(model, faces, chosen, definition, dec);
     }
     let mut cylinder = None;
     let mut caps = Vec::new();
@@ -363,7 +378,7 @@ fn annular(
     chosen: &BTreeSet<FaceId>,
     definition: &DraftDefinition,
     dec: &mut Decider,
-) -> Result<AnnularCell, Refusal> {
+) -> Result<Cell, Refusal> {
     let unsupported = || {
         Refusal::new(
             "draft.unsupported-arrangement",
@@ -421,12 +436,14 @@ fn annular(
             _ => return Err(unsupported()),
         }
     }
-    AnnularCell::new(
-        walls.try_into().map_err(|_| unsupported())?,
-        caps.try_into().map_err(|_| unsupported())?,
-        definition,
-        dec,
-    )
+    let walls: [AnnularWall; 2] = walls.try_into().map_err(|_| unsupported())?;
+    let caps = caps.try_into().map_err(|_| unsupported())?;
+    if walls.iter().any(|wall| wall.selected) && oblique::needed(definition, dec)? {
+        let bound = ObliqueAnnularBound::new(walls, caps, definition, dec)?;
+        bound.require_separated()?;
+        return Ok(Cell::ObliqueAnnular(Box::new(bound)));
+    }
+    AnnularCell::new(walls, caps, definition, dec).map(|cell| Cell::Annular(Box::new(cell)))
 }
 
 fn assemble_annular(model: &mut Model, cell: &AnnularCell) -> BodyId {
@@ -1709,9 +1726,12 @@ pub(crate) fn build(
         }
     }
     if components.len() > 1
-        && components
-            .iter()
-            .any(|c| matches!(c, Cell::Capped(_) | Cell::Annular(_) | Cell::Oblique(_)))
+        && components.iter().any(|c| {
+            matches!(
+                c,
+                Cell::Capped(_) | Cell::Annular(_) | Cell::Oblique(_) | Cell::ObliqueAnnular(_)
+            )
+        })
     {
         return Err(Refusal::new(
             "draft.unsupported-arrangement",

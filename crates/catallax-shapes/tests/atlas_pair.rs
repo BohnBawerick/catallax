@@ -33,13 +33,17 @@ fn retained_pair_components_keep_complete_plane_points_and_near_contacts() {
                 (q(1_000_001, 1_000_000), 0),
             ] {
                 let cut = Plane::new(
-                    Point3::new(coordinate, Real::zero(), Real::zero()),
+                    Point3::new(coordinate.clone(), Real::zero(), Real::zero()),
                     Vector3::new(Real::one(), Real::zero(), Real::zero()),
                     Vector3::new(Real::zero(), Real::one(), Real::zero()),
                     &mut dec,
                 )
                 .unwrap();
-                let SectionHits::Points(points) = curve.plane_hits(&cut, &mut dec).unwrap() else {
+                let SectionHits::Points(points) =
+                    curve.plane_hits(&cut, &mut dec).unwrap_or_else(|error| {
+                        panic!("reversed={reversed}, coordinate={coordinate:?}: {error:?}")
+                    })
+                else {
                     panic!("the circular component cannot lie in a vertical plane")
                 };
                 assert_eq!(points.len(), expected);

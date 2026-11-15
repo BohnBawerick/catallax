@@ -45,11 +45,13 @@ fn split(
     panel: [Rational; 2],
     depth: usize,
     pending: &mut Vec<([Rational; 2], usize)>,
+    reason: &str,
 ) -> Result<(), Refusal> {
     if depth == 16 {
-        return Err(missing(
-            "a complete graph panel needs further finite contact isolation",
-        ));
+        return Err(missing(&format!(
+            "graph panel [{}, {}] needs further finite contact isolation: {reason}",
+            panel[0], panel[1]
+        )));
     }
     let middle = (&panel[0] + &panel[1]).mul_pow2(-1);
     pending.push(([middle.clone(), panel[1].clone()], depth + 1));
@@ -182,7 +184,7 @@ impl PatchPairCurve {
                 let jet = match piece.taylor(&interval, 0, dec) {
                     Ok(jet) => jet,
                     Err(error) if refinable(&error) => {
-                        split(panel, depth, &mut pending)?;
+                        split(panel, depth, &mut pending, &error.detail)?;
                         continue;
                     }
                     Err(error) => return Err(error),
@@ -203,7 +205,7 @@ impl PatchPairCurve {
                 let jets = match piece.taylor(&interval, 1, dec) {
                     Ok(jets) => jets,
                     Err(error) if refinable(&error) => {
-                        split(panel, depth, &mut pending)?;
+                        split(panel, depth, &mut pending, &error.detail)?;
                         continue;
                     }
                     Err(error) => return Err(error),
@@ -226,7 +228,7 @@ impl PatchPairCurve {
                                 if error.code == "numbers.root-not-certified"
                                     || refinable(&error) =>
                             {
-                                split(panel, depth, &mut pending)?;
+                                split(panel, depth, &mut pending, &error.detail)?;
                             }
                             Err(error) => return Err(error),
                         }
@@ -236,7 +238,7 @@ impl PatchPairCurve {
                 let jets = match piece.taylor(&interval, 2, dec) {
                     Ok(jets) => jets,
                     Err(error) if refinable(&error) => {
-                        split(panel, depth, &mut pending)?;
+                        split(panel, depth, &mut pending, &error.detail)?;
                         continue;
                     }
                     Err(error) => return Err(error),
@@ -266,7 +268,12 @@ impl PatchPairCurve {
                         continue;
                     }
                 }
-                split(panel, depth, &mut pending)?;
+                split(
+                    panel,
+                    depth,
+                    &mut pending,
+                    "projected derivative and curvature both contain zero",
+                )?;
             }
         }
         if contained == self.pieces.len() {

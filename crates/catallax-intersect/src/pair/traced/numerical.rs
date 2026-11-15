@@ -9,6 +9,8 @@ use catallax_numbers::{
 const BITS: u32 = 128;
 
 mod checked;
+mod cylinder;
+pub use cylinder::{NumericalNativeCylinderSource, numerical_native_cylinder_source};
 mod finite;
 pub use checked::{
     NumericalIntersectionPiece, NumericalNativeIntersection, NumericalNativeWork,

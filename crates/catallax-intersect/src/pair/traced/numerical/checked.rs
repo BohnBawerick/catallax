@@ -4,7 +4,7 @@ use super::*;
 use catallax_shapes::BSplineCurve;
 use catallax_trace::{
     global_solver::SolverRefusal,
-    spline::{BSplineCurve as FloatCurve, PointForm},
+    spline::{BSplineCurve as FloatCurve, BSplineSurface as FloatSurface, PointForm},
     surface_curves::{CurveKind, IntersectionCurve},
     surface_intersector::Intersector,
     surface_work::WorkReport,
@@ -312,6 +312,28 @@ fn trace_with_caller(
     intersector.do_intersection_with_work(dec.deadline(), pay_trace_work)
 }
 
+fn check_proposal_rows(
+    surface: &FloatSurface,
+    index: usize,
+    dec: &mut Decider,
+) -> Result<NumericalCheck, Refusal> {
+    for (pole, rows) in surface.control_points().chunks_exact(2).enumerate() {
+        dec.charge_work(1)?;
+        if rows[0].coordinates == rows[1].coordinates {
+            return Err(Refusal::new(
+                "intersect.numerical-native-proposal-collapse",
+                format!(
+                    "source-{index} native angular pole {pole} has indistinguishable binary64 axial controls; finite source and shared frame remain unchanged"
+                ),
+            ));
+        }
+    }
+    Ok(NumericalCheck::Passed {
+        name: "native.proposal-distinct-axial-controls".into(),
+        scope: format!("source-{index}"),
+    })
+}
+
 fn build_intersection(
     surfaces: [&Surface; 2],
     dec: &mut Decider,
@@ -335,6 +357,10 @@ pub(super) fn search(
         crate::pair::trace_candidates::surface(&windows.sources[0], &Isometry::identity(), dec)?;
     let b =
         crate::pair::trace_candidates::surface(&windows.sources[1], &Isometry::identity(), dec)?;
+    let proposal_checks = [
+        check_proposal_rows(&a, 0, dec)?,
+        check_proposal_rows(&b, 1, dec)?,
+    ];
     let after_sources = catallax_numbers::current_operation_work().used;
     let mut setup = after_sources - after_windows;
     let carriers = [
@@ -343,6 +369,7 @@ pub(super) fn search(
     ];
     let mut pieces = Vec::new();
     let mut checks = windows.evidence.checks().to_vec();
+    checks.extend(proposal_checks);
     let mut trace_work = WorkReport::default();
     let mut tracing = 0;
     let ranges: Vec<[i64; 2]> = if quarters {
@@ -504,7 +531,7 @@ mod tests {
                 assert_eq!(piece.curve().domain(), piece.uv()[0].domain());
                 assert_eq!(piece.curve().domain(), piece.uv()[1].domain());
             }
-            assert_eq!(result.evidence().checks().len(), 5 + 4 * 2 + 1);
+            assert_eq!(result.evidence().checks().len(), 5 + 2 + 4 * 2 + 1);
             eprintln!(
                 "numerical native query reverse={reverse} total_work={} trace={:?}",
                 work.used,
@@ -591,6 +618,39 @@ mod tests {
             assert_eq!(report, complete);
         });
         assert!(!work.exhausted, "{work:?}");
+    }
+
+    #[test]
+    fn proposal_guard_distinguishes_thin_origin_rows_and_far_representable_rows() {
+        for (origin, span) in [
+            (r(0), Rational::from_ratio(1, 1_000_000_000).unwrap()),
+            (r(1_000_000_000), r(1)),
+        ] {
+            let mut dec = Decider::default();
+            let frame = Frame::new(
+                Point3::new(s(0), Real::from(origin), s(0)),
+                &Vector3::new(s(0), s(1), s(0)),
+                &Vector3::new(s(1), s(0), s(0)),
+                &mut dec,
+            )
+            .unwrap();
+            let source = source(
+                &frame,
+                &[r(0), span],
+                [&s(1), &s(1)],
+                "control",
+                &Rational::from_ratio(1, 10_000_000).unwrap(),
+                &mut dec,
+            )
+            .unwrap();
+            let proposal = crate::pair::trace_candidates::surface(
+                &source.surface,
+                &Isometry::identity(),
+                &mut dec,
+            )
+            .unwrap();
+            assert!(check_proposal_rows(&proposal, 0, &mut dec).is_ok());
+        }
     }
 
     #[test]

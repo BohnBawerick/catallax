@@ -286,28 +286,35 @@ mod tests {
             s(0),
         );
         cylinder.axis = Vector3::new(s(0), s(1), s(0));
-        let (result, work) = with_operation_budget(20_000_000, || {
-            numerical_native_finite_intersection(
-                [&surfaces[0], &surfaces[1]],
-                [r(11), r(12)],
-                [r(0), Rational::from_ratio(1, 1_000_000_000).unwrap()],
-                &mut Decider::default(),
-            )
-        });
-        match &result {
-            Ok(Some(answer)) => eprintln!(
-                "thin far-origin query retained {} pieces after {} trace checkpoints",
-                answer.pieces().len(),
-                answer.trace_work().accepted
-            ),
-            Err(fault) => eprintln!("thin far-origin query: {}: {}", fault.code, fault.detail),
-            Ok(None) => panic!("expected supported cone/cylinder family"),
+        for reverse in [false, true] {
+            let ordered = if reverse {
+                [&surfaces[1], &surfaces[0]]
+            } else {
+                [&surfaces[0], &surfaces[1]]
+            };
+            let (result, work) = with_operation_budget(20_000_000, || {
+                numerical_native_finite_intersection(
+                    ordered,
+                    [r(11), r(12)],
+                    [r(0), Rational::from_ratio(1, 1_000_000_000).unwrap()],
+                    &mut Decider::default(),
+                )
+            });
+            match &result {
+                Ok(Some(answer)) => eprintln!(
+                    "thin far-origin query retained {} pieces after {} trace checkpoints",
+                    answer.pieces().len(),
+                    answer.trace_work().accepted
+                ),
+                Err(fault) => eprintln!("thin far-origin query: {}: {}", fault.code, fault.detail),
+                Ok(None) => panic!("expected supported cone/cylinder family"),
+            }
+            assert!(!work.exhausted, "{work:?}");
+            assert_eq!(
+                result.err().map(|fault| fault.code).as_deref(),
+                Some("intersect.numerical-native-proposal-collapse")
+            );
         }
-        assert!(!work.exhausted, "{work:?}");
-        assert_eq!(
-            result.err().map(|fault| fault.code).as_deref(),
-            Some("intersect.numerical-native-proposal-collapse")
-        );
     }
 
     #[test]

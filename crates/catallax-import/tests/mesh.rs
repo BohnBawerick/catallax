@@ -422,6 +422,51 @@ fn the_size_limit_is_a_typed_refusal() {
 }
 
 #[test]
+fn obj_minimum_signed_exponent_is_malformed() {
+    assert_eq!(
+        code(b"v 1e-9223372036854775808 0 0\n"),
+        "import.mesh-malformed"
+    );
+}
+
+#[test]
+fn obj_exponents_outside_the_supported_range_are_malformed() {
+    for exponent in [
+        "-401",
+        "401",
+        "+401",
+        "-9223372036854775807",
+        "9223372036854775807",
+        "+9223372036854775807",
+        "-9223372036854775809",
+        "9223372036854775808",
+    ] {
+        for marker in ['e', 'E'] {
+            let obj = format!("v 1{marker}{exponent} 0 0\n");
+            assert_eq!(code(obj.as_bytes()), "import.mesh-malformed", "{obj}");
+        }
+    }
+}
+
+#[test]
+fn obj_exponent_boundaries_preserve_exact_coordinates() {
+    for exponent in ["-400", "-399", "-1", "0", "+0", "1", "+399", "+400"] {
+        for marker in ['e', 'E'] {
+            // A homogeneous weight brings even the largest and smallest
+            // supported coordinates back to the same exact unit tetrahedron.
+            let obj = format!(
+                "v 0 0 0\nv 1{marker}{exponent} 0 0 1{marker}{exponent}\n\
+                 v 0 1 0\nv 0 0 1\nf 1 3 2\nf 1 2 4\nf 1 4 3\nf 2 3 4\n"
+            );
+            let mesh = read(obj.as_bytes()).unwrap_or_else(|code| panic!("{obj}: {code}"));
+            assert_eq!(mesh.vertex_count(), 4);
+            assert_eq!(mesh.triangles().len(), 4);
+            assert!((0..4).any(|v| mesh.file_vertex(v) == &point(["1", "0", "0"])));
+        }
+    }
+}
+
+#[test]
 fn malformed_files_say_why() {
     for bytes in [
         &b"solid x\n facet normal 0 0 0\n outer loop\n vertex 0 0\n"[..],

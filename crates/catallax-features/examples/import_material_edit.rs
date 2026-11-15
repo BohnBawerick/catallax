@@ -159,6 +159,7 @@ fn positive(out: &Path, dec: &mut Decider) -> Result<Value, Refusal> {
 }
 
 fn run(bytes: &[u8], out: &Path, dec: &mut Decider) -> Result<Value, Refusal> {
+    let start = current_operation_work().used;
     let controls: Value = serde_json::from_str(include_str!(
         "../../../docs/phase1/import-oblique-step/real-controls.json"
     ))
@@ -184,6 +185,7 @@ fn run(bytes: &[u8], out: &Path, dec: &mut Decider) -> Result<Value, Refusal> {
         dec,
     )
     .map_err(|e| problem("import.material-admission", format!("{e:?}")))?;
+    let import_work = current_operation_work().used - start;
     let StepImport::Numerical(imported) = imported else {
         return Err(problem(
             "import.material-category",
@@ -202,9 +204,13 @@ fn run(bytes: &[u8], out: &Path, dec: &mut Decider) -> Result<Value, Refusal> {
             "accepted source definition differs from writer qualification",
         ));
     }
+    let before_work = current_operation_work().used;
     let protected = posed(&imported.bodies()[0].1, dec)?;
+    let pose_work = current_operation_work().used - before_work;
     let fingerprint = state(&protected, dec)?;
+    let before_work = current_operation_work().used;
     let before_file = save(&protected, &out.join("real-before.step"), dec)?;
+    let before_step_work = current_operation_work().used - before_work;
     if before_file["sha256"] != expected["edited_step"]["sha256"] {
         return Err(problem(
             "import.material-source",
@@ -239,6 +245,7 @@ fn run(bytes: &[u8], out: &Path, dec: &mut Decider) -> Result<Value, Refusal> {
             "edit attempt changed the protected input",
         ));
     }
+    let before_work = current_operation_work().used;
     let real = match attempt {
         Ok(after) => {
             if after.history().len() != protected.history().len() + 1 {
@@ -265,11 +272,15 @@ fn run(bytes: &[u8], out: &Path, dec: &mut Decider) -> Result<Value, Refusal> {
                 "prior_geometry_and_history_unchanged":true,"material_delta_applied":false})
         }
     };
+    let after_step_work = current_operation_work().used - before_work;
+    let before_work = current_operation_work().used;
     let positive = positive(out, dec)?;
+    let positive_work = current_operation_work().used - before_work;
     Ok(
-        json!({"model_id":"00000022","source_sha256":sha,"repaired_definition_sha256":derivative.sha256,
+        json!({"status":"observed","proof":"numerical","exact":false,"model_id":"00000022","source_sha256":sha,"repaired_definition_sha256":derivative.sha256,
         "requested_edit":{"kind":"resize","axis":0,"length_mm":requested.to_string(),"expected_volume_ratio":"2","expected_delta_volume_ratio":"1"},
-        "protected_history_stages":protected.history().len(),"real":real,"positive_control":positive,"material_edit_work":edit_work}),
+        "protected_history_stages":protected.history().len(),"real":real,"positive_control":positive,
+        "stages":{"import":import_work,"pose":pose_work,"before_step":before_step_work,"material_edit":edit_work,"after_step":after_step_work,"positive_control":positive_work}}),
     )
 }
 

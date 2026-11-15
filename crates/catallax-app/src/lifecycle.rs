@@ -17,7 +17,7 @@ use crate::{
 };
 
 /// Explicit caps for construction plus preview, and for subsequent proof.
-/// Unused units never move between phases. The default total remains 20M;
+/// Unused units never move between phases. The default total is 100M;
 /// callers choose its split rather than receiving two default allowances.
 #[derive(Clone, Copy, Debug)]
 pub struct WorkAllocation {
@@ -29,7 +29,8 @@ pub struct WorkAllocation {
 
 impl WorkAllocation {
     /// Splits the existing application default. Returns `None` for a preview
-    /// cap above the total. Explicit caller budgets may use the public fields.
+    /// cap above the total. This always reserves the 100M application total.
+    /// Callers with a smaller allowance must set explicit caps in the public fields.
     pub fn application(preview: u64) -> Option<Self> {
         Some(Self {
             preview,
@@ -59,6 +60,17 @@ pub struct WorkReport {
     pub preview: OperationWork,
     /// Actual proof work; absent until the caller runs proof.
     pub proof: Option<OperationWork>,
+}
+
+impl WorkReport {
+    /// Whether actual preview and proof work exceeds the 20M speed-phase target.
+    /// Per-stage counts remain in `preview` and `proof`, including failed work.
+    pub fn over_target(&self) -> bool {
+        self.preview
+            .used
+            .saturating_add(self.proof.map_or(0, |work| work.used))
+            > crate::TARGET_BUILD_WORK
+    }
 }
 
 /// Delivery state. A confirmed result has the same guarantees as [`crate::build`],

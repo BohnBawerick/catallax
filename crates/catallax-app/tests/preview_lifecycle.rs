@@ -630,7 +630,7 @@ fn progressive_target_diagnostics() {
             &mut Decider::default(),
         );
         let mut row = json!({"part":part, "environment":"shared machine; informational only; unloaded machine not guaranteed",
-            "total_cap":catallax_app::DEFAULT_BUILD_WORK, "preview_cap":10_000_000, "proof_cap":10_000_000,
+            "total_cap":catallax_app::DEFAULT_BUILD_WORK, "preview_cap":10_000_000, "proof_cap":catallax_app::DEFAULT_BUILD_WORK - 10_000_000,
             "first_paint_ms":start.elapsed().as_secs_f64()*1000.0});
         match answer {
             Err(error) => {
@@ -663,4 +663,23 @@ fn progressive_target_diagnostics() {
         assert!(controller.confirmed().is_none());
         println!("{row}");
     }
+}
+
+#[test]
+fn target_budget_callers_reserve_explicit_preview_and_proof_caps() {
+    let controller = Controller::default();
+    let caps = WorkAllocation {
+        preview: 10_000_000,
+        proof: 10_000_000,
+    };
+    let (job, work) = with_operation_budget(catallax_app::TARGET_BUILD_WORK, || {
+        start(&controller, 4, caps, &MeshOptions::default())
+    });
+    assert!(!work.exhausted);
+    assert_eq!(work.used, catallax_app::TARGET_BUILD_WORK);
+    assert!(job.prove(&mut Decider::default()).publish());
+    let snapshot = controller.latest().unwrap();
+    assert!(matches!(snapshot.status(), Status::Confirmed(_)));
+    assert!(!snapshot.work().over_target());
+    assert_eq!(snapshot.work().allocation.proof, 10_000_000);
 }

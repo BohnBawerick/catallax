@@ -59,6 +59,13 @@ fn stream_ignores_wall_limit_and_resets_operation_budget() {
     );
     assert!(!dir.join("1/answer.step").exists());
     assert_eq!(rows[0]["work"], rows[2]["work"]);
+    assert_eq!(rows[0]["work"]["target"], catallax_app::TARGET_BUILD_WORK);
+    assert_eq!(rows[0]["work"]["over_target"], false);
+    assert_eq!(rows[0]["operation_log"]["work"]["over_target"], false);
+    for operation in rows[0]["operation_log"]["operations"].as_array().unwrap() {
+        assert_eq!(operation["work"]["target"], catallax_app::TARGET_BUILD_WORK);
+        assert_eq!(operation["work"]["over_target"], false);
+    }
     let mut a = rows[0]["manifest"].clone();
     let mut b = rows[2]["manifest"].clone();
     a.as_object_mut().unwrap().remove("stats");

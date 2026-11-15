@@ -20,6 +20,12 @@ to the supplied source interval. Clamped endpoint controls avoid interval wideni
 of a homogeneous quotient beyond an integer native U boundary. UV coordinates are
 not clamped or reparameterized.
 
+Positive-weight homogeneous control hulls check the complete finite V range at
+construction. Inconclusive hulls undergo midpoint de Casteljau subdivision to
+depth 16. An outside or still unresolved range returns `hole.cap-finite-v`; no
+sample substitutes for this guard. The completed hull check has its own evidence
+entry and makes no spatial deviation claim.
+
 ## Prior art
 
 The pole projection follows OCCT's
@@ -41,11 +47,16 @@ The tests exercise 32 templates across top/bottom caps, axial/skew Hole frames,
 four source quarters and a rigid placement. Independent surface-section evaluations
 check the 3D and UV curves. Wrong radius, wrong or shifted source interval,
 parallel-plane and cancelled-request controls cover refusal behavior.
+A weighted-quarter control has all 17 stations inside but exceeds V=1 between
+them; it must refuse. A nearby safe curve with an inconclusive initial hull must
+pass after subdivision.
 
 A closed skew-cylinder fixture assembles two cap loops and four wall quarters
 with 24 retained native trim bindings. A diameter edit keeps the stable face keys;
 numerical handover preserves the bindings, tolerance and edit history. Live and
-restored numerical STEP bytes agree. This fixture qualifies the cap/wall contract;
+restored numerical STEP bytes agree. A direct-builder STEP oracle checks solid
+validity, material witnesses, volume and centroid with first-moment integration
+enabled and its integration status checked. This fixture qualifies the cap/wall contract;
 the collar Hole still needs the finite cone-face partitioner and app consumer.
 
 The ordinary exact Hole evaluator is unchanged. Numerical assembly and STEP remain

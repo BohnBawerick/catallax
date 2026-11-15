@@ -10,6 +10,7 @@ use catallax_topology::numerical::{DEFAULT_WORK, NumericalOptions};
 
 const BITS: u32 = 128;
 const SUBDIVISIONS: i64 = 16;
+const V_HULL_DEPTH: usize = 16;
 
 /// A checked numerical cap edge and its two retained parameter curves.
 /// Samples grant no exact incidence or whole-curve deviation bound.
@@ -40,7 +41,7 @@ impl CapCurve {
         &self.cylinder_uv
     }
     /// Preset tolerance and actual sample checks against both original carriers
-    /// and both retained parameter compositions.
+    /// and both retained parameter compositions, plus the finite V hull guard.
     pub fn evidence(&self) -> &NumericalEvidence {
         &self.evidence
     }
@@ -53,6 +54,8 @@ fn bad(detail: &str) -> Refusal {
 /// Projects one canonical quadratic/linear cylinder quarter along its unit
 /// axis onto a cap plane. The quarter's native knots and finite U interval stay
 /// fixed; V is computed in its supplied signed-mm cylinder interval.
+/// Positive-weight control hulls cover the complete V range, subdividing to a
+/// fixed depth when necessary. An unresolved or outside range refuses.
 /// Parallel cap planes return `None`. Invalid sources and failed checks refuse.
 pub fn cap_curve(
     key: &str,
@@ -105,6 +108,64 @@ fn magnitude(value: &Ball) -> Rational {
 
 fn difference(a: &[Ball; 3], b: &[Ball; 3]) -> Rational {
     (0..3).fold(Rational::zero(), |sum, i| sum + magnitude(&(&a[i] - &b[i])))
+}
+
+fn finite_v(
+    values: &[Real],
+    weights: &[Real; 3],
+    domain: [&Rational; 2],
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    let refused = || {
+        Refusal::new(
+            "hole.cap-finite-v",
+            "positive-weight control hulls do not establish the cap's complete finite V range",
+        )
+    };
+    let mut controls = Vec::new();
+    let mut inside = true;
+    for (value, weight) in values.iter().zip(weights) {
+        let weight = dec.enclose_budgeted_at(weight, BITS)?;
+        if weight.lo().sign() != Sign::Positive {
+            return Err(refused());
+        }
+        let value = dec.enclose_budgeted_at(value, BITS)?;
+        inside &= value.lo() >= *domain[0] && value.hi() <= *domain[1];
+        controls.push([&weight * &value, weight]);
+    }
+    if inside {
+        return Ok(());
+    }
+    let controls: [[Ball; 2]; 3] = controls.try_into().expect("three source controls");
+    let half = Ball::from_rational(&Rational::from_ratio(1, 2).unwrap(), BITS);
+    let mut pending = vec![(0, controls)];
+    while let Some((depth, controls)) = pending.pop() {
+        dec.charge_work(1)?;
+        let bounds = controls
+            .iter()
+            .map(|[value, weight]| value.checked_div(weight).ok_or_else(refused))
+            .collect::<Result<Vec<_>, _>>()?;
+        if bounds
+            .iter()
+            .all(|value| value.lo() >= *domain[0] && value.hi() <= *domain[1])
+        {
+            continue;
+        }
+        if depth == V_HULL_DEPTH
+            || [0, 2]
+                .into_iter()
+                .any(|i| bounds[i].hi() < *domain[0] || bounds[i].lo() > *domain[1])
+        {
+            return Err(refused());
+        }
+        let left: [Ball; 2] = std::array::from_fn(|j| &(&controls[0][j] + &controls[1][j]) * &half);
+        let right: [Ball; 2] =
+            std::array::from_fn(|j| &(&controls[1][j] + &controls[2][j]) * &half);
+        let middle: [Ball; 2] = std::array::from_fn(|j| &(&left[j] + &right[j]) * &half);
+        pending.push((depth + 1, [middle.clone(), right, controls[2].clone()]));
+        pending.push((depth + 1, [controls[0].clone(), left, middle]));
+    }
+    Ok(())
 }
 
 fn build(
@@ -190,6 +251,7 @@ fn build(
         );
         points.push(projected);
     }
+    finite_v(&v, &weights, [v0, v1], dec)?;
     let curve = BSplineCurve::new(
         2,
         quarter.knots()[0].to_vec(),
@@ -351,11 +413,17 @@ fn checks(
             });
         }
     }
-    let mut checks = vec![NumericalCheck::Samples {
-        name: "hole.cap.source-axial-coordinates".into(),
-        scope: key.into(),
-        samples: control_samples,
-    }];
+    let mut checks = vec![
+        NumericalCheck::Passed {
+            name: "hole.cap.finite-v-positive-weight-hulls".into(),
+            scope: key.into(),
+        },
+        NumericalCheck::Samples {
+            name: "hole.cap.source-axial-coordinates".into(),
+            scope: key.into(),
+            samples: control_samples,
+        },
+    ];
     checks.extend(
         [
             "hole.cap.original-plane",

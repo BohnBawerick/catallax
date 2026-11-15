@@ -155,8 +155,12 @@ fn native_cap_curves_match_independent_surface_section_evaluations() {
                     assert_eq!(output.plane_uv().domain(), source.domain()[0]);
                     assert_eq!(output.cylinder_uv().domain(), source.domain()[0]);
                     assert_eq!(output.cylinder_uv().degree(), 3);
-                    assert_eq!(output.evidence().checks().len(), 5);
+                    assert_eq!(output.evidence().checks().len(), 6);
                     for check in output.evidence().checks() {
+                        if let NumericalCheck::Passed { name, .. } = check {
+                            assert_eq!(name, "hole.cap.finite-v-positive-weight-hulls");
+                            continue;
+                        }
                         let NumericalCheck::Samples { name, samples, .. } = check else {
                             panic!("expected actual composition samples")
                         };
@@ -280,4 +284,113 @@ fn a_plane_parallel_to_the_axis_has_no_ellipse_template() {
         .unwrap()
         .is_none()
     );
+}
+
+fn finite_v_fixture(extent: &str, dec: &mut Decider) -> (CylinderSpan, BSplineSurface, Plane) {
+    let placement = serde_json::from_value(json!({
+        "id":"finite-v", "point":["0","0","0"], "direction":["0","0","1"]
+    }))
+    .unwrap();
+    let span = HoleTool::new(
+        &placement,
+        &q("2"),
+        &HoleDepth::Through,
+        &HoleTip::Flat,
+        None,
+        &(&q(extent) - &q("1")),
+        dec,
+    )
+    .unwrap()
+    .cylinder_span()
+    .unwrap();
+    assert_eq!(span.interval_mm, [-q(extent), q(extent)]);
+    let axis = span.cylinder.axis.clone();
+    let x = span.cylinder.radial_reference();
+    let y = axis.cross(&x);
+    let plane = Plane::new(
+        span.cylinder.origin.clone(),
+        axis.minus(&x.scaled(&Real::from_i64(4)))
+            .minus(&y.scaled(&Real::from_i64(3))),
+        x.scaled(&Real::from_i64(3))
+            .minus(&y.scaled(&Real::from_i64(4))),
+        dec,
+    )
+    .unwrap();
+    let source = quarter(&span, 0, dec);
+    (span, source, plane)
+}
+
+fn projected_v(source: &BSplineSurface, plane: &Plane, t: Rational, dec: &Decider) -> f64 {
+    let normal = [&plane.normal.x, &plane.normal.y, &plane.normal.z].map(Real::to_f64);
+    let at = Ball::from_rational(&t, 128);
+    let a = floats(
+        source
+            .evaluate(&at, &Ball::from_rational(&q("0"), 128), dec)
+            .unwrap(),
+    );
+    let b = floats(
+        source
+            .evaluate(&at, &Ball::from_rational(&q("1"), 128), dec)
+            .unwrap(),
+    );
+    let numerator: f64 = (0..3).map(|j| -normal[j] * a[j]).sum();
+    let denominator: f64 = (0..3).map(|j| normal[j] * (b[j] - a[j])).sum();
+    numerator / denominator
+}
+
+#[test]
+fn finite_v_excursion_between_seventeen_stations_is_rejected() {
+    let mut dec = Decider::default();
+    let (span, source, plane) = finite_v_fixture("4.999", &mut dec);
+    assert!((0..=16).all(|i| (0.0..=1.0).contains(&projected_v(
+        &source,
+        &plane,
+        Rational::from_ratio(i, 16).unwrap(),
+        &dec
+    ))));
+    assert!(projected_v(&source, &plane, q("5/12"), &dec) > 1.0);
+    let result = cap_curve(
+        "between-stations",
+        &span,
+        &source,
+        &plane,
+        &NumericalOptions {
+            tolerance_mm: q("1e-7"),
+        },
+        &mut dec,
+    );
+    assert!(
+        result.is_err(),
+        "a cap leaving finite V between stations must refuse"
+    );
+    assert_eq!(result.unwrap_err().code, "hole.cap-finite-v");
+}
+
+#[test]
+fn finite_v_subdivision_accepts_a_safe_curve_with_an_inconclusive_initial_hull() {
+    let mut dec = Decider::default();
+    let (span, source, plane) = finite_v_fixture("5.001", &mut dec);
+    assert!(projected_v(&source, &plane, q("5/12"), &dec) < 1.0);
+    let normal = [&plane.normal.x, &plane.normal.y, &plane.normal.z].map(Real::to_f64);
+    let a = &source.controls()[2];
+    let b = &source.controls()[3];
+    let a = [&a.x, &a.y, &a.z].map(Real::to_f64);
+    let b = [&b.x, &b.y, &b.z].map(Real::to_f64);
+    let numerator: f64 = (0..3).map(|j| -normal[j] * a[j]).sum();
+    let denominator: f64 = (0..3).map(|j| normal[j] * (b[j] - a[j])).sum();
+    assert!(numerator / denominator > 1.0);
+    let output = cap_curve(
+        "subdivided-hulls",
+        &span,
+        &source,
+        &plane,
+        &NumericalOptions {
+            tolerance_mm: q("1e-7"),
+        },
+        &mut dec,
+    )
+    .unwrap()
+    .unwrap();
+    assert!(output.evidence().checks().iter().any(|check|
+        matches!(check, NumericalCheck::Passed { name, .. } if name == "hole.cap.finite-v-positive-weight-hulls")));
 }

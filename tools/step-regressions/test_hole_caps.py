@@ -1,4 +1,4 @@
-"""Native numerical cap joins against unhealed STEP and cylinder material."""
+"""Native numerical cap joins against direct-builder STEP and cylinder material."""
 import math
 import os
 from pathlib import Path
@@ -55,9 +55,12 @@ class HoleCapOracles(unittest.TestCase):
                     self.assertEqual(count(shape, TopAbs_SOLID), 1)
                     self.assertEqual(count(shape, TopAbs_FACE), 6)
                     properties = GProp_GProps()
-                    BRepGProp.VolumePropertiesGK_s(
-                        shape, properties, Eps=1e-12, OnlyClosed=True,
+                    integration_error = BRepGProp.VolumePropertiesGK_s(
+                        shape, properties, Eps=1e-12, OnlyClosed=True, CGFlag=True,
                     )
+                    self.assertTrue(math.isfinite(integration_error))
+                    self.assertGreaterEqual(integration_error, 0)
+                    self.assertLessEqual(integration_error, 1e-10)
                     expected_volume = 12 * math.sqrt(3) * math.pi * radius ** 2
                     self.assertAlmostEqual(properties.Mass(), expected_volume, delta=1e-5)
                     for actual, expected in zip(properties.CentreOfMass().Coord(), center):

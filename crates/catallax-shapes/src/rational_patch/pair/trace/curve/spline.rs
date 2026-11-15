@@ -28,7 +28,20 @@ impl PatchPairCurve {
                     patches.push(patch);
                 }
             }
-            let answer = match crate::rational_patch::spline_points(&patches, spline, dec) {
+            let before = catallax_numbers::current_operation_work().used;
+            let queried = crate::rational_patch::spline_points(&patches, spline, dec);
+            eprintln!(
+                "pair spline source side={side} patches={} work={} outcome={}",
+                patches.len(),
+                catallax_numbers::current_operation_work().used - before,
+                match &queried {
+                    Ok(Some(SectionHits::Contained)) => "contained",
+                    Ok(Some(SectionHits::Points(_))) => "points",
+                    Ok(None) => "unsupported",
+                    Err(_) => "refused",
+                }
+            );
+            let answer = match queried {
                 Ok(answer) => answer,
                 Err(error)
                     if error.code == "shapes.rational-patch-unproven"

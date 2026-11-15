@@ -96,7 +96,14 @@ fn clears(
     match model.geom().curve(curve_id) {
         Curve::BSpline(curve) => clears_native(path, q, curve, dec),
         Curve::PatchPair(branch) => {
+            let before = catallax_numbers::current_operation_work().used;
             let spline = path_curve(path, dec)?;
+            eprintln!(
+                "probe path conversion degree={} controls={} work={}",
+                spline.degree(),
+                spline.control_count(),
+                catallax_numbers::current_operation_work().used - before
+            );
             let Some(points) = branch.spline_points(&spline, dec)? else {
                 return Ok(false);
             };

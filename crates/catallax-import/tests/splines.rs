@@ -135,6 +135,14 @@ fn repeated_knot_entries_preserve_the_exact_expanded_curve_and_surface() {
 
 #[test]
 fn redundant_endpoint_controls_have_zero_support_and_preserve_the_weighted_curve() {
+    let source = padded_curve("1.,1.,2.,1.,1.");
+    assert_eq!(
+        read_step(source.as_bytes()).unwrap(),
+        read_step(SOURCE).unwrap()
+    );
+}
+
+fn padded_curve(weights: &str) -> String {
     let original = std::str::from_utf8(SOURCE).unwrap();
     let source = original
         .replace(
@@ -147,13 +155,25 @@ fn redundant_endpoint_controls_have_zero_support_and_preserve_the_weighted_curve
         )
         .replace(
             "RATIONAL_B_SPLINE_CURVE((1.,2.,1.))",
-            "RATIONAL_B_SPLINE_CURVE((1.,1.,2.,1.,1.))",
+            &format!("RATIONAL_B_SPLINE_CURVE(({weights}))"),
         );
     assert_ne!(source, original);
-    assert_eq!(
-        read_step(source.as_bytes()).unwrap(),
-        read_step(SOURCE).unwrap()
-    );
+    source
+}
+
+#[test]
+fn endpoint_normalization_refuses_nonpositive_discarded_weights() {
+    for weights in [
+        "0.,1.,2.,1.,1.",
+        "-1.,1.,2.,1.,1.",
+        "1.,1.,2.,1.,0.",
+        "1.,1.,2.,1.,-1.",
+    ] {
+        assert!(matches!(
+            read_step(padded_curve(weights).as_bytes()),
+            Err(ImportRefusal::Malformed { detail }) if detail == "weights must be strictly positive"
+        ));
+    }
 }
 
 #[test]

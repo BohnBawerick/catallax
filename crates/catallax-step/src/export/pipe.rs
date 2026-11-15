@@ -64,10 +64,9 @@ impl Exporter<'_> {
                             "pipe faces sharing a carrier need different export seams",
                         ));
                     }
-                    if rows.is_none() && partial.is_some() {
-                        continue;
-                    }
-                    for (row, (edge, _)) in rows.ok_or_else(unsupported)?.iter().enumerate() {
+                    for (row, (edge, _)) in
+                        rows.or(partial).ok_or_else(unsupported)?.iter().enumerate()
+                    {
                         self.pipe_rails.insert(*edge, (face, row));
                     }
                 }

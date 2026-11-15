@@ -300,11 +300,18 @@ impl<'a> Exporter<'a> {
         if let Some(curve) = self.curves.get(&id) {
             return Ok(curve.clone());
         }
-        let form = if let Some(form) = self.bands.curves.get(&id) {
+        let mut form = if let Some(form) = self.bands.curves.get(&id) {
             form.clone()
         } else {
             curve_form(self.model.geom(), id, self.dec)?
         };
+        if self.pipe_rails.iter().any(|(edge, (face, _))| {
+            self.model.edge(*edge).curve == id
+                && self.pipe_rotations.get(&self.model.face(*face).surface) == Some(&true)
+        }) && let CurveForm::Ellipse { major_dir, .. } = &mut form
+        {
+            *major_dir = major_dir.scaled(&Real::from_i64(-1));
+        }
         let capture = self
             .chart_state
             .as_ref()

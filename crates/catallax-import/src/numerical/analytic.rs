@@ -314,6 +314,7 @@ fn definition(solid: &Solid, dec: &mut Decider) -> Result<n::NumericalDefinition
 
 pub(super) fn import(
     bytes: &[u8],
+    verified_sha256: &str,
     refusal: ImportRefusal,
     options: &n::NumericalOptions,
     dec: &mut Decider,
@@ -367,7 +368,7 @@ pub(super) fn import(
         format: crate::REPAIR_FORMAT.into(),
         source: crate::SourceRef {
             name: "source.step".into(),
-            sha256: crate::sha256_hex(bytes),
+            sha256: verified_sha256.to_owned(),
         },
         derivative: None,
         changes: Vec::new(),

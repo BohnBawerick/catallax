@@ -142,18 +142,22 @@ fn import_inner(
     options: &n::NumericalOptions,
     dec: &mut Decider,
 ) -> Result<StepImport, ImportError> {
+    // Verification is part of this request, including a mismatch that would
+    // otherwise return before any geometry work. Do not hash an unmetered slice.
+    dec.charge_work(bytes.len() as u64)
+        .map_err(|_| ImportError::Source(ImportRefusal::ResourceLimit))?;
     let mut model = Model::new();
     match crate::import_step_bodies(&mut model, bytes, expected_sha256, step) {
         Ok(bodies) => {
             return Ok(StepImport::Certified(Box::new(CertifiedImport {
                 model,
                 bodies,
-                source_sha256: crate::sha256_hex(bytes),
+                source_sha256: expected_sha256.to_owned(),
             })));
         }
         Err(ImportRefusal::NotSolid { detail }) if detail.contains("exactly") => {}
         Err(error) if analytic::eligible(&error) => {
-            return analytic::import(bytes, error, options, dec);
+            return analytic::import(bytes, expected_sha256, error, options, dec);
         }
         Err(error) => return Err(error.into()),
     }
@@ -169,7 +173,7 @@ fn import_inner(
     let imported = match crate::repair::apply_file(
         &mut Model::new(),
         crate::read_step(bytes)?,
-        &crate::sha256_hex(bytes),
+        expected_sha256,
         "source.step",
         &Default::default(),
         &[],
@@ -178,7 +182,7 @@ fn import_inner(
     ) {
         Ok(imported) => imported,
         Err(error) if analytic::eligible(&error) => {
-            return analytic::import(bytes, error, options, dec);
+            return analytic::import(bytes, expected_sha256, error, options, dec);
         }
         Err(error) => return Err(error.into()),
     };

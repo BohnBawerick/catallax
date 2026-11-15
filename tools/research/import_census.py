@@ -171,6 +171,7 @@ def main():
         'observation_timeout_seconds': args.timeout, 'workers': args.workers,
         'per_import_workers': 1,
         'per_import_work_limit': 20_000_000,
+        'verification_byte_work': 'charged before the initial kernel verification hash',
         'full_definition': 'admitted with complete source coverage',
         'partial_definition': 'admitted with unverified source coverage',
         'scope': 'import admission; does not assert an edit or STEP export for every admission'}

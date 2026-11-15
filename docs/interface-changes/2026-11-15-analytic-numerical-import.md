@@ -34,7 +34,9 @@ Files remain marked numerical approximate without a global uncertainty claim.
 The existing finite planar writer and exact exporter keep their paths.
 
 No exact model extraction or exact-incidence fact is added. The unchanged 20M
-request allowance covers admission and every continuation/export stage. Caller
+request allowance covers admission and every continuation/export stage. Source
+bytes are charged before the initial verification hash, including a mismatch;
+the already verified digest is reused by subsequent source records. Caller
 recipes, source bytes and previously checked bodies are not changed on failure.
 The SolidDraft numerical-group and replacement UI integration remains separate.
 

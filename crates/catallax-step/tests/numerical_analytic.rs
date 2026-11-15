@@ -3,7 +3,7 @@
 mod fixture;
 
 use catallax_numbers::{Ball, Decider, NumericalCheck, Real, with_operation_budget};
-use catallax_shapes::{Curve, Point3, Surface};
+use catallax_shapes::{Curve, Point3, Surface, Vector3};
 use catallax_step::numerical::{self as output, NumericalStepOptions};
 use catallax_topology::numerical as n;
 use fixture::{q, quarter};
@@ -189,4 +189,83 @@ fn partial_circle_exchange_uses_the_reader_parameter_chart() {
             );
         }
     }
+}
+
+#[test]
+fn partial_circle_phase_is_checked_after_direction_rounding() {
+    let mut definition = quarter();
+    let c = q("20/29");
+    let s = q("21/29");
+    let rotate = |x: &Real, y: &Real| {
+        [
+            &(x * &Real::from(c.clone())) - &(y * &Real::from(s.clone())),
+            &(x * &Real::from(s.clone())) + &(y * &Real::from(c.clone())),
+        ]
+    };
+    let point = |p: &Point3| {
+        let [x, y] = rotate(&p.x, &p.y);
+        Point3::new(x, y, p.z.clone())
+    };
+    let vector = |v: &Vector3| {
+        let [x, y] = rotate(&v.x, &v.y);
+        Vector3::new(x, y, v.z.clone())
+    };
+    for vertex in &mut definition.vertices {
+        let [x, y, _] = vertex.position.clone();
+        vertex.position[0] = &(&x * &c) - &(&y * &s);
+        vertex.position[1] = &(&x * &s) + &(&y * &c);
+    }
+    for edge in &mut definition.edges {
+        match &mut edge.curve {
+            Curve::Line(line) => {
+                line.origin = point(&line.origin);
+                line.dir = vector(&line.dir);
+            }
+            Curve::Circle(circle) => {
+                circle.center = point(&circle.center);
+                circle.normal = vector(&circle.normal);
+                circle.ref_dir = vector(&circle.ref_dir);
+            }
+            _ => unreachable!(),
+        }
+    }
+    for face in &mut definition.faces {
+        match &mut face.surface {
+            Surface::Plane(plane) => {
+                plane.origin = point(&plane.origin);
+                plane.normal = vector(&plane.normal);
+                plane.ref_dir = vector(&plane.ref_dir);
+            }
+            Surface::Cylinder(cylinder) => {
+                cylinder.origin = point(&cylinder.origin);
+                cylinder.axis = vector(&cylinder.axis);
+                cylinder.ref_dir = vector(&cylinder.ref_dir);
+            }
+            _ => unreachable!(),
+        }
+    }
+    let body = n::build(
+        definition,
+        n::NumericalOptions::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let file = output::build(
+        &body,
+        &NumericalStepOptions::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    save("quarter-oblique-anchor.step", file.bytes());
+    let error = output::build(
+        &body,
+        &NumericalStepOptions {
+            significant_digits: 4,
+            max_scalar_rounding_error_mm: q("1/100"),
+            ..NumericalStepOptions::default()
+        },
+        &mut Decider::default(),
+    )
+    .unwrap_err();
+    assert_eq!(error.code, "step.numerical-arc-phase");
 }

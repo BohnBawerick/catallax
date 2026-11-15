@@ -14,7 +14,7 @@ use catallax_numbers::{
     Answer, Answered, Ball, Decider, Fact, FactKind, FactOrigin, MarkLog, Outcome, Refusal,
     StrictOrder, ZeroProof,
 };
-use catallax_shapes::{CurveId, GeomKey, PointId, SurfaceId};
+use catallax_shapes::{CurveId, GeomKey, Meet, MeetOf, PointDef, PointId, Position, SurfaceId};
 use catallax_topology::{BodyId, BodyKind, FaceId, Loop, Model, VertexId};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -164,6 +164,28 @@ fn carrier_hits(
             // A strict exclusion proves the complete meeting empty, including
             // all tangencies and isolated points. Retain its coverage proof.
             complete.insert(surface, Vec::new());
+            continue;
+        }
+        if let Some(meeting) =
+            crate::curve_pair::finite_spline_plane_points(model, curve, surface, dec)?
+        {
+            validated = true;
+            if let crate::curve_pair::FinitePlanePoints::Points(positions) = meeting {
+                let mut canonical = Vec::new();
+                for position in positions {
+                    let point = model.geom_mut().add_point(PointDef::Meet(Meet {
+                        of: MeetOf::CurveSurface(curve, surface),
+                        position: Position::Closed(position),
+                    }));
+                    let kept =
+                        canonical_point(model, points, point, dec, "boolean.imprint-ambiguous")?;
+                    if !canonical.contains(&kept) {
+                        canonical.push(kept);
+                    }
+                    found.push(point);
+                }
+                complete.insert(surface, canonical);
+            }
             continue;
         }
         let answer = match query(model.geom_mut(), curve, surface, dec) {

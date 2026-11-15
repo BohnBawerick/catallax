@@ -158,6 +158,45 @@ mod tests {
     use super::*;
     use catallax_numbers::with_operation_budget;
 
+    #[test]
+    fn finite_point_queries_include_endpoint_and_even_order_roots() {
+        for heights in [[0, 1, 1], [1, -1, 1]] {
+            let ((), work) = with_operation_budget(20_000_000, || {
+                let mut dec = Decider::default();
+                let curve = BSplineCurve::new(
+                    2,
+                    [0, 0, 0, 1, 1, 1].map(Rational::from_i64).to_vec(),
+                    heights
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, z)| {
+                            Point3::new(
+                                Rational::from_ratio(i as i64, 2).unwrap().into(),
+                                Real::zero(),
+                                Real::from_i64(z),
+                            )
+                        })
+                        .collect(),
+                    vec![Real::one(); 3],
+                    &mut dec,
+                )
+                .unwrap();
+                let points = hits(&curve, &RealPoly::var(3, 2), &mut dec)
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(points.len(), 1);
+                assert!(dec.sign(&points[0].z).is_coincident());
+                let expected = if heights[0] == 0 {
+                    Real::zero()
+                } else {
+                    Rational::from_ratio(1, 2).unwrap().into()
+                };
+                assert!(dec.sign(&(&points[0].x - &expected)).is_coincident());
+            });
+            assert!(!work.exhausted, "{} units", work.used);
+        }
+    }
+
     fn cut(scale: i64, contained: bool) -> (RealPoly, [RealPoly; 4]) {
         let factor = Real::from_rational(Rational::one().mul_pow2(scale));
         let dense = RealPoly::from_terms(

@@ -2,9 +2,46 @@
 
 use super::*;
 use catallax_numbers::{RealPoly, ZeroProof};
-use catallax_shapes::{BSplineCurve, Plane, SectionHits, SectionSurface, Sphere};
+use catallax_shapes::{
+    BSplineCurve, Plane, SectionHits, SectionSurface, Sphere, Surface, SurfaceId,
+};
 
 mod spline;
+
+pub(crate) enum FinitePlanePoints {
+    Contained,
+    Points(Vec<Point3>),
+}
+
+/// Complete finite point sets for clipping, without two-sided contact labels.
+pub(crate) fn finite_spline_plane_points(
+    model: &Model,
+    curve: CurveId,
+    surface: SurfaceId,
+    dec: &mut Decider,
+) -> Result<Option<FinitePlanePoints>, Refusal> {
+    let (Curve::BSpline(curve), Surface::Plane(plane)) =
+        (model.geom().curve(curve), model.geom().surface(surface))
+    else {
+        return Ok(None);
+    };
+    if sign(
+        &plane.normal.norm_squared(),
+        dec,
+        "boolean.patch-section-meetings",
+    )? == Sign::Zero
+    {
+        return Err(unresolved("a finite plane query needs a nonzero normal"));
+    }
+    let equation = model
+        .geom()
+        .implicit(surface)
+        .ok_or_else(|| unresolved("the finite plane has no polynomial equation"))?;
+    Ok(Some(match spline::hits(curve, equation, dec)? {
+        None => FinitePlanePoints::Contained,
+        Some(points) => FinitePlanePoints::Points(points),
+    }))
+}
 
 fn unresolved(detail: &str) -> Refusal {
     refusal("boolean.patch-section-meetings", detail)

@@ -453,7 +453,9 @@ fn a_step_cone_with_an_irrational_axis_length_imports_without_rounding_the_axis(
             assert!(values[1].is_zero());
             transformed.push_str(&format!(
                 "{prefix}({},{},{}));\n",
-                values[2], values[0], values[2]
+                values[2].to_decimal_exact().unwrap(),
+                values[0].to_decimal_exact().unwrap(),
+                values[2].to_decimal_exact().unwrap()
             ));
         } else {
             transformed.push_str(line);

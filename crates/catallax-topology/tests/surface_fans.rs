@@ -109,3 +109,15 @@ fn separate_corner_cycles_in_the_same_face_refuse() {
         "{faults:?}"
     );
 }
+
+#[test]
+fn closed_primitive_surfaces_keep_connected_corner_fans() {
+    for primitive in primitives() {
+        let mut model = Model::new();
+        let solid = assemble(&mut model, &expected(&primitive, &Pose::identity()));
+        let mut surface = model.body(solid).clone();
+        surface.kind = BodyKind::Surface;
+        let surface = model.add_body(surface);
+        assert!(model.check(surface).is_empty(), "{primitive:?}");
+    }
+}

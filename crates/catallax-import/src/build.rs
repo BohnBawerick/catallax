@@ -74,6 +74,24 @@ pub fn build_surface_model(
     let mut lumps = Vec::new();
     for shell in &source.shells {
         let faces = build_source_faces(model, &shell.name, &shell.faces, step)?;
+        if shell.closed {
+            let mut uses = BTreeMap::<EdgeId, usize>::new();
+            for face in &faces {
+                for boundary in &model.face(*face).loops {
+                    if let Loop::Coedges(coedges) = model.loop_(*boundary) {
+                        for coedge in coedges {
+                            *uses.entry(model.coedge(*coedge).edge).or_default() += 1;
+                        }
+                    }
+                }
+            }
+            if uses.values().any(|count| *count != 2) {
+                return Err(not_solid(format!(
+                    "declared closed surface shell {} has boundary edges",
+                    shell.name
+                )));
+            }
+        }
         let shell = model.add_shell(Shell { faces });
         lumps.push(model.add_lump(Lump {
             shells: vec![shell],

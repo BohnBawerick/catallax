@@ -294,6 +294,19 @@ fn separated(a: &BoundingBox, b: &BoundingBox) -> bool {
     (0..3).any(|i| a.max[i] < b.min[i] || b.max[i] < a.min[i])
 }
 
+fn require_material(model: &Model, bodies: &[BodyId]) -> Result<(), Refusal> {
+    if bodies
+        .iter()
+        .any(|body| model.body(*body).kind == BodyKind::Surface)
+    {
+        return Err(Refusal::new(
+            "boolean.not-solid",
+            "a surface body has no solid material",
+        ));
+    }
+    Ok(())
+}
+
 // Strictly separated enclosing boxes prove that regularised union is just the
 // disjoint collection of the existing immutable lumps. No support intersection
 // or replacement geometry is needed, and contact never takes this path.
@@ -1036,6 +1049,7 @@ fn evaluate_impl(
                 Operation::Boolean { kind, target, tool } => {
                     let a = &bodies[target];
                     let b = &bodies[tool];
+                    require_material(model, &[a.body, b.body])?;
                     if let Some(context) = certification.as_deref_mut()
                         && (context.has_certificate(target) || context.has_certificate(tool))
                     {
@@ -1205,6 +1219,9 @@ fn evaluate_impl(
                     // Validate even count-one and empty patterns before set identities.
                     crate::pattern_placement(layout, 0, dec)?;
                     let source = &bodies[body];
+                    if layout.count() > 1 {
+                        require_material(model, &[source.body])?;
+                    }
                     let mut body = source.body;
                     let mut radius = source.radius.clone();
                     let source_chamfers: Vec<_> = chamfers
@@ -1283,6 +1300,9 @@ fn evaluate_impl(
                 } => {
                     let map = crate::mirror_placement(plane)?;
                     let source = &bodies[body];
+                    if *keep_original {
+                        require_material(model, &[source.body])?;
+                    }
                     let source_chamfers: Vec<_> = chamfers
                         .iter()
                         .filter(|d| {

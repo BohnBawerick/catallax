@@ -77,7 +77,6 @@ struct EdgeUse {
     same: usize,
     reversed: usize,
     first_face: usize,
-    last_face: usize,
 }
 
 struct ShellScan {
@@ -201,23 +200,9 @@ impl Checker<'_> {
 
     fn surface_boundaries(&mut self, shell: ShellId, scan: &ShellScan) -> usize {
         let mut boundary: BTreeMap<VertexId, Vec<VertexId>> = BTreeMap::new();
-        let mut fans: BTreeMap<VertexId, BTreeMap<usize, BTreeSet<usize>>> = BTreeMap::new();
         let mut rings = 0;
         for (edge, uses) in &scan.edges {
             let edge = self.model.edge(*edge);
-            let interior = uses.same == 1 && uses.reversed == 1;
-            for vertex in [edge.start, edge.end].into_iter().flatten() {
-                let fan = fans.entry(vertex).or_default();
-                for (a, b) in [
-                    (uses.first_face, uses.last_face),
-                    (uses.last_face, uses.first_face),
-                ] {
-                    let neighbors = fan.entry(a).or_default();
-                    if interior {
-                        neighbors.insert(b);
-                    }
-                }
-            }
             if uses.same + uses.reversed != 1 {
                 continue;
             }
@@ -253,21 +238,61 @@ impl Checker<'_> {
                 }
             }
         }
+        self.surface_fans(shell);
+        rings
+    }
+
+    fn surface_fans(&mut self, shell: ShellId) {
+        let m = self.model;
+        let mut fans: BTreeMap<VertexId, BTreeMap<CoedgeId, BTreeSet<CoedgeId>>> = BTreeMap::new();
+        let mut endpoints: BTreeMap<(EdgeId, bool, VertexId), Vec<CoedgeId>> = BTreeMap::new();
+        for face in &m.shell(shell).faces {
+            for boundary in &m.face(*face).loops {
+                let Loop::Coedges(coedges) = m.loop_(*boundary) else {
+                    continue;
+                };
+                for (index, corner) in coedges.iter().copied().enumerate() {
+                    let outgoing = m.coedge(corner);
+                    let edge = m.edge(outgoing.edge);
+                    let start = outgoing.sense == Sense::Same;
+                    let Some(vertex) = (if start { edge.start } else { edge.end }) else {
+                        continue;
+                    };
+                    fans.entry(vertex).or_default().entry(corner).or_default();
+                    endpoints
+                        .entry((outgoing.edge, start, vertex))
+                        .or_default()
+                        .push(corner);
+                    let incoming = m.coedge(coedges[(index + coedges.len() - 1) % coedges.len()]);
+                    endpoints
+                        .entry((incoming.edge, incoming.sense == Sense::Reversed, vertex))
+                        .or_default()
+                        .push(corner);
+                }
+            }
+        }
+        // A node is a corner occurrence, so two wedges of one face stay distinct.
+        for ((_, _, vertex), corners) in endpoints {
+            if let [a, b] = corners.as_slice() {
+                let fan = fans.get_mut(&vertex).expect("endpoint has a corner");
+                fan.get_mut(a).expect("corner was registered").insert(*b);
+                fan.get_mut(b).expect("corner was registered").insert(*a);
+            }
+        }
         for (vertex, fan) in fans {
             let mut seen = BTreeSet::new();
-            let mut pending = vec![*fan.keys().next().expect("edge has a face")];
-            while let Some(face) = pending.pop() {
-                if seen.insert(face) {
-                    pending.extend(fan[&face].iter().copied());
+            let mut pending = vec![*fan.keys().next().expect("vertex has a corner")];
+            while let Some(corner) = pending.pop() {
+                if seen.insert(corner) {
+                    pending.extend(fan[&corner].iter().copied());
                 }
             }
             if seen.len() != fan.len() {
                 self.fault("topology.vertex-fan", || {
-                    format!("vertex {vertex:?} in shell {shell:?} has disconnected face fans")
+                    format!("vertex {vertex:?} in shell {shell:?} has disconnected corner fans")
                 });
             }
         }
-        rings
     }
 
     fn face(&mut self, f: FaceId, index: usize, s: ShellId, scan: &mut ShellScan) {
@@ -360,7 +385,6 @@ impl Checker<'_> {
                         }
                         self.incidence(GeomKey::Curve(edge.curve), GeomKey::Surface(face.surface));
                         let first_face = if let Some(uses) = scan.edges.get_mut(&coedge.edge) {
-                            uses.last_face = index;
                             match coedge.sense {
                                 Sense::Same => uses.same += 1,
                                 Sense::Reversed => uses.reversed += 1,
@@ -373,7 +397,6 @@ impl Checker<'_> {
                                     same: usize::from(coedge.sense == Sense::Same),
                                     reversed: usize::from(coedge.sense == Sense::Reversed),
                                     first_face: index,
-                                    last_face: index,
                                 },
                             );
                             scan.rings += usize::from(ring);

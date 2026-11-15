@@ -277,7 +277,8 @@ impl<'a> Reader<'a> {
                 "BREP_WITH_VOIDS"
                 | "BREP_WITH_VOIDS_AND_BOUNDS"
                 | "NEXT_ASSEMBLY_USAGE_OCCURRENCE"
-                | "FACETED_BREP" => return Err(unsupported(id, e)),
+                | "FACETED_BREP"
+                | "FACE_BASED_SURFACE_MODEL" => return Err(unsupported(id, e)),
                 _ => {}
             }
         }
@@ -292,7 +293,8 @@ impl<'a> Reader<'a> {
                             | "REPRESENTATION_MAP"
                             | "REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION"
                             | "ITEM_DEFINED_TRANSFORMATION"
-                    ) || unsupported_solid_model(name)
+                    ) || name == "FACE_BASED_SURFACE_MODEL"
+                        || unsupported_solid_model(name)
                 }) {
                     return Err(unsupported(id, entity));
                 }

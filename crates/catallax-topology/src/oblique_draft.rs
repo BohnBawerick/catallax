@@ -268,9 +268,9 @@ impl<'a> DraftedCylinder<'a> {
     pub fn hole(&self) -> Option<(&'a ObliqueDraft, FaceId, [EdgeId; 2])> {
         self.hole
     }
-    /// Positive lower bound on wall separation within every transverse section.
+    /// Positive lower bound on the three-dimensional distance between the walls.
     /// Export and display must keep their combined displacement below this bound.
-    pub fn section_clearance(&self, dec: &mut Decider) -> Result<Option<Real>, Refusal> {
+    pub fn wall_clearance(&self, dec: &mut Decider) -> Result<Option<Real>, Refusal> {
         let Some((inner, _, _)) = self.hole else {
             return Ok(None);
         };
@@ -295,11 +295,19 @@ impl<'a> DraftedCylinder<'a> {
             self.support.amplitude(&inner.heights()[1]) - inner.amplitude(&inner.heights()[1]),
             dec,
         )? - delta;
-        // A segment shorter than radius/2 stays away from the axis, where the
-        // inner radial residual has Lipschitz bound 1 + 2*|lean|/radius.
+        let axial = if sign(inner.tangent(), dec)? == Sign::Negative {
+            -inner.tangent()
+        } else {
+            inner.tangent().clone()
+        };
+        // The inner residual is rho - A(z) - lean.dot(ray). Any segment
+        // shorter than radius/2 stays at rho >= radius/2. Its transverse
+        // derivative norm is at most 1 + 2*|lean|/radius and its axial
+        // derivative is tangent. Their sum bounds the full gradient norm,
+        // including wall points at different heights after XYZ rounding.
         minimum(
             &radius / &Real::from_i64(2),
-            gap / (Real::one() + Real::from_i64(2) * lean / radius),
+            gap / (Real::one() + Real::from_i64(2) * lean / radius + axial),
             dec,
         )
         .map(Some)

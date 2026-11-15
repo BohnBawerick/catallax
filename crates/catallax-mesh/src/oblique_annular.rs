@@ -11,7 +11,7 @@ pub(super) fn build(
 ) -> Answered<Mesh> {
     let (inner, inner_face, inner_rings) = checked.hole().expect("checked annular body");
     let supports = [checked.support(), inner];
-    let clearance = checked.section_clearance(dec)?.unwrap();
+    let clearance = checked.wall_clearance(dec)?.unwrap();
     let clearance = dec.enclose_at(&clearance, chart::BITS)?.lo();
     let tolerance = options
         .chord_tolerance

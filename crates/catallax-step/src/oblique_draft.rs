@@ -27,7 +27,7 @@ pub(crate) fn write<W: Write>(
             }
         }
         let displacement = Real::from_rational((&rounded.bound + &inner.bound).mul_pow2(1));
-        let clearance = view.section_clearance(dec)?.unwrap();
+        let clearance = view.wall_clearance(dec)?.unwrap();
         if sign(&(clearance - displacement), dec)? != Sign::Positive {
             return Err(bad("rounded annular walls exceed their separation bound"));
         }

@@ -15,8 +15,16 @@ cap planes. Volume subtracts the inner finite law from the outer law.
 The B-rep display uses a common tensor grid for both walls and annular cap
 strips. It checks the requested chord bound, rounding, facet orientation and
 closed edge incidence. Its combined displacement must remain below a positive
-section wall-separation bound. It retains the existing typed refusals for
+three-dimensional wall-separation bound. It retains the existing typed refusals for
 unsupported angular and edge-length controls.
+
+For inner residual `F = rho - A(z) - lean.dot(ray)`, let `r` be the minimum
+inner radius and `g` the minimum signed radial gap over the finite height.
+A segment shorter than `r/2` stays at least `r/2` from the axis.
+There the full gradient norm is bounded by `1 + 2*|lean|/r + |tangent|`.
+Thus `min(r/2, g/(1 + 2*|lean|/r + |tangent|))` bounds the Euclidean wall
+distance even when the two points have different axial heights.
+The display and STEP displacement checks both use this spatial bound.
 
 STEP writes each wall as two rational charts. Both annular caps share the wall
 rows. The file has six faces, twelve edges and eight vertices, with a complete
@@ -31,6 +39,12 @@ This follows OCCT's shared replacement surfaces, edge curves and pcurves in
 The [P04 SMLib consumer map](../phase1/P04/PORT-CONSUMERS.md) identifies no
 missing tracer call needed by this family. Its four exact cap intersections
 already exist, so assembly reuses them without a new intersection algorithm.
+For display, OCCT's
+[`BRepMesh_DelaunayDeflectionControlMeshAlgo`](https://github.com/Open-Cascade-SAS/OCCT/blob/master/src/ModelingAlgorithms/TKMesh/BRepMesh/BRepMesh_DelaunayDeflectionControlMeshAlgo.hxx)
+checks three-dimensional facet deviation and refines failed triangles.
+This family keeps its existing whole-domain derivative grid bound and adds the
+analytic spatial margin before rounding, so no new tracer or sampled
+distance search is needed from the P04 SMLib map.
 
 Field compilation retains its previous separation diagnostic and does not yet
 publish the oblique annulus. Touching, crossing, reversed walls and a zero
@@ -42,6 +56,9 @@ The public input is
 The native regression is in `draft_oblique.rs`. Independent unhealed STEP,
 polar-volume and material witnesses are in
 `tools/step-regressions/test_draft_oblique.py`.
+`draft_annular_clearance.rs` adds a steep thin annulus with radial slope 100,
+minimum radial gap 0.0495 mm and an exact cross-height wall pair only
+0.000495 mm apart, including a translated, tilted frame.
 
 ## Verification
 

@@ -1,6 +1,6 @@
 # Import correspondence: first kernel step
 
-Producer: `a034ecf032e32511f5c58155eb945e18822ed59c`, based on main
+Producer: `6e1846a948923d626d54e0ad78f4c14023c8b907`, based on main
 `e9887bad203e351cd138b3eb8003e4202400cc05`. This is one step toward
 ROADMAP 1.2. The [public contract](../../interface-changes/2026-11-15-import-correspondence.md)
 describes the verifier, accepted derivative snapshots and unresolved cases.
@@ -26,21 +26,21 @@ physical source edges match; no old or new entry is unresolved or unmatched.
 
 | Public model ID | Verified faces | Verified edges | Comparison work |
 | --- | ---: | ---: | ---: |
-| 00000131 | 4 | 4 | 4,654 |
-| 00000173 | 5 | 4 | 5,296 |
-| 00000190 | 6 | 12 | 13,268 |
-| 00000405 | 4 | 4 | 5,166 |
-| 00000511 | 6 | 12 | 22,374 |
-| 00000605 | 6 | 12 | 12,170 |
-| 00000632 | 6 | 6 | 7,834 |
-| 00000633 | 7 | 14 | 16,514 |
-| 00000695 | 6 | 12 | 13,320 |
-| 00000821 | 3 | 2 | 2,906 |
+| 00000131 | 4 | 4 | 4,702 |
+| 00000173 | 5 | 4 | 5,350 |
+| 00000190 | 6 | 12 | 13,376 |
+| 00000405 | 4 | 4 | 5,214 |
+| 00000511 | 6 | 12 | 22,482 |
+| 00000605 | 6 | 12 | 12,278 |
+| 00000632 | 6 | 6 | 7,906 |
+| 00000633 | 7 | 14 | 16,640 |
+| 00000695 | 6 | 12 | 13,428 |
+| 00000821 | 3 | 2 | 2,936 |
 
 Each stage retains the existing 20M allowance. The table reports comparison
 work; the JSON separately records both imports. It does not claim a combined
-request was run under one allowance. These are fresh executions on a shared Mac
-with two kernel threads, using a release binary rebuilt at the producer commit.
+request was run under one allowance. These are fresh executions on the Linux work PC, using a release binary
+rebuilt at the producer commit.
 No latency qualification is claimed.
 
 The source and unresolved per-model licence scope remain those of the
@@ -57,13 +57,15 @@ four test workers. CI-selected all-target Clippy passed for the import crate
 and its reverse consumers. Rust formatting passed. The existing local Python
 format/tooling gate requires Linux affinity and GNU realpath, so its complete
 result is provided by the restored work-PC run instead of being called a local
-pass. The full Linux `ci/run fmt` gate and all 259 import all-target tests passed at
-the producer commit on the work PC.
+pass. The full Linux `ci/run fmt` gate and all 261 import all-target tests passed at
+the producer commit on the work PC. Both new review regressions fail against the
+previous comparison logic and pass with the corrections.
 
 Controls cover changed geometry behind reused entity numbers, duplicates in
 either source, reordered solids, actual planar derivatives and reopen, declined
-solids, unavailable internal spline derivatives, public-record tampering and
-exhausted comparison work. Existing replacement tests cover the editorial
+solids, mixed available/unavailable peers in either source, unavailable internal
+spline derivatives, public-record tampering and exhausted comparison work,
+including quadratic ambiguity output. Existing replacement tests cover the editorial
 transaction and rollback independently of this new report.
 
 The report supplies verified matches and unresolved entries. It does not yet

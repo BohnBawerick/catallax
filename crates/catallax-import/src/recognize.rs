@@ -136,7 +136,7 @@ pub struct FaceLoop {
     pub vertex: Option<Vertex>,
 }
 
-/// An `ADVANCED_FACE`.
+/// An `ADVANCED_FACE` or `FACE_SURFACE`.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Face {
     /// Entity name, the recipe face key.
@@ -350,7 +350,12 @@ impl<'a> Reader<'a> {
     }
 
     fn face(&self, id: u64) -> Result<Face, ImportRefusal> {
-        let a = self.args(id, "ADVANCED_FACE")?;
+        let entity = self.entity(id)?;
+        let kind = entity.type_name();
+        if !matches!(kind, "ADVANCED_FACE" | "FACE_SURFACE") {
+            return Err(unsupported(id, entity));
+        }
+        let a = self.args(id, kind)?;
         let mut loops = Vec::new();
         for b in ref_list(a, 1)? {
             let e = self.entity(b)?;

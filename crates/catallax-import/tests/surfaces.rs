@@ -11,6 +11,19 @@ use common::{BoxFixture, box_step};
 
 const SQUARE: &str = include_str!("fixtures/surface-square.step");
 
+#[test]
+fn face_surface_uses_the_same_explicit_surface_and_boundary_fields() {
+    let source = SQUARE.replace("ADVANCED_FACE(", "FACE_SURFACE(");
+    assert_ne!(source, SQUARE);
+    assert_eq!(
+        read_step(source.as_bytes()).unwrap(),
+        read_step(SQUARE.as_bytes()).unwrap()
+    );
+    let (model, bodies) = build(&source);
+    assert_eq!(model.body(bodies[0]).kind, BodyKind::Surface);
+    round_trip(&model, &bodies);
+}
+
 fn build(source: &str) -> (Model, Vec<catallax_topology::BodyId>) {
     let source = read_step(source.as_bytes()).unwrap();
     let mut model = Model::new();

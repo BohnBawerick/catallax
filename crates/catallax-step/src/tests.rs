@@ -1320,6 +1320,7 @@ fn a_trace_without_an_initial_fitting_budget_is_refused() {
                 max_precision_bits,
                 max_work: 0,
             }),
+            crate::fit::DEGREE,
         )
         .err()
         .unwrap();

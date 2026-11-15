@@ -644,6 +644,22 @@ impl<'a> Exporter<'a> {
                 error + self.edge_errors.get(&id).cloned().unwrap_or_default(),
             )
         } else {
+            let pipe_section = matches!(
+                self.model.geom().curve(source.curve),
+                catallax_shapes::Curve::PatchSection(_)
+            ) && self
+                .model
+                .coedges_of_edge(id)
+                .into_iter()
+                .filter_map(|coedge| self.model.owner_of_coedge(coedge))
+                .any(|(_, face)| self.rolling_pipe(face).is_some());
+            let order = if pipe_section { 3 } else { crate::fit::DEGREE };
+            if pipe_section {
+                eprintln!(
+                    "[DEBUG-e02] section trace begins at {} work",
+                    self.dec.stats().work
+                );
+            }
             let from = source.start.map(|v| self.model.vertex(v).point);
             let to = source.end.map(|v| self.model.vertex(v).point);
             let (from, to) = if source.sense == Sense::Same {
@@ -654,6 +670,12 @@ impl<'a> Exporter<'a> {
             let trace =
                 catallax_intersect::trace(self.model.geom(), source.curve, from, to, self.dec)?
                     .value;
+            if pipe_section {
+                eprintln!(
+                    "[DEBUG-e02] section fit begins at {} work",
+                    self.dec.stats().work
+                );
+            }
             let (fit, spans) = if capture {
                 let (fit, spans) = crate::fit::fit_with_ranges(
                     &trace,
@@ -662,6 +684,7 @@ impl<'a> Exporter<'a> {
                     source.sense == Sense::Reversed,
                     self.options,
                     self.dec,
+                    order,
                 )?;
                 (fit, Some(spans))
             } else {
@@ -673,10 +696,17 @@ impl<'a> Exporter<'a> {
                         source.sense == Sense::Reversed,
                         self.options,
                         self.dec,
+                        order,
                     )?,
                     None,
                 )
             };
+            if pipe_section {
+                eprintln!(
+                    "[DEBUG-e02] section fit ends at {} work",
+                    self.dec.stats().work
+                );
+            }
             let points = fit
                 .points
                 .iter()

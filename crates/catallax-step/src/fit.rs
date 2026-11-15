@@ -52,13 +52,14 @@ pub(crate) fn fit(
     reverse: bool,
     options: &StepOptions,
     dec: &Decider,
+    order: usize,
 ) -> Result<Fit, Refusal> {
     fit_spans(
         trace,
         start,
         end,
         reverse,
-        (options.significant_digits, &options.curve_tolerance),
+        (options.significant_digits, &options.curve_tolerance, order),
         dec,
         |_, _, _| {},
     )
@@ -77,6 +78,7 @@ pub(crate) fn fit_with_ranges(
     reverse: bool,
     options: &StepOptions,
     dec: &Decider,
+    order: usize,
 ) -> Result<(Fit, Vec<TraceSpan>), Refusal> {
     let mut ranges = Vec::new();
     // A chart projects the written space curve back onto its carrier. Reserve
@@ -87,7 +89,7 @@ pub(crate) fn fit_with_ranges(
         start,
         end,
         reverse,
-        (options.significant_digits, &tolerance),
+        (options.significant_digits, &tolerance, order),
         dec,
         |piece, from, to| {
             ranges.push(TraceSpan {
@@ -111,13 +113,14 @@ fn fit_spans(
     start: &Point,
     end: &Point,
     reverse: bool,
-    (digits, tolerance): (u32, &Rational),
+    (digits, tolerance, order): (u32, &Rational, usize),
     dec: &Decider,
     mut accepted: impl FnMut(usize, &Rational, &Rational),
 ) -> Result<Fit, Refusal> {
     dec.check_deadline()?;
     let policy = dec.policy();
     assert!(!trace.pieces().is_empty(), "empty curve trace");
+    assert!((1..=DEGREE).contains(&order));
     // TracePiece's internal arithmetic is excluded, as allowed by piece 6's
     // convention. Each span constructs five input balls and one hull.
     let pieces = u64::try_from(trace.pieces().len()).unwrap();
@@ -142,7 +145,7 @@ fn fit_spans(
                 "trace range cannot be enclosed at working precision",
             ));
         }
-        let initial = span(piece, &lo, &hi, p, digits, &whole, dec)?;
+        let initial = span(piece, &lo, &hi, (p, digits, order), &whole, dec)?;
         // Its work was reserved above.
         let mut pending = vec![(lo, hi, initial)];
         while let Some((lo, hi, current)) = pending.pop() {
@@ -154,8 +157,8 @@ fn fit_spans(
             if &error > tolerance && useful && remaining >= cost.saturating_mul(2) {
                 remaining -= cost * 2;
                 let mid = (&lo + &hi).mul_pow2(-1);
-                let left = span(piece, &lo, &mid, p, digits, &whole, dec)?;
-                let right = span(piece, &mid, &hi, p, digits, &whole, dec)?;
+                let left = span(piece, &lo, &mid, (p, digits, order), &whole, dec)?;
+                let right = span(piece, &mid, &hi, (p, digits, order), &whole, dec)?;
                 if left.error().max(right.error()) < error {
                     pending.push((mid.clone(), hi, right));
                     pending.push((lo, mid, left));
@@ -227,8 +230,7 @@ fn span(
     piece: &TracePiece,
     lo: &Rational,
     hi: &Rational,
-    precision: u32,
-    digits: u32,
+    (precision, digits, order): (u32, u32, usize),
     whole: &Ball,
     dec: &Decider,
 ) -> Result<Span, Refusal> {
@@ -251,12 +253,16 @@ fn span(
         .as_ref()
         .filter(|ball| inside(ball))
         .unwrap_or(whole);
-    let coefficients = piece.taylor(center, DEGREE, dec)?;
-    let remainder_coefficient = piece.taylor(domain, DEGREE + 1, dec)?.pop().unwrap();
+    let mut coefficients = piece.taylor(center, order, dec)?;
+    let remainder_coefficient = piece.taylor(domain, order + 1, dec)?.pop().unwrap();
     let remainder = remainder_coefficient
         .iter()
         .fold(Rational::zero(), |s, b| s + number::magnitude(b))
-        * width.mul_pow2(-1).pow((DEGREE + 1) as i32).unwrap();
+        * width.mul_pow2(-1).pow((order + 1) as i32).unwrap();
+    // Elevate a lower-order polynomial into the existing degree-seven format.
+    coefficients.resize_with(DEGREE + 1, || {
+        std::array::from_fn(|_| Ball::from_rational(&Rational::zero(), precision))
+    });
     let mut ideals = Vec::with_capacity(DEGREE + 1);
     let mut points = Vec::with_capacity(DEGREE + 1);
     taylor_controls(&coefficients, &width, digits, |xyz, control| {

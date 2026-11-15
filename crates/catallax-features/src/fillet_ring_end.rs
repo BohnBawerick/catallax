@@ -76,10 +76,19 @@ pub(super) fn pipe_geometry(
     // Local knots avoid cancellation in the retained section's power basis.
     let carrier = RationalSplineSurface::new(
         source.degrees(),
-        [source.knots()[0].iter().map(|knot| (knot - &low) / (&high - &low)).collect(),
-            source.knots()[1].to_vec()],
-        source.control_count(), source.controls().to_vec(), source.weights().to_vec(), dec,
-    )?.to_surface(dec)?;
+        [
+            source.knots()[0]
+                .iter()
+                .map(|knot| (knot - &low) / (&high - &low))
+                .collect(),
+            source.knots()[1].to_vec(),
+        ],
+        source.control_count(),
+        source.controls().to_vec(),
+        source.weights().to_vec(),
+        dec,
+    )?
+    .to_surface(dec)?;
     let atlases = RationalAtlas::partition_with_polynomial_bounds(carrier, [false; 2], dec)?;
     let [atlas] = atlases.as_slice() else {
         return Err(unsupported());

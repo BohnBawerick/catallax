@@ -3,13 +3,18 @@
 use super::*;
 use catallax_topology::Loop;
 
+pub(super) struct Band {
+    pub rings: Vec<NumericalConeRing>,
+    pub checks: Vec<NumericalCheck>,
+}
+
 pub(super) fn read(
     model: &Model,
     face: FaceId,
     cone: &Cone,
     tolerance: &Rational,
     dec: &mut Decider,
-) -> Result<Option<(Vec<NumericalConeRing>, Vec<NumericalCheck>)>, Refusal> {
+) -> Result<Option<Band>, Refusal> {
     if model.face(face).loops.len() != 2 {
         return Ok(None);
     }
@@ -72,14 +77,14 @@ pub(super) fn read(
             "finite cone ring heights must be distinct and strictly positive",
         ));
     }
-    Ok(Some((
+    Ok(Some(Band {
         rings,
-        vec![NumericalCheck::Samples {
+        checks: vec![NumericalCheck::Samples {
             name: "finite.ring-cone-band-deviation-bound".into(),
             scope: format!("{face:?}"),
             samples,
         }],
-    )))
+    }))
 }
 
 pub(super) fn angle(

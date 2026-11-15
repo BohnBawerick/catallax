@@ -86,7 +86,7 @@ fn run(upper: bool, sense: Sense, offset: &str, skew: bool) -> NumericalFacePart
     let pair = stages.intersection;
     assert_eq!(
         stages.boundaries
-            + stages.charts
+            + stages.supports
             + stages.topology
             + pair.windows
             + pair.setup
@@ -160,15 +160,17 @@ fn skew_retains_the_unchanged_lower_face_and_all_upper_material_regions() {
     assert_eq!(upper.native_trims.len(), 3);
     assert_eq!(upper.events.len(), 5);
     for i in 0..4 {
-        let Surface::BSpline(SplineSupport::RationalPatch(a)) = &lower.cylinder_quarters[i].surface
+        let Surface::BSpline(SplineSupport::RationalPatch(a)) =
+            &lower.cylinder_source.quarters[i].surface
         else {
             unreachable!()
         };
-        let Surface::BSpline(SplineSupport::RationalPatch(b)) = &upper.cylinder_quarters[i].surface
+        let Surface::BSpline(SplineSupport::RationalPatch(b)) =
+            &upper.cylinder_source.quarters[i].surface
         else {
             unreachable!()
         };
         assert!(a.carrier().same_definition(b.carrier()));
-        assert_eq!(upper.cylinder_quarters[i].id, i);
+        assert_eq!(upper.cylinder_source.quarters[i].id, i);
     }
 }

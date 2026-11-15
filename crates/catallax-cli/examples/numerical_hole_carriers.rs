@@ -266,7 +266,7 @@ fn query(
     if let Some(partition) = &partition {
         report["open_partition"] = partition_report(partition);
         report["work_stages"]["face_boundaries"] = json!(partition.work.boundaries);
-        report["work_stages"]["face_charts"] = json!(partition.work.charts);
+        report["work_stages"]["face_supports"] = json!(partition.work.supports);
         report["work_stages"]["face_topology"] = json!(partition.work.topology);
     }
     report["work_stages"]["report_preparation"] =
@@ -288,7 +288,7 @@ fn partition_report(p: &catallax_boolean::numerical::NumericalFacePartition) -> 
         "events":p.events.iter().map(|e|json!({"key":e.key,"vertex":e.vertex,"point_only":e.point_only,"hits":e.hits.iter().map(|h|json!({"piece":h.piece,"parameter":h.parameter.to_string(),"uv":h.uv.each_ref().map(|r|r.each_ref().map(ToString::to_string)),"requested_domains":h.requested_domains.each_ref().map(|d|d.each_ref().map(|r|r.each_ref().map(ToString::to_string)))})).collect::<Vec<_>>()})).collect::<Vec<_>>(),
         "rings":p.rings.iter().map(|r|json!({"original_loop":format!("{:?}",r.original_loop),"coedge":format!("{:?}",r.coedge),"edge":format!("{:?}",r.edge),"sense":format!("{:?}",r.sense),"edge_sense":format!("{:?}",r.edge_sense),"height_mm":r.height_mm.to_string(),"original_height_mm":r.original_height_mm.each_ref().map(ToString::to_string)})).collect::<Vec<_>>(),
         "ring_links":p.ring_links.iter().map(|r|json!({"edge":r.edge,"ring":r.ring,"source_u":r.source_u.each_ref().map(ToString::to_string),"original_parameters_rad":r.original_parameters_rad.each_ref().map(|r|r.each_ref().map(ToString::to_string))})).collect::<Vec<_>>(),
-        "cylinder_quarters":p.cylinder_quarters.iter().map(|q|{let Surface::BSpline(catallax_shapes::SplineSupport::RationalPatch(patch))=&q.surface else{unreachable!()};json!({"id":q.id,"axis_parameters_mm":q.axis_parameters_mm.each_ref().map(ToString::to_string),"source":source(patch.carrier())})}).collect::<Vec<_>>(),
+        "cylinder_quarters":p.cylinder_source.quarters.iter().map(|q|{let Surface::BSpline(catallax_shapes::SplineSupport::RationalPatch(patch))=&q.surface else{unreachable!()};json!({"id":q.id,"axis_parameters_mm":q.axis_parameters_mm.each_ref().map(ToString::to_string),"source":source(patch.carrier())})}).collect::<Vec<_>>(),
         "cylinder_trims":p.cylinder_trims.iter().map(|t|json!({"piece":t.piece,"edge":t.edge,"quarter":t.quarter,"curve":curve(&t.curve)})).collect::<Vec<_>>(),
         "evidence":catallax_cli::numerical_evidence_summary(&p.evidence)})
 }

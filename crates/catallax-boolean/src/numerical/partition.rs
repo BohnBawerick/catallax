@@ -11,7 +11,7 @@ pub(super) struct Input<'a> {
     pub intersection: NumericalNativeIntersection,
     pub rings: Vec<NumericalConeRing>,
     pub cone_quarters: Vec<Surface>,
-    pub cylinder_quarters: Vec<NumericalCylinderQuarter>,
+    pub cylinder_source: NumericalCylinderSource,
     pub options: NumericalOptions,
     pub checks: Vec<NumericalCheck>,
 }
@@ -60,7 +60,7 @@ impl Input<'_> {
             intersection,
             rings,
             cone_quarters,
-            cylinder_quarters,
+            cylinder_source,
             options,
             mut checks,
         } = self;
@@ -189,8 +189,7 @@ impl Input<'_> {
                         source,
                         &rings,
                         &intersection,
-                        fixed_axis,
-                        &fixed,
+                        (fixed_axis, &fixed),
                         [
                             (pair[0].1, pair[0].2.clone()),
                             (pair[1].1, pair[1].2.clone()),
@@ -268,6 +267,11 @@ impl Input<'_> {
             &mut topology.ring_links,
             &mut cylinder_trims,
         )?;
+        checks.extend(super::checks::open(
+            &topology.definition,
+            &native_trims,
+            dec,
+        )?);
         checks.push(NumericalCheck::Passed {
             name: "finite.owned-closed-native-loop-walks".into(),
             scope: key.into(),
@@ -277,7 +281,7 @@ impl Input<'_> {
         let work = NumericalFaceWork {
             boundaries: 0,
             intersection: intersection.work_stages(),
-            charts: 0,
+            supports: 0,
             topology: 0,
         };
         Ok(NumericalFacePartition {
@@ -287,7 +291,7 @@ impl Input<'_> {
             rings,
             ring_links: topology.ring_links,
             events: records,
-            cylinder_quarters,
+            cylinder_source,
             cylinder_trims,
             evidence,
             work,
@@ -301,11 +305,11 @@ impl Topology<'_> {
         source: &BSplineSurface,
         rings: &[NumericalConeRing],
         intersection: &NumericalNativeIntersection,
-        fixed_axis: usize,
-        fixed: &Rational,
+        coordinate: (usize, &Rational),
         ends: [(usize, [Rational; 2]); 2],
         dec: &mut Decider,
     ) -> Result<NumericalTrim, Refusal> {
+        let (fixed_axis, fixed) = coordinate;
         let free = 1 - fixed_axis;
         let forward = ends[0].1[free] < ends[1].1[free];
         let sorted = if forward {
@@ -540,7 +544,10 @@ impl Topology<'_> {
                     ordered.reverse()
                 }
                 for span in ordered.windows(2) {
-                    for i in 1..8 {
+                    for i in 0..8 {
+                        if span[0] == p[0] && i == 0 {
+                            continue;
+                        }
                         let t = &span[0]
                             + &((&span[1] - &span[0]) * Rational::from_ratio(i, 8).unwrap());
                         let at = events::rational_point(curve.point_at(&Real::from(t), dec)?)?;

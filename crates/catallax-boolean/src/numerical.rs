@@ -15,6 +15,7 @@ use catallax_topology::{
 };
 
 mod band;
+mod checks;
 mod events;
 mod material;
 mod partition;
@@ -104,8 +105,8 @@ pub struct NumericalFaceWork {
     pub boundaries: u64,
     /// Source construction, tracing and independent retained-fit checks.
     pub intersection: NumericalNativeWork,
-    /// Admission of the retained cone and cylinder quarter patches.
-    pub charts: u64,
+    /// Retained cylinder source construction and cone/cylinder chart admission.
+    pub supports: u64,
     /// Finite ownership, explicit endpoint joins and kept loop construction.
     pub topology: u64,
 }
@@ -129,7 +130,7 @@ pub struct NumericalFacePartition {
     /// Finite meetings, including duplicate seam contacts and explicit vertex ownership.
     pub events: Vec<NumericalFiniteEvent>,
     /// Canonical cylinder quarters for the caller's wall assembly.
-    pub cylinder_quarters: Vec<NumericalCylinderQuarter>,
+    pub cylinder_source: NumericalCylinderSource,
     /// Unbound tool-side UV templates, retaining their original native parameter.
     pub cylinder_trims: Vec<NumericalCylinderTrim>,
     /// Preset tolerance, actual sampled checks and explicit endpoint repairs.
@@ -233,10 +234,11 @@ fn build_face(
     if key.is_empty() || options.tolerance_mm.sign() != Sign::Positive {
         return Err(bad("face key and positive preset tolerance are required"));
     }
-    let Some((rings, mut checks)) = band::read(model, face, cone, &options.tolerance_mm, dec)?
-    else {
+    let Some(band) = band::read(model, face, cone, &options.tolerance_mm, dec)? else {
         return Ok(None);
     };
+    let rings = band.rings;
+    let mut checks = band.checks;
     let heights = [rings[0].height_mm.clone(), rings[1].height_mm.clone()];
     let before_intersection = catallax_numbers::current_operation_work().used;
     let originals = [Surface::Cone(cone.clone()), Surface::Cylinder(tool.clone())];
@@ -252,15 +254,29 @@ fn build_face(
     let cone_quarters = (0..4)
         .map(|i| patch(&intersection.windows().sources()[0], i, dec))
         .collect::<Result<Vec<_>, _>>()?;
-    let cylinder_quarters = (0..4)
-        .map(|i| {
-            Ok(NumericalCylinderQuarter {
-                id: i,
-                surface: patch(&intersection.windows().sources()[1], i, dec)?,
-                axis_parameters_mm: tool_parameters.clone(),
-            })
-        })
-        .collect::<Result<Vec<_>, Refusal>>()?;
+    let cylinder_source =
+        NumericalCylinderSource::new(tool, tool_parameters, options.clone(), dec)?;
+    if !cylinder_source
+        .source
+        .same_definition(&intersection.windows().sources()[1])
+    {
+        return Err(bad(
+            "canonical cylinder constructor changed the finite query source definition",
+        ));
+    }
+    checks.extend(
+        cylinder_source
+            .evidence
+            .checks()
+            .iter()
+            .cloned()
+            .map(|mut check| {
+                let (NumericalCheck::Passed { scope, .. } | NumericalCheck::Samples { scope, .. }) =
+                    &mut check;
+                *scope = format!("canonical-cylinder/{scope}");
+                check
+            }),
+    );
     let before_topology = catallax_numbers::current_operation_work().used;
     let mut result = partition::Input {
         key,
@@ -269,13 +285,13 @@ fn build_face(
         intersection,
         rings,
         cone_quarters,
-        cylinder_quarters,
+        cylinder_source,
         options,
         checks,
     }
     .build(dec)?;
     result.work.boundaries = before_intersection - start;
-    result.work.charts = before_topology - before_charts;
+    result.work.supports = before_topology - before_charts;
     result.work.topology = catallax_numbers::current_operation_work().used - before_topology;
     Ok(Some(result))
 }

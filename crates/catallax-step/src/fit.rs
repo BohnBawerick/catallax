@@ -7,6 +7,7 @@ use catallax_numbers::{Ball, Decider, Rational, Refusal};
 
 use crate::StepOptions;
 use crate::number::{self, Point};
+use std::collections::BTreeMap;
 
 pub(crate) const DEGREE: usize = 7;
 
@@ -138,6 +139,7 @@ fn fit_spans(
     let mut remaining = policy.max_work - cost * pieces;
     let mut spans = Vec::new();
     for (piece_index, piece) in trace.pieces().iter().enumerate() {
+        let mut endpoints = BTreeMap::new();
         let (lo, hi) = piece.range();
         let whole = Ball::from_rational(&lo, p).hull(&Ball::from_rational(&hi, p));
         if whole.lo() < lo || whole.hi() > hi {
@@ -145,7 +147,15 @@ fn fit_spans(
                 "trace range cannot be enclosed at working precision",
             ));
         }
-        let initial = span(piece, &lo, &hi, (p, digits, order), &whole, dec)?;
+        let initial = span(
+            piece,
+            &lo,
+            &hi,
+            (p, digits, order),
+            &whole,
+            dec,
+            &mut endpoints,
+        )?;
         // Its work was reserved above.
         let mut pending = vec![(lo, hi, initial)];
         while let Some((lo, hi, current)) = pending.pop() {
@@ -157,8 +167,24 @@ fn fit_spans(
             if &error > tolerance && useful && remaining >= cost.saturating_mul(2) {
                 remaining -= cost * 2;
                 let mid = (&lo + &hi).mul_pow2(-1);
-                let left = span(piece, &lo, &mid, (p, digits, order), &whole, dec)?;
-                let right = span(piece, &mid, &hi, (p, digits, order), &whole, dec)?;
+                let left = span(
+                    piece,
+                    &lo,
+                    &mid,
+                    (p, digits, order),
+                    &whole,
+                    dec,
+                    &mut endpoints,
+                )?;
+                let right = span(
+                    piece,
+                    &mid,
+                    &hi,
+                    (p, digits, order),
+                    &whole,
+                    dec,
+                    &mut endpoints,
+                )?;
                 if left.error().max(right.error()) < error {
                     pending.push((mid.clone(), hi, right));
                     pending.push((lo, mid, left));
@@ -233,6 +259,7 @@ fn span(
     (precision, digits, order): (u32, u32, usize),
     whole: &Ball,
     dec: &Decider,
+    endpoints: &mut BTreeMap<Rational, [Ball; 3]>,
 ) -> Result<Span, Refusal> {
     let mid = (lo + hi).mul_pow2(-1);
     let width = hi - lo;
@@ -272,11 +299,19 @@ fn span(
     for (index, t) in [(0, lo), (DEGREE, hi)] {
         let raw = Ball::from_rational(t, precision);
         let parameter = if inside(&raw) { &raw } else { whole };
+        let position = if order < DEGREE {
+            if let Some(position) = endpoints.get(t) {
+                position.clone()
+            } else {
+                let position = piece.evaluate(parameter, dec)?;
+                endpoints.insert(t.clone(), position.clone());
+                position
+            }
+        } else {
+            piece.evaluate(parameter, dec)?
+        };
         points[index] = Point {
-            xyz: piece
-                .evaluate(parameter, dec)?
-                .each_ref()
-                .map(|b| number::ball_number(b, digits)),
+            xyz: position.each_ref().map(|b| number::ball_number(b, digits)),
         };
     }
     let bounds = piece

@@ -241,7 +241,8 @@ fn branches() {
                     }
                 };
                 let began = Instant::now();
-                let fit = fit::fit(&trace, &start, &start, false, &options, &dec).unwrap();
+                let fit =
+                    fit::fit(&trace, &start, &start, false, &options, &dec, fit::DEGREE).unwrap();
                 let elapsed = began.elapsed();
                 println!(
                     "{case},{index},1e-{exponent},{},{},{},{},{},{}",

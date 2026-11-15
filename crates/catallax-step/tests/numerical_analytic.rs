@@ -257,6 +257,26 @@ fn partial_circle_phase_is_checked_after_direction_rounding() {
     )
     .unwrap();
     save("quarter-oblique-anchor.step", file.bytes());
+    let phases = file
+        .report()
+        .emitted_evidence
+        .checks()
+        .iter()
+        .filter_map(|check| match check {
+            NumericalCheck::Samples { name, samples, .. }
+                if name == "file.arc-zero-phase-tangent-bound" =>
+            {
+                Some(samples)
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(phases.len(), 2);
+    for samples in phases {
+        assert_eq!(samples.len(), 1);
+        assert_eq!(samples[0].parameters, vec![q("0")]);
+        assert!(samples[0].distance_upper_mm <= q("1/1000000000"));
+    }
     let error = output::build(
         &body,
         &NumericalStepOptions {

@@ -26,8 +26,14 @@ impl Boundaries {
     fn split_merged_chords(
         &mut self,
         options: &PreviewOptions,
-        dec: &Decider,
+        dec: &mut Decider,
     ) -> Result<(), Refusal> {
+        let count = self.vertices.len() as u64;
+        // Bill deduplication and three sorted indices before allocating them.
+        let index_work = count
+            .saturating_mul(u64::from(count.max(1).ilog2()) + 1)
+            .saturating_mul(4);
+        dec.charge_work(index_work)?;
         let tolerance = VERTEX_MERGE_MM.min(options.chord_tolerance.to_f64_nearest() * 0.25);
         let vertices: BTreeSet<_> = self.vertices.values().copied().collect();
         let sorted: [Vec<_>; 3] = std::array::from_fn(|axis| {
@@ -39,6 +45,8 @@ impl Boundaries {
         });
         // Welding can put a vertex inside another edge's chord. Split the shared
         // polyline here so both incident faces cancel the same oriented segments.
+        // Each visit adds at most one reference, so this also caps added storage.
+        let mut visits_left = options.max_vertices;
         for edge in &mut self.mesh.edges {
             let mut split = vec![edge.vertices[0]];
             for pair in edge.vertices.windows(2) {
@@ -56,7 +64,10 @@ impl Boundaries {
                     let last = candidates.partition_point(|&i| self.mesh.positions[i][axis] < hi);
                     let mut interior = Vec::new();
                     for &index in &candidates[first..last] {
-                        dec.check_deadline()?;
+                        visits_left = visits_left.checked_sub(1).ok_or_else(|| {
+                            failure("preview boundary repair reached max_vertices visits")
+                        })?;
+                        dec.charge_work(1)?;
                         let p = self.mesh.positions[index];
                         let t = (p[axis] - a[axis]) / delta[axis];
                         let d: [f64; 3] = std::array::from_fn(|i| p[i] - (a[i] + t * delta[i]));
@@ -307,4 +318,128 @@ pub(crate) fn build(
         result.split_merged_chords(options, dec)?;
     }
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use catallax_numbers::with_operation_budget;
+    use catallax_shapes::{Curve, Line, Point3, PointDef, Vector3};
+    use catallax_topology::{Edge, Vertex};
+
+    fn crowded_chords(count: usize, edges: usize, on_chord: bool) -> Boundaries {
+        let mut model = Model::new();
+        let positions: Vec<_> = [[0.0; 3], [(count + 1) as f64, 0.0, 0.0]]
+            .into_iter()
+            .chain((1..=count).map(|i| [i as f64, f64::from(!on_chord), 0.0]))
+            .collect();
+        let vertices = positions
+            .iter()
+            .enumerate()
+            .map(|(index, p)| {
+                let [x, y, z] = p.map(|x| chart::q(x).into());
+                let point = model
+                    .geom_mut()
+                    .add_point(PointDef::Explicit(Point3::new(x, y, z)));
+                (model.add_vertex(Vertex { point }), index)
+            })
+            .collect::<BTreeMap<_, _>>();
+        let curve = model.geom_mut().add_curve(Curve::Line(Line {
+            origin: Point3::origin(),
+            dir: Vector3::new(1.into(), 0.into(), 0.into()),
+        }));
+        let ends: Vec<_> = vertices.keys().copied().take(2).collect();
+        let edges = (0..edges)
+            .map(|_| PreviewEdge {
+                edge: model.add_edge(Edge {
+                    curve,
+                    sense: Sense::Same,
+                    start: Some(ends[0]),
+                    end: Some(ends[1]),
+                }),
+                vertices: vec![0, 1],
+            })
+            .collect();
+        Boundaries {
+            mesh: PreviewMesh {
+                positions,
+                edges,
+                ..PreviewMesh::default()
+            },
+            vertices,
+            edges: BTreeMap::new(),
+            merged_vertices: true,
+        }
+    }
+
+    #[test]
+    fn merged_chord_search_is_bounded_without_an_operation_allowance() {
+        let mut boundaries = crowded_chords(4096, 4096, false);
+        let options = PreviewOptions {
+            max_vertices: boundaries.mesh.positions.len(),
+            ..PreviewOptions::default()
+        };
+        let result = boundaries.split_merged_chords(&options, &mut Decider::default());
+        assert_eq!(result.unwrap_err().code, "mesh.precision-or-budget");
+    }
+
+    #[test]
+    fn merged_chord_splits_have_bounded_reference_growth() {
+        let mut boundaries = crowded_chords(16, 16, true);
+        let original: usize = boundaries
+            .mesh
+            .edges
+            .iter()
+            .map(|edge| edge.vertices.len())
+            .sum();
+        let options = PreviewOptions {
+            max_vertices: boundaries.mesh.positions.len(),
+            ..PreviewOptions::default()
+        };
+        let result = boundaries.split_merged_chords(&options, &mut Decider::default());
+        assert_eq!(result.unwrap_err().code, "mesh.precision-or-budget");
+        let references: usize = boundaries
+            .mesh
+            .edges
+            .iter()
+            .map(|edge| edge.vertices.len())
+            .sum();
+        assert!(references <= original + options.max_vertices);
+    }
+
+    #[test]
+    fn merged_chord_search_honors_the_existing_operation_allowance() {
+        let mut boundaries = crowded_chords(4096, 4096, false);
+        let (result, work) = with_operation_budget(8, || {
+            boundaries.split_merged_chords(&PreviewOptions::default(), &mut Decider::default())
+        });
+        assert_eq!(result.unwrap_err().code, "numbers.operation-budget");
+        assert!(work.used <= 8);
+        assert!(work.exhausted);
+    }
+
+    #[test]
+    fn merged_chord_split_replays_at_its_measured_work_limit() {
+        let options = PreviewOptions {
+            max_vertices: 4,
+            ..PreviewOptions::default()
+        };
+        let run = || {
+            let mut boundaries = crowded_chords(2, 1, true);
+            let mut dec = Decider::default();
+            boundaries.split_merged_chords(&options, &mut dec)?;
+            assert!(dec.stats().work > 0);
+            Ok::<_, Refusal>(boundaries.mesh.edges[0].vertices.clone())
+        };
+        let (result, work) = with_operation_budget(1000, run);
+        assert_eq!(result.unwrap(), [0, 2, 3, 1]);
+        assert!(!work.exhausted);
+        let (exact, exact_work) = with_operation_budget(work.used, run);
+        assert_eq!(exact.unwrap(), [0, 2, 3, 1]);
+        assert_eq!(exact_work.used, work.used);
+        assert!(!exact_work.exhausted);
+        let (short, short_work) = with_operation_budget(work.used - 1, run);
+        assert_eq!(short.unwrap_err().code, "numbers.operation-budget");
+        assert!(short_work.exhausted);
+    }
 }

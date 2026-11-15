@@ -70,65 +70,81 @@ fn full_cylinder_exchange_keeps_equivalent_surface_charts() {
     for outer in [false, true] {
         for axis in [-1_i64, 1] {
             for quarter_turns in -3_i64..=3 {
-                let mut definition = if outer {
-                    outer_cylinder()
-                } else {
-                    fixture::bore()
-                };
-                let phase =
-                    &(Ball::pi(128).mid() / fixture::q("2")) * &Rational::from_i64(quarter_turns);
-                for face in &mut definition.faces {
-                    if let Surface::Cylinder(cylinder) = &mut face.surface {
-                        cylinder.axis = RVector3::new(0.into(), 0.into(), axis.into()).to_real();
-                        let reference = match quarter_turns.rem_euclid(4) {
-                            0 => [1, 0, 0],
-                            1 => [0, axis, 0],
-                            2 => [-1, 0, 0],
-                            _ => [0, -axis, 0],
+                for reverse_seam in [false, true] {
+                    for start in 0..4 {
+                        let mut definition = if outer {
+                            outer_cylinder()
+                        } else {
+                            fixture::bore()
                         };
-                        cylinder.ref_dir = RVector3::new(
-                            reference[0].into(),
-                            reference[1].into(),
-                            reference[2].into(),
+                        let phase = &(Ball::pi(128).mid() / fixture::q("2"))
+                            * &Rational::from_i64(quarter_turns);
+                        for face in &mut definition.faces {
+                            if let Surface::Cylinder(cylinder) = &mut face.surface {
+                                cylinder.axis =
+                                    RVector3::new(0.into(), 0.into(), axis.into()).to_real();
+                                let reference = match quarter_turns.rem_euclid(4) {
+                                    0 => [1, 0, 0],
+                                    1 => [0, axis, 0],
+                                    2 => [-1, 0, 0],
+                                    _ => [0, -axis, 0],
+                                };
+                                cylinder.ref_dir = RVector3::new(
+                                    reference[0].into(),
+                                    reference[1].into(),
+                                    reference[2].into(),
+                                )
+                                .to_real();
+                                for uv in face
+                                    .loops
+                                    .iter_mut()
+                                    .flatten()
+                                    .flat_map(|trim| &mut trim.uv)
+                                {
+                                    uv[0] = &(&uv[0] * &Rational::from_i64(axis)) - &phase;
+                                    uv[1] = &uv[1] * &Rational::from_i64(axis);
+                                }
+                            }
+                        }
+                        if reverse_seam {
+                            let edge = definition
+                                .edges
+                                .iter_mut()
+                                .find(|e| e.key == "cylinder-u-seam")
+                                .unwrap();
+                            let catallax_shapes::Curve::Line(line) = &mut edge.curve else {
+                                unreachable!()
+                            };
+                            line.dir = RVector3::new(0.into(), 0.into(), (-1).into()).to_real();
+                            edge.parameters[1] = fixture::q("-1");
+                        }
+                        definition.faces.last_mut().unwrap().loops[0].rotate_left(start);
+                        let body = n::build(
+                            definition,
+                            n::NumericalOptions::default(),
+                            &mut Decider::default(),
                         )
-                        .to_real();
-                        for uv in face
-                            .loops
-                            .iter_mut()
-                            .flatten()
-                            .flat_map(|trim| &mut trim.uv)
-                        {
-                            uv[0] = &(&uv[0] * &Rational::from_i64(axis)) - &phase;
-                            uv[1] = &uv[1] * &Rational::from_i64(axis);
+                        .unwrap();
+                        let file = output::build(
+                            &body,
+                            &NumericalStepOptions::default(),
+                            &mut Decider::default(),
+                        )
+                        .unwrap();
+                        file.check_written(file.bytes(), &mut Decider::default())
+                            .unwrap();
+                        assert_eq!(
+                            file.report().counts,
+                            if outer { [3, 3, 2] } else { [7, 15, 10] }
+                        );
+                        if let Ok(path) = std::env::var("CATALLAX_ANALYTIC_EVIDENCE") {
+                            let name = format!(
+                                "cylinder-chart-outer-{outer}-axis-{axis}-phase-{quarter_turns}-reverse-{reverse_seam}-start-{start}.step"
+                            );
+                            std::fs::write(std::path::Path::new(&path).join(name), file.bytes())
+                                .unwrap();
                         }
                     }
-                }
-                let body = n::build(
-                    definition,
-                    n::NumericalOptions::default(),
-                    &mut Decider::default(),
-                )
-                .unwrap();
-                let file = output::build(
-                    &body,
-                    &NumericalStepOptions::default(),
-                    &mut Decider::default(),
-                )
-                .unwrap();
-                file.check_written(file.bytes(), &mut Decider::default())
-                    .unwrap();
-                assert_eq!(
-                    file.report().counts,
-                    if outer { [3, 3, 2] } else { [7, 15, 10] }
-                );
-                if let Ok(path) = std::env::var("CATALLAX_ANALYTIC_EVIDENCE") {
-                    std::fs::write(
-                        std::path::Path::new(&path).join(format!(
-                            "cylinder-chart-outer-{outer}-axis-{axis}-phase-{quarter_turns}.step"
-                        )),
-                        file.bytes(),
-                    )
-                    .unwrap();
                 }
             }
         }

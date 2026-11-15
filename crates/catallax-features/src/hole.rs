@@ -12,6 +12,9 @@ use catallax_shapes::{
 };
 use catallax_topology::{Body, BodyId, BodyKind, Edge, Lump, Model, Sense, Shell, Vertex};
 
+mod cap;
+pub use cap::{CapCurve, cap_curve};
+
 /// One positive-height cylindrical or conical band of a drill tool.
 #[derive(Clone, Debug)]
 pub struct HoleBand {
@@ -37,6 +40,27 @@ pub struct HoleTool {
     pub reference: Vector3,
     /// Bands in increasing depth order, before regularised subtraction.
     pub bands: Vec<HoleBand>,
+}
+
+/// One cylindrical carrier shared by contiguous compiled hole bands.
+/// This is generating input, not an admitted cut or an intersection result.
+#[derive(Clone, Debug)]
+pub struct CylinderSpan {
+    /// Carrier at the authored point, retaining the compiled axis and seam.
+    pub cylinder: Cylinder,
+    /// Signed millimetres from that point along the unit drilling axis.
+    pub interval_mm: [Rational; 2],
+    /// Original part identities and intervals in the same coordinates.
+    pub bands: Vec<CylinderBand>,
+}
+
+/// The part of a canonical cylinder supplied by one original hole band.
+#[derive(Clone, Debug)]
+pub struct CylinderBand {
+    /// Original lateral surface identity.
+    pub part: HolePart,
+    /// Signed millimetres from the authored hole point.
+    pub interval_mm: [Rational; 2],
 }
 
 fn sign(value: &Real, dec: &mut Decider) -> Result<Sign, Refusal> {
@@ -269,6 +293,50 @@ impl HoleTool {
             point,
             axis,
             reference,
+            bands,
+        })
+    }
+
+    /// Retains one canonical cylinder for contiguous constant-radius bands.
+    /// Cone tips, changing radii, ledges and nonrational depth bounds return
+    /// `None`. Numerical consumers supply their own tolerance and checks.
+    pub fn cylinder_span(&self) -> Option<CylinderSpan> {
+        let radius = &self.bands.first()?.radius[0];
+        let mut bands: Vec<CylinderBand> = Vec::with_capacity(self.bands.len());
+        for band in &self.bands {
+            if !band.end.is_empty()
+                || band
+                    .radius
+                    .iter()
+                    .any(|value| !value.same_definition(radius))
+            {
+                return None;
+            }
+            let interval_mm = [band.depth[0].as_rational()?, band.depth[1].as_rational()?];
+            if interval_mm[0] >= interval_mm[1]
+                || bands
+                    .last()
+                    .is_some_and(|previous| previous.interval_mm[1] != interval_mm[0])
+            {
+                return None;
+            }
+            bands.push(CylinderBand {
+                part: band.part,
+                interval_mm,
+            });
+        }
+        let interval_mm = [
+            bands.first()?.interval_mm[0].clone(),
+            bands.last()?.interval_mm[1].clone(),
+        ];
+        Some(CylinderSpan {
+            cylinder: Cylinder {
+                origin: self.point.clone(),
+                axis: self.axis.clone(),
+                radius_sq: radius.square(),
+                ref_dir: self.reference.clone(),
+            },
+            interval_mm,
             bands,
         })
     }

@@ -46,7 +46,10 @@ fn the_public_partial_oblique_rim_builds_and_exports_after_a_radius_edit() {
             )
             .unwrap();
             assert_eq!(report.marks.len(), 1);
-            assert_eq!(report.marks[0].code, "step.approximate-pipe-end");
+            assert_eq!(
+                report.marks.iter().next().unwrap().code,
+                "step.approximate-pipe-end"
+            );
             assert!(report.value.definition_deviation.is_none());
             assert!(String::from_utf8_lossy(&bytes).contains("complete_body_bound=unestablished"));
             assert!(!bytes.is_empty());

@@ -375,10 +375,13 @@ fn evaluate(bytes: &[u8]) -> Value {
 
 fn evaluate_numerical(bytes: &[u8]) -> Value {
     use catallax_import::numerical::{ImportError, StepImport};
+    // Request identity is prepared before the query, as for a saved recipe. The
+    // numerical entry charges source bytes before independently verifying it.
+    let expected_sha256 = sha256_hex(bytes);
     let (result, work) = with_operation_budget(IMPORT_WORK, || {
         catallax_import::numerical::import_step(
             bytes,
-            &sha256_hex(bytes),
+            &expected_sha256,
             &StepId::new("r8-import").unwrap(),
             &catallax_topology::numerical::NumericalOptions::default(),
             &mut catallax_numbers::Decider::default(),
@@ -399,6 +402,23 @@ fn evaluate_numerical(bytes: &[u8]) -> Value {
                 "bodies":imported.bodies().len(),"local_incidence_tolerances":tolerances})
         }
         Ok(StepImport::Numerical(imported)) => {
+            let source_admission_method = imported
+                .source_admission()
+                .map(|record| record.method.as_str());
+            let source_intersection_checks = imported
+                .source_admission()
+                .map(|record| &record.intersection_checks);
+            let checked_max = imported
+                .bodies()
+                .iter()
+                .flat_map(|(_, body)| body.evidence().checks())
+                .flat_map(|check| match check {
+                    catallax_numbers::NumericalCheck::Samples { samples, .. } => samples.as_slice(),
+                    _ => &[],
+                })
+                .map(|sample| &sample.distance_upper_mm)
+                .max()
+                .map(ToString::to_string);
             let bounds = imported
                 .record()
                 .face_tolerances
@@ -417,7 +437,11 @@ fn evaluate_numerical(bytes: &[u8]) -> Value {
             json!({"stage":"import","outcome":"admitted","import_category":"numerical approximate",
                 "bodies":imported.bodies().len(),"exact":false,"tolerances_mm":tolerances,
                 "source_to_result_max_mm":bounds,"complete_body_bound":"unestablished",
-                "source_change_count":imported.record().changes.len()})
+                "source_change_count":imported.record().changes.len(),
+                "source_admission_method":source_admission_method,"max_checked_residual_mm":checked_max,
+                "source_intersection_checks":source_intersection_checks,
+                "source_optional_exact_work_reserved":imported.source_admission().map(|record|record.optional_exact_work_reserved),
+                "source_optional_exact_work_used":imported.source_admission().map(|record|record.optional_exact_work_used)})
         }
         Err(ImportError::Source(refusal)) => {
             eprintln!("{}", serde_json::to_string(&refusal).unwrap());

@@ -580,7 +580,6 @@ fn build_inner(
         if coordinate_frame && axis(&normal, true) == axis(&x, true) {
             return Err(bad("unsupported", "plane axes must be orthogonal"));
         }
-        let y = cross(&normal, &x);
         let point = w.point(&origin)?;
         let n = w.direction(&normal)?;
         let reference = w.direction(&x)?;
@@ -602,22 +601,16 @@ fn build_inner(
                 } else {
                     [edge.vertices[1], edge.vertices[0]]
                 };
-                for i in 0..2 {
-                    let position = &d.vertices[endpoint[i]].position;
-                    let agrees = if coordinate_frame {
-                        let uv = &trim.uv[i];
-                        let value = std::array::from_fn::<_, 3, _>(|k| {
-                            &origin[k] + &(&x[k] * &uv[0]) + (&y[k] * &uv[1])
-                        });
-                        value == *position
-                    } else {
-                        let delta = difference(position, &origin, w.dec)?;
-                        dot(&normal, &delta, w.dec)?.is_zero()
-                    };
-                    if !agrees {
+                for endpoint in endpoint {
+                    // STEP retains these world-space boundary vertices. Its
+                    // implicit planar parameters need not equal the source's
+                    // numerical UV midpoints; no point or carrier is moved.
+                    let position = &d.vertices[endpoint].position;
+                    let delta = difference(position, &origin, w.dec)?;
+                    if !dot(&normal, &delta, w.dec)?.is_zero() {
                         return Err(bad(
                             "gap",
-                            "retained trim and plane endpoint differ; no export healing",
+                            "retained boundary vertex is off its plane; no export healing",
                         ));
                     }
                 }

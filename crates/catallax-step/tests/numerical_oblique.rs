@@ -145,6 +145,48 @@ fn oblique_export_preserves_the_source_endpoint_gap_refusal() {
 }
 
 #[test]
+fn numerical_uv_roundoff_does_not_move_or_refuse_a_planar_boundary() {
+    let mut d = tube::tube();
+    for uv in d.faces[0]
+        .loops
+        .iter_mut()
+        .flatten()
+        .flat_map(|trim| &mut trim.uv)
+    {
+        uv[0] = &uv[0] + &tube::q("1e-38");
+    }
+    let body = source::build(d, NumericalOptions::default(), &mut Decider::default()).unwrap();
+    let artifact = numerical::build(
+        &body,
+        &NumericalStepOptions::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    assert_eq!(artifact.report().counts, [10, 24, 16]);
+    assert!(artifact.report().emitted_evidence.repairs().is_empty());
+}
+
+#[test]
+fn a_tolerated_plane_carrier_gap_still_refuses_without_healing() {
+    let mut d = tube::tube();
+    let Surface::Plane(plane) = &mut d.faces[0].surface else {
+        unreachable!()
+    };
+    plane.origin.z = &plane.origin.z + &Real::from(tube::q("0.005"));
+    let body = source::build(d, NumericalOptions::default(), &mut Decider::default()).unwrap();
+    assert_eq!(
+        numerical::build(
+            &body,
+            &NumericalStepOptions::default(),
+            &mut Decider::default()
+        )
+        .unwrap_err()
+        .code,
+        "step.numerical-gap"
+    );
+}
+
+#[test]
 fn successive_rotations_reconstruct_the_written_orthogonal_frame() {
     let initial = source::build(
         definition(),

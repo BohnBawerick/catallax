@@ -15,8 +15,7 @@ catallax_step::numerical::build(&body, &options, &mut decider)
 closed shell with finite rational line edges and rational orthogonal plane
 frames, including oblique directions and N02's outer-loop/one-hole faces.
 Source line endpoints and plane incidence must agree in retained rational world
-coordinates. The original coordinate-plane path also retains its exact trim
-endpoint check. Oblique trims use inverse coordinates on the actual written
+coordinates. Trims use inverse coordinates on the actual written
 orthonormal frame, checked numerically rather than equating rational UV midpoints
 with exact real parameters. No world-space source point is moved.
 Merely tolerated source geometric gaps refuse instead of being healed. Curved

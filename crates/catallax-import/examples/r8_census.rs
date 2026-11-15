@@ -375,10 +375,13 @@ fn evaluate(bytes: &[u8]) -> Value {
 
 fn evaluate_numerical(bytes: &[u8]) -> Value {
     use catallax_import::numerical::{ImportError, StepImport};
+    // Request identity is prepared before the query, as for a saved recipe. The
+    // numerical entry charges source bytes before independently verifying it.
+    let expected_sha256 = sha256_hex(bytes);
     let (result, work) = with_operation_budget(IMPORT_WORK, || {
         catallax_import::numerical::import_step(
             bytes,
-            &sha256_hex(bytes),
+            &expected_sha256,
             &StepId::new("r8-import").unwrap(),
             &catallax_topology::numerical::NumericalOptions::default(),
             &mut catallax_numbers::Decider::default(),

@@ -1,4 +1,4 @@
-//! Opt-in derivative bounds, exact periodic ownership and legacy work preservation.
+//! Derivative bounds, exact periodic ownership and metered chart admission.
 
 use std::num::NonZeroUsize;
 
@@ -67,16 +67,24 @@ fn cylinder(gap: bool, dec: &mut Decider) -> Result<BSplineSurface, Refusal> {
 
 #[test]
 fn legacy_cylinder_admission_keeps_its_exact_work_boundary() {
-    let (result, work) = with_operation_budget(71_656, || {
-        let mut dec = Decider::default();
-        let source = cylinder(false, &mut dec)?;
-        RationalAtlas::partition(source, [true, false], &mut dec)
-    });
-    let atlases = result.unwrap();
-    assert_eq!(atlases.len(), 1);
-    assert!(atlases[0].periodic_u() && !atlases[0].periodic_v());
-    assert!(!work.exhausted);
-    assert_eq!(work.used, 71_656);
+    for limit in [71_656, 71_655] {
+        let (result, work) = with_operation_budget(limit, || {
+            let mut dec = Decider::default();
+            let source = cylinder(false, &mut dec)?;
+            RationalAtlas::partition(source, [true, false], &mut dec)
+        });
+        if limit == 71_656 {
+            let atlases = result.unwrap();
+            assert_eq!(atlases.len(), 1);
+            assert!(atlases[0].periodic_u() && !atlases[0].periodic_v());
+            assert!(!work.exhausted);
+            assert_eq!(work.used, limit);
+        } else {
+            assert!(work.exhausted);
+            assert_eq!(result.unwrap_err().code, "numbers.operation-budget");
+            assert!(work.used <= limit);
+        }
+    }
 }
 
 fn topology(atlas: &RationalAtlas) -> String {

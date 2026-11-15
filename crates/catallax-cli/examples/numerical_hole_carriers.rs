@@ -1,10 +1,12 @@
 //! Retain numerical cone/hole-carrier fits from actual recipe prefixes.
-//! Usage: numerical_hole_carriers OUT WORKERS RECIPE.json...
+//! Usage: numerical_hole_carriers OUT WORKERS [--check-supports] RECIPE.json...
 
 use catallax_numbers::{
     Decider, Rational, Real, Sign, current_operation_work, with_operation_budget,
 };
-use catallax_shapes::{BSplineCurve, BSplineSurface, Cylinder, Point3, Surface, Vector3};
+use catallax_shapes::{
+    BSplineCurve, BSplineSurface, Cylinder, Point3, RationalPatch, Surface, Vector3,
+};
 use serde_json::{Value, json};
 use std::{path::Path, process::ExitCode};
 
@@ -48,7 +50,43 @@ fn curve(curve: &BSplineCurve) -> Value {
         "weights":curve.weights().map(|q|q.as_rational().expect("retained rational weight").to_string()).collect::<Vec<_>>()})
 }
 
-fn query(recipe: &Value, face_index: usize, reverse: bool) -> Result<Value, String> {
+fn support_charts(sources: &[BSplineSurface; 2], dec: &mut Decider) -> Result<Value, String> {
+    let mut charts = Vec::new();
+    for (side, source) in sources.iter().enumerate() {
+        let knots = source.knots();
+        for span in source.span_indices() {
+            let start = current_operation_work().used;
+            let domain = std::array::from_fn(|axis| {
+                [
+                    knots[axis][span[axis]].clone(),
+                    knots[axis][span[axis] + 1].clone(),
+                ]
+            });
+            let retained = source
+                .bezier_patch(span, domain.each_ref().map(|row| row.each_ref()), dec)
+                .map_err(|e| format!("{}: {}", e.code, e.detail))?;
+            let patch = RationalPatch::new(retained.clone(), dec)
+                .map_err(|e| format!("side {side}, span {span:?}: {}: {}", e.code, e.detail))?;
+            if !patch.carrier().same_definition(&retained) {
+                return Err("chart admission changed its retained carrier".into());
+            }
+            charts.push(json!({"side":side,"span":span,
+                "domain":domain.each_ref().map(|row|row.each_ref().map(ToString::to_string)),
+                "proof":"complete-retained-rational-chart",
+                "embedding_lower_bound":patch.embedding_lower_bound().to_string(),
+                "projection":patch.embedding_projection().iter().map(|v|[&v.x,&v.y,&v.z].map(|q|q.as_rational().unwrap().to_string())).collect::<Vec<_>>(),
+                "work":current_operation_work().used-start}));
+        }
+    }
+    Ok(json!(charts))
+}
+
+fn query(
+    recipe: &Value,
+    face_index: usize,
+    reverse: bool,
+    check_supports: bool,
+) -> Result<Value, String> {
     let mut prefix = recipe.clone();
     let hole = prefix["steps"]
         .as_array_mut()
@@ -111,8 +149,7 @@ fn query(recipe: &Value, face_index: usize, reverse: bool) -> Result<Value, Stri
         .ok_or("unsupported carrier pair")?;
     let windows = result.windows();
     let stages = result.work_stages();
-    Ok(
-        json!({"format":"catallax-numerical-native-pair/1","proof":"numerical","exact":false,
+    let mut report = json!({"format":"catallax-numerical-native-pair/1","proof":"numerical","exact":false,
         "category":"approximate","cone_face":format!("{face:?}"),"reverse":reverse,
         "sources":windows.sources().iter().map(source).collect::<Vec<_>>(),
         "cone_heights":windows.cone_heights().each_ref().map(ToString::to_string),
@@ -122,14 +159,25 @@ fn query(recipe: &Value, face_index: usize, reverse: bool) -> Result<Value, Stri
         "evidence":catallax_cli::numerical_evidence_summary(result.evidence()),
         "complete_body_bound":"unestablished","trace_checkpoints":format!("{:?}",result.trace_work()),
         "work_stages":{"recipe":prefix_work,"windows":stages.windows,"setup":stages.setup,
-            "tracing":stages.tracing,"fit_checks":stages.fit_checks}}),
-    )
+            "tracing":stages.tracing,"fit_checks":stages.fit_checks}});
+    if check_supports {
+        let before = current_operation_work().used;
+        report["support_charts"] = support_charts(windows.sources(), &mut dec)?;
+        report["work_stages"]["support_charts"] = json!(current_operation_work().used - before);
+    }
+    Ok(report)
 }
 
 fn run() -> Result<(), String> {
-    let args: Vec<_> = std::env::args().skip(1).collect();
+    let mut args: Vec<_> = std::env::args().skip(1).collect();
+    let check_supports = args.get(2).is_some_and(|s| s == "--check-supports");
+    if check_supports {
+        args.remove(2);
+    }
     if args.len() < 3 {
-        return Err("usage: numerical_hole_carriers OUT WORKERS RECIPE.json...".into());
+        return Err(
+            "usage: numerical_hole_carriers OUT WORKERS [--check-supports] RECIPE.json...".into(),
+        );
     }
     let out = Path::new(&args[0]);
     let workers: usize = args[1].parse().map_err(|_| "workers must be 1, 2 or 4")?;
@@ -164,7 +212,7 @@ fn run() -> Result<(), String> {
         let handles: Vec<_> = (0..workers).map(|rank| {
             let jobs = &jobs;
             scope.spawn(move || jobs.iter().enumerate().filter(|(i, _)| i % workers == rank).map(|(index, (name, recipe, face, reverse))| {
-                let (result, work) = with_operation_budget(20_000_000, || query(recipe, *face, *reverse));
+                let (result, work) = with_operation_budget(20_000_000, || query(recipe, *face, *reverse, check_supports));
                 let mut response = match result {
                     Ok(response) if !work.exhausted => response,
                     Ok(_) => json!({"proof":"refused","refusal":"operation allowance exhausted"}),

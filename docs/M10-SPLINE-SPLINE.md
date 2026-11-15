@@ -339,8 +339,9 @@ analytic whole-support window certificate, tracing dependency or STEP export.
 `RationalAtlas::partition_with_polynomial_bounds(source, periodic, dec)`
 admits the same checked atlas type as `partition`. Callers must opt in;
 the legacy constructor and its callers retain their original derivative
-dispatch. A regression pins complete legacy cylinder admission to 71,656
-units, including source construction.
+dispatch.
+Atlas cell admission retains its original interval criterion and chart partitioning.
+Complete default cylinder admission takes 71,656 units including source construction; its regression also refuses at 71,655.
 
 The new path requires exact rational homogeneous span coefficients.
 It caches exact Bernstein nets of `W partial(N_i) - N_i partial(W)` once
@@ -359,8 +360,8 @@ enclosures refuse `shapes.rational-atlas-polynomial-weights`.
 
 Work-PC measurements use a canonical cylinder of radius 1/2 with axial
 range `[-17,17]` and a canonical torus of major radius 14 and minor radius 2.
-Both use exact balanced rational quarter circles. Counts include source
-construction; each cylinder cover has 24 charts.
+Both use exact balanced rational quarter circles.
+Counts include source construction; each cylinder cover has 24 charts.
 
 | Admission | Cylinder work | Torus work | Combined work | Torus charts |
 | --- | ---: | ---: | ---: | ---: |
@@ -420,9 +421,9 @@ translated/nonunit-cell regression checks position, tangent and normal
 enclosures against direct exact evaluations.
 
 Work-PC workspace/all-targets Clippy and six focused tests pass. In the
-same native-shaped cylinder/torus experiment above, one 20M request still
-refuses `numbers.operation-budget` at 19,999,999 used, with detail
-`exact geometric proof arithmetic stopped`. Admissions remain 5,669,300.
+earlier native-shaped cylinder/torus experiment above, one 20M request
+refused `numbers.operation-budget` at 19,999,999 used, with detail
+`exact geometric proof arithmetic stopped`. That measurement included 5,669,300 admission units before the ruled-chart fallback.
 All four thread settings return identical refusal bytes and work. This
 does not yet provide a native branch answer, M8 solid or STEP export.
 

@@ -20,6 +20,7 @@ pub use pair::{
 mod differential;
 mod query;
 mod range;
+mod ruled;
 mod section;
 mod trace_series;
 pub(crate) use section::{Cover, axis_section, search_cover, vanishing_side_row};
@@ -228,8 +229,9 @@ fn projection_margin(
 }
 
 impl RationalPatch {
-    /// Proves the complete chart using the dual of its centre tangents as a
-    /// projection. No control is changed and no sample supplies the proof.
+    /// Proves the complete chart using a centre-tangent projection or rational
+    /// Bernstein bounds for a ruled chart. Controls stay unchanged; no sample
+    /// supplies the proof.
     /// Patches without a proved global projection retain a typed refusal.
     pub fn new(carrier: BSplineSurface, dec: &mut Decider) -> Result<Self, Refusal> {
         Self::certified(carrier, MAX_PROOF_DEPTH, MAX_PROOF_CELLS, None, dec)
@@ -296,7 +298,7 @@ impl RationalPatch {
                 "centre tangents do not provide an independent projection",
             ));
         }
-        let projection = [
+        let mut projection = [
             a.scaled(&bb)
                 .minus(&b.scaled(&ab))
                 .scaled(&(&Real::one() / &determinant)),
@@ -352,6 +354,23 @@ impl RationalPatch {
                     lower: margin,
                 });
             } else {
+                // Atlas cells keep their original interval criterion so that
+                // their partition also retains the cells used by integration.
+                if max_depth > 0
+                    && depth == 0
+                    && spans.len() == 1
+                    && let Some((axis, margin)) = ruled::certificate(&carrier, &projection[0], dec)?
+                {
+                    projection[1] = axis;
+                    lower = Some(margin.clone());
+                    cover.clear();
+                    cover.push(ProjectionCell {
+                        domain: domain.clone(),
+                        lower: margin,
+                    });
+                    pending.clear();
+                    break;
+                }
                 if depth == max_depth {
                     return Err(unproven(
                         "no positive whole-domain projected Jacobian bound was proved",

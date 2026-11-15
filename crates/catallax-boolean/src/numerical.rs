@@ -146,6 +146,24 @@ fn bad(detail: impl Into<String>) -> Refusal {
 fn q(value: i64) -> Rational {
     Rational::from_i64(value)
 }
+fn charge_visits(count: usize, dec: &mut Decider) -> Result<(), Refusal> {
+    dec.charge_work(u64::try_from(count).map_err(|_| bad("finite visit count overflowed"))?)
+}
+fn sort_by<T>(
+    values: &mut [T],
+    compare: impl FnMut(&T, &T) -> std::cmp::Ordering,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    let count = u64::try_from(values.len()).map_err(|_| bad("finite sort size overflowed"))?;
+    // Prepay a quadratic comparison bound before the infallible library sort.
+    dec.charge_work(
+        count
+            .checked_mul(count)
+            .ok_or_else(|| bad("finite sort bound overflowed"))?,
+    )?;
+    values.sort_by(compare);
+    dec.check_deadline()
+}
 fn interval(value: &Real, dec: &mut Decider) -> Result<Ball, Refusal> {
     dec.enclose_budgeted_at(value, BITS)
 }

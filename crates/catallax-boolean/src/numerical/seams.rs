@@ -50,7 +50,7 @@ impl<'a> Roots<'a> {
                 ))
             })
             .collect::<Result<Vec<_>, Refusal>>()?;
-        distances.sort();
+        sort_by(&mut distances, Ord::cmp, dec)?;
         let Some((gap, index)) = distances.first() else {
             return Err(bad("finite cone seam has no isolated cylinder root"));
         };

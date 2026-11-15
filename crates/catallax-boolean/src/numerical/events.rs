@@ -37,13 +37,21 @@ pub(super) fn rational_point(point: Point3) -> Result<[Rational; 3], Refusal> {
 pub(super) fn box_point(point: &[Rational; 3]) -> [Ball; 3] {
     point.each_ref().map(|q| Ball::from_rational(q, BITS))
 }
-pub(super) fn point_piece(piece: &catallax_intersect::NumericalIntersectionPiece) -> bool {
+pub(super) fn point_piece(
+    piece: &catallax_intersect::NumericalIntersectionPiece,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
     let first = piece.curve().control(0);
-    piece.curve().controls().all(|p| {
-        p.x.same_definition(&first.x)
+    for p in piece.curve().controls() {
+        dec.charge_work(1)?;
+        if !(p.x.same_definition(&first.x)
             && p.y.same_definition(&first.y)
-            && p.z.same_definition(&first.z)
-    })
+            && p.z.same_definition(&first.z))
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 fn quarter(domain: &[[Rational; 2]; 2]) -> Result<usize, Refusal> {
     (0..4)
@@ -108,7 +116,7 @@ pub(super) fn collect(
     let mut groups = BTreeMap::<String, Vec<Occurrence>>::new();
     let mut seams = seams::Roots::new(intersection)?;
     for (index, piece) in intersection.pieces().iter().enumerate() {
-        let point_only = point_piece(piece);
+        let point_only = point_piece(piece, dec)?;
         for end in 0..if point_only { 1 } else { 2 } {
             dec.charge_work(1)?;
             let parameter = piece.curve().domain()[end].clone();
@@ -152,9 +160,12 @@ pub(super) fn collect(
         }
     }
     for (group, occurrences) in groups {
+        dec.charge_work(1)?;
+        let occurrence_count = occurrences.len();
         let mut arcs = BTreeMap::<[usize; 2], Vec<Occurrence>>::new();
         let mut points = BTreeMap::<[usize; 2], Vec<Occurrence>>::new();
         for occurrence in occurrences {
+            dec.charge_work(1)?;
             if occurrence.end.is_some() {
                 arcs.entry(occurrence.domain).or_default().push(occurrence)
             } else {
@@ -165,6 +176,7 @@ pub(super) fn collect(
             }
         }
         if group.starts_with("interior-piece-") {
+            charge_visits(occurrence_count, dec)?;
             let all: Vec<_> = arcs
                 .into_values()
                 .chain(points.into_values())
@@ -174,21 +186,24 @@ pub(super) fn collect(
             continue;
         }
         let anchor = if arcs.is_empty() { &points } else { &arcs };
+        charge_visits(anchor.len(), dec)?;
         let count = anchor.values().map(Vec::len).max().unwrap_or(0);
         let mut roots = vec![Vec::<Occurrence>::new(); count];
         let mut anchors = Vec::new();
         for bucket in anchor.values() {
+            charge_visits(bucket.len(), dec)?;
             if bucket.len() != count {
                 return Err(bad(
                     "adjacent finite boundary root counts disagree; no near-hit merge was applied",
                 ));
             }
             let mut sorted = bucket.clone();
-            sorted.sort_by(order);
+            sort_by(&mut sorted, order, dec)?;
             if anchors.is_empty() {
                 anchors = sorted.clone()
             }
             for (root, occurrence) in roots.iter_mut().zip(sorted) {
+                dec.charge_work(1)?;
                 root.push(occurrence)
             }
         }
@@ -197,9 +212,12 @@ pub(super) fn collect(
                 let mut distances = anchors
                     .iter()
                     .enumerate()
-                    .map(|(i, a)| Ok((distance(&box_point(&point.xyz), &box_point(&a.xyz))?, i)))
+                    .map(|(i, a)| {
+                        dec.charge_work(1)?;
+                        Ok((distance(&box_point(&point.xyz), &box_point(&a.xyz))?, i))
+                    })
                     .collect::<Result<Vec<_>, Refusal>>()?;
-                distances.sort();
+                sort_by(&mut distances, Ord::cmp, dec)?;
                 let Some((gap, index)) = distances.first() else {
                     return Err(bad("contact has no retained finite event"));
                 };
@@ -221,6 +239,7 @@ pub(super) fn collect(
             if let Some(index) = owned.get(&vertex).copied() {
                 let event: &mut NumericalFiniteEvent = &mut records[index];
                 event.point_only &= record.point_only;
+                charge_visits(record.hits.len(), dec)?;
                 event.hits.extend(record.hits);
                 continue;
             }
@@ -260,11 +279,13 @@ fn add_event(
             .as_ref()
             .map_or_else(|| first.hit.uv[0].clone(), |owner| owner.uv.clone()),
     );
+    charge_visits(occurrences.len(), dec)?;
     let point_only = occurrences.iter().all(|o| o.end.is_none());
     let domain = &first.hit.requested_domains[0];
     let on_cone_boundary = (0..2).any(|i| domain[i].contains(&first.hit.uv[0][i]));
     let name = format!("{key}/event/{group}/{ordinal}");
     let vertex = if !point_only || on_cone_boundary {
+        charge_visits(result.uv.len(), dec)?;
         if let Some(i) = result.uv.iter().position(|p| p == &uv) {
             Some(i)
         } else {

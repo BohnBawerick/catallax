@@ -96,7 +96,7 @@ impl Input<'_> {
         let mut cylinder_trims = Vec::new();
         let mut arc_uses = BTreeMap::<usize, Vec<NumericalTrim>>::new();
         for (index, piece) in intersection.pieces().iter().enumerate() {
-            if events::point_piece(piece) {
+            if events::point_piece(piece, dec)? {
                 continue;
             }
             let quarter = (0..4)
@@ -158,6 +158,7 @@ impl Input<'_> {
                     _ => q(quarter as i64),
                 };
                 let free = 1 - fixed_axis;
+                charge_visits(topology.uv.len(), dec)?;
                 let mut points: Vec<_> = topology
                     .uv
                     .iter()
@@ -171,8 +172,9 @@ impl Input<'_> {
                         ))
                     })
                     .collect();
-                points.sort_by(|a, b| a.0.cmp(&b.0));
+                sort_by(&mut points, |a, b| a.0.cmp(&b.0), dec)?;
                 if side >= 2 {
+                    charge_visits(points.len(), dec)?;
                     points.reverse()
                 }
                 for pair in points.windows(2) {
@@ -203,7 +205,7 @@ impl Input<'_> {
             let mut holes = Vec::new();
             for boundary in loops {
                 let polygon = topology.polygon(&boundary, dec)?;
-                let area = area(&polygon);
+                let area = area(&polygon, dec)?;
                 match area.sign() {
                     Sign::Positive => outers.push((boundary, polygon)),
                     Sign::Negative => holes.push((boundary, polygon)),
@@ -216,11 +218,13 @@ impl Input<'_> {
             }
             let mut ownership = vec![Vec::new(); outers.len()];
             for (boundary, polygon) in holes {
-                let owners: Vec<_> = outers
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(i, (_, outer))| inside(&polygon[0], outer).then_some(i))
-                    .collect();
+                let mut owners = Vec::new();
+                for (i, (_, outer)) in outers.iter().enumerate() {
+                    dec.charge_work(1)?;
+                    if inside(&polygon[0], outer, dec)? {
+                        owners.push(i)
+                    }
+                }
                 let [owner] = owners.as_slice() else {
                     return Err(bad("finite hole has no unique enclosing retained region"));
                 };
@@ -266,6 +270,7 @@ impl Input<'_> {
             &mut records,
             &mut topology.ring_links,
             &mut cylinder_trims,
+            dec,
         )?;
         checks.extend(super::checks::open(
             &topology.definition,
@@ -410,6 +415,7 @@ impl Topology<'_> {
     ) -> Result<Vec<Vec<NumericalTrim>>, Refusal> {
         let mut outgoing = BTreeMap::<usize, Vec<usize>>::new();
         for (i, trim) in uses.iter().enumerate() {
+            dec.charge_work(1)?;
             outgoing
                 .entry(self.vertex_ends(trim)[0])
                 .or_default()
@@ -418,6 +424,7 @@ impl Topology<'_> {
         let mut passed = BTreeSet::new();
         let mut loops = Vec::new();
         for start in 0..uses.len() {
+            dec.charge_work(1)?;
             if passed.contains(&start) {
                 continue;
             }
@@ -433,6 +440,7 @@ impl Topology<'_> {
                 if end == self.vertex_ends(&uses[start])[0] {
                     break;
                 }
+                charge_visits(outgoing.get(&end).map_or(0, Vec::len), dec)?;
                 let candidates: Vec<_> = outgoing
                     .get(&end)
                     .into_iter()
@@ -497,6 +505,7 @@ impl Topology<'_> {
             let mut options = candidates
                 .iter()
                 .map(|i| {
+                    dec.charge_work(1)?;
                     let b = self.direction(&uses[*i], false, divisor, dec)?;
                     Ok((
                         *i,
@@ -504,7 +513,11 @@ impl Topology<'_> {
                     ))
                 })
                 .collect::<Result<Vec<_>, Refusal>>()?;
-            options.sort_by(|a, b| angular(&a.1, &b.1).then_with(|| a.0.cmp(&b.0)));
+            sort_by(
+                &mut options,
+                |a, b| angular(&a.1, &b.1).then_with(|| a.0.cmp(&b.0)),
+                dec,
+            )?;
             if options.len() > 1
                 && angular(&options[0].1, &options[1].1) == std::cmp::Ordering::Equal
             {
@@ -526,6 +539,7 @@ impl Topology<'_> {
     ) -> Result<Vec<[Rational; 2]>, Refusal> {
         let mut result = Vec::new();
         for trim in boundary {
+            dec.charge_work(1)?;
             result.push(trim.uv[0].clone());
             if let Some(curve) = self.native.get(&trim.edge) {
                 let edge = &self.definition.edges[trim.edge];
@@ -533,6 +547,7 @@ impl Topology<'_> {
                 if trim.sense == Sense::Reversed {
                     p.swap(0, 1)
                 }
+                charge_visits(curve.knots().len(), dec)?;
                 let mut breaks: BTreeSet<_> = curve
                     .knots()
                     .iter()
@@ -577,20 +592,30 @@ fn angular(a: &[Rational; 2], b: &[Rational; 2]) -> std::cmp::Ordering {
             Sign::Zero => std::cmp::Ordering::Equal,
         })
 }
-fn area(polygon: &[[Rational; 2]]) -> Rational {
-    polygon
+fn area(polygon: &[[Rational; 2]], dec: &mut Decider) -> Result<Rational, Refusal> {
+    let mut sum = q(0);
+    for (a, b) in polygon
         .iter()
         .zip(polygon.iter().cycle().skip(1))
         .take(polygon.len())
-        .fold(q(0), |sum, (a, b)| sum + (&a[0] * &b[1] - &a[1] * &b[0]))
+    {
+        dec.charge_work(1)?;
+        sum = sum + (&a[0] * &b[1] - &a[1] * &b[0]);
+    }
+    Ok(sum)
 }
-fn inside(p: &[Rational; 2], polygon: &[[Rational; 2]]) -> bool {
+fn inside(
+    p: &[Rational; 2],
+    polygon: &[[Rational; 2]],
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
     let mut result = false;
     for (a, b) in polygon
         .iter()
         .zip(polygon.iter().cycle().skip(1))
         .take(polygon.len())
     {
+        dec.charge_work(1)?;
         if (a[1] > p[1]) != (b[1] > p[1])
             && ((&b[0] - &a[0]) * (&p[1] - &a[1]) - (&b[1] - &a[1]) * (&p[0] - &a[0])).sign()
                 == if b[1] > a[1] {
@@ -602,14 +627,44 @@ fn inside(p: &[Rational; 2], polygon: &[[Rational; 2]]) -> bool {
             result = !result
         }
     }
-    result
+    Ok(result)
 }
 fn compact(
     definition: &mut NumericalDefinition,
     events: &mut [NumericalFiniteEvent],
     rings: &mut Vec<NumericalRingLink>,
     cylinders: &mut Vec<NumericalCylinderTrim>,
+    dec: &mut Decider,
 ) -> Result<(), Refusal> {
+    let mut visits = 0usize;
+    for face in &definition.faces {
+        dec.charge_work(1)?;
+        for row in &face.loops {
+            dec.charge_work(1)?;
+            visits = visits
+                .checked_add(
+                    row.len()
+                        .checked_mul(2)
+                        .ok_or_else(|| bad("finite trim work bound overflowed"))?,
+                )
+                .ok_or_else(|| bad("finite trim work bound overflowed"))?;
+        }
+    }
+    for (count, repetitions) in [
+        (definition.edges.len(), 8),
+        (events.len(), 1),
+        (rings.len(), 2),
+        (cylinders.len(), 1),
+    ] {
+        visits = visits
+            .checked_add(
+                count
+                    .checked_mul(repetitions)
+                    .ok_or_else(|| bad("finite compaction work bound overflowed"))?,
+            )
+            .ok_or_else(|| bad("finite compaction work bound overflowed"))?;
+    }
+    charge_visits(visits, dec)?;
     let used_edges: BTreeSet<_> = definition
         .faces
         .iter()
@@ -660,7 +715,7 @@ fn compact(
             .get(&c.edge)
             .ok_or_else(|| bad("a retained fitted arc was omitted from finite material loops"))?
     }
-    Ok(())
+    dec.check_deadline()
 }
 
 #[cfg(test)]
@@ -672,11 +727,53 @@ mod tests {
         let polygon: Vec<_> = (0..16)
             .flat_map(|_| [[q(0), q(0)], [q(1), q(0)], [q(1), q(1)], [q(0), q(1)]])
             .collect();
-        let (_, work) =
-            catallax_numbers::with_operation_budget(8, || inside(&[q(0), q(0)], &polygon));
+        let (answer, work) = catallax_numbers::with_operation_budget(8, || {
+            inside(&[q(0), q(0)], &polygon, &mut Decider::default())
+        });
+        assert!(answer.is_err());
         assert!(
             work.exhausted,
             "outer polygon traversal escaped its allowance: {work:?}"
         );
+        let (answer, work) = catallax_numbers::with_operation_budget(64, || {
+            inside(&[q(0), q(0)], &polygon, &mut Decider::default())
+        });
+        assert!(answer.is_ok());
+        assert_eq!(work.used, 64);
+        assert!(!work.exhausted);
+    }
+
+    #[test]
+    fn polygon_visits_and_sort_honor_an_expired_deadline() {
+        let polygon = [[q(0), q(0)], [q(1), q(0)], [q(1), q(1)], [q(0), q(1)]];
+        let mut dec = Decider::default();
+        dec.set_deadline(Some(
+            std::time::Instant::now() - std::time::Duration::from_secs(1),
+        ));
+        assert_eq!(
+            inside(&[q(0), q(0)], &polygon, &mut dec).unwrap_err().code,
+            "numbers.deadline"
+        );
+        assert_eq!(
+            area(&polygon, &mut dec).unwrap_err().code,
+            "numbers.deadline"
+        );
+        let mut values = [3, 1, 2];
+        assert_eq!(
+            sort_by(&mut values, Ord::cmp, &mut dec).unwrap_err().code,
+            "numbers.deadline"
+        );
+        assert_eq!(values, [3, 1, 2]);
+    }
+
+    #[test]
+    fn sort_reserves_its_checked_bound_before_comparisons() {
+        let mut values = [3, 1, 2];
+        let (answer, work) = catallax_numbers::with_operation_budget(8, || {
+            sort_by(&mut values, Ord::cmp, &mut Decider::default())
+        });
+        assert!(answer.is_err());
+        assert!(work.exhausted);
+        assert_eq!(values, [3, 1, 2]);
     }
 }

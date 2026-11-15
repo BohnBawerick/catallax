@@ -55,6 +55,10 @@ The caller owns cap/wall assembly, global material sense, names, edits and final
 closed-shell admission through `build_with_native_trims`. `work` records boundary
 preparation, producer stages, source/chart admission and topology work under the
 caller's allowance and deadline. Standalone calls retain the 20M allowance.
+Polygon area and containment charge every edge visit. Boundary-event scans,
+outgoing-candidate visits and compaction are charged as visits or checked visit
+bounds. Sorting prepays a checked quadratic comparison bound and checks the
+deadline before and after the library call.
 
 The `numerical_hole_carriers` example accepts `--clip-cone --finite-bands MIN MAX`
 to exercise this API on actual E07 prefixes. Reports include the open definition,

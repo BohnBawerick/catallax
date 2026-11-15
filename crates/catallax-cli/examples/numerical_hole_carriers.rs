@@ -196,6 +196,7 @@ fn query(
     } else {
         [&cone, &cylinder]
     };
+    let input_work = current_operation_work().used - prefix_work;
     let result = if let Some(parameters) = finite_bands {
         catallax_intersect::numerical_native_finite_intersection(
             ordered,
@@ -208,6 +209,7 @@ fn query(
     }
     .map_err(|e| format!("{}: {}", e.code, e.detail))?
     .ok_or("unsupported carrier pair")?;
+    let before_report = current_operation_work().used;
     let windows = result.windows();
     let stages = result.work_stages();
     let original_doubles: Vec<_> = windows.originals().iter().map(|s| {
@@ -231,8 +233,10 @@ fn query(
             "curves":std::iter::once(p.curve()).chain(p.uv().iter()).map(curve).collect::<Vec<_>>()})).collect::<Vec<_>>(),
         "evidence":catallax_cli::numerical_evidence_summary(result.evidence()),
         "complete_body_bound":"unestablished","trace_checkpoints":format!("{:?}",result.trace_work()),
-        "work_stages":{"recipe":prefix_work,"windows":stages.windows,"setup":stages.setup,
+        "work_stages":{"recipe":prefix_work,"input_preparation":input_work,"windows":stages.windows,"setup":stages.setup,
             "tracing":stages.tracing,"fit_checks":stages.fit_checks}});
+    report["work_stages"]["report_preparation"] =
+        json!(current_operation_work().used - before_report);
     if check_supports {
         let before = current_operation_work().used;
         report["support_charts"] = support_charts(windows.sources(), &mut dec)?;

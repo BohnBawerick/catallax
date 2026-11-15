@@ -1,4 +1,4 @@
-//! Canonical P1 fits the eager application's unchanged request allowance.
+//! Canonical P1 fits the eager application's default request allowance.
 use catallax_app::{DEFAULT_BUILD_WORK, build};
 use catallax_mesh::MeshOptions;
 use catallax_numbers::{Decider, Rational, set_threads, with_operation_budget};

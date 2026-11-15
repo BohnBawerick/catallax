@@ -630,7 +630,7 @@ fn progressive_target_diagnostics() {
             &mut Decider::default(),
         );
         let mut row = json!({"part":part, "environment":"shared machine; informational only; unloaded machine not guaranteed",
-            "total_cap":catallax_app::DEFAULT_BUILD_WORK, "preview_cap":10_000_000, "proof_cap":10_000_000,
+            "total_cap":catallax_app::DEFAULT_BUILD_WORK, "preview_cap":10_000_000, "proof_cap":catallax_app::DEFAULT_BUILD_WORK - 10_000_000,
             "first_paint_ms":start.elapsed().as_secs_f64()*1000.0});
         match answer {
             Err(error) => {

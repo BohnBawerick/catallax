@@ -53,7 +53,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
         for iteration in 0..=repetitions {
             let controller = Controller::default();
-            // Explicit equal split of one 20M request, not 20M per phase.
+            // Preview reserves 10M from the shared application allowance.
             let allocation = WorkAllocation::application(10_000_000).unwrap();
             let start = Instant::now();
             let mut preview_decider = Decider::default();

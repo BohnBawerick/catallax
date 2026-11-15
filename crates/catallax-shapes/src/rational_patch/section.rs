@@ -135,12 +135,17 @@ fn degrees(poly: &RealPoly, dec: &mut Decider) -> Result<[u32; 2], Refusal> {
 pub(crate) fn axis_section(
     patch: &RationalPatch,
     surface: &SectionSurface,
+    boundary_rows: bool,
     dec: &mut Decider,
 ) -> Result<Option<RationalPatchSection>, Refusal> {
     for span in &patch.data.spans {
         let degree = degrees(&surface.equation(span), dec)?;
         if degree[0] != 0 && degree[1] != 0 {
-            return rows::section(patch, surface, dec);
+            return if boundary_rows {
+                rows::section(patch, surface, dec)
+            } else {
+                Ok(None)
+            };
         }
     }
     patch.sections(surface, dec).map(Some)

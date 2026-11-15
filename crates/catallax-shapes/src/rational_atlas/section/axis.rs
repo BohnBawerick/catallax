@@ -214,7 +214,7 @@ pub(super) fn section(
     let mut pieces: Vec<Piece> = Vec::new();
     let mut ends = Vec::new();
     for chart in atlas.charts() {
-        let Some(section) = axis_section(chart.patch(), surface, dec)? else {
+        let Some(section) = axis_section(chart.patch(), surface, join_rows, dec)? else {
             return unavailable(
                 join_rows,
                 "a chart boundary row needs complete remainder coverage",

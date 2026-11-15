@@ -179,3 +179,52 @@ fn row_factors_need_a_nonzero_remainder_over_the_whole_chart() {
     });
     assert!(!work.exhausted, "{} work units", work.used);
 }
+
+#[test]
+fn a_cubic_loft_row_keeps_its_finite_span_after_cancellation() {
+    let ((), work) = with_operation_budget(20_000_000, || {
+        let mut dec = Decider::default();
+        let mut controls = Vec::new();
+        for (u, row) in [(q("0"), q("0")), (q("1/8"), q("1/8")), (q("1/4"), q("1/8"))] {
+            for (height, v) in [(24, q("1")), (24, q("4/3")), (20, q("5/3")), (16, q("2"))] {
+                controls.push(Point3::new(u.clone(), &row * &Real::from_i64(height), v));
+            }
+        }
+        let source = BSplineSurface::new(
+            [2, 3],
+            [
+                ["0", "0", "0", "1/4", "1/4", "1/4"]
+                    .map(|t| Rational::parse(t).unwrap())
+                    .to_vec(),
+                [1, 1, 1, 1, 2, 2, 2, 2].map(Rational::from_i64).to_vec(),
+            ],
+            [3, 4],
+            controls,
+            vec![Real::one(); 12],
+            &mut dec,
+        )
+        .unwrap();
+        let mut atlases = RationalAtlas::partition(source, [false, false], &mut dec).unwrap();
+        assert_eq!(atlases.len(), 1);
+        let section = atlases
+            .pop()
+            .unwrap()
+            .sections(&plane(1, Real::zero(), false), &mut dec)
+            .unwrap();
+        let curves: Vec<_> = section.curves().collect();
+        assert_eq!(curves.len(), 1);
+        let (curve, crossing) = curves[0];
+        assert!(crossing);
+        let ends = curve
+            .domain()
+            .map(|t| curve.point_at(&t.clone().into(), &mut dec).unwrap());
+        for z in [1, 2] {
+            assert!(ends.iter().any(|p| equal(
+                p,
+                &Point3::new(0.into(), 0.into(), z.into()),
+                &mut dec
+            )));
+        }
+    });
+    assert!(!work.exhausted, "{} work units", work.used);
+}

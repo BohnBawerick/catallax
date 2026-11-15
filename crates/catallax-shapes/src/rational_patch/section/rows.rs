@@ -24,8 +24,19 @@ fn nonzero(poly: &RealPoly, domain: &Domain, dec: &mut Decider) -> Result<bool, 
     }
     let mut pending = vec![(domain.clone(), 0)];
     while let Some((cell, depth)) = pending.pop() {
-        if !poly
-            .eval_ball(&box_balls(&cell, bits), dec)?
+        let mut local = poly.clone();
+        let mut centered = cell.clone();
+        for axis in 0..2 {
+            let middle = (&cell[axis][0] + &cell[axis][1]).mul_pow2(-1);
+            local = local.substitute(
+                axis,
+                &(RealPoly::var(2, axis)
+                    + RealPoly::constant(2, Real::from_rational(middle.clone()))),
+            );
+            centered[axis] = cell[axis].each_ref().map(|bound| bound - &middle);
+        }
+        if !local
+            .eval_ball(&box_balls(&centered, bits), dec)?
             .contains_zero()
         {
             continue;

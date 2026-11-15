@@ -20,6 +20,7 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 /// match it are a recipe error. Supported planar and capped-cylinder spline incidence repairs build
 /// exact derivatives within the 10 um and neighbouring-feature limits, with
 /// attained source-deviation bounds retained in the result bodies' marks.
+/// Failure leaves the caller's complete model unchanged.
 pub fn import_step_bodies(
     model: &mut Model,
     bytes: &[u8],
@@ -33,7 +34,13 @@ pub fn import_step_bodies(
             actual,
         });
     }
-    build_file(model, &read_step(bytes)?, Some(step))
+    let mut candidate = model.clone();
+    let bodies = build_file(&mut candidate, &read_step(bytes)?, Some(step))?;
+    if catallax_numbers::current_operation_work().exhausted {
+        return Err(ImportRefusal::ResourceLimit);
+    }
+    *model = candidate;
+    Ok(bodies)
 }
 
 /// Builds the bodies of an IGES file's manifold solid B-rep objects for the

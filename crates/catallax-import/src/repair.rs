@@ -191,7 +191,7 @@ pub fn apply_source(
 /// The repair of one read source. `cleaned` carries a binary-noise cleanup's
 /// proven movement and squared feature size, recorded for every face.
 #[allow(clippy::too_many_arguments)]
-fn apply_file(
+pub(crate) fn apply_file(
     model: &mut Model,
     file: StepFile,
     sha: &str,

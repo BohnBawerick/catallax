@@ -31,6 +31,8 @@ mod incidence_straight;
 mod intersect;
 /// Closed triangle mesh import with exact validity and winding queries.
 pub mod mesh;
+/// Numerical STEP admission with separate source repair and numerical evidence.
+pub mod numerical;
 mod part21;
 mod planar_arithmetic;
 mod planar_deviation;

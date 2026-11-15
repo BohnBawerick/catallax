@@ -1,0 +1,66 @@
+{
+  "archive_sha256": "52e6dd1b6fa38e3cd99af59b662370829129540030975919c3e256dce6ad1dbe",
+  "binary_sha256": "439891c2a162c18e20ea86e917546847c78cbbb0222c0b0539b65f2ae188d471",
+  "format": "catallax-planar-import-controls/1",
+  "rows": [
+    {
+      "body_counts": {
+        "edges": 12,
+        "faces": 6,
+        "vertices": 8
+      },
+      "complete_workflow": false,
+      "import_status": "numerical",
+      "import_work": 396094,
+      "max_checked_residual_mm": "668006255438688701495698229329269783601/7237005577332262213973186563042994240829374041602535252466099000494570602496",
+      "model_id": "00000022",
+      "refusal": {
+        "code": "step.numerical-unsupported",
+        "stage": "source-step"
+      },
+      "sample_checks": 36,
+      "source_sha256": "9ed73f7963a68aec2121a1308385a8dc76041ff634870b28e9bc684c0ef3b4cc",
+      "source_to_result_upper_mm": [
+        "0.000000000001",
+        "0.000000000001",
+        "0.000000000001"
+      ],
+      "status": "refused",
+      "tolerance_mm": "0.01",
+      "work_limit": 20000000,
+      "work_used": 396194
+    },
+    {
+      "body_counts": {
+        "edges": 12,
+        "faces": 6,
+        "vertices": 8
+      },
+      "complete_workflow": false,
+      "import_status": "numerical",
+      "import_work": 803183,
+      "max_checked_residual_mm": "13408816743687181715985333918588055295/28269553036454149273332760011886696253239742350009903329945699220681916416",
+      "model_id": "00000134",
+      "refusal": {
+        "code": "step.numerical-unsupported",
+        "stage": "source-step"
+      },
+      "sample_checks": 36,
+      "source_sha256": "20dbc78663bed9c687b3b6635e6c232651fcf85b5425abb1eb416ab27761dcc3",
+      "source_to_result_upper_mm": [
+        "0.000000000001",
+        "0.000000000001",
+        "0.000000000001",
+        "0.000000000001",
+        "0.000000000001"
+      ],
+      "status": "refused",
+      "tolerance_mm": "0.01",
+      "work_limit": 20000000,
+      "work_used": 803233
+    }
+  ],
+  "scope": "two fixed source admissions; subsequent oblique STEP export still refused; not a complete census rerun",
+  "seed": 20261111,
+  "source_revision": "67eabb12e18de9bc0463829c7721d1fffee68756"
+}

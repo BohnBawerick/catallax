@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use catallax_numbers::{
-    Decider, Rational, Refusal, Sign, operation_budget_active, with_operation_budget,
+    Decider, Rational, Real, Refusal, Sign, operation_budget_active, with_operation_budget,
 };
 use catallax_recipe::StepId;
 use catallax_shapes::{Curve, Line, Plane, RPoint3, RVector3, Surface};
@@ -85,8 +85,8 @@ fn unsupported(detail: &str) -> ImportError {
     Refusal::new("import.numerical-unsupported-family", detail).into()
 }
 
-/// Try the existing certified path, then numerically admit the bounded axis-
-/// aligned planar source-incidence family. The raw source stays immutable.
+/// Try the existing certified path, then numerically admit the bounded planar
+/// source-incidence family. The raw source stays immutable.
 ///
 /// The numerical path retains the recorded producer's actual source bounds and
 /// repairs. It constructs a separate N01/N02 definition and rechecks it at the
@@ -227,38 +227,48 @@ fn planar_definition(
         let crate::Surface::Plane(plane) = &face.surface else {
             return Err(unsupported("this numerical family requires planar faces"));
         };
-        let axes: Vec<_> = (0..3).filter(|i| !plane.axis[*i].is_zero()).collect();
-        if axes.len() != 1 {
+        let mut frame = plane.clone();
+        let nonzero: Vec<_> = (0..3).filter(|i| !frame.axis[*i].is_zero()).collect();
+        if nonzero.len() == 1 {
+            // A coordinate plane has a cheap canonical unit frame. This changes
+            // only its parameterization, not the retained world-space geometry.
+            let axis = nonzero[0];
+            let sign = frame.axis[axis].sign();
+            frame.axis = std::array::from_fn(|_| Rational::zero());
+            frame.axis[axis] = if sign == Sign::Positive {
+                Rational::one()
+            } else {
+                -Rational::one()
+            };
+            frame.ref_dir = std::array::from_fn(|_| Rational::zero());
+            frame.ref_dir[(axis + 1) % 3] = Rational::one();
+        }
+        let plane = &frame;
+        // ElSLib::PlaneParameters uses the inverse orthonormal placement.
+        // Keep the accepted plane's actual frame, including oblique directions;
+        // retain 128-bit enclosure midpoints as numerical UV coordinates and let
+        // N01 check their actual world-space residuals at the fixed tolerance.
+        let y = crate::planar_arithmetic::cross(&plane.axis, &plane.ref_dir, dec)?;
+        let axes = [&plane.ref_dir, &y];
+        let squared = [
+            crate::planar_arithmetic::dot(axes[0], axes[0], dec)?,
+            crate::planar_arithmetic::dot(axes[1], axes[1], dec)?,
+        ];
+        if squared.iter().any(|q| q.sign() != Sign::Positive) {
             return Err(unsupported(
-                "this numerical family requires axis-aligned repaired planes",
+                "the retained repaired plane has a degenerate parameter frame",
             ));
         }
-        let axis = axes[0];
-        let sign = if plane.axis[axis].sign() == Sign::Positive {
-            Rational::one()
-        } else {
-            -Rational::one()
-        };
-        let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
-        let mut normal = std::array::from_fn(|_| Rational::zero());
-        normal[axis] = sign.clone();
-        let mut reference = std::array::from_fn(|_| Rational::zero());
-        reference[u] = Rational::one();
+        let lengths = squared.map(|q| Real::from(q).sqrt());
         let uv = |p: &Vec3, dec: &mut Decider| -> Result<_, ImportError> {
-            if p[axis] != plane.origin[axis] {
-                return Err(unsupported(
-                    "the retained repaired boundary is not on its plane",
-                ));
+            let delta = crate::planar_arithmetic::sub(p, &plane.origin, dec)?;
+            let mut result = [Rational::zero(), Rational::zero()];
+            for i in 0..2 {
+                let projection = crate::planar_arithmetic::dot(&delta, axes[i], dec)?;
+                let value = &Real::from(projection) / &lengths[i];
+                result[i] = dec.enclose_budgeted_at(&value, 128)?.mid();
             }
-            Ok([
-                crate::planar_arithmetic::arithmetic(&p[u], &plane.origin[u], '-', dec)?,
-                crate::planar_arithmetic::arithmetic(
-                    &crate::planar_arithmetic::arithmetic(&p[v], &plane.origin[v], '-', dec)?,
-                    &sign,
-                    '*',
-                    dec,
-                )?,
-            ])
+            Ok(result)
         };
         let mut loops = Vec::new();
         let mut boundaries: Vec<_> = face.loops.iter().collect();
@@ -321,8 +331,8 @@ fn planar_definition(
             key: face.name.clone(),
             surface: Surface::Plane(Plane {
                 origin: point(&plane.origin),
-                normal: vector(&normal),
-                ref_dir: vector(&reference),
+                normal: vector(&plane.axis),
+                ref_dir: vector(&plane.ref_dir),
             }),
             sense: if face.same_sense {
                 Sense::Same

@@ -96,7 +96,9 @@ fn run(bytes: &[u8], out: &Path) -> Result<Value, Value> {
     let mut solids = Vec::new();
     for (index, (key, body)) in imported.bodies().iter().enumerate() {
         let before = current_operation_work().used;
-        let original = file(body, &out.join(format!("solid-{index}.step")), &mut dec)?;
+        let original = file(body, &out.join(format!("solid-{index}.step")), &mut dec)
+            .map_err(|refusal| json!({"stage":"source-step","cause":refusal,
+                "source_body":evidence(body),"source_record":imported.record(),"import_work":import_work}))?;
         let export_work = current_operation_work().used - before;
         let before = current_operation_work().used;
         let edited = pose_edit(body, &mut dec).map_err(|e| error("pose-edit", e))?;

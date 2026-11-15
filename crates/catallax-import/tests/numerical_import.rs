@@ -95,6 +95,67 @@ fn a_previously_supported_source_keeps_the_certified_path() {
 }
 
 #[test]
+fn oblique_repaired_planes_retain_their_frames_and_checked_trims() {
+    let source = box_with_placement(5, Some(["0.000001", "0", "1"]), Some(["1", "0", "0"]));
+    // An independent rigid 3-4-5 rotation of every source point and direction.
+    let source = source
+        .lines()
+        .map(|line| {
+            if !line.contains("CARTESIAN_POINT(") && !line.contains("DIRECTION(") {
+                return line.to_owned();
+            }
+            let (prefix, coordinates) = line.split_once(",(").unwrap();
+            let p = coordinates
+                .trim_end_matches("));")
+                .split(',')
+                .map(|value| r(value.trim_end_matches('.')))
+                .collect::<Vec<_>>();
+            let q = [
+                (&r("3") * &p[0] - &r("4") * &p[2]) / r("5"),
+                p[1].clone(),
+                (&r("4") * &p[0] + &r("3") * &p[2]) / r("5"),
+            ];
+            format!(
+                "{prefix},({},{},{}));",
+                common::dec(&q[0]),
+                common::dec(&q[1]),
+                common::dec(&q[2])
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let imported = admitted(source.as_bytes());
+    assert!(!imported.record().source_incidence.is_empty());
+    let body = &imported.bodies()[0].1;
+    assert_eq!(body.counts().faces, 6);
+    assert!(body.definition().faces.iter().any(|face| {
+        let Surface::Plane(plane) = &face.surface else {
+            return false;
+        };
+        [
+            plane.normal.x.rational_ref(),
+            plane.normal.y.rational_ref(),
+            plane.normal.z.rational_ref(),
+        ]
+        .iter()
+        .filter(|q| q.is_some_and(|q| !q.is_zero()))
+        .count()
+            == 2
+    }));
+    assert!(
+        body.evidence()
+            .checks()
+            .iter()
+            .filter_map(|check| match check {
+                NumericalCheck::Samples { samples, .. } => Some(samples),
+                _ => None,
+            })
+            .flatten()
+            .all(|sample| sample.distance_upper_mm <= r("0.01"))
+    );
+}
+
+#[test]
 fn the_source_cap_is_inclusive_and_the_next_larger_gap_refuses() {
     let imported = admitted(&displaced_carrier("1.01", "1", false));
     assert_eq!(

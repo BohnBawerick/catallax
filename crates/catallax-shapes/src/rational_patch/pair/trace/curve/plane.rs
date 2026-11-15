@@ -1,10 +1,17 @@
 //! Complete finite plane points from the retained graph, without contact labels.
 
 use super::*;
+use crate::rational_patch::boundary_rows;
 use crate::{Plane, SectionHits};
 
 fn missing(detail: &str) -> Refusal {
     Refusal::new("intersect.patch-pair-plane", detail)
+}
+
+fn refinable(error: &Refusal) -> bool {
+    error.code == "intersect.patch-pair-trace-jacobian"
+        || (error.code == "intersect.patch-pair-trace"
+            && error.detail == "graph homogeneous denominator needs a positive enclosure")
 }
 
 fn equation(span: &Span, plane: &Plane) -> RealPoly {
@@ -142,8 +149,29 @@ impl PatchPairCurve {
                 .definition
                 .second
                 .span(arc.second_chart, arc.second_span);
-            if cut.is_zero(dec)? || equation(second, plane).is_zero(dec)? {
+            let second_cut = equation(second, plane);
+            if cut.is_zero(dec)? || second_cut.is_zero(dec)? {
                 contained += 1;
+                continue;
+            }
+            let mut border_only = None;
+            if piece.clipped_ends.is_none() {
+                border_only = boundary_rows(&cut, &arc.first_cell, dec)?;
+                if border_only.is_none() {
+                    border_only = boundary_rows(&second_cut, &arc.second_cell, dec)?;
+                }
+            }
+            if let Some(rows) = border_only {
+                // The complete cell-pair certificate accounts for every
+                // border meeting as one of this arc's owned endpoints.
+                if rows.rows().next().is_some() {
+                    for end in 0..2 {
+                        let point = endpoint(piece, end);
+                        if value(&point, plane, dec)? == Sign::Zero {
+                            store(&mut points, point, dec)?;
+                        }
+                    }
+                }
                 continue;
             }
             let mut cache = BTreeMap::new();
@@ -151,7 +179,14 @@ impl PatchPairCurve {
             while let Some((panel, depth)) = pending.pop() {
                 let interval = Ball::from_rational(&panel[0], bits)
                     .hull(&Ball::from_rational(&panel[1], bits));
-                let jet = piece.taylor(&interval, 0, dec)?;
+                let jet = match piece.taylor(&interval, 0, dec) {
+                    Ok(jet) => jet,
+                    Err(error) if refinable(&error) => {
+                        split(panel, depth, &mut pending)?;
+                        continue;
+                    }
+                    Err(error) => return Err(error),
+                };
                 if !(&projected(&jet[0], &normal) - &offset).contains_zero() {
                     continue;
                 }
@@ -167,7 +202,7 @@ impl PatchPairCurve {
                 let signs = [value(&ends[0], plane, dec)?, value(&ends[1], plane, dec)?];
                 let jets = match piece.taylor(&interval, 1, dec) {
                     Ok(jets) => jets,
-                    Err(error) if error.code == "intersect.patch-pair-trace-jacobian" => {
+                    Err(error) if refinable(&error) => {
                         split(panel, depth, &mut pending)?;
                         continue;
                     }
@@ -187,7 +222,10 @@ impl PatchPairCurve {
                     if signs[0] != Sign::Zero && signs[1] != Sign::Zero && signs[0] != signs[1] {
                         match root(piece, &cut, &interval, dec) {
                             Ok(point) => store(&mut points, point, dec)?,
-                            Err(error) if error.code == "numbers.root-not-certified" => {
+                            Err(error)
+                                if error.code == "numbers.root-not-certified"
+                                    || refinable(&error) =>
+                            {
                                 split(panel, depth, &mut pending)?;
                             }
                             Err(error) => return Err(error),
@@ -197,7 +235,7 @@ impl PatchPairCurve {
                 }
                 let jets = match piece.taylor(&interval, 2, dec) {
                     Ok(jets) => jets,
-                    Err(error) if error.code == "intersect.patch-pair-trace-jacobian" => {
+                    Err(error) if refinable(&error) => {
                         split(panel, depth, &mut pending)?;
                         continue;
                     }

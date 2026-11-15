@@ -7,6 +7,7 @@ use catallax_numbers::Integer;
 mod branch;
 mod native_carrier;
 mod rows;
+pub(crate) use rows::boundary_rows;
 mod surface;
 pub(crate) use branch::{Cover, search_cover};
 pub use branch::{

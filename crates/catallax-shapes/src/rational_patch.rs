@@ -23,7 +23,7 @@ mod range;
 mod ruled;
 mod section;
 mod trace_series;
-pub(crate) use section::{Cover, axis_section, search_cover, vanishing_side_row};
+pub(crate) use section::{Cover, axis_section, boundary_rows, search_cover, vanishing_side_row};
 pub use section::{
     PatchSectionBranch, RationalPatchSection, SectionBranchApproximation, SectionCandidate,
     SectionHits, SectionSearch, SectionSurface, SectionTracePiece,

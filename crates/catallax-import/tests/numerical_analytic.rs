@@ -128,3 +128,27 @@ fn exhausted_analytic_imports_return_no_body() {
     let (result, work) = with_operation_budget(1, || checked(&source, "0.01"));
     assert!(result.is_err() && work.exhausted);
 }
+
+#[test]
+fn source_bytes_are_charged_before_the_initial_verification_hash() {
+    let source = vec![b' '; 100_000];
+    let (result, work) = with_operation_budget(1, || {
+        numerical::import_step(
+            &source,
+            &"0".repeat(64),
+            &StepId::new("analytic-source").unwrap(),
+            &n::NumericalOptions::default(),
+            &mut Decider::default(),
+        )
+    });
+    assert!(
+        work.exhausted,
+        "verification hashed unmetered bytes: {result:?}"
+    );
+    assert!(matches!(
+        result,
+        Err(numerical::ImportError::Source(
+            catallax_import::ImportRefusal::ResourceLimit
+        ))
+    ));
+}

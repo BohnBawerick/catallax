@@ -84,11 +84,11 @@ fn file(body: &n::NumericalBody, path: &Path, dec: &mut Decider) -> Result<Value
         "source_history_stages":file.report().source_history.len(),"complete_body_bound":"unestablished"}),
     )
 }
-fn run(bytes: &[u8], out: &Path) -> Result<Value, Value> {
+fn run(bytes: &[u8], expected_sha256: &str, out: &Path) -> Result<Value, Value> {
     let mut dec = Decider::default();
     let imported = numerical::import_step(
         bytes,
-        &sha256_hex(bytes),
+        expected_sha256,
         &StepId::new("source").unwrap(),
         &n::NumericalOptions::default(),
         &mut dec,
@@ -141,7 +141,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bytes = std::fs::read(&args[0])?;
     let out = Path::new(&args[1]);
     std::fs::create_dir_all(out)?;
-    let (result, work) = with_operation_budget(n::DEFAULT_WORK, || run(&bytes, out));
+    let source_sha256 = sha256_hex(&bytes);
+    let (result, work) =
+        with_operation_budget(n::DEFAULT_WORK, || run(&bytes, &source_sha256, out));
     let mut response = match result {
         Ok(v) => v,
         Err(e) => json!({"status":"refused","refusal":e}),
@@ -149,7 +151,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if work.exhausted {
         response = json!({"status":"refused","refusal":{"code":"resource_limit"}});
     }
-    response["source_sha256"] = json!(sha256_hex(&bytes));
+    response["source_sha256"] = json!(source_sha256);
     response["work_used"] = json!(work.used);
     response["work_limit"] = json!(n::DEFAULT_WORK);
     std::fs::write(out.join("response.json"), format!("{response}\n"))?;

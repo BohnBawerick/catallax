@@ -32,6 +32,9 @@ pub struct Imported {
     pub record: RepairRecord,
     /// Canonical bytes of the derivative, when geometry was repaired.
     pub derivative: Option<Vec<u8>>,
+    // Producer-owned accepted definitions. Public repair records and entity
+    // numbers alone cannot authorize a replacement correspondence.
+    pub(crate) comparison: crate::correspondence::SourceSnapshot,
 }
 
 fn invalid(id: &str, detail: impl Into<String>) -> ImportRefusal {
@@ -526,12 +529,20 @@ fn apply_file(
     Decider::default()
         .check_deadline()
         .map_err(|_| ImportRefusal::ResourceLimit)?;
+    let comparison = crate::correspondence::SourceSnapshot::new(
+        record.source.sha256.clone(),
+        work,
+        &bodies,
+        &left_open,
+        &built_model,
+    );
     *model = built_model;
     Ok(Imported {
         bodies,
         left_open,
         record,
         derivative,
+        comparison,
     })
 }
 

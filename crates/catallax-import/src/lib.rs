@@ -12,6 +12,8 @@ mod build;
 mod clean;
 mod cone;
 mod consume;
+/// Verified entity correspondence between two completed imports.
+pub mod correspondence;
 mod curved;
 mod cylinder_radius;
 mod deviation;

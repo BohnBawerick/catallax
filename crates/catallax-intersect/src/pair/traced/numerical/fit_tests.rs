@@ -1,4 +1,5 @@
 use super::*;
+use catallax_numbers::current_operation_work;
 use catallax_trace::{surface_curves::IntersectionCurve, surface_intersector::Intersector};
 
 fn sampled_residual(
@@ -43,7 +44,7 @@ fn sampled_residual(
 
 #[test]
 fn checked_flush_refreshes_coupled_endpoint_derivatives() {
-    let ((a, b, trace_work), work) = with_operation_budget(20_000_000, || {
+    let ((a, b, trace_work, trace_bill), work) = with_operation_budget(20_000_000, || {
         let mut dec = Decider::default();
         let surfaces = [
             Surface::Cone(Cone {
@@ -75,8 +76,10 @@ fn checked_flush_refreshes_coupled_endpoint_derivatives() {
         let old_residual = sampled_residual(&before, sources, &dec);
         assert!(old_residual > Rational::from_ratio(1, 1_000_000).unwrap());
         intersector.check_output_spans = true;
+        let start = current_operation_work().used;
         let (after, trace_work) = intersector
             .do_intersection_with_work(|units| Decider::default().charge_work(units).is_ok());
+        let trace_bill = current_operation_work().used - start;
         let after = after.unwrap();
         assert!(!trace_work.cancelled);
         assert_eq!(trace_work.accepted, trace_work.attempted);
@@ -97,7 +100,7 @@ fn checked_flush_refreshes_coupled_endpoint_derivatives() {
                 assert_eq!(a.control_points(), b.control_points());
             }
         }
-        eprintln!("metered native fit work: {trace_work:?}");
+        eprintln!("metered native fit work: {trace_work:?}; request bill={trace_bill}");
         let new_residual = sampled_residual(&after, sources, &dec);
         eprintln!(
             "coupled residual before={} after={}",
@@ -110,23 +113,18 @@ fn checked_flush_refreshes_coupled_endpoint_derivatives() {
             old_residual.to_f64_nearest(),
             new_residual.to_f64_nearest()
         );
-        (a, b, trace_work)
+        (a, b, trace_work, trace_bill)
     });
     assert!(!work.exhausted, "{work:?}");
     let mut intersector = Intersector::new(&a, a.natural_domain(), &b, b.natural_domain());
     intersector.approx_tolerance = 2.5e-8;
     intersector.check_output_spans = true;
-    for limit in [
-        0,
-        trace_work.accepted / 2,
-        trace_work.accepted - 1,
-        trace_work.accepted + 1,
-    ] {
+    for limit in [0, trace_bill / 2, trace_bill - 1, trace_bill] {
         let ((result, report), budget) = with_operation_budget(limit, || {
             intersector
                 .do_intersection_with_work(|units| Decider::default().charge_work(units).is_ok())
         });
-        if limit < trace_work.accepted {
+        if limit < trace_bill {
             assert!(result.is_err(), "cancelled trace kept partial curves");
             assert!(report.cancelled);
             assert!(budget.exhausted);

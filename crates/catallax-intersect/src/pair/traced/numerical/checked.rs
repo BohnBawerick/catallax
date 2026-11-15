@@ -42,6 +42,20 @@ pub struct NumericalNativeIntersection {
     pieces: Vec<NumericalIntersectionPiece>,
     evidence: NumericalEvidence,
     trace_work: WorkReport,
+    work_stages: NumericalNativeWork,
+}
+
+/// Actual operation-work deltas, including callback deadline checks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NumericalNativeWork {
+    /// Analytic frames, finite windows and rounded source checks.
+    pub windows: u64,
+    /// Float conversion and intersector setup.
+    pub setup: u64,
+    /// Floating search, stepping and output, including nested helpers.
+    pub tracing: u64,
+    /// Retained definitions and independent sample/evidence checks.
+    pub fit_checks: u64,
 }
 
 impl NumericalNativeIntersection {
@@ -57,10 +71,14 @@ impl NumericalNativeIntersection {
     pub fn evidence(&self) -> &NumericalEvidence {
         &self.evidence
     }
-    /// Charged floating-trace visits. Exact validation work is charged separately
-    /// to the same ambient operation allowance.
+    /// Floating-trace checkpoint visits. Callback overhead and exact validation
+    /// contribute additional work to the same operation allowance.
     pub fn trace_work(&self) -> WorkReport {
         self.trace_work
+    }
+    /// Measured work for the complete query, excluding any caller prefix.
+    pub fn work_stages(&self) -> NumericalNativeWork {
+        self.work_stages
     }
 }
 
@@ -78,8 +96,10 @@ fn retained(
     dimension: usize,
     dec: &mut Decider,
 ) -> Result<BSplineCurve, Refusal> {
-    if curve.dimension() != dimension {
-        return Err(invalid("a retained fit has the wrong coordinate dimension"));
+    if dimension == 3 && curve.dimension() != 3 {
+        return Err(invalid(
+            "a retained 3D fit has the wrong coordinate dimension",
+        ));
     }
     let mut controls = Vec::new();
     let mut weights = Vec::new();
@@ -88,6 +108,9 @@ fn retained(
         let (point, weight) = curve
             .control_point(i, PointForm::Euclidean)
             .map_err(|fault| invalid(format!("invalid fitted control: {fault:?}")))?;
+        if dimension == 2 && point.z != 0.0 {
+            return Err(invalid("a retained UV fit has a nonzero third coordinate"));
+        }
         controls.push(Point3::new(
             exact(point.x)?.into(),
             exact(point.y)?.into(),
@@ -270,9 +293,11 @@ fn build_intersection(
     surfaces: [&Surface; 2],
     dec: &mut Decider,
 ) -> Result<Option<NumericalNativeIntersection>, Refusal> {
+    let started = catallax_numbers::current_operation_work().used;
     let Some(windows) = numerical_native_windows(surfaces, dec)? else {
         return Ok(None);
     };
+    let after_windows = catallax_numbers::current_operation_work().used;
     let a =
         crate::pair::trace_candidates::surface(&windows.sources[0], &Isometry::identity(), dec)?;
     let b =
@@ -281,8 +306,10 @@ fn build_intersection(
     let mut intersector = Intersector::new(&a, a.natural_domain(), &b, b.natural_domain());
     intersector.approx_tolerance = windows.evidence.tolerance_mm().to_f64_nearest() / 4.;
     intersector.check_output_spans = true;
+    let after_setup = catallax_numbers::current_operation_work().used;
     let (fits, trace_work) = intersector
         .do_intersection_with_work(|units| Decider::default().charge_work(units).is_ok());
+    let after_trace = catallax_numbers::current_operation_work().used;
     if trace_work.cancelled {
         dec.charge_work(0)?;
         return Err(invalid(
@@ -320,12 +347,28 @@ fn build_intersection(
         name: "native.retained-every-reported-piece".into(),
         scope: "finite-window-search".into(),
     });
+    let samples: usize = checks
+        .iter()
+        .map(|check| match check {
+            NumericalCheck::Samples { samples, .. } => samples.len(),
+            _ => 1,
+        })
+        .sum();
+    dec.charge_work(samples as u64)?;
     let evidence = NumericalEvidence::new(windows.evidence.tolerance_mm().clone(), checks, vec![])?;
+    let finished = catallax_numbers::current_operation_work().used;
+    let work_stages = NumericalNativeWork {
+        windows: after_windows - started,
+        setup: after_setup - after_windows,
+        tracing: after_trace - after_setup,
+        fit_checks: finished - after_trace,
+    };
     Ok(Some(NumericalNativeIntersection {
         windows,
         pieces,
         evidence,
         trace_work,
+        work_stages,
     }))
 }
 

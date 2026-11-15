@@ -10,7 +10,8 @@ const BITS: u32 = 128;
 
 mod checked;
 pub use checked::{
-    NumericalIntersectionPiece, NumericalNativeIntersection, numerical_native_intersection,
+    NumericalIntersectionPiece, NumericalNativeIntersection, NumericalNativeWork,
+    numerical_native_intersection,
 };
 
 #[cfg(test)]

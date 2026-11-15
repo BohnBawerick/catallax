@@ -36,7 +36,7 @@ pub use spline_germ::native_spline_normal_acceleration;
 mod spline_plane;
 pub use pair::traced::numerical::{
     NumericalIntersectionPiece, NumericalNativeIntersection, NumericalNativeWindows,
-    numerical_native_intersection, numerical_native_windows,
+    NumericalNativeWork, numerical_native_intersection, numerical_native_windows,
 };
 pub use query::native_spline_line_segment;
 pub use spline_line::{

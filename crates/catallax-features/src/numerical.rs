@@ -173,8 +173,23 @@ fn prism(
         dec.charge_work(1)?;
         let a = &d.vertices[edge.vertices[0]].position;
         let b = &d.vertices[edge.vertices[1]].position;
-        if a[axis] != b[axis] && (0..3).any(|i| i != axis && a[i] != b[i]) {
+        let Curve::Line(line) = &edge.curve else {
             return Err(unsupported());
+        };
+        let origin = coordinates(&line.origin)?;
+        let direction = vector(&line.dir)?;
+        if a[axis] != b[axis] {
+            if (0..3).any(|i| i != axis && (a[i] != b[i] || direction[i] != Rational::zero())) {
+                return Err(unsupported());
+            }
+        } else if direction[axis] != Rational::zero() {
+            return Err(unsupported());
+        }
+        for (t, endpoint) in edge.parameters.iter().zip([a, b]) {
+            dec.charge_work(1)?;
+            if &origin[axis] + &(t * &direction[axis]) != endpoint[axis] {
+                return Err(unsupported());
+            }
         }
     }
     // Exactly two planar caps. Side supports are parallel to the extrusion axis.
@@ -432,6 +447,7 @@ impl NumericalRecipe {
     /// Parse generating data only. Call `evaluate_numerical` to admit it under a
     /// shared request allowance. Saved check claims are never accepted as evidence.
     pub fn parse(input: &str, dec: &mut Decider) -> Result<Self, Refusal> {
+        dec.charge_work(u64::try_from(input.len()).unwrap_or(u64::MAX))?;
         let v: Value = serde_json::from_str(input).map_err(|e| bad(e.to_string()))?;
         if v["format"] != "catallax-numerical-recipe/1" {
             return Err(bad("unsupported numerical recipe format"));

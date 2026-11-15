@@ -30,7 +30,7 @@ pub(crate) fn finite_spline_plane_points(
     surface: SurfaceId,
     dec: &mut Decider,
 ) -> Result<Option<FinitePlanePoints>, Refusal> {
-    let (Curve::BSpline(curve), Surface::Plane(plane)) =
+    let (Curve::BSpline(spline), Surface::Plane(plane)) =
         (model.geom().curve(curve), model.geom().surface(surface))
     else {
         return Ok(None);
@@ -43,11 +43,15 @@ pub(crate) fn finite_spline_plane_points(
     {
         return Err(unresolved("a finite plane query needs a nonzero normal"));
     }
+    // Retained extrusion sections have a complete source solver before span substitution.
+    if catallax_intersect::is_bezier_extrusion_section(model.geom(), curve, dec)? {
+        return Ok(None);
+    }
     let equation = model
         .geom()
         .implicit(surface)
         .ok_or_else(|| unresolved("the finite plane has no polynomial equation"))?;
-    Ok(Some(match spline::hits(curve, equation, dec)? {
+    Ok(Some(match spline::hits(spline, equation, dec)? {
         None => FinitePlanePoints::Contained,
         Some(points) => FinitePlanePoints::Points(points),
     }))

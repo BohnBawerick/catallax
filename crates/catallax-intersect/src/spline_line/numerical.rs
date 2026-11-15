@@ -188,10 +188,10 @@ pub fn numerical_spline_line_points(
             .fold(Rational::zero(), |sum, x| sum + x.hi() - x.lo());
         let derivatives = frame.transverse(&jet.first, true);
         if diameter > leaf_size
-            && residual
+            && residual.iter().all(|r| upper(r) <= flat_limit)
+            && derivatives
                 .iter()
-                .chain(&derivatives)
-                .all(|r| upper(r) <= flat_limit)
+                .all(|r| upper(r) * (&cell.hi - &cell.lo) <= flat_limit)
         {
             return Err(Refusal::new(
                 "intersect.spline-line-overlap",
@@ -379,6 +379,10 @@ mod tests {
             );
         });
         assert!(!work.exhausted, "{} work units", work.used);
+        eprintln!(
+            "algebraic cubic numerical controls: {} work units",
+            work.used
+        );
     }
 
     #[test]
@@ -431,5 +435,84 @@ mod tests {
             );
         });
         assert!(!work.exhausted, "{} work units", work.used);
+        eprintln!(
+            "three-component and partial-overlap numerical controls: {} work units",
+            work.used
+        );
+    }
+
+    #[test]
+    fn tangent_and_tiny_crossing_survive_pose_scale_and_finite_domain_checks() {
+        use catallax_shapes::{Pose, Rotation};
+        for scale in [1, 7] {
+            let ((), work) = with_operation_budget(20_000_000, || {
+                let mut dec = Decider::default();
+                let mut geom = GeomStore::new();
+                let rotation = Rotation::from_quaternion(
+                    Rational::one(),
+                    Rational::one(),
+                    Rational::one(),
+                    Rational::zero(),
+                )
+                .unwrap();
+                let pose =
+                    Pose::new(rotation, Vector3::new(r("-7"), r("3"), r("11")), &mut dec).unwrap();
+                let s = Real::from_i64(scale);
+                let controls = [(-1, 1), (0, -1), (1, 1)]
+                    .map(|(x, y)| {
+                        Point3::new(
+                            Real::from_i64(x * scale),
+                            Real::from_i64(y * scale),
+                            Real::zero(),
+                        )
+                    })
+                    .to_vec();
+                let curve = BSplineCurve::new(
+                    2,
+                    [0, 0, 0, 1, 1, 1].map(Rational::from_i64).to_vec(),
+                    controls,
+                    vec![Real::one(); 3],
+                    &mut dec,
+                )
+                .unwrap()
+                .transformed(&pose);
+                let curve = geom.add_curve(Curve::BSpline(curve));
+                for (height, expected) in
+                    [("0", 1), ("1/1000000000000", 2), ("-1/1000000000000", 0)]
+                {
+                    let line = geom.add_curve(Curve::Line(Line {
+                        origin: pose.apply_point(&Point3::new(
+                            Real::zero(),
+                            r(height) * s.clone(),
+                            Real::zero(),
+                        )),
+                        dir: pose.apply_vector(&Vector3::new(
+                            s.clone(),
+                            Real::zero(),
+                            Real::zero(),
+                        )),
+                    }));
+                    let result = numerical_spline_line_points(&geom, line, curve, &mut dec)
+                        .unwrap()
+                        .unwrap();
+                    assert_eq!(
+                        result.points().len(),
+                        expected,
+                        "scale={scale}, height={height}"
+                    );
+                    if expected == 1 {
+                        let (answer, _) = with_operation_budget(0, || {
+                            numerical_spline_line_points(&geom, curve, line, &mut dec)
+                        });
+                        assert_eq!(answer.unwrap_err().code, "numbers.operation-budget");
+                    }
+                }
+            });
+            assert!(!work.exhausted, "scale={scale}: {} units", work.used);
+            eprintln!(
+                "posed tangent controls, scale={scale}: {} work units",
+                work.used
+            );
+        }
     }
 }

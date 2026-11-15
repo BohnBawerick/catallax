@@ -319,6 +319,9 @@ fn rounded_curves(
                 if edge.parameters[0] > edge.parameters[1] && ts[1] >= ts[0] {
                     ts[1] = &ts[1] - &period;
                 }
+                if edge.vertices[0] != edge.vertices[1] {
+                    canonical_arc_parameters(&mut ts, &period, w.dec)?;
+                }
                 (id, Curve::Circle(circle), ts.try_into().unwrap())
             }
             _ => {
@@ -333,6 +336,44 @@ fn rounded_curves(
         result.push(id);
     }
     Ok((result, phase_checks))
+}
+
+fn canonical_arc_parameters(
+    parameters: &mut [Rational],
+    period: &Rational,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    let extent = arithmetic(&parameters[1], &parameters[0], '-', dec)?.abs();
+    if extent.is_zero() || extent >= *period {
+        return Err(bad(
+            "rounding-topology",
+            "distinct circle endpoints require a finite arc shorter than one turn",
+        ));
+    }
+    // STEP EDGE_CURVE omits the native range. Like OCCT's vertex projection
+    // and UpdateParam3d/AdjustPeriodic, put its ascending lower endpoint in
+    // [0, 2*pi), retaining its extent and direction. Both ends receive the
+    // same period shift; the retained face chart and coedge walks do not move.
+    // Build the pcurves only after this normalization so their parameter is
+    // the one the reader reconstructs, including a crossing of phase zero.
+    for _ in 0..4 {
+        dec.charge_work(1)?;
+        let lower = parameters[0].clone().min(parameters[1].clone());
+        let add = if lower.sign() == Sign::Negative {
+            '+'
+        } else if lower >= *period {
+            '-'
+        } else {
+            return Ok(());
+        };
+        for parameter in parameters.iter_mut() {
+            *parameter = arithmetic(parameter, period, add, dec)?;
+        }
+    }
+    Err(bad(
+        "unsupported",
+        "analytic arc requires a distant periodic chart",
+    ))
 }
 
 fn closed_circle_phase(

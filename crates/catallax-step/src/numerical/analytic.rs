@@ -209,8 +209,12 @@ fn rounded_surfaces(w: &mut Writer<'_>, d: &mut NumericalDefinition) -> Result<V
     Ok(result)
 }
 
-fn rounded_curves(w: &mut Writer<'_>, d: &mut NumericalDefinition) -> Result<Vec<Id>, Refusal> {
+fn rounded_curves(
+    w: &mut Writer<'_>,
+    d: &mut NumericalDefinition,
+) -> Result<(Vec<Id>, Vec<NumericalCheck>), Refusal> {
     let mut result = Vec::new();
+    let mut phase_checks = Vec::new();
     for edge in &mut d.edges {
         w.dec.charge_work(1)?;
         let (id, curve, parameters) = match &edge.curve {
@@ -255,7 +259,7 @@ fn rounded_curves(w: &mut Writer<'_>, d: &mut NumericalDefinition) -> Result<Vec
                 // reader reconstructs the same natural range as its pcurves.
                 // The center, axis, radius and source vertex remain unchanged.
                 let reference = if edge.vertices[0] == edge.vertices[1] {
-                    let center = rational_point(&circle.center)?;
+                    let center = round3(&rational_point(&circle.center)?, w.options)?;
                     vector_from(&difference(
                         &d.vertices[edge.vertices[0]].position,
                         &center,
@@ -286,6 +290,15 @@ fn rounded_curves(w: &mut Writer<'_>, d: &mut NumericalDefinition) -> Result<Vec
                     radius_sq: Real::from(&radius * &radius),
                     ref_dir: vector_from(&x),
                 };
+                if edge.vertices[0] == edge.vertices[1] {
+                    phase_checks.push(closed_circle_phase(
+                        &circle,
+                        &radius,
+                        &d.vertices[edge.vertices[0]].position,
+                        &edge.key,
+                        w,
+                    )?);
+                }
                 let mut ts = Vec::new();
                 for (i, index) in edge.vertices.into_iter().enumerate() {
                     let [a, b, _] = local(
@@ -318,7 +331,51 @@ fn rounded_curves(w: &mut Writer<'_>, d: &mut NumericalDefinition) -> Result<Vec
         edge.parameters = parameters;
         result.push(id);
     }
-    Ok(result)
+    Ok((result, phase_checks))
+}
+
+fn closed_circle_phase(
+    circle: &Circle,
+    radius: &Rational,
+    vertex: &[Rational; 3],
+    key: &str,
+    w: &mut Writer<'_>,
+) -> Result<NumericalCheck, Refusal> {
+    w.dec.charge_work(1)?;
+    let [x, y, _] = local(&circle.center, &circle.normal, &circle.ref_dir, vertex)?;
+    if x.lo().sign() != Sign::Positive {
+        return Err(Refusal::new(
+            "step.numerical-closed-circle-phase",
+            "written endpoint does not select the positive reference ray",
+        ));
+    }
+    // For x > 0, |atan(y/x)| <= |y|/x. Check the actual written frame in
+    // angular and physical units, independently of the looser source tolerance.
+    // The angular cap follows OCCT Precision::Angular(); the physical selector
+    // cap stays below the raw builder's 1e-7 mm precision. Neither is exactness.
+    let tangent = y.lo().abs().max(y.hi().abs());
+    let angle_upper = arithmetic(&tangent, &x.lo(), '/', w.dec)?;
+    let displacement = arithmetic(radius, &angle_upper, '*', w.dec)?;
+    let angular_limit = Rational::from_ratio(1, 1_000_000_000_000).unwrap();
+    let distance_limit = w
+        .options
+        .max_scalar_rounding_error_mm
+        .clone()
+        .min(Rational::from_ratio(1, 1_000_000_000).unwrap());
+    if angle_upper > angular_limit || displacement > distance_limit {
+        return Err(Refusal::new(
+            "step.numerical-closed-circle-phase",
+            "decimal direction does not establish the forced zero phase within its angular and physical selector limits",
+        ));
+    }
+    Ok(NumericalCheck::Samples {
+        name: "file.closed-circle-zero-phase-tangent-bound".into(),
+        scope: format!("{key};angular_limit_rad=1e-12;distance_limit_mm={distance_limit}"),
+        samples: vec![NumericalSample {
+            parameters: vec![Rational::zero()],
+            distance_upper_mm: displacement,
+        }],
+    })
 }
 
 struct ParameterRounding {
@@ -542,7 +599,7 @@ pub(super) fn build(
         vertex.position = round3(&vertex.position, options)?;
     }
     let surfaces = rounded_surfaces(&mut w, &mut d)?;
-    let geometry = rounded_curves(&mut w, &mut d)?;
+    let (geometry, phase_checks) = rounded_curves(&mut w, &mut d)?;
     closed_circle_parameters(&mut d, w.dec)?;
     for face in &mut d.faces {
         for trim in face.loops.iter_mut().flatten() {
@@ -625,6 +682,7 @@ pub(super) fn build(
     // independently rounded pcurves get their own distance enclosures, including
     // endpoints; no rounded parameter gap is silently snapped or called exact.
     let mut checks = admitted.evidence().checks().to_vec();
+    checks.extend(phase_checks);
     checks.extend(parameter_checks);
     let emitted = NumericalEvidence::new(body.options().tolerance_mm.clone(), checks, Vec::new())?;
     let mut faces = Vec::new();

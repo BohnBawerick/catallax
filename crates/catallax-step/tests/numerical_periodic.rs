@@ -2,6 +2,7 @@
 #[path = "../../catallax-topology/tests/common/periodic.rs"]
 mod fixture;
 use catallax_numbers::{Ball, Decider, Rational};
+use catallax_shapes::{Curve, Point3, Surface};
 use catallax_step::numerical::{self as output, NumericalStepOptions};
 use catallax_topology::{Sense, numerical as n};
 
@@ -28,6 +29,139 @@ fn a_complete_bore_emits_one_seam_curve_with_two_uses() {
         std::fs::write(
             std::path::Path::new(&path).join("periodic-bore.step"),
             file.bytes(),
+        )
+        .unwrap();
+    }
+}
+
+fn shifted_center_bore() -> n::NumericalDefinition {
+    let mut definition = fixture::bore();
+    let shift = catallax_numbers::Real::from(fixture::q("-1.0004"));
+    let shifted = |p: &Point3| Point3::new(p.x.clone(), &p.y + &shift, p.z.clone());
+    for vertex in &mut definition.vertices {
+        vertex.position[1] = &vertex.position[1] + &fixture::q("-1.0004");
+    }
+    for edge in &mut definition.edges {
+        match &mut edge.curve {
+            Curve::Line(line) => line.origin = shifted(&line.origin),
+            Curve::Circle(circle) => circle.center = shifted(&circle.center),
+            _ => unreachable!(),
+        }
+    }
+    for face in &mut definition.faces {
+        match &mut face.surface {
+            Surface::Plane(plane) => plane.origin = shifted(&plane.origin),
+            Surface::Cylinder(cylinder) => cylinder.origin = shifted(&cylinder.origin),
+            _ => unreachable!(),
+        }
+    }
+    definition
+}
+
+#[test]
+fn a_shifted_center_uses_the_written_center_for_its_zero_phase() {
+    let body = n::build(
+        shifted_center_bore(),
+        n::NumericalOptions::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    for digits in [4, 17] {
+        let options = NumericalStepOptions {
+            significant_digits: digits,
+            max_scalar_rounding_error_mm: fixture::q("0.001"),
+            ..Default::default()
+        };
+        let file = output::build(&body, &options, &mut Decider::default()).unwrap();
+        let checks = file
+            .report()
+            .emitted_evidence
+            .checks()
+            .iter()
+            .filter_map(|check| match check {
+                catallax_numbers::NumericalCheck::Samples { name, samples, .. }
+                    if name == "file.closed-circle-zero-phase-tangent-bound" =>
+                {
+                    Some(samples)
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(checks.len(), 2);
+        assert!(
+            checks
+                .iter()
+                .flat_map(|samples| samples.iter())
+                .all(|sample| sample.distance_upper_mm <= fixture::q("0.000000001"))
+        );
+        if digits == 17
+            && let Ok(path) = std::env::var("CATALLAX_ANALYTIC_EVIDENCE")
+        {
+            std::fs::write(
+                std::path::Path::new(&path).join("periodic-bore-shifted-center.step"),
+                file.bytes(),
+            )
+            .unwrap();
+        }
+    }
+}
+
+#[test]
+fn a_direction_that_rounds_away_from_zero_phase_is_refused() {
+    let mut definition = fixture::bore();
+    let c = Rational::from_ratio(20, 29).unwrap();
+    let s = Rational::from_ratio(21, 29).unwrap();
+    let phase = Ball::atan2(&Ball::from_rational(&s, 128), &Ball::from_rational(&c, 128))
+        .unwrap()
+        .mid();
+    let period = Ball::pi(128).mid() * Rational::from_i64(2);
+    for vertex in &mut definition.vertices[8..10] {
+        vertex.position[0] = c.clone();
+        vertex.position[1] = s.clone();
+    }
+    for edge in &mut definition.edges {
+        if matches!(edge.curve, Curve::Circle(_)) {
+            edge.parameters = [phase.clone(), &phase + &period];
+        } else if edge.key == "cylinder-u-seam"
+            && let Curve::Line(line) = &mut edge.curve
+        {
+            line.origin = Point3::new(c.clone().into(), s.clone().into(), 0.into());
+        }
+    }
+    for face in &mut definition.faces {
+        if matches!(face.surface, Surface::Plane(_)) && face.loops.len() == 2 {
+            face.loops[1][0].uv = [[c.clone(), s.clone()], [c.clone(), s.clone()]];
+        } else if matches!(face.surface, Surface::Cylinder(_)) {
+            for trim in face.loops.iter_mut().flatten() {
+                for uv in &mut trim.uv {
+                    uv[0] = &uv[0] + &phase;
+                }
+            }
+        }
+    }
+    let body = n::build(
+        definition,
+        n::NumericalOptions::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let coarse = NumericalStepOptions {
+        significant_digits: 4,
+        max_scalar_rounding_error_mm: fixture::q("0.001"),
+        ..Default::default()
+    };
+    let error = output::build(&body, &coarse, &mut Decider::default()).unwrap_err();
+    assert_eq!(error.code, "step.numerical-closed-circle-phase");
+    let fine = output::build(
+        &body,
+        &NumericalStepOptions::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    if let Ok(path) = std::env::var("CATALLAX_ANALYTIC_EVIDENCE") {
+        std::fs::write(
+            std::path::Path::new(&path).join("periodic-bore-oblique-anchor.step"),
+            fine.bytes(),
         )
         .unwrap();
     }

@@ -185,6 +185,13 @@ def main():
     parser.add_argument("--example-sha256", required=True)
     parser.add_argument("--source-revision", required=True)
     parser.add_argument("--phased-authored", type=Path, required=True)
+    parser.add_argument(
+        "--precision-authored",
+        nargs=2,
+        type=Path,
+        required=True,
+        metavar=("SHIFTED_CENTER", "OBLIQUE_ANCHOR"),
+    )
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument(
         "--raw-helper",
@@ -214,6 +221,13 @@ def main():
     assert len(r["source_admission"]["intersection_checks"]) == 16 * 15 // 2
     assert r["work_used"] <= r["work_limit"] == 20_000_000
     assert r["work_used"] == r["work"]["import"] + sum(r["solids"][0]["work"].values())
+    phase_checks = {}
+    for field in ["source_step", "edited_step"]:
+        check = r["solids"][0][field]["closed_circle_phase_checks"]
+        assert check["count"] == 4 and check["angular_limit_rad"] == "1/1000000000000"
+        assert check["distance_limit_mm"] == "1/1000000000"
+        assert 0 <= Fraction(check["max_tangent_bound_mm"]) <= Fraction(1, 1_000_000_000)
+        phase_checks[field] = check
 
     artifacts, shapes = [], []
     identity = []
@@ -318,6 +332,27 @@ def main():
         solids=1, faces=7, edges=15, vertices=10, two_loop_faces=2, euler_with_face_holes=0
     )
     assert state(phased, (0, 0, 0.5)) == "outside" and state(phased, (1.5, 0, 0.5)) == "inside"
+    precision_authored = []
+    for path, shift, role in zip(
+        args.precision_authored, [-1.0004, 0], ["shifted_center", "oblique_anchor"]
+    ):
+        shape = raw_solid(path)
+        assert BRepCheck_Analyzer(shape).IsValid(), role
+        assert abs(volume(shape) - (16 - math.pi)) < 1e-9
+        assert topology(shape) == topology(phased)
+        assert (
+            state(shape, (0, shift, 0.5)) == "outside"
+            and state(shape, (1.5, shift, 0.5)) == "inside"
+        )
+        precision_authored.append(
+            dict(
+                role=role,
+                sha256=sha(path),
+                raw_valid=True,
+                volume_and_material_checked=True,
+                significant_digits=17,
+            )
+        )
     # Keep the actual shape properties private. Public artifacts retain checked
     # relationships, source-local identities and hashes, rather than coordinates.
     public_artifacts = [
@@ -344,6 +379,7 @@ def main():
         identity=identity[0],
         closed_circle_identity="retained_center_axis_radius_and_endpoint; reference_phase_may_rotate",
         source_identity_swap_rejected=True,
+        closed_circle_phase_checks=phase_checks,
         source_unit_to_mm=1000,
         exported_step_healing=False,
         exported_step_same_parameter=False,
@@ -362,6 +398,7 @@ def main():
         phased_authored=dict(
             sha256=sha(args.phased_authored), raw_valid=True, volume_and_material_checked=True
         ),
+        precision_authored=precision_authored,
         material_probes=probes,
         complete_body_bound="unestablished",
         catallax_boolean_qualified=False,

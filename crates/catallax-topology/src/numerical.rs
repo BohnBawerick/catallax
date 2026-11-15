@@ -38,7 +38,7 @@ pub struct NumericalVertex {
 pub struct NumericalEdge {
     /// Stable key, unique among edges.
     pub key: String,
-    /// Retained line or finite native B-spline carrier.
+    /// Retained line, finite circular arc or native B-spline carrier.
     pub curve: Curve,
     /// Start and end indices in the vertex table.
     pub vertices: [usize; 2],
@@ -63,7 +63,8 @@ pub struct NumericalTrim {
 pub struct NumericalFace {
     /// Stable key, unique among faces. It survives a surface replacement.
     pub key: String,
-    /// A plane or an embedded rational patch. The trim need not be a patch row.
+    /// A plane, finite cylindrical chart or embedded rational patch.
+    /// The trim need not be a patch row.
     pub surface: Surface,
     /// Material normal relative to the support normal.
     pub sense: Sense,
@@ -130,7 +131,7 @@ impl Default for NumericalOptions {
 ///   a bound on the current body.
 ///
 /// Nine equally spaced locations per coedge, including its endpoints, are checked
-/// against its retained face parameters. Planar spline edges use projected curve
+/// against its retained face parameters. Planar circular/spline edges use projected curve
 /// samples; other trims use their linear u/v segment. Every edge endpoint is
 /// checked against its vertex. These are pointwise distance enclosures, not bounds
 /// between samples. For projected spline walks, loop simplicity and hole placement
@@ -439,7 +440,7 @@ fn build_inner(
         if !analytic::supports(&face.surface) {
             return Err(bad(
                 "unsupported",
-                "numerical admission currently supports planes and embedded rational patches",
+                "numerical admission supports planes, finite cylindrical charts and embedded rational patches",
             ));
         }
         analytic::validate_surface(&face.surface, dec)?;

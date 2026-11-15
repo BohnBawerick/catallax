@@ -4,7 +4,7 @@
 //! own a private model containing their new definitions. Persist origins rather
 //! than handles across edits. Refusals keep the underlying decision and input
 //! counts. Queries spend the caller's active allowance, or the application
-//! default when called alone. They never publish a partial answer.
+//! 100M default when called alone. They never publish a partial answer.
 
 use std::collections::BTreeMap;
 

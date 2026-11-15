@@ -13,7 +13,7 @@ fn canonical_p1_builds_with_display_inside_the_default_allowance_at_every_thread
         max_vertices: 200_000,
         ..Default::default()
     };
-    assert_eq!(DEFAULT_BUILD_WORK, 20_000_000);
+    assert_eq!(DEFAULT_BUILD_WORK, 100_000_000);
     let mut reference = None;
     for threads in [1, 2, 4] {
         set_threads(NonZeroUsize::new(threads));

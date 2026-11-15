@@ -64,7 +64,10 @@ use catallax_topology::{BodyId, EdgeId, FaceId, Model, VertexId};
 
 /// Default arithmetic allowance for an eager build with display, an exact-only
 /// build, or a separate display request. A caller-owned allowance takes precedence.
-pub const DEFAULT_BUILD_WORK: u64 = 20_000_000;
+pub const DEFAULT_BUILD_WORK: u64 = 100_000_000;
+
+/// Speed-phase target for a complete build or query. Exceeding it does not refuse work.
+pub const TARGET_BUILD_WORK: u64 = 20_000_000;
 
 fn bounded_build<T>(run: impl FnOnce() -> Result<T, Error>) -> Result<T, Error> {
     if operation_budget_active() {
@@ -187,7 +190,7 @@ fn rendering_result(
     ))
 }
 
-/// Builds an exact checkpoint and rendering answer within one shared 20M allowance.
+/// Builds an exact checkpoint and rendering answer within one shared 100M allowance.
 /// Certified callers can continue using [`build_incremental`] unchanged.
 pub fn build_incremental_with_display_result(
     recipe: &Recipe,
@@ -496,4 +499,69 @@ pub fn build_soliddraft(
         body,
         steps: converted.steps,
     })
+}
+
+#[cfg(test)]
+mod allowance_tests {
+    use super::*;
+    use crate::lifecycle::{WorkAllocation, WorkReport};
+    use catallax_numbers::{OperationWork, current_operation_work};
+
+    fn build_with_work(units: u64) -> Result<WorkReport, Error> {
+        bounded_build(|| {
+            let mut decider = Decider::default();
+            // Charge deterministic predicate work without a slow fixture.
+            let _ = decider.charge_work(units);
+            let recipe =
+                Recipe::parse(include_str!("../tests/fixtures/rounded-base-flange.json")).unwrap();
+            build_incremental_without_display(&recipe, None, &mut decider)?;
+            Ok(WorkReport {
+                allocation: WorkAllocation::application(0).unwrap(),
+                preview: OperationWork {
+                    used: 0,
+                    exhausted: false,
+                },
+                proof: Some(current_operation_work()),
+            })
+        })
+    }
+
+    #[test]
+    fn build_above_target_completes_and_reports_stage_work() {
+        let report = build_with_work(TARGET_BUILD_WORK + 1).unwrap();
+        assert!(report.over_target());
+        assert_eq!(report.preview.used, 0);
+        let proof = report.proof.unwrap();
+        assert!(proof.used > TARGET_BUILD_WORK);
+        assert!(proof.used < DEFAULT_BUILD_WORK);
+        assert!(!proof.exhausted);
+    }
+
+    #[test]
+    fn build_above_default_allowance_still_refuses() {
+        assert!(matches!(
+            build_with_work(DEFAULT_BUILD_WORK + 1),
+            Err(Error::ResourceLimit)
+        ));
+    }
+
+    #[test]
+    fn target_is_strict_and_sums_actual_stage_work() {
+        let mut report = WorkReport {
+            allocation: WorkAllocation::application(10_000_000).unwrap(),
+            preview: OperationWork {
+                used: 10_000_000,
+                exhausted: false,
+            },
+            proof: None,
+        };
+        assert!(!report.over_target());
+        report.proof = Some(OperationWork {
+            used: 10_000_000,
+            exhausted: false,
+        });
+        assert!(!report.over_target());
+        report.proof.as_mut().unwrap().used += 1;
+        assert!(report.over_target());
+    }
 }

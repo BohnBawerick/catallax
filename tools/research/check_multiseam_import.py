@@ -103,11 +103,12 @@ def check_identity(source, emitted, response, shift):
             max(abs(x - y) for x, y in zip(normalized(a), normalized(b))) < 1e-12
         ), "carrier direction differs"
 
-    def frame(a, b):
+    def frame(a, b, reference=True):
         af, bf = source.frame(a), emitted.frame(b)
         point(af[0], bf[0])
         direction(af[1], bf[1])
-        direction(af[2], bf[2])
+        if reference:
+            direction(af[2], bf[2])
 
     for n in source.ids("VERTEX_POINT"):
         point(source.xyz(source.refs(n)[0]), emitted.xyz(emitted.refs(vertices[f"#{n}"])[0]))
@@ -127,7 +128,9 @@ def check_identity(source, emitted, response, shift):
             direction(source.xyz(source.refs(ar[1])[0]), emitted.xyz(emitted.refs(br[1])[0]))
         else:
             assert source.kind(a) == "CIRCLE"
-            frame(a, b)
+            # Complete circles retain the geometric carrier; their reference
+            # phase may rotate to the retained shared endpoint for STEP ranges.
+            frame(a, b, reference=original_refs[0] != original_refs[1])
             ra = Fraction(source.bodies[a].rsplit(",", 1)[1].strip(" )"))
             rb = Fraction(emitted.bodies[b].rsplit(",", 1)[1].strip(" )"))
             assert abs(1000 * ra - rb) <= rounding, "circle radius differs"
@@ -339,6 +342,7 @@ def main():
         stages=r["solids"][0]["work"],
         topology_repairs=r["source_admission"]["topology_repairs"],
         identity=identity[0],
+        closed_circle_identity="retained_center_axis_radius_and_endpoint; reference_phase_may_rotate",
         source_identity_swap_rejected=True,
         source_unit_to_mm=1000,
         exported_step_healing=False,

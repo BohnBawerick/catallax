@@ -250,12 +250,26 @@ fn rounded_curves(w: &mut Writer<'_>, d: &mut NumericalDefinition) -> Result<Vec
                 )
             }
             Curve::Circle(circle) => {
+                // A full circle's 3D carrier has no distinguished reference
+                // phase. Put its retained endpoint at phase zero so a STEP
+                // reader reconstructs the same natural range as its pcurves.
+                // The center, axis, radius and source vertex remain unchanged.
+                let reference = if edge.vertices[0] == edge.vertices[1] {
+                    let center = rational_point(&circle.center)?;
+                    vector_from(&difference(
+                        &d.vertices[edge.vertices[0]].position,
+                        &center,
+                        w.dec,
+                    )?)
+                } else {
+                    circle.ref_dir.clone()
+                };
                 let WrittenFrame {
                     entity: frame,
                     origin: o,
                     normal: n,
                     reference: x,
-                } = placement(w, &circle.center, &circle.normal, &circle.ref_dir)?;
+                } = placement(w, &circle.center, &circle.normal, &reference)?;
                 let radius = crate::number::sqrt_real(&circle.radius_sq)
                     .as_rational()
                     .ok_or_else(|| {
@@ -331,30 +345,15 @@ fn closed_circle_parameters(
                 "closed circle must retain one complete turn",
             ));
         }
-        let mut phase = edge.parameters[0].clone();
         // A STEP EDGE_CURVE does not carry this parameter range. OCCT projects
-        // the shared endpoint and reconstructs the ascending natural full turn.
-        // Its pcurve must use that same range. Changing an edge's direction also
-        // changes every coedge sense, retaining each physical boundary walk.
-        for _ in 0..4 {
-            if phase.sign() == Sign::Negative {
-                phase = arithmetic(&phase, &period, '+', dec)?;
-            } else if phase >= period {
-                phase = arithmetic(&phase, &period, '-', dec)?;
-            } else {
-                break;
-            }
-        }
-        if phase.sign() == Sign::Negative || phase >= period {
-            return Err(bad(
-                "unsupported",
-                "closed circle phase is outside the natural turn",
-            ));
-        }
+        // the shared endpoint and reconstructs the ascending natural full turn
+        // of the anchored carrier above. Its pcurve must use that same range.
+        // Changing an edge's direction also changes every coedge sense,
+        // retaining each physical boundary walk.
         if edge.parameters[1] < edge.parameters[0] {
             reversed.push(index);
         }
-        edge.parameters = [phase.clone(), arithmetic(&phase, &period, '+', dec)?];
+        edge.parameters = [Rational::zero(), period.clone()];
     }
     for face in &mut definition.faces {
         dec.charge_work(1)?;

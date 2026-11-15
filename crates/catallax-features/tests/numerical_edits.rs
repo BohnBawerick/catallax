@@ -272,3 +272,26 @@ fn lower_cut_and_cyclic_coordinate_frame_preserve_the_hole_and_material() {
         step(body.body())
     );
 }
+
+#[test]
+fn decoding_is_charged_before_json_parsing() {
+    let (result, work) = with_operation_budget(1, || {
+        catallax_features::replay_numerical("this is deliberately invalid JSON", &mut Decider::default())
+    });
+    assert!(work.exhausted, "JSON decoding began before allowance accounting");
+    assert_eq!(result.unwrap_err().code, "numbers.operation-budget");
+}
+
+#[test]
+fn non_axial_retained_trace_refuses_literal_clip() {
+    let mut r = recipe();
+    let edge = r.source.edges.iter_mut().find(|e| {
+        r.source.vertices[e.vertices[0]].position[2] != r.source.vertices[e.vertices[1]].position[2]
+    }).unwrap();
+    let Curve::Line(line) = &mut edge.curve else { panic!("line") };
+    line.dir.x = q("0.0001").into();
+    let original = evaluate_numerical(&r, &mut Decider::default()).unwrap();
+    let resized = original.edit(resize(2), &mut Decider::default()).unwrap();
+    assert!(resized.edit(cut(2,"1.5",true), &mut Decider::default()).is_err(),
+        "nominal vertex alignment must not admit a non-axial retained trace");
+}

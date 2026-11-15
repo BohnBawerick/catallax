@@ -34,6 +34,10 @@ impl Default for NumericalStepOptions {
 /// Source and file checks with separate scopes; always a numerical result.
 #[derive(Clone, Debug)]
 pub struct NumericalStepReport {
+    /// Original generating input, before any explicit sewing or later edits.
+    pub original_definition: catallax_topology::numerical::NumericalDefinition,
+    /// Earlier checked states. Their checks apply only to their own definitions.
+    pub source_history: Vec<catallax_topology::numerical::NumericalHistory>,
     /// Retained generating definition name.
     pub source_name: String,
     /// Immutable copy of the generating tables, trims and stable source keys.
@@ -496,6 +500,8 @@ fn build_inner(
     let artifact = NumericalStep {
         bytes: file.into_bytes(),
         report: NumericalStepReport {
+            original_definition: body.source_definition().clone(),
+            source_history: body.history().to_vec(),
             source_name: d.name.clone(),
             source_definition: d.clone(),
             source_evidence: body.evidence().clone(),

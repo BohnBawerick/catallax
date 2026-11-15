@@ -137,6 +137,8 @@ impl Default for NumericalOptions {
 /// ```
 #[derive(Clone, Debug)]
 pub struct NumericalBody {
+    source: NumericalDefinition,
+    history: Vec<NumericalHistory>,
     definition: NumericalDefinition,
     options: NumericalOptions,
     model: Model,
@@ -144,7 +146,50 @@ pub struct NumericalBody {
     evidence: NumericalEvidence,
 }
 
+/// A previous checked state. Its checks apply to this definition and tolerance only.
+#[derive(Clone, Debug)]
+pub struct NumericalHistory {
+    /// The generating definition at this stage.
+    pub definition: NumericalDefinition,
+    /// The controls used at this stage.
+    pub options: NumericalOptions,
+    /// The checks and cumulative repair history at this stage.
+    pub evidence: NumericalEvidence,
+}
+
 impl NumericalBody {
+    /// Original generating input, including endpoints removed by explicit sewing.
+    pub fn source_definition(&self) -> &NumericalDefinition {
+        &self.source
+    }
+    /// Earlier checked states in order. These checks do not describe the current body.
+    pub fn history(&self) -> &[NumericalHistory] {
+        &self.history
+    }
+    /// Rechecks an edited definition under explicitly stated current controls.
+    /// Prior checks and repairs remain historical; no old sample certifies this body.
+    pub fn rebuild(
+        &self,
+        definition: NumericalDefinition,
+        options: NumericalOptions,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        guarded(|| {
+            let mut next = build_inner(definition, options, self.evidence.repairs().to_vec(), dec)?;
+            next.inherit(self);
+            Ok(next)
+        })
+    }
+    fn inherit(&mut self, previous: &Self) {
+        self.source = previous.source.clone();
+        self.history = previous.history.clone();
+        self.history.push(NumericalHistory {
+            definition: previous.definition.clone(),
+            options: previous.options.clone(),
+            evidence: previous.evidence.clone(),
+        });
+    }
+
     /// Retained generating data, including the finite parameter trims.
     pub fn definition(&self) -> &NumericalDefinition {
         &self.definition
@@ -185,12 +230,7 @@ impl NumericalBody {
                 .find(|f| f.key == face)
                 .ok_or_else(|| bad("unknown-face", format!("unknown face {face}")))?;
             selected.surface = surface;
-            build_inner(
-                definition,
-                self.options.clone(),
-                self.evidence.repairs().to_vec(),
-                dec,
-            )
+            self.rebuild(definition, self.options.clone(), dec)
         })
     }
 
@@ -229,7 +269,9 @@ impl NumericalBody {
                     distance_upper_mm: movement,
                 });
             }
-            build_inner(definition, self.options.clone(), repairs, dec)
+            let mut next = build_inner(definition, self.options.clone(), repairs, dec)?;
+            next.inherit(self);
+            Ok(next)
         })
     }
 }
@@ -523,6 +565,8 @@ fn build_inner(
     let evidence = NumericalEvidence::new(options.tolerance_mm.clone(), checks, repairs)?;
     dec.check_deadline()?;
     Ok(NumericalBody {
+        source: definition.clone(),
+        history: Vec::new(),
         definition,
         options,
         model,
@@ -762,6 +806,7 @@ pub fn sew(
         }
         definition.vertices = retained;
         let mut body = build_inner(definition, options, repairs, dec)?;
+        body.source = input.clone();
         let mut checks = body.evidence.checks().to_vec();
         for &[keeper, removed] in pairs {
             dec.charge_work(1)?;

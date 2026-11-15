@@ -1581,6 +1581,44 @@ fn import_refusal(error: catallax_import::ImportRefusal) -> Refusal {
     Refusal::new(code, format!("{error:?}")).keeping_any(undecided)
 }
 
+/// Evaluate the opt-in numerical source and its edits atomically. Every stage shares
+/// the active request allowance, or the unchanged 20M default. No exact checkpoint
+/// or bounded-answer conversion is made.
+pub fn evaluate_numerical(
+    recipe: &crate::numerical::NumericalRecipe,
+    dec: &mut Decider,
+) -> Result<crate::numerical::NumericalBuilt, Refusal> {
+    numerical_request(|| crate::numerical::evaluate(recipe, dec))
+}
+
+/// Replay a saved numerical definition. Parsing and all build/edit stages share
+/// one request allowance. Saved geometry or evidence is never trusted as checked.
+pub fn replay_numerical(
+    input: &str,
+    dec: &mut Decider,
+) -> Result<crate::numerical::NumericalBuilt, Refusal> {
+    numerical_request(|| {
+        let recipe = crate::numerical::NumericalRecipe::parse(input, dec)?;
+        crate::numerical::evaluate(&recipe, dec)
+    })
+}
+
+fn numerical_request<T>(run: impl FnOnce() -> Result<T, Refusal>) -> Result<T, Refusal> {
+    if catallax_numbers::operation_budget_active() {
+        return run();
+    }
+    let (result, work) =
+        catallax_numbers::with_operation_budget(catallax_topology::numerical::DEFAULT_WORK, run);
+    if work.exhausted {
+        Err(Refusal::new(
+            "numbers.operation-budget",
+            "numerical edits exhausted their shared work allowance",
+        ))
+    } else {
+        result
+    }
+}
+
 #[cfg(test)]
 mod import_refusal_tests {
     use super::*;

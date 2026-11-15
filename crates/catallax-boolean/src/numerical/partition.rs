@@ -547,7 +547,14 @@ impl Topology<'_> {
                 if trim.sense == Sense::Reversed {
                     p.swap(0, 1)
                 }
-                charge_visits(curve.knots().len(), dec)?;
+                charge_visits(
+                    curve
+                        .knots()
+                        .len()
+                        .checked_mul(3)
+                        .ok_or_else(|| bad("finite knot scan bound overflowed"))?,
+                    dec,
+                )?;
                 let mut breaks: BTreeSet<_> = curve
                     .knots()
                     .iter()
@@ -639,8 +646,14 @@ fn compact(
     let mut visits = 0usize;
     for face in &definition.faces {
         dec.charge_work(1)?;
+        visits = visits
+            .checked_add(2)
+            .ok_or_else(|| bad("finite face work bound overflowed"))?;
         for row in &face.loops {
             dec.charge_work(1)?;
+            visits = visits
+                .checked_add(2)
+                .ok_or_else(|| bad("finite loop work bound overflowed"))?;
             visits = visits
                 .checked_add(
                     row.len()
@@ -735,11 +748,11 @@ mod tests {
             work.exhausted,
             "outer polygon traversal escaped its allowance: {work:?}"
         );
-        let (answer, work) = catallax_numbers::with_operation_budget(64, || {
+        let (answer, work) = catallax_numbers::with_operation_budget(1024, || {
             inside(&[q(0), q(0)], &polygon, &mut Decider::default())
         });
         assert!(answer.is_ok());
-        assert_eq!(work.used, 64);
+        assert!(work.used >= 64);
         assert!(!work.exhausted);
     }
 

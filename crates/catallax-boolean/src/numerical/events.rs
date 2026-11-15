@@ -200,6 +200,7 @@ pub(super) fn collect(
             let mut sorted = bucket.clone();
             sort_by(&mut sorted, order, dec)?;
             if anchors.is_empty() {
+                charge_visits(sorted.len(), dec)?;
                 anchors = sorted.clone()
             }
             for (root, occurrence) in roots.iter_mut().zip(sorted) {

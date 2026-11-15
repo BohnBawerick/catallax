@@ -597,4 +597,31 @@ mod tests {
         });
         assert_eq!(answer.unwrap_err().code, "numbers.operation-budget");
     }
+
+    #[test]
+    fn a_short_coincident_span_is_an_interval_even_below_the_leaf_size() {
+        let mut dec = Decider::default();
+        let mut geom = GeomStore::new();
+        let curve = BSplineCurve::new(
+            1,
+            [0, 0, 1, 1].map(Rational::from_i64).to_vec(),
+            vec![point("0", "0"), point("1/1000000000", "0")],
+            vec![Real::one(); 2],
+            &mut dec,
+        )
+        .unwrap();
+        let curve = geom.add_curve(Curve::BSpline(curve));
+        let line = geom.add_curve(Curve::Line(Line {
+            origin: point("0", "0"),
+            dir: Vector3::new(Real::one(), Real::zero(), Real::zero()),
+        }));
+        for (a, b) in [(curve, line), (line, curve)] {
+            assert_eq!(
+                numerical_spline_line_points(&geom, a, b, &mut dec)
+                    .unwrap_err()
+                    .code,
+                "intersect.spline-line-overlap"
+            );
+        }
+    }
 }

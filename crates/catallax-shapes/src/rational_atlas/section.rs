@@ -17,7 +17,7 @@ pub struct AtlasSection {
 }
 
 impl AtlasSection {
-    /// Finite rational components and their exact odd/even crossing parity.
+    /// Finite rational components and whether their owned sides cross the cutter.
     pub fn curves(&self) -> impl Iterator<Item = (&BSplineCurve, bool)> {
         self.curves
             .iter()
@@ -70,16 +70,12 @@ impl RationalAtlas {
         let start = dec.stats().work;
         let charts: Arc<[RationalPatch]> =
             self.charts().iter().map(|c| c.patch().clone()).collect();
+        let mut has_row = false;
         for chart in charts.iter() {
-            if vanishing_side_row(chart, surface, dec)? {
-                return Err(Refusal::new(
-                    "intersect.atlas-section-row",
-                    "the section contains a whole chart boundary row",
-                ));
-            }
+            has_row |= vanishing_side_row(chart, surface, dec)?;
         }
         if matches!(surface, SectionSurface::Plane(_))
-            && let Some(curves) = axis::section(self, surface, dec)?
+            && let Some(curves) = axis::section(self, surface, has_row, dec)?
         {
             return Ok(AtlasSection {
                 branches: Vec::new(),
@@ -90,6 +86,12 @@ impl RationalAtlas {
                     ..SectionSearch::default()
                 },
             });
+        }
+        if has_row {
+            return Err(Refusal::new(
+                "intersect.atlas-section-row",
+                "the section contains a whole chart boundary row",
+            ));
         }
         let sides = [
             SplineBoundary::UMin,

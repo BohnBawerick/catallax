@@ -406,7 +406,12 @@ fn build_inner(
                     ));
                 }
             }
-            Curve::Circle(circle) => analytic::validate_circle(circle, &edge.parameters, dec)?,
+            Curve::Circle(circle) => analytic::validate_circle(
+                circle,
+                &edge.parameters,
+                edge.vertices[0] == edge.vertices[1],
+                dec,
+            )?,
             _ => {
                 return Err(bad(
                     "unsupported",

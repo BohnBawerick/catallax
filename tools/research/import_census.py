@@ -43,7 +43,7 @@ def public_manifest(report):
         per_import_work_limit verification_byte_work full_definition partial_definition scope complete
         evaluated per_model_csv_sha256 baseline_outcomes outcomes baseline_first_refusals after_fix_causes
         import_categories outcome_transitions prior_outcomes prior_first_causes prior_outcome_transitions
-        recovered_since_prior_model_ids lost_prior_full_model_ids numerical_source_methods
+        recovered_since_prior_model_ids lost_prior_full_model_ids numerical_source_methods topology_repair_full_model_ids topology_repair_count
         recovered_full_model_ids lost_full_model_ids full_import_share_percent build_record_sha256'''.split()
     result = {key: report[key] for key in fields if key in report}
     if 'build_record' in report:
@@ -124,6 +124,8 @@ def observe(binary, path, key, expected_hash, raw, timeout, baseline):
         'source_to_result_max_mm': imported.get('source_to_result_max_mm'),
         'source_change_count': imported.get('source_change_count'),
         'source_admission_method': imported.get('source_admission_method'),
+        'source_topology_repairs': json.dumps(imported.get('source_topology_repairs') or [], separators=(',', ':')),
+        'source_topology_repair_count': len(imported.get('source_topology_repairs') or []),
         'source_optional_exact_work_reserved': imported.get('source_optional_exact_work_reserved'),
         'source_optional_exact_work_used': imported.get('source_optional_exact_work_used'),
         'source_pair_work_used': sum(check.get('exact_attempt_work_used', 0) for check in
@@ -287,6 +289,10 @@ def main():
                                             if row['prior_outcome'] == 'full' and row['outcome'] != 'full'],
               'numerical_source_methods': dict(Counter(row['source_admission_method'] for row in ordered
                                                        if row['source_admission_method'])),
+              'topology_repair_full_model_ids': [row['model_id'] for row in ordered
+                                                  if row['outcome'] == 'full' and row['source_topology_repair_count']],
+              'topology_repair_count': sum(row['source_topology_repair_count'] for row in ordered
+                                            if row['outcome'] in ('full', 'partial')),
               'recovered_full_model_ids': [row['model_id'] for row in ordered
                                            if row['outcome'] == 'full' and row['baseline_outcome'] != 'full'],
               'lost_full_model_ids': [row['model_id'] for row in ordered

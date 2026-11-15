@@ -135,10 +135,16 @@ def main():
         candidate = (args.sources / member).resolve()
         assert candidate.is_relative_to(args.sources.resolve())
         files[key] = candidate
+    subprocess.run(['git', '-C', str(ROOT), 'diff', '--quiet', 'HEAD'], check=True)
+    source_revision = subprocess.check_output(
+        ['git', '-C', str(ROOT), 'rev-parse', 'HEAD'], text=True).strip()
     identity = {
         'schema': 'catallax-numerical-import-census/1', 'seed': SEED,
         'denominator': COUNT, 'binary_sha256': digest(args.binary),
         'collector_sha256': digest(Path(__file__)),
+        'source_revision': source_revision,
+        'observer_sha256': digest(ROOT / 'crates/catallax-import/examples/r8_census.rs'),
+        'rustc': subprocess.check_output(['rustc', '--version'], text=True).strip(),
         'source_hash_manifest_sha256': HASH_MANIFEST,
         'selection_sha256': digest(args.selection),
         'baseline_csv_sha256': digest(args.baseline),

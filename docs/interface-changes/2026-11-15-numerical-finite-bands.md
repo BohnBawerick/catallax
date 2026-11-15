@@ -27,7 +27,12 @@ explicit origin. No existing global source or fit is reparameterized.
 
 Invalid or collapsed bands refuse before calling the tracer, whose empty-domain
 fallback must not turn a finite request into a natural-domain search. The query
-shares the caller's operation allowance and deadline. The standalone allowance
+shares the caller's operation allowance and deadline. Before tracing, the
+converted binary64 control net must preserve distinct axial controls at every
+angular pole. A far-origin band whose distinct retained rows collapse during
+proposal conversion refuses with `intersect.numerical-native-proposal-collapse`.
+The common source origin and native coordinates are not recentered. Successful
+queries record this actual proposal check separately from source/carrier checks. The standalone allowance
 stays 20M. No numerical fit becomes an exact pair, incidence fact or exact result.
 The result does not contain Boolean topology, a complete branch-count proof or
 a whole-curve/body deviation bound.

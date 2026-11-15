@@ -317,6 +317,12 @@ fn check_proposal_rows(
     index: usize,
     dec: &mut Decider,
 ) -> Result<NumericalCheck, Refusal> {
+    if surface.counts()[1] != 2 || surface.degrees()[1] != 1 {
+        return Err(invalid(
+            "a native proposal changed its ruled axial control layout",
+        ));
+    }
+    // Native ruled sources store two axial controls at every angular pole.
     for (pole, rows) in surface.control_points().chunks_exact(2).enumerate() {
         dec.charge_work(1)?;
         if rows[0].coordinates == rows[1].coordinates {

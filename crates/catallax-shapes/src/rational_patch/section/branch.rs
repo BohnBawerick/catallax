@@ -541,7 +541,8 @@ pub(crate) fn search_cover(
                     }
                     // Retained trace jets use this power-form enclosure too.
                     let derivative = equation.partial(solved).eval_ball(
-                        &box_balls(&net.domain, dec.policy().max_precision_bits.min(128)), dec,
+                        &box_balls(&net.domain, dec.policy().max_precision_bits.min(128)),
+                        dec,
                     )?;
                     if derivative.sign().is_none() {
                         continue;

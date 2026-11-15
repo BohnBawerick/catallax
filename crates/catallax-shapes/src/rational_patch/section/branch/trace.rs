@@ -284,6 +284,26 @@ impl SectionTracePiece {
         for coordinate in &span.coordinates {
             homogeneous.push(series(coordinate, &parameters, order, bits, dec)?);
         }
+        // A B-spline denominator is a convex blend of its positive weights.
+        let mut low: Option<Rational> = None;
+        let mut high: Option<Rational> = None;
+        for weight in self.branch.charts[cell.chart].carrier().weights() {
+            let bound = dec.enclose_at(weight, bits)?;
+            low = Some(low.map_or_else(|| bound.lo(), |old| old.min(bound.lo())));
+            high = Some(high.map_or_else(|| bound.hi(), |old| old.max(bound.hi())));
+        }
+        let low = homogeneous[3][0]
+            .lo()
+            .max(low.expect("nonempty spline weights"));
+        let high = homogeneous[3][0]
+            .hi()
+            .min(high.expect("nonempty spline weights"));
+        if low > high {
+            return Err(failure(
+                "section trace denominator left its spline weight bounds",
+            ));
+        }
+        homogeneous[3][0] = Ball::from_rational(&low, bits).hull(&Ball::from_rational(&high, bits));
         let mut result: Vec<[Ball; 3]> = Vec::with_capacity(order + 1);
         for n in 0..=order {
             let mut xyz: [Ball; 3] = std::array::from_fn(|_| zero());

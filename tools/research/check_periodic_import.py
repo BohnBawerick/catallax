@@ -179,10 +179,23 @@ assert stock is not None, "no independent stock probe selected"
 outside = add(centre, [100 * r * x for x in radial])
 assert not inside_outer(outside)
 expected = math.prod(widths) - math.pi * r * r * norm(sub(*centres))
+# Hash equality identifies the supplied input/response association. The supplied
+# revision and executable-to-capture origin remain author-attested, not proved.
+source_pins = {
+    "00001818": "29d669186fc4d6de574f656544e24d0066a2f4ee32accb6679d7de24664e32fa",
+    "00009734": "ac7d5ece45cff986ec2c630618d0dc8fecb1ad1218267f79b9f0d99ead08f833",
+    "00002345": "8b138ab5f82850b19b017f86283b8074a88c7a271c4c4a01576a610bbfa7b40e",
+}
 rows = []
 for key in ["00001818", "00009734", "00002345"]:
     folder = probe / key
     response = json.loads((folder / "response.json").read_text())
+    assert response["source_sha256"] == source_pins[key], (
+        key,
+        "response source hash differs from original pin",
+    )
+    if key == "00002345":
+        assert response["source_sha256"] == sha(source), "response/source file hash mismatch"
     assert response["status"] == "numerical" and response["exact"] is False
     assert response["source_admission"]["method"] == "retained_shared_analytic_boundaries/3"
     assert response["source_admission"]["tolerance_mm"] == "1/100"
@@ -239,6 +252,9 @@ report = dict(
     ),
     real_2345_independent_carrier_volume_and_material_checked=True,
     source_unit_to_mm=1000,
+    response_source_hashes_checked_against_original_pins=True,
+    named_source_response_hash_equals_input_file=True,
+    producer_binding="author_attested_offload_invocation; checker does not establish build or run origin",
 )
 report["checker_sha256"] = sha(Path(__file__))
 report["example_binary_sha256"] = sha(args.example_binary)

@@ -1,0 +1,71 @@
+{
+  "catallax_work_limit_comparable": false,
+  "complete": true,
+  "denominator": 3000,
+  "external_timeout_seconds": 60,
+  "format": "catallax-occt-census/1",
+  "healed_whole_shape_valid": 2934,
+  "healing_policy": "ShapeFix_Shape default Perform; no tolerance overrides",
+  "ocp_versions": [
+    "8.0.1.1"
+  ],
+  "opened": 2993,
+  "outcomes": {
+    "failed": 1,
+    "healed_valid_solid": 2701,
+    "open_shell": 44,
+    "opened_other": 243,
+    "timeout": 11
+  },
+  "protocol_sha256": "8b4a470a00d7afa48481d2cb544e4c7a53797f771ae8cf50717cbb6063918e73",
+  "reader_integer_defaults_observed_profiles": [
+    {
+      "files_observed": 3000,
+      "settings": {
+        "read.maxprecision.mode": 0,
+        "read.precision.mode": 0,
+        "read.stdsameparameter.mode": 0,
+        "read.step.nonmanifold": 0
+      }
+    }
+  ],
+  "reader_integer_defaults_unobserved_files": 0,
+  "reader_policy": "fresh-process STEPControl_Reader default transfer; no setting overrides",
+  "reader_real_defaults_observed_profiles": [
+    {
+      "files_observed": 3000,
+      "settings": {
+        "read.maxprecision.val": 1.0,
+        "read.precision.val": 0.001
+      }
+    }
+  ],
+  "reader_real_defaults_unobserved_files": 0,
+  "rows_sha256": "815a1bd4320a2a246cc13650cfc2a136fd7f20d67a8ec0b1c5420eb93739eb9b",
+  "scope": "Standard transferred results after default ShapeFix; not complete source-item coverage or a common tolerance bound.",
+  "seed": 20261111,
+  "selection_sha256": "1b11410b220d5e8a3156794f6c8f9cc09091a43dcac9af801215fb3a38d571a5",
+  "shape_fix_defaults_observed_profiles": [
+    {
+      "files_observed": 2992,
+      "settings": {
+        "max_tolerance": 1e-07,
+        "min_tolerance": 1e-07,
+        "precision": 1e-07
+      }
+    }
+  ],
+  "shape_fix_defaults_unobserved_files": 8,
+  "source_hash_manifest_sha256": "3323e104c377023846073a05d7e164ca1082dc3dcf32cc046eee897401454cc7",
+  "transferred_whole_shape_valid": 2941,
+  "validity_transitions": {
+    "False -> False": 49,
+    "False -> None": 1,
+    "False -> True": 1,
+    "None -> None": 8,
+    "True -> False": 5,
+    "True -> None": 3,
+    "True -> True": 2933
+  },
+  "workers": 2
+}

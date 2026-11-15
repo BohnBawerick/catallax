@@ -76,17 +76,27 @@ actual seam-repair admissions from other reader changes.
 
 ## Executed qualification
 
-[qualification.json](qualification.json) retains the **initial named-part
-capture, before the continuous-clearance and mandatory shared-seam guards**. It
-binds that capture to kernel
-producer `7e5b506f3d9448ff664fe4473c921eadc268bca5`, example executable hash,
-independent checker hash and actual STEP bytes. The earlier observed refusal is
-bound separately to `dc0d7a4dab2c1e68feb52cb729800823ab4d97d3`. The named file now
-imports as one numerical body with 7 faces, 15 edges and 10 vertices. Import uses
-1,189,708 work; source STEP, pose rebuild and edited STEP use 219,184, 125,385 and
-219,148 respectively, totalling 1,753,425 under the unchanged 20M allowance.
+[qualification.json](qualification.json) records the current capture, its
+**author-attested** association with kernel producer `51e9c0ffa13efcbcfb5c004b152e4c6014c6b5c1`, example executable hash,
+independent checker hash and actual STEP bytes, including the authored bore hash.
+The revision and executable-to-capture association come from the recorded
+offload invocation and are author-attested for both the current and initial
+named captures. The checker independently validates the supplied STEP artifacts,
+compares response source hashes to fixed original pins, checks the named real
+source file, and hashes the supplied executable. It does not independently
+establish that this executable was built from the supplied revision or produced
+those captures. Its own text hash identifies a checker version independently
+of the attested kernel revision. This named-part provenance is distinct from
+the census collector's actual Cargo-artifact build binding.
+The earlier observed refusal is bound separately to
+`dc0d7a4dab2c1e68feb52cb729800823ab4d97d3`. The named file imports as one numerical
+body with 7 faces, 15 edges and 10 vertices. Import uses 1,190,064 work; source
+STEP, pose rebuild and edited STEP use 219,540, 125,741 and 219,504 respectively,
+totalling 1,754,849 under the unchanged 20M allowance. The
+[initial named-part capture](initial-qualification.json) is retained with its own
+producer, before the continuous-clearance and mandatory shared-seam guards.
 
-The work-PC run passed 60 scoped release controls and 12 evidence controls. Both
+The work-PC run passed 63 scoped release controls and 12 evidence controls. Both
 actual exported files pass raw OCCT construction and whole-solid validity,
 without healing, sewing or SameParameter. A source-carrier calculation accounts
 for the source's metre units, checks the expected stock-minus-bore volume, and
@@ -104,12 +114,13 @@ captures with:
 
 ```sh
 python tools/research/check_periodic_import.py \
-  --source-revision 7e5b506f3d9448ff664fe4473c921eadc268bca5 \
+  --source-revision 51e9c0ffa13efcbcfb5c004b152e4c6014c6b5c1 \
   --capture CAPTURE --imports IMPORTS --real-source 00002345.step \
   --example-binary numerical_import --out qualification.json
 ```
 
-The initial 3,000-file capture remains private because the stricter admission
-guards require a fresh census. The complete matching rerun and later native
-qualification belong in the subsequent census publication. No population
-recovery count is inferred from this single qualified part.
+The [complete matching census](../../research/step-census.md) imports 400 of the
+same 3,000 sources fully (13.33%), retaining all 378 prior full imports and adding
+22 actual files with 44 recorded seams. That population count comes from all
+3,000 terminal observations, separately from this named-part edit/STEP check.
+The earlier prototype census remains private and contributes no current claim.

@@ -5,7 +5,7 @@
     "raw_valid": true,
     "reference_boolean_cut_valid": true,
     "reference_cut_volume_mm3": "8-pi/2",
-    "source_step_sha256": "2d7226194398d2dc517d0ca0e2d7746a1ac2d4c3ec07915a90e4296f96ed9765",
+    "source_step_sha256": "7250070f34f589403b29dce710837582f06eee91dbdf06c618b52dfb9c24b45b",
     "volume_mm3": "16-pi"
   },
   "before": {
@@ -24,18 +24,19 @@
     "work_limit": 20000000,
     "work_used": 1045313
   },
-  "capture_stage": "initial seam implementation, before continuous circle clearance and mandatory shared-seam periodic admission; later capture belongs in the complete matching census publication",
-  "checker_sha256": "8697ca4aafd2cee2d5d2b9042e4596b04af19e1223023b2ee9d29c880aa21455",
-  "example_binary_sha256": "06dc08ba97544644a64498a85f24ea1a9fc2a058c41118584d425432d9715d67",
+  "checker_sha256": "e1db9b850d3c1860d946b5b5218c1c9be38c6c0cc9e18c6570839c91b054f338",
+  "example_binary_sha256": "40a277e035e03df9e33c06d42a9becaa87debe2abf5c9a55cc9827a0ad682191",
   "format": "catallax-periodic-numerical-workflow/1",
   "healing": false,
+  "named_source_response_hash_equals_input_file": true,
   "ocp_version": "8.0.1.1",
+  "producer_binding": "author_attested_offload_invocation; checker does not establish build or run origin",
   "raw_builder_sha256": "5633cdcf16efc13f328ed85b33a738f6a9296e2afb925f4c64bbed7c91025376",
   "real_2345_independent_carrier_volume_and_material_checked": true,
   "real_parts": [
     {
       "edited_step_sha256": "1645c1deb9fca73089748e7496d37d7c345781a21e4c684ab6e5b460927af7be",
-      "import_work": 1157201,
+      "import_work": 1157225,
       "material_probes_checked": false,
       "model_id": "00001818",
       "pose_volume_and_centroid_checked": true,
@@ -43,9 +44,9 @@
       "source_sha256": "29d669186fc4d6de574f656544e24d0066a2f4ee32accb6679d7de24664e32fa",
       "source_step_sha256": "36870d0f479acaab06aed6c945966ffb07e5a3d725cadbe7cfe4e6d1f7710655",
       "stages": {
-        "edited_export": 190682,
-        "pose_rebuild": 99903,
-        "source_export": 190955
+        "edited_export": 190706,
+        "pose_rebuild": 99927,
+        "source_export": 190979
       },
       "topology": {
         "edges": 12,
@@ -57,11 +58,11 @@
       },
       "topology_repairs": [],
       "work_limit": 20000000,
-      "work_used": 1638741
+      "work_used": 1638837
     },
     {
       "edited_step_sha256": "98fcc19f8cd806ab3c9d49e5e4dd83482b8e91a323f6e880415e1a131bee4ced",
-      "import_work": 1159085,
+      "import_work": 1159117,
       "material_probes_checked": false,
       "model_id": "00009734",
       "pose_volume_and_centroid_checked": true,
@@ -69,9 +70,9 @@
       "source_sha256": "ac7d5ece45cff986ec2c630618d0dc8fecb1ad1218267f79b9f0d99ead08f833",
       "source_step_sha256": "f9df22cc64b67115f3325e51bd9431f2280764cd7e08e0a960773c8adc58ba95",
       "stages": {
-        "edited_export": 207786,
-        "pose_rebuild": 98963,
-        "source_export": 207808
+        "edited_export": 207818,
+        "pose_rebuild": 98995,
+        "source_export": 207840
       },
       "topology": {
         "edges": 12,
@@ -83,21 +84,21 @@
       },
       "topology_repairs": [],
       "work_limit": 20000000,
-      "work_used": 1673642
+      "work_used": 1673770
     },
     {
-      "edited_step_sha256": "d8f87dc50398495a4d38591a134500974828d3fb45530737588ab1a76a3fc48f",
-      "import_work": 1189708,
+      "edited_step_sha256": "74df72bfe647e0be6d001fe1f886d38f46cdffa63ab1113a7a268e9a00c5c16f",
+      "import_work": 1190064,
       "material_probes_checked": true,
       "model_id": "00002345",
       "pose_volume_and_centroid_checked": true,
       "raw_before_and_pose_valid": true,
       "source_sha256": "8b138ab5f82850b19b017f86283b8074a88c7a271c4c4a01576a610bbfa7b40e",
-      "source_step_sha256": "b290afd332e4e361d3a4be4bc287b254d27891f8008340d4a8c30de2cf23fd04",
+      "source_step_sha256": "8d947d029b3edc662d372f6206775ea0eae5bbd6d88f249d6093a5a65d446323",
       "stages": {
-        "edited_export": 219148,
-        "pose_rebuild": 125385,
-        "source_export": 219184
+        "edited_export": 219504,
+        "pose_rebuild": 125741,
+        "source_export": 219540
       },
       "topology": {
         "edges": 15,
@@ -124,16 +125,21 @@
         }
       ],
       "work_limit": 20000000,
-      "work_used": 1753425
+      "work_used": 1754849
     }
   ],
+  "response_source_hashes_checked_against_original_pins": true,
   "same_parameter": false,
-  "source_revision": "7e5b506f3d9448ff664fe4473c921eadc268bca5",
+  "source_revision": "51e9c0ffa13efcbcfb5c004b152e4c6014c6b5c1",
   "source_unit_to_mm": 1000,
   "validation": {
     "all_target_clippy_packages": 18,
+    "continuous_circle_hole_clearance_checks": {
+      "edited_body": 2,
+      "source_body": 2
+    },
     "evidence_controls_passed": 12,
-    "full_census": "separate capture; no aggregate gain claimed here",
-    "scoped_release_controls_passed": 60
+    "full_census": "complete matching capture in docs/research/step-census-periodic",
+    "scoped_release_controls_passed": 63
   }
 }

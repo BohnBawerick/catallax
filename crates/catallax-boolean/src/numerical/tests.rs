@@ -73,7 +73,14 @@ fn run(upper: bool, sense: Sense, offset: &str, skew: bool) -> NumericalFacePart
             face,
             "cone-test",
             &tool(offset, skew),
-            [q(-49), q(49)],
+            if offset == "10" {
+                [q(-49), q(49)]
+            } else {
+                [
+                    Rational::from_ratio(-99, 2).unwrap(),
+                    Rational::from_ratio(99, 2).unwrap(),
+                ]
+            },
             NumericalOptions {
                 tolerance_mm: Rational::from_ratio(1, 10_000_000).unwrap(),
             },

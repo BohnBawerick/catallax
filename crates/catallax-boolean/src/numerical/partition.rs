@@ -441,7 +441,18 @@ impl Topology<'_> {
                     .copied()
                     .collect();
                 if candidates.is_empty() {
-                    return Err(bad("finite retained boundary is open"));
+                    return Err(bad(format!(
+                        "finite retained boundary is open at vertex {end}, uv={:?}; uses={:?}",
+                        self.uv[end].each_ref().map(Rational::to_f64_nearest),
+                        uses.iter()
+                            .map(|t| (
+                                t.edge,
+                                self.vertex_ends(t),
+                                t.uv.each_ref()
+                                    .map(|p| p.each_ref().map(Rational::to_f64_nearest))
+                            ))
+                            .collect::<Vec<_>>()
+                    )));
                 }
                 current = if candidates.len() == 1 {
                     candidates[0]

@@ -5,6 +5,7 @@
     "raw_valid": true,
     "reference_boolean_cut_valid": true,
     "reference_cut_volume_mm3": "8-pi/2",
+    "source_step_sha256": "2d7226194398d2dc517d0ca0e2d7746a1ac2d4c3ec07915a90e4296f96ed9765",
     "volume_mm3": "16-pi"
   },
   "before": {
@@ -23,7 +24,8 @@
     "work_limit": 20000000,
     "work_used": 1045313
   },
-  "checker_sha256": "14ad82e379f26974102ae205721ad6f0d5abcf7cb20e96143a259f7f1f68baf0",
+  "capture_stage": "initial seam implementation, before continuous circle clearance and mandatory shared-seam periodic admission; later capture belongs in the complete matching census publication",
+  "checker_sha256": "8697ca4aafd2cee2d5d2b9042e4596b04af19e1223023b2ee9d29c880aa21455",
   "example_binary_sha256": "06dc08ba97544644a64498a85f24ea1a9fc2a058c41118584d425432d9715d67",
   "format": "catallax-periodic-numerical-workflow/1",
   "healing": false,

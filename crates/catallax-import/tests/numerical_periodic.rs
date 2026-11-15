@@ -26,8 +26,11 @@ fn refs(line: &str) -> Vec<u64> {
         .collect()
 }
 fn source(delta: &str) -> Vec<u8> {
+    source_definition(delta, fixture::bore())
+}
+fn source_definition(delta: &str, definition: n::NumericalDefinition) -> Vec<u8> {
     let body = n::build(
-        fixture::bore(),
+        definition,
         n::NumericalOptions::default(),
         &mut Decider::default(),
     )
@@ -177,4 +180,53 @@ fn separated_rim_anchors_do_not_trigger_nearest_seam_guessing() {
         .unwrap();
     let changed = text.replace(old, &format!("#{point}=CARTESIAN_POINT('',(0.,1.,1.));"));
     assert!(import(changed.as_bytes()).is_err());
+}
+
+#[test]
+fn a_circular_wall_crossing_stock_between_samples_is_refused() {
+    let bytes = source("-1.99999999");
+    let original = std::str::from_utf8(&bytes).unwrap();
+    let line = |id| {
+        original
+            .lines()
+            .find(|s| s.starts_with(&format!("#{id}=")))
+            .unwrap()
+    };
+    let mut changed = original.to_owned();
+    for carrier in original
+        .lines()
+        .filter(|s| s.contains("=CIRCLE(") || s.contains("=CYLINDRICAL_SURFACE("))
+    {
+        let placement = line(refs(carrier)[0]);
+        let reference = refs(placement)[2];
+        changed = changed.replace(
+            line(reference),
+            &format!("#{reference}=DIRECTION('',(0.9230769230769231,0.3846153846153846,0.));"),
+        );
+        let prefix = carrier.rsplit_once(',').unwrap().0;
+        changed = changed.replace(carrier, &format!("{prefix},2.1);"));
+    }
+    for (name, height) in [("v8", "0."), ("v9", "1.")] {
+        let vertex = original
+            .lines()
+            .find(|s| s.contains(&format!("=VERTEX_POINT('{name}',")))
+            .unwrap();
+        let point = refs(vertex)[0];
+        changed = changed.replace(
+            line(point),
+            &format!(
+                "#{point}=CARTESIAN_POINT('',(1.9384615384615385,0.8076923076923077,{height}));"
+            ),
+        );
+    }
+    // All eight sampled rim points lie inside the square, but the real circle
+    // has radius 2.1 and crosses its sides at unsampled angular extrema.
+    match import(changed.as_bytes()) {
+        Err(numerical::ImportError::Numerical(error)) => {
+            assert_eq!(error.code, "numerical.invalid-trim", "{error:?}");
+            assert!(error.detail.contains("continuous clearance"), "{error:?}");
+        }
+        Err(error) => panic!("unexpected source refusal: {error:?}"),
+        Ok(_) => panic!("crossing circle was admitted"),
+    }
 }

@@ -505,6 +505,11 @@ pub(super) fn build(
             }
         }
     }
+    // Validate the actual rounded chart before classifying a repeated edge as
+    // a seam. Admission requires a complete periodic cell for such an edge;
+    // use count alone is not a geometric seam condition.
+    let admitted = n::build(d, body.options().clone(), w.dec)?;
+    let d = admitted.definition();
     let mut parameter = ParameterRounding {
         error: Rational::zero(),
     };
@@ -562,7 +567,6 @@ pub(super) fn build(
     // The canonical projected vertex walk checks finite trim topology. Actual
     // independently rounded pcurves get their own distance enclosures, including
     // endpoints; no rounded parameter gap is silently snapped or called exact.
-    let admitted = n::build(d, body.options().clone(), w.dec)?;
     let mut checks = admitted.evidence().checks().to_vec();
     checks.extend(parameter_checks);
     let emitted = NumericalEvidence::new(body.options().tolerance_mm.clone(), checks, Vec::new())?;

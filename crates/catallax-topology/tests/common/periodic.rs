@@ -197,3 +197,29 @@ pub fn bore() -> NumericalDefinition {
     });
     d
 }
+
+/// Change only the authored bore radius, retaining its axis-aligned seam.
+#[allow(dead_code)]
+pub fn bore_with_radius(radius: &str) -> NumericalDefinition {
+    let r = q(radius);
+    let mut definition = bore();
+    for vertex in &mut definition.vertices[8..10] {
+        vertex.position[0] = r.clone();
+    }
+    for edge in &mut definition.edges {
+        match &mut edge.curve {
+            Curve::Circle(circle) => circle.radius_sq = (&r * &r).into(),
+            Curve::Line(line) if edge.key == "cylinder-u-seam" => line.origin.x = r.clone().into(),
+            _ => {}
+        }
+    }
+    for face in &mut definition.faces {
+        if let Surface::Cylinder(cylinder) = &mut face.surface {
+            cylinder.radius_sq = (&r * &r).into();
+        }
+    }
+    for face in &mut definition.faces[0..2] {
+        face.loops[1][0].uv = [[r.clone(), q("0")], [r.clone(), q("0")]];
+    }
+    definition
+}

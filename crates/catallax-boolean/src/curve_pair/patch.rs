@@ -24,12 +24,20 @@ pub(crate) enum FinitePlanePoints {
 }
 
 /// Complete finite point sets for clipping, without two-sided contact labels.
-pub(crate) fn finite_spline_plane_points(
+pub(crate) fn finite_plane_points(
     model: &Model,
     curve: CurveId,
     surface: SurfaceId,
     dec: &mut Decider,
 ) -> Result<Option<FinitePlanePoints>, Refusal> {
+    if let (Curve::PatchPair(branch), Surface::Plane(plane)) =
+        (model.geom().curve(curve), model.geom().surface(surface))
+    {
+        return Ok(Some(match branch.plane_hits(plane, dec)? {
+            SectionHits::Contained => FinitePlanePoints::Contained,
+            SectionHits::Points(points) => FinitePlanePoints::Points(points),
+        }));
+    }
     let (Curve::BSpline(spline), Surface::Plane(plane)) =
         (model.geom().curve(curve), model.geom().surface(surface))
     else {

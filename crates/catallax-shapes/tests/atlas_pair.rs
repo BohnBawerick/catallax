@@ -1,11 +1,70 @@
 //! Exact chart and periodic ownership through the existing cell-pair engine.
 
-use catallax_numbers::{Decider, Rational, Real, Refusal, with_operation_budget};
-use catallax_shapes::{BSplineSurface, Point3, RationalAtlas};
+use catallax_numbers::{
+    Decider, Outcome, Rational, Real, Refusal, ZeroProof, with_operation_budget,
+};
+use catallax_shapes::{BSplineSurface, Plane, Point3, RationalAtlas, SectionHits, Vector3};
 use std::num::NonZeroUsize;
 
 fn q(n: i64, d: i64) -> Real {
     Real::from_rational(Rational::from_ratio(n, d).unwrap())
+}
+
+#[test]
+fn retained_pair_components_keep_complete_plane_points_and_near_contacts() {
+    for reversed in [false, true] {
+        let ((), work) = with_operation_budget(20_000_000, || {
+            let mut dec = Decider::default();
+            let cylinder = cylinder(true, false, false, &mut dec).unwrap();
+            let support = plane(&mut dec);
+            let meeting = if reversed {
+                support.patch_meeting_with_cached_spans(&cylinder, &mut dec)
+            } else {
+                cylinder.patch_meeting_with_cached_spans(&support, &mut dec)
+            }
+            .unwrap();
+            assert_eq!(meeting.branches().len(), 1);
+            let curve = meeting.curve_branch(0, &mut dec).unwrap();
+            for (coordinate, expected) in [
+                (q(0, 1), 2),
+                (q(1, 2), 2),
+                (q(1, 1), 1),
+                (q(999_999, 1_000_000), 2),
+                (q(1_000_001, 1_000_000), 0),
+            ] {
+                let cut = Plane::new(
+                    Point3::new(coordinate, Real::zero(), Real::zero()),
+                    Vector3::new(Real::one(), Real::zero(), Real::zero()),
+                    Vector3::new(Real::zero(), Real::one(), Real::zero()),
+                    &mut dec,
+                )
+                .unwrap();
+                let SectionHits::Points(points) = curve.plane_hits(&cut, &mut dec).unwrap() else {
+                    panic!("the circular component cannot lie in a vertical plane")
+                };
+                assert_eq!(points.len(), expected);
+                for point in points {
+                    assert!(curve.contains(&point, &mut dec).unwrap());
+                    assert!(
+                        matches!(dec.sign(&point.minus(&cut.origin).dot(&cut.normal)),
+                        Outcome::ProvenCoincident(proof) if proof.proof != ZeroProof::SeparationBound)
+                    );
+                }
+            }
+            let cut = Plane::new(
+                Point3::new(Real::zero(), Real::zero(), q(1, 5)),
+                Vector3::new(Real::zero(), Real::zero(), Real::one()),
+                Vector3::new(Real::one(), Real::zero(), Real::zero()),
+                &mut dec,
+            )
+            .unwrap();
+            assert!(matches!(
+                curve.plane_hits(&cut, &mut dec).unwrap(),
+                SectionHits::Contained
+            ));
+        });
+        assert!(!work.exhausted, "{reversed}: {} work units", work.used);
+    }
 }
 
 fn cylinder(

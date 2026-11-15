@@ -16,6 +16,7 @@ use crate::{
 
 mod analytic;
 mod curved;
+mod handover;
 mod native;
 pub use native::{NumericalNativeTrim, build_with_native_trims};
 mod source;
@@ -153,7 +154,7 @@ impl Default for NumericalOptions {
 /// use catallax_topology::numerical::NumericalBody;
 /// fn promote(body: NumericalBody) -> Answer<NumericalBody> { body.into() }
 /// ```
-#[derive(Clone, Debug, catallax_numbers::Transfer)]
+#[derive(Clone, Debug)]
 pub struct NumericalBody {
     source: NumericalDefinition,
     source_native_trims: Vec<NumericalNativeTrim>,
@@ -167,7 +168,7 @@ pub struct NumericalBody {
 }
 
 /// A previous checked state. Its checks apply to this definition and tolerance only.
-#[derive(Clone, Debug, catallax_numbers::Transfer)]
+#[derive(Clone, Debug)]
 pub struct NumericalHistory {
     /// The generating definition at this stage.
     pub definition: NumericalDefinition,
@@ -571,6 +572,13 @@ fn build_inner(
                 dec,
             )?;
         }
+        checks.extend(native::join_samples(
+            face_index,
+            face,
+            &definition.edges,
+            &native,
+            dec,
+        )?);
         let sampled = native.has_face(face_index) || analytic::projected(face, &definition.edges);
         checks.push(NumericalCheck::Passed {
             name: if sampled {

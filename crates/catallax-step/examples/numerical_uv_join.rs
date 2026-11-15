@@ -10,7 +10,8 @@ use std::{path::Path, process::ExitCode};
 fn q(s: &str) -> Rational {
     Rational::parse(s).unwrap()
 }
-fn run(out: &Path, control: &str) -> Result<serde_json::Value, String> {
+/// Builds a native join control and writes its numerical artifacts.
+pub fn run(out: &Path, control: &str) -> Result<serde_json::Value, String> {
     let tolerance = q("1/100");
     let mut dec = Decider::default();
     let mut model = Model::new();

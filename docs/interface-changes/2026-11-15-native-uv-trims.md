@@ -12,6 +12,8 @@ It merges the 3D/UV knot boundaries clipped to the finite edge interval and chec
 Each actual UV sample must lie in the retained patch domain without clamping.
 The checks record 3D-edge/surface distance and physical endpoint displacement from the declared closed-loop endpoints, in millimetres.
 They do not treat parameter-coordinate differences as millimetres.
+Every join on a face with native bindings compares the two actual pcurve endpoints in physical space, including the closing join.
+These checks run on the source and again on the actual decimal definitions, before declared loop endpoints can hide a gap.
 The sampled loop uses declared endpoints and native interior locations; simplicity and hole placement remain qualified as sampled.
 Existing analytic periodic-seam and continuous circular-hole clearance checks still run before native loop sampling.
 Continuous containment of general native curves, separation and whole-curve deviation remain unresolved.
@@ -22,6 +24,8 @@ Rebuild, surface replacement and vertex repair recheck them and preserve earlier
 `rebuild_with_native_trims` explicitly replaces the current bindings when an edit changes their addresses or definitions.
 The generating source and previous checked body remain unchanged on refusal.
 The body handover codec retains original, current and historical bindings and their native curve graphs.
+Numerical body and history records start with separate layout tags, `CXNUMB02` and `CXNUMH02`.
+Earlier positional payloads refuse with `handover.version-mismatch`; they are never interpreted as the new layout.
 
 The numerical STEP writer emits retained rational 2D B-splines through PCURVE on rational patch and plane faces.
 Analytic exchange keeps its existing empty-sidecar path; a native binding on a currently unsupported analytic carrier refuses instead of dropping the binding.

@@ -5,6 +5,9 @@ use catallax_numbers::Real;
 use catallax_shapes::BSplineCurve;
 use std::collections::BTreeMap;
 
+mod joins;
+pub(super) use joins::samples as join_samples;
+
 /// A native parameter curve bound to one stable finite coedge use.
 #[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct NumericalNativeTrim {

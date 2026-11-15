@@ -197,3 +197,20 @@ fn duplicate_stale_reversed_and_partial_native_bindings_refuse() {
         );
     }
 }
+
+#[test]
+fn legacy_positional_native_body_and_history_payloads_refuse() {
+    let mut dec = Decider::default();
+    let body = catallax_numbers::transfer::decode::<numerical::NumericalBody>(
+        include_bytes!("../fixtures/numerical-native-body-v1.handover"),
+        &mut dec,
+    )
+    .unwrap_err();
+    assert_eq!(body.code, "handover.version-mismatch");
+    let history = catallax_numbers::transfer::decode::<numerical::NumericalHistory>(
+        include_bytes!("../fixtures/numerical-native-history-v1.handover"),
+        &mut dec,
+    )
+    .unwrap_err();
+    assert_eq!(history.code, "handover.version-mismatch");
+}

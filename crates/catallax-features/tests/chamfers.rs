@@ -73,6 +73,87 @@ fn unequal_setbacks_follow_reference_order_and_have_exact_volume() {
 }
 
 #[test]
+fn three_incident_bevels_sew_a_named_triangle_with_unequal_setback_controls() {
+    let fixture: Value =
+        serde_json::from_str(include_str!("fixtures/chamfer-three-edge.json")).unwrap();
+    let mut previous = None;
+    for (first, second, expected) in [
+        ("1", "1", "2837/3"),
+        ("1", "2", "932"),
+        ("5/4", "3/4", "15145/16"),
+    ] {
+        let mut input = fixture.clone();
+        input["steps"][1]["distance"] = json!(first);
+        input["steps"][1]["other_distance"] = json!(second);
+        let recipe = Recipe::parse(&input.to_string()).unwrap();
+        let mut built = build(&recipe);
+        assert_eq!(built.chamfers.len(), 3);
+        let faces = built.model.faces_of_body(built.result);
+        assert_eq!(faces.len(), 10);
+        let corners: Vec<_> = faces
+            .iter()
+            .filter(|face| {
+                built
+                    .model
+                    .face_origins(**face)
+                    .iter()
+                    .any(|origin| matches!(origin.role, Role::Corner { .. }))
+            })
+            .collect();
+        assert_eq!(corners.len(), 1);
+        assert!(matches!(
+            built
+                .model
+                .geom()
+                .surface(built.model.face(*corners[0]).surface),
+            Surface::Plane(_)
+        ));
+        let volume = catallax_measure::volume(
+            &built.model,
+            built.result,
+            &Default::default(),
+            &mut decider(),
+        )
+        .unwrap()
+        .value;
+        let expected = Rational::parse(expected).unwrap();
+        assert_eq!(volume.lo, expected);
+        assert_eq!(volume.hi, expected);
+        let mut names: Vec<_> = faces
+            .iter()
+            .map(|face| built.model.face_origins(*face).to_vec())
+            .collect();
+        names.sort();
+        if let Some(previous) = previous {
+            assert_eq!(names, previous);
+        }
+        previous = Some(names);
+        for (p, expected) in [
+            (
+                ["1/4", "1/4", "1/4"],
+                catallax_boolean::Containment::Outside,
+            ),
+            (["2", "2", "2"], catallax_boolean::Containment::Inside),
+        ] {
+            assert!(
+                matches!(catallax_boolean::classify_point(&mut built.model, built.result, &point(p), &mut decider()), Outcome::Proven(actual) if actual == expected)
+            );
+        }
+        let mut bytes = Vec::new();
+        let report = catallax_step::write_step(
+            &built.model,
+            &[built.result],
+            &Default::default(),
+            &mut decider(),
+            &mut bytes,
+        )
+        .unwrap();
+        assert_eq!(report.value.faces, 10);
+        assert!(bytes.starts_with(b"ISO-10303-21;"));
+    }
+}
+
+#[test]
 fn p2_builds_cones_and_setback_edits_keep_all_origins() {
     let mut recipe = Recipe::parse(include_str!("../../../parts/P2-collar.json")).unwrap();
     let mut previous = None;

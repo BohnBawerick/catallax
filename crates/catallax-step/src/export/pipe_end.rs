@@ -33,8 +33,8 @@ impl Parametric for EndMap<'_> {
         let bits = t.precision();
         let ball = |q: &Rational| Ball::from_rational(q, bits);
         let width = &self.range[1] - &self.range[0];
-        let speed = (&self.source.to - &self.source.from) / &width;
-        let parameter = &ball(&self.source.from) + &((t - &ball(&self.range[0])) * &ball(&speed));
+        let speed = (&self.source.to - &self.source.from) / width;
+        let parameter = &ball(&self.source.from) + &((t - &ball(&self.range[0])) * ball(&speed));
         let native = self
             .piece
             .section_parameters(&parameter, N - 1, dec)?
@@ -149,7 +149,7 @@ impl Exporter<'_> {
             )
         })?;
         let written = self.written_envelope(surface)?;
-        self.deviation(&mapped.error * &metric + &written.error);
+        self.deviation(&(&mapped.error * &metric) + &written.error);
         let points = mapped
             .points
             .iter()

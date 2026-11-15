@@ -240,7 +240,7 @@ impl Exporter<'_> {
         ))
     }
 
-    fn positive(&mut self, value: &Real) -> Result<bool, Refusal> {
+    pub(super) fn positive(&mut self, value: &Real) -> Result<bool, Refusal> {
         match self.dec.sign(value) {
             Outcome::Proven(StrictSign::Positive) => Ok(true),
             Outcome::Proven(StrictSign::Negative) => Ok(false),

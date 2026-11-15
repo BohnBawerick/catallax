@@ -2,6 +2,9 @@
 
 use super::*;
 
+mod germ;
+pub(super) use germ::inward_sign;
+
 fn divide(poly: &RealPoly, axis: usize, bound: &Rational) -> RealPoly {
     let mut terms = Vec::new();
     for (monomial, coefficient) in poly.terms() {

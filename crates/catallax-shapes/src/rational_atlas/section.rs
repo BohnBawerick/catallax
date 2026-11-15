@@ -17,7 +17,7 @@ pub struct AtlasSection {
 }
 
 impl AtlasSection {
-    /// Finite rational components and their exact odd/even crossing parity.
+    /// Finite rational components and whether their owned sides cross the cutter.
     pub fn curves(&self) -> impl Iterator<Item = (&BSplineCurve, bool)> {
         self.curves
             .iter()

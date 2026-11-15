@@ -13,6 +13,8 @@ struct Piece {
     curve: BSplineCurve,
     ends: [usize; 2],
     crossing: bool,
+    inward: Option<Sign>,
+    germs: usize,
 }
 
 fn unavailable<T>(rows: bool, detail: &str) -> Result<Option<T>, Refusal> {
@@ -232,6 +234,7 @@ pub(super) fn section(
         }
         for (curve, crossing) in curves {
             let mut nodes = [0; 2];
+            let mut parameters = std::array::from_fn(|_| std::array::from_fn(|_| Real::zero()));
             for (side, bound) in curve.domain().into_iter().enumerate() {
                 let point = curve.point_at(&Real::from_rational(bound.clone()), dec)?;
                 let Some(at) = chart.patch().parameters_at(&point, dec)? else {
@@ -240,17 +243,38 @@ pub(super) fn section(
                         "a boundary-row endpoint has no proved source parameter owner",
                     );
                 };
+                parameters[side] = at.clone();
                 nodes[side] = endpoint(atlas, chart, at, &mut ends, dec)?;
                 if !join_rows && !ends[nodes[side]].physical {
                     return Ok(None);
                 }
             }
+            let inward = if join_rows {
+                section.boundary_inward_sign(&parameters, dec)?
+            } else {
+                None
+            };
             let mut duplicate = false;
-            for old in &pieces {
+            for old in &mut pieces {
                 let forward = old.ends == nodes;
                 let reverse = old.ends == [nodes[1], nodes[0]];
                 if (forward || reverse) && same_piece(&old.curve, curve, forward, dec)? {
-                    if old.crossing != crossing {
+                    if join_rows {
+                        let (Some(first), Some(second)) = (old.inward, inward) else {
+                            return unavailable(
+                                join_rows,
+                                "duplicate seam rows need complete inward-side signs",
+                            );
+                        };
+                        if old.germs != 1 {
+                            return unavailable(
+                                join_rows,
+                                "a seam row has more than two inward germs",
+                            );
+                        }
+                        old.crossing = first != second;
+                        old.germs += 1;
+                    } else if old.crossing != crossing {
                         return unavailable(
                             join_rows,
                             "duplicate boundary-row copies disagree on crossing parity",
@@ -265,6 +289,8 @@ pub(super) fn section(
                     curve: curve.clone(),
                     ends: nodes,
                     crossing,
+                    inward,
+                    germs: 1,
                 });
             }
         }

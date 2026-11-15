@@ -29,6 +29,14 @@ pub struct RationalPatchSection {
 }
 
 impl RationalPatchSection {
+    pub(crate) fn boundary_inward_sign(
+        &self,
+        ends: &[[Real; 2]; 2],
+        dec: &mut Decider,
+    ) -> Result<Option<Sign>, Refusal> {
+        rows::inward_sign(&self.patch, &self.surface, ends, dec)
+    }
+
     /// The unchanged generating patch.
     pub fn patch(&self) -> &RationalPatch {
         &self.patch

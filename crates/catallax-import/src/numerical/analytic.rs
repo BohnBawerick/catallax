@@ -5,7 +5,7 @@ use catallax_numbers::Ball;
 use catallax_shapes::{Circle, Cylinder};
 
 const BITS: u32 = 128;
-const EXACT_PAIR_WORK: u64 = 50_000;
+const OPTIONAL_EXACT_WORK: u64 = 1_000_000;
 
 #[cfg(test)]
 use crate::incidence_features::common as fixtures;
@@ -324,88 +324,179 @@ fn charge_face(face: &crate::Face, dec: &mut Decider) -> Result<(), ImportError>
     Ok(())
 }
 
-/// Reuse the source checker on independent pairs so one failed incidence
-/// prerequisite cannot suppress checks of other faces or later solids.
+#[derive(Debug)]
+struct SourceChecks {
+    pairs: Vec<NumericalSourcePairCheck>,
+    optional_work_reserved: u64,
+    optional_work_used: u64,
+}
+
+fn polygonal(face: &crate::Face) -> bool {
+    matches!(face.surface, crate::Surface::Plane(_))
+        && !face.loops.is_empty()
+        && face
+            .loops
+            .iter()
+            .flat_map(|boundary| &boundary.edges)
+            .all(|edge| matches!(edge.curve, crate::Curve::Line(..)))
+}
+
+fn unresolved_pair(
+    solid: &str,
+    faces: [String; 2],
+    refusal: ImportRefusal,
+    work: u64,
+) -> NumericalSourcePairCheck {
+    NumericalSourcePairCheck::Unresolved {
+        solid: solid.to_owned(),
+        faces,
+        refusal: Box::new(refusal),
+        exact_attempt_work_used: work,
+    }
+}
+
+fn optional_unresolved(
+    solid: &str,
+    faces: [String; 2],
+    allowance: u64,
+    work: u64,
+) -> NumericalSourcePairCheck {
+    let refusal = Refusal::new(
+        "import.source-proof-work-limit",
+        format!(
+            "optional curved-pair proof was not completed within the collective {allowance}-work allowance"
+        ),
+    );
+    unresolved_pair(
+        solid,
+        faces.clone(),
+        ImportRefusal::SelfIntersectionNotVerified {
+            solid: solid.to_owned(),
+            faces,
+            reason: refusal.to_string(),
+            refusal: Some(Box::new(refusal)),
+        },
+        work,
+    )
+}
+
+fn source_pair(
+    solid: &str,
+    a: &crate::Face,
+    b: &crate::Face,
+    dec: &mut Decider,
+) -> Result<(), ImportError> {
+    // Charge retained tables before scratch setup. Existing exact arithmetic
+    // remains on the active caller/optional-proof counter.
+    charge_face(a, dec)?;
+    charge_face(b, dec)?;
+    crate::intersect::check_solid(&Solid {
+        name: solid.to_owned(),
+        faces: vec![a.clone(), b.clone()],
+    })
+    .map_err(Into::into)
+}
+
+/// All cheap checks run on the shared request before optional proofs. One gap
+/// or expensive proof therefore cannot suppress decidable pairs in later solids.
 fn intersection_checks(
     file: &crate::StepFile,
-    exact_pair_work_allowance: u64,
+    optional_allowance: u64,
     dec: &mut Decider,
-) -> Result<Vec<NumericalSourcePairCheck>, ImportError> {
+) -> Result<SourceChecks, ImportError> {
     let mut checks = Vec::new();
+    let mut optional = Vec::new();
     for solid in &file.solids {
         let mut incidence = Vec::new();
+        let mut bounds = Vec::new();
         for face in &solid.faces {
             charge_face(face, dec)?;
             incidence.push(crate::intersect::planar_incidence_error(face));
+            bounds.push(crate::curved::face_bounds(face));
             dec.check_deadline()?;
         }
         for (i, a) in solid.faces.iter().enumerate() {
             for (j, b) in solid.faces.iter().enumerate().skip(i + 1) {
                 dec.charge_work(1)?;
                 let faces = [a.name.clone(), b.name.clone()];
-                let (unresolved, exact_attempt_work_used, exact_attempt_work_reserved) =
-                    if let Some(refusal) = incidence[i].as_ref().or(incidence[j].as_ref()) {
-                        (Some(refusal.clone()), 0, 0)
-                    } else {
-                        // Charge the retained tables before cloning/setup. The
-                        // existing checker meters its exact geometric arithmetic.
-                        charge_face(a, dec)?;
-                        charge_face(b, dec)?;
-                        let pair = Solid {
-                            name: solid.name.clone(),
-                            faces: vec![a.clone(), b.clone()],
-                        };
-                        // Optional exact proofs get a bounded prepaid attempt.
-                        // Exhaustion is retained as unresolved and all reserved
-                        // work remains paid from the unchanged parent allowance.
-                        let allowance = catallax_numbers::OperationAllowance::reserve(
-                            exact_pair_work_allowance,
-                        )?;
-                        let (result, work) = allowance.run(|| crate::intersect::check_solid(&pair));
-                        dec.check_deadline()?;
-                        let unresolved = if work.exhausted {
-                            let refusal = Refusal::new(
-                                "import.source-pair-work-limit",
-                                format!(
-                                    "optional exact pair attempt exhausted its {exact_pair_work_allowance}-work prepaid allowance"
-                                ),
-                            );
-                            Some(ImportRefusal::SelfIntersectionNotVerified {
-                                solid: solid.name.clone(),
-                                faces: faces.clone(),
-                                reason: refusal.to_string(),
-                                refusal: Some(Box::new(refusal)),
-                            })
-                        } else {
-                            match result {
-                                Ok(()) => None,
-                                Err(
-                                    refusal @ ImportRefusal::SelfIntersectionNotVerified { .. },
-                                ) => Some(refusal),
-                                Err(refusal) => return Err(refusal.into()),
-                            }
-                        };
-                        (unresolved, work.used, exact_pair_work_allowance)
-                    };
-                checks.push(match unresolved {
-                    Some(refusal) => NumericalSourcePairCheck::Unresolved {
+                if let Some(refusal) = incidence[i].as_ref().or(incidence[j].as_ref()) {
+                    checks.push(unresolved_pair(&solid.name, faces, refusal.clone(), 0));
+                } else if let (Some(a), Some(b)) = (&bounds[i], &bounds[j])
+                    && crate::curved::apart(a, b)
+                {
+                    checks.push(NumericalSourcePairCheck::CheckedNoCrossing {
                         solid: solid.name.clone(),
                         faces,
-                        refusal: Box::new(refusal),
-                        exact_attempt_work_used,
-                        exact_attempt_work_reserved,
-                    },
-                    None => NumericalSourcePairCheck::CheckedNoCrossing {
+                        exact_attempt_work_used: 0,
+                    });
+                } else if polygonal(a) && polygonal(b) {
+                    let before = catallax_numbers::current_operation_work().used;
+                    source_pair(&solid.name, a, b, dec)?;
+                    dec.check_deadline()?;
+                    checks.push(NumericalSourcePairCheck::CheckedNoCrossing {
                         solid: solid.name.clone(),
                         faces,
-                        exact_attempt_work_used,
-                        exact_attempt_work_reserved,
-                    },
-                });
+                        exact_attempt_work_used: catallax_numbers::current_operation_work().used
+                            - before,
+                    });
+                } else {
+                    optional.push((checks.len(), solid.name.as_str(), a, b));
+                    checks.push(optional_unresolved(
+                        &solid.name,
+                        faces,
+                        optional_allowance,
+                        0,
+                    ));
+                }
             }
         }
     }
-    Ok(checks)
+    if optional.is_empty() || optional_allowance == 0 {
+        return Ok(SourceChecks {
+            pairs: checks,
+            optional_work_reserved: 0,
+            optional_work_used: 0,
+        });
+    }
+    // A single collective prepayment bounds costly curved proofs. Cheap pairs
+    // above pay only their actual shared work, regardless of their count.
+    let allowance = catallax_numbers::OperationAllowance::reserve(optional_allowance)?;
+    let (result, work) = allowance.run(|| -> Result<(), ImportError> {
+        for (slot, solid, a, b) in optional {
+            if catallax_numbers::current_operation_work().exhausted {
+                break;
+            }
+            dec.check_deadline()?;
+            let before = catallax_numbers::current_operation_work().used;
+            let result = source_pair(solid, a, b, dec);
+            let after = catallax_numbers::current_operation_work();
+            let used = after.used - before;
+            let faces = [a.name.clone(), b.name.clone()];
+            if after.exhausted {
+                checks[slot] = optional_unresolved(solid, faces, optional_allowance, used);
+                break;
+            }
+            checks[slot] = match result {
+                Ok(()) => NumericalSourcePairCheck::CheckedNoCrossing {
+                    solid: solid.to_owned(),
+                    faces,
+                    exact_attempt_work_used: used,
+                },
+                Err(ImportError::Source(
+                    refusal @ ImportRefusal::SelfIntersectionNotVerified { .. },
+                )) => unresolved_pair(solid, faces, refusal, used),
+                Err(error) => return Err(error),
+            };
+        }
+        Ok(())
+    });
+    dec.check_deadline()?;
+    result?;
+    Ok(SourceChecks {
+        pairs: checks,
+        optional_work_reserved: optional_allowance,
+        optional_work_used: work.used,
+    })
 }
 
 #[cfg(test)]
@@ -421,17 +512,89 @@ fn exhausted_optional_proof_is_unresolved_and_paid_without_exhausting_the_reques
         (checks, current_operation_work().used)
     });
     assert!(!work.exhausted && paid >= 1 && paid == work.used);
+    assert_eq!(checks.optional_work_reserved, 1);
     assert!(
-        checks.iter().any(|check| matches!(check,
-        NumericalSourcePairCheck::Unresolved { refusal, exact_attempt_work_reserved: 1, .. }
+        checks.pairs.iter().any(|check| matches!(check,
+        NumericalSourcePairCheck::Unresolved { refusal, .. }
         if matches!(refusal.as_ref(), ImportRefusal::SelfIntersectionNotVerified {
             refusal: Some(reason), ..
-        } if reason.code == "import.source-pair-work-limit"))),
+        } if reason.code == "import.source-proof-work-limit"))),
         "{checks:?}"
     );
     let (result, work) =
         with_operation_budget(1, || intersection_checks(&file, 1, &mut Decider::default()));
     assert!(result.is_err() && work.exhausted);
+}
+
+#[cfg(test)]
+#[test]
+fn cheap_crossings_are_checked_before_any_optional_proof_allowance() {
+    let mut source = fixtures::Soup::new();
+    source.cylinder(["10", "10", "10"], 2, "2", "1", fixtures::Caps::Both);
+    source.box_(["0", "0", "0"], ["2", "2", "2"]);
+    source.box_(["1", "1", "1"], ["3", "3", "3"]);
+    let file = crate::read_step(source.finish().as_bytes()).unwrap();
+    let (result, work) = catallax_numbers::with_operation_budget(20_000_000, || {
+        intersection_checks(&file, 0, &mut Decider::default())
+    });
+    assert!(!work.exhausted);
+    assert!(matches!(
+        result,
+        Err(ImportError::Source(ImportRefusal::SelfIntersecting { .. }))
+    ));
+}
+
+#[cfg(test)]
+#[test]
+fn many_planar_pairs_do_not_prepay_optional_work() {
+    let points = [
+        ["0", "0", "0"],
+        ["1", "1", "0"],
+        ["2", "4", "0"],
+        ["3", "9", "0"],
+        ["4", "16", "0"],
+        ["5", "25", "0"],
+        ["6", "36", "0"],
+        ["7", "49", "0"],
+        ["8", "64", "0"],
+        ["9", "81", "0"],
+        ["10", "100", "0"],
+        ["11", "121", "0"],
+        ["12", "144", "0"],
+        ["13", "169", "0"],
+        ["14", "196", "0"],
+        ["15", "225", "0"],
+        ["16", "256", "0"],
+        ["17", "289", "0"],
+        ["18", "324", "0"],
+        ["19", "361", "0"],
+        ["20", "400", "0"],
+        ["21", "441", "0"],
+        ["22", "484", "0"],
+        ["23", "529", "0"],
+        ["24", "576", "0"],
+        ["25", "625", "0"],
+        ["26", "676", "0"],
+        ["27", "729", "0"],
+    ];
+    let mut faces = vec![points.into_iter().rev().collect()];
+    for i in 0..points.len() {
+        faces.push(vec![
+            points[i],
+            points[(i + 1) % points.len()],
+            ["13", "260", "1"],
+        ]);
+    }
+    let source = fixtures::polyhedra_step(&[faces]);
+    let file = crate::read_step(source.as_bytes()).unwrap();
+    assert_eq!(file.solids[0].faces.len(), 29);
+    let (result, work) = catallax_numbers::with_operation_budget(20_000_000, || {
+        intersection_checks(&file, 50_000, &mut Decider::default())
+    });
+    assert!(result.is_ok() && !work.exhausted, "{result:?}, {work:?}");
+    let checks = result.unwrap();
+    assert_eq!(checks.pairs.len(), 406);
+    assert_eq!(checks.optional_work_reserved, 0);
 }
 
 pub(super) fn import(
@@ -469,7 +632,7 @@ pub(super) fn import(
         // that separate family receives its own complete qualification.
         return Err(refusal.into());
     }
-    let intersection_checks = intersection_checks(&file, EXACT_PAIR_WORK, dec)?;
+    let intersection_checks = intersection_checks(&file, OPTIONAL_EXACT_WORK, dec)?;
     let mut bodies = Vec::new();
     for solid in &file.solids {
         bodies.push((
@@ -499,8 +662,9 @@ pub(super) fn import(
             strict_refusal: refusal,
             tolerance_mm: options.tolerance_mm.clone(),
             method: "retained_shared_analytic_boundaries/2".into(),
-            intersection_checks,
-            exact_pair_work_allowance: EXACT_PAIR_WORK,
+            intersection_checks: intersection_checks.pairs,
+            optional_exact_work_reserved: intersection_checks.optional_work_reserved,
+            optional_exact_work_used: intersection_checks.optional_work_used,
         }),
     })))
 }

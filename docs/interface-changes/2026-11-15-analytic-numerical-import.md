@@ -21,12 +21,14 @@ prerequisites hold. A gap only leaves pairs using its affected face unresolved;
 it cannot skip other face pairs or later solids. Each unresolved entry retains
 the actual typed prerequisite or undecided refusal. A detected crossing refuses
 the whole import. Separate solids are not compared, matching the existing policy.
-Each optional exact pair attempt prepays 50,000 work from the unchanged request
-allowance. An exhausted attempt leaves an explicit unresolved entry; its work is
-never refunded or converted to a successful check. Records retain both actual
-and prepaid work. `CheckedNoCrossing` permits the existing contact cases and does
-not claim separated boundaries. Cheap exact checks remain useful; costly proof
-does not consume the whole request before numerical admission can run.
+Cheap polygonal pairs and conservative source-box separations run first on the
+shared work count, including every unaffected solid. Only the remaining curved
+proofs use one collective 1M-work prepayment from the unchanged request. Exhaustion
+leaves the current and remaining optional pairs explicitly unresolved, with
+actual proof work retained. `CheckedNoCrossing` permits existing contact cases;
+it does not claim separated boundaries. Source records retain the collective
+actual/prepaid work. A file of cheap planar pairs pays no optional prepayment.
+
 
 N01's numerical definition now accepts finite circular arcs and finite
 cylindrical charts. A circular arc must span less than one turn. A cylindrical

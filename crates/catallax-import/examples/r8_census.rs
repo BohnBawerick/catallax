@@ -440,7 +440,8 @@ fn evaluate_numerical(bytes: &[u8]) -> Value {
                 "source_change_count":imported.record().changes.len(),
                 "source_admission_method":source_admission_method,"max_checked_residual_mm":checked_max,
                 "source_intersection_checks":source_intersection_checks,
-                "source_exact_pair_work_allowance":imported.source_admission().map(|record|record.exact_pair_work_allowance)})
+                "source_optional_exact_work_reserved":imported.source_admission().map(|record|record.optional_exact_work_reserved),
+                "source_optional_exact_work_used":imported.source_admission().map(|record|record.optional_exact_work_used)})
         }
         Err(ImportError::Source(refusal)) => {
             eprintln!("{}", serde_json::to_string(&refusal).unwrap());

@@ -43,11 +43,13 @@ crossing refuses the whole import. Separate solids are not compared, following
 the existing import policy. Numerical samples do not resolve those exact source
 pairs. The finite planar STEP writer retains its existing path and controls.
 
-Optional exact source-pair attempts each prepay 50,000 work from the same 20M
-request. Their actual/prepaid work and any exhaustion remain in the source
-coverage record. Exhausted attempts are unresolved, never successful separation
-checks; the remaining numerical admission still runs. The successful
-`CheckedNoCrossing` variant permits the existing checker’s boundary contacts.
+Cheap polygonal pair checks and conservative source-box separations run first,
+paying actual shared work. Remaining curved proofs have one collective 1M-work
+prepayment from the same 20M request. Exhaustion leaves all unfinished optional
+pairs explicitly unresolved; source records retain actual/prepaid collective work.
+A 29-face planar solid pays no optional prepayment. `CheckedNoCrossing` permits
+the existing checker’s boundary contacts.
+
 
 The analytic STEP helper writes explicit cylindrical pcurves and checks actual
 decimal geometry, including STEP frame normalization and projected references.

@@ -53,7 +53,8 @@ fn curve_range(
 }
 
 // Four rational quadratic arcs sweep each profile control through one turn.
-// Axis ratios keep the resulting controls and weights rational.
+// Axis ratios keep the resulting controls and weights rational. With s = a·a,
+// the first span turns through 2 atan(sqrt(s)); the second completes a half turn.
 fn revolved(
     profile: StepSplineCurve,
     origin: &Vec3,

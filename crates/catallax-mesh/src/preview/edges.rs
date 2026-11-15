@@ -1,5 +1,5 @@
 //! Shared, unproved edge polylines. Sampling never constructs chord certificates.
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use catallax_intersect::{TracePiece, trace};
 use catallax_numbers::{Ball, Decider, Interval, Rational, Refusal};
@@ -23,6 +23,59 @@ pub(crate) struct Boundaries {
 const VERTEX_MERGE_MM: f64 = 1e-12;
 
 impl Boundaries {
+    fn split_merged_chords(
+        &mut self,
+        options: &PreviewOptions,
+        dec: &Decider,
+    ) -> Result<(), Refusal> {
+        let tolerance = VERTEX_MERGE_MM.min(options.chord_tolerance.to_f64_nearest() * 0.25);
+        let vertices: BTreeSet<_> = self.vertices.values().copied().collect();
+        let sorted: [Vec<_>; 3] = std::array::from_fn(|axis| {
+            let mut indices: Vec<_> = vertices.iter().copied().collect();
+            indices.sort_by(|&a, &b| {
+                self.mesh.positions[a][axis].total_cmp(&self.mesh.positions[b][axis])
+            });
+            indices
+        });
+        // Welding can put a vertex inside another edge's chord. Split the shared
+        // polyline here so both incident faces cancel the same oriented segments.
+        for edge in &mut self.mesh.edges {
+            let mut split = vec![edge.vertices[0]];
+            for pair in edge.vertices.windows(2) {
+                dec.check_deadline()?;
+                let [a, b] = [pair[0], pair[1]].map(|index| self.mesh.positions[index]);
+                let delta: [f64; 3] = std::array::from_fn(|i| b[i] - a[i]);
+                let axis = (0..3)
+                    .max_by(|&i, &j| delta[i].abs().total_cmp(&delta[j].abs()))
+                    .unwrap();
+                if delta[axis] != 0.0 {
+                    let lo = a[axis].min(b[axis]);
+                    let hi = a[axis].max(b[axis]);
+                    let candidates = &sorted[axis];
+                    let first = candidates.partition_point(|&i| self.mesh.positions[i][axis] <= lo);
+                    let last = candidates.partition_point(|&i| self.mesh.positions[i][axis] < hi);
+                    let mut interior = Vec::new();
+                    for &index in &candidates[first..last] {
+                        dec.check_deadline()?;
+                        let p = self.mesh.positions[index];
+                        let t = (p[axis] - a[axis]) / delta[axis];
+                        let d: [f64; 3] = std::array::from_fn(|i| p[i] - (a[i] + t * delta[i]));
+                        if d[0].hypot(d[1]).hypot(d[2]) <= tolerance {
+                            interior.push(index);
+                        }
+                    }
+                    if delta[axis] < 0.0 {
+                        interior.reverse();
+                    }
+                    split.extend(interior);
+                }
+                split.push(pair[1]);
+            }
+            edge.vertices = split;
+        }
+        Ok(())
+    }
+
     fn push(&mut self, point: [f64; 3], options: &PreviewOptions) -> Result<usize, Refusal> {
         if self.mesh.positions.len() >= options.max_vertices {
             return Err(failure("preview boundary reached max_vertices"));
@@ -42,6 +95,7 @@ impl Boundaries {
         if let Some(&index) = self.vertices.get(&vertex) {
             return Ok(index);
         }
+        let tolerance = VERTEX_MERGE_MM.min(options.chord_tolerance.to_f64_nearest() * 0.25);
         let p = model.geom().position(model.vertex(vertex).point);
         let point = chart::position(&[
             dec.enclose_at(&p.x, chart::BITS)?,
@@ -60,9 +114,8 @@ impl Boundaries {
                     ];
                     for &index in nearby.get(&key).into_iter().flatten() {
                         let other = self.mesh.positions[index];
-                        if (0..3).map(|i| (point[i] - other[i]).powi(2)).sum::<f64>()
-                            <= VERTEX_MERGE_MM * VERTEX_MERGE_MM
-                        {
+                        let d: [f64; 3] = std::array::from_fn(|i| point[i] - other[i]);
+                        if d[0].hypot(d[1]).hypot(d[2]) <= tolerance {
                             existing = Some(existing.map_or(index, |old: usize| old.min(index)));
                         }
                     }
@@ -249,6 +302,9 @@ pub(crate) fn build(
             edge: edge_id,
             vertices: indices,
         });
+    }
+    if result.merged_vertices {
+        result.split_merged_chords(options, dec)?;
     }
     Ok(result)
 }

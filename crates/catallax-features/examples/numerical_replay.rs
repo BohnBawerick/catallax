@@ -49,3 +49,21 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn source_is_preserved_when_output_names_the_recipe() {
+        let dir=std::env::temp_dir().join(format!("catallax-n04-identity-{}",std::process::id()));
+        std::fs::create_dir(&dir).unwrap();
+        let input=dir.join("recipe.json");
+        let saved=include_str!("../../../evidence/phase1/N04/recipe.json");
+        std::fs::write(&input,saved).unwrap();
+        let result=run(&input,&input);
+        let unchanged=std::fs::read_to_string(&input).unwrap()==saved;
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(unchanged,"replay publication overwrote its generating recipe");
+        assert!(result.is_err(),"same-file publication must refuse");
+    }
+}

@@ -1,6 +1,6 @@
 # N04 numerical edit evidence
 
-Source tested: `822847575290fd42676f7eb95a5f079efb6d28b2`.
+Source tested: `491d468241d3ca2b04b297fd56dd041ca61991d3`.
 
 The baseline regression at `7a90e83e` failed after a no-op `replace_surface`:
 `a later edit discarded the source sewing checks`. The final regression checks the
@@ -16,9 +16,9 @@ controls and actual checks.
 
 `edited.step` is the actual approximate STEP from that replay. Fresh example
 runs at `CATALLAX_THREADS=1`, `2` and `4` produced identical STEP bytes and identical
-`replay-summary.json` records, including 698,253 shared work units for parse,
+`replay-summary.json` records, including 705,670 shared work units for parse,
 source admission, edits, export and written-byte readback. The independent
-feature test measured 506,206 work units for construction and edits alone.
+feature test measured 506,302 work units for construction and edits alone.
 
 `raw-reference.json` records OCCT 7.8.1.1 reading these exact bytes with the raw
 builder and healing disabled. It checks one valid solid, ten faces, 24 edges,
@@ -34,7 +34,7 @@ python3 -B tools/step-regressions/check_numerical_edit.py /tmp/n04.step
 cargo test --release --locked -p catallax-topology -p catallax-features -p catallax-step -p catallax-app --test numerical_trim --test numerical_edits --test numerical_step --test numerical -- --nocapture
 ```
 
-The scoped release tests passed, including the N03 exact legacy byte/work control.
+All 31 scoped release tests passed, including the N03 exact legacy byte/work control.
 Adverse controls cover an over-tolerance current residual, invalid dimensions and
 cuts, duplicate edit IDs, modified source gaps, a low precision cap and a shared
 work limit of one. A refused CLI replay removed a pre-existing stale STEP file.
@@ -44,3 +44,13 @@ Coverage remains rational planar coordinate-frame edits and cuts across a
 straight two-layer prism. Curved or general numerical Booleans and app checkpoint
 integration remain outside this API. Numerical samples do not establish a
 complete body bound.
+
+Review regressions at `26b77421` and `c39f89f1` reproduced recipe overwrite,
+uncharged JSON decoding and admission of a non-axial retained trace. The final
+controls pass. Publication checks input/output identity before any cleanup, writes
+and verifies a unique adjacent staging file, then renames it atomically. Same-path,
+symlink and Unix hard-link controls preserve source bytes, including invalid JSON.
+Normal publication and refusals leave no staging files. The example safety tests
+run in the normal CI test set. JSON bytes are charged before decoding, and cuts
+require axial retained generator lines and exact retained axial endpoints. No
+review finding remains deferred.

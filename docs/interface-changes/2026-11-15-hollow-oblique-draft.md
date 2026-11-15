@@ -75,7 +75,7 @@ stages; the total also includes the sketch and request bookkeeping.
 | Control | Draft work | STEP work | Total work | File displacement bound |
 | --- | ---: | ---: | ---: | ---: |
 | Both walls | 4,139 | 857 | 5,023 | 0 mm |
-| Outer only | 3,951 | 1,054 | 5,032 | 0 mm |
+| Outer only | 3,951 | 1,073 | 5,051 | 0 mm |
 | Inner only | 3,975 | 857 | 4,859 | 0 mm |
 | Negative angle | 4,211 | 857 | 5,095 | 0 mm |
 | Outer radius edited to 9 mm | 4,139 | 857 | 5,023 | 0 mm |

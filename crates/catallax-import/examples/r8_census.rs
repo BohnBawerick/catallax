@@ -439,7 +439,8 @@ fn evaluate_numerical(bytes: &[u8]) -> Value {
                 "source_to_result_max_mm":bounds,"complete_body_bound":"unestablished",
                 "source_change_count":imported.record().changes.len(),
                 "source_admission_method":source_admission_method,"max_checked_residual_mm":checked_max,
-                "source_intersection_checks":source_intersection_checks})
+                "source_intersection_checks":source_intersection_checks,
+                "source_exact_pair_work_allowance":imported.source_admission().map(|record|record.exact_pair_work_allowance)})
         }
         Err(ImportError::Source(refusal)) => {
             eprintln!("{}", serde_json::to_string(&refusal).unwrap());

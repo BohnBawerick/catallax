@@ -21,6 +21,12 @@ prerequisites hold. A gap only leaves pairs using its affected face unresolved;
 it cannot skip other face pairs or later solids. Each unresolved entry retains
 the actual typed prerequisite or undecided refusal. A detected crossing refuses
 the whole import. Separate solids are not compared, matching the existing policy.
+Each optional exact pair attempt prepays 50,000 work from the unchanged request
+allowance. An exhausted attempt leaves an explicit unresolved entry; its work is
+never refunded or converted to a successful check. Records retain both actual
+and prepaid work. `CheckedNoCrossing` permits the existing contact cases and does
+not claim separated boundaries. Cheap exact checks remain useful; costly proof
+does not consume the whole request before numerical admission can run.
 
 N01's numerical definition now accepts finite circular arcs and finite
 cylindrical charts. A circular arc must span less than one turn. A cylindrical

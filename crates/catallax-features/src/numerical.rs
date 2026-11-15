@@ -205,7 +205,8 @@ fn deform(
         return Err(bad("dimension must remain positive"));
     }
     let map = |p: &mut [Rational; 3]| {
-        p[axis] = next_lo + &((&p[axis] - lo) * &scale);
+        let delta = &p[axis] - lo;
+        p[axis] = next_lo + &(&delta * &scale);
     };
     let mut d = d.clone();
     for v in &mut d.vertices {

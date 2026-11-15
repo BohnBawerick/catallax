@@ -1553,13 +1553,27 @@ pub fn evaluate_numerical(
     recipe: &crate::numerical::NumericalRecipe,
     dec: &mut Decider,
 ) -> Result<crate::numerical::NumericalBuilt, Refusal> {
+    numerical_request(|| crate::numerical::evaluate(recipe, dec))
+}
+
+/// Replay a saved numerical definition. Parsing and all build/edit stages share
+/// one request allowance. Saved geometry or evidence is never trusted as checked.
+pub fn replay_numerical(
+    input: &str,
+    dec: &mut Decider,
+) -> Result<crate::numerical::NumericalBuilt, Refusal> {
+    numerical_request(|| {
+        let recipe = crate::numerical::NumericalRecipe::parse(input, dec)?;
+        crate::numerical::evaluate(&recipe, dec)
+    })
+}
+
+fn numerical_request<T>(run: impl FnOnce() -> Result<T, Refusal>) -> Result<T, Refusal> {
     if catallax_numbers::operation_budget_active() {
-        return crate::numerical::evaluate(recipe, dec);
+        return run();
     }
     let (result, work) =
-        catallax_numbers::with_operation_budget(catallax_topology::numerical::DEFAULT_WORK, || {
-            crate::numerical::evaluate(recipe, dec)
-        });
+        catallax_numbers::with_operation_budget(catallax_topology::numerical::DEFAULT_WORK, run);
     if work.exhausted {
         Err(Refusal::new(
             "numbers.operation-budget",

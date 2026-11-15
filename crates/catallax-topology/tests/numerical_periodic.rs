@@ -106,3 +106,53 @@ fn translated_seam_branches_may_slope_within_the_numerical_tolerance() {
     )
     .unwrap();
 }
+
+#[test]
+fn a_shared_seam_cannot_fall_back_to_a_near_turn_chart() {
+    let mut definition = fixture::bore();
+    for trim in definition
+        .faces
+        .last_mut()
+        .unwrap()
+        .loops
+        .iter_mut()
+        .flatten()
+    {
+        for uv in &mut trim.uv {
+            if uv[0] > fixture::q("1") {
+                uv[0] = &uv[0] - &fixture::q("1/1000");
+            }
+        }
+    }
+    let error = n::build(
+        definition,
+        NumericalOptions::default(),
+        &mut Decider::default(),
+    )
+    .unwrap_err();
+    assert_eq!(error.code, "numerical.invalid-trim");
+    assert!(error.detail.contains("paired seam"));
+}
+
+#[test]
+fn continuous_circle_clearance_respects_the_requested_tolerance() {
+    let definition = fixture::bore_with_radius("399/200");
+    assert!(
+        n::build(
+            definition.clone(),
+            NumericalOptions::default(),
+            &mut Decider::default()
+        )
+        .is_err()
+    );
+    let body = n::build(
+        definition,
+        NumericalOptions {
+            tolerance_mm: fixture::q("1/1000"),
+        },
+        &mut Decider::default(),
+    )
+    .unwrap();
+    assert!(body.evidence().checks().iter().any(|check| matches!(check,
+        catallax_numbers::NumericalCheck::Passed { name,.. } if name=="trim.continuous-circle-hole-clearance")));
+}

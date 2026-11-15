@@ -230,6 +230,7 @@ report = dict(
     real_parts=rows,
     authored=dict(
         raw_valid=True,
+        source_step_sha256=h,
         volume_mm3="16-pi",
         bore_void_and_stock_probes_checked=True,
         reference_boolean_cut_valid=True,

@@ -466,7 +466,7 @@ fn build_inner(
         // Validate the newly admitted second boundary before building its
         // coedges. A duplicated outer loop remains an invalid trim, as in N01.
         if face.loops.len() == 2 {
-            analytic::check_loops(face, &definition.edges, dec)?;
+            analytic::check_loops(face, &definition.edges, &options.tolerance_mm, dec)?;
             check_distinct_boundary_vertices(face, &definition.edges, dec)?;
         }
         let mut loops = Vec::new();
@@ -539,7 +539,7 @@ fn build_inner(
     }
     for face in &definition.faces {
         if face.loops.len() == 1 {
-            analytic::check_loops(face, &definition.edges, dec)?;
+            analytic::check_loops(face, &definition.edges, &options.tolerance_mm, dec)?;
         }
         let sampled = analytic::projected(face, &definition.edges);
         checks.push(NumericalCheck::Passed {
@@ -561,6 +561,12 @@ fn build_inner(
                 .into(),
                 scope: face.key.clone(),
             });
+            if analytic::circular_hole(face, &definition.edges).is_some() {
+                checks.push(NumericalCheck::Passed {
+                    name: "trim.continuous-circle-hole-clearance".into(),
+                    scope: face.key.clone(),
+                });
+            }
             checks.push(NumericalCheck::Passed {
                 name: "trim.boundary-endpoints-disjoint".into(),
                 scope: face.key.clone(),

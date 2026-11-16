@@ -9,9 +9,11 @@ mod expression;
 mod mapping;
 mod parametric;
 mod topology;
+mod units;
 pub use definitions::*;
 pub use mapping::{Frame, MappingError};
 pub use parametric::{AngleUnit, ParameterChart};
+pub use units::ContextUnits;
 
 use crate::ImportRefusal;
 use crate::part21::{Entity, Graph};

@@ -6,18 +6,21 @@ use catallax_shapes::{Point3, Vector3};
 use std::collections::BTreeSet;
 
 /// Plane-angle unit of the containing representation.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum AngleUnit {
     /// Written angular parameters are radians.
     Radians,
     /// Written angular parameters are degrees.
     Degrees,
+    /// Exact radians per written angular unit from a representation context.
+    ScaledRadians(Rational),
 }
 impl AngleUnit {
-    fn factor(self) -> Expr {
+    fn factor(&self) -> Expr {
         match self {
             Self::Radians => Expr::integer(1),
             Self::Degrees => Expr::pi().div(&Expr::integer(180)),
+            Self::ScaledRadians(scale) => Expr::rational(scale.clone()),
         }
     }
 }

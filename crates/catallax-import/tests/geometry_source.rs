@@ -415,3 +415,28 @@ fn parameter_charts_evaluate_conics_sweeps_offsets_replicas_and_spindle_sheet() 
         std::fs::write(path, serde_json::to_vec_pretty(&observations).unwrap()).unwrap();
     }
 }
+
+#[test]
+fn units_are_resolved_per_context_without_rounding_degree_conversion() {
+    use catallax_import::geometry_source::AngleUnit;
+    let s=read("
+#1=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#10,#11)) REPRESENTATION_CONTEXT('mm',''));
+#2=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#12,#13)) REPRESENTATION_CONTEXT('metres',''));
+#3=(GLOBAL_UNIT_ASSIGNED_CONTEXT((#10,#12)) REPRESENTATION_CONTEXT('conflict',''));
+#10=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#11=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));
+#12=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT($,.METRE.));
+#13=(CONVERSION_BASED_UNIT('DEGREE',#14) NAMED_UNIT(*) PLANE_ANGLE_UNIT());
+#14=MEASURE_WITH_UNIT(PLANE_ANGLE_MEASURE(0.0174532925199433),#11);
+");
+    let a = s.context_units(1, &mut Decider::default()).unwrap();
+    let b = s.context_units(2, &mut Decider::default()).unwrap();
+    assert_eq!(a.length_mm, Some(q("1")));
+    assert_eq!(b.length_mm, Some(q("1000")));
+    assert_eq!(a.plane_angle, Some(AngleUnit::ScaledRadians(q("1"))));
+    assert_eq!(
+        b.plane_angle,
+        Some(AngleUnit::ScaledRadians(q("0.0174532925199433")))
+    );
+    assert!(s.context_units(3, &mut Decider::default()).is_err());
+}

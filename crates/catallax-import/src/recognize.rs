@@ -667,7 +667,7 @@ fn unknown_unit(found: &str) -> ImportRefusal {
 /// conversion-based unit worth its length measure of its own base unit. The
 /// factors stay exact; a chain deeper than `MAX_CONVERSION_DEPTH`, which includes a
 /// cycle, is refused.
-fn unit_millimetres(g: &Graph, id: u64, depth: u32) -> Result<Rational, ImportRefusal> {
+pub(crate) fn unit_millimetres(g: &Graph, id: u64, depth: u32) -> Result<Rational, ImportRefusal> {
     let Some(e) = g.get(&id) else {
         return Err(unknown_unit("length unit"));
     };

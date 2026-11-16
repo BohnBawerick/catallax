@@ -42,7 +42,7 @@ pub(super) fn references(
         })
         .collect()
 }
-fn number(p: &Param, id: EntityId) -> Result<Rational, ImportRefusal> {
+pub(super) fn number(p: &Param, id: EntityId) -> Result<Rational, ImportRefusal> {
     let Param::Number(s) = p else {
         return Err(malformed(id, "expected a number"));
     };

@@ -68,11 +68,13 @@ continues to identify the source of its 25.9M to 27.3M totals.
 
 ## Regression and reproduction
 
-Default STEP CI runs all fourteen original requests at 20M, including worker
+Required STEP CI runs all fourteen original requests at 20M, including worker
 comparisons and stale-file replay. The three top requests must exhaust that
 allowance, refuse with no result or STEP metadata, and leave no STEP artifact.
-The STEP job has a 360-minute proof-wait guard for these required bounded checks;
-the 20M request limit and target are unchanged.
+They run in `tools/step-regressions/slow_m10_top_refusals.py`, in the separate
+required `step-regressions-slow` job, which has a 360-minute proof-wait guard;
+the other eleven stay in `step-regressions`. The 20M request limit and target are
+unchanged.
 
 The three 100M success requests have an additional explicit slow test. Run it with
 `CATALLAX_SLOW_LOFT_TOP=1` and
@@ -87,5 +89,5 @@ It was not repeated for this change. The qualification above uses the three
 original requests completed once, their actual STEP files and the raw checks.
 The separately ignored Rust source-admission test remains runnable with `--ignored`.
 Only the additional 100M success matrix is opt-in. The required 20M refusal and
-artifact checks remain in default CI. The existing Rust source-test exception
+artifact checks remain in required CI. The existing Rust source-test exception
 and the measured full-request times remain listed for phase 5.

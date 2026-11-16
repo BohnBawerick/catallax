@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Original M10 STEP answers, with slow top cuts at the 100M application allowance."""
+"""Original M10 STEP answers, with slow top cuts at the 100M application allowance.
+
+The three top cuts' required 20M refusals live in `slow_m10_top_refusals.py`, which
+the `step-regressions-slow` CI job runs beside this suite.
+"""
 
 import copy
 import hashlib
@@ -120,14 +124,8 @@ def comparable(response):
     return response
 
 
-class M10SplineBooleanTests(unittest.TestCase):
-    def test_numbered_outcomes_and_work_survive_worker_changes(self):
-        self.check_outcomes(cases())
-
-    @unittest.skipUnless(os.environ.get('CATALLAX_SLOW_LOFT_TOP') == '1',
-                         'slow loft top cuts; run explicitly for the phase-5 work list')
-    def test_slow_top_requests_reach_step(self):
-        self.check_outcomes([row for row in cases() if row[0] in TOP_CASES], application=True)
+class M10Outcomes:
+    """Shared checks; a mixin so importing it collects no tests."""
 
     def check_outcomes(self, rows, application=False):
         with tempfile.TemporaryDirectory(prefix='catallax-m10-') as temporary:
@@ -232,6 +230,16 @@ class M10SplineBooleanTests(unittest.TestCase):
         self.assertEqual([op['operation'] for op in operations[-1:]], ['numerical-step-reread'])
         numerical = [op for op in operations if op['operation'] == 'numerical-step']
         self.assertEqual([op['status'] for op in numerical], ['answered'])
+
+
+class M10SplineBooleanTests(M10Outcomes, unittest.TestCase):
+    def test_numbered_outcomes_and_work_survive_worker_changes(self):
+        self.check_outcomes([row for row in cases() if row[0] not in TOP_CASES])
+
+    @unittest.skipUnless(os.environ.get('CATALLAX_SLOW_LOFT_TOP') == '1',
+                         'slow loft top cuts; run explicitly for the phase-5 work list')
+    def test_slow_top_requests_reach_step(self):
+        self.check_outcomes([row for row in cases() if row[0] in TOP_CASES], application=True)
 
 
 if __name__ == '__main__':

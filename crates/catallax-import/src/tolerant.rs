@@ -126,6 +126,7 @@ pub enum ToleranceEntity {
 
 /// One actual tolerance increase. Values are rational millimetre strings.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ToleranceChange {
     /// Source identity, scoped to its body and immutable source hash.
     pub entity: ToleranceEntity,
@@ -306,6 +307,11 @@ impl TolerantBody {
             source: source.clone(),
             tolerance_mm: self.options.initial_mm.clone(),
         });
+        self.maximum_attained_mm = self
+            .options
+            .initial_mm
+            .clone()
+            .max(self.maximum_attained_mm.clone());
         Ok(index)
     }
 
@@ -414,7 +420,7 @@ impl TolerantBody {
             edges: Vec::new(),
             vertex_indices: BTreeMap::new(),
             edge_indices: BTreeMap::new(),
-            maximum_attained_mm: options.initial_mm.clone(),
+            maximum_attained_mm: Rational::zero(),
             changes: Vec::new(),
         }
     }
@@ -679,6 +685,7 @@ pub fn reopen(
     dec: &mut Decider,
 ) -> Result<TolerantFile, Error> {
     budget(|| {
+        dec.charge_work(record.initial_mm.len() as u64 + record.maximum_mm.len() as u64)?;
         if record.format != "catallax-import-tolerances/1" {
             return Err(invalid("unsupported tolerance record format"));
         }

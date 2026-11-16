@@ -342,3 +342,70 @@ fn options_hash_and_read_work_are_checked_before_a_graph_is_returned() {
     });
     assert!(result.is_err() && work.exhausted);
 }
+
+#[test]
+fn vertex_loops_and_closed_edge_endpoints_keep_their_source_identity() {
+    let mut soup = common::Soup::new();
+    soup.vertex_loop_sphere(["1", "2", "3"], "2");
+    let source = soup.finish();
+    let graph = read(&source);
+    assert_eq!(
+        graph.definition(&mut Decider::default()).unwrap(),
+        read_step(source.as_bytes()).unwrap()
+    );
+    assert_eq!(graph.bodies()[0].vertices().len(), 1);
+    assert!(graph.bodies()[0].edges().is_empty());
+    assert_eq!(
+        graph.bodies()[0].shells()[0].faces[0].loops[0].vertex,
+        Some(0)
+    );
+    let mut soup = common::Soup::new();
+    soup.cylinder(["0", "0", "0"], 2, "2", "1", common::Caps::Both);
+    let source = soup.finish();
+    let mut graph = read(&source);
+    let body = graph.bodies()[0].name().to_owned();
+    let edge = graph.bodies()[0]
+        .edges()
+        .iter()
+        .find(|e| e.vertices[0] == e.vertices[1])
+        .unwrap()
+        .name
+        .clone();
+    graph
+        .grow_edge_tolerance(
+            &body,
+            &edge,
+            r("0.001"),
+            "closed-edge",
+            &mut Decider::default(),
+        )
+        .unwrap();
+    // A ring's single endpoint is propagated once, even though used twice.
+    assert_eq!(graph.bodies()[0].tolerance_changes().len(), 2);
+    assert_eq!(
+        graph.definition(&mut Decider::default()).unwrap(),
+        read_step(source.as_bytes()).unwrap()
+    );
+    assert_eq!(
+        tolerant::reopen(source.as_bytes(), &graph.record(), &mut Decider::default()).unwrap(),
+        graph
+    );
+}
+
+#[test]
+fn normalized_source_units_and_empty_entity_maxima_are_retained() {
+    let mut fixture = BoxFixture::new(["1", "2", "3"]);
+    fixture.unit = common::Unit::Metre;
+    let source = box_step(fixture);
+    let graph = read(&source);
+    assert_eq!(
+        graph.definition(&mut Decider::default()).unwrap(),
+        read_step(source.as_bytes()).unwrap()
+    );
+    assert_eq!(graph.bodies()[0].maximum_tolerance_mm(), &r("1e-7"));
+    let mut soup = common::Soup::new();
+    soup.unbounded_plane(["0", "0", "0"], 2);
+    let graph = read(&soup.finish());
+    assert!(graph.bodies()[0].vertices().is_empty() && graph.bodies()[0].edges().is_empty());
+    assert_eq!(graph.bodies()[0].maximum_tolerance_mm(), &r("0"));
+}

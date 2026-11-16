@@ -497,7 +497,8 @@ fn offset_nodes(knots: &[Rational], dec: &mut Decider) -> Result<Vec<Rational>, 
     let three = Rational::from_i64(3);
     for i in 0..count {
         dec.charge_work(3)?;
-        nodes.push((&(&knots[i + 1] + &knots[i + 2]) + &knots[i + 3]) / &three);
+        let sum = &(&knots[i + 1] + &knots[i + 2]) + &knots[i + 3];
+        nodes.push(&sum / &three);
     }
     Ok(nodes)
 }

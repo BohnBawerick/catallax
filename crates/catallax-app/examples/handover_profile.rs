@@ -21,6 +21,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
     let bytes = bytes?;
     let export_us = export_start.elapsed().as_micros();
+    if let Some(path) = std::env::args().nth(2) {
+        std::fs::write(path, &bytes)?;
+    }
     let mut imports_us = Vec::new();
     let mut import_work = Vec::new();
     for _ in 0..7 {

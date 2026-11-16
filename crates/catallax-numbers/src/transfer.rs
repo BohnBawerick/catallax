@@ -51,6 +51,12 @@ type Factory = fn(&mut Reader<'_>) -> Result<Box<dyn Any>, Refusal>;
 type Emit = Box<dyn FnOnce(&mut Writer) -> Result<(), Refusal>>;
 type HandleRanges = RefCell<HashMap<TypeId, (Option<usize>, Option<u32>)>>;
 
+#[derive(Default)]
+struct RationalCache {
+    values: HashMap<Vec<u8>, crate::Rational>,
+    bytes: usize,
+}
+
 fn reserve<T>(decider: &mut Decider, values: &mut Vec<T>, extra: usize) -> Result<(), Refusal> {
     if extra > values.capacity().saturating_sub(values.len()) {
         decider.charge_work(values.len() as u64)?;
@@ -162,12 +168,13 @@ impl<'a> Writer<'a> {
 pub struct Reader<'a> {
     data: &'a [u8],
     at: usize,
-    objects: &'a HashMap<u32, Box<dyn Any>>,
+    objects: &'a [Option<Box<dyn Any>>],
     decider: &'a mut Decider,
     handles: &'a HandleRanges,
+    rationals: &'a RefCell<RationalCache>,
 }
 
-impl Reader<'_> {
+impl<'a> Reader<'a> {
     pub fn handle<T: 'static>(&self, index: u32) {
         let mut handles = self.handles.borrow_mut();
         let entry = handles.entry(TypeId::of::<T>()).or_default();
@@ -182,7 +189,8 @@ impl Reader<'_> {
         }
         Ok(())
     }
-    pub fn take(&mut self, count: usize) -> Result<&[u8], Refusal> {
+    #[inline]
+    pub fn take(&mut self, count: usize) -> Result<&'a [u8], Refusal> {
         let end = self
             .at
             .checked_add(count)
@@ -196,6 +204,13 @@ impl Reader<'_> {
         Ok(bytes)
     }
 
+    #[inline]
+    pub fn bytes(&mut self) -> Result<&'a [u8], Refusal> {
+        let count = self.count()?;
+        self.take(count)
+    }
+
+    #[inline]
     pub fn count(&mut self) -> Result<usize, Refusal> {
         let count = usize::read(self)?;
         if count > self.data.len().saturating_sub(self.at) {
@@ -328,14 +343,16 @@ pub fn decode<T: Codec>(bytes: &[u8], decider: &mut Decider) -> Result<T, Refusa
     }
     let mut registry = Registry::default();
     registry.add::<T>();
-    let mut objects = HashMap::new();
+    let mut objects = Vec::new();
     let handles = RefCell::new(HashMap::new());
+    let rationals = RefCell::new(RationalCache::default());
     let mut reader = Reader {
         data: &bytes[12..end],
         at: 0,
         objects: &objects,
         decider,
         handles: &handles,
+        rationals: &rationals,
     };
     if String::read(&mut reader)? != type_name::<T>() {
         return Err(invalid("wrong body handover kind"));
@@ -352,7 +369,17 @@ pub fn decode<T: Codec>(bytes: &[u8], decider: &mut Decider) -> Result<T, Refusa
         );
     }
     let count = reader.count()?;
+    // Each record has a u32 ID and two u64 fields before its payload.
+    if count > reader.data.len().saturating_sub(reader.at) / 20 {
+        return Err(invalid("shared object count exceeds input"));
+    }
     let mut at = reader.at;
+    decider.charge_work(count as u64)?;
+    objects
+        .try_reserve_exact(count)
+        .map_err(|_| Refusal::new("handover.resource-limit", "shared object allocation failed"))?;
+    decider.check_deadline()?;
+    objects.resize_with(count, || None);
     for _ in 0..count {
         let mut reader = Reader {
             data: &bytes[12..end],
@@ -360,9 +387,10 @@ pub fn decode<T: Codec>(bytes: &[u8], decider: &mut Decider) -> Result<T, Refusa
             objects: &objects,
             decider,
             handles: &handles,
+            rationals: &rationals,
         };
         let id = u32::read(&mut reader)?;
-        if id as usize >= count || objects.contains_key(&id) {
+        if id as usize >= count || objects[id as usize].is_some() {
             return Err(invalid("invalid shared object number"));
         }
         let kind = usize::read(&mut reader)?;
@@ -379,10 +407,11 @@ pub fn decode<T: Codec>(bytes: &[u8], decider: &mut Decider) -> Result<T, Refusa
             objects: &objects,
             decider,
             handles: &handles,
+            rationals: &rationals,
         };
         let value = factory(&mut record)?;
         record.finish()?;
-        objects.insert(id, value);
+        objects[id as usize] = Some(value);
     }
     let mut reader = Reader {
         data: &bytes[12..end],
@@ -390,6 +419,7 @@ pub fn decode<T: Codec>(bytes: &[u8], decider: &mut Decider) -> Result<T, Refusa
         objects: &objects,
         decider,
         handles: &handles,
+        rationals: &rationals,
     };
     let length = reader.count()?;
     let start = reader.at;
@@ -401,6 +431,7 @@ pub fn decode<T: Codec>(bytes: &[u8], decider: &mut Decider) -> Result<T, Refusa
         objects: &objects,
         decider,
         handles: &handles,
+        rationals: &rationals,
     };
     let value = T::read(&mut root)?;
     root.finish()?;
@@ -418,6 +449,7 @@ macro_rules! integer {
     ($($ty:ty),*) => {$ (
         impl Codec for $ty {
             fn write(&self, w: &mut Writer) -> Result<(), Refusal> { w.raw(&self.to_le_bytes())?; Ok(()) }
+            #[inline]
             fn read(r: &mut Reader<'_>) -> Result<Self, Refusal> {
                 let bytes = r.take(std::mem::size_of::<Self>())?;
                 Ok(Self::from_le_bytes(bytes.try_into().map_err(|_| invalid("invalid scalar width"))?))
@@ -431,6 +463,7 @@ impl Codec for usize {
     fn write(&self, w: &mut Writer) -> Result<(), Refusal> {
         (*self as u64).write(w)
     }
+    #[inline]
     fn read(r: &mut Reader<'_>) -> Result<Self, Refusal> {
         Self::try_from(u64::read(r)?).map_err(|_| invalid("index exceeds platform width"))
     }
@@ -444,7 +477,7 @@ impl Codec for num_bigint::BigInt {
         w.raw(&bytes)
     }
     fn read(r: &mut Reader<'_>) -> Result<Self, Refusal> {
-        Ok(Self::from_signed_bytes_le(&Vec::<u8>::read(r)?))
+        Ok(Self::from_signed_bytes_le(r.bytes()?))
     }
 }
 impl Codec for crate::Rational {
@@ -453,8 +486,17 @@ impl Codec for crate::Rational {
         self.d.write(w)
     }
     fn read(r: &mut Reader<'_>) -> Result<Self, Refusal> {
-        let n = crate::Integer::read(r)?;
-        let d = crate::Integer::read(r)?;
+        let start = r.at;
+        let numerator = r.bytes()?;
+        let denominator = r.bytes()?;
+        let key = &r.data[start..r.at];
+        r.decider.charge_work(key.len() as u64)?;
+        // Only identical encodings reuse a completed canonicality check.
+        if let Some(value) = r.rationals.borrow().values.get(key) {
+            return Ok(value.clone());
+        }
+        let n = crate::Integer(num_bigint::BigInt::from_signed_bytes_le(numerator));
+        let d = crate::Integer(num_bigint::BigInt::from_signed_bytes_le(denominator));
         if d.sign() != crate::Sign::Positive {
             return Err(invalid("non-positive rational denominator"));
         }
@@ -463,6 +505,20 @@ impl Codec for crate::Rational {
         if value.n != n || value.d != d {
             return Err(invalid("noncanonical rational"));
         }
+        let mut cache = r.rationals.borrow_mut();
+        if cache.values.len() == cache.values.capacity() {
+            r.decider.charge_work(cache.bytes as u64)?;
+            cache.values.try_reserve(1).map_err(|_| {
+                Refusal::new(
+                    "handover.resource-limit",
+                    "rational cache allocation failed",
+                )
+            })?;
+            r.decider.check_deadline()?;
+        }
+        r.decider.charge_work(key.len() as u64)?;
+        cache.bytes += key.len();
+        cache.values.insert(key.to_vec(), value.clone());
         Ok(value)
     }
 }
@@ -543,11 +599,11 @@ impl<T: Codec, const N: usize> Codec for [T; N] {
         Ok(())
     }
     fn read(r: &mut Reader<'_>) -> Result<Self, Refusal> {
-        (0..N)
-            .map(|_| T::read(r))
-            .collect::<Result<Vec<_>, _>>()?
-            .try_into()
-            .map_err(|_| invalid("invalid array width"))
+        let mut values = std::array::from_fn(|_| None);
+        for value in &mut values {
+            *value = Some(T::read(r)?);
+        }
+        Ok(values.map(Option::unwrap))
     }
     fn register(r: &mut Registry) {
         r.add::<T>();
@@ -566,7 +622,8 @@ impl<T: Codec> Codec for Arc<T> {
     fn read(r: &mut Reader<'_>) -> Result<Self, Refusal> {
         let id = u32::read(r)?;
         r.objects
-            .get(&id)
+            .get(id as usize)
+            .and_then(Option::as_ref)
             .and_then(|x| x.downcast_ref::<Self>())
             .cloned()
             .ok_or_else(|| invalid("unresolved or mistyped shared reference"))
@@ -597,7 +654,8 @@ impl<T: Codec> Codec for Arc<[T]> {
     fn read(r: &mut Reader<'_>) -> Result<Self, Refusal> {
         let id = u32::read(r)?;
         r.objects
-            .get(&id)
+            .get(id as usize)
+            .and_then(Option::as_ref)
             .and_then(|x| x.downcast_ref::<Self>())
             .cloned()
             .ok_or_else(|| invalid("unresolved slice reference"))
@@ -825,6 +883,105 @@ impl Codec for &'static str {
 mod tests {
     use super::*;
     use crate::{Rational, Real};
+
+    #[test]
+    fn fixed_arrays_decode_empty_values_and_refuse_invalid_elements() {
+        let bytes = encode(&[0_u64; 0], &mut Decider::default()).unwrap();
+        assert_eq!(
+            decode::<[u64; 0]>(&bytes, &mut Decider::default()).unwrap(),
+            [0_u64; 0]
+        );
+        let mut bytes = encode(&[true, false, true], &mut Decider::default()).unwrap();
+        let end = bytes.len() - 32;
+        bytes[end - 1] = 7;
+        let digest = Sha256::digest(&bytes[..end]);
+        bytes[end..].copy_from_slice(&digest);
+        assert_eq!(
+            decode::<[bool; 3]>(&bytes, &mut Decider::default())
+                .unwrap_err()
+                .code,
+            "handover.invalid-data"
+        );
+    }
+
+    #[test]
+    fn numbered_objects_refuse_duplicate_and_out_of_range_ids() {
+        fn length(bytes: &[u8], at: &mut usize) -> usize {
+            let value = u64::from_le_bytes(bytes[*at..*at + 8].try_into().unwrap()) as usize;
+            *at += 8;
+            value
+        }
+        let bytes = encode(
+            &vec![Arc::new(1_u64), Arc::new(2_u64)],
+            &mut Decider::default(),
+        )
+        .unwrap();
+        let mut at = 12;
+        at += 8 + u64::from_le_bytes(bytes[at..at + 8].try_into().unwrap()) as usize;
+        for _ in 0..length(&bytes, &mut at) {
+            let n = length(&bytes, &mut at);
+            at += n;
+        }
+        assert_eq!(length(&bytes, &mut at), 2);
+        let first = at;
+        at += 12;
+        let n = length(&bytes, &mut at);
+        at += n;
+        let second = at;
+        for (offset, id) in [(first, 2_u32), (second, 0_u32)] {
+            let mut corrupt = bytes.clone();
+            corrupt[offset..offset + 4].copy_from_slice(&id.to_le_bytes());
+            let end = corrupt.len() - 32;
+            let digest = Sha256::digest(&corrupt[..end]);
+            corrupt[end..].copy_from_slice(&digest);
+            assert_eq!(
+                decode::<Vec<Arc<u64>>>(&corrupt, &mut Decider::default())
+                    .unwrap_err()
+                    .code,
+                "handover.invalid-data"
+            );
+        }
+    }
+
+    #[test]
+    fn repeated_rationals_keep_their_bytes_and_pay_for_every_read() {
+        let rational = Rational::parse("123456789012345678901234567890123456789012345678901/700000000000000000000000000000000000000000000000003").unwrap();
+        let source = vec![rational; 64];
+        let bytes = encode(&source, &mut Decider::default()).unwrap();
+        let (restored, work) = crate::with_operation_budget(1_000_000, || {
+            decode::<Vec<Rational>>(&bytes, &mut Decider::default())
+        });
+        let restored = restored.unwrap();
+        assert_eq!(restored, source);
+        assert_eq!(encode(&restored, &mut Decider::default()).unwrap(), bytes);
+        let (refused, spent) = crate::with_operation_budget(work.used - 1, || {
+            decode::<Vec<Rational>>(&bytes, &mut Decider::default())
+        });
+        assert!(refused.is_err());
+        assert!(spent.exhausted);
+    }
+
+    #[test]
+    fn cached_rationals_do_not_admit_noncanonical_or_invalid_encodings() {
+        let half = Rational::from_ratio(1, 2).unwrap();
+        for (n, d) in [(2, 4), (0, 2), (1, 0), (-1, -2)] {
+            let invalid = Rational {
+                n: n.into(),
+                d: d.into(),
+            };
+            let bytes = encode(
+                &vec![half.clone(), half.clone(), invalid],
+                &mut Decider::default(),
+            )
+            .unwrap();
+            assert_eq!(
+                decode::<Vec<Rational>>(&bytes, &mut Decider::default())
+                    .unwrap_err()
+                    .code,
+                "handover.invalid-data"
+            );
+        }
+    }
 
     #[test]
     fn shared_exact_definitions_keep_their_graph_and_integer_bits() {

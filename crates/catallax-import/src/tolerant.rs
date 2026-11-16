@@ -13,6 +13,9 @@ use catallax_numbers::{
 use serde::{Deserialize, Serialize};
 
 pub use crate::numerical::ImportError as Error;
+
+/// Measured, transactional repair of source topology.
+pub mod healing;
 use crate::{Curve, Face, FaceLoop, ImportRefusal, OrientedEdge, StepFile, Surface, Vertex};
 
 /// Initial numerical uncertainty and the maximum healing tolerance, in mm.
@@ -737,6 +740,7 @@ pub fn reopen(
                 "record values or history do not match the replayed changes",
             ));
         }
+        dec.check_deadline()?;
         Ok(file)
     })
 }

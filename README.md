@@ -16,17 +16,17 @@ In design: general tolerance-policy composition, broader agreement checks betwee
 
 ## What works today
 
-The 0.2.0 source includes:
+The 0.3.0 source includes:
 
 - Exact blocks, cylinders, spheres, cones and tori; unite, subtract and intersect in supported geometric configurations.
 - Sketch extrusions and revolutions, holes, patterns, mirrors, sweeps, lofts, fillets, chamfers, offsets, shells, thicken and draft within their documented domains.
-- Proven bounds for supported measurements, display meshes and STEP AP242 exports. Analytic STEP import, planar repair and spline source previews have separate admission and proof limits.
+- Proven bounds for supported measurements, display meshes and STEP AP242 exports. STEP import admits analytic, numerical and spline sources by tier, and numerical and spline Boolean results export as approximate STEP. Each has its own admission and proof limits.
 - A field evaluator, sampled two-kernel comparisons, cubic lattices and network gyroids with labelled print output.
 - An application entry used by SolidDraft, revision-bound construction display and deferred proof, plus a deterministic verification CLI with replay and worker-count checks.
 
-This is alpha software. Valid cases still refuse or take seconds. General fillets, curved sweeps, loft intersections, STEP import and tolerance-policy composition remain incomplete. The fourteen numbered spline STEP export requests and eight later-cut cases remain refusals in the 0.2.0 freeze. Complete acceptance of the canonical P1 bracket in SolidDraft remains open.
+This is alpha software. Valid cases still refuse or take seconds. General fillets, curved sweeps, loft intersections, STEP import and tolerance-policy composition remain incomplete. Three of the fourteen recorded spline Boolean requests still refuse in the 0.3.0 freeze, and most STEP files in the public census still refuse at import. Complete acceptance of the canonical P1 bracket in SolidDraft remains open.
 
-See the [0.2.0 release scope](https://github.com/BohnBawerick/catallax/blob/release/0.2.0/docs/milestones/M2.md), [implementation limits](docs/CAPABILITIES.md) and [target-part comparison](https://kernel.zigrawbohnbawerick.org/comparison.html).
+See the [0.3.0 release scope](https://github.com/BohnBawerick/catallax/blob/release/0.3.0/docs/milestones/M3.md), [implementation limits](docs/CAPABILITIES.md) and [target-part comparison](https://kernel.zigrawbohnbawerick.org/comparison.html).
 
 ## Download or build
 

@@ -123,3 +123,27 @@ fn complex_face_and_edge_inheritance_preserve_the_source_inventory() {
     assert_eq!(opened.source().bodies()[0].edges().len(), 4);
     assert!(matches!(opened.body(0), Some(BodyView::Certified { .. })));
 }
+
+#[test]
+fn bare_edge_endpoints_do_not_invent_a_straight_curve() {
+    let source = SQUARE.replace("EDGE_CURVE('',#10,#11,#16,.T.)", "EDGE('',#10,#11)");
+    let opened = open(&source);
+    assert_eq!(opened.bodies()[0].tier(), Tier::SurfaceBody);
+    assert!(matches!(opened.body(0), Some(BodyView::Surfaces { .. })));
+    let edge = opened.source().bodies()[0]
+        .edges()
+        .iter()
+        .find(|e| e.name == "#20")
+        .unwrap();
+    let catallax_import::Curve::Retained(reference) = &edge.curve else {
+        panic!("a bare edge must retain an unresolved source reference");
+    };
+    assert_eq!(reference.entity(), 20);
+    assert!(matches!(
+        reference
+            .source()
+            .topology(20, &mut Decider::default())
+            .unwrap(),
+        catallax_import::geometry_source::Topology::Edge { curve: None, .. }
+    ));
+}

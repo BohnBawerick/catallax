@@ -30,7 +30,7 @@ impl ParsedStep {
         &self,
         dec: &mut Decider,
     ) -> Result<Definition, ImportRefusal> {
-        let scale = crate::recognize::source_length_scale(&self.graph)?;
+        let scale = crate::recognize::source_length_scale(&self.graph, dec)?;
         // A prototype is not an occurrence. Do not publish unplaced duplicates.
         for id in self.entities() {
             let e = self.entity(id)?;
@@ -276,10 +276,7 @@ impl Adapter<'_> {
                 let end = self.vertex(vertices[1])?;
                 let curve = match curve {
                     Some(id) => self.curve(id)?,
-                    None => C::Line(
-                        start.point.clone(),
-                        crate::exact::sub(&end.point, &start.point),
-                    ),
+                    None => C::Retained(self.retained(id)),
                 };
                 Ok(OrientedEdge {
                     edge: format!("#{id}"),
@@ -315,7 +312,8 @@ impl Adapter<'_> {
                 self_intersect: None,
             })),
             Geometry::Curve(_) => {
-                match crate::recognize::source_curve(&self.source.graph, id, self.dec) {
+                match crate::recognize::source_curve(&self.source.graph, id, &self.scale, self.dec)
+                {
                     Ok(curve) => Ok(curve),
                     Err(ImportRefusal::Unsupported { .. }) => Ok(C::Retained(self.retained(id))),
                     Err(error) => Err(error),
@@ -333,12 +331,23 @@ impl Adapter<'_> {
                 Ok(S::Retained(self.retained(id)))
             }
             Geometry::Surface(Surface::Torus(placement, major, minor)) => Ok(S::Torus(
-                crate::recognize::source_placement(&self.source.graph, placement, self.dec)?,
+                crate::recognize::source_placement(
+                    &self.source.graph,
+                    placement,
+                    &self.scale,
+                    self.dec,
+                )?,
                 &major * &self.scale,
                 &minor * &self.scale,
             )),
             Geometry::Surface(_) => {
-                match crate::recognize::source_surface(&self.source.graph, id, loops, self.dec) {
+                match crate::recognize::source_surface(
+                    &self.source.graph,
+                    id,
+                    loops,
+                    &self.scale,
+                    self.dec,
+                ) {
                     Ok(surface) => Ok(surface),
                     Err(ImportRefusal::Unsupported { .. }) => Ok(S::Retained(self.retained(id))),
                     Err(error) => Err(error),

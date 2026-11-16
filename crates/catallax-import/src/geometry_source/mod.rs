@@ -203,7 +203,7 @@ fn context_field(count: usize, id: EntityId) -> Result<usize, ImportRefusal> {
     }
 }
 
-/// An unmapped source carrier, retaining its complete graph and length units.
+/// An unmapped or unresolved source reference, retaining its graph and length units.
 /// It supplies no native incidence or material certificate.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct RetainedGeometry {

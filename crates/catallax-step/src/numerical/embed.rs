@@ -104,27 +104,63 @@ pub fn embeds(model: &Model, body: BodyId) -> bool {
 
 struct SplineFace {
     surface: Surface64,
+    // Binary64 copy of `bounds`, where inversion searches and snaps.
     region: [[f64; 2]; 2],
-    // Parameter box that admitted trims stay inside: the patch domain, or the
-    // box round an atlas face's charts.
-    domain: [[f64; 2]; 2],
+    // Exact parameter box that admitted trims stay inside: the patch domain,
+    // or the box round an atlas face's charts. Its sides need not be binary64
+    // values, so trims on a side take the exact side, never its binary64 copy.
+    bounds: [[Rational; 2]; 2],
+}
+
+impl SplineFace {
+    fn new(surface: Surface64, bounds: [[Rational; 2]; 2]) -> Self {
+        Self {
+            surface,
+            region: bounds
+                .each_ref()
+                .map(|side| side.each_ref().map(Rational::to_f64_nearest)),
+            bounds,
+        }
+    }
+
+    // The exact value of a proposed parameter: a side within binary64 noise
+    // is that exact side, and any other value is kept inside the box.
+    fn exact(&self, axis: usize, value: f64) -> Result<Rational, Refusal> {
+        let [lo, hi] = self.region[axis];
+        let noise = 1e-12 * (hi - lo);
+        if (value - lo).abs() <= noise {
+            return Ok(self.bounds[axis][0].clone());
+        }
+        if (value - hi).abs() <= noise {
+            return Ok(self.bounds[axis][1].clone());
+        }
+        Ok(exact(value)?
+            .max(self.bounds[axis][0].clone())
+            .min(self.bounds[axis][1].clone()))
+    }
 }
 
 enum Carrier {
     Plane { origin: [f64; 3], normal: [f64; 3] },
-    Spline(SplineFace),
+    Spline(Box<SplineFace>),
 }
 
 fn carrier(surface: &Surface, dec: &mut Decider) -> Result<Carrier, Refusal> {
-    let region = |domains: &mut dyn Iterator<Item = &[[Rational; 2]; 2]>| {
-        let mut region = [[f64::INFINITY, f64::NEG_INFINITY]; 2];
+    // The exact box round a nonempty set of rectangles.
+    let bounds = |domains: &mut dyn Iterator<Item = &[[Rational; 2]; 2]>| {
+        let mut bounds: Option<[[Rational; 2]; 2]> = None;
         for domain in domains {
-            for axis in 0..2 {
-                region[axis][0] = region[axis][0].min(domain[axis][0].to_f64_nearest());
-                region[axis][1] = region[axis][1].max(domain[axis][1].to_f64_nearest());
-            }
+            bounds = Some(match bounds {
+                None => domain.clone(),
+                Some(box_) => std::array::from_fn(|axis| {
+                    [
+                        box_[axis][0].clone().min(domain[axis][0].clone()),
+                        box_[axis][1].clone().max(domain[axis][1].clone()),
+                    ]
+                }),
+            });
         }
-        region
+        bounds.expect("a face has at least one chart")
     };
     Ok(match surface {
         Surface::Plane(Plane { origin, normal, .. }) => {
@@ -139,22 +175,22 @@ fn carrier(surface: &Surface, dec: &mut Decider) -> Result<Carrier, Refusal> {
                 normal: n.map(|c| c / length),
             }
         }
-        Surface::BSpline(SplineSupport::RationalPatch(patch)) => Carrier::Spline(SplineFace {
-            surface: Surface64::new(patch.carrier(), dec)?,
-            region: region(&mut std::iter::once(patch.domain())),
-            domain: region(&mut std::iter::once(patch.domain())),
-        }),
+        Surface::BSpline(SplineSupport::RationalPatch(patch)) => {
+            Carrier::Spline(Box::new(SplineFace::new(
+                Surface64::new(patch.carrier(), dec)?,
+                patch.domain().clone(),
+            )))
+        }
         Surface::BSpline(SplineSupport::RationalAtlas(atlas)) => {
             dec.charge_work(atlas.charts().len() as u64)?;
             // A logical face covers only its own charts of the source; the
             // other rows of a closed source are a different face, and
             // admission keeps every trim on these charts.
-            let region = region(&mut atlas.charts().iter().map(|chart| chart.patch().domain()));
-            Carrier::Spline(SplineFace {
-                surface: Surface64::new(atlas.source(), dec)?,
-                region,
-                domain: region,
-            })
+            let bounds = bounds(&mut atlas.charts().iter().map(|chart| chart.patch().domain()));
+            Carrier::Spline(Box::new(SplineFace::new(
+                Surface64::new(atlas.source(), dec)?,
+                bounds,
+            )))
         }
         _ => {
             return Err(unsupported(
@@ -194,7 +230,7 @@ fn rational_curve<const D: usize>(
     controls: &[[f64; D]],
     domain: [&Rational; 2],
     ends: [[Rational; 3]; 2],
-    clamp: Option<[[f64; 2]; 2]>,
+    face: Option<&SplineFace>,
     dec: &mut Decider,
 ) -> Result<BSplineCurve, Refusal> {
     dec.charge_work((knots.len() + D * controls.len()) as u64)?;
@@ -223,12 +259,13 @@ fn rational_curve<const D: usize>(
         } else {
             let mut xyz = [Rational::zero(), Rational::zero(), Rational::zero()];
             for c in 0..D {
-                // A UV control a rounding step outside the carrier's box would
-                // move the trim off its domain; the curve moves by that step.
-                let value = clamp.map_or(control[c], |range| {
-                    control[c].clamp(range[c][0], range[c][1])
-                });
-                xyz[c] = exact(value)?;
+                // A UV control a rounding step outside the face's exact box
+                // would move the trim off its domain; the curve moves by that
+                // step at most.
+                xyz[c] = match face {
+                    Some(face) => face.exact(c, control[c])?,
+                    None => exact(control[c])?,
+                };
             }
             xyz
         };
@@ -295,7 +332,7 @@ fn native_uv(
                 &controls,
                 interval,
                 ends.map(uv_end),
-                Some(face.domain),
+                Some(face),
                 dec,
             );
         }
@@ -476,7 +513,7 @@ fn fitted_edge(
                 uv_controls,
                 domain,
                 face_use.ends.map(uv_end),
-                Some(face_use.face.domain),
+                Some(face_use.face),
                 dec,
             )?);
         }
@@ -636,7 +673,7 @@ pub fn definition_from_exact_model(
                                 return Err(fit_failure("a vertex has no spline face parameter"));
                             }
                             Uv {
-                                exact: [exact(at[0])?, exact(at[1])?],
+                                exact: [spline.exact(0, at[0])?, spline.exact(1, at[1])?],
                                 approx: at,
                             }
                         }
@@ -834,4 +871,93 @@ pub fn build_from_exact_model(
         let artifact = build(&body, step, dec)?;
         Ok((body, artifact))
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use catallax_shapes::BSplineSurface;
+
+    // A bilinear patch over [0, 1/3] x [1/10, 2/3]; no side is a binary64 value.
+    fn face() -> SplineFace {
+        let third = Rational::from_ratio(1, 3).unwrap();
+        let tenth = Rational::from_ratio(1, 10).unwrap();
+        let two_thirds = Rational::from_ratio(2, 3).unwrap();
+        let mut dec = Decider::default();
+        let source = BSplineSurface::new(
+            [1, 1],
+            [
+                vec![
+                    Rational::zero(),
+                    Rational::zero(),
+                    third.clone(),
+                    third.clone(),
+                ],
+                vec![
+                    tenth.clone(),
+                    tenth.clone(),
+                    two_thirds.clone(),
+                    two_thirds.clone(),
+                ],
+            ],
+            [2, 2],
+            [[0i64, 0], [0, 1], [1, 0], [1, 1]]
+                .map(|[x, y]| Point3::new(Real::from(x), Real::from(y), Real::zero()))
+                .to_vec(),
+            vec![Real::one(); 4],
+            &mut dec,
+        )
+        .unwrap();
+        SplineFace::new(
+            Surface64::new(&source, &mut dec).unwrap(),
+            [[Rational::zero(), third], [tenth, two_thirds]],
+        )
+    }
+
+    #[test]
+    fn trims_on_a_non_binary64_side_keep_the_exact_side() {
+        let face = face();
+        let third = Rational::from_ratio(1, 3).unwrap();
+        let tenth = Rational::from_ratio(1, 10).unwrap();
+        let two_thirds = Rational::from_ratio(2, 3).unwrap();
+        // The binary64 copies of 1/3, 1/10 and 2/3 differ from the sides.
+        for side in [&third, &tenth, &two_thirds] {
+            assert_ne!(&exact(side.to_f64_nearest()).unwrap(), side);
+        }
+        assert_eq!(face.exact(0, third.to_f64_nearest()).unwrap(), third);
+        assert_eq!(face.exact(1, tenth.to_f64_nearest()).unwrap(), tenth);
+        assert_eq!(
+            face.exact(1, two_thirds.to_f64_nearest() + 1e-16).unwrap(),
+            two_thirds
+        );
+        // Outside the box clamps to the side; inside keeps the proposed value.
+        assert_eq!(face.exact(0, 0.4).unwrap(), third);
+        assert_eq!(face.exact(1, 0.0).unwrap(), tenth);
+        assert_eq!(
+            face.exact(0, 0.25).unwrap(),
+            Rational::from_ratio(1, 4).unwrap()
+        );
+        // A fitted UV curve along the side u = 1/3 keeps every control on it.
+        let curve = rational_curve(
+            &[0.1, 0.1, 0.1, 0.1, 0.6, 0.6, 0.6, 0.6],
+            &[[third.to_f64_nearest(), 0.1]; 4],
+            [&tenth, &Rational::from_ratio(3, 5).unwrap()],
+            [
+                [third.clone(), tenth.clone(), Rational::zero()],
+                [
+                    third.clone(),
+                    Rational::from_ratio(3, 5).unwrap(),
+                    Rational::zero(),
+                ],
+            ],
+            Some(&face),
+            &mut Decider::default(),
+        )
+        .unwrap();
+        assert!(
+            curve
+                .controls()
+                .all(|p| p.x.as_rational() == Some(third.clone()))
+        );
+    }
 }

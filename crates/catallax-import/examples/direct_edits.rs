@@ -79,11 +79,14 @@ fn main() {
     );
     let parse = |index: usize| Rational::parse(&args[index]).unwrap();
     let key = args[4].clone();
+    let approximate_source = opened.bodies()[0].approximate();
+    let mut stage = "prepare";
     let (result, edit_work) = with_operation_budget(100_000_000, || {
         let mut dec = Decider::default();
-        let before =
-            DirectSolid::from_opened(&opened, 0, Default::default(), Default::default(), &mut dec)?;
+        let before = DirectSolid::from_opened(std::sync::Arc::new(opened), 0, &mut dec)?;
         let prepare_work = current_operation_work().used;
+        stage = "edit";
+        save("prepared.json", &json!({"work":prepare_work}));
         let edit = match args[3].as_str() {
             "delete-face" => Edit::DeleteFace { face: key },
             "delete-fillet" => Edit::DeleteFillet { face: key },
@@ -130,7 +133,7 @@ fn main() {
         Err(e) => {
             save(
                 "report.json",
-                &json!({"stage":"edit","refusal":error(e),"work":edit_work.used,"exhausted":edit_work.exhausted}),
+                &json!({"stage":stage,"refusal":error(e),"work":edit_work.used,"exhausted":edit_work.exhausted}),
             );
             return;
         }
@@ -142,26 +145,43 @@ fn main() {
         let mut dec = Decider::default();
         let mut files = Vec::new();
         for (name, solid) in [("before.step", &before), ("after.step", &after)] {
-            let file =
-                catallax_step::numerical::build(solid.body(), &Default::default(), &mut dec)?;
-            file.check_written(file.bytes(), &mut dec)?;
-            std::fs::write(out.join(name), file.bytes()).unwrap();
-            assert_eq!(std::fs::read(out.join(name)).unwrap(), file.bytes());
-            files.push(
-                json!({"file":name,"sha256":sha256_hex(file.bytes()),"bytes":file.bytes().len()}),
-            );
+            let bytes = match solid.body() {
+                tolerant::opened::BodyView::Certified { model, body } => {
+                    let mut bytes = Vec::new();
+                    let mut options = catallax_step::StepOptions::default();
+                    if approximate_source {
+                        options.product_name = "catallax approximate source repair".into();
+                    }
+                    catallax_step::write_step(model, &[body], &options, &mut dec, &mut bytes)?;
+                    bytes
+                }
+                tolerant::opened::BodyView::Numerical(body) => {
+                    let file =
+                        catallax_step::numerical::build(body, &Default::default(), &mut dec)?;
+                    file.check_written(file.bytes(), &mut dec)?;
+                    file.bytes().to_vec()
+                }
+                _ => unreachable!("the editor retains only admitted material"),
+            };
+            std::fs::write(out.join(name), &bytes).unwrap();
+            assert_eq!(std::fs::read(out.join(name)).unwrap(), bytes);
+            files.push(json!({"file":name,"sha256":sha256_hex(&bytes),"bytes":bytes.len()}));
         }
         Ok::<_, catallax_numbers::Refusal>(files)
     });
     let exports = exports.unwrap();
+    let tolerant::opened::BodyView::Numerical(material) = after.body() else {
+        unreachable!("edits are numerical")
+    };
+    let admission = after.admission().expect("completed derivative admission");
     save(
         "report.json",
         &json!({"outcome":"exported","authority":"numerical","source_sha256":after.source_sha256(),
-        "tolerance_mm":after.body().options().tolerance_mm.to_string(),"work_limit":100_000_000,
+        "tolerance_mm":material.options().tolerance_mm.to_string(),"work_limit":100_000_000,
         "open_work":open_work.used,"prepare_work":prepare_work,"edit_total_work":edit_work.used,
         "export_work":export_work.used,"exhausted":edit_work.exhausted||export_work.exhausted,
         "before_faces":before.faces().len(),"after_faces":after.faces().len(),
-        "history":format!("{:?}",after.history()),"source_pair_checks":after.admission().source_pair_checks(),
-        "topology_repairs":after.admission().topology_repairs(),"files":exports}),
+        "history":format!("{:?}",after.history()),"source_pair_checks":admission.source_pair_checks(),
+        "topology_repairs":admission.topology_repairs(),"files":exports}),
     );
 }

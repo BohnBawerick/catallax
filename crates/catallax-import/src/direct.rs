@@ -90,40 +90,43 @@ pub struct EditRecord {
 
 #[derive(Debug)]
 struct Source {
+    opened: Arc<OpenedStep>,
+    body_index: usize,
     sha256: String,
     body_name: String,
     faces: Arc<[Face]>,
 }
 
-/// Retained source, complete edited definition and checked numerical material.
+/// Retained admitted source and complete, separately checked edit derivatives.
 /// Clone shares immutable geometry; editing never mutates an earlier result.
 #[derive(Clone, Debug)]
 pub struct DirectSolid {
     source: Arc<Source>,
     faces: Arc<[Face]>,
-    material: Arc<SewnSurfaceBody>,
+    material: Option<Arc<SewnSurfaceBody>>,
     history: Vec<EditRecord>,
 }
 
 impl DirectSolid {
-    /// Start from an actually admitted imported solid, not a closed declaration.
-    /// Original source definitions are reconstructed and separately admitted by
-    /// the same sewer used for subsequent edits, using the caller's fixed caps.
+    /// Start from the actual admitted imported solid, not a closed declaration.
+    /// Keep its existing material and proof without rebuilding it from retained
+    /// pre-repair declarations. Only a requested edit constructs new material.
     pub fn from_opened(
-        opened: &OpenedStep,
+        opened: Arc<OpenedStep>,
         index: usize,
-        sewing: ToleranceOptions,
-        options: n::NumericalOptions,
         dec: &mut Decider,
     ) -> Result<Self, ImportError> {
         if !operation_budget_active() {
             return with_operation_budget(n::DEFAULT_WORK, || {
-                Self::from_opened(opened, index, sewing, options, dec)
+                Self::from_opened(opened, index, dec)
             })
             .0;
         }
         match opened.body(index) {
-            Some(BodyView::Certified { .. } | BodyView::Numerical(_)) => {}
+            Some(BodyView::Certified { model, body })
+                if model.body(body).kind == catallax_topology::BodyKind::Solid => {}
+            Some(BodyView::Numerical(body))
+                if body.kind() == catallax_topology::BodyKind::Solid => {}
             _ => {
                 return Err(bad(
                     "direct.not-solid",
@@ -139,17 +142,18 @@ impl DirectSolid {
             ));
         }
         let solid = file.solids.pop().expect("checked one solid");
-        let material = sew_constructed_surfaces(&solid.name, &solid.faces, sewing, options, dec)?;
         let faces: Arc<[Face]> = solid.faces.into();
         let source = Arc::new(Source {
             sha256: opened.source().source_sha256().to_owned(),
             body_name: solid.name,
             faces: faces.clone(),
+            opened,
+            body_index: index,
         });
         Ok(Self {
             source,
             faces,
-            material: Arc::new(material),
+            material: None,
             history: Vec::new(),
         })
     }
@@ -170,13 +174,18 @@ impl DirectSolid {
     pub fn faces(&self) -> &[Face] {
         &self.faces
     }
-    /// Separately checked numerical material, not an exact model.
-    pub fn body(&self) -> &n::NumericalBody {
-        self.material.body()
+    /// Original admitted material before editing; numerical material afterwards.
+    /// A repaired certified input retains its original repair marks and evidence.
+    pub fn body(&self) -> BodyView<'_> {
+        match &self.material {
+            Some(material) => BodyView::Numerical(material.body()),
+            None => self.source.opened.body(self.source.body_index).expect("retained admitted source"),
+        }
     }
-    /// Current sewing, source-pair and finite reconstruction evidence.
-    pub fn admission(&self) -> &SewnSurfaceBody {
-        &self.material
+    /// Sewing, source-pair and finite reconstruction evidence for a derivative.
+    /// The initial editor retains the original OpenedStep admission instead.
+    pub fn admission(&self) -> Option<&SewnSurfaceBody> {
+        self.material.as_deref()
     }
     /// Completed edits in order; refused requests never enter this history.
     pub fn history(&self) -> &[EditRecord] {
@@ -261,7 +270,7 @@ impl DirectSolid {
         Ok(Self {
             source: self.source.clone(),
             faces: faces.into(),
-            material: Arc::new(material),
+            material: Some(Arc::new(material)),
             history,
         })
     }

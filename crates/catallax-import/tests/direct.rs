@@ -23,14 +23,7 @@ fn source() -> DirectSolid {
         &mut Decider::default(),
     )
     .unwrap();
-    DirectSolid::from_opened(
-        &opened,
-        0,
-        Default::default(),
-        Default::default(),
-        &mut Decider::default(),
-    )
-    .unwrap()
+    DirectSolid::from_opened(std::sync::Arc::new(opened), 0, &mut Decider::default()).unwrap()
 }
 fn positive_x(solid: &DirectSolid) -> String {
     solid
@@ -45,12 +38,29 @@ fn positive_x(solid: &DirectSolid) -> String {
         .clone()
 }
 fn max_x(solid: &DirectSolid) -> String {
-    solid
-        .body()
-        .definition()
-        .vertices
+    let mut dec = Decider::default();
+    let bytes = match solid.body() {
+        opened::BodyView::Certified { model, body } => {
+            let mut bytes = Vec::new();
+            catallax_step::write_step(model, &[body], &Default::default(), &mut dec, &mut bytes)
+                .unwrap();
+            bytes
+        }
+        opened::BodyView::Numerical(body) => {
+            catallax_step::numerical::build(body, &Default::default(), &mut dec)
+                .unwrap()
+                .bytes()
+                .to_vec()
+        }
+        _ => panic!("material required"),
+    };
+    let file = catallax_import::read_step_with_decider(&bytes, &mut dec).unwrap();
+    file.solids[0]
+        .faces
         .iter()
-        .map(|v| &v.position[0])
+        .flat_map(|f| &f.loops)
+        .flat_map(|b| &b.edges)
+        .flat_map(|e| [&e.start.point[0], &e.end.point[0]])
         .max()
         .unwrap()
         .to_string()

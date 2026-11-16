@@ -8,6 +8,7 @@ use crate::tolerant::{ToleranceOptions, healing::HealedFile};
 #[derive(Debug)]
 pub struct SewnSurfaceBody {
     body: n::NumericalBody,
+    faces: std::sync::Arc<[crate::Face]>,
     healing: HealedFile,
     pair_checks: Vec<NumericalSourcePairCheck>,
     topology_repairs: Vec<NumericalTopologyRepair>,
@@ -17,6 +18,11 @@ impl SewnSurfaceBody {
     /// Checked closed material, always numerical even when all gaps are zero.
     pub fn body(&self) -> &n::NumericalBody {
         &self.body
+    }
+    /// Canonical 3D inputs used by the completed numerical reconstruction.
+    /// Parameter-only seams remain described by `topology_repairs`.
+    pub(crate) fn shared_faces(&self) -> std::sync::Arc<[crate::Face]> {
+        self.faces.clone()
     }
     /// Immutable original surface definitions, seam matches and repair caps.
     pub fn healing(&self) -> &HealedFile {
@@ -45,9 +51,21 @@ pub fn sew_constructed_surfaces(
     options: n::NumericalOptions,
     dec: &mut Decider,
 ) -> Result<SewnSurfaceBody, ImportError> {
+    sew_with_reconstruction(name, faces, sewing, options, |_, _| Ok(()), dec)
+}
+
+/// Run bounded geometric reconstruction after seam binding, before admission.
+pub(crate) fn sew_with_reconstruction(
+    name: &str,
+    faces: &[crate::Face],
+    sewing: ToleranceOptions,
+    options: n::NumericalOptions,
+    reconstruct: impl FnOnce(&mut [crate::Face], &mut Decider) -> Result<(), ImportError>,
+    dec: &mut Decider,
+) -> Result<SewnSurfaceBody, ImportError> {
     if !operation_budget_active() {
         return with_operation_budget(n::DEFAULT_WORK, || {
-            sew_constructed_surfaces(name, faces, sewing, options, dec)
+            sew_with_reconstruction(name, faces, sewing, options, reconstruct, dec)
         })
         .0;
     }
@@ -82,6 +100,7 @@ pub fn sew_constructed_surfaces(
         name: model.name,
         faces: shell.faces,
     });
+    reconstruct(&mut file.solids[0].faces, dec)?;
     let source_checks = intersection_checks(&file, OPTIONAL_EXACT_WORK, dec)?;
     let mut topology_repairs = Vec::new();
     let body = n::build(
@@ -90,8 +109,15 @@ pub fn sew_constructed_surfaces(
         dec,
     )?;
     dec.check_deadline()?;
+    let faces = file
+        .solids
+        .pop()
+        .expect("one constructed solid")
+        .faces
+        .into();
     Ok(SewnSurfaceBody {
         body,
+        faces,
         healing: healed,
         pair_checks: source_checks.pairs,
         topology_repairs,

@@ -241,12 +241,11 @@ pub(super) fn hole(
     let ownership = owners(faces, dec)?;
     let mut walls = BTreeSet::new();
     for (i, face) in faces.iter().enumerate() {
-        if !face.same_sense {
-            if let Surface::Cylinder(candidate, _) = &face.surface {
-                if coaxial(axis, candidate, dec)? {
-                    walls.insert(i);
-                }
-            }
+        if !face.same_sense
+            && let Surface::Cylinder(candidate, _) = &face.surface
+            && coaxial(axis, candidate, dec)?
+        {
+            walls.insert(i);
         }
     }
     let mut removable = walls.clone();

@@ -121,7 +121,10 @@ fn main() {
                     }
                     _ => panic!("observer replacement family"),
                 }
-                Edit::ReplaceFace { face: key, surface }
+                Edit::ReplaceFace {
+                    face: key,
+                    surface: Box::new(surface),
+                }
             }
             _ => panic!("unknown edit"),
         };

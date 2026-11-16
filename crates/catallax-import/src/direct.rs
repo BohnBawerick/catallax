@@ -11,7 +11,7 @@ use catallax_numbers::{
 };
 use catallax_topology::numerical as n;
 
-use crate::numerical::{ImportError, SewnSurfaceBody, sew_constructed_surfaces};
+use crate::numerical::{ImportError, SewnSurfaceBody};
 use crate::planar_arithmetic as a;
 use crate::tolerant::ToleranceOptions;
 use crate::tolerant::opened::{BodyView, OpenedStep};
@@ -57,7 +57,7 @@ pub enum Edit {
         /// Current source-scoped face key.
         face: String,
         /// New geometric support; adjacent trims are reconstructed.
-        surface: Surface,
+        surface: Box<Surface>,
     },
 }
 
@@ -67,11 +67,13 @@ pub enum Edit {
 pub enum Construction {
     /// Rational support changes and exact intersections of retained supports.
     Rational,
-    /// Upper bound on the requested parallel support displacement error.
-    /// This is not a global source-to-result distance or topology certificate.
-    BoundedOffset {
+    /// Separate numerical support-offset and endpoint-intersection bounds.
+    /// Neither is a global source-to-result or topology certificate.
+    Numerical {
         /// Absolute whole-plane displacement error, in millimetres.
-        error_upper_mm: Rational,
+        offset_error_upper_mm: Rational,
+        /// Distance to a reconstructed boundary intersection, in millimetres.
+        intersection_error_upper_mm: Rational,
     },
 }
 
@@ -278,12 +280,68 @@ impl DirectSolid {
                 support::offset(&mut faces, face, distance_mm, &options, dec)?
             }
             Edit::ReplaceFace { face, surface } => {
-                support::replace(&mut faces, face, surface.clone(), dec)?
+                support::replace(&mut faces, face, surface, dec)?
             }
         };
+        if let Construction::Numerical {
+            offset_error_upper_mm,
+            intersection_error_upper_mm,
+        } = &construction
+            && (offset_error_upper_mm > &options.tolerance_mm
+                || intersection_error_upper_mm > &options.tolerance_mm)
+        {
+            return Err(bad(
+                "direct.intersection-bound",
+                "construction error exceeds the stated numerical tolerance",
+            ));
+        }
         let line_cap = a::minimum(options.tolerance_mm.clone(), sewing.maximum_mm.clone(), dec)?;
-        let vertex_repairs = reconstruct_planar_vertices(&mut faces, &line_cap, dec)?;
-        let line_repairs = reconstruct_lines(&mut faces, &line_cap, dec)?;
+        let mut vertex_repairs = reconstruct_planar_vertices(&mut faces, &line_cap, dec)?;
+        let mut line_repairs = reconstruct_lines(&mut faces, &line_cap, dec)?;
+        let changed = {
+            let by_name: BTreeMap<_, _> = faces.iter().map(|f| (f.name.as_str(), f)).collect();
+            let mut changed = false;
+            for previous in self.faces.iter() {
+                dec.charge_work(1)?;
+                match by_name.get(previous.name.as_str()) {
+                    None => changed = true,
+                    Some(next) if previous != *next => {
+                        if let (Some(old), Some(new)) =
+                            (polygon_winding(previous, dec)?, polygon_winding(next, dec)?)
+                            && (old != new || new == catallax_numbers::Sign::Zero)
+                        {
+                            return Err(bad(
+                                "direct.topology-change",
+                                "the edit reverses or collapses an adjacent planar boundary",
+                            ));
+                        }
+                        changed = true;
+                    }
+                    _ => {}
+                }
+            }
+            changed
+        };
+        if !changed {
+            return Err(bad(
+                "direct.no-change",
+                "the request does not change the retained geometry",
+            ));
+        }
+        let material = crate::numerical::sew_with_reconstruction(
+            &self.source.body_name,
+            &faces,
+            sewing,
+            options,
+            |sewn, dec| {
+                vertex_repairs.extend(reconstruct_planar_vertices(sewn, &line_cap, dec)?);
+                line_repairs.extend(reconstruct_lines(sewn, &line_cap, dec)?);
+                Ok(())
+            },
+            dec,
+        )?;
+        drop(faces);
+        let faces = material.shared_faces();
         let by_name: BTreeMap<_, _> = faces.iter().map(|f| (f.name.as_str(), f)).collect();
         let mut modified_faces = Vec::new();
         let mut deleted_faces = Vec::new();
@@ -291,30 +349,10 @@ impl DirectSolid {
             dec.charge_work(1)?;
             match by_name.get(previous.name.as_str()) {
                 None => deleted_faces.push(previous.name.clone()),
-                Some(next) if previous != *next => {
-                    if let (Some(old), Some(new)) =
-                        (polygon_winding(previous, dec)?, polygon_winding(next, dec)?)
-                    {
-                        if old != new || new == catallax_numbers::Sign::Zero {
-                            return Err(bad(
-                                "direct.topology-change",
-                                "the edit reverses or collapses an adjacent planar boundary",
-                            ));
-                        }
-                    }
-                    modified_faces.push(previous.name.clone());
-                }
+                Some(next) if previous != *next => modified_faces.push(previous.name.clone()),
                 _ => {}
             }
         }
-        if modified_faces.is_empty() && deleted_faces.is_empty() {
-            return Err(bad(
-                "direct.no-change",
-                "the request does not change the retained geometry",
-            ));
-        }
-        let material =
-            sew_constructed_surfaces(&self.source.body_name, &faces, sewing, options, dec)?;
         let mut history = self.history.clone();
         history.push(EditRecord {
             edit,
@@ -327,7 +365,7 @@ impl DirectSolid {
         dec.check_deadline()?;
         Ok(Self {
             source: self.source.clone(),
-            faces: faces.into(),
+            faces,
             material: Some(Arc::new(material)),
             history,
         })
@@ -436,10 +474,10 @@ fn update_vertices(
 ) -> Result<(), ImportError> {
     for face in faces {
         for boundary in &mut face.loops {
-            if let Some(v) = &mut boundary.vertex {
-                if let Some(next) = vertices.get(&v.name) {
-                    *v = next.clone();
-                }
+            if let Some(v) = &mut boundary.vertex
+                && let Some(next) = vertices.get(&v.name)
+            {
+                *v = next.clone();
             }
             for edge in &mut boundary.edges {
                 dec.charge_work(1)?;
@@ -659,10 +697,10 @@ fn reconstruct_planar_vertices(
     // Keep old carriers until reconstruct_lines records their finite residuals.
     for face in faces {
         for boundary in &mut face.loops {
-            if let Some(vertex) = &mut boundary.vertex {
-                if let Some(point) = moved.get(&vertex.name) {
-                    vertex.point = point.clone();
-                }
+            if let Some(vertex) = &mut boundary.vertex
+                && let Some(point) = moved.get(&vertex.name)
+            {
+                vertex.point = point.clone();
             }
             for edge in &mut boundary.edges {
                 for vertex in [&mut edge.start, &mut edge.end] {

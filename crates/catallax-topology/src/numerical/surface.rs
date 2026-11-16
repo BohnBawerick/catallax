@@ -310,7 +310,7 @@ impl SplineSurfaceBody {
             if thickness.is_zero() {
                 return Err(failure("thickness must be nonzero"));
             }
-            let (base, offset, checks) = fit_normal_pair(
+            let (offset, checks) = fit_normal_offset(
                 &self.source,
                 &thickness,
                 &self.body.options.tolerance_mm,
@@ -434,7 +434,6 @@ fn extend_candidate(
     candidate.extracted(requested.each_ref().map(|a| a.each_ref()), dec)
 }
 
-fn fit_normal_pair(
 struct OffsetInterval {
     source_span: usize,
     bounds: [Rational; 2],
@@ -489,6 +488,7 @@ fn offset_nodes(intervals: &[OffsetInterval], dec: &mut Decider) -> Result<Vec<R
     Ok(nodes)
 }
 
+fn fit_normal_offset(
     source: &RationalSplineSurface,
     thickness: &Rational,
     tolerance: &Rational,

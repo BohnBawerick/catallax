@@ -431,6 +431,8 @@ fn build_impl(
     }
     let face_index = d.faces.len();
     let face_key = format!("{key}/blend/{edge_key}");
+    let mut sampled_carriers = source.sampled_carriers().clone();
+    sampled_carriers.insert(face_key.clone());
     for side in 0..2 {
         let curve = fillet.rail(side).unwrap();
         bindings.insert((face_key.clone(), d.edges[rails[side]].key.clone()), parameter_line(curve.domain(), side, dec)?);
@@ -469,7 +471,7 @@ fn build_impl(
         }
     }
     compact(&mut d);
-    let body = previous.unwrap_or(&source).rebuild_with_native_trims(d, native_trims, source.options().clone(), dec)
+    let body = previous.unwrap_or(&source).rebuild_with_sampled_carriers(d, native_trims, sampled_carriers, source.options().clone(), dec)
         .map_err(|error| at_stage("body native admission", error))?;
     Ok(NumericalFilletBuilt { source, body, edge: edge_key.into(), key: key.into(), radius, tolerance_mm, fillet, constrained_parameter_controls })
 }

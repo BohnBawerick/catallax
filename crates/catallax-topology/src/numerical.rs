@@ -19,7 +19,7 @@ mod atlas;
 mod curved;
 mod handover;
 mod native;
-pub use native::{NumericalNativeTrim, build_with_native_trims};
+pub use native::{NumericalNativeTrim, build_with_native_trims, build_with_sampled_carriers};
 mod source;
 pub use source::definition_from_model;
 /// Editable finite spline sheets with trim, extension and normal thickening.
@@ -150,6 +150,9 @@ impl Default for NumericalOptions {
 /// continuous projected-disk clearance checks, not chord-polygon pair tests.
 /// Other curved boundary containment remains sampled and explicitly unresolved
 /// between nodes.
+/// Explicitly declared numerical atlas carriers may instead use a 9 by 9
+/// sampled chart-box coverage check. Their evidence says sampled coverage,
+/// never filled-box proof. Other faces retain the exact chart-union test.
 /// The checks do not establish whole-body separation, global self-intersection
 /// freedom or a whole-body approximation bound. They grant no STEP export authority.
 /// Approximate export requires a numerical writer and its own output checks.
@@ -164,6 +167,8 @@ impl Default for NumericalOptions {
 pub struct NumericalBody {
     source: NumericalDefinition,
     source_native_trims: Vec<NumericalNativeTrim>,
+    source_sampled_carriers: BTreeSet<String>,
+    sampled_carriers: BTreeSet<String>,
     native_trims: Vec<NumericalNativeTrim>,
     history: Vec<NumericalHistory>,
     definition: NumericalDefinition,
@@ -180,6 +185,8 @@ pub struct NumericalHistory {
     pub definition: NumericalDefinition,
     /// Native parameter curves checked at this stage.
     pub native_trims: Vec<NumericalNativeTrim>,
+    /// Numerical carriers admitted with sampled, not exact, chart-box coverage.
+    pub sampled_carriers: BTreeSet<String>,
     /// The controls used at this stage.
     pub options: NumericalOptions,
     /// The checks and cumulative repair history at this stage.
@@ -208,10 +215,12 @@ impl NumericalBody {
     fn inherit(&mut self, previous: &Self) {
         self.source = previous.source.clone();
         self.source_native_trims = previous.source_native_trims.clone();
+        self.source_sampled_carriers = previous.source_sampled_carriers.clone();
         self.history = previous.history.clone();
         self.history.push(NumericalHistory {
             definition: previous.definition.clone(),
             native_trims: previous.native_trims.clone(),
+            sampled_carriers: previous.sampled_carriers.clone(),
             options: previous.options.clone(),
             evidence: previous.evidence.clone(),
         });
@@ -304,6 +313,7 @@ impl NumericalBody {
                 self.kind(),
                 definition,
                 self.native_trims.clone(),
+                self.sampled_carriers.clone(),
                 self.options.clone(),
                 repairs,
                 dec,
@@ -323,7 +333,7 @@ pub fn build(
     options: NumericalOptions,
     dec: &mut Decider,
 ) -> Result<NumericalBody, Refusal> {
-    guarded(|| build_inner(definition, Vec::new(), options, Vec::new(), dec))
+    guarded(|| build_inner(definition, Vec::new(), BTreeSet::new(), options, Vec::new(), dec))
 }
 
 /// Builds an open or closed surface shell under stated numerical tolerances.
@@ -454,6 +464,7 @@ fn admission_stage(name: &'static str, scope: impl FnOnce() -> String) -> Option
 fn build_inner(
     definition: NumericalDefinition,
     native_trims: Vec<NumericalNativeTrim>,
+    sampled_carriers: BTreeSet<String>,
     options: NumericalOptions,
     repairs: Vec<NumericalRepair>,
     dec: &mut Decider,
@@ -487,6 +498,13 @@ fn build_inner_kind(
     keys(definition.vertices.iter().map(|v| v.key.as_str()), dec)?;
     keys(definition.edges.iter().map(|e| e.key.as_str()), dec)?;
     keys(definition.faces.iter().map(|f| f.key.as_str()), dec)?;
+    for key in &sampled_carriers {
+        let face = definition.faces.iter().find(|face| &face.key == key)
+            .ok_or_else(|| bad("definition", "sampled carrier names an unknown face"))?;
+        if !matches!(face.surface, Surface::BSpline(SplineSupport::RationalAtlas(_))) {
+            return Err(bad("unsupported", "sampled carrier coverage requires a retained rational atlas"));
+        }
+    }
     let native = native::Index::new(&definition, &native_trims, dec)?;
     let mut model = Model::new();
     let vertices: Vec<_> = definition
@@ -574,11 +592,15 @@ fn build_inner_kind(
         if face.loops.is_empty() {
             return Err(bad("trim", "this admission path requires an outer loop"));
         }
-        // Chart-union containment is checked at sampled native UV locations,
-        // so an atlas face accepts no straight parameter trim, and its charts
-        // must fill their box so that the filled loop stays on them.
+        // Every atlas edge needs native UV data. Exact faces also establish
+        // complete chart-box coverage; explicitly numerical carriers record
+        // sampled coverage only.
         if let Surface::BSpline(SplineSupport::RationalAtlas(source)) = &face.surface {
-            atlas::check_filled(source, dec)?;
+            if sampled_carriers.contains(&face.key) {
+                atlas::check_sampled(source, dec)?;
+            } else {
+                atlas::check_filled(source, dec)?;
+            }
             for (row, boundary) in face.loops.iter().enumerate() {
                 for use_index in 0..boundary.len() {
                     dec.charge_work(1)?;
@@ -706,7 +728,11 @@ fn build_inner_kind(
             Surface::BSpline(SplineSupport::RationalAtlas(_))
         ) {
             checks.push(NumericalCheck::Passed {
-                name: "surface.atlas-charts-fill-box".into(),
+                name: if sampled_carriers.contains(&face.key) {
+                    "surface.sampled-atlas-chart-box-coverage-9x9"
+                } else {
+                    "surface.atlas-charts-fill-box"
+                }.into(),
                 scope: face.key.clone(),
             });
             checks.push(NumericalCheck::Passed {
@@ -830,6 +856,8 @@ fn build_inner_kind(
     Ok(NumericalBody {
         source: definition.clone(),
         source_native_trims: native_trims.clone(),
+        source_sampled_carriers: sampled_carriers.clone(),
+        sampled_carriers,
         native_trims,
         history: Vec::new(),
         definition,
@@ -1131,7 +1159,7 @@ pub fn sew(
             }
         }
         definition.vertices = retained;
-        let mut body = build_inner(definition, Vec::new(), options, repairs, dec)?;
+        let mut body = build_inner(definition, Vec::new(), BTreeSet::new(), options, repairs, dec)?;
         body.source = input.clone();
         let mut checks = body.evidence.checks().to_vec();
         for &[keeper, removed] in pairs {

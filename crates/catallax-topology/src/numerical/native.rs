@@ -297,13 +297,34 @@ pub fn build_with_native_trims(
     options: NumericalOptions,
     dec: &mut Decider,
 ) -> Result<NumericalBody, Refusal> {
-    guarded(|| build_inner(definition, native_trims, options, Vec::new(), dec))
+    guarded(|| build_inner(definition, native_trims, BTreeSet::new(), options, Vec::new(), dec))
+}
+
+/// Admits explicitly numerical atlas carriers with sampled box coverage.
+/// The declaration changes only their chart-coverage check, not edge, loop,
+/// incidence, or distance checks. Undeclared faces keep exact chart coverage.
+pub fn build_with_sampled_carriers(
+    definition: NumericalDefinition,
+    native_trims: Vec<NumericalNativeTrim>,
+    sampled_carriers: BTreeSet<String>,
+    options: NumericalOptions,
+    dec: &mut Decider,
+) -> Result<NumericalBody, Refusal> {
+    guarded(|| build_inner(definition, native_trims, sampled_carriers, options, Vec::new(), dec))
 }
 
 impl NumericalBody {
     /// Original native parameter curves, including curves retained through edits.
     pub fn source_native_trims(&self) -> &[NumericalNativeTrim] {
         &self.source_native_trims
+    }
+    /// Original carriers declared numerical, retained through continuations.
+    pub fn source_sampled_carriers(&self) -> &BTreeSet<String> {
+        &self.source_sampled_carriers
+    }
+    /// Current carriers whose chart-box coverage was checked only at samples.
+    pub fn sampled_carriers(&self) -> &BTreeSet<String> {
+        &self.sampled_carriers
     }
     /// Current native parameter curves, bound to stable finite coedge uses.
     pub fn native_trims(&self) -> &[NumericalNativeTrim] {
@@ -317,11 +338,29 @@ impl NumericalBody {
         options: NumericalOptions,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
+        let sampled_carriers = self.sampled_carriers.iter().filter(|key| {
+            definition.faces.iter().any(|face| &face.key == *key
+                && matches!(face.surface, Surface::BSpline(SplineSupport::RationalAtlas(_))))
+        }).cloned().collect();
+        self.rebuild_with_sampled_carriers(definition, native_trims, sampled_carriers, options, dec)
+    }
+
+    /// Rechecks an edit with an explicit current numerical-carrier declaration.
+    /// Source declarations and earlier check records remain historical.
+    pub fn rebuild_with_sampled_carriers(
+        &self,
+        definition: NumericalDefinition,
+        native_trims: Vec<NumericalNativeTrim>,
+        sampled_carriers: BTreeSet<String>,
+        options: NumericalOptions,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
         guarded(|| {
             let mut next = build_inner_kind(
                 self.kind(),
                 definition,
                 native_trims,
+                sampled_carriers,
                 options,
                 self.evidence.repairs().to_vec(),
                 dec,

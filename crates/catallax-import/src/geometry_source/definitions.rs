@@ -198,3 +198,80 @@ pub struct RepresentationContext {
     /// Declared uncertainty references.
     pub uncertainties: Vec<EntityId>,
 }
+
+/// Topology declarations. Shell closure and orientation remain source claims.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum Topology {
+    /// Outer connected face set and oriented inner-shell references.
+    Solid {
+        /// Outer shell or connected face set.
+        outer: EntityId,
+        /// Oriented inner-shell instances in source order.
+        voids: Vec<EntityId>,
+    },
+    /// Shell-based surface model, retaining open or closed shell references.
+    SurfaceModel(Vec<EntityId>),
+    /// Face-based surface model, retaining connected face sets.
+    FaceModel(Vec<EntityId>),
+    /// Face references and closure declaration; absent for a connected face set.
+    Shell {
+        /// Source face instances.
+        faces: Vec<EntityId>,
+        /// Declared closure, absent for an unspecialized face set.
+        closed: Option<bool>,
+    },
+    /// Oriented shell reference and its declared orientation.
+    OrientedShell(EntityId, bool),
+    /// Bounds, optional support geometry and declared same-sense flag.
+    Face {
+        /// Face-bound instances in source order.
+        bounds: Vec<EntityId>,
+        /// Support surface, absent on a topological FACE.
+        surface: Option<EntityId>,
+        /// Declared sense against the support geometry.
+        same_sense: Option<bool>,
+    },
+    /// Oriented face reference and its declared orientation.
+    OrientedFace(EntityId, bool),
+    /// Boundary loop, orientation and explicit outer-bound designation.
+    FaceBound {
+        /// Boundary LOOP instance.
+        loop_id: EntityId,
+        /// Declared traversal orientation.
+        orientation: bool,
+        /// Whether the entity explicitly names an outer bound.
+        outer: bool,
+    },
+    /// Ordered oriented-edge references.
+    EdgeLoop(Vec<EntityId>),
+    /// Ordered Cartesian points of a polygonal loop.
+    PolyLoop(Vec<EntityId>),
+    /// A degenerate loop represented by one vertex.
+    VertexLoop(EntityId),
+    /// Endpoint vertices, optional curve and same-sense declaration.
+    Edge {
+        /// Source start and end vertices.
+        vertices: [EntityId; 2],
+        /// Support curve, absent on a topological EDGE.
+        curve: Option<EntityId>,
+        /// Declared sense against the support geometry.
+        same_sense: Option<bool>,
+    },
+    /// Oriented edge reference and its declared orientation.
+    OrientedEdge(EntityId, bool),
+    /// A vertex's Cartesian point reference.
+    Vertex(EntityId),
+}
+
+/// Representation placement records, before composing transformations.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum PlacementLink {
+    /// Mapping origin and mapped representation.
+    RepresentationMap(EntityId, EntityId),
+    /// Representation map and target transformation.
+    MappedItem(EntityId, EntityId),
+    /// Two representation references and their transformation operator.
+    Relationship([EntityId; 2], EntityId),
+    /// Source and target representation items defining a transformation.
+    ItemDefinedTransformation([EntityId; 2]),
+}

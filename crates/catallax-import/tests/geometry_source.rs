@@ -171,3 +171,148 @@ fn representation_contexts_retain_separate_unit_assignments() {
         Err(ImportRefusal::Malformed { .. })
     ));
 }
+
+#[test]
+fn topology_retains_void_orientation_and_surface_intent() {
+    use catallax_import::geometry_source::Topology;
+    let s=read("
+#1=BREP_WITH_VOIDS('solid',#10,(#12));
+#2=(BREP_WITH_VOIDS((#12)) FACETED_BREP() GEOMETRIC_REPRESENTATION_ITEM() MANIFOLD_SOLID_BREP(#10) REPRESENTATION_ITEM('solid') SOLID_MODEL());
+#3=SHELL_BASED_SURFACE_MODEL('surface',(#10,#11));
+#4=FACE_BASED_SURFACE_MODEL('faces',(#10));
+#10=CLOSED_SHELL('outer',(#20));
+#11=OPEN_SHELL('open',(#20));
+#12=ORIENTED_CLOSED_SHELL('inner',*,#10,.F.);
+#13=(CLOSED_SHELL() CONNECTED_FACE_SET((#20)) GEOMETRIC_REPRESENTATION_ITEM() REPRESENTATION_ITEM('outer') TOPOLOGICAL_REPRESENTATION_ITEM());
+#20=ADVANCED_FACE('face',(#30),#90,.F.);
+#21=(ADVANCED_FACE() FACE((#30)) FACE_SURFACE(#90,.F.) GEOMETRIC_REPRESENTATION_ITEM() REPRESENTATION_ITEM('face') TOPOLOGICAL_REPRESENTATION_ITEM());
+#22=ORIENTED_FACE('face',*,#20,.F.);
+#30=FACE_OUTER_BOUND('bound',#40,.T.);
+#31=(FACE_BOUND(#40,.T.) FACE_OUTER_BOUND() REPRESENTATION_ITEM('bound') TOPOLOGICAL_REPRESENTATION_ITEM());
+#40=EDGE_LOOP('loop',(#50));
+#41=VERTEX_LOOP('loop',#70);
+#42=POLY_LOOP('poly',(#80,#81,#82));
+#50=ORIENTED_EDGE('edge',*,*,#60,.F.);
+#60=EDGE_CURVE('curve',#70,#71,#91,.T.);
+#61=(EDGE(#70,#71) EDGE_CURVE(#91,.T.) GEOMETRIC_REPRESENTATION_ITEM() REPRESENTATION_ITEM('curve') TOPOLOGICAL_REPRESENTATION_ITEM());
+#70=VERTEX_POINT('vertex',#80);
+");
+    let t = |id| s.topology(id, &mut Decider::default()).unwrap();
+    for (a, b) in [(1, 2), (10, 13), (20, 21), (30, 31), (60, 61)] {
+        assert_eq!(t(a), t(b));
+    }
+    assert_eq!(
+        t(1),
+        Topology::Solid {
+            outer: 10,
+            voids: vec![12]
+        }
+    );
+    assert_eq!(t(12), Topology::OrientedShell(10, false));
+    assert_eq!(t(3), Topology::SurfaceModel(vec![10, 11]));
+    assert_eq!(t(4), Topology::FaceModel(vec![10]));
+    assert_eq!(
+        t(11),
+        Topology::Shell {
+            faces: vec![20],
+            closed: Some(false)
+        }
+    );
+    assert_eq!(
+        t(20),
+        Topology::Face {
+            bounds: vec![30],
+            surface: Some(90),
+            same_sense: Some(false)
+        }
+    );
+    assert_eq!(t(22), Topology::OrientedFace(20, false));
+    assert_eq!(t(41), Topology::VertexLoop(70));
+    assert_eq!(t(42), Topology::PolyLoop(vec![80, 81, 82]));
+    assert_eq!(t(50), Topology::OrientedEdge(60, false));
+    assert_eq!(
+        t(60),
+        Topology::Edge {
+            vertices: [70, 71],
+            curve: Some(91),
+            same_sense: Some(true)
+        }
+    );
+    assert_eq!(t(70), Topology::Vertex(80));
+}
+
+#[test]
+fn representation_maps_retain_both_frames_and_transform_direction() {
+    use catallax_import::geometry_source::PlacementLink;
+    let s=read("
+#1=REPRESENTATION_MAP(#10,#11);
+#2=MAPPED_ITEM('mapped',#1,#12);
+#3=ITEM_DEFINED_TRANSFORMATION('placement',$,#20,#21);
+#4=REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION('link',$,#11,#13,#3);
+#5=(REPRESENTATION_RELATIONSHIP('link',$,#11,#13) REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION(#3) SHAPE_REPRESENTATION_RELATIONSHIP());
+");
+    let link = |id| s.placement_link(id, &mut Decider::default()).unwrap();
+    assert_eq!(link(1), PlacementLink::RepresentationMap(10, 11));
+    assert_eq!(link(2), PlacementLink::MappedItem(1, 12));
+    assert_eq!(link(3), PlacementLink::ItemDefinedTransformation([20, 21]));
+    assert_eq!(link(4), PlacementLink::Relationship([11, 13], 3));
+    assert_eq!(link(4), link(5));
+}
+
+#[test]
+fn exact_mapping_keeps_line_magnitude_and_polyline_index_parameters() {
+    use catallax_shapes::Curve as NativeCurve;
+    let s = read(
+        "
+#1=CARTESIAN_POINT('p',(1.,2.,3.));
+#2=DIRECTION('direction',(0.,3.,4.));
+#3=VECTOR('vector',#2,5.);
+#4=LINE('line',#1,#3);
+#5=CARTESIAN_POINT('q',(1.,2.,103.));
+#6=CARTESIAN_POINT('r',(2.,2.,103.));
+#7=POLYLINE('polyline',(#1,#5,#6));
+#8=CARTESIAN_POINT('uv',(2.,3.));
+#9=POLYLINE('uv',(#8,#8));
+",
+    );
+    let mut dec = Decider::default();
+    let NativeCurve::Line(line) = s.native_curve(4, &q("2"), &mut dec).unwrap() else {
+        panic!("line")
+    };
+    assert_eq!(line.origin.y.rational_ref(), Some(&q("4")));
+    assert_eq!(line.dir.y.rational_ref(), Some(&q("6")));
+    assert_eq!(line.dir.z.rational_ref(), Some(&q("8")));
+    let poly = s
+        .spline_curve(7, &[q("1"), q("1"), q("1")], &mut dec)
+        .unwrap();
+    assert_eq!(poly.knots(), &[q("0"), q("0"), q("1"), q("2"), q("2")]);
+    let uv = s
+        .spline_curve(9, &[q("10"), q("100"), q("1")], &mut dec)
+        .unwrap();
+    assert_eq!(uv.controls()[0], [q("20"), q("300"), q("0")]);
+    assert_eq!(uv.controls()[0], uv.controls()[1]);
+}
+
+#[test]
+fn native_mapping_preserves_wrappers_and_complete_torus_definition() {
+    let s = read(
+        "
+#1=CARTESIAN_POINT('p',(0.,0.,0.));
+#2=AXIS2_PLACEMENT_3D('frame',#1,$,$);
+#3=TOROIDAL_SURFACE('spindle',#2,1.,2.);
+#4=PLANE('plane',#2);
+#5=OFFSET_SURFACE('offset',#4,2.,.F.);
+#6=CIRCLE('circle',#2,1.);
+#7=TRIMMED_CURVE('trim',#6,(PARAMETER_VALUE(0.)),(PARAMETER_VALUE(1.)),.T.,.PARAMETER.);
+",
+    );
+    let mut dec = Decider::default();
+    assert!(s.native_surface(4, &q("1"), &mut dec).is_ok());
+    assert!(s.native_surface(3, &q("1"), &mut dec).is_err());
+    assert!(s.native_surface(5, &q("1"), &mut dec).is_err());
+    assert!(s.native_curve(7, &q("1"), &mut dec).is_err());
+    assert_eq!(
+        geometry(&s, 3),
+        Geometry::Surface(Surface::Torus(2, q("1"), q("2")))
+    );
+}

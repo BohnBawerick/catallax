@@ -83,7 +83,7 @@ fn logical(a: &[Param], i: usize, id: EntityId) -> Result<Option<bool>, ImportRe
         _ => Err(malformed(id, "expected a STEP logical")),
     }
 }
-fn boolean(a: &[Param], i: usize, id: EntityId) -> Result<bool, ImportRefusal> {
+pub(super) fn boolean(a: &[Param], i: usize, id: EntityId) -> Result<bool, ImportRefusal> {
     logical(a, i, id)?.ok_or_else(|| malformed(id, "expected a STEP boolean"))
 }
 fn reals(a: &[Param], i: usize, id: EntityId) -> Result<Vec<Rational>, ImportRefusal> {
@@ -114,7 +114,11 @@ fn trim(a: &[Param], i: usize, id: EntityId) -> Result<Vec<TrimSelect>, ImportRe
         })
         .collect()
 }
-fn component<'a>(e: &'a Entity, kind: &str, id: EntityId) -> Result<&'a [Param], ImportRefusal> {
+pub(super) fn component<'a>(
+    e: &'a Entity,
+    kind: &str,
+    id: EntityId,
+) -> Result<&'a [Param], ImportRefusal> {
     e.part(kind)
         .ok_or_else(|| malformed(id, format!("missing {kind} component")))
 }
@@ -137,6 +141,11 @@ pub(super) fn geometry(
     dec: &mut Decider,
 ) -> Result<Geometry, ImportRefusal> {
     let e = source.entity(id)?;
+    charge(e, dec)?;
+    geometry_fields(source, e, id)
+}
+
+pub(super) fn charge(e: &Entity, dec: &mut Decider) -> Result<(), ImportRefusal> {
     let mut pending: Vec<&Param> = e.parts.iter().flat_map(|(_, a)| a).collect();
     while let Some(p) = pending.pop() {
         let work = match p {
@@ -150,6 +159,14 @@ pub(super) fn geometry(
             _ => {}
         }
     }
+    Ok(())
+}
+
+fn geometry_fields(
+    source: &ParsedStep,
+    e: &Entity,
+    id: EntityId,
+) -> Result<Geometry, ImportRefusal> {
     if let Some(spline) = spline(e, id)? {
         return Ok(spline);
     }

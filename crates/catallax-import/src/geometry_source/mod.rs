@@ -5,7 +5,10 @@
 
 mod decode;
 mod definitions;
+mod mapping;
+mod topology;
 pub use definitions::*;
+pub use mapping::{Frame, MappingError};
 
 use crate::ImportRefusal;
 use crate::part21::{Entity, Graph};
@@ -51,6 +54,24 @@ impl ParsedStep {
         dec.charge_work(1)
             .map_err(|_| ImportRefusal::ResourceLimit)?;
         decode::geometry(self, id, dec)
+    }
+
+    /// Read topology declarations without inferring a material region.
+    pub fn topology(&self, id: EntityId, dec: &mut Decider) -> Result<Topology, ImportRefusal> {
+        let e = self.entity(id)?;
+        decode::charge(e, dec)?;
+        topology::read(e, id)
+    }
+
+    /// Read representation maps and transformation relationships.
+    pub fn placement_link(
+        &self,
+        id: EntityId,
+        dec: &mut Decider,
+    ) -> Result<PlacementLink, ImportRefusal> {
+        let e = self.entity(id)?;
+        decode::charge(e, dec)?;
+        topology::placement_link(e, id)
     }
 
     /// Existing exact-source recognition over the same parsed graph.

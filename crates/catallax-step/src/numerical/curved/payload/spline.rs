@@ -169,6 +169,42 @@ pub(super) fn surface(
     )
 }
 
+/// The written atlas face: the rounded source, partitioned again, keeping
+/// the component whose charts have the original domains after rounding.
+pub(super) fn atlas(
+    source: &RationalAtlas,
+    errors: &mut Errors,
+    options: &NumericalStepOptions,
+    dec: &mut Decider,
+) -> Result<RationalAtlas, Refusal> {
+    let carrier = surface(source.source(), errors, options, dec)?;
+    let mut wanted = Vec::with_capacity(source.charts().len());
+    for chart in source.charts() {
+        let mut domain = chart.patch().domain().clone();
+        for value in domain.iter_mut().flatten() {
+            dec.charge_work(1)?;
+            *value = written(value, options)?;
+        }
+        wanted.push(domain);
+    }
+    let periodic = [source.periodic_u(), source.periodic_v()];
+    for candidate in RationalAtlas::partition(carrier, periodic, dec)? {
+        dec.charge_work(1)?;
+        if candidate
+            .charts()
+            .iter()
+            .map(|chart| chart.patch().domain())
+            .eq(wanted.iter())
+        {
+            return Ok(candidate);
+        }
+    }
+    Err(bad(
+        "rounding-topology",
+        "the written atlas source no longer has the original charts",
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

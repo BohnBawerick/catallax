@@ -744,11 +744,17 @@ fn check_loop(
                 format!("{} has an empty or open parameter edge", face.key),
             ));
         }
-        if let Surface::BSpline(SplineSupport::RationalPatch(patch)) = &face.surface {
+        let domain = match &face.surface {
+            Surface::BSpline(SplineSupport::RationalPatch(patch)) => {
+                Some(patch.domain().each_ref().map(|[lo, hi]| [lo, hi]))
+            }
+            // An atlas face evaluates its retained source in source parameters.
+            Surface::BSpline(SplineSupport::RationalAtlas(atlas)) => Some(atlas.source().domain()),
+            _ => None,
+        };
+        if let Some(domain) = domain {
             for p in [a, b] {
-                if (0..2).any(|axis| {
-                    p[axis] < patch.domain()[axis][0] || p[axis] > patch.domain()[axis][1]
-                }) {
+                if (0..2).any(|axis| p[axis] < *domain[axis][0] || p[axis] > *domain[axis][1]) {
                     return Err(bad(
                         "trim",
                         "parameter trim leaves the retained patch domain",

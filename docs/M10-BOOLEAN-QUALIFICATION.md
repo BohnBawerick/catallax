@@ -1,8 +1,9 @@
 # M10 spline boolean qualification
 
-The three side box/loft operations and the through-all loft cut construct
-solids. All fourteen exchange requests below still refuse. None produces a
-STEP file, so there is no new OpenCASCADE export-validity claim.
+The three side box/loft operations, the through-all loft cut and the three
+spline-pair operations construct solids and now write approximate STEP
+through the numerical embedding described below. The other seven exchange
+requests still refuse and produce no STEP file.
 
 The request allowance is 20,000,000 work units, including construction and
 export. Tolerances and existing proof checks are unchanged. A budget row is
@@ -72,6 +73,38 @@ The two-spline requests build both operands, then stop at the atlas/atlas
 surface-pair coverage boundary. These early refusals establish neither
 classification nor sewing of those requests.
 
+## Numerical STEP embedding
+
+The exact writer has no STEP form for a multi-chart atlas face or a
+patch-pair curve, so it refuses `step.unsupported-geometry` for all seven
+constructed requests. Their Boolean results keep complete finite trims, so
+this is a representation gap only. Following the ROADMAP "Numerical first"
+rule, such a refusal now tries a numerical embedding at the exact writer's
+1e-7 mm curve tolerance. Each atlas face is written as its retained source
+surface. Patch-section and patch-pair edges become fitted cubics, and every
+edge use on a spline face gets a fitted native UV curve. Numerical admission
+and the writer's decimal payload are checked at that tolerance. Answers are
+marked approximate, with no complete body bound. See
+[the interface note](interface-changes/2026-11-16-numerical-step-embedding.md).
+
+Work-PC replays at 20M, one worker:
+
+| Number | Request | Total work | Embedding and STEP | Raw OCCT faces/edges/vertices | Volume mm3 |
+| --- | --- | ---: | ---: | --- | ---: |
+| M10-001 | Side subtract | 9,261,428 | 1,012,142 | 9/18/12 | 10.700529128388986 |
+| M10-002 | Side union | 9,262,899 | 1,013,564 | 9/18/12 | 30.700529128388986 |
+| M10-003 | Side intersect | 8,941,741 | 697,951 | 6/12/8 | 3.299479539097737 |
+| M10-007 | Through-all loft cut | 3,361,386 | 817,363 | 8/18/12 | 13.00000866748672 |
+| M10-012 | Two spline lofts subtract | 4,142,927 | 553,039 | 5/9/6 | 5.140628182592781 |
+| M10-013 | Two spline lofts union | 4,174,042 | 583,250 | 5/9/6 | 19.1406368500795 |
+| M10-014 | Two spline lofts intersect | 5,224,950 | 544,318 | 5/9/6 | 8.85938048489394 |
+
+Every file opens in OpenCASCADE (OCP 8.0.1.1) through the repository's
+healing-off reader as one valid solid with the manifest's counts, and a
+later box cut stays valid. The volumes agree with each other: subtract plus
+intersect gives the loft volume 14.0000087 in both families, and union minus
+subtract gives the side box volume of 20.
+
 ## Verification
 
 The 15 November finite-contact rerun moves M10-009 through M10-011 past the
@@ -85,10 +118,12 @@ section solver and must complete construction before refusing STEP export.
 
 The end-to-end test runs fresh requests with request-worker/kernel-thread
 counts 1/1 and 4/4. It compares complete manifests, operation logs and work,
-excluding diagnostic timings and statistics. It requires the five constructed
-cases to reach STEP, import to complete for M10-009 through M10-011, and every
-refused output directory to contain no `answer.step`. A replay over a seeded
-stale STEP file must remove that file and retain the same outcome and work.
+excluding diagnostic timings and statistics. It requires the seven constructed
+cases to answer with approximate STEP after the exact writer's refusal, M7 to
+reach the writer, import to complete for M10-009 through M10-011, and every
+refused output directory to contain no `answer.step`. A replay of M10-008 over
+a seeded stale STEP file must remove that file and retain the same outcome and
+work.
 
 The feature test retains the side Solid, one-material-lump and structural
 checks. Its through-all cut also requires one solid and two cap openings.

@@ -957,7 +957,11 @@ Ordinary recipes retain `helix` path segments and optional `sweep.guide` and `sw
 
 The section construction follows [OpenCASCADE MakePipeShell](https://dev.opencascade.org/doc/refman/html/class_b_rep_offset_a_p_i___make_pipe_shell.html) and [SMLib's geometry/topology sweep separation](https://docs.nvidia.com/smlib/manual/smlib/sweep/index.html). A helix uses the analytic rotation-minimising frame law, including its torsion correction, rather than substituting a Frenet frame. Four transported sections propose each cubic longitudinal span. Linear motion with no guide or twist uses an exact ruled span instead. Rational profile weights and section coordinates are fitted numerically. Shared parameter rows define common B-rep edges; no mesh substitutes for the solid.
 
+An integer number of helix turns does not generally return a rotation-minimising frame: its torsion contributes holonomy. An authored oblique section therefore cannot be copied by a plain axial screw motion. [OCCT's rigid-instance reuse](https://occt3d.com/dev/doc/refman/html/class_b_rep_builder_a_p_i___transform.html) applies when the complete geometry is a rigid copy, not merely its centreline. This implementation retains the authored frame instead of substituting Frenet transport.
+
 For single rational bicubic charts the kernel couples the projected Jacobian numerators before taking exact Bernstein hulls, following the homogeneous control-hull principle used in [SMLib's Bezier bounds](https://github.com/NVIDIA-Omniverse/usd-brep/blob/main/source/SMLib/src/SmBSplineCurve.cpp). Positive diagonal lower bounds and a strict determinant bound prove the same positive symmetric Jacobian and global embedding as the existing interval criterion. [OCCT's B-spline constructor checks](https://occt3d.com/dev/doc/refman/html/class_geom___b_spline_surface.html) validate the representation, not this whole-chart embedding claim. The existing finite cell, depth and caller work allowances are unchanged. Analytic stock remains analytic through the recipe's prefix Booleans.
+
+The coupled proof clears the six projection coefficients' denominators by one positive common factor before polynomial arithmetic. It divides that factor out of the final margin, leaving the stored projection, geometry and strong-monotonicity bound unchanged. This is exact homogeneous normalization, not a reduced precision, tolerance or arithmetic charge.
 
 Each accepted rational chart has its own exact embedding proof about the fitted carrier. Agreement with the authored motion is numerical. Profile fitting checks nine locations per source chart. Section fitting checks seven interior locations per longitudinal span for every profile control, aiming at one quarter of the caller's tolerance. `max_sections` and the active work allowance remain finite and are never enlarged on failure. The report retains both source-profile and section-law sample residuals. These checks establish no continuous or whole-body approximation bound.
 
@@ -983,7 +987,6 @@ The unchanged P8 original and spring-rise edit reach the same prefix below. The 
 Later: the thread sweep exceeds the 20M target; retain this phase record for Phase 5 without enlarging the 100M application allowance.
 
 The standalone quarter-helix at the witness-separation checkpoint builds, applies a rise edit, saves and reopens with identical edited/reopened STEP bytes under explicit 100M request allowances. All three exported bodies open in OpenCASCADE with healing off as valid, closed, one-solid bodies with 18 faces matching the numerical producer. This proves that feature case, not complete P8.
-
 
 ### 4.12 Loft
 

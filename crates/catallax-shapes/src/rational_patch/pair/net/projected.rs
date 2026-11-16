@@ -12,6 +12,7 @@ use super::*;
 pub(crate) struct ProjectedJacobian {
     domain: Domain,
     widths: [Rational; 2],
+    projection_scale: Rational,
     weight: Grid,
     diagonal: [Grid; 2],
     off_sum: Grid,
@@ -29,6 +30,37 @@ fn direction(vector: &Vector3) -> Result<[&Rational; 3], Refusal> {
         vector.y.rational_ref().ok_or_else(missing)?,
         vector.z.rational_ref().ok_or_else(missing)?,
     ])
+}
+
+// Both projection rows use one positive scale, so the symmetric Jacobian's
+// positivity is unchanged. Convert its margin back before publishing it.
+fn integral_projection(
+    projection: &[Vector3; 2],
+    dec: &mut Decider,
+) -> Result<([Vector3; 2], Rational), Refusal> {
+    let mut scale = Rational::one();
+    for vector in projection {
+        for component in direction(vector)? {
+            let denominator = Rational::from_integer(component.denominator().clone());
+            // For positive integers C,D: lcm(C,D) = numerator(C/D) * D.
+            // Division and multiplication retain their existing work charges.
+            let ratio = quotient(&scale, &denominator, dec)?;
+            let cofactor = Rational::from_integer(ratio.numerator().clone());
+            scale = mul(&cofactor, &denominator, dec)?;
+        }
+    }
+    let row = |vector: &Vector3, dec: &mut Decider| -> Result<Vector3, Refusal> {
+        let components = direction(vector)?;
+        Ok(Vector3::new(
+            mul(components[0], &scale, dec)?.into(),
+            mul(components[1], &scale, dec)?.into(),
+            mul(components[2], &scale, dec)?.into(),
+        ))
+    };
+    Ok((
+        [row(&projection[0], dec)?, row(&projection[1], dec)?],
+        scale,
+    ))
 }
 
 fn combine(terms: &[(&Dense, &Rational)], dec: &mut Decider) -> Result<Dense, Refusal> {
@@ -65,6 +97,7 @@ impl ProjectedJacobian {
         domain: Domain,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
+        let (projection, projection_scale) = integral_projection(projection, dec)?;
         let local = [
             Dense::local(&homogeneous[0], &domain, dec)?,
             Dense::local(&homogeneous[1], &domain, dec)?,
@@ -108,6 +141,7 @@ impl ProjectedJacobian {
         Ok(Self {
             domain,
             widths,
+            projection_scale,
             weight,
             diagonal,
             off_sum,
@@ -142,6 +176,7 @@ impl ProjectedJacobian {
         let trace = add(&a[1], &b[1], dec)?;
         let weight_squared = mul(&weight[1], &weight[1], dec)?;
         let denominator = mul(&trace, &weight_squared, dec)?;
+        let denominator = mul(&denominator, &self.projection_scale, dec)?;
         quotient(&determinant, &denominator, dec)
     }
 }
@@ -190,6 +225,43 @@ mod tests {
             assert_eq!(point.y.as_rational(), Some(q(-797, 4)));
             assert_eq!(point.z.as_rational(), Some(q(62565, 208)));
             assert_eq!(patch.embedding_lower_bound().sign(), Sign::Positive);
+            Ok(())
+        });
+        assert!(!work.exhausted);
+        result.unwrap();
+    }
+
+    #[test]
+    fn homogeneous_projection_normalization_keeps_a_valid_geometric_margin() {
+        let (result, work) = with_operation_budget(20_000_000, || -> Result<(), Refusal> {
+            let mut dec = Decider::default();
+            let points = (0..3)
+                .flat_map(|u| {
+                    (0..3).map(move |v| {
+                        Point3::new(
+                            q(3 * u, 2).into(),
+                            q(5 * v, 2).into(),
+                            (&q(if u == 1 { -1 } else { 1 }, 4)
+                                + &q(if v == 1 { -1 } else { 1 }, 4))
+                                .into(),
+                        )
+                    })
+                })
+                .collect();
+            let knots = [0, 0, 0, 1, 1, 1].map(Rational::from_i64).to_vec();
+            let carrier = BSplineSurface::new(
+                [2, 2],
+                [knots.clone(), knots],
+                [3, 3],
+                points,
+                vec![Real::one(); 9],
+                &mut dec,
+            )?;
+            let patch = RationalPatch::new(carrier, &mut dec)?;
+            // X=3u,Y=5v,Z=(u-1/2)^2+(v-1/2)^2. Its centre-dual
+            // projection is (X/3,Y/5), whose Jacobian is exactly I.
+            assert_eq!(patch.embedding_lower_bound().sign(), Sign::Positive);
+            assert!(patch.embedding_lower_bound() <= &Rational::one());
             Ok(())
         });
         assert!(!work.exhausted);

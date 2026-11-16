@@ -105,7 +105,8 @@ pub fn embeds(model: &Model, body: BodyId) -> bool {
 struct SplineFace {
     surface: Surface64,
     region: [[f64; 2]; 2],
-    // Parameter box of the written carrier; admitted trims stay inside it.
+    // Parameter box that admitted trims stay inside: the patch domain, or the
+    // box round an atlas face's charts.
     domain: [[f64; 2]; 2],
 }
 
@@ -114,7 +115,7 @@ enum Carrier {
     Spline(SplineFace),
 }
 
-fn carrier(surface: &Surface) -> Result<Carrier, Refusal> {
+fn carrier(surface: &Surface, dec: &mut Decider) -> Result<Carrier, Refusal> {
     let region = |domains: &mut dyn Iterator<Item = &[[Rational; 2]; 2]>| {
         let mut region = [[f64::INFINITY, f64::NEG_INFINITY]; 2];
         for domain in domains {
@@ -139,20 +140,22 @@ fn carrier(surface: &Surface) -> Result<Carrier, Refusal> {
             }
         }
         Surface::BSpline(SplineSupport::RationalPatch(patch)) => Carrier::Spline(SplineFace {
-            surface: Surface64::new(patch.carrier()),
+            surface: Surface64::new(patch.carrier(), dec)?,
             region: region(&mut std::iter::once(patch.domain())),
             domain: region(&mut std::iter::once(patch.domain())),
         }),
-        Surface::BSpline(SplineSupport::RationalAtlas(atlas)) => Carrier::Spline(SplineFace {
-            surface: Surface64::new(atlas.source()),
+        Surface::BSpline(SplineSupport::RationalAtlas(atlas)) => {
+            dec.charge_work(atlas.charts().len() as u64)?;
             // A logical face covers only its own charts of the source; the
-            // other rows of a closed source are a different face.
-            region: region(&mut atlas.charts().iter().map(|chart| chart.patch().domain())),
-            domain: atlas
-                .source()
-                .domain()
-                .map(|[lo, hi]| [lo.to_f64_nearest(), hi.to_f64_nearest()]),
-        }),
+            // other rows of a closed source are a different face, and
+            // admission keeps every trim on these charts.
+            let region = region(&mut atlas.charts().iter().map(|chart| chart.patch().domain()));
+            Carrier::Spline(SplineFace {
+                surface: Surface64::new(atlas.source(), dec)?,
+                region,
+                domain: region,
+            })
+        }
         _ => {
             return Err(unsupported(
                 "numerical embedding needs planes or rational spline faces",
@@ -194,6 +197,7 @@ fn rational_curve<const D: usize>(
     clamp: Option<[[f64; 2]; 2]>,
     dec: &mut Decider,
 ) -> Result<BSplineCurve, Refusal> {
+    dec.charge_work((knots.len() + D * controls.len()) as u64)?;
     let mut exact_knots = Vec::with_capacity(knots.len());
     for (i, knot) in knots.iter().enumerate() {
         exact_knots.push(if i < 4 {
@@ -597,7 +601,7 @@ pub fn definition_from_exact_model(
         dec.charge_work(1)?;
         let face = model.face(*id);
         let surface = model.geom().surface(face.surface);
-        carriers.push(carrier(surface)?);
+        carriers.push(carrier(surface, dec)?);
         for lp in &face.loops {
             let Loop::Coedges(uses) = model.loop_(*lp) else {
                 unreachable!("checked by embeds")
@@ -688,7 +692,7 @@ pub fn definition_from_exact_model(
                             line.dir.z.clone(),
                         )),
                     },
-                    Curve::BSpline(spline) => Native::Spline(Curve64::new(spline)),
+                    Curve::BSpline(spline) => Native::Spline(Curve64::new(spline, dec)?),
                     _ => unreachable!(),
                 };
                 let ascending = parameters[0] < parameters[1];

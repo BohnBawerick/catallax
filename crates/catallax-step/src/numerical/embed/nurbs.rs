@@ -68,24 +68,37 @@ pub(super) struct Surface64 {
     controls: Vec<[f64; 4]>,
 }
 
+// One unit per converted scalar, charged before the conversion starts.
+fn charge(scalars: usize, dec: &mut Decider) -> Result<(), Refusal> {
+    dec.charge_work(scalars as u64)
+}
+
 impl Surface64 {
-    pub fn new(source: &BSplineSurface) -> Self {
-        Self {
-            degrees: source.degrees(),
-            knots: source
-                .knots()
-                .map(|row| row.iter().map(|q| q.to_f64_nearest()).collect()),
-            count: source.control_count(),
-            controls: source
-                .controls()
-                .iter()
-                .zip(source.weights())
-                .map(|(p, w)| {
-                    let w = real(w);
-                    [real(&p.x) * w, real(&p.y) * w, real(&p.z) * w, w]
-                })
-                .collect(),
+    pub fn new(source: &BSplineSurface, dec: &mut Decider) -> Result<Self, Refusal> {
+        let [u, v] = source.knots();
+        charge(u.len() + v.len() + 4 * source.controls().len(), dec)?;
+        let columns = source.control_count()[1];
+        let mut controls = Vec::with_capacity(source.controls().len());
+        for (row, (points, weights)) in source
+            .controls()
+            .chunks(columns)
+            .zip(source.weights().chunks(columns))
+            .enumerate()
+        {
+            if row % 16 == 0 {
+                dec.check_deadline()?;
+            }
+            for (p, w) in points.iter().zip(weights) {
+                let w = real(w);
+                controls.push([real(&p.x) * w, real(&p.y) * w, real(&p.z) * w, w]);
+            }
         }
+        Ok(Self {
+            degrees: source.degrees(),
+            knots: [u, v].map(|row| row.iter().map(|q| q.to_f64_nearest()).collect()),
+            count: source.control_count(),
+            controls,
+        })
     }
 
     /// Position and first partial derivatives at a clamped location.
@@ -205,19 +218,21 @@ pub(super) struct Curve64 {
 }
 
 impl Curve64 {
-    pub fn new(source: &BSplineCurve) -> Self {
-        Self {
+    pub fn new(source: &BSplineCurve, dec: &mut Decider) -> Result<Self, Refusal> {
+        charge(source.knots().len() + 4 * source.controls().len(), dec)?;
+        let mut controls = Vec::with_capacity(source.controls().len());
+        for (i, (p, w)) in source.controls().zip(source.weights()).enumerate() {
+            if i % 64 == 0 {
+                dec.check_deadline()?;
+            }
+            let w = real(w);
+            controls.push([real(&p.x) * w, real(&p.y) * w, real(&p.z) * w, w]);
+        }
+        Ok(Self {
             degree: source.degree(),
             knots: source.knots().iter().map(|q| q.to_f64_nearest()).collect(),
-            controls: source
-                .controls()
-                .zip(source.weights())
-                .map(|(p, w)| {
-                    let w = real(w);
-                    [real(&p.x) * w, real(&p.y) * w, real(&p.z) * w, w]
-                })
-                .collect(),
-        }
+            controls,
+        })
     }
 
     pub fn point(&self, t: f64) -> [f64; 3] {
@@ -371,4 +386,64 @@ pub(super) fn evaluate<const D: usize>(knots: &[f64], controls: &[[f64; D]], t: 
         }
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use catallax_numbers::{Rational, with_operation_budget};
+    use catallax_shapes::{Point3, SplineBoundary};
+
+    fn grid(side: usize) -> BSplineSurface {
+        let knots: Vec<_> = std::iter::once(0)
+            .chain(0..side as i64)
+            .chain(std::iter::once(side as i64 - 1))
+            .map(Rational::from_i64)
+            .collect();
+        let controls = (0..side * side)
+            .map(|i| {
+                Point3::new(
+                    Real::from((i / side) as i64),
+                    Real::from((i % side) as i64),
+                    Real::from(1),
+                )
+            })
+            .collect();
+        BSplineSurface::new(
+            [1, 1],
+            [knots.clone(), knots],
+            [side, side],
+            controls,
+            vec![Real::from(2); side * side],
+            &mut Decider::default(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn binary64_copies_charge_their_payload_before_converting() {
+        let side = 40;
+        let source = grid(side);
+        let payload = (2 * (side + 2) + 4 * side * side) as u64;
+        let ((), work) = with_operation_budget(2 * payload, || {
+            let copy = Surface64::new(&source, &mut Decider::default()).unwrap();
+            assert_eq!(copy.point([1.5, 2.5]), [1.5, 2.5, 1.0]);
+        });
+        assert!(!work.exhausted && work.used >= payload, "{work:?}");
+        let (result, work) = with_operation_budget(payload - 1, || {
+            Surface64::new(&source, &mut Decider::default()).map(|_| ())
+        });
+        assert!(result.is_err() && work.exhausted, "{work:?}");
+        let curve = BSplineCurve::boundary(&source, SplineBoundary::UMin);
+        let curve_payload = (curve.knots().len() + 4 * curve.controls().len()) as u64;
+        let ((), work) = with_operation_budget(2 * curve_payload, || {
+            let copy = Curve64::new(&curve, &mut Decider::default()).unwrap();
+            assert_eq!(copy.point(3.5), [0.0, 3.5, 1.0]);
+        });
+        assert!(!work.exhausted && work.used >= curve_payload, "{work:?}");
+        let (result, work) = with_operation_budget(curve_payload - 1, || {
+            Curve64::new(&curve, &mut Decider::default()).map(|_| ())
+        });
+        assert!(result.is_err() && work.exhausted, "{work:?}");
+    }
 }

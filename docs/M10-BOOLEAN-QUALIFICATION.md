@@ -91,13 +91,13 @@ Work-PC replays at 20M, one worker:
 
 | Number | Request | Total work | Embedding and STEP | Raw OCCT faces/edges/vertices | Volume mm3 |
 | --- | --- | ---: | ---: | --- | ---: |
-| M10-001 | Side subtract | 9,261,428 | 1,012,142 | 9/18/12 | 10.700529128388986 |
-| M10-002 | Side union | 9,262,899 | 1,013,564 | 9/18/12 | 30.700529128388986 |
-| M10-003 | Side intersect | 8,941,741 | 697,951 | 6/12/8 | 3.299479539097737 |
-| M10-007 | Through-all loft cut | 3,361,386 | 817,363 | 8/18/12 | 13.00000866748672 |
-| M10-012 | Two spline lofts subtract | 4,142,927 | 553,039 | 5/9/6 | 5.140628182592781 |
-| M10-013 | Two spline lofts union | 4,174,042 | 583,250 | 5/9/6 | 19.1406368500795 |
-| M10-014 | Two spline lofts intersect | 5,224,950 | 544,318 | 5/9/6 | 8.85938048489394 |
+| M10-001 | Side subtract | 9,264,506 | 1,015,220 | 9/18/12 | 10.700529128388986 |
+| M10-002 | Side union | 9,265,977 | 1,016,642 | 9/18/12 | 30.700529128388986 |
+| M10-003 | Side intersect | 8,943,383 | 699,593 | 6/12/8 | 3.299479539097737 |
+| M10-007 | Through-all loft cut | 3,362,988 | 818,965 | 8/18/12 | 13.00000866748672 |
+| M10-012 | Two spline lofts subtract | 4,146,476 | 556,588 | 5/9/6 | 5.140628182592781 |
+| M10-013 | Two spline lofts union | 4,177,911 | 587,119 | 5/9/6 | 19.1406368500795 |
+| M10-014 | Two spline lofts intersect | 5,228,179 | 547,547 | 5/9/6 | 8.85938048489394 |
 
 Every file opens in OpenCASCADE (OCP 8.0.1.1) through the repository's
 healing-off reader as one valid solid with the manifest's counts, and a

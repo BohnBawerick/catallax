@@ -611,7 +611,7 @@ fn m11_smooth_edge_names_the_missing_cross_chart_proof() {
 
 #[test]
 fn numerical_fillet_builds_on_the_smooth_loft_across_its_station_seam() {
-    let (rounded, work) = with_operation_budget(100_000_000, || {
+    let ((rounded, built, supports, radius, tolerance), work) = with_operation_budget(100_000_000, || {
         let mut definition = serde_json::to_value(smooth_recipe()).unwrap();
         definition["steps"].as_array_mut().unwrap().pop();
         definition["result"] = json!("loft");
@@ -638,14 +638,6 @@ fn numerical_fillet_builds_on_the_smooth_loft_across_its_station_seam() {
         });
         let radius = q("1/10");
         let tolerance = q("1/10000000");
-        let mut source_step = Vec::new();
-        catallax_step::write_step(
-            &built.model, &[built.result], &catallax_step::StepOptions::default(),
-            &mut dec, &mut source_step,
-        ).unwrap();
-        if let Some(path) = std::env::var_os("CATALLAX_M11_STEP_OUT") {
-            std::fs::write(std::path::Path::new(&path).with_extension("source.step"), &source_step).unwrap();
-        }
         let options = catallax_topology::numerical::NumericalOptions { tolerance_mm: tolerance.clone() };
         let (source, native) = catallax_step::numerical::definition_from_exact_model(
             &built.model, built.result, recipe.name.clone(), &tolerance, &mut dec,
@@ -655,6 +647,14 @@ fn numerical_fillet_builds_on_the_smooth_loft_across_its_station_seam() {
             source, &format!("{edge:?}"), "round", radius.clone(), tolerance.clone(), &mut dec,
         ).unwrap();
         println!("numerical smooth-loft body admission: {} work", catallax_numbers::current_operation_work().used);
+        (rounded, built, supports, radius, tolerance)
+    });
+    assert!(!work.exhausted, "{work:?}");
+    println!("numerical smooth-loft fillet: {} work", work.used);
+    let build_work = work.used;
+    // Independent geometry checks and proof capture do not consume the app request.
+    let ((), proof_work) = with_operation_budget(100_000_000, || {
+        let mut dec = Decider::default();
         let fillet = rounded.fillet();
         let radial_tolerance = &(&q("2") * &radius) * &tolerance;
         for node in fillet.spine().nodes() {
@@ -691,14 +691,17 @@ fn numerical_fillet_builds_on_the_smooth_loft_across_its_station_seam() {
             let encoded = catallax_numbers::transfer::encode(rounded.body(), &mut dec).unwrap();
             std::fs::write(std::path::Path::new(&path).with_extension("numerical-body"), encoded).unwrap();
         }
-        let artifact = catallax_step::numerical::build(rounded.body(), &catallax_step::numerical::NumericalStepOptions::default(), &mut dec).unwrap();
+        let mut source_step = Vec::new();
+        catallax_step::write_step(
+            &built.model, &[built.result], &catallax_step::StepOptions::default(),
+            &mut dec, &mut source_step,
+        ).unwrap();
         if let Some(path) = std::env::var_os("CATALLAX_M11_STEP_OUT") {
-            std::fs::write(path, artifact.bytes()).unwrap();
+            std::fs::write(std::path::Path::new(&path).with_extension("source.step"), &source_step).unwrap();
         }
-        rounded
     });
-    assert!(!work.exhausted, "{work:?}");
-    println!("numerical smooth-loft fillet: {} work", work.used);
+    assert!(!proof_work.exhausted, "{proof_work:?}");
+    println!("separate numerical-body checks and proof capture: {} work", proof_work.used);
     let names = |body: &catallax_topology::numerical::NumericalBody| (
         body.definition().faces.iter().map(|face| face.key.clone()).collect::<std::collections::BTreeSet<_>>(),
         body.definition().edges.iter().map(|edge| edge.key.clone()).collect::<std::collections::BTreeSet<_>>(),
@@ -706,15 +709,30 @@ fn numerical_fillet_builds_on_the_smooth_loft_across_its_station_seam() {
     let (edited, work) = with_operation_budget(100_000_000, || {
         let mut dec = Decider::default();
         let edited = rounded.edit_radius(q("3/20"), &mut dec).unwrap();
-        let artifact = catallax_step::numerical::build(edited.body(), &catallax_step::numerical::NumericalStepOptions::default(), &mut dec).unwrap();
-        if let Some(path) = std::env::var_os("CATALLAX_M11_STEP_OUT") {
-            std::fs::write(std::path::Path::new(&path).with_extension("edited.step"), artifact.bytes()).unwrap();
-        }
         edited
     });
     assert!(!work.exhausted, "{work:?}");
     assert_eq!(names(rounded.body()), names(edited.body()));
     println!("numerical smooth-loft radius edit: {} work", work.used);
+    let edit_work = work.used;
+    for (body, body_work, extension) in [
+        (rounded.body(), build_work, "step"),
+        (edited.body(), edit_work, "edited.step"),
+    ] {
+        // Cold export plus its preceding build still shares the 100M ceiling.
+        let (artifact, export_work) = with_operation_budget(100_000_000 - body_work, || {
+            catallax_step::numerical::build(
+                body, &catallax_step::numerical::NumericalStepOptions::default(),
+                &mut Decider::default(),
+            )
+        });
+        println!("numerical smooth-loft {extension}: body {body_work} + STEP {} work", export_work.used);
+        assert!(!export_work.exhausted, "{export_work:?}: {:?}", artifact.as_ref().err());
+        let artifact = artifact.unwrap();
+        if let Some(path) = std::env::var_os("CATALLAX_M11_STEP_OUT") {
+            std::fs::write(std::path::Path::new(&path).with_extension(extension), artifact.bytes()).unwrap();
+        }
+    }
 }
 
 fn blend(built: &Built) -> (FaceId, catallax_shapes::SplineFillet) {

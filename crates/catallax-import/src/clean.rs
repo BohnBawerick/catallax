@@ -158,7 +158,7 @@ pub(crate) fn bound(file: &StepFile, cleaned: &Cleaned) -> Option<(Rational, Rat
                 smaller(major * major);
                 smaller(minor * minor);
             }
-            Surface::BSpline(_) => return None,
+            Surface::BSpline(_) | Surface::Retained(_) => return None,
         }
         for bound in &face.loops {
             for e in &bound.edges {
@@ -173,7 +173,7 @@ pub(crate) fn bound(file: &StepFile, cleaned: &Cleaned) -> Option<(Rational, Rat
                         smaller(a * a);
                         smaller(b * b);
                     }
-                    Curve::BSpline(_) => return None,
+                    Curve::BSpline(_) | Curve::Retained(_) => return None,
                 }
                 let chord: Vec3 = std::array::from_fn(|i| &e.end.point[i] - &e.start.point[i]);
                 smaller(norm_squared(&chord));

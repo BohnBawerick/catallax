@@ -509,6 +509,15 @@ impl TolerantFile {
                     faces,
                 });
             }
+            if body.declared_solid && shells.len() != 1 {
+                return Err(ImportRefusal::NotSolid {
+                    detail: format!(
+                        "{}: retained inner shells require material nesting admission",
+                        body.name
+                    ),
+                }
+                .into());
+            }
             if body.declared_solid {
                 file.solids.push(crate::Solid {
                     name: body.name.clone(),
@@ -662,8 +671,28 @@ fn read_inner(
             "initial tolerance must be nonnegative and no greater than a positive cap",
         ));
     }
-    let file = crate::read_step_with_decider(bytes, dec)?;
-    from_file(file, expected_sha256, options, dec)
+    match crate::read_step_with_decider(bytes, dec) {
+        Ok(file) => from_file(file, expected_sha256, options, dec),
+        Err(ImportRefusal::Unsupported { .. }) => {
+            let parsed = crate::geometry_source::ParsedStep::read(bytes, dec)?;
+            let definition = parsed.retained_definition(dec)?;
+            let mut bodies = Vec::new();
+            for source in definition.bodies {
+                let mut body = TolerantBody::new(&source.name, source.solid, &options);
+                for shell in source.shells {
+                    body.shell(&shell.name, shell.closed, &shell.faces, dec)?;
+                }
+                bodies.push(body);
+            }
+            Ok(TolerantFile {
+                source_sha256: expected_sha256.into(),
+                mm_per_unit: definition.scale,
+                options,
+                bodies,
+            })
+        }
+        Err(error) => Err(error.into()),
+    }
 }
 
 fn from_file(

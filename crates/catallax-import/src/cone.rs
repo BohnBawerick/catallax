@@ -111,6 +111,7 @@ pub(crate) fn rim_cone(face: &Face) -> Result<Option<RimCone>, ImportRefusal> {
             for (edge, _) in chain {
                 heights.extend([height(&edge.start.point), height(&edge.end.point)]);
                 match &edge.curve {
+                    Curve::Retained(source) => return Err(source.admission_refusal()),
                     Curve::Circle(c, r) => {
                         let h = height(&c.origin);
                         let parallel = is_zero(&cross(&c.axis, &axis));

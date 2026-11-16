@@ -30,6 +30,7 @@ fn curve_range(
 ) -> Result<[Rational; 2], ImportRefusal> {
     dec.charge_work(1).map_err(spline::source_error)?;
     Ok(match &edge.curve {
+        Curve::Retained(source) => return Err(source.admission_refusal()),
         Curve::Line(..) => projection_range([&edge.start.point, &edge.end.point], direction, dec)?
             .expect("two endpoints"),
         Curve::BSpline(curve) => projection_range(curve.geometry.controls(), direction, dec)?

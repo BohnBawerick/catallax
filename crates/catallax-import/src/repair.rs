@@ -827,6 +827,7 @@ pub fn canonical_bytes(file: &StepFile) -> Vec<u8> {
 fn canonical_faces(out: &mut String, faces: &[crate::Face]) {
     for face in faces {
         let surface = match &face.surface {
+            Surface::Retained(source) => format!("retained {}", source.identity()),
             Surface::Plane(p) => format!("plane {}", placement(p)),
             Surface::Cylinder(p, r) => format!("cylinder {} {r}", placement(p)),
             Surface::Cone45(p, r) => format!("cone45 {} {r}", placement(p)),
@@ -860,6 +861,7 @@ fn canonical_faces(out: &mut String, faces: &[crate::Face]) {
             }
             for e in &bound.edges {
                 let curve = match &e.curve {
+                    Curve::Retained(source) => format!("retained {}", source.identity()),
                     Curve::Line(o, d) => format!("line {}|{}", v3(o), v3(d)),
                     Curve::Circle(p, r) => format!("circle {} {r}", placement(p)),
                     Curve::Ellipse(p, a, b) => format!("ellipse {} {a} {b}", placement(p)),

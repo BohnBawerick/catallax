@@ -348,6 +348,7 @@ impl Builder<'_> {
 
     fn surface(&mut self, face: &StepFace) -> Result<GeomSurface, ImportRefusal> {
         Ok(match &face.surface {
+            Surface::Retained(source) => return Err(source.admission_refusal()),
             Surface::Plane(p) => GeomSurface::Plane(Plane {
                 origin: point(&p.origin),
                 normal: vector(&p.axis),
@@ -440,6 +441,7 @@ impl Builder<'_> {
             return Ok((*id, *ends, false));
         }
         let curve = match &e.curve {
+            Curve::Retained(source) => return Err(source.admission_refusal()),
             Curve::Line(o, d) => GeomCurve::Line(Line {
                 origin: point(o),
                 dir: vector(d),
@@ -897,13 +899,16 @@ fn check_on_surface(face: &StepFace, e: &OrientedEdge) -> Result<(), ImportRefus
 
 /// Exact test that both ends of the edge lie on its curve.
 fn check_on_curve(e: &OrientedEdge) -> Result<(), ImportRefusal> {
+    if let Curve::Retained(source) = &e.curve {
+        return Err(source.admission_refusal());
+    }
     let on = |p: &Vec3| match &e.curve {
         Curve::Line(o, d) => is_zero(&cross(&sub(p, o), d)),
         Curve::Circle(c, r) => {
             let rel = sub(p, &c.origin);
             dot(&rel, &c.axis).is_zero() && dot(&rel, &rel) == r * r
         }
-        Curve::Ellipse(..) | Curve::BSpline(_) => false,
+        Curve::Ellipse(..) | Curve::BSpline(_) | Curve::Retained(_) => false,
     };
     if on(&e.start.point) && on(&e.end.point) {
         Ok(())

@@ -87,7 +87,6 @@ fn main() {
         };
         let options = NumericalOptions {
             tolerance_mm: Rational::parse("0.000001").unwrap(),
-            ..Default::default()
         };
         assert!(
             sew_constructed_surfaces(

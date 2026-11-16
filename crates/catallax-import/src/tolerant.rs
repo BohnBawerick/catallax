@@ -645,7 +645,7 @@ fn read_inner(
             "initial tolerance must be nonnegative and no greater than a positive cap",
         ));
     }
-    let file = crate::read_step(bytes)?;
+    let file = crate::read_step_with_decider(bytes, dec)?;
     from_file(file, expected_sha256, options, dec)
 }
 
@@ -685,12 +685,21 @@ pub fn reopen(
     dec: &mut Decider,
 ) -> Result<TolerantFile, Error> {
     budget(|| {
-        dec.charge_work(record.initial_mm.len() as u64 + record.maximum_mm.len() as u64)?;
+        charge_record(record, dec)?;
         if record.format != "catallax-import-tolerances/1" {
             return Err(invalid("unsupported tolerance record format"));
         }
-        let parse =
-            |s: &str| Rational::parse(s).map_err(|_| invalid("invalid rational millimetre value"));
+        // charge_record prepays parsing and formatting before either occurs.
+        // Records written by this API use canonical integers or fractions;
+        // exponent syntax is excluded before it can expand a short input.
+        let parse = |s: &str| {
+            let value =
+                Rational::parse(s).map_err(|_| invalid("invalid rational millimetre value"))?;
+            if value.to_string() != s {
+                return Err(invalid("noncanonical rational millimetre value"));
+            }
+            Ok(value)
+        };
         let mut file = read_inner(
             bytes,
             &record.source_sha256,
@@ -723,11 +732,117 @@ pub fn reopen(
                 }
             }
         }
-        if file.record() != *record {
+        if !matches_record(&file, record, dec)? {
             return Err(invalid(
                 "record values or history do not match the replayed changes",
             ));
         }
         Ok(file)
     })
+}
+
+fn charge_text(value: &str, dec: &mut Decider) -> Result<(), Error> {
+    dec.charge_work(1_u64.saturating_add(value.len() as u64))?;
+    Ok(())
+}
+
+fn charge_number(value: &str, dec: &mut Decider) -> Result<(), Error> {
+    let size = value.len() as u64;
+    // Conservative quadratic prepayment covers big-integer parsing, fraction
+    // reduction, comparisons, decimal formatting and the replay's copies.
+    dec.charge_work(
+        1_u64.saturating_add(
+            size.saturating_mul(size)
+                .saturating_add(size)
+                .saturating_mul(8),
+        ),
+    )?;
+    if value.is_empty()
+        || !value
+            .bytes()
+            .all(|c| c.is_ascii_digit() || matches!(c, b'-' | b'/'))
+    {
+        return Err(invalid(
+            "saved millimetre values must be canonical integers or fractions",
+        ));
+    }
+    Ok(())
+}
+
+fn charge_change(change: &ToleranceChange, dec: &mut Decider) -> Result<(), Error> {
+    let name = match &change.entity {
+        ToleranceEntity::Vertex(name) | ToleranceEntity::Edge(name) => name,
+    };
+    charge_text(name, dec)?;
+    charge_text(&change.cause, dec)?;
+    charge_number(&change.before_mm, dec)?;
+    charge_number(&change.after_mm, dec)?;
+    if let Some(edge) = &change.propagated_from_edge {
+        charge_text(edge, dec)?;
+    }
+    Ok(())
+}
+
+fn charge_record(record: &ToleranceRecord, dec: &mut Decider) -> Result<(), Error> {
+    charge_text(&record.format, dec)?;
+    charge_text(&record.source_sha256, dec)?;
+    charge_number(&record.initial_mm, dec)?;
+    charge_number(&record.maximum_mm, dec)?;
+    for body in &record.bodies {
+        charge_text(&body.name, dec)?;
+        for (name, value) in body.vertices.iter().chain(&body.edges) {
+            charge_text(name, dec)?;
+            charge_number(value, dec)?;
+        }
+        for change in &body.changes {
+            charge_change(change, dec)?;
+        }
+    }
+    Ok(())
+}
+
+fn matches_record(
+    file: &TolerantFile,
+    record: &ToleranceRecord,
+    dec: &mut Decider,
+) -> Result<bool, Error> {
+    // Compare the replay directly. Do not allocate a second complete record or
+    // hide inventory traversal, number formatting or log equality in derive Eq.
+    for (body, saved) in file.bodies.iter().zip(&record.bodies) {
+        dec.charge_work(1)?;
+        if body.vertices.len() != saved.vertices.len()
+            || body.edges.len() != saved.edges.len()
+            || body.changes.len() != saved.changes.len()
+        {
+            return Ok(false);
+        }
+        let values = body
+            .vertices
+            .iter()
+            .map(|v| (&v.source.name, &v.tolerance_mm))
+            .chain(body.edges.iter().map(|e| (&e.name, &e.tolerance_mm)));
+        for ((name, value), (saved_name, saved_value)) in
+            values.zip(saved.vertices.iter().chain(&saved.edges))
+        {
+            charge_text(name, dec)?;
+            // All values came from the prepaid initial value or growth history.
+            // Reserve formatting explicitly too, using a digit-count upper
+            // bound derived without first formatting the integer operands.
+            let bits = value
+                .numerator()
+                .bit_length()
+                .saturating_add(value.denominator().bit_length());
+            dec.charge_work(bits.saturating_mul(bits).saturating_add(1))?;
+            if name != saved_name || value.to_string() != *saved_value {
+                return Ok(false);
+            }
+        }
+        for (change, saved) in body.changes.iter().zip(&saved.changes) {
+            charge_change(change, dec)?;
+            if change != saved {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(true)
 }

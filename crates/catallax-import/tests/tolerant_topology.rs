@@ -409,3 +409,103 @@ fn normalized_source_units_and_empty_entity_maxima_are_retained() {
     assert!(graph.bodies()[0].vertices().is_empty() && graph.bodies()[0].edges().is_empty());
     assert_eq!(graph.bodies()[0].maximum_tolerance_mm(), &r("0"));
 }
+
+#[test]
+fn recognition_keeps_the_callers_deadline_at_its_first_source_lookup() {
+    use catallax_numbers::{TestDeadline, TestDeadlinePoint};
+    let source = box_step(BoxFixture::new(["1", "2", "3"]));
+    let hash = sha256_hex(source.as_bytes());
+    // One checkpoint hashes the bytes; the next is the reader's source-entity
+    // lookup. A fresh reader Decider would ignore this deadline and only fail
+    // later in topology normalization with a different error origin.
+    let clock = TestDeadline::after(TestDeadlinePoint::Enclosure, 2);
+    let mut dec = Decider::default();
+    dec.set_deadline(Some(clock.instant()));
+    let (result, work) = with_operation_budget(20_000_000, || {
+        tolerant::read_step(
+            source.as_bytes(),
+            &hash,
+            ToleranceOptions::default(),
+            &mut dec,
+        )
+    });
+    clock.assert_expired();
+    assert!(!work.exhausted);
+    assert!(matches!(
+        result,
+        Err(Error::Source(ImportRefusal::ResourceLimit))
+    ));
+}
+
+#[test]
+fn saved_numeric_text_is_prepaid_before_parsing_or_formatting() {
+    let source = box_step(BoxFixture::new(["1", "2", "3"]));
+    let mut graph = read(&source);
+    let body = graph.bodies()[0].name().to_owned();
+    let edge = graph.bodies()[0].edges()[0].name.clone();
+    graph
+        .grow_edge_tolerance(&body, &edge, r("0.001"), "sewing", &mut Decider::default())
+        .unwrap();
+    for target in 0..6 {
+        let mut record = graph.record();
+        let large = "9".repeat(5_000);
+        match target {
+            0 => record.initial_mm = large,
+            1 => record.maximum_mm = large,
+            2 => record.bodies[0].vertices[0].1 = large,
+            3 => record.bodies[0].edges[0].1 = large,
+            4 => record.bodies[0].changes[0].after_mm = large,
+            _ => record.bodies[0].changes[1].before_mm = large,
+        }
+        let (result, work) = with_operation_budget(50_000, || {
+            tolerant::reopen(source.as_bytes(), &record, &mut Decider::default())
+        });
+        assert!(
+            result.is_err() && work.exhausted,
+            "unmetered numeric field {target}"
+        );
+    }
+    let mut record = graph.record();
+    record.initial_mm = "1e100000".into();
+    let (result, work) = with_operation_budget(50_000, || {
+        tolerant::reopen(source.as_bytes(), &record, &mut Decider::default())
+    });
+    assert!(!work.exhausted);
+    assert!(
+        matches!(result, Err(Error::Numerical(ref e)) if e.code == "import.invalid-tolerances")
+    );
+}
+
+#[test]
+fn saved_inventory_and_history_strings_share_the_replay_work_allowance() {
+    let source = box_step(BoxFixture::new(["1", "2", "3"]));
+    let mut graph = read(&source);
+    let body = graph.bodies()[0].name().to_owned();
+    let edge = graph.bodies()[0].edges()[0].name.clone();
+    graph
+        .grow_edge_tolerance(&body, &edge, r("0.001"), "sewing", &mut Decider::default())
+        .unwrap();
+    for target in 0..3 {
+        let mut record = graph.record();
+        match target {
+            0 => record.bodies[0].name = "x".repeat(100_000),
+            1 => record.bodies[0].changes[0].cause = "x".repeat(100_000),
+            _ => record.bodies[0]
+                .vertices
+                .extend(std::iter::repeat_n(("#extra".into(), "0".into()), 10_000)),
+        }
+        let (result, work) = with_operation_budget(50_000, || {
+            tolerant::reopen(source.as_bytes(), &record, &mut Decider::default())
+        });
+        assert!(
+            result.is_err() && work.exhausted,
+            "unmetered inventory field {target}"
+        );
+    }
+    let record = graph.record();
+    let (result, work) = with_operation_budget(20_000_000, || {
+        tolerant::reopen(source.as_bytes(), &record, &mut Decider::default())
+    });
+    assert_eq!(result.unwrap(), graph);
+    assert!(!work.exhausted && work.used > source.len() as u64);
+}

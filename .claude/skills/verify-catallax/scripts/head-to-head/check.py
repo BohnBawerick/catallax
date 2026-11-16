@@ -65,6 +65,16 @@ def check(case, variant, step_path, expected_faces):
                       'opened': True, 'roots': roots, 'valid': valid, 'closed_solid': closed,
                       'solids': len(solid_list), 'faces': faces,
                       'expected_faces': expected_faces, 'face_count_matches': faces == expected_faces}
+    if case.get('step_read') == 'healing-off':
+        # Reported beside the verdict, not part of it: the repository's raw
+        # StepToTopoDS builder at 1e-7 mm, with no ShapeFix, sewing or SameParameter.
+        sys.path.insert(0, str(Path(__file__).resolve().parents[5] / 'tools/step-regressions'))
+        from check_numerical_step import raw_solid
+        try:
+            raw = raw_solid(step_path)
+            result['step']['healing_off'] = {'opened': True, 'valid': BRepCheck_Analyzer(raw).IsValid()}
+        except AssertionError as error:
+            result['step']['healing_off'] = {'opened': False, 'valid': False, 'reason': str(error)}
     if 'census' in case and closed:
         # Material removal is judged from each kernel's exported solid, measured in OCCT.
         from OCP.BRepGProp import BRepGProp
@@ -74,7 +84,7 @@ def check(case, variant, step_path, expected_faces):
         result['material'] = {'volume_mm3': abs(props.Mass()),
                               'source_volume_mm3': case['census']['cutter']['source_volume_mm3']}
     if implicit is None:
-        result['membership'] = {'status': 'not-run', 'reason': 'no independent analytic predicate for this complete target (P5 trimmed blend, census parts)'}
+        result['membership'] = {'status': 'not-run', 'reason': 'no independent analytic predicate for this complete target (P5 trimmed blend, census parts, phase-2 targets)'}
         return result
     # Same 6^3 sampling scheme as the original report, with analytic target bounds.
     axes = [[bounds[i]+(bounds[i+3]-bounds[i])*k/3 for k in range(-1, 5)] for i in range(3)]

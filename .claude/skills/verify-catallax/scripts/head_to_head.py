@@ -176,6 +176,12 @@ def catallax(case, recipe, binary, directory, args):
     result = json.loads(partial.read_text()) if partial.exists() else {}
     result['process'] = execution
     result['status'] = 'completed' if execution['exit'] == 0 else 'incomplete' if execution['status'] == 'timeout' else 'failed-rebuild'
+    if not result.get('variants') and execution['status'] != 'timeout':
+        # The example stopped before any phase, for example on a recipe it cannot read.
+        lines = (directory / 'stderr').read_text().strip().splitlines()
+        reason = lines[-1] if lines else f'exit {execution["exit"]} before any phase'
+        result['variants'] = {label: {'build': {'status': 'command-failed', 'error': reason}}
+                              for label in ('construction', 'edit')}
     for variant in result.get('variants', {}).values():
         if 'values' in variant.get('measurement', {}):
             variant['measurement']['claimed'] = variant['measurement']['values']
@@ -255,6 +261,12 @@ def benchmark(args):
     census = Path(getattr(args, 'census_cases', None) or '/nonexistent')
     labelled = [(p, p.relative_to(DATA / 'cases').as_posix()) for p in sorted((DATA / 'cases').rglob('*.json'))]
     labelled += [(p, f'census/{p.name}') for p in sorted(census.glob('*.json'))]
+    # Checkpoint targets kept outside parts/: (case directory, recipe root, label prefix).
+    recipe_roots = {}
+    for directory, recipe_root, prefix in getattr(args, 'extra_cases', None) or []:
+        for p in sorted(Path(directory).glob('*.json')):
+            labelled.append((p, f'{prefix}/{p.name}'))
+            recipe_roots[p] = Path(recipe_root).resolve()
     if args.part:
         labelled = [(p, label) for p, label in labelled if label in args.part]
         if len(labelled) != len(set(args.part)):
@@ -284,7 +296,7 @@ def benchmark(args):
                 recipe = case['census']['recipe']
                 census_source(case)
             else:
-                recipe_path = root / case['recipe']
+                recipe_path = recipe_roots.get(path, root) / case['recipe']
                 if sha(recipe_path) != case['recipe_sha256']:
                     raise ValueError(f'{case["recipe"]}: recipe changed since reference script was authored')
                 recipe = json.loads(recipe_path.read_text())

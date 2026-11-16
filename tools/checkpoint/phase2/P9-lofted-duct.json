@@ -1,0 +1,322 @@
+{
+  "format": "catallax-recipe/5",
+  "name": "P9 lofted duct",
+  "steps": [
+    {
+      "id": "outer_inlet",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "line",
+            "id": "outer_right",
+            "to": [
+              "20",
+              "5"
+            ]
+          },
+          {
+            "kind": "arc",
+            "id": "outer_ne",
+            "centre": [
+              "15",
+              "5"
+            ],
+            "to": [
+              "15",
+              "10"
+            ],
+            "turn": "ccw"
+          },
+          {
+            "kind": "line",
+            "id": "outer_top",
+            "to": [
+              "-15",
+              "10"
+            ]
+          },
+          {
+            "kind": "arc",
+            "id": "outer_nw",
+            "centre": [
+              "-15",
+              "5"
+            ],
+            "to": [
+              "-20",
+              "5"
+            ],
+            "turn": "ccw"
+          },
+          {
+            "kind": "line",
+            "id": "outer_left",
+            "to": [
+              "-20",
+              "-5"
+            ]
+          },
+          {
+            "kind": "arc",
+            "id": "outer_sw",
+            "centre": [
+              "-15",
+              "-5"
+            ],
+            "to": [
+              "-15",
+              "-10"
+            ],
+            "turn": "ccw"
+          },
+          {
+            "kind": "line",
+            "id": "outer_bottom",
+            "to": [
+              "15",
+              "-10"
+            ]
+          },
+          {
+            "kind": "arc",
+            "id": "outer_se",
+            "centre": [
+              "15",
+              "-5"
+            ],
+            "to": [
+              "20",
+              "-5"
+            ],
+            "turn": "ccw"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "outer_outlet",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "40"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "circle",
+            "id": "outer_round",
+            "centre": [
+              "0",
+              "0"
+            ],
+            "radius": "12"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "outer",
+      "op": "loft",
+      "shape": "smooth",
+      "sections": [
+        {
+          "profile": "outer_inlet",
+          "start": [
+            "outer_right"
+          ]
+        },
+        {
+          "profile": "outer_outlet",
+          "start": [
+            "outer_round"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inner_inlet",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "-1"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "line",
+            "id": "inner_right",
+            "to": [
+              "18",
+              "5"
+            ]
+          },
+          {
+            "kind": "arc",
+            "id": "inner_ne",
+            "centre": [
+              "15",
+              "5"
+            ],
+            "to": [
+              "15",
+              "8"
+            ],
+            "turn": "ccw"
+          },
+          {
+            "kind": "line",
+            "id": "inner_top",
+            "to": [
+              "-15",
+              "8"
+            ]
+          },
+          {
+            "kind": "arc",
+            "id": "inner_nw",
+            "centre": [
+              "-15",
+              "5"
+            ],
+            "to": [
+              "-18",
+              "5"
+            ],
+            "turn": "ccw"
+          },
+          {
+            "kind": "line",
+            "id": "inner_left",
+            "to": [
+              "-18",
+              "-5"
+            ]
+          },
+          {
+            "kind": "arc",
+            "id": "inner_sw",
+            "centre": [
+              "-15",
+              "-5"
+            ],
+            "to": [
+              "-15",
+              "-8"
+            ],
+            "turn": "ccw"
+          },
+          {
+            "kind": "line",
+            "id": "inner_bottom",
+            "to": [
+              "15",
+              "-8"
+            ]
+          },
+          {
+            "kind": "arc",
+            "id": "inner_se",
+            "centre": [
+              "15",
+              "-5"
+            ],
+            "to": [
+              "18",
+              "-5"
+            ],
+            "turn": "ccw"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "inner_outlet",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "41"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "circle",
+            "id": "inner_round",
+            "centre": [
+              "0",
+              "0"
+            ],
+            "radius": "10"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "inner",
+      "op": "loft",
+      "shape": "smooth",
+      "sections": [
+        {
+          "profile": "inner_inlet",
+          "start": [
+            "inner_right"
+          ]
+        },
+        {
+          "profile": "inner_outlet",
+          "start": [
+            "inner_round"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "duct",
+      "op": "boolean",
+      "kind": "subtract",
+      "target": "outer",
+      "tool": "inner"
+    }
+  ],
+  "result": "duct"
+}

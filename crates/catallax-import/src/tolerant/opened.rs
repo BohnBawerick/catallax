@@ -190,6 +190,40 @@ fn retain_surface(outcome: &mut BodyOutcome, error: Error) {
     outcome.refusal = Some(error);
 }
 
+// A private strict candidate must finish before the caller's deadline on both
+// success and refusal. Expiry cannot publish it or start optional healing.
+fn strict_retry(
+    outcome: &mut BodyOutcome,
+    definition: &crate::StepFile,
+    step: &StepId,
+    dec: &mut Decider,
+) -> Result<Option<ImportRefusal>, catallax_numbers::Refusal> {
+    let mut model = Model::new();
+    let built =
+        crate::build::build_file_with_deadline(&mut model, definition, Some(step), dec.deadline());
+    dec.check_deadline()?;
+    match built {
+        Ok(ids) if ids.len() == 1 && !current_operation_work().exhausted => {
+            let body = ids[0];
+            outcome.approximate = !model.body(body).marks.is_empty();
+            outcome.tier = if model.body(body).kind == BodyKind::Surface {
+                Tier::SurfaceBody
+            } else if outcome.approximate {
+                Tier::RepairedSolid
+            } else {
+                Tier::ValidSolid
+            };
+            outcome.storage = Storage::Certified {
+                model: Box::new(model),
+                body,
+            };
+            Ok(None)
+        }
+        Ok(_) => Ok(Some(ImportRefusal::ResourceLimit)),
+        Err(error) => Ok(Some(error)),
+    }
+}
+
 /// Read first, retain every supported body, then try solid admission. The old
 /// certified/numerical file path stays first; later attempts are private.
 /// A late admission budget refusal leaves the prepaid surface representation.
@@ -302,30 +336,13 @@ pub fn open_step(
                 continue;
             }
         };
-        let mut model = Model::new();
-        let strict_refusal = match crate::build_file(&mut model, &definition, Some(step)) {
-            Ok(ids) if ids.len() == 1 && !current_operation_work().exhausted => {
-                let body = ids[0];
-                outcome.approximate = !model.body(body).marks.is_empty();
-                outcome.tier = if model.body(body).kind == BodyKind::Surface {
-                    Tier::SurfaceBody
-                } else if outcome.approximate {
-                    Tier::RepairedSolid
-                } else {
-                    Tier::ValidSolid
-                };
-                outcome.storage = Storage::Certified {
-                    model: Box::new(model),
-                    body,
-                };
-                if let Err(error) = dec.check_deadline() {
-                    retain_surface(outcome, error.into());
-                    break;
-                }
-                continue;
+        let strict_refusal = match strict_retry(outcome, &definition, step, dec) {
+            Ok(None) => continue,
+            Ok(Some(error)) => error,
+            Err(error) => {
+                retain_surface(outcome, error.into());
+                break;
             }
-            Ok(_) => ImportRefusal::ResourceLimit,
-            Err(error) => error,
         };
         outcome.refusal = Some(strict_refusal.clone().into());
         if current_operation_work().exhausted {
@@ -414,4 +431,50 @@ pub fn reopen(
         verified.options.clone(),
         dec,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use catallax_numbers::{TestDeadline, TestDeadlinePoint};
+
+    #[test]
+    fn strict_retry_expiry_retains_prepaid_surfaces_before_healing() {
+        let definition =
+            crate::read_step(include_bytes!("../../tests/fixtures/spline-roof.step")).unwrap();
+        let step = StepId::new("source").unwrap();
+        let source_slot = || BodyOutcome {
+            tier: Tier::SurfaceBody,
+            approximate: true,
+            storage: Storage::Source,
+            healed: None,
+            refusal: None,
+            healing_failure: None,
+        };
+        let (_, complete) = with_operation_budget(n::DEFAULT_WORK, || {
+            strict_retry(
+                &mut source_slot(),
+                &definition,
+                &step,
+                &mut Decider::default(),
+            )
+        });
+        let clock = TestDeadline::after(TestDeadlinePoint::Work, 2);
+        let mut dec = Decider::default();
+        dec.set_deadline(Some(clock.instant()));
+        let mut outcome = source_slot();
+        let (expired, work) = with_operation_budget(n::DEFAULT_WORK, || {
+            strict_retry(&mut outcome, &definition, &step, &mut dec)
+        });
+        assert_eq!(expired.unwrap_err().code, "numbers.deadline");
+        clock.assert_expired();
+        // A fresh deadline-free builder would do the entire strict replay and
+        // discover expiry only at the outer publication check.
+        assert!(work.used < complete.used, "{work:?} versus {complete:?}");
+        assert!(!work.exhausted);
+        assert!(matches!(outcome.storage, Storage::Source));
+        assert_eq!(outcome.tier(), Tier::SurfaceBody);
+        assert!(outcome.healed.is_none());
+        assert!(outcome.healing_failure.is_none());
+    }
 }

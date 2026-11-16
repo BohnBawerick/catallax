@@ -74,6 +74,9 @@ Source-hash manifest SHA-256: `3323e104c377023846073a05d7e164ca1082dc3dcf32cc046
 Archive identity: `52e6dd1b6fa38e3cd99af59b662370829129540030975919c3e256dce6ad1dbe`.
 Every selected file's actual source digest was checked before and after observation; archive names and private CAD geometry are not published.
 
+A subsequent review fix propagates a caller's deadline through per-body strict construction and checks either outcome before publishing or healing; expiry retains the prepaid source surfaces.
+The capture above remains credited to its original producer. Its observer uses deadline-free Deciders and an external process timeout; the follow-up changes no geometry, tolerance, work charges or deadline-free decisions.
+
 One unchanged **20M** allowance covers complete source reading and all opening/admission/healing attempts.
 A separate unchanged **20M** allowance covers aggregate export of all admitted bodies.
 Observer metadata, serialization, hashes used only for observation, disk I/O and external OCCT work are outside numerical work.

@@ -248,6 +248,15 @@ pub(crate) fn check_faces(
     faces: &[Face],
     prepared: Option<crate::curved::Scratch>,
 ) -> Result<(), ImportRefusal> {
+    check_faces_with_deadline(name, faces, prepared, None)
+}
+
+pub(crate) fn check_faces_with_deadline(
+    name: &str,
+    faces: &[Face],
+    prepared: Option<crate::curved::Scratch>,
+    deadline: Option<std::time::Instant>,
+) -> Result<(), ImportRefusal> {
     // A rim-defined cone beyond the automatic cap is refused with its numbers
     // before any pair is examined.
     for face in faces {
@@ -270,6 +279,7 @@ pub(crate) fn check_faces(
     let mut scratch: Option<Result<crate::curved::Scratch, crate::curved::NotVerified>> =
         prepared.map(Ok);
     let mut dec = catallax_numbers::Decider::default();
+    dec.set_deadline(deadline);
     let mut unverified: Option<(usize, usize, crate::curved::NotVerified)> = None;
     for i in 0..polys.len() {
         for j in i + 1..polys.len() {
@@ -289,7 +299,7 @@ pub(crate) fn check_faces(
                     continue;
                 }
             }
-            let ready = scratch.get_or_insert_with(|| crate::curved::scratch(faces));
+            let ready = scratch.get_or_insert_with(|| crate::curved::scratch(faces, deadline));
             let outcome = match ready {
                 Ok(s) => {
                     let (fa, fb) = (s.faces[i], s.faces[j]);

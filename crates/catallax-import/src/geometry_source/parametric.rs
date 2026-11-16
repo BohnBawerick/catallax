@@ -25,6 +25,15 @@ impl AngleUnit {
     }
 }
 
+/// Units of a chart's evaluated coordinates.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum CoordinateSpace {
+    /// Physical Cartesian coordinates in millimetres.
+    Millimetres,
+    /// Raw surface parameters, which may mix angular and length units.
+    SurfaceParameters,
+}
+
 /// One source carrier chart. It is not a finite face, edge or validity proof.
 /// Wrapper instances remain listed so topology admission must apply their trims.
 #[derive(Clone, Debug)]
@@ -34,6 +43,7 @@ pub struct ParameterChart {
     domain: [[Option<Rational>; 2]; 2],
     wrappers: Vec<EntityId>,
     coordinates: Triple,
+    coordinate_space: CoordinateSpace,
 }
 impl ParameterChart {
     /// Original geometry instance requested by the caller.
@@ -43,6 +53,10 @@ impl ParameterChart {
     /// One for a curve or two for a surface.
     pub fn dimension(&self) -> usize {
         self.dimension
+    }
+    /// Evaluated coordinate units, independent of curve parameter units.
+    pub fn coordinate_space(&self) -> CoordinateSpace {
+        self.coordinate_space
     }
     /// Basis parameter limits. `None` means unbounded, not an inferred trim.
     pub fn domain(&self) -> &[[Option<Rational>; 2]; 2] {
@@ -117,6 +131,7 @@ fn chart(id: EntityId, dimension: usize, coordinates: Triple) -> ParameterChart 
         domain: domain(),
         wrappers: Vec::new(),
         coordinates,
+        coordinate_space: CoordinateSpace::Millimetres,
     }
 }
 fn frame_point(f: &Frame, local: &Triple) -> Triple {
@@ -347,6 +362,9 @@ impl Compiler<'_> {
                 }
                 self.length_mm = length;
                 self.angles = angle;
+                for c in &mut charts {
+                    c.coordinate_space = CoordinateSpace::SurfaceParameters;
+                }
                 charts
             }
         };
@@ -486,6 +504,9 @@ impl Compiler<'_> {
                     }));
                 let mut charts = self.curve(profile, 0, dec)?;
                 for c in &mut charts {
+                    if c.coordinate_space != CoordinateSpace::Millimetres {
+                        return Err(error("extrusion profile is a parameter-space curve"));
+                    }
                     c.dimension = 2;
                     c.coordinates = ex::add(&c.coordinates, &ex::scale(&direction, &distance));
                 }
@@ -504,6 +525,9 @@ impl Compiler<'_> {
                 };
                 let mut charts = self.curve(profile, 1, dec)?;
                 for c in &mut charts {
+                    if c.coordinate_space != CoordinateSpace::Millimetres {
+                        return Err(error("revolution profile is a parameter-space curve"));
+                    }
                     let relative = ex::sub(&c.coordinates, &origin);
                     let axial = ex::scale(&axis, &ex::dot(&axis, &relative));
                     let radial = ex::sub(&relative, &axial);

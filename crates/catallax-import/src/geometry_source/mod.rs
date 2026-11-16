@@ -6,13 +6,15 @@
 mod decode;
 mod definitions;
 mod expression;
+mod fitting;
 mod mapping;
 mod parametric;
 mod topology;
 mod units;
 pub use definitions::*;
+pub use fitting::{FitOptions, FittedCurve, FittedSurface};
 pub use mapping::{Frame, MappingError};
-pub use parametric::{AngleUnit, ParameterChart};
+pub use parametric::{AngleUnit, CoordinateSpace, ParameterChart};
 pub use units::ContextUnits;
 
 use crate::ImportRefusal;

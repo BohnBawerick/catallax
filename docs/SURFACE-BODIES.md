@@ -8,6 +8,8 @@ Milestone 2.3 adds library-level surface edits, free spline wires and constructe
 
 Wire paths may be open or closed. Consecutive directed endpoints must share a vertex; a ring edge is a complete one-edge path. Coedges and edges cannot be repeated within the body's wire paths. Crossings do not imply a material or face-regularity claim. Body traversal, counts, journal replay and isometries preserve wires. Reflection preserves a wire's directed traversal rather than applying the outward-face loop reversal rule.
 
+The `CXBODY` envelope now writes version 2 for certified and numerical handovers. Readers also accept the supported pre-wire version-1 layout and supply empty wire lists. Existing solid, surface and empty discriminants retain their values; wire is appended. Earlier numerical record layouts with obsolete positional native trims still refuse through their existing per-record tags.
+
 STEP preserves the actual kind:
 
 - Surface bodies use `SHELL_BASED_SURFACE_MODEL`; actual boundary uses decide whether each shell is open or closed.
@@ -20,11 +22,11 @@ Numerical export reconstructs and checks the emitted body with the same kind ins
 
 | Operation | API | Contract |
 |---|---|---|
-| Free spline wire | `catallax_topology::spline_wire` | Exact rational endpoint joins; no snapping or input mutation. Returns a fresh model and wire body. |
+| Free spline wire | `catallax_topology::spline_wire` | Exact active-domain clamping and rational endpoint joins; no snapping or input mutation. Returns a fresh model and wire body. |
 | Finite spline sheet | `numerical::surface::SplineSurfaceBody::new` | Retains the rational generating patch and builds a separate numerically admitted surface body. |
 | Trim | `SplineSurfaceBody::trim` | Exact rational extraction of a nonempty parameter rectangle inside the current domain; rebuilds boundary topology and retains history. This is parameter trimming, not surface/surface intersection trimming. |
 | Extend | `SplineSurfaceBody::extend` | Extends one chart side to an external parameter value. The numerical candidate retains the original parameter frame; an independent 9-by-9 sample grid checks the old patch within the caller's tolerance. |
-| Thicken | `SplineSurfaceBody::thicken` | Nonzero signed unit-normal offset. Adaptive cubic tensor interpolation is checked at grid nodes and cell midpoints. Two caps and four ruled rims share their vertices and edges explicitly. Both signs retain the source-face key and history. |
+| Thicken | `SplineSurfaceBody::thicken` | Retains the original rational cap unchanged. The signed unit-normal offset uses cubic interpolation with simple knots on every source-span subdivision and Greville nodes. Independent 7-by-7 checks per subdivision include both one-sided source-knot limits. Two caps and exact ruled Coons rims share their vertices and edges explicitly. Both signs retain the source-face key and history. |
 | Sew constructed faces | `catallax_import::numerical::sew_constructed_surfaces` | Takes native analytic face definitions, not STEP bytes. Reuses the import sewer, source checks and finite-parameter mapper; returns a separately checked numerical solid and the complete sewing/source-pair evidence. |
 
 Extension and normal-offset checks are sampled. They establish neither a whole-domain approximation bound nor global injectivity or absence of self-intersection. Numerical STEP stays marked numerical. The exact generating definition is not an exact-body or exact-offset certificate.
@@ -40,7 +42,7 @@ The donor pin remains SMLib `c9c5979f04cea8c38213004d4f04df0dcfb40d05`; existing
 | Wire topology | [SMLib wire shells and edge uses](https://github.com/NVIDIA-Omniverse/usd-brep/blob/c9c5979f04cea8c38213004d4f04df0dcfb40d05/.agents/skills/smlib-brep-model/references/brep-format.md); [OCCT MakeWire](https://occt3d.com/dev/doc/refman/html/class_b_rep_builder_a_p_i___make_wire.html) | Separate free directed uses, with exact ordered endpoint joins. No tolerance welding or partial-result publication. |
 | Rectangular trim | SMLib homogeneous knot splitting; [OCCT rectangular trimmed surface](https://occt3d.com/dev/doc/refman/html/class_geom___rectangular_trimmed_surface.html) | Existing exact tensor extraction, not a fitted replacement or an intersection solver. |
 | Extension | SMLib `N_SrfExtendByParamDist`, `NL_G1R`, in [NL_SrfAdv.cpp](https://github.com/NVIDIA-Omniverse/usd-brep/blob/c9c5979f04cea8c38213004d4f04df0dcfb40d05/source/SMLib/src/NL_SrfAdv.cpp); [OCCT ExtendSurfByLength](https://occt3d.com/dev/doc/refman/html/class_geom_lib.html) | Existing `catallax-trace::surface_extend` candidate, parameter remapping and independent retained-source samples. No new donor code or OCCT code is copied. |
-| Normal offset | SMLib `SmOffsetSurface` unit-normal law; [OCCT OffsetSurface](https://occt3d.com/dev/doc/refman/html/class_geom___offset_surface.html) | Evaluate the signed normal law, fit it through the 2.2 tensor toolkit and qualify independent samples. Rims use shared cap boundaries, not a second sewer. |
+| Normal offset | SMLib `SmOffsetSurface` unit-normal law and tensor interpolation; [OCCT OffsetSurface](https://occt3d.com/dev/doc/refman/html/class_geom___offset_surface.html) and [BSplSLib prescribed-knot interpolation](https://occt3d.com/dev/doc/refman/html/class_b_spl_s_lib.html) | Keep the original cap. Evaluate the signed normal law and use OCCT's prescribed-knot approach with the existing exact rational tensor solver. Source-span knots prevent a narrow source feature from falling between global nodes; simple cubic knots retain C2 joins. Independent per-span checks remain sampled. Exact 2.2 Coons rims join unequal cap bases without a second sewer. |
 | Constructed-face sewing | SMLib stitch-then-solid validation; [OCCT Sewing](https://occt3d.com/dev/doc/refman/html/class_b_rep_builder_a_p_i___sewing.html) | The existing import lane's mutually unique boundary matcher and subsequent checks. Its private algorithms and byte-import entry paths are unchanged. |
 
 ## Reproduction and observed proof
@@ -48,7 +50,8 @@ The donor pin remains SMLib `c9c5979f04cea8c38213004d4f04df0dcfb40d05`; existing
 Run on a build host, with scratch directories outside the checkout:
 
 ```sh
-cargo test -p catallax-topology --test wires
+cargo test -p catallax-topology --test wires --test surface_thickening
+cargo test -p catallax-app --test handover version_one_bodies_keep_geometry_history_and_empty_kind
 cargo run -p catallax-step --example surface_bodies -- /tmp/cx-surface-bodies
 cargo run -p catallax-step --example surface_bodies -- /tmp/cx-back-thicken -2/5
 cargo run -p catallax-step --example wire_bodies -- /tmp/cx-wire-bodies

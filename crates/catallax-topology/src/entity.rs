@@ -1,6 +1,9 @@
 //! Topological entities.
 
-use catallax_numbers::MarkLog;
+use catallax_numbers::{
+    MarkLog, Refusal,
+    transfer::{Codec, Reader, Registry, Writer},
+};
 use catallax_shapes::{CurveId, Handle, PointId, SurfaceId};
 
 /// Handle of a vertex.
@@ -107,14 +110,14 @@ pub enum BodyKind {
     Solid,
     /// A collection of bounded faces, with no assertion of enclosed material.
     Surface,
-    /// One or more connected edge paths, without faces or material.
-    Wire,
     /// No material at all.
     Empty,
+    /// One or more connected edge paths, without faces or material.
+    Wire,
 }
 
 /// A body: material/surface lumps or free wires, plus construction marks.
-#[derive(Clone, PartialEq, Debug, catallax_numbers::Transfer)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct Body {
     /// What the body is.
     pub kind: BodyKind,
@@ -124,4 +127,33 @@ pub struct Body {
     pub wires: Vec<Wire>,
     /// Marks of every not-exact decision behind the body.
     pub marks: MarkLog,
+}
+
+impl Codec for Body {
+    fn write(&self, writer: &mut Writer<'_>) -> Result<(), Refusal> {
+        self.kind.write(writer)?;
+        self.lumps.write(writer)?;
+        self.wires.write(writer)?;
+        self.marks.write(writer)
+    }
+
+    fn read(reader: &mut Reader<'_>) -> Result<Self, Refusal> {
+        Ok(Self {
+            kind: Codec::read(reader)?,
+            lumps: Codec::read(reader)?,
+            wires: if reader.version() == 1 {
+                Vec::new()
+            } else {
+                Codec::read(reader)?
+            },
+            marks: Codec::read(reader)?,
+        })
+    }
+
+    fn register(registry: &mut Registry) {
+        registry.add::<BodyKind>();
+        registry.add::<Vec<LumpId>>();
+        registry.add::<Vec<Wire>>();
+        registry.add::<MarkLog>();
+    }
 }

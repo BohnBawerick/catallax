@@ -298,7 +298,7 @@ impl SplineSurfaceBody {
 
     /// Thickens along the unit normal by a nonzero signed distance. The source
     /// cap remains exact. Cubic interpolation uses every source knot span;
-    /// independent node/midpoint checks include both one-sided knot limits.
+    /// independent per-span checks include both one-sided knot limits.
     /// Ruled Coons rims close the shell without requiring equal cap bases.
     /// Checks are sampled, not a whole-body deviation or injectivity proof.
     pub fn thicken(
@@ -468,23 +468,37 @@ fn offset_intervals(
     Ok(intervals)
 }
 
-fn offset_nodes(intervals: &[OffsetInterval], dec: &mut Decider) -> Result<Vec<Rational>, Refusal> {
-    let count = product(intervals.len(), 3)?
-        .checked_add(1)
-        .ok_or_else(|| failure("offset node count overflows"))?;
-    let mut nodes = reserve(count, dec)?;
-    for interval in intervals {
-        for part in 0..3 {
-            nodes.push(parameter(&interval.bounds[0], &interval.bounds[1], part, 3));
-        }
-    }
-    nodes.push(
+fn offset_knots(intervals: &[OffsetInterval], dec: &mut Decider) -> Result<Vec<Rational>, Refusal> {
+    let first = intervals
+        .first()
+        .ok_or_else(|| failure("source has no active knot span"))?;
+    let count = intervals
+        .len()
+        .checked_add(7)
+        .ok_or_else(|| failure("offset knot count overflows"))?;
+    let mut knots = reserve(count, dec)?;
+    knots.extend(std::iter::repeat_n(first.bounds[0].clone(), 4));
+    knots.extend(
         intervals
-            .last()
-            .ok_or_else(|| failure("source has no active knot span"))?
-            .bounds[1]
-            .clone(),
+            .iter()
+            .skip(1)
+            .map(|interval| interval.bounds[0].clone()),
     );
+    knots.extend(std::iter::repeat_n(
+        intervals.last().expect("active intervals exist").bounds[1].clone(),
+        4,
+    ));
+    Ok(knots)
+}
+
+fn offset_nodes(knots: &[Rational], dec: &mut Decider) -> Result<Vec<Rational>, Refusal> {
+    let count = knots.len() - 4;
+    let mut nodes = reserve(count, dec)?;
+    let three = Rational::from_i64(3);
+    for i in 0..count {
+        dec.charge_work(3)?;
+        nodes.push((&(&knots[i + 1] + &knots[i + 2]) + &knots[i + 3]) / &three);
+    }
     Ok(nodes)
 }
 
@@ -502,10 +516,11 @@ fn fit_normal_offset(
             offset_intervals(source, 0, divisions[0], dec)?,
             offset_intervals(source, 1, divisions[1], dec)?,
         ];
-        let parameters = [
-            offset_nodes(&intervals[0], dec)?,
-            offset_nodes(&intervals[1], dec)?,
+        let knots = [
+            offset_knots(&intervals[0], dec)?,
+            offset_knots(&intervals[1], dec)?,
         ];
+        let parameters = [offset_nodes(&knots[0], dec)?, offset_nodes(&knots[1], dec)?];
         let counts = parameters.each_ref().map(|nodes| nodes.len());
         let size = product(counts[0], counts[1])?;
         let mut samples = reserve(size, dec)?;
@@ -519,9 +534,10 @@ fn fit_normal_offset(
                 );
             }
         }
-        let offset = RationalSplineSurface::through_grid(
+        let offset = RationalSplineSurface::through_grid_on_knots(
             [&parameters[0], &parameters[1]],
             [3, 3],
+            knots,
             &samples,
             dec,
         )?;

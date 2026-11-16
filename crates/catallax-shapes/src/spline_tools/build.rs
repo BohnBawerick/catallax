@@ -310,12 +310,6 @@ fn cardinals(
     dec: &mut Decider,
 ) -> Result<Vec<RationalSplineCurve>, Refusal> {
     let n = nodes.len();
-    let width = size(&[2, n])?;
-    let matrix_entries = size(&[n, width])?;
-    dec.charge_work(
-        u64::try_from(matrix_entries)
-            .map_err(|_| invalid("surface interpolation work count overflows"))?,
-    )?;
     if n == 0
         || degree >= n
         || nodes.windows(2).any(|p| p[0] >= p[1])
@@ -363,6 +357,32 @@ fn cardinals(
         );
     }
     knots.extend(std::iter::repeat_n(domain[1].clone(), degree + 1));
+    cardinals_on_knots(nodes, degree, knots, dec)
+}
+
+fn cardinals_on_knots(
+    nodes: &[Rational],
+    degree: usize,
+    knots: Vec<Rational>,
+    dec: &mut Decider,
+) -> Result<Vec<RationalSplineCurve>, Refusal> {
+    let n = nodes.len();
+    let width = size(&[2, n])?;
+    let entries = size(&[n, width])?
+        .checked_add(knots.len())
+        .ok_or_else(|| invalid("interpolation work count overflows"))?;
+    dec.charge_work(
+        u64::try_from(entries).map_err(|_| invalid("interpolation work count overflows"))?,
+    )?;
+    axis(degree, &knots, n, dec)?;
+    if nodes.windows(2).any(|pair| pair[0] >= pair[1])
+        || nodes[0] < knots[degree]
+        || nodes[n - 1] > knots[n]
+    {
+        return Err(invalid(
+            "interpolation nodes must increase inside the active knot domain",
+        ));
+    }
     let mut matrix = capacity(n, dec)?;
     for (i, t) in nodes.iter().enumerate() {
         let mut row = basis(degree, &knots, n, t, dec)?;
@@ -515,6 +535,28 @@ impl RationalSplineSurface {
         points: &[RationalPoint],
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
+        Self::interpolate_grid(parameters, degrees, points, None, dec)
+    }
+
+    /// Interpolates a u-major grid in a prescribed expanded knot basis.
+    /// Parameters must increase inside each active domain; singular systems refuse.
+    pub fn through_grid_on_knots(
+        parameters: [&[Rational]; 2],
+        degrees: [usize; 2],
+        knots: [Vec<Rational>; 2],
+        points: &[RationalPoint],
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        Self::interpolate_grid(parameters, degrees, points, Some(knots), dec)
+    }
+
+    fn interpolate_grid(
+        parameters: [&[Rational]; 2],
+        degrees: [usize; 2],
+        points: &[RationalPoint],
+        knots: Option<[Vec<Rational>; 2]>,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
         let count = parameters.map(<[Rational]>::len);
         if count[0] < 2 || count[1] < 2 || count[0].checked_mul(count[1]) != Some(points.len()) {
             return Err(invalid(
@@ -522,20 +564,27 @@ impl RationalSplineSurface {
             ));
         }
         let _tensor_work = size(&[points.len(), points.len(), 7])?;
-        let bases = [
-            cardinals(
-                parameters[0],
-                degrees[0],
-                [&parameters[0][0], &parameters[0][count[0] - 1]],
-                dec,
-            )?,
-            cardinals(
-                parameters[1],
-                degrees[1],
-                [&parameters[1][0], &parameters[1][count[1] - 1]],
-                dec,
-            )?,
-        ];
+        let bases = if let Some([u, v]) = knots {
+            [
+                cardinals_on_knots(parameters[0], degrees[0], u, dec)?,
+                cardinals_on_knots(parameters[1], degrees[1], v, dec)?,
+            ]
+        } else {
+            [
+                cardinals(
+                    parameters[0],
+                    degrees[0],
+                    [&parameters[0][0], &parameters[0][count[0] - 1]],
+                    dec,
+                )?,
+                cardinals(
+                    parameters[1],
+                    degrees[1],
+                    [&parameters[1][0], &parameters[1][count[1] - 1]],
+                    dec,
+                )?,
+            ]
+        };
         let mut controls = filled(points.len(), std::array::from_fn(|_| Rational::zero()), dec)?;
         for u in 0..count[0] {
             for v in 0..count[1] {

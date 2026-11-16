@@ -613,6 +613,134 @@ impl RationalSplineSurface {
         )
     }
 
+    /// Exact Euclidean-linear ruling between clamped profiles with the same domain.
+    /// A common homogeneous product basis retains their continuity multiplicities.
+    /// The second parameter runs from zero on `first` to one on `second`.
+    pub fn ruled(
+        first: &RationalSplineCurve,
+        second: &RationalSplineCurve,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        if first.domain() != second.domain() {
+            return Err(invalid("ruled profiles must have the same active domain"));
+        }
+        let profiles = [first, second];
+        let degree = first
+            .degree
+            .checked_add(second.degree)
+            .ok_or_else(|| invalid("ruled degree overflows"))?;
+        let mut interior = std::collections::BTreeMap::<Rational, usize>::new();
+        for profile in profiles {
+            dec.charge_work(
+                u64::try_from(profile.knots.len())
+                    .map_err(|_| invalid("ruled knot count overflows"))?,
+            )?;
+            let [lo, hi] = profile.domain();
+            if profile.knots.first() != Some(lo) || profile.knots.last() != Some(hi) {
+                return Err(invalid("ruled profiles require clamped knot ends"));
+            }
+            for group in
+                profile.knots[profile.degree + 1..profile.controls.len()].chunk_by(|a, b| a == b)
+            {
+                if group.len() > profile.degree {
+                    return Err(invalid("ruled profiles must be continuous"));
+                }
+                let multiplicity = degree - profile.degree + group.len();
+                interior
+                    .entry(group[0].clone())
+                    .and_modify(|old| *old = (*old).max(multiplicity))
+                    .or_insert(multiplicity);
+            }
+        }
+        let mut count = degree
+            .checked_add(1)
+            .ok_or_else(|| invalid("ruled count overflows"))?;
+        for multiplicity in interior.values() {
+            count = count
+                .checked_add(*multiplicity)
+                .ok_or_else(|| invalid("ruled count overflows"))?;
+        }
+        let knot_count = count
+            .checked_add(degree)
+            .and_then(|n| n.checked_add(1))
+            .ok_or_else(|| invalid("ruled knot count overflows"))?;
+        let mut knots = capacity(knot_count, dec)?;
+        let [lo, hi] = first.domain();
+        knots.extend(std::iter::repeat_n(lo.clone(), degree + 1));
+        for (value, multiplicity) in interior {
+            knots.extend(std::iter::repeat_n(value, multiplicity));
+        }
+        knots.extend(std::iter::repeat_n(hi.clone(), degree + 1));
+        let mut nodes = capacity(count, dec)?;
+        let divisor = Rational::from_i64(
+            i64::try_from(degree).map_err(|_| invalid("ruled degree overflows"))?,
+        );
+        for i in 0..count {
+            dec.charge_work(degree as u64)?;
+            let sum = knots[i + 1..i + degree + 1]
+                .iter()
+                .fold(Rational::zero(), |sum, value| &sum + value);
+            nodes.push(&sum / &divisor);
+        }
+        let mut cards = cardinals_on_knots(&nodes, degree, knots, dec)?;
+        let size = size(&[count, 2])?;
+        let mut homogeneous: Vec<Homogeneous> =
+            filled(size, std::array::from_fn(|_| Rational::zero()), dec)?;
+        for (node, card) in nodes.iter().zip(&cards) {
+            let a = ruled_value(first, node, dec)?;
+            let b = ruled_value(second, node, dec)?;
+            dec.charge_work(7)?;
+            let weight = &a[3] * &b[3];
+            let values: [Homogeneous; 2] = std::array::from_fn(|side| {
+                std::array::from_fn(|axis| {
+                    if axis == 3 {
+                        weight.clone()
+                    } else if side == 0 {
+                        &a[axis] * &b[3]
+                    } else {
+                        &b[axis] * &a[3]
+                    }
+                })
+            });
+            for (u, coefficient) in card.controls.iter().enumerate() {
+                dec.charge_work(16)?;
+                for side in 0..2 {
+                    for axis in 0..4 {
+                        homogeneous[u * 2 + side][axis] = &homogeneous[u * 2 + side][axis]
+                            + &(&values[side][axis] * &coefficient[0]);
+                    }
+                }
+            }
+        }
+        let knots = std::mem::take(&mut cards[0].knots);
+        let mut controls = capacity(size, dec)?;
+        let mut weights = capacity(size, dec)?;
+        for [x, y, z, weight] in homogeneous {
+            if weight.sign() != Sign::Positive {
+                return Err(invalid("ruled homogeneous weight is not positive"));
+            }
+            dec.charge_work(3)?;
+            controls.push([&x / &weight, &y / &weight, &z / &weight]);
+            weights.push(weight);
+        }
+        Self::new(
+            [degree, 1],
+            [
+                knots,
+                vec![
+                    Rational::zero(),
+                    Rational::zero(),
+                    Rational::one(),
+                    Rational::one(),
+                ],
+            ],
+            [count, 2],
+            controls,
+            weights,
+            dec,
+        )
+    }
+
     /// Builds a bilinearly blended Coons patch. `u_curves` are the v-min/v-max
     /// boundaries; `v_curves` are u-min/u-max. Each pair has the same direction.
     /// Input domains are mapped to [0,1]. All four corners must agree exactly.
@@ -802,4 +930,27 @@ mod work_tests {
         );
         assert!(work.exhausted);
     }
+}
+
+fn ruled_value(
+    curve: &RationalSplineCurve,
+    at: &Rational,
+    dec: &mut Decider,
+) -> Result<Homogeneous, Refusal> {
+    let coefficients = basis(curve.degree, &curve.knots, curve.controls.len(), at, dec)?;
+    let mut value = std::array::from_fn(|_| Rational::zero());
+    for ((point, weight), coefficient) in
+        curve.controls.iter().zip(&curve.weights).zip(coefficients)
+    {
+        if coefficient.is_zero() {
+            continue;
+        }
+        dec.charge_work(8)?;
+        let scale = &coefficient * weight;
+        for axis in 0..3 {
+            value[axis] = &value[axis] + &(&point[axis] * &scale);
+        }
+        value[3] = &value[3] + &scale;
+    }
+    Ok(value)
 }

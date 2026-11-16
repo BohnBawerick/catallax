@@ -84,3 +84,41 @@ fn prescribed_grid_basis_refuses_nonclamped_zero_width_endpoint_spans() {
         [q("1/2"), q("1/2"), q("1/4")]
     );
 }
+
+#[test]
+fn ruled_surface_is_euclidean_linear_between_distinct_rational_bases() {
+    use catallax_shapes::spline_tools::RationalSplineCurve;
+    let q = |text: &str| Rational::parse(text).unwrap();
+    let dec = &mut Decider::default();
+    let a = RationalSplineCurve::new(
+        2,
+        ["0", "0", "0", "1/2", "1", "1", "1"].map(q).to_vec(),
+        [[0, 0, 0], [1, 0, 1], [2, 0, 0], [3, 0, 1]]
+            .map(|p| p.map(Rational::from_i64))
+            .to_vec(),
+        ["2", "3", "1", "2"].map(q).to_vec(),
+        dec,
+    )
+    .unwrap();
+    let b = RationalSplineCurve::new(
+        3,
+        ["0", "0", "0", "0", "1", "1", "1", "1"].map(q).to_vec(),
+        [[0, 2, 1], [1, 3, 2], [2, 2, 3], [3, 2, 4]]
+            .map(|p| p.map(Rational::from_i64))
+            .to_vec(),
+        ["4", "1", "2", "3"].map(q).to_vec(),
+        dec,
+    )
+    .unwrap();
+    let surface = RationalSplineSurface::ruled(&a, &b, dec).unwrap();
+    for u in [q("0"), q("1/3"), q("1/2"), q("2/3"), q("1")] {
+        let first = a.point_at(&u, dec).unwrap();
+        let second = b.point_at(&u, dec).unwrap();
+        for v in [q("0"), q("1/4"), q("1")] {
+            let expected = std::array::from_fn(|axis| {
+                &(&first[axis] * &(&q("1") - &v)) + &(&second[axis] * &v)
+            });
+            assert_eq!(surface.point_at(&u, &v, dec).unwrap(), expected);
+        }
+    }
+}

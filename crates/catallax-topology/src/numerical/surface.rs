@@ -299,7 +299,7 @@ impl SplineSurfaceBody {
     /// Thickens along the unit normal by a nonzero signed distance. The source
     /// cap remains exact. Cubic interpolation uses every source knot span;
     /// independent per-span checks include both one-sided knot limits.
-    /// Ruled Coons rims close the shell without requiring equal cap bases.
+    /// Exact ruled rims close the shell without requiring equal cap bases.
     /// Checks are sampled, not a whole-body deviation or injectivity proof.
     pub fn thicken(
         &self,
@@ -706,22 +706,7 @@ fn solid_definition(
         .zip(upper_boundaries)
         .enumerate()
     {
-        let line = |a: &RationalPoint, b: &RationalPoint, dec: &Decider| {
-            RationalSplineCurve::new(
-                1,
-                vec![zero.clone(), zero.clone(), one.clone(), one.clone()],
-                vec![a.clone(), b.clone()],
-                vec![one.clone(); 2],
-                dec,
-            )
-        };
-        let left = line(&bottom.controls()[0], &top.controls()[0], dec)?;
-        let right = line(
-            bottom.controls().last().expect("boundary has controls"),
-            top.controls().last().expect("boundary has controls"),
-            dec,
-        )?;
-        let rim = RationalSplineSurface::coons(&[bottom, top], &[left, right], dec)?;
+        let rim = RationalSplineSurface::ruled(&bottom, &top, dec)?;
         let walk = [
             (i, Sense::Same),
             (8 + (i + 1) % 4, Sense::Same),

@@ -1,5 +1,5 @@
 //! Retain numerical cone/hole-carrier fits from actual recipe prefixes.
-//! Usage: numerical_hole_carriers OUT WORKERS [--check-supports] [--finite-bands MIN MAX] RECIPE.json...
+//! Usage: numerical_hole_carriers OUT WORKERS [--check-supports] [--finite-bands MIN MAX] [--clip-cone] RECIPE.json...
 
 use catallax_numbers::{
     Decider, Rational, Real, Sign, current_operation_work, with_operation_budget,
@@ -134,6 +134,7 @@ fn query(
     reverse: bool,
     check_supports: bool,
     finite_bands: Option<[Rational; 2]>,
+    clip_cone: bool,
 ) -> Result<Value, String> {
     let mut prefix = recipe.clone();
     let hole = prefix["steps"]
@@ -188,6 +189,7 @@ fn query(
     });
     let heights = finite_bands
         .as_ref()
+        .filter(|_| !clip_cone)
         .map(|_| finite_cone_heights(&built.model, *face, cone, &mut dec))
         .transpose()?;
     let cone = Surface::Cone(cone.clone());
@@ -197,7 +199,33 @@ fn query(
         [&cone, &cylinder]
     };
     let input_work = current_operation_work().used - prefix_work;
-    let result = if let Some(parameters) = finite_bands {
+    let partition = if clip_cone {
+        let Surface::Cylinder(tool) = &cylinder else {
+            unreachable!()
+        };
+        Some(
+            catallax_boolean::numerical::clip_cone_cylinder_face(
+                &built.model,
+                *face,
+                &format!("cone-{face_index}"),
+                tool,
+                finite_bands
+                    .clone()
+                    .ok_or("--clip-cone requires --finite-bands")?,
+                catallax_topology::numerical::NumericalOptions {
+                    tolerance_mm: Rational::from_ratio(1, 10_000_000).unwrap(),
+                },
+                &mut dec,
+            )
+            .map_err(|e| format!("{}: {}", e.code, e.detail))?
+            .ok_or("unsupported finite cone face")?,
+        )
+    } else {
+        None
+    };
+    let result = if let Some(partition) = &partition {
+        Ok(Some(partition.intersection.clone()))
+    } else if let Some(parameters) = finite_bands {
         catallax_intersect::numerical_native_finite_intersection(
             ordered,
             heights.expect("finite band heights checked above"),
@@ -235,6 +263,12 @@ fn query(
         "complete_body_bound":"unestablished","trace_checkpoints":format!("{:?}",result.trace_work()),
         "work_stages":{"recipe":prefix_work,"input_preparation":input_work,"windows":stages.windows,"setup":stages.setup,
             "tracing":stages.tracing,"fit_checks":stages.fit_checks}});
+    if let Some(partition) = &partition {
+        report["open_partition"] = partition_report(partition);
+        report["work_stages"]["face_boundaries"] = json!(partition.work.boundaries);
+        report["work_stages"]["face_supports"] = json!(partition.work.supports);
+        report["work_stages"]["face_topology"] = json!(partition.work.topology);
+    }
     report["work_stages"]["report_preparation"] =
         json!(current_operation_work().used - before_report);
     if check_supports {
@@ -245,14 +279,33 @@ fn query(
     Ok(report)
 }
 
+fn partition_report(p: &catallax_boolean::numerical::NumericalFacePartition) -> Value {
+    json!({"kind":"open-numerical-face-partition","assembled_body":false,
+        "vertices":p.definition.vertices.iter().map(|v|json!({"key":v.key,"position":v.position.each_ref().map(ToString::to_string)})).collect::<Vec<_>>(),
+        "edges":p.definition.edges.iter().map(|e|{let catallax_shapes::Curve::BSpline(c)=&e.curve else{unreachable!()};json!({"key":e.key,"vertices":e.vertices,"parameters":e.parameters.each_ref().map(ToString::to_string),"curve":curve(c)})}).collect::<Vec<_>>(),
+        "faces":p.definition.faces.iter().map(|f|{let Surface::BSpline(catallax_shapes::SplineSupport::RationalPatch(patch))=&f.surface else{unreachable!()};json!({"key":f.key,"sense":format!("{:?}",f.sense),"source":source(patch.carrier()),"loops":f.loops.iter().map(|l|l.iter().map(|t|json!({"edge":t.edge,"sense":format!("{:?}",t.sense),"uv":t.uv.each_ref().map(|p|p.each_ref().map(ToString::to_string))})).collect::<Vec<_>>()).collect::<Vec<_>>()})}).collect::<Vec<_>>(),
+        "native_trims":p.native_trims.iter().map(|t|json!({"face":t.face,"boundary":t.boundary,"use_index":t.use_index,"edge":t.edge,"curve":curve(&t.curve)})).collect::<Vec<_>>(),
+        "events":p.events.iter().map(|e|json!({"key":e.key,"vertex":e.vertex,"point_only":e.point_only,"hits":e.hits.iter().map(|h|json!({"piece":h.piece,"parameter":h.parameter.to_string(),"uv":h.uv.each_ref().map(|r|r.each_ref().map(ToString::to_string)),"requested_domains":h.requested_domains.each_ref().map(|d|d.each_ref().map(|r|r.each_ref().map(ToString::to_string)))})).collect::<Vec<_>>()})).collect::<Vec<_>>(),
+        "rings":p.rings.iter().map(|r|json!({"original_loop":format!("{:?}",r.original_loop),"coedge":format!("{:?}",r.coedge),"edge":format!("{:?}",r.edge),"sense":format!("{:?}",r.sense),"edge_sense":format!("{:?}",r.edge_sense),"height_mm":r.height_mm.to_string(),"original_height_mm":r.original_height_mm.each_ref().map(ToString::to_string)})).collect::<Vec<_>>(),
+        "ring_links":p.ring_links.iter().map(|r|json!({"edge":r.edge,"ring":r.ring,"source_u":r.source_u.each_ref().map(ToString::to_string),"original_parameters_rad":r.original_parameters_rad.each_ref().map(|r|r.each_ref().map(ToString::to_string))})).collect::<Vec<_>>(),
+        "cylinder_quarters":p.cylinder_source.quarters().iter().map(|q|{let Surface::BSpline(catallax_shapes::SplineSupport::RationalPatch(patch)) = q.surface() else{unreachable!()};json!({"id":q.id(),"key":q.key(),"axis_parameters_mm":q.axis_parameters_mm().each_ref().map(ToString::to_string),"source":source(patch.carrier())})}).collect::<Vec<_>>(),
+        "cylinder_trims":p.cylinder_trims.iter().map(|t|json!({"piece":t.piece,"edge":t.edge,"quarter":t.quarter,"curve":curve(&t.curve)})).collect::<Vec<_>>(),
+        "evidence":catallax_cli::numerical_evidence_summary(&p.evidence)})
+}
+
 fn run() -> Result<(), String> {
     let mut args: Vec<_> = std::env::args().skip(1).collect();
     let mut check_supports = false;
     let mut finite_bands = None;
+    let mut clip_cone = false;
     while let Some(flag) = args.get(2).filter(|s| s.starts_with("--")) {
         match flag.as_str() {
             "--check-supports" => {
                 check_supports = true;
+                args.remove(2);
+            }
+            "--clip-cone" => {
+                clip_cone = true;
                 args.remove(2);
             }
             "--finite-bands" if args.len() >= 5 => {
@@ -267,7 +320,7 @@ fn run() -> Result<(), String> {
     }
     if args.len() < 3 {
         return Err(
-            "usage: numerical_hole_carriers OUT WORKERS [--check-supports] [--finite-bands MIN MAX] RECIPE.json...".into(),
+            "usage: numerical_hole_carriers OUT WORKERS [--check-supports] [--finite-bands MIN MAX] [--clip-cone] RECIPE.json...".into(),
         );
     }
     let out = Path::new(&args[0]);
@@ -304,7 +357,7 @@ fn run() -> Result<(), String> {
             let jobs = &jobs;
             let finite_bands = &finite_bands;
             scope.spawn(move || jobs.iter().enumerate().filter(|(i, _)| i % workers == rank).map(|(index, (name, recipe, face, reverse))| {
-                let (result, work) = with_operation_budget(20_000_000, || query(recipe, *face, *reverse, check_supports, finite_bands.clone()));
+                let (result, work) = with_operation_budget(20_000_000, || query(recipe, *face, *reverse, check_supports, finite_bands.clone(), clip_cone));
                 let mut response = match result {
                     Ok(response) if !work.exhausted => response,
                     Ok(_) => json!({"proof":"refused","refusal":"operation allowance exhausted"}),

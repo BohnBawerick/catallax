@@ -143,7 +143,7 @@ impl Path {
                     return Err(bad("a helix needs positive radius, nonzero pitch and nonzero turns"));
                 }
                 let pose = crate::profile::placement(frame, dec)?;
-                let coordinate = |x: &Real| -> Result<f64, Refusal> {
+                let mut coordinate = |x: &Real| -> Result<f64, Refusal> {
                     Ok(dec.enclose_budgeted_at(x, 128)?.mid().to_f64_nearest())
                 };
                 let origin = [coordinate(&pose.translation.x)?, coordinate(&pose.translation.y)?, coordinate(&pose.translation.z)?];
@@ -305,8 +305,8 @@ fn definition(recipe: &SweepRecipe, dec: &mut Decider) -> Result<(NumericalDefin
             let mut points = Vec::new();
             let mut weights = Vec::new();
             for (i,p) in coordinates.iter().enumerate() {
-                for p in controls(section.frames.map(|f| f.apply(*p))) {
-                    points.push(point(p)?);
+                for p in exact_controls(section.frames, *p)? {
+                    points.push(p);
                     weights.push(chart.curve.weight(i).clone());
                 }
             }
@@ -320,6 +320,28 @@ fn definition(recipe: &SweepRecipe, dec: &mut Decider) -> Result<(NumericalDefin
     }
     assembly.caps(frame(0.0,dec)?,frame(1.0,dec)?,dec)?;
     Ok((assembly.definition,checks))
+}
+
+fn exact_controls(frames: [Frame; 4], p: V) -> Result<[Point3; 4], Refusal> {
+    let px = rational(p[0])?;
+    let py = rational(p[1])?;
+    let mut rows: [[Rational; 3]; 4] =
+        std::array::from_fn(|_| std::array::from_fn(|_| q(0)));
+    for (row, frame) in rows.iter_mut().zip(frames) {
+        let scale = rational(frame.scale)?;
+        for (axis, value) in row.iter_mut().enumerate() {
+            *value = rational(frame.origin[axis])?
+                + &scale * (rational(frame.x[axis])? * &px + rational(frame.y[axis])? * &py);
+        }
+    }
+    let middle = |coefficients: [i64; 4]| -> [Rational; 3] {
+        std::array::from_fn(|axis| {
+            (0..4).fold(q(0), |sum, i| sum + q(coefficients[i]) * &rows[i][axis]) / q(6)
+        })
+    };
+    let values = [rows[0].clone(), middle([-5, 18, -9, 2]),
+        middle([2, -9, 18, -5]), rows[3].clone()];
+    Ok(values.map(|[x, y, z]| Point3::new(x.into(), y.into(), z.into())))
 }
 
 type VertexKey=(usize,Rational,Rational);
@@ -339,7 +361,7 @@ impl Assembly {
         let u=if *u==q(1) {q(0)} else {u.clone()};
         let key=(lp,u,v.clone());
         if let Some(id)=self.vertices.get(&key) { return Ok(*id); }
-        let coordinate=|x:&Real| x.as_rational().cloned().ok_or_else(|| bad("fitted control is not rational"));
+        let coordinate=|x:&Real| x.as_rational().ok_or_else(|| bad("fitted control is not rational"));
         let position=[coordinate(&p.x)?,coordinate(&p.y)?,coordinate(&p.z)?];
         let id=self.definition.vertices.len();
         self.definition.vertices.push(NumericalVertex { key:format!("vertex/{lp}/{}/{v}",key.1),position });

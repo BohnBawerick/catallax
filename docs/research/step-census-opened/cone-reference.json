@@ -1,0 +1,80 @@
+{
+  "binary_sha256": "5b46aea2f4775791e31448e568e186eba38935edaa9808aae98ab0bae6436d94",
+  "results": [
+    {
+      "expected_body_count": 1,
+      "exported_body_count": 1,
+      "exported_step_hashes": [
+        "29a992d2544e0f00e2750b3d58195336e0cc0bdaebc416cb79ba4421b11d3f14"
+      ],
+      "model_id": "00000174",
+      "observed_body_count": 1,
+      "outcome": "raw_valid",
+      "raw_invalid_solid_count": 0,
+      "raw_reader_refused_body_count": 0,
+      "raw_valid_solid_count": 1,
+      "source_sha256": "c581712b5e192d8dfa57a746f918d43d53b0bd578f3d41afa627685ac36aea4f"
+    },
+    {
+      "expected_body_count": 2,
+      "exported_body_count": 2,
+      "exported_step_hashes": [
+        "3f04bc6c1d7c6b3596b7fc1c6c05db2c5add3385ffb4b0d16332048102fa07b4",
+        "4ea2407353a27d9d058551d5c14f8d287c234bebe9bd0c4eb7eaa7c46a61cb6a"
+      ],
+      "model_id": "00004399",
+      "observed_body_count": 2,
+      "outcome": "raw_valid",
+      "raw_invalid_solid_count": 0,
+      "raw_reader_refused_body_count": 0,
+      "raw_valid_solid_count": 2,
+      "source_sha256": "81655d919bfc91e976ec1244425e9b7cf2fe9518652df099aeec4dffb5afc6fe"
+    },
+    {
+      "expected_body_count": 2,
+      "exported_body_count": 2,
+      "exported_step_hashes": [
+        "f3c37c2bcd4c3c4535840bec13707a44c4612d30ebe3b7aa11c4a0269204c364",
+        "99c7a8d93796e3b1462d68a9e4b8c6640a9aeabd4535771669917ab3b34c3798"
+      ],
+      "model_id": "00004152",
+      "observed_body_count": 2,
+      "outcome": "raw_valid",
+      "raw_invalid_solid_count": 0,
+      "raw_reader_refused_body_count": 0,
+      "raw_valid_solid_count": 2,
+      "source_sha256": "e77a7e4af0172fbcb08aece1f03c4d4efe5dee8a19e5d589d3fd2b1aa8c2f2e9"
+    },
+    {
+      "expected_body_count": 1,
+      "exported_body_count": 1,
+      "exported_step_hashes": [
+        "be3f3653bda1d6f932e92aa076878ddb1f8b49f0bd64fad8c2498f40e39c6655"
+      ],
+      "model_id": "00004452",
+      "observed_body_count": 1,
+      "outcome": "raw_valid",
+      "raw_invalid_solid_count": 0,
+      "raw_reader_refused_body_count": 0,
+      "raw_valid_solid_count": 1,
+      "source_sha256": "16558d0dea69c39a3e65550db82e1b8bd0ef3ee43c919d178dcdbe78c9e959c7"
+    },
+    {
+      "expected_body_count": 1,
+      "exported_body_count": 1,
+      "exported_step_hashes": [
+        "18dccd17c9ac9c6a472b18bffe2850506bd597f724f58f0de77eff0ca222144a"
+      ],
+      "model_id": "00009819",
+      "observed_body_count": 1,
+      "outcome": "raw_valid",
+      "raw_invalid_solid_count": 0,
+      "raw_reader_refused_body_count": 0,
+      "raw_valid_solid_count": 1,
+      "source_sha256": "bac5dd52df282816d058a73a2793b074b4272d4e6e6d80dd2af020a3b1c814d6"
+    }
+  ],
+  "scope": "Landed cone reference; valid after builder processing, not unhealed validity or complete source fidelity.",
+  "source_revision": "88bb7851a00f0a8531fd85618a2cf083fcda510c",
+  "unhealed_validity_established": false
+}

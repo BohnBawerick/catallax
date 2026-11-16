@@ -191,6 +191,47 @@ The report is an observation of these repairs, not an independently trusted soli
 The existing recipe repair/approval path retains its own source-bound records and policy.
 The [healer measurements](../research/tolerant-import-healing/README.md) retain the actual fixtures and real-file outcomes.
 
+### Per-body opening tiers and source replay
+
+`tolerant::opened::open_step` retains the supported reader's source definitions before attempting body admission.
+Each `BodyOutcome` reports `ValidSolid`, `RepairedSolid` or `SurfaceBody`, with an explicit approximation flag and the actual refusal/check history.
+`BodyView` distinguishes a checked model, a separately checked numerical B-rep, and retained source surfaces with unresolved boundary checks.
+Retained source surfaces expose no exact model or solid authority.
+An already admitted surface model retains its existing checked surface B-rep and surface kind.
+The broad surface tier therefore does not itself assert finite embedding, closure or material; the view and recorded checks determine the available operations.
+
+The existing certified/numerical whole-file entry remains the first admission route.
+If that route refuses, each recognized body is tried independently, so one open or unsupported sibling cannot erase a valid body's result.
+The healer prepares a private one-body candidate under the original file hash.
+Known bad/open boundaries remain surfaces; pending checks may reach the existing numerical finite-trim builder and source-pair checks.
+The retained-definition adapter also admits the checked planar-line repair family without refitting retained carriers.
+It retains the landed cone deviation and remaining-tolerance checks.
+Every numerical result remains approximate and records its source interpretation, even when retained 3D geometry has not moved.
+Cheap exact source derivatives keep their existing source marks and are classified as repaired, separately from their construction facts.
+
+Default controls remain 0.0000001 mm initial entity tolerance and a 0.01 mm maximum.
+Recognition, source retention, the whole-file attempt, sibling attempts and healing share the unchanged 20M opening allowance.
+Output slots are reserved before optional admission work.
+A late admission budget/deadline refusal discards that admission and leaves the previously read source representation, rather than returning partial candidate geometry as a solid.
+An `Ok` result can therefore contain only retained surfaces even when optional work exhausted the outer allowance.
+Callers must handle body views explicitly instead of interpreting success as solid admission.
+Source hash mismatch, unsupported recognition and unreadable geometry remain typed failures before a readable source result is available.
+No existing import, proposal/approval, recipe or application entry is silently switched to this consumer.
+
+`OpenedStep::saved_controls` saves the original `catallax-import-tolerances/1` source record.
+`opened::reopen` verifies that record against the immutable source, rejects a purported source record containing later tolerance growth, then reruns the selector with the recorded controls and the caller's step identity.
+It introduces no healed-body codec or cached-model promotion.
+The replay and reconstruction share one active allowance.
+The normal 0.001 mm gap fixture saves/reloads its controls and reproduces an approximate six-face, twelve-edge, eight-vertex body with identical repair history.
+All entity keys remain scoped to the original source SHA-256 and body; changing or renumbering a file still requires the separate verified correspondence/replacement path.
+
+The census observer separates supported source retention, admitted solid tiers and independently checked exports.
+Its source inventory coverage flag is the frozen source-inspection result at the identical source hash; incomplete representation coverage is never promoted to a complete-source solid file.
+Retained source surfaces without an admitted B-rep receive no checked STEP or valid-solid credit.
+All admitted bodies share one separate 20M export allowance, and actual written bytes are independently checked with the pinned OCCT builder protocol.
+Builder processing can heal internally; neither unhealed validity nor complete source fidelity follows from that result.
+The [frozen tier census](../research/step-census-opened/README.md) owns the measured counts, producer and limitations.
+
 ### IGES source recognition
 
 `read_iges` and `read_iges_with_decider` read IGES 5.3 manifold solid B-rep objects into the same `StepFile`, so `build_file`, its exact incidence checks, the self-intersection check and every builder refusal are shared. `import_iges_bodies` checks the saved hash, reads the file, checks self-intersection and builds, as `import_step_bodies` does for STEP, including its separately recorded bounded spline-incidence path. The recipe step `import_iges` (RECIPE.md section 4.18.2) goes through `apply_source` with `SourceFormat::Iges`, so gap proposals (`propose_source`), saved decisions, repairs, recorded face tolerances and the STEP derivative are those of a STEP import. A persisted IGES record replays through `rebuild_source` with `SourceFormat::Iges`; `rebuild` is its STEP form, so no replay guesses the format from the bytes or their name. Face keys are directory-entry sequence numbers such as `D17`; edges and vertices are named by their list and index, such as `D3:5`.

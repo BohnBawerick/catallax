@@ -316,15 +316,20 @@ fn movement_inner(
     ))
 }
 
-pub(crate) fn prepare(source: &Solid, measured: &crate::IncidenceGap) -> Result<Prepared, String> {
+pub(crate) fn prepare(
+    source: &Solid,
+    measured: &crate::IncidenceGap,
+    deadline: Option<std::time::Instant>,
+) -> Result<Prepared, String> {
     if source
         .faces
         .iter()
         .any(|f| !matches!(f.surface, Surface::Plane(_)))
     {
-        return crate::incidence_curved::prepare(source);
+        return crate::incidence_curved::prepare(source, deadline);
     }
     let mut dec = Decider::default();
+    dec.set_deadline(deadline);
     checkpoint(&mut dec)?;
     let mut vertices: BTreeMap<Vec3, Vec<Placement>> = BTreeMap::new();
     let mut planes: BTreeMap<String, Vec<Placement>> = BTreeMap::new();

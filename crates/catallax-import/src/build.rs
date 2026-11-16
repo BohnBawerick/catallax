@@ -7,6 +7,7 @@
 //! joined vertices. Nothing joins by proximity.
 
 use std::collections::BTreeMap;
+use std::time::Instant;
 
 use catallax_numbers::{Fact, FactKind, FactOrigin, MarkLog, Rational};
 use catallax_recipe::{Origin, Role, StepId};
@@ -53,14 +54,25 @@ pub fn build_file(
     file: &StepFile,
     step: Option<&StepId>,
 ) -> Result<Vec<BodyId>, ImportRefusal> {
+    build_file_with_deadline(model, file, step, None)
+}
+
+pub(crate) fn build_file_with_deadline(
+    model: &mut Model,
+    file: &StepFile,
+    step: Option<&StepId>,
+    deadline: Option<Instant>,
+) -> Result<Vec<BodyId>, ImportRefusal> {
     let repair = file.solids.iter().any(has_spline);
     let mut bodies = file
         .solids
         .iter()
-        .map(|solid| build_solid_with_repair(model, solid, step, repair))
+        .map(|solid| build_solid_with_repair(model, solid, step, repair, deadline))
         .collect::<Result<Vec<_>, _>>()?;
     for surface in &file.surface_models {
-        bodies.push(build_surface_model(model, surface, step)?);
+        bodies.push(build_surface_model_with_deadline(
+            model, surface, step, deadline,
+        )?);
     }
     Ok(bodies)
 }
@@ -71,9 +83,18 @@ pub fn build_surface_model(
     source: &SurfaceModel,
     step: Option<&StepId>,
 ) -> Result<BodyId, ImportRefusal> {
+    build_surface_model_with_deadline(model, source, step, None)
+}
+
+fn build_surface_model_with_deadline(
+    model: &mut Model,
+    source: &SurfaceModel,
+    step: Option<&StepId>,
+    deadline: Option<Instant>,
+) -> Result<BodyId, ImportRefusal> {
     let mut lumps = Vec::new();
     for shell in &source.shells {
-        let faces = build_source_faces(model, &shell.name, &shell.faces, step)?;
+        let faces = build_source_faces(model, &shell.name, &shell.faces, step, deadline)?;
         if shell.closed {
             let mut uses = BTreeMap::<EdgeId, usize>::new();
             for face in &faces {
@@ -117,7 +138,7 @@ pub fn build_solid(
     solid: &Solid,
     step: Option<&StepId>,
 ) -> Result<BodyId, ImportRefusal> {
-    build_solid_with_repair(model, solid, step, has_spline(solid))
+    build_solid_with_repair(model, solid, step, has_spline(solid), None)
 }
 
 fn build_solid_with_repair(
@@ -125,18 +146,19 @@ fn build_solid_with_repair(
     solid: &Solid,
     step: Option<&StepId>,
     repair: bool,
+    deadline: Option<Instant>,
 ) -> Result<BodyId, ImportRefusal> {
     if !repair {
-        return build_solid_exact(model, solid, step, &MarkLog::new());
+        return build_solid_exact(model, solid, step, &MarkLog::new(), deadline);
     }
     let original = model.clone();
-    let result = build_solid_exact(model, solid, step, &MarkLog::new());
+    let result = build_solid_exact(model, solid, step, &MarkLog::new(), deadline);
     let Err(refusal) = &result else { return result };
     if crate::incidence::target(refusal).is_none() {
         return result;
     }
     *model = original.clone();
-    let gap = Box::new(crate::incidence::measure_solid(solid, refusal)?);
+    let gap = Box::new(crate::incidence::measure_solid(solid, refusal, deadline)?);
     let cap = crate::gap::auto_cap();
     if Rational::parse(&gap.distance_lower_mm).expect("measured decimal") > cap {
         return Err(ImportRefusal::IncidenceGap {
@@ -145,7 +167,7 @@ fn build_solid_with_repair(
             next_refusal: None,
         });
     }
-    let prepared = crate::incidence_repair::prepare(solid, &gap).map_err(|reason| {
+    let prepared = crate::incidence_repair::prepare(solid, &gap, deadline).map_err(|reason| {
         if catallax_numbers::current_operation_work().exhausted {
             ImportRefusal::ResourceLimit
         } else {
@@ -156,7 +178,7 @@ fn build_solid_with_repair(
             }
         }
     })?;
-    match build_solid_exact(model, &prepared.solid, step, &prepared.marks) {
+    match build_solid_exact(model, &prepared.solid, step, &prepared.marks, deadline) {
         Ok(body) => Ok(body),
         Err(next) => {
             *model = original;
@@ -192,8 +214,9 @@ fn build_solid_exact(
     solid: &Solid,
     step: Option<&StepId>,
     marks: &MarkLog,
+    deadline: Option<Instant>,
 ) -> Result<BodyId, ImportRefusal> {
-    let faces = build_source_faces(model, &solid.name, &solid.faces, step)?;
+    let faces = build_source_faces(model, &solid.name, &solid.faces, step, deadline)?;
     let shell = model.add_shell(Shell { faces });
     let lump = model.add_lump(Lump {
         shells: vec![shell],
@@ -217,12 +240,13 @@ fn build_source_faces(
     name: &str,
     source: &[StepFace],
     step: Option<&StepId>,
+    deadline: Option<Instant>,
 ) -> Result<Vec<catallax_topology::FaceId>, ImportRefusal> {
     let has_spline = has_spline_faces(source);
     if !has_spline {
-        crate::intersect::check_faces(name, source, None)?;
+        crate::intersect::check_faces_with_deadline(name, source, None, deadline)?;
     }
-    let mut b = Builder::new(model, false);
+    let mut b = Builder::with_deadline(model, false, deadline);
     let mut faces = Vec::new();
     for face in source {
         let origins = step
@@ -238,13 +262,14 @@ fn build_source_faces(
         faces.push(b.face(face, origins)?);
     }
     if has_spline {
-        crate::intersect::check_faces(
+        crate::intersect::check_faces_with_deadline(
             name,
             source,
             Some(crate::curved::Scratch {
                 model: model.clone(),
                 faces: faces.clone(),
             }),
+            deadline,
         )?;
     }
     Ok(faces)
@@ -271,11 +296,13 @@ struct Use {
 }
 
 impl<'a> Builder<'a> {
-    fn new(model: &'a mut Model, scratch: bool) -> Self {
+    fn with_deadline(model: &'a mut Model, scratch: bool, deadline: Option<Instant>) -> Self {
+        let mut dec = catallax_numbers::Decider::default();
+        dec.set_deadline(deadline);
         Self {
             model,
             scratch,
-            dec: catallax_numbers::Decider::default(),
+            dec,
             vertices: BTreeMap::new(),
             edges: BTreeMap::new(),
             segments: BTreeMap::new(),
@@ -289,8 +316,9 @@ impl<'a> Builder<'a> {
 pub(crate) fn scratch_faces(
     model: &mut Model,
     faces: &[StepFace],
+    deadline: Option<Instant>,
 ) -> Result<Vec<catallax_topology::FaceId>, ImportRefusal> {
-    let mut b = Builder::new(model, true);
+    let mut b = Builder::with_deadline(model, true, deadline);
     faces.iter().map(|f| b.face(f, Vec::new())).collect()
 }
 
@@ -957,7 +985,7 @@ mod tests {
             }],
         };
         let mut model = Model::new();
-        let face_id = Builder::new(&mut model, false)
+        let face_id = Builder::with_deadline(&mut model, false, None)
             .face(&face, Vec::new())
             .unwrap();
         let surface = model.face(face_id).surface;

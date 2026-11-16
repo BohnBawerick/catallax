@@ -456,8 +456,12 @@ fn identities(source: &Solid, dec: &mut Decider) -> Result<(), String> {
     Ok(())
 }
 
-pub(crate) fn prepare(source: &Solid) -> Result<Prepared, String> {
+pub(crate) fn prepare(
+    source: &Solid,
+    deadline: Option<std::time::Instant>,
+) -> Result<Prepared, String> {
     let mut dec = Decider::default();
+    dec.set_deadline(deadline);
     checkpoint(&mut dec)?;
     if source.faces.len() != 3 {
         return Err("curved feature certificate: this step requires one cylinder and two perpendicular planar caps".into());

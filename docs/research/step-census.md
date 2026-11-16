@@ -15,7 +15,24 @@ It is step R8 ([archived plan, section 12.6](../archive/PLAN-2026-11.md#126-robu
 
 A first attempt on 11 November stopped before measuring, because the archive could not be fetched. The run that counted took 3,000 models from the public ABC collection with a fixed seed and put each through the import entry on main. It was run again after a fix to how placements are read.
 
-## Result
+## Current tier-consumer result
+
+The complete 16 November rerun evaluates **all 3,000 original inputs**, with the same seed, source hashes and denominator.
+It records **418 complete-source solid imports (13.93%)**, beside the original **186 (6.20%, about 6%)**.
+Every expected solid exports and passes validity after OCCT builder processing in **384 files (12.80%)**.
+Possible internal builder healing remains part of that qualification; it establishes no unhealed validity or complete source-fidelity bound.
+
+The consumer additionally retains 119 mixed/partial files and 2,202 unverified source-surface sets, for 2,739 supported source openings (91.30%).
+Retained source definitions are separate from an admitted B-rep or checked STEP.
+There are 259 recognition/geometry-read refusals and two opening timeouts.
+The run loses no solid-file/body tier against the landed 405 admissions and no export-valid file against the landed 374.
+All ten selected P06 parts retain their source/control artifacts, and `00009338` keeps its working numerical route in the one integrated observation.
+
+The [tier census](step-census-opened/README.md), [3,000-row table](step-census-opened/results.csv) and [producer manifest](step-census-opened/results.json) own the new counts, actual gains, remaining causes and protocol.
+The unchanged OCCT reference is 2,993 transferred/opened files and 2,701 healed-valid solid files (90.03%) under its different default transfer/ShapeFix method.
+The sections below retain historical observations at their original producers.
+
+## Earlier frozen export result
 
 The complete frozen-population export comparison records **369 of the original
 3,000 files (12.30%) with STEP exports valid after OCCT builder construction,

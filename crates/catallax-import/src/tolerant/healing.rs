@@ -545,14 +545,25 @@ fn charge_source(source: &TolerantFile, dec: &mut Decider) -> Result<(), Error> 
     Ok(())
 }
 
-fn usage(body: &TolerantBody, dec: &mut Decider) -> Result<Vec<Vec<(usize, usize, bool)>>, Error> {
+#[derive(Clone, Copy)]
+struct EdgeUse {
+    shell: usize,
+    face: usize,
+    forward: bool,
+}
+
+fn usage(body: &TolerantBody, dec: &mut Decider) -> Result<Vec<Vec<EdgeUse>>, Error> {
     let mut result = vec![Vec::new(); body.edges.len()];
     for (s, shell) in body.shells.iter().enumerate() {
         for (f, face) in shell.faces.iter().enumerate() {
             for boundary in &face.loops {
                 for coedge in &boundary.edges {
                     dec.charge_work(1)?;
-                    result[coedge.edge].push((s, f, coedge.forward == boundary.orientation));
+                    result[coedge.edge].push(EdgeUse {
+                        shell: s,
+                        face: f,
+                        forward: coedge.forward == boundary.orientation,
+                    });
                 }
             }
         }

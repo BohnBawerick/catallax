@@ -319,7 +319,7 @@ pub(super) fn shells(
         let mut adjacent = vec![Vec::new(); count];
         let mut closed = true;
         for edge in &uses {
-            let local: Vec<_> = edge.iter().filter(|(shell, _, _)| *shell == s).collect();
+            let local: Vec<_> = edge.iter().filter(|edge| edge.shell == s).collect();
             if local.is_empty() {
                 continue;
             }
@@ -328,8 +328,8 @@ pub(super) fn shells(
                 closed = false;
                 continue;
             }
-            let (.., a, direction_a) = *local[0];
-            let (.., b, direction_b) = *local[1];
+            let (a, direction_a) = (local[0].face, local[0].forward);
+            let (b, direction_b) = (local[1].face, local[1].forward);
             if a == b {
                 if direction_a == direction_b {
                     closed = false;

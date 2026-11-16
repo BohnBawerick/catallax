@@ -323,6 +323,12 @@ pub enum Operation {
         path: StepId,
         /// How the profile turns along the path.
         orientation: SweepOrientation,
+        /// Auxiliary path defining section rotation at equal normalized native parameters.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        guide: Option<StepId>,
+        /// Additional signed rotation in degrees, linear in normalized native path parameter.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        twist: Option<Number>,
     },
     /// A solid through a sequence of profiles.
     Loft {
@@ -528,7 +534,13 @@ impl Operation {
             | Operation::Draft { body, .. }
             | Operation::Pattern { body, .. }
             | Operation::Mirror { body, .. } => vec![(body, Body)],
-            Operation::Sweep { profile, path, .. } => vec![(profile, Profile), (path, Path)],
+            Operation::Sweep { profile, path, guide, .. } => {
+                let mut inputs=Vec::with_capacity(2+usize::from(guide.is_some()));
+                inputs.push((profile,Profile));
+                inputs.push((path,Path));
+                if let Some(guide)=guide {inputs.push((guide,Path));}
+                inputs
+            }
             Operation::Loft { sections, .. } => {
                 sections.iter().map(|s| (&s.profile, Profile)).collect()
             }

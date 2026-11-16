@@ -64,10 +64,19 @@ impl RecipeCandidate {
 
 /// Whether the exact evaluator must not claim authority for this recipe.
 pub fn requires_numerical(recipe: &Recipe) -> bool {
-    recipe.steps.iter().any(|step| {
-        matches!(&step.op,Operation::Path {segments,..}
-        if segments.iter().any(|s|matches!(s,PathSegment::Helix {..})))
+    recipe.steps.iter().any(|step| match &step.op {
+        Operation::Path {segments,..} => segments.iter().any(|s|matches!(s,PathSegment::Helix {..})),
+        Operation::Sweep {guide,twist,..} => guide.is_some() || twist.as_ref().is_some_and(|n|!n.value().is_zero()),
+        _=>false,
     })
+}
+
+pub(crate) fn path_needs_numerical(recipe:&Recipe,path:&StepId)->bool {
+    if recipe.step(path).is_some_and(|step|matches!(&step.op,Operation::Path {segments,..}
+        if segments.iter().any(|s|matches!(s,PathSegment::Helix {..})))) {return true;}
+    recipe.steps.iter().any(|step|matches!(&step.op,Operation::Sweep {path:spine,guide,twist,..}
+        if (guide.is_some() || twist.as_ref().is_some_and(|n|!n.value().is_zero()))
+            && (spine==path || guide.as_ref()==Some(path))))
 }
 
 /// Constructs the fitted recipe privately. The caller must supply the numerical
@@ -104,6 +113,8 @@ impl Context {
         path: &StepId,
         step: &StepId,
         orientation: SweepOrientation,
+        guide: Option<&StepId>,
+        twist: Option<&Number>,
         dec: &mut Decider,
     ) -> Result<(BodyId, Rational), Refusal> {
         let sketch = recipe
@@ -114,49 +125,22 @@ impl Context {
         let Operation::Sketch { plane, loops } = &sketch.op else {
             return Err(bad("sweep needs a sketch"));
         };
-        let rail = recipe
-            .steps
-            .iter()
-            .find(|s| &s.id == path)
-            .ok_or_else(|| bad("missing sweep spine"))?;
-        let Operation::Path { start, segments } = &rail.op else {
-            return Err(bad("sweep needs a path"));
-        };
-        let [
-            PathSegment::Helix {
-                id,
-                centre,
-                axis,
-                angle,
-                rise,
-                ..
-            },
-        ] = segments.as_slice()
-        else {
-            return Err(bad(
-                "a numerical recipe sweep currently needs one complete helix segment",
-            ));
-        };
+        let (id,motion)=recipe_path(recipe,path)?;
+        let guide=guide.map(|id|recipe_path(recipe,id).map(|(_,motion)|motion)).transpose()?;
         let definition = SweepRecipe {
             name: step.to_string(),
             loops: loops.clone(),
             plane: Some(plane.clone()),
-            path: SweepPath::Helix {
-                start: start.clone(),
-                centre: centre.clone(),
-                axis: axis.clone(),
-                angle: angle.clone(),
-                rise: rise.clone(),
-            },
+            path: motion,
             orientation,
-            guide: None,
+            guide,
             reference: [1, 0, 0].map(Into::into),
-            twist_degrees: 0.into(),
+            twist_degrees: twist.cloned().unwrap_or_else(||0.into()),
             end_scale: 1.into(),
             tolerance_mm: self.tolerance.clone().into(),
             max_sections: 4096,
         };
-        let (body, radius, checks) = append(model, &definition, step, Some(id), dec)?;
+        let (body, radius, checks) = append(model, &definition, step, Some(&id), dec)?;
         self.checks.insert(step.clone(), checks);
         Ok((body, radius))
     }
@@ -210,7 +194,8 @@ impl Context {
             tolerance_mm: self.tolerance.clone().into(),
             max_sections: 1,
         };
-        let (body, radius, _) = append(model, &definition, step, None, dec)?;
+        let (body, radius, checks) = append(model, &definition, step, None, dec)?;
+        self.checks.insert(step.clone(), checks);
         Ok(Some((body, radius)))
     }
 }
@@ -296,4 +281,39 @@ fn append(
         marks: Default::default(),
     });
     Ok((body, radius, checks))
+}
+
+fn recipe_path(recipe:&Recipe,path:&StepId)->Result<(ElementId,SweepPath),Refusal> {
+    let rail=recipe.step(path).ok_or_else(||bad("missing sweep path"))?;
+    let Operation::Path {start,segments}=&rail.op else {return Err(bad("a sweep input must be a path"));};
+    let [segment]=segments.as_slice() else {
+        return Err(bad("a numerical sweep currently needs one complete authored segment per path"));
+    };
+    let motion=match segment {
+        PathSegment::Line {to,..}=>SweepPath::Line {start:start.clone(),end:to.clone()},
+        PathSegment::Helix {centre,axis,angle,rise,..}=>SweepPath::Helix {
+            start:start.clone(),centre:centre.clone(),axis:axis.clone(),angle:angle.clone(),rise:rise.clone()},
+        PathSegment::Spline {degree,control_points,weights,knots,..}=>SweepPath::Spline {
+            degree:*degree,control_points:control_points.clone(),weights:weights.clone(),knots:knots.clone()},
+        PathSegment::Arc {centre,to,axis,..}=>{
+            let point=|p:&RecipePoint|catallax_shapes::RPoint3::new(
+                p.0[0].value().clone(),p.0[1].value().clone(),p.0[2].value().clone());
+            let a=point(start).minus(&point(centre));
+            let b=point(to).minus(&point(centre));
+            let normal=catallax_shapes::RVector3::new(axis.0[0].value().clone(),
+                axis.0[1].value().clone(),axis.0[2].value().clone());
+            if normal.is_zero() || a.is_zero() || a==b || a.norm_squared()!=b.norm_squared()
+                || !a.dot(&normal).is_zero() || !b.dot(&normal).is_zero() {
+                return Err(bad("an arc needs distinct endpoints on one nonzero perpendicular circle"));
+            }
+            let av=[a.x.to_f64_nearest(),a.y.to_f64_nearest(),a.z.to_f64_nearest()];
+            let bv=[b.x.to_f64_nearest(),b.y.to_f64_nearest(),b.z.to_f64_nearest()];
+            let n=unit(axis.0.each_ref().map(number))?;
+            let mut angle=libm::atan2(dot(n,cross(av,bv)),dot(av,bv));
+            if angle<=0.0 {angle+=std::f64::consts::TAU;}
+            SweepPath::Helix {start:start.clone(),centre:centre.clone(),axis:axis.clone(),
+                angle:rational(angle.to_degrees())?.into(),rise:0.into()}
+        }
+    };
+    Ok((segment.id().clone(),motion))
 }

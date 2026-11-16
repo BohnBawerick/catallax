@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 mod recipe;
 #[cfg(test)]
 mod tests;
-pub(crate) use recipe::Context;
+pub(crate) use recipe::{Context, path_needs_numerical};
 pub use recipe::{RecipeCandidate, RecipeSwept, prepare_recipe, requires_numerical};
 /// Persisted generating definition. Reopening rebuilds and rechecks the geometry.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -174,7 +174,7 @@ fn cross(a: V, b: V) -> V {
     ]
 }
 fn unit(a: V) -> Result<V, Refusal> {
-    let length = dot(a, a).sqrt();
+    let length = libm::sqrt(dot(a, a));
     if !length.is_finite() || length <= 0.0 {
         return Err(bad("zero or nonfinite frame direction"));
     }
@@ -259,7 +259,7 @@ impl Path {
                 }
                 let z = unit(axis.0.each_ref().map(number))?;
                 let radial = sub(recipe_point(start), recipe_point(centre));
-                let radius = dot(radial, radial).sqrt();
+                let radius = libm::sqrt(dot(radial, radial));
                 let x = unit(radial)?;
                 let y = unit(cross(z, x))?;
                 let turns = number(angle) / 360.0;
@@ -309,7 +309,7 @@ impl Path {
                 axes,
             } => {
                 let omega = std::f64::consts::TAU * turns;
-                let (s, c) = (omega * t).sin_cos();
+                let (s, c) = libm::sincos(omega * t);
                 let local = [radius * c, radius * s, pitch * turns * t];
                 let tangent = [-radius * omega * s, radius * omega * c, pitch * turns];
                 let transform = |v: V| {
@@ -373,12 +373,12 @@ impl Frame {
                 } = path
                 {
                     let omega = std::f64::consts::TAU * turns;
-                    let (s, c) = (omega * t).sin_cos();
+                    let (s, c) = libm::sincos(omega * t);
                     let radial = add(mul(axes[0], c), mul(axes[1], s));
                     let binormal = unit(cross(tangent, radial))?;
                     let rise = pitch * turns;
-                    let speed = (radius * radius * omega * omega + rise * rise).sqrt();
-                    let (spin_s, spin_c) = (-omega * rise / speed * t).sin_cos();
+                    let speed = libm::sqrt(radius * radius * omega * omega + rise * rise);
+                    let (spin_s, spin_c) = libm::sincos(-omega * rise / speed * t);
                     let x = add(mul(radial, spin_c), mul(binormal, spin_s));
                     return Ok([x, cross(tangent, x), tangent]);
                 }
@@ -407,7 +407,7 @@ impl Frame {
                 mul(current[2], components[2]),
             )
         };
-        let (s, c) = (twist * t).sin_cos();
+        let (s, c) = libm::sincos(twist * t);
         let turn = |v: V| {
             add(
                 add(mul(v, c), mul(cross(current[2], v), s)),
@@ -507,7 +507,6 @@ fn definition(
         .as_ref()
         .map(|p| Path::new(p, dec))
         .transpose()?;
-    let reference = recipe.reference.each_ref().map(number);
     let twist = number(&recipe.twist_degrees).to_radians();
     let end_scale = number(&recipe.end_scale);
     let mut initial = None;
@@ -537,6 +536,8 @@ fn definition(
         normal_offset = dot(sub(origin, anchor), unit(cross(axes[0], axes[1]))?);
         initial = Some(axes);
     }
+    let reference=initial.map(|axes|axes[0])
+        .unwrap_or_else(||recipe.reference.each_ref().map(number));
     let frame = |t, dec: &mut Decider| {
         Frame::at(
             &path,
@@ -606,7 +607,7 @@ fn definition(
                     .evaluate_box([&t, &t], 128, dec)?
                     .map(|b| b.mid().to_f64_nearest());
                 let delta = sub(to_section(source), emitted);
-                profile_error = profile_error.max(dot(delta, delta).sqrt() * end_scale.max(1.0));
+                profile_error = profile_error.max(libm::sqrt(dot(delta, delta)) * end_scale.max(1.0));
                 profile_samples += 1;
             }
             sample_controls.extend(coordinates.iter().copied());
@@ -669,7 +670,7 @@ fn definition(
                     let local = j as f64 / 8.0;
                     let target = frame((i as f64 + local) / n as f64, dec)?.apply(*p);
                     let delta = sub(cubic(&fit, local), target);
-                    let error = dot(delta, delta).sqrt();
+                    let error = libm::sqrt(dot(delta, delta));
                     if !error.is_finite() {
                         return Err(bad("nonfinite sampled fitting error"));
                     }
@@ -699,23 +700,34 @@ fn definition(
     }
     let positive = orientation > 0.0;
     let mut assembly = Assembly::new(recipe.name.clone(), recipe.loops.len(), positive);
+    let linear = matches!(path, Path::Line(..)) && guide.is_none() && twist == 0.0;
+    let degree = if linear { 1 } else { 3 };
     for (lp, chart, coordinates, forward, segment) in charts {
         for (station, section) in sections.iter().enumerate() {
             dec.charge_work(1)?;
-            let mut points = Vec::new();
-            let mut weights = Vec::new();
+            let mut points = Vec::with_capacity(coordinates.len() * (degree + 1));
+            let mut weights = Vec::with_capacity(coordinates.len() * (degree + 1));
             for (i, p) in coordinates.iter().enumerate() {
-                for p in exact_controls(section.frames, *p)? {
-                    points.push(p);
-                    weights.push(chart.curve.weight(i).clone());
+                if linear {
+                    for frame in [section.frames[0], section.frames[3]] {
+                        let row=affine_row(frame,&[rational(p[0])?,rational(p[1])?])?;
+                        let [x,y,z]=row;
+                        points.push(Point3::new(x.into(),y.into(),z.into()));
+                        weights.push(chart.curve.weight(i).clone());
+                    }
+                } else {
+                    for p in exact_controls(section.frames, *p)? {
+                        points.push(p);
+                        weights.push(chart.curve.weight(i).clone());
+                    }
                 }
             }
-            let mut vknots = vec![section.t[0].clone(); 4];
-            vknots.extend(vec![section.t[1].clone(); 4]);
+            let mut vknots = vec![section.t[0].clone(); degree + 1];
+            vknots.extend(vec![section.t[1].clone(); degree + 1]);
             let carrier = BSplineSurface::new(
-                [chart.curve.degree(), 3],
+                [chart.curve.degree(), degree],
                 [chart.curve.knots().to_vec(), vknots],
-                [coordinates.len(), 4],
+                [coordinates.len(), degree + 1],
                 points,
                 weights,
                 dec,
@@ -742,16 +754,21 @@ fn definition(
     Ok((assembly.definition, checks, assembly.roles))
 }
 
+fn affine_row(frame:Frame,p:&[Rational;2])->Result<[Rational;3],Refusal> {
+    let scale=rational(frame.scale)?;
+    let mut row=[q(0),q(0),q(0)];
+    for (axis,value) in row.iter_mut().enumerate() {
+        *value=rational(frame.origin[axis])? +
+            &scale * &(&rational(frame.x[axis])? * &p[0] + &rational(frame.y[axis])? * &p[1]);
+    }
+    Ok(row)
+}
+
 fn exact_controls(frames: [Frame; 4], p: V) -> Result<[Point3; 4], Refusal> {
-    let px = rational(p[0])?;
-    let py = rational(p[1])?;
+    let p=[rational(p[0])?,rational(p[1])?];
     let mut rows: [[Rational; 3]; 4] = std::array::from_fn(|_| std::array::from_fn(|_| q(0)));
-    for (row, frame) in rows.iter_mut().zip(frames) {
-        let scale = rational(frame.scale)?;
-        for (axis, value) in row.iter_mut().enumerate() {
-            *value = rational(frame.origin[axis])?
-                + &scale * &(&rational(frame.x[axis])? * &px + &rational(frame.y[axis])? * &py);
-        }
+    for (row,frame) in rows.iter_mut().zip(frames) {
+        *row=affine_row(frame,&p)?;
     }
     let middle = |coefficients: [i64; 4]| -> [Rational; 3] {
         std::array::from_fn(|axis| {

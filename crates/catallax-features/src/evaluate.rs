@@ -1062,15 +1062,17 @@ fn evaluate_impl(
                     profile,
                     path,
                     orientation,
+                    guide,
+                    twist,
                 } => {
                     let helical = recipe.steps.iter().find(|s| &s.id == path)
                         .is_some_and(|s| matches!(&s.op,Operation::Path {segments,..}
                             if segments.iter().any(|s|matches!(s,catallax_recipe::PathSegment::Helix {..}))));
-                    if helical {
+                    if helical || guide.is_some() || twist.as_ref().is_some_and(|n|!n.value().is_zero()) {
                         let context=numerical_sweep.as_deref_mut().ok_or_else(||Refusal::new(
                             "sweep.requires-numerical-evaluation",
                             "helical sweeps require numerical admission under a stated tolerance"))?;
-                        let (body,radius)=context.sweep(model,recipe,profile,path,&step.id,*orientation,dec)?;
+                        let (body,radius)=context.sweep(model,recipe,profile,path,&step.id,*orientation,guide.as_ref(),twist.as_ref(),dec)?;
                         BodyValue {body,radius}
                     } else {
                         let profile = &profiles[profile];
@@ -1767,8 +1769,8 @@ fn evaluate_impl(
                 None
             })
         } else if let Operation::Path { start, segments } = &step.op {
-            if numerical_sweep.is_some() && segments.iter()
-                .any(|s| matches!(s,catallax_recipe::PathSegment::Helix {..})) {
+            if numerical_sweep.is_some()
+                && crate::general_sweep::path_needs_numerical(recipe,&step.id) {
                 Ok(None)
             } else {
                 crate::sweep::Path::new(start, segments).map(|path| {

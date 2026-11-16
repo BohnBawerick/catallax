@@ -33,27 +33,23 @@ fn run() -> Result<(), Box<dyn Error>> {
         return Err("usage: general_sweep INITIAL.json EDITED.json OUTPUT_DIRECTORY".into());
     }
     let mut dec = Decider::default();
-    let initial = general_sweep::build(&read(&args[1])?, &mut dec)?;
+    let initial_definition=read(&args[1])?;
+    let initial=request("build",||Ok(general_sweep::build(&initial_definition,&mut dec)?))?;
     eprintln!("initial numerical body admitted");
     let out = Path::new(&args[3]);
     fs::create_dir_all(out)?;
-    export(&initial, &out.join("initial.step"), &mut dec)?;
+    request("initial-export",||export(&initial,&out.join("initial.step"),&mut dec))?;
     eprintln!("initial STEP checked");
-    let edited = initial.edit(read(&args[2])?, &mut dec)?;
+    let edited_definition=read(&args[2])?;
+    let edited=request("edit",||Ok(initial.edit(edited_definition,&mut dec)?))?;
     eprintln!("edited numerical body admitted");
-    let bytes = export(&edited, &out.join("edited.step"), &mut dec)?;
+    let bytes=request("edited-export",||export(&edited,&out.join("edited.step"),&mut dec))?;
     let saved = json!({"format":"catallax-general-sweep/1","definition":edited.recipe()});
     fs::write(out.join("saved.json"), serde_json::to_vec_pretty(&saved)?)?;
-    let reopened = general_sweep::build(
-        &read(
-            out.join("saved.json")
-                .to_str()
-                .ok_or("non-UTF8 output path")?,
-        )?,
-        &mut dec,
-    )?;
+    let reopened_definition=read(out.join("saved.json").to_str().ok_or("non-UTF8 output path")?)?;
+    let reopened=request("reopen",||Ok(general_sweep::build(&reopened_definition,&mut dec)?))?;
     eprintln!("reopened numerical body admitted");
-    let replay = export(&reopened, &out.join("reopened.step"), &mut dec)?;
+    let replay=request("reopened-export",||export(&reopened,&out.join("reopened.step"),&mut dec))?;
     if replay != bytes {
         return Err("reopened STEP differs from edited STEP".into());
     }
@@ -66,9 +62,9 @@ fn run() -> Result<(), Box<dyn Error>> {
     println!("{report}");
     Ok(())
 }
-fn main() -> Result<(), Box<dyn Error>> {
-    let ((result, work), operations) =
-        with_operation_log(|| with_operation_budget(1_000_000_000, run));
+fn request<T>(id:&str,run:impl FnOnce()->Result<T,Box<dyn Error>>)->Result<T,Box<dyn Error>> {
+    let ((result,work),operations)=with_operation_log(||with_operation_budget(1_000_000_000,run));
+    eprintln!("{}",json!({"request":id,"work":work.used,"work_limit":1000000000,"exhausted":work.exhausted}));
     for operation in operations {
         eprintln!(
             "{}",
@@ -76,9 +72,10 @@ fn main() -> Result<(), Box<dyn Error>> {
             "refusal":operation.refusal.as_ref().map(|r|r.code)})
         );
     }
-    result?;
     if work.exhausted {
-        return Err("sweep proof exhausted its explicit 1G allowance".into());
+        return Err(format!("{id} exhausted its explicit 1G request allowance").into());
     }
-    Ok(())
+    result
 }
+
+fn main()->Result<(),Box<dyn Error>> {run()}

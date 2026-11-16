@@ -275,13 +275,20 @@ fn geometry(op: &mut Operation, recipe: &Recipe, map: &Isometry) -> Result<(), R
                 }
             }
         }
+        ExtrudeTapered {distance,..} => {
+            if map.reversing() {*distance=(-distance.value()).into();}
+        }
+        Sweep {twist,..} => {
+            if map.reversing() {
+                if let Some(twist)=twist {*twist=(-twist.value()).into();}
+            }
+        }
         Boolean { .. }
         | Fillet { .. }
         | Chamfer { .. }
         | Shell { .. }
         | Offset { .. }
         | Thicken { .. }
-        | Sweep { .. }
         | Loft { .. } => (),
         _ => {
             return Err(bad(format!(
@@ -328,7 +335,7 @@ fn rewrite(
                     || input_object
                         && matches!(
                             key.as_str(),
-                            "body" | "target" | "tool" | "profile" | "path" | "region"
+                            "body" | "target" | "tool" | "profile" | "path" | "guide" | "region"
                         )
                         && value.is_string()
                 {

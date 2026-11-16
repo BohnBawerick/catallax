@@ -611,7 +611,7 @@ fn m11_smooth_edge_names_the_missing_cross_chart_proof() {
 
 #[test]
 fn numerical_fillet_builds_on_the_smooth_loft_across_its_station_seam() {
-    let ((), work) = with_operation_budget(100_000_000, || {
+    let (rounded, work) = with_operation_budget(100_000_000, || {
         let mut definition = serde_json::to_value(smooth_recipe()).unwrap();
         definition["steps"].as_array_mut().unwrap().pop();
         definition["result"] = json!("loft");
@@ -634,42 +634,26 @@ fn numerical_fillet_builds_on_the_smooth_loft_across_its_station_seam() {
                 built.model.geom().surface(built.model.face(face).surface)
             else { panic!("the smooth loft must retain its station charts"); };
             assert!(atlas.charts().len() > 1);
-            catallax_shapes::NumericalFilletSpine::extended_support(
-                atlas, 1, &q("1/4"), &mut dec,
-            ).unwrap()
+            atlas.clone()
         });
         let radius = q("1/10");
-        let distances = faces.map(|face| {
-            if built.model.face(face).sense == catallax_topology::Sense::Same {
-                -radius.clone()
-            } else {
-                radius.clone()
-            }
-        });
         let tolerance = q("1/10000");
-        let free: [Rational; 2] = std::array::from_fn(|side| {
-            let source = supports[side].source();
-            let domain = source.domain();
-            let width = domain[1][1] - domain[1][0];
-            let cap = domain[1][0] + &(&width * &q("1/6"));
-            domain[0].into_iter().find(|u| {
-                let point = source.evaluate_box([u, u], [&cap, &cap], 128, &dec).unwrap();
-                (0..3).all(|k| (&point[k].lo() - &ends[0][k]).abs() < q("1/1000000000000")
-                    && (&point[k].hi() - &ends[0][k]).abs() < q("1/1000000000000"))
-            }).unwrap().clone()
-        });
-        let domain = supports[0].source().domain()[1];
-        let pad = &(domain[1] - domain[0]) * &q("1/12");
-        let range = [domain[0] + &pad, domain[1] - &pad];
-        let seed = [free[0].clone(), free[1].clone(), range[0].clone()];
-        let spine = catallax_shapes::NumericalFilletSpine::trace(
-            &supports, distances, 1, range, seed, tolerance.clone(), &mut dec,
+        let options = catallax_topology::numerical::NumericalOptions { tolerance_mm: tolerance.clone() };
+        let (source, native) = catallax_step::numerical::definition_from_exact_model(
+            &built.model, built.result, recipe.name.clone(), &tolerance, &mut dec,
         ).unwrap();
-        let fillet = catallax_shapes::NumericalSplineFillet::fit(spine, &mut dec).unwrap();
+        let source = catallax_topology::numerical::build_with_native_trims(source, native, options, &mut dec).unwrap();
+        let rounded = catallax_features::fillet::numerical::build(
+            source, &format!("{edge:?}"), "round", radius.clone(), tolerance.clone(), &mut dec,
+        ).unwrap();
+        let fillet = rounded.fillet();
         let radial_tolerance = &(&q("2") * &radius) * &tolerance;
         for node in fillet.spine().nodes() {
             for side in 0..2 {
                 let uv = &node.parameters[side];
+                let native = supports[side].source().domain();
+                if uv[0] < *native[0][0] || uv[0] > *native[0][1]
+                    || uv[1] < *native[1][0] || uv[1] > *native[1][1] { continue; }
                 let point = supports[side].source()
                     .evaluate_box([&uv[0], &uv[0]], [&uv[1], &uv[1]], 128, &dec).unwrap();
                 let square = (0..3).fold(
@@ -683,18 +667,41 @@ fn numerical_fillet_builds_on_the_smooth_loft_across_its_station_seam() {
                 assert!((&square.hi() - &(&radius * &radius)).abs() <= radial_tolerance);
             }
         }
-        for height in [q("0"), q("2")] {
-            let cut = fillet.plane_cut([q("0"), q("0"), q("1")], height.clone(), &mut dec).unwrap();
+        for edge in rounded.body().definition().edges.iter().filter(|edge| edge.key.starts_with("round/cap/")) {
+            let Curve::BSpline(curve) = &edge.curve else { panic!("cap cut must retain its native spline"); };
+            let vertex = &rounded.body().definition().vertices[edge.vertices[0]].position;
+            let height = if vertex[2].abs() < (&vertex[2] - &q("2")).abs() { q("0") } else { q("2") };
             for i in 0..=16 {
                 let s = Rational::from_ratio(i, 16).unwrap();
-                let point = cut.curve().evaluate_box([&s, &s], 128, &dec).unwrap();
+                let point = curve.evaluate_box([&s, &s], 128, &dec).unwrap();
                 assert!((&point[2].lo() - &height).abs() <= tolerance);
                 assert!((&point[2].hi() - &height).abs() <= tolerance);
             }
         }
+        let artifact = catallax_step::numerical::build(rounded.body(), &catallax_step::numerical::NumericalStepOptions::default(), &mut dec).unwrap();
+        if let Some(path) = std::env::var_os("CATALLAX_M11_STEP_OUT") {
+            std::fs::write(path, artifact.bytes()).unwrap();
+        }
+        rounded
     });
     assert!(!work.exhausted, "{work:?}");
     println!("numerical smooth-loft fillet: {} work", work.used);
+    let names = |body: &catallax_topology::numerical::NumericalBody| (
+        body.definition().faces.iter().map(|face| face.key.clone()).collect::<std::collections::BTreeSet<_>>(),
+        body.definition().edges.iter().map(|edge| edge.key.clone()).collect::<std::collections::BTreeSet<_>>(),
+    );
+    let (edited, work) = with_operation_budget(100_000_000, || {
+        let mut dec = Decider::default();
+        let edited = rounded.edit_radius(q("3/20"), &mut dec).unwrap();
+        let artifact = catallax_step::numerical::build(edited.body(), &catallax_step::numerical::NumericalStepOptions::default(), &mut dec).unwrap();
+        if let Some(path) = std::env::var_os("CATALLAX_M11_STEP_OUT") {
+            std::fs::write(std::path::Path::new(&path).with_extension("edited.step"), artifact.bytes()).unwrap();
+        }
+        edited
+    });
+    assert!(!work.exhausted, "{work:?}");
+    assert_eq!(names(rounded.body()), names(edited.body()));
+    println!("numerical smooth-loft radius edit: {} work", work.used);
 }
 
 fn blend(built: &Built) -> (FaceId, catallax_shapes::SplineFillet) {

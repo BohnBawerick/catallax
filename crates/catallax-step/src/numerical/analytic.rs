@@ -1,4 +1,4 @@
-//! Approximate finite analytic exchange with explicit cylindrical pcurves.
+//! Approximate finite analytic exchange with explicit periodic pcurves.
 //! Decimal carrier and pcurve values are rechecked as numerical geometry.
 
 use super::*;
@@ -762,11 +762,6 @@ pub(super) fn build(
                     ends[1][1] = height;
                 }
             }
-            let ends = if let Some(cone) = &cone_parameters[*f] {
-                cone.step_ends(&ends, w.dec)?
-            } else {
-                ends
-            };
             let (curve, actual) = pcurve(
                 &mut w,
                 &mut parameter,
@@ -912,7 +907,7 @@ pub(super) fn build(
         if has_cylinders {
             file_checks.push("file.explicit-conical-pcurves".into());
         }
-        file_checks.push("file.cone-step-v-generator-distance".into());
+        file_checks.push("file.cone-step-v-axial-height".into());
         file_checks.push(format!(
             "file.cone-semi-angle-rounding-max-rad={angle_error}"
         ));

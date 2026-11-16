@@ -1,4 +1,4 @@
-//! STEP cone parameters use generator distance, while native v is axial height.
+//! STEP cone v is axial height; OCCT converts it to generator distance on import.
 
 use super::*;
 use catallax_shapes::Cone;
@@ -81,24 +81,6 @@ pub(super) fn uv(
 }
 
 impl Parameters {
-    pub fn step_ends(
-        &self,
-        ends: &[[Rational; 2]; 2],
-        dec: &mut Decider,
-    ) -> Result<[[Rational; 2]; 2], Refusal> {
-        let cosine = self.cosine.mid();
-        Ok([
-            [
-                ends[0][0].clone(),
-                arithmetic(&ends[0][1], &cosine, '/', dec)?,
-            ],
-            [
-                ends[1][0].clone(),
-                arithmetic(&ends[1][1], &cosine, '/', dec)?,
-            ],
-        ])
-    }
-
     /// Evaluate the actual decimal STEP cone, including its trigonometric enclosure.
     pub fn evaluate(
         &self,
@@ -134,12 +116,15 @@ impl Parameters {
             }
             basis.push(unit);
         }
-        let height = v * &self.cosine;
-        let radius = v * &self.sine;
+        let slope = self
+            .sine
+            .checked_div(&self.cosine)
+            .ok_or_else(|| bad("rounding-topology", "written cone slope is unresolved"))?;
+        let radius = v * &slope;
         let (cosine, sine) = (u.cos(), u.sin());
         Ok(std::array::from_fn(|i| {
             Ball::from_rational(&origin[i], BITS)
-                + &basis[0][i] * &height
+                + &basis[0][i] * v
                 + (&basis[1][i] * &cosine + &basis[2][i] * &sine) * radius.clone()
         }))
     }

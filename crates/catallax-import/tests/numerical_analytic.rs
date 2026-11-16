@@ -396,7 +396,7 @@ fn cone_export_source(angle: &str, top: &str, mode: &str) -> Vec<u8> {
 }
 
 #[test]
-fn numerical_cones_export_step_generator_parameters_and_checked_geometry() {
+fn numerical_cones_export_step_axial_parameters_and_checked_geometry() {
     for (name, angle, top, mode) in [
         ("cone-30", "30.", "2.732050808", "identity"),
         ("cone-60", "60.", "6.196152423", "identity"),
@@ -420,9 +420,6 @@ fn numerical_cones_export_step_generator_parameters_and_checked_geometry() {
                 .iter()
                 .find(|f| matches!(f.surface, catallax_shapes::Surface::Cone(_)))
                 .unwrap();
-            let catallax_shapes::Surface::Cone(cone) = &face.surface else {
-                unreachable!()
-            };
             let native_min = face
                 .loops
                 .iter()
@@ -453,25 +450,15 @@ fn numerical_cones_export_step_generator_parameters_and_checked_geometry() {
                 .map(|s| &s.parameters[2])
                 .min()
                 .unwrap();
-            assert!(step_min > native_min, "{name}");
-            let slope = Decider::default().enclose_at(&cone.slope, 128).unwrap();
-            let cosine = catallax_numbers::Ball::from_rational(&q("1"), 128)
-                .checked_div(
-                    &(catallax_numbers::Ball::from_rational(&q("1"), 128) + slope.square())
-                        .sqrt()
-                        .unwrap(),
-                )
-                .unwrap();
-            let restored = catallax_numbers::Ball::from_rational(step_min, 128) * cosine;
             assert!(
-                (restored.mid() - native_min.clone()).abs() < q("1e-8"),
+                (step_min.clone() - native_min.clone()).abs() < q("1e-8"),
                 "{name}"
             );
             assert!(
                 file.report()
                     .checks
                     .iter()
-                    .any(|s| s == "file.cone-step-v-generator-distance")
+                    .any(|s| s == "file.cone-step-v-axial-height")
             );
             let text = std::str::from_utf8(file.bytes()).unwrap();
             assert!(text.contains("CONICAL_SURFACE(") && text.contains("PCURVE("));

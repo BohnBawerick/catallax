@@ -81,7 +81,7 @@ fn inner_cone_seams_export_from_every_cyclic_loop_start() {
             file.report()
                 .checks
                 .iter()
-                .any(|c| c == "file.cone-step-v-generator-distance")
+                .any(|c| c == "file.cone-step-v-axial-height")
         );
         file.check_written(file.bytes(), &mut Decider::default())
             .unwrap();

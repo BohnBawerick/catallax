@@ -59,7 +59,9 @@ mod order;
 mod surface;
 
 pub use cut_trace::FilletCutTrace;
-pub use numerical::{NumericalFilletSpine, NumericalSpineNode, NumericalSplineFillet};
+pub use numerical::{
+    NumericalFilletCut, NumericalFilletSpine, NumericalSpineNode, NumericalSplineFillet,
+};
 use jets::{Exact, Jet, Support};
 
 /// The fitted face's target two-sided deviation, in nanometres.

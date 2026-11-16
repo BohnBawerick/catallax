@@ -82,7 +82,7 @@ pub use spline_fillet::{
     SPLINE_FILLET_CUT, SPLINE_FILLET_DEFINITION, SPLINE_FILLET_DEVIATION, SPLINE_FILLET_IRREGULAR,
     SPLINE_FILLET_RAIL_DOMAIN, SPLINE_FILLET_SPINE, SPLINE_FILLET_SUPPORT_SPANS,
     SPLINE_FILLET_TARGET_NM, SplineFillet, SplineFilletDefinition,
-    NumericalFilletSpine, NumericalSpineNode, NumericalSplineFillet,
+    NumericalFilletCut, NumericalFilletSpine, NumericalSpineNode, NumericalSplineFillet,
 };
 pub use spline_surface::{SplinePointParameters, SplineSupport, SplineSurface};
 pub use store::{

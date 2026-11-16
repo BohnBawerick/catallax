@@ -99,17 +99,23 @@ fn numerical_fillet_crosses_chart_seams_with_circular_sections() {
             split_vertical_plane(true, &mut dec),
             split_vertical_plane(false, &mut dec),
         ];
+        let supports = supports.map(|support| {
+            catallax_shapes::NumericalFilletSpine::extended_support(
+                &support, 1, &Rational::from_ratio(1, 4).unwrap(), &mut dec,
+            )
+            .unwrap()
+        });
         let radius = Rational::from_ratio(1, 10).unwrap();
         let tolerance = Rational::parse("0.0000001").unwrap();
         let spine = catallax_shapes::NumericalFilletSpine::trace(
             &supports,
             [radius.clone(), radius.clone()],
             1,
-            [Rational::zero(), Rational::from_i64(2)],
+            [Rational::from_ratio(-1, 2).unwrap(), Rational::from_ratio(5, 2).unwrap()],
             [
                 Rational::from_ratio(11, 20).unwrap(),
                 Rational::from_ratio(9, 20).unwrap(),
-                Rational::zero(),
+                Rational::from_ratio(-1, 2).unwrap(),
             ],
             tolerance.clone(),
             &mut dec,
@@ -118,7 +124,7 @@ fn numerical_fillet_crosses_chart_seams_with_circular_sections() {
         let fillet = catallax_shapes::NumericalSplineFillet::fit(spine, &mut dec).unwrap();
         assert!(fillet.sampled_error_mm() <= &tolerance);
         let source = fillet.surface().source();
-        for i in 0..=16 {
+        for i in -4..=20 {
             let tau = Rational::from_ratio(i, 8).unwrap();
             for j in 0..=8 {
                 let across = Rational::from_ratio(j, 8).unwrap();
@@ -133,6 +139,23 @@ fn numerical_fillet_crosses_chart_seams_with_circular_sections() {
                 assert!((&point[2].hi() - &tau).abs() <= tolerance);
                 if j == 0 { assert!(point[1].lo().abs().max(point[1].hi().abs()) <= tolerance); }
                 if j == 8 { assert!(point[0].lo().abs().max(point[0].hi().abs()) <= tolerance); }
+            }
+        }
+        for normal in [[0, 0, 1], [1, 0, 1]] {
+            let cut = fillet.plane_cut(normal.map(Rational::from_i64), Rational::zero(), &mut dec).unwrap();
+            for i in 0..=32 {
+                let s = Rational::from_ratio(i, 32).unwrap();
+                let point = cut.curve().evaluate_box([&s, &s], 128, &dec).unwrap();
+                let uv = cut.parameters().evaluate_box([&s, &s], 128, &dec).unwrap();
+                let tau = uv[0].mid();
+                let across = uv[1].mid();
+                let on_fillet = source.evaluate_box([&tau, &tau], [&across, &across], 128, &dec).unwrap();
+                let residual = &point[2] + &(&point[0] * &catallax_numbers::Ball::from_rational(&Rational::from_i64(normal[0]), 128));
+                assert!(residual.lo().abs().max(residual.hi().abs()) <= tolerance);
+                for k in 0..3 {
+                    assert!((&point[k].lo() - &on_fillet[k].hi()).abs() <= tolerance);
+                    assert!((&point[k].hi() - &on_fillet[k].lo()).abs() <= tolerance);
+                }
             }
         }
     });

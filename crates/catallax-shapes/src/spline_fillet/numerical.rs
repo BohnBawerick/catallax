@@ -11,6 +11,11 @@ use std::sync::Arc;
 #[path = "numerical_carrier.rs"]
 mod carrier;
 pub use carrier::NumericalSplineFillet;
+#[path = "numerical_extend.rs"]
+mod extend;
+#[path = "numerical_cut.rs"]
+mod cut;
+pub use cut::NumericalFilletCut;
 
 const MAX_DEPTH: u32 = 24;
 const MAX_NODES: usize = 16_385;

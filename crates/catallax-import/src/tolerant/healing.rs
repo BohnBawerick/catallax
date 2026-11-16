@@ -4,7 +4,10 @@
 
 use std::collections::BTreeMap;
 
-use catallax_numbers::{Ball, Decider, Rational, Refusal, current_operation_work};
+use catallax_numbers::{
+    Ball, Decider, Rational, Refusal, current_operation_work, operation_budget_active,
+    with_operation_budget,
+};
 use serde::{Deserialize, Serialize};
 
 use super::{Error, ToleranceEntity, ToleranceRecord, TolerantBody, TolerantFile, TolerantUse};
@@ -157,6 +160,23 @@ pub struct HealingReport {
     pub approximate: bool,
 }
 
+/// Typed refusal and work already spent; no candidate geometry is published.
+#[derive(Debug)]
+pub struct HealingFailure {
+    /// Original refusal, including the numerical budget/deadline code.
+    pub error: Error,
+    /// Preparation, sewing, wire, face, shell, solid or publication.
+    pub failed_stage: &'static str,
+    /// Source body being processed, absent for file-wide stages.
+    pub body: Option<String>,
+    /// Completed stages and, if applicable, the partial failed stage.
+    pub stages: Vec<HealingStage>,
+    /// Work spent preparing the immutable source and candidate.
+    pub preparation_work_used: u64,
+    /// Work spent validating source geometry and publishing tolerance changes.
+    pub publication_work_used: u64,
+}
+
 /// A healed candidate with immutable input, derived geometry and actual checks.
 /// Body tiers and solid admission remain separate consumers of these checks.
 #[derive(Clone, Debug)]
@@ -200,7 +220,6 @@ struct Plan {
     checks: Vec<HealingCheck>,
     measurements: Vec<HealingMeasurement>,
     issues: Vec<HealingIssue>,
-    stages: Vec<HealingStage>,
 }
 impl Plan {
     fn need(&mut self, body: usize, entity: ToleranceEntity, required: Rational, cause: &str) {
@@ -243,36 +262,60 @@ fn failure(code: &'static str, detail: &str) -> Error {
 /// together. Cap, topology, deadline or work failure leaves `source` untouched.
 /// Unresolved checks remain explicit for later surface/solid tier assignment.
 pub fn heal(source: &TolerantFile, dec: &mut Decider) -> Result<HealedFile, Error> {
-    super::budget(|| {
-        let preparation_start = current_operation_work().used;
+    attempt(source, dec).map_err(|failure| failure.error)
+}
+
+/// As [`heal`], retaining stage measurements even on cap or work refusal.
+/// Failure diagnostics never contain a partially repaired candidate.
+pub fn attempt(
+    source: &TolerantFile,
+    dec: &mut Decider,
+) -> Result<HealedFile, Box<HealingFailure>> {
+    if !operation_budget_active() {
+        return with_operation_budget(catallax_topology::numerical::DEFAULT_WORK, || {
+            attempt(source, dec)
+        })
+        .0;
+    }
+    let start = current_operation_work().used;
+    let mut phase_start = start;
+    let mut failed_stage = "preparation";
+    let mut failed_body = None;
+    let mut preparation_work_used = 0;
+    let mut stages = Vec::new();
+    let result = super::budget(|| {
         // Prepay the source inventory before cloning the candidate transaction.
         charge_source(source, dec)?;
         charge_source(source, dec)?;
         let original = source.clone();
         let mut candidate = source.clone();
-        let preparation_work_used = current_operation_work()
-            .used
-            .saturating_sub(preparation_start);
+        preparation_work_used = current_operation_work().used.saturating_sub(start);
         let mut plan = Plan::default();
         for (index, body) in candidate.bodies.iter_mut().enumerate() {
             for stage in ["sewing", "wire", "face", "shell", "solid"] {
-                let before = current_operation_work().used;
-                match stage {
-                    "sewing" => sewing::sew(index, body, &mut plan, dec)?,
-                    "wire" => wire::fix(index, &source.bodies[index], body, &mut plan, dec)?,
-                    "face" => checks::faces(index, body, &mut plan, dec)?,
-                    "shell" => checks::shells(body, &mut plan, dec)?,
-                    "solid" => checks::solid(body, &mut plan, dec)?,
+                phase_start = current_operation_work().used;
+                failed_stage = stage;
+                failed_body = Some(index);
+                let stage_result = match stage {
+                    "sewing" => sewing::sew(index, body, &mut plan, dec),
+                    "wire" => wire::fix(index, &source.bodies[index], body, &mut plan, dec),
+                    "face" => checks::faces(index, body, &mut plan, dec),
+                    "shell" => checks::shells(body, &mut plan, dec),
+                    "solid" => checks::solid(body, &mut plan, dec),
                     _ => unreachable!(),
-                }
-                plan.stages.push(HealingStage {
+                };
+                stages.push(HealingStage {
                     body: body.name.clone(),
                     stage: stage.into(),
-                    work_used: current_operation_work().used.saturating_sub(before),
+                    work_used: current_operation_work().used.saturating_sub(phase_start),
                 });
+                stage_result?;
             }
         }
         let before = current_operation_work().used;
+        phase_start = before;
+        failed_stage = "publication";
+        failed_body = None;
         for (index, body) in candidate.bodies.iter().enumerate() {
             checks::source_geometry(index, &source.bodies[index], body, &mut plan, dec)?;
         }
@@ -349,7 +392,7 @@ pub fn heal(source: &TolerantFile, dec: &mut Decider) -> Result<HealedFile, Erro
             checks: plan.checks,
             measurements: plan.measurements,
             issues: plan.issues,
-            stages: plan.stages,
+            stages: std::mem::take(&mut stages),
             preparation_work_used,
             publication_work_used: current_operation_work().used.saturating_sub(before),
             approximate,
@@ -359,8 +402,29 @@ pub fn heal(source: &TolerantFile, dec: &mut Decider) -> Result<HealedFile, Erro
             candidate,
             report,
         };
-        dec.check_deadline()?;
+        if let Err(error) = dec.check_deadline() {
+            stages = result.report.stages;
+            return Err(error.into());
+        }
         Ok(result)
+    });
+    result.map_err(|error| {
+        Box::new(HealingFailure {
+            error,
+            failed_stage,
+            body: failed_body.map(|index| source.bodies[index].name.clone()),
+            stages,
+            preparation_work_used: if failed_stage == "preparation" {
+                current_operation_work().used.saturating_sub(start)
+            } else {
+                preparation_work_used
+            },
+            publication_work_used: if failed_stage == "publication" {
+                current_operation_work().used.saturating_sub(phase_start)
+            } else {
+                0
+            },
+        })
     })
 }
 

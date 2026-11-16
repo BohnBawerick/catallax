@@ -16,7 +16,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (attempt, work) = with_operation_budget(20_000_000, || {
         let mut dec = Decider::default();
         let source = tolerant::read_step(&bytes, &args[1], Default::default(), &mut dec)?;
-        let result = healing::heal(&source, &mut dec);
+        let result = healing::attempt(&source, &mut dec);
         Ok::<_, tolerant::Error>((source, result))
     });
     let mut report = serde_json::json!({"format":"catallax-healing-observation/1","source_sha256":args[1],"kernel_work_used":work.used,"work_exhausted":work.exhausted,"solid_validity_checked":false,"body_tiers_assigned":false});
@@ -28,9 +28,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok((source, result)) => {
             report["source_bodies"]=source.bodies().iter().map(|body|serde_json::json!({"name":body.name(),"declared_solid":body.declared_solid(),"faces":body.shells().iter().map(|s|s.faces.len()).sum::<usize>(),"edges":body.edges().len(),"vertices":body.vertices().len()})).collect::<Vec<_>>().into();
             match result {
-                Err(error) => {
+                Err(failure) => {
                     report["status"] = "healing_refused_source_retained".into();
-                    report["refusal"] = format!("{error:?}").into();
+                    report["refusal"] = format!("{:?}", failure.error).into();
+                    report["failed_stage"] = failure.failed_stage.into();
+                    report["failed_body"] = failure.body.into();
+                    let measured = failure.preparation_work_used
+                        + failure.stages.iter().map(|s| s.work_used).sum::<u64>()
+                        + failure.publication_work_used;
+                    assert!(measured <= work.used);
+                    report["healing_work_used"] = measured.into();
+                    report["preparation_work_used"] = failure.preparation_work_used.into();
+                    report["publication_work_used"] = failure.publication_work_used.into();
+                    report["stages"] = serde_json::to_value(failure.stages)?;
                     report["source_tolerances"] = serde_json::to_value(source.record())?;
                 }
                 Ok(healed) => {

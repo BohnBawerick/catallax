@@ -276,9 +276,20 @@ fn an_exhausted_candidate_preserves_the_original_source_and_ledger() {
     });
     complete.unwrap();
     for allowance in [0, 1, measured.used / 2, measured.used - 1] {
-        let (result, work) =
-            with_operation_budget(allowance, || healing::heal(&input, &mut Decider::default()));
-        assert!(result.is_err() && work.exhausted);
+        let (result, work) = with_operation_budget(allowance, || {
+            healing::attempt(&input, &mut Decider::default())
+        });
+        let failure = result.unwrap_err();
+        assert!(work.exhausted);
+        assert!(
+            matches!(&failure.error, tolerant::Error::Numerical(r) if r.code == "numbers.operation-budget")
+        );
+        assert_eq!(
+            failure.preparation_work_used
+                + failure.stages.iter().map(|s| s.work_used).sum::<u64>()
+                + failure.publication_work_used,
+            work.used
+        );
         assert_eq!(input, before);
     }
 }

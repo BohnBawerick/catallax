@@ -161,10 +161,214 @@ fn add_vertex(
     Ok(index)
 }
 
-fn curve(
+enum SplineImageProof {
+    Line([Rational; 2]),
+    Circle {
+        mapped: Rational,
+        endpoint: Rational,
+        finite_arc: Rational,
+    },
+}
+
+type CylinderSupports<'a> = BTreeMap<&'a str, Option<(&'a crate::Placement, &'a Rational)>>;
+
+fn cylinder_supports<'a>(
+    solid: &'a Solid,
+    dec: &mut Decider,
+) -> Result<CylinderSupports<'a>, ImportError> {
+    let mut result = BTreeMap::new();
+    for face in &solid.faces {
+        dec.charge_work(1)?;
+        if let crate::Surface::Cylinder(frame, radius) = &face.surface {
+            for edge in face.loops.iter().flat_map(|b| &b.edges) {
+                dec.charge_work(1)?;
+                if matches!(edge.curve, crate::Curve::BSpline(_)) {
+                    result
+                        .entry(edge.edge.as_str())
+                        .and_modify(|old| {
+                            if *old != Some((frame, radius)) {
+                                *old = None;
+                            }
+                        })
+                        .or_insert(Some((frame, radius)));
+                }
+            }
+        }
+    }
+    Ok(result)
+}
+
+fn circle_curve(
     edge: &crate::OrientedEdge,
+    frame: &crate::Placement,
+    radius: &Rational,
+    same_sense: bool,
     dec: &mut Decider,
 ) -> Result<(Curve, [Rational; 2]), ImportError> {
+    if edge.start.point == edge.end.point && edge.start.name != edge.end.name {
+        return Err(unsupported(
+            "coincident circle endpoints need the same explicit source vertex",
+        ));
+    }
+    let mut ts = Vec::new();
+    for p in [&edge.start.point, &edge.end.point] {
+        let [x, y, _] = coordinates(p, frame, dec)?;
+        ts.push(angle(&x, &y)?);
+    }
+    if same_sense {
+        if ts[1] <= ts[0] {
+            ts[1] = &ts[1] + &turn();
+        }
+    } else if ts[1] >= ts[0] {
+        ts[1] = &ts[1] - &turn();
+    }
+    Ok((
+        Curve::Circle(Circle {
+            center: point(&frame.origin),
+            normal: vector(&frame.axis),
+            radius_sq: Real::from(radius * radius),
+            ref_dir: vector(&frame.ref_dir),
+        }),
+        ts.try_into().unwrap(),
+    ))
+}
+
+fn spline_circle(
+    edge: &crate::OrientedEdge,
+    cylinder: &crate::Placement,
+    radius: &Rational,
+    tolerance: &Rational,
+    dec: &mut Decider,
+) -> Result<(Curve, [Rational; 2], SplineImageProof), ImportError> {
+    use crate::planar_arithmetic as a;
+    let image =
+        crate::incidence_curved::numerical_circle_image(edge, cylinder, radius, tolerance, dec)
+            .map_err(|detail| Refusal::new("import.numerical-spline-circle-unverified", detail))?;
+    let (curve, parameters) = circle_curve(
+        edge,
+        &image.circle,
+        &image.radius,
+        image.curve_same_sense,
+        dec,
+    )?;
+    let mut endpoint_bound = Rational::zero();
+    for (parameter, source) in parameters.iter().zip(&image.source_endpoints) {
+        let p = curve
+            .evaluate(&Ball::from_rational(parameter, BITS), dec)?
+            .ok_or_else(|| unsupported("circle image has no evaluator"))?;
+        let mut distance2 = Rational::zero();
+        for i in 0..3 {
+            let lo = a::arithmetic(&p[i].lo(), &source[i], '-', dec)?.abs();
+            let hi = a::arithmetic(&p[i].hi(), &source[i], '-', dec)?.abs();
+            let delta = a::maximum(lo, hi, dec)?;
+            let squared = a::arithmetic(&delta, &delta, '*', dec)?;
+            distance2 = a::arithmetic(&distance2, &squared, '+', dec)?;
+        }
+        endpoint_bound = a::maximum(endpoint_bound, a::sqrt_enclosure(&distance2, dec)?.1, dec)?;
+    }
+    if a::compare(&endpoint_bound, &image.reservation_mm, dec)?.is_gt() {
+        return Err(Refusal::new(
+            "import.numerical-spline-circle-endpoints",
+            "realized arc endpoints do not match the full source spline interval within the reservation",
+        ).into());
+    }
+    let mut source_angles = Vec::new();
+    for q in &image.half_parameters {
+        let square = a::arithmetic(q, q, '*', dec)?;
+        let x = a::arithmetic(&Rational::one(), &square, '-', dec)?;
+        let y = a::arithmetic(q, &Rational::from_i64(2), '*', dec)?;
+        source_angles.push(angle(
+            &Ball::from_rational(&x, BITS),
+            &Ball::from_rational(&y, BITS),
+        )?);
+    }
+    let source_sweep = a::arithmetic(&source_angles[1], &source_angles[0], '-', dec)?;
+    let actual_sweep = a::arithmetic(&parameters[1], &parameters[0], '-', dec)?;
+    let difference = a::arithmetic(&actual_sweep, &source_sweep, '-', dec)?.abs();
+    let half_pi = a::arithmetic(&Ball::pi(BITS).lo(), &Rational::from_i64(2), '/', dec)?;
+    if a::compare(&difference, &half_pi, dec)?.is_ge() {
+        return Err(Refusal::new(
+            "import.numerical-spline-circle-winding",
+            "realized circular arc changes the source interval's winding",
+        )
+        .into());
+    }
+    // Corresponding circle images are within delta. Their endpoints are within
+    // delta + epsilon of the realized endpoints. Matching winding therefore
+    // bounds both finite images by 2 delta + epsilon.
+    let twice_mapped = a::arithmetic(&image.deviation_upper_mm, &Rational::from_i64(2), '*', dec)?;
+    let finite_arc = a::arithmetic(&twice_mapped, &endpoint_bound, '+', dec)?;
+    Ok((
+        curve,
+        parameters,
+        SplineImageProof::Circle {
+            mapped: image.deviation_upper_mm,
+            endpoint: endpoint_bound,
+            finite_arc,
+        },
+    ))
+}
+
+fn spline_line(
+    edge: &crate::OrientedEdge,
+    image: crate::incidence_straight::LineImage<'_>,
+    tolerance: &Rational,
+    dec: &mut Decider,
+) -> Result<(Curve, [Rational; 2], [Rational; 2]), ImportError> {
+    use crate::planar_arithmetic as a;
+    let norm = a::dot(&image.direction, &image.direction, dec)?;
+    let limit2 = a::arithmetic(tolerance, tolerance, '*', dec)?;
+    let mut parameters = std::array::from_fn(|_| Rational::zero());
+    let mut residuals = std::array::from_fn(|_| Rational::zero());
+    for (index, endpoint) in [&edge.start.point, &edge.end.point].into_iter().enumerate() {
+        let delta = a::sub(endpoint, image.origin, dec)?;
+        let scalar = a::dot(&delta, &image.direction, dec)?;
+        parameters[index] = a::arithmetic(&scalar, &norm, '/', dec)?;
+        let bounded = a::minimum(
+            a::maximum(scalar, image.scalar_bounds[0].clone(), dec)?,
+            image.scalar_bounds[1].clone(),
+            dec,
+        )?;
+        let parameter = a::arithmetic(&bounded, &norm, '/', dec)?;
+        let closest = a::offset(image.origin, &image.direction, &parameter, '+', dec)?;
+        residuals[index] = a::squared(endpoint, &closest, dec)?;
+        if a::compare(&residuals[index], &limit2, dec)?.is_gt() {
+            return Err(Refusal::new(
+                "import.numerical-spline-domain",
+                "source vertex exceeds the requested tolerance from the finite spline line image",
+            )
+            .into());
+        }
+    }
+    let order = a::compare(&parameters[0], &parameters[1], dec)?;
+    if !(if edge.curve_same_sense {
+        order.is_lt()
+    } else {
+        order.is_gt()
+    }) {
+        return Err(Refusal::new(
+            "import.numerical-spline-order",
+            "projected source vertices disagree with the regular spline direction",
+        )
+        .into());
+    }
+    let [dx, dy, dz] = image.direction;
+    Ok((
+        Curve::Line(Line {
+            origin: point(image.origin),
+            dir: RVector3::new(dx, dy, dz).to_real(),
+        }),
+        parameters,
+        residuals,
+    ))
+}
+
+fn curve(
+    edge: &crate::OrientedEdge,
+    tolerance: &Rational,
+    cylinders: &CylinderSupports<'_>,
+    dec: &mut Decider,
+) -> Result<(Curve, [Rational; 2], Option<SplineImageProof>), ImportError> {
     use crate::planar_arithmetic as a;
     match &edge.curve {
         crate::Curve::Line(origin, dir) => {
@@ -183,38 +387,36 @@ fn curve(
                     dir: vector(dir),
                 }),
                 ts.try_into().unwrap(),
+                None,
             ))
         }
         crate::Curve::Circle(frame, radius) => {
-            if edge.start.point == edge.end.point && edge.start.name != edge.end.name {
-                return Err(unsupported(
-                    "coincident circle endpoints need the same explicit source vertex",
-                ));
+            let (curve, parameters) =
+                circle_curve(edge, frame, radius, edge.curve_same_sense, dec)?;
+            Ok((curve, parameters, None))
+        }
+        crate::Curve::BSpline(_) => {
+            if let Some(image) = crate::incidence_straight::line_image(edge, dec)
+                .map_err(|_| ImportRefusal::ResourceLimit)?
+            {
+                let (curve, parameters, residuals) = spline_line(edge, image, tolerance, dec)?;
+                Ok((curve, parameters, Some(SplineImageProof::Line(residuals))))
+            } else {
+                let (frame, radius) = cylinders
+                    .get(edge.edge.as_str())
+                    .and_then(|support| *support)
+                    .ok_or_else(|| {
+                        unsupported(
+                            "nonlinear spline needs one unambiguous source cylinder carrier",
+                        )
+                    })?;
+                let (curve, parameters, proof) =
+                    spline_circle(edge, frame, radius, tolerance, dec)?;
+                Ok((curve, parameters, Some(proof)))
             }
-            let mut ts = Vec::new();
-            for p in [&edge.start.point, &edge.end.point] {
-                let [x, y, _] = coordinates(p, frame, dec)?;
-                ts.push(angle(&x, &y)?);
-            }
-            if edge.curve_same_sense {
-                if ts[1] <= ts[0] {
-                    ts[1] = &ts[1] + &turn();
-                }
-            } else if ts[1] >= ts[0] {
-                ts[1] = &ts[1] - &turn();
-            }
-            Ok((
-                Curve::Circle(Circle {
-                    center: point(&frame.origin),
-                    normal: vector(&frame.axis),
-                    radius_sq: Real::from(radius * radius),
-                    ref_dir: vector(&frame.ref_dir),
-                }),
-                ts.try_into().unwrap(),
-            ))
         }
         _ => Err(unsupported(
-            "the retained analytic source family requires finite lines and circular arcs",
+            "the retained analytic source family requires finite lines, regular spline line images or circular arcs",
         )),
     }
 }
@@ -222,6 +424,9 @@ fn curve(
 fn definition(
     solid: &Solid,
     repairs: &mut Vec<NumericalTopologyRepair>,
+    linear_spline_images: &mut Vec<NumericalSplineLineImage>,
+    circular_spline_images: &mut Vec<NumericalSplineCircleImage>,
+    tolerance: &Rational,
     dec: &mut Decider,
 ) -> Result<n::NumericalDefinition, ImportError> {
     let mut result = n::NumericalDefinition {
@@ -232,7 +437,8 @@ fn definition(
     };
     let mut vertices = BTreeMap::new();
     let mut edges = BTreeMap::<String, usize>::new();
-    let mut source_curves = BTreeMap::new();
+    let mut source_curves = BTreeMap::<&str, (&crate::Curve, bool)>::new();
+    let cylinders = cylinder_supports(solid, dec)?;
     for face in &solid.faces {
         dec.charge_work(1)?;
         let (carrier, _) = surface(face)?;
@@ -252,12 +458,11 @@ fn definition(
                         add_vertex(&mut result, &mut vertices, &source.start, dec)?,
                         add_vertex(&mut result, &mut vertices, &source.end, dec)?,
                     ];
-                    let (curve, ts) = curve(source, dec)?;
                     let index = if let Some(index) = edges.get(&source.edge) {
                         let prior = &result.edges[*index];
                         if prior.vertices != ends
-                            || prior.parameters != ts
-                            || source_curves.get(&source.edge) != Some(&source.curve)
+                            || source_curves.get(source.edge.as_str())
+                                != Some(&(&source.curve, source.curve_same_sense))
                         {
                             return Err(unsupported(
                                 "one shared source edge has inconsistent geometry",
@@ -265,6 +470,7 @@ fn definition(
                         }
                         *index
                     } else {
+                        let (curve, ts, image_proof) = curve(source, tolerance, &cylinders, dec)?;
                         let index = result.edges.len();
                         result.edges.push(n::NumericalEdge {
                             key: source.edge.clone(),
@@ -273,7 +479,35 @@ fn definition(
                             parameters: ts,
                         });
                         edges.insert(source.edge.clone(), index);
-                        source_curves.insert(source.edge.clone(), source.curve.clone());
+                        source_curves.insert(
+                            source.edge.as_str(),
+                            (&source.curve, source.curve_same_sense),
+                        );
+                        match image_proof {
+                            Some(SplineImageProof::Line(residuals)) => {
+                                linear_spline_images.push(NumericalSplineLineImage {
+                                    solid: solid.name.clone(),
+                                    edge: source.edge.clone(),
+                                    endpoint_distance_squared_mm2: residuals.map(|v| v.to_string()),
+                                    tolerance_mm: tolerance.to_string(),
+                                });
+                            }
+                            Some(SplineImageProof::Circle {
+                                mapped,
+                                endpoint,
+                                finite_arc,
+                            }) => {
+                                circular_spline_images.push(NumericalSplineCircleImage {
+                                    solid: solid.name.clone(),
+                                    edge: source.edge.clone(),
+                                    mapped_curve_deviation_upper_mm: mapped.to_string(),
+                                    endpoint_distance_upper_mm: endpoint.to_string(),
+                                    finite_arc_deviation_upper_mm: finite_arc.to_string(),
+                                    tolerance_mm: tolerance.to_string(),
+                                });
+                            }
+                            None => {}
+                        }
                         index
                     };
                     let (a, b) = if forward {
@@ -819,11 +1053,20 @@ pub(super) fn admit_definition(
     let intersection_checks = intersection_checks(file, OPTIONAL_EXACT_WORK, dec)?;
     let mut bodies = Vec::new();
     let mut topology_repairs = Vec::new();
+    let mut linear_spline_images = Vec::new();
+    let mut circular_spline_images = Vec::new();
     for solid in &file.solids {
         bodies.push((
             solid.name.clone(),
             n::build(
-                definition(solid, &mut topology_repairs, dec)?,
+                definition(
+                    solid,
+                    &mut topology_repairs,
+                    &mut linear_spline_images,
+                    &mut circular_spline_images,
+                    &continuation_options.tolerance_mm,
+                    dec,
+                )?,
                 continuation_options.clone(),
                 dec,
             )?,
@@ -850,8 +1093,10 @@ pub(super) fn admit_definition(
         source_admission: Some(NumericalSourceAdmission {
             strict_refusal: refusal,
             tolerance_mm: options.tolerance_mm.clone(),
-            method: "retained_shared_analytic_boundaries/3".into(),
+            method: "retained_shared_analytic_boundaries/4".into(),
             topology_repairs,
+            linear_spline_images,
+            circular_spline_images,
             intersection_checks: intersection_checks.pairs,
             optional_exact_work_reserved: intersection_checks.optional_work_reserved,
             optional_exact_work_used: intersection_checks.optional_work_used,

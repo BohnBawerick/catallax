@@ -197,7 +197,7 @@ for key in ["00001818", "00009734", "00002345"]:
     if key == "00002345":
         assert response["source_sha256"] == sha(source), "response/source file hash mismatch"
     assert response["status"] == "numerical" and response["exact"] is False
-    assert response["source_admission"]["method"] == "retained_shared_analytic_boundaries/3"
+    assert response["source_admission"]["method"] == "retained_shared_analytic_boundaries/4"
     assert response["source_admission"]["tolerance_mm"] == "1/100"
     assert response["work_used"] <= response["work_limit"] == 20_000_000
     a, av, ac, ah = checked(folder / "solid-0.step")

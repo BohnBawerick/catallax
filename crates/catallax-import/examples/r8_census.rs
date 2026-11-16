@@ -458,6 +458,8 @@ fn evaluate_numerical(bytes: &[u8]) -> Value {
                 "source_change_count":imported.record().changes.len(),
                 "source_admission_method":source_admission_method,"max_checked_residual_mm":checked_max,
                 "source_topology_repairs":imported.source_admission().map(|record| &record.topology_repairs),
+                "source_linear_spline_images":imported.source_admission().map(|record| &record.linear_spline_images),
+                "source_circular_spline_images":imported.source_admission().map(|record| &record.circular_spline_images),
                 "source_intersection_checks":source_intersection_checks,
                 "source_optional_exact_work_reserved":imported.source_admission().map(|record|record.optional_exact_work_reserved),
                 "source_optional_exact_work_used":imported.source_admission().map(|record|record.optional_exact_work_used)})

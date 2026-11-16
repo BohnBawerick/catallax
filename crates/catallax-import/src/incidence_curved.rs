@@ -4,7 +4,7 @@ use crate::incidence_arithmetic::{
     arithmetic as op, checkpoint, compare, cross, dot, equal, maximum, minimum, same,
     same_sequence, sqrt_enclosure, sub,
 };
-use crate::incidence_repair::{Net, Prepared};
+use crate::incidence_repair::{Net, Prepared, split};
 use crate::{Curve, Face, OrientedEdge, Placement, Solid, Surface, Vec3};
 use catallax_numbers::{BoundKind, Decider, Mark, MarkLog, Rational, Sign};
 use serde::Serialize;
@@ -100,8 +100,18 @@ fn local_nets(
     dec: &mut Decider,
 ) -> Result<Vec<Net>, String> {
     let mut nets = crate::incidence_circle::source_nets(edge, dec)?;
+    in_frame(&mut nets, frame, h, dec)?;
+    Ok(nets)
+}
+
+fn in_frame(
+    nets: &mut [Net],
+    frame: &Frame,
+    h: &Rational,
+    dec: &mut Decider,
+) -> Result<(), String> {
     let centre = frame.centre(h, dec)?;
-    for net in &mut nets {
+    for net in nets {
         for p in net {
             let offset = scaled(&centre, &p[3], dec)?;
             let a = sub(&[p[0].clone(), p[1].clone(), p[2].clone()], &offset, dec)?;
@@ -113,7 +123,7 @@ fn local_nets(
             ];
         }
     }
-    Ok(nets)
+    Ok(())
 }
 fn rotated(nets: &[Net], rotation: usize, dec: &mut Decider) -> Result<Vec<Net>, String> {
     let negative = Rational::from_i64(-1);
@@ -134,6 +144,176 @@ fn rotated(nets: &[Net], rotation: usize, dec: &mut Decider) -> Result<Vec<Net>,
     }
     Ok(result)
 }
+struct CircleProjection {
+    circle: Placement,
+    orientation: Sign,
+    differences: Vec<Net>,
+    local: Vec<Net>,
+}
+
+fn circle_projection(
+    nets: &[Net],
+    frame: &Frame,
+    height: &Rational,
+    dec: &mut Decider,
+) -> Result<CircleProjection, String> {
+    let mut chosen = None;
+    for rotation in 0..4 {
+        let local = rotated(nets, rotation, dec)?;
+        let mut valid = true;
+        for net in &local {
+            for p in net {
+                let rw = op(&frame.radius, &p[3], '*', dec)?;
+                if op(&rw, &p[0], '+', dec)?.sign() != Sign::Positive {
+                    valid = false;
+                }
+            }
+        }
+        if valid {
+            chosen = Some((rotation, local));
+            break;
+        }
+    }
+    let (rotation, local) = chosen.ok_or(
+        "circle chart certificate: source control hull crosses every supported chart pole",
+    )?;
+    let (orientation, differences) = crate::incidence_circle::image(&local, &frame.radius, dec)?;
+    let reference = match rotation {
+        0 => frame.axes[0].clone(),
+        1 => frame.axes[1].clone(),
+        2 => scaled(&frame.axes[0], &Rational::from_i64(-1), dec)?,
+        _ => scaled(&frame.axes[1], &Rational::from_i64(-1), dec)?,
+    };
+    Ok(CircleProjection {
+        circle: Placement {
+            origin: frame.centre(height, dec)?,
+            axis: frame.axes[2].clone(),
+            ref_dir: reference,
+        },
+        orientation,
+        differences,
+        local,
+    })
+}
+
+pub(crate) struct NumericalCircleImage {
+    pub circle: Placement,
+    pub radius: Rational,
+    pub curve_same_sense: bool,
+    pub source_endpoints: [Vec3; 2],
+    pub half_parameters: [Rational; 2],
+    pub deviation_upper_mm: Rational,
+    pub reservation_mm: Rational,
+}
+
+pub(crate) fn numerical_circle_image(
+    edge: &OrientedEdge,
+    cylinder: &Placement,
+    radius: &Rational,
+    tolerance: &Rational,
+    dec: &mut Decider,
+) -> Result<NumericalCircleImage, String> {
+    let frame = Frame::new(cylinder, radius, dec)?;
+    let height = frame.local(&edge.start.point, dec)?[2].clone();
+    let mut nets = crate::incidence_circle::curve_nets(edge, dec)?;
+    let ends = [
+        nets.first()
+            .and_then(|n| n.first())
+            .ok_or("empty spline image")?,
+        nets.last()
+            .and_then(|n| n.last())
+            .ok_or("empty spline image")?,
+    ];
+    let mut source_endpoints = std::array::from_fn(|_| std::array::from_fn(|_| Rational::zero()));
+    for (point, endpoint) in ends.into_iter().zip(&mut source_endpoints) {
+        if point[3].sign() != Sign::Positive {
+            return Err("circle image needs positive endpoint weights".into());
+        }
+        for i in 0..3 {
+            endpoint[i] = op(&point[i], &point[3], '/', dec)?;
+        }
+    }
+    in_frame(&mut nets, &frame, &height, dec)?;
+    for pair in nets.windows(2) {
+        let a = pair[0].last().ok_or("empty source spline span")?;
+        let b = pair[1].first().ok_or("empty source spline span")?;
+        let az = op(&a[2], &b[3], '*', dec)?;
+        let bz = op(&b[2], &a[3], '*', dec)?;
+        if !equal(&az, &bz, dec)? {
+            return Err("source spline height is discontinuous between spans".into());
+        }
+    }
+    // Separate mapped-curve and endpoint reservations; the radial fraction
+    // keeps their angular perturbations far from the winding branch guard.
+    let reservation = minimum(
+        op(tolerance, &Rational::from_i64(8), '/', dec)?,
+        op(radius, &Rational::from_i64(100), '/', dec)?,
+        dec,
+    )?;
+    let mut height_bound = Rational::zero();
+    for net in &mut nets {
+        for point in net {
+            if point[3].sign() != Sign::Positive {
+                return Err("circle image needs positive source weights".into());
+            }
+            height_bound = maximum(height_bound, op(&point[2].abs(), &point[3], '/', dec)?, dec)?;
+            point[2] = Rational::zero();
+        }
+    }
+    if compare(&height_bound, &reservation, dec)?.is_ge() {
+        return Err("source spline height bound exceeds the circle reservation".into());
+    }
+    // Refine the certificate's Bernstein hulls without changing the curve.
+    for _ in 0..2 {
+        if nets.len() > 2048 {
+            return Err("circle source partition exceeds the existing cell allowance".into());
+        }
+        let mut refined = Vec::with_capacity(nets.len() * 2);
+        for net in nets {
+            let (a, b) = split(&net, dec)?;
+            refined.push(a);
+            refined.push(b);
+        }
+        nets = refined;
+    }
+    let image = circle_projection(&nets, &frame, &height, dec)?;
+    let mut half_parameters = std::array::from_fn(|_| Rational::zero());
+    let ends = [
+        image
+            .local
+            .first()
+            .and_then(|n| n.first())
+            .ok_or("empty circle chart")?,
+        image
+            .local
+            .last()
+            .and_then(|n| n.last())
+            .ok_or("empty circle chart")?,
+    ];
+    for (point, parameter) in ends.into_iter().zip(&mut half_parameters) {
+        let rw = op(radius, &point[3], '*', dec)?;
+        *parameter = op(&point[1], &op(&rw, &point[0], '+', dec)?, '/', dec)?;
+    }
+    let planar_limit = op(&reservation, &height_bound, '-', dec)?;
+    let (_, planar_bound) = crate::incidence_circle::bound(image.differences, &planar_limit, dec)?;
+    if compare(&planar_bound, &planar_limit, dec)?.is_gt() {
+        return Err("continuous spline-to-circle displacement exceeds the reservation".into());
+    }
+    if !edge.curve_same_sense {
+        source_endpoints.reverse();
+        half_parameters.reverse();
+    }
+    Ok(NumericalCircleImage {
+        circle: image.circle,
+        radius: frame.radius,
+        curve_same_sense: edge.curve_same_sense != (image.orientation == Sign::Negative),
+        source_endpoints,
+        half_parameters,
+        deviation_upper_mm: op(&planar_bound, &height_bound, '+', dec)?,
+        reservation_mm: reservation,
+    })
+}
+
 fn replacement(
     edge: &OrientedEdge,
     frame: &Frame,
@@ -150,45 +330,12 @@ fn replacement(
     let mut target = edge.clone();
     if equal(&a[2], &b[2], dec)? {
         let nets = local_nets(edge, frame, &a[2], dec)?;
-        let mut chosen = None;
-        for rotation in 0..4 {
-            let local = rotated(&nets, rotation, dec)?;
-            let mut valid = true;
-            for net in &local {
-                for p in net {
-                    let rw = op(&frame.radius, &p[3], '*', dec)?;
-                    if op(&rw, &p[0], '+', dec)?.sign() != Sign::Positive {
-                        valid = false;
-                    }
-                }
-            }
-            if valid {
-                chosen = Some((rotation, local));
-                break;
-            }
-        }
-        let (rotation, local) = chosen.ok_or(
-            "circle chart certificate: source control hull crosses every supported chart pole",
-        )?;
-        let (sign, nets) = crate::incidence_circle::image(&local, &frame.radius, dec)?;
-        let reference = match rotation {
-            0 => frame.axes[0].clone(),
-            1 => frame.axes[1].clone(),
-            2 => scaled(&frame.axes[0], &Rational::from_i64(-1), dec)?,
-            _ => scaled(&frame.axes[1], &Rational::from_i64(-1), dec)?,
-        };
-        target.curve = Curve::Circle(
-            Placement {
-                origin: frame.centre(&a[2], dec)?,
-                axis: frame.axes[2].clone(),
-                ref_dir: reference,
-            },
-            frame.radius.clone(),
-        );
-        if sign == Sign::Negative {
+        let image = circle_projection(&nets, frame, &a[2], dec)?;
+        target.curve = Curve::Circle(image.circle, frame.radius.clone());
+        if image.orientation == Sign::Negative {
             target.curve_same_sense = !target.curve_same_sense;
         }
-        Ok((target, nets))
+        Ok((target, image.differences))
     } else {
         Err("curved target certificate: physical generator edges need a separate complete-neighbour feature proof".into())
     }

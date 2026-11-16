@@ -15,9 +15,9 @@ use crate::{ImportRefusal, RepairRecord, Solid, Vec3};
 mod analytic;
 mod cones;
 
-/// Numerical reconstruction of finite parameter trims, retaining the immutable
-/// source's shared vertices and analytic carriers. No geometric displacement or
-/// complete source/body deviation bound is inferred from its sampled checks.
+/// Numerical finite-trim reconstruction with shared source vertices. Retained
+/// analytic carriers and individually bounded spline images are distinguished.
+/// Sampled checks grant no complete source/body deviation certificate.
 #[derive(Clone, Debug)]
 pub struct NumericalSourceAdmission {
     /// The strict attempt's actual refusal, before numerical admission.
@@ -26,8 +26,12 @@ pub struct NumericalSourceAdmission {
     pub tolerance_mm: Rational,
     /// Versioned source interpretation and repair method.
     pub method: String,
-    /// Explicit changes to source topology; source geometry is retained.
+    /// Explicit changes to topology; the original source remains immutable.
     pub topology_repairs: Vec<NumericalTopologyRepair>,
+    /// Certified regular spline line images and finite-image endpoint residuals.
+    pub linear_spline_images: Vec<NumericalSplineLineImage>,
+    /// Continuous source-spline bounds against checked finite circular arcs.
+    pub circular_spline_images: Vec<NumericalSplineCircleImage>,
     /// Every within-solid source face pair, in source order. A tolerated
     /// incidence prerequisite is unresolved only for pairs using that face.
     /// Separate solids are not compared, matching the existing import policy.
@@ -36,6 +40,38 @@ pub struct NumericalSourceAdmission {
     pub optional_exact_work_reserved: u64,
     /// Actual work used inside that collective proof allowance.
     pub optional_exact_work_used: u64,
+}
+
+/// A spline's full active image is one regular finite line segment. Numerical
+/// endpoint reconstruction does not change source vertices or certify a body bound.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct NumericalSplineLineImage {
+    /// Source solid name.
+    pub solid: String,
+    /// Source edge name, shared by every use.
+    pub edge: String,
+    /// Exact squared distances from the source vertices to the finite image.
+    pub endpoint_distance_squared_mm2: [String; 2],
+    /// Requested numerical check tolerance, including any cone reservation.
+    pub tolerance_mm: String,
+}
+
+/// A continuously bounded circle image, with full-interval endpoint and winding
+/// checks. This edge-local bound grants no complete source/body certificate.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct NumericalSplineCircleImage {
+    /// Source solid name.
+    pub solid: String,
+    /// Source edge name, shared by every use.
+    pub edge: String,
+    /// Continuous source-to-mapped-circle displacement bound, in millimetres.
+    pub mapped_curve_deviation_upper_mm: String,
+    /// Actual arc endpoint distance from the full source interval's endpoints.
+    pub endpoint_distance_upper_mm: String,
+    /// Two-sided finite source-curve/realized-arc image bound, in millimetres.
+    pub finite_arc_deviation_upper_mm: String,
+    /// Requested numerical check tolerance, including any cone reservation.
+    pub tolerance_mm: String,
 }
 
 /// A derived cylinder seam joins two retained noncontractible source rims.

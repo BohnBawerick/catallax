@@ -15,10 +15,19 @@ fn failure(error: Refusal) -> String {
     )
 }
 
+pub(crate) struct LineImage<'a> {
+    pub origin: &'a Vec3,
+    pub direction: Vec3,
+    pub scalar_bounds: [Rational; 2],
+}
+
 /// Nonnegative Bernstein derivative coefficients, with a positive coefficient
 /// on each span, prove a strictly ordered line image. Parameter derivatives
 /// may vanish at endpoints; constant spans and reversals remain refused.
-pub(crate) fn reduce(edge: &OrientedEdge, dec: &mut Decider) -> Result<Option<Curve>, String> {
+pub(crate) fn line_image<'a>(
+    edge: &'a OrientedEdge,
+    dec: &mut Decider,
+) -> Result<Option<LineImage<'a>>, String> {
     checkpoint(dec)?;
     let Curve::BSpline(source) = &edge.curve else {
         return Ok(None);
@@ -139,6 +148,22 @@ pub(crate) fn reduce(edge: &OrientedEdge, dec: &mut Decider) -> Result<Option<Cu
     if compare(&lo, &hi, dec)?.is_ge() {
         return Ok(None);
     }
+    Ok(Some(LineImage {
+        origin,
+        direction,
+        scalar_bounds: [lo, hi],
+    }))
+}
+
+pub(crate) fn reduce(edge: &OrientedEdge, dec: &mut Decider) -> Result<Option<Curve>, String> {
+    let Some(LineImage {
+        origin,
+        direction,
+        scalar_bounds: [lo, hi],
+    }) = line_image(edge, dec)?
+    else {
+        return Ok(None);
+    };
     let mut parameters = Vec::new();
     for endpoint in [&edge.start.point, &edge.end.point] {
         checkpoint(dec)?;

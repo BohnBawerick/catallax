@@ -7,7 +7,7 @@ use catallax_import::{
     numerical::{self, StepImport},
     sha256_hex,
 };
-use catallax_numbers::{Decider, with_operation_budget};
+use catallax_numbers::{Decider, Rational, with_operation_budget};
 use catallax_recipe::StepId;
 use catallax_step::numerical::{self as output, NumericalStepOptions};
 use catallax_topology::numerical as n;
@@ -69,6 +69,151 @@ fn checked(bytes: &[u8], tolerance: &str) -> Result<StepImport, numerical::Impor
         },
         &mut Decider::default(),
     )
+}
+
+fn opened_checked(bytes: &[u8], tolerance: &str) -> catallax_import::tolerant::opened::OpenedStep {
+    use catallax_import::tolerant::{ToleranceOptions, opened};
+    opened::open_step(
+        bytes,
+        &sha256_hex(bytes),
+        &StepId::new("retained-spline-image").unwrap(),
+        ToleranceOptions {
+            initial_mm: q("0.000000000001"),
+            maximum_mm: q(tolerance),
+        },
+        &mut Decider::default(),
+    )
+    .unwrap()
+}
+
+fn spline_boundary(offset: &str, scales: [&str; 4]) -> Vec<u8> {
+    let source = displaced_wall("0.000000000001");
+    let recognized = catallax_import::read_step(&source).unwrap();
+    let edge = recognized.solids[0]
+        .faces
+        .iter()
+        .flat_map(|f| &f.loops)
+        .flat_map(|b| &b.edges)
+        .find(|e| matches!(e.curve, catallax_import::Curve::Line(..)))
+        .unwrap();
+    let (a, b) = if edge.curve_same_sense {
+        (&edge.start.point, &edge.end.point)
+    } else {
+        (&edge.end.point, &edge.start.point)
+    };
+    let direction: [Rational; 3] = std::array::from_fn(|i| &b[i] - &a[i]);
+    let axis = (0..3).find(|&i| direction[i].is_zero()).unwrap();
+    let offset = q(offset);
+    let controls = scales.map(|scale| {
+        let scale = q(scale);
+        let mut p: [Rational; 3] = std::array::from_fn(|i| {
+            let component = &scale * &direction[i];
+            &a[i] + &component
+        });
+        p[axis] = &p[axis] + &offset;
+        p
+    });
+    with_spline(&source, edge, &controls, &["1.", "2.", "3.", "1."])
+}
+
+fn circular_spline_boundary(weight: &str, height: &str, reverse: bool) -> Vec<u8> {
+    let source = displaced_wall("0.000000000001");
+    let recognized = catallax_import::read_step(&source).unwrap();
+    let edge = recognized.solids[0]
+        .faces
+        .iter()
+        .flat_map(|f| &f.loops)
+        .flat_map(|b| &b.edges)
+        .find(|e| matches!(e.curve, catallax_import::Curve::Circle(..)))
+        .unwrap();
+    let catallax_import::Curve::Circle(frame, _) = &edge.curve else {
+        unreachable!()
+    };
+    let (a, b) = if edge.curve_same_sense {
+        (&edge.start.point, &edge.end.point)
+    } else {
+        (&edge.end.point, &edge.start.point)
+    };
+    let height = q(height);
+    let middle = std::array::from_fn(|i| {
+        let sum = &a[i] + &b[i];
+        let flat = &sum - &frame.origin[i];
+        let lift = &height * &frame.axis[i];
+        &flat + &lift
+    });
+    let mut controls = [a.clone(), middle, b.clone()];
+    let mut edge = edge.clone();
+    if reverse {
+        controls.reverse();
+        edge.curve_same_sense = !edge.curve_same_sense;
+    }
+    with_spline(&source, &edge, &controls, &["1.", weight, "1."])
+}
+
+fn with_spline(
+    source: &[u8],
+    edge: &catallax_import::OrientedEdge,
+    controls: &[[Rational; 3]],
+    weights: &[&str],
+) -> Vec<u8> {
+    let degree = controls.len() - 1;
+    let multiplicity = degree + 1;
+    let text = std::str::from_utf8(source).unwrap();
+    let edge_line = text
+        .lines()
+        .find(|line| line.starts_with(&format!("{}=", edge.edge)))
+        .unwrap();
+    let curve = references(edge_line)[2];
+    let original = text
+        .lines()
+        .find(|line| line.starts_with(&format!("#{curve}=")))
+        .unwrap();
+    let first = text
+        .lines()
+        .filter_map(|line| {
+            line.strip_prefix('#')?
+                .split_once('=')?
+                .0
+                .parse::<u64>()
+                .ok()
+        })
+        .max()
+        .unwrap()
+        + 1;
+    let decimal = |value: &Rational| {
+        let text = value.to_string();
+        let value = if let Some((n, d)) = text.split_once('/') {
+            n.parse::<f64>().unwrap() / d.parse::<f64>().unwrap()
+        } else {
+            text.parse::<f64>().unwrap()
+        };
+        format!("{value:.12}")
+    };
+    let mut points = String::new();
+    let mut ids = Vec::new();
+    for (index, p) in controls.iter().enumerate() {
+        let id = first + index as u64;
+        points.push_str(&format!(
+            "#{id}=CARTESIAN_POINT('',({}));\n",
+            p.each_ref().map(decimal).join(",")
+        ));
+        ids.push(format!("#{id}"));
+    }
+    let replacement = format!(
+        "#{curve}=(BOUNDED_CURVE() B_SPLINE_CURVE({degree},({}),.UNSPECIFIED.,.F.,.F.) B_SPLINE_CURVE_WITH_KNOTS(({multiplicity},{multiplicity}),(0.,1.),.UNSPECIFIED.) CURVE() GEOMETRIC_REPRESENTATION_ITEM() RATIONAL_B_SPLINE_CURVE(({})) REPRESENTATION_ITEM(''));",
+        ids.join(","),
+        weights.join(",")
+    );
+    let edge_prefix = edge_line.rsplit_once(',').unwrap().0;
+    let edge_definition = format!(
+        "{edge_prefix},{});",
+        if edge.curve_same_sense { ".T." } else { ".F." }
+    );
+    let text = text
+        .replace(original, &replacement)
+        .replace(edge_line, &edge_definition);
+    let end = text.rfind("ENDSEC;").unwrap();
+    format!("{}{}{}", &text[..end], points, &text[end..]).into_bytes()
 }
 
 fn combine_sources(first: &[u8], second: &str) -> Vec<u8> {
@@ -178,7 +323,7 @@ fn curved_dependency_rebuilds_finite_parameters_and_retains_shared_vertices() {
         panic!("expected numerical admission")
     };
     let admission = imported.source_admission().unwrap();
-    assert_eq!(admission.method, "retained_shared_analytic_boundaries/3");
+    assert_eq!(admission.method, "retained_shared_analytic_boundaries/4");
     assert_eq!(admission.intersection_checks.len(), 10);
     assert!(admission.intersection_checks.iter().any(|check| matches!(
         check,
@@ -232,6 +377,98 @@ fn curved_dependency_rebuilds_finite_parameters_and_retains_shared_vertices() {
             .unwrap()
             .contains("numerical approximate")
     );
+}
+
+#[test]
+fn a_regular_weighted_spline_line_image_rebuilds_only_finite_parameters() {
+    let source = spline_boundary("0.00000001", ["-1", "0", "1", "2"]);
+    let opened = opened_checked(&source, "0.01");
+    let Some(StepImport::Numerical(imported)) = opened.admission(0) else {
+        panic!(
+            "expected numerical admission: {:?}",
+            opened.bodies()[0].refusal()
+        );
+    };
+    let images = &imported.source_admission().unwrap().linear_spline_images;
+    assert_eq!(images.len(), 1);
+    let image = &images[0];
+    assert_eq!(
+        image.endpoint_distance_squared_mm2,
+        [
+            q("0.0000000000000001").to_string(),
+            q("0.0000000000000001").to_string()
+        ]
+    );
+    let recognized = catallax_import::read_step(&source).unwrap();
+    assert!(
+        recognized.solids[0]
+            .faces
+            .iter()
+            .flat_map(|f| &f.loops)
+            .flat_map(|b| &b.edges)
+            .any(|e| e.edge == image.edge && matches!(e.curve, catallax_import::Curve::BSpline(_)))
+    );
+    let body = &imported.bodies()[0].1;
+    let counts = body.counts();
+    assert_eq!((counts.faces, counts.edges, counts.vertices), (5, 9, 6));
+    assert!(
+        body.definition()
+            .edges
+            .iter()
+            .any(|e| e.key == image.edge && matches!(e.curve, catallax_shapes::Curve::Line(_)))
+    );
+    assert_eq!(imported.record().source.sha256, sha256_hex(&source));
+    let refused = opened_checked(&source, "0.000000001");
+    assert!(matches!(
+        refused.body(0),
+        Some(catallax_import::tolerant::opened::BodyView::Surfaces { .. })
+    ));
+    assert!(matches!(refused.bodies()[0].refusal(),
+        Some(catallax_import::tolerant::Error::Numerical(r))
+        if r.code == "import.numerical-spline-domain"));
+}
+
+#[test]
+fn finite_spline_extent_and_backtracking_are_not_infinite_line_permissions() {
+    use catallax_import::tolerant::{Error, opened::BodyView};
+    for (offset, scales) in [
+        ("0", ["0.00000002", "0.3", "0.6", "1"]),
+        ("0.00000001", ["-1", "3", "-2", "2"]),
+    ] {
+        let source = spline_boundary(offset, scales);
+        let tolerance = if offset == "0" { "0.000000001" } else { "0.01" };
+        let opened = opened_checked(&source, tolerance);
+        let expected = if offset == "0" {
+            "import.numerical-spline-domain"
+        } else {
+            "import.numerical-unsupported-family"
+        };
+        let refusal = opened.bodies()[0].refusal();
+        assert!(
+            matches!(refusal, Some(Error::Numerical(r)) if r.code == expected),
+            "{refusal:?}"
+        );
+        let Some(BodyView::Surfaces {
+            source: retained, ..
+        }) = opened.body(0)
+        else {
+            panic!("a declined line image must retain a surface body");
+        };
+        let original = catallax_import::read_step(&source).unwrap();
+        let original = original.solids[0]
+            .faces
+            .iter()
+            .flat_map(|f| &f.loops)
+            .flat_map(|b| &b.edges)
+            .find(|e| matches!(e.curve, catallax_import::Curve::BSpline(_)))
+            .unwrap();
+        let retained = retained
+            .edges()
+            .iter()
+            .find(|e| e.name == original.edge)
+            .unwrap();
+        assert_eq!(retained.curve, original.curve);
+    }
 }
 
 #[test]
@@ -483,4 +720,75 @@ fn numerical_cones_export_step_axial_parameters_and_checked_geometry() {
             "{name}: {result:?}, {work:?}"
         );
     }
+}
+
+#[test]
+fn cylindrical_spline_arcs_have_continuous_spatial_and_finite_image_bounds() {
+    for (height, reverse) in [
+        ("0", false),
+        ("0", true),
+        ("0.0001", false),
+        ("0.0001", true),
+    ] {
+        let source = circular_spline_boundary("0.7071067811865475", height, reverse);
+        let opened = opened_checked(&source, "0.01");
+        let Some(StepImport::Numerical(imported)) = opened.admission(0) else {
+            panic!(
+                "expected circular image: {:?}",
+                opened.bodies()[0].refusal()
+            );
+        };
+        let images = &imported.source_admission().unwrap().circular_spline_images;
+        assert_eq!(images.len(), 1);
+        let image = &images[0];
+        let mapped = q(&image.mapped_curve_deviation_upper_mm);
+        let endpoint = q(&image.endpoint_distance_upper_mm);
+        let finite = q(&image.finite_arc_deviation_upper_mm);
+        assert!(finite <= q("0.01") && finite >= mapped && finite >= endpoint);
+        if height != "0" {
+            assert!(mapped >= q("0.00004"));
+            let declined = opened_checked(&source, "0.000001");
+            assert!(matches!(
+                declined.body(0),
+                Some(catallax_import::tolerant::opened::BodyView::Surfaces { .. })
+            ));
+        }
+        let body = &imported.bodies()[0].1;
+        assert!(
+            body.definition()
+                .edges
+                .iter()
+                .any(|edge| edge.key == image.edge
+                    && matches!(edge.curve, catallax_shapes::Curve::Circle(_)))
+        );
+        let counts = body.counts();
+        assert_eq!((counts.faces, counts.edges, counts.vertices), (5, 9, 6));
+    }
+}
+
+#[test]
+fn cylindrical_endpoints_do_not_approve_a_bowed_source_spline() {
+    use catallax_import::tolerant::opened::BodyView;
+    let source = circular_spline_boundary("0.5", "0", false);
+    let opened = opened_checked(&source, "0.01");
+    let Some(BodyView::Surfaces {
+        source: retained, ..
+    }) = opened.body(0)
+    else {
+        panic!("an unbounded circle fit must retain source surfaces");
+    };
+    let original = catallax_import::read_step(&source).unwrap();
+    let original = original.solids[0]
+        .faces
+        .iter()
+        .flat_map(|f| &f.loops)
+        .flat_map(|b| &b.edges)
+        .find(|e| matches!(e.curve, catallax_import::Curve::BSpline(_)))
+        .unwrap();
+    let retained = retained
+        .edges()
+        .iter()
+        .find(|e| e.name == original.edge)
+        .unwrap();
+    assert_eq!(retained.curve, original.curve);
 }

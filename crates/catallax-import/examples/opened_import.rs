@@ -63,6 +63,8 @@ fn diagnostics(opened: &OpenedStep) -> Vec<Value> {
         let admission = match opened.admission(index) {
             Some(StepImport::Numerical(a)) => json!({"source_record":a.record(),"source_interpretation":a.source_admission().map(|s|json!({
                 "method":s.method,"strict_refusal":s.strict_refusal,"tolerance_mm":s.tolerance_mm.to_string(),
+                "linear_spline_images":s.linear_spline_images,
+                "circular_spline_images":s.circular_spline_images,
                 "topology_repairs":s.topology_repairs,"intersection_checks":s.intersection_checks}))}),
             _ => Value::Null,
         };

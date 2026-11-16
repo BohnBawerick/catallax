@@ -212,7 +212,7 @@ pub(crate) fn image(
     Ok((sign, differences))
 }
 
-pub(crate) fn source_nets(edge: &OrientedEdge, dec: &mut Decider) -> Result<Vec<Net>, String> {
+pub(crate) fn curve_nets(edge: &OrientedEdge, dec: &mut Decider) -> Result<Vec<Net>, String> {
     let crate::Curve::BSpline(s) = &edge.curve else {
         return Err("expected source spline".into());
     };
@@ -223,6 +223,11 @@ pub(crate) fn source_nets(edge: &OrientedEdge, dec: &mut Decider) -> Result<Vec<
             nets.push(crate::spline_embedding::bezier(g, span, dec)?);
         }
     }
+    Ok(nets)
+}
+
+pub(crate) fn source_nets(edge: &OrientedEdge, dec: &mut Decider) -> Result<Vec<Net>, String> {
+    let nets = curve_nets(edge, dec)?;
     let first = nets
         .first()
         .and_then(|n| n.first())

@@ -122,9 +122,12 @@ fn run(bytes: &[u8], expected_sha256: &str, out: &Path) -> Result<Value, Value> 
         "method":record.method,"tolerance_mm":record.tolerance_mm.to_string(),
         "strict_refusal":record.strict_refusal,"intersection_checks":record.intersection_checks,
         "topology_repairs":record.topology_repairs,
+        "linear_spline_images":record.linear_spline_images,
+        "circular_spline_images":record.circular_spline_images,
         "optional_exact_work_reserved":record.optional_exact_work_reserved,
         "optional_exact_work_used":record.optional_exact_work_used,
-        "cross_solid_pairs":"not_compared_by_import_policy","shared_3d_geometry":"retained",
+        "cross_solid_pairs":"not_compared_by_import_policy",
+        "shared_3d_geometry":if record.linear_spline_images.is_empty() && record.circular_spline_images.is_empty() {"retained"} else {"retained_with_bounded_spline_images"},
         "parameter_trims":"rebuilt","complete_body_bound":"unestablished"})
     });
     let mut solids = Vec::new();

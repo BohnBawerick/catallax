@@ -640,10 +640,15 @@ fn definition(
             charts.push((lp_index, fitted_chart, coordinates, forward, segment));
         }
     }
-    let mut n = path
-        .minimum_sections()
-        .max((twist.abs() / (std::f64::consts::PI / 8.0)).ceil() as usize)
-        .max(1);
+    // The analytic unguided helix frame has at most twice the spine's angular
+    // frequency. Quarter-turn seed spans prevent aliasing; residuals, not a
+    // fixed sixteen-spans-per-turn layout, decide the required resolution.
+    let mut n = match (&path, &guide) {
+        (Path::Helix { turns, .. }, None) => (turns.abs() * 4.0).ceil() as usize,
+        _ => path.minimum_sections(),
+    }
+    .max((twist.abs() / (std::f64::consts::PI / 8.0)).ceil() as usize)
+    .max(1);
     if let Some(g) = &guide {
         n = n.max(g.minimum_sections());
     }
@@ -700,9 +705,19 @@ fn definition(
         if checks.max_sample_error_mm <= tolerance / 4.0 {
             break (sections, checks);
         }
-        n = n
-            .checked_mul(2)
-            .ok_or_else(|| bad("section count overflow"))?;
+        n = match (&path, &guide) {
+            (Path::Helix { .. }, None) => {
+                let ratio = checks.max_sample_error_mm / (tolerance / 4.0);
+                let estimate = (n as f64 * libm::sqrt(libm::sqrt(ratio))).ceil() as usize;
+                let next = n
+                    .checked_add(1)
+                    .ok_or_else(|| bad("section count overflow"))?;
+                estimate.max(next)
+            }
+            _ => n
+                .checked_mul(2)
+                .ok_or_else(|| bad("section count overflow"))?,
+        };
     };
     let first_frame = frame(0.0, dec)?;
     let orientation = dot(cross(first_frame.x, first_frame.y), path.at(0.0, dec)?.1);

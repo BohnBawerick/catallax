@@ -118,6 +118,7 @@ fn annulus(rotated: bool) -> (Model, catallax_topology::BodyId) {
     let body = model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: Default::default(),
     });
     (model, body)

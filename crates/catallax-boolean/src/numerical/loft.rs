@@ -521,6 +521,7 @@ pub fn loft_box_selection(
     let collection = model.add_body(Body {
         kind: BodyKind::Surface,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: MarkLog::new(),
     });
     dec.check_deadline()?;

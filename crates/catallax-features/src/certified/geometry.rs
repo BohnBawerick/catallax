@@ -340,6 +340,7 @@ pub(super) fn build_prism(
     model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks,
     })
 }

@@ -613,6 +613,7 @@ fn build_inner_kind(
     let body = model.add_body(Body {
         kind,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: MarkLog::new(),
     });
     if let Some(fault) = crate::check::structure(&model, body).into_iter().next() {

@@ -223,6 +223,7 @@ pub fn empty(model: &mut Model) -> BodyId {
     model.add_body(Body {
         kind: BodyKind::Empty,
         lumps: Vec::new(),
+        wires: Vec::new(),
         marks: MarkLog::new(),
     })
 }
@@ -251,6 +252,7 @@ fn solid(model: &mut Model, faces: Vec<FaceId>) -> BodyId {
     model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: MarkLog::new(),
     })
 }

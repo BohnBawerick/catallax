@@ -46,6 +46,7 @@ fn body_with_faces<const N: usize>(model: &mut Model, faces: [FaceId; N]) -> Bod
     model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: MarkLog::new(),
     })
 }

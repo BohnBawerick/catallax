@@ -522,6 +522,7 @@ fn assemble_annular(model: &mut Model, cell: &AnnularCell) -> BodyId {
     model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: Default::default(),
     })
 }
@@ -580,6 +581,7 @@ fn assemble_round(model: &mut Model, cell: &RoundCell) -> BodyId {
     model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: Default::default(),
     })
 }
@@ -674,6 +676,7 @@ fn assemble_capped(
     Ok(model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: Default::default(),
     }))
 }
@@ -1663,6 +1666,7 @@ fn assemble_polyhedral(
     Ok(model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: Default::default(),
     }))
 }
@@ -1759,6 +1763,7 @@ fn assemble(
     model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: Default::default(),
     })
 }

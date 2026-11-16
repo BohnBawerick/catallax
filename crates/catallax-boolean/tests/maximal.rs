@@ -31,6 +31,7 @@ fn solid(m: &mut Model, faces: Vec<FaceId>) -> BodyId {
     m.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: MarkLog::new(),
     })
 }

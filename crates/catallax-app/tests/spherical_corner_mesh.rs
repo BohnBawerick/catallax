@@ -981,6 +981,7 @@ fn sphere_split_through_its_poles(model: &mut Model) -> BodyId {
     model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: catallax_numbers::MarkLog::new(),
     })
 }
@@ -1298,6 +1299,7 @@ fn sphere_split_along_a_long_arc(model: &mut Model) -> BodyId {
     model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: catallax_numbers::MarkLog::new(),
     })
 }

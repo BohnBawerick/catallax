@@ -506,6 +506,7 @@ fn reversed_exact_face_normal_is_a_disagreement() {
     built.result = built.model.add_body(Body {
         kind: catallax_topology::BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: Default::default(),
     });
     let controller = Controller::default();
@@ -575,6 +576,7 @@ fn extra_brep_origin_cannot_be_mistaken_for_insufficient_sampling() {
     built.result = built.model.add_body(Body {
         kind: catallax_topology::BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: Default::default(),
     });
     let controller = Controller::default();

@@ -129,6 +129,7 @@ fn oblique_circle_extrusion_has_exact_measurements_and_step_geometry() {
     let body = model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: MarkLog::new(),
     });
     let zero = Ball::from_rational(&r(0), 128);

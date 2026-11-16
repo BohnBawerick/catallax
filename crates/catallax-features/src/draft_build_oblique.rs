@@ -94,6 +94,7 @@ pub(super) fn assemble(
     let body = model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: Default::default(),
     });
     catallax_topology::DraftedCylinder::check(model, body, dec)?;
@@ -149,6 +150,7 @@ pub(super) fn assemble_annular(
     let body = model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: Default::default(),
     });
     catallax_topology::DraftedCylinder::check(model, body, dec)?;

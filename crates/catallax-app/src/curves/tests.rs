@@ -593,6 +593,7 @@ fn attach_span(
     let body = model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: Default::default(),
     });
     (model, body, edge)

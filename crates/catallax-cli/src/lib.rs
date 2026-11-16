@@ -420,6 +420,7 @@ fn build_into(
                 catallax_boolean::BoolOp::Subtract => model.add_body(catallax_topology::Body {
                     kind: BodyKind::Empty,
                     lumps: Vec::new(),
+                    wires: Vec::new(),
                     marks: model.body(a.body).marks.clone(),
                 }),
                 _ => panic!("unknown boolean operation"),
@@ -777,6 +778,7 @@ pub(crate) fn result_summary(
             BodyKind::Empty => "empty",
             BodyKind::Solid => "solid",
             BodyKind::Surface => "surface",
+            BodyKind::Wire => "wire",
             _ => return Err(Refusal::new("cli.unsupported-body", "unknown body kind")),
         }
         .into(),

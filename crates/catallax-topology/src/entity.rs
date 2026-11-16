@@ -49,7 +49,7 @@ pub struct Edge {
     pub end: Option<VertexId>,
 }
 
-/// One use of an edge by a loop.
+/// One directed use of an edge in a face boundary or a free wire.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, catallax_numbers::Transfer)]
 pub struct Coedge {
     /// The edge.
@@ -92,6 +92,13 @@ pub struct Lump {
     pub shells: Vec<ShellId>,
 }
 
+/// An ordered, connected path of coedges, open or closed, without a face.
+#[derive(Clone, PartialEq, Eq, Hash, Debug, catallax_numbers::Transfer)]
+pub struct Wire {
+    /// Directed edge uses in traversal order.
+    pub coedges: Vec<CoedgeId>,
+}
+
 /// What a body is.
 #[non_exhaustive]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, catallax_numbers::Transfer)]
@@ -100,17 +107,21 @@ pub enum BodyKind {
     Solid,
     /// A collection of bounded faces, with no assertion of enclosed material.
     Surface,
+    /// One or more connected edge paths, without faces or material.
+    Wire,
     /// No material at all.
     Empty,
 }
 
-/// A body: lumps plus the marks of the operations that produced it.
+/// A body: material/surface lumps or free wires, plus construction marks.
 #[derive(Clone, PartialEq, Debug, catallax_numbers::Transfer)]
 pub struct Body {
     /// What the body is.
     pub kind: BodyKind,
     /// Its lumps.
     pub lumps: Vec<LumpId>,
+    /// Free wires. Nonempty only for a wire body, which has no lumps.
+    pub wires: Vec<Wire>,
     /// Marks of every not-exact decision behind the body.
     pub marks: MarkLog,
 }

@@ -397,6 +397,7 @@ fn tiny_remaining_allowance_stops_before_a_large_root_is_materialized() {
         source.model.add_body(catallax_topology::Body {
             kind: catallax_topology::BodyKind::Empty,
             lumps: Vec::new(),
+            wires: Vec::new(),
             marks: Default::default(),
         });
     }

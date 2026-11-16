@@ -1828,11 +1828,27 @@ impl<'a> Exporter<'a> {
         }
         let mut solids = Vec::new();
         let mut surfaces = false;
+        let mut wires = false;
         for id in bodies {
             let body = self.model.body(*id);
             match body.kind {
                 BodyKind::Empty => continue,
                 BodyKind::Solid => {}
+                BodyKind::Wire => {
+                    let mut topology = Topology::default();
+                    let mut sets = Vec::with_capacity(body.wires.len());
+                    for wire in &body.wires {
+                        let mut edges = Vec::with_capacity(wire.coedges.len());
+                        for coedge in &wire.coedges {
+                            let edge = self.model.coedge(*coedge).edge;
+                            edges.push(self.edge(edge, &mut topology)?.id);
+                        }
+                        sets.push(self.graph.add("CONNECTED_EDGE_SET", vec![text("''"), refs(edges)]));
+                    }
+                    solids.push(self.graph.add("EDGE_BASED_WIREFRAME_MODEL", vec![text("''"), refs(sets)]));
+                    wires = true;
+                    continue;
+                }
                 BodyKind::Surface => {
                     let mut shells = Vec::new();
                     for lump in &body.lumps {
@@ -1921,12 +1937,18 @@ impl<'a> Exporter<'a> {
         let mut output = self.graph.write(&solids, |numbers| {
             if envelope.is_some() {
                 stand_in_header(&self.options.product_name, numbers, &uncertainty)
-            } else if surfaces {
+            } else if surfaces || wires {
                 representation_header(
                     &self.options.product_name,
                     numbers,
                     if self.approximate_pipe_ends { None } else { Some(&uncertainty) },
-                    if self.report.solids == 0 { "MANIFOLD_SURFACE_SHAPE_REPRESENTATION" } else { "SHAPE_REPRESENTATION" },
+                    if self.report.solids == 0 && wires && !surfaces {
+                        "EDGE_BASED_WIREFRAME_SHAPE_REPRESENTATION"
+                    } else if self.report.solids == 0 && surfaces && !wires {
+                        "MANIFOLD_SURFACE_SHAPE_REPRESENTATION"
+                    } else {
+                        "SHAPE_REPRESENTATION"
+                    },
                     if self.approximate_pipe_ends {
                         "approximate pipe end parameter maps; requested distance tolerance applies to samples and fitted components; complete_body_bound=unestablished"
                     } else {

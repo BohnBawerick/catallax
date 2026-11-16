@@ -371,7 +371,7 @@ fn check_numerical_loops(
         }
         loops.push(polygon);
     }
-    super::check_boundaries(face, &loops, dec)
+    super::check_boundaries(face, &loops, None, dec)
 }
 
 /// Builds with retained native UV curves at the 3D edges' finite parameters.

@@ -708,6 +708,16 @@ fn numerical_fillet_builds_on_the_smooth_loft_across_its_station_seam() {
             println!("numerical smooth-loft radius edit refuses at its work ceiling: {} work", work.used);
         }
     }
+    if let Some(path) = std::env::var_os("CATALLAX_M11_STEP_OUT") {
+        let (artifact, work) = with_operation_budget(100_000_000, || {
+            catallax_step::numerical::build(
+                rounded.body(), &Default::default(), &mut Decider::default(),
+            )
+        });
+        assert!(!work.exhausted, "{work:?}");
+        std::fs::write(path, artifact.unwrap().bytes()).unwrap();
+        println!("direct numerical smooth-loft STEP: {} work", work.used);
+    }
 }
 
 fn blend(built: &Built) -> (FaceId, catallax_shapes::SplineFillet) {

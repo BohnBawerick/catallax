@@ -271,15 +271,14 @@ pub(super) fn build(
             trim.curve = spline::uv_curve(&trim.curve, parameters, &mut errors, options, dec)?;
         }
     }
-    let emitted = if body.kind() == BodyKind::Surface {
-        catallax_topology::numerical::build_surface_with_native_trims(
-            definition, native_trims, body.options().clone(), dec,
-        )?
+    let build = if body.kind() == BodyKind::Surface {
+        catallax_topology::numerical::build_surface_with_sampled_carriers
     } else {
-        catallax_topology::numerical::build_with_sampled_carriers(
-            definition, native_trims, body.sampled_carriers().clone(), body.options().clone(), dec,
-        )?
+        catallax_topology::numerical::build_with_sampled_carriers
     };
+    let emitted = build(
+        definition, native_trims, body.sampled_carriers().clone(), body.options().clone(), dec,
+    )?;
     Ok(Payload {
         body: emitted,
         lines,

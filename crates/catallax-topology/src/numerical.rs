@@ -359,11 +359,23 @@ pub fn build_surface_with_native_trims(
     options: NumericalOptions,
     dec: &mut Decider,
 ) -> Result<NumericalBody, Refusal> {
+    build_surface_with_sampled_carriers(definition, native_trims, BTreeSet::new(), options, dec)
+}
+
+/// Builds a numerical surface shell while retaining declared sampled carriers.
+pub fn build_surface_with_sampled_carriers(
+    definition: NumericalDefinition,
+    native_trims: Vec<NumericalNativeTrim>,
+    sampled_carriers: BTreeSet<String>,
+    options: NumericalOptions,
+    dec: &mut Decider,
+) -> Result<NumericalBody, Refusal> {
     guarded(|| {
         build_inner_kind(
             BodyKind::Surface,
             definition,
             native_trims,
+            sampled_carriers,
             options,
             Vec::new(),
             dec,
@@ -457,6 +469,7 @@ fn build_inner(
         BodyKind::Solid,
         definition,
         native_trims,
+        sampled_carriers,
         options,
         repairs,
         dec,
@@ -467,6 +480,7 @@ fn build_inner_kind(
     kind: BodyKind,
     definition: NumericalDefinition,
     native_trims: Vec<NumericalNativeTrim>,
+    sampled_carriers: BTreeSet<String>,
     options: NumericalOptions,
     repairs: Vec<NumericalRepair>,
     dec: &mut Decider,
@@ -1017,14 +1031,23 @@ fn check_loops(
     cleared_circles: Option<(&NumericalFace, &[NumericalEdge])>,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
-    for (i, boundary) in face.loops.iter().enumerate() {
+    check_boundaries(face, &face.loops, cleared_circles, dec)
+}
+
+fn check_boundaries(
+    face: &NumericalFace,
+    boundaries: &[Vec<NumericalTrim>],
+    cleared_circles: Option<(&NumericalFace, &[NumericalEdge])>,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    for (i, boundary) in boundaries.iter().enumerate() {
         check_loop(face, boundary, i != 0, dec)?;
     }
-    for (i, hole) in face.loops.iter().enumerate().skip(1) {
+    for (i, hole) in boundaries.iter().enumerate().skip(1) {
         let hole_circle = cleared_circles.is_some_and(|(source, edges)| {
             analytic::complete_circle(&source.loops[i], edges).is_some()
         });
-        for (j, other) in face.loops[..i].iter().enumerate() {
+        for (j, other) in boundaries[..i].iter().enumerate() {
             let other_circle = cleared_circles.is_some_and(|(source, edges)| {
                 analytic::complete_circle(&source.loops[j], edges).is_some()
             });

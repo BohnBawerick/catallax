@@ -123,7 +123,21 @@ Direct STEP from the admitted loft also passes its numerical reread and
 the independent raw OpenCASCADE read/edit above. Optional diagnostic body
 handover was removed after its separate 100M refusal; no transfer-engine
 performance change or repeated-proof claim is made. Numerical body/history
-layout 03 retains the new carrier declarations; older positional layouts
-refuse explicitly.
+layout 03 retains the new carrier declarations. Tagged v02 numerical body
+and history records still read with empty declarations; unversioned
+positional layouts continue to refuse.
+
+### Review corrections
+
+Output admission and endpoint projection use the stricter of the source
+and requested fillet tolerances. A loose source therefore cannot admit a
+new seam beyond the requested tolerance. This conservatively rechecks the
+whole output at that stricter tolerance.
+
+Native bindings are carried by face/boundary/use occurrence. Only replaced
+rails, shortened border endpoints and inserted cap uses change; untouched
+UV branches are retained, including two uses of a periodic seam edge.
+Current-main surface kinds, continuous planar-circle clearance and
+certified handover migration are preserved.
 
 

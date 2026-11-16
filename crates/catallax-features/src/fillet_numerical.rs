@@ -226,8 +226,29 @@ fn guarded<T>(run: impl FnOnce() -> Result<T, Refusal>) -> Result<T, Refusal> {
     }
 }
 
-type Bindings = BTreeMap<(String, String), BSplineCurve>;
+// Kept parallel to definition faces, boundaries and individual trim uses.
+type NativeRows = Vec<Vec<Vec<Option<BSplineCurve>>>>;
 type Parameters = BTreeMap<(usize, usize), [Rational; 2]>;
+
+fn native_rows(source: &NumericalBody) -> Result<NativeRows, Refusal> {
+    let definition = source.definition();
+    let faces: BTreeMap<_, _> = definition.faces.iter().enumerate()
+        .map(|(i, face)| (face.key.as_str(), i)).collect();
+    let mut rows: NativeRows = definition.faces.iter().map(|face| {
+        face.loops.iter().map(|row| vec![None; row.len()]).collect()
+    }).collect();
+    for binding in source.native_trims() {
+        let face = *faces.get(binding.face.as_str())
+            .ok_or_else(|| bad("source native trim names an unknown face"))?;
+        let slot = rows[face].get_mut(binding.boundary)
+            .and_then(|row| row.get_mut(binding.use_index))
+            .ok_or_else(|| bad("source native trim has a stale occurrence"))?;
+        if slot.replace(binding.curve.clone()).is_some() {
+            return Err(bad("source native trim duplicates an occurrence"));
+        }
+    }
+    Ok(rows)
+}
 
 fn constrained_rail(
     curve: &BSplineCurve,
@@ -308,6 +329,8 @@ fn build_impl(
     if key.is_empty() || radius.sign() != Sign::Positive || tolerance_mm.sign() != Sign::Positive || tolerance_mm > Rational::parse("0.001").unwrap() {
         return Err(bad("a numerical fillet needs an operation key, positive radius and stated tolerance at most 1 micrometre"));
     }
+    let mut options = source.options().clone();
+    options.tolerance_mm = options.tolerance_mm.min(tolerance_mm.clone());
     let original = source.definition();
     let selected = original.edges.iter().position(|edge| edge.key == edge_key).ok_or_else(|| bad("selected numerical edge does not exist"))?;
     let input = &original.edges[selected];
@@ -361,13 +384,8 @@ fn build_impl(
     ];
     let mut d = original.clone();
     d.name = format!("{} / {key}", original.name);
-    let mut bindings: Bindings = source.native_trims().iter().map(|binding| ((binding.face.clone(), binding.edge.clone()), binding.curve.clone())).collect();
+    let mut native_uses = native_rows(&source)?;
     let mut parameters: Parameters = BTreeMap::new();
-    for (face, f) in original.faces.iter().enumerate() {
-        for trim in f.loops.iter().flatten() {
-            for (vertex, uv) in walked(&original.edges[trim.edge], trim.sense).into_iter().zip(&trim.uv) { parameters.insert((face, vertex), uv.clone()); }
-        }
-    }
     let mut rail_vertices = [[0usize; 2]; 2];
     for side in 0..2 {
         for end in 0..2 {
@@ -383,12 +401,26 @@ fn build_impl(
         for end in 0..2 {
             let border = neighbour(original, sides[side], selected, input.vertices[end])?;
             let vertex = rail_vertices[side][end];
-            let t = project(&original.edges[border], &d.vertices[vertex].position, &source.options().tolerance_mm, dec)?;
+            let t = project(&original.edges[border], &d.vertices[vertex].position, &options.tolerance_mm, dec)?;
             let slot = usize::from(original.edges[border].vertices[1] == input.vertices[end]);
             d.edges[border].vertices[slot] = vertex;
             d.edges[border].parameters[slot] = t.clone();
-            let binding = bindings.get(&(original.faces[sides[side]].key.clone(), original.edges[border].key.clone())).ok_or_else(|| bad("a spline side border needs its native parameter curve"))?;
-            let uv = uv_at(binding, &t, dec)?;
+            let mut side_uv = None;
+            for (face_index, face) in d.faces.iter_mut().enumerate() {
+                for (boundary, row) in face.loops.iter_mut().enumerate() {
+                    for (use_index, trim) in row.iter_mut().enumerate() {
+                        if trim.edge != border { continue; }
+                        let uv = match &native_uses[face_index][boundary][use_index] {
+                            Some(curve) => uv_at(curve, &t, dec)?,
+                            None => plane_uv(&face.surface, &d.vertices[vertex].position, dec)?,
+                        };
+                        let endpoint = if trim.sense == Sense::Same { slot } else { 1 - slot };
+                        trim.uv[endpoint] = uv.clone();
+                        if face_index == sides[side] { side_uv = Some(uv); }
+                    }
+                }
+            }
+            let uv = side_uv.ok_or_else(|| bad("edited border has no support occurrence"))?;
             rail_uv[side][end] = uv.clone();
             parameters.insert((sides[side], vertex), uv);
             parameters.insert((caps[end], vertex), plane_uv(&original.faces[caps[end]].surface, &d.vertices[vertex].position, dec)?);
@@ -401,32 +433,43 @@ fn build_impl(
         let interval = [cuts[0].tau_ends()[side].clone(), cuts[1].tau_ends()[side].clone()];
         let (curve, changed) = constrained_rail(fillet.parameter_rail(side).ok_or_else(|| bad("support pcurve is missing"))?, &interval, &rail_uv[side], &domain(&physical[side]), dec)?;
         constrained_parameter_controls += changed;
-        bindings.insert((original.faces[sides[side]].key.clone(), edge_key.clone()), curve);
+        native_uses[sides[side]][0][[at_a, at_b][side]] = Some(curve);
         rails[side] = d.edges.len();
         d.edges.push(NumericalEdge { key: edge_key, curve: Curve::BSpline(fillet.rail(side).unwrap().clone()), vertices: rail_vertices[side], parameters: interval });
     }
-    d.faces[first].loops[0][at_a].edge = rails[0];
-    d.faces[second].loops[0][at_b].edge = rails[1];
+    for (side, use_index) in [at_a, at_b].into_iter().enumerate() {
+        let sense = trims[side].sense;
+        let uv = walked(&d.edges[rails[side]], sense)
+            .map(|vertex| parameters[&(sides[side], vertex)].clone());
+        d.faces[sides[side]].loops[0][use_index] = new_trim(rails[side], sense, uv);
+    }
     let mut cut_edges = [0; 2];
     for end in 0..2 {
         cut_edges[end] = d.edges.len();
         d.edges.push(NumericalEdge { key: format!("{key}/cap/{}", original.faces[caps[end]].key), curve: Curve::BSpline(cuts[end].curve().clone()), vertices: [rail_vertices[0][end], rail_vertices[1][end]], parameters: [q(0), q(1)] });
         let face = caps[end];
         let loops = std::mem::take(&mut d.faces[face].loops);
-        for boundary in loops {
+        let old_native = std::mem::take(&mut native_uses[face]);
+        for (boundary, bindings) in loops.into_iter().zip(old_native) {
+            let first = boundary.first().ok_or_else(|| bad("end-plane boundary is empty"))?;
+            let first = walked(&d.edges[first.edge], first.sense)[0];
             let mut replacement = Vec::with_capacity(boundary.len() + 1);
-            for (i, trim) in boundary.iter().enumerate() {
-                replacement.push(trim.clone());
+            let mut replacement_native = Vec::with_capacity(boundary.len() + 1);
+            let mut uses = boundary.into_iter().zip(bindings).peekable();
+            while let Some((trim, curve)) = uses.next() {
                 let a = walked(&d.edges[trim.edge], trim.sense)[1];
-                let next = &boundary[(i + 1) % boundary.len()];
-                let b = walked(&d.edges[next.edge], next.sense)[0];
+                let b = uses.peek().map_or(first, |(next, _)| walked(&d.edges[next.edge], next.sense)[0]);
+                replacement.push(trim);
+                replacement_native.push(curve);
                 if a != b {
                     let endpoints = d.edges[cut_edges[end]].vertices;
                     let sense = if [a, b] == endpoints { Sense::Same } else if [b, a] == endpoints { Sense::Reversed } else { return Err(bad("end-plane loop has a gap unrelated to the selected fillet")); };
                     replacement.push(new_trim(cut_edges[end], sense, [parameters[&(face, a)].clone(), parameters[&(face, b)].clone()]));
+                    replacement_native.push(None);
                 }
             }
             d.faces[face].loops.push(replacement);
+            native_uses[face].push(replacement_native);
         }
     }
     let face_index = d.faces.len();
@@ -434,14 +477,22 @@ fn build_impl(
     let mut sampled_carriers = source.sampled_carriers().clone();
     sampled_carriers.insert(face_key.clone());
     for side in 0..2 {
-        let curve = fillet.rail(side).unwrap();
-        bindings.insert((face_key.clone(), d.edges[rails[side]].key.clone()), parameter_line(curve.domain(), side, dec)?);
         for end in 0..2 { parameters.insert((face_index, rail_vertices[side][end]), [cuts[end].tau_ends()[side].clone(), q(side as i64)]); }
     }
-    for end in 0..2 { bindings.insert((face_key.clone(), d.edges[cut_edges[end]].key.clone()), cuts[end].parameters().clone()); }
     let first_use = (rails[0], flip(trims[0].sense));
     let reaches = usize::from(first_use.1 == Sense::Same);
     let path = [first_use, (cut_edges[reaches], Sense::Same), (rails[1], flip(trims[1].sense)), (cut_edges[1 - reaches], Sense::Reversed)];
+    let mut blend_native = Vec::with_capacity(path.len());
+    for (edge, _) in &path {
+        let curve = if *edge == rails[0] {
+            parameter_line(fillet.rail(0).unwrap().domain(), 0, dec)?
+        } else if *edge == rails[1] {
+            parameter_line(fillet.rail(1).unwrap().domain(), 1, dec)?
+        } else {
+            cuts[usize::from(*edge == cut_edges[1])].parameters().clone()
+        };
+        blend_native.push(Some(curve));
+    }
     let boundary = path.into_iter().map(|(edge, sense)| {
         let ends = walked(&d.edges[edge], sense);
         new_trim(edge, sense, ends.map(|vertex| parameters[&(face_index, vertex)].clone()))
@@ -458,20 +509,22 @@ fn build_impl(
     let direction = (0..3).map(|i| normal[i] * (jet.value[i].mid().to_f64_nearest() - centre[i].mid().to_f64_nearest())).sum::<f64>();
     if !direction.is_finite() || direction == 0.0 { return Err(bad("numerical fillet material orientation is unresolved")); }
     d.faces.push(NumericalFace { key: face_key, surface: Surface::BSpline(SplineSupport::RationalAtlas(fillet.surface().clone())), sense: if direction > 0.0 { Sense::Same } else { Sense::Reversed }, loops: vec![boundary] });
+    native_uses.push(vec![blend_native]);
     let mut native_trims = Vec::new();
-    for (face, f) in d.faces.iter_mut().enumerate() {
-        for (boundary, row) in f.loops.iter_mut().enumerate() {
-            for (use_index, trim) in row.iter_mut().enumerate() {
-                let edge = &d.edges[trim.edge];
-                trim.uv = walked(edge, trim.sense).map(|vertex| parameters[&(face, vertex)].clone());
-                if let Some(curve) = bindings.get(&(f.key.clone(), edge.key.clone())) {
-                    native_trims.push(NumericalNativeTrim { face: f.key.clone(), boundary, use_index, edge: edge.key.clone(), curve: curve.clone() });
+    for (f, native_face) in d.faces.iter().zip(native_uses) {
+        for (boundary, (row, native_row)) in f.loops.iter().zip(native_face).enumerate() {
+            for (use_index, (trim, curve)) in row.iter().zip(native_row).enumerate() {
+                if let Some(curve) = curve {
+                    native_trims.push(NumericalNativeTrim {
+                        face: f.key.clone(), boundary, use_index,
+                        edge: d.edges[trim.edge].key.clone(), curve,
+                    });
                 }
             }
         }
     }
     compact(&mut d);
-    let body = previous.unwrap_or(&source).rebuild_with_sampled_carriers(d, native_trims, sampled_carriers, source.options().clone(), dec)
+    let body = previous.unwrap_or(&source).rebuild_with_sampled_carriers(d, native_trims, sampled_carriers, options, dec)
         .map_err(|error| at_stage("body native admission", error))?;
     Ok(NumericalFilletBuilt { source, body, edge: edge_key.into(), key: key.into(), radius, tolerance_mm, fillet, constrained_parameter_controls })
 }

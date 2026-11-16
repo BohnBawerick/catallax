@@ -1,5 +1,6 @@
 {
-  "source_head": "06468b4bd8df69aa2bd7ace53cf7ea50d0a3aefb",
+  "source_head": "f6944020c61064edfd816efb18a36620d46f1226",
+  "crates_tree": "24ba60dda1362217e3df83fd491648d2d051ef94",
   "request_format": "unchanged catallax-step/1",
   "cases": [
     {
@@ -30,7 +31,9 @@
       },
       "tolerance_mm": "1e-7",
       "complete_body_bound": "unestablished",
-      "sha256": "658f3b4abae4decf9e1d60036772ccdfaa5ff905e5dc3c2f6e405f4fce4a57c5"
+      "sha256": "658f3b4abae4decf9e1d60036772ccdfaa5ff905e5dc3c2f6e405f4fce4a57c5",
+      "raw_checked_source_head": "06468b4bd8df69aa2bd7ace53cf7ea50d0a3aefb",
+      "raw_check_reuse": "identical STEP bytes"
     },
     {
       "case": "M10-009",
@@ -70,10 +73,12 @@
         "limit": 20000000,
         "over_target": false,
         "target": 20000000,
-        "used": 4461015
+        "used": 4461368
       },
       "numerical_tolerance_mm": "1e-7",
-      "complete_body_bound": "unestablished"
+      "complete_body_bound": "unestablished",
+      "raw_checked_source_head": "06468b4bd8df69aa2bd7ace53cf7ea50d0a3aefb",
+      "raw_check_reuse": "identical STEP bytes"
     },
     {
       "case": "M10-010",
@@ -113,10 +118,12 @@
         "limit": 20000000,
         "over_target": false,
         "target": 20000000,
-        "used": 4695558
+        "used": 4695911
       },
       "numerical_tolerance_mm": "1e-7",
-      "complete_body_bound": "unestablished"
+      "complete_body_bound": "unestablished",
+      "raw_checked_source_head": "06468b4bd8df69aa2bd7ace53cf7ea50d0a3aefb",
+      "raw_check_reuse": "identical STEP bytes"
     },
     {
       "case": "M10-011",
@@ -156,10 +163,12 @@
         "limit": 20000000,
         "over_target": false,
         "target": 20000000,
-        "used": 3829276
+        "used": 3829629
       },
       "numerical_tolerance_mm": "1e-7",
-      "complete_body_bound": "unestablished"
+      "complete_body_bound": "unestablished",
+      "raw_checked_source_head": "06468b4bd8df69aa2bd7ace53cf7ea50d0a3aefb",
+      "raw_check_reuse": "identical STEP bytes"
     }
   ]
 }

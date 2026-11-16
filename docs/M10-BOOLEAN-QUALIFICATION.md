@@ -131,19 +131,21 @@ a seeded stale file must replace it with the same checked STEP bytes.
 
 ### Additional original-request acceptance
 
-At source `06468b4bd8df69aa2bd7ace53cf7ea50d0a3aefb`, each unchanged original
+At source `f6944020c61064edfd816efb18a36620d46f1226`, each unchanged original
 `catallax-step/1` request completes construction, numerical admission, STEP
 and disk reread within the unchanged 20M allowance. The four actual files
 pass the healing-off OCP 8.0.1.1 reader, topology and material checks, volume
 comparison and a later cut. The M7 physical hole remains present. See the
 [generated receipts](phase1/spline-boolean-finite-queries/acceptance.json).
+The per-body importer adds 353 work units to each imported request; all four
+STEP files remain byte-identical to the raw-checked predecessor files.
 
 | Number | Total work | Faces/edges/vertices | Volume mm3 |
 | --- | ---: | --- | ---: |
 | M10-008 | 2,240,515 | 9/18/12 | 14.333333333333336 |
-| M10-009 | 4,461,015 | 10/24/16 | 6.695312500000001 |
-| M10-010 | 4,695,558 | 12/30/20 | 22.6953125 |
-| M10-011 | 3,829,276 | 6/12/8 | 0.9713541666666666 |
+| M10-009 | 4,461,368 | 10/24/16 | 6.695312500000001 |
+| M10-010 | 4,695,911 | 12/30/20 | 22.6953125 |
+| M10-011 | 3,829,629 | 6/12/8 | 0.9713541666666666 |
 
 ### Numerical top source construction
 

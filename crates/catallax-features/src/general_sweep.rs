@@ -360,6 +360,15 @@ impl Frame {
         orientation: catallax_recipe::SweepOrientation,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
+        if matches!(path, Path::Spline(_))
+            && guide.is_none()
+            && orientation == catallax_recipe::SweepOrientation::RotationMinimising
+        {
+            return Err(Refusal::new(
+                "sweep.spline-transport",
+                "a spline needs a guide or fixed orientation; unguided rotation-minimising transport is implemented for lines and circular helices",
+            ));
+        }
         let base = |t: f64, dec: &mut Decider| -> Result<[V; 3], Refusal> {
             let (origin, tangent) = path.at(t, dec)?;
             let tangent = unit(tangent)?;
@@ -536,8 +545,9 @@ fn definition(
         normal_offset = dot(sub(origin, anchor), unit(cross(axes[0], axes[1]))?);
         initial = Some(axes);
     }
-    let reference=initial.map(|axes|axes[0])
-        .unwrap_or_else(||recipe.reference.each_ref().map(number));
+    let reference = initial
+        .map(|axes| axes[0])
+        .unwrap_or_else(|| recipe.reference.each_ref().map(number));
     let frame = |t, dec: &mut Decider| {
         Frame::at(
             &path,
@@ -607,7 +617,8 @@ fn definition(
                     .evaluate_box([&t, &t], 128, dec)?
                     .map(|b| b.mid().to_f64_nearest());
                 let delta = sub(to_section(source), emitted);
-                profile_error = profile_error.max(libm::sqrt(dot(delta, delta)) * end_scale.max(1.0));
+                profile_error =
+                    profile_error.max(libm::sqrt(dot(delta, delta)) * end_scale.max(1.0));
                 profile_samples += 1;
             }
             sample_controls.extend(coordinates.iter().copied());
@@ -710,9 +721,9 @@ fn definition(
             for (i, p) in coordinates.iter().enumerate() {
                 if linear {
                     for frame in [section.frames[0], section.frames[3]] {
-                        let row=affine_row(frame,&[rational(p[0])?,rational(p[1])?])?;
-                        let [x,y,z]=row;
-                        points.push(Point3::new(x.into(),y.into(),z.into()));
+                        let row = affine_row(frame, &[rational(p[0])?, rational(p[1])?])?;
+                        let [x, y, z] = row;
+                        points.push(Point3::new(x.into(), y.into(), z.into()));
                         weights.push(chart.curve.weight(i).clone());
                     }
                 } else {
@@ -754,21 +765,21 @@ fn definition(
     Ok((assembly.definition, checks, assembly.roles))
 }
 
-fn affine_row(frame:Frame,p:&[Rational;2])->Result<[Rational;3],Refusal> {
-    let scale=rational(frame.scale)?;
-    let mut row=[q(0),q(0),q(0)];
-    for (axis,value) in row.iter_mut().enumerate() {
-        *value=rational(frame.origin[axis])? +
-            &scale * &(&rational(frame.x[axis])? * &p[0] + &rational(frame.y[axis])? * &p[1]);
+fn affine_row(frame: Frame, p: &[Rational; 2]) -> Result<[Rational; 3], Refusal> {
+    let scale = rational(frame.scale)?;
+    let mut row = [q(0), q(0), q(0)];
+    for (axis, value) in row.iter_mut().enumerate() {
+        *value = rational(frame.origin[axis])?
+            + &scale * &(&rational(frame.x[axis])? * &p[0] + &rational(frame.y[axis])? * &p[1]);
     }
     Ok(row)
 }
 
 fn exact_controls(frames: [Frame; 4], p: V) -> Result<[Point3; 4], Refusal> {
-    let p=[rational(p[0])?,rational(p[1])?];
+    let p = [rational(p[0])?, rational(p[1])?];
     let mut rows: [[Rational; 3]; 4] = std::array::from_fn(|_| std::array::from_fn(|_| q(0)));
-    for (row,frame) in rows.iter_mut().zip(frames) {
-        *row=affine_row(frame,&p)?;
+    for (row, frame) in rows.iter_mut().zip(frames) {
+        *row = affine_row(frame, &p)?;
     }
     let middle = |coefficients: [i64; 4]| -> [Rational; 3] {
         std::array::from_fn(|axis| {

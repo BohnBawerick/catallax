@@ -92,3 +92,40 @@ fn guide_rotation_and_authored_twist_both_move_the_section() {
     .unwrap();
     close(frame.apply([2.0, 0.0, 0.0]), [0.0, 2.0, 2.0], 1e-12);
 }
+
+#[test]
+fn a_projected_reference_is_not_mislabelled_as_spline_parallel_transport() {
+    let mut dec = Decider::default();
+    let path = Path::Spline(
+        BSplineCurve::new(
+            3,
+            [0, 0, 0, 0, 1, 1, 1, 1].map(q).to_vec(),
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 1.0],
+                [0.0, 1.0, 2.0],
+                [1.0, 1.0, 3.0],
+            ]
+            .map(|p| point(p).unwrap())
+            .to_vec(),
+            vec![Real::from(1); 4],
+            &mut dec,
+        )
+        .unwrap(),
+    );
+    let refusal = Frame::at(
+        &path,
+        None,
+        [1.0, 0.0, 0.0],
+        None,
+        0.0,
+        0.0,
+        1.0,
+        0.5,
+        catallax_recipe::SweepOrientation::RotationMinimising,
+        &mut dec,
+    )
+    .err()
+    .expect("a general spline needs an integrated frame, not a projected reference");
+    assert_eq!(refusal.code, "sweep.spline-transport");
+}

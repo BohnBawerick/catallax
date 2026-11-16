@@ -15,10 +15,37 @@ struct Poly {
     values: Vec<Rational>,
 }
 
-fn choose(n: usize, k: usize) -> Rational {
-    (0..k.min(n - k)).fold(Rational::one(), |v, i| {
-        v * Rational::from_ratio((n - i) as i64, (i + 1) as i64).unwrap()
+fn size(dimensions: &[usize]) -> Result<usize, Refusal> {
+    dimensions.iter().try_fold(1usize, |n, d| {
+        n.checked_mul(*d)
+            .ok_or_else(|| invalid("surface construction dimension product overflows"))
     })
+}
+
+fn capacity<T>(length: usize, dec: &mut Decider) -> Result<Vec<T>, Refusal> {
+    let units =
+        u64::try_from(length).map_err(|_| invalid("surface construction work count overflows"))?;
+    dec.charge_work(units)?;
+    let mut values = Vec::new();
+    values
+        .try_reserve_exact(length)
+        .map_err(|e| Refusal::new("shapes.spline-construction-memory", e.to_string()))?;
+    Ok(values)
+}
+
+fn filled<T: Clone>(length: usize, value: T, dec: &mut Decider) -> Result<Vec<T>, Refusal> {
+    let mut values = capacity(length, dec)?;
+    values.resize(length, value);
+    Ok(values)
+}
+
+fn choose(n: usize, k: usize, dec: &mut Decider) -> Result<Rational, Refusal> {
+    let mut value = Rational::one();
+    for i in 0..k.min(n - k) {
+        dec.charge_work(3)?;
+        value = value * Rational::from_ratio((n - i) as i64, (i + 1) as i64).unwrap();
+    }
+    Ok(value)
 }
 
 impl Poly {
@@ -29,16 +56,16 @@ impl Poly {
         }
     }
 
-    fn elevated(&self, target: [usize; 2], dec: &Decider) -> Result<Self, Refusal> {
+    fn elevated(&self, target: [usize; 2], dec: &mut Decider) -> Result<Self, Refusal> {
         let mut out = self.clone();
         for axis in 0..2 {
             while out.degree[axis] < target[axis] {
                 let mut degree = out.degree;
                 degree[axis] += 1;
-                let mut values = Vec::with_capacity((degree[0] + 1) * (degree[1] + 1));
+                let mut values = capacity(size(&[degree[0] + 1, degree[1] + 1])?, dec)?;
                 for u in 0..=degree[0] {
                     for v in 0..=degree[1] {
-                        dec.check_deadline()?;
+                        dec.charge_work(6)?;
                         let i = if axis == 0 { u } else { v };
                         let alpha = Rational::from_ratio(i as i64, degree[axis] as i64).unwrap();
                         let mut value = Rational::zero();
@@ -63,32 +90,44 @@ impl Poly {
         Ok(out)
     }
 
-    fn plus(&self, other: &Self, dec: &Decider) -> Result<Self, Refusal> {
+    fn plus(&self, other: &Self, dec: &mut Decider) -> Result<Self, Refusal> {
         let degree = std::array::from_fn(|i| self.degree[i].max(other.degree[i]));
         let a = self.elevated(degree, dec)?;
         let b = other.elevated(degree, dec)?;
-        Ok(Self {
-            degree,
-            values: a.values.iter().zip(&b.values).map(|(a, b)| a + b).collect(),
-        })
+        let mut values = capacity(a.values.len(), dec)?;
+        for (a, b) in a.values.iter().zip(&b.values) {
+            dec.charge_work(1)?;
+            values.push(a + b);
+        }
+        Ok(Self { degree, values })
     }
 
-    fn times(&self, other: &Self, dec: &Decider) -> Result<Self, Refusal> {
+    fn times(&self, other: &Self, dec: &mut Decider) -> Result<Self, Refusal> {
         let degree = [
-            self.degree[0] + other.degree[0],
-            self.degree[1] + other.degree[1],
+            self.degree[0]
+                .checked_add(other.degree[0])
+                .ok_or_else(|| invalid("surface product degree overflows"))?,
+            self.degree[1]
+                .checked_add(other.degree[1])
+                .ok_or_else(|| invalid("surface product degree overflows"))?,
         ];
-        let mut values = vec![Rational::zero(); (degree[0] + 1) * (degree[1] + 1)];
+        let _products = size(&[self.values.len(), other.values.len()])?;
+        let mut values = filled(
+            size(&[degree[0] + 1, degree[1] + 1])?,
+            Rational::zero(),
+            dec,
+        )?;
         for i in 0..=self.degree[0] {
             for j in 0..=self.degree[1] {
                 for k in 0..=other.degree[0] {
                     for l in 0..=other.degree[1] {
-                        dec.check_deadline()?;
-                        let scale = choose(self.degree[0], i) * choose(other.degree[0], k)
-                            / choose(degree[0], i + k)
-                            * choose(self.degree[1], j)
-                            * choose(other.degree[1], l)
-                            / choose(degree[1], j + l);
+                        dec.charge_work(9)?;
+                        let scale = choose(self.degree[0], i, dec)?
+                            * choose(other.degree[0], k, dec)?
+                            / choose(degree[0], i + k, dec)?
+                            * choose(self.degree[1], j, dec)?
+                            * choose(other.degree[1], l, dec)?
+                            / choose(degree[1], j + l, dec)?;
                         let index = (i + k) * (degree[1] + 1) + j + l;
                         values[index] = &values[index]
                             + &(&self.values[i * (self.degree[1] + 1) + j]
@@ -101,11 +140,16 @@ impl Poly {
         Ok(Self { degree, values })
     }
 
-    fn scaled(&self, factor: &Rational) -> Self {
-        Self {
-            degree: self.degree,
-            values: self.values.iter().map(|v| v * factor).collect(),
+    fn scaled(&self, factor: &Rational, dec: &mut Decider) -> Result<Self, Refusal> {
+        let mut values = capacity(self.values.len(), dec)?;
+        for value in &self.values {
+            dec.charge_work(1)?;
+            values.push(value * factor);
         }
+        Ok(Self {
+            degree: self.degree,
+            values,
+        })
     }
 }
 
@@ -122,14 +166,18 @@ impl Patch {
         }
     }
 
-    fn add(&self, other: &Self, sign: i64, dec: &Decider) -> Result<Self, Refusal> {
+    fn add(&self, other: &Self, sign: i64, dec: &mut Decider) -> Result<Self, Refusal> {
         let mut xyz = Vec::with_capacity(3);
         let sign = Rational::from_i64(sign);
         for axis in 0..3 {
-            xyz.push(self.xyz[axis].times(&other.weight, dec)?.plus(
-                &other.xyz[axis].times(&self.weight, dec)?.scaled(&sign),
-                dec,
-            )?);
+            xyz.push(
+                self.xyz[axis].times(&other.weight, dec)?.plus(
+                    &other.xyz[axis]
+                        .times(&self.weight, dec)?
+                        .scaled(&sign, dec)?,
+                    dec,
+                )?,
+            );
         }
         Ok(Self {
             xyz: xyz.try_into().unwrap_or_else(|_| unreachable!()),
@@ -141,8 +189,17 @@ impl Patch {
         curve: &RationalSplineCurve,
         axis: usize,
         domain: [&Rational; 2],
-        dec: &Decider,
+        dec: &mut Decider,
     ) -> Result<Self, Refusal> {
+        dec.charge_work(
+            u64::try_from(size(&[
+                curve.controls.len(),
+                curve.degree + 1,
+                curve.degree + 1,
+                4,
+            ])?)
+            .map_err(|_| invalid("surface extraction work count overflows"))?,
+        )?;
         let constant = curve.weights.iter().all(|w| w == &curve.weights[0]);
         let curve = curve.extracted(domain, dec)?;
         let degree = if axis == 0 {
@@ -170,7 +227,7 @@ impl Patch {
         Ok(Self { xyz, weight })
     }
 
-    fn multiplied(&self, basis: &Poly, dec: &Decider) -> Result<Self, Refusal> {
+    fn multiplied(&self, basis: &Poly, dec: &mut Decider) -> Result<Self, Refusal> {
         let mut xyz = Vec::with_capacity(3);
         for x in &self.xyz {
             xyz.push(x.times(basis, dec)?);
@@ -181,23 +238,23 @@ impl Patch {
         })
     }
 
-    fn net(&self, degrees: [usize; 2], dec: &Decider) -> Result<Vec<Homogeneous>, Refusal> {
+    fn net(&self, degrees: [usize; 2], dec: &mut Decider) -> Result<Vec<Homogeneous>, Refusal> {
         let xyz = self
             .xyz
             .iter()
             .map(|p| p.elevated(degrees, dec))
             .collect::<Result<Vec<_>, _>>()?;
         let w = self.weight.elevated(degrees, dec)?;
-        Ok((0..w.values.len())
-            .map(|i| {
-                [
-                    xyz[0].values[i].clone(),
-                    xyz[1].values[i].clone(),
-                    xyz[2].values[i].clone(),
-                    w.values[i].clone(),
-                ]
-            })
-            .collect())
+        let mut net = capacity(w.values.len(), dec)?;
+        for i in 0..w.values.len() {
+            net.push([
+                xyz[0].values[i].clone(),
+                xyz[1].values[i].clone(),
+                xyz[2].values[i].clone(),
+                w.values[i].clone(),
+            ]);
+        }
+        Ok(net)
     }
 
     fn degree(&self) -> [usize; 2] {
@@ -219,19 +276,19 @@ fn basis(
     knots: &[Rational],
     count: usize,
     t: &Rational,
-    dec: &Decider,
+    dec: &mut Decider,
 ) -> Result<Vec<Rational>, Refusal> {
     let span = if t == &knots[count] {
         count - 1
     } else {
         knots.partition_point(|k| k <= t) - 1
     };
-    let mut values = vec![Rational::zero(); degree + 1];
+    let mut values = filled(degree + 1, Rational::zero(), dec)?;
     values[0] = Rational::one();
     for j in 1..=degree {
         let mut saved = Rational::zero();
         for r in 0..j {
-            dec.check_deadline()?;
+            dec.charge_work(7)?;
             let right = &knots[span + r + 1] - t;
             let left = t - &knots[span + r + 1 - j];
             let temp = &values[r] / &(&right + &left);
@@ -240,7 +297,7 @@ fn basis(
         }
         values[j] = saved;
     }
-    let mut all = vec![Rational::zero(); count];
+    let mut all = filled(count, Rational::zero(), dec)?;
     all[span - degree..=span].clone_from_slice(&values);
     Ok(all)
 }
@@ -250,9 +307,15 @@ fn cardinals(
     nodes: &[Rational],
     degree: usize,
     domain: [&Rational; 2],
-    dec: &Decider,
+    dec: &mut Decider,
 ) -> Result<Vec<RationalSplineCurve>, Refusal> {
     let n = nodes.len();
+    let width = size(&[2, n])?;
+    let matrix_entries = size(&[n, width])?;
+    dec.charge_work(
+        u64::try_from(matrix_entries)
+            .map_err(|_| invalid("surface interpolation work count overflows"))?,
+    )?;
     if n == 0
         || degree >= n
         || nodes.windows(2).any(|p| p[0] >= p[1])
@@ -281,8 +344,17 @@ fn cardinals(
     if degree == 0 {
         return Err(invalid("interpolating degree must be positive"));
     }
-    let mut knots = vec![domain[0].clone(); degree + 1];
+    let knot_count = n
+        .checked_add(degree)
+        .and_then(|n| n.checked_add(1))
+        .ok_or_else(|| invalid("interpolation knot count overflows"))?;
+    let mut knots = capacity(knot_count, dec)?;
+    knots.resize(degree + 1, domain[0].clone());
     for j in 1..n - degree {
+        dec.charge_work(
+            u64::try_from(degree + 1)
+                .map_err(|_| invalid("interpolation degree work overflows"))?,
+        )?;
         knots.push(
             nodes[j..j + degree]
                 .iter()
@@ -291,20 +363,25 @@ fn cardinals(
         );
     }
     knots.extend(std::iter::repeat_n(domain[1].clone(), degree + 1));
-    let mut matrix = Vec::with_capacity(n);
+    let mut matrix = capacity(n, dec)?;
     for (i, t) in nodes.iter().enumerate() {
         let mut row = basis(degree, &knots, n, t, dec)?;
+        row.try_reserve_exact(n)
+            .map_err(|e| Refusal::new("shapes.spline-construction-memory", e.to_string()))?;
         row.extend((0..n).map(|j| Rational::from_i64(i64::from(i == j))));
         matrix.push(row);
     }
     for pivot in 0..n {
-        dec.check_deadline()?;
+        dec.charge_work(
+            u64::try_from(n - pivot).map_err(|_| invalid("interpolation pivot work overflows"))?,
+        )?;
         let source = (pivot..n)
             .find(|i| !matrix[*i][pivot].is_zero())
             .ok_or_else(|| invalid("singular interpolation parameters"))?;
         matrix.swap(pivot, source);
         let divisor = matrix[pivot][pivot].clone();
-        for j in pivot..2 * n {
+        for j in pivot..width {
+            dec.charge_work(1)?;
             matrix[pivot][j] = &matrix[pivot][j] / &divisor;
         }
         for i in 0..n {
@@ -315,32 +392,36 @@ fn cardinals(
             if factor.is_zero() {
                 continue;
             }
-            for j in pivot..2 * n {
-                dec.check_deadline()?;
+            for j in pivot..width {
+                dec.charge_work(2)?;
                 matrix[i][j] = &matrix[i][j] - &(&factor * &matrix[pivot][j]);
             }
         }
     }
-    (0..n)
-        .map(|i| {
-            RationalSplineCurve::new(
-                degree,
-                knots.clone(),
-                (0..n)
-                    .map(|j| [matrix[j][n + i].clone(), Rational::zero(), Rational::zero()])
-                    .collect(),
-                vec![Rational::one(); n],
-                dec,
-            )
-        })
-        .collect()
+    let mut result = capacity(n, dec)?;
+    for i in 0..n {
+        let mut controls = capacity(n, dec)?;
+        for row in &matrix {
+            controls.push([row[n + i].clone(), Rational::zero(), Rational::zero()]);
+        }
+        let mut copied_knots = capacity(knots.len(), dec)?;
+        copied_knots.extend_from_slice(&knots);
+        result.push(RationalSplineCurve::new(
+            degree,
+            copied_knots,
+            controls,
+            filled(n, Rational::one(), dec)?,
+            dec,
+        )?);
+    }
+    Ok(result)
 }
 
 fn scalar_piece(
     curve: &RationalSplineCurve,
     axis: usize,
     domain: [&Rational; 2],
-    dec: &Decider,
+    dec: &mut Decider,
 ) -> Result<Poly, Refusal> {
     Ok(Patch::curve(curve, axis, domain, dec)?.xyz[0].clone())
 }
@@ -348,12 +429,23 @@ fn scalar_piece(
 fn assemble(
     breaks: [&[Rational]; 2],
     patches: Vec<Patch>,
-    dec: &Decider,
+    dec: &mut Decider,
 ) -> Result<RationalSplineSurface, Refusal> {
     let degrees = std::array::from_fn(|a| patches.iter().map(|p| p.degree()[a]).max().unwrap());
     let cells = [breaks[0].len() - 1, breaks[1].len() - 1];
-    let count = [cells[0] * degrees[0] + 1, cells[1] * degrees[1] + 1];
-    let mut net = vec![std::array::from_fn(|_| Rational::zero()); count[0] * count[1]];
+    let count = [
+        size(&[cells[0], degrees[0]])?
+            .checked_add(1)
+            .ok_or_else(|| invalid("surface control count overflows"))?,
+        size(&[cells[1], degrees[1]])?
+            .checked_add(1)
+            .ok_or_else(|| invalid("surface control count overflows"))?,
+    ];
+    let mut net = filled(
+        size(&count)?,
+        std::array::from_fn(|_| Rational::zero()),
+        dec,
+    )?;
     for (index, patch) in patches.into_iter().enumerate() {
         let cell = [index / cells[1], index % cells[1]];
         let local = patch.net(degrees, dec)?;
@@ -361,6 +453,7 @@ fn assemble(
             for v in 0..=degrees[1] {
                 let target = (cell[0] * degrees[0] + u) * count[1] + cell[1] * degrees[1] + v;
                 let value = &local[u * (degrees[1] + 1) + v];
+                dec.charge_work(10)?;
                 if !net[target][3].is_zero() && &net[target] != value {
                     // Equivalent homogeneous scales are allowed, but never a geometric gap.
                     if (0..3).any(|a| &net[target][a] * &value[3] != &value[a] * &net[target][3]) {
@@ -393,7 +486,7 @@ fn assemble(
 
 fn normalized(
     curves: &[RationalSplineCurve],
-    dec: &Decider,
+    dec: &mut Decider,
 ) -> Result<Vec<RationalSplineCurve>, Refusal> {
     curves
         .iter()
@@ -420,7 +513,7 @@ impl RationalSplineSurface {
         parameters: [&[Rational]; 2],
         degrees: [usize; 2],
         points: &[RationalPoint],
-        dec: &Decider,
+        dec: &mut Decider,
     ) -> Result<Self, Refusal> {
         let count = parameters.map(<[Rational]>::len);
         if count[0] < 2 || count[1] < 2 || count[0].checked_mul(count[1]) != Some(points.len()) {
@@ -428,6 +521,7 @@ impl RationalSplineSurface {
                 "grid must contain at least two rows and columns and match its parameter counts",
             ));
         }
+        let _tensor_work = size(&[points.len(), points.len(), 7])?;
         let bases = [
             cardinals(
                 parameters[0],
@@ -442,12 +536,12 @@ impl RationalSplineSurface {
                 dec,
             )?,
         ];
-        let mut controls = vec![std::array::from_fn(|_| Rational::zero()); points.len()];
+        let mut controls = filled(points.len(), std::array::from_fn(|_| Rational::zero()), dec)?;
         for u in 0..count[0] {
             for v in 0..count[1] {
                 for i in 0..count[0] {
                     for j in 0..count[1] {
-                        dec.check_deadline()?;
+                        dec.charge_work(7)?;
                         let scale = &bases[0][i].controls[u][0] * &bases[1][j].controls[v][0];
                         for a in 0..3 {
                             controls[u * count[1] + v][a] = &controls[u * count[1] + v][a]
@@ -462,7 +556,7 @@ impl RationalSplineSurface {
             [bases[0][0].knots.clone(), bases[1][0].knots.clone()],
             count,
             controls,
-            vec![Rational::one(); points.len()],
+            filled(points.len(), Rational::one(), dec)?,
             dec,
         )
     }
@@ -474,7 +568,7 @@ impl RationalSplineSurface {
     pub fn coons(
         u_curves: &[RationalSplineCurve; 2],
         v_curves: &[RationalSplineCurve; 2],
-        dec: &Decider,
+        dec: &mut Decider,
     ) -> Result<Self, Refusal> {
         let nodes = [Rational::zero(), Rational::one()];
         Self::gordon(u_curves, &nodes, v_curves, &nodes, dec)
@@ -490,7 +584,7 @@ impl RationalSplineSurface {
         v_parameters: &[Rational],
         guides: &[RationalSplineCurve],
         u_parameters: &[Rational],
-        dec: &Decider,
+        dec: &mut Decider,
     ) -> Result<Self, Refusal> {
         if profiles.is_empty()
             || guides.is_empty()
@@ -512,7 +606,7 @@ impl RationalSplineSurface {
             [&zero, &one],
             dec,
         )?;
-        let mut grid = Vec::with_capacity(profiles.len() * guides.len());
+        let mut grid = capacity(size(&[profiles.len(), guides.len()])?, dec)?;
         for (j, guide) in guides.iter().enumerate() {
             for (i, profile) in profiles.iter().enumerate() {
                 let point = profile.point_at(&u_parameters[j], dec)?;
@@ -526,7 +620,7 @@ impl RationalSplineSurface {
         }
         let u_breaks = breaks(&profiles, &bu);
         let v_breaks = breaks(&guides, &bv);
-        let mut patches = Vec::with_capacity((u_breaks.len() - 1) * (v_breaks.len() - 1));
+        let mut patches = capacity(size(&[u_breaks.len() - 1, v_breaks.len() - 1])?, dec)?;
         for u in u_breaks.windows(2) {
             for v in v_breaks.windows(2) {
                 let ub = bu
@@ -557,7 +651,11 @@ impl RationalSplineSurface {
                         let product = ub.times(vb, dec)?;
                         let point = &grid[j * profiles.len() + i];
                         let term = Patch {
-                            xyz: std::array::from_fn(|a| product.scaled(&point[a])),
+                            xyz: [
+                                product.scaled(&point[0], dec)?,
+                                product.scaled(&point[1], dec)?,
+                                product.scaled(&point[2], dec)?,
+                            ],
                             weight: Poly::constant(one.clone()),
                         };
                         patch = patch.add(&term, -1, dec)?;
@@ -576,7 +674,7 @@ impl RationalSplineSurface {
         v_parameters: &[Rational],
         guides: &[RationalSplineCurve],
         u_parameters: &[Rational],
-        dec: &Decider,
+        dec: &mut Decider,
     ) -> Result<Self, Refusal> {
         if profiles.len() < 2 {
             return Err(invalid("guided skin requires at least two cross sections"));
@@ -591,7 +689,7 @@ impl RationalSplineSurface {
     pub fn n_sided_fill(
         boundaries: &[RationalSplineCurve],
         centre: &RationalPoint,
-        dec: &Decider,
+        dec: &mut Decider,
     ) -> Result<Vec<Self>, Refusal> {
         if boundaries.len() < 3 {
             return Err(invalid("N-sided fill requires at least three boundaries"));
@@ -627,5 +725,29 @@ impl RationalSplineSurface {
                 )
             })
             .collect()
+    }
+}
+#[cfg(test)]
+mod work_tests {
+    use super::*;
+    use catallax_numbers::with_operation_budget;
+
+    #[test]
+    fn bernstein_product_debits_inner_rational_work() {
+        let polynomial = Poly {
+            degree: [3, 3],
+            values: vec![Rational::one(); 16],
+        };
+        let (result, work) = with_operation_budget(1000, || {
+            polynomial.times(&polynomial, &mut Decider::default())
+        });
+        assert_eq!(
+            result
+                .err()
+                .expect("product must exhaust its allowance")
+                .code,
+            "numbers.operation-budget"
+        );
+        assert!(work.exhausted);
     }
 }

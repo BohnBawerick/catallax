@@ -61,7 +61,7 @@ fn run(out: &Path) {
         .iter()
         .flat_map(|u| nodes.iter().map(move |v| law(u, v)))
         .collect();
-    let grid = Surface::through_grid([&nodes, &nodes], [2, 2], &points, &dec).unwrap();
+    let grid = Surface::through_grid([&nodes, &nodes], [2, 2], &points, &mut dec).unwrap();
     for u in &nodes {
         for v in &nodes {
             assert_eq!(grid.point_at(u, v, &dec).unwrap(), law(u, v));
@@ -69,13 +69,13 @@ fn run(out: &Path) {
     }
     let profiles: Vec<_> = nodes.iter().map(|v| section(v, true, &dec)).collect();
     let guides: Vec<_> = nodes.iter().map(|u| section(u, false, &dec)).collect();
-    let gordon = Surface::gordon(&profiles, &nodes, &guides, &nodes, &dec).unwrap();
+    let gordon = Surface::gordon(&profiles, &nodes, &guides, &nodes, &mut dec).unwrap();
     let skin = Surface::guided_skin(
         &profiles,
         &nodes,
         &[guides[1].clone()],
         &[nodes[1].clone()],
-        &dec,
+        &mut dec,
     )
     .unwrap();
     for u in [q("0"), q("1/5"), q("1/3"), q("4/5"), q("1")] {
@@ -116,7 +116,7 @@ fn run(out: &Path) {
             line(p(0, 0, 0), p(0, 6, 0), &dec),
             line(p(8, 0, 0), p(8, 6, 0), &dec),
         ],
-        &dec,
+        &mut dec,
     )
     .unwrap();
     for u in [q("0"), q("1/7"), q("1/3"), q("3/4"), q("1")] {
@@ -136,7 +136,7 @@ fn run(out: &Path) {
             )
         })
         .collect();
-    let fill = Surface::n_sided_fill(&boundaries, &p(3, 3, 2), &dec).unwrap();
+    let fill = Surface::n_sided_fill(&boundaries, &p(3, 3, 2), &mut dec).unwrap();
     for i in 0..fill.len() {
         let previous = (i + fill.len() - 1) % fill.len();
         for t in [q("0"), q("1/3"), q("1")] {

@@ -17,12 +17,37 @@ pub struct SplineSurfaceStepReport {
     /// Whole-surface L1 rounding bound, hence also a Euclidean distance bound.
     /// Every patch uses [0,1] knots exactly, so no rounded parameter knots enter it.
     pub max_deviation_mm: Rational,
+    /// Decimal uncertainty serialized in the STEP header. It covers the proven
+    /// rounding bound and does not exceed `tolerance_mm`.
+    pub uncertainty_mm: Rational,
     /// True only when every emitted control and weight equals its source exactly.
     pub exact: bool,
 }
 
 fn bad(detail: &str) -> Refusal {
     Refusal::new("step.spline-surfaces", detail)
+}
+
+fn uncertainty(
+    bound: &Rational,
+    cap: &Rational,
+    mut digits: u32,
+    dec: &mut Decider,
+) -> Result<(String, Rational), Refusal> {
+    loop {
+        dec.charge_work(u64::from(digits))?;
+        let upper = bound.to_decimal_bounds(digits).1;
+        let value = crate::number::formatted_value(&upper);
+        if value >= *bound && value <= *cap {
+            return Ok((crate::number::decimal(&upper), value));
+        }
+        if digits == 1000 {
+            return Err(bad(
+                "no serialized uncertainty covers the rounding bound within the requested tolerance",
+            ));
+        }
+        digits = digits.saturating_mul(2).min(1000);
+    }
 }
 
 /// Writes an AP242 geometric surface set. It does not claim surface regularity,
@@ -151,6 +176,8 @@ pub fn write_spline_surfaces_step<W: Write>(
             }
         }
     }
+    let (uncertainty_text, uncertainty_mm) =
+        uncertainty(&maximum, tolerance_mm, significant_digits, dec)?;
     let name = if exact {
         "catallax exact spline definitions"
     } else {
@@ -162,7 +189,7 @@ pub fn write_spline_surfaces_step<W: Write>(
     );
     let mut file = graph.write(&[set], |roots| format!(
         "ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('{}'),'2;1');\nFILE_NAME('surfaces.step','2026-11-17T00:00:00',(''),(''),'catallax','catallax','');\nFILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));\nENDSEC;\nDATA;\n#1=APPLICATION_CONTEXT('managed model based 3d engineering');\n#2=APPLICATION_PROTOCOL_DEFINITION('international standard','ap242_managed_model_based_3d_engineering',2014,#1);\n#3=PRODUCT_CONTEXT('',#1,'mechanical');\n#4=PRODUCT('surfaces','surfaces','',(#3));\n#5=PRODUCT_DEFINITION_FORMATION('','',#4);\n#6=PRODUCT_DEFINITION_CONTEXT('part definition',#1,'design');\n#7=PRODUCT_DEFINITION('design','',#5,#6);\n#8=PRODUCT_DEFINITION_SHAPE('','',#7);\n#9=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));\n#10=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));\n#11=(NAMED_UNIT(*) SI_UNIT($,.STERADIAN.) SOLID_ANGLE_UNIT());\n#12=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE({}),#9,'distance_accuracy_value','whole surface rounding bound');\n#13=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#12)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#9,#10,#11)) REPRESENTATION_CONTEXT('',''));\n#14=GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION('{}',(#{}),#13);\n#15=SHAPE_DEFINITION_REPRESENTATION(#8,#14);\n",
-        name, crate::number::rational(tolerance_mm, significant_digits).text, name, roots[0]));
+        name, uncertainty_text, name, roots[0]));
     file.push_str("ENDSEC;\nEND-ISO-10303-21;\n");
     out.write_all(file.as_bytes())
         .map_err(|e| Refusal::new("step.io-error", e.to_string()))?;
@@ -171,6 +198,7 @@ pub fn write_spline_surfaces_step<W: Write>(
         patches: ids.len(),
         tolerance_mm: tolerance_mm.clone(),
         max_deviation_mm: maximum,
+        uncertainty_mm,
         exact,
     })
 }

@@ -983,20 +983,20 @@ A native spline also cannot equal a retained section if a complete span leaves t
 
 ##### Work recorded for Phase 5
 
-The unchanged P8 original and spring-rise edit reach the same prefix below. Exact witness separation at `f7f1a632b18f212691febe3153ebd276bb9db889` clears the earlier component-equivalence refusal. Positive common-denominator normalization at `2c59c7df54cb6d66fe53a1d4593bddec69b80d84` reduces fitting work, but both complete requests still exhaust the unchanged 100M allowance in `threaded`. Neither complete part nor P8 STEP is claimed. Nested per-chart charges are included in the sweep row, not counted twice.
+The unchanged P8 original and spring-rise edit reach the same prefix below. The witness-separation checkpoint clears the earlier component-equivalence refusal. Common-denominator normalization, residual-driven helix fitting and shared-net projection selection retain the declared source checks and the 100M application allowance. The latest verified thread uses 59 sections and 236 charts, rather than the earlier fixed-floor 128 sections and 512 charts. The complete request still exhausts its allowance in `threaded`; neither complete part nor P8 STEP is claimed. Nested per-chart charges belong to the sweep row, not a second total.
 
-| Stage | Before normalization | After normalization | Latest outcome |
+| Stage | Witness-separation checkpoint | Shared-net fitting checkpoint | Latest outcome |
 |---|---:|---:|---|
 | Plate and boss stock | 0 | 0 | Built |
 | Base union | 11,050 | 11,050 | Built |
 | Thread sketch | 1 | 1 | Built |
-| Thread sweep | 96,979,475 | 49,398,368 | Fitted carrier built; source motion numerical |
-| Threaded union | 3,007,286 | 36,542,288 | Request allowance exhausted |
-| Complete request | 99,997,812 | 85,951,707 | Refused |
+| Thread sweep | 96,979,475 | 33,680,247 | Fitted carrier built; source motion numerical |
+| Threaded union | 3,007,286 | 66,308,685 | Request allowance exhausted |
+| Complete request | 99,997,812 | 99,999,983 | Refused |
 
-Later: the thread sweep exceeds the 20M target; retain this phase record for Phase 5 without enlarging the 100M application allowance.
+Later: thread fitting still exceeds the 20M target; retain this phase record for Phase 5 without enlarging the 100M application allowance.
 
-The standalone quarter-helix at the witness-separation checkpoint builds, applies a rise edit, saves and reopens with identical edited/reopened STEP bytes under explicit 100M request allowances. All three exported bodies open in OpenCASCADE with healing off as valid, closed, one-solid bodies with 18 faces matching the numerical producer. This proves that feature case, not complete P8.
+At the shared-net checkpoint the standalone quarter helix builds, applies a rise edit, saves and reopens with identical edited/reopened STEP bytes under explicit 100M request allowances and `max_sections=2`. All three STEP bodies open in OpenCASCADE with healing off as valid, closed, one-solid bodies with ten faces matching the numerical producer. This proves that feature case, not complete P8.
 
 ### 4.12 Loft
 

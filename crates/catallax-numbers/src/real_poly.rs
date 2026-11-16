@@ -277,6 +277,7 @@ impl RealPoly {
     /// rational equations. Either way they isolate candidates and certify
     /// every candidate in the original equation. Root domains and
     /// conjugate choices are never inferred from an eliminated equation alone.
+    #[cfg_attr(feature = "work-span", track_caller)]
     pub fn real_roots(&self, dec: &mut Decider) -> Result<Vec<Real>, Refusal> {
         assert_eq!(self.nvars(), 1);
         if let Some(p) = self.rational() {

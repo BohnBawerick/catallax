@@ -43,9 +43,10 @@ Face keys are the `ADVANCED_FACE` entity names, as in `docs/RECIPE.md` section 4
 Numerical bodies with plane, cylinder and cone faces and line or circle edges export through the analytic STEP writer.
 Cone pcurves retain axial height as their STEP v coordinate, following OCCT's `GeomConvert_Units::DegreeToRadian` conversion to generator distance on import.
 The writer checks the actual decimal placement and semi-angle against each emitted pcurve and edge.
-Semi-angle rounding is recorded in radians separately from length errors.
+Semi-angle rounding is recorded in radians separately from length errors, with the maximum distance from both endpoints of the enclosed source angle to its written decimal.
 Cyclic ordering of a periodic loop preserves the two seam uses on reversed cone faces.
 The output remains marked approximate, with its numerical checks and `complete_body_bound=unestablished` retained.
+Retained native B-spline trims on cones refuse with `numerical.native-cone-domain-unverified` until complete positive-height and periodic-domain checks cover those finite curves.
 
 ### Surface bodies
 

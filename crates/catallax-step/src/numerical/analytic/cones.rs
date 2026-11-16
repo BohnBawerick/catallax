@@ -17,11 +17,9 @@ pub(super) fn rounded(
     let slope = w.dec.enclose_budgeted_at(&source.slope, BITS)?;
     let angle = Ball::atan2(&slope, &Ball::from_rational(&Rational::one(), BITS))
         .ok_or_else(|| bad("rounding-topology", "cone semi-angle is unresolved"))?;
-    let original = angle.mid();
     // Angular rounding has its own record. Geometry checks enforce the physical tolerance.
-    let number = crate::number::rational(&original, w.options.significant_digits);
-    let written_angle = written(&original, w.options)?;
-    let angle = Ball::from_rational(&written_angle, BITS);
+    let number = crate::number::rounded(&angle.lo(), &angle.hi(), w.options.significant_digits);
+    let angle = Ball::from_rational(&number.value, BITS);
     let sine = angle.sin();
     let cosine = angle.cos();
     if angle.lo().sign() != Sign::Positive

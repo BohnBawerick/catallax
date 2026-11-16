@@ -67,7 +67,7 @@ pub struct NumericalTrim {
 pub struct NumericalFace {
     /// Stable key, unique among faces. It survives a surface replacement.
     pub key: String,
-    /// A plane, finite cylindrical chart or embedded rational patch.
+    /// A plane, finite cylinder or cone chart, or embedded rational patch.
     /// The trim need not be a patch row.
     pub surface: Surface,
     /// Material normal relative to the support normal.

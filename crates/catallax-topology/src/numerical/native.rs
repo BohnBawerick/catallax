@@ -288,6 +288,8 @@ pub(super) fn check_loops(
 /// Builds with retained native UV curves at the 3D edges' finite parameters.
 /// Every binding is checked; continuations retain and recheck these definitions.
 /// Empty bindings preserve the ordinary numerical build path.
+/// Cone bindings refuse until complete positive-height and periodic-domain
+/// constraints are checked over their finite curves.
 pub fn build_with_native_trims(
     definition: NumericalDefinition,
     native_trims: Vec<NumericalNativeTrim>,

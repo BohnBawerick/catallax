@@ -229,51 +229,6 @@ fn projection_margin(
     diagonal[0].lo().min(diagonal[1].lo()) - magnitude(&off)
 }
 
-// Select a different fixed projection only when the original one is proved
-// non-positive at a genuine parameter point. Corner success never admits a
-// chart: it merely preserves the original whole-domain proof attempt.
-fn projection_obstructed_at_corners(
-    span: &Span,
-    domain: &[[Rational; 2]; 2],
-    projection: &[Vector3; 2],
-    widths: &[Rational; 2],
-    bits: u32,
-    dec: &mut Decider,
-) -> Result<bool, Refusal> {
-    let frame = [
-        math::budgeted_vector(&projection[0], bits, dec)?,
-        math::budgeted_vector(&projection[1], bits, dec)?,
-    ];
-    let scales = widths
-        .each_ref()
-        .map(|width| Ball::from_rational(width, bits));
-    let four = Ball::from_rational(&Rational::from_i64(4), bits);
-    for u in &domain[0] {
-        for v in &domain[1] {
-            let at = [Real::from(u.clone()), Real::from(v.clone())];
-            let derivatives = span.derivatives(&at);
-            let derivatives = [
-                math::budgeted_vector(&derivatives[0], bits, dec)?,
-                math::budgeted_vector(&derivatives[1], bits, dec)?,
-            ];
-            let diagonal = [
-                &dot(&frame[0], &derivatives[0]) * &scales[0],
-                &dot(&frame[1], &derivatives[1]) * &scales[1],
-            ];
-            if diagonal.iter().any(|value| value.hi() <= Rational::zero()) {
-                return Ok(true);
-            }
-            let off = &(&dot(&frame[0], &derivatives[1]) * &scales[1])
-                + &(&dot(&frame[1], &derivatives[0]) * &scales[0]);
-            let determinant = &(&(&diagonal[0] * &diagonal[1]) * &four) - &off.square();
-            if determinant.hi() <= Rational::zero() {
-                return Ok(true);
-            }
-        }
-    }
-    Ok(false)
-}
-
 impl RationalPatch {
     /// Proves the complete chart using a centre-tangent projection or rational
     /// Bernstein bounds for a ruled chart. Single rational bicubic spans couple
@@ -367,30 +322,19 @@ impl RationalPatch {
             let [x, y, z, w] = span.coordinates.each_ref().map(RealPoly::as_rational);
             match (x, y, z, w) {
                 (Some(x), Some(y), Some(z), Some(w)) => {
-                    if projection_obstructed_at_corners(
-                        span,
-                        &domain,
-                        &projection,
-                        &widths,
-                        bits,
-                        dec,
-                    )? {
-                        let aa = aa.as_rational().expect("rational centre tangent");
-                        let bb = bb.as_rational().expect("rational centre tangent");
-                        dec.reserve_exact_arithmetic(&aa, &bb, true)?;
-                        let exponent = bb.numerator().bit_length() as i64
-                            + aa.denominator().bit_length() as i64
-                            - bb.denominator().bit_length() as i64
-                            - aa.numerator().bit_length() as i64;
-                        // A positive dyadic scale avoids a second large
-                        // rational denominator in the fixed projection.
-                        let scale = Real::from(Rational::one().mul_pow2(exponent));
-                        projection[1] = projection[1].scaled(&scale);
-                    }
+                    let aa = aa.as_rational().expect("rational centre tangent");
+                    let bb = bb.as_rational().expect("rational centre tangent");
+                    dec.reserve_exact_arithmetic(&aa, &bb, true)?;
+                    let exponent = bb.numerator().bit_length() as i64
+                        + aa.denominator().bit_length() as i64
+                        - bb.denominator().bit_length() as i64
+                        - aa.numerator().bit_length() as i64;
+                    let balance = Rational::one().mul_pow2(exponent);
                     Some(ProjectedJacobian::new(
                         &[x, y, z, w],
-                        &projection,
+                        &mut projection,
                         domain.clone(),
+                        &balance,
                         dec,
                     )?)
                 }

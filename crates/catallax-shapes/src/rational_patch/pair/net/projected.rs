@@ -16,6 +16,7 @@ pub(crate) struct ProjectedJacobian {
     weight: Grid,
     diagonal: [Grid; 2],
     off_sum: Grid,
+    whole_margin: Rational,
 }
 
 fn direction(vector: &Vector3) -> Result<[&Rational; 3], Refusal> {
@@ -90,14 +91,78 @@ fn combine(terms: &[(&Dense, &Rational)], dec: &mut Decider) -> Result<Dense, Re
     Ok(result.trimmed())
 }
 
+fn projection_bound(
+    weight: &Grid,
+    diagonal: [&Grid; 2],
+    off_sum: &Grid,
+    cuts: &[[Rational; 2]; 2],
+    projection_scale: &Rational,
+    dec: &mut Decider,
+) -> Result<Rational, Refusal> {
+    let weight = restricted_range(weight, cuts, dec)?;
+    let a = restricted_range(diagonal[0], cuts, dec)?;
+    let b = restricted_range(diagonal[1], cuts, dec)?;
+    if weight[0].sign() != Sign::Positive
+        || a[0].sign() != Sign::Positive
+        || b[0].sign() != Sign::Positive
+    {
+        return Ok(Rational::zero());
+    }
+    let off = restricted_range(off_sum, cuts, dec)?;
+    let ends = off.each_ref().map(|value| value.abs());
+    let upper = if less(&ends[0], &ends[1], dec)? {
+        &ends[1]
+    } else {
+        &ends[0]
+    };
+    let squared = mul(upper, upper, dec)?;
+    let quarter = quotient(&squared, &Rational::from_i64(4), dec)?;
+    let along = mul(&a[0], &b[0], dec)?;
+    let determinant = sub(&along, &quarter, dec)?;
+    if determinant.sign() != Sign::Positive {
+        return Ok(Rational::zero());
+    }
+    let trace = add(&a[1], &b[1], dec)?;
+    let weight_squared = mul(&weight[1], &weight[1], dec)?;
+    let denominator = mul(&trace, &weight_squared, dec)?;
+    let denominator = mul(&denominator, projection_scale, dec)?;
+    quotient(&determinant, &denominator, dec)
+}
+
+fn corner_obstruction(
+    diagonal: &[Grid; 2],
+    off_sum: &Grid,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    for u in 0..2 {
+        for v in 0..2 {
+            let index = |grid: &Grid| u * grid.deg[0] * (grid.deg[1] + 1) + v * grid.deg[1];
+            let a = &diagonal[0].v[index(&diagonal[0])];
+            let b = &diagonal[1].v[index(&diagonal[1])];
+            if a.sign() != Sign::Positive || b.sign() != Sign::Positive {
+                return Ok(true);
+            }
+            let c = &off_sum.v[index(off_sum)];
+            let along = mul(a, b, dec)?;
+            let along = mul(&along, &Rational::from_i64(4), dec)?;
+            let squared = mul(c, c, dec)?;
+            if sub(&along, &squared, dec)?.sign() != Sign::Positive {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
 impl ProjectedJacobian {
     pub(crate) fn new(
         homogeneous: &[MPoly; 4],
-        projection: &[Vector3; 2],
+        projection: &mut [Vector3; 2],
         domain: Domain,
+        balance: &Rational,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
-        let (projection, projection_scale) = integral_projection(projection, dec)?;
+        let (integral, projection_scale) = integral_projection(projection, dec)?;
         let local = [
             Dense::local(&homogeneous[0], &domain, dec)?,
             Dense::local(&homogeneous[1], &domain, dec)?,
@@ -118,7 +183,7 @@ impl ProjectedJacobian {
                 dec,
             )
         };
-        let projected = [project(&projection[0])?, project(&projection[1])?];
+        let projected = [project(&integral[0])?, project(&integral[1])?];
         let dw = [local[3].derivative(0, dec)?, local[3].derivative(1, dec)?];
         let derivative = |coordinate: &Dense, axis: usize, dec: &mut Decider| {
             let dn = coordinate.derivative(axis, dec)?;
@@ -132,8 +197,42 @@ impl ProjectedJacobian {
         let n21 = derivative(&projected[1], 0, dec)?;
         let one = Rational::one();
         let off = combine(&[(&n12, &one), (&n21, &one)], dec)?;
-        let diagonal = [bernstein(&n11, dec)?, bernstein(&n22, dec)?];
-        let off_sum = bernstein(&off, dec)?;
+        let mut diagonal = [bernstein(&n11, dec)?, bernstein(&n22, dec)?];
+        let mut off_sum = bernstein(&off, dec)?;
+        let cuts = std::array::from_fn(|_| [Rational::zero(), Rational::one()]);
+        let mut whole_margin = projection_bound(
+            &weight,
+            diagonal.each_ref(),
+            &off_sum,
+            &cuts,
+            &projection_scale,
+            dec,
+        )?;
+        if whole_margin.sign() != Sign::Positive && *balance != one {
+            let scaled = combine(&[(&n22, balance)], dec)?;
+            let scaled_diagonal = bernstein(&scaled, dec)?;
+            let scaled_off = combine(&[(&n12, &one), (&n21, balance)], dec)?;
+            let scaled_off = bernstein(&scaled_off, dec)?;
+            let balanced_margin = projection_bound(
+                &weight,
+                [&diagonal[0], &scaled_diagonal],
+                &scaled_off,
+                &cuts,
+                &projection_scale,
+                dec,
+            )?;
+            // Prefer a complete certificate, not sampled positivity. If both
+            // hulls are inconclusive, preserve the original cover unless an
+            // exact corner coefficient proves that projection impossible.
+            if balanced_margin.sign() == Sign::Positive
+                || corner_obstruction(&diagonal, &off_sum, dec)?
+            {
+                diagonal[1] = scaled_diagonal;
+                off_sum = scaled_off;
+                whole_margin = balanced_margin;
+                projection[1] = projection[1].scaled(&Real::from(balance.clone()));
+            }
+        }
         let widths = [
             sub(&domain[0][1], &domain[0][0], dec)?,
             sub(&domain[1][1], &domain[1][0], dec)?,
@@ -145,39 +244,23 @@ impl ProjectedJacobian {
             weight,
             diagonal,
             off_sum,
+            whole_margin,
         })
     }
 
     pub(crate) fn margin(&self, cell: &Domain, dec: &mut Decider) -> Result<Rational, Refusal> {
+        if *cell == self.domain {
+            return Ok(self.whole_margin.clone());
+        }
         let cuts = restriction(&self.domain, &self.widths, cell, dec)?;
-        let weight = restricted_range(&self.weight, &cuts, dec)?;
-        let a = restricted_range(&self.diagonal[0], &cuts, dec)?;
-        let b = restricted_range(&self.diagonal[1], &cuts, dec)?;
-        if weight[0].sign() != Sign::Positive
-            || a[0].sign() != Sign::Positive
-            || b[0].sign() != Sign::Positive
-        {
-            return Ok(Rational::zero());
-        }
-        let off = restricted_range(&self.off_sum, &cuts, dec)?;
-        let ends = off.each_ref().map(|value| value.abs());
-        let upper = if less(&ends[0], &ends[1], dec)? {
-            &ends[1]
-        } else {
-            &ends[0]
-        };
-        let squared = mul(upper, upper, dec)?;
-        let quarter = quotient(&squared, &Rational::from_i64(4), dec)?;
-        let along = mul(&a[0], &b[0], dec)?;
-        let determinant = sub(&along, &quarter, dec)?;
-        if determinant.sign() != Sign::Positive {
-            return Ok(Rational::zero());
-        }
-        let trace = add(&a[1], &b[1], dec)?;
-        let weight_squared = mul(&weight[1], &weight[1], dec)?;
-        let denominator = mul(&trace, &weight_squared, dec)?;
-        let denominator = mul(&denominator, &self.projection_scale, dec)?;
-        quotient(&determinant, &denominator, dec)
+        projection_bound(
+            &self.weight,
+            self.diagonal.each_ref(),
+            &self.off_sum,
+            &cuts,
+            &self.projection_scale,
+            dec,
+        )
     }
 }
 
@@ -390,5 +473,53 @@ mod tests {
         });
         assert!(!work.exhausted);
         assert_eq!(result.unwrap_err().code, "shapes.rational-patch-unproven");
+    }
+
+    #[test]
+    fn a_balanced_projection_can_require_the_existing_finite_cover() {
+        let (result, work) = with_operation_budget(20_000_000, || -> Result<(), Refusal> {
+            let mut dec = Decider::default();
+            // X=u+99u²/200,Y=v(1-99u/100)/10. The original
+            // projection is indefinite at corners. The balanced pointwise
+            // Jacobian is positive, but independent whole-cell diagonal
+            // minima still need a finite parameter restriction to prove it.
+            let mut points = Vec::new();
+            for (x, height) in [(-101, 199), (-99, 100), (299, 1)] {
+                for v in [-1, 1] {
+                    points.push(Point3::new(
+                        q(x, 200).into(),
+                        q(v * height, 1000).into(),
+                        Real::zero(),
+                    ));
+                }
+            }
+            let carrier = BSplineSurface::new(
+                [2, 1],
+                [
+                    [-1, -1, -1, 1, 1, 1].map(Rational::from_i64).to_vec(),
+                    [-1, -1, 1, 1].map(Rational::from_i64).to_vec(),
+                ],
+                [3, 2],
+                points,
+                vec![Real::one(); 6],
+                &mut dec,
+            )?;
+            let patch = RationalPatch::new(carrier, &mut dec)?;
+            let at = patch
+                .parameters_at(
+                    &Point3::new(Real::zero(), q(1, 20).into(), Real::zero()),
+                    &mut dec,
+                )?
+                .expect("the genuine finite point remains invertible");
+            for (coordinate, expected) in at.into_iter().zip([q(0, 1), q(1, 2)]) {
+                assert_eq!(
+                    exact_sign(&(&coordinate - &Real::from(expected)), &mut dec)?,
+                    Sign::Zero
+                );
+            }
+            Ok(())
+        });
+        assert!(!work.exhausted);
+        result.unwrap();
     }
 }

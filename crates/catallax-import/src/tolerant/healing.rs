@@ -14,9 +14,9 @@ use super::{Error, ToleranceEntity, ToleranceRecord, TolerantBody, TolerantFile,
 use crate::{Curve, Placement, StepFile, Surface, Vec3};
 
 mod checks;
+pub(crate) mod constructed;
 mod sewing;
 mod wire;
-pub(crate) mod constructed;
 
 /// A completed healing stage, with deterministic work charged to this request.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

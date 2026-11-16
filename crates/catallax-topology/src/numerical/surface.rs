@@ -296,11 +296,11 @@ impl SplineSurfaceBody {
         })
     }
 
-    /// Thickens along the unit normal by a nonzero signed distance. Front and back
-    /// offsets use the same normal law; four ruled rims close the generated shell.
-    /// Cubic tensor interpolation is checked independently at source-grid nodes
-    /// and cell midpoints. Checks are sampled, not a whole-body deviation bound.
-    /// The generating source sheet and previous checks remain in the history.
+    /// Thickens along the unit normal by a nonzero signed distance. The source
+    /// cap remains exact. Bicubic offset pieces cover every source knot span;
+    /// independent node/midpoint checks include both one-sided knot limits.
+    /// Ruled Coons rims close the shell without requiring equal cap bases.
+    /// Checks are sampled, not a whole-body deviation or injectivity proof.
     pub fn thicken(
         &self,
         thickness: Rational,
@@ -318,9 +318,9 @@ impl SplineSurfaceBody {
             )?;
             let front = thickness.sign() == Sign::Positive;
             let (lower, upper) = if front {
-                (&base, &offset)
+                (&self.source, &offset)
             } else {
-                (&offset, &base)
+                (&offset, &self.source)
             };
             let mut result = build(
                 solid_definition(&self.body.definition.name, lower, upper, front, dec)?,
@@ -435,110 +435,192 @@ fn extend_candidate(
 }
 
 fn fit_normal_pair(
+struct OffsetInterval {
+    source_span: usize,
+    bounds: [Rational; 2],
+}
+
+fn offset_intervals(
+    source: &RationalSplineSurface,
+    axis: usize,
+    divisions: usize,
+    dec: &mut Decider,
+) -> Result<Vec<OffsetInterval>, Refusal> {
+    let knots = source.knots()[axis];
+    let first = source.degrees()[axis];
+    let last = source.control_count()[axis];
+    dec.charge_work(((last - first) as u64).saturating_mul(2))?;
+    let count = (first..last).filter(|i| knots[*i] != knots[*i + 1]).count();
+    let mut intervals = reserve(product(count, divisions)?, dec)?;
+    for span in first..last {
+        if knots[span] == knots[span + 1] {
+            continue;
+        }
+        for part in 0..divisions {
+            intervals.push(OffsetInterval {
+                source_span: span,
+                bounds: [
+                    parameter(&knots[span], &knots[span + 1], part, divisions),
+                    parameter(&knots[span], &knots[span + 1], part + 1, divisions),
+                ],
+            });
+        }
+    }
+    Ok(intervals)
+}
+
+fn offset_nodes(intervals: &[OffsetInterval], dec: &mut Decider) -> Result<Vec<Rational>, Refusal> {
+    let count = product(intervals.len(), 3)?
+        .checked_add(1)
+        .ok_or_else(|| failure("offset node count overflows"))?;
+    let mut nodes = reserve(count, dec)?;
+    for interval in intervals {
+        for part in 0..3 {
+            nodes.push(parameter(&interval.bounds[0], &interval.bounds[1], part, 3));
+        }
+    }
+    nodes.push(
+        intervals
+            .last()
+            .ok_or_else(|| failure("source has no active knot span"))?
+            .bounds[1]
+            .clone(),
+    );
+    Ok(nodes)
+}
+
     source: &RationalSplineSurface,
     thickness: &Rational,
     tolerance: &Rational,
     dec: &mut Decider,
-) -> Result<
-    (
-        RationalSplineSurface,
-        RationalSplineSurface,
-        Vec<NumericalCheck>,
-    ),
-    Refusal,
-> {
+) -> Result<(RationalSplineSurface, Vec<NumericalCheck>), Refusal> {
     let carrier = source.to_surface(dec)?;
-    let domains = domain(source);
     let mut workspace = carrier.span_workspace();
-    let mut intervals = 3usize;
+    let mut divisions = source.degrees().map(|degree| degree.div_ceil(3).max(1));
     loop {
-        let n = intervals
-            .checked_add(1)
-            .ok_or_else(|| failure("offset grid dimensions overflow"))?;
-        let size = product(n, n)?;
-        let parameters = domains.each_ref().map(|d| {
-            (0..=intervals)
-                .map(|i| parameter(&d[0], &d[1], i, intervals))
-                .collect::<Vec<_>>()
-        });
-        let mut base = reserve(size, dec)?;
-        let mut top = reserve(size, dec)?;
+        let intervals = [
+            offset_intervals(source, 0, divisions[0], dec)?,
+            offset_intervals(source, 1, divisions[1], dec)?,
+        ];
+        let parameters = [
+            offset_nodes(&intervals[0], dec)?,
+            offset_nodes(&intervals[1], dec)?,
+        ];
+        let counts = parameters.each_ref().map(|nodes| nodes.len());
+        let size = product(counts[0], counts[1])?;
+        let mut samples = reserve(size, dec)?;
         for u in &parameters[0] {
             for v in &parameters[1] {
-                let evaluated = jet(&carrier, &[u.clone(), v.clone()], &mut workspace, dec)?;
-                base.push(evaluated.value.each_ref().map(Ball::mid));
-                top.push(
-                    offset_point(&evaluated, thickness, dec)?
+                let value = jet(&carrier, &[u.clone(), v.clone()], &mut workspace, dec)?;
+                samples.push(
+                    offset_point(&value, thickness, dec)?
                         .each_ref()
                         .map(Ball::mid),
                 );
             }
         }
-        let base = RationalSplineSurface::through_grid(
-            [&parameters[0], &parameters[1]],
-            [3, 3],
-            &base,
-            dec,
-        )?;
-        let top = RationalSplineSurface::through_grid(
-            [&parameters[0], &parameters[1]],
-            [3, 3],
-            &top,
-            dec,
-        )?;
-        let base_carrier = base.to_surface(dec)?;
-        let top_carrier = top.to_surface(dec)?;
-        let mut base_work = base_carrier.span_workspace();
-        let mut top_work = top_carrier.span_workspace();
-        let subdivisions = product(intervals, 2)?;
-        let checks = product(subdivisions + 1, subdivisions + 1)?;
-        let mut base_samples = reserve(checks, dec)?;
-        let mut offset_samples = reserve(checks, dec)?;
-        let mut maximum = Rational::zero();
-        for i in 0..=subdivisions {
-            for j in 0..=subdivisions {
-                let uv = [
-                    parameter(&domains[0][0], &domains[0][1], i, subdivisions),
-                    parameter(&domains[1][0], &domains[1][1], j, subdivisions),
-                ];
-                let original = jet(&carrier, &uv, &mut workspace, dec)?;
-                let fitted = jet(&base_carrier, &uv, &mut base_work, dec)?;
-                let offset = jet(&top_carrier, &uv, &mut top_work, dec)?;
-                let base_error = distance(&original.value, &fitted.value);
-                let offset_error =
-                    distance(&offset_point(&original, thickness, dec)?, &offset.value);
-                maximum = maximum.max(base_error.clone()).max(offset_error.clone());
-                base_samples.push(NumericalSample {
-                    parameters: uv.to_vec(),
-                    distance_upper_mm: base_error,
+        let mut controls: Vec<Option<RationalPoint>> = reserve(size, dec)?;
+        controls.resize_with(size, || None);
+        for (ui, _) in intervals[0].iter().enumerate() {
+            for (vi, _) in intervals[1].iter().enumerate() {
+                let points: [RationalPoint; 16] = std::array::from_fn(|i| {
+                    samples[(3 * ui + i / 4) * counts[1] + 3 * vi + i % 4].clone()
                 });
-                offset_samples.push(NumericalSample {
-                    parameters: uv.to_vec(),
-                    distance_upper_mm: offset_error,
+                let patch = RationalSplineSurface::through_grid(
+                    [
+                        &parameters[0][3 * ui..3 * ui + 4],
+                        &parameters[1][3 * vi..3 * vi + 4],
+                    ],
+                    [3, 3],
+                    &points,
+                    dec,
+                )?;
+                for (i, point) in patch.controls().iter().enumerate() {
+                    let index = (3 * ui + i / 4) * counts[1] + 3 * vi + i % 4;
+                    if let Some(previous) = &controls[index] {
+                        if previous != point {
+                            return Err(failure("offset patches disagree on a shared boundary"));
+                        }
+                    } else {
+                        controls[index] = Some(point.clone());
+                    }
+                }
+            }
+        }
+        let mut knots = [Vec::new(), Vec::new()];
+        for axis in 0..2 {
+            let knot_count = counts[axis]
+                .checked_add(4)
+                .ok_or_else(|| failure("offset knot count overflows"))?;
+            knots[axis] = reserve(knot_count, dec)?;
+            for (i, interval) in intervals[axis].iter().enumerate() {
+                let multiplicity = if i == 0 { 4 } else { 3 };
+                knots[axis].extend((0..multiplicity).map(|_| interval.bounds[0].clone()));
+            }
+            let end = &intervals[axis]
+                .last()
+                .expect("active intervals exist")
+                .bounds[1];
+            knots[axis].extend((0..4).map(|_| end.clone()));
+        }
+        let controls = controls
+            .into_iter()
+            .map(|point| {
+                point.ok_or_else(|| failure("offset interpolation left an unfilled control"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut weights = reserve(size, dec)?;
+        weights.resize(size, Rational::one());
+        let offset = RationalSplineSurface::new([3, 3], knots, counts, controls, weights, dec)?;
+        let candidate = offset.to_surface(dec)?;
+        let mut candidate_work = candidate.span_workspace();
+        let mut checks = reserve(product(intervals[0].len(), intervals[1].len())?, dec)?;
+        let mut maximum = Rational::zero();
+        for (ui, u) in intervals[0].iter().enumerate() {
+            for (vi, v) in intervals[1].iter().enumerate() {
+                let mut evidence = reserve(49, dec)?;
+                for i in 0..=6 {
+                    for j in 0..=6 {
+                        let uv = [
+                            parameter(&u.bounds[0], &u.bounds[1], i, 6),
+                            parameter(&v.bounds[0], &v.bounds[1], j, 6),
+                        ];
+                        dec.charge_work(1)?;
+                        let original = carrier.jet_on_span(
+                            [u.source_span, v.source_span],
+                            &uv.clone().map(|q| [q.clone(), q]),
+                            BITS,
+                            dec,
+                            &mut workspace,
+                        )?;
+                        let actual = jet(&candidate, &uv, &mut candidate_work, dec)?;
+                        let error =
+                            distance(&offset_point(&original, thickness, dec)?, &actual.value);
+                        maximum = maximum.max(error.clone());
+                        evidence.push(NumericalSample {
+                            parameters: uv.to_vec(),
+                            distance_upper_mm: error,
+                        });
+                    }
+                }
+                checks.push(NumericalCheck::Samples {
+                    name: "surface.thicken-normal-offset-samples".into(),
+                    scope: format!(
+                        "source spans {},{}; interpolation cell {ui},{vi}",
+                        u.source_span, v.source_span
+                    ),
+                    samples: evidence,
                 });
             }
         }
         if maximum <= *tolerance {
-            return Ok((
-                base,
-                top,
-                vec![
-                    NumericalCheck::Samples {
-                        name: "surface.thicken-source-fit-samples".into(),
-                        scope: "source sheet".into(),
-                        samples: base_samples,
-                    },
-                    NumericalCheck::Samples {
-                        name: "surface.thicken-normal-offset-samples".into(),
-                        scope: "signed normal offset".into(),
-                        samples: offset_samples,
-                    },
-                ],
-            ));
+            return Ok((offset, checks));
         }
-        intervals = intervals
-            .checked_mul(2)
-            .ok_or_else(|| failure("offset refinement dimensions overflow"))?;
+        for divisions in &mut divisions {
+            *divisions = divisions
+                .checked_mul(2)
+                .ok_or_else(|| failure("offset refinement dimensions overflow"))?;
+        }
     }
 }
 
@@ -648,37 +730,28 @@ fn solid_definition(
         [one.clone(), one.clone()],
         [zero.clone(), one.clone()],
     ];
-    for i in 0..4 {
-        let bottom = &boundaries[0][i];
-        let top = &boundaries[1][i];
-        if bottom.degree() != top.degree()
-            || bottom.knots() != top.knots()
-            || bottom
-                .weights()
-                .iter()
-                .chain(top.weights())
-                .any(|w| w != &one)
-        {
-            return Err(failure(
-                "normal-fit boundaries do not share a polynomial basis",
-            ));
-        }
-        let mut controls = reserve(product(bottom.controls().len(), 2)?, dec)?;
-        for (a, b) in bottom.controls().iter().zip(top.controls()) {
-            controls.push(a.clone());
-            controls.push(b.clone());
-        }
-        let rim = RationalSplineSurface::new(
-            [bottom.degree(), 1],
-            [
-                bottom.knots().to_vec(),
+    let [lower_boundaries, upper_boundaries] = boundaries;
+    for (i, (bottom, top)) in lower_boundaries
+        .into_iter()
+        .zip(upper_boundaries)
+        .enumerate()
+    {
+        let line = |a: &RationalPoint, b: &RationalPoint, dec: &Decider| {
+            RationalSplineCurve::new(
+                1,
                 vec![zero.clone(), zero.clone(), one.clone(), one.clone()],
-            ],
-            [bottom.controls().len(), 2],
-            controls,
-            vec![one.clone(); bottom.controls().len() * 2],
+                vec![a.clone(), b.clone()],
+                vec![one.clone(); 2],
+                dec,
+            )
+        };
+        let left = line(&bottom.controls()[0], &top.controls()[0], dec)?;
+        let right = line(
+            bottom.controls().last().expect("boundary has controls"),
+            top.controls().last().expect("boundary has controls"),
             dec,
         )?;
+        let rim = RationalSplineSurface::coons(&[bottom, top], &[left, right], dec)?;
         let walk = [
             (i, Sense::Same),
             (8 + (i + 1) % 4, Sense::Same),

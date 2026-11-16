@@ -2,12 +2,10 @@
 
 use crate::{Body, BodyId, BodyKind, Coedge, Edge, Model, Sense, Vertex, VertexId, Wire};
 use catallax_numbers::{
-    Decider, Fact, FactKind, FactOrigin, MarkLog, Rational, Real, Refusal, operation_budget_active,
+    Decider, Fact, FactKind, FactOrigin, MarkLog, Rational, Refusal, operation_budget_active,
     with_operation_budget,
 };
-use catallax_shapes::{
-    BSplineCurve, Curve, GeomKey, PointDef, RPoint3, spline_tools::RationalSplineCurve,
-};
+use catallax_shapes::{Curve, GeomKey, PointDef, RPoint3, spline_tools::RationalSplineCurve};
 
 fn point(model: &mut Model, value: &[Rational; 3]) -> VertexId {
     let point = model.geom_mut().add_point(PointDef::Explicit(
@@ -57,6 +55,15 @@ pub fn spline_wire(
     let mut previous = None;
     for piece in pieces {
         let domain = piece.domain();
+        let clamped;
+        let piece = if piece.knots().first() == Some(domain[0])
+            && piece.knots().last() == Some(domain[1])
+        {
+            piece
+        } else {
+            clamped = piece.extracted(domain, dec)?;
+            &clamped
+        };
         let a = piece.point_at(domain[0], dec)?;
         let b = piece.point_at(domain[1], dec)?;
         comparison_work(&a, dec)?;
@@ -81,17 +88,7 @@ pub fn spline_wire(
         } else {
             point(&mut model, &b)
         };
-        let curve = BSplineCurve::new(
-            piece.degree(),
-            piece.knots().to_vec(),
-            piece
-                .controls()
-                .iter()
-                .map(|p| RPoint3::new(p[0].clone(), p[1].clone(), p[2].clone()).to_real())
-                .collect(),
-            piece.weights().iter().cloned().map(Real::from).collect(),
-            dec,
-        )?;
+        let curve = piece.to_curve(dec)?;
         let curve = model.geom_mut().add_curve(Curve::BSpline(curve));
         for vertex in [start, end] {
             let point = model.vertex(vertex).point;

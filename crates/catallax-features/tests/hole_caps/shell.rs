@@ -1,6 +1,7 @@
 use super::*;
+use catallax_boolean::numerical::NumericalCylinderSource;
 use catallax_numbers::{current_operation_work, transfer};
-use catallax_shapes::{BSplineCurve, Curve, Line, RationalPatch, Surface};
+use catallax_shapes::{BSplineCurve, Curve, Line, Surface};
 use catallax_step::numerical::{self as step, NumericalStepOptions};
 use catallax_topology::{
     Sense,
@@ -91,8 +92,42 @@ fn fixture(
     options: &NumericalOptions,
     dec: &mut Decider,
 ) -> (NumericalDefinition, Vec<NumericalNativeTrim>) {
-    let span = span_with_diameter(true, true, diameter, dec);
-    let sources: Vec<_> = (0..4).map(|i| quarter(&span, i, dec)).collect();
+    let authored = span_with_diameter(true, true, diameter, dec);
+    let source = NumericalCylinderSource::new(
+        &authored.cylinder,
+        authored.interval_mm.clone(),
+        options.clone(),
+        dec,
+    )
+    .unwrap();
+    assert_eq!(source.axis_parameters_mm(), &authored.interval_mm);
+    let span = CylinderSpan {
+        cylinder: source.original().clone(),
+        interval_mm: source.axis_parameters_mm().clone(),
+        bands: authored.bands,
+    };
+    println!(
+        "shell descriptor interval=[{},{}] source={} charts={}",
+        span.interval_mm[0],
+        span.interval_mm[1],
+        source.source_work(),
+        source.chart_work()
+    );
+    assert_eq!(source.quarters().len(), 4);
+    let sources: Vec<_> = source
+        .quarters()
+        .iter()
+        .enumerate()
+        .map(|(i, quarter)| {
+            assert_eq!(quarter.id(), i);
+            assert_eq!(quarter.key(), format!("cylinder/quarter-{i}"));
+            assert_eq!(quarter.axis_parameters_mm(), source.axis_parameters_mm());
+            let Surface::BSpline(support) = quarter.surface() else {
+                panic!("expected retained source quarter")
+            };
+            support.carrier()
+        })
+        .collect();
     let caps: Vec<Vec<_>> = [true, false]
         .into_iter()
         .map(|top| {
@@ -177,7 +212,7 @@ fn fixture(
             dec,
         );
     }
-    for (i, source) in sources.into_iter().enumerate() {
+    for (i, quarter) in source.quarters().iter().enumerate() {
         let end = Rational::from_i64(i as i64 + 1);
         let start = Rational::from_i64(i as i64);
         let seam = |t: &Rational, dec: &mut Decider| {
@@ -189,17 +224,11 @@ fn fixture(
         };
         let right = seam(&end, dec);
         let left = seam(&start, dec);
-        let before = current_operation_work().used;
-        let patch = RationalPatch::new(source, dec).unwrap();
-        println!(
-            "shell wall-{i} embedding work={}",
-            current_operation_work().used - before
-        );
         face(
             &mut definition,
             &mut bindings,
             format!("wall-{i}"),
-            Surface::BSpline(patch.into()),
+            quarter.surface().clone(),
             Sense::Same,
             vec![
                 (i, Sense::Same, caps[0][i].cylinder_uv().clone()),

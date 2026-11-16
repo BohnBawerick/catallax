@@ -89,3 +89,84 @@ pub(super) fn same(
     // Matching witness points never establishes equality of complete curves.
     Ok(None)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use catallax_numbers::with_operation_budget;
+    use catallax_shapes::Point3;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn many_span_affine_identity_charges_visits_and_checks_the_deadline() {
+        let count = 128_i64;
+        let mut dec = Decider::default();
+        let controls: Vec<_> = (0..=2 * count)
+            .map(|k| {
+                let i = k / 2;
+                Point3::new(
+                    Rational::from_ratio(k, 2).unwrap().into(),
+                    Real::from_i64(i * i + if k % 2 == 1 { i } else { 0 }),
+                    Real::zero(),
+                )
+            })
+            .collect();
+        let knots: Vec<_> = (0..=count)
+            .flat_map(|i| {
+                std::iter::repeat_n(
+                    Rational::from_i64(i),
+                    if i == 0 || i == count { 3 } else { 2 },
+                )
+            })
+            .collect();
+        let first = BSplineCurve::new(
+            2,
+            knots.clone(),
+            controls.clone(),
+            vec![Real::one(); controls.len()],
+            &mut dec,
+        )
+        .unwrap();
+        let first = spans(&first, &mut dec).unwrap();
+        for reversed in [false, true] {
+            let mut controls = controls.clone();
+            if reversed {
+                controls.reverse();
+            }
+            let second = BSplineCurve::new(
+                2,
+                knots
+                    .iter()
+                    .map(|t| t * &Rational::from_i64(3) + Rational::from_i64(7))
+                    .collect(),
+                controls.clone(),
+                vec![Real::one(); controls.len()],
+                &mut dec,
+            )
+            .unwrap();
+            let second = spans(&second, &mut dec).unwrap();
+            let scale = Rational::from_i64(if reversed { -3 } else { 3 });
+            let offset = Rational::from_i64(if reversed { 7 + 3 * count } else { 7 });
+            let (result, work) = with_operation_budget(100_000, || {
+                affine_identity(&first, &second, &offset, &scale, &mut Decider::default())
+            });
+            assert!(result.unwrap());
+            assert!(!work.exhausted);
+            assert!(
+                work.used >= count as u64,
+                "span visits must be charged: {work:?}"
+            );
+            let (result, work) = with_operation_budget(16, || {
+                affine_identity(&first, &second, &offset, &scale, &mut Decider::default())
+            });
+            assert_eq!(result.unwrap_err().code, "numbers.operation-budget");
+            assert!(work.exhausted);
+            let (result, _) = with_operation_budget(100_000, || {
+                let mut dec = Decider::default();
+                dec.set_deadline(Some(Instant::now() - Duration::from_secs(1)));
+                affine_identity(&first, &second, &offset, &scale, &mut dec)
+            });
+            assert_eq!(result.unwrap_err().code, "numbers.deadline");
+        }
+    }
+}

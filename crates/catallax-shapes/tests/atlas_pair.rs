@@ -12,6 +12,83 @@ fn q(n: i64, d: i64) -> Real {
     Real::from_rational(Rational::from_ratio(n, d).unwrap())
 }
 
+fn split_vertical_plane(first: bool, dec: &mut Decider) -> RationalAtlas {
+    let controls = [-1, 1]
+        .into_iter()
+        .flat_map(|horizontal| {
+            [0, 1, 2].map(|height| {
+                if first {
+                    Point3::new(q(horizontal, 1), q(0, 1), q(height, 1))
+                } else {
+                    Point3::new(q(0, 1), q(horizontal, 1), q(height, 1))
+                }
+            })
+        })
+        .collect();
+    let source = BSplineSurface::new(
+        [1, 1],
+        [
+            [0, 0, 1, 1].map(Rational::from_i64).to_vec(),
+            [0, 0, 1, 2, 2].map(Rational::from_i64).to_vec(),
+        ],
+        [2, 3],
+        controls,
+        vec![Real::one(); 6],
+        dec,
+    )
+    .unwrap();
+    let [atlas] = <[_; 1]>::try_from(
+        RationalAtlas::partition(source, [false, false], dec).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(atlas.charts().len(), 2);
+    atlas
+}
+
+#[test]
+fn offset_spine_crosses_both_atlas_seams_without_fragmenting() {
+    let ((), work) = with_operation_budget(20_000_000, || {
+        let mut dec = Decider::default();
+        let first = split_vertical_plane(true, &mut dec);
+        let second = split_vertical_plane(false, &mut dec);
+        let meeting = first
+            .offset_meeting(
+                &second,
+                [
+                    Rational::from_ratio(1, 10).unwrap(),
+                    Rational::from_ratio(1, 5).unwrap(),
+                ],
+                &mut dec,
+            )
+            .unwrap();
+        let [branch] = meeting.branches() else {
+            panic!("an internal chart row must not split the offset spine");
+        };
+        assert!(!branch.is_closed());
+        let mut charts = std::collections::BTreeSet::new();
+        for arc in branch.arcs() {
+            charts.insert((arc.first_chart, arc.second_chart));
+            for end in &arc.ends {
+                let point = meeting.point(end);
+                for residual in [&point.x - &q(1, 5), &point.y + &q(1, 10)] {
+                    let enclosure = dec.enclose_budgeted_at(&residual, 128).unwrap();
+                    assert!(enclosure.contains_zero());
+                    assert!(enclosure.hi() - enclosure.lo() < Rational::one().mul_pow2(-80));
+                }
+            }
+        }
+        assert_eq!(charts, [(0, 0), (1, 1)].into_iter().collect());
+        let ends = branch.ends().map(|end| meeting.point(end).z);
+        assert!(
+            (ends[0].as_rational() == Some(Rational::zero())
+                && ends[1].as_rational() == Some(Rational::from_i64(2)))
+                || (ends[1].as_rational() == Some(Rational::zero())
+                    && ends[0].as_rational() == Some(Rational::from_i64(2)))
+        );
+    });
+    assert!(!work.exhausted, "{work:?}");
+}
+
 #[test]
 fn retained_source_clearance_keeps_native_initial_and_later_contacts() {
     for reversed in [false, true] {

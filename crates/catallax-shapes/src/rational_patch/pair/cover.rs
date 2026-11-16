@@ -209,6 +209,23 @@ impl RationalAtlas {
         )
     }
 
+    /// Complete meeting of two logical faces offset by signed distances along
+    /// their oriented unit normals. Chart joins retain the atlas's ownership;
+    /// offset regularity and every arc use the existing cell-pair certificates.
+    /// A zero distance leaves that support unchanged.
+    pub fn offset_meeting(
+        &self,
+        other: &Self,
+        distances: [Rational; 2],
+        dec: &mut Decider,
+    ) -> Result<PatchPairIntersection, Refusal> {
+        meeting(
+            [Source::Atlas(self), Source::Atlas(other)],
+            distances.map(|distance| (!distance.is_zero()).then_some(distance)),
+            dec,
+        )
+    }
+
     /// Complete meeting with explicit reuse of exactly equal rational span
     /// polynomials and unrounded Bernstein nets. Every original chart and its
     /// ownership remain in the unchanged cell-pair search. The legacy method

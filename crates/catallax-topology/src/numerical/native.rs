@@ -149,7 +149,11 @@ fn midpoint(value: &Real, dec: &mut Decider) -> Result<Rational, Refusal> {
     }
 }
 
-fn point(surface: &Surface, uv: &[Real; 2], dec: &mut Decider) -> Result<[Ball; 3], Refusal> {
+pub(super) fn point(
+    surface: &Surface,
+    uv: &[Real; 2],
+    dec: &mut Decider,
+) -> Result<[Ball; 3], Refusal> {
     if let Surface::BSpline(SplineSupport::RationalPatch(patch)) = surface {
         let p = patch.point_at(uv, dec)?;
         [&p.x, &p.y, &p.z]

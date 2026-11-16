@@ -326,7 +326,7 @@ impl<T: Value> Grid<T> {
         Ok([low, high])
     }
 
-    fn range(&self, dec: &mut Decider) -> Result<[Rational; 2], Refusal> {
+    pub(super) fn range(&self, dec: &mut Decider) -> Result<[Rational; 2], Refusal> {
         let mut out = self.v[0].bounds();
         for value in &self.v[1..] {
             let [lo, hi] = value.bounds();

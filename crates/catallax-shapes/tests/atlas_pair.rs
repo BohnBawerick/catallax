@@ -1,11 +1,127 @@
 //! Exact chart and periodic ownership through the existing cell-pair engine.
 
-use catallax_numbers::{Decider, Rational, Real, Refusal, with_operation_budget};
-use catallax_shapes::{BSplineSurface, Point3, RationalAtlas};
+use catallax_numbers::{
+    Decider, Outcome, Rational, Real, Refusal, ZeroProof, with_operation_budget,
+};
+use catallax_shapes::{
+    BSplineCurve, BSplineSurface, Plane, Point3, RationalAtlas, SectionHits, Vector3,
+};
 use std::num::NonZeroUsize;
 
 fn q(n: i64, d: i64) -> Real {
     Real::from_rational(Rational::from_ratio(n, d).unwrap())
+}
+
+#[test]
+fn retained_source_clearance_keeps_native_initial_and_later_contacts() {
+    for reversed in [false, true] {
+        let ((), work) = with_operation_budget(20_000_000, || {
+            let mut dec = Decider::default();
+            let cylinder = cylinder(true, false, false, &mut dec).unwrap();
+            let plane = plane(&mut dec);
+            let meeting = if reversed {
+                plane.patch_meeting_with_cached_spans(&cylinder, &mut dec)
+            } else {
+                cylinder.patch_meeting_with_cached_spans(&plane, &mut dec)
+            }
+            .unwrap();
+            let component = meeting.curve_branch(0, &mut dec).unwrap();
+            for (x, heights, allowed, expected) in [
+                (1, vec![q(1, 5), q(1, 1)], true, true),
+                (1, vec![q(1, 5), q(1, 1)], false, false),
+                (1, vec![q(0, 1), q(1, 1)], true, false),
+                (1, vec![q(0, 1), q(1, 5)], true, false),
+                (1, vec![q(1, 1), q(2, 1)], false, true),
+                (3, vec![q(0, 1), q(1, 1)], false, true),
+                (1, vec![q(1, 5), q(6, 5), q(1, 5)], true, false),
+            ] {
+                let degree = heights.len() - 1;
+                let knots = std::iter::repeat_n(Rational::from_i64(2), degree + 1)
+                    .chain(std::iter::repeat_n(Rational::from_i64(5), degree + 1))
+                    .collect();
+                let path = BSplineCurve::new(
+                    degree,
+                    knots,
+                    heights
+                        .into_iter()
+                        .map(|z| Point3::new(q(x, 1), Real::zero(), z))
+                        .collect(),
+                    vec![Real::one(); degree + 1],
+                    &mut dec,
+                )
+                .unwrap();
+                assert_eq!(
+                    component
+                        .clears_spline_sources(&path, allowed, &mut dec)
+                        .unwrap(),
+                    expected,
+                    "reversed={reversed},x={x},degree={degree},allowed={allowed}"
+                );
+            }
+        });
+        assert!(!work.exhausted, "{work:?}");
+    }
+}
+
+#[test]
+fn retained_pair_components_keep_complete_plane_points_and_near_contacts() {
+    for reversed in [false, true] {
+        let ((), work) = with_operation_budget(20_000_000, || {
+            let mut dec = Decider::default();
+            let cylinder = cylinder(true, false, false, &mut dec).unwrap();
+            let support = plane(&mut dec);
+            let meeting = if reversed {
+                support.patch_meeting_with_cached_spans(&cylinder, &mut dec)
+            } else {
+                cylinder.patch_meeting_with_cached_spans(&support, &mut dec)
+            }
+            .unwrap();
+            assert_eq!(meeting.branches().len(), 1);
+            let curve = meeting.curve_branch(0, &mut dec).unwrap();
+            for (coordinate, expected) in [
+                (q(0, 1), 2),
+                (q(1, 2), 2),
+                (q(1, 1), 1),
+                (q(999_999, 1_000_000), 2),
+                (q(1_000_001, 1_000_000), 0),
+            ] {
+                let cut = Plane::new(
+                    Point3::new(coordinate.clone(), Real::zero(), Real::zero()),
+                    Vector3::new(Real::one(), Real::zero(), Real::zero()),
+                    Vector3::new(Real::zero(), Real::one(), Real::zero()),
+                    &mut dec,
+                )
+                .unwrap();
+                let SectionHits::Points(points) =
+                    curve.plane_hits(&cut, &mut dec).unwrap_or_else(|error| {
+                        panic!("reversed={reversed}, coordinate={coordinate:?}: {error:?}")
+                    })
+                else {
+                    panic!("the circular component cannot lie in a vertical plane")
+                };
+                assert_eq!(points.len(), expected);
+                for point in points {
+                    assert!(curve.contains(&point, &mut dec).unwrap());
+                    assert!(
+                        matches!(dec.sign(&point.minus(&cut.origin).dot(&cut.normal)),
+                        Outcome::ProvenCoincident(proof) if proof.proof != ZeroProof::SeparationBound)
+                    );
+                }
+            }
+            let cut = Plane::new(
+                Point3::new(Real::zero(), Real::zero(), q(1, 5)),
+                Vector3::new(Real::zero(), Real::zero(), Real::one()),
+                Vector3::new(Real::one(), Real::zero(), Real::zero()),
+                &mut dec,
+            )
+            .unwrap();
+            assert!(matches!(
+                curve.plane_hits(&cut, &mut dec).unwrap(),
+                SectionHits::Contained
+            ));
+        });
+        assert!(!work.exhausted, "{reversed}: {} work units", work.used);
+    }
 }
 
 fn cylinder(

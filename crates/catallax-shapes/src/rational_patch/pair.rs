@@ -56,6 +56,7 @@
 use super::*;
 use catallax_numbers::{BoxRoots, IsolatedRoot, MPoly, PolySystem, RootBox};
 
+mod correlated;
 mod cover;
 use cover::{RetainedSource, Source};
 mod face;
@@ -541,6 +542,7 @@ struct Context {
     /// with its length `L` one more variable after `(u, v, s, t)` and one
     /// more equation `L^2 - N . N`.
     equations: Vec<std::sync::OnceLock<Vec<MPoly>>>,
+    correlated_fields: Vec<std::sync::OnceLock<Option<[MPoly; 2]>>>,
 }
 
 impl Context {
@@ -603,6 +605,8 @@ impl Context {
             equations.push(difference(&left, &right, dec)?);
         }
         equations.extend(extra);
+        let fields = correlated::prepare(self, spans, dec)?;
+        let _ = self.correlated_fields[self.index(spans)].set(fields);
         let _ = slot.set(equations);
         Ok(())
     }
@@ -876,6 +880,7 @@ fn finish(
         sides,
         rotation,
         equations: (0..pairs).map(|_| std::sync::OnceLock::new()).collect(),
+        correlated_fields: (0..pairs).map(|_| std::sync::OnceLock::new()).collect(),
     };
     let reuse = patches
         .iter()

@@ -4,6 +4,8 @@ use super::*;
 
 mod equivalence;
 mod germ;
+mod plane;
+mod spline;
 mod trace;
 
 type Location = (usize, Real, [Real; 4]);

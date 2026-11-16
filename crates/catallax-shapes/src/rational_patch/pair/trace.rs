@@ -4,6 +4,9 @@ use super::*;
 use crate::rational_patch::trace_series::series;
 use std::collections::BTreeMap;
 
+pub(super) mod affine;
+mod bounds;
+mod contract;
 mod curve;
 pub use curve::PatchPairCurve;
 
@@ -132,14 +135,15 @@ impl PatchPairIntersection {
                     });
                     let mut equations = Vec::with_capacity(3);
                     for k in 0..3 {
-                        equations.push(RealPoly::from(difference(
+                        equations.push(difference(
                             &product(&a[k], &b[3], dec)?,
                             &product(&b[k], &a[3], dec)?,
                             dec,
-                        )?));
+                        )?);
                     }
-                    let polynomials: [RealPoly; 3] =
-                        equations.try_into().expect("three patch equations");
+                    let polynomials =
+                        affine::reduce(equations.try_into().expect("three patch equations"), dec)?
+                            .map(RealPoly::from);
                     let jacobian = std::array::from_fn(|row| {
                         std::array::from_fn(|column| polynomials[row].partial(column))
                     });
@@ -275,6 +279,7 @@ impl PairTracePiece {
             .map(|[lo, hi]| Ball::from_rational(lo, bits).hull(&Ball::from_rational(hi, bits)));
         for _ in 0..bits {
             dec.check_deadline()?;
+            let before = at.clone();
             let middle: [Ball; 5] = std::array::from_fn(|axis| {
                 if axis < 4 {
                     Ball::from_rational(&at[axis].mid(), bits)
@@ -296,7 +301,22 @@ impl PairTracePiece {
                 self.equation(3).eval_ball(&middle, dec)?,
             ];
             let Some(factor) = Factor::new(self.jacobian_at(&all, dec)?, dec)? else {
-                break;
+                for row in [3, 0, 1, 2] {
+                    for axis in 0..4 {
+                        contract::coordinate(
+                            self.equation(row),
+                            self.derivative(row, axis),
+                            axis,
+                            &mut at,
+                            t,
+                            dec,
+                        )?;
+                    }
+                }
+                if contract::unchanged(&before, &at) {
+                    break;
+                }
+                continue;
             };
             let Some(delta) = factor.solve(residual, dec)? else {
                 break;
@@ -313,14 +333,11 @@ impl PairTracePiece {
                 }
                 next[axis] = Ball::from_rational(&lo, bits).hull(&Ball::from_rational(&hi, bits));
             }
-            if next
-                .iter()
-                .zip(&at)
-                .all(|(a, b)| a.lo() == b.lo() && a.hi() == b.hi())
-            {
+            let unchanged = contract::unchanged(&before, &next);
+            at = next;
+            if unchanged {
                 break;
             }
-            at = next;
         }
         Ok(at)
     }

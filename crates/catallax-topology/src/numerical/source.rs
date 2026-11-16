@@ -9,7 +9,8 @@ fn scalar(value: &catallax_numbers::Real, dec: &Decider) -> Result<Rational, Ref
 }
 
 /// Generates finite numerical input from a retained line/patch model. Vertex and
-/// parameter values are rounded to 128-bit midpoints; the original carriers are
+/// parameter values are rounded to 128-bit midpoints. Proven finite parameters
+/// are clamped to their closed native domains; the original carriers are
 /// retained. This returns no admitted body or incidence authority. Call [`build`]
 /// to check the generated topology, finite trims and residuals under a tolerance.
 pub fn definition_from_model(
@@ -134,7 +135,15 @@ pub fn definition_from_model(
                             let at = patch.parameters_at(point, dec)?.ok_or_else(|| {
                                 bad("trim", "source vertex has no retained patch parameter")
                             })?;
-                            [scalar(&at[0], dec)?, scalar(&at[1], dec)?]
+                            let domain = patch.domain();
+                            [
+                                scalar(&at[0], dec)?
+                                    .max(domain[0][0].clone())
+                                    .min(domain[0][1].clone()),
+                                scalar(&at[1], dec)?
+                                    .max(domain[1][0].clone())
+                                    .min(domain[1][1].clone()),
+                            ]
                         }
                         Surface::Plane(_) => {
                             let p = [

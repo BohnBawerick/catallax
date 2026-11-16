@@ -295,7 +295,9 @@ impl SectionSurface {
                         - &coordinates[3]
                             .scale([&torus.center.x, &torus.center.y, &torus.center.z][i])
                 });
-                let q = d.iter().fold(RealPoly::zero(variables), |sum, p| sum + p * p);
+                let q = d
+                    .iter()
+                    .fold(RealPoly::zero(variables), |sum, p| sum + p * p);
                 let h = d
                     .iter()
                     .zip([&torus.axis.x, &torus.axis.y, &torus.axis.z])

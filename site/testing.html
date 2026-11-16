@@ -71,7 +71,7 @@
     <p>Two measures compare Catallax with the reference kernels. Both run once per checkpoint, each as one command, and the <a href="checkpoint-1.html">Checkpoint 1 page</a> has the results.</p>
     <ul class="ev__list">
       <li><b>Edit-chain scoreboard.</b> 23 target parts, each built and then rebuilt after one change, in Catallax, OpenCASCADE and SMLib. All three kernels are judged by one definition of done: both versions build, both STEP exports open in OpenCASCADE as valid closed solids, and no independent check finds a wrong value. At Checkpoint 1 Catallax finished 10 of 13 test parts and 6 of 10 real parts; OpenCASCADE 12 and 7; SMLib 8 and 6.</li>
-      <li><b>STEP census.</b> 3,000 models from the public ABC collection, picked with a fixed seed. A file counts only when every body imports, exports again, and passes OpenCASCADE's validity check. At Checkpoint 1, 374 files passed (12.47%). OpenCASCADE opens 2,701 (90.03%) after its own default repair, so the two figures compare how many files open, not accuracy at one tolerance.</li>
+      <li><b>STEP census.</b> 3,000 models from the public ABC collection, picked with a fixed seed. A file counts only when every body imports, exports again, and passes OpenCASCADE's validity check. At Checkpoint 1, 374 files passed (12.47%), checked after the OpenCASCADE builder, which may heal pcurves. OpenCASCADE opens 2,701 (90.03%) after its own default repair, so the two figures compare how many files open, not accuracy at one tolerance.</li>
       <li><b>Freeform cut requests.</b> 14 recorded requests that cut or join lofted solids. 11 now write a checked approximate STEP file; three are still refused.</li>
     </ul>
   </section>

@@ -93,11 +93,11 @@
 
   <section aria-labelledby="census">
     <h2 class="ev__h" id="census">3,000 real STEP files</h2>
-    <p>The census takes 3,000 models from the public ABC collection, picked with a fixed seed, and imports every one. A file counts for Catallax only when every body in it imports, exports again as STEP, and that export passes OpenCASCADE's validity check.</p>
+    <p>The census takes 3,000 models from the public ABC collection, picked with a fixed seed, and imports every one. A file counts for Catallax only when every body in it imports, exports again as STEP, and that export passes OpenCASCADE's validity check. The check runs after the OpenCASCADE builder, which may heal pcurves, the curves that trim each face.</p>
     <div class="table-wrap"><table class="ev__table ev__table--num">
       <thead><tr><th scope="col">Measure</th><th scope="col">Files</th><th scope="col">Share of 3,000</th></tr></thead>
       <tbody>
-        <tr><th scope="row">Catallax, valid after export</th><td>374</td><td>12.47%</td></tr>
+        <tr><th scope="row">Catallax, valid after export <small>after the OpenCASCADE builder, which may heal pcurves</small></th><td>374</td><td>12.47%</td></tr>
         <tr><th scope="row">OpenCASCADE, valid after its default repair</th><td>2,701</td><td>90.03%</td></tr>
         <tr><th scope="row">Catallax, previous count</th><td>369</td><td>12.30%</td></tr>
       </tbody>
@@ -115,7 +115,7 @@
       <thead><tr><th scope="col">Tier census</th><th scope="col">Files</th><th scope="col">Share of 3,000</th></tr></thead>
       <tbody>
         <tr><th scope="row">Complete solid imports</th><td>418</td><td>13.93%</td></tr>
-        <tr><th scope="row">Every solid exports and passes OpenCASCADE's check</th><td>384</td><td>12.80%</td></tr>
+        <tr><th scope="row">Every solid exports and passes OpenCASCADE's check <small>after the OpenCASCADE builder, which may heal pcurves</small></th><td>384</td><td>12.80%</td></tr>
         <tr><th scope="row">Opens at any tier <small>not a checked solid</small></th><td>2,739</td><td>91.30%</td></tr>
       </tbody>
     </table></div>

@@ -1,0 +1,197 @@
+{
+  "format": "catallax-recipe/5",
+  "name": "P8 helical spring and threaded boss",
+  "steps": [
+    {
+      "id": "plate",
+      "op": "block",
+      "size": [
+        "50",
+        "50",
+        "4"
+      ],
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "-25",
+          "-25",
+          "0"
+        ]
+      }
+    },
+    {
+      "id": "boss",
+      "op": "cylinder",
+      "radius": "8",
+      "height": "20",
+      "pose": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "4"
+        ]
+      }
+    },
+    {
+      "id": "base",
+      "op": "boolean",
+      "kind": "union",
+      "target": "plate",
+      "tool": "boss"
+    },
+    {
+      "id": "thread_profile",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "1",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "circle",
+            "id": "thread_section",
+            "centre": [
+              "8",
+              "7"
+            ],
+            "radius": "0.6"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "thread_path",
+      "op": "path",
+      "start": [
+        "8",
+        "0",
+        "7"
+      ],
+      "segments": [
+        {
+          "kind": "helix",
+          "id": "thread_turns",
+          "centre": [
+            "0",
+            "0",
+            "7"
+          ],
+          "axis": [
+            "0",
+            "0",
+            "1"
+          ],
+          "angle": "2880",
+          "rise": "12"
+        }
+      ]
+    },
+    {
+      "id": "thread",
+      "op": "sweep",
+      "profile": "thread_profile",
+      "path": "thread_path",
+      "orientation": "rotation_minimising"
+    },
+    {
+      "id": "threaded",
+      "op": "boolean",
+      "kind": "union",
+      "target": "base",
+      "tool": "thread"
+    },
+    {
+      "id": "spring_profile",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "1",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "circle",
+            "id": "spring_section",
+            "centre": [
+              "17",
+              "2.5"
+            ],
+            "radius": "1"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "spring_path",
+      "op": "path",
+      "start": [
+        "17",
+        "0",
+        "2.5"
+      ],
+      "segments": [
+        {
+          "kind": "helix",
+          "id": "coils",
+          "centre": [
+            "0",
+            "0",
+            "2.5"
+          ],
+          "axis": [
+            "0",
+            "0",
+            "1"
+          ],
+          "angle": "1800",
+          "rise": "15"
+        }
+      ]
+    },
+    {
+      "id": "spring",
+      "op": "sweep",
+      "profile": "spring_profile",
+      "path": "spring_path",
+      "orientation": "rotation_minimising"
+    },
+    {
+      "id": "part",
+      "op": "boolean",
+      "kind": "union",
+      "target": "threaded",
+      "tool": "spring"
+    }
+  ],
+  "result": "part"
+}

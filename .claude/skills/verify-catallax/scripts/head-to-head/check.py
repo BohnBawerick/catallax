@@ -7,6 +7,22 @@ import sys
 from analytic import definition
 
 
+def healing_off_read(step_path):
+    """The repository's raw StepToTopoDS builder at 1e-7 mm, with no ShapeFix, sewing
+    or SameParameter. It is reported beside the verdict and never decides it, so
+    every failure, including a missing helper or binding, comes back as data."""
+    try:
+        helpers = str(Path(__file__).resolve().parents[5] / 'tools/step-regressions')
+        if helpers not in sys.path:
+            sys.path.insert(0, helpers)
+        from check_numerical_step import raw_solid
+        shape = raw_solid(step_path)
+        from OCP.BRepCheck import BRepCheck_Analyzer
+        return {'opened': True, 'valid': BRepCheck_Analyzer(shape).IsValid()}
+    except Exception as error:
+        return {'opened': False, 'valid': False, 'reason': f'{type(error).__name__}: {error}'}
+
+
 def check(case, variant, step_path, expected_faces):
     reference, bounds, implicit = definition(case, variant)
     result = {'oracle': reference, 'oracle_source': 'independent elementary formulas and analytic solid predicates; no CAD-kernel reference construction',
@@ -65,6 +81,8 @@ def check(case, variant, step_path, expected_faces):
                       'opened': True, 'roots': roots, 'valid': valid, 'closed_solid': closed,
                       'solids': len(solid_list), 'faces': faces,
                       'expected_faces': expected_faces, 'face_count_matches': faces == expected_faces}
+    if case.get('step_read') == 'healing-off':
+        result['step']['healing_off'] = healing_off_read(step_path)
     if 'census' in case and closed:
         # Material removal is judged from each kernel's exported solid, measured in OCCT.
         from OCP.BRepGProp import BRepGProp
@@ -74,7 +92,7 @@ def check(case, variant, step_path, expected_faces):
         result['material'] = {'volume_mm3': abs(props.Mass()),
                               'source_volume_mm3': case['census']['cutter']['source_volume_mm3']}
     if implicit is None:
-        result['membership'] = {'status': 'not-run', 'reason': 'no independent analytic predicate for this complete target (P5 trimmed blend, census parts)'}
+        result['membership'] = {'status': 'not-run', 'reason': 'no independent analytic predicate for this complete target (P5 trimmed blend, census parts, phase-2 targets)'}
         return result
     # Same 6^3 sampling scheme as the original report, with analytic target bounds.
     axes = [[bounds[i]+(bounds[i+3]-bounds[i])*k/3 for k in range(-1, 5)] for i in range(3)]

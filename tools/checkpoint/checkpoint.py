@@ -8,7 +8,8 @@ first use. `--sources` and `--selection` are the private census corpus and its
 [model_id, member] list. Every output goes to `--out`, outside the checkout.
 Both commands build their own binaries from the clean current checkout.
 
-The scoreboard runs P0 to P5 and ten real census parts through Catallax,
+The scoreboard runs P0 to P5, the phase-2 targets in `phase2/` (P8, P9 and the
+curved-housing chain) and ten real census parts through Catallax,
 OpenCASCADE (CadQuery) and SMLib (smlibpy) with the existing head-to-head
 driver, then reports one definition of done for all three kernels. The census
 reruns import admission on all 3,000 files, then exports every full admission
@@ -33,6 +34,7 @@ RESEARCH = ROOT / 'tools/research'
 CONTROLS = ROOT / 'docs/research/step-census/retained-controls.json'
 HASHES = ROOT / 'docs/research/step-census/source-hashes.json'
 PREVIOUS = ROOT / 'docs/research/step-census-circular-pcurves/results.csv'
+PHASE2 = ROOT / 'tools/checkpoint/phase2'
 ENGINES = ['catallax', 'cadquery', 'smlibpy']
 KERNEL_NAMES = {'catallax': 'Catallax', 'cadquery': 'OpenCASCADE (CadQuery 2.6.1)',
                 'smlibpy': 'SMLib (smlibpy 0.4.0)'}
@@ -170,9 +172,14 @@ def outcome(result, census=False):
     return True, 'done', ''
 
 
+def group(part):
+    return 'census' if part.startswith('census/') else 'phase2' if part.startswith('phase2/') else 'phase1'
+
+
 def scoreboard_tables(report):
     measured = [pair for pair in report['pairs'] if not pair['warmup']]
-    parts = sorted({pair['part'] for pair in measured}, key=lambda p: (p.startswith('census/'), p))
+    order = {'phase1': 0, 'phase2': 1, 'census': 2}
+    parts = sorted({pair['part'] for pair in measured}, key=lambda p: (order[group(p)], p))
     rows = []
     for part in parts:
         row = {'part': part, 'engines': {}}
@@ -182,6 +189,11 @@ def scoreboard_tables(report):
             done = bool(verdicts) and all(v[0] for v in verdicts)
             first = next((v for v in verdicts if not v[0]), verdicts[0] if verdicts else (False, 'not run', ''))
             entry = {'done': done, 'summary': 'done' if done else first[1], 'detail': first[2]}
+            # The curved-housing chain also reads its STEP with healing off; reported, not gating.
+            raw = [variant.get('correctness', {}).get('step', {}).get('healing_off')
+                   for sample in samples for variant in sample.get('variants', {}).values()]
+            if any(r is not None for r in raw):
+                entry['healing_off_valid'] = all(r is not None and r['valid'] for r in raw)
             if engine == 'catallax' and samples:
                 variants = samples[-1].get('variants', {})
                 entry['work'] = {label: variants.get(label, {}).get('build', {}).get('work')
@@ -204,6 +216,7 @@ def scoreboard_markdown(report, rows, seconds):
              'in OCCT 8.0.1.1 as valid closed solids with the kernel\'s own face count, and no '
              'independent check found a wrong value. On a census part the drill and the radius '
              'change must each lower the OCCT-measured volume.', '',
+             'Groups: P0 to P5 (13), phase 2 (P8, P9 and the curved-housing chain), census parts (10).', '',
              '| Target | ' + ' | '.join(KERNEL_NAMES[e] for e in engines) + ' | Catallax work (build, edit) | Catallax names |',
              '| --- |' + ' --- |' * len(engines) + ' ---: | --- |']
     for row in rows:
@@ -213,12 +226,19 @@ def scoreboard_markdown(report, rows, seconds):
         lines.append('| ' + ' | '.join([row['part'].removesuffix('.json'),
             *[row['engines'][e]['summary'] for e in engines],
             f'{fmt(work.get("construction"))}, {fmt(work.get("edit"))}',
-            str(row['engines'].get('catallax', {}).get('names'))]) + ' |')
-    lines += ['', '| Kernel | Done, P0 to P5 (13) | Done, census parts (10) |', '| --- | ---: | ---: |']
+            str(row['engines'].get('catallax', {}).get('names') or 'not-run')]) + ' |')
+    sizes = {g: sum(group(r['part']) == g for r in rows) for g in ('phase1', 'phase2', 'census')}
+    lines += ['', f'| Kernel | Done, P0 to P5 ({sizes["phase1"]}) | Done, phase 2 ({sizes["phase2"]}) '
+              f'| Done, census parts ({sizes["census"]}) |', '| --- | ---: | ---: | ---: |']
     for engine in engines:
-        synthetic = sum(r['engines'][engine]['done'] for r in rows if not r['part'].startswith('census/'))
-        real = sum(r['engines'][engine]['done'] for r in rows if r['part'].startswith('census/'))
-        lines.append(f'| {KERNEL_NAMES[engine]} | {synthetic} | {real} |')
+        done = {g: sum(r['engines'][engine]['done'] for r in rows if group(r['part']) == g) for g in sizes}
+        lines.append(f'| {KERNEL_NAMES[engine]} | {done["phase1"]} | {done["phase2"]} | {done["census"]} |')
+    raw = [(r['part'], e, r['engines'][e]['healing_off_valid']) for r in rows for e in engines
+           if 'healing_off_valid' in r['engines'][e]]
+    if raw:
+        lines += ['', 'Healing-off read (raw StepToTopoDS at 1e-7 mm, no ShapeFix), reported beside '
+                  'the verdict: ' + '; '.join(f'{part.removesuffix(".json")} / {KERNEL_NAMES[e]}: '
+                                              f'{"valid" if ok else "not valid"}' for part, e, ok in raw) + '.']
     details = [(r['part'], e, r['engines'][e]['detail']) for r in rows for e in engines
                if r['engines'][e]['detail']]
     if details:
@@ -241,7 +261,8 @@ def scoreboard(args):
         inputs=str(ROOT / 'parts'), binary=str(binary), reference=None, out=str(out / 'head-to-head'),
         core=args.core, max_work=args.max_work, repeats=args.repeats, timeout=args.timeout, part=args.part,
         occt_python=receipt['checker'], tool_runtime=str(path), machine_class=args.machine_class,
-        engines=ENGINES, census_cases=str(cases)))
+        engines=ENGINES, census_cases=str(cases),
+        extra_cases=[(str(PHASE2 / 'cases'), str(PHASE2.parent), 'phase2')]))
     rows = scoreboard_tables(report)
     seconds = time.monotonic() - started
     save(out / 'scoreboard.json', {'format': 'catallax-checkpoint-scoreboard/1',
@@ -389,7 +410,8 @@ def main():
     scoreboard_command.add_argument('--timeout', type=float, default=120)
     scoreboard_command.add_argument('--machine-class', default='work PC, shared')
     scoreboard_command.add_argument('--part', action='append',
-                                    help='smoke runs only: exact case name such as P2-collar.json or census/00000131.json')
+                                    help='smoke runs only: exact case name such as P2-collar.json, '
+                                         'phase2/P9-lofted-duct.json or census/00000131.json')
     census_command = commands.choices['census']
     # Two workers and a per-observer cap keep one huge source (00005642 peaks at
     # 4.6 GB) from exhausting the shared 20 GB work PC.

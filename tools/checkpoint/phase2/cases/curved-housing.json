@@ -1,0 +1,17 @@
+{
+  "format": "catallax-head-to-head-case/1",
+  "recipe": "phase2/curved-housing.json",
+  "recipe_sha256": "803558dbb48dab4add6fc1ba70d3ea8a2ac11ba044b8256d2c7ea9030c51e7e6",
+  "edit": {
+    "step": "section1",
+    "path": [
+      "loops",
+      0,
+      0,
+      "radius"
+    ],
+    "value": "15"
+  },
+  "definition": "Three-circle smooth loft, a cut by an extruded cubic Bezier, then a radius-2 fillet along the whole spline/spline cut edge. Edit: the middle section radius 14 to 15, which rebuilds the cut and the fillet.",
+  "step_read": "healing-off"
+}

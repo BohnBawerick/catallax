@@ -6,7 +6,7 @@ This is step 2 of the checkpoint in `ROADMAP.md`: gather the results. The owner 
 
 ## How to rerun
 
-Both runs are one command each. Run them on the work PC through `cx-offload`, from a clean checkout of the commit being measured.
+Both runs are one command each. Run them on the work PC through `cx-offload`, from a clean checkout of the commit being measured. The census uses two import workers and kills any one observer above 6,144 MiB, recording that file as out of memory by name, so one huge source cannot exhaust the shared machine. The largest known source, 00005642, peaks at 4,605 MiB on its own.
 
 ```sh
 TOOLS=~/cx-checkpoint1/tools        # pinned CadQuery, smlibpy and OCP install, made on first use
@@ -70,7 +70,7 @@ Dry run on main `c52fd8f4` with this tooling, work PC, 100M work per Catallax ph
 
 The last column applies the same rule to the [published comparison](../../site/comparison-results.json) at `3852c773`. Since then P1, P4 and P5 finish in Catallax. Every Catallax build used at most 13.6M work, under the 20M target.
 
-The census rows come from a rerun of the ten census parts with the material rule. The P0 to P5 STEP files of the dry run were checked again under the closed-solid rule and no verdict changed; line tangent and near miss pass with two closed solids each.
+The census rows come from a rerun of the ten census parts with the material rule. The P0 to P5 STEP files of the dry run were checked again under the closed-solid rule, which counts the distinct faces owned by all solids together, and no verdict changed. Line tangent and near miss pass with two closed solids each in Catallax and OCCT, as does SMLib's general torus.
 
 On 00000131, 00000632 and 00000633 the hole lands inside an existing bore, so Catallax's and OCCT's volumes do not change at all. These three edits test nothing as defined. Picking a hole position that cuts material, for example by trying a few offsets from the centre, would make them count; it is not done here.
 
@@ -92,7 +92,7 @@ Dry run on main `c52fd8f4`, the 20M import and export allowances, a 60 s cap per
 
 Five files are new (00000174, 00004152, 00004399, 00004452, 00009819) and none of the 369 is lost.
 
-#669 changed both census observers after this dry run, so the census command ran once more on main `634a9483` to check it still works. It gave the same 374 valid files. That run was not complete: the observer for 00005642, a 465 MB source, reached 3.9 GB and the work PC's out-of-memory guard killed it while other jobs were running. Alone, the same file refuses at `resource_limit` after 18 s. The cut run has the work PC to itself.
+#669 changed both census observers after this dry run, so the census command ran once more on main `634a9483` to check it still works. It gave the same 374 valid files. That run was not complete: the observer for 00005642, a 465 MB source, reached 3.9 GB and the work PC's out-of-memory guard killed it while other jobs were running. Alone, the same file refuses at `resource_limit` after 18 s. The cut run has the work PC to itself and runs under the memory cap above.
 
 | Admission | Files |
 | --- | ---: |

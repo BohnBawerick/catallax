@@ -7,7 +7,7 @@ use catallax_shapes::{BSplineCurve, Point3, Vector3};
 #[cfg(test)]
 mod tests;
 
-pub(super) struct Chart {
+pub(crate) struct Chart {
     pub bounds: [Rational; 2],
     pub curve: BSplineCurve,
 }
@@ -122,7 +122,7 @@ fn arc_step(
     Ok((count, c, s))
 }
 
-pub(super) fn build(
+pub(crate) fn build(
     profile: &Profile,
     lp: &Loop,
     start: &ElementId,

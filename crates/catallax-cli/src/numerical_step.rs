@@ -50,29 +50,55 @@ pub(crate) fn evaluate(value: &Value, source: &str, out: &Path) -> io::Result<Va
         Ok(tolerance) if tolerance.sign() == Sign::Positive => tolerance,
         _ => return invalid("tolerance_mm must be a positive rational string".into()),
     };
-    let imported = match crate::import_recipe::parse(&problem.recipe) {
-        Ok(imported) => imported,
-        Err(error) => return Ok(refused(error.code, error.detail)),
-    };
-    let empty_files = catallax_features::ImportFiles::new();
-    let (input, files) = imported
-        .as_ref()
-        .map_or((&problem.recipe, &empty_files), |(recipe, files)| {
-            (*recipe, files)
-        });
-    let recipe = match catallax_recipe::Recipe::parse(&input.to_string()) {
-        Ok(recipe) => recipe,
-        Err(error) => {
-            let mut manifest = refused("cli.invalid-recipe", error);
-            manifest["status"] = json!("invalid-question");
-            return Ok(manifest);
-        }
-    };
     let mut dec = Decider::default();
-    let admitted = match admit(&recipe, files, &tolerance, &mut dec) {
-        Ok(admitted) => admitted,
-        Err(manifest) => return Ok(manifest),
-    };
+    let (admitted, result, sweep_checks) =
+        if problem.recipe["format"] == "catallax-general-sweep/1" {
+            let definition: catallax_features::general_sweep::SweepRecipe =
+                match serde_json::from_value(problem.recipe["definition"].clone()) {
+                    Ok(definition) => definition,
+                    Err(error) => return invalid(error.to_string()),
+                };
+            if definition.tolerance_mm.value() != &tolerance {
+                return invalid("sweep and export must declare the same tolerance_mm".into());
+            }
+            let swept = match catallax_features::general_sweep::build(&definition, &mut dec) {
+                Ok(swept) => swept,
+                Err(error) => return Ok(refused(error.code, error.detail)),
+            };
+            let checks = serde_json::to_value(swept.checks()).expect("finite sweep checks");
+            (
+                Admitted {
+                    body: swept.into_body(),
+                    recipe_work: current_operation_work().used,
+                },
+                definition.name,
+                checks,
+            )
+        } else {
+            let imported = match crate::import_recipe::parse(&problem.recipe) {
+                Ok(imported) => imported,
+                Err(error) => return Ok(refused(error.code, error.detail)),
+            };
+            let empty_files = catallax_features::ImportFiles::new();
+            let (input, files) = imported
+                .as_ref()
+                .map_or((&problem.recipe, &empty_files), |(recipe, files)| {
+                    (*recipe, files)
+                });
+            let recipe = match catallax_recipe::Recipe::parse(&input.to_string()) {
+                Ok(recipe) => recipe,
+                Err(error) => {
+                    let mut manifest = refused("cli.invalid-recipe", error);
+                    manifest["status"] = json!("invalid-question");
+                    return Ok(manifest);
+                }
+            };
+            let admitted = match admit(&recipe, files, &tolerance, &mut dec) {
+                Ok(admitted) => admitted,
+                Err(manifest) => return Ok(manifest),
+            };
+            (admitted, recipe.result.to_string(), Value::Null)
+        };
     let body = admitted.body;
     let recipe_work = admitted.recipe_work;
     let admitted_work = current_operation_work().used;
@@ -82,7 +108,7 @@ pub(crate) fn evaluate(value: &Value, source: &str, out: &Path) -> io::Result<Va
             .min(NumericalStepOptions::default().max_scalar_rounding_error_mm),
         ..Default::default()
     };
-    let span = OperationSpan::begin("brep", &recipe.result, "numerical-step", &dec);
+    let span = OperationSpan::begin("brep", &result, "numerical-step", &dec);
     let artifact = step::build(&body, &options, &mut dec);
     span.finish(&dec, artifact.as_ref().err(), None);
     let artifact = match artifact {
@@ -97,7 +123,7 @@ pub(crate) fn evaluate(value: &Value, source: &str, out: &Path) -> io::Result<Va
             return Err(error);
         }
     };
-    let span = OperationSpan::begin("brep", &recipe.result, "numerical-step-reread", &dec);
+    let span = OperationSpan::begin("brep", &result, "numerical-step-reread", &dec);
     let checked = artifact.check_written(&reread, &mut dec);
     span.finish(&dec, checked.as_ref().err(), None);
     if let Err(error) = checked {
@@ -117,6 +143,7 @@ pub(crate) fn evaluate(value: &Value, source: &str, out: &Path) -> io::Result<Va
             "result":{"lumps":counts.lumps,"shells":counts.shells,"faces":counts.faces,"edges":counts.edges,"vertices":counts.vertices},
             "numerical":{"source":crate::numerical_evidence_summary(&report.source_evidence),
                 "emitted":crate::numerical_evidence_summary(&report.emitted_evidence),
+                "sweep_fitting":sweep_checks,
                 "complete_body_bound":"unestablished"},
             "step":{"file":"answer.step","category":"approximate","seams":"required",
                 "sha256":format!("{:x}",Sha256::digest(&reread)),"bytes":reread.len(),

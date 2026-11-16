@@ -77,6 +77,8 @@ mod loft;
 mod mesh_import;
 /// Separate checked numerical edit definitions and replay.
 pub mod numerical;
+/// Editable numerical sweeps with guides, twist and helical paths.
+pub mod general_sweep;
 mod offset_fit;
 mod placement;
 mod planar_distance;

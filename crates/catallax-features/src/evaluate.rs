@@ -847,11 +847,6 @@ fn evaluate_impl(
         let mut build = |model: &mut Model,
                          dec: &mut Decider|
          -> Result<Option<BodyValue>, Refusal> {
-            if let Some(context) = numerical_sweep.as_deref_mut() {
-                if let Some((body, radius)) = context.stock(model, &step.op, &step.id, dec)? {
-                    return Ok(Some(BodyValue {body,radius}));
-                }
-            }
             if let Some((body, radius)) = crate::stock::build(model, &step.op, &step.id, dec)? {
                 return Ok(Some(BodyValue { body, radius }));
             }

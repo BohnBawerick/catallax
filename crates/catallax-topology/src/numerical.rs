@@ -336,7 +336,16 @@ pub fn build(
     options: NumericalOptions,
     dec: &mut Decider,
 ) -> Result<NumericalBody, Refusal> {
-    guarded(|| build_inner(definition, Vec::new(), BTreeSet::new(), options, Vec::new(), dec))
+    guarded(|| {
+        build_inner(
+            definition,
+            Vec::new(),
+            BTreeSet::new(),
+            options,
+            Vec::new(),
+            dec,
+        )
+    })
 }
 
 /// Builds an open or closed surface shell under stated numerical tolerances.
@@ -497,10 +506,19 @@ fn build_inner_kind(
     keys(definition.edges.iter().map(|e| e.key.as_str()), dec)?;
     keys(definition.faces.iter().map(|f| f.key.as_str()), dec)?;
     for key in &sampled_carriers {
-        let face = definition.faces.iter().find(|face| &face.key == key)
+        let face = definition
+            .faces
+            .iter()
+            .find(|face| &face.key == key)
             .ok_or_else(|| bad("definition", "sampled carrier names an unknown face"))?;
-        if !matches!(face.surface, Surface::BSpline(SplineSupport::RationalAtlas(_))) {
-            return Err(bad("unsupported", "sampled carrier coverage requires a retained rational atlas"));
+        if !matches!(
+            face.surface,
+            Surface::BSpline(SplineSupport::RationalAtlas(_))
+        ) {
+            return Err(bad(
+                "unsupported",
+                "sampled carrier coverage requires a retained rational atlas",
+            ));
         }
     }
     let native = native::Index::new(&definition, &native_trims, &sampled_carriers, dec)?;
@@ -688,7 +706,8 @@ fn build_inner_kind(
                 "edge.numerical-pair-vertex-distance"
             } else {
                 "edge.vertex-distance"
-            }.into(),
+            }
+            .into(),
             scope: edge.key.clone(),
             samples,
         });
@@ -704,7 +723,13 @@ fn build_inner_kind(
                 dec,
             )?;
         }
-        checks.extend(native::join_samples(face_index, face, &definition.edges, &native, dec)?);
+        checks.extend(native::join_samples(
+            face_index,
+            face,
+            &definition.edges,
+            &native,
+            dec,
+        )?);
         let sampled = native.has_face(face_index) || analytic::projected(face, &definition.edges);
         checks.push(NumericalCheck::Passed {
             name: if sampled_carriers.contains(&face.key) {
@@ -726,7 +751,8 @@ fn build_inner_kind(
                     "surface.sampled-atlas-chart-box-coverage-9x9"
                 } else {
                     "surface.atlas-charts-fill-box"
-                }.into(),
+                }
+                .into(),
                 scope: face.key.clone(),
             });
             checks.push(NumericalCheck::Passed {
@@ -734,7 +760,8 @@ fn build_inner_kind(
                     "trim.numerical-carrier-sampled-atlas-chart-union-9-per-use"
                 } else {
                     "trim.sampled-atlas-chart-union"
-                }.into(),
+                }
+                .into(),
                 scope: face.key.clone(),
             });
         }
@@ -791,13 +818,15 @@ fn build_inner_kind(
             let edge = &definition.edges[trim.edge];
             let numerical_pair = native.numerical_pair(trim.edge);
             if let Some(curve) = native.get(face_index, boundary_index, use_index) {
-                let (samples, endpoints) = native::samples(face, trim, edge, curve, numerical_pair, dec)?;
+                let (samples, endpoints) =
+                    native::samples(face, trim, edge, curve, numerical_pair, dec)?;
                 checks.push(NumericalCheck::Samples {
                     name: if numerical_pair {
                         "trim.numerical-pair-native-endpoint-position"
                     } else {
                         "trim.native-endpoint-position"
-                    }.into(),
+                    }
+                    .into(),
                     scope: format!("face {:?}, edge {:?}, use {index}", face.key, edge.key),
                     samples: endpoints,
                 });
@@ -806,7 +835,8 @@ fn build_inner_kind(
                         "trim.numerical-pair-edge-surface-distance"
                     } else {
                         "trim.edge-surface-distance"
-                    }.into(),
+                    }
+                    .into(),
                     scope: format!("face {:?}, edge {:?}, use {index}", face.key, edge.key),
                     samples,
                 });
@@ -856,7 +886,8 @@ fn build_inner_kind(
                     "trim.numerical-pair-edge-surface-distance"
                 } else {
                     "trim.edge-surface-distance"
-                }.into(),
+                }
+                .into(),
                 scope: format!("face {:?}, edge {:?}, use {index}", face.key, edge.key),
                 samples,
             });
@@ -1162,7 +1193,14 @@ pub fn sew(
             }
         }
         definition.vertices = retained;
-        let mut body = build_inner(definition, Vec::new(), BTreeSet::new(), options, repairs, dec)?;
+        let mut body = build_inner(
+            definition,
+            Vec::new(),
+            BTreeSet::new(),
+            options,
+            repairs,
+            dec,
+        )?;
         body.source = input.clone();
         let mut checks = body.evidence.checks().to_vec();
         for &[keeper, removed] in pairs {

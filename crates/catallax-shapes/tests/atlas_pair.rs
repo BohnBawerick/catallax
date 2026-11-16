@@ -37,10 +37,8 @@ fn split_vertical_plane(first: bool, dec: &mut Decider) -> RationalAtlas {
         dec,
     )
     .unwrap();
-    let [atlas] = <[_; 1]>::try_from(
-        RationalAtlas::partition(source, [false, false], dec).unwrap(),
-    )
-    .unwrap();
+    let [atlas] =
+        <[_; 1]>::try_from(RationalAtlas::partition(source, [false, false], dec).unwrap()).unwrap();
     assert_eq!(atlas.charts().len(), 2);
     atlas
 }
@@ -101,7 +99,10 @@ fn numerical_fillet_crosses_chart_seams_with_circular_sections() {
         ];
         let supports = supports.map(|support| {
             catallax_shapes::NumericalFilletSpine::extended_support(
-                &support, 1, &Rational::from_ratio(1, 4).unwrap(), &mut dec,
+                &support,
+                1,
+                &Rational::from_ratio(1, 4).unwrap(),
+                &mut dec,
             )
             .unwrap()
         });
@@ -111,7 +112,10 @@ fn numerical_fillet_crosses_chart_seams_with_circular_sections() {
             &supports,
             [radius.clone(), radius.clone()],
             1,
-            [Rational::from_ratio(-1, 2).unwrap(), Rational::from_ratio(5, 2).unwrap()],
+            [
+                Rational::from_ratio(-1, 2).unwrap(),
+                Rational::from_ratio(5, 2).unwrap(),
+            ],
             [
                 Rational::from_ratio(11, 20).unwrap(),
                 Rational::from_ratio(9, 20).unwrap(),
@@ -128,29 +132,45 @@ fn numerical_fillet_crosses_chart_seams_with_circular_sections() {
             let tau = Rational::from_ratio(i, 8).unwrap();
             for j in 0..=8 {
                 let across = Rational::from_ratio(j, 8).unwrap();
-                let point = source.evaluate_box([&tau, &tau], [&across, &across], 128, &dec).unwrap();
+                let point = source
+                    .evaluate_box([&tau, &tau], [&across, &across], 128, &dec)
+                    .unwrap();
                 let x = &point[0] - &catallax_numbers::Ball::from_rational(&radius, 128);
                 let y = &point[1] + &catallax_numbers::Ball::from_rational(&radius, 128);
                 let square = &x.pow_u32(2) + &y.pow_u32(2);
-                let error = (&square.lo() - &(&radius * &radius)).abs()
+                let error = (&square.lo() - &(&radius * &radius))
+                    .abs()
                     .max((&square.hi() - &(&radius * &radius)).abs());
                 assert!(error <= &tolerance * &radius);
                 assert!((&point[2].lo() - &tau).abs() <= tolerance);
                 assert!((&point[2].hi() - &tau).abs() <= tolerance);
-                if j == 0 { assert!(point[1].lo().abs().max(point[1].hi().abs()) <= tolerance); }
-                if j == 8 { assert!(point[0].lo().abs().max(point[0].hi().abs()) <= tolerance); }
+                if j == 0 {
+                    assert!(point[1].lo().abs().max(point[1].hi().abs()) <= tolerance);
+                }
+                if j == 8 {
+                    assert!(point[0].lo().abs().max(point[0].hi().abs()) <= tolerance);
+                }
             }
         }
         for normal in [[0, 0, 1], [1, 0, 1]] {
-            let cut = fillet.plane_cut(normal.map(Rational::from_i64), Rational::zero(), &mut dec).unwrap();
+            let cut = fillet
+                .plane_cut(normal.map(Rational::from_i64), Rational::zero(), &mut dec)
+                .unwrap();
             for i in 0..=32 {
                 let s = Rational::from_ratio(i, 32).unwrap();
                 let point = cut.curve().evaluate_box([&s, &s], 128, &dec).unwrap();
                 let uv = cut.parameters().evaluate_box([&s, &s], 128, &dec).unwrap();
                 let tau = uv[0].mid();
                 let across = uv[1].mid();
-                let on_fillet = source.evaluate_box([&tau, &tau], [&across, &across], 128, &dec).unwrap();
-                let residual = &point[2] + &(&point[0] * &catallax_numbers::Ball::from_rational(&Rational::from_i64(normal[0]), 128));
+                let on_fillet = source
+                    .evaluate_box([&tau, &tau], [&across, &across], 128, &dec)
+                    .unwrap();
+                let residual = &point[2]
+                    + &(&point[0]
+                        * &catallax_numbers::Ball::from_rational(
+                            &Rational::from_i64(normal[0]),
+                            128,
+                        ));
                 assert!(residual.lo().abs().max(residual.hi().abs()) <= tolerance);
                 for k in 0..3 {
                     assert!((&point[k].lo() - &on_fillet[k].hi()).abs() <= tolerance);

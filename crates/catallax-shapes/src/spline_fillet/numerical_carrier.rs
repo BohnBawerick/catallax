@@ -21,21 +21,33 @@ pub struct NumericalSplineFillet {
     samples: usize,
 }
 
-fn packed(problem: &Problem, node: &NumericalSpineNode, dec: &mut Decider) -> Result<Packed, Refusal> {
+fn packed(
+    problem: &Problem,
+    node: &NumericalSpineNode,
+    dec: &mut Decider,
+) -> Result<Packed, Refusal> {
     let radius = problem.supports[0].distance.abs().to_f64_nearest();
     let mut points = [[0.0; 3]; 2];
     let mut directions = [[0.0; 3]; 2];
     for side in 0..2 {
         let support = &problem.supports[side];
-        let at = node.parameters[side].each_ref().map(Rational::to_f64_nearest);
+        let at = node.parameters[side]
+            .each_ref()
+            .map(Rational::to_f64_nearest);
         let (_, chart) = support.chart(at)?;
         dec.charge_work(chart.evaluation_work())?;
         let (point, normal) = chart.contact_f64(at);
         points[side] = point;
-        let sign = if support.distance.sign() == Sign::Negative { 1.0 } else { -1.0 };
+        let sign = if support.distance.sign() == Sign::Negative {
+            1.0
+        } else {
+            -1.0
+        };
         directions[side] = normal.map(|v| sign * v);
     }
-    let cosine = (0..3).map(|i| directions[0][i] * directions[1][i]).sum::<f64>();
+    let cosine = (0..3)
+        .map(|i| directions[0][i] * directions[1][i])
+        .sum::<f64>();
     let denominator = 1.0 + cosine;
     if !denominator.is_finite() || denominator <= 1e-12 {
         return Err(bad("rolling-ball section has opposite contact directions"));
@@ -46,12 +58,19 @@ fn packed(problem: &Problem, node: &NumericalSpineNode, dec: &mut Decider) -> Re
         centre[i] + radius * (directions[0][i] + directions[1][i]) / denominator
     });
     let mut result: Packed = std::array::from_fn(|_| Rational::zero());
-    for (row, (point, w)) in [(points[0], 1.0), (middle, weight), (points[1], 1.0)].into_iter().enumerate() {
-        for i in 0..3 { result[row * 4 + i] = rational(point[i] * w)?; }
+    for (row, (point, w)) in [(points[0], 1.0), (middle, weight), (points[1], 1.0)]
+        .into_iter()
+        .enumerate()
+    {
+        for i in 0..3 {
+            result[row * 4 + i] = rational(point[i] * w)?;
+        }
         result[row * 4 + 3] = rational(w)?;
     }
     for side in 0..2 {
-        for axis in 0..2 { result[12 + side * 2 + axis] = node.parameters[side][axis].clone(); }
+        for axis in 0..2 {
+            result[12 + side * 2 + axis] = node.parameters[side][axis].clone();
+        }
     }
     Ok(result)
 }
@@ -95,12 +114,21 @@ pub(super) fn hermite<'a, const N: usize>(
     controls.push((*values(0)).clone());
     for i in 0..nodes.len() - 1 {
         let third = (&nodes[i + 1].tau - &nodes[i].tau) / Rational::from_i64(3);
-        controls.push(std::array::from_fn(|j| &values(i)[j] + &(&third * &slopes[i][j])));
-        controls.push(std::array::from_fn(|j| &values(i + 1)[j] - &(&third * &slopes[i + 1][j])));
+        controls.push(std::array::from_fn(|j| {
+            &values(i)[j] + &(&third * &slopes[i][j])
+        }));
+        controls.push(std::array::from_fn(|j| {
+            &values(i + 1)[j] - &(&third * &slopes[i + 1][j])
+        }));
         controls.push((*values(i + 1)).clone());
-        if i + 1 < nodes.len() - 1 { knots.extend(std::iter::repeat_n(nodes[i + 1].tau.clone(), 3)); }
+        if i + 1 < nodes.len() - 1 {
+            knots.extend(std::iter::repeat_n(nodes[i + 1].tau.clone(), 3));
+        }
     }
-    knots.extend(std::iter::repeat_n(nodes.last().expect("stations").tau.clone(), 4));
+    knots.extend(std::iter::repeat_n(
+        nodes.last().expect("stations").tau.clone(),
+        4,
+    ));
     (knots, controls)
 }
 
@@ -109,7 +137,11 @@ struct Candidate {
     rails: [BSplineCurve; 2],
     parameters: [BSplineCurve; 2],
 }
-fn candidate(nodes: &[NumericalSpineNode], values: &[Packed], dec: &mut Decider) -> Result<Candidate, Refusal> {
+fn candidate(
+    nodes: &[NumericalSpineNode],
+    values: &[Packed],
+    dec: &mut Decider,
+) -> Result<Candidate, Refusal> {
     dec.charge_work((nodes.len() as u64) * 128)?;
     let (knots, data) = hermite(nodes, |i| &values[i]);
     let mut controls = Vec::with_capacity(3 * data.len());
@@ -120,7 +152,11 @@ fn candidate(nodes: &[NumericalSpineNode], values: &[Packed], dec: &mut Decider)
     for entry in &data {
         for row in 0..3 {
             let weight = &entry[4 * row + 3];
-            if weight.sign() != Sign::Positive { return Err(bad("numerical carrier has a non-positive homogeneous weight")); }
+            if weight.sign() != Sign::Positive {
+                return Err(bad(
+                    "numerical carrier has a non-positive homogeneous weight",
+                ));
+            }
             let point = Point3::new(
                 Real::from_rational(&entry[4 * row] / weight),
                 Real::from_rational(&entry[4 * row + 1] / weight),
@@ -137,15 +173,22 @@ fn candidate(nodes: &[NumericalSpineNode], values: &[Packed], dec: &mut Decider)
         for side in 0..2 {
             parameters[side].push(Point3::new(
                 Real::from_rational(entry[12 + 2 * side].clone()),
-                Real::from_rational(entry[13 + 2 * side].clone()), Real::zero(),
+                Real::from_rational(entry[13 + 2 * side].clone()),
+                Real::zero(),
             ));
         }
     }
     let count = data.len();
     let surface = BSplineSurface::new(
         [3, 2],
-        [knots.clone(), [0, 0, 0, 1, 1, 1].map(Rational::from_i64).to_vec()],
-        [count, 3], controls, weights, dec,
+        [
+            knots.clone(),
+            [0, 0, 0, 1, 1, 1].map(Rational::from_i64).to_vec(),
+        ],
+        [count, 3],
+        controls,
+        weights,
+        dec,
     )?;
     let [a, b] = rail_points;
     let [wa, wb] = rail_weights;
@@ -158,30 +201,52 @@ fn candidate(nodes: &[NumericalSpineNode], values: &[Packed], dec: &mut Decider)
         BSplineCurve::new(3, knots.clone(), a, vec![Real::one(); count], dec)?,
         BSplineCurve::new(3, knots, b, vec![Real::one(); count], dec)?,
     ];
-    Ok(Candidate { surface, rails, parameters })
+    Ok(Candidate {
+        surface,
+        rails,
+        parameters,
+    })
 }
 fn section(row: &Packed, parameter: &Rational) -> [Rational; 3] {
     let other = Rational::one() - parameter.clone();
-    let basis = [other.clone() * other.clone(), Rational::from_i64(2) * other * parameter.clone(), parameter.clone() * parameter.clone()];
-    let h: [Rational; 4] = std::array::from_fn(|i| (0..3).fold(Rational::zero(), |sum, j| sum + &basis[j] * &row[j * 4 + i]));
+    let basis = [
+        other.clone() * other.clone(),
+        Rational::from_i64(2) * other * parameter.clone(),
+        parameter.clone() * parameter.clone(),
+    ];
+    let h: [Rational; 4] = std::array::from_fn(|i| {
+        (0..3).fold(Rational::zero(), |sum, j| sum + &basis[j] * &row[j * 4 + i])
+    });
     std::array::from_fn(|i| &h[i] / &h[3])
 }
 fn distance(point: &[Ball; 3], target: &[Rational; 3]) -> Rational {
     (0..3).fold(Rational::zero(), |sum, i| {
-        sum + (&point[i].lo() - &target[i]).abs().max((&point[i].hi() - &target[i]).abs())
+        sum + (&point[i].lo() - &target[i])
+            .abs()
+            .max((&point[i].hi() - &target[i]).abs())
     })
 }
-fn rail_error(problem: &Problem, candidate: &Candidate, tau: &Rational, side: usize, dec: &mut Decider) -> Result<Rational, Refusal> {
+fn rail_error(
+    problem: &Problem,
+    candidate: &Candidate,
+    tau: &Rational,
+    side: usize,
+    dec: &mut Decider,
+) -> Result<Rational, Refusal> {
     let uv = candidate.parameters[side].evaluate_box([tau, tau], 128, dec)?;
     let at = [uv[0].mid(), uv[1].mid()];
     let support = &problem.supports[side];
     let (_, chart) = support.chart(at.each_ref().map(Rational::to_f64_nearest))?;
     let mut meter = Meter::default();
-    let contact = chart.contact(&at.each_ref().map(|p| Jet::constant(ball(p), 0)), &mut meter)?;
+    let contact = chart.contact(
+        &at.each_ref().map(|p| Jet::constant(ball(p), 0)),
+        &mut meter,
+    )?;
     meter.charge(dec)?;
     let point = candidate.rails[side].evaluate_box([tau, tau], 128, dec)?;
     Ok((0..3).fold(Rational::zero(), |sum, i| {
-        sum + (&point[i].lo() - &contact.point[i].0[0].hi()).abs()
+        sum + (&point[i].lo() - &contact.point[i].0[0].hi())
+            .abs()
             .max((&point[i].hi() - &contact.point[i].0[0].lo()).abs())
     }))
 }
@@ -194,11 +259,17 @@ impl NumericalSplineFillet {
     pub fn fit(mut spine: NumericalFilletSpine, dec: &mut Decider) -> Result<Self, Refusal> {
         let radius = spine.problem.supports[0].distance.abs();
         if radius.sign() != Sign::Positive || spine.problem.supports[1].distance.abs() != radius {
-            return Err(bad("a rolling-ball carrier requires equal positive offset radii"));
+            return Err(bad(
+                "a rolling-ball carrier requires equal positive offset radii",
+            ));
         }
         let mut samples = 0;
         for round in 0..=MAX_DEPTH {
-            let values = spine.nodes.iter().map(|node| packed(&spine.problem, node, dec)).collect::<Result<Vec<_>, _>>()?;
+            let values = spine
+                .nodes
+                .iter()
+                .map(|node| packed(&spine.problem, node, dec))
+                .collect::<Result<Vec<_>, _>>()?;
             let fitted = candidate(&spine.nodes, &values, dec)?;
             let mut inserted = Vec::new();
             let mut upper = Rational::zero();
@@ -209,20 +280,34 @@ impl NumericalSplineFillet {
                 for i in 1..4 {
                     let share = Rational::from_ratio(i, 4).unwrap();
                     let tau = &pair[0].tau + &(&(&pair[1].tau - &pair[0].tau) * &share);
-                    let node = spine.problem.solve(&tau, spine.problem.guess(&pair[0], &pair[1], i as f64 / 4.0), dec)?;
+                    let node = spine.problem.solve(
+                        &tau,
+                        spine.problem.guess(&pair[0], &pair[1], i as f64 / 4.0),
+                        dec,
+                    )?;
                     let centre_error = spine.centre_error(&node, dec)?;
                     span_upper = span_upper.max(centre_error.clone());
                     centre_upper = centre_upper.max(centre_error);
                     let truth = packed(&spine.problem, &node, dec)?;
                     for j in 0..=4 {
                         let section_at = Rational::from_ratio(j, 4).unwrap();
-                        let actual = fitted.surface.evaluate_box([&tau, &tau], [&section_at, &section_at], 128, dec)?;
+                        let actual = fitted.surface.evaluate_box(
+                            [&tau, &tau],
+                            [&section_at, &section_at],
+                            128,
+                            dec,
+                        )?;
                         let error = distance(&actual, &section(&truth, &section_at));
                         span_upper = span_upper.max(error);
                         samples += 1;
                     }
-                    for side in 0..2 { span_upper = span_upper.max(rail_error(&spine.problem, &fitted, &tau, side, dec)?); }
-                    if i == 2 { middle = Some(node); }
+                    for side in 0..2 {
+                        span_upper =
+                            span_upper.max(rail_error(&spine.problem, &fitted, &tau, side, dec)?);
+                    }
+                    if i == 2 {
+                        middle = Some(node);
+                    }
                 }
                 if span_upper > spine.tolerance_mm.mul_pow2(-1) {
                     inserted.push((index + 1, middle.expect("checked midpoint")));
@@ -230,30 +315,59 @@ impl NumericalSplineFillet {
                 upper = upper.max(span_upper);
             }
             if inserted.is_empty() {
-                let [surface] = <[_; 1]>::try_from(RationalAtlas::partition(fitted.surface, [false, false], dec)?)
-                    .map_err(|_| bad("numerical fillet carrier does not form one regular G1 logical face"))?;
+                let [surface] = <[_; 1]>::try_from(RationalAtlas::partition(
+                    fitted.surface,
+                    [false, false],
+                    dec,
+                )?)
+                .map_err(|_| {
+                    bad("numerical fillet carrier does not form one regular G1 logical face")
+                })?;
                 spine.sampled_error_mm = centre_upper;
                 spine.samples += samples / 5;
-                return Ok(Self { spine, surface, rails: fitted.rails, parameter_rails: fitted.parameters, sampled_error_mm: upper, samples });
+                return Ok(Self {
+                    spine,
+                    surface,
+                    rails: fitted.rails,
+                    parameter_rails: fitted.parameters,
+                    sampled_error_mm: upper,
+                    samples,
+                });
             }
             if round == MAX_DEPTH || spine.nodes.len() + inserted.len() > MAX_NODES {
-                return Err(bad("numerical fillet carrier cannot meet its stated sampled tolerance within the subdivision limit"));
+                return Err(bad(
+                    "numerical fillet carrier cannot meet its stated sampled tolerance within the subdivision limit",
+                ));
             }
-            for (index, node) in inserted.into_iter().rev() { spine.nodes.insert(index, node); }
+            for (index, node) in inserted.into_iter().rev() {
+                spine.nodes.insert(index, node);
+            }
             spine.centre_curve = super::centre_fit(&spine.nodes, dec)?;
         }
         unreachable!("fit returns at its subdivision limit")
     }
     /// Exact regular atlas of the fitted carrier, not an exact rolling-ball face.
-    pub fn surface(&self) -> &RationalAtlas { &self.surface }
+    pub fn surface(&self) -> &RationalAtlas {
+        &self.surface
+    }
     /// Numerical spine and its explicitly stated tolerance.
-    pub fn spine(&self) -> &NumericalFilletSpine { &self.spine }
+    pub fn spine(&self) -> &NumericalFilletSpine {
+        &self.spine
+    }
     /// Three-dimensional boundary curve on the first or second support.
-    pub fn rail(&self, side: usize) -> Option<&BSplineCurve> { self.rails.get(side) }
+    pub fn rail(&self, side: usize) -> Option<&BSplineCurve> {
+        self.rails.get(side)
+    }
     /// Native support parameters corresponding to a boundary's curve parameter.
-    pub fn parameter_rail(&self, side: usize) -> Option<&BSplineCurve> { self.parameter_rails.get(side) }
+    pub fn parameter_rail(&self, side: usize) -> Option<&BSplineCurve> {
+        self.parameter_rails.get(side)
+    }
     /// Largest checked position or rail residual, in L1 millimetres.
-    pub fn sampled_error_mm(&self) -> &Rational { &self.sampled_error_mm }
+    pub fn sampled_error_mm(&self) -> &Rational {
+        &self.sampled_error_mm
+    }
     /// Number of interior section sample positions checked during fitting.
-    pub fn samples(&self) -> usize { self.samples }
+    pub fn samples(&self) -> usize {
+        self.samples
+    }
 }

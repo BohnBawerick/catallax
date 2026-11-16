@@ -49,8 +49,16 @@ impl Codec for NumericalBody {
         Ok(Self {
             source: Codec::read(r)?,
             source_native_trims: Codec::read(r)?,
-            source_sampled_carriers: if carriers { Codec::read(r)? } else { BTreeSet::new() },
-            sampled_carriers: if carriers { Codec::read(r)? } else { BTreeSet::new() },
+            source_sampled_carriers: if carriers {
+                Codec::read(r)?
+            } else {
+                BTreeSet::new()
+            },
+            sampled_carriers: if carriers {
+                Codec::read(r)?
+            } else {
+                BTreeSet::new()
+            },
             native_trims: Codec::read(r)?,
             history: Codec::read(r)?,
             definition: Codec::read(r)?,
@@ -85,7 +93,11 @@ impl Codec for NumericalHistory {
         Ok(Self {
             definition: Codec::read(r)?,
             native_trims: Codec::read(r)?,
-            sampled_carriers: if carriers { Codec::read(r)? } else { BTreeSet::new() },
+            sampled_carriers: if carriers {
+                Codec::read(r)?
+            } else {
+                BTreeSet::new()
+            },
             options: Codec::read(r)?,
             evidence: Codec::read(r)?,
         })

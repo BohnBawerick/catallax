@@ -619,34 +619,67 @@ fn numerical_fillet_builds_on_the_smooth_loft_across_its_station_seam() {
         let mut dec = Decider::default();
         let built = evaluate(&recipe, &mut dec).unwrap();
         let ends = [[q("1"), q("-1"), q("0")], [q("1"), q("0"), q("2")]];
-        let edge = built.model.edges_of_body(built.result).into_iter().find(|id| {
-            let edge = built.model.edge(*id);
-            let (Some(a), Some(b)) = (edge.start, edge.end) else { return false; };
-            let actual = [a, b].map(|v| {
-                let p = built.model.geom().position(built.model.vertex(v).point).as_rational().unwrap();
-                [p.x, p.y, p.z]
-            });
-            actual == ends || actual == [ends[1].clone(), ends[0].clone()]
-        }).unwrap();
+        let edge = built
+            .model
+            .edges_of_body(built.result)
+            .into_iter()
+            .find(|id| {
+                let edge = built.model.edge(*id);
+                let (Some(a), Some(b)) = (edge.start, edge.end) else {
+                    return false;
+                };
+                let actual = [a, b].map(|v| {
+                    let p = built
+                        .model
+                        .geom()
+                        .position(built.model.vertex(v).point)
+                        .as_rational()
+                        .unwrap();
+                    [p.x, p.y, p.z]
+                });
+                actual == ends || actual == [ends[1].clone(), ends[0].clone()]
+            })
+            .unwrap();
         let faces: [_; 2] = users(&built, edge).try_into().unwrap();
         let supports = faces.map(|face| {
             let Surface::BSpline(SplineSupport::RationalAtlas(atlas)) =
                 built.model.geom().surface(built.model.face(face).surface)
-            else { panic!("the smooth loft must retain its station charts"); };
+            else {
+                panic!("the smooth loft must retain its station charts");
+            };
             assert!(atlas.charts().len() > 1);
             atlas.clone()
         });
         let radius = q("1/10");
         let tolerance = q("1/10000000");
-        let options = catallax_topology::numerical::NumericalOptions { tolerance_mm: tolerance.clone() };
+        let options = catallax_topology::numerical::NumericalOptions {
+            tolerance_mm: tolerance.clone(),
+        };
         let (source, native) = catallax_step::numerical::definition_from_exact_model(
-            &built.model, built.result, recipe.name.clone(), &tolerance, &mut dec,
-        ).unwrap();
-        let source = catallax_topology::numerical::build_with_native_trims(source, native, options, &mut dec).unwrap();
+            &built.model,
+            built.result,
+            recipe.name.clone(),
+            &tolerance,
+            &mut dec,
+        )
+        .unwrap();
+        let source = catallax_topology::numerical::build_with_native_trims(
+            source, native, options, &mut dec,
+        )
+        .unwrap();
         let rounded = catallax_features::fillet::numerical::build(
-            source, &format!("{edge:?}"), "round", radius.clone(), tolerance.clone(), &mut dec,
-        ).unwrap();
-        println!("numerical smooth-loft body admission: {} work", catallax_numbers::current_operation_work().used);
+            source,
+            &format!("{edge:?}"),
+            "round",
+            radius.clone(),
+            tolerance.clone(),
+            &mut dec,
+        )
+        .unwrap();
+        println!(
+            "numerical smooth-loft body admission: {} work",
+            catallax_numbers::current_operation_work().used
+        );
         (rounded, supports, radius, tolerance)
     });
     assert!(!work.exhausted, "{work:?}");
@@ -660,14 +693,22 @@ fn numerical_fillet_builds_on_the_smooth_loft_across_its_station_seam() {
             for side in 0..2 {
                 let uv = &node.parameters[side];
                 let native = supports[side].source().domain();
-                if uv[0] < *native[0][0] || uv[0] > *native[0][1]
-                    || uv[1] < *native[1][0] || uv[1] > *native[1][1] { continue; }
-                let point = supports[side].source()
-                    .evaluate_box([&uv[0], &uv[0]], [&uv[1], &uv[1]], 128, &dec).unwrap();
+                if uv[0] < *native[0][0]
+                    || uv[0] > *native[0][1]
+                    || uv[1] < *native[1][0]
+                    || uv[1] > *native[1][1]
+                {
+                    continue;
+                }
+                let point = supports[side]
+                    .source()
+                    .evaluate_box([&uv[0], &uv[0]], [&uv[1], &uv[1]], 128, &dec)
+                    .unwrap();
                 let square = (0..3).fold(
                     catallax_numbers::Ball::from_rational(&q("0"), 128),
                     |sum, k| {
-                        let delta = &point[k] - &catallax_numbers::Ball::from_rational(&node.centre[k], 128);
+                        let delta = &point[k]
+                            - &catallax_numbers::Ball::from_rational(&node.centre[k], 128);
                         &sum + &delta.pow_u32(2)
                     },
                 );
@@ -675,10 +716,22 @@ fn numerical_fillet_builds_on_the_smooth_loft_across_its_station_seam() {
                 assert!((&square.hi() - &(&radius * &radius)).abs() <= radial_tolerance);
             }
         }
-        for edge in rounded.body().definition().edges.iter().filter(|edge| edge.key.starts_with("round/cap/")) {
-            let Curve::BSpline(curve) = &edge.curve else { panic!("cap cut must retain its native spline"); };
+        for edge in rounded
+            .body()
+            .definition()
+            .edges
+            .iter()
+            .filter(|edge| edge.key.starts_with("round/cap/"))
+        {
+            let Curve::BSpline(curve) = &edge.curve else {
+                panic!("cap cut must retain its native spline");
+            };
             let vertex = &rounded.body().definition().vertices[edge.vertices[0]].position;
-            let height = if vertex[2].abs() < (&vertex[2] - &q("2")).abs() { q("0") } else { q("2") };
+            let height = if vertex[2].abs() < (&vertex[2] - &q("2")).abs() {
+                q("0")
+            } else {
+                q("2")
+            };
             for i in 0..=16 {
                 let s = Rational::from_ratio(i, 16).unwrap();
                 let point = curve.evaluate_box([&s, &s], 128, &dec).unwrap();
@@ -688,11 +741,24 @@ fn numerical_fillet_builds_on_the_smooth_loft_across_its_station_seam() {
         }
     });
     assert!(!proof_work.exhausted, "{proof_work:?}");
-    println!("independent numerical-body geometry checks: {} work", proof_work.used);
-    let names = |body: &catallax_topology::numerical::NumericalBody| (
-        body.definition().faces.iter().map(|face| face.key.clone()).collect::<std::collections::BTreeSet<_>>(),
-        body.definition().edges.iter().map(|edge| edge.key.clone()).collect::<std::collections::BTreeSet<_>>(),
+    println!(
+        "independent numerical-body geometry checks: {} work",
+        proof_work.used
     );
+    let names = |body: &catallax_topology::numerical::NumericalBody| {
+        (
+            body.definition()
+                .faces
+                .iter()
+                .map(|face| face.key.clone())
+                .collect::<std::collections::BTreeSet<_>>(),
+            body.definition()
+                .edges
+                .iter()
+                .map(|edge| edge.key.clone())
+                .collect::<std::collections::BTreeSet<_>>(),
+        )
+    };
     let (edited, work) = with_operation_budget(100_000_000, || {
         rounded.edit_radius(q("3/20"), &mut Decider::default())
     });
@@ -700,18 +766,26 @@ fn numerical_fillet_builds_on_the_smooth_loft_across_its_station_seam() {
         Ok(edited) => {
             assert!(!work.exhausted, "{work:?}");
             assert_eq!(names(rounded.body()), names(edited.body()));
-            println!("numerical smooth-loft radius edit keeps names: {} work", work.used);
+            println!(
+                "numerical smooth-loft radius edit keeps names: {} work",
+                work.used
+            );
         }
         Err(refusal) => {
             assert!(work.exhausted, "{refusal:?}: {work:?}");
             assert_eq!(refusal.code, "numbers.operation-budget");
-            println!("numerical smooth-loft radius edit refuses at its work ceiling: {} work", work.used);
+            println!(
+                "numerical smooth-loft radius edit refuses at its work ceiling: {} work",
+                work.used
+            );
         }
     }
     if let Some(path) = std::env::var_os("CATALLAX_M11_STEP_OUT") {
         let (artifact, work) = with_operation_budget(100_000_000, || {
             catallax_step::numerical::build(
-                rounded.body(), &Default::default(), &mut Decider::default(),
+                rounded.body(),
+                &Default::default(),
+                &mut Decider::default(),
             )
         });
         assert!(!work.exhausted, "{work:?}");

@@ -81,24 +81,28 @@ fn controls() -> NumericalOptions {
     }
 }
 
-fn linear_native(
-    ends: &[[Rational; 2]; 2],
-    spike: bool,
-    dec: &mut Decider,
-) -> BSplineCurve {
+fn linear_native(ends: &[[Rational; 2]; 2], spike: bool, dec: &mut Decider) -> BSplineCurve {
     let ts = [q("0"), q("1/32"), q("1/16"), q("3/32"), q("1")];
     let direction: [Rational; 2] = std::array::from_fn(|i| &ends[1][i] - &ends[0][i]);
     let offset = q("1e-4");
-    let points = ts.iter().enumerate().map(|(i, t)| {
-        let mut p: [Rational; 2] = std::array::from_fn(|axis| &ends[0][axis] + &(t * &direction[axis]));
-        if spike && i == 2 {
-            p[0] = &p[0] - &(&direction[1] * &offset);
-            p[1] = &p[1] + &(&direction[0] * &offset);
-        }
-        let [x, y] = p;
-        Point3::new(x.into(), y.into(), Real::zero())
-    }).collect();
-    let knots = std::iter::once(q("0")).chain(ts).chain(std::iter::once(q("1"))).collect();
+    let points = ts
+        .iter()
+        .enumerate()
+        .map(|(i, t)| {
+            let mut p: [Rational; 2] =
+                std::array::from_fn(|axis| &ends[0][axis] + &(t * &direction[axis]));
+            if spike && i == 2 {
+                p[0] = &p[0] - &(&direction[1] * &offset);
+                p[1] = &p[1] + &(&direction[0] * &offset);
+            }
+            let [x, y] = p;
+            Point3::new(x.into(), y.into(), Real::zero())
+        })
+        .collect();
+    let knots = std::iter::once(q("0"))
+        .chain(ts)
+        .chain(std::iter::once(q("1")))
+        .collect();
     BSplineCurve::new(1, knots, points, vec![Real::one(); 5], dec).unwrap()
 }
 
@@ -106,10 +110,15 @@ fn linear_native(
 fn exact_exact_distance_pair_keeps_its_knot_grid_in_a_mixed_body() {
     let ((), work) = with_operation_budget(20_000_000, || {
         let mut definition = tube();
-        let numerical_face = definition.faces.iter().position(|face| {
-            face.loops.len() == 1 && face.loops[0].len() == 4
-                && face.loops[0].iter().all(|trim| trim.edge != 0)
-        }).unwrap();
+        let numerical_face = definition
+            .faces
+            .iter()
+            .position(|face| {
+                face.loops.len() == 1
+                    && face.loops[0].len() == 4
+                    && face.loops[0].iter().all(|trim| trim.edge != 0)
+            })
+            .unwrap();
         let points: [Point3; 4] = std::array::from_fn(|i| {
             let trim = &definition.faces[numerical_face].loops[0][i];
             let edge = &definition.edges[trim.edge];
@@ -120,14 +129,29 @@ fn exact_exact_distance_pair_keeps_its_knot_grid_in_a_mixed_body() {
         let [p0, p1, p2, p3] = points;
         let mut dec = Decider::default();
         let carrier = BSplineSurface::new(
-            [1, 1], std::array::from_fn(|_| vec![q("0"), q("0"), q("1"), q("1")]), [2, 2],
-            vec![p0, p3, p1, p2], vec![Real::one(); 4], &mut dec,
-        ).unwrap();
-        let atlases = catallax_shapes::RationalAtlas::partition(carrier, [false, false], &mut dec).unwrap();
+            [1, 1],
+            std::array::from_fn(|_| vec![q("0"), q("0"), q("1"), q("1")]),
+            [2, 2],
+            vec![p0, p3, p1, p2],
+            vec![Real::one(); 4],
+            &mut dec,
+        )
+        .unwrap();
+        let atlases =
+            catallax_shapes::RationalAtlas::partition(carrier, [false, false], &mut dec).unwrap();
         let [atlas]: [_; 1] = atlases.try_into().unwrap();
-        definition.faces[numerical_face].surface = Surface::BSpline(SplineSupport::RationalAtlas(atlas));
-        let corners = [[q("0"), q("0")], [q("1"), q("0")], [q("1"), q("1")], [q("0"), q("1")]];
-        for (i, trim) in definition.faces[numerical_face].loops[0].iter_mut().enumerate() {
+        definition.faces[numerical_face].surface =
+            Surface::BSpline(SplineSupport::RationalAtlas(atlas));
+        let corners = [
+            [q("0"), q("0")],
+            [q("1"), q("0")],
+            [q("1"), q("1")],
+            [q("0"), q("1")],
+        ];
+        for (i, trim) in definition.faces[numerical_face].loops[0]
+            .iter_mut()
+            .enumerate()
+        {
             trim.uv = [corners[i].clone(), corners[(i + 1) % 4].clone()];
         }
         let key = definition.faces[numerical_face].key.clone();
@@ -136,14 +160,20 @@ fn exact_exact_distance_pair_keeps_its_knot_grid_in_a_mixed_body() {
         for (face_index, face) in definition.faces.iter().enumerate() {
             for (boundary, row) in face.loops.iter().enumerate() {
                 for (use_index, trim) in row.iter().enumerate() {
-                    if trim.edge != 0 && face_index != numerical_face { continue; }
+                    if trim.edge != 0 && face_index != numerical_face {
+                        continue;
+                    }
                     let mut ends = trim.uv.clone();
-                    if trim.sense == Sense::Reversed { ends.reverse(); }
+                    if trim.sense == Sense::Reversed {
+                        ends.reverse();
+                    }
                     if face_index == 0 && trim.edge == 0 {
                         target = Some((bindings.len(), ends.clone()));
                     }
                     bindings.push(NumericalNativeTrim {
-                        face: face.key.clone(), boundary, use_index,
+                        face: face.key.clone(),
+                        boundary,
+                        use_index,
                         edge: definition.edges[trim.edge].key.clone(),
                         curve: linear_native(&ends, false, &mut dec),
                     });
@@ -151,17 +181,26 @@ fn exact_exact_distance_pair_keeps_its_knot_grid_in_a_mixed_body() {
             }
         }
         let body = numerical::build_with_sampled_carriers(
-            definition, bindings, std::collections::BTreeSet::from([key]), controls(), &mut dec,
-        ).unwrap();
+            definition,
+            bindings,
+            std::collections::BTreeSet::from([key]),
+            controls(),
+            &mut dec,
+        )
+        .unwrap();
         let encoded = catallax_numbers::transfer::encode(&body, &mut dec).unwrap();
-        let body: numerical::NumericalBody = catallax_numbers::transfer::decode(&encoded, &mut dec).unwrap();
-        assert_eq!(catallax_numbers::transfer::encode(&body, &mut dec).unwrap(), encoded);
+        let body: numerical::NumericalBody =
+            catallax_numbers::transfer::decode(&encoded, &mut dec).unwrap();
+        assert_eq!(
+            catallax_numbers::transfer::encode(&body, &mut dec).unwrap(),
+            encoded
+        );
         let (slot, ends) = target.unwrap();
         let mut changed = body.native_trims().to_vec();
         changed[slot].curve = linear_native(&ends, true, &mut dec);
-        let refusal = body.rebuild_with_native_trims(
-            body.definition().clone(), changed, controls(), &mut dec,
-        ).unwrap_err();
+        let refusal = body
+            .rebuild_with_native_trims(body.definition().clone(), changed, controls(), &mut dec)
+            .unwrap_err();
         assert_eq!(refusal.code, "numbers.numerical-tolerance-exceeded");
     });
     assert!(!work.exhausted, "{work:?}");

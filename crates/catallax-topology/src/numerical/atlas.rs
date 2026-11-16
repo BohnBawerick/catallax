@@ -74,19 +74,24 @@ fn sampled_fills_box<'a>(
     dec: &mut Decider,
 ) -> Result<bool, Refusal> {
     let mut remaining = domains.clone();
-    let Some(first) = remaining.next() else { return Ok(false); };
+    let Some(first) = remaining.next() else {
+        return Ok(false);
+    };
     let mut bounds = first.each_ref().map(|axis| [&axis[0], &axis[1]]);
     dec.charge_work(4 * domains.len() as u64)?;
     for domain in remaining {
         for axis in 0..2 {
-            if &domain[axis][0] < bounds[axis][0] { bounds[axis][0] = &domain[axis][0]; }
-            if &domain[axis][1] > bounds[axis][1] { bounds[axis][1] = &domain[axis][1]; }
+            if &domain[axis][0] < bounds[axis][0] {
+                bounds[axis][0] = &domain[axis][0];
+            }
+            if &domain[axis][1] > bounds[axis][1] {
+                bounds[axis][1] = &domain[axis][1];
+            }
         }
     }
     const SIDE: usize = SUBDIVISIONS as usize + 1;
-    let shares: [Rational; SIDE] = std::array::from_fn(|i| {
-        Rational::from_ratio(i as i64, SUBDIVISIONS).unwrap()
-    });
+    let shares: [Rational; SIDE] =
+        std::array::from_fn(|i| Rational::from_ratio(i as i64, SUBDIVISIONS).unwrap());
     let grid: [[Rational; SIDE]; 2] = std::array::from_fn(|axis| {
         let width = bounds[axis][1] - bounds[axis][0];
         std::array::from_fn(|i| bounds[axis][0] + &(&width * &shares[i]))
@@ -95,8 +100,7 @@ fn sampled_fills_box<'a>(
         for v in &grid[1] {
             dec.charge_work(domains.len() as u64)?;
             if !domains.clone().any(|domain| {
-                &domain[0][0] <= u && u <= &domain[0][1]
-                    && &domain[1][0] <= v && v <= &domain[1][1]
+                &domain[0][0] <= u && u <= &domain[0][1] && &domain[1][0] <= v && v <= &domain[1][1]
             }) {
                 return Ok(false);
             }
@@ -106,10 +110,16 @@ fn sampled_fills_box<'a>(
 }
 
 pub(super) fn check_sampled(atlas: &RationalAtlas, dec: &mut Decider) -> Result<(), Refusal> {
-    if sampled_fills_box(atlas.charts().iter().map(|chart| chart.patch().domain()), dec)? {
+    if sampled_fills_box(
+        atlas.charts().iter().map(|chart| chart.patch().domain()),
+        dec,
+    )? {
         Ok(())
     } else {
-        Err(bad("unsupported", "a numerical carrier fails its sampled atlas box coverage check"))
+        Err(bad(
+            "unsupported",
+            "a numerical carrier fails its sampled atlas box coverage check",
+        ))
     }
 }
 

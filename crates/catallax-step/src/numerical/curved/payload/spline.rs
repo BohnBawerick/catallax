@@ -207,13 +207,16 @@ fn continuity_basis<'a>(
             }
             if knots[begin] > knots[degree] && end - begin == degree {
                 let strip = begin - 1;
-                let alpha = &(&knots[begin] - &knots[strip])
-                    / &(&knots[end] - &knots[strip]);
+                let alpha = &(&knots[begin] - &knots[strip]) / &(&knots[end] - &knots[strip]);
                 let beta = &Rational::one() - &alpha;
                 let mut redundant = true;
                 for cross in 0..counts[1 - axis] {
                     let indices = [strip - 1, strip, strip + 1].map(|at| {
-                        if axis == 0 { at * counts[1] + cross } else { cross * counts[1] + at }
+                        if axis == 0 {
+                            at * counts[1] + cross
+                        } else {
+                            cross * counts[1] + at
+                        }
                     });
                     let [Some(a), Some(b), Some(c)] =
                         indices.map(|i| rational_homogeneous(&carrier, i))
@@ -246,22 +249,43 @@ fn continuity_basis<'a>(
             if other != axis {
                 return row.to_vec();
             }
-            row.iter().enumerate()
+            row.iter()
+                .enumerate()
                 .filter(|(i, _)| dropped.binary_search_by_key(i, |d| d.0).is_err())
-                .map(|(_, q)| q.clone()).collect()
+                .map(|(_, q)| q.clone())
+                .collect()
         });
         let retained = |index: &usize| {
-            let strip = if axis == 0 { index / counts[1] } else { index % counts[1] };
+            let strip = if axis == 0 {
+                index / counts[1]
+            } else {
+                index % counts[1]
+            };
             dropped.binary_search_by_key(&strip, |d| d.1).is_err()
         };
-        let controls = carrier.controls().iter().enumerate()
-            .filter(|(i, _)| retained(i)).map(|(_, p)| p.clone()).collect();
-        let weights = carrier.weights().iter().enumerate()
-            .filter(|(i, _)| retained(i)).map(|(_, w)| w.clone()).collect();
+        let controls = carrier
+            .controls()
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| retained(i))
+            .map(|(_, p)| p.clone())
+            .collect();
+        let weights = carrier
+            .weights()
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| retained(i))
+            .map(|(_, w)| w.clone())
+            .collect();
         let mut output_counts = counts;
         output_counts[axis] -= dropped.len();
         carrier = std::borrow::Cow::Owned(BSplineSurface::new(
-            carrier.degrees(), output_knots, output_counts, controls, weights, dec,
+            carrier.degrees(),
+            output_knots,
+            output_counts,
+            controls,
+            weights,
+            dec,
         )?);
     }
     Ok(carrier)
@@ -313,30 +337,52 @@ mod tests {
     fn decimal_export_keeps_an_exact_c1_join_as_one_face() {
         let ((), work) = with_operation_budget(20_000_000, || {
             let mut dec = Decider::default();
-            let controls = (0..2).flat_map(|x| (0..5).map(move |j| Point3::new(
-                x.into(),
-                Rational::from_ratio(j as i64, 3).unwrap().into(),
-                Rational::from_ratio([0, 1, 0, -1, 0][j], 3).unwrap().into(),
-            ))).collect();
+            let controls = (0..2)
+                .flat_map(|x| {
+                    (0..5).map(move |j| {
+                        Point3::new(
+                            x.into(),
+                            Rational::from_ratio(j as i64, 3).unwrap().into(),
+                            Rational::from_ratio([0, 1, 0, -1, 0][j], 3).unwrap().into(),
+                        )
+                    })
+                })
+                .collect();
             let source = BSplineSurface::new(
                 [1, 2],
                 [
                     [0, 0, 1, 1].map(Rational::from_i64).to_vec(),
                     [0, 0, 0, 1, 1, 2, 2, 2].map(Rational::from_i64).to_vec(),
                 ],
-                [2, 5], controls, vec![Real::one(); 10], &mut dec,
-            ).unwrap();
+                [2, 5],
+                controls,
+                vec![Real::one(); 10],
+                &mut dec,
+            )
+            .unwrap();
             let [source]: [_; 1] = RationalAtlas::partition(source, [false; 2], &mut dec)
-                .unwrap().try_into().unwrap();
+                .unwrap()
+                .try_into()
+                .unwrap();
             let written = atlas(
-                &source, &mut Errors::default(), &NumericalStepOptions::default(), &mut dec,
-            ).unwrap();
+                &source,
+                &mut Errors::default(),
+                &NumericalStepOptions::default(),
+                &mut dec,
+            )
+            .unwrap();
             let tolerance = Rational::from_ratio(1, 10_000_000).unwrap();
             for u in [Rational::zero(), Rational::one()] {
                 for i in 0..=8 {
                     let v = Rational::from_ratio(i, 4).unwrap();
-                    let a = source.source().evaluate_box([&u, &u], [&v, &v], 128, &dec).unwrap();
-                    let b = written.source().evaluate_box([&u, &u], [&v, &v], 128, &dec).unwrap();
+                    let a = source
+                        .source()
+                        .evaluate_box([&u, &u], [&v, &v], 128, &dec)
+                        .unwrap();
+                    let b = written
+                        .source()
+                        .evaluate_box([&u, &u], [&v, &v], 128, &dec)
+                        .unwrap();
                     for k in 0..3 {
                         let error = &a[k] - &b[k];
                         assert!(error.lo().abs() <= tolerance);

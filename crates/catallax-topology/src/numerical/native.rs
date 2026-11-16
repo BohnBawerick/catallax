@@ -343,10 +343,15 @@ fn check_numerical_loops(
     for (row, boundary) in face.loops.iter().enumerate() {
         let mut polygon = Vec::with_capacity(boundary.len() * SUBDIVISIONS as usize);
         for (use_index, trim) in boundary.iter().enumerate() {
-            let edge = edges.get(trim.edge)
+            let edge = edges
+                .get(trim.edge)
                 .ok_or_else(|| bad("trim", "trim names an unknown edge"))?;
-            let curve = index.get(face_index, row, use_index)
-                .ok_or_else(|| bad("trim", "a numerical atlas face needs a native UV curve on every edge"))?;
+            let curve = index.get(face_index, row, use_index).ok_or_else(|| {
+                bad(
+                    "trim",
+                    "a numerical atlas face needs a native UV curve on every edge",
+                )
+            })?;
             let [a, b] = if trim.sense == Sense::Same {
                 edge.parameters.each_ref()
             } else {
@@ -364,7 +369,9 @@ fn check_numerical_loops(
                     [midpoint(&at[0], dec)?, midpoint(&at[1], dec)?]
                 };
                 polygon.push(NumericalTrim {
-                    edge: trim.edge, sense: trim.sense, uv: [previous, at.clone()],
+                    edge: trim.edge,
+                    sense: trim.sense,
+                    uv: [previous, at.clone()],
                 });
                 previous = at;
             }
@@ -385,7 +392,16 @@ pub fn build_with_native_trims(
     options: NumericalOptions,
     dec: &mut Decider,
 ) -> Result<NumericalBody, Refusal> {
-    guarded(|| build_inner(definition, native_trims, BTreeSet::new(), options, Vec::new(), dec))
+    guarded(|| {
+        build_inner(
+            definition,
+            native_trims,
+            BTreeSet::new(),
+            options,
+            Vec::new(),
+            dec,
+        )
+    })
 }
 
 /// Admits explicitly numerical atlas carriers with sampled face-local checks.
@@ -400,7 +416,16 @@ pub fn build_with_sampled_carriers(
     options: NumericalOptions,
     dec: &mut Decider,
 ) -> Result<NumericalBody, Refusal> {
-    guarded(|| build_inner(definition, native_trims, sampled_carriers, options, Vec::new(), dec))
+    guarded(|| {
+        build_inner(
+            definition,
+            native_trims,
+            sampled_carriers,
+            options,
+            Vec::new(),
+            dec,
+        )
+    })
 }
 
 impl NumericalBody {
@@ -428,10 +453,20 @@ impl NumericalBody {
         options: NumericalOptions,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
-        let sampled_carriers = self.sampled_carriers.iter().filter(|key| {
-            definition.faces.iter().any(|face| &face.key == *key
-                && matches!(face.surface, Surface::BSpline(SplineSupport::RationalAtlas(_))))
-        }).cloned().collect();
+        let sampled_carriers = self
+            .sampled_carriers
+            .iter()
+            .filter(|key| {
+                definition.faces.iter().any(|face| {
+                    &face.key == *key
+                        && matches!(
+                            face.surface,
+                            Surface::BSpline(SplineSupport::RationalAtlas(_))
+                        )
+                })
+            })
+            .cloned()
+            .collect();
         self.rebuild_with_sampled_carriers(definition, native_trims, sampled_carriers, options, dec)
     }
 

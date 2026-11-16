@@ -76,7 +76,8 @@ pub(in crate::numerical) fn samples(
                     "trim.numerical-pair-native-join-position"
                 } else {
                     "trim.native-join-position"
-                }.into(),
+                }
+                .into(),
                 scope: format!(
                     "face {:?}, loop {boundary_index}, uses {use_index}->{next_index}",
                     face.key

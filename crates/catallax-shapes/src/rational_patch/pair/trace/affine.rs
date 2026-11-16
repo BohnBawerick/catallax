@@ -110,7 +110,7 @@ mod tests {
                 } else {
                     parameter.clone()
                 };
-                std::array::from_fn(|axis| p.partial(axis).eval_ball(&at, &dec).unwrap())
+                std::array::from_fn(|axis| p.partial(axis).eval_ball(&at, dec).unwrap())
             })
         };
         assert!(

@@ -1,7 +1,7 @@
 //! The five reusable stages.
 
 use catallax_numbers::{Answer, Answered, Decider, MarkLog, Outcome, Refusal, StrictSign};
-use catallax_shapes::{CurveId, PointId};
+use catallax_shapes::{CurveId, Point3, PointId, SplineSupport, Surface};
 use catallax_topology::{BodyId, EdgeId, FaceId, Model, Sense};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -190,6 +190,28 @@ pub(crate) fn imprint_for_boolean(
     })
 }
 
+fn excludes_finite_point(
+    surface: &Surface,
+    point: &Point3,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    match surface {
+        Surface::BSpline(SplineSupport::RationalPatch(patch)) => {
+            Ok(patch.parameters_at(point, dec)?.is_none())
+        }
+        Surface::BSpline(SplineSupport::RationalAtlas(atlas)) => {
+            for chart in atlas.charts() {
+                dec.charge_work(1)?;
+                if chart.patch().parameters_at(point, dec)?.is_some() {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
+        }
+        _ => Ok(false),
+    }
+}
+
 /// One piece's class against the other body, with the coincident face it
 /// lies on when either carries an origin.
 fn classify_piece(
@@ -204,6 +226,13 @@ fn classify_piece(
     let class = crate::points::find(model, piece, dec, |model, point, rational, dec| {
         for &other_face in other_faces {
             let opposite = model.face(other_face).clone();
+            // A counterpart must contain this witness on its finite support.
+            // Exclusion here asserts no equality or separation of carriers.
+            if face.surface != opposite.surface
+                && excludes_finite_point(model.geom().surface(opposite.surface), rational, dec)?
+            {
+                continue;
+            }
             if crate::geometry::coincident(
                 model
                     .geom()

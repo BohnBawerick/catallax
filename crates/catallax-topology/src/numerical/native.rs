@@ -282,7 +282,7 @@ pub(super) fn check_loops(
         }
         sampled.loops.push(polygon);
     }
-    super::check_loops(&sampled, dec)
+    super::check_loops(&sampled, analytic_family.then_some((face, edges)), dec)
 }
 
 /// Builds with retained native UV curves at the 3D edges' finite parameters.

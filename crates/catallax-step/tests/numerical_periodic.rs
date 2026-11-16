@@ -240,3 +240,38 @@ fn equivalent_closed_rim_directions_and_periods_emit_the_same_step() {
         }
     }
 }
+
+#[test]
+fn multiple_bores_and_complete_annular_caps_write_checked_step() {
+    for (name, definition, expected) in [
+        (
+            "multiple-bores",
+            fixture::bores(&["-0.5", "0.5"], "0.4"),
+            [8, 18, 12],
+        ),
+        ("annulus", fixture::annulus("2"), [4, 6, 4]),
+    ] {
+        let body = n::build(
+            definition,
+            n::NumericalOptions::default(),
+            &mut Decider::default(),
+        )
+        .unwrap();
+        let file = output::build(
+            &body,
+            &NumericalStepOptions::default(),
+            &mut Decider::default(),
+        )
+        .unwrap();
+        assert_eq!(file.report().counts, expected);
+        file.check_written(file.bytes(), &mut Decider::default())
+            .unwrap();
+        if let Ok(path) = std::env::var("CATALLAX_ANALYTIC_EVIDENCE") {
+            std::fs::write(
+                std::path::Path::new(&path).join(format!("{name}.step")),
+                file.bytes(),
+            )
+            .unwrap();
+        }
+    }
+}

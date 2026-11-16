@@ -73,8 +73,8 @@ pub struct NumericalFace {
     pub surface: Surface,
     /// Material normal relative to the support normal.
     pub sense: Sense,
-    /// Ordered finite loops: one simple outer loop and optionally one interior hole.
-    /// The hole runs opposite to the outer loop and may not touch its boundary.
+    /// Ordered finite loops: one simple outer loop followed by interior holes.
+    /// Holes run opposite to the outer loop, remain disjoint and may not nest.
     /// Planar native-spline walks receive sampled parameter-polygon checks.
     pub loops: Vec<Vec<NumericalTrim>>,
 }
@@ -142,9 +142,11 @@ impl Default for NumericalOptions {
 /// span at the same finite native parameter. Their endpoint correspondence is
 /// checked in millimetres against the declared loop endpoints. Every edge endpoint is
 /// checked against its vertex. These are pointwise distance enclosures, not bounds
-/// between samples. For projected or retained native UV walks, loop simplicity and hole placement
-/// refer to the sampled polygon. Continuous containment and disjointness remain
-/// unresolved and have no unqualified check entry.
+/// between samples. Projected or retained native UV walks keep their sampled
+/// simplicity checks. Complete planar circular boundaries additionally receive
+/// continuous projected-disk clearance checks, not chord-polygon pair tests.
+/// Other curved boundary containment remains sampled and explicitly unresolved
+/// between nodes.
 /// The checks do not establish whole-body separation, global self-intersection
 /// freedom or a whole-body approximation bound. They grant no STEP export authority.
 /// Approximate export requires a numerical writer and its own output checks.
@@ -494,11 +496,8 @@ fn build_inner(
                 dec,
             )?;
         }
-        if face.loops.is_empty() || face.loops.len() > 2 {
-            return Err(bad(
-                "trim",
-                "this admission path requires an outer loop and at most one hole",
-            ));
+        if face.loops.is_empty() {
+            return Err(bad("trim", "this admission path requires an outer loop"));
         }
         // Chart-union containment is checked at sampled native UV locations,
         // so an atlas face accepts no straight parameter trim, and its charts
@@ -517,9 +516,9 @@ fn build_inner(
                 }
             }
         }
-        // Validate the newly admitted second boundary before building its
-        // coedges. A duplicated outer loop remains an invalid trim, as in N01.
-        if face.loops.len() == 2 {
+        // Validate every interior boundary before building its coedges.
+        // Duplicated, nested or crossing boundaries remain invalid trims.
+        if face.loops.len() > 1 {
             native::check_loops(
                 face_index,
                 face,
@@ -637,9 +636,17 @@ fn build_inner(
                 scope: face.key.clone(),
             });
         }
-        if face.loops.len() == 2 {
+        if face.loops.len() > 1 {
+            // This family necessarily ran analytic::circle_clearance during
+            // loop validation. Native curves on rational patches did not.
+            let planar_circle_clearance = matches!(face.surface, Surface::Plane(_))
+                && face.loops.iter().any(|boundary| {
+                    analytic::complete_circle(boundary, &definition.edges).is_some()
+                });
             checks.push(NumericalCheck::Passed {
-                name: if sampled {
+                name: if planar_circle_clearance {
+                    "trim.sampled-boundaries-with-continuous-circle-clearance"
+                } else if sampled {
                     "trim.sampled-hole-contained-disjoint"
                 } else {
                     "trim.hole-contained-disjoint"
@@ -647,9 +654,21 @@ fn build_inner(
                 .into(),
                 scope: face.key.clone(),
             });
-            if analytic::circular_hole(face, &definition.edges).is_some() {
+            if planar_circle_clearance
+                && face.loops.iter().skip(1).any(|boundary| {
+                    analytic::complete_circle(boundary, &definition.edges).is_some()
+                })
+            {
                 checks.push(NumericalCheck::Passed {
                     name: "trim.continuous-circle-hole-clearance".into(),
+                    scope: face.key.clone(),
+                });
+            }
+            if planar_circle_clearance
+                && analytic::complete_circle(&face.loops[0], &definition.edges).is_some()
+            {
+                checks.push(NumericalCheck::Passed {
+                    name: "trim.continuous-circle-outer-clearance".into(),
                     scope: face.key.clone(),
                 });
             }
@@ -870,36 +889,64 @@ fn check_distinct_boundary_vertices(
     Ok(())
 }
 
-fn check_loops(face: &NumericalFace, dec: &mut Decider) -> Result<(), Refusal> {
+fn inside_loop(
+    point: &[Rational; 2],
+    boundary: &[NumericalTrim],
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    let mut inside = false;
+    for edge in boundary {
+        dec.charge_work(1)?;
+        let [a, b] = &edge.uv;
+        if (a[1] > point[1]) != (b[1] > point[1])
+            && (orient(a, b, point).sign() == Sign::Positive) == (b[1] > a[1])
+        {
+            inside = !inside;
+        }
+    }
+    Ok(inside)
+}
+
+fn check_loops(
+    face: &NumericalFace,
+    cleared_circles: Option<(&NumericalFace, &[NumericalEdge])>,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
     for (i, boundary) in face.loops.iter().enumerate() {
         check_loop(face, boundary, i != 0, dec)?;
     }
-    if face.loops.len() == 2 {
-        let outer = &face.loops[0];
-        let hole = &face.loops[1];
-        for a in outer {
-            for b in hole {
-                dec.charge_work(1)?;
-                if intersects(&a.uv[0], &a.uv[1], &b.uv[0], &b.uv[1]) {
-                    return Err(bad("trim", "hole crosses or touches the outer loop"));
+    for (i, hole) in face.loops.iter().enumerate().skip(1) {
+        let hole_circle = cleared_circles.is_some_and(|(source, edges)| {
+            analytic::complete_circle(&source.loops[i], edges).is_some()
+        });
+        for (j, other) in face.loops[..i].iter().enumerate() {
+            let other_circle = cleared_circles.is_some_and(|(source, edges)| {
+                analytic::complete_circle(&source.loops[j], edges).is_some()
+            });
+            if !hole_circle && !other_circle {
+                for a in other {
+                    for b in hole {
+                        dec.charge_work(1)?;
+                        if intersects(&a.uv[0], &a.uv[1], &b.uv[0], &b.uv[1]) {
+                            return Err(bad("trim", "hole crosses or touches another boundary"));
+                        }
+                    }
                 }
             }
-        }
-        // Boundaries are disjoint and individually simple. One strict interior
-        // witness therefore places this entire hole inside the outer polygon.
-        let point = &hole[0].uv[0];
-        let mut inside = false;
-        for edge in outer {
-            dec.charge_work(1)?;
-            let [a, b] = &edge.uv;
-            if (a[1] > point[1]) != (b[1] > point[1])
-                && (orient(a, b, point).sign() == Sign::Positive) == (b[1] > a[1])
-            {
-                inside = !inside;
+            // Inscribed chord polygons can cross even when two real circular
+            // rims are disjoint. Those pairs already passed disk clearance.
+            if other_circle && (hole_circle || j == 0) {
+                continue;
             }
-        }
-        if !inside {
-            return Err(bad("trim", "hole is not strictly inside the outer loop"));
+            // Simple disjoint boundaries need one strict witness per component.
+            let contained = inside_loop(&hole[0].uv[0], other, dec)?;
+            if j == 0 {
+                if !contained {
+                    return Err(bad("trim", "hole is not strictly inside the outer loop"));
+                }
+            } else if contained || inside_loop(&other[0].uv[0], hole, dec)? {
+                return Err(bad("trim", "interior holes overlap or nest"));
+            }
         }
     }
     Ok(())

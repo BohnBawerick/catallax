@@ -48,14 +48,16 @@ def check(case, variant, step_path, expected_faces):
     actual = reader.OneShape()
     valid = not actual.IsNull() and BRepCheck_Analyzer(actual).IsValid()
     faces = len(entries(actual, TopAbs_FACE))
-    # A valid open shell is not a part: require one solid whose shells are all
-    # closed and which owns every face in the file.
+    # A valid open shell is not a part: require at least one solid, every shell
+    # of every solid closed, and no face outside a solid. Separate solids are
+    # allowed because line contact and near misses legitimately yield two.
     from OCP.BRep import BRep_Tool
     from OCP.TopAbs import TopAbs_SHELL
     solid_list = entries(actual, TopAbs_SOLID)
-    closed = (len(solid_list) == 1
-              and all(BRep_Tool.IsClosed_s(shell) for shell in entries(solid_list[0], TopAbs_SHELL))
-              and len(entries(solid_list[0], TopAbs_FACE)) == faces)
+    owned = sum(len(entries(solid, TopAbs_FACE)) for solid in solid_list)
+    closed = (bool(solid_list) and owned == faces
+              and all(BRep_Tool.IsClosed_s(shell) for solid in solid_list
+                      for shell in entries(solid, TopAbs_SHELL)))
     result['step'] = {'status': 'passed' if valid and closed and faces == expected_faces else 'failed',
                       'opened': True, 'roots': roots, 'valid': valid, 'closed_solid': closed,
                       'solids': len(solid_list), 'faces': faces,
@@ -65,7 +67,7 @@ def check(case, variant, step_path, expected_faces):
         from OCP.BRepGProp import BRepGProp
         from OCP.GProp import GProp_GProps
         props = GProp_GProps()
-        BRepGProp.VolumeProperties_s(solid_list[0], props)
+        BRepGProp.VolumeProperties_s(actual, props)
         result['material'] = {'volume_mm3': abs(props.Mass()),
                               'source_volume_mm3': case['census']['cutter']['source_volume_mm3']}
     if implicit is None:

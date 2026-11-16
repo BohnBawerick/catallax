@@ -523,15 +523,17 @@ fn spline(e: &Entity, id: EntityId) -> Result<Option<Geometry>, ImportRefusal> {
             .part("RATIONAL_B_SPLINE_CURVE")
             .map(|a| reals(a, 0, id))
             .transpose()?;
-        return Ok(Some(Geometry::Curve(Curve::BSpline(SplineCurve {
-            degree: integer(a, n, id)?,
-            controls: references(a, n + 1, id)?,
-            form: enumeration(a, n + 2, id)?,
-            closed: logical(a, n + 3, id)?,
-            self_intersect: logical(a, n + 4, id)?,
-            weights,
-            knots,
-        }))));
+        return Ok(Some(Geometry::Curve(Curve::BSpline(Box::new(
+            SplineCurve {
+                degree: integer(a, n, id)?,
+                controls: references(a, n + 1, id)?,
+                form: enumeration(a, n + 2, id)?,
+                closed: logical(a, n + 3, id)?,
+                self_intersect: logical(a, n + 4, id)?,
+                weights,
+                knots,
+            },
+        )))));
     }
     let surface_base = e.part("B_SPLINE_SURFACE").or_else(|| {
         if simple {
@@ -565,15 +567,17 @@ fn spline(e: &Entity, id: EntityId) -> Result<Option<Geometry>, ImportRefusal> {
             .part("RATIONAL_B_SPLINE_SURFACE")
             .map(|a| real_grid(a, 0, id))
             .transpose()?;
-        return Ok(Some(Geometry::Surface(Surface::BSpline(SplineSurface {
-            degree: [integer(a, n, id)?, integer(a, n + 1, id)?],
-            controls: reference_grid(a, n + 2, id)?,
-            form: enumeration(a, n + 3, id)?,
-            closed: [logical(a, n + 4, id)?, logical(a, n + 5, id)?],
-            self_intersect: logical(a, n + 6, id)?,
-            weights,
-            knots,
-        }))));
+        return Ok(Some(Geometry::Surface(Surface::BSpline(Box::new(
+            SplineSurface {
+                degree: [integer(a, n, id)?, integer(a, n + 1, id)?],
+                controls: reference_grid(a, n + 2, id)?,
+                form: enumeration(a, n + 3, id)?,
+                closed: [logical(a, n + 4, id)?, logical(a, n + 5, id)?],
+                self_intersect: logical(a, n + 6, id)?,
+                weights,
+                knots,
+            },
+        )))));
     }
     Ok(None)
 }

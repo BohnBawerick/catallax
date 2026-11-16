@@ -102,7 +102,7 @@ pub enum Curve {
     /// Placement and focal distance.
     Parabola(EntityId, Rational),
     /// Finite polynomial or rational spline source data.
-    BSpline(SplineCurve),
+    BSpline(Box<SplineCurve>),
     /// Ordered Cartesian points; source parameter knots are point indices.
     Polyline(Vec<EntityId>),
     /// Basis, trim SELECT lists, sense agreement and representation preference.
@@ -133,7 +133,7 @@ pub enum Surface {
     /// Placement and the written major and minor radii.
     Torus(EntityId, Rational, Rational),
     /// Polynomial or rational spline source data.
-    BSpline(SplineSurface),
+    BSpline(Box<SplineSurface>),
     /// Swept curve and extrusion VECTOR instance.
     Extrusion(EntityId, EntityId),
     /// Swept curve and AXIS1_PLACEMENT instance.

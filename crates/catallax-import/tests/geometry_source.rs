@@ -151,3 +151,23 @@ fn source_byte_budget_is_checked_before_parsing() {
     assert!(work.exhausted);
     assert!(matches!(result, Err(ImportRefusal::ResourceLimit)));
 }
+
+#[test]
+fn representation_contexts_retain_separate_unit_assignments() {
+    let s=read("
+#1=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#10,#11)) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#12)) REPRESENTATION_CONTEXT('model',''));
+#2=GEOMETRIC_REPRESENTATION_CONTEXT('parameters','',2);
+#3=GLOBAL_UNIT_ASSIGNED_CONTEXT('second model','',(#20,#21));
+#4=CARTESIAN_POINT('point',(1.,2.,3.));
+");
+    let first = s.representation_context(1).unwrap();
+    assert_eq!(first.dimension, Some(3));
+    assert_eq!(first.units, vec![10, 11]);
+    assert_eq!(first.uncertainties, vec![12]);
+    assert_eq!(s.representation_context(2).unwrap().dimension, Some(2));
+    assert_eq!(s.representation_context(3).unwrap().units, vec![20, 21]);
+    assert!(matches!(
+        s.representation_context(4),
+        Err(ImportRefusal::Malformed { .. })
+    ));
+}

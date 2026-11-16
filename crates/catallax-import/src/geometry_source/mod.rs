@@ -10,11 +10,12 @@ pub use definitions::*;
 use crate::ImportRefusal;
 use crate::part21::{Entity, Graph};
 use catallax_numbers::Decider;
+use std::sync::Arc;
 
 /// One immutable Part 21 graph shared by geometry readers and the certified view.
 #[derive(Clone, Debug)]
 pub struct ParsedStep {
-    graph: Graph,
+    graph: Arc<Graph>,
 }
 
 impl ParsedStep {
@@ -24,7 +25,7 @@ impl ParsedStep {
             .map_err(|_| ImportRefusal::ResourceLimit)?;
         dec.check_deadline()
             .map_err(|_| ImportRefusal::ResourceLimit)?;
-        let graph = crate::part21::parse(bytes)?;
+        let graph = Arc::new(crate::part21::parse(bytes)?);
         dec.check_deadline()
             .map_err(|_| ImportRefusal::ResourceLimit)?;
         Ok(Self { graph })
@@ -81,21 +82,30 @@ impl ParsedStep {
         id: EntityId,
     ) -> Result<RepresentationContext, ImportRefusal> {
         let e = self.entity(id)?;
+        if !e.parts.iter().any(|(kind, _)| {
+            matches!(
+                kind.as_str(),
+                "REPRESENTATION_CONTEXT"
+                    | "PARAMETRIC_REPRESENTATION_CONTEXT"
+                    | "GEOMETRIC_REPRESENTATION_CONTEXT"
+                    | "GLOBAL_UNIT_ASSIGNED_CONTEXT"
+                    | "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT"
+            )
+        }) {
+            return Err(malformed(id, "expected a representation context"));
+        }
         let dimension = e
             .part("GEOMETRIC_REPRESENTATION_CONTEXT")
-            .map(|a| {
-                let index = usize::from(a.len() != 1) * 2;
-                decode::integer(a, index, id)
-            })
+            .map(|a| decode::integer(a, context_field(a.len(), id)?, id))
             .transpose()?;
         let units = e
             .part("GLOBAL_UNIT_ASSIGNED_CONTEXT")
-            .map(|a| decode::references(a, 0, id))
+            .map(|a| decode::references(a, context_field(a.len(), id)?, id))
             .transpose()?
             .unwrap_or_default();
         let uncertainties = e
             .part("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT")
-            .map(|a| decode::references(a, 0, id))
+            .map(|a| decode::references(a, context_field(a.len(), id)?, id))
             .transpose()?
             .unwrap_or_default();
         Ok(RepresentationContext {
@@ -115,5 +125,16 @@ impl ParsedStep {
 fn malformed(id: EntityId, detail: impl std::fmt::Display) -> ImportRefusal {
     ImportRefusal::Malformed {
         detail: format!("#{id}: {detail}"),
+    }
+}
+
+fn context_field(count: usize, id: EntityId) -> Result<usize, ImportRefusal> {
+    match count {
+        1 => Ok(0),
+        3 => Ok(2),
+        _ => Err(malformed(
+            id,
+            "unrecognized representation context field layout",
+        )),
     }
 }

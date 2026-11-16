@@ -11,6 +11,7 @@ mod iges;
 mod import_recipe;
 mod manifest;
 mod name_checks;
+mod numerical_loft_step;
 mod numerical_step;
 mod printing;
 mod question;

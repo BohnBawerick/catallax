@@ -227,7 +227,8 @@ jobs:
     needs: [select, build]
     if: needs.select.outputs.step-regressions == 'true'
     runs-on: ${{ needs.select.outputs.boat == 'true' && 'boat' || 'ubuntu-latest' }}
-    timeout-minutes: 45
+    # Required 20M top-cut proof waits can exceed 45 minutes before phase 5.
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
         with:

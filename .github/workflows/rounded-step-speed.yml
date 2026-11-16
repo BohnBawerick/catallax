@@ -30,7 +30,8 @@ jobs:
   paired:
     needs: route
     runs-on: ${{ needs.route.outputs.boat == 'true' && 'boat' || 'ubuntu-latest' }}
-    timeout-minutes: 30
+    # Two cold release builds must finish before the paired measurements start.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
         with:

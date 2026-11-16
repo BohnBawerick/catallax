@@ -531,6 +531,7 @@ fn charge_placement(value: &Placement, dec: &mut Decider) -> Result<(), Error> {
 
 fn charge_curve(value: &Curve, dec: &mut Decider) -> Result<(), Error> {
     match value {
+        Curve::Retained(_) => dec.charge_work(1)?,
         Curve::Line(a, b) => {
             charge_vector(a, dec)?;
             charge_vector(b, dec)?;
@@ -563,6 +564,7 @@ fn charge_curve(value: &Curve, dec: &mut Decider) -> Result<(), Error> {
 
 fn charge_surface(value: &Surface, dec: &mut Decider) -> Result<(), Error> {
     match value {
+        Surface::Retained(_) => dec.charge_work(1)?,
         Surface::Plane(p) => charge_placement(p, dec)?,
         Surface::Cylinder(p, r) | Surface::Cone45(p, r) | Surface::Sphere(p, r) => {
             charge_placement(p, dec)?;

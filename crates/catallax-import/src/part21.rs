@@ -20,7 +20,7 @@ pub(crate) enum Param {
 }
 
 /// One entity instance. A complex instance has several parts, in file order.
-#[derive(Clone, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub(crate) struct Entity {
     pub parts: Vec<(String, Vec<Param>)>,
 }

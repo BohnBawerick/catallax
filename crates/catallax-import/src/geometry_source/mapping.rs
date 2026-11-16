@@ -1,6 +1,6 @@
 //! Exact source coordinates and native carriers, without topology admission.
 use super::*;
-use catallax_numbers::{Outcome, Rational, Real, Refusal, StrictSign};
+use catallax_numbers::{Outcome, Rational, Real, Refusal, StrictSign, ZeroProof};
 use catallax_shapes::{self as shapes, Point3, Vector3};
 use shapes::spline_tools::{RationalSplineCurve, RationalSplineSurface};
 
@@ -204,6 +204,58 @@ impl ParsedStep {
         )?)
     }
 
+    /// Exact finite quadratic carrier for a parabola in its original STEP
+    /// parameter. Algebraic placement coordinates remain exact Real values.
+    pub fn parabola_segment(
+        &self,
+        id: EntityId,
+        interval: [Rational; 2],
+        length_mm: &Rational,
+        dec: &mut Decider,
+    ) -> Result<shapes::BSplineCurve, MappingError> {
+        let Geometry::Curve(Curve::Parabola(placement, focal)) = self.geometry(id, dec)? else {
+            return Err(invalid("expected PARABOLA"));
+        };
+        if focal <= Rational::zero() || interval[0] >= interval[1] {
+            return Err(invalid(
+                "parabola requires positive focal distance and increasing parameters",
+            ));
+        }
+        let frame = self.axis_placement(placement, length_mm, dec)?;
+        let [a, b] = &interval;
+        let divisor = &Rational::from_i64(4) * &focal;
+        let xs = [
+            (a * a) / divisor.clone(),
+            (a * b) / divisor.clone(),
+            (b * b) / divisor,
+        ];
+        let ys = [a.clone(), (a + b) / Rational::from_i64(2), b.clone()];
+        let controls = xs
+            .into_iter()
+            .zip(ys)
+            .map(|(x, y)| {
+                frame
+                    .origin
+                    .plus(&frame.axes[0].scaled(&Real::from_rational(&x * length_mm)))
+                    .plus(&frame.axes[1].scaled(&Real::from_rational(&y * length_mm)))
+            })
+            .collect();
+        Ok(shapes::BSplineCurve::new(
+            2,
+            vec![
+                a.clone(),
+                a.clone(),
+                a.clone(),
+                b.clone(),
+                b.clone(),
+                b.clone(),
+            ],
+            controls,
+            vec![Real::one(); 3],
+            dec,
+        )?)
+    }
+
     /// Map an unwrapped curve to an exact native carrier. Trims and replicas
     /// require their own parameter/placement handling and are never discarded.
     pub fn native_curve(
@@ -273,6 +325,61 @@ impl ParsedStep {
                     )?)
                 }
             }
+            Curve::Offset3d(parent, distance, _, reference) => {
+                let raw = self.geometry(parent, dec)?;
+                if !matches!(
+                    raw,
+                    Geometry::Curve(Curve::Line(_, _) | Curve::Circle(_, _))
+                ) {
+                    return Err(invalid("offset curve requires finite numerical mapping"));
+                }
+                let reference = self.unit_direction(reference, dec)?;
+                let distance = Real::from_rational(&distance * length_mm);
+                match self.native_curve(parent, length_mm, dec)? {
+                    shapes::Curve::Line(line) => {
+                        let normal = unit(line.dir.cross(&reference), dec)?;
+                        shapes::Curve::Line(shapes::Line::new(
+                            line.origin.plus(&normal.scaled(&(-distance))),
+                            line.dir,
+                            dec,
+                        )?)
+                    }
+                    shapes::Curve::Circle(circle) => {
+                        match dec.sign(&circle.normal.cross(&reference).norm_squared()) {
+                            Outcome::ProvenCoincident(p)
+                                if p.proof != ZeroProof::SeparationBound => {}
+                            _ => {
+                                return Err(invalid(
+                                    "circle offset reference is not proved parallel to its normal",
+                                ));
+                            }
+                        }
+                        let direction = match dec.sign(&circle.normal.dot(&reference)) {
+                            Outcome::Proven(StrictSign::Positive) => Real::one(),
+                            Outcome::Proven(StrictSign::Negative) => Real::from_i64(-1),
+                            _ => {
+                                return Err(invalid(
+                                    "circle offset reference orientation is undecided",
+                                ));
+                            }
+                        };
+                        let radius = &circle.radius_sq.sqrt() - &(&distance * &direction);
+                        if !matches!(dec.sign(&radius), Outcome::Proven(StrictSign::Positive)) {
+                            return Err(invalid(
+                                "circle offset radius is not proved positive; signed phase requires finite mapping",
+                            ));
+                        }
+                        shapes::Curve::Circle(shapes::Circle::new(
+                            circle.center,
+                            circle.normal,
+                            radius.square(),
+                            circle.ref_dir,
+                            dec,
+                        )?)
+                    }
+                    _ => unreachable!("selected line or circle"),
+                }
+            }
             Curve::BSpline(_) | Curve::Polyline(_) => shapes::Curve::BSpline(
                 self.spline_curve(id, &std::array::from_fn(|_| length_mm.clone()), dec)?
                     .to_curve(dec)?,
@@ -297,6 +404,40 @@ impl ParsedStep {
         let Geometry::Surface(surface) = self.geometry(id, dec)? else {
             return Err(invalid("expected SURFACE"));
         };
+        if let Surface::Offset(parent, distance, _) = &surface {
+            let Geometry::Surface(base) = self.geometry(*parent, dec)? else {
+                return Err(invalid("expected offset basis surface"));
+            };
+            let placement = match &base {
+                Surface::Plane(p) | Surface::Cylinder(p, _) | Surface::Sphere(p, _) => *p,
+                _ => return Err(invalid("offset surface requires finite numerical mapping")),
+            };
+            let f = self.axis_placement(placement, length_mm, dec)?;
+            let distance = Real::from_rational(distance * length_mm);
+            return Ok(match base {
+                Surface::Plane(_) => shapes::Surface::Plane(shapes::Plane::new(
+                    f.origin.plus(&f.axes[2].scaled(&distance)),
+                    f.axes[2].clone(),
+                    f.axes[0].clone(),
+                    dec,
+                )?),
+                Surface::Cylinder(_, r) => shapes::Surface::Cylinder(shapes::Cylinder::new(
+                    f.origin,
+                    f.axes[2].clone(),
+                    Real::from_rational(&r * length_mm) + distance,
+                    f.axes[0].clone(),
+                    dec,
+                )?),
+                Surface::Sphere(_, r) => shapes::Surface::Sphere(shapes::Sphere::new(
+                    f.origin,
+                    Real::from_rational(&r * length_mm) + distance,
+                    f.axes[2].clone(),
+                    f.axes[0].clone(),
+                    dec,
+                )?),
+                _ => unreachable!("selected analytic offset"),
+            });
+        }
         let placement = match &surface {
             Surface::Plane(p)
             | Surface::Cylinder(p, _)

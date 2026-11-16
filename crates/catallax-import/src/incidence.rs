@@ -162,6 +162,12 @@ fn point(p: &Vec3) -> Point3 {
 
 fn point_curve(p: &Vec3, curve: &Curve, dec: &mut Decider) -> Result<Bounds, Refusal> {
     let value = match curve {
+        Curve::Retained(_) => {
+            return Err(Refusal::new(
+                "import.geometry-mapping-required",
+                "retained curve needs native mapping",
+            ));
+        }
         Curve::Line(o, d) => {
             let v = sub(p, o);
             let d2 = dot(d, d);
@@ -329,6 +335,10 @@ fn spans(edge: &OrientedEdge, dec: &mut Decider) -> Result<(Vec<Span>, bool), Re
     let one = constant(&Rational::one());
     let t = RealPoly::var(1, 0);
     match &edge.curve {
+        Curve::Retained(_) => Err(Refusal::new(
+            "import.geometry-mapping-required",
+            "retained curve needs native mapping",
+        )),
         Curve::Line(o, d) => {
             let d2 = dot(d, d);
             let parameters =
@@ -439,6 +449,12 @@ struct Metric {
 impl Metric {
     fn new(p: &[RealPoly; 4], surface: &Surface) -> Result<Self, Refusal> {
         let (placement, radius) = match surface {
+            Surface::Retained(_) => {
+                return Err(Refusal::new(
+                    "import.geometry-mapping-required",
+                    "retained surface needs native mapping",
+                ));
+            }
             Surface::Plane(p) => (p, Rational::zero()),
             Surface::Cylinder(p, r)
             | Surface::Sphere(p, r)

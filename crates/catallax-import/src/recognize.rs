@@ -56,6 +56,8 @@ pub struct Placement {
 /// A supported surface.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Surface {
+    /// Complete source carrier awaiting an explicit native or numerical mapping.
+    Retained(crate::geometry_source::RetainedGeometry),
     /// `PLANE`; the normal is the placement axis.
     Plane(Placement),
     /// `CYLINDRICAL_SURFACE`.
@@ -86,6 +88,8 @@ pub struct SemiAngle {
 /// A supported curve.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Curve {
+    /// Complete source carrier awaiting an explicit native or numerical mapping.
+    Retained(crate::geometry_source::RetainedGeometry),
     /// `LINE` through a point along a direction.
     Line(Vec3, Vec3),
     /// `CIRCLE`.
@@ -226,6 +230,58 @@ pub(crate) fn read_graph(graph: &Graph, dec: &Decider) -> Result<StepFile, Impor
     Reader::new(graph, dec)?.file()
 }
 
+pub(crate) fn source_length_scale(graph: &Graph, dec: &Decider) -> Result<Rational, ImportRefusal> {
+    length_scale(graph, dec)
+}
+pub(crate) fn source_curve(
+    graph: &Graph,
+    id: u64,
+    scale: &Rational,
+    dec: &Decider,
+) -> Result<Curve, ImportRefusal> {
+    Reader {
+        g: graph,
+        scale: scale.clone(),
+        dec,
+    }
+    .curve(id)
+}
+pub(crate) fn source_placement(
+    graph: &Graph,
+    id: u64,
+    scale: &Rational,
+    dec: &Decider,
+) -> Result<Placement, ImportRefusal> {
+    Reader {
+        g: graph,
+        scale: scale.clone(),
+        dec,
+    }
+    .placement(id)
+}
+pub(crate) fn source_surface(
+    graph: &Graph,
+    id: u64,
+    loops: &[FaceLoop],
+    scale: &Rational,
+    dec: &Decider,
+) -> Result<Surface, ImportRefusal> {
+    let reader = Reader {
+        g: graph,
+        scale: scale.clone(),
+        dec,
+    };
+    if reader
+        .entity(id)?
+        .part("SURFACE_OF_LINEAR_EXTRUSION")
+        .is_some()
+    {
+        reader.linear_extrusion(id, loops)
+    } else {
+        reader.surface(id)
+    }
+}
+
 fn unsupported(id: u64, e: &Entity) -> ImportRefusal {
     ImportRefusal::Unsupported {
         entity: format!("#{id}"),
@@ -249,7 +305,7 @@ impl<'a> Reader<'a> {
     fn new(g: &'a Graph, dec: &'a Decider) -> Result<Self, ImportRefusal> {
         Ok(Self {
             g,
-            scale: length_scale(g)?,
+            scale: length_scale(g, dec)?,
             dec,
         })
     }
@@ -628,23 +684,31 @@ fn number(p: &Param) -> Result<Rational, ImportRefusal> {
 const MAX_CONVERSION_DEPTH: u32 = 8;
 
 /// Millimetres per file length unit, from the one length unit the file declares.
-fn length_scale(g: &Graph) -> Result<Rational, ImportRefusal> {
+fn length_scale(g: &Graph, dec: &Decider) -> Result<Rational, ImportRefusal> {
+    let mut meter = Decider::new(*dec.policy());
+    meter.set_deadline(dec.deadline());
+    meter
+        .charge_work(g.len() as u64)
+        .map_err(spline::source_error)?;
     let mut scales = BTreeSet::new();
     // Only units a representation context assigns count; a conversion's base unit does not.
-    let assigned: BTreeSet<u64> = g
-        .values()
-        .filter_map(|e| e.part("GLOBAL_UNIT_ASSIGNED_CONTEXT"))
-        .filter_map(|a| match a.first() {
-            Some(Param::List(l)) => Some(l),
-            _ => None,
-        })
-        .flatten()
-        .filter_map(|p| match p {
-            Param::Ref(r) => Some(*r),
-            _ => None,
-        })
-        .collect();
+    let mut assigned = BTreeSet::new();
+    for entity in g.values() {
+        if let Some(args) = entity.part("GLOBAL_UNIT_ASSIGNED_CONTEXT")
+            && let Some(Param::List(units)) = args.first()
+        {
+            meter
+                .charge_work(units.len() as u64)
+                .map_err(spline::source_error)?;
+            for unit in units {
+                if let Param::Ref(id) = unit {
+                    assigned.insert(*id);
+                }
+            }
+        }
+    }
     for (id, e) in assigned.iter().filter_map(|id| Some((id, g.get(id)?))) {
+        meter.charge_work(1).map_err(spline::source_error)?;
         if e.part("LENGTH_UNIT").is_some() {
             scales.insert(unit_millimetres(g, *id, 0)?);
         }
@@ -755,7 +819,7 @@ fn degree_context(g: &Graph) -> bool {
 // subtypes (simple Part 21 entities do not spell out their supertypes). Check all
 // parts of complex entities too. MANIFOLD_SOLID_BREP is the sole admitted branch.
 // Schema audit: https://www.steptools.com/stds/stp_aim/html/t_solid_model.html
-fn unsupported_solid_model(name: &str) -> bool {
+pub(crate) fn unsupported_solid_model(name: &str) -> bool {
     matches!(
         name,
         "SOLID_MODEL"
@@ -823,4 +887,56 @@ fn unsupported_solid_model(name: &str) -> bool {
             | "TRACK_BLENDED_SOLID"
             | "TRACK_BLENDED_SOLID_WITH_END_CONDITIONS"
     )
+}
+
+#[cfg(test)]
+mod source_adapter_tests {
+    use super::*;
+    use catallax_numbers::with_operation_budget;
+
+    #[test]
+    fn source_entities_reuse_one_charged_unit_scan() {
+        let graph = parse(
+            b"DATA;
+#1=CARTESIAN_POINT('',(1.,2.,3.));
+#2=DIRECTION('',(1.,0.,0.));
+#3=DIRECTION('',(0.,0.,1.));
+#4=AXIS2_PLACEMENT_3D('',#1,#3,#2);
+#5=VECTOR('',#2,1.);
+#6=LINE('',#1,#5);
+#7=PLANE('',#4);
+#8=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT($,.METRE.));
+#9=(GLOBAL_UNIT_ASSIGNED_CONTEXT((#8)) REPRESENTATION_CONTEXT('',''));
+ENDSEC;",
+        )
+        .unwrap();
+        let dec = Decider::default();
+        let (refused, work) =
+            with_operation_budget(graph.len() as u64 - 1, || source_length_scale(&graph, &dec));
+        assert!(matches!(refused, Err(ImportRefusal::ResourceLimit)));
+        assert!(work.exhausted);
+        let (scale, work) = with_operation_budget(10_000, || source_length_scale(&graph, &dec));
+        let scale = scale.unwrap();
+        assert_eq!(scale, Rational::from_i64(1000));
+        assert!(work.used >= graph.len() as u64);
+        // Geometry mapping consumes the validated scale even without contexts
+        // in the geometry subgraph. Repeating unit discovery would refuse here.
+        let mut geometry = graph;
+        geometry.remove(&8);
+        geometry.remove(&9);
+        let origin = [1000, 2000, 3000].map(Rational::from_i64);
+        let Curve::Line(point, _) = source_curve(&geometry, 6, &scale, &dec).unwrap() else {
+            panic!("line")
+        };
+        assert_eq!(point, origin);
+        assert_eq!(
+            source_placement(&geometry, 4, &scale, &dec).unwrap().origin,
+            origin
+        );
+        let Surface::Plane(placement) = source_surface(&geometry, 7, &[], &scale, &dec).unwrap()
+        else {
+            panic!("plane")
+        };
+        assert_eq!(placement.origin, origin);
+    }
 }

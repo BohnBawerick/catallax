@@ -313,7 +313,18 @@ fn native_mapping_preserves_wrappers_and_complete_torus_definition() {
     let mut dec = Decider::default();
     assert!(s.native_surface(4, &q("1"), &mut dec).is_ok());
     assert!(s.native_surface(3, &q("1"), &mut dec).is_err());
-    assert!(s.native_surface(5, &q("1"), &mut dec).is_err());
+    let catallax_shapes::Surface::Plane(offset) = s.native_surface(5, &q("1"), &mut dec).unwrap()
+    else {
+        panic!("plane offset")
+    };
+    assert!(matches!(
+        dec.sign(&(&offset.origin.z - &catallax_numbers::Real::from_i64(2))),
+        catallax_numbers::Outcome::ProvenCoincident(_)
+    ));
+    assert_eq!(
+        geometry(&s, 5),
+        Geometry::Surface(Surface::Offset(4, q("2"), Some(false)))
+    );
     assert!(s.native_curve(7, &q("1"), &mut dec).is_err());
     assert_eq!(
         geometry(&s, 3),

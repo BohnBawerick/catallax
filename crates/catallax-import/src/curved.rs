@@ -398,6 +398,7 @@ pub(crate) fn face_bounds(face: &Face) -> Option<Bounds> {
     let mut ts: Vec<Rational> = Vec::new();
     for e in face.loops.iter().flat_map(|l| &l.edges) {
         match &e.curve {
+            Curve::Retained(_) => return None,
             Curve::Line(..) => {
                 for p in [&e.start.point, &e.end.point] {
                     boxes.push([p.clone(), p.clone()]);

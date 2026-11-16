@@ -759,6 +759,7 @@ fn section_inputs(
         #[cfg(feature = "work-span")]
         pairs_span: catallax_numbers::work_span::Instance::new(),
         pool: Vec::new(),
+        has_native_spline: false,
         points: Vec::new(),
         mandatory: BTreeSet::new(),
         singular: BTreeSet::new(),
@@ -818,6 +819,7 @@ fn section_inputs(
     let PairPass {
         mut trimmed,
         pool,
+        has_native_spline,
         mut points,
         mut mandatory,
         singular,
@@ -833,36 +835,39 @@ fn section_inputs(
         active.fill(true);
     }
     let mut covered = BTreeMap::new();
-    let mut lines = Vec::new();
-    for (index, curve) in pool.iter().copied().enumerate() {
-        dec.charge_work(1)?;
-        if matches!(model.geom().curve(curve), Curve::Line(_)) {
-            lines.push((index, curve));
-        }
-    }
-    for (index, finite) in pool.iter().copied().enumerate() {
-        dec.charge_work(1)?;
-        if !matches!(model.geom().curve(finite), Curve::BSpline(_)) {
-            continue;
-        }
-        for &(owner, line) in &lines {
+    if has_native_spline {
+        let mut lines = Vec::new();
+        for (index, curve) in pool.iter().copied().enumerate() {
             dec.charge_work(1)?;
-            if let Some(mut cover) = crate::curve_pair::finite_line_cover(model, finite, line, dec)?
-            {
-                for point in &mut cover.ends {
-                    *point = canonical_point(
-                        model,
-                        &mut points,
-                        *point,
-                        dec,
-                        "boolean.imprint-ambiguous",
-                    )?;
-                    mandatory.insert(*point);
+            if matches!(model.geom().curve(curve), Curve::Line(_)) {
+                lines.push((index, curve));
+            }
+        }
+        for (index, finite) in pool.iter().copied().enumerate() {
+            dec.charge_work(1)?;
+            if !matches!(model.geom().curve(finite), Curve::BSpline(_)) {
+                continue;
+            }
+            for &(owner, line) in &lines {
+                dec.charge_work(1)?;
+                if let Some(mut cover) =
+                    crate::curve_pair::finite_line_cover(model, finite, line, dec)?
+                {
+                    for point in &mut cover.ends {
+                        *point = canonical_point(
+                            model,
+                            &mut points,
+                            *point,
+                            dec,
+                            "boolean.imprint-ambiguous",
+                        )?;
+                        mandatory.insert(*point);
+                    }
+                    active[index] = false;
+                    active[owner] = true;
+                    covered.insert(cover.finite, cover);
+                    break;
                 }
-                active[index] = false;
-                active[owner] = true;
-                covered.insert(cover.finite, cover);
-                break;
             }
         }
     }
@@ -1191,6 +1196,7 @@ struct PairPass {
     pairs_span: catallax_numbers::work_span::Instance,
     // Every canonical carrier in insertion order.
     pool: Vec<CurveId>,
+    has_native_spline: bool,
     points: Vec<PointId>,
     mandatory: BTreeSet<PointId>,
     singular: BTreeSet<PointId>,
@@ -1290,6 +1296,7 @@ fn face_pair(
         finite_bounds,
         pruning_model,
         pool,
+        has_native_spline,
         points,
         mandatory,
         singular,
@@ -1316,6 +1323,8 @@ fn face_pair(
                 for curve in face_edges(model, face) {
                     let relevant = relevant(dec);
                     let index = add_curve(model, pool, curve, dec)?;
+                    *has_native_spline |=
+                        matches!(model.geom().curve(pool[index]), Curve::BSpline(_));
                     active.resize(pool.len(), false);
                     active[index] |= relevant;
                     supports.resize(pool.len(), BTreeSet::new());
@@ -1336,6 +1345,8 @@ fn face_pair(
                     } => {
                         let relevant = relevant(dec);
                         let index = add_curve(model, pool, curve, dec)?;
+                        *has_native_spline |=
+                            matches!(model.geom().curve(pool[index]), Curve::BSpline(_));
                         active.resize(pool.len(), false);
                         active[index] |= relevant;
                         supports.resize(pool.len(), BTreeSet::new());

@@ -329,7 +329,7 @@ fn projected_circle(
             .ok_or_else(|| bad("trim", "circular outer projection is unresolved"))?;
         // A tilted circle projects to an ellipse. Its inscribed disk uses
         // r*|cos(angle)|, not the enclosing radius used for holes.
-        Some(&radius.lo() * &cosine.lo() - tolerance)
+        Some(&(&radius.lo() * &cosine.lo()) - tolerance)
     } else {
         None
     };
@@ -397,7 +397,7 @@ fn circle_clearance(
                 .sqrt()
                 .ok_or_else(|| bad("trim", "circle separation is unresolved"))?;
                 let clear = if let Some(radius) = &circle.interior_radius {
-                    distance.hi() + &other.enclosing_radius < *radius
+                    &distance.hi() + &other.enclosing_radius < *radius
                 } else {
                     distance.lo() > &circle.enclosing_radius + &other.enclosing_radius
                 };

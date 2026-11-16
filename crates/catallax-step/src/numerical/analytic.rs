@@ -611,6 +611,37 @@ fn pcurve_checks(
     })
 }
 
+fn normalize_cylinder_cell(face: &mut n::NumericalFace, dec: &mut Decider) -> Result<(), Refusal> {
+    if !matches!(face.surface, Surface::Cylinder(_)) {
+        return Ok(());
+    }
+    let [boundary] = face.loops.as_mut_slice() else {
+        return Ok(());
+    };
+    if boundary.len() != 4
+        || (boundary[0].edge != boundary[2].edge && boundary[1].edge != boundary[3].edge)
+    {
+        return Ok(());
+    }
+    // Keep the checked seam cell in the reader's nearest angular chart.
+    // Otherwise circle projection may shift its rims by a period but leave
+    // the retained seam branches behind. Translate every use together.
+    let minimum = boundary
+        .iter()
+        .flat_map(|trim| &trim.uv)
+        .map(|uv| &uv[0])
+        .min()
+        .expect("four cell sides");
+    let origin = near(minimum.clone(), &Rational::zero(), dec)?;
+    let shift = arithmetic(&origin, minimum, '-', dec)?;
+    if !shift.is_zero() {
+        for uv in boundary.iter_mut().flat_map(|trim| &mut trim.uv) {
+            uv[0] = arithmetic(&uv[0], &shift, '+', dec)?;
+        }
+    }
+    Ok(())
+}
+
 fn seam_loop_start(
     boundary: &[n::NumericalTrim],
     edges: &[n::NumericalEdge],
@@ -713,6 +744,7 @@ pub(super) fn build(
                 )?;
             }
         }
+        normalize_cylinder_cell(face, w.dec)?;
     }
     // Validate the actual rounded chart before classifying a repeated edge as
     // a seam. Admission requires a complete periodic cell for such an edge;

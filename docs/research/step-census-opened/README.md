@@ -176,3 +176,28 @@ Fourteen focused STEP/oblique controls pass, including decoding a written source
 Actual `00000835` and `00000018` outputs have all three and all sixteen bodies valid after the pinned builder, respectively.
 The first exported `00000835` body also takes a valid material-removing box cut without altering its input bytes.
 These observations grant neither a whole-body source-fidelity bound nor export-valid credit without independent checks.
+
+## Cylindrical period-chart qualification
+
+Kernel producer `06910e4076e41530620fb66d8a811c4fdac69297` was measured once on the same 3,000 source hashes, with two workers, 6,144 MiB caps, unchanged 20M allowances and the 60-second file bound.
+
+| File measure | Numerical export capture | Period-chart candidate |
+| --- | ---: | ---: |
+| Complete-source solids | 550 | 550 |
+| Every solid exported and valid after OCCT builder processing | 507 | 516 |
+| Any invalid written body, full and partial | 46 | 37 |
+| Export refusal, full and partial | 1 | 1 |
+
+All nine newly export-valid files were already fully admitted and had an invalid-after-builder export outcome.
+Their IDs are `00000265`, `00000269`, `00001929`, `00004622`, `00004623`, `00005002`, `00005763`, `00007405` and `00008723`.
+There are no measured admission/body-inventory losses, export-valid losses or unmeasured previous passes.
+`00001687` and `00005501` remain invalid and receive no new credit.
+The same two opening timeouts, one export timeout and `00002204` export work refusal remain run facts; no memory termination or process error occurs.
+
+The first invalidity in `00008723` was localised before selecting the fix: the reader moved circular pcurves into a different U period while retaining the seam branches, making one cylindrical face unorientable.
+A diagnostic common-period translation restored validity; cyclic loop rotation alone did not.
+Independent authored annulus controls reproduced the sensitivity for both face senses.
+The candidate passes six periodic STEP tests and ten actual period-gauge/signed-height annulus artifacts with the expected topology and volume.
+All three real-part bodies now validate, with unchanged written 3D entity tables.
+Only the existing four-sided cylindrical seam-cell chart is translated; 3D geometry, source data, tolerance and the existing numerical checks remain unchanged.
+Builder processing can occur internally, and no complete source-fidelity or unhealed-validity claim is made.

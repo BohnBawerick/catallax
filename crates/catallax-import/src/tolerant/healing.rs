@@ -135,6 +135,8 @@ pub struct HealingReport {
     pub issues: Vec<HealingIssue>,
     /// Actual work for all five stages, in body/stage order.
     pub stages: Vec<HealingStage>,
+    /// Work prepaid before cloning the immutable source and repair candidate.
+    pub preparation_work_used: u64,
     /// Work checking and committing the gathered tolerance plan.
     pub publication_work_used: u64,
     /// Any topology repair or tolerance growth forces an approximate result.
@@ -228,11 +230,15 @@ fn failure(code: &'static str, detail: &str) -> Error {
 /// Unresolved checks remain explicit for later surface/solid tier assignment.
 pub fn heal(source: &TolerantFile, dec: &mut Decider) -> Result<HealedFile, Error> {
     super::budget(|| {
+        let preparation_start = current_operation_work().used;
         // Prepay the source inventory before cloning the candidate transaction.
         charge_source(source, dec)?;
         charge_source(source, dec)?;
         let original = source.clone();
         let mut candidate = source.clone();
+        let preparation_work_used = current_operation_work()
+            .used
+            .saturating_sub(preparation_start);
         let mut plan = Plan::default();
         for (index, body) in candidate.bodies.iter_mut().enumerate() {
             for stage in ["sewing", "wire", "face", "shell", "solid"] {
@@ -253,6 +259,9 @@ pub fn heal(source: &TolerantFile, dec: &mut Decider) -> Result<HealedFile, Erro
             }
         }
         let before = current_operation_work().used;
+        for (index, body) in candidate.bodies.iter().enumerate() {
+            checks::source_geometry(index, &source.bodies[index], body, &mut plan, dec)?;
+        }
         // Gather maxima and endpoint propagation before making any ledger
         // change. Even a late refusal discards this whole private candidate.
         let mut growth: BTreeMap<(usize, bool, String), (Rational, String)> = BTreeMap::new();
@@ -314,6 +323,7 @@ pub fn heal(source: &TolerantFile, dec: &mut Decider) -> Result<HealedFile, Erro
             }
         }
         dec.charge_work(candidate.bodies.len() as u64)?;
+        super::charge_text(&source.source_sha256, dec)?;
         let approximate = !plan.changes.is_empty()
             || candidate
                 .bodies
@@ -326,6 +336,7 @@ pub fn heal(source: &TolerantFile, dec: &mut Decider) -> Result<HealedFile, Erro
             measurements: plan.measurements,
             issues: plan.issues,
             stages: plan.stages,
+            preparation_work_used,
             publication_work_used: current_operation_work().used.saturating_sub(before),
             approximate,
         };

@@ -138,6 +138,142 @@ fn opposite(a: &Rational, b: &Rational) -> bool {
     !a.is_zero() && !b.is_zero() && a.sign() != b.sign()
 }
 
+// Validate the immutable source too. A carrier removed by sewing must never
+// escape its original incidence checks or acquire an unmeasured correspondence.
+pub(super) fn source_geometry(
+    body_index: usize,
+    source: &TolerantBody,
+    candidate: &TolerantBody,
+    plan: &mut Plan,
+    dec: &mut Decider,
+) -> Result<(), Error> {
+    for edge in &source.edges {
+        let Curve::Line(origin, direction) = &edge.curve else {
+            continue;
+        };
+        for (end, vertex) in edge.vertices.iter().enumerate() {
+            let point = &source.vertices[*vertex].source.point;
+            let projection = project_line(point, origin, direction, dec)?;
+            let upper = distance_upper(
+                &distance_squared(point, &projection, dec)?,
+                &source.options.maximum_mm,
+                dec,
+            )?;
+            plan.measured(
+                source,
+                &format!("original {} endpoint {end}", edge.name),
+                "original-source-point-to-original-line-carrier",
+                &upper,
+            );
+            plan.need(
+                body_index,
+                ToleranceEntity::Vertex(source.vertices[*vertex].source.name.clone()),
+                upper,
+                "healing.original-source-vertex-incidence",
+            );
+        }
+    }
+    for shell in &source.shells {
+        for face in &shell.faces {
+            let Surface::Plane(plane) = &face.surface else {
+                continue;
+            };
+            for boundary in &face.loops {
+                for coedge in &boundary.edges {
+                    let edge = &source.edges[coedge.edge];
+                    let Curve::Line(origin, direction) = &edge.curve else {
+                        continue;
+                    };
+                    let mut maximum = Rational::zero();
+                    for vertex in edge.vertices {
+                        let point = project_line(
+                            &source.vertices[vertex].source.point,
+                            origin,
+                            direction,
+                            dec,
+                        )?;
+                        let upper = distance_upper(
+                            &plane_squared(&point, plane, dec)?,
+                            &source.options.maximum_mm,
+                            dec,
+                        )?;
+                        if compare(&upper, &maximum, dec)?.is_gt() {
+                            maximum = upper;
+                        }
+                    }
+                    plan.measured(
+                        source,
+                        &format!("original {} on {}", edge.name, face.name),
+                        "original-finite-line-segment-to-original-plane",
+                        &maximum,
+                    );
+                    plan.need(
+                        body_index,
+                        ToleranceEntity::Edge(edge.name.clone()),
+                        maximum,
+                        "healing.original-source-finite-line-incidence",
+                    );
+                }
+            }
+        }
+    }
+    let sewn: Vec<_> = plan
+        .changes
+        .iter()
+        .filter_map(|change| match change {
+            HealingChange::EdgesSewn {
+                body,
+                retained,
+                replaced,
+                reversed,
+                ..
+            } if *body == source.name => Some((retained.clone(), replaced.clone(), *reversed)),
+            _ => None,
+        })
+        .collect();
+    for (retained, replaced, reversed) in sewn {
+        let original = &source.edges[source.edge_indices[&replaced]];
+        let result = &candidate.edges[candidate.edge_indices[&retained]];
+        let (Curve::Line(old_origin, old_direction), Curve::Line(origin, direction)) =
+            (&original.curve, &result.curve)
+        else {
+            continue;
+        };
+        let mut maximum = Rational::zero();
+        for end in 0..2 {
+            let old = &source.vertices[original.vertices[if reversed { 1 - end } else { end }]]
+                .source
+                .point;
+            let current = &candidate.vertices[result.vertices[end]].source.point;
+            let a = project_line(old, old_origin, old_direction, dec)?;
+            let b = project_line(current, origin, direction, dec)?;
+            let upper = distance_upper(
+                &distance_squared(&a, &b, dec)?,
+                &source.options.maximum_mm,
+                dec,
+            )?;
+            plan.measured(
+                source,
+                &format!("{replaced} -> {retained} endpoint {end}"),
+                "original-finite-line-to-final-retained-line-endpoint-correspondence",
+                &upper,
+            );
+            if compare(&upper, &maximum, dec)?.is_gt() {
+                maximum = upper;
+            }
+        }
+        for name in [retained, replaced] {
+            plan.need(
+                body_index,
+                ToleranceEntity::Edge(name),
+                maximum.clone(),
+                "healing.measured-finite-source-line-correspondence",
+            );
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn faces(
     body_index: usize,
     body: &mut TolerantBody,

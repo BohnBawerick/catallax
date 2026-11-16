@@ -282,3 +282,223 @@ fn an_exhausted_candidate_preserves_the_original_source_and_ledger() {
         assert_eq!(input, before);
     }
 }
+
+#[test]
+fn an_existing_wire_is_reordered_without_losing_any_edge_use() {
+    let mut text = box_step(BoxFixture::new(["2", "3", "4"]));
+    let line = text
+        .lines()
+        .find(|l| l.contains("=EDGE_LOOP("))
+        .unwrap()
+        .to_owned();
+    let (prefix, tail) = line.split_once(",(").unwrap();
+    let mut refs = tail
+        .split(')')
+        .next()
+        .unwrap()
+        .split(',')
+        .collect::<Vec<_>>();
+    refs.swap(1, 2);
+    text = text.replacen(&line, &format!("{prefix},({}));", refs.join(",")), 1);
+    let input = read(&text);
+    let before = input.clone();
+    let result = healing::heal(&input, &mut Decider::default()).unwrap();
+    assert_eq!(input, before);
+    assert_eq!(
+        result
+            .report()
+            .changes
+            .iter()
+            .filter(|c| matches!(c, HealingChange::WireReordered { .. }))
+            .count(),
+        1
+    );
+    let body = checked_planar_fixture(&result.definition(&mut Decider::default()).unwrap());
+    assert_eq!(
+        (
+            body.counts().faces,
+            body.counts().edges,
+            body.counts().vertices
+        ),
+        (6, 12, 8)
+    );
+}
+
+fn reverse_last_flag(line: &str) -> String {
+    if let Some(prefix) = line.strip_suffix(".T.);") {
+        format!("{prefix}.F.);")
+    } else if let Some(prefix) = line.strip_suffix(".F.);") {
+        format!("{prefix}.T.);")
+    } else {
+        panic!("authored boolean flag")
+    }
+}
+
+#[test]
+fn a_reversed_face_boundary_gets_an_explicit_orientation_repair() {
+    let mut text = box_step(BoxFixture::new(["2", "3", "4"]));
+    let line = text
+        .lines()
+        .find(|l| l.contains("=FACE_OUTER_BOUND("))
+        .unwrap()
+        .to_owned();
+    text = text.replacen(&line, &reverse_last_flag(&line), 1);
+    let input = read(&text);
+    let result = healing::heal(&input, &mut Decider::default()).unwrap();
+    assert!(
+        result
+            .report()
+            .changes
+            .iter()
+            .any(|c| matches!(c, HealingChange::BoundaryReversed { .. }))
+    );
+    checked_planar_fixture(&result.definition(&mut Decider::default()).unwrap());
+    assert!(input.bodies()[0].tolerance_changes().is_empty());
+}
+
+#[test]
+fn an_inside_out_polyhedral_shell_is_oriented_outwards_as_one_candidate() {
+    let text = box_step(BoxFixture::new(["2", "3", "4"]))
+        .lines()
+        .map(|line| {
+            if line.contains("=FACE_OUTER_BOUND(") || line.contains("=ADVANCED_FACE(") {
+                reverse_last_flag(line)
+            } else {
+                line.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let input = read(&text);
+    let result = healing::heal(&input, &mut Decider::default()).unwrap();
+    assert_eq!(result.report().changes.iter().filter(|c|matches!(c,HealingChange::FaceReversed{cause,..} if cause=="solid-positive-oriented-polyhedral-volume")).count(),6);
+    checked_planar_fixture(&result.definition(&mut Decider::default()).unwrap());
+    assert!(result.report().approximate);
+}
+
+#[test]
+fn a_true_crossing_remains_an_unresolved_surface_condition() {
+    let mut soup = common::Soup::new();
+    let ring = [
+        ["0", "0", "0"],
+        ["2", "2", "0"],
+        ["0", "2", "0"],
+        ["2", "0", "0"],
+    ]
+    .map(|p| p.map(r));
+    soup.plane_face(&ring, &[], 2, true, &[r("0"), r("0"), r("0")]);
+    let input = read(&soup.finish());
+    let before = input.clone();
+    let result = healing::heal(&input, &mut Decider::default()).unwrap();
+    assert_eq!(input, before);
+    assert!(
+        result
+            .report()
+            .issues
+            .iter()
+            .any(|i| i.code == "face.crossing-or-collinear-nonadjacent-boundaries")
+    );
+    assert!(
+        !result
+            .report()
+            .checks
+            .iter()
+            .any(|c| c.check == "solid.positive-oriented-polyhedral-volume")
+    );
+}
+
+#[test]
+fn sewing_keeps_independent_source_bodies_and_their_bindings_separate() {
+    let mut first = BoxFixture::new(["2", "3", "4"]);
+    first.shift = Some((0, [r("0.001"), r("0"), r("0")]));
+    let text = common::boxes_step(&[first, BoxFixture::new(["2", "3", "4"])]);
+    let input = read(&text);
+    let original = input.definition(&mut Decider::default()).unwrap();
+    let result = healing::heal(&input, &mut Decider::default()).unwrap();
+    let definition = result.definition(&mut Decider::default()).unwrap();
+    assert_eq!(definition.solids.len(), 2);
+    assert_eq!(definition.solids[1], original.solids[1]);
+    let unchanged = input.bodies()[1].name();
+    assert!(!result.report().changes.iter().any(|c| match c {
+        HealingChange::EdgesSewn { body, .. }
+        | HealingChange::VerticesJoined { body, .. }
+        | HealingChange::WireReordered { body, .. }
+        | HealingChange::BoundaryReversed { body, .. }
+        | HealingChange::FaceReversed { body, .. } => body == unchanged,
+    }));
+}
+
+#[test]
+fn normal_shared_edge_sewing_exports_a_checked_approximate_body() {
+    let mut fixture = BoxFixture::new(["2", "3", "4"]);
+    fixture.shift = Some((0, [r("0.001"), r("0"), r("0")]));
+    let text = box_step(fixture);
+    let input = read(&text);
+    let healed = healing::heal(&input, &mut Decider::default()).unwrap();
+    let body = checked_planar_fixture(&healed.definition(&mut Decider::default()).unwrap());
+    let step = catallax_step::numerical::build(&body, &Default::default(), &mut Decider::default())
+        .unwrap();
+    step.check_written(step.bytes(), &mut Decider::default())
+        .unwrap();
+    assert!(healed.report().approximate);
+    assert_eq!(step.report().counts, [6, 12, 8]);
+    if let Ok(folder) = std::env::var("CATALLAX_HEALING_EVIDENCE") {
+        let folder = std::path::Path::new(&folder);
+        std::fs::write(folder.join("normal-shared-edge.step"), step.bytes()).unwrap();
+        let record = serde_json::json!({"format":"catallax-healing-geometry-control/1","source_sha256":input.source_sha256(),"healing":healed.report(),"tolerances":healed.tolerances(),"step_sha256":sha256_hex(step.bytes()),"numerical_step":true,"complete_source_body_bound_established":false});
+        std::fs::write(
+            folder.join("normal-shared-edge.json"),
+            serde_json::to_vec_pretty(&record).unwrap(),
+        )
+        .unwrap();
+    }
+}
+
+#[test]
+fn a_replaced_source_carrier_cannot_escape_its_original_geometry_cap() {
+    fn refs(value: &str) -> Vec<usize> {
+        value
+            .split('#')
+            .skip(1)
+            .map(|s| {
+                s[..s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len())]
+                    .parse()
+                    .unwrap()
+            })
+            .collect()
+    }
+    let mut text = source("0.001");
+    let input = read(&text);
+    let baseline = healing::heal(&input, &mut Decider::default()).unwrap();
+    let replaced = baseline
+        .report()
+        .changes
+        .iter()
+        .find_map(|c| match c {
+            HealingChange::EdgesSewn { replaced, .. } => Some(replaced),
+            _ => None,
+        })
+        .unwrap();
+    let edge = text
+        .lines()
+        .find(|l| l.starts_with(&format!("{replaced}=")))
+        .unwrap();
+    let carrier = refs(edge.split_once('=').unwrap().1)[2];
+    let line = text
+        .lines()
+        .find(|l| l.starts_with(&format!("#{carrier}=")))
+        .unwrap()
+        .to_owned();
+    let origin = refs(line.split_once('=').unwrap().1)[0];
+    let replacement = line.replacen(&format!(",#{origin}"), ",#900002", 1);
+    text = text.replacen(&line, &replacement, 1).replacen(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#900002=CARTESIAN_POINT('',(100.,100.,100.));\nENDSEC;\nEND-ISO-10303-21;",
+        1,
+    );
+    let input = read(&text);
+    let before = input.clone();
+    let error = healing::heal(&input, &mut Decider::default()).unwrap_err();
+    assert!(matches!(error,tolerant::Error::Numerical(ref r) if r.code=="import.healing-cap"));
+    assert_eq!(input, before);
+}

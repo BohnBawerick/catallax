@@ -46,42 +46,47 @@ The builder rounds one convex edge between two single-patch faces whose ends mee
 - [M11-OFFSET-PROOF.md](../M11-OFFSET-PROOF.md): https://github.com/BohnBawerick/catallax/pull/445
 - [M11-COVERAGE.md](../M11-COVERAGE.md): https://github.com/BohnBawerick/catallax/pull/521, https://github.com/BohnBawerick/catallax/pull/523, https://github.com/BohnBawerick/catallax/pull/526
 
-## 16 November: numerical multi-patch continuation, not yet a body
+## 16 November: numerical multi-patch body, STEP still refused
 
 The phase-2.1 continuation uses metered Newton offset contacts across atlas
 charts, C1 cubic centre/section fits and paired world/native-UV end cuts.
 The sampled tolerance is 1e-7 mm, not a whole-face or whole-body bound.
 The perpendicular-plane seam and circular-section controls pass. An earlier
 curved-loft carrier/cap-only probe passed at 1e-4 mm in 29,335,696 work; that
-is not acceptance of the current, stricter full-body request.
+is separate from the current, stricter body result.
 
 Declared numerical carriers use sampled chart-box coverage and nine UV-walk
 locations per coedge. Only the new fillet carrier is declared numerical in
-this probe. Source-carrier checks are unchanged. Edge, incidence, endpoint,
-join and world-distance checks keep their existing algorithms and full
-clipped native-knot-span sample grids. The exact chart-gap control and
-default native continuation/repair/support-edit/handover control pass.
+this probe. Source-carrier checks are unchanged. A shared edge incident to
+a declared numerical face uses nine native parameters for its numerical
+world-distance evidence, with the same 1e-7 mm tolerance. Exact-exact edges
+retain their original clipped 3D/UV knot-span sample grid. The mixed-body
+control rejects an exact-exact pcurve spike between the coarse locations;
+the exact chart-gap and default native continuation/repair/support-edit/
+handover controls also pass.
 
-The smooth three-section loft's full body probe still exhausts the 100M
-request allowance. Its final-admission work before refusal is:
+The smooth three-section loft's fillet body admits at 96,751,874 work within
+the 100M request allowance. Independent circle-radius and end-plane samples
+then pass. Its completed final-admission work is:
 
 | Check authority | Charged work |
 |---|---:|
 | Numerical face-local | 1,271,040 |
-| Exact source-face-local | 6,540,591 |
-| Cross-face checks and setup | 3,417,006 |
-| Final-admission total | 11,228,637 |
+| Unchanged source-face-local | 6,540,517 |
+| Cross-face checks and setup | 168,954 |
+| Final-admission total | 7,980,511 |
 
-The last unfinished check is native edge-to-surface distance sampling for
-`round/blend/#20 / round/cap/#14`. These counts cover final admission only;
-the same request allowance also covers the preceding source and fillet work.
-No admitted body, filleted STEP, radius-edit result or imported-part/housing
-acceptance is claimed. The test is
+These counts cover final admission only; the same request allowance also
+covers the preceding source and fillet work. Numerical STEP construction
+then refuses with `step.numerical-rounding-topology`: “the written atlas
+source no longer has the original charts”. No filleted STEP, radius-edit
+result, imported-part fillet or housing acceptance is claimed. The test is
 `m11_spline_fillet::numerical_fillet_builds_on_the_smooth_loft_across_its_station_seam`.
 
 The interpolation and separate UV/3D-curve representation follow the
 [SMLib rail-blend/lift workflow](https://github.com/NVIDIA-Omniverse/usd-brep/blob/main/source/SMLib/src/SmFilletSolver.cpp#L8465-L8520)
 and [OpenCASCADE's paired intersection curves](https://dev.opencascade.org/doc/refman/html/class_int_tools___face_face.html).
-Numerical face-local admission uses Catallax's finite sampling convention,
-not either kernel's complete wire certification. No reference source was ported.
+Numerical face-local and declared numerical-pair admission use Catallax's
+finite sampling convention, not either kernel's complete wire certification.
+No reference source was ported.
 

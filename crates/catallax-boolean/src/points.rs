@@ -831,7 +831,19 @@ fn search<T>(
             else {
                 continue;
             };
-            if let Some(result) = accept(model, query, &candidate, dec)? {
+            eprintln!(
+                "PROBE_QUERY surface={:?} depth={depth} before={}",
+                f.surface,
+                catallax_numbers::current_operation_work().used
+            );
+            let accepted = accept(model, query, &candidate, dec)?;
+            eprintln!(
+                "PROBE_QUERY surface={:?} depth={depth} after={} accepted={}",
+                f.surface,
+                catallax_numbers::current_operation_work().used,
+                accepted.is_some()
+            );
+            if let Some(result) = accepted {
                 return Ok(result);
             }
         }
@@ -909,6 +921,14 @@ fn probe_start(
     if upper.is_zero() {
         return Ok(None);
     }
+    eprintln!(
+        "PROBE_START surface={:?} edge={:?} scale={} upper={} work={}",
+        f.surface,
+        coedge.edge,
+        scale.to_f64_nearest(),
+        upper.to_f64_nearest(),
+        catallax_numbers::current_operation_work().used
+    );
     Ok(Some(ProbeStart {
         point,
         p,

@@ -140,10 +140,39 @@ The first causes of the new solid files were 108 `numerical.invalid-trim`, 16 `s
 `00005188`, previously blocked by a complete circular outer rim with a hole, now exports valid; `00004869` still remains a surface result.
 
 Other opening outcomes are 129 partial files, 2,227 retained-surface files, 92 unopened inputs and the same two opening timeouts.
-Across full and partial files, 43 files contain invalid output and 43 refuse export; none gains export-valid credit.
+Across full and partial files, 43 have `invalid_after_builder` as their primary export outcome and 43 refuse export; 44 contain an invalid written body, including one export-refused file.
 The timeout set is unchanged, with `00004777` retaining its completed opening verdict.
 No observer reaches its memory cap and no process error is recorded.
 
 The focused controls pass polygonal multiple holes, circular hole pairs, nested/touching/crossing refusals, caller-tolerance clearance and a thin annulus with different rim phases.
 Actual double-bore and annulus STEP files also pass the pinned OCCT builder's validity, volume and inside/outside checks.
 These remain numerical results with the recorded sampled and continuous-circle checks, not whole-body source-fidelity or exact proofs.
+
+## Numerical planar export qualification
+
+Kernel producer `fd24f13ab8fbc92ba4d5e8eca6ad3d6605b12e90` was measured once on the same 3,000 source hashes, with two workers, unchanged 20M opening and aggregate export allowances, a 60-second file bound and 6,144 MiB caps.
+
+| File measure | Multiple-bound capture | Numerical export candidate |
+| --- | ---: | ---: |
+| Complete-source solids | 550 | 550 |
+| Every solid exported and valid after OCCT builder processing | 479 | 507 |
+| Primary `invalid_after_builder` export outcome, full and partial | 43 | 46 |
+| Any invalid written body, full and partial | 44 | 46 |
+| Export refusal, full and partial | 43 | 1 |
+
+The 28 newly export-valid files were already complete-source admissions, each previously stopped by `step.numerical-gap`.
+The 550-file solid set and its body inventories are unchanged; there are no measured losses or unmeasured previous passes.
+Of 31 complete-source numerical-gap candidates, three still produce invalid output and receive no credit: `00001687`, `00005501` and `00008723`.
+Twelve of the preceding qualification's 13 newly admitted gap cases now export valid; its other 24 invalid-output cases remain invalid.
+The difference between primary invalid outcomes and files containing an invalid body accounts for an invalid prefix already written before an export refusal.
+
+The same opening timeouts (`00000187`, `00008201`) and export timeout (`00004777`) remain run facts.
+No observer reaches its memory cap and no process error occurs.
+The sole remaining export refusal is `numbers.operation-budget` for `00002204`; it is not a geometric diagnosis.
+
+The planar writer retains source vertices, lines and planes and rechecks the selected decimal payload at the body's unchanged tolerance.
+It no longer demands exact-zero source incidence, but rejects a reversed finite-line walk and retains existing collapsed-payload refusals.
+Fourteen focused STEP/oblique controls pass, including decoding a written source gap without healing it.
+Actual `00000835` and `00000018` outputs have all three and all sixteen bodies valid after the pinned builder, respectively.
+The first exported `00000835` body also takes a valid material-removing box cut without altering its input bytes.
+These observations grant neither a whole-body source-fidelity bound nor export-valid credit without independent checks.

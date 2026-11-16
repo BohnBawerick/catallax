@@ -150,7 +150,7 @@ fn n03_numerical_two_loop_and_repaired_controls_are_reread() {
     }
 }
 #[test]
-fn n03_tolerated_source_gap_is_not_healed_on_export() {
+fn n03_tolerated_source_gap_is_retained_in_the_written_geometry() {
     let mut definition = n02::tube();
     definition.vertices[0].position[0] =
         definition.vertices[0].position[0].clone() + n02::q("0.005");
@@ -160,15 +160,73 @@ fn n03_tolerated_source_gap_is_not_healed_on_export() {
         &mut Decider::default(),
     )
     .unwrap();
-    let before = format!("{:?}", body.definition());
+    let artifact = numerical::build(
+        &body,
+        &NumericalStepOptions::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let decoded = catallax_import::read_step(artifact.bytes()).unwrap();
+    let expected = &body.definition().vertices[0].position;
+    assert!(
+        decoded
+            .solids
+            .iter()
+            .flat_map(|solid| &solid.faces)
+            .flat_map(|face| &face.loops)
+            .flat_map(|boundary| &boundary.edges)
+            .any(|edge| {
+                let catallax_import::Curve::Line(origin, dir) = &edge.curve else {
+                    return false;
+                };
+                [&edge.start.point, &edge.end.point]
+                    .into_iter()
+                    .any(|position| {
+                        if position != expected {
+                            return false;
+                        }
+                        let delta: [Rational; 3] =
+                            std::array::from_fn(|i| &position[i] - &origin[i]);
+                        (0..3).any(|i| {
+                            let j = (i + 1) % 3;
+                            let k = (i + 2) % 3;
+                            &delta[j] * &dir[k] != &delta[k] * &dir[j]
+                        })
+                    })
+            })
+    );
+}
+
+#[test]
+fn projected_vertices_cannot_reverse_the_written_finite_line() {
+    let mut model = Model::new();
+    let size = n02::q("0.001");
+    let body = catallax_topology::block(
+        &mut model,
+        [size.clone(), size.clone(), size],
+        &Pose::identity(),
+    )
+    .unwrap();
+    let options = NumericalOptions::default();
+    let (mut definition, native) = numerical::definition_from_exact_model(
+        &model,
+        body,
+        "short edges".into(),
+        &options.tolerance_mm,
+        &mut Decider::default(),
+    )
+    .unwrap();
+    definition.edges[0].parameters.swap(0, 1);
+    let body =
+        source::build_with_native_trims(definition, native, options, &mut Decider::default())
+            .unwrap();
     let refusal = numerical::build(
         &body,
         &NumericalStepOptions::default(),
         &mut Decider::default(),
     )
     .unwrap_err();
-    assert_eq!(refusal.code, "step.numerical-gap");
-    assert_eq!(before, format!("{:?}", body.definition()));
+    assert_eq!(refusal.code, "step.numerical-rounding-topology");
 }
 #[test]
 fn n03_rounding_cannot_collapse_the_emitted_body() {

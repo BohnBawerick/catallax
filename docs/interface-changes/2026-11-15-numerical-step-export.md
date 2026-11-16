@@ -11,18 +11,20 @@ catallax_step::numerical::build(&body, &options, &mut decider)
     -> Result<NumericalStep, Refusal>
 ```
 
-`body` is N01/N02's checked `NumericalBody`. The original planar-line family is one retained
-closed shell with finite rational line edges and rational orthogonal plane
-frames, including oblique directions and N02's outer-loop/one-hole faces.
-Source line endpoints and plane incidence must agree in retained rational world
-coordinates. Trims use inverse coordinates on the actual written
-orthonormal frame, checked numerically rather than equating rational UV midpoints
-with exact real parameters. No world-space source point is moved.
-Merely tolerated source geometric gaps still refuse on that original path.
+`body` is N01/N02's checked `NumericalBody`. The planar-line family is one retained
+closed shell with finite rational line edges, plane frames and explicit outer
+and inner loops. Source line/vertex and plane/vertex residuals need not be
+exactly zero. The decimal payload must instead pass numerical admission under
+the body's unchanged stated tolerance. Trims use inverse coordinates on the
+actual written orthonormal frame, rather than equating source UV midpoints with
+exact real parameters. No world-space source point or carrier is healed.
+Projected finite-line parameters must retain the emitted edge's orientation;
+reversed or collapsed walks refuse even when a short edge fits inside tolerance.
 Native spline edges and rational patches use the separate
 [curved numerical path](2026-11-15-numerical-curved-step.md), including flat
 splines retained as native spline surfaces. Both paths retain explicit edge/loop
-topology.
+topology. The original N03 qualification's exact-zero source-gap restriction is
+superseded; its raw reference checks remain evidence for their original files.
 
 The private artifact bytes are STEP AP242, explicitly labelled `catallax numerical
 approximate` in `FILE_DESCRIPTION` and the solid name. Source name, source local
@@ -71,11 +73,15 @@ artifact does not itself claim a disk write or OCCT acceptance. An altered,
 truncated or unrelated file refuses. External I/O failures remain the caller's
 I/O errors; no output path is mutated by a failed artifact build.
 
-The new typed refusals use `step.numerical-options`, `-unsupported`, `-gap`,
+The typed refusals use `step.numerical-options`, `-unsupported`, `-gap`,
 `-rounding-limit`, `-rounding-topology`, `-file-number` and `-file-changed`, plus
 existing N01/N02 topology, trim, sample, precision and work refusals. No partial
 artifact is returned. Independent raw reference import/edit validation is separate
 and applies only to the exact file hashes it checked.
+
+`step.numerical-gap` still applies when exact-model embedding cannot recover
+finite source parameters. It no longer requires exact-zero source incidence
+when serializing an already checked numerical body.
 
 [The N03 report](../phase1/N03/REPORT.md) records the public controls, actual byte
 reread, raw OCCT check and subsequent cut, with remaining scope limits.

@@ -51,9 +51,7 @@ pub(super) fn check_loops(
                 } else {
                     let share = Rational::from_ratio(i, SUBDIVISIONS).unwrap();
                     let t = a + &(&share * &(b - a));
-                    let point = edge
-                        .curve
-                        .evaluate(&Ball::from_rational(&t, BITS), dec)?
+                    let point = crate::numerical::curve_at(&edge.curve, &t, dec)?
                         .ok_or_else(|| bad("unsupported", "edge has no parameter evaluator"))?;
                     parameters(&face.surface, &point, dec)?
                 };

@@ -355,6 +355,21 @@ fn precision_allowed(dec: &Decider) -> Result<(), Refusal> {
     }
     Ok(())
 }
+// Rational sample addresses stay exact even when their binary enclosure
+// extends beyond a finite spline endpoint.
+fn curve_at(
+    curve: &Curve,
+    parameter: &Rational,
+    dec: &Decider,
+) -> Result<Option<[Ball; 3]>, Refusal> {
+    match curve {
+        Curve::BSpline(curve) => curve
+            .evaluate_box([parameter, parameter], BITS, dec)
+            .map(Some),
+        _ => curve.evaluate(&Ball::from_rational(parameter, BITS), dec),
+    }
+}
+
 fn point_box(p: &[Rational; 3]) -> [Ball; 3] {
     p.each_ref().map(|x| Ball::from_rational(x, BITS))
 }
@@ -565,9 +580,7 @@ fn build_inner(
         for i in 0..2 {
             dec.charge_work(1)?;
             let t = &edge.parameters[i];
-            let value = edge
-                .curve
-                .evaluate(&Ball::from_rational(t, BITS), dec)?
+            let value = crate::numerical::curve_at(&edge.curve, t, dec)?
                 .ok_or_else(|| bad("unsupported", "edge has no parameter evaluator"))?;
             samples.push(NumericalSample {
                 parameters: vec![t.clone()],
@@ -680,9 +693,7 @@ fn build_inner(
                 let mut uv: [Rational; 2] = std::array::from_fn(|axis| {
                     &trim.uv[0][axis] + &(&s * &(&trim.uv[1][axis] - &trim.uv[0][axis]))
                 });
-                let p = edge
-                    .curve
-                    .evaluate(&Ball::from_rational(&t, BITS), dec)?
+                let p = crate::numerical::curve_at(&edge.curve, &t, dec)?
                     .ok_or_else(|| bad("unsupported", "edge has no parameter evaluator"))?;
                 if i != 0 && i != SUBDIVISIONS && analytic::projected_edge(face, edge) {
                     uv = curved::parameters(&face.surface, &p, dec)?;

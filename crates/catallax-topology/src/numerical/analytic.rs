@@ -181,9 +181,7 @@ pub(super) fn check_loops(
                 } else {
                     let s = Rational::from_ratio(i, SUBDIVISIONS).unwrap();
                     let t = a + &(&s * &(b - a));
-                    let point = edge
-                        .curve
-                        .evaluate(&Ball::from_rational(&t, BITS), dec)?
+                    let point = crate::numerical::curve_at(&edge.curve, &t, dec)?
                         .ok_or_else(|| bad("unsupported", "edge has no parameter evaluator"))?;
                     curved::parameters(&face.surface, &point, dec)?
                 };

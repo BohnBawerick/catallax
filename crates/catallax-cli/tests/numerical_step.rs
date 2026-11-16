@@ -200,3 +200,132 @@ fn numerical_step_requests_keep_tolerance_evidence_and_refused_artifacts_separat
     assert!(!broken.join("answer.step").exists());
     fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn skew_collar_numerical_request_exports_the_actual_hole_with_step_trace_spans() {
+    let proof = std::env::var_os("CATALLAX_SKEW_CLI_PROOF");
+    let dir = proof.as_ref().map_or_else(
+        || std::env::temp_dir().join(format!("catallax-skew-hole-{}", std::process::id())),
+        std::path::PathBuf::from,
+    );
+    fs::create_dir_all(&dir).unwrap();
+    let mut recipe: Value =
+        serde_json::from_str(include_str!("../../../parts/P2-collar.json")).unwrap();
+    recipe["steps"].as_array_mut().unwrap().push(json!({
+        "id":"hole","op":"hole","target":"collar","diameter":"2","depth":"through","tip":"flat",
+        "at":[{"id":"radial-0","point":["21/2","12","0"],"direction":["1","-1","1"]}]
+    }));
+    recipe["result"] = json!("hole");
+    let request = json!({"format":"catallax-request/1","source":"recipe",
+        "problem":{"format":"catallax-numerical-step/1","recipe":recipe,"tolerance_mm":"1e-7"},
+        "max_work":20_000_000,"out":dir});
+    let mut child = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+        .arg("stream")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    writeln!(child.stdin.take().unwrap(), "{request}").unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+    let row: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let manifest = &row["manifest"];
+    assert_eq!(manifest["status"], "answered", "{row}");
+    assert_eq!(manifest["proof"], "numerical");
+    assert_eq!(manifest["exact"], false);
+    assert_eq!(manifest["category"], "approximate");
+    assert_eq!(manifest["result"]["faces"], 23);
+    assert_eq!(manifest["step"]["tolerance_mm"], "1/10000000");
+    assert!(row["work"]["used"].as_u64().unwrap() < 20_000_000);
+    assert_eq!(
+        manifest["work_stages"]
+            .as_object()
+            .unwrap()
+            .values()
+            .map(|v| v.as_u64().unwrap())
+            .sum::<u64>(),
+        row["work"]["used"].as_u64().unwrap()
+    );
+    let operations = row["operation_log"]["operations"].as_array().unwrap();
+    for required in ["hole", "numerical-step", "numerical-step-reread"] {
+        assert!(
+            operations
+                .iter()
+                .any(|operation| operation["operation"] == required),
+            "{required}"
+        );
+    }
+    let file = fs::read(dir.join("answer.step")).unwrap();
+    assert!(catallax_step::check_seams(&file).is_ok());
+    fs::write(
+        dir.join("test-response.json"),
+        serde_json::to_vec_pretty(&row).unwrap(),
+    )
+    .unwrap();
+    if proof.is_none() {
+        fs::remove_dir_all(dir).unwrap();
+    }
+}
+
+fn numerical_hole_review_request(recipe: Value, label: &str) -> (Value, std::path::PathBuf, bool) {
+    let proof = std::env::var_os("CATALLAX_SKEW_REVIEW_PROOF");
+    let root = proof.as_ref().map_or_else(
+        || std::env::temp_dir().join(format!("catallax-hole-review-{}", std::process::id())),
+        std::path::PathBuf::from,
+    );
+    let dir = root.join(label);
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("answer.step"), b"STALE").unwrap();
+    let request = json!({"format":"catallax-request/1","source":"recipe","problem":{"format":"catallax-numerical-step/1","recipe":recipe,"tolerance_mm":"1e-7"},"max_work":20_000_000,"out":dir});
+    let mut child = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+        .arg("stream")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    writeln!(child.stdin.take().unwrap(), "{request}").unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+    let row = serde_json::from_slice(&output.stdout).unwrap();
+    fs::write(dir.join("test-response.json"), &output.stdout).unwrap();
+    (row, dir, proof.is_none())
+}
+#[test]
+fn numerical_hole_refuses_a_field_envelope() {
+    let mut recipe: Value =
+        serde_json::from_str(include_str!("../../../parts/P2-collar.json")).unwrap();
+    let steps = recipe["steps"].as_array_mut().unwrap();
+    steps.push(json!({"id":"infill","op":"lattice","region":"collar","cell":"cubic","size":"2","frame":{"rotation":["1","0","0","0"],"translation":["0","0","0"]},"radius":{"constant":"0.3"}}));
+    steps.push(json!({"id":"hole","op":"hole","target":"infill","diameter":"2","depth":"through","tip":"flat","at":[{"id":"radial-0","point":["21/2","12","0"],"direction":["1","-1","1"]}]}));
+    recipe["result"] = json!("hole");
+    let (row, dir, temporary) = numerical_hole_review_request(recipe, "field-envelope");
+    assert_eq!(row["manifest"]["status"], "refused", "{row}");
+    assert_eq!(row["manifest"]["refusal"]["code"], "field.stand-in-export");
+    assert!(!dir.join("answer.step").exists());
+    if temporary {
+        fs::remove_dir_all(dir).unwrap();
+    }
+}
+#[test]
+fn numerical_hole_fallback_reuses_the_prefix() {
+    let recipe = json!({"format":"catallax-recipe/3","name":"unsupported collar continuation stock","steps":[
+        {"id":"stock","op":"block","size":["8","8","6"],"pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}},
+        {"id":"hole","op":"hole","target":"stock","diameter":"2","depth":"through","tip":"flat","at":[{"id":"miss","point":["20","20","6"],"direction":["0","0","-1"]}]}
+    ],"result":"hole"});
+    let (row, dir, temporary) = numerical_hole_review_request(recipe, "unsupported-stock");
+    assert_eq!(row["manifest"]["status"], "answered", "{row}");
+    assert_eq!(row["manifest"]["result"]["faces"], 6);
+    let operations = row["operation_log"]["operations"].as_array().unwrap();
+    assert_eq!(
+        operations
+            .iter()
+            .filter(|operation| operation["operation"] == "block")
+            .count(),
+        1,
+        "{operations:?}"
+    );
+    assert!(dir.join("answer.step").exists());
+    if temporary {
+        fs::remove_dir_all(dir).unwrap();
+    }
+}

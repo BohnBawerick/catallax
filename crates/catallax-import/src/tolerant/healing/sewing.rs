@@ -27,13 +27,15 @@ fn correspondence(
 ) -> Result<Option<Match>, Error> {
     let left = &body.edges[a];
     let right = &body.edges[b];
-    let lines = match (&left.curve, &right.curve) {
-        (Curve::Line(_, a), Curve::Line(_, b)) => parallel(a, b, dec)?,
-        _ => false,
+    let (Curve::Line(_, left_direction), Curve::Line(_, right_direction)) =
+        (&left.curve, &right.curve)
+    else {
+        // Carrier and endpoint equality do not identify a finite nonlinear
+        // domain: opposite senses can select complementary arcs. Retain both
+        // edges until a finite-domain correspondence check is implemented.
+        return Ok(None);
     };
-    // Equal non-linear carriers are sewn only at identical endpoint positions;
-    // no finite-arc or spline-parameter correspondence is guessed from proximity.
-    if !lines && left.curve != right.curve {
+    if !parallel(left_direction, right_direction, dec)? {
         return Ok(None);
     }
     let cap = &body.options.maximum_mm;
@@ -47,7 +49,7 @@ fn correspondence(
                 .source
                 .point;
             let squared = distance_squared(p, q, dec)?;
-            if compare(&squared, &cap_squared, dec)?.is_gt() || (!lines && !squared.is_zero()) {
+            if compare(&squared, &cap_squared, dec)?.is_gt() {
                 break;
             }
             distances.push(squared);
@@ -90,6 +92,16 @@ pub(super) fn sew(
         .map(|(i, _)| i)
         .collect();
     let mut choices: Vec<Vec<Match>> = vec![Vec::new(); body.edges.len()];
+    for &edge in &free {
+        dec.charge_work(1)?;
+        if !matches!(body.edges[edge].curve, Curve::Line(..)) {
+            plan.unresolved(
+                body,
+                &body.edges[edge].name,
+                "sewing.nonlinear-finite-correspondence-pending",
+            );
+        }
+    }
     for (index, &a) in free.iter().enumerate() {
         for &b in &free[index + 1..] {
             dec.charge_work(1)?;
@@ -162,12 +174,7 @@ pub(super) fn sew(
             reversed: found.reversed,
             endpoint_distance_upper_mm: [gaps[0].to_string(), gaps[1].to_string()],
             checks: vec![
-                if matches!(left.curve, Curve::Line(..)) {
-                    "parallel-line-carriers-and-finite-endpoint-correspondence"
-                } else {
-                    "identical-carrier-and-identical-endpoints"
-                }
-                .into(),
+                "parallel-line-carriers-and-finite-endpoint-correspondence".into(),
                 "mutually-unique-free-boundary-match".into(),
             ],
         });

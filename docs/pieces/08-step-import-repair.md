@@ -152,7 +152,7 @@ Later admission and STEP consumers must preserve that mark.
 The stage order follows [OCCT ShapeFix_Shape](https://github.com/Open-Cascade-SAS/OCCT/blob/V8_0_0/src/ModelingAlgorithms/TKShHealing/ShapeFix/ShapeFix_Shape.cxx), [ShapeFix_Wire](https://github.com/Open-Cascade-SAS/OCCT/blob/V8_0_0/src/ModelingAlgorithms/TKShHealing/ShapeFix/ShapeFix_Wire.cxx) and [BRepBuilderAPI_Sewing](https://github.com/Open-Cascade-SAS/OCCT/blob/V8_0_0/src/ModelingAlgorithms/TKTopAlgo/BRepBuilderAPI/BRepBuilderAPI_Sewing.cxx), with explicit candidate publication and the caller's cap.
 The implemented repair family is conservative:
 
-- Sewing pairs mutually unique free edges on different faces of the same shell. Parallel line carriers require both endpoint correspondences within the cap; other carriers require identical geometry and endpoint positions. Ambiguous matches, different shells and different bodies are not sewn.
+- Sewing pairs mutually unique free line edges on different faces of the same shell. Parallel line carriers require both endpoint correspondences within the cap. Nonlinear free edges remain unresolved until finite-domain correspondence is established: equal carriers and endpoints can select complementary arcs. Ambiguous matches, different shells and different bodies are not sewn.
 - Wire connection first measures every declared adjacent gap and closure before applying endpoint joins. A disconnected ordering may instead use a unique walk through shared vertices, recording changed order and reversed uses. Small finite line intervals at or below the initial tolerance may be removed only when all incident supports are planar and every bound retains an edge. The measurement uses the original finite line, even after earlier joins. A closed circle is not a small line merely because its endpoints coincide.
 - Planar line boundaries receive finite segment crossing/touch and orientation checks. Shell checks find connected components and consistent opposite edge uses, reporting open, nonmanifold or nonorientable cases. A closed planar candidate may have its whole orientation reversed from its signed polyhedral volume.
 
@@ -173,6 +173,7 @@ Cap, topology, deadline or work refusal discards the complete private candidate,
 The caller's source graph and tolerance ledger remain unchanged.
 `attempt` additionally returns the original typed refusal, failed stage/body and work spent on completed and partially failed stages, without exposing candidate geometry.
 Preparation, all five stages and publication share the active allowance; a standalone call installs the unchanged 20M allowance.
+Scans of cross-body change and issue logs prepay every potentially visited entry, including entries rejected by the body filter.
 The final deadline checkpoint runs after the result fields are constructed.
 `tolerant::reopen` also checks the deadline after its final saved-field comparison.
 

@@ -99,6 +99,9 @@ pub(super) fn source_geometry(
     plan: &mut Plan,
     dec: &mut Decider,
 ) -> Result<(), Error> {
+    // The log contains changes for every body. Prepay the complete visited span,
+    // including foreign-body entries rejected by the filter.
+    dec.charge_work(plan.changes.len() as u64)?;
     let targets: BTreeMap<_, _> = plan
         .changes
         .iter()
@@ -225,6 +228,7 @@ pub(super) fn source_geometry(
             }
         }
     }
+    dec.charge_work(plan.changes.len() as u64)?;
     let sewn: Vec<_> = plan
         .changes
         .iter()
@@ -279,6 +283,7 @@ pub(super) fn source_geometry(
             );
         }
     }
+    dec.charge_work(plan.changes.len() as u64)?;
     let collapsed: Vec<_> = plan
         .changes
         .iter()
@@ -645,6 +650,9 @@ pub(super) fn solid(
         plan.passed(body, &body.name, "solid.source-surface-kind-retained");
         return Ok(());
     }
+    // Conservatively prepay the full scan even if an own-body issue permits
+    // early termination; no cross-body metadata inspection is free.
+    dec.charge_work(plan.issues.len() as u64)?;
     if plan.issues.iter().any(|issue| issue.body == body.name) {
         plan.unresolved(body, &body.name, "solid.unresolved-prerequisites");
         return Ok(());

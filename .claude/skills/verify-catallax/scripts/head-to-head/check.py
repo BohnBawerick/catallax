@@ -7,6 +7,22 @@ import sys
 from analytic import definition
 
 
+def healing_off_read(step_path):
+    """The repository's raw StepToTopoDS builder at 1e-7 mm, with no ShapeFix, sewing
+    or SameParameter. It is reported beside the verdict and never decides it, so
+    every failure, including a missing helper or binding, comes back as data."""
+    try:
+        helpers = str(Path(__file__).resolve().parents[5] / 'tools/step-regressions')
+        if helpers not in sys.path:
+            sys.path.insert(0, helpers)
+        from check_numerical_step import raw_solid
+        shape = raw_solid(step_path)
+        from OCP.BRepCheck import BRepCheck_Analyzer
+        return {'opened': True, 'valid': BRepCheck_Analyzer(shape).IsValid()}
+    except Exception as error:
+        return {'opened': False, 'valid': False, 'reason': f'{type(error).__name__}: {error}'}
+
+
 def check(case, variant, step_path, expected_faces):
     reference, bounds, implicit = definition(case, variant)
     result = {'oracle': reference, 'oracle_source': 'independent elementary formulas and analytic solid predicates; no CAD-kernel reference construction',
@@ -66,15 +82,7 @@ def check(case, variant, step_path, expected_faces):
                       'solids': len(solid_list), 'faces': faces,
                       'expected_faces': expected_faces, 'face_count_matches': faces == expected_faces}
     if case.get('step_read') == 'healing-off':
-        # Reported beside the verdict, not part of it: the repository's raw
-        # StepToTopoDS builder at 1e-7 mm, with no ShapeFix, sewing or SameParameter.
-        sys.path.insert(0, str(Path(__file__).resolve().parents[5] / 'tools/step-regressions'))
-        from check_numerical_step import raw_solid
-        try:
-            raw = raw_solid(step_path)
-            result['step']['healing_off'] = {'opened': True, 'valid': BRepCheck_Analyzer(raw).IsValid()}
-        except AssertionError as error:
-            result['step']['healing_off'] = {'opened': False, 'valid': False, 'reason': str(error)}
+        result['step']['healing_off'] = healing_off_read(step_path)
     if 'census' in case and closed:
         # Material removal is judged from each kernel's exported solid, measured in OCCT.
         from OCP.BRepGProp import BRepGProp

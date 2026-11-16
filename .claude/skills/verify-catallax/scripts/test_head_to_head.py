@@ -1,5 +1,9 @@
 """Consumer-visible correctness checks for the benchmark report."""
+import importlib.util
 import math
+from pathlib import Path
+import sys
+import types
 import unittest
 
 from head_to_head import compare_properties, summarize
@@ -94,6 +98,31 @@ class CorrectnessTests(unittest.TestCase):
             self.assertIsNone(row['preview_wait_median_ms'])
             self.assertEqual(row['preview_budget_passes'], 0)
             self.assertFalse(row['built_after_proof'])
+
+
+class HealingOffReadTests(unittest.TestCase):
+    def test_any_raw_read_failure_is_reported_not_raised(self):
+        # The optional read runs after the default verdict; an exception escaping it
+        # would replace a passing STEP check with the checker-failed row.
+        data = Path(__file__).with_name('head-to-head')
+        sys.path.insert(0, str(data))
+        spec = importlib.util.spec_from_file_location('benchmark_check', data / 'check.py')
+        check = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(check)
+        def raw_solid(path):
+            raise RuntimeError('translator crashed')
+        stub = types.ModuleType('check_numerical_step')
+        stub.raw_solid = raw_solid
+        previous = sys.modules.get('check_numerical_step')
+        sys.modules['check_numerical_step'] = stub
+        try:
+            row = check.healing_off_read(Path('part.step'))
+        finally:
+            if previous is None:
+                del sys.modules['check_numerical_step']
+            else:
+                sys.modules['check_numerical_step'] = previous
+        self.assertEqual(row, {'opened': False, 'valid': False, 'reason': 'RuntimeError: translator crashed'})
 
 
 if __name__ == '__main__':

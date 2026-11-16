@@ -28,6 +28,72 @@ fn read(text: &str) -> tolerant::TolerantFile {
 }
 
 #[test]
+fn coincident_circle_endpoints_do_not_establish_finite_arc_correspondence() {
+    for sense in [false, true] {
+        for reverse in [false, true] {
+            // The two faces share a chord, but own distinct circle edges.
+            // Opposite carrier senses with the same endpoints select the
+            // complementary quarter/three-quarter arcs, despite zero gap.
+            let (start, end) = if reverse { (13, 12) } else { (12, 13) };
+            let text = format!(
+                "ISO-10303-21;\nHEADER;\nENDSEC;\nDATA;\n\
+                 #1=CARTESIAN_POINT('',(0.,0.,0.));\n\
+                 #2=DIRECTION('',(0.,0.,1.));\n\
+                 #3=DIRECTION('',(1.,0.,0.));\n\
+                 #4=AXIS2_PLACEMENT_3D('',#1,#2,#3);\n\
+                 #5=CIRCLE('',#4,1.);\n#6=PLANE('',#4);\n\
+                 #10=CARTESIAN_POINT('',(1.,0.,0.));\n\
+                 #11=CARTESIAN_POINT('',(0.,1.,0.));\n\
+                 #12=VERTEX_POINT('',#10);\n#13=VERTEX_POINT('',#11);\n\
+                 #14=DIRECTION('',(-1.,1.,0.));\n\
+                 #15=VECTOR('',#14,1.);\n#16=LINE('',#10,#15);\n\
+                 #20=EDGE_CURVE('',#12,#13,#5,.T.);\n\
+                 #21=EDGE_CURVE('',#{start},#{end},#5,.{}.);\n\
+                 #22=EDGE_CURVE('',#12,#13,#16,.T.);\n\
+                 #30=ORIENTED_EDGE('',*,*,#20,.T.);\n\
+                 #31=ORIENTED_EDGE('',*,*,#22,.F.);\n\
+                 #32=ORIENTED_EDGE('',*,*,#21,.{}.);\n\
+                 #33=ORIENTED_EDGE('',*,*,#22,.F.);\n\
+                 #40=EDGE_LOOP('',(#30,#31));\n\
+                 #41=FACE_OUTER_BOUND('',#40,.T.);\n\
+                 #42=ADVANCED_FACE('',(#41),#6,.T.);\n\
+                 #43=EDGE_LOOP('',(#32,#33));\n\
+                 #44=FACE_OUTER_BOUND('',#43,.T.);\n\
+                 #45=ADVANCED_FACE('',(#44),#6,.T.);\n\
+                 #50=CLOSED_SHELL('',(#42,#45));\n\
+                 #51=MANIFOLD_SOLID_BREP('',#50);\n\
+                 #60=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));\n\
+                 #61=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#60)) REPRESENTATION_CONTEXT('',''));\n\
+                 ENDSEC;\nEND-ISO-10303-21;\n",
+                if sense { 'T' } else { 'F' },
+                if reverse { 'F' } else { 'T' }
+            );
+            let input = read(&text);
+            let before = input.clone();
+            let healed = healing::heal(&input, &mut Decider::default()).unwrap();
+            assert_eq!(input, before);
+            assert!(
+                !healed.report().changes.iter().any(|change| matches!(change,
+                    HealingChange::EdgesSewn { retained, replaced, .. }
+                    if [retained.as_str(), replaced.as_str()].iter().any(|s| ["#20", "#21"].contains(s))))
+            );
+            let definition = healed.definition(&mut Decider::default()).unwrap();
+            let arcs: Vec<_> = definition
+                .named_faces()
+                .flat_map(|(_, face)| &face.loops)
+                .flat_map(|boundary| &boundary.edges)
+                .filter(|edge| matches!(edge.curve, catallax_import::Curve::Circle(..)))
+                .collect();
+            assert_eq!(arcs.len(), 2);
+            assert_eq!(arcs[0].edge, "#20");
+            assert_eq!(arcs[1].edge, "#21");
+            assert!(arcs[0].curve_same_sense);
+            assert_eq!(arcs[1].curve_same_sense, sense);
+        }
+    }
+}
+
+#[test]
 fn a_shared_edge_source_is_sewn_with_measured_geometry_and_an_approximate_result() {
     let text = source("0.001");
     let input = read(&text);

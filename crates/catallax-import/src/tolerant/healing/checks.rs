@@ -701,3 +701,44 @@ pub(super) fn solid(
     plan.unresolved(body, &body.name, "solid.cross-face-validity-pending");
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use catallax_numbers::with_operation_budget;
+
+    #[test]
+    fn unrelated_body_change_and_issue_visits_consume_the_callers_work() {
+        let body = TolerantBody::new("#1", true, &Default::default());
+        let mut changes = Plan::default();
+        for _ in 0..1024 {
+            changes.changes.push(HealingChange::VerticesJoined {
+                body: "#2".into(),
+                source: "#3".into(),
+                retained: "#4".into(),
+                distance_upper_mm: "0".into(),
+            });
+        }
+        let (result, work) = with_operation_budget(512, || {
+            source_geometry(0, &body, &body, &mut changes, &mut Decider::default())
+        });
+        assert!(work.exhausted);
+        assert!(matches!(result, Err(Error::Numerical(r)) if r.code == "numbers.operation-budget"));
+
+        let mut issues = Plan::default();
+        for _ in 0..1024 {
+            issues.issues.push(HealingIssue {
+                body: "#2".into(),
+                scope: "#3".into(),
+                code: "unresolved".into(),
+            });
+        }
+        let mut candidate = body.clone();
+        let (result, work) = with_operation_budget(512, || {
+            solid(&mut candidate, &mut issues, &mut Decider::default())
+        });
+        assert!(work.exhausted);
+        assert!(matches!(result, Err(Error::Numerical(r)) if r.code == "numbers.operation-budget"));
+        assert_eq!(candidate, body);
+    }
+}

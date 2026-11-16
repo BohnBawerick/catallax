@@ -609,6 +609,94 @@ fn m11_smooth_edge_names_the_missing_cross_chart_proof() {
     catallax_numbers::set_threads(None);
 }
 
+#[test]
+fn numerical_fillet_builds_on_the_smooth_loft_across_its_station_seam() {
+    let ((), work) = with_operation_budget(100_000_000, || {
+        let mut definition = serde_json::to_value(smooth_recipe()).unwrap();
+        definition["steps"].as_array_mut().unwrap().pop();
+        definition["result"] = json!("loft");
+        let recipe = Recipe::parse(&definition.to_string()).unwrap();
+        let mut dec = Decider::default();
+        let built = evaluate(&recipe, &mut dec).unwrap();
+        let ends = [[q("1"), q("-1"), q("0")], [q("1"), q("0"), q("2")]];
+        let edge = built.model.edges_of_body(built.result).into_iter().find(|id| {
+            let edge = built.model.edge(*id);
+            let (Some(a), Some(b)) = (edge.start, edge.end) else { return false; };
+            let actual = [a, b].map(|v| {
+                let p = built.model.geom().position(built.model.vertex(v).point).as_rational().unwrap();
+                [p.x, p.y, p.z]
+            });
+            actual == ends || actual == [ends[1].clone(), ends[0].clone()]
+        }).unwrap();
+        let faces: [_; 2] = users(&built, edge).try_into().unwrap();
+        let supports = faces.map(|face| {
+            let Surface::BSpline(SplineSupport::RationalAtlas(atlas)) =
+                built.model.geom().surface(built.model.face(face).surface)
+            else { panic!("the smooth loft must retain its station charts"); };
+            assert!(atlas.charts().len() > 1);
+            catallax_shapes::NumericalFilletSpine::extended_support(
+                atlas, 1, &q("1/4"), &mut dec,
+            ).unwrap()
+        });
+        let radius = q("1/10");
+        let distances = faces.map(|face| {
+            if built.model.face(face).sense == catallax_topology::Sense::Same {
+                -radius.clone()
+            } else {
+                radius.clone()
+            }
+        });
+        let tolerance = q("1/10000");
+        let free: [Rational; 2] = std::array::from_fn(|side| {
+            let source = supports[side].source();
+            let domain = source.domain();
+            let width = domain[1][1] - domain[1][0];
+            let cap = domain[1][0] + &(&width * &q("1/6"));
+            domain[0].into_iter().find(|u| {
+                let point = source.evaluate_box([u, u], [&cap, &cap], 128, &dec).unwrap();
+                (0..3).all(|k| (&point[k].lo() - &ends[0][k]).abs() < q("1/1000000000000")
+                    && (&point[k].hi() - &ends[0][k]).abs() < q("1/1000000000000"))
+            }).unwrap().clone()
+        });
+        let domain = supports[0].source().domain()[1];
+        let pad = &(domain[1] - domain[0]) * &q("1/12");
+        let range = [domain[0] + &pad, domain[1] - &pad];
+        let seed = [free[0].clone(), free[1].clone(), range[0].clone()];
+        let spine = catallax_shapes::NumericalFilletSpine::trace(
+            &supports, distances, 1, range, seed, tolerance.clone(), &mut dec,
+        ).unwrap();
+        let fillet = catallax_shapes::NumericalSplineFillet::fit(spine, &mut dec).unwrap();
+        let radial_tolerance = &(&q("2") * &radius) * &tolerance;
+        for node in fillet.spine().nodes() {
+            for side in 0..2 {
+                let uv = &node.parameters[side];
+                let point = supports[side].source()
+                    .evaluate_box([&uv[0], &uv[0]], [&uv[1], &uv[1]], 128, &dec).unwrap();
+                let square = (0..3).fold(
+                    catallax_numbers::Ball::from_rational(&q("0"), 128),
+                    |sum, k| {
+                        let delta = &point[k] - &catallax_numbers::Ball::from_rational(&node.centre[k], 128);
+                        &sum + &delta.pow_u32(2)
+                    },
+                );
+                assert!((&square.lo() - &(&radius * &radius)).abs() <= radial_tolerance);
+                assert!((&square.hi() - &(&radius * &radius)).abs() <= radial_tolerance);
+            }
+        }
+        for height in [q("0"), q("2")] {
+            let cut = fillet.plane_cut([q("0"), q("0"), q("1")], height.clone(), &mut dec).unwrap();
+            for i in 0..=16 {
+                let s = Rational::from_ratio(i, 16).unwrap();
+                let point = cut.curve().evaluate_box([&s, &s], 128, &dec).unwrap();
+                assert!((&point[2].lo() - &height).abs() <= tolerance);
+                assert!((&point[2].hi() - &height).abs() <= tolerance);
+            }
+        }
+    });
+    assert!(!work.exhausted, "{work:?}");
+    println!("numerical smooth-loft fillet: {} work", work.used);
+}
+
 fn blend(built: &Built) -> (FaceId, catallax_shapes::SplineFillet) {
     built
         .model

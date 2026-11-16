@@ -161,6 +161,9 @@ def outcome(result, census=False):
         steps = (('drill', source, before['volume_mm3']),
                  ('radius change', before['volume_mm3'], after['volume_mm3']))
         for step, old, new in steps:
+            if new - old > REMOVAL * source:
+                return False, f'{step} raised the volume', \
+                    f'a subtraction cannot add material; OCCT volume {old!r} -> {new!r} mm3'
             if not old - new > REMOVAL * source:
                 return False, f'attempted subtraction: {step} removed no material', \
                     f'OCCT volume {old!r} -> {new!r} mm3'

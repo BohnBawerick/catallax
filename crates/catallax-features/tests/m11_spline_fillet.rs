@@ -687,10 +687,6 @@ fn numerical_fillet_builds_on_the_smooth_loft_across_its_station_seam() {
                 assert!((&point[2].hi() - &height).abs() <= tolerance);
             }
         }
-        if let Some(path) = std::env::var_os("CATALLAX_M11_STEP_OUT") {
-            let encoded = catallax_numbers::transfer::encode(rounded.body(), &mut dec).unwrap();
-            std::fs::write(std::path::Path::new(&path).with_extension("numerical-body"), encoded).unwrap();
-        }
         let mut source_step = Vec::new();
         catallax_step::write_step(
             &built.model, &[built.result], &catallax_step::StepOptions::default(),

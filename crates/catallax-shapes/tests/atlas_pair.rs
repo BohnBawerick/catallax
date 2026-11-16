@@ -92,6 +92,54 @@ fn offset_spine_crosses_both_atlas_seams_without_fragmenting() {
 }
 
 #[test]
+fn numerical_fillet_crosses_chart_seams_with_circular_sections() {
+    let ((), work) = with_operation_budget(100_000_000, || {
+        let mut dec = Decider::default();
+        let supports = [
+            split_vertical_plane(true, &mut dec),
+            split_vertical_plane(false, &mut dec),
+        ];
+        let radius = Rational::from_ratio(1, 10).unwrap();
+        let tolerance = Rational::parse("0.0000001").unwrap();
+        let spine = catallax_shapes::NumericalFilletSpine::trace(
+            &supports,
+            [radius.clone(), radius.clone()],
+            1,
+            [Rational::zero(), Rational::from_i64(2)],
+            [
+                Rational::from_ratio(11, 20).unwrap(),
+                Rational::from_ratio(9, 20).unwrap(),
+                Rational::zero(),
+            ],
+            tolerance.clone(),
+            &mut dec,
+        )
+        .unwrap();
+        let fillet = catallax_shapes::NumericalSplineFillet::fit(spine, &mut dec).unwrap();
+        assert!(fillet.sampled_error_mm() <= &tolerance);
+        let source = fillet.surface().source();
+        for i in 0..=16 {
+            let tau = Rational::from_ratio(i, 8).unwrap();
+            for j in 0..=8 {
+                let across = Rational::from_ratio(j, 8).unwrap();
+                let point = source.evaluate_box([&tau, &tau], [&across, &across], 128, &dec).unwrap();
+                let x = &point[0] - &catallax_numbers::Ball::from_rational(&radius, 128);
+                let y = &point[1] + &catallax_numbers::Ball::from_rational(&radius, 128);
+                let square = &x.pow_u32(2) + &y.pow_u32(2);
+                let error = (&square.lo() - &(&radius * &radius)).abs()
+                    .max((&square.hi() - &(&radius * &radius)).abs());
+                assert!(error <= &tolerance * &radius);
+                assert!((&point[2].lo() - &tau).abs() <= tolerance);
+                assert!((&point[2].hi() - &tau).abs() <= tolerance);
+                if j == 0 { assert!(point[1].lo().abs().max(point[1].hi().abs()) <= tolerance); }
+                if j == 8 { assert!(point[0].lo().abs().max(point[0].hi().abs()) <= tolerance); }
+            }
+        }
+    });
+    assert!(!work.exhausted, "{work:?}");
+}
+
+#[test]
 fn retained_source_clearance_keeps_native_initial_and_later_contacts() {
     for reversed in [false, true] {
         let ((), work) = with_operation_budget(20_000_000, || {

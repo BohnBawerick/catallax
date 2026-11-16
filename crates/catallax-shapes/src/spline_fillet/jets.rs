@@ -155,6 +155,7 @@ pub(super) fn constant(value: &Rational, order: usize) -> Jet {
 }
 
 /// A polynomial in two parameters with ball coefficients.
+#[derive(Debug)]
 pub(super) struct Poly {
     terms: Vec<(usize, usize, Ball, f64)>,
     pub(super) degree: [usize; 2],
@@ -212,6 +213,7 @@ pub(super) fn powers(at: &[Jet; 2], degree: [usize; 2], meter: &mut Meter) -> [V
 
 /// One support: its homogeneous coordinates and normal `N`, a positive
 /// multiple of `P_u x P_v`, with the side of the ball's centre.
+#[derive(Debug)]
 pub(super) struct Support {
     pub(super) exact: [MPoly; 4],
     h: [Poly; 4],

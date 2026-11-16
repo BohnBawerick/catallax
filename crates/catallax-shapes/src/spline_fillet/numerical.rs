@@ -6,6 +6,11 @@
 use super::jets::{Jet, Meter, Support, ball};
 use crate::{BSplineCurve, Point3, RationalAtlas};
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal, Sign};
+use std::sync::Arc;
+
+#[path = "numerical_carrier.rs"]
+mod carrier;
+pub use carrier::NumericalSplineFillet;
 
 const MAX_DEPTH: u32 = 24;
 const MAX_NODES: usize = 16_385;
@@ -46,6 +51,7 @@ fn inverse(mut a: [[f64; 3]; 3], mut b: [f64; 3]) -> Option<[f64; 3]> {
     b.iter().all(|v| v.is_finite()).then_some(b)
 }
 
+#[derive(Debug)]
 struct LogicalSupport {
     charts: Vec<Support>,
     distance: Rational,
@@ -103,12 +109,14 @@ pub struct NumericalSpineNode {
 /// A numerical centre polyline with explicit sampled checks, never exact authority.
 #[derive(Clone, Debug)]
 pub struct NumericalFilletSpine {
+    problem: Arc<Problem>,
     nodes: Vec<NumericalSpineNode>,
     tolerance_mm: Rational,
     sampled_error_mm: Rational,
     samples: usize,
 }
 
+#[derive(Debug)]
 struct Problem {
     supports: [LogicalSupport; 2],
     axis: usize,
@@ -260,7 +268,7 @@ impl NumericalFilletSpine {
                 nodes.push(b);
             }
         }
-        Ok(Self { nodes, tolerance_mm, sampled_error_mm, samples })
+        Ok(Self { problem: Arc::new(problem), nodes, tolerance_mm, sampled_error_mm, samples })
     }
     /// Ordered stations, including both ends and every accepted span boundary.
     pub fn nodes(&self) -> &[NumericalSpineNode] { &self.nodes }

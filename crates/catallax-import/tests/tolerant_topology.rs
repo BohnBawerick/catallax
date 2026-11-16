@@ -172,9 +172,9 @@ fn cap_and_invalid_requests_leave_the_entire_graph_unchanged() {
     let edge = graph.bodies()[0].edges()[0].name.clone();
     let vertex = graph.bodies()[0].vertices()[0].source.name.clone();
     for (entity, value, cause) in [
-        (&edge, "0.01000000001", "sewing"),
-        (&edge, "-0.001", "sewing"),
-        (&edge, "0.001", " "),
+        (edge.as_str(), "0.01000000001", "sewing"),
+        (edge.as_str(), "-0.001", "sewing"),
+        (edge.as_str(), "0.001", " "),
         ("#missing", "0.001", "sewing"),
     ] {
         let before = graph.clone();

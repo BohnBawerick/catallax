@@ -16,6 +16,8 @@ pub use crate::numerical::ImportError as Error;
 
 /// Measured, transactional repair of source topology.
 pub mod healing;
+/// Per-body admission with retained surface representations on solid refusal.
+pub mod opened;
 use crate::{Curve, Face, FaceLoop, ImportRefusal, OrientedEdge, StepFile, Surface, Vertex};
 
 /// Initial numerical uncertainty and the maximum healing tolerance, in mm.
@@ -445,6 +447,18 @@ impl TolerantFile {
     /// Source solids followed by source surface models, as in StepFile.
     pub fn bodies(&self) -> &[TolerantBody] {
         &self.bodies
+    }
+    fn one_body(&self, index: usize, dec: &mut Decider) -> Result<Self, Error> {
+        let body = &self.bodies[index];
+        charge_text(&self.source_sha256, dec)?;
+        healing::charge_value(&self.mm_per_unit, dec)?;
+        healing::charge_body(body, dec)?;
+        Ok(Self {
+            source_sha256: self.source_sha256.clone(),
+            mm_per_unit: self.mm_per_unit.clone(),
+            options: body.options.clone(),
+            bodies: vec![body.clone()],
+        })
     }
     /// Reconstruct the retained source definition for geometry consumers.
     /// Local tolerance changes do not move or replace any source geometry.

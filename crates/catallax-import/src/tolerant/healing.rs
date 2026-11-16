@@ -190,6 +190,10 @@ impl HealedFile {
     pub fn source(&self) -> &TolerantFile {
         &self.source
     }
+    /// Derived source bodies; these do not grant solid admission.
+    pub fn bodies(&self) -> &[TolerantBody] {
+        &self.candidate.bodies
+    }
     /// Derived definition, including explicitly recorded topology repairs.
     pub fn definition(&self, dec: &mut Decider) -> Result<StepFile, Error> {
         self.candidate.definition(dec)
@@ -502,7 +506,7 @@ fn distance_upper(
         .min(cap.clone()))
 }
 
-fn charge_value(value: &Rational, dec: &mut Decider) -> Result<(), Error> {
+pub(super) fn charge_value(value: &Rational, dec: &mut Decider) -> Result<(), Error> {
     let bits = value
         .numerator()
         .bit_length()
@@ -595,41 +599,46 @@ fn charge_source(source: &TolerantFile, dec: &mut Decider) -> Result<(), Error> 
     super::charge_text(&source.source_sha256, dec)?;
     charge_value(&source.mm_per_unit, dec)?;
     for body in &source.bodies {
-        super::charge_text(&body.name, dec)?;
-        charge_value(&body.options.initial_mm, dec)?;
-        charge_value(&body.options.maximum_mm, dec)?;
-        charge_value(&body.maximum_attained_mm, dec)?;
-        for vertex in &body.vertices {
-            dec.charge_work(
-                3_u64
-                    .saturating_mul(vertex.source.name.len() as u64)
-                    .saturating_add(1),
-            )?;
-            charge_vector(&vertex.source.point, dec)?;
-            charge_value(&vertex.tolerance_mm, dec)?;
-        }
-        for edge in &body.edges {
-            dec.charge_work(
-                3_u64
-                    .saturating_mul(edge.name.len() as u64)
-                    .saturating_add(1),
-            )?;
-            charge_curve(&edge.curve, dec)?;
-            charge_value(&edge.tolerance_mm, dec)?;
-        }
-        for shell in &body.shells {
-            super::charge_text(&shell.name, dec)?;
-            for face in &shell.faces {
-                super::charge_text(&face.name, dec)?;
-                charge_surface(&face.surface, dec)?;
-                for boundary in &face.loops {
-                    dec.charge_work(1 + boundary.edges.len() as u64)?;
-                }
+        charge_body(body, dec)?;
+    }
+    Ok(())
+}
+
+pub(super) fn charge_body(body: &TolerantBody, dec: &mut Decider) -> Result<(), Error> {
+    super::charge_text(&body.name, dec)?;
+    charge_value(&body.options.initial_mm, dec)?;
+    charge_value(&body.options.maximum_mm, dec)?;
+    charge_value(&body.maximum_attained_mm, dec)?;
+    for vertex in &body.vertices {
+        dec.charge_work(
+            3_u64
+                .saturating_mul(vertex.source.name.len() as u64)
+                .saturating_add(1),
+        )?;
+        charge_vector(&vertex.source.point, dec)?;
+        charge_value(&vertex.tolerance_mm, dec)?;
+    }
+    for edge in &body.edges {
+        dec.charge_work(
+            3_u64
+                .saturating_mul(edge.name.len() as u64)
+                .saturating_add(1),
+        )?;
+        charge_curve(&edge.curve, dec)?;
+        charge_value(&edge.tolerance_mm, dec)?;
+    }
+    for shell in &body.shells {
+        super::charge_text(&shell.name, dec)?;
+        for face in &shell.faces {
+            super::charge_text(&face.name, dec)?;
+            charge_surface(&face.surface, dec)?;
+            for boundary in &face.loops {
+                dec.charge_work(1 + boundary.edges.len() as u64)?;
             }
         }
-        for change in &body.changes {
-            super::charge_change(change, dec)?;
-        }
+    }
+    for change in &body.changes {
+        super::charge_change(change, dec)?;
     }
     Ok(())
 }

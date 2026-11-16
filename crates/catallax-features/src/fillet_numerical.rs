@@ -67,7 +67,8 @@ fn along(uv: &[[Rational; 2]; 2]) -> Result<usize, Refusal> {
     Ok(usize::from(changes[1] >= changes[0]))
 }
 fn directions(
-    atlas: &RationalAtlas, trim: &NumericalTrim, sense: Sense, dec: &mut Decider,
+    atlas: &RationalAtlas, trim: &NumericalTrim, sense: Sense,
+    tolerance: &Rational, dec: &mut Decider,
 ) -> Result<[[f64; 3]; 2], Refusal> {
     let at = [
         (&trim.uv[0][0] + &trim.uv[1][0]).mul_pow2(-1),
@@ -76,12 +77,23 @@ fn directions(
     let jet = atlas.source().jet_box([&at[0], &at[0]], [&at[1], &at[1]], 64, dec)?;
     let du = jet.first[0].each_ref().map(|v| v.mid().to_f64_nearest());
     let dv = jet.first[1].each_ref().map(|v| v.mid().to_f64_nearest());
-    let delta = [
-        (&trim.uv[1][0] - &trim.uv[0][0]).to_f64_nearest(),
-        (&trim.uv[1][1] - &trim.uv[0][1]).to_f64_nearest(),
-    ];
+    let free = 1 - along(&coedge_uv(trim))?;
+    let bounds = domain(atlas);
+    let low = (&at[free] - &bounds[free][0]).abs() <= (&at[free] - &bounds[free][1]).abs();
+    let mut border = at.clone();
+    border[free] = bounds[free][usize::from(!low)].clone();
+    let border_point = atlas.source().evaluate_box(
+        [&border[0], &border[0]], [&border[1], &border[1]], 128, dec,
+    )?;
+    let miss = (0..3).fold(q(0), |sum, i| {
+        sum + (&jet.value[i].mid() - &border_point[i].mid()).abs()
+    });
+    if miss > *tolerance {
+        return Err(bad("selected edge is not on a support border within the source tolerance"));
+    }
+    let inward_parameter = if low { 1.0 } else { -1.0 };
     let sign = if sense == Sense::Same { 1.0 } else { -1.0 };
-    let into = std::array::from_fn(|i| sign * (-delta[1] * du[i] + delta[0] * dv[i]));
+    let into = std::array::from_fn(|i| inward_parameter * jet.first[free][i].mid().to_f64_nearest());
     let outward = [
         sign * (du[1] * dv[2] - du[2] * dv[1]),
         sign * (du[2] * dv[0] - du[0] * dv[2]),
@@ -290,8 +302,8 @@ fn build_impl(
     let axes = [along(&uv[0])?, along(&uv[1])?];
     let physical = [atlas(&original.faces[first], dec)?, atlas(&original.faces[second], dec)?];
     let turns = [
-        directions(&physical[0], &trims[0], original.faces[first].sense, dec)?,
-        directions(&physical[1], &trims[1], original.faces[second].sense, dec)?,
+        directions(&physical[0], &trims[0], original.faces[first].sense, &source.options().tolerance_mm, dec)?,
+        directions(&physical[1], &trims[1], original.faces[second].sense, &source.options().tolerance_mm, dec)?,
     ];
     let convex = |a: usize, b: usize| {
         (0..3).map(|i| turns[a][0][i] * turns[b][1][i]).sum::<f64>() < 0.0

@@ -268,6 +268,15 @@ h2 { font-size: clamp(2.9rem, 7.6vw, 8.4rem); line-height: 0.94; }
 .block__links { display: flex; flex-wrap: wrap; gap: 2px 14px; }
 
 /* Responsive ------------------------------------------------------------ */
+/* Checkpoint: latest measured results, above the older benchmark */
+.checkpoint__lede { max-width: 58ch; font-size: clamp(1.1rem, 1.6vw, 1.4rem); line-height: 1.45; color: var(--fog); }
+.checkpoint__facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.checkpoint__facts li { display: grid; align-content: start; gap: 10px; padding: 22px 24px; background: var(--graphite); border: 1px solid var(--steel); border-radius: var(--radius-lg); }
+.checkpoint__facts b { font-size: clamp(2rem, 3.6vw, 3.4rem); font-weight: 560; letter-spacing: -0.03em; line-height: 1; font-variant-numeric: tabular-nums; color: var(--bone); }
+.checkpoint__facts small { font: 500 var(--text-label) var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--slate); }
+.checkpoint__facts span { font-size: var(--text-small); line-height: 1.5; color: var(--fog); }
+@media (max-width: 760px) { .checkpoint__facts { grid-template-columns: minmax(0, 1fr); } }
+
 @media (max-width: 900px) {
   .rail { display: none; }
   .balloons, .leaders { display: none; }
@@ -301,9 +310,11 @@ h2 { font-size: clamp(2.9rem, 7.6vw, 8.4rem); line-height: 0.94; }
   .block { margin-bottom: 76px; }
   .chart tr { grid-template-columns: 6.2em minmax(0, 1fr); column-gap: 8px; }
   .tiles { grid-template-columns: minmax(0, 1fr); }
+  .checkpoint .chart tr { grid-template-columns: 7.6em minmax(0, 1fr); }
 }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   .ln > span { transform: none !important; transition: none; }
   .redline::after { transform: none; transition: none; }
 }
+

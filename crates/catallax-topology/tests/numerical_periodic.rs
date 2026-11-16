@@ -156,3 +156,95 @@ fn continuous_circle_clearance_respects_the_requested_tolerance() {
     assert!(body.evidence().checks().iter().any(|check| matches!(check,
         catallax_numbers::NumericalCheck::Passed { name,.. } if name=="trim.continuous-circle-hole-clearance")));
 }
+
+#[test]
+fn multiple_bores_require_pairwise_clearance_under_the_requested_tolerance() {
+    let body = n::build(
+        fixture::bores(&["-0.5", "0.5"], "0.4"),
+        NumericalOptions::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let counts = body.counts();
+    assert_eq!((counts.faces, counts.edges, counts.vertices), (8, 18, 12));
+    assert_eq!(body.definition().faces[0].loops.len(), 3);
+    for (tolerance, passes) in [("0.01", false), ("0.001", true)] {
+        let result = n::build(
+            fixture::bores(&["-0.4025", "0.4025"], "0.4"),
+            NumericalOptions {
+                tolerance_mm: fixture::q(tolerance),
+            },
+            &mut Decider::default(),
+        );
+        if passes {
+            result.unwrap();
+        } else {
+            assert_eq!(result.unwrap_err().code, "numerical.invalid-trim");
+        }
+    }
+    for centers in [["0", "0"], ["-0.2", "0.2"], ["0", "2"]] {
+        let error = n::build(
+            fixture::bores(&centers, "0.4"),
+            NumericalOptions::default(),
+            &mut Decider::default(),
+        )
+        .unwrap_err();
+        assert_eq!(error.code, "numerical.invalid-trim");
+    }
+}
+
+#[test]
+fn a_thin_annulus_uses_its_actual_rims_not_crossing_inscribed_chords() {
+    let mut definition = fixture::annulus("1.03");
+    let reference =
+        catallax_shapes::RVector3::new(fixture::q("3/5"), fixture::q("4/5"), fixture::q("0"))
+            .to_real();
+    for vertex in &mut definition.vertices[..2] {
+        vertex.position[0] = fixture::q("3/5");
+        vertex.position[1] = fixture::q("4/5");
+    }
+    for edge in &mut definition.edges[..2] {
+        let catallax_shapes::Curve::Circle(circle) = &mut edge.curve else {
+            unreachable!()
+        };
+        circle.ref_dir = reference.clone();
+    }
+    let catallax_shapes::Curve::Line(seam) = &mut definition.edges[2].curve else {
+        unreachable!()
+    };
+    seam.origin =
+        catallax_shapes::RPoint3::new(fixture::q("3/5"), fixture::q("4/5"), fixture::q("0"))
+            .to_real();
+    for cap in &mut definition.faces[..2] {
+        cap.loops[1][0].uv = [
+            [fixture::q("3/5"), fixture::q("4/5")],
+            [fixture::q("3/5"), fixture::q("4/5")],
+        ];
+    }
+    let catallax_shapes::Surface::Cylinder(wall) = &mut definition.faces[2].surface else {
+        unreachable!()
+    };
+    wall.ref_dir = reference;
+    let body = n::build(
+        definition,
+        NumericalOptions::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let counts = body.counts();
+    assert_eq!((counts.faces, counts.edges, counts.vertices), (4, 6, 4));
+    for (tolerance, passes) in [("0.01", false), ("0.001", true)] {
+        let result = n::build(
+            fixture::annulus("1.015"),
+            NumericalOptions {
+                tolerance_mm: fixture::q(tolerance),
+            },
+            &mut Decider::default(),
+        );
+        if passes {
+            result.unwrap();
+        } else {
+            assert_eq!(result.unwrap_err().code, "numerical.invalid-trim");
+        }
+    }
+}

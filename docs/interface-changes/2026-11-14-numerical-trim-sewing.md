@@ -4,19 +4,33 @@ Piece: topology, opt-in numerical admission only. Existing exact consumers,
 `Answer`, `BoundedEvidence`, proof/export boundaries and saved answers keep their
 contracts. No caller migration is required.
 
-`catallax_topology::numerical::build` now admits one simple outer linear u/v loop
-and optionally one strictly interior simple hole per face. The outer orientation
-follows the face sense; the hole has the opposite orientation. Hole/outer touching,
-crossing, an outside hole, self-crossing, open or reversed loops refuse.
-Numerical admission also rejects shared walked endpoint IDs between outer and
-hole loops after endpoint remapping, independently of their unchanged UV trims.
+`catallax_topology::numerical::build` admits one simple outer linear u/v loop
+and strictly interior simple holes per face. The outer orientation follows the
+face sense; holes have the opposite orientation. Hole/outer touching, crossing,
+outside holes, nested holes, self-crossing, open or reversed loops refuse.
+Numerical admission also rejects shared walked endpoint IDs across distinct
+boundaries after endpoint remapping, independently of their unchanged UV trims.
 The completed `trim.boundary-endpoints-disjoint` record names this local check;
-no stronger guarantee is inferred from the generic topology checker. The
-existing plane and embedded rational-patch carriers remain the only admitted
-supports. Additional holes and curved parameter trims remain unsupported. Every
-coedge of both loops receives N01's nine pointwise distance enclosures. A completed
-`trim.hole-contained-disjoint` record reports the finite parameter-space check;
-it is not a whole-body geometric certificate.
+no stronger guarantee is inferred from the generic topology checker.
+Every loop retains the existing pointwise distance checks and carrier-specific
+admission rules. `trim.hole-contained-disjoint` reports the finite linear
+parameter-space check; it is not a whole-body geometric certificate.
+
+Planar complete-circle boundaries may be outer rims or holes. Projected disks
+enclose circular holes with the stated tolerance added to each radius.
+An outer circle's projected ellipse contains a disk of radius
+`r * abs(cos(angle between normals))`; the stated tolerance is subtracted from
+that interior radius. Hole disks must fit inside it or remain disjoint from
+other hole disks. Finite-line neighbours receive complete segment clearance
+or interior endpoint checks. Unsupported curved neighbours refuse.
+Simple closed-loop checks bind every segment end to the next start.
+Circular pairs use these continuous checks rather than intersecting inscribed
+chord polygons, which can cross for a valid thin annulus with different rim phases.
+The mixed record is `trim.sampled-boundaries-with-continuous-circle-clearance`,
+with separate `trim.continuous-circle-hole-clearance` and
+`trim.continuous-circle-outer-clearance` entries where applicable.
+Other projected/native curved walks retain their sampled scope.
+No tolerance, default work allowance or exact-proof authority is increased.
 
 New API:
 

@@ -170,6 +170,16 @@ pub(crate) fn embedded_exact(
         Ok((_, artifact)) => artifact,
         Err(error) => return Ok(Some(Err(error))),
     };
+    publish_embedded(&artifact, recipe, out, dec).map(Some)
+}
+
+pub(crate) fn publish_embedded(
+    artifact: &step::NumericalStep,
+    recipe: &catallax_recipe::Recipe,
+    out: &Path,
+    dec: &mut Decider,
+) -> io::Result<Result<Value, catallax_numbers::Refusal>> {
+    let tolerance = artifact.report().source_evidence.tolerance_mm();
     let path = out.join("answer.step");
     let reread = match fs::write(&path, artifact.bytes()).and_then(|()| fs::read(&path)) {
         Ok(bytes) => bytes,
@@ -183,7 +193,7 @@ pub(crate) fn embedded_exact(
     span.finish(dec, checked.as_ref().err(), None);
     if let Err(error) = checked {
         let _ = fs::remove_file(&path);
-        return Ok(Some(Err(error)));
+        return Ok(Err(error));
     }
     let report = artifact.report();
     let spline = report.spline_rounding.as_ref().map(|rounding| {
@@ -192,7 +202,7 @@ pub(crate) fn embedded_exact(
             "max_weight_error":rounding.max_weight_error.to_string()
         })
     });
-    Ok(Some(Ok(json!({
+    Ok(Ok(json!({
         "file":"answer.step","approximate":true,"category":"approximate","proof":"numerical",
         "seams":"required","sha256":format!("{:x}",Sha256::digest(&reread)),"bytes":reread.len(),
         "checks":report.checks,"tolerance_mm":tolerance.to_string(),
@@ -204,7 +214,7 @@ pub(crate) fn embedded_exact(
         "max_scalar_rounding_error_mm":report.max_scalar_rounding_error_mm.to_string(),
         "max_direction_ratio_rounding_error":report.max_direction_ratio_rounding_error.to_string(),
         "spline_rounding":spline
-    }))))
+    })))
 }
 
 struct Admitted {

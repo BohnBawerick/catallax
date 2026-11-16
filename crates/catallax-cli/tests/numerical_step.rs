@@ -1,6 +1,7 @@
 //! Real stream requests keep numerical STEP separate from exact answers.
 
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use std::{
     fs,
     io::Write,
@@ -28,7 +29,7 @@ fn numerical_step_requests_keep_tolerance_evidence_and_refused_artifacts_separat
         "tolerance_mm":"1/10000000"});
     let mut extra = problem.clone();
     extra["precision"] = json!(17);
-    let mut invalid: Vec<_> = ["0", "-1", "garbage"]
+    let mut following: Vec<_> = ["0", "-1", "garbage"]
         .into_iter()
         .map(|tolerance| {
             let mut value = problem.clone();
@@ -36,7 +37,7 @@ fn numerical_step_requests_keep_tolerance_evidence_and_refused_artifacts_separat
             ("recipe", value, 20_000_000)
         })
         .collect();
-    invalid.extend([
+    following.extend([
         ("recipe", extra, 20_000_000),
         ("compare", problem.clone(), 20_000_000),
         ("recipe", problem.clone(), 0),
@@ -48,7 +49,7 @@ fn numerical_step_requests_keep_tolerance_evidence_and_refused_artifacts_separat
         ("recipe", problem.clone(), 20_000_000),
     ]);
     let requests: Vec<_> = std::iter::once(("recipe", problem, 20_000_000))
-        .chain(invalid)
+        .chain(following)
         .collect();
     let mut child = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
         .arg("stream")
@@ -125,7 +126,7 @@ fn numerical_step_requests_keep_tolerance_evidence_and_refused_artifacts_separat
         .unwrap();
         assert_eq!(saved, *manifest);
     }
-    for (i, row) in rows.iter().enumerate().take(8).skip(1) {
+    for (i, row) in rows.iter().enumerate().take(7).skip(1) {
         assert!(!dir.join(i.to_string()).join("answer.step").exists());
         assert!(row["manifest"]["step"].is_null());
         assert!(row["manifest"]["numerical"].is_null());
@@ -147,10 +148,42 @@ fn numerical_step_requests_keep_tolerance_evidence_and_refused_artifacts_separat
         rows[6]["manifest"]["refusal"]["code"],
         "numbers.operation-budget"
     );
-    assert_eq!(
-        rows[7]["manifest"]["refusal"]["code"],
-        "numbers.geometric-gap-unproven"
-    );
+    let ordinary = &rows[7];
+    let manifest = &ordinary["manifest"];
+    assert_eq!(manifest["format"], "catallax-manifest/5");
+    assert_eq!(manifest["status"], "answered");
+    assert!(manifest["refusal"].is_null());
+    assert_eq!(manifest["exact"], false);
+    assert_eq!(manifest["result"]["faces"], 9);
+    assert!(manifest["numerical"].is_null());
+    assert_eq!(manifest["marks"].as_array().unwrap().len(), 1);
+    assert_eq!(manifest["marks"][0]["code"], "step.numerical-approximate");
+    let step = &manifest["step"];
+    assert_eq!(step["proof"], "numerical");
+    assert_eq!(step["category"], "approximate");
+    assert_eq!(step["approximate"], true);
+    assert_eq!(step["tolerance_mm"], "1/10000000");
+    assert_eq!(step["complete_body_bound"], "unestablished");
+    assert_eq!(step["seams"], "required");
+    for scope in ["source", "emitted"] {
+        assert_eq!(step["numerical"][scope]["tolerance_mm"], "1/10000000");
+        assert!(
+            !step["numerical"][scope]["checks"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+    }
+    assert_eq!(ordinary["work"]["limit"], 20_000_000);
+    assert_eq!(ordinary["work"]["exhausted"], false);
+    assert!(ordinary["work"]["used"].as_u64().unwrap() < 20_000_000);
+    let file = fs::read(dir.join("7/answer.step")).unwrap();
+    assert!(file.starts_with(b"ISO-10303-21;"));
+    assert_eq!(step["sha256"], format!("{:x}", Sha256::digest(&file)));
+    assert!(catallax_step::check_seams(&file).is_ok());
+    let saved: Value =
+        serde_json::from_slice(&fs::read(dir.join("7/manifest.json")).unwrap()).unwrap();
+    assert_eq!(saved, *manifest);
     assert_eq!(rows[0]["manifest"], rows[8]["manifest"]);
     assert_eq!(rows[0]["work"], rows[8]["work"]);
     assert_eq!(

@@ -225,6 +225,7 @@ pub(super) fn check_loops(
         analytic::check_loops(face, edges, tolerance, dec)?;
     }
     let mut sampled = face.clone();
+    let polygon_stage = super::admission_stage("native-uv-polygon", || face.key.clone());
     sampled.loops.clear();
     for (row, boundary) in face.loops.iter().enumerate() {
         let mut polygon = Vec::new();

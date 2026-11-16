@@ -155,6 +155,28 @@ P1 to P5 pass through SolidDraft on Catallax main `47fb0a2e`, run on the work PC
 | P4 | shell wall 2 to 1.5 | 1.25M |
 | P5 | junction fillet 2 to 2.5 | 4.50M |
 
+## Release
+
+The checkpoint ends with a release of both repositories and a redeploy of the website and browser app on it, right after this report. Firstmate dispatches the release; this section lists what to cut. Both stay alpha prereleases.
+
+**Catallax 0.3.0**, from the main commit pinned for the cut run, so the release is the commit these numbers measure. `docs/RELEASING.md` advances the minor version for a completed milestone step, and the phase-1 checkpoint is one. Since v0.2.0 it carries 78 merged changes:
+
+- Real STEP import: numerical admission of planar, oblique, cylindrical, cone and B-spline revolution sources, shell models as typed surface bodies, per-entity tolerances, source topology healing, and opening by tier (#669). The census moves from 186 admitted files to 418 complete solid imports and 384 valid exports, against OCCT's 2,701.
+- STEP export: approximate STEP for numerical bodies, curved patches with holes, cones, and spline Boolean results without an exact form (#668), with the seam, circle and pcurve repairs that took post-builder validity from 322 to 374 files.
+- Spline Booleans: loft Booleans and finite cylinder sections (#664), plane contacts through spline Booleans, numerical spline-line and cone-cylinder queries, and #672 (spline request 11 of 14) once merged.
+- Everyday features: mixed fillet corners, partial-oblique fillet ends, hollow drafts, three-edge chamfer corners, shells with side openings, draft and shell around mixed openings, and skew holes through bevelled collars (#667).
+- Kernel hand-over between instances (#632, #657), verified STEP file replacement with face and edge correspondence, and the 100M application allowance with a 20M target (#619).
+- This report's tooling (#665).
+
+**SolidDraft 0.6.0**, pinned to that same Catallax commit. Since 0.5.0 it carries:
+
+- Browser kernel work off the page thread: builds, edits, Undo, Redo and opening in a kernel worker (#322), mass properties in a worker (#314), lazy reads of the adopted bodies (#323, if merged by the cut).
+- STEP: multi-solid file replacement as one verified transaction (#319), matched face names kept across replacement (#324).
+- Modelling: part colours and transparency, Draft with its own pull direction (#326), supporting planes kept for face-mounted cuts, 100M work per request.
+- Sketcher and interface: box and crossing selection, relations for two-entity selections, relation glyph hints, broken-dimension recovery, the left icon strip with the feature tree, walk-over redesigns R1 to R8, and eleven small fixes from a user walk.
+
+The redeploy takes the browser app and website to SolidDraft 0.6.0 on Catallax 0.3.0. The release checklist's replay, evidence and package dry runs still apply to both; this list does not replace them.
+
 ## What still refuses and why
 
 From the dry run. The cut run replaces these.

@@ -304,10 +304,15 @@ def census(args):
         csv.field_size_limit(64 * 1024 * 1024)
         before = {r['model_id'] for r in csv.DictReader(stream) if r['validity_outcome'] == 'raw_valid'}
     valid = {key for key, row in observed.items() if row['outcome'] == 'raw_valid'}
-    # A previous pass that this run aborted for memory or time was not measured,
-    # so it is neither kept nor lost.
-    aborted = ({k for k, row in rows.items() if row['outcome'] in ('timeout', 'out_of_memory')}
-               | {k for k, row in observed.items() if row['outcome'] in ('timeout', 'out_of_memory')})
+    # Runs with no verdict: aborted for memory or time, or a process error. A
+    # previous pass among them was not measured, so it is neither kept nor lost.
+    unmeasured = {'timeout': 'timed out', 'out_of_memory': 'out of memory',
+                  'process_error': 'process error', 'missing_result': 'process error, no result'}
+    not_covered = [{'model_id': k, 'stage': stage, 'kind': unmeasured[row['outcome']],
+                    'detail': row.get('cause') or row.get('timeout_stage') or ''}
+                   for stage, table in (('import', rows), ('export', observed))
+                   for k, row in sorted(table.items()) if row['outcome'] in unmeasured]
+    aborted = {entry['model_id'] for entry in not_covered}
     report = {
         'format': 'catallax-checkpoint-census/1', 'source_revision': revision,
         'import_binary_sha256': admission['binary_sha256'], 'export_binary_sha256': digest(exporter),
@@ -322,10 +327,7 @@ def census(args):
         'previous_not_measured': sorted((before - valid) & aborted),
         'admission_outcomes': admission['outcomes'], 'import_categories': admission['import_categories'],
         'refusal_causes': admission['after_fix_causes'],
-        'import_out_of_memory': sorted(k for k, row in rows.items() if row['outcome'] == 'out_of_memory'),
-        'export_out_of_memory': sorted(k for k, row in observed.items() if row['outcome'] == 'out_of_memory'),
-        'import_timeout': sorted(k for k, row in rows.items() if row['outcome'] == 'timeout'),
-        'export_timeout': sorted(k for k, row in observed.items() if row['outcome'] == 'timeout'),
+        'not_covered': not_covered,
         'max_rss_mb_per_observer': args.max_rss_mb,
         'export_outcomes': dict(Counter(r['outcome'] for r in observed.values())),
         'export_refusal_causes': dict(Counter(r.get('cause') for r in observed.values()
@@ -350,7 +352,7 @@ def census_markdown(r):
              f'| Catallax, previous capture | {r["previous_valid_after_builder"]} | {100 * r["previous_valid_after_builder"] / 3000:.2f}% |',
              '', f'Gained since the previous capture: {len(r["gained_since_previous"])}. '
              f'Lost, measured and no longer valid: {len(r["lost_since_previous"])} {r["lost_since_previous"]}. '
-             f'Previously valid but not measured this run (aborted, see Not covered): '
+             f'Previously valid but without a verdict this run (see Not covered): '
              f'{len(r["previous_not_measured"])} {r["previous_not_measured"]}.', '',
              '| Admission | Files |', '| --- | ---: |']
     lines += [f'| {k} | {v} |' for k, v in sorted(r['admission_outcomes'].items())]
@@ -358,21 +360,14 @@ def census_markdown(r):
     lines += [f'| {k} | {v} |' for k, v in sorted(r['import_categories'].items())]
     lines += ['', '| First refusal cause | Files |', '| --- | ---: |']
     lines += [f'| `{k}` | {v} |' for k, v in sorted(r['refusal_causes'].items(), key=lambda kv: -kv[1])]
-    if r['import_out_of_memory']:
-        lines.append(f'| out of memory above {r["max_rss_mb_per_observer"]} MiB | {len(r["import_out_of_memory"])} |')
-        lines += ['', 'Out of memory at import: ' + ', '.join(r['import_out_of_memory']) + '.']
     lines += ['', '| Export outcome of full admissions | Files |', '| --- | ---: |']
     lines += [f'| {k} | {v} |' for k, v in sorted(r['export_outcomes'].items())]
-    if r['export_out_of_memory']:
-        lines += ['', 'Out of memory at export: ' + ', '.join(r['export_out_of_memory']) + '.']
-    aborted = [(stage, kind, key) for stage, kind, field in (
-        ('import', 'out of memory', 'import_out_of_memory'), ('import', 'timed out', 'import_timeout'),
-        ('export', 'out of memory', 'export_out_of_memory'), ('export', 'timed out', 'export_timeout'))
-        for key in r[field]]
     lines += ['', '## Not covered', '',
-              'Runs aborted for memory or time. They are not passes and not refusals of geometry; '
-              'the census did not measure them. The memory cap is sampled per observer, not a host-wide bound.', '']
-    lines += [f'- {key}: {stage} {kind}' for stage, kind, key in aborted] or ['- None.']
+              'Runs with no verdict: aborted for memory or time, or ended by a process error. They are '
+              'not passes, not losses and not refusals of geometry. The memory cap is sampled per '
+              f'observer ({r["max_rss_mb_per_observer"]} MiB), not a host-wide bound.', '']
+    lines += [f'- {e["model_id"]}: {e["stage"]} {e["kind"]}' + (f' ({e["detail"]})' if e['detail'] else '')
+              for e in r['not_covered']] or ['- None.']
     if r['export_refusal_causes']:
         lines += ['', 'Export refusals: ' + ', '.join(f'`{k}` {v}' for k, v in r['export_refusal_causes'].items()) + '.']
     return '\n'.join(lines) + '\n'

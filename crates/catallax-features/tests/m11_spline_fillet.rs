@@ -654,6 +654,7 @@ fn numerical_fillet_builds_on_the_smooth_loft_across_its_station_seam() {
         let rounded = catallax_features::fillet::numerical::build(
             source, &format!("{edge:?}"), "round", radius.clone(), tolerance.clone(), &mut dec,
         ).unwrap();
+        println!("numerical smooth-loft body admission: {} work", catallax_numbers::current_operation_work().used);
         let fillet = rounded.fillet();
         let radial_tolerance = &(&q("2") * &radius) * &tolerance;
         for node in fillet.spine().nodes() {

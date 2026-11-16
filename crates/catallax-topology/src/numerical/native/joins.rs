@@ -72,7 +72,11 @@ pub(in crate::numerical) fn samples(
                 dec,
             )?;
             checks.push(NumericalCheck::Samples {
-                name: "trim.native-join-position".into(),
+                name: if index.numerical_pair(trim.edge) || index.numerical_pair(next.edge) {
+                    "trim.numerical-pair-native-join-position"
+                } else {
+                    "trim.native-join-position"
+                }.into(),
                 scope: format!(
                     "face {:?}, loop {boundary_index}, uses {use_index}->{next_index}",
                     face.key

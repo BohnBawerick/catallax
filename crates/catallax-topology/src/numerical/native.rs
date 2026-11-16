@@ -28,6 +28,7 @@ pub(super) struct Index<'a> {
     curves: BTreeMap<(usize, usize, usize), &'a BSplineCurve>,
     faces: BTreeSet<usize>,
     sampled_carriers: &'a BTreeSet<String>,
+    numerical_edges: BTreeSet<usize>,
 }
 
 impl<'a> Index<'a> {
@@ -41,7 +42,16 @@ impl<'a> Index<'a> {
             curves: BTreeMap::new(),
             faces: BTreeSet::new(),
             sampled_carriers,
+            numerical_edges: BTreeSet::new(),
         };
+        for face in &definition.faces {
+            if sampled_carriers.contains(&face.key) {
+                for trim in face.loops.iter().flatten() {
+                    dec.charge_work(1)?;
+                    index.numerical_edges.insert(trim.edge);
+                }
+            }
+        }
         if bindings.is_empty() {
             return Ok(index);
         }
@@ -96,6 +106,9 @@ impl<'a> Index<'a> {
     }
     pub fn has_face(&self, face: usize) -> bool {
         self.faces.contains(&face)
+    }
+    pub fn numerical_pair(&self, edge: usize) -> bool {
+        self.numerical_edges.contains(&edge)
     }
 }
 
@@ -172,14 +185,39 @@ pub(super) fn point(
     }
 }
 
+fn numerical_parameters(
+    edge: &NumericalEdge,
+    sense: Sense,
+    dec: &mut Decider,
+) -> Result<Vec<Rational>, Refusal> {
+    let [a, b] = if sense == Sense::Same {
+        edge.parameters.each_ref()
+    } else {
+        [&edge.parameters[1], &edge.parameters[0]]
+    };
+    let span = b - a;
+    let mut points = Vec::with_capacity(SUBDIVISIONS as usize + 1);
+    for i in 0..=SUBDIVISIONS {
+        dec.charge_work(1)?;
+        let share = Rational::from_ratio(i, SUBDIVISIONS).unwrap();
+        points.push(a + &(&share * &span));
+    }
+    Ok(points)
+}
+
 pub(super) fn samples(
     face: &NumericalFace,
     trim: &NumericalTrim,
     edge: &NumericalEdge,
     curve: &BSplineCurve,
+    numerical_pair: bool,
     dec: &mut Decider,
 ) -> Result<(Vec<NumericalSample>, Vec<NumericalSample>), Refusal> {
-    let ts = parameters(edge, curve, trim.sense, dec)?;
+    let ts = if numerical_pair {
+        numerical_parameters(edge, trim.sense, dec)?
+    } else {
+        parameters(edge, curve, trim.sense, dec)?
+    };
     let mut samples = Vec::new();
     let mut endpoints = Vec::new();
     for (i, t) in ts.iter().enumerate() {
@@ -292,8 +330,8 @@ pub(super) fn check_loops(
 }
 
 // Face-local UV topology uses nine locations per coedge for a declared
-// numerical carrier. World-distance and endpoint checks keep the complete
-// existing clipped-knot-span grid in `samples` and `join_samples`.
+// numerical carrier. Incident face-pairs use labelled numerical distance
+// samples; exact-exact pairs keep the clipped-knot-span grid.
 fn check_numerical_loops(
     face_index: usize,
     face: &NumericalFace,
@@ -352,9 +390,9 @@ pub fn build_with_native_trims(
 
 /// Admits explicitly numerical atlas carriers with sampled face-local checks.
 /// Their UV walks use nine locations per coedge; chart coverage uses a 9 by 9
-/// grid. Edge, incidence, endpoint, join and world-distance checks are unchanged,
-/// including the complete existing clipped-knot-span distance sample grid.
-/// Undeclared faces retain their original admission path.
+/// grid. Incident face-pairs use labelled numerical distance samples at the
+/// unchanged tolerance; exact-exact pairs keep their original sample grids.
+/// Undeclared face-local checks retain their original admission path.
 pub fn build_with_sampled_carriers(
     definition: NumericalDefinition,
     native_trims: Vec<NumericalNativeTrim>,

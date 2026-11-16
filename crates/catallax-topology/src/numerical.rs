@@ -153,8 +153,9 @@ impl Default for NumericalOptions {
 /// Explicitly declared numerical atlas carriers use a 9 by 9 chart-box grid
 /// and nine UV-walk locations per coedge for face-local checks. Their evidence
 /// says numerical samples, never continuous filled-box or curved-loop proof.
-/// Edge, incidence, endpoint, join and world-distance checks retain the full
-/// existing native-knot-span sampling grid. Other faces keep their original path.
+/// Incident face-pairs use nine native edge parameters for labelled numerical
+/// distance samples. Exact-exact pairs retain the full native-knot-span grid.
+/// Other face-local checks keep their original path; incidence stays unchanged.
 /// The checks do not establish whole-body separation, global self-intersection
 /// freedom or a whole-body approximation bound. They grant no STEP export authority.
 /// Approximate export requires a numerical writer and its own output checks.
@@ -444,6 +445,23 @@ fn keys<'a>(values: impl Iterator<Item = &'a str>, dec: &mut Decider) -> Result<
     Ok(())
 }
 
+struct AdmissionStage {
+    name: &'static str,
+    scope: String,
+    start: u64,
+}
+impl Drop for AdmissionStage {
+    fn drop(&mut self) {
+        eprintln!("native_admission stage={} scope={:?} work={}",
+            self.name, self.scope,
+            catallax_numbers::current_operation_work().used.saturating_sub(self.start));
+    }
+}
+fn admission_stage(name: &'static str, scope: impl FnOnce() -> String) -> Option<AdmissionStage> {
+    std::env::var_os("CATALLAX_NATIVE_ADMISSION_TRACE")?;
+    Some(AdmissionStage { name, scope: scope(), start: catallax_numbers::current_operation_work().used })
+}
+
 fn build_inner(
     definition: NumericalDefinition,
     native_trims: Vec<NumericalNativeTrim>,
@@ -552,8 +570,12 @@ fn build_inner_kind(
             end: Some(vertices[edge.vertices[1]]),
         }));
     }
+    drop(definitions_stage);
     let mut faces = Vec::new();
     for (face_index, face) in definition.faces.iter().enumerate() {
+        let carrier_stage = admission_stage(
+            if sampled_carriers.contains(&face.key) { "carrier/numerical-face" } else { "carrier/exact-face" },
+            || face.key.clone());
         dec.charge_work(1)?;
         if !analytic::supports(&face.surface) {
             return Err(bad(
@@ -639,6 +661,7 @@ fn build_inner_kind(
         wires: Vec::new(),
         marks: MarkLog::new(),
     });
+    let structure_stage = admission_stage("incidence/cross", || definition.name.clone());
     if let Some(fault) = crate::check::structure(&model, body).into_iter().next() {
         return Err(Refusal::new(fault.code, fault.detail));
     }
@@ -653,7 +676,11 @@ fn build_inner_kind(
         name: "topology.structure".into(),
         scope: definition.name.clone(),
     }];
-    for edge in &definition.edges {
+    drop(structure_stage);
+    for (edge_index, edge) in definition.edges.iter().enumerate() {
+        let _endpoints = admission_stage(
+            if native.numerical_pair(edge_index) { "edge-endpoints/numerical-pair" } else { "edge-endpoints/exact-pair" },
+            || edge.key.clone());
         let mut samples = Vec::new();
         for i in 0..2 {
             dec.charge_work(1)?;
@@ -669,13 +696,20 @@ fn build_inner_kind(
             });
         }
         checks.push(NumericalCheck::Samples {
-            name: "edge.vertex-distance".into(),
+            name: if native.numerical_pair(edge_index) {
+                "edge.numerical-pair-vertex-distance"
+            } else {
+                "edge.vertex-distance"
+            }.into(),
             scope: edge.key.clone(),
             samples,
         });
     }
     for (face_index, face) in definition.faces.iter().enumerate() {
         if face.loops.len() == 1 {
+            let _loop = admission_stage(
+                if sampled_carriers.contains(&face.key) { "uv-loop/numerical-face" } else { "uv-loop/exact-face" },
+                || face.key.clone());
             native::check_loops(
                 face_index,
                 face,
@@ -685,13 +719,11 @@ fn build_inner_kind(
                 dec,
             )?;
         }
-        checks.extend(native::join_samples(
-            face_index,
-            face,
-            &definition.edges,
-            &native,
-            dec,
-        )?);
+        let joins = {
+            let _joins = admission_stage("joins/cross", || face.key.clone());
+            native::join_samples(face_index, face, &definition.edges, &native, dec)?
+        };
+        checks.extend(joins);
         let sampled = native.has_face(face_index) || analytic::projected(face, &definition.edges);
         checks.push(NumericalCheck::Passed {
             name: if sampled_carriers.contains(&face.key) {
@@ -776,20 +808,35 @@ fn build_inner_kind(
             .enumerate()
         {
             let edge = &definition.edges[trim.edge];
+            let numerical_pair = native.numerical_pair(trim.edge);
             if let Some(curve) = native.get(face_index, boundary_index, use_index) {
-                let (samples, endpoints) = native::samples(face, trim, edge, curve, dec)?;
+                let _samples = admission_stage(
+                    if numerical_pair { "world-native-trim/numerical-pair" } else { "world-native-trim/exact-pair" },
+                    || format!("{} / {}", face.key, edge.key));
+                let (samples, endpoints) = native::samples(face, trim, edge, curve, numerical_pair, dec)?;
                 checks.push(NumericalCheck::Samples {
-                    name: "trim.native-endpoint-position".into(),
+                    name: if numerical_pair {
+                        "trim.numerical-pair-native-endpoint-position"
+                    } else {
+                        "trim.native-endpoint-position"
+                    }.into(),
                     scope: format!("face {:?}, edge {:?}, use {index}", face.key, edge.key),
                     samples: endpoints,
                 });
                 checks.push(NumericalCheck::Samples {
-                    name: "trim.edge-surface-distance".into(),
+                    name: if numerical_pair {
+                        "trim.numerical-pair-edge-surface-distance"
+                    } else {
+                        "trim.edge-surface-distance"
+                    }.into(),
                     scope: format!("face {:?}, edge {:?}, use {index}", face.key, edge.key),
                     samples,
                 });
                 continue;
             }
+            let _samples = admission_stage(
+                if numerical_pair { "world-ordinary-trim/numerical-pair" } else { "world-ordinary-trim/exact-pair" },
+                || format!("{} / {}", face.key, edge.key));
             let [a, b] = if trim.sense == Sense::Same {
                 edge.parameters.each_ref()
             } else {
@@ -830,13 +877,20 @@ fn build_inner_kind(
                 });
             }
             checks.push(NumericalCheck::Samples {
-                name: "trim.edge-surface-distance".into(),
+                name: if numerical_pair {
+                    "trim.numerical-pair-edge-surface-distance"
+                } else {
+                    "trim.edge-surface-distance"
+                }.into(),
                 scope: format!("face {:?}, edge {:?}, use {index}", face.key, edge.key),
                 samples,
             });
         }
     }
-    let evidence = NumericalEvidence::new(options.tolerance_mm.clone(), checks, repairs)?;
+    let evidence = {
+        let _evidence = admission_stage("distance-evidence/cross", || definition.name.clone());
+        NumericalEvidence::new(options.tolerance_mm.clone(), checks, repairs)?
+    };
     dec.check_deadline()?;
     Ok(NumericalBody {
         source: definition.clone(),

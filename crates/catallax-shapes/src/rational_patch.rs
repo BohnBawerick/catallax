@@ -321,12 +321,28 @@ impl RationalPatch {
         {
             let [x, y, z, w] = span.coordinates.each_ref().map(RealPoly::as_rational);
             match (x, y, z, w) {
-                (Some(x), Some(y), Some(z), Some(w)) => Some(ProjectedJacobian::new(
-                    &[x, y, z, w],
-                    &projection,
-                    domain.clone(),
-                    dec,
-                )?),
+                (Some(x), Some(y), Some(z), Some(w)) => {
+                    // Balance the centre-dual rows in the unit-domain metric.
+                    // This positive row scale changes only the fixed projection,
+                    // whose complete symmetric Jacobian is still certified.
+                    let aa = aa.as_rational().expect("rational centre tangent");
+                    let bb = bb.as_rational().expect("rational centre tangent");
+                    dec.reserve_exact_arithmetic(&aa, &bb, true)?;
+                    let exponent = bb.numerator().bit_length() as i64
+                        + aa.denominator().bit_length() as i64
+                        - bb.denominator().bit_length() as i64
+                        - aa.numerator().bit_length() as i64;
+                    // A dyadic balance avoids introducing a second large
+                    // rational denominator into every projected coefficient.
+                    let scale = Real::from(Rational::one().mul_pow2(exponent));
+                    projection[1] = projection[1].scaled(&scale);
+                    Some(ProjectedJacobian::new(
+                        &[x, y, z, w],
+                        &projection,
+                        domain.clone(),
+                        dec,
+                    )?)
+                }
                 _ => None,
             }
         } else {

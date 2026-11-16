@@ -258,10 +258,60 @@ mod tests {
                 &mut dec,
             )?;
             let patch = RationalPatch::new(carrier, &mut dec)?;
-            // X=3u,Y=5v,Z=(u-1/2)^2+(v-1/2)^2. Its centre-dual
-            // projection is (X/3,Y/5), whose Jacobian is exactly I.
+            // X=3u,Y=5v,Z=(u-1/2)^2+(v-1/2)^2. The balanced
+            // projection is (X/3,2Y/5), with smallest Jacobian eigenvalue 1.
             assert_eq!(patch.embedding_lower_bound().sign(), Sign::Positive);
             assert!(patch.embedding_lower_bound() <= &Rational::one());
+            Ok(())
+        });
+        assert!(!work.exhausted);
+        result.unwrap();
+    }
+
+    #[test]
+    fn a_balanced_projection_keeps_a_wide_bending_chart_invertible() {
+        let (result, work) = with_operation_budget(20_000_000, || -> Result<(), Refusal> {
+            let mut dec = Decider::default();
+            // X=u+2v²,Y=10v,Z=0 on [-1,1]². The centre-dual
+            // symmetric Jacobian is indefinite near the ends, despite the
+            // chart being injective; positive metric balancing proves it.
+            let points = [-1, 1]
+                .into_iter()
+                .flat_map(|u| {
+                    [2, -2, 2]
+                        .into_iter()
+                        .zip([-10, 0, 10])
+                        .map(move |(bend, y)| {
+                            Point3::new((u + bend).into(), y.into(), Real::zero())
+                        })
+                })
+                .collect();
+            let carrier = BSplineSurface::new(
+                [1, 2],
+                [
+                    [-1, -1, 1, 1].map(Rational::from_i64).to_vec(),
+                    [-1, -1, -1, 1, 1, 1].map(Rational::from_i64).to_vec(),
+                ],
+                [2, 3],
+                points,
+                vec![Real::one(); 6],
+                &mut dec,
+            )?;
+            let patch = RationalPatch::new(carrier, &mut dec)?;
+            let at = patch
+                .parameters_at(&Point3::new(1.into(), 5.into(), Real::zero()), &mut dec)?
+                .expect("the genuine finite point has an inverse");
+            for coordinate in at {
+                assert_eq!(
+                    exact_sign(&(&coordinate - &Real::from(q(1, 2))), &mut dec)?,
+                    Sign::Zero
+                );
+            }
+            assert!(
+                patch
+                    .parameters_at(&Point3::new(4.into(), 5.into(), Real::zero()), &mut dec)?
+                    .is_none()
+            );
             Ok(())
         });
         assert!(!work.exhausted);

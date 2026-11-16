@@ -267,6 +267,53 @@ impl NumericalLoftSelection {
     }
 }
 
+/// Chooses the numerical top-stock path when the stock spans the loft's width.
+/// This routing check gives no material or incidence authority.
+pub fn stock_spans_loft_width(
+    model: &Model,
+    loft: BodyId,
+    stock: BodyId,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    let source = Loft::original(model, loft, dec)?;
+    let mut width = None;
+    for (plane, sense) in &source.planes {
+        let axis = outward(plane, *sense).cross(&source.ray);
+        if dec
+            .enclose_budgeted_at(&axis.norm_squared(), 128)?
+            .lo()
+            .sign()
+            == Sign::Positive
+        {
+            width = Some(axis);
+            break;
+        }
+    }
+    let axis = width.ok_or_else(|| bad("the loft has no resolved width direction"))?;
+    let mut loft_range: Option<Ball> = None;
+    for patch in &source.patches {
+        for point in patch.carrier().controls() {
+            dec.charge_work(1)?;
+            let projection = &point.x * &axis.x + &point.y * &axis.y + &point.z * &axis.z;
+            let bounds = dec.enclose_budgeted_at(&projection, 128)?;
+            loft_range =
+                Some(loft_range.map_or_else(|| bounds.clone(), |range| range.hull(&bounds)));
+        }
+    }
+    let mut stock_range: Option<Ball> = None;
+    for id in model.vertices_of_body(stock) {
+        dec.charge_work(1)?;
+        let point = model.geom().position(model.vertex(id).point);
+        let projection = &point.x * &axis.x + &point.y * &axis.y + &point.z * &axis.z;
+        let bounds = dec.enclose_budgeted_at(&projection, 128)?;
+        stock_range = Some(stock_range.map_or_else(|| bounds.clone(), |range| range.hull(&bounds)));
+    }
+    Ok(match (loft_range, stock_range) {
+        (Some(loft), Some(stock)) => stock.lo() < loft.lo() && stock.hi() > loft.hi(),
+        _ => false,
+    })
+}
+
 /// Selects an original loft against an original convex planar stock body.
 /// The caller must supply unchanged constructor outputs, before any trimmed-face
 /// edits. Numerical labels never enter exact Classification or incidence facts.

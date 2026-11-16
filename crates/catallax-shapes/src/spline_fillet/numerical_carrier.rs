@@ -56,14 +56,36 @@ fn packed(problem: &Problem, node: &NumericalSpineNode, dec: &mut Decider) -> Re
     Ok(result)
 }
 
-fn hermite(nodes: &[NumericalSpineNode], values: &[Packed]) -> (Vec<Rational>, Vec<Packed>) {
-    let mut slopes = Vec::with_capacity(nodes.len());
-    for i in 0..nodes.len() {
-        let a = i.saturating_sub(1);
-        let b = (i + 1).min(nodes.len() - 1);
-        let width = &nodes[b].tau - &nodes[a].tau;
-        slopes.push(std::array::from_fn::<_, ROWS, _>(|j| (&values[b][j] - &values[a][j]) / width.clone()));
+/// Derivatives of the local three-station interpolating quadratic. In
+/// particular, end derivatives are not first-order secants.
+pub(super) fn station_slopes<'a, const N: usize>(
+    parameter: impl Fn(usize) -> &'a Rational,
+    values: &[[Rational; N]],
+) -> Vec<[Rational; N]> {
+    let mut slopes = Vec::with_capacity(values.len());
+    for i in 0..values.len() {
+        let a = i.saturating_sub(1).min(values.len() - 3);
+        let h0 = parameter(a + 1) - parameter(a);
+        let h1 = parameter(a + 2) - parameter(a + 1);
+        let width = &h0 + &h1;
+        slopes.push(std::array::from_fn(|j| {
+            let d0 = (&values[a + 1][j] - &values[a][j]) / h0.clone();
+            let d1 = (&values[a + 2][j] - &values[a + 1][j]) / h1.clone();
+            let numerator = if i == 0 {
+                &(&(&h0 + &width) * &d0) - &(&h0 * &d1)
+            } else if i + 1 == values.len() {
+                &(&(&h1 + &width) * &d1) - &(&h1 * &d0)
+            } else {
+                &(&h1 * &d0) + &(&h0 * &d1)
+            };
+            numerator / width.clone()
+        }));
     }
+    slopes
+}
+
+fn hermite(nodes: &[NumericalSpineNode], values: &[Packed]) -> (Vec<Rational>, Vec<Packed>) {
+    let slopes = station_slopes(|i| &nodes[i].tau, values);
     let mut knots = vec![nodes[0].tau.clone(); 4];
     let mut controls = Vec::with_capacity(3 * (nodes.len() - 1) + 1);
     controls.push(values[0].clone());

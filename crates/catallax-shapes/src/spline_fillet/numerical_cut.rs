@@ -70,6 +70,7 @@ impl NumericalSplineFillet {
             }
             Err(bad("fillet end-plane bisection cannot meet the stated tolerance"))
         };
+        let mut last_error = Rational::zero();
         for density in [8usize, 16, 32, 64, 128, 256] {
             dec.charge_work(density as u64 * 128)?;
             let mut samples = Vec::with_capacity(density + 1);
@@ -78,13 +79,7 @@ impl NumericalSplineFillet {
                 let (tau, point) = root(&s, dec)?;
                 samples.push([point[0].clone(), point[1].clone(), point[2].clone(), tau, s]);
             }
-            let mut slopes: Vec<[Rational; 5]> = Vec::with_capacity(samples.len());
-            for i in 0..=density {
-                let a = i.saturating_sub(1);
-                let b = (i + 1).min(density);
-                let width = &samples[b][4] - &samples[a][4];
-                slopes.push(std::array::from_fn(|j| (&samples[b][j] - &samples[a][j]) / width.clone()));
-            }
+            let slopes = super::carrier::station_slopes(|i| &samples[i][4], &samples);
             let mut controls = vec![samples[0].clone()];
             let mut knots = vec![Rational::zero(); 4];
             for i in 0..density {
@@ -121,7 +116,11 @@ impl NumericalSplineFillet {
                     sampled_error_mm: upper,
                 });
             }
+            last_error = upper;
         }
-        Err(bad("fillet end-plane curves cannot meet the stated sampled tolerance"))
+        Err(bad(format!(
+            "fillet end-plane curves reach sampled residual {} mm against {} mm",
+            last_error, tolerance,
+        )))
     }
 }

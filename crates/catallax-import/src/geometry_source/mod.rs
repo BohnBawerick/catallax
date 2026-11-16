@@ -5,10 +5,13 @@
 
 mod decode;
 mod definitions;
+mod expression;
 mod mapping;
+mod parametric;
 mod topology;
 pub use definitions::*;
 pub use mapping::{Frame, MappingError};
+pub use parametric::{AngleUnit, ParameterChart};
 
 use crate::ImportRefusal;
 use crate::part21::{Entity, Graph};

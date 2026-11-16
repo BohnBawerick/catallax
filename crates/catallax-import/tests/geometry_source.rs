@@ -280,8 +280,12 @@ fn exact_mapping_keeps_line_magnitude_and_polyline_index_parameters() {
         panic!("line")
     };
     assert_eq!(line.origin.y.rational_ref(), Some(&q("4")));
-    assert_eq!(line.dir.y.rational_ref(), Some(&q("6")));
-    assert_eq!(line.dir.z.rational_ref(), Some(&q("8")));
+    for (actual, expected) in [(&line.dir.y, q("6")), (&line.dir.z, q("8"))] {
+        assert!(matches!(
+            dec.sign(&(actual - &catallax_numbers::Real::from_rational(expected))),
+            catallax_numbers::Outcome::ProvenCoincident(_)
+        ));
+    }
     let poly = s
         .spline_curve(7, &[q("1"), q("1"), q("1")], &mut dec)
         .unwrap();
@@ -315,4 +319,99 @@ fn native_mapping_preserves_wrappers_and_complete_torus_definition() {
         geometry(&s, 3),
         Geometry::Surface(Surface::Torus(2, q("1"), q("2")))
     );
+}
+
+#[test]
+fn parameter_charts_evaluate_conics_sweeps_offsets_replicas_and_spindle_sheet() {
+    use catallax_import::geometry_source::AngleUnit;
+    use catallax_numbers::Ball;
+    let s = read(
+        "
+#1=CARTESIAN_POINT('origin',(1.,2.,3.));
+#2=AXIS2_PLACEMENT_3D('frame',#1,$,$);
+#3=DIRECTION('z',(0.,0.,1.));
+#4=HYPERBOLA('hyperbola',#2,2.,3.);
+#5=PARABOLA('parabola',#2,2.);
+#6=CIRCLE('circle',#2,2.);
+#7=OFFSET_CURVE_3D('offset',#6,0.25,.F.,#3);
+#8=VECTOR('extrusion',#3,7.);
+#9=SURFACE_OF_LINEAR_EXTRUSION('extrusion',#4,#8);
+#10=CONICAL_SURFACE('cone',#2,3.,0.4);
+#11=TOROIDAL_SURFACE('spindle',#2,1.,2.);
+#12=CYLINDRICAL_SURFACE('cylinder',#2,2.);
+#13=OFFSET_SURFACE('offset',#12,0.25,.F.);
+#14=DIRECTION('y',(0.,1.,0.));
+#15=VECTOR('line direction',#14,1.);
+#16=LINE('line',#1,#15);
+#17=CARTESIAN_POINT('translation',(10.,20.,30.));
+#18=CARTESIAN_TRANSFORMATION_OPERATOR_3D('transform',#14,$,#17,2.,#3);
+#19=CURVE_REPLICA('replica',#16,#18);
+#20=CARTESIAN_POINT('zero',(0.,0.,0.));
+#21=AXIS2_PLACEMENT_3D('ellipse frame',#20,$,$);
+#22=ELLIPSE('profile',#21,3.,2.);
+#23=AXIS1_PLACEMENT('axis',#20,#14);
+#24=SURFACE_OF_REVOLUTION('revolution',#22,#23);
+#25=RECTANGULAR_TRIMMED_SURFACE('trim',#13,0.,1.,0.,2.,.F.,.T.);
+#26=CURVE_REPLICA('cycle',#27,#18);
+#27=CURVE_REPLICA('cycle',#26,#18);
+#28=CARTESIAN_POINT('uv',(2.,3.));
+#29=CARTESIAN_POINT('uv',(4.,5.));
+#30=POLYLINE('uv',(#28,#29));
+#31=DEFINITIONAL_REPRESENTATION('uv',(#30),#90);
+#32=PCURVE('pcurve',#12,#31);
+",
+    );
+    let cases = [
+        (4, false, vec!["0.4"]),
+        (5, false, vec!["3"]),
+        (7, false, vec!["0.4"]),
+        (9, true, vec!["0.4", "2"]),
+        (10, true, vec!["0.3", "2"]),
+        (11, true, vec!["0.3", "2.4"]),
+        (13, true, vec!["0.3", "2"]),
+        (19, false, vec!["2"]),
+        (24, true, vec!["0.3", "0.4"]),
+        (25, true, vec!["0.3", "2"]),
+        (32, false, vec!["0.5"]),
+    ];
+    let mut observations = Vec::new();
+    for (id, surface, parameters) in cases {
+        let mut dec = Decider::default();
+        let charts = if surface {
+            s.surface_charts(id, &q("1"), AngleUnit::Radians, &mut dec)
+        } else {
+            s.curve_charts(id, &q("1"), AngleUnit::Radians, &mut dec)
+        }
+        .unwrap();
+        assert_eq!(charts.len(), 1);
+        let parameters = parameters
+            .iter()
+            .map(|v| Ball::from_rational(&q(v), 128))
+            .collect::<Vec<_>>();
+        let value = charts[0].evaluate(&parameters, &mut dec).unwrap();
+        for coordinate in &value {
+            assert!((coordinate.hi() - coordinate.lo()) < q("0.000000000001"));
+        }
+        if id == 19 {
+            for (value, expected) in value.iter().zip(["3", "10.5", "16.5"]) {
+                assert!(value.lo() <= q(expected) && value.hi() >= q(expected));
+            }
+        }
+        if id == 25 {
+            assert_eq!(charts[0].wrappers(), &[13, 25]);
+        }
+        if id == 32 {
+            for (value, expected) in value.iter().zip(["3", "4", "0"]) {
+                assert!(value.lo() <= q(expected) && value.hi() >= q(expected));
+            }
+        }
+        observations.push(serde_json::json!({"entity":id,"bounds":value.map(|v|[v.lo().to_string(),v.hi().to_string()])}));
+    }
+    assert!(
+        s.curve_charts(26, &q("1"), AngleUnit::Radians, &mut Decider::default())
+            .is_err()
+    );
+    if let Ok(path) = std::env::var("CATALLAX_GEOMETRY_OBSERVATIONS") {
+        std::fs::write(path, serde_json::to_vec_pretty(&observations).unwrap()).unwrap();
+    }
 }

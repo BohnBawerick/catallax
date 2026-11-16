@@ -54,8 +54,11 @@ def check(case, variant, step_path, expected_faces):
     from OCP.BRep import BRep_Tool
     from OCP.TopAbs import TopAbs_SHELL
     solid_list = entries(actual, TopAbs_SOLID)
-    owned = sum(len(entries(solid, TopAbs_FACE)) for solid in solid_list)
-    closed = (bool(solid_list) and owned == faces
+    # Union of distinct faces owned by any solid; a face shared by two solids counts once.
+    owned = []
+    for solid in solid_list:
+        owned += [face for face in entries(solid, TopAbs_FACE) if not any(face.IsSame(o) for o in owned)]
+    closed = (bool(solid_list) and len(owned) == faces
               and all(BRep_Tool.IsClosed_s(shell) for solid in solid_list
                       for shell in entries(solid, TopAbs_SHELL)))
     result['step'] = {'status': 'passed' if valid and closed and faces == expected_faces else 'failed',

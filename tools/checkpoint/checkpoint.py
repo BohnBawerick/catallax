@@ -270,7 +270,8 @@ def census(args):
     subprocess.run([sys.executable, '-B', str(RESEARCH / 'import_census.py'), '--binary', importer,
                     '--build-record', str(out / 'import-build.json'), '--sources', str(args.sources),
                     '--selection', str(args.selection), '--source-hashes', str(HASHES),
-                    '--out', str(out / 'import'), '--workers', str(args.import_workers)], check=False)
+                    '--out', str(out / 'import'), '--workers', str(args.import_workers),
+                    '--max-rss-mb', str(args.max_rss_mb)], check=False)
     clock['import_census'] = time.monotonic() - started
     admission = json.loads((out / 'import/summary.json').read_text())
     rows = {row['model_id']: row for row in json.loads((out / 'import/ordered-rows.json').read_text())}
@@ -291,7 +292,7 @@ def census(args):
         jobs = {pool.submit(validity.observe, exporter, paths[key],
                             {'model_id': key, 'source_sha256': rows[key]['source_sha256'],
                              'bodies': rows[key]['bodies']},
-                            out / 'export/parts' / key, 60): key for key in admitted}
+                            out / 'export/parts' / key, 60, args.max_rss_mb): key for key in admitted}
         for job in as_completed(jobs):
             row = job.result()
             observed[row['model_id']] = row
@@ -315,6 +316,9 @@ def census(args):
         'gained_since_previous': sorted(valid - before), 'lost_since_previous': sorted(before - valid),
         'admission_outcomes': admission['outcomes'], 'import_categories': admission['import_categories'],
         'refusal_causes': admission['after_fix_causes'],
+        'import_out_of_memory': sorted(k for k, row in rows.items() if row['outcome'] == 'out_of_memory'),
+        'export_out_of_memory': sorted(k for k, row in observed.items() if row['outcome'] == 'out_of_memory'),
+        'max_rss_mb_per_observer': args.max_rss_mb,
         'export_outcomes': dict(Counter(r['outcome'] for r in observed.values())),
         'export_refusal_causes': dict(Counter(r.get('cause') for r in observed.values()
                                               if r['outcome'] == 'export_refused')),
@@ -344,8 +348,13 @@ def census_markdown(r):
     lines += [f'| {k} | {v} |' for k, v in sorted(r['import_categories'].items())]
     lines += ['', '| First refusal cause | Files |', '| --- | ---: |']
     lines += [f'| `{k}` | {v} |' for k, v in sorted(r['refusal_causes'].items(), key=lambda kv: -kv[1])]
+    if r['import_out_of_memory']:
+        lines.append(f'| out of memory above {r["max_rss_mb_per_observer"]} MiB | {len(r["import_out_of_memory"])} |')
+        lines += ['', 'Out of memory at import: ' + ', '.join(r['import_out_of_memory']) + '.']
     lines += ['', '| Export outcome of full admissions | Files |', '| --- | ---: |']
     lines += [f'| {k} | {v} |' for k, v in sorted(r['export_outcomes'].items())]
+    if r['export_out_of_memory']:
+        lines += ['', 'Out of memory at export: ' + ', '.join(r['export_out_of_memory']) + '.']
     if r['export_refusal_causes']:
         lines += ['', 'Export refusals: ' + ', '.join(f'`{k}` {v}' for k, v in r['export_refusal_causes'].items()) + '.']
     return '\n'.join(lines) + '\n'
@@ -369,7 +378,11 @@ def main():
     scoreboard_command.add_argument('--part', action='append',
                                     help='smoke runs only: exact case name such as P2-collar.json or census/00000131.json')
     census_command = commands.choices['census']
-    census_command.add_argument('--import-workers', type=int, default=4)
+    # Two workers and a per-observer cap keep one huge source (00005642 peaks at
+    # 4.6 GB) from exhausting the shared 20 GB work PC.
+    census_command.add_argument('--import-workers', type=int, default=2)
+    census_command.add_argument('--max-rss-mb', type=int, default=6144,
+                                help='kill one observer above this resident memory and record it as out of memory')
     census_command.add_argument('--export-workers', type=int, default=2)
     args = parser.parse_args()
     {'scoreboard': scoreboard, 'census': census}[args.command](args)

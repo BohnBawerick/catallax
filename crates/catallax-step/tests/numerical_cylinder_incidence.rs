@@ -213,3 +213,190 @@ fn circle_tilt_above_source_tolerance_is_refused() {
         );
     }
 }
+
+// Rotate the cylinder axis away from every coordinate axis. The earlier
+// XY-rotated controls keep their cylinder axis on Z and cannot pin this case.
+fn oblique_axis(mut d: n::NumericalDefinition) -> n::NumericalDefinition {
+    let c = q("20/29");
+    let s = q("21/29");
+    let rotate = |x: &Real, z: &Real| {
+        [
+            &(x * &Real::from(c.clone())) - &(z * &Real::from(s.clone())),
+            &(x * &Real::from(s.clone())) + &(z * &Real::from(c.clone())),
+        ]
+    };
+    let point = |p: &Point3| {
+        let [x, z] = rotate(&p.x, &p.z);
+        Point3::new(x, p.y.clone(), z)
+    };
+    let vector = |p: &Vector3| {
+        let [x, z] = rotate(&p.x, &p.z);
+        Vector3::new(x, p.y.clone(), z)
+    };
+    for vertex in &mut d.vertices {
+        let [x, _, z] = vertex.position.clone();
+        vertex.position[0] = &(&x * &c) - &(&z * &s);
+        vertex.position[2] = &(&x * &s) + &(&z * &c);
+    }
+    for edge in &mut d.edges {
+        match &mut edge.curve {
+            Curve::Line(line) => {
+                line.origin = point(&line.origin);
+                line.dir = vector(&line.dir);
+            }
+            Curve::Circle(circle) => {
+                circle.center = point(&circle.center);
+                circle.normal = vector(&circle.normal);
+                circle.ref_dir = vector(&circle.ref_dir);
+            }
+            _ => unreachable!(),
+        }
+    }
+    for face in &mut d.faces {
+        match &mut face.surface {
+            Surface::Plane(plane) => {
+                plane.origin = point(&plane.origin);
+                plane.normal = vector(&plane.normal);
+                plane.ref_dir = vector(&plane.ref_dir);
+            }
+            Surface::Cylinder(cylinder) => {
+                cylinder.origin = point(&cylinder.origin);
+                cylinder.axis = vector(&cylinder.axis);
+                cylinder.ref_dir = vector(&cylinder.ref_dir);
+            }
+            _ => unreachable!(),
+        }
+    }
+    d
+}
+
+#[test]
+fn emitted_circle_pcurves_keep_constant_height_on_oblique_parallel_and_antiparallel_axes() {
+    // Follow references in the actual emitted STEP, rather than inspecting the
+    // writer's internal endpoints or inferring the claim from BRep validity.
+    fn references(entity: &str) -> Vec<usize> {
+        entity
+            .split('#')
+            .skip(1)
+            .map(|s| {
+                s[..s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len())]
+                    .parse()
+                    .unwrap()
+            })
+            .collect()
+    }
+    fn pair(entity: &str) -> [catallax_numbers::Rational; 2] {
+        let (_, values) = entity.split_once(",(").unwrap();
+        let (values, _) = values.split_once(')').unwrap();
+        let values: Vec<_> = values.split(',').map(q).collect();
+        values.try_into().unwrap()
+    }
+    for antiparallel in [false, true] {
+        let mut definition = chart(1);
+        for index in [1, 4] {
+            definition.vertices[index].position[2] =
+                &definition.vertices[index].position[2] + &q("1e-10");
+        }
+        let offset = q("37.3578654636477");
+        let face = definition.faces.last_mut().unwrap();
+        let Surface::Cylinder(cylinder) = &mut face.surface else {
+            unreachable!()
+        };
+        cylinder.origin.z = Real::from(-&offset);
+        if antiparallel {
+            cylinder.axis.z = Real::from(-1);
+        }
+        for uv in face
+            .loops
+            .iter_mut()
+            .flatten()
+            .flat_map(|trim| &mut trim.uv)
+        {
+            uv[1] = &uv[1] + &offset;
+            if antiparallel {
+                uv[0] = -&uv[0];
+                uv[1] = -&uv[1];
+            }
+        }
+        let body = n::build(
+            oblique_axis(definition),
+            n::NumericalOptions::default(),
+            &mut Decider::default(),
+        )
+        .unwrap();
+        let file = output::build(
+            &body,
+            &NumericalStepOptions::default(),
+            &mut Decider::default(),
+        )
+        .unwrap();
+        file.check_written(file.bytes(), &mut Decider::default())
+            .unwrap();
+        let text = std::str::from_utf8(file.bytes()).unwrap();
+        let entities: std::collections::BTreeMap<usize, &str> = text
+            .lines()
+            .filter_map(|line| {
+                let (id, value) = line.strip_prefix('#')?.split_once('=')?;
+                Some((id.parse().unwrap(), value))
+            })
+            .collect();
+        let mut heights = Vec::new();
+        for entity in entities
+            .values()
+            .filter(|e| e.starts_with("SURFACE_CURVE("))
+        {
+            let refs = references(entity);
+            if !entities[&refs[0]].starts_with("CIRCLE(") {
+                continue;
+            }
+            for pcurve in refs.iter().skip(1).map(|id| entities[id]) {
+                let refs = references(pcurve);
+                if !entities[&refs[0]].starts_with("CYLINDRICAL_SURFACE(") {
+                    continue;
+                }
+                let placement = references(entities[&refs[0]])[0];
+                let axis = references(entities[&placement])[1];
+                let (_, components) = entities[&axis].split_once(",(").unwrap();
+                let components: Vec<_> = components
+                    .split(')')
+                    .next()
+                    .unwrap()
+                    .split(',')
+                    .map(q)
+                    .collect();
+                assert!(!components[0].is_zero() && !components[2].is_zero());
+                let line = references(entities[&refs[1]])[0];
+                let refs = references(entities[&line]);
+                let origin = pair(entities[&refs[0]]);
+                let direction = references(entities[&refs[1]])[0];
+                let direction = pair(entities[&direction]);
+                assert!(!direction[0].is_zero());
+                assert!(
+                    direction[1].is_zero(),
+                    "emitted pcurve V slope: {direction:?}"
+                );
+                heights.push(if antiparallel {
+                    -&origin[1]
+                } else {
+                    origin[1].clone()
+                });
+            }
+        }
+        heights.sort();
+        assert_eq!(heights.len(), 2);
+        for (actual, expected) in heights.iter().zip([offset.clone(), &offset + &q("1")]) {
+            assert!(
+                (actual - &expected).abs() < q("1e-10"),
+                "{actual} != {expected}"
+            );
+        }
+        if let Ok(path) = std::env::var("CATALLAX_OBLIQUE_HEIGHT_EVIDENCE") {
+            std::fs::write(
+                std::path::Path::new(&path)
+                    .join(format!("oblique-axis-antiparallel-{antiparallel}.step")),
+                file.bytes(),
+            )
+            .unwrap();
+        }
+    }
+}

@@ -236,8 +236,10 @@ pub(super) fn build(
                 planes.push(None);
             }
             Surface::BSpline(SplineSupport::RationalAtlas(source)) => {
-                face.surface =
-                    Surface::BSpline(spline::atlas(source, &mut errors, options, dec)?.into());
+                let written = spline::atlas(source, &mut errors, options, dec).map_err(|error| {
+                    Refusal::new(error.code, format!("face {:?}: {}", face.key, error.detail))
+                })?;
+                face.surface = Surface::BSpline(written.into());
                 for trim in face.loops.iter_mut().flatten() {
                     for uv in &mut trim.uv {
                         for value in uv {

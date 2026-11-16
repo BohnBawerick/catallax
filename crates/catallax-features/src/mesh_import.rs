@@ -256,6 +256,7 @@ pub(crate) fn build(
     let body = model.add_body(Body {
         kind: BodyKind::Solid,
         lumps,
+        wires: Vec::new(),
         marks: Default::default(),
     });
     Ok((body, radius))

@@ -33,12 +33,38 @@ fn check_with_incidence(model: &Model, body: BodyId, exact_incidence: bool) -> V
         vertex_shells: BTreeMap::new(),
     };
     let b = model.body(body);
-    if (matches!(b.kind, BodyKind::Solid | BodyKind::Surface) && b.lumps.is_empty())
-        || (b.kind == BodyKind::Empty && !b.lumps.is_empty())
+    if (matches!(b.kind, BodyKind::Solid | BodyKind::Surface)
+        && (b.lumps.is_empty() || !b.wires.is_empty()))
+        || (b.kind == BodyKind::Empty && (!b.lumps.is_empty() || !b.wires.is_empty()))
+        || (b.kind == BodyKind::Wire && (!b.lumps.is_empty() || b.wires.is_empty()))
     {
         check.fault("topology.body-kind", || {
             format!("body {body:?} has incompatible lumps")
         });
+    }
+    let mut wire_edges = BTreeSet::new();
+    for wire in &b.wires {
+        if wire.coedges.is_empty() {
+            check.fault("topology.empty-part", || "wire has no coedge".into());
+        }
+        for (index, coedge) in wire.coedges.iter().enumerate() {
+            if !check.coedges.insert(*coedge) {
+                check.shared(coedge);
+            }
+            let edge = model.coedge(*coedge).edge;
+            if !wire_edges.insert(edge) {
+                check.shared(&edge);
+            }
+            check.edge_geometry(edge);
+            let (start, end) = model.coedge_ends(*coedge);
+            if (start.is_none() && end.is_none() && wire.coedges.len() != 1)
+                || (index > 0 && model.coedge_ends(wire.coedges[index - 1]).1 != start)
+            {
+                check.fault("topology.wire-not-connected", || {
+                    format!("wire is broken at coedge {coedge:?}")
+                });
+            }
+        }
     }
     for l in &b.lumps {
         if !check.lumps.insert(*l) {
@@ -418,8 +444,6 @@ impl Checker<'_> {
     }
 
     fn edge(&mut self, e: EdgeId, shell: ShellId) {
-        let m = self.model;
-        let edge = m.edge(e);
         if let Some(previous) = self.edge_shells.get(&e) {
             if *previous != shell {
                 self.shared(&e);
@@ -427,6 +451,12 @@ impl Checker<'_> {
         } else {
             self.edge_shells.insert(e, shell);
         }
+        self.edge_geometry(e);
+    }
+
+    fn edge_geometry(&mut self, e: EdgeId) {
+        let m = self.model;
+        let edge = m.edge(e);
         if edge.start.is_none() != edge.end.is_none()
             || (edge.start == edge.end && m.geom().curve(edge.curve).is_closed() == Some(false))
         {

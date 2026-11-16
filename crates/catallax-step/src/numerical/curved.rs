@@ -220,11 +220,7 @@ pub(super) fn build(
             ],
         ));
     }
-    let shell = w.graph.add("CLOSED_SHELL", vec![text("''"), refs(faces)]);
-    let solid = w.graph.add(
-        "MANIFOLD_SOLID_BREP",
-        vec![text("'numerical approximate'"), shell.into()],
-    );
+    let solid = w.representation(faces, body)?;
     let emitted_native_trims = payload.body.native_trims().to_vec();
     let mut artifact = w.finish(
         solid,

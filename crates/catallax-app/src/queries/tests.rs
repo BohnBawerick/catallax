@@ -269,6 +269,7 @@ fn empty_bodies_have_empty_curves_zero_overlap_and_no_contacts() {
     let body = model.add_body(Body {
         kind: BodyKind::Empty,
         lumps: vec![],
+        wires: Vec::new(),
         marks: MarkLog::new(),
     });
     let solid = cube(&mut model, [0, 0, 0], 2);

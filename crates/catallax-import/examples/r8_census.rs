@@ -342,6 +342,7 @@ fn body_kind(kind: BodyKind) -> &'static str {
     match kind {
         BodyKind::Solid => "solid",
         BodyKind::Surface => "surface",
+        BodyKind::Wire => "wire",
         BodyKind::Empty => "empty",
         _ => "unknown",
     }

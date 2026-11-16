@@ -269,12 +269,12 @@ pub(super) fn build(
             trim.curve = spline::uv_curve(&trim.curve, parameters, &mut errors, options, dec)?;
         }
     }
-    let emitted = catallax_topology::numerical::build_with_native_trims(
-        definition,
-        native_trims,
-        body.options().clone(),
-        dec,
-    )?;
+    let build = if body.kind() == BodyKind::Surface {
+        catallax_topology::numerical::build_surface_with_native_trims
+    } else {
+        catallax_topology::numerical::build_with_native_trims
+    };
+    let emitted = build(definition, native_trims, body.options().clone(), dec)?;
     Ok(Payload {
         body: emitted,
         lines,

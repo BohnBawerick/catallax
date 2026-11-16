@@ -98,6 +98,7 @@ fn open_surface_has_area_and_bounds_but_refuses_volume_and_every_boolean_shortcu
     let empty = model.add_body(Body {
         kind: BodyKind::Empty,
         lumps: Vec::new(),
+        wires: Vec::new(),
         marks: Default::default(),
     });
     for op in [BoolOp::Unite, BoolOp::Subtract, BoolOp::Intersect] {
@@ -268,6 +269,7 @@ fn surface_topology_rejects_nonmanifold_edge_use_and_empty_models() {
     let invalid = model.add_body(Body {
         kind: BodyKind::Surface,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: Default::default(),
     });
     assert!(

@@ -15,7 +15,7 @@ use std::{
 };
 
 const MAGIC: &[u8; 8] = b"CXBODY\0\0";
-const VERSION: u32 = 1;
+const VERSION: u32 = 2;
 
 mod json;
 pub use json::charge_json_number;
@@ -166,6 +166,7 @@ impl<'a> Writer<'a> {
 }
 
 pub struct Reader<'a> {
+    version: u32,
     data: &'a [u8],
     at: usize,
     objects: &'a [Option<Box<dyn Any>>],
@@ -175,6 +176,10 @@ pub struct Reader<'a> {
 }
 
 impl<'a> Reader<'a> {
+    pub fn version(&self) -> u32 {
+        self.version
+    }
+
     pub fn handle<T: 'static>(&self, index: u32) {
         let mut handles = self.handles.borrow_mut();
         let entry = handles.entry(TypeId::of::<T>()).or_default();
@@ -324,10 +329,14 @@ pub fn decode<T: Codec>(bytes: &[u8], decider: &mut Decider) -> Result<T, Refusa
     if bytes.get(..8) != Some(MAGIC.as_slice()) {
         return Err(invalid("body handover magic is missing"));
     }
-    let version = bytes
-        .get(8..12)
-        .ok_or_else(|| invalid("truncated version"))?;
-    if version != VERSION.to_le_bytes() {
+    let version = u32::from_le_bytes(
+        bytes
+            .get(8..12)
+            .ok_or_else(|| invalid("truncated version"))?
+            .try_into()
+            .map_err(|_| invalid("truncated version"))?,
+    );
+    if version != 1 && version != VERSION {
         return Err(Refusal::new(
             "handover.version-mismatch",
             "unsupported body handover format version",
@@ -347,6 +356,7 @@ pub fn decode<T: Codec>(bytes: &[u8], decider: &mut Decider) -> Result<T, Refusa
     let handles = RefCell::new(HashMap::new());
     let mut rationals = RationalCache::default();
     let mut reader = Reader {
+        version,
         data: &bytes[12..end],
         at: 0,
         objects: &objects,
@@ -382,6 +392,7 @@ pub fn decode<T: Codec>(bytes: &[u8], decider: &mut Decider) -> Result<T, Refusa
     objects.resize_with(count, || None);
     for _ in 0..count {
         let mut reader = Reader {
+            version,
             data: &bytes[12..end],
             at,
             objects: &objects,
@@ -402,6 +413,7 @@ pub fn decode<T: Codec>(bytes: &[u8], decider: &mut Decider) -> Result<T, Refusa
         reader.take(length)?;
         at = reader.at;
         let mut record = Reader {
+            version,
             data: &bytes[12 + start..12 + start + length],
             at: 0,
             objects: &objects,
@@ -414,6 +426,7 @@ pub fn decode<T: Codec>(bytes: &[u8], decider: &mut Decider) -> Result<T, Refusa
         objects[id as usize] = Some(value);
     }
     let mut reader = Reader {
+        version,
         data: &bytes[12..end],
         at,
         objects: &objects,
@@ -426,6 +439,7 @@ pub fn decode<T: Codec>(bytes: &[u8], decider: &mut Decider) -> Result<T, Refusa
     reader.take(length)?;
     reader.finish()?;
     let mut root = Reader {
+        version,
         data: &bytes[12 + start..12 + start + length],
         at: 0,
         objects: &objects,
@@ -1142,7 +1156,7 @@ mod tests {
     }
 
     #[test]
-    fn metered_json_keeps_the_version_one_bytes() {
+    fn metered_json_preserves_payload_and_reads_version_one() {
         struct Metadata(Vec<String>);
         impl Codec for Metadata {
             fn write(&self, w: &mut Writer) -> Result<(), Refusal> {
@@ -1156,7 +1170,7 @@ mod tests {
         let json = serde_json::to_vec(&value.0).unwrap();
         let kind = type_name::<Metadata>();
         let mut legacy = MAGIC.to_vec();
-        legacy.extend(VERSION.to_le_bytes());
+        legacy.extend(1_u32.to_le_bytes());
         legacy.extend((kind.len() as u64).to_le_bytes());
         legacy.extend(kind.as_bytes());
         legacy.extend(0_u64.to_le_bytes());
@@ -1165,7 +1179,10 @@ mod tests {
         legacy.extend((json.len() as u64).to_le_bytes());
         legacy.extend(json);
         legacy.extend(Sha256::digest(&legacy).as_slice());
-        assert_eq!(encode(&value, &mut Decider::default()).unwrap(), legacy);
+        let mut current = legacy[..legacy.len() - 32].to_vec();
+        current[8..12].copy_from_slice(&2_u32.to_le_bytes());
+        current.extend(Sha256::digest(&current).as_slice());
+        assert_eq!(encode(&value, &mut Decider::default()).unwrap(), current);
         let restored: Metadata = decode(&legacy, &mut Decider::default()).unwrap();
         assert_eq!(restored.0, value.0);
     }

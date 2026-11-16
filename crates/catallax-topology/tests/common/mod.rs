@@ -378,6 +378,7 @@ pub fn body_from_lumps(m: &mut Model, lumps: Vec<LumpId>) -> BodyId {
     m.add_body(Body {
         kind: BodyKind::Solid,
         lumps,
+        wires: Vec::new(),
         marks: MarkLog::new(),
     })
 }

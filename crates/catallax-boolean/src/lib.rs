@@ -187,6 +187,7 @@ fn apart(model: &mut Model, a: BodyId, b: BodyId, op: BoolOp) -> BooleanAnswer {
     let body = model.add_body(Body {
         kind,
         lumps,
+        wires: Vec::new(),
         marks: marks.clone(),
     });
     let (body, marks) = fit_marked(model, body, marks);
@@ -237,6 +238,7 @@ fn staged(
         let body = model.add_body(Body {
             kind: BodyKind::Empty,
             lumps: Vec::new(),
+            wires: Vec::new(),
             marks: operand_marks.clone(),
         });
         let (body, marks) = fit_marked(model, body, operand_marks);
@@ -306,6 +308,7 @@ fn staged(
             let body = model.add_body(Body {
                 kind: BodyKind::Solid,
                 lumps,
+                wires: Vec::new(),
                 marks: MarkLog::new(),
             });
             run!(Stage::Sew, make_maximal(model, body, dec))

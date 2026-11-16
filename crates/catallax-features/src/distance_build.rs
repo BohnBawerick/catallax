@@ -68,6 +68,7 @@ fn closed(model: &mut Model, band: RadialBand) -> BodyId {
     model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: Default::default(),
     })
 }
@@ -159,6 +160,7 @@ fn cylinder(model: &mut Model, skin: &crate::cylinder_skin::CylinderSkin) -> Bod
     model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: Default::default(),
     })
 }

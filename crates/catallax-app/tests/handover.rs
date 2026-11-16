@@ -397,6 +397,7 @@ fn tiny_remaining_allowance_stops_before_a_large_root_is_materialized() {
         source.model.add_body(catallax_topology::Body {
             kind: catallax_topology::BodyKind::Empty,
             lumps: Vec::new(),
+            wires: Vec::new(),
             marks: Default::default(),
         });
     }
@@ -418,5 +419,65 @@ fn tiny_remaining_allowance_stops_before_a_large_root_is_materialized() {
     assert!(
         written <= 16,
         "materialized {written} bytes with only 16 work units left"
+    );
+}
+
+fn legacy_v1(text: &str) -> Vec<u8> {
+    text.lines()
+        .filter(|line| !line.starts_with('#'))
+        .flat_map(str::split_ascii_whitespace)
+        .map(|byte| u8::from_str_radix(byte, 16).unwrap())
+        .collect()
+}
+
+#[test]
+fn version_one_bodies_keep_geometry_history_and_empty_kind() {
+    let bytes = legacy_v1(include_str!("handover_v1/certified.hex"));
+    let imported = read_body(&bytes, &mut Decider::default()).unwrap();
+    let source = build(&block());
+    assert_eq!(queries(&source), queries(&imported));
+    assert_eq!(step(&source), step(&imported));
+    assert_eq!(
+        &write_body(&imported, &mut Decider::default()).unwrap()[8..12],
+        &2_u32.to_le_bytes()
+    );
+
+    let empty: catallax_topology::Body = catallax_numbers::transfer::decode(
+        &legacy_v1(include_str!("handover_v1/empty.hex")),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    assert_eq!(empty.kind, catallax_topology::BodyKind::Empty);
+    assert!(empty.lumps.is_empty() && empty.wires.is_empty() && empty.marks.is_empty());
+
+    let bytes = legacy_v1(include_str!("handover_v1/numerical.hex"));
+    let imported = read_numerical(&bytes, &mut Decider::default()).unwrap();
+    let source = catallax_app::build_numerical(
+        numerical_cases::fixture("0.001"),
+        Default::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let source = source
+        .rebuild(
+            source.definition().clone(),
+            source.options().clone(),
+            &mut Decider::default(),
+        )
+        .unwrap();
+    assert_eq!(source.counts(), imported.counts());
+    assert_eq!(source.options(), imported.options());
+    assert_eq!(source.evidence(), imported.evidence());
+    assert_eq!(source.history().len(), imported.history().len());
+    let export = |body: &catallax_app::NumericalBody| {
+        catallax_step::numerical::build(body, &Default::default(), &mut Decider::default())
+            .unwrap()
+            .bytes()
+            .to_vec()
+    };
+    assert_eq!(export(&source), export(&imported));
+    assert_eq!(
+        &write_numerical(&imported, &mut Decider::default()).unwrap()[8..12],
+        &2_u32.to_le_bytes()
     );
 }

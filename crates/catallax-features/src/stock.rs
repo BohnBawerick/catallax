@@ -132,6 +132,7 @@ pub(crate) fn build(
     let body = model.add_body(Body {
         kind: model.body(raw).kind,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: MarkLog::new(),
     });
     let bound = local_bound

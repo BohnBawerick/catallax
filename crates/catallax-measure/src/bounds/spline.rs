@@ -188,6 +188,7 @@ pub(super) fn prism_faces(
     let body = scratch.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: MarkLog::new(),
     });
     let checked = SplinePrism::check(&scratch, body, dec)?;

@@ -261,6 +261,7 @@ fn planted_copy(model: &Model, body: BodyId, surface: Surface, plant: Plant) -> 
     let body = copy.add_body(Body {
         kind: original.kind,
         lumps,
+        wires: Vec::new(),
         marks: original.marks.clone(),
     });
     Blind { model: copy, body }
@@ -657,6 +658,7 @@ fn across_shells(blind: &mut Blind) -> Value {
             blind.model.add_body(Body {
                 kind: catallax_topology::BodyKind::Solid,
                 lumps: vec![lump],
+                wires: Vec::new(),
                 marks: catallax_numbers::MarkLog::new(),
             })
         })
@@ -864,6 +866,7 @@ fn planted() -> Value {
     let overlapping = model.add_body(Body {
         kind: catallax_topology::BodyKind::Solid,
         lumps,
+        wires: Vec::new(),
         marks: catallax_numbers::MarkLog::new(),
     });
     let faults: Vec<_> = model.check(overlapping).iter().map(|f| f.code).collect();
@@ -888,6 +891,7 @@ fn planted() -> Value {
     let coincident = model.add_body(Body {
         kind: catallax_topology::BodyKind::Solid,
         lumps,
+        wires: Vec::new(),
         marks: catallax_numbers::MarkLog::new(),
     });
     let faults: Vec<_> = model.check(coincident).iter().map(|f| f.code).collect();

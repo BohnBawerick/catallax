@@ -68,6 +68,7 @@ fn finish(model: &mut Model, faces: Vec<FaceId>) -> BodyId {
     model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: MarkLog::new(),
     })
 }
@@ -344,6 +345,7 @@ pub(super) fn void_block() -> (Model, BodyId) {
     let body = model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: MarkLog::new(),
     });
     assert!(model.check(body).is_empty());

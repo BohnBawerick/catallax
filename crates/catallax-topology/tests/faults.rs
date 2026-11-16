@@ -227,6 +227,7 @@ blind_test!(case_32_body_kind_and_empty_parts, {
     let b = m.add_body(Body {
         kind: BodyKind::Empty,
         lumps,
+        wires: Vec::new(),
         marks: MarkLog::new(),
     });
     faults(&m, b, &["topology.body-kind"]);

@@ -877,6 +877,7 @@ mod tests {
         model.add_body(Body {
             kind: BodyKind::Solid,
             lumps: vec![lump],
+            wires: Vec::new(),
             marks: MarkLog::new(),
         })
     }

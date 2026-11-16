@@ -481,6 +481,7 @@ fn voids_multiple_lumps_and_repeated_bodies() {
     let body = model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: MarkLog::new(),
     });
     assert!(model.check(body).is_empty());
@@ -538,6 +539,7 @@ fn voids_multiple_lumps_and_repeated_bodies() {
     let multiple = model.add_body(Body {
         kind: BodyKind::Solid,
         lumps,
+        wires: Vec::new(),
         marks: MarkLog::new(),
     });
     assert!(model.check(multiple).is_empty());
@@ -619,6 +621,7 @@ fn branch_body_with_sense(source_sense: Sense) -> (Model, BodyId) {
     let body = model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: MarkLog::new(),
     });
     (model, body)
@@ -871,6 +874,7 @@ fn irrational_intersection_circles_remain_analytic() {
     let body = model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: MarkLog::new(),
     });
     assert!(model.check(body).is_empty());
@@ -1117,6 +1121,7 @@ fn irrational_intersection_lines_and_trimmed_seam_arcs_remain_analytic() {
     let body = model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: MarkLog::new(),
     });
     assert!(model.check(body).is_empty());
@@ -1207,6 +1212,7 @@ fn irrational_radius_cap() -> (Model, BodyId) {
     let body = model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: MarkLog::new(),
     });
     assert!(model.check(body).is_empty());
@@ -1448,6 +1454,7 @@ fn steinmetz_ellipse_arcs_stay_analytic_with_a_valid_deviation_bound() {
     let body = model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: MarkLog::new(),
     });
     assert!(model.check(body).is_empty());
@@ -1695,6 +1702,7 @@ fn loopless_torus_void_keeps_its_natural_seam_wire_orientation() {
     let body = model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: MarkLog::new(),
     });
     let (file, report) = export(&model, &[body], &StepOptions::default());

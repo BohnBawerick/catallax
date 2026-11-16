@@ -16,6 +16,8 @@ python3 -B tools/checkpoint/checkpoint.py scoreboard --tools $TOOLS --sources $S
 python3 -B tools/checkpoint/checkpoint.py census --tools $TOOLS --sources $SOURCES --selection $SELECTION --out RUN/census
 ```
 
+After this cut, the scoreboard command also runs the phase-2 targets (P8, P9 and the curved-housing chain), and it moves a census hole off-centre when the centred hole removes nothing. [tools/checkpoint/phase2](../../tools/checkpoint/phase2/README.md) defines both. The cut-run tables below used the earlier command.
+
 Each command builds its own binaries and writes `scoreboard.md` or `census.md` beside its raw data. Wall time on the work PC at the cut: 14.2 min for the scoreboard and 13.0 min for the census, on a warm target directory. A cold release build adds about 4 min to each command. Installing the tools the first time adds about 5 min.
 
 ## Coverage count

@@ -1,0 +1,15 @@
+{
+  "format": "catallax-head-to-head-case/1",
+  "recipe": "phase2/P8-spring-threaded-boss.json",
+  "recipe_sha256": "da8fab33822606ab9d090b9844b8f18a78921da31103fe70c35760006eb971dc",
+  "edit": {
+    "step": "spring_path",
+    "path": [
+      "segments",
+      0,
+      "rise"
+    ],
+    "value": "17.5"
+  },
+  "definition": "Plate, boss, an 8-turn round thread swept on the boss wall and a 5-turn spring standing in the plate. Edit: spring pitch 3 to 3.5."
+}

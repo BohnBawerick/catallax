@@ -1,0 +1,16 @@
+{
+  "format": "catallax-head-to-head-case/1",
+  "recipe": "phase2/P9-lofted-duct.json",
+  "recipe_sha256": "cfa5da46368a02abb2833aba3bf0877cd0f419e792f3f64a631e6f0fb764b0ea",
+  "edit": {
+    "step": "inner_outlet",
+    "path": [
+      "loops",
+      0,
+      0,
+      "radius"
+    ],
+    "value": "10.5"
+  },
+  "definition": "Rounded-rectangle inlet lofted to a round outlet; the wall is the outer loft minus an inset inner loft. Edit: the round outlet wall thins from 2 to 1.5."
+}

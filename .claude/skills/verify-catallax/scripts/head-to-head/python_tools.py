@@ -63,6 +63,39 @@ class CadQuery:
         face = max(part.Faces(), key=lambda f: f.Center().z)
         return part.shell([face], -thickness)
 
+    def coil(self, radius, z, angle, rise, tube):
+        # Circle in the axial plane y=0, carried along a right-handed helix about z.
+        # isFrenet=False selects OCCT's corrected Frenet frame, its torsion-free frame.
+        cq = self.cq
+        path = cq.Wire.makeHelix(rise * 360 / angle, rise, radius, cq.Vector(0, 0, z))
+        profile = cq.Wire.makeCircle(tube, cq.Vector(radius, 0, z), cq.Vector(0, 1, 0))
+        return cq.Solid.sweep(profile, [], path, makeSolid=True, isFrenet=False)
+
+    def loft(self, sections):
+        cq = self.cq
+        def wire(kind, shape, z):
+            if kind == 'circle':
+                return cq.Wire.makeCircle(shape, cq.Vector(0, 0, z), cq.Vector(0, 0, 1))
+            points = [[cq.Vector(x, y, z) for x, y in segment[1:]] for segment in shape]
+            return cq.Wire.assembleEdges([cq.Edge.makeLine(*p) if len(p) == 2 else cq.Edge.makeThreePointArc(*p)
+                                          for p in points])
+        return cq.Solid.makeLoft([wire(*section) for section in sections], ruled=False)
+
+    def bezier_prism(self, controls, top, y, length):
+        cq = self.cq
+        (x0, z0), (x3, z3) = controls[0], controls[-1]
+        arch = cq.Edge.makeBezier([cq.Vector(x, y, z) for x, z in controls])
+        rest = cq.Wire.makePolygon([(x3, y, z3), (x3, y, top), (x0, y, top), (x0, y, z0)])
+        wire = cq.Wire.assembleEdges([arch, *rest.Edges()])
+        return cq.Solid.extrudeLinear(wire, [], cq.Vector(0, length, 0))
+
+    def blend_above(self, part, z, radius):
+        solids = part.Solids()
+        if len(solids) != 1:
+            raise ValueError('blend requires the complete single target solid')
+        edges = [e for e in solids[0].Edges() if e.BoundingBox().zmin > z]
+        return solids[0].fillet(radius, edges)
+
     def import_step(self, path):
         solids = self.cq.importers.importStep(str(path)).solids().vals()
         if len(solids) != 1:
@@ -139,6 +172,33 @@ class SMLib:
 
     def shell_top(self, part, thickness):
         return part.shell(thickness, part.faces().top())
+
+    def coil(self, radius, z, angle, rise, tube):
+        sm = self.sm
+        plane = sm.Plane(origin=(radius, 0, z), x_dir=(1, 0, 0), z_dir=(0, 1, 0))
+        path = sm.Helix(rise * 360 / angle, rise, radius, center=(0, 0, z))
+        return sm.sweep(plane * sm.Circle(tube), path, orient=True)
+
+    def loft(self, sections):
+        sm = self.sm
+        def wire(kind, shape, z):
+            if kind == 'circle':
+                return sm.Circle(shape).translate(0, 0, z)
+            points = [[(x, y, z) for x, y in segment[1:]] for segment in shape]
+            return sm.Wire([sm.Line(*p) if len(p) == 2 else sm.ThreePointArc(*p) for p in points])
+        return sm.loft([wire(*section) for section in sections])
+
+    def bezier_prism(self, controls, top, y, length):
+        sm = self.sm
+        (x0, z0), (x3, z3) = controls[0], controls[-1]
+        arch = sm.Bezier(*[(x, y, z) for x, z in controls])
+        rest = sm.Polyline((x3, y, z3), (x3, y, top), (x0, y, top), (x0, y, z0))
+        return sm.extrude(sm.make_face(sm.Wire([arch, rest])), abs(length),
+                          direction=(0, 1 if length > 0 else -1, 0))
+
+    def blend_above(self, part, z, radius):
+        edges = [e for e in part.edges() if e.bbox().min.z > z]
+        return part.fillet(edges, radius)
 
     def import_step(self, path):
         part = self.sm.import_step(str(path))

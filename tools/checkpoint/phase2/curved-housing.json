@@ -1,0 +1,226 @@
+{
+  "format": "catallax-recipe/5",
+  "name": "Curved housing: loft, spline cut, fillet across patches",
+  "steps": [
+    {
+      "id": "section0",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "circle",
+            "id": "s0",
+            "centre": [
+              "0",
+              "0"
+            ],
+            "radius": "10"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section1",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "15"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "circle",
+            "id": "s1",
+            "centre": [
+              "0",
+              "0"
+            ],
+            "radius": "14"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "section2",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "30"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "circle",
+            "id": "s2",
+            "centre": [
+              "0",
+              "0"
+            ],
+            "radius": "10"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "housing",
+      "op": "loft",
+      "shape": "smooth",
+      "sections": [
+        {
+          "profile": "section0",
+          "start": [
+            "s0"
+          ]
+        },
+        {
+          "profile": "section1",
+          "start": [
+            "s1"
+          ]
+        },
+        {
+          "profile": "section2",
+          "start": [
+            "s2"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tool_profile",
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "1",
+          "1",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "20",
+          "0"
+        ]
+      },
+      "loops": [
+        [
+          {
+            "kind": "bezier",
+            "id": "arch",
+            "controls": [
+              [
+                "-10",
+                "20"
+              ],
+              [
+                "10",
+                "20"
+              ]
+            ],
+            "to": [
+              "20",
+              "34"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "right",
+            "to": [
+              "20",
+              "40"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "roof",
+            "to": [
+              "-20",
+              "40"
+            ]
+          },
+          {
+            "kind": "line",
+            "id": "left",
+            "to": [
+              "-20",
+              "34"
+            ]
+          }
+        ]
+      ]
+    },
+    {
+      "id": "tool",
+      "op": "extrude",
+      "profile": "tool_profile",
+      "distance": "40"
+    },
+    {
+      "id": "cut",
+      "op": "boolean",
+      "kind": "subtract",
+      "target": "housing",
+      "tool": "tool"
+    },
+    {
+      "id": "rounded",
+      "op": "fillet",
+      "body": "cut",
+      "radius": "2",
+      "edges": [
+        {
+          "between": [
+            {
+              "step": "housing",
+              "role": {
+                "side": {
+                  "segment": "s0"
+                }
+              }
+            },
+            {
+              "step": "tool",
+              "role": {
+                "side": {
+                  "segment": "arch"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "result": "rounded"
+}

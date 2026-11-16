@@ -131,6 +131,10 @@ Any tolerance growth explicitly marks the body as repaired; zero growth establis
 
 The `catallax-import-tolerances/1` record saves controls, every current vertex/edge value and ordered growth history, scoped to the immutable source SHA-256 and body name.
 `tolerant::reopen` rereads those exact bytes and reproduces the changes, including endpoint propagation, then compares the complete record.
+Recognition retains the caller's Decider and deadline.
+Reopen prepays the complete saved inventory and history, including quadratic work for variable-length numeric text, before parsing it.
+Saved values use canonical integers or fractions; exponent notation is rejected before it can expand into a large integer.
+The replay compares current entity values and history with explicit work charges, without constructing a second full record.
 Changed or renumbered sources require separate correspondence and never inherit these bindings automatically.
 This API does not add geometry-reading families or implement the later ShapeFix-style healing and body tiers.
 The existing certified and numerical import entry points retain their current behavior.

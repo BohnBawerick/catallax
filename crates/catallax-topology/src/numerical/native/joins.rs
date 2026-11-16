@@ -25,9 +25,7 @@ fn endpoint(
     let at = if let Some(curve) = curve {
         uv(curve, t, dec)?
     } else if matches!(face.surface, Surface::Plane(_)) {
-        let p = edge
-            .curve
-            .evaluate(&Ball::from_rational(t, 128), dec)?
+        let p = crate::numerical::curve_at(&edge.curve, t, dec)?
             .ok_or_else(|| bad("unsupported", "edge has no parameter evaluator"))?;
         let uv = face
             .surface

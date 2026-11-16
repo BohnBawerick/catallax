@@ -13,6 +13,8 @@ mod rings;
 mod shell;
 #[path = "hole_caps/skew.rs"]
 mod skew;
+#[path = "hole_caps/walls.rs"]
+mod walls;
 
 fn q(text: &str) -> Rational {
     Rational::parse(text).unwrap()

@@ -183,9 +183,7 @@ pub(super) fn samples(
         dec.charge_work(1)?;
         let at = uv(curve, t, dec)?;
         let q = point(&face.surface, &at, dec)?;
-        let p = edge
-            .curve
-            .evaluate(&Ball::from_rational(t, BITS), dec)?
+        let p = crate::numerical::curve_at(&edge.curve, t, dec)?
             .ok_or_else(|| bad("unsupported", "edge has no parameter evaluator"))?;
         let values = [midpoint(&at[0], dec)?, midpoint(&at[1], dec)?];
         samples.push(NumericalSample {
@@ -267,9 +265,7 @@ pub(super) fn check_loops(
                     } else {
                         let share = Rational::from_ratio(i, SUBDIVISIONS).unwrap();
                         let t = a + &(&share * &(b - a));
-                        let p = edge
-                            .curve
-                            .evaluate(&Ball::from_rational(&t, BITS), dec)?
+                        let p = crate::numerical::curve_at(&edge.curve, &t, dec)?
                             .ok_or_else(|| bad("unsupported", "edge has no parameter evaluator"))?;
                         curved::parameters(&face.surface, &p, dec)?
                     };

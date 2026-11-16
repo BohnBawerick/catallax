@@ -3,6 +3,7 @@
 use super::*;
 use catallax_boolean::numerical::NumericalCylinderSource;
 use catallax_features::hole::cylinder_ring_curve;
+use catallax_intersect::numerical_native_cylinder_intersection;
 use catallax_numbers::{NumericalEvidence, transfer};
 use catallax_shapes::{BSplineCurve, Curve, Surface};
 use catallax_topology::Loop;
@@ -35,7 +36,7 @@ fn on(source: &BSplineSurface, uv: &[Rational; 3], dec: &Decider) -> [f64; 3] {
 
 #[test]
 fn shared_ring_anchor_keeps_original_native_maps_after_diameter_edit() {
-    let (records, work) = with_operation_budget(100_000_000, || {
+    let (records, work) = with_operation_budget(20_000_000, || {
         let mut dec = Decider::default();
         let mut records = Vec::new();
         let mut previous_keys = None;
@@ -205,6 +206,81 @@ fn shared_ring_anchor_keeps_original_native_maps_after_diameter_edit() {
                 assert!(distance(actual, point) <= 1e-7);
             }
             assert_eq!(section.quarter, 1);
+            let incoming = numerical_native_cylinder_intersection(
+                [stock.original(), &component.span.cylinder],
+                [
+                    stock.axis_parameters_mm().clone(),
+                    component.span.interval_mm.clone(),
+                ],
+                &mut dec,
+            )
+            .unwrap();
+            assert!(
+                incoming.sources()[0]
+                    .source()
+                    .same_definition(stock.source())
+            );
+            assert!(
+                incoming.sources()[1]
+                    .source()
+                    .same_definition(part.cylinder_source.source())
+            );
+            let mut joins = Vec::new();
+            for (index, piece) in incoming.pieces().iter().enumerate() {
+                for (end, parameter) in piece.curve().domain().into_iter().enumerate() {
+                    let endpoint = at(piece.curve(), parameter, &mut dec);
+                    if distance(endpoint.each_ref().map(Rational::to_f64_nearest), point) > 1e-7 {
+                        continue;
+                    }
+                    let native = piece
+                        .uv()
+                        .each_ref()
+                        .map(|curve| at(curve, parameter, &mut dec));
+                    assert!(
+                        distance(
+                            native[0].each_ref().map(Rational::to_f64_nearest),
+                            stock_uv.each_ref().map(Rational::to_f64_nearest)
+                        ) <= 1e-7
+                    );
+                    assert!(
+                        distance(
+                            native[1].each_ref().map(Rational::to_f64_nearest),
+                            tool_uv.each_ref().map(Rational::to_f64_nearest)
+                        ) <= 1e-7
+                    );
+                    for (source, uv) in incoming.sources().iter().zip(&native) {
+                        assert!(distance(on(source.source(), uv, &dec), point) <= 1e-7);
+                    }
+                    joins.push((index, end));
+                }
+            }
+            let [(piece_index, end)] = joins.as_slice() else {
+                panic!("one incoming wall section at the owned original-ring anchor: {joins:?}")
+            };
+            let piece = &incoming.pieces()[*piece_index];
+            let mut joined = component.definition.clone();
+            let other = joined.vertices.len();
+            joined
+                .vertices
+                .push(catallax_topology::numerical::NumericalVertex {
+                    key: "stock-wall/other-end".into(),
+                    position: at(piece.curve(), piece.curve().domain()[1 - end], &mut dec),
+                });
+            let mut vertices = [other, other];
+            vertices[*end] = vertex;
+            joined
+                .edges
+                .push(catallax_topology::numerical::NumericalEdge {
+                    key: "stock-wall/coupled-section".into(),
+                    curve: Curve::BSpline(piece.curve().clone()),
+                    vertices,
+                    parameters: piece.curve().domain().map(Clone::clone),
+                });
+            assert_eq!(joined.edges.last().unwrap().vertices[*end], vertex);
+            assert_eq!(
+                joined.vertices[vertex].key,
+                part.definition.vertices[vertex].key
+            );
             let naive_uv = [&q("4") - &edge.parameters[1], q("1"), q("0")];
             let naive_error = distance(on(stock_quarter.carrier(), &naive_uv, &dec), stock_point);
             assert!(naive_error > 1e-3);
@@ -254,7 +330,13 @@ fn shared_ring_anchor_keeps_original_native_maps_after_diameter_edit() {
                 "stock_quarter":mapping.quarter(),"stock_uv":stock_uv.each_ref().map(ToString::to_string),
                 "tool_quarter":section.quarter,"tool_uv":tool_uv.each_ref().map(ToString::to_string),
                 "cone_uv":cone_uv.each_ref().map(ToString::to_string),"naive_error_mm":naive_error,
-                "status":"existing cone/tool plus original-stock-ring anchor; incoming cylinder/cylinder section pending"}));
+                "incoming_piece":piece_index,"incoming_end":end,
+                "incoming_pieces":incoming.pieces().iter().map(|piece| json!({
+                    "domains":piece.source_domains().clone().map(|domain|domain.map(|axis|axis.map(|v|v.to_string()))),
+                    "ends":piece.curve().domain().map(|t|at(piece.curve(),t,&mut dec).map(|v|v.to_f64_nearest())),
+                    "uv":piece.uv().each_ref().map(|curve|piece.curve().domain().map(|t|at(curve,t,&mut dec).map(|v|v.to_f64_nearest())))
+                })).collect::<Vec<_>>(),
+                "status":"incoming cylinder/cylinder section shares the original cone/tool/ring vertex and both native maps"}));
         }
         records
     });

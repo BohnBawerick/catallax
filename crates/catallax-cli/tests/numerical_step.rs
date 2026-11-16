@@ -200,3 +200,69 @@ fn numerical_step_requests_keep_tolerance_evidence_and_refused_artifacts_separat
     assert!(!broken.join("answer.step").exists());
     fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn skew_collar_numerical_request_exports_the_actual_hole_with_step_trace_spans() {
+    let proof = std::env::var_os("CATALLAX_SKEW_CLI_PROOF");
+    let dir = proof.as_ref().map_or_else(
+        || std::env::temp_dir().join(format!("catallax-skew-hole-{}", std::process::id())),
+        std::path::PathBuf::from,
+    );
+    fs::create_dir_all(&dir).unwrap();
+    let mut recipe: Value =
+        serde_json::from_str(include_str!("../../../parts/P2-collar.json")).unwrap();
+    recipe["steps"].as_array_mut().unwrap().push(json!({
+        "id":"hole","op":"hole","target":"collar","diameter":"2","depth":"through","tip":"flat",
+        "at":[{"id":"radial-0","point":["21/2","12","0"],"direction":["1","-1","1"]}]
+    }));
+    recipe["result"] = json!("hole");
+    let request = json!({"format":"catallax-request/1","source":"recipe",
+        "problem":{"format":"catallax-numerical-step/1","recipe":recipe,"tolerance_mm":"1e-7"},
+        "max_work":20_000_000,"out":dir});
+    let mut child = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+        .arg("stream")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    writeln!(child.stdin.take().unwrap(), "{request}").unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+    let row: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let manifest = &row["manifest"];
+    assert_eq!(manifest["status"], "answered", "{row}");
+    assert_eq!(manifest["proof"], "numerical");
+    assert_eq!(manifest["exact"], false);
+    assert_eq!(manifest["category"], "approximate");
+    assert_eq!(manifest["result"]["faces"], 23);
+    assert_eq!(manifest["step"]["tolerance_mm"], "1/10000000");
+    assert!(row["work"]["used"].as_u64().unwrap() < 20_000_000);
+    assert_eq!(
+        manifest["work_stages"]
+            .as_object()
+            .unwrap()
+            .values()
+            .map(|v| v.as_u64().unwrap())
+            .sum::<u64>(),
+        row["work"]["used"].as_u64().unwrap()
+    );
+    let operations = row["operation_log"]["operations"].as_array().unwrap();
+    for required in ["hole", "numerical-step", "numerical-step-reread"] {
+        assert!(
+            operations
+                .iter()
+                .any(|operation| operation["operation"] == required),
+            "{required}"
+        );
+    }
+    let file = fs::read(dir.join("answer.step")).unwrap();
+    assert!(catallax_step::check_seams(&file).is_ok());
+    fs::write(
+        dir.join("test-response.json"),
+        serde_json::to_vec_pretty(&row).unwrap(),
+    )
+    .unwrap();
+    if proof.is_none() {
+        fs::remove_dir_all(dir).unwrap();
+    }
+}

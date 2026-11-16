@@ -12,10 +12,14 @@ use catallax_shapes::{
 };
 use catallax_topology::{Body, BodyId, BodyKind, Edge, Lump, Model, Sense, Shell, Vertex};
 
+mod assembly;
+pub use assembly::{NumericalHole, build_numerical_hole};
 mod cap;
 pub use cap::{CapCurve, cap_curve};
 mod cap_ring;
 pub use cap_ring::append_planar_cap;
+mod cylinder_wall;
+pub use cylinder_wall::{CylinderWallBoundary, append_cylinder_wall};
 mod ring;
 pub use ring::{CylinderRingCurve, cylinder_ring_curve};
 

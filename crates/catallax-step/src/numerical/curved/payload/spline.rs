@@ -41,10 +41,12 @@ fn weight(
 
 pub(super) fn curve(
     source: &BSplineCurve,
+    parameters: &[Rational; 2],
     errors: &mut Errors,
     options: &NumericalStepOptions,
     dec: &mut Decider,
 ) -> Result<BSplineCurve, Refusal> {
+    let source = finite_curve(source, parameters, false, dec)?;
     let knots = knots(source.knots(), errors, options, dec)?;
     let controls = source
         .controls()
@@ -57,9 +59,10 @@ pub(super) fn curve(
     BSplineCurve::new(source.degree(), knots, controls, weights, dec)
 }
 
-fn finite_uv_curve(
+fn finite_curve(
     source: &BSplineCurve,
     parameters: &[Rational; 2],
+    uv: bool,
     dec: &mut Decider,
 ) -> Result<BSplineCurve, Refusal> {
     let mut interval = parameters.clone();
@@ -84,9 +87,13 @@ fn finite_uv_curve(
             lo,
             if first { degree + 1 } else { degree },
         ));
-        for [x, y, _, w] in net.into_iter().skip(usize::from(!first)) {
+        for [x, y, z, w] in net.into_iter().skip(usize::from(!first)) {
             dec.charge_work(1)?;
-            controls.push(Point3::new(&x / &w, &y / &w, 0.into()));
+            controls.push(Point3::new(
+                &x / &w,
+                &y / &w,
+                if uv { 0.into() } else { &z / &w },
+            ));
             weights.push(w);
         }
     }
@@ -107,7 +114,7 @@ pub(super) fn uv_curve(
     options: &NumericalStepOptions,
     dec: &mut Decider,
 ) -> Result<BSplineCurve, Refusal> {
-    let source = finite_uv_curve(source, parameters, dec)?;
+    let source = finite_curve(source, parameters, true, dec)?;
     let knots = knots(source.knots(), errors, options, dec)?;
     let controls = source
         .controls()
@@ -233,7 +240,7 @@ mod tests {
                 if reversed {
                     authored.reverse();
                 }
-                let finite = finite_uv_curve(&source, &authored, &mut dec).unwrap();
+                let finite = finite_curve(&source, &authored, true, &mut dec).unwrap();
                 assert_eq!(finite.domain(), interval.each_ref());
                 assert_eq!(finite.degree(), source.degree());
                 assert_eq!(

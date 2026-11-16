@@ -372,7 +372,7 @@ fn cone_export_source(angle: &str, top: &str, mode: &str) -> Vec<u8> {
             let p = xyz
                 .trim_end_matches(&[')', ';'][..])
                 .split(',')
-                .map(common::r)
+                .map(|token| common::r(token.trim().trim_end_matches('.')))
                 .collect::<Vec<_>>();
             let coordinates = match mode {
                 "oblique" => {

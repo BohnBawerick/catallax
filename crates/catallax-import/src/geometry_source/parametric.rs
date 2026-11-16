@@ -93,6 +93,64 @@ impl ParameterChart {
             }
         }
         let bits = parameters.iter().map(Ball::precision).min().unwrap_or(0);
+        self.evaluate_expressions(parameters, axes, bits, dec)
+    }
+
+    /// Enclose an exact rational parameter box, checking its source-domain
+    /// limits before outward arithmetic rounding of the parameters.
+    pub fn evaluate_box(
+        &self,
+        bounds: &[[Rational; 2]],
+        precision: u32,
+        dec: &mut Decider,
+    ) -> Result<[Ball; 3], MappingError> {
+        self.evaluate_box_derivative(bounds, &[], precision, dec)
+    }
+
+    /// Enclose a mixed derivative over an exact rational parameter box.
+    /// Polynomial extensions only bound rounding around the validated box;
+    /// requests outside the source knot span still refuse.
+    pub fn evaluate_box_derivative(
+        &self,
+        bounds: &[[Rational; 2]],
+        axes: &[usize],
+        precision: u32,
+        dec: &mut Decider,
+    ) -> Result<[Ball; 3], MappingError> {
+        if bounds.len() != self.dimension || axes.iter().any(|i| *i >= self.dimension) {
+            return Err(error("wrong parameter dimension"));
+        }
+        if precision == 0 || precision > dec.policy().max_precision_bits {
+            return Err(Refusal::new(
+                "numbers.precision-limit",
+                "parameter evaluation exceeds the caller's precision allowance",
+            )
+            .into());
+        }
+        for (range, limits) in bounds.iter().zip(&self.domain) {
+            if range[0] > range[1]
+                || limits[0].as_ref().is_some_and(|lo| range[0] < *lo)
+                || limits[1].as_ref().is_some_and(|hi| range[1] > *hi)
+            {
+                return Err(error("parameter interval is outside its source knot span"));
+            }
+        }
+        let parameters = bounds
+            .iter()
+            .map(|[a, b]| {
+                Ball::from_rational(a, precision).hull(&Ball::from_rational(b, precision))
+            })
+            .collect::<Vec<_>>();
+        self.evaluate_expressions(&parameters, axes, precision, dec)
+    }
+
+    fn evaluate_expressions(
+        &self,
+        parameters: &[Ball],
+        axes: &[usize],
+        bits: u32,
+        dec: &mut Decider,
+    ) -> Result<[Ball; 3], MappingError> {
         let mut coordinates = self.coordinates.clone();
         for axis in axes {
             coordinates = ex::derivative(&coordinates, *axis, dec)?;

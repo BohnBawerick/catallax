@@ -25,6 +25,7 @@ fn source() -> ParsedStep {
 #16=CARTESIAN_POINT('',(0.5,1.,0.));
 #17=CARTESIAN_POINT('',(1.,0.,0.));
 #18=B_SPLINE_CURVE_WITH_KNOTS('',2,(#1,#16,#17),.UNSPECIFIED.,.F.,.F.,(3,3),(0.1,0.9),.UNSPECIFIED.);
+#19=HYPERBOLA('',#2,2.,1.);
 #90=(GEOMETRIC_REPRESENTATION_CONTEXT(2) PARAMETRIC_REPRESENTATION_CONTEXT() REPRESENTATION_CONTEXT('param',''));
 ENDSEC;",
         &mut Decider::default(),
@@ -178,4 +179,40 @@ fn finite_spline_endpoints_keep_their_exact_decimal_domain() {
         .unwrap();
     assert_eq!(pieces.first().unwrap().interval()[0], q("0.1"));
     assert_eq!(pieces.last().unwrap().interval()[1], q("0.9"));
+    assert!(
+        charts[0]
+            .evaluate_box(&[[q("0.09"), q("0.1")]], 128, &mut dec)
+            .is_err()
+    );
+}
+
+#[test]
+fn hyperbola_fits_retain_a_bound_for_the_nonpolynomial_source() {
+    let s = source();
+    let mut dec = Decider::default();
+    let charts = s
+        .curve_charts(19, &q("1"), AngleUnit::Radians, &mut dec)
+        .unwrap();
+    let options = FitOptions {
+        tolerance_mm: q("0.01"),
+        maximum_pieces: 128,
+    };
+    let pieces = charts[0]
+        .fit_curve([q("-0.5"), q("0.5")], &options, &mut dec)
+        .unwrap();
+    assert!(pieces.len() > 1);
+    assert!(
+        pieces
+            .iter()
+            .all(|p| *p.maximum_deviation_mm() <= options.tolerance_mm)
+    );
+    if let Ok(path) = std::env::var("CATALLAX_FITTING_OBSERVATIONS") {
+        let rows=pieces.iter().map(|p|serde_json::json!({
+            "source":p.source(),
+            "interval":p.interval().each_ref().map(ToString::to_string),
+            "controls":p.geometry().controls().iter().map(|p|p.each_ref().map(ToString::to_string)).collect::<Vec<_>>(),
+            "maximum_deviation_mm":p.maximum_deviation_mm().to_string(),
+        })).collect::<Vec<_>>();
+        std::fs::write(path, serde_json::to_vec_pretty(&rows).unwrap()).unwrap();
+    }
 }

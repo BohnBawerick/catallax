@@ -109,11 +109,11 @@ fn sample(
     bits: u32,
     dec: &mut Decider,
 ) -> Result<([Rational; 3], [Rational; 3]), MappingError> {
-    let parameters = at
+    let bounds = at
         .iter()
-        .map(|p| Ball::from_rational(p, bits))
+        .map(|p| [p.clone(), p.clone()])
         .collect::<Vec<_>>();
-    let point = chart.evaluate(&parameters, dec)?;
+    let point = chart.evaluate_box(&bounds, bits, dec)?;
     let value = point.each_ref().map(|b| midpoint(&b.lo(), &b.hi()));
     let error = std::array::from_fn(|i| {
         (&value[i] - &point[i].lo())
@@ -121,12 +121,6 @@ fn sample(
             .max((&point[i].hi() - &value[i]).abs())
     });
     Ok((value, error))
-}
-fn intervals(domain: &[[Rational; 2]], bits: u32) -> Vec<Ball> {
-    domain
-        .iter()
-        .map(|[a, b]| Ball::from_rational(a, bits).hull(&Ball::from_rational(b, bits)))
-        .collect()
 }
 fn splittable(error: &MappingError) -> bool {
     matches!(error,MappingError::Geometry(r) if r.code=="import.geometry-parameter-domain")
@@ -162,11 +156,8 @@ impl ParameterChart {
             let result = (|| {
                 let (a, ea) = sample(self, &[cell[0].clone()], bits, dec)?;
                 let (b, eb) = sample(self, &[cell[1].clone()], bits, dec)?;
-                let second = self.evaluate_derivative(
-                    &intervals(std::slice::from_ref(&cell), bits),
-                    &[0, 0],
-                    dec,
-                )?;
+                let second =
+                    self.evaluate_box_derivative(std::slice::from_ref(&cell), &[0, 0], bits, dec)?;
                 let factor = (&cell[1] - &cell[0]).pow(2).expect("nonnegative exponent")
                     / Rational::from_i64(8);
                 let bound = (0..3).fold(Rational::zero(), |sum, i| {
@@ -249,9 +240,8 @@ impl ParameterChart {
                         }
                     }
                 }
-                let parameters = intervals(&cell, bits);
-                let du = self.evaluate_derivative(&parameters, &[0, 0], dec)?;
-                let dv = self.evaluate_derivative(&parameters, &[1, 1], dec)?;
+                let du = self.evaluate_box_derivative(&cell, &[0, 0], bits, dec)?;
+                let dv = self.evaluate_box_derivative(&cell, &[1, 1], bits, dec)?;
                 let factors = widths
                     .each_ref()
                     .map(|h| h.pow(2).expect("nonnegative exponent") / Rational::from_i64(8));

@@ -1,6 +1,6 @@
 //! Whole finite span identities and exact off-curve witnesses.
 
-use catallax_numbers::{Decider, Rational, Real, RealPoly, Refusal};
+use catallax_numbers::{Decider, Rational, Real, RealPoly, Refusal, Sign};
 use catallax_shapes::BSplineCurve;
 
 struct Span {
@@ -27,22 +27,36 @@ fn affine_identity(
     scale: &Rational,
     dec: &mut Decider,
 ) -> Result<bool, Refusal> {
+    dec.charge_work(1)?;
     let parameter = RealPoly::var(1, 0).scale(&Real::from_rational(scale.clone()))
         + RealPoly::constant(1, Real::from_rational(offset.clone()));
-    for second in b {
-        let mut domain = second.domain.each_ref().map(|t| &(t - offset) / scale);
-        if domain[0] > domain[1] {
+    let reversed = scale.sign() == Sign::Negative;
+    let mut first_index = 0;
+    for index in 0..b.len() {
+        dec.charge_work(1)?;
+        let second = &b[if reversed { b.len() - 1 - index } else { index }];
+        let mut domain = [Rational::zero(), Rational::zero()];
+        for (bound, value) in domain.iter_mut().zip(&second.domain) {
+            dec.reserve_exact_arithmetic(value, offset, false)?;
+            let delta = value - offset;
+            dec.reserve_exact_arithmetic(&delta, scale, true)?;
+            *bound = &delta / scale;
+        }
+        if reversed {
             domain.swap(0, 1);
         }
         let coordinates = second
             .coordinates
             .each_ref()
             .map(|p| p.substitute(0, &parameter));
-        for first in a {
-            if std::cmp::max(&first.domain[0], &domain[0])
-                >= std::cmp::min(&first.domain[1], &domain[1])
-            {
+        while let Some(first) = a.get(first_index) {
+            dec.charge_work(1)?;
+            if first.domain[1] <= domain[0] {
+                first_index += 1;
                 continue;
+            }
+            if first.domain[0] >= domain[1] {
+                break;
             }
             for axis in 0..3 {
                 if !(&first.coordinates[axis] * &coordinates[3]
@@ -51,6 +65,11 @@ fn affine_identity(
                 {
                     return Ok(false);
                 }
+            }
+            if first.domain[1] <= domain[1] {
+                first_index += 1;
+            } else {
+                break;
             }
         }
     }

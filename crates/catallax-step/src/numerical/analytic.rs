@@ -589,6 +589,52 @@ fn pcurve_checks(
     })
 }
 
+fn seam_loop_start(
+    boundary: &[n::NumericalTrim],
+    edges: &[n::NumericalEdge],
+    face_sense: Sense,
+    dec: &mut Decider,
+) -> Result<usize, Refusal> {
+    // OCCT TranslateEdgeLoop selects and installs both seam pcurves on each
+    // occurrence. Its final choice depends on the cumulative edge/wire/face
+    // orientation of the last occurrence. Give every retained seam a forward
+    // final occurrence. Only rotate a closed walk; never reverse it, exchange
+    // the seam's two charts, or alter geometry or parameter values.
+    let forward = |trim: &n::NumericalTrim| {
+        ((trim.sense == Sense::Same)
+            == (edges[trim.edge].parameters[0] < edges[trim.edge].parameters[1]))
+            == (face_sense == Sense::Same)
+    };
+    let mut last = std::collections::BTreeMap::new();
+    for trim in boundary {
+        dec.charge_work(1)?;
+        let entry = last.entry(trim.edge).or_insert((0_usize, false));
+        entry.0 += 1;
+        entry.1 = forward(trim);
+    }
+    last.retain(|_, (count, _)| *count == 2);
+    let mut wrong = last.values().filter(|(_, forward)| !forward).count();
+    if wrong == 0 {
+        return Ok(0);
+    }
+    // Moving the first use to the end changes only that edge's last use. This
+    // linear walk tests every cyclic start without rebuilding the other uses.
+    for (index, trim) in boundary.iter().enumerate() {
+        dec.charge_work(1)?;
+        if let Some((_, previous)) = last.get_mut(&trim.edge) {
+            wrong -= usize::from(!*previous);
+            *previous = forward(trim);
+            wrong += usize::from(!*previous);
+            if wrong == 0 {
+                return Ok((index + 1) % boundary.len());
+            }
+        }
+    }
+    // A more complicated arrangement may have no such cyclic start. Keep its
+    // admitted walk instead of inventing a different ordering or topology.
+    Ok(0)
+}
+
 pub(super) fn build(
     body: &NumericalBody,
     options: &NumericalStepOptions,
@@ -716,7 +762,12 @@ pub(super) fn build(
         let mut bounds = Vec::new();
         for (i, boundary) in face.loops.iter().enumerate() {
             let mut uses = Vec::new();
-            for trim in boundary {
+            let start = if matches!(face.surface, Surface::Cylinder(_)) {
+                seam_loop_start(boundary, &d.edges, face.sense, w.dec)?
+            } else {
+                0
+            };
+            for trim in boundary.iter().cycle().skip(start).take(boundary.len()) {
                 w.dec.charge_work(1)?;
                 uses.push(w.graph.add(
                     "ORIENTED_EDGE",

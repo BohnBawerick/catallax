@@ -1,0 +1,91 @@
+{
+  "all_400_import_work_source_hashes_body_counts_and_categories_match": true,
+  "by_import_category": {
+    "certified / raw_invalid": 9,
+    "certified / raw_valid": 177,
+    "certified / timeout": 1,
+    "numerical approximate / export_refused": 16,
+    "numerical approximate / raw_invalid": 13,
+    "numerical approximate / raw_valid": 184
+  },
+  "candidate_binary_sha256": "58128174b490ab39d1aa2927251a4a3769f90dcc5f91528befbb815497b8be25",
+  "candidate_csv_sha256": "890808462b91320ae054d226462ad34b04bf378dbced33a2e81fc57795e67974",
+  "candidate_source_revision": "7563b40c48229cfd57407351f716c3a01867d2a2",
+  "candidate_valid_files": 361,
+  "candidate_valid_of_admitted_percent": "90.25",
+  "candidate_valid_share_percent": "12.03",
+  "complete": true,
+  "denominator": 3000,
+  "expected_bodies": 808,
+  "format": "catallax-cylinder-seam-order-matched-census/1",
+  "frozen_admissions": 400,
+  "gained_ids": [
+    "00000363",
+    "00001857",
+    "00004333",
+    "00005897",
+    "00008682",
+    "00009319",
+    "00009321"
+  ],
+  "lost_ids": [],
+  "matched_control_binary_sha256": "e1f02dac8fdc56636ee3de4166d3a16e1af9d09b15a2ca79327190a454f7b4c1",
+  "matched_control_csv_byte_identical_to_previous_354_capture": true,
+  "matched_control_csv_sha256": "0f9c1727baa480e4c4c9e446e9495fcfa891dfff0249a7acfbddbcc3e6928431",
+  "matched_control_kernel_revision": "621cb33775218515db99a6399065b4abe8261e54",
+  "matched_control_source_revision": "0902b99f3e30893ce11cfb3d69488d55f93b2d92",
+  "matched_control_valid_files": 354,
+  "only_changed_production_path": [
+    "crates/catallax-step/src/numerical/analytic.rs"
+  ],
+  "paired_outcomes": {
+    "export_refused -> export_refused": 16,
+    "raw_invalid -> raw_invalid": 22,
+    "raw_invalid -> raw_valid": 7,
+    "raw_valid -> raw_valid": 354,
+    "timeout -> timeout": 1
+  },
+  "refusal_causes": {
+    "resource_limit": 1,
+    "step.numerical-gap": 15
+  },
+  "retained_controls": {
+    "00000131": "raw_valid",
+    "00000173": "raw_valid",
+    "00000190": "raw_valid",
+    "00000405": "raw_valid",
+    "00000511": "raw_valid",
+    "00000605": "raw_valid",
+    "00000632": "raw_valid",
+    "00000633": "raw_valid",
+    "00000695": "raw_valid",
+    "00000821": "raw_valid"
+  },
+  "seed": 20261111,
+  "stage_work": {
+    "export_work_used": {
+      "maximum": 19586631,
+      "minimum": 50,
+      "observed": 399,
+      "per_stage_limit": 20000000,
+      "sum": 222004344
+    },
+    "import_work_used": {
+      "maximum": 18929210,
+      "minimum": 3567,
+      "observed": 400,
+      "per_stage_limit": 20000000,
+      "sum": 571316874
+    }
+  },
+  "timeout": {
+    "export_work_used": "",
+    "import_work_used": "6798992",
+    "model_id": "00004777",
+    "source_sha256": "eca9d80a98fa55a5eeb6ea4d690ab5f0d60a3b59c7eaa7493f5f793ec3fbfdbd",
+    "timeout_stage": "export"
+  },
+  "unhealed_validity_established": false,
+  "validity_includes_occt_builder_internal_healing": true,
+  "validity_method": "direct OCCT builder construction, which can heal pcurves internally"
+}

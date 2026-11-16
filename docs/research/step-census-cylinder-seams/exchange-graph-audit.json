@@ -1,0 +1,10 @@
+{
+  "all_headers_and_entity_graphs_equal_except_cyclic_edge_loop_start": true,
+  "candidate_source_revision": "7563b40c48229cfd57407351f716c3a01867d2a2",
+  "changed_step_byte_files": 21,
+  "compared_declared_body_files": 699,
+  "comparison_preserves_oriented_edge_senses_and_pcurve_lists": true,
+  "complete": true,
+  "control_source_revision": "0902b99f3e30893ce11cfb3d69488d55f93b2d92",
+  "no_reversal_or_geometry_change_allowed": true
+}

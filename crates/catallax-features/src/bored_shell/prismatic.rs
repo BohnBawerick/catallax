@@ -420,6 +420,7 @@ pub(super) fn build(
     let body = model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: holes.marks,
     });
     if !model.check(body).is_empty() {

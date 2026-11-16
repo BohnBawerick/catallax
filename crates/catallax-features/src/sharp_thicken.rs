@@ -481,6 +481,7 @@ pub(crate) fn assemble(
     Ok(model.add_body(Body {
         kind: BodyKind::Solid,
         lumps,
+        wires: Vec::new(),
         marks: Default::default(),
     }))
 }

@@ -22,12 +22,13 @@ mod rolling_junction;
 mod rolling_mitre;
 mod spline_prism;
 mod transform;
+mod wire;
 
 pub use bezier_extrusion::BezierExtrusionBand;
 pub use build::{block, cone, cylinder, empty, sphere, torus};
 pub use entity::{
     Body, BodyId, BodyKind, Coedge, CoedgeId, Edge, EdgeId, Face, FaceId, Loop, LoopId, Lump,
-    LumpId, Sense, Shell, ShellId, Vertex, VertexId,
+    LumpId, Sense, Shell, ShellId, Vertex, VertexId, Wire,
 };
 pub use fit::{FIT_MARK, fitted_face_bound, with_fit_mark, without_fit_mark};
 pub use linear_fillet::LinearFilletBand;
@@ -42,3 +43,4 @@ pub use rolling_junction::{
 pub use rolling_mitre::RollingMitreBand;
 pub use spline_prism::SplinePrism;
 pub use transform::transformed_body;
+pub use wire::spline_wire;

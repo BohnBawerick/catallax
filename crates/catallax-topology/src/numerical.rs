@@ -22,6 +22,8 @@ mod native;
 pub use native::{NumericalNativeTrim, build_with_native_trims};
 mod source;
 pub use source::definition_from_model;
+/// Editable finite spline sheets with trim, extension and normal thickening.
+pub mod surface;
 
 /// Shared default work limit for a numerical build or continuation.
 pub const DEFAULT_WORK: u64 = 20_000_000;
@@ -89,7 +91,8 @@ pub struct NumericalDefinition {
     pub vertices: Vec<NumericalVertex>,
     /// Shared finite edges.
     pub edges: Vec<NumericalEdge>,
-    /// Faces of one connected closed shell.
+    /// Faces of one connected shell. `build` requires closure; `build_surface`
+    /// permits boundary edges without asserting enclosed material.
     pub faces: Vec<NumericalFace>,
 }
 
@@ -297,7 +300,8 @@ impl NumericalBody {
                     distance_upper_mm: movement,
                 });
             }
-            let mut next = build_inner(
+            let mut next = build_inner_kind(
+                self.kind(),
                 definition,
                 self.native_trims.clone(),
                 self.options.clone(),
@@ -320,6 +324,38 @@ pub fn build(
     dec: &mut Decider,
 ) -> Result<NumericalBody, Refusal> {
     guarded(|| build_inner(definition, Vec::new(), options, Vec::new(), dec))
+}
+
+/// Builds an open or closed surface shell under stated numerical tolerances.
+/// Boundary edges have one use; shared edges require two opposite uses.
+/// The existing surface topology checker validates boundary cycles, connectivity,
+/// vertex fans and Euler characteristic. No material or solid volume is inferred.
+pub fn build_surface(
+    definition: NumericalDefinition,
+    options: NumericalOptions,
+    dec: &mut Decider,
+) -> Result<NumericalBody, Refusal> {
+    build_surface_with_native_trims(definition, Vec::new(), options, dec)
+}
+
+/// Builds a surface shell with retained native parameter curves.
+/// Its sample checks and limitations match `build_with_native_trims`.
+pub fn build_surface_with_native_trims(
+    definition: NumericalDefinition,
+    native_trims: Vec<NumericalNativeTrim>,
+    options: NumericalOptions,
+    dec: &mut Decider,
+) -> Result<NumericalBody, Refusal> {
+    guarded(|| {
+        build_inner_kind(
+            BodyKind::Surface,
+            definition,
+            native_trims,
+            options,
+            Vec::new(),
+            dec,
+        )
+    })
 }
 
 fn guarded<T>(run: impl FnOnce() -> Result<T, Refusal>) -> Result<T, Refusal> {
@@ -397,6 +433,24 @@ fn keys<'a>(values: impl Iterator<Item = &'a str>, dec: &mut Decider) -> Result<
 }
 
 fn build_inner(
+    definition: NumericalDefinition,
+    native_trims: Vec<NumericalNativeTrim>,
+    options: NumericalOptions,
+    repairs: Vec<NumericalRepair>,
+    dec: &mut Decider,
+) -> Result<NumericalBody, Refusal> {
+    build_inner_kind(
+        BodyKind::Solid,
+        definition,
+        native_trims,
+        options,
+        repairs,
+        dec,
+    )
+}
+
+fn build_inner_kind(
+    kind: BodyKind,
     definition: NumericalDefinition,
     native_trims: Vec<NumericalNativeTrim>,
     options: NumericalOptions,
@@ -556,8 +610,9 @@ fn build_inner(
         shells: vec![shell],
     });
     let body = model.add_body(Body {
-        kind: BodyKind::Solid,
+        kind,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: MarkLog::new(),
     });
     if let Some(fault) = crate::check::structure(&model, body).into_iter().next() {

@@ -419,6 +419,7 @@ pub fn coalesce_rational_charts(
     let logical = model.add_body(Body {
         kind: source.kind,
         lumps,
+        wires: source.wires,
         marks: source.marks,
     });
     if !model.check(logical).is_empty() {

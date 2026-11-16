@@ -345,6 +345,7 @@ pub fn solid(kind: Roof) -> Fixture {
     let body = model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: MarkLog::default(),
     });
     Fixture {

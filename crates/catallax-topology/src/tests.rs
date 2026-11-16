@@ -23,6 +23,7 @@ fn body(m: &mut Model, faces: Vec<FaceId>) -> BodyId {
     m.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: MarkLog::new(),
     })
 }
@@ -657,6 +658,7 @@ fn structural_and_incidence_faults() {
     let b = m.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![],
+        wires: Vec::new(),
         marks: MarkLog::new(),
     });
     assert_fault(&m, b, "topology.body-kind");
@@ -664,6 +666,7 @@ fn structural_and_incidence_faults() {
     let b = m.add_body(Body {
         kind: BodyKind::Empty,
         lumps: vec![empty_lump],
+        wires: Vec::new(),
         marks: MarkLog::new(),
     });
     assert_fault(&m, b, "topology.body-kind");
@@ -689,6 +692,7 @@ fn multiple_lumps_voids_and_cross_shell_sharing() {
     let touching = m.add_body(Body {
         kind: BodyKind::Solid,
         lumps: lumps.clone(),
+        wires: Vec::new(),
         marks: MarkLog::new(),
     });
     assert_eq!(m.check(touching), vec![]);
@@ -703,6 +707,7 @@ fn multiple_lumps_voids_and_cross_shell_sharing() {
     let duplicate = m.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lumps[0], lumps[0]],
+        wires: Vec::new(),
         marks: MarkLog::new(),
     });
     assert_fault(&m, duplicate, "topology.shared-entity");
@@ -713,6 +718,7 @@ fn multiple_lumps_voids_and_cross_shell_sharing() {
     let duplicate = m.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lumps[0], alias_lump],
+        wires: Vec::new(),
         marks: MarkLog::new(),
     });
     assert_fault(&m, duplicate, "topology.shared-entity");
@@ -765,6 +771,7 @@ fn multiple_lumps_voids_and_cross_shell_sharing() {
     let hollow = m.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: MarkLog::new(),
     });
     assert_eq!(m.check(hollow), vec![]);
@@ -874,6 +881,7 @@ fn one_vertex_closed_edges_and_repeated_vertex_boundaries() {
     let invalid = m.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: MarkLog::new(),
     });
     assert_fault(&m, invalid, "topology.shared-entity");

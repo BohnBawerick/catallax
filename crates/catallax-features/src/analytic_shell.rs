@@ -182,6 +182,7 @@ pub(super) fn sew(
     Ok(model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: model.body(body).marks.clone(),
     }))
 }

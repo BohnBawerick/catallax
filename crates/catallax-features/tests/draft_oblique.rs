@@ -560,6 +560,7 @@ fn oblique_annular_checker_rejects_a_filled_cap_reversed_hole_or_duplicate_ring(
         let body = model.add_body(Body {
             kind: BodyKind::Solid,
             lumps: vec![lump],
+            wires: Vec::new(),
             marks: Default::default(),
         });
         assert!(

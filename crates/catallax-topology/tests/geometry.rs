@@ -136,6 +136,7 @@ blind_test!(body_marks_survive_sharing_cloning_and_queries, {
     let body = Body {
         kind: BodyKind::Solid,
         lumps: m.body(b).lumps.clone(),
+        wires: Vec::new(),
         marks: marks.clone(),
     };
     let marked = m.add_body(body.clone());

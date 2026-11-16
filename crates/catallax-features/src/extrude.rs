@@ -546,6 +546,7 @@ pub(crate) fn extrude_vector(
             BodyKind::Solid
         },
         lumps,
+        wires: Vec::new(),
         marks: MarkLog::new(),
     }))
 }

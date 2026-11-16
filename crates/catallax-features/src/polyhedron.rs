@@ -271,6 +271,7 @@ impl ConvexCell {
         model.add_body(Body {
             kind: BodyKind::Solid,
             lumps: vec![lump],
+            wires: Vec::new(),
             marks: Default::default(),
         })
     }

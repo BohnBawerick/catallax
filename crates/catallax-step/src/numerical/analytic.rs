@@ -856,11 +856,7 @@ pub(super) fn build(
             ],
         ));
     }
-    let shell = w.graph.add("CLOSED_SHELL", vec![text("''"), refs(faces)]);
-    let solid = w.graph.add(
-        "MANIFOLD_SOLID_BREP",
-        vec![text("'numerical approximate'"), shell.into()],
-    );
+    let solid = w.representation(faces, body)?;
     let mut description = format!(
         "catallax numerical approximate;source={};source_tolerance_mm={};source_checks={};source_repairs={};complete_body_bound=unestablished;max_scalar_rounding_error_mm={};max_direction_ratio_rounding_error={};max_pcurve_parameter_scalar_rounding_error={}",
         body.definition().name,
@@ -913,12 +909,13 @@ pub(super) fn build(
         ));
     }
     let mut file = w.graph.write(&[solid], |roots| {
-        crate::export::approximate_header(&options.product_name, roots, &description)
+        numerical_header(body, &options.product_name, roots, &description)
     });
     file.push_str("ENDSEC;\nEND-ISO-10303-21;\n");
     let artifact = NumericalStep {
         bytes: file.into_bytes(),
         report: NumericalStepReport {
+            kind: body.kind(),
             original_definition: body.source_definition().clone(),
             original_native_trims: body.source_native_trims().to_vec(),
             source_native_trims: body.native_trims().to_vec(),

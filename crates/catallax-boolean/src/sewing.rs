@@ -692,6 +692,7 @@ fn rebuild(
         let body = model.add_body(Body {
             kind: BodyKind::Empty,
             lumps: Vec::new(),
+            wires: Vec::new(),
             marks,
         });
         return checked(model, body);
@@ -920,6 +921,7 @@ fn rebuild(
         let body = model.add_body(Body {
             kind: model.body(source).kind,
             lumps,
+            wires: Vec::new(),
             marks,
         });
         return checked(model, body);
@@ -1037,6 +1039,7 @@ fn rebuild(
     let body = model.add_body(Body {
         kind: BodyKind::Solid,
         lumps,
+        wires: Vec::new(),
         marks,
     });
     checked(model, body)

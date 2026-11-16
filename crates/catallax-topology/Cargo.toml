@@ -17,6 +17,7 @@ im.workspace = true
 catallax-numbers.workspace = true
 catallax-shapes.workspace = true
 catallax-recipe.workspace = true
+catallax-trace.workspace = true
 
 [lints]
 workspace = true

@@ -187,6 +187,7 @@ pub(crate) fn sections(
     model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: Default::default(),
     })
 }
@@ -259,6 +260,7 @@ pub(crate) fn sweep(
     Ok(model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: Default::default(),
     }))
 }

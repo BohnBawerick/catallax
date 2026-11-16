@@ -437,6 +437,17 @@ impl Model {
                 TopoOp::Body(body) => {
                     self.add_body(Body {
                         lumps: body.lumps.iter().map(|l| remap.lump(*l)).collect(),
+                        wires: body
+                            .wires
+                            .iter()
+                            .map(|wire| crate::Wire {
+                                coedges: wire
+                                    .coedges
+                                    .iter()
+                                    .map(|coedge| remap.coedge(*coedge))
+                                    .collect(),
+                            })
+                            .collect(),
                         ..body.clone()
                     });
                 }
@@ -733,6 +744,7 @@ mod tests {
         later.add_body(Body {
             kind: crate::BodyKind::Empty,
             lumps: Vec::new(),
+            wires: Vec::new(),
             marks: catallax_numbers::MarkLog::new(),
         });
         assert!(!later.unchanged_where_read(&grown, &reads));

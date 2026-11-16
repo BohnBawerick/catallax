@@ -524,6 +524,14 @@ impl Model {
                 }
             }
         }
+        for wire in &self.body(b).wires {
+            for coedge in &wire.coedges {
+                let edge = self.coedge(*coedge).edge;
+                if seen.insert(edge) {
+                    result.push(edge);
+                }
+            }
+        }
         result
     }
 
@@ -551,10 +559,18 @@ impl Model {
                 }
             }
         }
+        for wire in &self.body(b).wires {
+            for coedge in &wire.coedges {
+                let (start, end) = self.coedge_ends(*coedge);
+                for vertex in [start, end].into_iter().flatten() {
+                    visit(vertex);
+                }
+            }
+        }
         result
     }
 
-    fn coedge_ends(&self, c: CoedgeId) -> (Option<VertexId>, Option<VertexId>) {
+    pub(crate) fn coedge_ends(&self, c: CoedgeId) -> (Option<VertexId>, Option<VertexId>) {
         let c = self.coedge(c);
         let e = self.edge(c.edge);
         match c.sense {
@@ -573,6 +589,20 @@ impl Model {
             shells: body.lumps.iter().map(|l| self.lump(*l).shells.len()).sum(),
             ..EntityCounts::default()
         };
+        for wire in &body.wires {
+            for coedge in &wire.coedges {
+                let edge_id = self.coedge(*coedge).edge;
+                if edges.insert(edge_id) {
+                    let edge = self.edge(edge_id);
+                    counts.ring_edges += usize::from(edge.start.is_none() && edge.end.is_none());
+                    *counts
+                        .edges_by_kind
+                        .entry(self.geom.curve(edge.curve).kind())
+                        .or_default() += 1;
+                    vertices.extend([edge.start, edge.end].into_iter().flatten());
+                }
+            }
+        }
         for f in self.unique_faces(b) {
             let face = self.face(f);
             counts.faces += 1;

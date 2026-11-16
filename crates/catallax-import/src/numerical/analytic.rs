@@ -3,6 +3,7 @@
 use super::*;
 use catallax_numbers::Ball;
 use catallax_shapes::{Circle, Cylinder};
+pub(super) mod constructed;
 
 const BITS: u32 = 128;
 const OPTIONAL_EXACT_WORK: u64 = 1_000_000;

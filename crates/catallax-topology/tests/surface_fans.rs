@@ -91,6 +91,7 @@ fn sheet_with_caps(pinched: bool) -> (Model, BodyId) {
     let body = m.add_body(Body {
         kind: BodyKind::Surface,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: MarkLog::new(),
     });
     (m, body)

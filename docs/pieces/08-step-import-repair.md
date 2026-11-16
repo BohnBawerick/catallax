@@ -114,6 +114,27 @@ An unsupported repair returns `incidence_gap` with its measured source bounds, m
 
 `catallax_mesh::preview_step` retains the exact source definitions and SHA-256 and returns an explicitly unproved `PreviewMesh` keyed by STEP entities, with shared edge samples and trimmed faces. It cannot supply a solid certificate, checked STEP or print mesh. Existing repair and recipe-publication gates are unchanged. See the [source and preview contract](../interface-changes/2026-11-07-step-spline-source-preview.md) for supported encodings, refusal boundaries and verification.
 
+### Tolerance-bearing source topology
+
+`tolerant::read_step` retains the supported reader's source geometry in a shared vertex/edge graph without requiring exact incidence, loop order or solid closure.
+The returned `TolerantFile` is source topology awaiting healing and validity checks; it grants no solid admission or exact-model extraction.
+Each vertex and edge stores an individual numerical tolerance in millimetres.
+`ToleranceOptions` defaults to an initial 0.0000001 mm and a maximum 0.01 mm; callers may state other nonnegative initial values under a positive cap before reading.
+These controls describe local topological uncertainty, not a geometric movement or whole-body deviation certificate.
+
+Growth follows [OCCT BRep_TVertex::UpdateTolerance](https://github.com/Open-Cascade-SAS/OCCT/blob/V8_0_0/src/ModelingData/TKBRep/BRep/BRep_TVertex.lxx) and [BRep_TEdge::UpdateTolerance](https://github.com/Open-Cascade-SAS/OCCT/blob/V8_0_0/src/ModelingData/TKBRep/BRep/BRep_TEdge.lxx): an entity's tolerance never decreases.
+Every actual increase records its source entity, before/after values and named cause.
+Growing an edge also grows either endpoint whose tolerance would otherwise be smaller, recording the triggering edge.
+The complete update is prepaid against the active work allowance before its first write, and a cap or work failure preserves the previous graph.
+An over-cap requirement refuses the update rather than clamping the recorded value below the requirement.
+Any tolerance growth explicitly marks the body as repaired; zero growth establishes neither validity nor exactness.
+
+The `catallax-import-tolerances/1` record saves controls, every current vertex/edge value and ordered growth history, scoped to the immutable source SHA-256 and body name.
+`tolerant::reopen` rereads those exact bytes and reproduces the changes, including endpoint propagation, then compares the complete record.
+Changed or renumbered sources require separate correspondence and never inherit these bindings automatically.
+This API does not add geometry-reading families or implement the later ShapeFix-style healing and body tiers.
+The existing certified and numerical import entry points retain their current behavior.
+
 ### IGES source recognition
 
 `read_iges` and `read_iges_with_decider` read IGES 5.3 manifold solid B-rep objects into the same `StepFile`, so `build_file`, its exact incidence checks, the self-intersection check and every builder refusal are shared. `import_iges_bodies` checks the saved hash, reads the file, checks self-intersection and builds, as `import_step_bodies` does for STEP, including its separately recorded bounded spline-incidence path. The recipe step `import_iges` (RECIPE.md section 4.18.2) goes through `apply_source` with `SourceFormat::Iges`, so gap proposals (`propose_source`), saved decisions, repairs, recorded face tolerances and the STEP derivative are those of a STEP import. A persisted IGES record replays through `rebuild_source` with `SourceFormat::Iges`; `rebuild` is its STEP form, so no replay guesses the format from the bytes or their name. Face keys are directory-entry sequence numbers such as `D17`; edges and vertices are named by their list and index, such as `D3:5`.

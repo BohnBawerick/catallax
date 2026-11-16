@@ -33,6 +33,8 @@ mod intersect;
 pub mod mesh;
 /// Numerical STEP admission with separate source repair and numerical evidence.
 pub mod numerical;
+/// Source topology with individual, capped vertex and edge tolerances.
+pub mod tolerant;
 mod part21;
 mod planar_arithmetic;
 mod planar_deviation;

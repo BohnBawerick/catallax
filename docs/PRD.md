@@ -141,7 +141,7 @@ This table describes product roles, not completion. Supported families and remai
 | Sketch, extrude, revolve | Exact | Exact, from a formula |
 | Hole, countersink | Exact where supported; remaining general holes follow milestone 1.4 | Exact |
 | Boolean | Exact. This is exact-brep's core | Exact where supported; unsupported coverage remains a named refusal |
-| Fillet or chamfer on an edge between faces the recipe defines | Exact for flat to flat and for a flat face meeting a perpendicular hole. Curved fillets retain their definition and may use a fitted B-rep carrier under section 3.1; general mixed and spline families follow milestones 1.4 and 1.5 | Exact rolling ball, because the recipe names both faces. Slower between two curved faces |
+| Fillet or chamfer on an edge between faces the recipe defines | Exact for flat to flat and for a flat face meeting a perpendicular hole. Curved fillets retain their definition and may use a fitted B-rep carrier under section 3.1; general mixed and spline families follow milestones 1.4 and 2.1 | Exact rolling ball, because the recipe names both faces. Slower between two curved faces |
 | Shell, offset, thicken | Exact for planes, cylinders, spheres and tori | Simple only where the field is a true distance. After booleans it is not, so the field measures distance from the faces themselves |
 | Draft | Exact. Planes stay planes and cylinders become cones | Exact |
 | Sweep, loft | Exact spline faces | Distance to the faces is computed numerically, so it is slower |

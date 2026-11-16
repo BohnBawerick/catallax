@@ -148,7 +148,9 @@ fn a_shared_edge_source_is_sewn_with_measured_geometry_and_an_approximate_result
 
 #[test]
 fn slightly_skew_line_carriers_sew_by_their_complete_finite_segments() {
-    let text = source("0.001");
+    let mut fixture = BoxFixture::new(["2", "3", "4"]);
+    fixture.shift = Some((0, [r("0.001"), r("0"), r("0")]));
+    let text = box_step(fixture);
     let baseline = healing::heal(&read(&text), &mut Decider::default()).unwrap();
     let replaced = baseline
         .report()

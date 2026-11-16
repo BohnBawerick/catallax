@@ -1,0 +1,858 @@
+{
+  "complete": true,
+  "material_probes": [
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        -15.000000149999998,
+        -18.750000049999997,
+        -5.00000005
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        -15.000000149999998,
+        -18.750000049999997,
+        0.0
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        -15.000000149999998,
+        -18.750000049999997,
+        5.000000049999999
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        -15.000000149999998,
+        -12.499999999999996,
+        -5.00000005
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        -15.000000149999998,
+        -12.499999999999996,
+        0.0
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        -15.000000149999998,
+        -12.499999999999996,
+        5.000000049999999
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        -15.000000149999998,
+        -6.249999949999996,
+        -5.00000005
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        -15.000000149999998,
+        -6.249999949999996,
+        0.0
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        -15.000000149999998,
+        -6.249999949999996,
+        5.000000049999999
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -5.00000005,
+        -18.750000049999997,
+        -5.00000005
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -5.00000005,
+        -18.750000049999997,
+        0.0
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -5.00000005,
+        -18.750000049999997,
+        5.000000049999999
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -5.00000005,
+        -12.499999999999996,
+        -5.00000005
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -5.00000005,
+        -12.499999999999996,
+        0.0
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -5.00000005,
+        -12.499999999999996,
+        5.000000049999999
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -5.00000005,
+        -6.249999949999996,
+        -5.00000005
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -5.00000005,
+        -6.249999949999996,
+        0.0
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -5.00000005,
+        -6.249999949999996,
+        5.000000049999999
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        0.0,
+        -18.750000049999997,
+        -5.00000005
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        0.0,
+        -18.750000049999997,
+        0.0
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        0.0,
+        -18.750000049999997,
+        5.000000049999999
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        0.0,
+        -12.499999999999996,
+        -5.00000005
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        0.0,
+        -12.499999999999996,
+        0.0
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        0.0,
+        -12.499999999999996,
+        5.000000049999999
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        0.0,
+        -6.249999949999996,
+        -5.00000005
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        0.0,
+        -6.249999949999996,
+        0.0
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        0.0,
+        -6.249999949999996,
+        5.000000049999999
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        5.000000049999999,
+        -18.750000049999997,
+        -5.00000005
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        5.000000049999999,
+        -18.750000049999997,
+        0.0
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        5.000000049999999,
+        -18.750000049999997,
+        5.000000049999999
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        5.000000049999999,
+        -12.499999999999996,
+        -5.00000005
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        5.000000049999999,
+        -12.499999999999996,
+        0.0
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        5.000000049999999,
+        -12.499999999999996,
+        5.000000049999999
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        5.000000049999999,
+        -6.249999949999996,
+        -5.00000005
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        5.000000049999999,
+        -6.249999949999996,
+        0.0
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        5.000000049999999,
+        -6.249999949999996,
+        5.000000049999999
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        15.00000015,
+        -18.750000049999997,
+        -5.00000005
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        15.00000015,
+        -18.750000049999997,
+        0.0
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        15.00000015,
+        -18.750000049999997,
+        5.000000049999999
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        15.00000015,
+        -12.499999999999996,
+        -5.00000005
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        15.00000015,
+        -12.499999999999996,
+        0.0
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        15.00000015,
+        -12.499999999999996,
+        5.000000049999999
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        15.00000015,
+        -6.249999949999996,
+        -5.00000005
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        15.00000015,
+        -6.249999949999996,
+        0.0
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        15.00000015,
+        -6.249999949999996,
+        5.000000049999999
+      ],
+      "source_bbox": 0
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        -18.75000015,
+        -18.750000049999997,
+        -6.25000005
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        -18.75000015,
+        -18.750000049999997,
+        0.0
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        -18.75000015,
+        -18.750000049999997,
+        6.250000049999999
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        -18.75000015,
+        -12.499999999999996,
+        -6.25000005
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        -18.75000015,
+        -12.499999999999996,
+        0.0
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        -18.75000015,
+        -12.499999999999996,
+        6.250000049999999
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        -18.75000015,
+        -6.249999949999996,
+        -6.25000005
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        -18.75000015,
+        -6.249999949999996,
+        0.0
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        -18.75000015,
+        -6.249999949999996,
+        6.250000049999999
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -6.250000050000001,
+        -18.750000049999997,
+        -6.25000005
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -6.250000050000001,
+        -18.750000049999997,
+        0.0
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -6.250000050000001,
+        -18.750000049999997,
+        6.250000049999999
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -6.250000050000001,
+        -12.499999999999996,
+        -6.25000005
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -6.250000050000001,
+        -12.499999999999996,
+        0.0
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -6.250000050000001,
+        -12.499999999999996,
+        6.250000049999999
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -6.250000050000001,
+        -6.249999949999996,
+        -6.25000005
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -6.250000050000001,
+        -6.249999949999996,
+        0.0
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -6.250000050000001,
+        -6.249999949999996,
+        6.250000049999999
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        0.0,
+        -18.750000049999997,
+        -6.25000005
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        0.0,
+        -18.750000049999997,
+        0.0
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        0.0,
+        -18.750000049999997,
+        6.250000049999999
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        0.0,
+        -12.499999999999996,
+        -6.25000005
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        0.0,
+        -12.499999999999996,
+        0.0
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        0.0,
+        -12.499999999999996,
+        6.250000049999999
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        0.0,
+        -6.249999949999996,
+        -6.25000005
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        0.0,
+        -6.249999949999996,
+        0.0
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        0.0,
+        -6.249999949999996,
+        6.250000049999999
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        6.250000050000001,
+        -18.750000049999997,
+        -6.25000005
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        6.250000050000001,
+        -18.750000049999997,
+        0.0
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        6.250000050000001,
+        -18.750000049999997,
+        6.250000049999999
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        6.250000050000001,
+        -12.499999999999996,
+        -6.25000005
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        6.250000050000001,
+        -12.499999999999996,
+        0.0
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        6.250000050000001,
+        -12.499999999999996,
+        6.250000049999999
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        6.250000050000001,
+        -6.249999949999996,
+        -6.25000005
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        6.250000050000001,
+        -6.249999949999996,
+        0.0
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        6.250000050000001,
+        -6.249999949999996,
+        6.250000049999999
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        18.75000015,
+        -18.750000049999997,
+        -6.25000005
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        18.75000015,
+        -18.750000049999997,
+        0.0
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        18.75000015,
+        -18.750000049999997,
+        6.250000049999999
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        18.75000015,
+        -12.499999999999996,
+        -6.25000005
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        18.75000015,
+        -12.499999999999996,
+        0.0
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        18.75000015,
+        -12.499999999999996,
+        6.250000049999999
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        18.75000015,
+        -6.249999949999996,
+        -6.25000005
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        18.75000015,
+        -6.249999949999996,
+        0.0
+      ],
+      "source_bbox": 1
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        18.75000015,
+        -6.249999949999996,
+        6.250000049999999
+      ],
+      "source_bbox": 1
+    }
+  ],
+  "model_id": "00000363",
+  "output_bodies": [
+    {
+      "body": 0,
+      "step_sha256": "8ef29ffae9c1de5288354e0c70d75edbeb83ef1483ac8c38ba27b9e93da3b9fa",
+      "topology": {
+        "edges": 3,
+        "euler_with_face_holes": 2,
+        "faces": 3,
+        "solids": 1,
+        "two_loop_faces": 0,
+        "vertices": 2
+      },
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 7853.981633974483
+    },
+    {
+      "body": 1,
+      "step_sha256": "a6bb592dc93626678ccf9a6da0c25566692e225bbc79324c4d10006ebf290a45",
+      "topology": {
+        "edges": 15,
+        "euler_with_face_holes": 0,
+        "faces": 7,
+        "solids": 1,
+        "two_loop_faces": 2,
+        "vertices": 10
+      },
+      "valid_after_builder_internal_processing": true,
+      "volume_mm3": 7771.018366025515
+    }
+  ],
+  "output_solid_count": 2,
+  "output_volumes_match_within_mm3": 1e-06,
+  "source_fidelity_or_complete_body_bound_established": false,
+  "source_reference_method": "normal OCCT source root transfer, with internal processing/healing",
+  "source_reference_solid_volumes_mm3": [
+    7771.018366025515,
+    7853.981633974483
+  ],
+  "source_roots_transferred": 2,
+  "source_sha256": "b0929fb2c86f2478f0897255904dda32e15a4cb8995d283a64fc18c10c271d9c",
+  "source_solid_count": 2,
+  "unhealed_validity_established": false
+}

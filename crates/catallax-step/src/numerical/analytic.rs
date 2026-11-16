@@ -8,22 +8,27 @@ use catallax_topology::numerical::{self as n, NumericalDefinition};
 
 const BITS: u32 = 128;
 
+mod cones;
+
 pub(super) fn applies(body: &NumericalBody) -> bool {
     let d = body.definition();
     body.native_trims().is_empty()
         && d.edges
             .iter()
             .all(|edge| matches!(edge.curve, Curve::Line(_) | Curve::Circle(_)))
-        && d.faces
-            .iter()
-            .all(|face| matches!(face.surface, Surface::Plane(_) | Surface::Cylinder(_)))
+        && d.faces.iter().all(|face| {
+            matches!(
+                face.surface,
+                Surface::Plane(_) | Surface::Cylinder(_) | Surface::Cone(_)
+            )
+        })
         && (d
             .edges
             .iter()
             .any(|edge| matches!(edge.curve, Curve::Circle(_)))
             || d.faces
                 .iter()
-                .any(|face| matches!(face.surface, Surface::Cylinder(_))))
+                .any(|face| matches!(face.surface, Surface::Cylinder(_) | Surface::Cone(_))))
 }
 
 fn round3(p: &[Rational; 3], options: &NumericalStepOptions) -> Result<[Rational; 3], Refusal> {
@@ -141,17 +146,23 @@ fn uv(
             let [x, y, z] = local(&cylinder.origin, &cylinder.axis, &cylinder.ref_dir, p)?;
             Ok([angle(&x, &y, &old[0], dec)?, z.mid()])
         }
+        Surface::Cone(cone) => cones::uv(cone, p, old, dec),
         _ => Err(bad(
             "unsupported",
-            "analytic writer requires planes or cylinders",
+            "analytic writer requires planes, cylinders or cones",
         )),
     }
 }
 
-fn rounded_surfaces(w: &mut Writer<'_>, d: &mut NumericalDefinition) -> Result<Vec<Id>, Refusal> {
+fn rounded_surfaces(
+    w: &mut Writer<'_>,
+    d: &mut NumericalDefinition,
+    cones: &mut Vec<Option<cones::Parameters>>,
+) -> Result<Vec<Id>, Refusal> {
     let mut result = Vec::new();
     for face in &mut d.faces {
         w.dec.charge_work(1)?;
+        let mut cone_parameters = None;
         let (id, surface) = match &face.surface {
             Surface::Plane(plane) => {
                 let WrittenFrame {
@@ -197,6 +208,11 @@ fn rounded_surfaces(w: &mut Writer<'_>, d: &mut NumericalDefinition) -> Result<V
                     }),
                 )
             }
+            Surface::Cone(cone) => {
+                let (id, surface, parameters) = cones::rounded(w, &face.key, cone)?;
+                cone_parameters = Some(parameters);
+                (id, surface)
+            }
             _ => {
                 return Err(bad(
                     "unsupported",
@@ -206,6 +222,7 @@ fn rounded_surfaces(w: &mut Writer<'_>, d: &mut NumericalDefinition) -> Result<V
         };
         face.surface = surface;
         result.push(id);
+        cones.push(cone_parameters);
     }
     Ok(result)
 }
@@ -556,6 +573,7 @@ fn pcurve_checks(
     edge: &n::NumericalEdge,
     face: &n::NumericalFace,
     actual: &[[Ball; 2]; 2],
+    cone: Option<&cones::Parameters>,
     dec: &mut Decider,
 ) -> Result<NumericalCheck, Refusal> {
     let mut samples = Vec::new();
@@ -571,7 +589,11 @@ fn pcurve_checks(
             .curve
             .evaluate(&Ball::from_rational(&t, BITS), dec)?
             .ok_or_else(|| bad("unsupported", "written analytic edge has no evaluator"))?;
-        let q = face.surface.evaluate(&uv[0], &uv[1], dec)?;
+        let q = if let Some(cone) = cone {
+            cone.evaluate(&face.surface, &uv[0], &uv[1], dec)?
+        } else {
+            face.surface.evaluate(&uv[0], &uv[1], dec)?
+        };
         let delta: [Ball; 3] = std::array::from_fn(|axis| &p[axis] - &q[axis]);
         let distance = (delta[0].square() + delta[1].square() + delta[2].square())
             .sqrt()
@@ -670,7 +692,8 @@ pub(super) fn build(
         ));
         vertex.position = round3(&vertex.position, options)?;
     }
-    let surfaces = rounded_surfaces(&mut w, &mut d)?;
+    let mut cone_parameters = Vec::with_capacity(d.faces.len());
+    let surfaces = rounded_surfaces(&mut w, &mut d, &mut cone_parameters)?;
     let (geometry, phase_checks) = rounded_curves(&mut w, &mut d)?;
     closed_circle_parameters(&mut d, w.dec)?;
     for face in &mut d.faces {
@@ -739,6 +762,11 @@ pub(super) fn build(
                     ends[1][1] = height;
                 }
             }
+            let ends = if let Some(cone) = &cone_parameters[*f] {
+                cone.step_ends(&ends, w.dec)?
+            } else {
+                ends
+            };
             let (curve, actual) = pcurve(
                 &mut w,
                 &mut parameter,
@@ -746,7 +774,13 @@ pub(super) fn build(
                 &edge.parameters,
                 &ends,
             )?;
-            parameter_checks.push(pcurve_checks(edge, face, &actual, w.dec)?);
+            parameter_checks.push(pcurve_checks(
+                edge,
+                face,
+                &actual,
+                cone_parameters[*f].as_ref(),
+                w.dec,
+            )?);
             pcurves.push(curve);
         }
         let curve = if pcurves.is_empty() {
@@ -832,7 +866,7 @@ pub(super) fn build(
         "MANIFOLD_SOLID_BREP",
         vec![text("'numerical approximate'"), shell.into()],
     );
-    let description = format!(
+    let mut description = format!(
         "catallax numerical approximate;source={};source_tolerance_mm={};source_checks={};source_repairs={};complete_body_bound=unestablished;max_scalar_rounding_error_mm={};max_direction_ratio_rounding_error={};max_pcurve_parameter_scalar_rounding_error={}",
         body.definition().name,
         body.options().tolerance_mm,
@@ -842,6 +876,47 @@ pub(super) fn build(
         w.direction_error,
         parameter.error
     );
+    let has_cones = cone_parameters.iter().any(Option::is_some);
+    let has_cylinders = d
+        .faces
+        .iter()
+        .any(|face| matches!(face.surface, Surface::Cylinder(_)));
+    let angle_error = cone_parameters
+        .iter()
+        .flatten()
+        .map(|p| p.angle_rounding_error.clone())
+        .max()
+        .unwrap_or_else(Rational::zero);
+    if has_cones {
+        description.push_str(&format!(
+            ";max_cone_semi_angle_rounding_error_rad={angle_error}"
+        ));
+    }
+    let mut file_checks = vec![
+        "source.retained-shared-analytic-boundaries".into(),
+        "file.decimal-analytic-carriers-and-pcurves-numerical-admission".into(),
+        if has_cones && !has_cylinders {
+            "file.explicit-conical-pcurves"
+        } else {
+            "file.explicit-cylindrical-pcurves"
+        }
+        .into(),
+        "file.canonical-byte-identity".into(),
+        "file.approximate-category-no-global-bound".into(),
+        format!(
+            "file.pcurve-parameter-scalar-rounding-max={}",
+            parameter.error
+        ),
+    ];
+    if has_cones {
+        if has_cylinders {
+            file_checks.push("file.explicit-conical-pcurves".into());
+        }
+        file_checks.push("file.cone-step-v-generator-distance".into());
+        file_checks.push(format!(
+            "file.cone-semi-angle-rounding-max-rad={angle_error}"
+        ));
+    }
     let mut file = w.graph.write(&[solid], |roots| {
         crate::export::approximate_header(&options.product_name, roots, &description)
     });
@@ -863,17 +938,7 @@ pub(super) fn build(
             max_direction_ratio_rounding_error: w.direction_error,
             counts: [count.faces, count.edges, count.vertices],
             spline_rounding: None,
-            checks: vec![
-                "source.retained-shared-analytic-boundaries".into(),
-                "file.decimal-analytic-carriers-and-pcurves-numerical-admission".into(),
-                "file.explicit-cylindrical-pcurves".into(),
-                "file.canonical-byte-identity".into(),
-                "file.approximate-category-no-global-bound".into(),
-                format!(
-                    "file.pcurve-parameter-scalar-rounding-max={}",
-                    parameter.error
-                ),
-            ],
+            checks: file_checks,
         },
     };
     artifact.check_written(artifact.bytes(), w.dec)?;

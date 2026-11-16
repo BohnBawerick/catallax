@@ -345,3 +345,155 @@ fn a_gapped_cone_retains_its_fitted_carrier_and_records_both_tolerances() {
     assert_eq!(refusal.code, "numerical.invalid-trim");
     assert!(refusal.detail.contains("above its apex"));
 }
+
+fn cone_export_source(angle: &str, top: &str, mode: &str) -> Vec<u8> {
+    let mut soup = common::Soup::new();
+    soup.cone(["0", "0", "0"], "1", angle, Ok(("3", top)));
+    let source = common::in_degrees(&soup.finish());
+    let plane = source.lines().find(|s| s.contains("=PLANE(")).unwrap();
+    let placement = references(plane)[0];
+    let placement = source
+        .lines()
+        .find(|s| s.starts_with(&format!("#{placement}=")))
+        .unwrap();
+    let origin = references(placement)[0];
+    let original = source
+        .lines()
+        .find(|s| s.starts_with(&format!("#{origin}=")))
+        .unwrap();
+    let source = source.replace(
+        original,
+        &format!("#{origin}=CARTESIAN_POINT('',(0.,0.,0.000000001));"),
+    );
+    let mut result = String::new();
+    for line in source.lines() {
+        if line.contains("=CARTESIAN_POINT(") || line.contains("=DIRECTION(") {
+            let (prefix, xyz) = line.rsplit_once('(').unwrap();
+            let p = xyz
+                .trim_end_matches(&[')', ';'][..])
+                .split(',')
+                .map(common::r)
+                .collect::<Vec<_>>();
+            let coordinates = match mode {
+                "oblique" => {
+                    assert!(p[1].is_zero());
+                    [p[2].clone(), p[0].clone(), p[2].clone()]
+                }
+                "turned" => [p[0].clone(), -&p[1], -&p[2]],
+                _ => [p[0].clone(), p[1].clone(), p[2].clone()],
+            }
+            .map(|v| v.to_decimal_exact().unwrap());
+            result.push_str(&format!(
+                "{prefix}({},{},{}));\n",
+                coordinates[0], coordinates[1], coordinates[2]
+            ));
+        } else {
+            result.push_str(line);
+            result.push('\n');
+        }
+    }
+    result.into_bytes()
+}
+
+#[test]
+fn numerical_cones_export_step_generator_parameters_and_checked_geometry() {
+    for (name, angle, top, mode) in [
+        ("cone-30", "30.", "2.732050808", "identity"),
+        ("cone-60", "60.", "6.196152423", "identity"),
+        ("cone-turned", "30.", "2.732050808", "turned"),
+        ("cone-oblique", "30.", "3.449489742783178", "oblique"),
+    ] {
+        let bytes = cone_export_source(angle, top, mode);
+        let (result, work) = with_operation_budget(20_000_000, || {
+            let StepImport::Numerical(imported) = checked(&bytes, "0.01")? else {
+                panic!("expected numerical cone")
+            };
+            let body = &imported.bodies()[0].1;
+            let file = output::build(
+                body,
+                &NumericalStepOptions::default(),
+                &mut Decider::default(),
+            )?;
+            let face = body
+                .definition()
+                .faces
+                .iter()
+                .find(|f| matches!(f.surface, catallax_shapes::Surface::Cone(_)))
+                .unwrap();
+            let catallax_shapes::Surface::Cone(cone) = &face.surface else {
+                unreachable!()
+            };
+            let native_min = face
+                .loops
+                .iter()
+                .flatten()
+                .flat_map(|t| &t.uv)
+                .map(|uv| &uv[1])
+                .min()
+                .unwrap();
+            let step_min = file
+                .report()
+                .emitted_evidence
+                .checks()
+                .iter()
+                .filter_map(|c| {
+                    let catallax_numbers::NumericalCheck::Samples {
+                        name,
+                        scope,
+                        samples,
+                    } = c
+                    else {
+                        return None;
+                    };
+                    (name == "file.actual-decimal-pcurve-edge-surface-distance"
+                        && scope.ends_with(&format!("on {}", face.key)))
+                    .then_some(samples)
+                })
+                .flatten()
+                .map(|s| &s.parameters[2])
+                .min()
+                .unwrap();
+            assert!(step_min > native_min, "{name}");
+            let slope = Decider::default().enclose_at(&cone.slope, 128).unwrap();
+            let cosine = catallax_numbers::Ball::from_rational(&q("1"), 128)
+                .checked_div(
+                    &(catallax_numbers::Ball::from_rational(&q("1"), 128) + slope.square())
+                        .sqrt()
+                        .unwrap(),
+                )
+                .unwrap();
+            let restored = catallax_numbers::Ball::from_rational(step_min, 128) * cosine;
+            assert!(
+                (restored.mid() - native_min.clone()).abs() < q("1e-8"),
+                "{name}"
+            );
+            assert!(
+                file.report()
+                    .checks
+                    .iter()
+                    .any(|s| s == "file.cone-step-v-generator-distance")
+            );
+            let text = std::str::from_utf8(file.bytes()).unwrap();
+            assert!(text.contains("CONICAL_SURFACE(") && text.contains("PCURVE("));
+            assert!(
+                text.contains("catallax numerical approximate")
+                    && text.contains("complete_body_bound=unestablished")
+            );
+            file.check_written(file.bytes(), &mut Decider::default())
+                .unwrap();
+            if let Ok(directory) = std::env::var("CATALLAX_CONE_EVIDENCE") {
+                std::fs::create_dir_all(&directory).unwrap();
+                std::fs::write(
+                    std::path::Path::new(&directory).join(format!("{name}.step")),
+                    file.bytes(),
+                )
+                .unwrap();
+            }
+            Ok::<_, numerical::ImportError>(())
+        });
+        assert!(
+            result.is_ok() && !work.exhausted,
+            "{name}: {result:?}, {work:?}"
+        );
+    }
+}

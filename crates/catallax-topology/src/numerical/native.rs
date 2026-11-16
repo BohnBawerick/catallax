@@ -317,7 +317,8 @@ impl NumericalBody {
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
         guarded(|| {
-            let mut next = build_inner(
+            let mut next = build_inner_kind(
+                self.kind(),
                 definition,
                 native_trims,
                 options,

@@ -442,25 +442,6 @@ fn keys<'a>(values: impl Iterator<Item = &'a str>, dec: &mut Decider) -> Result<
     Ok(())
 }
 
-struct AdmissionStage {
-    name: &'static str,
-    scope: String,
-    start: u64,
-}
-impl Drop for AdmissionStage {
-    fn drop(&mut self) {
-        eprintln!("native_admission stage={} scope={:?} work={}",
-            self.name, self.scope,
-            catallax_numbers::current_operation_work().used.saturating_sub(self.start));
-    }
-}
-fn admission_stage(name: &'static str, scope: impl FnOnce() -> String) -> Option<AdmissionStage> {
-    std::env::var_os("CATALLAX_NATIVE_ADMISSION_TRACE")?;
-    Some(AdmissionStage {
-        name, scope: scope(), start: catallax_numbers::current_operation_work().used,
-    })
-}
-
 fn build_inner(
     definition: NumericalDefinition,
     native_trims: Vec<NumericalNativeTrim>,
@@ -569,10 +550,8 @@ fn build_inner_kind(
             end: Some(vertices[edge.vertices[1]]),
         }));
     }
-    drop(definitions_stage);
     let mut faces = Vec::new();
     for (face_index, face) in definition.faces.iter().enumerate() {
-        let carrier_stage = admission_stage("face-carrier", || face.key.clone());
         dec.charge_work(1)?;
         if !analytic::supports(&face.surface) {
             return Err(bad(
@@ -658,7 +637,6 @@ fn build_inner_kind(
         wires: Vec::new(),
         marks: MarkLog::new(),
     });
-    let structure_stage = admission_stage("incidence", || definition.name.clone());
     if let Some(fault) = crate::check::structure(&model, body).into_iter().next() {
         return Err(Refusal::new(fault.code, fault.detail));
     }
@@ -673,9 +651,7 @@ fn build_inner_kind(
         name: "topology.structure".into(),
         scope: definition.name.clone(),
     }];
-    drop(structure_stage);
     for edge in &definition.edges {
-        let _endpoints = admission_stage("vertex-endpoints", || edge.key.clone());
         let mut samples = Vec::new();
         for i in 0..2 {
             dec.charge_work(1)?;
@@ -698,7 +674,6 @@ fn build_inner_kind(
     }
     for (face_index, face) in definition.faces.iter().enumerate() {
         if face.loops.len() == 1 {
-            let _loop = admission_stage("loop-check", || face.key.clone());
             native::check_loops(
                 face_index,
                 face,
@@ -708,11 +683,13 @@ fn build_inner_kind(
                 dec,
             )?;
         }
-        let joins = {
-            let _joins = admission_stage("loop-joins", || face.key.clone());
-            native::join_samples(face_index, face, &definition.edges, &native, dec)?
-        };
-        checks.extend(joins);
+        checks.extend(native::join_samples(
+            face_index,
+            face,
+            &definition.edges,
+            &native,
+            dec,
+        )?);
         let sampled = native.has_face(face_index) || analytic::projected(face, &definition.edges);
         checks.push(NumericalCheck::Passed {
             name: if sampled {
@@ -790,8 +767,6 @@ fn build_inner_kind(
         {
             let edge = &definition.edges[trim.edge];
             if let Some(curve) = native.get(face_index, boundary_index, use_index) {
-                let _samples = admission_stage("native-trim-samples",
-                    || format!("{} / {}", face.key, edge.key));
                 let (samples, endpoints) = native::samples(face, trim, edge, curve, dec)?;
                 checks.push(NumericalCheck::Samples {
                     name: "trim.native-endpoint-position".into(),
@@ -904,10 +879,7 @@ fn check_loop(
         ));
     }
     let mut area = Rational::zero();
-    let mut local_work = 0u64;
-    let mut crossing_work = 0u64;
     for (i, trim) in boundary.iter().enumerate() {
-        let local = catallax_numbers::current_operation_work().used;
         dec.charge_work(1)?;
         let [a, b] = &trim.uv;
         if a == b || *b != boundary[(i + 1) % n].uv[0] {
@@ -949,30 +921,16 @@ fn check_loop(
         if on_segment(a, b, next) || on_segment(b, next, a) {
             return Err(bad("trim", "adjacent parameter edges overlap or reverse"));
         }
-        local_work += catallax_numbers::current_operation_work().used.saturating_sub(local);
-        let crossing = catallax_numbers::current_operation_work().used;
         for j in i + 1..n {
             if j == i + 1 || (i == 0 && j == n - 1) {
                 continue;
             }
-            if let Err(error) = dec.charge_work(1) {
-                crossing_work += catallax_numbers::current_operation_work().used.saturating_sub(crossing);
-                if std::env::var_os("CATALLAX_NATIVE_ADMISSION_TRACE").is_some() {
-                    eprintln!("native_admission stage=polygon-local scope={:?} work={local_work}", face.key);
-                    eprintln!("native_admission stage=polygon-crossings scope={:?} work={crossing_work}", face.key);
-                }
-                return Err(error);
-            }
+            dec.charge_work(1)?;
             let [c, d] = &boundary[j].uv;
             if intersects(a, b, c, d) {
                 return Err(bad("trim", "parameter loop crosses or touches itself"));
             }
         }
-        crossing_work += catallax_numbers::current_operation_work().used.saturating_sub(crossing);
-    }
-    if std::env::var_os("CATALLAX_NATIVE_ADMISSION_TRACE").is_some() {
-        eprintln!("native_admission stage=polygon-local scope={:?} work={local_work}", face.key);
-        eprintln!("native_admission stage=polygon-crossings scope={:?} work={crossing_work}", face.key);
     }
     let wanted = if (face.sense == Sense::Same) != hole {
         Sign::Positive

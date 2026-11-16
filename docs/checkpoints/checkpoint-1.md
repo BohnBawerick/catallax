@@ -92,6 +92,8 @@ Dry run on main `c52fd8f4`, the 20M import and export allowances, a 60 s cap per
 
 Five files are new (00000174, 00004152, 00004399, 00004452, 00009819) and none of the 369 is lost.
 
+#669 changed both census observers after this dry run, so the census command ran once more on main `634a9483` to check it still works. It gave the same 374 valid files. That run was not complete: the observer for 00005642, a 465 MB source, reached 3.9 GB and the work PC's out-of-memory guard killed it while other jobs were running. Alone, the same file refuses at `resource_limit` after 18 s. The cut run has the work PC to itself.
+
 | Admission | Files |
 | --- | ---: |
 | Full | 405 |
@@ -127,7 +129,15 @@ A refusal is the first stop only. Fixing one cause can move a file to the next c
 
 The OCCT figure is the published reference capture: normal transfer, default `ShapeFix_Shape`, then `BRepCheck_Analyzer`. Its tolerances differ from Catallax's, so the two numbers measure coverage, not a common tolerance.
 
-The tolerant-import tiers have not landed. Only per-entity tolerance storage is on main ([#659](https://github.com/BohnBawerick/catallax/pull/659)), so the census reports the two existing import categories, certified and numerical approximate, instead of tiers.
+The tolerant-import tiers landed in [#669](https://github.com/BohnBawerick/catallax/pull/669) during the checkpoint. This run measures the existing import entry, which reports two categories, certified and numerical approximate. The tier consumer has its own full census at producer `3437c18d2fcc59bbc74c1a4123bf443237f99f73`, measured by the import lane and not rerun here ([step-census-opened](../research/step-census-opened/README.md)):
+
+| Tier census measure, #669 at `3437c18d` | Files | Share of 3,000 |
+| --- | ---: | ---: |
+| Complete-source solid imports | 418 | 13.93% |
+| Every expected solid exports and passes OCCT builder validity | 384 | 12.80% |
+| Supported source openings, any tier (no checked B-rep or export authority) | 2,739 | 91.30% |
+
+The openings count includes 119 mixed or partial files and 2,202 retained unverified source-surface sets. It is not a solid import or a valid export, so it stays out of the headline. #669 reports no loss against 405 complete solids and 374 valid exports.
 
 ## What still refuses and why
 
@@ -160,17 +170,19 @@ Phase 1 does no speed work. These are the costs that merged PRs recorded, kept h
 - **Spline-line queries.** The first Cartesian-box pose trial went over 20M; transverse Bezier subdivision removed it. Box-based pruning elsewhere may have the same cost ([#618](https://github.com/BohnBawerick/catallax/pull/618)).
 - **Import work limit.** 177 census files stopped at the 20M import allowance in the last admission capture. Four of them (00000011, 00000094, 00000205, 00000207) stop at 19,999,976 work ([#638](https://github.com/BohnBawerick/catallax/pull/638)). Optional curved source checks share one 1M prepayment, so a file with less than 1M left refuses there, and legacy planar intersection work is not fully metered ([census](../research/step-census.md)).
 - **Loft numerical admission.** The below-contact loft takes 10,219,174 work for construction, source conversion and numerical admission together ([#618](https://github.com/BohnBawerick/catallax/pull/618)).
+- **Tolerant import healing.** Index per-body healing logs in `tolerant/healing/checks.rs` so checks stop revisiting foreign bodies, and reuse verified source recognition in opening and replay for large parts. Both keep the stated allowance ([#669](https://github.com/BohnBawerick/catallax/pull/669), Later).
 - **Slow steps at the 0.5.0 cut.** Loft 35 s, fillet on a loft edge 26 s, spline sweep 13 s, P5 fillet edit 4 to 6 s, field mass 3.5 to 7.7 s (roadmap 5.1).
 
 
 
 ## Proposed order of phase 2
 
-The owner picks. This is a proposal with one reason each. It keeps the owner's 13 Nov order inside phase 2, with spline fillets and the curved-housing chain at the front of 2.1 as the captain set.
+The owner picks. This is a proposal with one reason each, using the numbering on main since [#662](https://github.com/BohnBawerick/catallax/pull/662) moved the spline fillets to 2.1.
 
-1. **2.1 NURBS toolkit, starting with spline fillets and the curved-housing chain.** It holds the two phase-1 promises that moved, the curved-housing chain of 1.1 and the multi-patch fillet of 1.5. Nothing in these numbers outranks it, because neither the scoreboard nor the census has a spline-fillet case yet; P9, the lofted duct, still has no recipe.
-2. **2.2 Surface bodies.** OCCT opens 44 census files only as open shells and Catallax refuses 69 as `not_solid`. None of them can count until a surface body exists.
-3. **2.3 General sweeps.** It depends on neither 2.1 nor 2.2, so it can run beside them, and P8 is the only target part it unlocks.
-4. **2.4 Direct edits.** It needs the trim, extend and sew of 2.1 and 2.2, and it pays only once imports open, which the census says most files still do not.
+1. **2.1 Fillets between spline faces, with the curved-housing chain.** It carries the two promises phase 1 handed on: the multi-patch fillet and the curved housing of 1.1. Nothing in these numbers outranks it, though neither the scoreboard nor the census measures it yet; P9, the lofted duct, still has no recipe.
+2. **2.2 NURBS toolkit.** Three "not started" coverage lines sit here, and 2.3 and 2.5 need its tools.
+3. **2.3 Surface bodies.** Under #669, 2,202 census files open only as retained, unverified source-surface sets, and OCCT itself gets only an open shell from 44. Sewing and thickening are what turn those into parts.
+4. **2.4 General sweeps.** It depends on neither 2.2 nor 2.3, so it can run beside them; P8 is the only target part it unlocks.
+5. **2.5 Direct edits.** It needs the trim, extend and sew of 2.2 and 2.3, and it pays only once imports open, which the census says most files still do not.
 
-The numbers argue for one change beside this order. Import is still the largest gap: 12.47% of files reach a valid export against OCCT's 90.03%. The four largest refusal causes, `incidence_gap`, `import.numerical-unsupported-family`, `numerical.invalid-trim` and `resource_limit`, cover 1,701 files, and all four are 1.2 import work rather than a phase-2 line. I propose that import repair keeps running beside 2.1 as part of the resolve list, so it does not stop at the checkpoint.
+The numbers argue for one addition beside this order. Import is still the largest gap: 12.47% of files reach a valid export in this run, and 12.80% in #669's tier census, against OCCT's 90.03%. The four largest first refusal causes, `incidence_gap`, `import.numerical-unsupported-family`, `numerical.invalid-trim` and `resource_limit`, cover 1,701 files, and all four are 1.2 import work rather than a phase-2 line. I propose that import repair keeps running beside 2.1 as part of the resolve list, so it does not stop at the checkpoint.

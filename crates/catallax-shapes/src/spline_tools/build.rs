@@ -376,7 +376,9 @@ fn cardinals_on_knots(
     )?;
     axis(degree, &knots, n, dec)?;
     if knots.first() != Some(&knots[degree]) || knots.last() != Some(&knots[n]) {
-        return Err(invalid("prescribed interpolation requires clamped knot ends"));
+        return Err(invalid(
+            "prescribed interpolation requires clamped knot ends",
+        ));
     }
     if nodes.windows(2).any(|pair| pair[0] >= pair[1])
         || nodes[0] < knots[degree]
@@ -907,6 +909,29 @@ impl RationalSplineSurface {
             .collect()
     }
 }
+fn ruled_value(
+    curve: &RationalSplineCurve,
+    at: &Rational,
+    dec: &mut Decider,
+) -> Result<Homogeneous, Refusal> {
+    let coefficients = basis(curve.degree, &curve.knots, curve.controls.len(), at, dec)?;
+    let mut value = std::array::from_fn(|_| Rational::zero());
+    for ((point, weight), coefficient) in
+        curve.controls.iter().zip(&curve.weights).zip(coefficients)
+    {
+        if coefficient.is_zero() {
+            continue;
+        }
+        dec.charge_work(8)?;
+        let scale = &coefficient * weight;
+        for axis in 0..3 {
+            value[axis] = &value[axis] + &(&point[axis] * &scale);
+        }
+        value[3] = &value[3] + &scale;
+    }
+    Ok(value)
+}
+
 #[cfg(test)]
 mod work_tests {
     use super::*;
@@ -930,27 +955,4 @@ mod work_tests {
         );
         assert!(work.exhausted);
     }
-}
-
-fn ruled_value(
-    curve: &RationalSplineCurve,
-    at: &Rational,
-    dec: &mut Decider,
-) -> Result<Homogeneous, Refusal> {
-    let coefficients = basis(curve.degree, &curve.knots, curve.controls.len(), at, dec)?;
-    let mut value = std::array::from_fn(|_| Rational::zero());
-    for ((point, weight), coefficient) in
-        curve.controls.iter().zip(&curve.weights).zip(coefficients)
-    {
-        if coefficient.is_zero() {
-            continue;
-        }
-        dec.charge_work(8)?;
-        let scale = &coefficient * weight;
-        for axis in 0..3 {
-            value[axis] = &value[axis] + &(&point[axis] * &scale);
-        }
-        value[3] = &value[3] + &scale;
-    }
-    Ok(value)
 }

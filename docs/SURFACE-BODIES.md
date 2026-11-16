@@ -64,9 +64,11 @@ cargo run -p catallax-import --example constructed_sew -- /tmp/cx-constructed-se
 
 | Scenario | Construction and export work units | Observed result |
 |---|---:|---|
-| Curved sheet, exact trim, tangent extension, positive thickening | 15,269,091 | Three surface STEP files and a six-face solid; positive volume 12.808125482551887 mm³. |
-| Same chain with negative thickening | 15,269,554 | Correctly oriented six-face solid; positive volume 12.792125695277566 mm³. |
+| Curved sheet, exact trim, tangent extension, positive thickening | 29,145,161 | Three surface STEP files and a six-face solid; positive volume 12.808125482551871 mm³. |
+| Same chain with negative thickening | 29,142,981 | Correctly oriented six-face solid; positive volume 12.792125695277552 mm³. |
 | Open, multi-edge closed and single-edge closed spline wires | 9,455 | Three STEP wireframes, correct unique edge/vertex counts, no faces or solids. |
 | Six independently constructed planar faces | 408,897 | Twelve recorded seam matches, a six-face solid of volume 24 mm³, and refusal of the open five-face sibling. |
 
 The wire regression also verifies actual directed geometry after replay onto a grown model and reflection. Artifact imports used `cadquery-ocp==8.0.1.1.0`, direct `StepToTopoDS_Builder` surface/solid/wireframe entry points, `read.stdsameparameter.mode=0`, and `read.maxprecision.mode=0`. All written artifacts passed `BRepCheck_Analyzer` without `TransferRoots`, `ShapeFix` or an explicit healing pass. These checks do not establish global self-intersection absence.
+
+Focused regressions also check non-clamped wire geometry, both localized caps at 1 nm tolerance, exact ruled interpolation between unequal rational bases, prescribed-knot endpoint admission, and authentic pre-wire handovers. Signed thickening exceeds the 20M work target but stays below the explicit 100M phase-2 allowance; no optimisation is included here.

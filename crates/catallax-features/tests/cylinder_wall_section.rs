@@ -60,7 +60,7 @@ fn skew_wall_section_joins_the_original_cone_ring_after_the_diameter_edit() {
             };
             let axis = stock
                 .axis
-                .scaled(&(&Real::one() / stock.axis.norm_squared().sqrt()));
+                .scaled(&(&Real::one() / &stock.axis.norm_squared().sqrt()));
             let mut heights = Vec::new();
             for boundary in &built.model.face(wall).loops {
                 let Loop::Coedges(uses) = built.model.loop_(*boundary) else {

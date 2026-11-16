@@ -124,7 +124,12 @@ def census_cases(paths, checker, directory):
                        'cutter': cut, 'recipe': recipe}})
 
 
-def outcome(result):
+# A drill or radius change counts only if the OCCT-measured volume drops by more
+# than this fraction of the source volume; equal volumes mean nothing was cut.
+REMOVAL = 1e-6
+
+
+def outcome(result, census=False):
     """One definition of done for every kernel, from the head-to-head row."""
     for label in ('construction', 'edit'):
         variant = result.get('variants', {}).get(label, {})
@@ -149,6 +154,16 @@ def outcome(result):
                  + len(check.get('membership', {}).get('wrong', [])))
         if wrong:
             return False, f'{label} {wrong} wrong checked values', ''
+    if census:
+        before = result['variants']['construction']['correctness']['material']
+        after = result['variants']['edit']['correctness']['material']
+        source = before['source_volume_mm3']
+        steps = (('drill', source, before['volume_mm3']),
+                 ('radius change', before['volume_mm3'], after['volume_mm3']))
+        for step, old, new in steps:
+            if not old - new > REMOVAL * source:
+                return False, f'attempted subtraction: {step} removed no material', \
+                    f'OCCT volume {old!r} -> {new!r} mm3'
     return True, 'done', ''
 
 
@@ -160,7 +175,7 @@ def scoreboard_tables(report):
         row = {'part': part, 'engines': {}}
         for engine in report['engines']:
             samples = [pair['engines'][engine] for pair in measured if pair['part'] == part]
-            verdicts = [outcome(sample) for sample in samples]
+            verdicts = [outcome(sample, part.startswith('census/')) for sample in samples]
             done = bool(verdicts) and all(v[0] for v in verdicts)
             first = next((v for v in verdicts if not v[0]), verdicts[0] if verdicts else (False, 'not run', ''))
             entry = {'done': done, 'summary': 'done' if done else first[1], 'detail': first[2]}
@@ -183,8 +198,9 @@ def scoreboard_markdown(report, rows, seconds):
              f'{report["timing"]["timeout_seconds_per_engine"]:.0f} s per engine. '
              f'Wall time {seconds / 60:.1f} min.', '',
              'Done: the original and the edited target both build, both STEP exports open '
-             'in OCCT 8.0.1.1 as valid solids with the kernel\'s own face count, and no '
-             'independent check found a wrong value.', '',
+             'in OCCT 8.0.1.1 as one valid closed solid with the kernel\'s own face count, and no '
+             'independent check found a wrong value. On a census part the drill and the radius '
+             'change must each lower the OCCT-measured volume.', '',
              '| Target | ' + ' | '.join(KERNEL_NAMES[e] for e in engines) + ' | Catallax work (build, edit) | Catallax names |',
              '| --- |' + ' --- |' * len(engines) + ' ---: | --- |']
     for row in rows:

@@ -4,7 +4,8 @@ Run with the checker's OCP Python. The hole runs along the axis of the smallest
 bounding-box extent, through the centre of the other two, 1 mm past each side.
 Its radius is a tenth of the smaller remaining extent; the edit makes it 1.5 times
 larger. All values are rounded to 0.001 mm and written as exact decimal strings,
-so every kernel receives the same numbers.
+so every kernel receives the same numbers. The source volume, also from OCCT, is
+the reference for judging whether the drill removed material.
 """
 from decimal import ROUND_HALF_EVEN, Decimal
 import json
@@ -12,6 +13,8 @@ import sys
 
 from OCP.Bnd import Bnd_Box
 from OCP.BRepBndLib import BRepBndLib
+from OCP.BRepGProp import BRepGProp
+from OCP.GProp import GProp_GProps
 from OCP.IFSelect import IFSelect_RetDone
 from OCP.STEPControl import STEPControl_Reader
 
@@ -26,8 +29,11 @@ def cutter(path):
     reader = STEPControl_Reader()
     if reader.ReadFile(str(path)) != IFSelect_RetDone or reader.TransferRoots() == 0:
         raise ValueError('source did not transfer')
+    source = reader.OneShape()
+    props = GProp_GProps()
+    BRepGProp.VolumeProperties_s(source, props)
     box = Bnd_Box()
-    BRepBndLib.AddOptimal_s(reader.OneShape(), box, False, False)
+    BRepBndLib.AddOptimal_s(source, box, False, False)
     lo, hi = box.CornerMin(), box.CornerMax()
     low = [mm(v) for v in (lo.X(), lo.Y(), lo.Z())]
     high = [mm(v) for v in (hi.X(), hi.Y(), hi.Z())]
@@ -44,7 +50,8 @@ def cutter(path):
             'height': str(extent[axis] + 2), 'radius': str(radius), 'edited_radius': str(edited),
             'rule': 'hole along the smallest bounding-box extent, through the centre of the others; '
                     'radius one tenth of the smaller remaining extent; edit 1.5 times; 0.001 mm rounding',
-            'bounding_box': 'OCP BRepBndLib::AddOptimal without triangulation, source as transferred'}
+            'bounding_box': 'OCP BRepBndLib::AddOptimal without triangulation, source as transferred',
+            'source_volume_mm3': abs(props.Mass())}
 
 
 if __name__ == '__main__':

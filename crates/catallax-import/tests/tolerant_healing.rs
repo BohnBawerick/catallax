@@ -28,7 +28,7 @@ fn read(text: &str) -> tolerant::TolerantFile {
 }
 
 #[test]
-fn coincident_circle_endpoints_do_not_establish_finite_arc_correspondence() {
+fn coincident_circle_endpoints_sew_only_the_same_finite_arc() {
     for sense in [false, true] {
         for reverse in [false, true] {
             // The two faces share a chord, but own distinct circle edges.
@@ -72,11 +72,10 @@ fn coincident_circle_endpoints_do_not_establish_finite_arc_correspondence() {
             let before = input.clone();
             let healed = healing::heal(&input, &mut Decider::default()).unwrap();
             assert_eq!(input, before);
-            assert!(
-                !healed.report().changes.iter().any(|change| matches!(change,
-                    HealingChange::EdgesSewn { retained, replaced, .. }
-                    if [retained.as_str(), replaced.as_str()].iter().any(|s| ["#20", "#21"].contains(s))))
-            );
+            let sewn = healed.report().changes.iter().any(|change| matches!(change,
+                HealingChange::EdgesSewn { retained, replaced, .. }
+                if [retained.as_str(), replaced.as_str()].iter().any(|s| ["#20", "#21"].contains(s))));
+            assert_eq!(sewn, sense != reverse);
             let definition = healed.definition(&mut Decider::default()).unwrap();
             let arcs: Vec<_> = definition
                 .named_faces()
@@ -86,9 +85,9 @@ fn coincident_circle_endpoints_do_not_establish_finite_arc_correspondence() {
                 .collect();
             assert_eq!(arcs.len(), 2);
             assert_eq!(arcs[0].edge, "#20");
-            assert_eq!(arcs[1].edge, "#21");
+            assert_eq!(arcs[1].edge, if sewn { "#20" } else { "#21" });
             assert!(arcs[0].curve_same_sense);
-            assert_eq!(arcs[1].curve_same_sense, sense);
+            assert_eq!(arcs[1].curve_same_sense, if sewn { true } else { sense });
         }
     }
 }
@@ -145,6 +144,62 @@ fn a_shared_edge_source_is_sewn_with_measured_geometry_and_an_approximate_result
             .all(|c| r(&c.after_mm) <= r("0.01"))
     );
     assert!(before.bodies()[0].tolerance_changes().is_empty());
+}
+
+#[test]
+fn slightly_skew_line_carriers_sew_by_their_complete_finite_segments() {
+    let text = source("0.001");
+    let baseline = healing::heal(&read(&text), &mut Decider::default()).unwrap();
+    let replaced = baseline
+        .report()
+        .changes
+        .iter()
+        .find_map(|change| match change {
+            HealingChange::EdgesSewn { replaced, .. } => Some(replaced.as_str()),
+            _ => None,
+        })
+        .unwrap();
+    let declaration = |name: &str| {
+        text.lines()
+            .find(|line| line.starts_with(&format!("{name}=")))
+            .unwrap()
+    };
+    let last_reference = |line: &str| {
+        format!(
+            "#{}",
+            line.rsplit('#')
+                .next()
+                .unwrap()
+                .split(|c: char| !c.is_ascii_digit())
+                .next()
+                .unwrap()
+        )
+    };
+    let carrier = last_reference(declaration(replaced));
+    let vector = last_reference(declaration(&carrier));
+    let direction = last_reference(declaration(&vector));
+    let original = declaration(&direction);
+    let text = text.replace(original, &original.replacen("0.", "0.0001", 1));
+    let input = read(&text);
+    let healed = healing::heal(&input, &mut Decider::default()).unwrap();
+    assert_eq!(
+        healed
+            .report()
+            .changes
+            .iter()
+            .filter(|change| matches!(change, HealingChange::EdgesSewn { .. }))
+            .count(),
+        4,
+    );
+    let body = checked_planar_fixture(&healed.definition(&mut Decider::default()).unwrap());
+    let counts = body.counts();
+    assert_eq!((counts.faces, counts.edges, counts.vertices), (6, 12, 8));
+    let exported =
+        catallax_step::numerical::build(&body, &Default::default(), &mut Decider::default())
+            .unwrap();
+    exported
+        .check_written(exported.bytes(), &mut Decider::default())
+        .unwrap();
 }
 
 // Independent consumer of the derived fixture through the public numerical

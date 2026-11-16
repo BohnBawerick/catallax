@@ -16,6 +16,7 @@ from pathlib import Path, PurePosixPath
 import subprocess
 import sys
 import time
+import rss_guard
 
 from export_validity_census import (
     ADMISSIONS_SHA,
@@ -234,7 +235,7 @@ def opening(row, checkpoint):
     )
 
 
-def observe(binary, source, baseline, folder, retain):
+def observe(binary, source, baseline, folder, retain, max_rss_mb=6144):
     key, expected = baseline["model_id"], baseline["source_sha256"]
     row = dict(
         model_id=key,
@@ -260,15 +261,16 @@ def observe(binary, source, baseline, folder, retain):
         "wb"
     ) as err:
         try:
-            process = subprocess.run(
+            process = rss_guard.run(
                 command,
                 stdout=out,
                 stderr=err,
                 timeout=60,
-                check=False,
+                max_rss_mb=max_rss_mb,
                 env={**os.environ, "CATALLAX_THREADS": "1"},
             )
-        except subprocess.TimeoutExpired:
+        except (subprocess.TimeoutExpired, rss_guard.MemoryExceeded) as error:
+            termination = "out_of_memory" if isinstance(error, rss_guard.MemoryExceeded) else "timeout"
             checkpoints = []
             for line in (folder / "producer.stdout").read_text().splitlines():
                 try:
@@ -280,9 +282,14 @@ def observe(binary, source, baseline, folder, retain):
             if checkpoints:
                 assert len(checkpoints) == 1 and checkpoints[0]["source_sha256"] == expected
                 opening(row, checkpoints[0])
-            row.update(timeout_stage="export" if checkpoints else "open", export_validity="timeout")
+            row.update(
+                timeout_stage="export" if checkpoints else "open",
+                export_validity=termination,
+            )
+            if isinstance(error, rss_guard.MemoryExceeded):
+                row["observer_peak_rss_mb"] = error.peak_mb
             if not checkpoints:
-                row["outcome"] = "timeout"
+                row["outcome"] = termination
             return row
         finally:
             assert digest(source) == expected
@@ -320,7 +327,7 @@ def observe(binary, source, baseline, folder, retain):
         return row | dict(export_validity="timeout", timeout_stage="raw_reader")
     with (folder / "raw.stdout").open("wb") as out, (folder / "raw.stderr").open("wb") as err:
         try:
-            process = subprocess.run(
+            process = rss_guard.run(
                 [
                     sys.executable,
                     "-B",
@@ -336,10 +343,11 @@ def observe(binary, source, baseline, folder, retain):
                 stdout=out,
                 stderr=err,
                 timeout=remaining,
-                check=False,
+                max_rss_mb=max_rss_mb,
             )
-        except subprocess.TimeoutExpired:
-            return row | dict(export_validity="timeout", timeout_stage="raw_reader")
+        except (subprocess.TimeoutExpired, rss_guard.MemoryExceeded) as error:
+            termination = "out_of_memory" if isinstance(error, rss_guard.MemoryExceeded) else "timeout"
+            return row | dict(export_validity=termination, timeout_stage="raw_reader")
     if process.returncode or not (folder / "raw.json").is_file():
         return row | dict(export_validity="process_error", cause="raw_process_or_missing_response")
     checked = json.loads((folder / "raw.json").read_text())
@@ -379,6 +387,7 @@ def observe(binary, source, baseline, folder, retain):
 
 def collect(args):
     assert args.workers == 2 and not args.out.resolve().is_relative_to(ROOT)
+    assert args.max_rss_mb > 0
     assert digest(BASELINE) == ADMISSIONS_SHA and digest(args.source_hashes) == HASHES_SHA
     assert digest(args.selection) == SELECTION_SHA
     frozen_manifest = json.loads(BASELINE.with_suffix(".json").read_text())
@@ -450,6 +459,7 @@ def collect(args):
         observation_timeout_seconds=60,
         workers=2,
         per_import_workers=1,
+        max_rss_mb_per_observer=args.max_rss_mb,
         ocp_version="8.0.1.1",
         unhealed_validity_established=False,
         complete_source_body_bound_established=False,
@@ -471,7 +481,8 @@ def collect(args):
     with ThreadPoolExecutor(max_workers=2) as pool:
         pending = {
             pool.submit(
-                observe, binary, files[k], baseline[k], args.out / "parts" / k, k in retained
+                observe, binary, files[k], baseline[k], args.out / "parts" / k, k in retained,
+                args.max_rss_mb,
             ): k
             for k in sorted(hashes)
             if k not in rows
@@ -526,12 +537,22 @@ def collect(args):
     expected_valid = {k for k, r in validity.items() if r["validity_outcome"] == "raw_valid"}
     expected_valid.update(r["model_id"] for r in cone_reference["results"])
     assert len(expected_full) == 405 and len(expected_valid) == 374
+    not_measured = {
+        key for key, row in by_id.items()
+        if row["outcome"] in {"timeout", "out_of_memory", "process_error"}
+        or row.get("export_validity") in {"timeout", "out_of_memory", "process_error"}
+    }
+    baseline_not_measured = sorted((set(expected_full) | expected_valid) & not_measured)
     tier_losses = [
         k
         for k, count in expected_full.items()
-        if by_id[k]["outcome"] != "full" or by_id[k].get("observed_body_count") != count
+        if k not in not_measured
+        and (by_id[k]["outcome"] != "full" or by_id[k].get("observed_body_count") != count)
     ]
-    export_losses = [k for k in expected_valid if not by_id[k].get("all_solids_export_valid")]
+    export_losses = [
+        k for k in expected_valid
+        if k not in not_measured and not by_id[k].get("all_solids_export_valid")
+    ]
     outcomes = Counter(r["outcome"] for r in observations)
     exports = Counter(r.get("export_validity", "not_reached") for r in observations)
     opened = sum(r["opened"] for r in observations)
@@ -562,11 +583,14 @@ def collect(args):
         },
         tier_losses=tier_losses,
         frozen_valid_export_losses=export_losses,
+        not_measured=sorted(not_measured),
+        baseline_not_measured=baseline_not_measured,
         baseline_full_solid_files=405,
         baseline_valid_export_files=374,
         integrated_00009338_preserved=preserved_9338,
         acceptance_passed=not tier_losses
         and not export_losses
+        and not baseline_not_measured
         and not outcomes["process_error"]
         and not exports["process_error"]
         and preserved_9338,
@@ -613,6 +637,7 @@ def main():
     for field in ["build-record", "sources", "selection", "source-hashes", "out"]:
         command.add_argument("--" + field, type=Path, required=True)
     command.add_argument("--workers", type=int, default=2)
+    command.add_argument("--max-rss-mb", type=int, default=6144)
     command.add_argument("--resume", action="store_true")
     args = parser.parse_args()
     {"build": build, "raw": raw, "collect": collect}[args.command](args)

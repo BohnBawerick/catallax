@@ -6,17 +6,7 @@ struct Match {
     other: usize,
     reversed: bool,
     gaps: [Rational; 2],
-}
-
-fn parallel(a: &Vec3, b: &Vec3, dec: &mut Decider) -> Result<bool, Error> {
-    for (i, j) in [(0, 1), (1, 2), (2, 0)] {
-        let left = arithmetic(&a[i], &b[j], '*', dec)?;
-        let right = arithmetic(&a[j], &b[i], '*', dec)?;
-        if compare(&left, &right, dec)?.is_ne() {
-            return Ok(false);
-        }
-    }
-    Ok(true)
+    check: &'static str,
 }
 
 fn correspondence(
@@ -27,21 +17,25 @@ fn correspondence(
 ) -> Result<Option<Match>, Error> {
     let left = &body.edges[a];
     let right = &body.edges[b];
-    let (Curve::Line(_, left_direction), Curve::Line(_, right_direction)) =
-        (&left.curve, &right.curve)
-    else {
-        // Carrier and endpoint equality do not identify a finite nonlinear
-        // domain: opposite senses can select complementary arcs. Retain both
-        // edges until a finite-domain correspondence check is implemented.
-        return Ok(None);
+    let exact_arc = match (&left.curve, &right.curve) {
+        (Curve::Line(..), Curve::Line(..)) => false,
+        (Curve::Circle(..), Curve::Circle(..)) | (Curve::Ellipse(..), Curve::Ellipse(..)) => {
+            charge_curve(&left.curve, dec)?;
+            charge_curve(&right.curve, dec)?;
+            if left.curve != right.curve {
+                return Ok(None);
+            }
+            true
+        }
+        _ => return Ok(None),
     };
-    if !parallel(left_direction, right_direction, dec)? {
-        return Ok(None);
-    }
     let cap = &body.options.maximum_mm;
     let cap_squared = arithmetic(cap, cap, '*', dec)?;
     let mut alternatives = Vec::new();
     for reversed in [false, true] {
+        if exact_arc && (left.curve_same_sense ^ reversed) != right.curve_same_sense {
+            continue;
+        }
         let mut distances = Vec::new();
         for i in 0..2 {
             let p = &body.vertices[left.vertices[i]].source.point;
@@ -49,7 +43,7 @@ fn correspondence(
                 .source
                 .point;
             let squared = distance_squared(p, q, dec)?;
-            if compare(&squared, &cap_squared, dec)?.is_gt() {
+            if (exact_arc && !squared.is_zero()) || compare(&squared, &cap_squared, dec)?.is_gt() {
                 break;
             }
             distances.push(squared);
@@ -59,6 +53,11 @@ fn correspondence(
                 other: b,
                 reversed,
                 gaps: [distances[0].clone(), distances[1].clone()],
+                check: if exact_arc {
+                    "identical-conic-carrier-endpoints-and-finite-traversal"
+                } else {
+                    "finite-line-segment-endpoint-correspondence"
+                },
             });
         }
     }
@@ -92,16 +91,6 @@ pub(super) fn sew(
         .map(|(i, _)| i)
         .collect();
     let mut choices: Vec<Vec<Match>> = vec![Vec::new(); body.edges.len()];
-    for &edge in &free {
-        dec.charge_work(1)?;
-        if !matches!(body.edges[edge].curve, Curve::Line(..)) {
-            plan.unresolved(
-                body,
-                &body.edges[edge].name,
-                "sewing.nonlinear-finite-correspondence-pending",
-            );
-        }
-    }
     for (index, &a) in free.iter().enumerate() {
         for &b in &free[index + 1..] {
             dec.charge_work(1)?;
@@ -114,6 +103,7 @@ pub(super) fn sew(
                     other: a,
                     reversed: found.reversed,
                     gaps: found.gaps,
+                    check: found.check,
                 });
             }
         }
@@ -174,7 +164,7 @@ pub(super) fn sew(
             reversed: found.reversed,
             endpoint_distance_upper_mm: [gaps[0].to_string(), gaps[1].to_string()],
             checks: vec![
-                "parallel-line-carriers-and-finite-endpoint-correspondence".into(),
+                found.check.into(),
                 "mutually-unique-free-boundary-match".into(),
             ],
         });
@@ -225,6 +215,16 @@ pub(super) fn sew(
         }
     }
     let after = usage(body, dec)?;
+    for &edge in &free {
+        dec.charge_work(1)?;
+        if after[edge].len() == 1 && !matches!(body.edges[edge].curve, Curve::Line(..)) {
+            plan.unresolved(
+                body,
+                &body.edges[edge].name,
+                "sewing.nonlinear-finite-correspondence-pending",
+            );
+        }
+    }
     if after.iter().any(|uses| uses.len() > 2) && !before.iter().any(|uses| uses.len() > 2) {
         return Err(failure(
             "import.healing-topology",

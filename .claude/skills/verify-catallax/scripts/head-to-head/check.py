@@ -48,11 +48,33 @@ def check(case, variant, step_path, expected_faces):
     actual = reader.OneShape()
     valid = not actual.IsNull() and BRepCheck_Analyzer(actual).IsValid()
     faces = len(entries(actual, TopAbs_FACE))
-    result['step'] = {'status': 'passed' if valid and faces == expected_faces else 'failed',
-                      'opened': True, 'roots': roots, 'valid': valid, 'faces': faces,
+    # A valid open shell is not a part: require at least one solid, every shell
+    # of every solid closed, and no face outside a solid. Separate solids are
+    # allowed because line contact and near misses legitimately yield two.
+    from OCP.BRep import BRep_Tool
+    from OCP.TopAbs import TopAbs_SHELL
+    solid_list = entries(actual, TopAbs_SOLID)
+    # Union of distinct faces owned by any solid; a face shared by two solids counts once.
+    owned = []
+    for solid in solid_list:
+        owned += [face for face in entries(solid, TopAbs_FACE) if not any(face.IsSame(o) for o in owned)]
+    closed = (bool(solid_list) and len(owned) == faces
+              and all(BRep_Tool.IsClosed_s(shell) for solid in solid_list
+                      for shell in entries(solid, TopAbs_SHELL)))
+    result['step'] = {'status': 'passed' if valid and closed and faces == expected_faces else 'failed',
+                      'opened': True, 'roots': roots, 'valid': valid, 'closed_solid': closed,
+                      'solids': len(solid_list), 'faces': faces,
                       'expected_faces': expected_faces, 'face_count_matches': faces == expected_faces}
+    if 'census' in case and closed:
+        # Material removal is judged from each kernel's exported solid, measured in OCCT.
+        from OCP.BRepGProp import BRepGProp
+        from OCP.GProp import GProp_GProps
+        props = GProp_GProps()
+        BRepGProp.VolumeProperties_s(actual, props)
+        result['material'] = {'volume_mm3': abs(props.Mass()),
+                              'source_volume_mm3': case['census']['cutter']['source_volume_mm3']}
     if implicit is None:
-        result['membership'] = {'status': 'not-run', 'reason': 'no independent analytic predicate implemented for the complete trimmed P5 blend'}
+        result['membership'] = {'status': 'not-run', 'reason': 'no independent analytic predicate for this complete target (P5 trimmed blend, census parts)'}
         return result
     # Same 6^3 sampling scheme as the original report, with analytic target bounds.
     axes = [[bounds[i]+(bounds[i+3]-bounds[i])*k/3 for k in range(-1, 5)] for i in range(3)]

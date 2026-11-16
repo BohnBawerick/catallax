@@ -18,6 +18,8 @@ import subprocess
 import sys
 import time
 
+import rss_guard
+
 ROOT = Path(__file__).resolve().parents[2]
 ADMISSIONS_SHA = "b08224a6f919405de46d35896d8d682febbd10c36495d34759f4958c80be3bd7"
 HASHES_SHA = "3323e104c377023846073a05d7e164ca1082dc3dcf32cc046eee897401454cc7"
@@ -32,6 +34,7 @@ TERMINAL = {
     "reimport_refused",
     "admission_changed",
     "timeout",
+    "out_of_memory",
     "process_error",
 }
 WORK = 20_000_000
@@ -198,7 +201,14 @@ def raw(args):
     )
 
 
-def observe(binary, source, baseline, folder, timeout):
+def guarded_run(command, max_rss_mb, **kwargs):
+    """subprocess.run unless a memory cap is set; the capped runner raises MemoryExceeded."""
+    if max_rss_mb:
+        return rss_guard.run(command, max_rss_mb=max_rss_mb, **kwargs)
+    return subprocess.run(command, check=False, **kwargs)
+
+
+def observe(binary, source, baseline, folder, timeout, max_rss_mb=0):
     key, expected = baseline["model_id"], baseline["source_sha256"]
     row = dict(
         model_id=key,
@@ -216,14 +226,16 @@ def observe(binary, source, baseline, folder, timeout):
         "wb"
     ) as err:
         try:
-            process = subprocess.run(
+            process = guarded_run(
                 [str(binary), str(source), expected, str(capture)],
+                max_rss_mb,
                 stdout=out,
                 stderr=err,
                 timeout=timeout,
-                check=False,
                 env={**os.environ, "CATALLAX_THREADS": "1"},
             )
+        except rss_guard.MemoryExceeded as error:
+            return row | dict(outcome="out_of_memory", cause=f"observer above {max_rss_mb} MiB", peak_rss_mb=error.peak_mb)
         except subprocess.TimeoutExpired:
             checkpoints = []
             for line in (attempt / "producer.stdout").read_text().splitlines():
@@ -284,7 +296,7 @@ def observe(binary, source, baseline, folder, timeout):
         return row | dict(outcome="timeout", timeout_stage="raw_reader")
     with (attempt / "raw.stdout").open("wb") as out, (attempt / "raw.stderr").open("wb") as err:
         try:
-            process = subprocess.run(
+            process = guarded_run(
                 [
                     sys.executable,
                     "-B",
@@ -297,11 +309,13 @@ def observe(binary, source, baseline, folder, timeout):
                     "--out",
                     str(attempt / "raw.json"),
                 ],
+                max_rss_mb,
                 stdout=out,
                 stderr=err,
                 timeout=remaining,
-                check=False,
             )
+        except rss_guard.MemoryExceeded as error:
+            return row | dict(outcome="out_of_memory", cause=f"OCCT check above {max_rss_mb} MiB", peak_rss_mb=error.peak_mb)
         except subprocess.TimeoutExpired:
             return row | dict(outcome="timeout", timeout_stage="raw_reader")
     if process.returncode or not (attempt / "raw.json").is_file():

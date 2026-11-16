@@ -63,6 +63,12 @@ class CadQuery:
         face = max(part.Faces(), key=lambda f: f.Center().z)
         return part.shell([face], -thickness)
 
+    def import_step(self, path):
+        solids = self.cq.importers.importStep(str(path)).solids().vals()
+        if len(solids) != 1:
+            raise ValueError(f'expected one source solid, read {len(solids)}')
+        return solids[0]
+
     def measure(self, part):
         center = part.Center()
         return {'volume': part.Volume(), 'area': part.Area(), 'centroid': list(center.toTuple())}
@@ -134,6 +140,13 @@ class SMLib:
     def shell_top(self, part, thickness):
         return part.shell(thickness, part.faces().top())
 
+    def import_step(self, path):
+        part = self.sm.import_step(str(path))
+        solids = part.solids() if hasattr(part, 'solids') else [part]
+        if len(solids) != 1:
+            raise ValueError(f'expected one source solid, read {len(solids)}')
+        return solids[0]
+
     def measure(self, part):
         center = part.center()
         return {'volume': part.volume, 'area': part.area, 'centroid': [center.x, center.y, center.z]}
@@ -169,7 +182,7 @@ def run(engine, case, directory):
     for label in ('construction', 'edit'):
         row = result['variants'][label] = {}
         edit = float(case['edit']['value']) if label == 'edit' else None
-        part = phase(row, 'build', lambda: build(api, case['recipe'], edit))
+        part = phase(row, 'build', lambda: build(api, case['recipe'], edit, case))
         if part is None:
             continue
         phase(row, 'display', lambda: api.export(part, directory / f'{label}.stl'))

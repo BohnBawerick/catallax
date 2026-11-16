@@ -29,7 +29,7 @@ fn bad(detail: &str) -> Refusal { Refusal::new("step.spline-surfaces", detail) }
 /// Decimal controls and weights have a whole-patch positive-denominator bound.
 /// All validation and rounding finish before any bytes reach `out`.
 pub fn write_spline_surfaces_step<W: Write>(surfaces: &[RationalSplineSurface],
-    tolerance_mm: &Rational, significant_digits: u32, dec: &Decider, out: &mut W)
+    tolerance_mm: &Rational, significant_digits: u32, dec: &mut Decider, out: &mut W)
     -> Result<SplineSurfaceStepReport, Refusal> {
     if surfaces.is_empty() || tolerance_mm.sign() != Sign::Positive || !(2..=1000).contains(&significant_digits) {
         return Err(bad("surface set must be nonempty, tolerance positive and decimal precision between 2 and 1000"));

@@ -19,7 +19,7 @@ fn section(t: &Rational, u_curve: bool, dec: &Decider) -> Curve {
     let control = std::array::from_fn(|i| &m[i]*&q("2") - (&a[i]+&b[i])*q("1/2"));
     Curve::new(2,vec![q("0"),q("0"),q("0"),q("1"),q("1"),q("1")],vec![a,control,b],vec![q("1");3],dec).unwrap()
 }
-fn export(out: &Path,name: &str,surfaces: &[Surface],dec: &Decider) -> serde_json::Value {
+fn export(out: &Path,name: &str,surfaces: &[Surface],dec: &mut Decider) -> serde_json::Value {
     let mut bytes = Vec::new();
     let report = write_spline_surfaces_step(surfaces,&q("1/1000000"),17,dec,&mut bytes).unwrap();
     fs::write(out.join(format!("{name}.step")),&bytes).unwrap();
@@ -28,7 +28,7 @@ fn export(out: &Path,name: &str,surfaces: &[Surface],dec: &Decider) -> serde_jso
 }
 fn run(out: &Path) {
     fs::create_dir_all(out).unwrap();
-    let dec = Decider::default();
+    let mut dec = Decider::default();
     let nodes = [q("0"),q("1/3"),q("1")];
     let points: Vec<_> = nodes.iter().flat_map(|u| nodes.iter().map(move |v| law(u,v))).collect();
     let grid = Surface::through_grid([&nodes,&nodes],[2,2],&points,&dec).unwrap();
@@ -77,10 +77,10 @@ fn run(out: &Path) {
     let edited = coons.insert_knot(1,&q("2/5"),1,&dec).unwrap().raise_degree(1,3,&dec).unwrap();
     let pieces = edited.split(0,&q("1/2"),&dec).unwrap();
     assert_eq!(pieces[0].point_at(&q("1/2"),&q("2/5"),&dec).unwrap(),coons.point_at(&q("1/2"),&q("2/5"),&dec).unwrap());
-    let mut reports = vec![export(out,"grid",&[grid],&dec),export(out,"coons",&[coons],&dec),
-        export(out,"gordon",&[gordon],&dec),export(out,"guided-skin",&[skin],&dec),export(out,"n-sided-fill",&fill,&dec)];
+    let mut reports = vec![export(out,"grid",&[grid],&mut dec),export(out,"coons",&[coons],&mut dec),
+        export(out,"gordon",&[gordon],&mut dec),export(out,"guided-skin",&[skin],&mut dec),export(out,"n-sided-fill",&fill,&mut dec)];
     // Decimal rounding is checked by an independent rational control bound.
-    reports.push(export(out,"edited-coons",&pieces,&dec));
+    reports.push(export(out,"edited-coons",&pieces,&mut dec));
     let report = json!({"format":"catallax-nurbs-toolkit/1","checks":"exact interpolation, complete rational boundaries, guide profiles, fill seams, curve edits, surface edits","exports":reports});
     fs::write(out.join("report.json"),serde_json::to_vec_pretty(&report).unwrap()).unwrap();
     println!("{report}");

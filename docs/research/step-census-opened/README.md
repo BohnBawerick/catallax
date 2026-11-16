@@ -102,3 +102,23 @@ The comparison is retained as context, rather than rerunning or renaming those r
 To reproduce, build the clean producer with `tools/research/opened_import_census.py build --record <outside-checkout-record>`.
 Run its `collect` command with that record, the frozen selected source directory, original private selection, published source-hash manifest and a new outside-checkout capture directory under OCP 8.0.1.1.
 The observer header owns its individual-file invocation; `--retain-controls` saves source/control artifacts for the selected ten parts.
+
+## Retained-surface sewing qualification
+
+The single 3,000-file run at kernel producer `b9f7fc355032563d26479215dbd78b0628f9296b` uses two workers, one 20M opening allowance and one aggregate 20M export allowance per file, a 60-second file deadline, and a 6,144 MiB cap on each producer and independent reader.
+It records 418 complete-source solid files and 384 files with every solid exported valid, identical file sets to the frozen tier capture above.
+There are no new complete solid or export-valid files from this sewing change.
+The remaining outcomes are 128 partial files, 2,360 retained-surface files, 92 unopened inputs and two opening timeouts.
+The opening count differs from the older producer; this run does not attribute that difference to sewing.
+
+The opening timeouts remain `00000187` and `00008201`; `00004777` retains its completed solid opening and times out only at export.
+No observer reaches the memory cap and no process error is recorded.
+The collector's stage-attribution correction was checked against the saved rows without rerunning observers.
+It reports no measured tier or export loss and no unmeasured baseline pass in the applicable stage.
+The original and corrected aggregation receipts remain separate.
+
+The public normal-offset surface fixture also sews into a numerical solid, replays from its immutable source and controls, and writes an actual STEP file.
+The pinned OCCT builder reads that artifact as valid with one solid, six faces, twelve edges and eight vertices.
+The smaller caller cap retains the source surfaces instead.
+Finite skew-line correspondence and complementary-conic-arc controls exercise the added sewing checks.
+These controls establish the implemented family, not recovery of all 2,202 older retained-surface files or export authority for arbitrary retained carriers.

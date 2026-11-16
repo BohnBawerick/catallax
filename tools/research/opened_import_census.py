@@ -385,6 +385,30 @@ def observe(binary, source, baseline, folder, retain, max_rss_mb=6144):
     return row
 
 
+def comparison_outcomes(by_id, expected_full, expected_valid):
+    unknown = {"timeout", "out_of_memory", "process_error"}
+    opening_unknown = {key for key, row in by_id.items() if row["outcome"] in unknown}
+    export_unknown = opening_unknown | {
+        key for key, row in by_id.items() if row.get("export_validity") in unknown
+    }
+    return dict(
+        tier_losses=sorted(
+            key for key, count in expected_full.items()
+            if key not in opening_unknown
+            and (by_id[key]["outcome"] != "full"
+                 or by_id[key].get("observed_body_count") != count)
+        ),
+        frozen_valid_export_losses=sorted(
+            key for key in expected_valid
+            if key not in export_unknown and not by_id[key].get("all_solids_export_valid")
+        ),
+        not_measured=sorted(export_unknown),
+        baseline_not_measured=sorted(
+            (set(expected_full) & opening_unknown) | (expected_valid & export_unknown)
+        ),
+    )
+
+
 def collect(args):
     assert args.workers == 2 and not args.out.resolve().is_relative_to(ROOT)
     assert args.max_rss_mb > 0
@@ -537,22 +561,7 @@ def collect(args):
     expected_valid = {k for k, r in validity.items() if r["validity_outcome"] == "raw_valid"}
     expected_valid.update(r["model_id"] for r in cone_reference["results"])
     assert len(expected_full) == 405 and len(expected_valid) == 374
-    not_measured = {
-        key for key, row in by_id.items()
-        if row["outcome"] in {"timeout", "out_of_memory", "process_error"}
-        or row.get("export_validity") in {"timeout", "out_of_memory", "process_error"}
-    }
-    baseline_not_measured = sorted((set(expected_full) | expected_valid) & not_measured)
-    tier_losses = [
-        k
-        for k, count in expected_full.items()
-        if k not in not_measured
-        and (by_id[k]["outcome"] != "full" or by_id[k].get("observed_body_count") != count)
-    ]
-    export_losses = [
-        k for k in expected_valid
-        if k not in not_measured and not by_id[k].get("all_solids_export_valid")
-    ]
+    comparison = comparison_outcomes(by_id, expected_full, expected_valid)
     outcomes = Counter(r["outcome"] for r in observations)
     exports = Counter(r.get("export_validity", "not_reached") for r in observations)
     opened = sum(r["opened"] for r in observations)
@@ -581,16 +590,13 @@ def collect(args):
             name: sum(r.get(name + "_body_count", 0) for r in observations)
             for name in ["valid_solid", "repaired_solid", "surface"]
         },
-        tier_losses=tier_losses,
-        frozen_valid_export_losses=export_losses,
-        not_measured=sorted(not_measured),
-        baseline_not_measured=baseline_not_measured,
+        **comparison,
         baseline_full_solid_files=405,
         baseline_valid_export_files=374,
         integrated_00009338_preserved=preserved_9338,
-        acceptance_passed=not tier_losses
-        and not export_losses
-        and not baseline_not_measured
+        acceptance_passed=not comparison["tier_losses"]
+        and not comparison["frozen_valid_export_losses"]
+        and not comparison["baseline_not_measured"]
         and not outcomes["process_error"]
         and not exports["process_error"]
         and preserved_9338,

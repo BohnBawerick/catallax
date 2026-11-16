@@ -1,0 +1,59 @@
+{
+  "additional_timeout_previous_refusal": "00002204",
+  "baseline_certified_wire_self_intersection_ids": [
+    "00002036",
+    "00002730",
+    "00003687",
+    "00003783",
+    "00005585",
+    "00005751",
+    "00006733",
+    "00007768",
+    "00009316"
+  ],
+  "baseline_invalid_files": 22,
+  "baseline_wire_orientation_not_closed_ids": [
+    "00000718",
+    "00002553",
+    "00003124",
+    "00003557",
+    "00005064",
+    "00005223",
+    "00005497",
+    "00005774",
+    "00007980",
+    "00009338",
+    "00009362",
+    "00009656"
+  ],
+  "certified_wire_triage_scope": "Only 00002036 inspected: all source wires are simple closed circles; source/export direct-builder symptoms agree. Other eight certified files unqualified.",
+  "format": "catallax-constant-height-circle-causes/1",
+  "remaining_invalid_ids": [
+    "00002036",
+    "00002730",
+    "00003557",
+    "00003687",
+    "00003783",
+    "00005064",
+    "00005585",
+    "00005751",
+    "00006733",
+    "00007768",
+    "00007980",
+    "00008902",
+    "00009316",
+    "00009362"
+  ],
+  "scope": "observations after builder internal processing, not predicted gains or source-wire defect diagnoses",
+  "verified_recovered_files": 8,
+  "verified_recovered_ids": [
+    "00000718",
+    "00002553",
+    "00003124",
+    "00005223",
+    "00005497",
+    "00005774",
+    "00009338",
+    "00009656"
+  ]
+}

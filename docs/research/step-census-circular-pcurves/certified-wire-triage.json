@@ -1,0 +1,746 @@
+{
+  "admission": {
+    "bodies": 1,
+    "failed_body": null,
+    "files": [
+      {
+        "body": 0,
+        "bytes": 6988,
+        "file": "body-0.step",
+        "sha256": "1a2e6d0450d09e45cda0d372ae784d661c3c148e0e5166093287a3b0865a5df2"
+      }
+    ],
+    "import": {
+      "bodies": 1,
+      "import_category": "certified",
+      "outcome": "admitted",
+      "source_sha256": "916fd356c0b4a0bd4da247d7645730148b6155561f690e021de5a48989b8341f",
+      "stage": "import",
+      "work_limit": 20000000,
+      "work_used": 183568
+    },
+    "import_category": "certified",
+    "outcome": "complete",
+    "refusal": null,
+    "source_sha256": "916fd356c0b4a0bd4da247d7645730148b6155561f690e021de5a48989b8341f",
+    "stage": "export",
+    "work_limit": 20000000,
+    "work_used": 10651
+  },
+  "analytic_source_cross_section": {
+    "end_fillet_radius_mm": "0.2",
+    "formula_mm3": "139.36*pi + 0.16*pi^2",
+    "inner_cylinder_radius_mm": "1.5",
+    "normal_source_volume_agrees_within_mm3": 1e-09,
+    "outer_cylinder_radius_mm": "2.5",
+    "straight_height_mm": "34.6",
+    "volume_mm3": 439.3914889084479
+  },
+  "builder_internal_healing_possible": true,
+  "capture_producer": "7563b40c48229cfd57407351f716c3a01867d2a2",
+  "complete": true,
+  "direct_builder_max_tolerance_mm": "1e-7",
+  "direct_builder_precision_mm": "1e-7",
+  "export_direct_builder": {
+    "faces": [
+      {
+        "index": 0,
+        "orientation_of_wires": "exception:Standard_NullObject:",
+        "surface": "GeomAbs_Torus",
+        "valid": false,
+        "wires": [
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "SelfIntersectingWire"
+          },
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "SelfIntersectingWire"
+          }
+        ]
+      },
+      {
+        "index": 1,
+        "orientation_of_wires": "exception:Standard_NullObject:",
+        "surface": "GeomAbs_Torus",
+        "valid": false,
+        "wires": [
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "SelfIntersectingWire"
+          },
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "SelfIntersectingWire"
+          }
+        ]
+      },
+      {
+        "index": 2,
+        "orientation_of_wires": "NoError",
+        "surface": "GeomAbs_Plane",
+        "valid": true,
+        "wires": [
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "NoError"
+          },
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "NoError"
+          }
+        ]
+      },
+      {
+        "index": 3,
+        "orientation_of_wires": "NoError",
+        "surface": "GeomAbs_Plane",
+        "valid": true,
+        "wires": [
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "NoError"
+          },
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "NoError"
+          }
+        ]
+      },
+      {
+        "index": 4,
+        "orientation_of_wires": "exception:Standard_NullObject:",
+        "surface": "GeomAbs_Cylinder",
+        "valid": false,
+        "wires": [
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "SelfIntersectingWire"
+          },
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "SelfIntersectingWire"
+          }
+        ]
+      },
+      {
+        "index": 5,
+        "orientation_of_wires": "exception:Standard_NullObject:",
+        "surface": "GeomAbs_Torus",
+        "valid": false,
+        "wires": [
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "SelfIntersectingWire"
+          },
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "SelfIntersectingWire"
+          }
+        ]
+      },
+      {
+        "index": 6,
+        "orientation_of_wires": "exception:Standard_NullObject:",
+        "surface": "GeomAbs_Torus",
+        "valid": false,
+        "wires": [
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "SelfIntersectingWire"
+          },
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "SelfIntersectingWire"
+          }
+        ]
+      },
+      {
+        "index": 7,
+        "orientation_of_wires": "exception:Standard_NullObject:",
+        "surface": "GeomAbs_Cylinder",
+        "valid": false,
+        "wires": [
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "SelfIntersectingWire"
+          },
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "SelfIntersectingWire"
+          }
+        ]
+      }
+    ],
+    "topology": {
+      "edges": 8,
+      "euler_with_face_holes": 0,
+      "faces": 8,
+      "solids": 1,
+      "two_loop_faces": 8,
+      "vertices": 8
+    },
+    "valid": false,
+    "volume_mm3": 263.8937829015425
+  },
+  "export_sha256": "1a2e6d0450d09e45cda0d372ae784d661c3c148e0e5166093287a3b0865a5df2",
+  "export_unit_factors": [
+    1,
+    1,
+    1
+  ],
+  "finding": "All 16 source wires are single closed positive-radius circles with exact endpoint incidence, hence no 3D source-wire self-crossing. Source and export have the same direct-builder periodic-band diagnostics and volume. Normal source transfer adds periodic topology and yields the independently integrated rounded-tube volume. This one-file evidence identifies an OCCT periodic parameterization/seam construction disagreement, not a demonstrated native source-wire defect. Other certified files remain unqualified.",
+  "identical_direct_source_export_symptom_multisets": true,
+  "model_id": "00002036",
+  "ocp_version": "8.0.1.1",
+  "original_external_report_sha256": "fded9686cc3af12a8294a7f64a1666b6ffac54b8d9ad6205d308acab525bd254",
+  "scope": "one named certified-wire file; no full capture or other-eight-file qualification",
+  "source_circles": [
+    {
+      "closed_single_circle": true,
+      "exact_vertex_on_circle": true,
+      "radius_mm": "17/10",
+      "source_curve": 202,
+      "source_edge": 185
+    },
+    {
+      "closed_single_circle": true,
+      "exact_vertex_on_circle": true,
+      "radius_mm": "3/2",
+      "source_curve": 204,
+      "source_edge": 186
+    },
+    {
+      "closed_single_circle": true,
+      "exact_vertex_on_circle": true,
+      "radius_mm": "5/2",
+      "source_curve": 207,
+      "source_edge": 188
+    },
+    {
+      "closed_single_circle": true,
+      "exact_vertex_on_circle": true,
+      "radius_mm": "23/10",
+      "source_curve": 209,
+      "source_edge": 189
+    },
+    {
+      "closed_single_circle": true,
+      "exact_vertex_on_circle": true,
+      "radius_mm": "5/2",
+      "source_curve": 212,
+      "source_edge": 191
+    },
+    {
+      "closed_single_circle": true,
+      "exact_vertex_on_circle": true,
+      "radius_mm": "17/10",
+      "source_curve": 215,
+      "source_edge": 193
+    },
+    {
+      "closed_single_circle": true,
+      "exact_vertex_on_circle": true,
+      "radius_mm": "3/2",
+      "source_curve": 217,
+      "source_edge": 194
+    },
+    {
+      "closed_single_circle": true,
+      "exact_vertex_on_circle": true,
+      "radius_mm": "23/10",
+      "source_curve": 221,
+      "source_edge": 197
+    }
+  ],
+  "source_declared_length_unit": "metre",
+  "source_direct_builder": {
+    "faces": [
+      {
+        "index": 0,
+        "orientation_of_wires": "exception:Standard_NullObject:",
+        "surface": "GeomAbs_Torus",
+        "valid": false,
+        "wires": [
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "SelfIntersectingWire"
+          },
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "SelfIntersectingWire"
+          }
+        ]
+      },
+      {
+        "index": 1,
+        "orientation_of_wires": "exception:Standard_NullObject:",
+        "surface": "GeomAbs_Torus",
+        "valid": false,
+        "wires": [
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "SelfIntersectingWire"
+          },
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "SelfIntersectingWire"
+          }
+        ]
+      },
+      {
+        "index": 2,
+        "orientation_of_wires": "NoError",
+        "surface": "GeomAbs_Plane",
+        "valid": true,
+        "wires": [
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "NoError"
+          },
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "NoError"
+          }
+        ]
+      },
+      {
+        "index": 3,
+        "orientation_of_wires": "NoError",
+        "surface": "GeomAbs_Plane",
+        "valid": true,
+        "wires": [
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "NoError"
+          },
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "NoError"
+          }
+        ]
+      },
+      {
+        "index": 4,
+        "orientation_of_wires": "exception:Standard_NullObject:",
+        "surface": "GeomAbs_Cylinder",
+        "valid": false,
+        "wires": [
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "SelfIntersectingWire"
+          },
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "SelfIntersectingWire"
+          }
+        ]
+      },
+      {
+        "index": 5,
+        "orientation_of_wires": "exception:Standard_NullObject:",
+        "surface": "GeomAbs_Torus",
+        "valid": false,
+        "wires": [
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "SelfIntersectingWire"
+          },
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "SelfIntersectingWire"
+          }
+        ]
+      },
+      {
+        "index": 6,
+        "orientation_of_wires": "exception:Standard_NullObject:",
+        "surface": "GeomAbs_Torus",
+        "valid": false,
+        "wires": [
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "SelfIntersectingWire"
+          },
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "SelfIntersectingWire"
+          }
+        ]
+      },
+      {
+        "index": 7,
+        "orientation_of_wires": "exception:Standard_NullObject:",
+        "surface": "GeomAbs_Cylinder",
+        "valid": false,
+        "wires": [
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "SelfIntersectingWire"
+          },
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "SelfIntersectingWire"
+          }
+        ]
+      }
+    ],
+    "topology": {
+      "edges": 8,
+      "euler_with_face_holes": 0,
+      "faces": 8,
+      "solids": 1,
+      "two_loop_faces": 8,
+      "vertices": 8
+    },
+    "valid": false,
+    "volume_mm3": 263.8937829015425
+  },
+  "source_direct_builder_unit_factors": [
+    1000,
+    1,
+    1
+  ],
+  "source_loops": [
+    {
+      "single_closed_circle": true,
+      "source_edge": 185,
+      "source_loop": 104
+    },
+    {
+      "single_closed_circle": true,
+      "source_edge": 186,
+      "source_loop": 105
+    },
+    {
+      "single_closed_circle": true,
+      "source_edge": 188,
+      "source_loop": 108
+    },
+    {
+      "single_closed_circle": true,
+      "source_edge": 189,
+      "source_loop": 109
+    },
+    {
+      "single_closed_circle": true,
+      "source_edge": 191,
+      "source_loop": 112
+    },
+    {
+      "single_closed_circle": true,
+      "source_edge": 188,
+      "source_loop": 113
+    },
+    {
+      "single_closed_circle": true,
+      "source_edge": 193,
+      "source_loop": 116
+    },
+    {
+      "single_closed_circle": true,
+      "source_edge": 194,
+      "source_loop": 117
+    },
+    {
+      "single_closed_circle": true,
+      "source_edge": 194,
+      "source_loop": 120
+    },
+    {
+      "single_closed_circle": true,
+      "source_edge": 186,
+      "source_loop": 121
+    },
+    {
+      "single_closed_circle": true,
+      "source_edge": 191,
+      "source_loop": 124
+    },
+    {
+      "single_closed_circle": true,
+      "source_edge": 197,
+      "source_loop": 125
+    },
+    {
+      "single_closed_circle": true,
+      "source_edge": 197,
+      "source_loop": 128
+    },
+    {
+      "single_closed_circle": true,
+      "source_edge": 193,
+      "source_loop": 129
+    },
+    {
+      "single_closed_circle": true,
+      "source_edge": 189,
+      "source_loop": 132
+    },
+    {
+      "single_closed_circle": true,
+      "source_edge": 185,
+      "source_loop": 133
+    }
+  ],
+  "source_normal_root_transfer": {
+    "faces": [
+      {
+        "index": 0,
+        "orientation_of_wires": "NoError",
+        "surface": "GeomAbs_Torus",
+        "valid": true,
+        "wires": [
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "NoError"
+          }
+        ]
+      },
+      {
+        "index": 1,
+        "orientation_of_wires": "NoError",
+        "surface": "GeomAbs_Torus",
+        "valid": true,
+        "wires": [
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "NoError"
+          }
+        ]
+      },
+      {
+        "index": 2,
+        "orientation_of_wires": "NoError",
+        "surface": "GeomAbs_Plane",
+        "valid": true,
+        "wires": [
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "NoError"
+          },
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "NoError"
+          }
+        ]
+      },
+      {
+        "index": 3,
+        "orientation_of_wires": "NoError",
+        "surface": "GeomAbs_Plane",
+        "valid": true,
+        "wires": [
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "NoError"
+          },
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "NoError"
+          }
+        ]
+      },
+      {
+        "index": 4,
+        "orientation_of_wires": "NoError",
+        "surface": "GeomAbs_Cylinder",
+        "valid": true,
+        "wires": [
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "NoError"
+          }
+        ]
+      },
+      {
+        "index": 5,
+        "orientation_of_wires": "NoError",
+        "surface": "GeomAbs_Torus",
+        "valid": true,
+        "wires": [
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "NoError"
+          }
+        ]
+      },
+      {
+        "index": 6,
+        "orientation_of_wires": "NoError",
+        "surface": "GeomAbs_Torus",
+        "valid": true,
+        "wires": [
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "NoError"
+          }
+        ]
+      },
+      {
+        "index": 7,
+        "orientation_of_wires": "NoError",
+        "surface": "GeomAbs_Cylinder",
+        "valid": true,
+        "wires": [
+          {
+            "closed": "NoError",
+            "closed_2d": "NoError",
+            "orientation": "NoError",
+            "self_intersection": "NoError"
+          }
+        ]
+      }
+    ],
+    "topology": {
+      "edges": 16,
+      "euler_with_face_holes": 0,
+      "faces": 8,
+      "solids": 1,
+      "two_loop_faces": 2,
+      "vertices": 10
+    },
+    "valid": true,
+    "volume_mm3": 439.39148890844785
+  },
+  "source_sha256": "916fd356c0b4a0bd4da247d7645730148b6155561f690e021de5a48989b8341f",
+  "source_tori": [
+    {
+      "major_radius_mm": "17/10",
+      "minor_radius_mm": "1/5",
+      "regular_ring_torus": true,
+      "source_surface": 67
+    },
+    {
+      "major_radius_mm": "23/10",
+      "minor_radius_mm": "1/5",
+      "regular_ring_torus": true,
+      "source_surface": 71
+    },
+    {
+      "major_radius_mm": "17/10",
+      "minor_radius_mm": "1/5",
+      "regular_ring_torus": true,
+      "source_surface": 79
+    },
+    {
+      "major_radius_mm": "23/10",
+      "minor_radius_mm": "1/5",
+      "regular_ring_torus": true,
+      "source_surface": 87
+    }
+  ],
+  "static_admission_code_path": [
+    {
+      "behavior": "import_inner tries import_step_bodies first; success returns CertifiedImport at line 212 without numerical fallback",
+      "path": "crates/catallax-import/src/numerical.rs:199"
+    },
+    {
+      "behavior": "hash check, read_step and build_file on candidate Model; publish only after successful build",
+      "path": "crates/catallax-import/src/consume.rs:23"
+    },
+    {
+      "behavior": "all analytic/no splines makes repair=false, selecting build_solid_exact directly",
+      "path": "crates/catallax-import/src/build.rs:51"
+    },
+    {
+      "behavior": "build_source_faces runs pairwise intersection checks and exact curve/surface/vertex incidence; final Model.check must return no fault",
+      "path": "crates/catallax-import/src/build.rs:190"
+    },
+    {
+      "behavior": "check_faces refuses either an intersecting pair or an unverified pair",
+      "path": "crates/catallax-import/src/intersect.rs:246"
+    },
+    {
+      "behavior": "Certified branch uses write_step on the imported model, bypassing numerical analytic exporter",
+      "path": "crates/catallax-import/examples/export_import.rs:29"
+    },
+    {
+      "behavior": "existing coedge loops are written as FACE_BOUND; this source has one closed circle per loop and no explicit seam/pcurves",
+      "path": "crates/catallax-step/src/export.rs:1588"
+    }
+  ],
+  "unhealed_validity_established": false
+}

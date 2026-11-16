@@ -1,5 +1,9 @@
 # Cylindrical STEP seam ordering
 
+The later [constant-height circular-pcurve comparison](../step-census-circular-pcurves/README.md)
+records 369 valid files after builder processing, with eight additional recoveries
+and no losses. The distinct 361-file capture below remains unchanged.
+
 The complete frozen-population comparison records **361 of the original 3,000
 files (12.03%) valid after OCCT builder construction, which can heal pcurves
 internally**. The matched control has 354 valid files. **Seven actual files

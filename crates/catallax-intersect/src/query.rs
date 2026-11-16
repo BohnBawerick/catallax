@@ -498,6 +498,16 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
             proof: catallax_numbers::ZeroProof::Algebraic,
         });
     }
+    for (x, y) in [(a, b), (b, a)] {
+        if let (Curve::PatchSection(branch), Curve::BSpline(curve)) = (geom.curve(x), geom.curve(y))
+        {
+            match branch.surface().proves_curve_not_contained(curve, dec) {
+                Ok(true) => return Outcome::Proven(Apart),
+                Ok(false) => (),
+                Err(error) => return Outcome::Refused(error),
+            }
+        }
+    }
     if let (Curve::PatchSection(x), Curve::PatchSection(y)) = (geom.curve(a), geom.curve(b)) {
         match x.same_component(y, dec) {
             Ok(Some(true)) => {

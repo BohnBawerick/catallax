@@ -207,6 +207,12 @@ const KNOWN: &[(&str, &str, Kind)] = &[
         "equations",
         Kind::Guarded,
     ),
+    // Prepared beside the equations under the same writer-only guard.
+    (
+        "catallax-shapes/src/rational_patch/pair.rs",
+        "correlated_fields",
+        Kind::Guarded,
+    ),
     (
         "catallax-shapes/src/rational_patch/pair/net.rs",
         "children",

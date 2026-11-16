@@ -376,7 +376,9 @@ fn build<const CACHE: bool>(
                 Entry::Vacant(entry) => {
                     count(&mut work.traces.missed);
                     let (from, to) = natural_ends(model, coedge.edge);
+                    eprintln!("REGION_TRACE edge={:?} curve={:?} start={}",coedge.edge,edge.curve,catallax_numbers::current_operation_work().used);
                     let answer = trace(model.geom(), edge.curve, from, to, dec)?;
+                    eprintln!("REGION_TRACE edge={:?} done={}",coedge.edge,catallax_numbers::current_operation_work().used);
                     if !answer.marks.is_empty() {
                         return Err(refusal(
                             "boolean.classify-ambiguous",
@@ -394,6 +396,7 @@ fn build<const CACHE: bool>(
             };
             let mut edge_segments = Vec::new();
             for (index, piece) in traced.pieces().iter().enumerate() {
+                eprintln!("REGION_SAMPLE edge={:?} piece={index} start={}",coedge.edge,catallax_numbers::current_operation_work().used);
                 Sampling::<CACHE> {
                     #[cfg(feature = "work-span")]
                     span: work.traces.span.id(),
@@ -417,6 +420,7 @@ fn build<const CACHE: bool>(
                     0,
                     &mut edge_segments,
                 )?;
+                eprintln!("REGION_SAMPLE edge={:?} piece={index} done={}",coedge.edge,catallax_numbers::current_operation_work().used);
             }
             if product(coedge.sense, edge.sense) == Sense::Reversed {
                 edge_segments.reverse();
@@ -617,8 +621,10 @@ impl RegionCache {
         {
             return Ok(direct);
         }
+        eprintln!("SIGNATURE fast declined work={}", catallax_numbers::current_operation_work().used);
         let loops: Vec<_> = loop_groups.iter().flatten().copied().collect();
         let reference = reference(model, surface, &loops, dec)?;
+        eprintln!("SIGNATURE reference done work={}", catallax_numbers::current_operation_work().used);
         #[cfg(feature = "work-span")]
         let coordinates_span = self.traces.span.id();
         let mut work = SamplingWork {
@@ -683,7 +689,7 @@ impl RegionCache {
                     (projection.clone(), *choice)
                 } else {
                     (
-                        Projection::certified(surface, i64::from(choice), dec)?,
+                        {eprintln!("SIGNATURE projection start work={}",catallax_numbers::current_operation_work().used);let p=Projection::certified(surface, i64::from(choice), dec)?;eprintln!("SIGNATURE projection done work={}",catallax_numbers::current_operation_work().used);p},
                         i64::from(choice),
                     )
                 };
@@ -707,6 +713,7 @@ impl RegionCache {
                     };
                     queries.push(projected);
                 }
+                eprintln!("SIGNATURE build start work={}",catallax_numbers::current_operation_work().used);
                 let polygons = match build::<CACHE>(
                     model,
                     &loops,

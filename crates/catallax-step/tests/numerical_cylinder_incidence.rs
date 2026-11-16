@@ -400,3 +400,93 @@ fn emitted_circle_pcurves_keep_constant_height_on_oblique_parallel_and_antiparal
         }
     }
 }
+
+#[test]
+fn tilted_circle_skip_path_retains_its_checked_endpoint_height_slope() {
+    use catallax_numbers::NumericalCheck;
+    let mut definition = chart(1);
+    for index in [1, 4] {
+        definition.vertices[index].position[2] =
+            &definition.vertices[index].position[2] + &q("1e-10");
+    }
+    for edge in &mut definition.edges {
+        if let Curve::Circle(circle) = &mut edge.curve {
+            circle.normal.y = Real::from(q("1e-12"));
+        }
+    }
+    let circle_keys: Vec<_> = definition
+        .edges
+        .iter()
+        .filter(|e| matches!(e.curve, Curve::Circle(_)))
+        .map(|e| e.key.clone())
+        .collect();
+    let face_key = definition.faces.last().unwrap().key.clone();
+    let body = n::build(
+        oblique_axis(definition),
+        n::NumericalOptions::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let file = output::build(
+        &body,
+        &NumericalStepOptions::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    file.check_written(file.bytes(), &mut Decider::default())
+        .unwrap();
+    for key in &circle_keys {
+        let checks = file.report().emitted_evidence.checks();
+        let canonical = checks
+            .iter()
+            .find_map(|check| match check {
+                NumericalCheck::Samples {
+                    name,
+                    scope,
+                    samples,
+                } if name == "trim.edge-surface-distance"
+                    && scope.starts_with(&format!("face {face_key:?}, edge {key:?},")) =>
+                {
+                    Some(samples)
+                }
+                _ => None,
+            })
+            .unwrap();
+        let actual = checks
+            .iter()
+            .find_map(|check| match check {
+                NumericalCheck::Samples {
+                    name,
+                    scope,
+                    samples,
+                } if name == "file.actual-decimal-pcurve-edge-surface-distance"
+                    && *scope == format!("{key} on {face_key}") =>
+                {
+                    Some(samples)
+                }
+                _ => None,
+            })
+            .unwrap();
+        let heights = |samples: &[catallax_numbers::NumericalSample]| {
+            let mut values = [
+                samples.first().unwrap().parameters[2].clone(),
+                samples.last().unwrap().parameters[2].clone(),
+            ];
+            values.sort();
+            values
+        };
+        let original = heights(canonical);
+        let written = heights(actual);
+        assert_ne!(
+            original[0], original[1],
+            "control did not exercise a varying-V map"
+        );
+        assert_ne!(
+            written[0], written[1],
+            "tilted skip path flattened the pcurve"
+        );
+        for (before, after) in original.iter().zip(&written) {
+            assert!((before - after).abs() < q("1e-12"));
+        }
+    }
+}

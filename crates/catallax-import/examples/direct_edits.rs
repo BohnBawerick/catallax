@@ -106,14 +106,14 @@ fn main() {
                     .clone();
                 match &mut surface {
                     Surface::Plane(frame) => {
-                        frame.origin[0] = &frame.origin[0] + parse(5);
-                        frame.origin[1] = &frame.origin[1] + parse(6);
-                        frame.origin[2] = &frame.origin[2] + parse(7);
+                        frame.origin[0] = &frame.origin[0] + &parse(5);
+                        frame.origin[1] = &frame.origin[1] + &parse(6);
+                        frame.origin[2] = &frame.origin[2] + &parse(7);
                     }
                     Surface::Cylinder(frame, radius) => {
-                        frame.origin[0] = &frame.origin[0] + parse(5);
-                        frame.origin[1] = &frame.origin[1] + parse(6);
-                        frame.origin[2] = &frame.origin[2] + parse(7);
+                        frame.origin[0] = &frame.origin[0] + &parse(5);
+                        frame.origin[1] = &frame.origin[1] + &parse(6);
+                        frame.origin[2] = &frame.origin[2] + &parse(7);
                         *radius = parse(8);
                     }
                     _ => panic!("observer replacement family"),

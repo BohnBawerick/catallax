@@ -24,17 +24,41 @@ mod support;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Edit {
     /// Remove a four-sided face and extend its two side supports to meet.
-    DeleteFace { face: String },
+    DeleteFace {
+        /// Current source-scoped face key.
+        face: String,
+    },
     /// Remove a four-sided cylindrical blend between planar side supports.
-    DeleteFillet { face: String },
+    DeleteFillet {
+        /// Current source-scoped cylindrical blend key.
+        face: String,
+    },
     /// Remove the connected coaxial cavity containing this inward wall.
-    DeleteHole { face: String },
+    DeleteHole {
+        /// One inward cylindrical wall of the connected cavity.
+        face: String,
+    },
     /// Translate a support and reconstruct its intersections with neighbours.
-    MoveFace { face: String, translation_mm: Vec3 },
+    MoveFace {
+        /// Current source-scoped face key.
+        face: String,
+        /// Requested support translation, not a healing displacement.
+        translation_mm: Vec3,
+    },
     /// Positive distance follows the face's material-outward normal.
-    OffsetFace { face: String, distance_mm: Rational },
+    OffsetFace {
+        /// Current source-scoped face key.
+        face: String,
+        /// Signed material-outward normal displacement.
+        distance_mm: Rational,
+    },
     /// Replace the support, retaining and reconstructing its finite boundary.
-    ReplaceFace { face: String, surface: Surface },
+    ReplaceFace {
+        /// Current source-scoped face key.
+        face: String,
+        /// New geometric support; adjacent trims are reconstructed.
+        surface: Surface,
+    },
 }
 
 /// Accuracy of the changed supports and rational endpoint construction only.
@@ -45,15 +69,22 @@ pub enum Construction {
     Rational,
     /// Upper bound on the requested parallel support displacement error.
     /// This is not a global source-to-result distance or topology certificate.
-    BoundedOffset { error_upper_mm: Rational },
+    BoundedOffset {
+        /// Absolute whole-plane displacement error, in millimetres.
+        error_upper_mm: Rational,
+    },
 }
 
 /// Face correspondence for one completed edit. Failures publish no record.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EditRecord {
+    /// Request that produced this complete derivative.
     pub edit: Edit,
+    /// Support construction accuracy, separate from body admission.
     pub construction: Construction,
+    /// Retained face keys whose finite definitions changed.
     pub modified_faces: Vec<String>,
+    /// Source-scoped face keys removed by this edit.
     pub deleted_faces: Vec<String>,
 }
 
@@ -123,24 +154,31 @@ impl DirectSolid {
         })
     }
 
+    /// SHA-256 of the original imported bytes, never a derivative fingerprint.
     pub fn source_sha256(&self) -> &str {
         &self.source.sha256
     }
+    /// Original source-scoped solid key.
     pub fn source_body_name(&self) -> &str {
         &self.source.body_name
     }
+    /// Original retained definitions, in millimetres, without edit mutation.
     pub fn source_faces(&self) -> &[Face] {
         &self.source.faces
     }
+    /// Complete current derivative definitions.
     pub fn faces(&self) -> &[Face] {
         &self.faces
     }
+    /// Separately checked numerical material, not an exact model.
     pub fn body(&self) -> &n::NumericalBody {
         self.material.body()
     }
+    /// Current sewing, source-pair and finite reconstruction evidence.
     pub fn admission(&self) -> &SewnSurfaceBody {
         &self.material
     }
+    /// Completed edits in order; refused requests never enter this history.
     pub fn history(&self) -> &[EditRecord] {
         &self.history
     }

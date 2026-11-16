@@ -77,29 +77,41 @@ comparison.
 ## Reproduce
 
 Run the builds on the designated build host, from the repository root. The native
-example accepts an optional second argument to save the finished body:
+example accepts an optional second argument to save the finished body. Use a
+separate fresh target directory for each source revision. Record the revision,
+compiler and selected library hashes with each result:
 
 ```sh
+target_dir=$(mktemp -d "${TMPDIR:-/tmp}/catallax-handover.XXXXXX")
+export CARGO_TARGET_DIR=$target_dir
+git diff --quiet && git diff --cached --quiet || exit 1
+git rev-parse HEAD > "$target_dir/source-revision.txt"
+rustc -Vv > "$target_dir/rustc-version.txt"
 cargo run --release -p catallax-app --example handover_profile -- \
-  crates/catallax-cli/tests/fixtures/soliddraft-gui-bracket.json /tmp/bracket.handover
+  crates/catallax-cli/tests/fixtures/soliddraft-gui-bracket.json "$target_dir/bracket.handover"
 cargo build --release --target wasm32-unknown-unknown -p catallax-app --lib
 ```
 
 Compile the standalone probe against those wasm libraries:
 
 ```sh
-target_dir=${CARGO_TARGET_DIR:-target}
 deps=$target_dir/wasm32-unknown-unknown/release/deps
 externs=()
 for package in catallax_app catallax_features catallax_numbers; do
-  lib=$(find "$deps" -name "lib${package}-*.rlib" -print -quit)
-  externs+=(--extern "$package=$lib")
+  mapfile -t libs < <(find "$deps" -maxdepth 1 -name "lib${package}-*.rlib" -print)
+  if ((${#libs[@]} != 1)); then
+    printf 'Expected one wasm library for %s; found %s\n' "$package" "${#libs[@]}" >&2
+    exit 1
+  fi
+  sha256sum "${libs[0]}" >> "$target_dir/probe-inputs.sha256"
+  externs+=(--extern "$package=${libs[0]}")
 done
+printf '%s\n' "${externs[@]}" > "$target_dir/probe-inputs.txt"
 rustc --edition 2024 -C opt-level=3 --target wasm32-unknown-unknown --crate-type cdylib \
   crates/catallax-app/examples/handover_browser/probe.rs "${externs[@]}" \
-  -L "dependency=$deps" -L "dependency=$target_dir/release/deps" -o /tmp/handover-probe.wasm
+  -L "dependency=$deps" -L "dependency=$target_dir/release/deps" -o "$target_dir/handover-probe.wasm"
 node crates/catallax-app/examples/handover_browser/measure.mjs \
-  /tmp/handover-probe.wasm /tmp/bracket.handover
+  "$target_dir/handover-probe.wasm" "$target_dir/bracket.handover" > "$target_dir/timings.json"
 ```
 
 For Chrome, serve the wasm file, body and `measure.mjs` from a temporary localhost

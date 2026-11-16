@@ -219,7 +219,11 @@ pub fn read_step(bytes: &[u8]) -> Result<StepFile, ImportRefusal> {
 /// Spline data do not acquire incidence or solid proofs through recognition.
 pub fn read_step_with_decider(bytes: &[u8], dec: &Decider) -> Result<StepFile, ImportRefusal> {
     let graph = parse(bytes)?;
-    Reader::new(&graph, dec)?.file()
+    read_graph(&graph, dec)
+}
+
+pub(crate) fn read_graph(graph: &Graph, dec: &Decider) -> Result<StepFile, ImportRefusal> {
+    Reader::new(graph, dec)?.file()
 }
 
 fn unsupported(id: u64, e: &Entity) -> ImportRefusal {

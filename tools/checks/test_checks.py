@@ -55,19 +55,20 @@ class GateTests(unittest.TestCase):
                                  'corrections_sha256': 'corrections'},
                      'correction_base_answers': [{'index': 262}],
                      'selection': {'jobs': {'fmt': 1, 'clippy': 1, 'test-build': 1, 'tests': 4,
-                                            'build': 1, 'step-regressions': 1, 'replay': 4},
+                                            'build': 1, 'step-regressions': 1,
+                                            'step-regressions-slow': 1, 'replay': 4},
                                    'packages': ['catallax-cli'],
                                    'replay_partitions': checks.replay_catalog(checks.read(checks.ROOT / checks.INVENTORY)),
                                    'selected_cases': 477},
                      'declared': ['fmt', 'clippy', 'test-build', 'tests', 'build',
-                                  'step-regressions', 'replay', 'scoreboard']}
+                                  'step-regressions', 'step-regressions-slow', 'replay', 'scoreboard']}
         self.reported = {name: {'result': 'success'} for name in self.plan['selection']['jobs']}
         self.reported['scoreboard'] = {'result': 'skipped'}
         self.records = []
         for name, partitions in self.plan['selection']['jobs'].items():
             for part in range(1, partitions + 1):
                 record = dict(self.plan['identity'], job=name, partition=part,
-                              binary_sha256='binary' if name in {'build', 'step-regressions', 'replay'} else None,
+                              binary_sha256='binary' if name in checks.BINARY_JOBS else None,
                               result='success')
                 if name == 'replay':
                     selected = checks.replay_partition(self.plan, part)
@@ -108,7 +109,8 @@ class GateTests(unittest.TestCase):
         records = [record for record in self.records if record['job'] == 'fmt']
         actual = ['select', 'release-evidence', 'release-dry-run', 'fmt', 'clippy',
                   'tests', 'test-build', 'build', 'scoreboard',
-                  'replay (${{ matrix.partition }})', 'step-regressions', 'check', 'timings']
+                  'replay (${{ matrix.partition }})', 'step-regressions', 'step-regressions-slow',
+                  'check', 'timings']
         self.assertEqual(checks.decide(plan, reported, records, actual_jobs=actual), [])
         for unexpected in ('extra', 'replay (5)', 'replay (${{ matrix.other }})'):
             with self.subTest(job=unexpected):
@@ -163,7 +165,7 @@ class GateTests(unittest.TestCase):
             self.assertIn(f'replay: {result}', self.errors(reported=reported))
 
     def test_archive_and_step_jobs_cannot_be_skipped_or_lose_evidence(self):
-        for name in ('test-build', 'step-regressions'):
+        for name in ('test-build', *checks.STEP_JOBS):
             with self.subTest(job=name):
                 for result in ('failure', 'cancelled', 'skipped'):
                     reported = copy.deepcopy(self.reported)
@@ -171,10 +173,11 @@ class GateTests(unittest.TestCase):
                     self.assertIn(f'{name}: {result}', self.errors(reported=reported))
                 records = [record for record in self.records if record['job'] != name]
                 self.assertIn(f'{name}: partition 1/1 missing', self.errors(records=records))
-        records = copy.deepcopy(self.records)
-        next(record for record in records if record['job'] == 'step-regressions')['binary_sha256'] = 'stale'
-        self.assertTrue(any('step-regressions: stale binary_sha256:' in error
-                            for error in self.errors(records=records)))
+        for name in checks.STEP_JOBS:
+            records = copy.deepcopy(self.records)
+            next(record for record in records if record['job'] == name)['binary_sha256'] = 'stale'
+            self.assertTrue(any(f'{name}: stale binary_sha256:' in error
+                                for error in self.errors(records=records)))
 
     def test_c3_metadata_cannot_hide_changed_answer(self):
         base = [{'index': 7, 'accepted_answer_sha256':
@@ -232,7 +235,8 @@ class SelectorTests(unittest.TestCase):
                 if paths == ['.claude/skills/verify-catallax/scripts/control-catallax.py']:
                     self.assertIn('build', selected['jobs'])
                 self.assertEqual('test-build' in selected['jobs'], 'tests' in selected['jobs'])
-                self.assertEqual('step-regressions' in selected['jobs'], 'build' in selected['jobs'])
+                for name in checks.STEP_JOBS:
+                    self.assertEqual(name in selected['jobs'], 'build' in selected['jobs'])
 
     def test_s2_base_and_candidate_union(self):
         changed = copy.deepcopy(self.rules)
@@ -252,12 +256,14 @@ class SelectorTests(unittest.TestCase):
     def test_base_only_selection_still_requires_split_checks(self):
         old_rules = copy.deepcopy(self.rules)
         del old_rules['jobs']['test-build']
-        del old_rules['jobs']['step-regressions']
+        for name in checks.STEP_JOBS:
+            del old_rules['jobs'][name]
         base = self.route(['crates/catallax-cli/src/verification.rs'], old_rules)
         candidate = self.route(['docs/PLAN.md'])
         jobs = checks.union_selection(base, candidate)['jobs']
         self.assertEqual(jobs['test-build'], 1)
-        self.assertEqual(jobs['step-regressions'], 1)
+        for name in checks.STEP_JOBS:
+            self.assertEqual(jobs[name], 1)
 
     def test_ci_only_changes_run_tooling_and_changed_jobs_without_shards_or_replay(self):
         before = {'jobs': {

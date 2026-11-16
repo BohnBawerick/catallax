@@ -24,6 +24,8 @@ on:
         value: ${{ jobs.select.outputs.test-build }}
       step-regressions:
         value: ${{ jobs.select.outputs.step-regressions }}
+      step-regressions-slow:
+        value: ${{ jobs.select.outputs.step-regressions-slow }}
       build:
         value: ${{ jobs.select.outputs.build }}
       replay:
@@ -59,6 +61,7 @@ jobs:
       tests: ${{ steps.select.outputs.tests }}
       test-build: ${{ steps.select.outputs.test-build }}
       step-regressions: ${{ steps.select.outputs.step-regressions }}
+      step-regressions-slow: ${{ steps.select.outputs.step-regressions-slow }}
       build: ${{ steps.select.outputs.build }}
       replay: ${{ steps.select.outputs.replay }}
       replay_matrix: ${{ steps.select.outputs.replay_matrix }}

@@ -257,6 +257,23 @@ fn a_finite_straight_section_is_not_an_unbounded_line() {
             );
         }
         assert_eq!(dec.stats().coincident_separation, 0);
+        let finite = geom.add_curve(Curve::BSpline(
+            catallax_shapes::BSplineCurve::new(
+                1,
+                [0, 0, 1, 1].map(Rational::from_i64).to_vec(),
+                vec![
+                    Point3::new(Real::zero(), Real::zero(), q(3, 4).into()),
+                    Point3::new(q(3, 4).into(), Real::zero(), Real::zero()),
+                ],
+                vec![Real::one(); 2],
+                &mut dec,
+            )
+            .unwrap(),
+        ));
+        for (a, b) in [(curve, finite), (finite, curve)] {
+            let relation = same_curve(&geom, a, b, &mut dec);
+            assert!(!matches!(relation, Outcome::Proven(Apart)), "{relation:?}");
+        }
     });
     assert!(!work.exhausted);
 }
@@ -289,4 +306,34 @@ fn closed_section_witnesses_separate_nearby_circles_without_proving_equality() {
         }
     });
     assert!(!work.exhausted, "{} work units", work.used);
+}
+
+#[test]
+fn a_shared_endpoint_does_not_hide_a_section_witness_outside_the_spline_hull() {
+    let ((), work) = with_operation_budget(20_000_000, || {
+        let mut dec = Decider::default();
+        let (mut geom, curve) = fixture(&mut dec);
+        let Curve::PatchSection(branch) = geom.curve(curve) else {
+            unreachable!()
+        };
+        let first = branch.witnesses().next().unwrap();
+        let opposite = Point3::new(-&first.x, -&first.y, first.z.clone());
+        let diameter = geom.add_curve(Curve::BSpline(
+            catallax_shapes::BSplineCurve::new(
+                1,
+                [0, 0, 1, 1].map(Rational::from_i64).to_vec(),
+                vec![first, opposite],
+                vec![Real::one(); 2],
+                &mut dec,
+            )
+            .unwrap(),
+        ));
+        for (a, b) in [(curve, diameter), (diameter, curve)] {
+            assert!(matches!(
+                same_curve(&geom, a, b, &mut dec),
+                Outcome::Proven(Apart)
+            ));
+        }
+    });
+    assert!(!work.exhausted);
 }

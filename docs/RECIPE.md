@@ -971,18 +971,20 @@ Preview is unproved. Certified display bounds and property integration enclosure
 
 Curve comparison retains explicit-definition and complete-component equality proofs. A certified point on one retained branch that lies off another curve proves difference; matching witnesses never prove equality. [OpenCASCADE's curve-on-surface check](https://occt3d.com/dev/doc/refman/html/class_geom_lib___check_curve_on_surface.html) measures maximum distance. [SMLib's curve intersection](https://github.com/NVIDIA-Omniverse/usd-brep/blob/main/source/SMLib/src/SmCurve.cpp) separates analytic cases before its tolerance-based global check. Here the corresponding rejection remains exact because the retained witnesses and curve equations are already algebraic.
 
+Before algebraic membership checks, retained branch witnesses are tested against certified positive-weight control hulls. This follows the pole-box broad phase of [OCCT](https://occt3d.com/dev/doc/refman/html/class_bnd_lib___add3d_curve.html) and [SMLib](https://github.com/NVIDIA-Omniverse/usd-brep/blob/main/source/SMLib/src/SmBSplineCurve.cpp). A shared endpoint does not require an expensive equality proof when another witness is already outside the other finite carrier. Overlapping boxes prove nothing; no tolerance is added to the separation decision.
+
 ##### Work recorded for Phase 5
 
-The unchanged P8 original and spring-rise edit reach the same prefix below. The coupled-certificate checkpoint `a15881c1fd390a7b3f26fdb57eaebed4b1dcf5b0` refused component equivalence. Exact witness separation at `f7f1a632b18f212691febe3153ebd276bb9db889` clears that comparison, then exhausts the unchanged 100M allowance in `threaded`. Neither complete part nor P8 STEP is claimed. Nested per-chart charges are included in the sweep row, not counted twice.
+The unchanged P8 original and spring-rise edit reach the same prefix below. Exact witness separation at `f7f1a632b18f212691febe3153ebd276bb9db889` clears the earlier component-equivalence refusal. Positive common-denominator normalization at `2c59c7df54cb6d66fe53a1d4593bddec69b80d84` reduces fitting work, but both complete requests still exhaust the unchanged 100M allowance in `threaded`. Neither complete part nor P8 STEP is claimed. Nested per-chart charges are included in the sweep row, not counted twice.
 
-| Stage | Coupled-certificate work | Witness-separation work | Latest outcome |
+| Stage | Before normalization | After normalization | Latest outcome |
 |---|---:|---:|---|
 | Plate and boss stock | 0 | 0 | Built |
 | Base union | 11,050 | 11,050 | Built |
 | Thread sketch | 1 | 1 | Built |
-| Thread sweep | 96,979,475 | 96,979,475 | Fitted carrier built; source motion numerical |
-| Threaded union | 1,955,993 | 3,007,286 | Request allowance exhausted |
-| Complete request | 98,946,519 | 99,997,812 | Refused |
+| Thread sweep | 96,979,475 | 49,398,368 | Fitted carrier built; source motion numerical |
+| Threaded union | 3,007,286 | 36,542,288 | Request allowance exhausted |
+| Complete request | 99,997,812 | 85,951,707 | Refused |
 
 Later: the thread sweep exceeds the 20M target; retain this phase record for Phase 5 without enlarging the 100M application allowance.
 

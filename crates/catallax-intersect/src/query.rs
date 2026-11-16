@@ -376,13 +376,69 @@ fn cone_support(geom: &GeomStore, curve: CurveId) -> Option<&catallax_shapes::Co
         _ => None,
     })
 }
+fn control_hull<'a>(
+    controls: impl Iterator<Item = &'a Point3>,
+    bits: u32,
+    dec: &mut Decider,
+) -> Result<[Ball; 3], Refusal> {
+    let mut hull: Option<[Ball; 3]> = None;
+    for point in controls {
+        dec.charge_work(1)?;
+        let value = [
+            dec.enclose_budgeted_at(&point.x, bits)?,
+            dec.enclose_budgeted_at(&point.y, bits)?,
+            dec.enclose_budgeted_at(&point.z, bits)?,
+        ];
+        hull = Some(match hull {
+            None => value,
+            Some(old) => std::array::from_fn(|axis| old[axis].hull(&value[axis])),
+        });
+    }
+    Ok(hull.expect("validated finite spline carriers have Cartesian controls"))
+}
+
 // One certified off-curve point disproves equality. Matching witnesses do not.
-fn witness_separation(
+fn witness_separation<I: Iterator<Item = Point3>>(
     geom: &GeomStore,
     other: &Curve,
-    witnesses: impl Iterator<Item = Point3>,
+    witnesses: impl Fn() -> I,
     dec: &mut Decider,
 ) -> Option<Outcome<Apart>> {
+    let bits = dec.policy().max_precision_bits.min(128);
+    if bits > 0 {
+        let hull = match other {
+            Curve::BSpline(curve) => Some(control_hull(curve.controls(), bits, dec)),
+            Curve::PatchSection(branch) => Some(control_hull(
+                branch
+                    .charts()
+                    .iter()
+                    .flat_map(|chart| chart.carrier().controls().iter()),
+                bits,
+                dec,
+            )),
+            _ => None,
+        };
+        if let Some(hull) = hull {
+            let hull = match hull {
+                Ok(hull) => hull,
+                Err(error) => return Some(Outcome::Refused(error)),
+            };
+            // Scan all candidates before trying exact membership: the first
+            // endpoint can be shared even when an interior witness is apart.
+            // Positive weights keep every finite curve in its control hull.
+            for point in witnesses() {
+                for (axis, coordinate) in [&point.x, &point.y, &point.z].into_iter().enumerate() {
+                    let value = match dec.enclose_budgeted_at(coordinate, bits) {
+                        Ok(value) => value,
+                        Err(error) => return Some(Outcome::Refused(error)),
+                    };
+                    if value.hi() < hull[axis].lo() || value.lo() > hull[axis].hi() {
+                        return Some(Outcome::Proven(Apart));
+                    }
+                }
+            }
+        }
+    }
     let equations = other.equations(geom);
     if equations.is_none()
         && !matches!(
@@ -392,7 +448,7 @@ fn witness_separation(
     {
         return None;
     }
-    for point in witnesses {
+    for point in witnesses() {
         let off = match other {
             Curve::PatchPair(branch) => branch.contains(&point, dec).map(|on| !on),
             Curve::PatchSection(branch) => branch.contains(&point, dec).map(|on| !on),
@@ -472,9 +528,11 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
             Curve::PatchPair(branch) => witness_separation(
                 geom,
                 other,
-                branch
-                    .witnesses()
-                    .chain(std::iter::once(branch.endpoints()[1].clone())),
+                || {
+                    branch
+                        .witnesses()
+                        .chain(std::iter::once(branch.endpoints()[1].clone()))
+                },
                 dec,
             ),
             Curve::PatchSection(branch) => {
@@ -485,9 +543,11 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
                 witness_separation(
                     geom,
                     other,
-                    branch
-                        .witnesses()
-                        .chain(std::iter::once(branch.endpoints()[1].clone())),
+                    || {
+                        branch
+                            .witnesses()
+                            .chain(std::iter::once(branch.endpoints()[1].clone()))
+                    },
                     dec,
                 )
             }

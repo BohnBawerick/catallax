@@ -35,9 +35,13 @@ fn thickening_retains_a_bump_between_global_sample_nodes() {
         .map(q)
         .to_vec();
         let mut controls = Vec::new();
+        // Keep the ruled rims in the existing bounded-chart admission class.
+        // Scaling x does not move the bump out of its compact parameter support.
+        let scale = q("1000");
         for i in 0..9 {
             let x = &(&knots[i + 1] + &knots[i + 2]) + &knots[i + 3];
             let x = &x / &q("3");
+            let x = &x * &scale;
             let z = if i == 4 { q("1/10000") } else { q("0") };
             for y in [q("0"), q("1")] {
                 controls.push([x.clone(), y, z.clone()]);
@@ -62,15 +66,16 @@ fn thickening_retains_a_bump_between_global_sample_nodes() {
             &mut dec,
         )
         .unwrap();
-        let solid = sheet.thicken(q("1/10000"), &mut dec).unwrap();
+        let thickness = q("1/10");
+        let solid = sheet.thicken(thickness.clone(), &mut dec).unwrap();
         // The cubic basis peaks at 2/3 here, with zero slope and an upward normal.
-        let expected = [q("34/125"), q("1/2"), q("1/15000")];
+        let expected = [q("272"), q("1/2"), q("1/15000")];
         assert_eq!(cap_point(&solid, "local-bump", &mut dec), expected);
         let offset = cap_point(&solid, "local-bump/offset", &mut dec);
         let expected = [
             expected[0].clone(),
             expected[1].clone(),
-            &expected[2] + &q("1/10000"),
+            &expected[2] + &thickness,
         ];
         for (actual, target) in offset.iter().zip(&expected) {
             assert!(

@@ -31,6 +31,8 @@ Numerical export reconstructs and checks the emitted body with the same kind ins
 
 Extension and normal-offset checks are sampled. They establish neither a whole-domain approximation bound nor global injectivity or absence of self-intersection. Numerical STEP stays marked numerical. The exact generating definition is not an exact-body or exact-offset certificate.
 
+Thickening does not relax the existing strong-monotone bounded-chart admission. A geometrically valid ruled rim can still refuse if that chart certificate is unavailable. The localized regression keeps a 66.7 nm bump within parameter support `[0.270, 0.274]` and checks both caps at 1 nm tolerance on a 1000 mm panel with 0.1 mm thickness. This aspect ratio admits the rims; it does not claim coverage of thinner rims outside that chart certificate.
+
 Sewing uses the existing finite line-segment and identical finite circle/ellipse correspondence rules. Its displacement cap and the numerical reconstruction tolerance are independent explicit controls. Open, ambiguous or disconnected candidates never gain solid authority. The borrowed faces remain unchanged on failure. The report's constructed-definition fingerprint is a diagnostic identity for versioned in-memory text, not an imported STEP digest or a persistence codec.
 
 ## Algorithm choices

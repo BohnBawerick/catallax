@@ -81,6 +81,7 @@
   <a href="#kernel"><span>Kernel</span></a>
   <a href="#assembly"><span>Solid</span></a>
   <a href="#outcomes"><span>Proof</span></a>
+  <a href="#checkpoint"><span>Checkpoint 1</span></a>
   <a href="#bench"><span>Benchmarks</span></a>
   <a href="#work"><span>Work</span></a>
   <a href="#soliddraft"><span>SolidDraft</span></a>
@@ -198,6 +199,35 @@
   <p class="numbers__snapshot">Counts at <span data-snapshot>e79835b, 30 October 2026</span>. The repository has grown since. <a href="evidence.json">Method and earlier build evidence</a>.</p>
 </section>
 
+<section class="sheet bench checkpoint" id="checkpoint">
+  <h2>
+    <span class="ln"><span>Checkpoint 1:</span></span>
+    <span class="ln"><span>the <em>numbers</em>.</span></span>
+  </h2>
+  <p class="checkpoint__lede">Catallax 0.3.0, measured on 16 November 2026 against OpenCASCADE and SMLib. Each part is built, then rebuilt after one change, and judged by one definition of done.</p>
+  <figure class="chart" id="checkpoint-summary">
+    <table role="table">
+      <caption class="sr">Edit chains done at Checkpoint 1, by kernel: test parts out of 13 and real parts out of 10</caption>
+      <thead class="sr" role="rowgroup"><tr role="row"><th scope="col" role="columnheader">Kernel</th><th scope="col" role="columnheader">Test parts, of 13</th><th scope="col" role="columnheader">Real parts, of 10</th></tr></thead>
+      <tbody role="rowgroup">
+        <tr class="is-us" role="row"><th scope="row" role="rowheader">Catallax</th><td role="cell" style="--v:0.769"><i></i><b>10</b></td><td role="cell" style="--v:0.600"><i></i><b>6</b></td></tr>
+        <tr role="row"><th scope="row" role="rowheader">OpenCASCADE</th><td role="cell" style="--v:0.923"><i></i><b>12</b></td><td role="cell" style="--v:0.700"><i></i><b>7</b></td></tr>
+        <tr role="row"><th scope="row" role="rowheader">SMLib</th><td role="cell" style="--v:0.615"><i></i><b>8</b></td><td role="cell" style="--v:0.600"><i></i><b>6</b></td></tr>
+      </tbody>
+    </table>
+    <figcaption class="mono"><span class="key key--a">Test parts, of 13</span><span class="key key--b">Real parts, of 10</span></figcaption>
+  </figure>
+  <ul class="checkpoint__facts">
+    <li><b>374 <small>of 3,000</small></b><span>real STEP files import and export as valid solids, checked after the OpenCASCADE builder, which may heal pcurves. OpenCASCADE opens 2,701 after its own repair.</span></li>
+    <li><b>11 <small>of 14</small></b><span>recorded cuts on freeform lofted solids write a checked STEP file.</span></li>
+    <li><b>477</b><span>saved answers replayed on every kernel change and every release.</span></li>
+  </ul>
+  <div class="ctas">
+    <a class="btn btn--hot" href="checkpoint-1.html"><span>Checkpoint 1 results</span><svg class="sym"><use href="#s-arrow"/></svg></a>
+    <a class="btn" href="testing.html"><span>How it is tested</span></a>
+  </div>
+</section>
+
 <section class="sheet bench" id="bench">
   <h2>
     <span class="ln"><span>Measured, not <em>marketed</em>.</span></span>
@@ -214,7 +244,7 @@
         <tr role="row"><th scope="row" role="rowheader">Pali Ijo</th><td role="cell" style="--v:0.769"><i></i><b>30</b></td><td role="cell" style="--v:0.769"><i></i><b>30</b></td></tr>
       </tbody>
     </table>
-    <figcaption class="mono"><span class="key key--a">Build</span><span class="key key--b">Edit</span><span>Completed, of 39</span><span class="truth">Finishing a part does not prove it is correct.</span><a href="comparison.html" target="_blank" rel="noopener">Full comparison</a></figcaption>
+    <figcaption class="mono"><span class="key key--a">Build</span><span class="key key--b">Edit</span><span>Completed, of 39, Catallax 0.2.0</span><span class="truth">Finishing a part does not prove it is correct.</span><a href="comparison.html" target="_blank" rel="noopener">Full comparison</a></figcaption>
   </figure>
 </section>
 

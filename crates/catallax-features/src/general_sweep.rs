@@ -577,69 +577,67 @@ fn definition(
     for (lp_index, lp) in recipe.loops.iter().enumerate() {
         let start = lp.0.first().ok_or_else(|| bad("empty profile loop"))?.id();
         let (parts, ids, forward) = crate::loft::charts::build(&profile, lp, start, dec)?;
-        for source_chart in parts {
-            for part in profile_charts(source_chart, dec)?.into_iter().flatten() {
-                let coordinates = part
-                    .curve
-                    .controls()
-                    .map(|p| {
-                        let world = [
-                            dec.enclose_budgeted_at(&p.x, 128)?.mid().to_f64_nearest(),
-                            dec.enclose_budgeted_at(&p.y, 128)?.mid().to_f64_nearest(),
-                            dec.enclose_budgeted_at(&p.z, 128)?.mid().to_f64_nearest(),
-                        ];
-                        Ok(to_section(world))
-                    })
-                    .collect::<Result<Vec<_>, Refusal>>()?;
-                let fitted_weights = part
-                    .curve
-                    .weights()
-                    .map(|weight| Ok(Real::from(dec.enclose_budgeted_at(weight, 128)?.mid())))
-                    .collect::<Result<Vec<_>, Refusal>>()?;
-                let local = BSplineCurve::new(
-                    part.curve.degree(),
-                    part.curve.knots().to_vec(),
-                    coordinates
-                        .iter()
-                        .map(|p| point(*p))
-                        .collect::<Result<Vec<_>, _>>()?,
-                    fitted_weights,
-                    dec,
-                )?;
-                for i in 0..=8 {
-                    let t = &part.bounds[0]
-                        + &((&part.bounds[1] - &part.bounds[0])
-                            * Rational::from_ratio(i, 8).expect("fixed samples"));
-                    let source = part
-                        .curve
-                        .evaluate_box([&t, &t], 128, dec)?
-                        .map(|b| b.mid().to_f64_nearest());
-                    let emitted = local
-                        .evaluate_box([&t, &t], 128, dec)?
-                        .map(|b| b.mid().to_f64_nearest());
-                    let delta = sub(to_section(source), emitted);
-                    profile_error =
-                        profile_error.max(libm::sqrt(dot(delta, delta)) * end_scale.max(1.0));
-                    profile_samples += 1;
-                }
-                sample_controls.extend(coordinates.iter().copied());
-                let mid = (&part.bounds[0] + &part.bounds[1]).mul_pow2(-1);
-                let segment = ids
+        for part in parts {
+            let coordinates = part
+                .curve
+                .controls()
+                .map(|p| {
+                    let world = [
+                        dec.enclose_budgeted_at(&p.x, 128)?.mid().to_f64_nearest(),
+                        dec.enclose_budgeted_at(&p.y, 128)?.mid().to_f64_nearest(),
+                        dec.enclose_budgeted_at(&p.z, 128)?.mid().to_f64_nearest(),
+                    ];
+                    Ok(to_section(world))
+                })
+                .collect::<Result<Vec<_>, Refusal>>()?;
+            let fitted_weights = part
+                .curve
+                .weights()
+                .map(|weight| Ok(Real::from(dec.enclose_budgeted_at(weight, 128)?.mid())))
+                .collect::<Result<Vec<_>, Refusal>>()?;
+            let local = BSplineCurve::new(
+                part.curve.degree(),
+                part.curve.knots().to_vec(),
+                coordinates
                     .iter()
-                    .enumerate()
-                    .find(|(i, _)| {
-                        mid < Rational::from_ratio((i + 1) as i64, ids.len() as i64)
-                            .expect("segment count")
-                    })
-                    .expect("authored interval")
-                    .1
-                    .clone();
-                let fitted_chart = crate::loft::charts::Chart {
-                    bounds: part.bounds,
-                    curve: local,
-                };
-                charts.push((lp_index, fitted_chart, coordinates, forward, segment));
+                    .map(|p| point(*p))
+                    .collect::<Result<Vec<_>, _>>()?,
+                fitted_weights,
+                dec,
+            )?;
+            for i in 0..=8 {
+                let t = &part.bounds[0]
+                    + &((&part.bounds[1] - &part.bounds[0])
+                        * Rational::from_ratio(i, 8).expect("fixed samples"));
+                let source = part
+                    .curve
+                    .evaluate_box([&t, &t], 128, dec)?
+                    .map(|b| b.mid().to_f64_nearest());
+                let emitted = local
+                    .evaluate_box([&t, &t], 128, dec)?
+                    .map(|b| b.mid().to_f64_nearest());
+                let delta = sub(to_section(source), emitted);
+                profile_error =
+                    profile_error.max(libm::sqrt(dot(delta, delta)) * end_scale.max(1.0));
+                profile_samples += 1;
             }
+            sample_controls.extend(coordinates.iter().copied());
+            let mid = (&part.bounds[0] + &part.bounds[1]).mul_pow2(-1);
+            let segment = ids
+                .iter()
+                .enumerate()
+                .find(|(i, _)| {
+                    mid < Rational::from_ratio((i + 1) as i64, ids.len() as i64)
+                        .expect("segment count")
+                })
+                .expect("authored interval")
+                .1
+                .clone();
+            let fitted_chart = crate::loft::charts::Chart {
+                bounds: part.bounds,
+                curve: local,
+            };
+            charts.push((lp_index, fitted_chart, coordinates, forward, segment));
         }
     }
     let mut n = path
@@ -765,56 +763,6 @@ fn definition(
     }
     assembly.caps(frame(0.0, dec)?, frame(1.0, dec)?, dec)?;
     Ok((assembly.definition, checks, assembly.roles))
-}
-
-fn profile_charts(
-    chart: crate::loft::charts::Chart,
-    dec: &mut Decider,
-) -> Result<[Option<crate::loft::charts::Chart>; 2], Refusal> {
-    let degree = chart.curve.degree();
-    if degree <= 1 {
-        return Ok([Some(chart), None]);
-    }
-    if chart.curve.control_count() != degree + 1 {
-        return Err(bad("a compiled profile chart must be one Bezier span"));
-    }
-    let half = Real::from_rational(Rational::from_ratio(1, 2).expect("nonzero"));
-    let mut net: Vec<[Real; 4]> = chart
-        .curve
-        .controls()
-        .zip(chart.curve.weights())
-        .map(|(p, w)| [&p.x * w, &p.y * w, &p.z * w, w.clone()])
-        .collect();
-    let mut left = Vec::with_capacity(degree + 1);
-    let mut right = Vec::with_capacity(degree + 1);
-    left.push(net[0].clone());
-    right.push(net[degree].clone());
-    for last in (1..=degree).rev() {
-        dec.charge_work(last as u64)?;
-        for i in 0..last {
-            net[i] = std::array::from_fn(|axis| &(&net[i][axis] + &net[i + 1][axis]) * &half);
-        }
-        left.push(net[0].clone());
-        right.push(net[last - 1].clone());
-    }
-    right.reverse();
-    let middle = (&chart.bounds[0] + &chart.bounds[1]).mul_pow2(-1);
-    let build = |net,
-                 bounds: [Rational; 2],
-                 dec: &mut Decider|
-     -> Result<crate::loft::charts::Chart, Refusal> {
-        let knots = std::iter::repeat_n(bounds[0].clone(), degree + 1)
-            .chain(std::iter::repeat_n(bounds[1].clone(), degree + 1))
-            .collect();
-        Ok(crate::loft::charts::Chart {
-            bounds,
-            curve: BSplineCurve::from_homogeneous(degree, knots, net, dec)?,
-        })
-    };
-    Ok([
-        Some(build(left, [chart.bounds[0].clone(), middle.clone()], dec)?),
-        Some(build(right, [middle, chart.bounds[1].clone()], dec)?),
-    ])
 }
 
 fn affine_row(frame: Frame, p: &[Rational; 2]) -> Result<[Rational; 3], Refusal> {

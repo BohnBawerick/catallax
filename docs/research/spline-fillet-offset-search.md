@@ -11,7 +11,7 @@ The centre of the rolling ball runs along the curve where the two faces, each mo
 
 ## Why it was proposed
 
-The spline-fillet milestone, now 1.5, was about to commit to fillets on arbitrary spline faces. The port scope study had said to scope free-form fillets separately from intersections. So a scope study was added on 11 November as a bounded experiment: does the cell search for spline cuts, which works for cuts, extend to the fillet's equations?
+The spline-fillet milestone, now 2.1, was about to commit to fillets on arbitrary spline faces. The port scope study had said to scope free-form fillets separately from intersections. So a scope study was added on 11 November as a bounded experiment: does the cell search for spline cuts, which works for cuts, extend to the fillet's equations?
 
 ## What was tried
 
@@ -38,7 +38,7 @@ The route that worked, from 12 November: give the spline-pair engine the exact o
 
 ## What is still open
 
-The builder rounds one convex edge between two single-patch faces whose ends meet planes. Fillets across more than one patch, extra trims and junctions still refuse. That is milestone 1.5.
+The builder rounds one convex edge between two single-patch faces whose ends meet planes. Fillets across more than one patch, extra trims and junctions still refuse. That is milestone 2.1.
 
 ## Sources
 

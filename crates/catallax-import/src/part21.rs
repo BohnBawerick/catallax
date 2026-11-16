@@ -173,8 +173,8 @@ impl<'a> Cursor<'a> {
         self.s[self.i..].chars().next()
     }
     fn skip_space(&mut self) {
-        while self.peek().is_some_and(char::is_whitespace) {
-            self.i += 1;
+        while let Some(c) = self.peek().filter(|c| c.is_whitespace()) {
+            self.i += c.len_utf8();
         }
     }
     fn expect(&mut self, c: char) -> Result<(), ImportRefusal> {
@@ -299,8 +299,8 @@ impl<'a> Cursor<'a> {
             Some('.') => {
                 self.i += 1;
                 let start = self.i;
-                while self.peek().is_some_and(|c| c != '.') {
-                    self.i += 1;
+                while let Some(c) = self.peek().filter(|c| *c != '.') {
+                    self.i += c.len_utf8();
                 }
                 let word = self.s[start..self.i].to_ascii_uppercase();
                 self.expect('.')?;

@@ -583,6 +583,11 @@ impl Compiler<'_> {
         };
         let origin = self.point(t.origin, dec)?;
         if t.dimension == Some(2) {
+            if t.axes[1].is_some() || t.scales[0].as_ref().is_some_and(|s| *s != Rational::one()) {
+                return Err(error(
+                    "2D replica scale and second-axis interpretation require explicit mapping",
+                ));
+            }
             let y = [x[1].neg(), x[0].clone(), Expr::integer(0)];
             return Ok(ex::add(
                 &origin,

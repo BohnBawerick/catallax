@@ -514,3 +514,57 @@ fn part21_sections_retain_all_models_and_ignore_quoted_delimiters() {
     assert!(ParsedStep::read(duplicate.as_bytes(), &mut Decider::default()).is_err());
     assert!(ParsedStep::read(b"DATA; #1=POINT();", &mut Decider::default()).is_err());
 }
+
+#[test]
+fn two_dimensional_replicas_refuse_unapplied_scale_and_second_axis() {
+    use catallax_import::geometry_source::AngleUnit;
+    use catallax_numbers::Ball;
+    let s = read(
+        "
+#1=CARTESIAN_POINT('',(0.,0.));
+#2=DIRECTION('',(1.,0.));
+#3=VECTOR('',#2,1.);
+#4=LINE('',#1,#3);
+#5=CARTESIAN_POINT('',(2.,3.));
+#6=CARTESIAN_TRANSFORMATION_OPERATOR_2D('',#2,$,#5,1.);
+#7=DIRECTION('',(0.,-1.));
+#8=CARTESIAN_TRANSFORMATION_OPERATOR_2D('',#2,$,#5,2.);
+#9=CARTESIAN_TRANSFORMATION_OPERATOR_2D('',#2,#7,#5,1.);
+#10=CURVE_REPLICA('',#4,#6);
+#11=CURVE_REPLICA('',#4,#8);
+#12=CURVE_REPLICA('',#4,#9);
+",
+    );
+    let mut dec = Decider::default();
+    let charts = s
+        .curve_charts(10, &q("1"), AngleUnit::Radians, &mut dec)
+        .unwrap();
+    let point = charts[0]
+        .evaluate(&[Ball::from_rational(&q("2"), 128)], &mut dec)
+        .unwrap();
+    for (value, expected) in point.iter().zip([q("4"), q("3"), q("0")]) {
+        assert!(value.lo() <= expected && value.hi() >= expected);
+    }
+    for id in [11, 12] {
+        let error = s
+            .curve_charts(id, &q("1"), AngleUnit::Radians, &mut dec)
+            .unwrap_err();
+        assert!(
+            matches!(error,catallax_import::geometry_source::MappingError::Geometry(r) if r.code=="import.geometry-parameter-mapping")
+        );
+    }
+}
+
+#[test]
+fn unicode_whitespace_in_named_data_never_splits_a_character() {
+    for whitespace in ["\u{2003}", "\u{00a0}", "\u{3000}"] {
+        let text = format!(
+            "{whitespace}DATA({whitespace}'section',({whitespace}'AP242')); #1=CARTESIAN_POINT('',(1.,2.,3.)); ENDSEC;"
+        );
+        let parsed = ParsedStep::read(text.as_bytes(), &mut Decider::default()).unwrap();
+        assert_eq!(
+            geometry(&parsed, 1),
+            Geometry::Point(vec![q("1"), q("2"), q("3")])
+        );
+    }
+}

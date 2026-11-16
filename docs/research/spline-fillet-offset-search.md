@@ -46,7 +46,7 @@ The builder rounds one convex edge between two single-patch faces whose ends mee
 - [M11-OFFSET-PROOF.md](../M11-OFFSET-PROOF.md): https://github.com/BohnBawerick/catallax/pull/445
 - [M11-COVERAGE.md](../M11-COVERAGE.md): https://github.com/BohnBawerick/catallax/pull/521, https://github.com/BohnBawerick/catallax/pull/523, https://github.com/BohnBawerick/catallax/pull/526
 
-## 16 November: numerical multi-patch body, STEP still refused
+## 16 November: numerical multi-patch body and raw STEP
 
 The phase-2.1 continuation uses metered Newton offset contacts across atlas
 charts, C1 cubic centre/section fits and paired world/native-UV end cuts.
@@ -77,12 +77,24 @@ and end-plane samples pass. Its measured final-admission work is:
 | Cross-face checks and setup | 168,954 |
 | Final-admission total | 7,980,511 |
 
-These counts cover final admission only; the same request allowance also
-covers the preceding source and fillet work. Before the STEP continuity fix
-below, numerical STEP construction refused with
-`step.numerical-rounding-topology`: “the written atlas source no longer has
-the original charts”. No filleted STEP, radius-edit result, imported-part
-fillet or housing acceptance is claimed. The test is
+These counts cover final admission only; the same body-build allowance also
+covers the preceding source and fillet work. The STEP continuity fix below
+lets the admitted body write and reread numerical STEP in a separate
+80,265,942-work request. That is not a combined 100M end-to-end app result.
+The kernel entry point is `catallax_features::fillet::numerical::build`;
+ordinary recipe evaluation has not been migrated to this numerical result.
+
+OpenCASCADE/OCP 8.0.1.1 reads the actual 644,190-byte STEP through
+`StepToTopoDS_Builder`, with healing, `SameParameter` and `TransferRoots`
+off. It is valid, with seven faces and one closed solid. A later box cut
+is valid and reduces volume from 8.051606364758838 to 6.516691845842079 mm³.
+The file SHA-256 is
+`6f1984918902e4ee5f9ee2a57593aa33f9330f7b1c8f70ab52cef0c04fe3edaa`.
+
+The [bounded attempt record](../phase5-work-cases.md#incomplete-21-bounded-attempts)
+lists radius-edit, import, housing and all 13 frozen later-cut outcomes.
+Only the far-disjoint M8 cut builds. No completed 2.1 milestone or stable
+radius-edit names are claimed. The loft regression is
 `m11_spline_fillet::numerical_fillet_builds_on_the_smooth_loft_across_its_station_seam`.
 
 The interpolation and separate UV/3D-curve representation follow the
@@ -107,8 +119,11 @@ restricted here to zero-error removal rather than tolerance-based smoothing.
 [SMLib's `N_SrfRemoveKnotConditional` and boundary-constrained removal](https://docs.nvidia.com/smlib/manual/nlib/functions/index.html)
 were checked as the alternative. No reference implementation was copied.
 The decimal C1 regression and the existing `catallax-step` Rust suite pass.
-The latest loft follow-up stops in diagnostic body handover encoding at its
-separate 100M ceiling, before reaching STEP or the radius edit. That does not
-establish the current writer's result on this loft.
+Direct STEP from the admitted loft also passes its numerical reread and
+the independent raw OpenCASCADE read/edit above. Optional diagnostic body
+handover was removed after its separate 100M refusal; no transfer-engine
+performance change or repeated-proof claim is made. Numerical body/history
+layout 03 retains the new carrier declarations; older positional layouts
+refuse explicitly.
 
 

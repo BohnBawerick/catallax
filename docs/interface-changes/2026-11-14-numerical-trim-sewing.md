@@ -30,6 +30,9 @@ The mixed record is `trim.sampled-boundaries-with-continuous-circle-clearance`,
 with separate `trim.continuous-circle-hole-clearance` and
 `trim.continuous-circle-outer-clearance` entries where applicable.
 Other projected/native curved walks retain their sampled scope.
+The continuous-circle records are emitted only for the planar family that
+actually ran projected-disk clearance. A rational patch with native UV circles
+retains sampled-only evidence even when its shared 3D edges are complete circles.
 No tolerance, default work allowance or exact-proof authority is increased.
 
 New API:

@@ -637,10 +637,14 @@ fn build_inner(
             });
         }
         if face.loops.len() > 1 {
-            checks.push(NumericalCheck::Passed {
-                name: if face.loops.iter().any(|boundary| {
+            // This family necessarily ran analytic::circle_clearance during
+            // loop validation. Native curves on rational patches did not.
+            let planar_circle_clearance = matches!(face.surface, Surface::Plane(_))
+                && face.loops.iter().any(|boundary| {
                     analytic::complete_circle(boundary, &definition.edges).is_some()
-                }) {
+                });
+            checks.push(NumericalCheck::Passed {
+                name: if planar_circle_clearance {
                     "trim.sampled-boundaries-with-continuous-circle-clearance"
                 } else if sampled {
                     "trim.sampled-hole-contained-disjoint"
@@ -650,18 +654,19 @@ fn build_inner(
                 .into(),
                 scope: face.key.clone(),
             });
-            if face
-                .loops
-                .iter()
-                .skip(1)
-                .any(|boundary| analytic::complete_circle(boundary, &definition.edges).is_some())
+            if planar_circle_clearance
+                && face.loops.iter().skip(1).any(|boundary| {
+                    analytic::complete_circle(boundary, &definition.edges).is_some()
+                })
             {
                 checks.push(NumericalCheck::Passed {
                     name: "trim.continuous-circle-hole-clearance".into(),
                     scope: face.key.clone(),
                 });
             }
-            if analytic::complete_circle(&face.loops[0], &definition.edges).is_some() {
+            if planar_circle_clearance
+                && analytic::complete_circle(&face.loops[0], &definition.edges).is_some()
+            {
                 checks.push(NumericalCheck::Passed {
                     name: "trim.continuous-circle-outer-clearance".into(),
                     scope: face.key.clone(),

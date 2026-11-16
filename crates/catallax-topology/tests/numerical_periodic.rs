@@ -248,3 +248,109 @@ fn a_thin_annulus_uses_its_actual_rims_not_crossing_inscribed_chords() {
         }
     }
 }
+
+#[test]
+fn rational_patch_native_circles_retain_only_sampled_boundary_evidence() {
+    use catallax_numbers::{NumericalCheck, Real};
+    use catallax_shapes::{
+        BSplineCurve, BSplineSurface, Point3, RationalPatch, SplineSupport, Surface,
+    };
+    let mut definition = fixture::annulus("1.03");
+    let mut dec = Decider::default();
+    let patch = BSplineSurface::new(
+        [1, 1],
+        [
+            vec![
+                fixture::q("-2"),
+                fixture::q("-2"),
+                fixture::q("2"),
+                fixture::q("2"),
+            ],
+            vec![
+                fixture::q("-2"),
+                fixture::q("-2"),
+                fixture::q("2"),
+                fixture::q("2"),
+            ],
+        ],
+        [2, 2],
+        [[-2, -2, 0], [-2, 2, 0], [2, -2, 0], [2, 2, 0]]
+            .into_iter()
+            .map(|[x, y, z]| Point3::new(x.into(), y.into(), z.into()))
+            .collect(),
+        vec![Real::one(); 4],
+        &mut dec,
+    )
+    .unwrap();
+    definition.faces[0].surface = Surface::BSpline(SplineSupport::RationalPatch(
+        RationalPatch::new(patch, &mut dec).unwrap(),
+    ));
+    let period = catallax_numbers::Ball::pi(128).mid() * fixture::q("2");
+    let quarter = &period / &fixture::q("4");
+    let knots = std::iter::repeat_n(fixture::q("0"), 4)
+        .chain((1..4).flat_map(|i| {
+            std::iter::repeat_n(&quarter * &catallax_numbers::Rational::from_i64(i), 3)
+        }))
+        .chain(std::iter::repeat_n(period, 4))
+        .collect::<Vec<_>>();
+    const K: &str = "0.5522847498307936";
+    const M: &str = "-0.5522847498307936";
+    const CONTROLS: [[&str; 2]; 13] = [
+        ["1", "0"],
+        ["1", K],
+        [K, "1"],
+        ["0", "1"],
+        [M, "1"],
+        ["-1", K],
+        ["-1", "0"],
+        ["-1", M],
+        [M, "-1"],
+        ["0", "-1"],
+        [K, "-1"],
+        ["1", M],
+        ["1", "0"],
+    ];
+    let mut bindings = Vec::new();
+    for (boundary, radius) in [(0, "1.03"), (1, "1")] {
+        let radius = fixture::q(radius);
+        let controls = CONTROLS
+            .into_iter()
+            .map(|[u, v]| {
+                Point3::new(
+                    (&fixture::q(u) * &radius).into(),
+                    (&fixture::q(v) * &radius).into(),
+                    0.into(),
+                )
+            })
+            .collect();
+        bindings.push(n::NumericalNativeTrim {
+            face: definition.faces[0].key.clone(),
+            boundary,
+            use_index: 0,
+            edge: definition.edges[definition.faces[0].loops[boundary][0].edge]
+                .key
+                .clone(),
+            curve: BSplineCurve::new(3, knots.clone(), controls, vec![Real::one(); 13], &mut dec)
+                .unwrap(),
+        });
+    }
+    let body =
+        n::build_with_native_trims(definition, bindings, NumericalOptions::default(), &mut dec)
+            .unwrap();
+    let passed = |name: &str, scope: &str| {
+        body.evidence().checks().iter().any(|check| {
+            matches!(check, NumericalCheck::Passed { name: actual, scope: actual_scope }
+            if actual == name && actual_scope == scope)
+        })
+    };
+    assert!(passed("trim.sampled-hole-contained-disjoint", "f0"));
+    for name in [
+        "trim.sampled-boundaries-with-continuous-circle-clearance",
+        "trim.continuous-circle-hole-clearance",
+        "trim.continuous-circle-outer-clearance",
+    ] {
+        assert!(!passed(name, "f0"));
+    }
+    assert!(passed("trim.continuous-circle-hole-clearance", "f1"));
+    assert!(passed("trim.continuous-circle-outer-clearance", "f1"));
+}

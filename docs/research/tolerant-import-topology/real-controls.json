@@ -1,0 +1,285 @@
+{
+  "artifact_profile": {
+    "debug_assertions": false,
+    "debuginfo": 0,
+    "opt_level": "3",
+    "overflow_checks": false,
+    "test": false
+  },
+  "artifact_target": {
+    "crate_types": [
+      "bin"
+    ],
+    "doc": false,
+    "doctest": false,
+    "edition": "2024",
+    "kind": [
+      "example"
+    ],
+    "name": "tolerant_topology",
+    "src_path": "/home/pedro/offload/wt/cx-slice-import/crates/catallax-import/examples/tolerant_topology.rs",
+    "test": false
+  },
+  "binary_sha256": "5b08e00cc4a2bbce41342e968ef71d7e32893f45332d091c3c8039e2cc01c139",
+  "cases": [
+    {
+      "bodies": [
+        {
+          "declared_solid": true,
+          "edges": 4,
+          "faces": 4,
+          "maximum_tolerance_mm": "1/10000000",
+          "shells": 1,
+          "source": "#37",
+          "tolerance_changes": 0,
+          "vertices": 4
+        }
+      ],
+      "definition_unchanged": true,
+      "model_id": "00000131",
+      "record_sha256": "f4990d89b2a3d36b5031d33421157b326a73268879e187d9b1c6ec353edd372a",
+      "reopened": true,
+      "solid_validity_checked": false,
+      "source_sha256": "fde1162a6bc2f0631564cb88b09fe98435d5d91e28b8c93c3ada871b6b826fbf",
+      "work_used": 18206
+    },
+    {
+      "bodies": [
+        {
+          "declared_solid": true,
+          "edges": 4,
+          "faces": 5,
+          "maximum_tolerance_mm": "1/10000000",
+          "shells": 1,
+          "source": "#40",
+          "tolerance_changes": 0,
+          "vertices": 4
+        }
+      ],
+      "definition_unchanged": true,
+      "model_id": "00000173",
+      "record_sha256": "84472e7e0c7b13250abe81af503665a899ba62fbfea18f5d0ba12cef8fdbba8b",
+      "reopened": true,
+      "solid_validity_checked": false,
+      "source_sha256": "e9e6ed7e80f621e605560b7080903775c380e5410a62bc3d138b8fd682570c7a",
+      "work_used": 19896
+    },
+    {
+      "bodies": [
+        {
+          "declared_solid": true,
+          "edges": 12,
+          "faces": 6,
+          "maximum_tolerance_mm": "1/10000000",
+          "shells": 1,
+          "source": "#43",
+          "tolerance_changes": 0,
+          "vertices": 8
+        }
+      ],
+      "definition_unchanged": true,
+      "model_id": "00000190",
+      "record_sha256": "c855d0e4558b4758a10c68e8ed90905cd6a3a5dde196bb17a7da018a81dccd93",
+      "reopened": true,
+      "solid_validity_checked": false,
+      "source_sha256": "dffe2bf5f8be19d9fdde693be54c4f6c4732d2d333edd2dbd7cdd7cb05163948",
+      "work_used": 28704
+    },
+    {
+      "bodies": [
+        {
+          "declared_solid": true,
+          "edges": 4,
+          "faces": 4,
+          "maximum_tolerance_mm": "1/10000000",
+          "shells": 1,
+          "source": "#37",
+          "tolerance_changes": 0,
+          "vertices": 4
+        }
+      ],
+      "definition_unchanged": true,
+      "model_id": "00000405",
+      "record_sha256": "f4cc638886b62f1bb124e8c159dc17f1a8dc1fc5e7c46ea25618dce0af932855",
+      "reopened": true,
+      "solid_validity_checked": false,
+      "source_sha256": "855b700371c3ac43bc8764e03d94e688bf5df7a0be4c29576bfe6dcb8086c0f2",
+      "work_used": 18182
+    },
+    {
+      "bodies": [
+        {
+          "declared_solid": true,
+          "edges": 12,
+          "faces": 6,
+          "maximum_tolerance_mm": "1/10000000",
+          "shells": 1,
+          "source": "#43",
+          "tolerance_changes": 0,
+          "vertices": 8
+        }
+      ],
+      "definition_unchanged": true,
+      "model_id": "00000511",
+      "record_sha256": "80bc05c241718b596e4b2f8461b778e33f0292fbe9b2d31aa62e7c0bb22f0119",
+      "reopened": true,
+      "solid_validity_checked": false,
+      "source_sha256": "50a920f6fd50aedf1afacc1c19cc3b4722a7f4a11dd293fa4d42916e696e09d5",
+      "work_used": 28770
+    },
+    {
+      "bodies": [
+        {
+          "declared_solid": true,
+          "edges": 12,
+          "faces": 6,
+          "maximum_tolerance_mm": "1/10000000",
+          "shells": 1,
+          "source": "#43",
+          "tolerance_changes": 0,
+          "vertices": 8
+        }
+      ],
+      "definition_unchanged": true,
+      "model_id": "00000605",
+      "record_sha256": "d6e6faf10f0484a67bb9a8a7771fe41adbdeeaed134af990a60297fc7ce504b9",
+      "reopened": true,
+      "solid_validity_checked": false,
+      "source_sha256": "913d6be2f284c3ddded0e37ccd44ac9393b575c800cdf7812a09482071ed56d9",
+      "work_used": 28744
+    },
+    {
+      "bodies": [
+        {
+          "declared_solid": true,
+          "edges": 6,
+          "faces": 6,
+          "maximum_tolerance_mm": "1/10000000",
+          "shells": 1,
+          "source": "#43",
+          "tolerance_changes": 0,
+          "vertices": 6
+        }
+      ],
+      "definition_unchanged": true,
+      "model_id": "00000632",
+      "record_sha256": "d2196ee39d9b20d858f619a852ca131c9a518431b52c13fe138361645971fde0",
+      "reopened": true,
+      "solid_validity_checked": false,
+      "source_sha256": "4b28e439ccd5e4f736aae147aa07df2b33c8bc2c139bd3318f8be1d60241051a",
+      "work_used": 24872
+    },
+    {
+      "bodies": [
+        {
+          "declared_solid": true,
+          "edges": 14,
+          "faces": 7,
+          "maximum_tolerance_mm": "1/10000000",
+          "shells": 1,
+          "source": "#46",
+          "tolerance_changes": 0,
+          "vertices": 10
+        }
+      ],
+      "definition_unchanged": true,
+      "model_id": "00000633",
+      "record_sha256": "e6f202ee6b2a9969875528e20e10746ccd5e40fbbecbc7486a3bd2139d91526c",
+      "reopened": true,
+      "solid_validity_checked": false,
+      "source_sha256": "74a532c12724abc77aa5c2a2e4b89f166c66aebdbd8d02deab18294cdb7f0edd",
+      "work_used": 33564
+    },
+    {
+      "bodies": [
+        {
+          "declared_solid": true,
+          "edges": 12,
+          "faces": 6,
+          "maximum_tolerance_mm": "1/10000000",
+          "shells": 1,
+          "source": "#43",
+          "tolerance_changes": 0,
+          "vertices": 8
+        }
+      ],
+      "definition_unchanged": true,
+      "model_id": "00000695",
+      "record_sha256": "9a4a9ff5523bb0aedc081bd143e8101d5dea5af73e32b18e306dd58dade353c2",
+      "reopened": true,
+      "solid_validity_checked": false,
+      "source_sha256": "5a9660c0f13e03afc6bdda7aacebe565790c2019bdc0deb288a3e921a448995f",
+      "work_used": 28664
+    },
+    {
+      "bodies": [
+        {
+          "declared_solid": true,
+          "edges": 2,
+          "faces": 3,
+          "maximum_tolerance_mm": "1/10000000",
+          "shells": 1,
+          "source": "#34",
+          "tolerance_changes": 0,
+          "vertices": 2
+        }
+      ],
+      "definition_unchanged": true,
+      "model_id": "00000821",
+      "record_sha256": "a819565d6d061c38249b956f343ccd143dd59fd472712f585686e9766ca16a55",
+      "reopened": true,
+      "solid_validity_checked": false,
+      "source_sha256": "222f5bd1ba5f202853a68902c88edfa49ca12a09bb57809ac8c29adf782a6ee0",
+      "work_used": 13104
+    },
+    {
+      "bodies": [
+        {
+          "declared_solid": true,
+          "edges": 65,
+          "faces": 22,
+          "maximum_tolerance_mm": "1/10000000",
+          "shells": 1,
+          "source": "#91",
+          "tolerance_changes": 0,
+          "vertices": 44
+        }
+      ],
+      "definition_unchanged": true,
+      "model_id": "00001413",
+      "record_sha256": "3658e2f6b9583d20d93ab91a309cb685b3ed1ee0c31449f8f66577eb81737760",
+      "reopened": true,
+      "solid_validity_checked": false,
+      "source_sha256": "56a8e532c7677a24dfbcde905499bd966981132ae255391f07188bc1a5a898f4",
+      "work_used": 117829
+    },
+    {
+      "bodies": [
+        {
+          "declared_solid": true,
+          "edges": 36,
+          "faces": 14,
+          "maximum_tolerance_mm": "1/10000000",
+          "shells": 1,
+          "source": "#67",
+          "tolerance_changes": 0,
+          "vertices": 24
+        }
+      ],
+      "definition_unchanged": true,
+      "model_id": "00009338",
+      "record_sha256": "5dde3d5c89ed7ca327def2ac32330f7bd260a5033dfee17d07df8d775bafe3e7",
+      "reopened": true,
+      "solid_validity_checked": false,
+      "source_sha256": "9ccecf3ec505515049566e6dedc1fb653dd19682cca267951425f4e54166c7e5",
+      "work_used": 72508
+    }
+  ],
+  "complete": true,
+  "format": "catallax-tolerant-topology-real-controls/1",
+  "producer": "69b9d5fd921e5f3268cf30861f0b49fe4ca49dd6",
+  "scope": "exact reconstruction of supported reader definitions and tolerance record reopen; no solid validity, healing or complete source fidelity claim",
+  "solid_validity_checked": false,
+  "source_denominator": 3000,
+  "source_selection_seed": 20261111
+}

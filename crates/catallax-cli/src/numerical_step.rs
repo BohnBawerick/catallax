@@ -262,9 +262,10 @@ fn admit(
         let recipe_work=current_operation_work().used;
         let built=candidate.admit(|model,body,options,dec| {
             let (definition,trims)=step::definition_from_exact_model(
-                model,body,recipe.name.clone(),&options.tolerance_mm,dec)?;
-            numerical::build_with_native_trims(definition,trims,options.clone(),dec)
-        },dec).map_err(|error|refused(error.code,error.detail))?;
+                &model,body,recipe.name.clone(),&options.tolerance_mm,dec)?;
+            let body=numerical::build_with_native_trims(definition,trims,options.clone(),dec)?;
+            Ok((body,()))
+        },dec).map_err(|error|refused(error.code,error.detail))?.0;
         return Ok(Admitted {body:built.body,recipe_work,
             sweep_checks:serde_json::to_value(built.checks).expect("finite sweep checks")});
     }

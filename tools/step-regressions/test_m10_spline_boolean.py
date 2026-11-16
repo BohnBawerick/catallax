@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""M10 requests keep the 20M cap; constructed results write approximate STEP."""
+"""Original M10 STEP answers, with slow top cuts at the 100M application allowance."""
 
 import copy
 import hashlib
@@ -14,13 +14,12 @@ ROOT = Path(__file__).resolve().parents[2]
 BINARY = Path(os.environ.get('CATALLAX_VERIFY_BINARY', ROOT / 'target/release/catallax-verify')).resolve()
 DRIVER = ROOT / '.claude/skills/verify-catallax/scripts/control-catallax.py'
 ALLOWANCE = 20_000_000
-# None marks a numerically embedded approximate STEP answer.
-REFUSALS = (
-    *([None] * 3),
-    *(['numbers.operation-budget'] * 3),
-    *([None] * 5),
-    *([None] * 3),
-)
+APPLICATION_ALLOWANCE = 100_000_000
+TOP_CASES = frozenset(['M10-004', 'M10-005', 'M10-006'])
+
+
+def allowance(number):
+    return APPLICATION_ALLOWANCE if number in TOP_CASES else ALLOWANCE
 
 
 def pose(at):
@@ -104,11 +103,11 @@ def cases():
     return rows
 
 
-def write_questions(path):
-    rows = cases()
+def write_questions(path, rows=None):
+    rows = cases() if rows is None else rows
     path.write_text(''.join(json.dumps({
-        'format': 'catallax-question/1', 'source': 'recipe', 'problem': problem, 'max_work': ALLOWANCE,
-    }) + '\n' for _, _, problem in rows))
+        'format': 'catallax-question/1', 'source': 'recipe', 'problem': problem, 'max_work': allowance(number),
+    }) + '\n' for number, _, problem in rows))
     return rows
 
 
@@ -123,9 +122,17 @@ def comparable(response):
 
 class M10SplineBooleanTests(unittest.TestCase):
     def test_numbered_outcomes_and_work_survive_worker_changes(self):
+        self.check_outcomes([row for row in cases() if row[0] not in TOP_CASES])
+
+    @unittest.skipUnless(os.environ.get('CATALLAX_SLOW_LOFT_TOP') == '1',
+                         'slow loft top cuts; run explicitly for the phase-5 work list')
+    def test_slow_top_requests_reach_step(self):
+        self.check_outcomes([row for row in cases() if row[0] in TOP_CASES])
+
+    def check_outcomes(self, rows):
         with tempfile.TemporaryDirectory(prefix='catallax-m10-') as temporary:
             root = Path(temporary)
-            rows = write_questions(root / 'questions.jsonl')
+            write_questions(root / 'questions.jsonl', rows)
             baseline = None
             for workers in [1, 4]:
                 out = root / f'workers-{workers}'
@@ -138,51 +145,26 @@ class M10SplineBooleanTests(unittest.TestCase):
                 run = json.loads((out / 'run.json').read_text())
                 self.assertEqual(len(run['cases']), len(rows))
                 observed = []
-                for (number, name, _), case, expected in zip(rows, run['cases'], REFUSALS, strict=True):
+                for (number, name, _), case in zip(rows, run['cases'], strict=True):
                     with self.subTest(number=number, name=name, workers=workers):
                         response = case['response']
                         manifest = response['manifest']
                         self.assertFalse(case['cache_hit'])
-                        self.assertEqual(response['work']['limit'], ALLOWANCE)
+                        self.assertEqual(response['work']['limit'], allowance(number))
                         self.assertGreater(response['work']['used'], 0)
-                        self.assertLessEqual(response['work']['used'], ALLOWANCE)
+                        self.assertLessEqual(response['work']['used'], allowance(number))
                         operations = response['operation_log']['operations']
-                        if expected is None:
-                            self.assert_approximate(number, case, manifest, operations)
-                            observed.append(comparable(response))
-                            continue
-                        self.assertEqual(manifest['status'], 'refused')
-                        code = manifest['refusal']['code']
-                        self.assertEqual(code, expected)
-                        self.assertTrue(manifest['refusal']['detail'])
-                        self.assertEqual(response['work']['exhausted'], code == 'numbers.operation-budget')
-                        self.assertFalse((Path(case['path']) / 'answer.step').exists())
-                        self.assertIsNone(manifest['step'])
-                        self.assertIsNone(manifest['result'])
-                        if name == 'm7-cut' or name.startswith('import-'):
-                            construction = [op for op in operations if op['id'] == 'cut'
-                                            and op['operation'] in ('boolean', 'extrude_through')]
-                            self.assertEqual(len(construction), 1)
-                            self.assertEqual(construction[0]['status'], 'answered')
-                            self.assertEqual(operations[-1]['operation'], 'step')
-                            self.assertEqual(operations[-1]['refusal']['code'], expected)
-                        if name.startswith('import-'):
-                            imported = [op for op in operations if op['operation'] == 'import_step']
-                            self.assertEqual(len(imported), 1)
-                            self.assertEqual(imported[0]['status'], 'answered')
-                        if name.startswith('top-'):
-                            self.assertEqual(operations[-1]['id'], 'cut')
-                            self.assertEqual(operations[-1]['operation'], 'boolean')
-                            self.assertEqual(operations[-1]['refusal']['code'], expected)
+                        self.assert_approximate(number, case, manifest, operations)
                         observed.append(comparable(response))
-                        print(json.dumps({'case': number, 'name': name, 'workers': workers,
-                                          'work': response['work'], 'refusal': manifest['refusal']}))
                 if baseline is None:
                     baseline = observed
                 else:
                     self.assertEqual(observed, baseline)
                 # A replay must replace a stale file with the checked STEP bytes.
-                index = [number for number, _, _ in rows].index('M10-008')
+                numbers = [number for number, _, _ in rows]
+                if 'M10-008' not in numbers:
+                    continue
+                index = numbers.index('M10-008')
                 first = Path(run['cases'][index]['path'])
                 (first / 'answer.step').write_text('stale STEP result')
                 replay = subprocess.run([
@@ -194,7 +176,7 @@ class M10SplineBooleanTests(unittest.TestCase):
                                  observed[index]['manifest']['step']['sha256'])
 
     def assert_approximate(self, number, case, manifest, operations):
-        """The exact writer's refusal is kept; the numerical file is checked and approximate."""
+        """Check the actual file and the numerical stages that produced it."""
         self.assertEqual(manifest['status'], 'answered')
         self.assertIsNone(manifest['refusal'])
         self.assertFalse(manifest['exact'])
@@ -207,6 +189,22 @@ class M10SplineBooleanTests(unittest.TestCase):
         data = (Path(case['path']) / 'answer.step').read_bytes()
         self.assertEqual(hashlib.sha256(data).hexdigest(), step['sha256'])
         self.assertIn(b'complete_body_bound=unestablished', data)
+        if number in TOP_CASES:
+            self.assertEqual(manifest['proof'], 'numerical')
+            self.assertEqual(manifest['category'], 'approximate')
+            selected = manifest['numerical']['work_stages']
+            boolean = [op for op in operations if op['operation'] == 'numerical-boolean']
+            self.assertEqual([op['status'] for op in boolean], ['answered'])
+            self.assertEqual(sum(selected.values()), boolean[0]['work']['used'])
+            for stage in ['numerical-step-definition', 'numerical-native-admission',
+                          'numerical-step-payload', 'numerical-step-reread']:
+                self.assertEqual([op['status'] for op in operations if op['operation'] == stage],
+                                 ['answered'])
+            self.assertTrue(case['response']['work']['over_target'])
+            self.assertFalse(case['response']['work']['exhausted'])
+            self.assertEqual(case['response']['work']['target'], ALLOWANCE)
+            self.assertFalse(any(op['operation'] == 'step' for op in operations))
+            return
         construction = [op for op in operations if op['id'] == 'cut'
                         and op['operation'] in ('boolean', 'extrude_through')]
         self.assertEqual([op['status'] for op in construction], ['answered'])

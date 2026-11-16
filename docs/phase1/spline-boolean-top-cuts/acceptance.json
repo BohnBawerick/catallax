@@ -1,0 +1,595 @@
+{
+  "commit": "dd6767990347520ae3064886fab6b513afad1e73",
+  "crates_tree": "111ad68c7e16dbb1090d5c002e4814b7e1a446ae",
+  "application_allowance": 100000000,
+  "target": 20000000,
+  "attempts_per_case": 1,
+  "request_format": "original catallax-step/1",
+  "numerical_tolerance_mm": "1e-7",
+  "complete_body_bound": "unestablished",
+  "binary_sha256": "e2f445ccbc4f1f81a245fd5e84189c85b1d8433f7b86979544d3e70782afbb25",
+  "execution": {
+    "cores": [
+      0,
+      1,
+      2
+    ],
+    "fresh": true,
+    "worker_exits": {
+      "0": 0,
+      "1": 0,
+      "2": 0
+    },
+    "workers": 3
+  },
+  "interruption": "Earlier work-PC attempts were interrupted for the checkpoint before any response. Each case then completed once on the Blade with the identical binary.",
+  "cases": [
+    {
+      "case": "M10-004",
+      "name": "top-subtract",
+      "work": {
+        "exhausted": false,
+        "limit": 100000000,
+        "over_target": true,
+        "target": 20000000,
+        "used": 26777693
+      },
+      "target_work": 20000000,
+      "wall_ms": 8396262.269257,
+      "manifest_status": "answered",
+      "refusal": null,
+      "work_per_stage": {
+        "face_collection": 107,
+        "imprint": 8978883,
+        "intersection": 1995012,
+        "material_classification": 3184107,
+        "source_admission": 120,
+        "numerical-step-definition": 201966,
+        "numerical-native-admission": 5822825,
+        "numerical-step-payload": 6489909,
+        "numerical-step-reread": 64878,
+        "prefix_and_dispatch": 39886
+      },
+      "over_20m_target": true,
+      "qualification": "builds at 100M, over the 20M target",
+      "raw_occt": {
+        "case": "M10-004",
+        "ocp": "8.0.1.1",
+        "healing": false,
+        "raw_valid": true,
+        "topology": {
+          "solids": 1,
+          "faces": 7,
+          "edges": 12,
+          "vertices": 8,
+          "two_loop_faces": 1
+        },
+        "volume_mm3": 13.610476086913577,
+        "expected_volume_mm3": 13.61047608571874,
+        "material_states": [
+          "inside",
+          "outside",
+          "outside",
+          "outside",
+          "outside",
+          "inside"
+        ],
+        "later_cut_valid": true,
+        "later_cut_volume_mm3": 8.660695586200221,
+        "later_cut_material_states": [
+          "inside",
+          "outside",
+          "outside",
+          "outside",
+          "outside",
+          "inside"
+        ],
+        "tolerance_mm": "1e-7",
+        "complete_body_bound": "unestablished",
+        "sha256": "edcb8923939bac3f3884597ccc69b37df84e60a91a4cd35a3e94870e8351ebce"
+      },
+      "step_checks": [
+        "source.retained-native-carriers-and-physical-loops",
+        "file.decimal-model-numerical-admission",
+        "file.canonical-byte-identity",
+        "file.curved-seam-contract",
+        "file.approximate-category-no-global-bound"
+      ],
+      "native_trims": 8,
+      "numerical_evidence": {
+        "emitted": {
+          "tolerance_mm": "1/10000000",
+          "checks": [
+            {
+              "kind": "passed",
+              "name": "surface.atlas-charts-fill-box",
+              "count": 1
+            },
+            {
+              "kind": "passed",
+              "name": "topology.structure",
+              "count": 1
+            },
+            {
+              "kind": "passed",
+              "name": "trim.boundary-endpoints-disjoint",
+              "count": 1
+            },
+            {
+              "kind": "passed",
+              "name": "trim.sampled-atlas-chart-union",
+              "count": 1
+            },
+            {
+              "kind": "passed",
+              "name": "trim.sampled-hole-contained-disjoint",
+              "count": 1
+            },
+            {
+              "kind": "passed",
+              "name": "trim.sampled-simple-oriented-parameter-loop",
+              "count": 6
+            },
+            {
+              "kind": "passed",
+              "name": "trim.simple-oriented-parameter-loop",
+              "count": 1
+            },
+            {
+              "kind": "samples",
+              "name": "edge.vertex-distance",
+              "count": 12
+            },
+            {
+              "kind": "samples",
+              "name": "trim.edge-surface-distance",
+              "count": 24
+            },
+            {
+              "kind": "samples",
+              "name": "trim.native-endpoint-position",
+              "count": 8
+            },
+            {
+              "kind": "samples",
+              "name": "trim.native-join-position",
+              "count": 8
+            }
+          ],
+          "samples": 2312,
+          "repairs": []
+        },
+        "source": {
+          "tolerance_mm": "1/10000000",
+          "checks": [
+            {
+              "kind": "passed",
+              "name": "surface.atlas-charts-fill-box",
+              "count": 1
+            },
+            {
+              "kind": "passed",
+              "name": "topology.structure",
+              "count": 1
+            },
+            {
+              "kind": "passed",
+              "name": "trim.boundary-endpoints-disjoint",
+              "count": 1
+            },
+            {
+              "kind": "passed",
+              "name": "trim.sampled-atlas-chart-union",
+              "count": 1
+            },
+            {
+              "kind": "passed",
+              "name": "trim.sampled-hole-contained-disjoint",
+              "count": 1
+            },
+            {
+              "kind": "passed",
+              "name": "trim.sampled-simple-oriented-parameter-loop",
+              "count": 6
+            },
+            {
+              "kind": "passed",
+              "name": "trim.simple-oriented-parameter-loop",
+              "count": 1
+            },
+            {
+              "kind": "samples",
+              "name": "edge.vertex-distance",
+              "count": 12
+            },
+            {
+              "kind": "samples",
+              "name": "trim.edge-surface-distance",
+              "count": 24
+            },
+            {
+              "kind": "samples",
+              "name": "trim.native-endpoint-position",
+              "count": 8
+            },
+            {
+              "kind": "samples",
+              "name": "trim.native-join-position",
+              "count": 8
+            }
+          ],
+          "samples": 2312,
+          "repairs": []
+        }
+      }
+    },
+    {
+      "case": "M10-005",
+      "name": "top-union",
+      "work": {
+        "exhausted": false,
+        "limit": 100000000,
+        "over_target": true,
+        "target": 20000000,
+        "used": 27289073
+      },
+      "target_work": 20000000,
+      "wall_ms": 8398940.178453,
+      "manifest_status": "answered",
+      "refusal": null,
+      "work_per_stage": {
+        "face_collection": 171,
+        "imprint": 8978883,
+        "intersection": 1995012,
+        "material_classification": 3184107,
+        "source_admission": 120,
+        "numerical-step-definition": 203831,
+        "numerical-native-admission": 5839022,
+        "numerical-step-payload": 6978479,
+        "numerical-step-reread": 69562,
+        "prefix_and_dispatch": 39886
+      },
+      "over_20m_target": true,
+      "qualification": "builds at 100M, over the 20M target",
+      "raw_occt": {
+        "case": "M10-005",
+        "ocp": "8.0.1.1",
+        "healing": false,
+        "raw_valid": true,
+        "topology": {
+          "solids": 1,
+          "faces": 11,
+          "edges": 24,
+          "vertices": 16,
+          "two_loop_faces": 1
+        },
+        "volume_mm3": 113.61047608691362,
+        "expected_volume_mm3": 113.61047608571876,
+        "material_states": [
+          "inside",
+          "inside",
+          "inside",
+          "inside",
+          "inside",
+          "inside"
+        ],
+        "later_cut_valid": true,
+        "later_cut_volume_mm3": 83.66069558773587,
+        "later_cut_material_states": [
+          "inside",
+          "inside",
+          "inside",
+          "inside",
+          "inside",
+          "inside"
+        ],
+        "tolerance_mm": "1e-7",
+        "complete_body_bound": "unestablished",
+        "sha256": "a50c582662316591123b1a551ad0ef1918287a8a7e4e40d0d1109cebc4ae2b11"
+      },
+      "step_checks": [
+        "source.retained-native-carriers-and-physical-loops",
+        "file.decimal-model-numerical-admission",
+        "file.canonical-byte-identity",
+        "file.curved-seam-contract",
+        "file.approximate-category-no-global-bound"
+      ],
+      "native_trims": 8,
+      "numerical_evidence": {
+        "emitted": {
+          "tolerance_mm": "1/10000000",
+          "checks": [
+            {
+              "kind": "passed",
+              "name": "surface.atlas-charts-fill-box",
+              "count": 1
+            },
+            {
+              "kind": "passed",
+              "name": "topology.structure",
+              "count": 1
+            },
+            {
+              "kind": "passed",
+              "name": "trim.boundary-endpoints-disjoint",
+              "count": 1
+            },
+            {
+              "kind": "passed",
+              "name": "trim.sampled-atlas-chart-union",
+              "count": 1
+            },
+            {
+              "kind": "passed",
+              "name": "trim.sampled-hole-contained-disjoint",
+              "count": 1
+            },
+            {
+              "kind": "passed",
+              "name": "trim.sampled-simple-oriented-parameter-loop",
+              "count": 7
+            },
+            {
+              "kind": "passed",
+              "name": "trim.simple-oriented-parameter-loop",
+              "count": 4
+            },
+            {
+              "kind": "samples",
+              "name": "edge.vertex-distance",
+              "count": 24
+            },
+            {
+              "kind": "samples",
+              "name": "trim.edge-surface-distance",
+              "count": 48
+            },
+            {
+              "kind": "samples",
+              "name": "trim.native-endpoint-position",
+              "count": 8
+            },
+            {
+              "kind": "samples",
+              "name": "trim.native-join-position",
+              "count": 8
+            }
+          ],
+          "samples": 2552,
+          "repairs": []
+        },
+        "source": {
+          "tolerance_mm": "1/10000000",
+          "checks": [
+            {
+              "kind": "passed",
+              "name": "surface.atlas-charts-fill-box",
+              "count": 1
+            },
+            {
+              "kind": "passed",
+              "name": "topology.structure",
+              "count": 1
+            },
+            {
+              "kind": "passed",
+              "name": "trim.boundary-endpoints-disjoint",
+              "count": 1
+            },
+            {
+              "kind": "passed",
+              "name": "trim.sampled-atlas-chart-union",
+              "count": 1
+            },
+            {
+              "kind": "passed",
+              "name": "trim.sampled-hole-contained-disjoint",
+              "count": 1
+            },
+            {
+              "kind": "passed",
+              "name": "trim.sampled-simple-oriented-parameter-loop",
+              "count": 7
+            },
+            {
+              "kind": "passed",
+              "name": "trim.simple-oriented-parameter-loop",
+              "count": 4
+            },
+            {
+              "kind": "samples",
+              "name": "edge.vertex-distance",
+              "count": 24
+            },
+            {
+              "kind": "samples",
+              "name": "trim.edge-surface-distance",
+              "count": 48
+            },
+            {
+              "kind": "samples",
+              "name": "trim.native-endpoint-position",
+              "count": 8
+            },
+            {
+              "kind": "samples",
+              "name": "trim.native-join-position",
+              "count": 8
+            }
+          ],
+          "samples": 2552,
+          "repairs": []
+        }
+      }
+    },
+    {
+      "case": "M10-006",
+      "name": "top-intersect",
+      "work": {
+        "exhausted": false,
+        "limit": 100000000,
+        "over_target": true,
+        "target": 20000000,
+        "used": 25945726
+      },
+      "target_work": 20000000,
+      "wall_ms": 8164843.474192999,
+      "manifest_status": "answered",
+      "refusal": null,
+      "work_per_stage": {
+        "face_collection": 49,
+        "imprint": 8978883,
+        "intersection": 1995012,
+        "material_classification": 3184107,
+        "source_admission": 120,
+        "numerical-step-definition": 196438,
+        "numerical-native-admission": 5515982,
+        "numerical-step-payload": 5976637,
+        "numerical-step-reread": 58612,
+        "prefix_and_dispatch": 39886
+      },
+      "over_20m_target": true,
+      "qualification": "builds at 100M, over the 20M target",
+      "raw_occt": {
+        "case": "M10-006",
+        "ocp": "8.0.1.1",
+        "healing": false,
+        "raw_valid": true,
+        "topology": {
+          "solids": 1,
+          "faces": 4,
+          "edges": 6,
+          "vertices": 4,
+          "two_loop_faces": 0
+        },
+        "volume_mm3": 0.389523913086418,
+        "expected_volume_mm3": 0.38952391428128064,
+        "material_states": [
+          "outside",
+          "inside",
+          "outside",
+          "inside",
+          "outside",
+          "outside"
+        ],
+        "later_cut_valid": true,
+        "later_cut_volume_mm3": 0.3197731685820196,
+        "later_cut_material_states": [
+          "outside",
+          "inside",
+          "outside",
+          "inside",
+          "outside",
+          "outside"
+        ],
+        "tolerance_mm": "1e-7",
+        "complete_body_bound": "unestablished",
+        "sha256": "f1133cabbfc739f1557ef931ee6f48113e8afc210d98613ba1741b43509694d9"
+      },
+      "step_checks": [
+        "source.retained-native-carriers-and-physical-loops",
+        "file.decimal-model-numerical-admission",
+        "file.canonical-byte-identity",
+        "file.curved-seam-contract",
+        "file.approximate-category-no-global-bound"
+      ],
+      "native_trims": 4,
+      "numerical_evidence": {
+        "emitted": {
+          "tolerance_mm": "1/10000000",
+          "checks": [
+            {
+              "kind": "passed",
+              "name": "surface.atlas-charts-fill-box",
+              "count": 1
+            },
+            {
+              "kind": "passed",
+              "name": "topology.structure",
+              "count": 1
+            },
+            {
+              "kind": "passed",
+              "name": "trim.sampled-atlas-chart-union",
+              "count": 1
+            },
+            {
+              "kind": "passed",
+              "name": "trim.sampled-simple-oriented-parameter-loop",
+              "count": 4
+            },
+            {
+              "kind": "samples",
+              "name": "edge.vertex-distance",
+              "count": 6
+            },
+            {
+              "kind": "samples",
+              "name": "trim.edge-surface-distance",
+              "count": 12
+            },
+            {
+              "kind": "samples",
+              "name": "trim.native-endpoint-position",
+              "count": 4
+            },
+            {
+              "kind": "samples",
+              "name": "trim.native-join-position",
+              "count": 4
+            }
+          ],
+          "samples": 2148,
+          "repairs": []
+        },
+        "source": {
+          "tolerance_mm": "1/10000000",
+          "checks": [
+            {
+              "kind": "passed",
+              "name": "surface.atlas-charts-fill-box",
+              "count": 1
+            },
+            {
+              "kind": "passed",
+              "name": "topology.structure",
+              "count": 1
+            },
+            {
+              "kind": "passed",
+              "name": "trim.sampled-atlas-chart-union",
+              "count": 1
+            },
+            {
+              "kind": "passed",
+              "name": "trim.sampled-simple-oriented-parameter-loop",
+              "count": 4
+            },
+            {
+              "kind": "samples",
+              "name": "edge.vertex-distance",
+              "count": 6
+            },
+            {
+              "kind": "samples",
+              "name": "trim.edge-surface-distance",
+              "count": 12
+            },
+            {
+              "kind": "samples",
+              "name": "trim.native-endpoint-position",
+              "count": 4
+            },
+            {
+              "kind": "samples",
+              "name": "trim.native-join-position",
+              "count": 4
+            }
+          ],
+          "samples": 2148,
+          "repairs": []
+        }
+      }
+    }
+  ]
+}

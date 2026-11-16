@@ -76,7 +76,7 @@ mod tests {
                 .hull(&Ball::from_rational(&Rational::from_i64(2), 128))
         });
         let parameter = Ball::from_rational(&Rational::from_ratio(1, 2).unwrap(), 128);
-        let initial = std::array::from_fn(|i| {
+        let initial: [Ball; 5] = std::array::from_fn(|i| {
             if i < 4 {
                 at[i].clone()
             } else {
@@ -112,7 +112,7 @@ mod tests {
             assert!(at[axis].lo() <= *expected && at[axis].hi() >= *expected);
         }
         assert!(at[3].hi() - at[3].lo() < Rational::from_i64(2));
-        let narrowed = std::array::from_fn(|i| {
+        let narrowed: [Ball; 5] = std::array::from_fn(|i| {
             if i < 4 {
                 at[i].clone()
             } else {

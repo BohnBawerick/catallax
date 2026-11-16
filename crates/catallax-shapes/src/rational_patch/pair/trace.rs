@@ -278,18 +278,6 @@ impl PairTracePiece {
         for _ in 0..bits {
             dec.check_deadline()?;
             let before = at.clone();
-            for row in [3, 0, 1, 2] {
-                for axis in 0..4 {
-                    contract::coordinate(
-                        self.equation(row),
-                        self.derivative(row, axis),
-                        axis,
-                        &mut at,
-                        t,
-                        dec,
-                    )?;
-                }
-            }
             let middle: [Ball; 5] = std::array::from_fn(|axis| {
                 if axis < 4 {
                     Ball::from_rational(&at[axis].mid(), bits)
@@ -311,6 +299,18 @@ impl PairTracePiece {
                 self.equation(3).eval_ball(&middle, dec)?,
             ];
             let Some(factor) = Factor::new(self.jacobian_at(&all, dec)?, dec)? else {
+                for row in [3, 0, 1, 2] {
+                    for axis in 0..4 {
+                        contract::coordinate(
+                            self.equation(row),
+                            self.derivative(row, axis),
+                            axis,
+                            &mut at,
+                            t,
+                            dec,
+                        )?;
+                    }
+                }
                 if contract::unchanged(&before, &at) {
                     break;
                 }

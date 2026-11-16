@@ -792,7 +792,7 @@ fn profile_charts(
     for last in (1..=degree).rev() {
         dec.charge_work(last as u64)?;
         for i in 0..last {
-            net[i] = std::array::from_fn(|axis| (&net[i][axis] + &net[i + 1][axis]) * &half);
+            net[i] = std::array::from_fn(|axis| &(&net[i][axis] + &net[i + 1][axis]) * &half);
         }
         left.push(net[0].clone());
         right.push(net[last - 1].clone());

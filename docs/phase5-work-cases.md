@@ -12,6 +12,6 @@ No optimisation is part of their capability qualification.
 
 The slow loft-source admission test timed out at 1,200 seconds in CI. It stays
 available with `--ignored`. The complete 100M top requests also have an explicit
-slow regression. Default Python CI still checks all three 20M refusals and artifact
-absence. The listed full-request counts come from the recorded source before the
+slow regression. Required Python CI still checks all three 20M refusals and artifact
+absence, in the `step-regressions-slow` job. The listed full-request counts come from the recorded source before the
 review's narrower predispatch checks; those long requests were not repeated.

@@ -1,6 +1,8 @@
 use super::*;
-use catallax_boolean::numerical::{NumericalCylinderSource, clip_cone_cylinder_face};
-use catallax_features::{evaluate, hole::append_planar_cap};
+use catallax_boolean::numerical::{
+    NumericalCylinderSource, NumericalFacePartition, clip_cone_cylinder_face,
+};
+use catallax_features::{Built, evaluate, hole::append_planar_cap};
 use catallax_numbers::transfer;
 use catallax_recipe::Recipe;
 use catallax_shapes::{BSplineCurve, Curve, Surface};
@@ -10,7 +12,7 @@ use catallax_topology::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 
-fn source() -> Recipe {
+pub(super) fn source() -> Recipe {
     let side = |segment: &str| json!({"step":"ring","role":{"side":{"segment":segment}}});
     Recipe::parse(&json!({"format":"catallax-recipe/3","name":"E07 collar skew prefix","steps":[
         {"id":"section","op":"sketch","plane":{"rotation":["1","0","0","0"],"translation":["0","0","0"]},"loops":[[
@@ -207,10 +209,15 @@ fn sliver_material(
         .collect()
 }
 
-fn fixture(
-    diameter: &Rational,
-    dec: &mut Decider,
-) -> (NumericalDefinition, Vec<NumericalNativeTrim>) {
+pub(super) struct Component {
+    pub definition: NumericalDefinition,
+    pub bindings: Vec<NumericalNativeTrim>,
+    pub cone: NumericalFacePartition,
+    pub built: Built,
+    pub span: CylinderSpan,
+}
+
+pub(super) fn component(diameter: &Rational, dec: &mut Decider) -> Component {
     let built = evaluate(&source(), dec).unwrap();
     let faces = built.model.faces_of_body(built.result);
     let upper = *faces.iter().find(|id| matches!(built.model.geom().surface(built.model.face(**id).surface),Surface::Cone(c) if c.apex.y.to_f64()>12.)).unwrap();
@@ -296,8 +303,8 @@ fn fixture(
         }
     }
     assert_eq!(known.len(), 2);
-    let mut definition = part.definition;
-    let mut bindings = part.native_trims;
+    let mut definition = part.definition.clone();
+    let mut bindings = part.native_trims.clone();
     let retained_keys: Vec<_> = definition.faces.iter().map(|f| f.key.clone()).collect();
     for quarter in part.cylinder_source.quarters() {
         let Surface::BSpline(support) = quarter.surface() else {
@@ -433,6 +440,24 @@ fn fixture(
         retained_keys
     );
     assert!(retained_keys.contains(&"upper/quarter-0/region-0".to_owned()));
+    Component {
+        definition,
+        bindings,
+        cone: part,
+        built,
+        span,
+    }
+}
+
+fn fixture(
+    diameter: &Rational,
+    dec: &mut Decider,
+) -> (NumericalDefinition, Vec<NumericalNativeTrim>) {
+    let Component {
+        definition,
+        bindings,
+        ..
+    } = component(diameter, dec);
     (definition, bindings)
 }
 

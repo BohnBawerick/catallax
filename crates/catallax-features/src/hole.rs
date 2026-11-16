@@ -16,6 +16,8 @@ mod cap;
 pub use cap::{CapCurve, cap_curve};
 mod cap_ring;
 pub use cap_ring::append_planar_cap;
+mod ring;
+pub use ring::{CylinderRingCurve, cylinder_ring_curve};
 
 /// One positive-height cylindrical or conical band of a drill tool.
 #[derive(Clone, Debug)]

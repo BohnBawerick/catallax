@@ -1,0 +1,14 @@
+{
+  "all_common_3d_carriers_vertices_surfaces_and_oriented_loops_unchanged": true,
+  "candidate_source_revision": "2d53b8b1bc307b075c6ff8323aed0595a9e93468",
+  "changed_step_byte_files": 33,
+  "compared_common_declared_body_files": 699,
+  "complete": true,
+  "control_source_revision": "1e8b24b651c468e8f81cc1748fcc6a8b3fe3db3b",
+  "new_declared_files_without_previous_output": 0,
+  "no_loop_rotation_reversal_or_3d_geometry_change_allowed": true,
+  "only_pcurve_coordinates_ignored_in_3d_graph_comparison": true,
+  "pcurve_surface_association_order_and_representation_preference_preserved": true,
+  "previous_declared_files_not_written": 0,
+  "source_tolerance_labels_unchanged": true
+}

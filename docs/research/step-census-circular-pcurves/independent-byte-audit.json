@@ -1,0 +1,50 @@
+{
+  "actual_cargo_log_artifact_and_executable_checked": true,
+  "all_3000_ids_hashes_and_denominator_checked": true,
+  "all_400_durable_source_hashes_rechecked": true,
+  "all_808_expected_bodies_reproduced": true,
+  "all_declared_step_hashes_and_mm_radian_units_checked": true,
+  "all_previous_361_valid_files_retained": true,
+  "binary_sha256": "8b7e4f17a7ec3c0cedc3ba940d14c6fb9708a2b4de6e105d06399f45cc57212e",
+  "builder_checked_bodies": 677,
+  "builder_invalid_bodies": 32,
+  "builder_valid_bodies": 645,
+  "complete": true,
+  "csv_sha256": "bbe34caeb3161804261583637de29d5ef4597f9c1918bcb510b56d643c1dd142",
+  "export_outcomes": {
+    "export_refused": 15,
+    "raw_invalid": 14,
+    "raw_valid": 369,
+    "timeout": 2
+  },
+  "gained_ids": [
+    "00000718",
+    "00002553",
+    "00003124",
+    "00005223",
+    "00005497",
+    "00005774",
+    "00009338",
+    "00009656"
+  ],
+  "lost_ids": [],
+  "matched_control_binary_sha256": "2d917b760606d9ba8d3aa94ff502936aaed5b51320b247430c59c4af8af49962",
+  "matched_control_csv_sha256": "890808462b91320ae054d226462ad34b04bf378dbced33a2e81fc57795e67974",
+  "matched_control_kernel_revision": "1e8b24b651c468e8f81cc1748fcc6a8b3fe3db3b",
+  "matched_control_source_revision": "1e8b24b651c468e8f81cc1748fcc6a8b3fe3db3b",
+  "only_production_change": [
+    "crates/catallax-step/src/numerical/analytic.rs"
+  ],
+  "only_production_change_relative_to": "1e8b24b651c468e8f81cc1748fcc6a8b3fe3db3b",
+  "paired_outcomes": {
+    "export_refused -> export_refused": 15,
+    "export_refused -> timeout": 1,
+    "raw_invalid -> raw_invalid": 14,
+    "raw_invalid -> raw_valid": 8,
+    "raw_valid -> raw_valid": 361,
+    "timeout -> timeout": 1
+  },
+  "source_revision": "2d53b8b1bc307b075c6ff8323aed0595a9e93468",
+  "validity_includes_occt_builder_internal_healing": true,
+  "written_body_files_checked": 699
+}

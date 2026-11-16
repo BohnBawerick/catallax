@@ -1,0 +1,88 @@
+{
+  "admission_csv_sha256": "b08224a6f919405de46d35896d8d682febbd10c36495d34759f4958c80be3bd7",
+  "admission_manifest_sha256": "f447f1a095ccc77e7d9fa5ee4bacc865eb4efb6119d429b372cfadd1a1dbda7e",
+  "admission_source_revision": "51e9c0ffa13efcbcfb5c004b152e4c6014c6b5c1",
+  "aggregate_export_work_limit": 20000000,
+  "archive_sha256": "52e6dd1b6fa38e3cd99af59b662370829129540030975919c3e256dce6ad1dbe",
+  "binary_sha256": "2d917b760606d9ba8d3aa94ff502936aaed5b51320b247430c59c4af8af49962",
+  "build_record": {
+    "binary_sha256": "2d917b760606d9ba8d3aa94ff502936aaed5b51320b247430c59c4af8af49962",
+    "build_command": [
+      "cargo",
+      "build",
+      "--release",
+      "-p",
+      "catallax-import",
+      "--example",
+      "export_import",
+      "--message-format=json"
+    ],
+    "cargo_artifact": {
+      "features": [],
+      "fresh": false,
+      "profile": {
+        "debug_assertions": false,
+        "debuginfo": 0,
+        "opt_level": "3",
+        "overflow_checks": false,
+        "test": false
+      },
+      "target": {
+        "crate_types": [
+          "bin"
+        ],
+        "edition": "2024",
+        "kind": [
+          "example"
+        ],
+        "name": "export_import"
+      }
+    },
+    "cargo_json_sha256": "75c7c9ccb2da307d84573d901372ce463782a456089ad23bb4a8340c267b84af",
+    "cargo_lock_sha256": "9d2010cc334dc3818c45f4e97eac8b3058296166bb242cd57093f05a5485a2b4",
+    "collector_sha256": "e2b9ef200b37aee8d8e5970fc0f6db6ce4a156584614ebaced92703584be1bba",
+    "git_tree": "39fe8a7b13075d4f6139c2a5c75c7a7be014ec7b",
+    "kernel_revision": "1e8b24b651c468e8f81cc1748fcc6a8b3fe3db3b",
+    "observer_sha256": "731ec3cd7c309a90b1bc8fe77f9a95b0174bd489e2cb841ca544d65a657cf607",
+    "raw_helper_sha256": "5633cdcf16efc13f328ed85b33a738f6a9296e2afb925f4c64bbed7c91025376",
+    "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+    "source_revision": "1e8b24b651c468e8f81cc1748fcc6a8b3fe3db3b"
+  },
+  "build_record_sha256": "8bed02e281803ecb3c1abde0827138ddf4a379aa4dae69b613805809590237c8",
+  "complete": true,
+  "denominator": 3000,
+  "evaluated": 400,
+  "export_outcomes": {
+    "export_refused": 16,
+    "raw_invalid": 22,
+    "raw_valid": 361,
+    "timeout": 1
+  },
+  "exported_step_healing": false,
+  "exported_step_same_parameter": false,
+  "format": "catallax-frozen-admission-export-validity/1",
+  "frozen_admitted_inputs": 400,
+  "kernel_revision": "1e8b24b651c468e8f81cc1748fcc6a8b3fe3db3b",
+  "observation_timeout_seconds": 60,
+  "ocp_version": "8.0.1.1",
+  "output_unit_factors": [
+    1,
+    1,
+    1
+  ],
+  "per_import_work_limit": 20000000,
+  "per_import_workers": 1,
+  "per_model_csv_sha256": "890808462b91320ae054d226462ad34b04bf378dbced33a2e81fc57795e67974",
+  "raw_helper_sha256": "5633cdcf16efc13f328ed85b33a738f6a9296e2afb925f4c64bbed7c91025376",
+  "raw_max_tolerance_mm": "1e-7",
+  "raw_precision_mm": "1e-7",
+  "raw_valid_files": 361,
+  "raw_valid_share_percent": "12.03",
+  "scope": "raw exported-solid validity; not source fidelity, arbitrary edit, material or full-body deviation qualification",
+  "seed": 20261111,
+  "selection_sha256": "1b11410b220d5e8a3156794f6c8f9cc09091a43dcac9af801215fb3a38d571a5",
+  "source_coverage": "frozen_full_admissions_only",
+  "source_hash_manifest_sha256": "3323e104c377023846073a05d7e164ca1082dc3dcf32cc046eee897401454cc7",
+  "source_revision": "1e8b24b651c468e8f81cc1748fcc6a8b3fe3db3b",
+  "workers": 2
+}

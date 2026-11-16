@@ -1,0 +1,28 @@
+{
+  "binary_sha256": "04ac04eca76c87fb3df5683a1df39bcf7564563734384f31876a45be68ed4815",
+  "complete": true,
+  "csv_sha256": "6e7579c19a8a953cf84ad7538550b2c95d60fe01214942a7869e2f2b3ac68e5d",
+  "format": "catallax-withheld-circular-pcurve-experiment/1",
+  "gained_ids": [
+    "00002553",
+    "00005223",
+    "00005497",
+    "00009338"
+  ],
+  "lost_ids": [
+    "00001784",
+    "00005348"
+  ],
+  "outcomes": {
+    "export_refused": 16,
+    "raw_invalid": 20,
+    "raw_valid": 363,
+    "timeout": 1
+  },
+  "published_as_current_result": false,
+  "reason": "Generic endpoint projection introduced slopes into already-flat pcurves of tilted carriers; replaced by the written-parallel constant-height family.",
+  "source_revision": "f037218f937219c0039603ab50cdc0e529f6bd0d",
+  "tilted_authored_baseline_cases": 32,
+  "tilted_authored_baseline_source_revision": "7a5bb9c909ac4ba33dca09051cbae673244d2f55",
+  "tilted_authored_baseline_valid": 24
+}

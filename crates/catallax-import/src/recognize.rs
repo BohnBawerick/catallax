@@ -219,7 +219,11 @@ pub fn read_step(bytes: &[u8]) -> Result<StepFile, ImportRefusal> {
 /// Spline data do not acquire incidence or solid proofs through recognition.
 pub fn read_step_with_decider(bytes: &[u8], dec: &Decider) -> Result<StepFile, ImportRefusal> {
     let graph = parse(bytes)?;
-    Reader::new(&graph, dec)?.file()
+    read_graph(&graph, dec)
+}
+
+pub(crate) fn read_graph(graph: &Graph, dec: &Decider) -> Result<StepFile, ImportRefusal> {
+    Reader::new(graph, dec)?.file()
 }
 
 fn unsupported(id: u64, e: &Entity) -> ImportRefusal {
@@ -663,7 +667,7 @@ fn unknown_unit(found: &str) -> ImportRefusal {
 /// conversion-based unit worth its length measure of its own base unit. The
 /// factors stay exact; a chain deeper than `MAX_CONVERSION_DEPTH`, which includes a
 /// cycle, is refused.
-fn unit_millimetres(g: &Graph, id: u64, depth: u32) -> Result<Rational, ImportRefusal> {
+pub(crate) fn unit_millimetres(g: &Graph, id: u64, depth: u32) -> Result<Rational, ImportRefusal> {
     let Some(e) = g.get(&id) else {
         return Err(unknown_unit("length unit"));
     };

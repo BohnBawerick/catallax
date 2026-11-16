@@ -19,6 +19,8 @@ mod cylinder_radius;
 mod deviation;
 mod exact;
 mod gap;
+/// Retained STEP geometry declarations for tolerant import.
+pub mod geometry_source;
 mod hull;
 mod iges;
 mod incidence;

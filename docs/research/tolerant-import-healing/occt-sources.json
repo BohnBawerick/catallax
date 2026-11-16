@@ -1,0 +1,85 @@
+{
+  "ref": "V8_0_0",
+  "files": [
+    {
+      "path": "src/ModelingData/TKBRep/BRep/BRep_TVertex.hxx",
+      "local": "BRep_TVertex.hxx",
+      "sha256": "f5302dda36eaa47b9854afff6a59a11494327508d235ee306c73deb3882b7b2b"
+    },
+    {
+      "path": "src/ModelingData/TKBRep/BRep/BRep_TVertex.lxx",
+      "local": "BRep_TVertex.lxx",
+      "sha256": "c05d23899f242ee210c3a86a644aeafeb6124b3c6516e2eee9f5154d0a61ba44"
+    },
+    {
+      "path": "src/ModelingData/TKBRep/BRep/BRep_TVertex.cxx",
+      "local": "BRep_TVertex.cxx",
+      "sha256": "8a38e8249dcda67e38db5ef434c0aceeeed4600d7b3f5a699b63ce5d422d9f94"
+    },
+    {
+      "path": "src/ModelingData/TKBRep/BRep/BRep_TEdge.hxx",
+      "local": "BRep_TEdge.hxx",
+      "sha256": "d0e7aece1252e4d12e05f4c040944c4d3657119bfacc4f08f188980cff18abfb"
+    },
+    {
+      "path": "src/ModelingData/TKBRep/BRep/BRep_TEdge.lxx",
+      "local": "BRep_TEdge.lxx",
+      "sha256": "d248563cc5fdc8ba49ec659cf0a029d664279893f3a797651d2856299c930be4"
+    },
+    {
+      "path": "src/ModelingData/TKBRep/BRep/BRep_TEdge.cxx",
+      "local": "BRep_TEdge.cxx",
+      "sha256": "065f684efdb63cabc36a5fe15e15d49f599cf321595f70d8fab3ef9013c36093"
+    },
+    {
+      "path": "src/ModelingAlgorithms/TKShHealing/ShapeFix/ShapeFix_Root.hxx",
+      "local": "ShapeFix_Root.hxx",
+      "sha256": "15d49dd4e9386a357cb71b1baede7ca856b71b1b71c94ebd19f67c14b5baef4e"
+    },
+    {
+      "path": "src/ModelingAlgorithms/TKShHealing/ShapeFix/ShapeFix_Root.cxx",
+      "local": "ShapeFix_Root.cxx",
+      "sha256": "df8e48f4da83078fb4a7a0d3be23db4eb5671ce91040534f013da8987f9a4a3d"
+    },
+    {
+      "path": "src/ModelingAlgorithms/TKShHealing/ShapeFix/ShapeFix_Shape.cxx",
+      "local": "ShapeFix_Shape.cxx",
+      "sha256": "4b026c4e099fd37ed4ff801fa30b946b67542580aa90d2e4fc0af0386198d2fc"
+    },
+    {
+      "path": "src/ModelingAlgorithms/TKShHealing/ShapeFix/ShapeFix_Wire.cxx",
+      "local": "ShapeFix_Wire.cxx",
+      "sha256": "5294f1be441ac90b7c4e84c473839c4c980e859d33a4f30d1df6dd7b17bf5504"
+    },
+    {
+      "path": "src/ModelingAlgorithms/TKShHealing/ShapeFix/ShapeFix_Face.cxx",
+      "local": "ShapeFix_Face.cxx",
+      "sha256": "c94ab6e3647ef7bf1bf3c30e8233bdb042b48a77c53131938171c9dcba8a56c1"
+    },
+    {
+      "path": "src/ModelingAlgorithms/TKShHealing/ShapeFix/ShapeFix_Shell.cxx",
+      "local": "ShapeFix_Shell.cxx",
+      "sha256": "d06ae5f480adb59bdac561fb4999ca9e9c0aa95a4962f1501944ff1d4cfc3f51"
+    },
+    {
+      "path": "src/ModelingAlgorithms/TKShHealing/ShapeFix/ShapeFix_Solid.cxx",
+      "local": "ShapeFix_Solid.cxx",
+      "sha256": "c60978b8af2e21e7cde3a22aa91ad9140c8985e86be1d367cd4840c2da4cf821"
+    },
+    {
+      "path": "src/ModelingAlgorithms/TKTopAlgo/BRepBuilderAPI/BRepBuilderAPI_Sewing.cxx",
+      "local": "BRepBuilderAPI_Sewing.cxx",
+      "sha256": "c1c012468138924becaaf5778f6a38b1be9fcf30cc3059cdf6bb72b3a68525c7"
+    },
+    {
+      "path": "src/ModelingData/TKBRep/BRep/BRep_Builder.cxx",
+      "local": "BRep_Builder.cxx",
+      "sha256": "1bd00a0e711efdf560b503142a599d77ddba43a2ed3fbadd706d10429eaf8b1c"
+    },
+    {
+      "path": "src/ModelingAlgorithms/TKShHealing/ShapeFix/ShapeFix_Edge.cxx",
+      "local": "ShapeFix_Edge.cxx",
+      "sha256": "8d03114683f88e1649ff5b160086354a3bcc443fa196055105b3ecbfc89ae380"
+    }
+  ]
+}

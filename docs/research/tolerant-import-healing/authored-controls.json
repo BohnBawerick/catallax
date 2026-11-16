@@ -1,0 +1,1280 @@
+{
+  "independent_step_checks": {
+    "cases": [
+      {
+        "file": "normal-shared-edge.step",
+        "material_probes_passed": 4,
+        "step_sha256": "6b4158986a477ac4b0f5b8a195aceb28580bba51f65e90755be7d26b5bcc906a",
+        "topology": {
+          "edges": 12,
+          "euler_with_face_holes": 2,
+          "faces": 6,
+          "solids": 1,
+          "two_loop_faces": 0,
+          "vertices": 8
+        },
+        "valid_after_builder_internal_healing": true,
+        "volume_mm3": 23.988000000000003
+      },
+      {
+        "file": "small-line-0.step",
+        "material_probes_passed": 4,
+        "step_sha256": "5739c3ac3f0302918fbd2332c0d002626ddacafd8c19c033295d099982f42a5c",
+        "topology": {
+          "edges": 12,
+          "euler_with_face_holes": 2,
+          "faces": 6,
+          "solids": 1,
+          "two_loop_faces": 0,
+          "vertices": 8
+        },
+        "valid_after_builder_internal_healing": true,
+        "volume_mm3": 24.0
+      },
+      {
+        "file": "small-line-1.step",
+        "material_probes_passed": 4,
+        "step_sha256": "5739c3ac3f0302918fbd2332c0d002626ddacafd8c19c033295d099982f42a5c",
+        "topology": {
+          "edges": 12,
+          "euler_with_face_holes": 2,
+          "faces": 6,
+          "solids": 1,
+          "two_loop_faces": 0,
+          "vertices": 8
+        },
+        "valid_after_builder_internal_healing": true,
+        "volume_mm3": 24.0
+      },
+      {
+        "file": "preserved-line.step",
+        "material_probes_passed": 4,
+        "step_sha256": "db535f87a17592c8f5d693d6804f25ca1d2b4aee861bf898d1739c9b3a0b9f44",
+        "topology": {
+          "edges": 13,
+          "euler_with_face_holes": 2,
+          "faces": 6,
+          "solids": 1,
+          "two_loop_faces": 0,
+          "vertices": 9
+        },
+        "valid_after_builder_internal_healing": true,
+        "volume_mm3": 24.0
+      }
+    ],
+    "complete": true,
+    "complete_source_body_bound_established": false,
+    "material_probes_passed": 16,
+    "ocp_version": "8.0.1.1",
+    "unhealed_validity_established": false
+  },
+  "native_healer_tests_passed": 15,
+  "native_tolerance_tests_passed": 13,
+  "normal_gap": {
+    "complete_source_body_bound_established": false,
+    "format": "catallax-healing-geometry-control/1",
+    "healing": {
+      "approximate": true,
+      "changes": [
+        {
+          "body": "#178",
+          "checks": [
+            "parallel-line-carriers-and-finite-endpoint-correspondence",
+            "mutually-unique-free-boundary-match"
+          ],
+          "endpoint_distance_upper_mm": [
+            "174224571863520493293247799005065324267/174224571863520493293247799005065324265472",
+            "174224571863520493293247799005065324267/174224571863520493293247799005065324265472"
+          ],
+          "kind": "edges_sewn",
+          "replaced": "#167",
+          "retained": "#9",
+          "reversed": false
+        },
+        {
+          "body": "#178",
+          "checks": [
+            "parallel-line-carriers-and-finite-endpoint-correspondence",
+            "mutually-unique-free-boundary-match"
+          ],
+          "endpoint_distance_upper_mm": [
+            "174224571863520493293247799005065324267/174224571863520493293247799005065324265472",
+            "174224571863520493293247799005065324267/174224571863520493293247799005065324265472"
+          ],
+          "kind": "edges_sewn",
+          "replaced": "#120",
+          "retained": "#17",
+          "reversed": false
+        },
+        {
+          "body": "#178",
+          "checks": [
+            "parallel-line-carriers-and-finite-endpoint-correspondence",
+            "mutually-unique-free-boundary-match"
+          ],
+          "endpoint_distance_upper_mm": [
+            "174224571863520493293247799005065324267/174224571863520493293247799005065324265472",
+            "174224571863520493293247799005065324267/174224571863520493293247799005065324265472"
+          ],
+          "kind": "edges_sewn",
+          "replaced": "#150",
+          "retained": "#25",
+          "reversed": false
+        },
+        {
+          "body": "#178",
+          "checks": [
+            "parallel-line-carriers-and-finite-endpoint-correspondence",
+            "mutually-unique-free-boundary-match"
+          ],
+          "endpoint_distance_upper_mm": [
+            "174224571863520493293247799005065324267/174224571863520493293247799005065324265472",
+            "174224571863520493293247799005065324267/174224571863520493293247799005065324265472"
+          ],
+          "kind": "edges_sewn",
+          "replaced": "#96",
+          "retained": "#31",
+          "reversed": false
+        },
+        {
+          "body": "#178",
+          "distance_upper_mm": "174224571863520493293247799005065324267/174224571863520493293247799005065324265472",
+          "kind": "vertices_joined",
+          "retained": "#2",
+          "source": "#83"
+        },
+        {
+          "body": "#178",
+          "distance_upper_mm": "174224571863520493293247799005065324267/174224571863520493293247799005065324265472",
+          "kind": "vertices_joined",
+          "retained": "#20",
+          "source": "#91"
+        },
+        {
+          "body": "#178",
+          "distance_upper_mm": "174224571863520493293247799005065324267/174224571863520493293247799005065324265472",
+          "kind": "vertices_joined",
+          "retained": "#12",
+          "source": "#113"
+        },
+        {
+          "body": "#178",
+          "distance_upper_mm": "174224571863520493293247799005065324267/174224571863520493293247799005065324265472",
+          "kind": "vertices_joined",
+          "retained": "#4",
+          "source": "#115"
+        }
+      ],
+      "checks": [
+        {
+          "body": "#178",
+          "check": "sewing.mutually-unique-finite-boundaries-with-capped-endpoint-correspondence",
+          "scope": "#178"
+        },
+        {
+          "body": "#178",
+          "check": "wire.closed-shared-vertex-walk",
+          "scope": "#40"
+        },
+        {
+          "body": "#178",
+          "check": "wire.closed-shared-vertex-walk",
+          "scope": "#80"
+        },
+        {
+          "body": "#178",
+          "check": "wire.closed-shared-vertex-walk",
+          "scope": "#111"
+        },
+        {
+          "body": "#178",
+          "check": "wire.closed-shared-vertex-walk",
+          "scope": "#142"
+        },
+        {
+          "body": "#178",
+          "check": "wire.closed-shared-vertex-walk",
+          "scope": "#159"
+        },
+        {
+          "body": "#178",
+          "check": "wire.closed-shared-vertex-walk",
+          "scope": "#176"
+        },
+        {
+          "body": "#178",
+          "check": "face.simple-nondegenerate-oriented-planar-line-boundary",
+          "scope": "#40"
+        },
+        {
+          "body": "#178",
+          "check": "face.simple-nondegenerate-oriented-planar-line-boundary",
+          "scope": "#80"
+        },
+        {
+          "body": "#178",
+          "check": "face.simple-nondegenerate-oriented-planar-line-boundary",
+          "scope": "#111"
+        },
+        {
+          "body": "#178",
+          "check": "face.simple-nondegenerate-oriented-planar-line-boundary",
+          "scope": "#142"
+        },
+        {
+          "body": "#178",
+          "check": "face.simple-nondegenerate-oriented-planar-line-boundary",
+          "scope": "#159"
+        },
+        {
+          "body": "#178",
+          "check": "face.simple-nondegenerate-oriented-planar-line-boundary",
+          "scope": "#176"
+        },
+        {
+          "body": "#178",
+          "check": "shell.two-opposite-uses-per-active-edge",
+          "scope": "#178"
+        },
+        {
+          "body": "#178",
+          "check": "shell.connected-face-incidence",
+          "scope": "#178"
+        },
+        {
+          "body": "#178",
+          "check": "solid.positive-oriented-polyhedral-volume",
+          "scope": "#178"
+        }
+      ],
+      "issues": [
+        {
+          "body": "#178",
+          "code": "solid.cross-face-validity-pending",
+          "scope": "#178"
+        }
+      ],
+      "measurements": [
+        {
+          "body": "#178",
+          "check": "point-to-retained-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "#9 endpoint 0"
+        },
+        {
+          "body": "#178",
+          "check": "point-to-retained-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "#9 endpoint 1"
+        },
+        {
+          "body": "#178",
+          "check": "point-to-retained-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "#17 endpoint 0"
+        },
+        {
+          "body": "#178",
+          "check": "point-to-retained-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "#17 endpoint 1"
+        },
+        {
+          "body": "#178",
+          "check": "point-to-retained-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "#25 endpoint 0"
+        },
+        {
+          "body": "#178",
+          "check": "point-to-retained-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "#25 endpoint 1"
+        },
+        {
+          "body": "#178",
+          "check": "point-to-retained-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "#31 endpoint 0"
+        },
+        {
+          "body": "#178",
+          "check": "point-to-retained-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "#31 endpoint 1"
+        },
+        {
+          "body": "#178",
+          "check": "point-to-retained-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "#49 endpoint 0"
+        },
+        {
+          "body": "#178",
+          "check": "point-to-retained-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "#49 endpoint 1"
+        },
+        {
+          "body": "#178",
+          "check": "point-to-retained-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "#57 endpoint 0"
+        },
+        {
+          "body": "#178",
+          "check": "point-to-retained-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "#57 endpoint 1"
+        },
+        {
+          "body": "#178",
+          "check": "point-to-retained-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "#65 endpoint 0"
+        },
+        {
+          "body": "#178",
+          "check": "point-to-retained-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "#65 endpoint 1"
+        },
+        {
+          "body": "#178",
+          "check": "point-to-retained-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "#71 endpoint 0"
+        },
+        {
+          "body": "#178",
+          "check": "point-to-retained-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "#71 endpoint 1"
+        },
+        {
+          "body": "#178",
+          "check": "point-to-retained-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "#88 endpoint 0"
+        },
+        {
+          "body": "#178",
+          "check": "point-to-retained-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "#88 endpoint 1"
+        },
+        {
+          "body": "#178",
+          "check": "point-to-retained-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "#102 endpoint 0"
+        },
+        {
+          "body": "#178",
+          "check": "point-to-retained-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "#102 endpoint 1"
+        },
+        {
+          "body": "#178",
+          "check": "point-to-retained-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "#126 endpoint 0"
+        },
+        {
+          "body": "#178",
+          "check": "point-to-retained-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "#126 endpoint 1"
+        },
+        {
+          "body": "#178",
+          "check": "point-to-retained-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "#133 endpoint 0"
+        },
+        {
+          "body": "#178",
+          "check": "point-to-retained-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "#133 endpoint 1"
+        },
+        {
+          "body": "#178",
+          "check": "complete-line-segment-between-projected-endpoints-to-plane",
+          "distance_upper_mm": "0",
+          "scope": "#9 on #40"
+        },
+        {
+          "body": "#178",
+          "check": "complete-line-segment-between-projected-endpoints-to-plane",
+          "distance_upper_mm": "0",
+          "scope": "#17 on #40"
+        },
+        {
+          "body": "#178",
+          "check": "complete-line-segment-between-projected-endpoints-to-plane",
+          "distance_upper_mm": "0",
+          "scope": "#25 on #40"
+        },
+        {
+          "body": "#178",
+          "check": "complete-line-segment-between-projected-endpoints-to-plane",
+          "distance_upper_mm": "0",
+          "scope": "#31 on #40"
+        },
+        {
+          "body": "#178",
+          "check": "complete-line-segment-between-projected-endpoints-to-plane",
+          "distance_upper_mm": "0",
+          "scope": "#49 on #80"
+        },
+        {
+          "body": "#178",
+          "check": "complete-line-segment-between-projected-endpoints-to-plane",
+          "distance_upper_mm": "0",
+          "scope": "#57 on #80"
+        },
+        {
+          "body": "#178",
+          "check": "complete-line-segment-between-projected-endpoints-to-plane",
+          "distance_upper_mm": "0",
+          "scope": "#65 on #80"
+        },
+        {
+          "body": "#178",
+          "check": "complete-line-segment-between-projected-endpoints-to-plane",
+          "distance_upper_mm": "0",
+          "scope": "#71 on #80"
+        },
+        {
+          "body": "#178",
+          "check": "complete-line-segment-between-projected-endpoints-to-plane",
+          "distance_upper_mm": "0",
+          "scope": "#71 on #111"
+        },
+        {
+          "body": "#178",
+          "check": "complete-line-segment-between-projected-endpoints-to-plane",
+          "distance_upper_mm": "0",
+          "scope": "#88 on #111"
+        },
+        {
+          "body": "#178",
+          "check": "complete-line-segment-between-projected-endpoints-to-plane",
+          "distance_upper_mm": "0",
+          "scope": "#31 on #111"
+        },
+        {
+          "body": "#178",
+          "check": "complete-line-segment-between-projected-endpoints-to-plane",
+          "distance_upper_mm": "0",
+          "scope": "#102 on #111"
+        },
+        {
+          "body": "#178",
+          "check": "complete-line-segment-between-projected-endpoints-to-plane",
+          "distance_upper_mm": "0",
+          "scope": "#17 on #142"
+        },
+        {
+          "body": "#178",
+          "check": "complete-line-segment-between-projected-endpoints-to-plane",
+          "distance_upper_mm": "0",
+          "scope": "#126 on #142"
+        },
+        {
+          "body": "#178",
+          "check": "complete-line-segment-between-projected-endpoints-to-plane",
+          "distance_upper_mm": "0",
+          "scope": "#57 on #142"
+        },
+        {
+          "body": "#178",
+          "check": "complete-line-segment-between-projected-endpoints-to-plane",
+          "distance_upper_mm": "0",
+          "scope": "#133 on #142"
+        },
+        {
+          "body": "#178",
+          "check": "complete-line-segment-between-projected-endpoints-to-plane",
+          "distance_upper_mm": "0",
+          "scope": "#133 on #159"
+        },
+        {
+          "body": "#178",
+          "check": "complete-line-segment-between-projected-endpoints-to-plane",
+          "distance_upper_mm": "0",
+          "scope": "#49 on #159"
+        },
+        {
+          "body": "#178",
+          "check": "complete-line-segment-between-projected-endpoints-to-plane",
+          "distance_upper_mm": "0",
+          "scope": "#102 on #159"
+        },
+        {
+          "body": "#178",
+          "check": "complete-line-segment-between-projected-endpoints-to-plane",
+          "distance_upper_mm": "0",
+          "scope": "#25 on #159"
+        },
+        {
+          "body": "#178",
+          "check": "complete-line-segment-between-projected-endpoints-to-plane",
+          "distance_upper_mm": "0",
+          "scope": "#88 on #176"
+        },
+        {
+          "body": "#178",
+          "check": "complete-line-segment-between-projected-endpoints-to-plane",
+          "distance_upper_mm": "0",
+          "scope": "#65 on #176"
+        },
+        {
+          "body": "#178",
+          "check": "complete-line-segment-between-projected-endpoints-to-plane",
+          "distance_upper_mm": "0",
+          "scope": "#126 on #176"
+        },
+        {
+          "body": "#178",
+          "check": "complete-line-segment-between-projected-endpoints-to-plane",
+          "distance_upper_mm": "0",
+          "scope": "#9 on #176"
+        },
+        {
+          "body": "#178",
+          "check": "original-source-point-to-final-shared-vertex",
+          "distance_upper_mm": "174224571863520493293247799005065324267/174224571863520493293247799005065324265472",
+          "scope": "#83 -> #2"
+        },
+        {
+          "body": "#178",
+          "check": "original-source-point-to-final-shared-vertex",
+          "distance_upper_mm": "174224571863520493293247799005065324267/174224571863520493293247799005065324265472",
+          "scope": "#91 -> #20"
+        },
+        {
+          "body": "#178",
+          "check": "original-source-point-to-final-shared-vertex",
+          "distance_upper_mm": "174224571863520493293247799005065324267/174224571863520493293247799005065324265472",
+          "scope": "#113 -> #12"
+        },
+        {
+          "body": "#178",
+          "check": "original-source-point-to-final-shared-vertex",
+          "distance_upper_mm": "174224571863520493293247799005065324267/174224571863520493293247799005065324265472",
+          "scope": "#115 -> #4"
+        },
+        {
+          "body": "#178",
+          "check": "original-source-point-to-original-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "original #9 endpoint 0"
+        },
+        {
+          "body": "#178",
+          "check": "original-source-point-to-original-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "original #9 endpoint 1"
+        },
+        {
+          "body": "#178",
+          "check": "original-source-point-to-original-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "original #17 endpoint 0"
+        },
+        {
+          "body": "#178",
+          "check": "original-source-point-to-original-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "original #17 endpoint 1"
+        },
+        {
+          "body": "#178",
+          "check": "original-source-point-to-original-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "original #25 endpoint 0"
+        },
+        {
+          "body": "#178",
+          "check": "original-source-point-to-original-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "original #25 endpoint 1"
+        },
+        {
+          "body": "#178",
+          "check": "original-source-point-to-original-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "original #31 endpoint 0"
+        },
+        {
+          "body": "#178",
+          "check": "original-source-point-to-original-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "original #31 endpoint 1"
+        },
+        {
+          "body": "#178",
+          "check": "original-source-point-to-original-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "original #49 endpoint 0"
+        },
+        {
+          "body": "#178",
+          "check": "original-source-point-to-original-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "original #49 endpoint 1"
+        },
+        {
+          "body": "#178",
+          "check": "original-source-point-to-original-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "original #57 endpoint 0"
+        },
+        {
+          "body": "#178",
+          "check": "original-source-point-to-original-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "original #57 endpoint 1"
+        },
+        {
+          "body": "#178",
+          "check": "original-source-point-to-original-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "original #65 endpoint 0"
+        },
+        {
+          "body": "#178",
+          "check": "original-source-point-to-original-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "original #65 endpoint 1"
+        },
+        {
+          "body": "#178",
+          "check": "original-source-point-to-original-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "original #71 endpoint 0"
+        },
+        {
+          "body": "#178",
+          "check": "original-source-point-to-original-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "original #71 endpoint 1"
+        },
+        {
+          "body": "#178",
+          "check": "original-source-point-to-original-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "original #88 endpoint 0"
+        },
+        {
+          "body": "#178",
+          "check": "original-source-point-to-original-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "original #88 endpoint 1"
+        },
+        {
+          "body": "#178",
+          "check": "original-source-point-to-original-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "original #96 endpoint 0"
+        },
+        {
+          "body": "#178",
+          "check": "original-source-point-to-original-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "original #96 endpoint 1"
+        },
+        {
+          "body": "#178",
+          "check": "original-source-point-to-original-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "original #102 endpoint 0"
+        },
+        {
+          "body": "#178",
+          "check": "original-source-point-to-original-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "original #102 endpoint 1"
+        },
+        {
+          "body": "#178",
+          "check": "original-source-point-to-original-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "original #120 endpoint 0"
+        },
+        {
+          "body": "#178",
+          "check": "original-source-point-to-original-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "original #120 endpoint 1"
+        },
+        {
+          "body": "#178",
+          "check": "original-source-point-to-original-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "original #126 endpoint 0"
+        },
+        {
+          "body": "#178",
+          "check": "original-source-point-to-original-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "original #126 endpoint 1"
+        },
+        {
+          "body": "#178",
+          "check": "original-source-point-to-original-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "original #133 endpoint 0"
+        },
+        {
+          "body": "#178",
+          "check": "original-source-point-to-original-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "original #133 endpoint 1"
+        },
+        {
+          "body": "#178",
+          "check": "original-source-point-to-original-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "original #150 endpoint 0"
+        },
+        {
+          "body": "#178",
+          "check": "original-source-point-to-original-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "original #150 endpoint 1"
+        },
+        {
+          "body": "#178",
+          "check": "original-source-point-to-original-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "original #167 endpoint 0"
+        },
+        {
+          "body": "#178",
+          "check": "original-source-point-to-original-line-carrier",
+          "distance_upper_mm": "0",
+          "scope": "original #167 endpoint 1"
+        },
+        {
+          "body": "#178",
+          "check": "original-finite-line-segment-to-original-plane",
+          "distance_upper_mm": "0",
+          "scope": "original #9 on #40"
+        },
+        {
+          "body": "#178",
+          "check": "original-finite-line-segment-to-original-plane",
+          "distance_upper_mm": "0",
+          "scope": "original #17 on #40"
+        },
+        {
+          "body": "#178",
+          "check": "original-finite-line-segment-to-original-plane",
+          "distance_upper_mm": "0",
+          "scope": "original #25 on #40"
+        },
+        {
+          "body": "#178",
+          "check": "original-finite-line-segment-to-original-plane",
+          "distance_upper_mm": "0",
+          "scope": "original #31 on #40"
+        },
+        {
+          "body": "#178",
+          "check": "original-finite-line-segment-to-original-plane",
+          "distance_upper_mm": "0",
+          "scope": "original #49 on #80"
+        },
+        {
+          "body": "#178",
+          "check": "original-finite-line-segment-to-original-plane",
+          "distance_upper_mm": "0",
+          "scope": "original #57 on #80"
+        },
+        {
+          "body": "#178",
+          "check": "original-finite-line-segment-to-original-plane",
+          "distance_upper_mm": "0",
+          "scope": "original #65 on #80"
+        },
+        {
+          "body": "#178",
+          "check": "original-finite-line-segment-to-original-plane",
+          "distance_upper_mm": "0",
+          "scope": "original #71 on #80"
+        },
+        {
+          "body": "#178",
+          "check": "original-finite-line-segment-to-original-plane",
+          "distance_upper_mm": "0",
+          "scope": "original #71 on #111"
+        },
+        {
+          "body": "#178",
+          "check": "original-finite-line-segment-to-original-plane",
+          "distance_upper_mm": "0",
+          "scope": "original #88 on #111"
+        },
+        {
+          "body": "#178",
+          "check": "original-finite-line-segment-to-original-plane",
+          "distance_upper_mm": "0",
+          "scope": "original #96 on #111"
+        },
+        {
+          "body": "#178",
+          "check": "original-finite-line-segment-to-original-plane",
+          "distance_upper_mm": "0",
+          "scope": "original #102 on #111"
+        },
+        {
+          "body": "#178",
+          "check": "original-finite-line-segment-to-original-plane",
+          "distance_upper_mm": "0",
+          "scope": "original #120 on #142"
+        },
+        {
+          "body": "#178",
+          "check": "original-finite-line-segment-to-original-plane",
+          "distance_upper_mm": "0",
+          "scope": "original #126 on #142"
+        },
+        {
+          "body": "#178",
+          "check": "original-finite-line-segment-to-original-plane",
+          "distance_upper_mm": "0",
+          "scope": "original #57 on #142"
+        },
+        {
+          "body": "#178",
+          "check": "original-finite-line-segment-to-original-plane",
+          "distance_upper_mm": "0",
+          "scope": "original #133 on #142"
+        },
+        {
+          "body": "#178",
+          "check": "original-finite-line-segment-to-original-plane",
+          "distance_upper_mm": "0",
+          "scope": "original #133 on #159"
+        },
+        {
+          "body": "#178",
+          "check": "original-finite-line-segment-to-original-plane",
+          "distance_upper_mm": "0",
+          "scope": "original #49 on #159"
+        },
+        {
+          "body": "#178",
+          "check": "original-finite-line-segment-to-original-plane",
+          "distance_upper_mm": "0",
+          "scope": "original #102 on #159"
+        },
+        {
+          "body": "#178",
+          "check": "original-finite-line-segment-to-original-plane",
+          "distance_upper_mm": "0",
+          "scope": "original #150 on #159"
+        },
+        {
+          "body": "#178",
+          "check": "original-finite-line-segment-to-original-plane",
+          "distance_upper_mm": "0",
+          "scope": "original #88 on #176"
+        },
+        {
+          "body": "#178",
+          "check": "original-finite-line-segment-to-original-plane",
+          "distance_upper_mm": "0",
+          "scope": "original #65 on #176"
+        },
+        {
+          "body": "#178",
+          "check": "original-finite-line-segment-to-original-plane",
+          "distance_upper_mm": "0",
+          "scope": "original #126 on #176"
+        },
+        {
+          "body": "#178",
+          "check": "original-finite-line-segment-to-original-plane",
+          "distance_upper_mm": "0",
+          "scope": "original #167 on #176"
+        },
+        {
+          "body": "#178",
+          "check": "original-finite-line-to-final-retained-line-endpoint-correspondence",
+          "distance_upper_mm": "174224571863520493293247799005065324267/174224571863520493293247799005065324265472",
+          "scope": "#167 -> #9 endpoint 0"
+        },
+        {
+          "body": "#178",
+          "check": "original-finite-line-to-final-retained-line-endpoint-correspondence",
+          "distance_upper_mm": "174224571863520493293247799005065324267/174224571863520493293247799005065324265472",
+          "scope": "#167 -> #9 endpoint 1"
+        },
+        {
+          "body": "#178",
+          "check": "original-finite-line-to-final-retained-line-endpoint-correspondence",
+          "distance_upper_mm": "174224571863520493293247799005065324267/174224571863520493293247799005065324265472",
+          "scope": "#120 -> #17 endpoint 0"
+        },
+        {
+          "body": "#178",
+          "check": "original-finite-line-to-final-retained-line-endpoint-correspondence",
+          "distance_upper_mm": "174224571863520493293247799005065324267/174224571863520493293247799005065324265472",
+          "scope": "#120 -> #17 endpoint 1"
+        },
+        {
+          "body": "#178",
+          "check": "original-finite-line-to-final-retained-line-endpoint-correspondence",
+          "distance_upper_mm": "174224571863520493293247799005065324267/174224571863520493293247799005065324265472",
+          "scope": "#150 -> #25 endpoint 0"
+        },
+        {
+          "body": "#178",
+          "check": "original-finite-line-to-final-retained-line-endpoint-correspondence",
+          "distance_upper_mm": "174224571863520493293247799005065324267/174224571863520493293247799005065324265472",
+          "scope": "#150 -> #25 endpoint 1"
+        },
+        {
+          "body": "#178",
+          "check": "original-finite-line-to-final-retained-line-endpoint-correspondence",
+          "distance_upper_mm": "174224571863520493293247799005065324267/174224571863520493293247799005065324265472",
+          "scope": "#96 -> #31 endpoint 0"
+        },
+        {
+          "body": "#178",
+          "check": "original-finite-line-to-final-retained-line-endpoint-correspondence",
+          "distance_upper_mm": "174224571863520493293247799005065324267/174224571863520493293247799005065324265472",
+          "scope": "#96 -> #31 endpoint 1"
+        }
+      ],
+      "preparation_work_used": 4098,
+      "publication_work_used": 45418,
+      "source_sha256": "e3f0fcbac8fd5000d49a7d9c2b87a6ce45ce3a75e4edfe216c923c8da00b9563",
+      "stages": [
+        {
+          "body": "#178",
+          "stage": "sewing",
+          "work_used": 24750
+        },
+        {
+          "body": "#178",
+          "stage": "wire",
+          "work_used": 791
+        },
+        {
+          "body": "#178",
+          "stage": "face",
+          "work_used": 22416
+        },
+        {
+          "body": "#178",
+          "stage": "shell",
+          "work_used": 84
+        },
+        {
+          "body": "#178",
+          "stage": "solid",
+          "work_used": 960
+        }
+      ]
+    },
+    "numerical_step": true,
+    "source_sha256": "e3f0fcbac8fd5000d49a7d9c2b87a6ce45ce3a75e4edfe216c923c8da00b9563",
+    "step_sha256": "6b4158986a477ac4b0f5b8a195aceb28580bba51f65e90755be7d26b5bcc906a",
+    "tolerances": {
+      "bodies": [
+        {
+          "changes": [
+            {
+              "after_mm": "174224571863520493293247799005065324267/174224571863520493293247799005065324265472",
+              "before_mm": "1/10000000",
+              "cause": "healing.finite-edge-sewing",
+              "entity": {
+                "kind": "edge",
+                "name": "#120"
+              },
+              "propagated_from_edge": null
+            },
+            {
+              "after_mm": "174224571863520493293247799005065324267/174224571863520493293247799005065324265472",
+              "before_mm": "1/10000000",
+              "cause": "healing.finite-edge-sewing",
+              "entity": {
+                "kind": "vertex",
+                "name": "#12"
+              },
+              "propagated_from_edge": "#120"
+            },
+            {
+              "after_mm": "174224571863520493293247799005065324267/174224571863520493293247799005065324265472",
+              "before_mm": "1/10000000",
+              "cause": "healing.finite-edge-sewing",
+              "entity": {
+                "kind": "vertex",
+                "name": "#4"
+              },
+              "propagated_from_edge": "#120"
+            },
+            {
+              "after_mm": "174224571863520493293247799005065324267/174224571863520493293247799005065324265472",
+              "before_mm": "1/10000000",
+              "cause": "healing.finite-edge-sewing",
+              "entity": {
+                "kind": "edge",
+                "name": "#150"
+              },
+              "propagated_from_edge": null
+            },
+            {
+              "after_mm": "174224571863520493293247799005065324267/174224571863520493293247799005065324265472",
+              "before_mm": "1/10000000",
+              "cause": "healing.finite-edge-sewing",
+              "entity": {
+                "kind": "vertex",
+                "name": "#20"
+              },
+              "propagated_from_edge": "#150"
+            },
+            {
+              "after_mm": "174224571863520493293247799005065324267/174224571863520493293247799005065324265472",
+              "before_mm": "1/10000000",
+              "cause": "healing.finite-edge-sewing",
+              "entity": {
+                "kind": "edge",
+                "name": "#167"
+              },
+              "propagated_from_edge": null
+            },
+            {
+              "after_mm": "174224571863520493293247799005065324267/174224571863520493293247799005065324265472",
+              "before_mm": "1/10000000",
+              "cause": "healing.finite-edge-sewing",
+              "entity": {
+                "kind": "vertex",
+                "name": "#2"
+              },
+              "propagated_from_edge": "#167"
+            },
+            {
+              "after_mm": "174224571863520493293247799005065324267/174224571863520493293247799005065324265472",
+              "before_mm": "1/10000000",
+              "cause": "healing.finite-edge-sewing",
+              "entity": {
+                "kind": "edge",
+                "name": "#17"
+              },
+              "propagated_from_edge": null
+            },
+            {
+              "after_mm": "174224571863520493293247799005065324267/174224571863520493293247799005065324265472",
+              "before_mm": "1/10000000",
+              "cause": "healing.finite-edge-sewing",
+              "entity": {
+                "kind": "edge",
+                "name": "#25"
+              },
+              "propagated_from_edge": null
+            },
+            {
+              "after_mm": "174224571863520493293247799005065324267/174224571863520493293247799005065324265472",
+              "before_mm": "1/10000000",
+              "cause": "healing.finite-edge-sewing",
+              "entity": {
+                "kind": "edge",
+                "name": "#31"
+              },
+              "propagated_from_edge": null
+            },
+            {
+              "after_mm": "174224571863520493293247799005065324267/174224571863520493293247799005065324265472",
+              "before_mm": "1/10000000",
+              "cause": "healing.finite-edge-sewing",
+              "entity": {
+                "kind": "edge",
+                "name": "#9"
+              },
+              "propagated_from_edge": null
+            },
+            {
+              "after_mm": "174224571863520493293247799005065324267/174224571863520493293247799005065324265472",
+              "before_mm": "1/10000000",
+              "cause": "healing.finite-edge-sewing",
+              "entity": {
+                "kind": "edge",
+                "name": "#96"
+              },
+              "propagated_from_edge": null
+            },
+            {
+              "after_mm": "174224571863520493293247799005065324267/174224571863520493293247799005065324265472",
+              "before_mm": "1/10000000",
+              "cause": "healing.shared-vertex-join",
+              "entity": {
+                "kind": "vertex",
+                "name": "#113"
+              },
+              "propagated_from_edge": null
+            },
+            {
+              "after_mm": "174224571863520493293247799005065324267/174224571863520493293247799005065324265472",
+              "before_mm": "1/10000000",
+              "cause": "healing.shared-vertex-join",
+              "entity": {
+                "kind": "vertex",
+                "name": "#115"
+              },
+              "propagated_from_edge": null
+            },
+            {
+              "after_mm": "174224571863520493293247799005065324267/174224571863520493293247799005065324265472",
+              "before_mm": "1/10000000",
+              "cause": "healing.shared-vertex-join",
+              "entity": {
+                "kind": "vertex",
+                "name": "#83"
+              },
+              "propagated_from_edge": null
+            },
+            {
+              "after_mm": "174224571863520493293247799005065324267/174224571863520493293247799005065324265472",
+              "before_mm": "1/10000000",
+              "cause": "healing.shared-vertex-join",
+              "entity": {
+                "kind": "vertex",
+                "name": "#91"
+              },
+              "propagated_from_edge": null
+            }
+          ],
+          "edges": [
+            [
+              "#9",
+              "174224571863520493293247799005065324267/174224571863520493293247799005065324265472"
+            ],
+            [
+              "#17",
+              "174224571863520493293247799005065324267/174224571863520493293247799005065324265472"
+            ],
+            [
+              "#25",
+              "174224571863520493293247799005065324267/174224571863520493293247799005065324265472"
+            ],
+            [
+              "#31",
+              "174224571863520493293247799005065324267/174224571863520493293247799005065324265472"
+            ],
+            [
+              "#49",
+              "1/10000000"
+            ],
+            [
+              "#57",
+              "1/10000000"
+            ],
+            [
+              "#65",
+              "1/10000000"
+            ],
+            [
+              "#71",
+              "1/10000000"
+            ],
+            [
+              "#88",
+              "1/10000000"
+            ],
+            [
+              "#96",
+              "174224571863520493293247799005065324267/174224571863520493293247799005065324265472"
+            ],
+            [
+              "#102",
+              "1/10000000"
+            ],
+            [
+              "#120",
+              "174224571863520493293247799005065324267/174224571863520493293247799005065324265472"
+            ],
+            [
+              "#126",
+              "1/10000000"
+            ],
+            [
+              "#133",
+              "1/10000000"
+            ],
+            [
+              "#150",
+              "174224571863520493293247799005065324267/174224571863520493293247799005065324265472"
+            ],
+            [
+              "#167",
+              "174224571863520493293247799005065324267/174224571863520493293247799005065324265472"
+            ]
+          ],
+          "name": "#178",
+          "vertices": [
+            [
+              "#2",
+              "174224571863520493293247799005065324267/174224571863520493293247799005065324265472"
+            ],
+            [
+              "#4",
+              "174224571863520493293247799005065324267/174224571863520493293247799005065324265472"
+            ],
+            [
+              "#12",
+              "174224571863520493293247799005065324267/174224571863520493293247799005065324265472"
+            ],
+            [
+              "#20",
+              "174224571863520493293247799005065324267/174224571863520493293247799005065324265472"
+            ],
+            [
+              "#42",
+              "1/10000000"
+            ],
+            [
+              "#44",
+              "1/10000000"
+            ],
+            [
+              "#52",
+              "1/10000000"
+            ],
+            [
+              "#60",
+              "1/10000000"
+            ],
+            [
+              "#83",
+              "174224571863520493293247799005065324267/174224571863520493293247799005065324265472"
+            ],
+            [
+              "#91",
+              "174224571863520493293247799005065324267/174224571863520493293247799005065324265472"
+            ],
+            [
+              "#113",
+              "174224571863520493293247799005065324267/174224571863520493293247799005065324265472"
+            ],
+            [
+              "#115",
+              "174224571863520493293247799005065324267/174224571863520493293247799005065324265472"
+            ]
+          ]
+        }
+      ],
+      "format": "catallax-import-tolerances/1",
+      "initial_mm": "1/10000000",
+      "maximum_mm": "1/100",
+      "source_sha256": "e3f0fcbac8fd5000d49a7d9c2b87a6ce45ce3a75e4edfe216c923c8da00b9563"
+    }
+  },
+  "producer": "1faccbee22ff1d5ef94c9d56dadcac8736280b8c"
+}

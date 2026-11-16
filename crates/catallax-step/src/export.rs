@@ -1843,9 +1843,15 @@ impl<'a> Exporter<'a> {
                             let edge = self.model.coedge(*coedge).edge;
                             edges.push(self.edge(edge, &mut topology)?.id);
                         }
-                        sets.push(self.graph.add("CONNECTED_EDGE_SET", vec![text("''"), refs(edges)]));
+                        sets.push(
+                            self.graph
+                                .add("CONNECTED_EDGE_SET", vec![text("''"), refs(edges)]),
+                        );
                     }
-                    solids.push(self.graph.add("EDGE_BASED_WIREFRAME_MODEL", vec![text("''"), refs(sets)]));
+                    solids.push(
+                        self.graph
+                            .add("EDGE_BASED_WIREFRAME_MODEL", vec![text("''"), refs(sets)]),
+                    );
                     wires = true;
                     continue;
                 }

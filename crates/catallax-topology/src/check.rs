@@ -33,7 +33,8 @@ fn check_with_incidence(model: &Model, body: BodyId, exact_incidence: bool) -> V
         vertex_shells: BTreeMap::new(),
     };
     let b = model.body(body);
-    if (matches!(b.kind, BodyKind::Solid | BodyKind::Surface) && (b.lumps.is_empty() || !b.wires.is_empty()))
+    if (matches!(b.kind, BodyKind::Solid | BodyKind::Surface)
+        && (b.lumps.is_empty() || !b.wires.is_empty()))
         || (b.kind == BodyKind::Empty && (!b.lumps.is_empty() || !b.wires.is_empty()))
         || (b.kind == BodyKind::Wire && (!b.lumps.is_empty() || b.wires.is_empty()))
     {

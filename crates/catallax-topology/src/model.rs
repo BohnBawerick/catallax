@@ -595,7 +595,10 @@ impl Model {
                 if edges.insert(edge_id) {
                     let edge = self.edge(edge_id);
                     counts.ring_edges += usize::from(edge.start.is_none() && edge.end.is_none());
-                    *counts.edges_by_kind.entry(self.geom.curve(edge.curve).kind()).or_default() += 1;
+                    *counts
+                        .edges_by_kind
+                        .entry(self.geom.curve(edge.curve).kind())
+                        .or_default() += 1;
                     vertices.extend([edge.start, edge.end].into_iter().flatten());
                 }
             }

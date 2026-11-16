@@ -437,9 +437,17 @@ impl Model {
                 TopoOp::Body(body) => {
                     self.add_body(Body {
                         lumps: body.lumps.iter().map(|l| remap.lump(*l)).collect(),
-                        wires: body.wires.iter().map(|wire| crate::Wire {
-                            coedges: wire.coedges.iter().map(|coedge| remap.coedge(*coedge)).collect(),
-                        }).collect(),
+                        wires: body
+                            .wires
+                            .iter()
+                            .map(|wire| crate::Wire {
+                                coedges: wire
+                                    .coedges
+                                    .iter()
+                                    .map(|coedge| remap.coedge(*coedge))
+                                    .collect(),
+                            })
+                            .collect(),
                         ..body.clone()
                     });
                 }

@@ -254,14 +254,25 @@ impl<F: FnMut(&Origin) -> Origin> Copy<'_, F> {
             }
             lumps.push(self.model.add_lump(Lump { shells }));
         }
-        let wires = source.wires.into_iter().map(|wire| {
-            let coedges = wire.coedges.into_iter().map(|id| {
-                let coedge = self.model.coedge(id).clone();
-                let edge = self.edge(coedge.edge);
-                self.model.add_coedge(Coedge { edge, sense: coedge.sense })
-            }).collect();
-            crate::Wire { coedges }
-        }).collect();
+        let wires = source
+            .wires
+            .into_iter()
+            .map(|wire| {
+                let coedges = wire
+                    .coedges
+                    .into_iter()
+                    .map(|id| {
+                        let coedge = self.model.coedge(id).clone();
+                        let edge = self.edge(coedge.edge);
+                        self.model.add_coedge(Coedge {
+                            edge,
+                            sense: coedge.sense,
+                        })
+                    })
+                    .collect();
+                crate::Wire { coedges }
+            })
+            .collect();
         let mapped = self.model.add_body(Body {
             kind: source.kind,
             lumps,

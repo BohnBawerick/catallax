@@ -471,3 +471,46 @@ fn geometry_sets_and_model_declarations_do_not_infer_closed_solids() {
     assert_eq!(models[3].kind, ModelDeclarationKind::Shells);
     assert_eq!(models[4].kind, ModelDeclarationKind::Solid);
 }
+
+#[test]
+fn part21_sections_retain_all_models_and_ignore_quoted_delimiters() {
+    let text = include_str!("fixtures/surface-square.step");
+    let model = text
+        .lines()
+        .find(|line| line.contains("=SHELL_BASED_SURFACE_MODEL("))
+        .unwrap()
+        .split_once('=')
+        .unwrap()
+        .1
+        .trim_end_matches(';');
+    for declaration in ["DATA;", "DATA('second',('AUTOMOTIVE_DESIGN'));", "data ;"] {
+        let source = text.replace(
+            "END-ISO-10303-21;",
+            &format!("{declaration}\n#100000={model};\nENDSEC;\nEND-ISO-10303-21;"),
+        );
+        let file = catallax_import::read_step(source.as_bytes()).unwrap();
+        assert_eq!(file.surface_models.len(), 2);
+        let parsed = ParsedStep::read(source.as_bytes(), &mut Decider::default()).unwrap();
+        assert_eq!(
+            parsed
+                .model_declarations(&mut Decider::default())
+                .unwrap()
+                .len(),
+            2
+        );
+    }
+    let source = text.replace("'surface-square.step'", "'DATA; ENDSEC;'");
+    assert_eq!(
+        catallax_import::read_step(source.as_bytes())
+            .unwrap()
+            .surface_models
+            .len(),
+        1
+    );
+    let duplicate = text.replace(
+        "END-ISO-10303-21;",
+        &format!("DATA;\n#32={model};\nENDSEC;\nEND-ISO-10303-21;"),
+    );
+    assert!(ParsedStep::read(duplicate.as_bytes(), &mut Decider::default()).is_err());
+    assert!(ParsedStep::read(b"DATA; #1=POINT();", &mut Decider::default()).is_err());
+}

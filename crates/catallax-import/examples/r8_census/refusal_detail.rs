@@ -89,7 +89,7 @@ pub(super) fn inspect(bytes: &[u8], refusal: &ImportRefusal) -> Result<Value, &'
     let ImportRefusal::SelfIntersecting { solid, faces } = refusal else {
         return Err("expected_saved_self_intersection_refusal");
     };
-    if !data_sections(bytes).single_supported() {
+    if !data_sections(bytes).readable() {
         return Err("unverified_data_section_scope");
     }
     let graph = super::part21::parse(bytes).map_err(|_| "source_syntax_failure")?;

@@ -85,13 +85,12 @@ struct DataSections {
 }
 
 impl DataSections {
-    fn single_supported(&self) -> bool {
-        self.scan_complete && self.count == 1 && self.unsupported == 0
+    fn readable(&self) -> bool {
+        self.scan_complete && self.count >= 1 && self.unsupported == 0
     }
 }
 
-// The production parser reads the first literal DATA; only. Scan the entire
-// file before making a completeness or absence claim about that graph.
+// Match the production parser's complete section traversal before claiming coverage.
 fn data_sections(bytes: &[u8]) -> DataSections {
     let mut result = DataSections {
         count: 0,
@@ -102,13 +101,13 @@ fn data_sections(bytes: &[u8]) -> DataSections {
     let (mut start, mut prefix, mut len) = (0, [0_u8; 5], 0);
     let mut i = 0;
     let record =
-        |prefix: &[u8], start: usize, end: usize, terminated: bool, result: &mut DataSections| {
+        |prefix: &[u8], _start: usize, _end: usize, terminated: bool, result: &mut DataSections| {
             if prefix.len() >= 4
                 && prefix[..4].eq_ignore_ascii_case(b"DATA")
                 && (prefix.len() == 4 || !(prefix[4].is_ascii_alphanumeric() || prefix[4] == b'_'))
             {
                 result.count += 1;
-                if !terminated || &bytes[start..end] != b"DATA" {
+                if !terminated {
                     result.unsupported += 1;
                 }
             }
@@ -123,11 +122,7 @@ fn data_sections(bytes: &[u8]) -> DataSections {
             }
             continue;
         }
-        let marker = bytes[i..].starts_with(b"DATA;") || bytes[i..].starts_with(b"ENDSEC;");
         if quoted {
-            // A literal marker in a string can fool the parser's substring
-            // search. Its graph is not a verified section observation.
-            result.scan_complete &= !marker;
             if bytes[i] == b'\'' {
                 if bytes.get(i + 1) == Some(&b'\'') {
                     i += 2;
@@ -143,6 +138,7 @@ fn data_sections(bytes: &[u8]) -> DataSections {
             i += 2;
             continue;
         }
+        let marker = bytes[i..].starts_with(b"DATA;") || bytes[i..].starts_with(b"ENDSEC;");
         if marker && len != 0 {
             result.scan_complete = false;
         }
@@ -264,7 +260,7 @@ fn census(bytes: &[u8]) -> Value {
         }
     }
     let faces: usize = kinds.values().sum();
-    let complete = sections.single_supported()
+    let complete = sections.readable()
         && roots > 0
         && faces > 0
         && missing.is_empty()
@@ -566,6 +562,29 @@ mod tests {
     }
 
     #[test]
+    fn surface_models_in_later_sections_are_both_imported() {
+        let text = include_str!("../tests/fixtures/surface-square.step");
+        let model = text
+            .lines()
+            .find(|line| line.contains("=SHELL_BASED_SURFACE_MODEL("))
+            .unwrap()
+            .split_once('=')
+            .unwrap()
+            .1
+            .trim_end_matches(';');
+        let source=text.replace("END-ISO-10303-21;",&format!("DATA('second',('AUTOMOTIVE_DESIGN'));\n#100000={model};\nENDSEC;\nEND-ISO-10303-21;"));
+        assert_eq!(census(source.as_bytes())["coverage_complete"], true);
+        for row in [
+            evaluate(source.as_bytes()),
+            evaluate_numerical(source.as_bytes()),
+        ] {
+            assert_eq!(row["outcome"], "admitted");
+            assert_eq!(row["bodies"], 2);
+            assert_eq!(row["body_kinds"]["surface"], 2);
+        }
+    }
+
+    #[test]
     fn incomplete_or_empty_traversal_never_claims_whole_part_coverage() {
         for bytes in [
             b"DATA; #1=MANIFOLD_SOLID_BREP('',#2); ENDSEC;".as_slice(),
@@ -580,7 +599,7 @@ mod tests {
     }
 
     #[test]
-    fn a_later_data_section_cannot_be_hidden_by_an_analytic_prefix() {
+    fn all_data_sections_contribute_to_complete_face_coverage() {
         let bytes = b"ISO-10303-21; HEADER; ENDSEC; DATA;
             #1=MANIFOLD_SOLID_BREP('',#2); #2=CLOSED_SHELL('',(#3));
             #3=ADVANCED_FACE('',(),#4,.T.); #4=PLANE($); ENDSEC;
@@ -592,13 +611,14 @@ mod tests {
         assert_eq!(row["face_kinds"]["plane"], 1);
         assert_eq!(row["data_sections"], 2);
         assert_eq!(row["unsupported_data_sections"], 0);
-        assert_eq!(row["coverage_complete"], false);
-        assert!(row["all_face_kinds_buildable"].is_null());
-        assert!(row["needs_spline_faces"].is_null());
+        assert_eq!(row["face_kinds"]["bspline"], 1);
+        assert_eq!(row["coverage_complete"], true);
+        assert_eq!(row["all_face_kinds_buildable"], false);
+        assert_eq!(row["needs_spline_faces"], true);
     }
 
     #[test]
-    fn unsupported_data_declarations_also_make_absence_unknown() {
+    fn named_and_case_insensitive_data_sections_are_counted() {
         for declaration in ["DATA('second',('schema'));", "data;", "DATA ;"] {
             let bytes = format!(
                 "DATA; #1=CLOSED_SHELL('',(#2));
@@ -607,10 +627,10 @@ mod tests {
             );
             let row = census(bytes.as_bytes());
             assert_eq!(row["data_sections"], 2);
-            assert_eq!(row["unsupported_data_sections"], 1);
-            assert_eq!(row["coverage_complete"], false);
-            assert!(row["all_face_kinds_buildable"].is_null());
-            assert!(row["needs_spline_faces"].is_null());
+            assert_eq!(row["unsupported_data_sections"], 0);
+            assert_eq!(row["coverage_complete"], true);
+            assert_eq!(row["all_face_kinds_buildable"], true);
+            assert_eq!(row["needs_spline_faces"], false);
         }
     }
 
@@ -621,7 +641,7 @@ mod tests {
             FILE_DESCRIPTION(('a ''quoted'' name'),''); ENDSEC;
             /* a comment */ DATA; #1=PLANE('ordinary label'); ENDSEC; END-ISO-10303-21;",
         );
-        assert!(sections.single_supported());
+        assert!(sections.readable());
         for bytes in [
             b"DATA; /* unclosed".as_slice(),
             b"DATA; 'unclosed",
@@ -632,6 +652,6 @@ mod tests {
         let quoted =
             data_sections(b"HEADER; FILE_DESCRIPTION(('DATA;'),''); ENDSEC; DATA; ENDSEC;");
         assert_eq!(quoted.count, 1);
-        assert!(!quoted.scan_complete);
+        assert!(quoted.scan_complete);
     }
 }

@@ -15,6 +15,7 @@ use crate::{
 };
 
 mod analytic;
+mod atlas;
 mod curved;
 mod handover;
 mod native;
@@ -485,11 +486,10 @@ fn build_inner(
             ));
         }
         // Chart-union containment is checked at sampled native UV locations,
-        // so an atlas face accepts no straight parameter trim.
-        if matches!(
-            face.surface,
-            Surface::BSpline(SplineSupport::RationalAtlas(_))
-        ) {
+        // so an atlas face accepts no straight parameter trim, and its charts
+        // must fill their box so that the filled loop stays on them.
+        if let Surface::BSpline(SplineSupport::RationalAtlas(source)) = &face.surface {
+            atlas::check_filled(source, dec)?;
             for (row, boundary) in face.loops.iter().enumerate() {
                 for use_index in 0..boundary.len() {
                     dec.charge_work(1)?;
@@ -615,6 +615,10 @@ fn build_inner(
             face.surface,
             Surface::BSpline(SplineSupport::RationalAtlas(_))
         ) {
+            checks.push(NumericalCheck::Passed {
+                name: "surface.atlas-charts-fill-box".into(),
+                scope: face.key.clone(),
+            });
             checks.push(NumericalCheck::Passed {
                 name: "trim.sampled-atlas-chart-union".into(),
                 scope: face.key.clone(),

@@ -17,6 +17,7 @@ from pathlib import Path, PurePosixPath
 import subprocess
 
 from r8_step_census import qualify_coverage
+import rss_guard
 
 ROOT = Path(__file__).resolve().parents[2]
 SEED = 20261111
@@ -39,7 +40,7 @@ def public_manifest(report):
     """Explicit public fields; raw build logs and machine paths remain private."""
     fields = '''schema seed denominator binary_sha256 collector_sha256 source_revision observer_sha256
         rustc source_hash_manifest_sha256 selection_sha256 baseline_csv_sha256 prior_csv_sha256
-        archive_sha256 archive_md5 archive_bytes observation_timeout_seconds workers per_import_workers
+        archive_sha256 archive_md5 archive_bytes observation_timeout_seconds workers max_rss_mb_per_observer per_import_workers
         per_import_work_limit verification_byte_work full_definition partial_definition scope complete
         evaluated per_model_csv_sha256 baseline_outcomes outcomes baseline_first_refusals after_fix_causes
         import_categories outcome_transitions prior_outcomes prior_first_causes prior_outcome_transitions
@@ -68,17 +69,24 @@ def baseline_outcome(row):
     return 'refused'
 
 
-def observe(binary, path, key, expected_hash, raw, timeout, baseline):
+def observe(binary, path, key, expected_hash, raw, timeout, baseline, max_rss_mb=0):
     assert digest(path) == expected_hash, (key, 'source bytes differ')
     stdout, stderr = raw / (key + '.jsonl'), raw / (key + '.stderr')
     with stdout.open('wb') as out, stderr.open('wb') as err:
         try:
-            process = subprocess.run([str(binary), '--numerical', str(path)],
-                                     stdout=out, stderr=err, timeout=timeout, check=False,
-                                     env={**os.environ, 'CATALLAX_THREADS': '1'})
+            command = [str(binary), '--numerical', str(path)]
+            env = {**os.environ, 'CATALLAX_THREADS': '1'}
+            if max_rss_mb:
+                process = rss_guard.run(command, stdout=out, stderr=err, timeout=timeout,
+                                        env=env, max_rss_mb=max_rss_mb)
+            else:
+                process = subprocess.run(command, stdout=out, stderr=err, timeout=timeout,
+                                         check=False, env=env)
             outcome = 'process_error' if process.returncode else 'missing_result'
         except subprocess.TimeoutExpired:
             outcome = 'timeout'
+        except rss_guard.MemoryExceeded:
+            outcome = 'out_of_memory'
     assert digest(path) == expected_hash, (key, 'source changed during observation')
     checkpoints = []
     for line in stdout.read_text().splitlines():
@@ -86,7 +94,7 @@ def observe(binary, path, key, expected_hash, raw, timeout, baseline):
             checkpoints.append(json.loads(line))
         except json.JSONDecodeError:
             # Killing the observer can interrupt the current checkpoint write.
-            if outcome != 'timeout':
+            if outcome not in ('timeout', 'out_of_memory'):
                 raise
     sources = [row for row in checkpoints if row.get('stage') == 'faces']
     imports = [row for row in checkpoints if row.get('stage') == 'import']
@@ -103,8 +111,10 @@ def observe(binary, path, key, expected_hash, raw, timeout, baseline):
             if imported['import_category'] == 'numerical approximate':
                 assert imported['exact'] is False
                 assert imported['complete_body_bound'] == 'unestablished'
-                assert set(imported['tolerances_mm']) == {'1/100'}
-                assert Fraction(imported['max_checked_residual_mm']) <= Fraction(1, 100)
+                # Some imports state a tolerance just under the fixed 0.01 mm cap.
+                tolerances = [Fraction(t) for t in imported['tolerances_mm']]
+                assert tolerances and all(0 < t <= Fraction(1, 100) for t in tolerances)
+                assert Fraction(imported['max_checked_residual_mm']) <= max(tolerances)
             outcome = 'full' if source.get('coverage_complete') is True else 'partial'
         else:
             assert imported['outcome'] == 'refused'
@@ -160,6 +170,8 @@ def main():
     parser.add_argument('--resume', action='store_true')
     parser.add_argument('--workers', type=int, default=4)
     parser.add_argument('--timeout', type=int, default=60)
+    parser.add_argument('--max-rss-mb', type=int, default=0,
+                        help='kill one observer above this resident memory and record out_of_memory; 0 is off')
     parser.add_argument('--baseline', type=Path,
                         default=ROOT / 'docs/milestones/R8-public-step-census.csv')
     parser.add_argument('--baseline-manifest', type=Path,
@@ -221,6 +233,7 @@ def main():
         'archive_md5': baseline_manifest['archive_md5'],
         'archive_bytes': baseline_manifest['archive_bytes'],
         'observation_timeout_seconds': args.timeout, 'workers': args.workers,
+        'max_rss_mb_per_observer': args.max_rss_mb,
         'per_import_workers': 1,
         'per_import_work_limit': 20_000_000,
         'verification_byte_work': 'charged before the initial kernel verification hash',
@@ -242,7 +255,7 @@ def main():
     with (args.out / 'rows.jsonl').open('a') as checkpoint:
         with ThreadPoolExecutor(max_workers=args.workers) as pool:
             pending = {pool.submit(observe, args.binary, files[key], key, hashes[key],
-                                   args.out / 'raw', args.timeout, baseline[key]): key
+                                   args.out / 'raw', args.timeout, baseline[key], args.max_rss_mb): key
                        for key in sorted(files) if key not in rows}
             for future in as_completed(pending):
                 row = future.result()
@@ -266,7 +279,7 @@ def main():
             writer.writerow({key: json.dumps(value, sort_keys=True) if isinstance(value, (list, dict))
                              else value for key, value in row.items()})
     outcomes = Counter(row['outcome'] for row in ordered)
-    complete = set(outcomes).issubset({'full', 'partial', 'refused', 'timeout'})
+    complete = set(outcomes).issubset({'full', 'partial', 'refused', 'timeout', 'out_of_memory'})
     report = {**identity, 'complete': complete, 'evaluated': len(rows),
               'per_model_csv_sha256': digest(args.out / 'census.csv'),
               'baseline_outcomes': dict(Counter(row['baseline_outcome'] for row in ordered)),

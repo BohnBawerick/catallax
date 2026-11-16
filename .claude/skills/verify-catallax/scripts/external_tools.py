@@ -48,6 +48,9 @@ class Graph:
     def shell_top(self, part, thickness):
         return self.add('shell_top', part, thickness)
 
+    def import_step(self, path):
+        raise NotImplementedError('the pinned Pali runner has no STEP import')
+
 
 def module(name):
     spec = importlib.util.spec_from_file_location(name, DATA / f'{name}.py')
@@ -79,7 +82,11 @@ def external(engine, case_path, case, directory, args):
         request = {'part': case['recipe']}
         for label in ('construction', 'edit'):
             graph = Graph()
-            targets.build(graph, case['recipe'], float(case['edit']['value']) if label == 'edit' else None)
+            try:
+                targets.build(graph, case['recipe'], float(case['edit']['value']) if label == 'edit' else None, case)
+            except NotImplementedError as error:
+                from head_to_head import not_expressible
+                return not_expressible(str(error))
             request[label] = graph.nodes
         save(directory / 'request.json', request)
         command = [receipt['pali_binary'], directory / 'request.json', directory]

@@ -1,5 +1,5 @@
 //! Development-only phase measurements. Never linked into an application entry.
-use catallax_features::Built;
+use catallax_features::{Built, ImportFiles};
 use catallax_measure::{Accuracy, Enclosure};
 use catallax_numbers::{Decider, with_operation_budget, with_operation_log};
 use catallax_recipe::Recipe;
@@ -222,6 +222,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let limit = input["max_work"].as_u64().ok_or("max_work required")?;
     let original = Recipe::parse(&serde_json::to_string(&input["recipe"])?)?;
     let edited = Recipe::parse(&serde_json::to_string(&input["edited_recipe"])?)?;
+    // Census targets embed their STEP source bytes, keyed by SHA-256, for import_step.
+    let sources: Vec<(String, Vec<u8>)> = match input["files"].as_object() {
+        Some(files) => files
+            .iter()
+            .map(|(hash, text)| {
+                let text = text.as_str().ok_or("files map SHA-256 to STEP text")?;
+                Ok((hash.clone(), text.as_bytes().to_vec()))
+            })
+            .collect::<Result<_, &str>>()?,
+        None => Vec::new(),
+    };
+    let files: ImportFiles<'_> = sources
+        .iter()
+        .map(|(hash, bytes)| (hash.clone(), bytes.as_slice()))
+        .collect();
     let root = Path::new(&args[1]);
     fs::create_dir_all(root)?;
     let mut report = json!({"format":"catallax-head-to-head-phases/1","variants":{},
@@ -231,7 +246,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let out = root.join(label);
         fs::create_dir_all(&out)?;
         let (built, mut build) = observe(limit, || {
-            catallax_features::evaluate(recipe, &mut Decider::default())
+            catallax_features::evaluate_with_files(recipe, &files, &mut Decider::default())
         });
         build["operations_rebuilt"] = json!(
             build["operations"]

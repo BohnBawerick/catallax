@@ -6,10 +6,16 @@ specified edges. A missing operation must raise NotImplementedError.
 from pathlib import Path
 
 
-def build(api, name, edit=None):
+def build(api, name, edit=None, case=None):
     box, cyl, sphere = api.box, api.cylinder, api.sphere
     union, cut, common = api.union, api.cut, api.common
     blend = api.blend
+    if name.startswith('census/'):
+        # Real part: the tool's own STEP import, then one drilled hole whose radius is the edit.
+        cutter = case['census']['cutter']
+        part = api.import_step(case['census']['source'])
+        return cut(part, cyl(edit or float(cutter['radius']), float(cutter['height']),
+                             tuple(map(float, cutter['base'])), tuple(cutter['axis'])))
     if name.startswith('P0/'):
         family = Path(name).stem
         height = edit if family not in ('block-sphere', 'general-torus') else None

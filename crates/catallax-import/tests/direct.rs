@@ -174,6 +174,25 @@ fn inherited_line_gap_is_bounded_and_reconstructed_before_step_export() {
             "ENDSEC;\nEND-ISO-10303-21;",
             &format!("{point}\nENDSEC;\nEND-ISO-10303-21;"),
         );
+        let vertex_line = text
+            .lines()
+            .find(|line| line.contains("=CARTESIAN_POINT(") && line.ends_with(",0.0));"))
+            .unwrap()
+            .to_owned();
+        let (prefix, coordinates) = vertex_line.split_once(",(").unwrap();
+        let coordinates: Vec<_> = coordinates
+            .strip_suffix("));")
+            .unwrap()
+            .split(',')
+            .map(r)
+            .collect();
+        let replacement = format!(
+            "{prefix},({},{},{}));",
+            common::dec(&(&coordinates[0] + &noise[0])),
+            common::dec(&(&coordinates[1] + &noise[1])),
+            common::dec(&(&coordinates[2] + &noise[2]))
+        );
+        text = text.replace(&vertex_line, &replacement);
         let opened = opened::open_step(
             text.as_bytes(),
             &sha256_hex(text.as_bytes()),
@@ -207,6 +226,13 @@ fn inherited_line_gap_is_bounded_and_reconstructed_before_step_export() {
         );
         assert!(
             repairs
+                .iter()
+                .all(|repair| repair.error_upper_mm <= r("0.01"))
+        );
+        let vertices = &after.history()[0].vertex_repairs;
+        assert!(!vertices.is_empty());
+        assert!(
+            vertices
                 .iter()
                 .all(|repair| repair.error_upper_mm <= r("0.01"))
         );

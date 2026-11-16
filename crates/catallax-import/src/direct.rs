@@ -81,11 +81,24 @@ pub enum Construction {
 pub struct LineRepair {
     /// Source-scoped shared edge key.
     pub edge: String,
-    /// Original carrier evaluated at its projected finite endpoint parameters.
+    /// Carrier segment at the current endpoints' projected parameters.
     pub source_segment_mm: [Vec3; 2],
     /// Reconstructed finite segment between the retained endpoint positions.
     pub result_segment_mm: [Vec3; 2],
     /// Outward bound on finite-segment displacement, not whole-body deviation.
+    pub error_upper_mm: Rational,
+}
+
+/// A retained planar corner reconstructed at its three supporting planes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VertexRepair {
+    /// Source-scoped shared vertex key.
+    pub vertex: String,
+    /// Position before this residual correction, after the requested edit.
+    pub before_mm: Vec3,
+    /// Exact meeting of the three retained rational support planes.
+    pub after_mm: Vec3,
+    /// Outward point-displacement bound, separate from requested movement.
     pub error_upper_mm: Rational,
 }
 
@@ -102,6 +115,8 @@ pub struct EditRecord {
     pub deleted_faces: Vec<String>,
     /// Explicit source-line corrections needed for closed, healing-free STEP.
     pub line_repairs: Vec<LineRepair>,
+    /// Bounded residual corrections at three-plane corners.
+    pub vertex_repairs: Vec<VertexRepair>,
 }
 
 #[derive(Debug)]
@@ -254,6 +269,7 @@ impl DirectSolid {
             }
         };
         let line_cap = a::minimum(options.tolerance_mm.clone(), sewing.maximum_mm.clone(), dec)?;
+        let vertex_repairs = reconstruct_planar_vertices(&mut faces, &line_cap, dec)?;
         let line_repairs = reconstruct_lines(&mut faces, &line_cap, dec)?;
         let by_name: BTreeMap<_, _> = faces.iter().map(|f| (f.name.as_str(), f)).collect();
         let mut modified_faces = Vec::new();
@@ -293,6 +309,7 @@ impl DirectSolid {
             modified_faces,
             deleted_faces,
             line_repairs,
+            vertex_repairs,
         });
         dec.check_deadline()?;
         Ok(Self {
@@ -536,6 +553,57 @@ fn reconstruct_lines(faces: &mut [Face], cap: &Rational, dec: &mut Decider) -> R
         for boundary in &mut face.loops {
             for edge in &mut boundary.edges {
                 if let Some(curve) = curves.get(&edge.edge) { edge.curve = curve.clone(); }
+            }
+        }
+    }
+    Ok(repairs)
+}
+
+fn reconstruct_planar_vertices(faces: &mut [Face], cap: &Rational, dec: &mut Decider) -> Result<Vec<VertexRepair>, ImportError> {
+    let incidence = vertex_owners(faces, dec)?;
+    let vertices: BTreeMap<_, _> = faces.iter().flat_map(|f| &f.loops)
+        .flat_map(|b| &b.edges).flat_map(|e| [&e.start, &e.end])
+        .map(|v| (v.name.as_str(), v)).collect();
+    let mut moved = BTreeMap::new();
+    let mut repairs = Vec::new();
+    'vertices: for (key, vertex) in vertices {
+        let owners = &incidence[key];
+        let mut supports = [None; 3];
+        let mut off_plane = false;
+        for (j, i) in owners.iter().enumerate() {
+            let Surface::Plane(support) = &faces[*i].surface else { continue 'vertices };
+            if j < 3 { supports[j] = Some(support); }
+            let delta = a::sub(&vertex.point, &support.origin, dec)?;
+            off_plane |= !a::dot(&delta, &support.axis, dec)?.is_zero();
+        }
+        if !off_plane { continue }
+        if owners.len() != 3 {
+            return Err(bad("direct.planar-corner", "a displaced planar corner needs three independent support planes"));
+        }
+        let point = triple(supports.map(|p| p.expect("three planes")), dec)?;
+        let square = a::squared(&vertex.point, &point, dec)?;
+        let (_, error) = a::sqrt_enclosure(&square, dec)?;
+        if a::compare(&error, cap, dec)?.is_gt() {
+            return Err(bad("direct.planar-corner", "retained planar corner reconstruction exceeds the stated displacement cap"));
+        }
+        repairs.push(VertexRepair {
+            vertex: key.to_owned(),
+            before_mm: vertex.point.clone(),
+            after_mm: point.clone(),
+            error_upper_mm: error,
+        });
+        moved.insert(key.to_owned(), point);
+    }
+    // Keep old carriers until reconstruct_lines records their finite residuals.
+    for face in faces {
+        for boundary in &mut face.loops {
+            if let Some(vertex) = &mut boundary.vertex {
+                if let Some(point) = moved.get(&vertex.name) { vertex.point = point.clone(); }
+            }
+            for edge in &mut boundary.edges {
+                for vertex in [&mut edge.start, &mut edge.end] {
+                    if let Some(point) = moved.get(&vertex.name) { vertex.point = point.clone(); }
+                }
             }
         }
     }

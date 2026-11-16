@@ -16,6 +16,7 @@ use crate::{Curve, Placement, StepFile, Surface, Vec3};
 mod checks;
 mod sewing;
 mod wire;
+pub(crate) mod constructed;
 
 /// A completed healing stage, with deterministic work charged to this request.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

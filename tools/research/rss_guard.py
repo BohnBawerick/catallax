@@ -28,20 +28,29 @@ def rss_mb(pid):
 
 
 def run(command, *, stdout, stderr, timeout, env=None, max_rss_mb=0, poll=0.05):
-    """Like subprocess.run(check=False), raising TimeoutExpired or MemoryExceeded."""
+    """Like subprocess.run(check=False), raising TimeoutExpired or MemoryExceeded.
+
+    Every wait is bounded by the absolute deadline, so a child that exits after
+    the timeout is a timeout, never a result. The child is killed and reaped on
+    any error, including an interrupt in the caller.
+    """
+    deadline = time.monotonic() + timeout
     process = subprocess.Popen(command, stdout=stdout, stderr=stderr, env=env)
-    started, peak = time.monotonic(), 0
-    while True:
-        try:
-            return subprocess.CompletedProcess(command, process.wait(timeout=poll))
-        except subprocess.TimeoutExpired:
-            pass
-        peak = max(peak, rss_mb(process.pid))
-        if max_rss_mb and peak > max_rss_mb:
+    try:
+        peak = 0
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired(command, timeout)
+            try:
+                return subprocess.CompletedProcess(command, process.wait(timeout=min(poll, remaining)))
+            except subprocess.TimeoutExpired:
+                pass
+            peak = max(peak, rss_mb(process.pid))
+            if max_rss_mb and peak > max_rss_mb:
+                raise MemoryExceeded(peak)
+    except BaseException:
+        if process.poll() is None:
             process.kill()
-            process.wait()
-            raise MemoryExceeded(peak)
-        if time.monotonic() - started > timeout:
-            process.kill()
-            process.wait()
-            raise subprocess.TimeoutExpired(command, timeout)
+        process.wait()
+        raise

@@ -43,9 +43,15 @@ def run(command, *, stdout, stderr, timeout, env=None, max_rss_mb=0, poll=0.05):
             if remaining <= 0:
                 raise subprocess.TimeoutExpired(command, timeout)
             try:
-                return subprocess.CompletedProcess(command, process.wait(timeout=min(poll, remaining)))
+                code = process.wait(timeout=min(poll, remaining))
             except subprocess.TimeoutExpired:
                 pass
+            else:
+                # The wait can return an exit only seen after the deadline passed;
+                # count any run observed past its deadline as timed out.
+                if time.monotonic() > deadline:
+                    raise subprocess.TimeoutExpired(command, timeout)
+                return subprocess.CompletedProcess(command, code)
             peak = max(peak, rss_mb(process.pid))
             if max_rss_mb and peak > max_rss_mb:
                 raise MemoryExceeded(peak)

@@ -22,9 +22,11 @@ slow regression. Required Python CI still checks all three 20M refusals and arti
 absence, in the `step-regressions-slow` job. The listed full-request counts come from the recorded source before the
 review's narrower predispatch checks; those long requests were not repeated.
 
-Incomplete 2.1 case: the 1e-7 mm multi-patch fillet body admits at 96,751,874
-work, above the 20M target and within the 100M ceiling. Numerical STEP then
-refuses with `step.numerical-rounding-topology`; no full milestone completion
-is claimed. Retain the [final-admission work split](research/spline-fillet-offset-search.md#16-november-numerical-multi-patch-body-step-still-refused)
+Incomplete 2.1 case: the 1e-7 mm multi-patch fillet body admits at 96,732,996
+modeled work, above the 20M target and within the 100M ceiling. Before the
+STEP continuity fix, export refused with `step.numerical-rounding-topology`.
+The current diagnostic body handover separately exhausts 100M before the
+writer; this is not a measured current STEP refusal or milestone completion.
+Retain the [final-admission work split](research/spline-fillet-offset-search.md#16-november-numerical-multi-patch-body-step-still-refused)
 and the earlier 29,335,696-work carrier/cap-only result for phase 5. The exact
 offset proof across atlas seams on perpendicular planes also exhausts at 100M.

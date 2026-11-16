@@ -65,9 +65,10 @@ control rejects an exact-exact pcurve spike between the coarse locations;
 the exact chart-gap and default native continuation/repair/support-edit/
 handover controls also pass.
 
-The smooth three-section loft's fillet body admits at 96,751,874 work within
-the 100M request allowance. Independent circle-radius and end-plane samples
-then pass. Its completed final-admission work is:
+The smooth three-section loft's fillet body admits at 96,732,996 modeled
+work within the 100M request allowance. The earlier 96,751,874 count also
+included writing an unfilleted source STEP fixture. Independent circle-radius
+and end-plane samples pass. Its measured final-admission work is:
 
 | Check authority | Charged work |
 |---|---:|
@@ -77,10 +78,11 @@ then pass. Its completed final-admission work is:
 | Final-admission total | 7,980,511 |
 
 These counts cover final admission only; the same request allowance also
-covers the preceding source and fillet work. Numerical STEP construction
-then refuses with `step.numerical-rounding-topology`: “the written atlas
-source no longer has the original charts”. No filleted STEP, radius-edit
-result, imported-part fillet or housing acceptance is claimed. The test is
+covers the preceding source and fillet work. Before the STEP continuity fix
+below, numerical STEP construction refused with
+`step.numerical-rounding-topology`: “the written atlas source no longer has
+the original charts”. No filleted STEP, radius-edit result, imported-part
+fillet or housing acceptance is claimed. The test is
 `m11_spline_fillet::numerical_fillet_builds_on_the_smooth_loft_across_its_station_seam`.
 
 The interpolation and separate UV/3D-curve representation follow the
@@ -89,4 +91,24 @@ and [OpenCASCADE's paired intersection curves](https://dev.opencascade.org/doc/r
 Numerical face-local and declared numerical-pair admission use Catallax's
 finite sampling convention, not either kernel's complete wire certification.
 No reference source was ported.
+
+### STEP continuity encoding
+
+Independent decimal rounding can split an exact C1 join whose continuity
+is carried by pole relations at a degree-fold knot. The numerical STEP
+helper now removes that one redundant pole strip before rounding, only
+when the homogeneous inverse-knot-insertion equality is rational and exact.
+The remaining knot multiplicity encodes C1 continuity structurally.
+Non-removable joins are unchanged; no rounding tolerance is enlarged.
+
+This follows the knot-multiplicity reduction used by
+[OpenCASCADE `RemoveUKnot`/`RemoveVKnot`](https://occt3d.com/dev/doc/refman/html/class_geom___b_spline_surface.html),
+restricted here to zero-error removal rather than tolerance-based smoothing.
+[SMLib's `N_SrfRemoveKnotConditional` and boundary-constrained removal](https://docs.nvidia.com/smlib/manual/nlib/functions/index.html)
+were checked as the alternative. No reference implementation was copied.
+The decimal C1 regression and the existing `catallax-step` Rust suite pass.
+The latest loft follow-up stops in diagnostic body handover encoding at its
+separate 100M ceiling, before reaching STEP or the radius edit. That does not
+establish the current writer's result on this loft.
+
 

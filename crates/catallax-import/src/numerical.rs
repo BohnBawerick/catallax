@@ -13,6 +13,7 @@ use catallax_topology::{BodyId, Model, Sense, numerical as n};
 use crate::{ImportRefusal, RepairRecord, Solid, Vec3};
 
 mod analytic;
+mod cones;
 
 /// Numerical reconstruction of finite parameter trims, retaining the immutable
 /// source's shared vertices and analytic carriers. No geometric displacement or
@@ -207,7 +208,7 @@ fn import_inner(
         }
     })?;
     let mut model = Model::new();
-    match crate::import_step_bodies(&mut model, bytes, expected_sha256, step) {
+    let strict_refusal = match crate::import_step_bodies(&mut model, bytes, expected_sha256, step) {
         Ok(bodies) => {
             return Ok(StepImport::Certified(Box::new(CertifiedImport {
                 model,
@@ -215,12 +216,17 @@ fn import_inner(
                 source_sha256: expected_sha256.to_owned(),
             })));
         }
-        Err(ImportRefusal::NotSolid { detail }) if detail.contains("exactly") => {}
+        Err(error) if cones::eligible(bytes, &error, dec)? => {
+            return analytic::import(bytes, expected_sha256, error, options, dec);
+        }
+        Err(error @ ImportRefusal::NotSolid { .. }) if matches!(&error, ImportRefusal::NotSolid { detail } if detail.contains("exactly")) => {
+            error
+        }
         Err(error) if analytic::eligible(&error) => {
             return analytic::import(bytes, expected_sha256, error, options, dec);
         }
         Err(error) => return Err(error.into()),
-    }
+    };
     if options.tolerance_mm.sign() != Sign::Positive
         || options.tolerance_mm > crate::gap::auto_cap()
     {
@@ -230,9 +236,13 @@ fn import_inner(
         )
         .into());
     }
+    let file = crate::read_step(bytes)?;
+    if cones::in_file(&file, None, dec)? {
+        return analytic::import(bytes, expected_sha256, strict_refusal, options, dec);
+    }
     let imported = match crate::repair::apply_file(
         &mut Model::new(),
-        crate::read_step(bytes)?,
+        file,
         expected_sha256,
         "source.step",
         &Default::default(),
@@ -241,6 +251,9 @@ fn import_inner(
         None,
     ) {
         Ok(imported) => imported,
+        Err(error) if cones::eligible(bytes, &error, dec)? => {
+            return analytic::import(bytes, expected_sha256, error, options, dec);
+        }
         Err(error) if analytic::eligible(&error) => {
             return analytic::import(bytes, expected_sha256, error, options, dec);
         }

@@ -352,7 +352,7 @@ impl Builder<'_> {
                 GeomSurface::Cone(Cone {
                     apex: point(&cone.apex),
                     axis: vector(&cone.axis),
-                    slope: cone.slope.into(),
+                    slope: cone.physical_slope(),
                     ref_dir: vector(&p.ref_dir),
                 })
             }
@@ -815,11 +815,18 @@ fn check_on_surface(face: &StepFace, e: &OrientedEdge) -> Result<(), ImportRefus
         (Surface::Cone(..), Curve::Circle(c, cr)) => {
             // The built cone passes through the face's rims; check exactly.
             let cone = crate::cone::rim_cone(face)?.expect("conical face");
-            let h = dot(&sub(&c.origin, &cone.apex), &cone.axis);
+            let h = cone.height(&c.origin);
             is_zero(&cross(&c.axis, &cone.axis))
                 && is_zero(&cross(&sub(&c.origin, &cone.apex), &cone.axis))
                 && h.sign() == catallax_numbers::Sign::Positive
                 && *cr == &cone.slope * &h
+        }
+        (Surface::Cone(..), Curve::Line(origin, direction)) => {
+            let cone = crate::cone::rim_cone(face)?.expect("conical face");
+            cone.contains_line(origin, direction)
+                && [&e.start.point, &e.end.point]
+                    .iter()
+                    .all(|p| cone.height(p).sign() != catallax_numbers::Sign::Negative)
         }
         (Surface::Sphere(p, r), Curve::Circle(c, cr)) => {
             // The circle's plane cuts the sphere in a circle about the foot of

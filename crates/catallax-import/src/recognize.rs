@@ -60,8 +60,7 @@ pub enum Surface {
     Plane(Placement),
     /// `CYLINDRICAL_SURFACE`.
     Cylinder(Placement, Rational),
-    /// `CONICAL_SURFACE` with semi-angle exactly 45 degrees (slope 1). Other
-    /// angles have an irrational slope and are refused.
+    /// `CONICAL_SURFACE` with semi-angle exactly 45 degrees (slope 1).
     Cone45(Placement, Rational),
     /// `CONICAL_SURFACE` at any other semi-angle, with its radius at the
     /// placement. The importer builds it through the face's rims; see

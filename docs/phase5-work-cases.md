@@ -11,5 +11,7 @@ No optimisation is part of their capability qualification.
 | M10-006 | builds at 100M, over the 20M target | 25,945,726 | [Stage work and raw STEP checks](phase1/spline-boolean-top-cuts/REPORT.md) |
 
 The slow loft-source admission test timed out at 1,200 seconds in CI. It stays
-available with `--ignored`; the complete top requests also have an explicit slow
-regression. Their default CI exclusions follow the owner's minimal-test rule.
+available with `--ignored`. The complete 100M top requests also have an explicit
+slow regression. Default Python CI still checks all three 20M refusals and artifact
+absence. The listed full-request counts come from the recorded source before the
+review's narrower predispatch checks; those long requests were not repeated.

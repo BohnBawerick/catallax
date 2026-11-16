@@ -6,6 +6,9 @@ set for milestone 1.3. Each result and its STEP are numerical and approximate at
 1e-7 mm. No complete body approximation bound is established.
 
 The caller accepts an unchanged loft constructor and a block spanning its width.
+Every block vertex must be above the floor and strictly between the loft caps,
+clear of the stated tolerance. A sampled original roof point must be strictly
+inside the block. Disjoint and unresolved routing cases keep ordinary evaluation.
 It reuses the exact finite intersection and imprint, then the separate numerical
 material selection and retained-source STEP embedding. The selected collection has
 no exact solid authority. Numerical admission, decimal-payload admission and disk
@@ -18,7 +21,7 @@ and the bounded native curve/surface search in the
 
 ## Actual requests and files
 
-Source commit `dd6767990347520ae3064886fab6b513afad1e73`. The [receipt](acceptance.json) records the source, binary hash, work and file checks.
+Measured source commit `dd6767990347520ae3064886fab6b513afad1e73`. The [receipt](acceptance.json) records the source, binary hash, work and file checks. The later review change narrows predispatch only. These full-request measurements were not repeated after that routing change.
 
 | Request | Whole-request work | Raw faces/edges/vertices | Physical holes | Volume mm3 |
 |---|---:|---|---:|---:|
@@ -58,11 +61,21 @@ The stages partition the complete request without counting parent spans twice.
 All three cases join the [phase-5 work list](../../phase5-work-cases.md). The
 application allowance is 100M until phase 5. The target remains 20M.
 
+The review follow-up measured 9,187 routing work on the original stock, compared
+with 2,540 in the recorded runs. That focused test checks only the read-only
+predispatch predicate. It is not a new full-request measurement; the receipt
+continues to identify the source of its 25.9M to 27.3M totals.
+
 ## Regression and reproduction
 
-Default STEP CI retains the eleven earlier requests at 20M, including the existing
-worker comparisons and stale-file replay. The three multi-hour top requests have
-an explicit slow test. Run it with `CATALLAX_SLOW_LOFT_TOP=1` and
+Default STEP CI runs all fourteen original requests at 20M, including worker
+comparisons and stale-file replay. The three top requests must exhaust that
+allowance, refuse with no result or STEP metadata, and leave no STEP artifact.
+The STEP job has a 360-minute proof-wait guard for these required bounded checks;
+the 20M request limit and target are unchanged.
+
+The three 100M success requests have an additional explicit slow test. Run it with
+`CATALLAX_SLOW_LOFT_TOP=1` and
 `CATALLAX_VERIFY_BINARY=/path/to/catallax-verify`:
 
 ```sh
@@ -73,4 +86,6 @@ That opt-in also compares the top requests across the existing worker settings.
 It was not repeated for this change. The qualification above uses the three
 original requests completed once, their actual STEP files and the raw checks.
 The separately ignored Rust source-admission test remains runnable with `--ignored`.
-The slow default exclusions and their measured times are recorded here for phase 5.
+Only the additional 100M success matrix is opt-in. The required 20M refusal and
+artifact checks remain in default CI. The existing Rust source-test exception
+and the measured full-request times remain listed for phase 5.

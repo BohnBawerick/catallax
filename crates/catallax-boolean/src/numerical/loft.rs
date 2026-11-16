@@ -267,14 +267,19 @@ impl NumericalLoftSelection {
     }
 }
 
-/// Chooses the numerical top-stock path when the stock spans the loft's width.
-/// This routing check gives no material or incidence authority.
-pub fn stock_spans_loft_width(
+/// Chooses a top stock spanning the width, strictly between the caps and above
+/// the floor, with a roof point strictly inside it. This routing witness gives
+/// no Boolean material, incidence or complete overlap authority.
+pub fn stock_overlaps_loft_top(
     model: &Model,
     loft: BodyId,
     stock: BodyId,
+    tolerance_mm: &Rational,
     dec: &mut Decider,
 ) -> Result<bool, Refusal> {
+    if tolerance_mm.sign() != Sign::Positive {
+        return Err(bad("top-stock routing needs a positive tolerance"));
+    }
     let source = Loft::original(model, loft, dec)?;
     let mut width = None;
     for (plane, sense) in &source.planes {
@@ -308,10 +313,63 @@ pub fn stock_spans_loft_width(
         let bounds = dec.enclose_budgeted_at(&projection, 128)?;
         stock_range = Some(stock_range.map_or_else(|| bounds.clone(), |range| range.hull(&bounds)));
     }
-    Ok(match (loft_range, stock_range) {
+    let spans_width = match (loft_range, stock_range) {
         (Some(loft), Some(stock)) => stock.lo() < loft.lo() && stock.hi() > loft.hi(),
         _ => false,
-    })
+    };
+    if !spans_width {
+        return Ok(false);
+    }
+    for id in model.vertices_of_body(stock) {
+        dec.charge_work(1)?;
+        let point = model.geom().position(model.vertex(id).point);
+        if !matches!(
+            planes(&source.planes, &point, tolerance_mm, dec)?,
+            Some((true, _))
+        ) {
+            return Ok(false);
+        }
+    }
+    let mut stock_planes = Vec::new();
+    for id in model.faces_of_body(stock) {
+        dec.charge_work(1)?;
+        let face = model.face(id);
+        let Surface::Plane(plane) = model.geom().surface(face.surface) else {
+            return Ok(false);
+        };
+        stock_planes.push((plane.clone(), face.sense));
+    }
+    if stock_planes.len() != 6 {
+        return Ok(false);
+    }
+    for patch in &source.patches {
+        let points = patch.domain().each_ref().map(|range| {
+            [
+                range[0].clone(),
+                (&range[0] + &range[1]).mul_pow2(-1),
+                range[1].clone(),
+            ]
+        });
+        for u in &points[0] {
+            for v in &points[1] {
+                dec.charge_work(1)?;
+                let point = patch.point_at(
+                    &[
+                        Real::from_rational(u.clone()),
+                        Real::from_rational(v.clone()),
+                    ],
+                    dec,
+                )?;
+                if matches!(
+                    planes(&stock_planes, &point, tolerance_mm, dec)?,
+                    Some((true, _))
+                ) {
+                    return Ok(true);
+                }
+            }
+        }
+    }
+    Ok(false)
 }
 
 /// Selects an original loft against an original convex planar stock body.

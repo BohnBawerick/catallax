@@ -2,7 +2,7 @@
 
 use std::{io, path::Path};
 
-use catallax_boolean::numerical::loft::{loft_box_selection, stock_spans_loft_width};
+use catallax_boolean::numerical::loft::{loft_box_selection, stock_overlaps_loft_top};
 use catallax_numbers::{BoundKind, Decider, Mark, OperationSpan, Refusal};
 use catallax_recipe::{BooleanKind, Operation, Recipe};
 use catallax_step::numerical::{self as step, NumericalStepOptions};
@@ -26,7 +26,7 @@ fn measured<T>(
     result
 }
 
-/// Handles an unchanged loft and a stock that spans its width at the final step.
+/// Handles an unchanged loft and an overlapping top stock at the final step.
 pub(crate) fn evaluate(
     recipe: &Recipe,
     files: &catallax_features::ImportFiles<'_>,
@@ -72,15 +72,15 @@ pub(crate) fn evaluate(
     };
     let loft = built.bodies[target];
     let stock = built.bodies[tool];
+    let tolerance = catallax_step::StepOptions::default().curve_tolerance;
     match measured("numerical-loft-routing", recipe, dec, |dec| {
-        stock_spans_loft_width(&built.model, loft, stock, dec)
+        stock_overlaps_loft_top(&built.model, loft, stock, &tolerance, dec)
     }) {
         Ok(true) => {}
         Ok(false) => return Ok(None),
         Err(error) if error.code == "boolean.numerical-loft" => return Ok(None),
         Err(error) => return Ok(Some(failure(error, "width-routing"))),
     }
-    let tolerance = catallax_step::StepOptions::default().curve_tolerance;
     let operation = match kind {
         BooleanKind::Union => catallax_boolean::BoolOp::Unite,
         BooleanKind::Subtract => catallax_boolean::BoolOp::Subtract,

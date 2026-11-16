@@ -52,7 +52,7 @@ fn native_seam(d: &n::NumericalDefinition) -> n::NumericalNativeTrim {
 }
 
 #[test]
-fn reproduce_native_cone_height_guard_bypass() {
+fn native_cone_trims_refuse_until_complete_domain_checks() {
     let positive = fixture::positive_bore();
     n::build(
         positive.clone(),
@@ -71,19 +71,14 @@ fn reproduce_native_cone_height_guard_bypass() {
     assert!(error.detail.contains("above its apex"));
     for d in [positive, negative] {
         let binding = native_seam(&d);
-        let body = n::build_with_native_trims(
+        let error = n::build_with_native_trims(
             d,
             vec![binding],
             n::NumericalOptions::default(),
             &mut Decider::default(),
         )
-        .unwrap();
-        assert_eq!(body.native_trims().len(), 1);
-        assert!(
-            body.definition()
-                .faces
-                .iter()
-                .any(|f| matches!(f.surface, Surface::Cone(_)))
-        );
+        .unwrap_err();
+        assert_eq!(error.code, "numerical.native-cone-domain-unverified");
+        assert!(error.detail.contains("positive-height and periodic-domain"));
     }
 }

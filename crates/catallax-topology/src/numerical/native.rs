@@ -64,6 +64,12 @@ impl<'a> Index<'a> {
             if edge.key != binding.edge {
                 return Err(bad("trim", "native trim address names a different edge"));
             }
+            if matches!(definition.faces[face].surface, Surface::Cone(_)) {
+                return Err(Refusal::new(
+                    "numerical.native-cone-domain-unverified",
+                    "native cone trims require complete positive-height and periodic-domain checks",
+                ));
+            }
             let [lo, hi] = binding.curve.domain();
             if edge.parameters.iter().any(|t| t < lo || t > hi) {
                 return Err(bad(

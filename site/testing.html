@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Testing | Catallax</title>
+<meta name="description" content="How Catallax is tested: unit tests, STEP files read back in OpenCASCADE, saved answers replayed on every release, an edit-chain scoreboard and a census of 3,000 real STEP files.">
+<link rel="canonical" href="https://kernel.zigrawbohnbawerick.org/testing.html">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0b0c0d">
+<link rel="icon" href="brand/mark.svg" type="image/svg+xml">
+<script>document.documentElement.classList.add('js')</script>
+<link rel="stylesheet" href="brand/fonts.css">
+<link rel="stylesheet" href="brand/tokens.css">
+<link rel="stylesheet" href="bare.css">
+<link rel="stylesheet" href="read.css">
+<link rel="stylesheet" href="evidence.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<symbol id="s-projection" viewBox="0 0 48 24"><path d="M3 8.5 25 3v18L3 15.5Z"/><circle cx="37" cy="12" r="9"/><circle cx="37" cy="12" r="4"/></symbol>
+</svg>
+<a class="skip" href="#main">Skip to content</a>
+<div class="frame" aria-hidden="true"></div>
+<header class="bar">
+  <a class="bar__brand" href="index.html" aria-label="Catallax, home"><img src="brand/mark.svg" alt="" width="28" height="28"><span>catallax</span></a>
+  <a class="bar__link" href="checkpoint-1.html">Checkpoint 1</a>
+  <a class="bar__link" href="testing.html" aria-current="page">Testing</a>
+  <a class="bar__link" href="https://github.com/BohnBawerick/catallax" target="_blank" rel="noopener">Code</a>
+</header>
+<main id="main" class="read ev">
+  <header class="read__head">
+    <h1>
+      <span class="ln"><span>How Catallax</span></span>
+      <span class="ln"><span>is <em>tested</em>.</span></span>
+    </h1>
+    <span class="dim js-only" aria-hidden="true"><i></i><b></b><i></i></span>
+  </header>
+  <p class="ev__lede">A change merges only after its checks pass. A release must reproduce every answer the last release gave. At each checkpoint, Catallax is measured against OpenCASCADE and SMLib on the same parts and on 3,000 real STEP files.</p>
+
+  <section aria-labelledby="every-change">
+    <h2 class="ev__h" id="every-change">On every change</h2>
+    <p>Each pull request runs the checks its change can affect, and a kernel change runs all of them. The full set also runs every night on the main branch, even when nothing in the kernel changed.</p>
+    <div class="table-wrap"><table class="ev__table ev__table--num">
+      <thead><tr><th scope="col">Check</th><th scope="col">Size</th><th scope="col">What it does</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Rust tests</th><td>3,523</td><td>Unit and integration tests in 653 source files.</td></tr>
+        <tr><th scope="row">STEP read-back</th><td>121</td><td>Tests in 38 files that open Catallax's STEP output in OpenCASCADE 8.0.1.1 and check it.</td></tr>
+        <tr><th scope="row">Saved answers</th><td>477</td><td>Earlier requests replayed fresh with four workers. Each answer must match the one on record.</td></tr>
+        <tr><th scope="row">Target parts</th><td></td><td>The target parts are built at a fixed work allowance, compared with their records, and their STEP files opened in OpenCASCADE.</td></tr>
+        <tr><th scope="row">Formatting and lint</th><td></td><td>rustfmt and Clippy across the workspace.</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section aria-labelledby="replay">
+    <h2 class="ev__h" id="replay">Saved answers, replayed</h2>
+    <p>Catallax keeps 477 earlier requests with a fingerprint of each accepted answer: 85 unions, 89 subtractions, 86 intersections and 217 mixed requests. Every answer must come back with the same record and the same output bytes. A difference fails the check unless someone reviews it and lists it, for example a request that used to be refused and now gets a correct answer.</p>
+    <p>A release replays all 477 against the previous release, together with 23 rebuilt parts. The previous release runs on one worker. The new build runs fresh on one, two and four workers, and those three runs must agree exactly, with no exceptions.</p>
+    <p>Before the 0.3.0 freeze, a fresh replay compared release 0.2.0 with the frozen commit: all 477 requests and all 23 rebuilt parts came out equal, records and output bytes. The release repeats the replay at one, two and four workers on the final commit before it is published.</p>
+  </section>
+
+  <section aria-labelledby="occt">
+    <h2 class="ev__h" id="occt">STEP files read back in OpenCASCADE</h2>
+    <p>A STEP file is only useful if other software can open it. The read-back tests load Catallax's actual output bytes into OpenCASCADE, the kernel behind FreeCAD and CadQuery, and check that the solid is valid and has the right faces. Several read the file raw: no ShapeFix repair, no sewing, no tolerance fixing, and nothing rewritten first. The checks on approximate STEP also make a later cut on the file in OpenCASCADE, to show it can be worked on.</p>
+    <p>At Checkpoint 1, the test parts P1 to P5 were built, edited, saved and reopened in SolidDraft, and every STEP export opened as valid in OpenCASCADE with repair turned off.</p>
+  </section>
+
+  <section aria-labelledby="measures">
+    <h2 class="ev__h" id="measures">Measured at each checkpoint</h2>
+    <p>Two measures compare Catallax with the reference kernels. Both run once per checkpoint, each as one command, and the <a href="checkpoint-1.html">Checkpoint 1 page</a> has the results.</p>
+    <ul class="ev__list">
+      <li><b>Edit-chain scoreboard.</b> 23 target parts, each built and then rebuilt after one change, in Catallax, OpenCASCADE and SMLib. All three kernels are judged by one definition of done: both versions build, both STEP exports open in OpenCASCADE as valid closed solids, and no independent check finds a wrong value. At Checkpoint 1 Catallax finished 10 of 13 test parts and 6 of 10 real parts; OpenCASCADE 12 and 7; SMLib 8 and 6.</li>
+      <li><b>STEP census.</b> 3,000 models from the public ABC collection, picked with a fixed seed. A file counts only when every body imports, exports again, and passes OpenCASCADE's validity check. At Checkpoint 1, 374 files passed (12.47%). OpenCASCADE opens 2,701 (90.03%) after its own default repair, so the two figures compare how many files open, not accuracy at one tolerance.</li>
+      <li><b>Freeform cut requests.</b> 14 recorded requests that cut or join lofted solids. 11 now write a checked approximate STEP file; three are still refused.</li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="limits">
+    <h2 class="ev__h" id="limits">What the tests do not prove</h2>
+    <div class="scope">
+      <p>Passing tests show that the cases tested give the recorded answers. They do not prove every part correct. Point checks sample a part; they do not cover all of it. A refusal is reported as a refusal and is never counted as a pass.</p>
+      <p>Counts are from the main branch at commit <code>44bf90eb</code>, the <a href="https://github.com/BohnBawerick/catallax/blob/main/docs/RELEASING.md" target="_blank" rel="noopener">release guide</a> and the <a href="https://github.com/BohnBawerick/catallax/blob/main/docs/checkpoints/checkpoint-1.md" target="_blank" rel="noopener">Checkpoint 1 report</a>.</p>
+    </div>
+  </section>
+</main>
+<footer class="block mono">
+  <div class="block__cell block__cell--sym"><svg class="sym sym--wide"><use href="#s-projection"/></svg></div>
+  <div class="block__cell"><small>Title</small><span>Testing</span></div>
+  <div class="block__cell"><small>Source</small><a href="https://github.com/BohnBawerick/catallax/blob/main/docs/RELEASING.md" target="_blank" rel="noopener">Release guide</a></div>
+  <div class="block__cell"><small>Drawn</small><a href="https://zigrawbohnbawerick.org/" target="_blank" rel="noopener">Zigrawbohnbawerick Pty Ltd</a></div>
+  <div class="block__cell"><small>Licence</small><a href="https://github.com/BohnBawerick/catallax/blob/main/LICENSE" target="_blank" rel="noopener">MIT</a></div>
+  <div class="block__cell"><small>Owner</small><a href="https://zigrawbohnbawerick.org/" target="_blank" rel="noopener">© 2026 Zigrawbohnbawerick Pty Ltd</a></div>
+  <div class="block__cell"><small>Notes</small><span class="block__links"><a href="why.html">Why</a><a href="thanks.html">Thanks</a><a href="THIRD-PARTY.txt">Third-party licences</a></span></div>
+</footer>
+<script src="read.js"></script>
+</body>
+</html>

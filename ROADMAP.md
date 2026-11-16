@@ -17,12 +17,15 @@ Dates appear only on finished work. Nothing ahead has a date.
 - A milestone is done when its "done when" line is shown on real parts, through SolidDraft where the app has the feature.
 - Earlier plans named milestones M1 to M35. [The table at the end](#old-milestone-names) maps each old name to its number here, so old notes still resolve.
 - Jobs marked * need a machine to themselves. They are timing and GPU jobs.
-- **One owner per slice.** Phase 1 runs as four slices: 1.1 with 1.3, 1.2, 1.4, and the app. One strong worker owns each slice until its "done when" line is met. The listed cards are a map, not a queue. The owner lands the slice as several PRs, each one reviewable step with green checks.
-- **Numerical first.** An exact proof counts as unavailable when it is missing or too costly. Then build within a tolerance stated before the operation, as OpenCASCADE and SMLib do. Check the result separately at that tolerance, mark it and its STEP approximate, and record the tolerance and the checks passed. An exact proof is a later upgrade, made where it is cheap. A numerical result is never labelled exact.
+- **One owner per lane.** Phase 2 runs as three kernel lanes and one app lane, listed under phase 2. One strong worker owns each lane until the "done when" line of its current milestone is met, then takes the next milestone in its lane. The owner lands the work as several PRs, each one reviewable step with green checks. Phase 1 ran as four slices: 1.1 with 1.3, 1.2, 1.4, and the app.
+- **Walk the done-when line first.** A milestone opens by walking its "done when" line end to end, through SolidDraft where the app has the feature, and listing every missing piece on the first day.
+- **Delivery until phase 5.** Large PRs that cover a whole step. Tests are the fewest that prove the change works. No speed work: a speed idea becomes a one-line note in the PR's Later section and joins the phase 5 list. Work off the "done when" line becomes such a note too. The owner's rule of 16 Nov, kept until phase 5 at Checkpoint 1.
+- **Numerical first.** An exact proof counts as unavailable when it is missing or too costly. Then build within a tolerance stated before the operation, as OpenCASCADE and SMLib do. Check the result separately at that tolerance, mark it and its STEP approximate, and record the tolerance and the checks passed. An exact proof is a later upgrade, made where it is cheap. A numerical result is never labelled exact. This holds for the spline fillets and the NURBS toolkit of phase 2. Import may need a different balance from parts built from scratch; the owner asked at Checkpoint 1 for that to be thought through, not assumed.
 - Before writing a new algorithm, check how OpenCASCADE and SMLib solve it, and say in the PR which approach you follow.
 - **The allowance until phase 5.** The application's default work allowance is 100M until phase 5, so slow parts still build in SolidDraft. 20M stays the target. Every edit over 20M records its measured work per stage and joins the list of cases for phase 5. A request still refuses at the allowance in force, and a refused step is not a completed build.
 - A SolidDraft feedback list goes to one worker as one PR, or two when the kernel changes too.
-- On the phase 1 slices, Codex cloud reviews and advises. It does not author PRs.
+- Kernel lanes run on Codex models and the app lane on Claude Opus. Codex cloud reviews and advises. It does not author PRs. A review holds a merge only on new kernel algorithms, numerical admission or tolerance rules, and data-loss or release paths; everything else merges on green checks and is reviewed after.
+- When a lane's model quota runs short before a checkpoint, firstmate reports it and the owner decides what gives.
 
 **Lessons, 15 Nov.** From the first ten hours of phase 1:
 - Tiny cards cost more than they changed. Setup, build, a 50-minute CI queue and review rounds outweighed each change.
@@ -30,11 +33,28 @@ Dates appear only on finished work. Nothing ahead has a date.
 - Nine app items as nine PRs queued on the same test runners.
 - Work authored in the cloud needed a second worker to open each PR.
 
+**Lessons, Checkpoint 1 (16 Nov).** From the whole of phase 1, 98 merged PRs in 48 hours:
+- Waiting cost more than the work. 34 of the 98 PRs waited over 2 hours between opening and merge, through two or three review rounds of 20 to 60 minutes and 30 to 45 minutes of hosted CI. Several CI failures came from the runners, not the change. Hence the narrower review hold above; a runner failure gets a rerun, not an investigation, and builds and tests run on the work PC before a push.
+- One worker per slice was the slowest path until the spline work split between two workers. Hence three kernel lanes in phase 2.
+- Two pieces a "done when" line needed surfaced on the last day: drawing an oblique draft in the app and re-pointing references after a file replacement. Hence walking the line first.
+- The measure moved during the phase. The census headline changed definition several times, the scoreboard became one command only at the checkpoint, three of its ten real parts test nothing and P6 to P10 have no definition. Hence the measures are fixed at the start of phase 2 and their definitions held to Checkpoint 2.
+- Numerical first paid. Complete STEP solid imports rose from 186 to 418, 11 of the 14 spline Boolean requests reach STEP, and P1, P4, P5 and the crossing pipes build.
+- Speed ideas parked as Later notes cost nothing and gave the checkpoint its phase 5 list. A side robustness test cost an hour.
+- Model quota is a real limit: the Codex weekly quota ran close to empty and one Claude account hit its five-hour limit twice. Fewer, longer lanes.
+
 The edit-chain scoreboard is the measure `VISION.md` asks for. The target parts P1 to P10 and ten real parts from the public STEP census are built and edited step by step in Catallax, OpenCASCADE and SMLib, with one definition of done for all three.
 
 ## Where we are
 
-In release: Catallax 0.2.0 with SolidDraft 0.5.0, cut on 14 Nov 2026. The tags are not published yet.
+Phase 1 ended at Checkpoint 1 on 16 Nov 2026. [The checkpoint report](docs/checkpoints/checkpoint-1.md) has every number below. Catallax 0.3.0 and SolidDraft 0.6.0 are cut from the measured commit.
+
+| Measure at Checkpoint 1 | Catallax | OpenCASCADE | SMLib |
+|---|---:|---:|---:|
+| Edit chains done, P0 to P5 (13) | 10 | 12 | 8 |
+| Edit chains done, real census parts (10) | 6 | 7 | 6 |
+| STEP census files reaching a valid solid (3,000) | 374 | 2,701 | |
+
+Three of the ten census parts count for no kernel, because the test hole lands in an existing bore. The coverage count was not recounted at Checkpoint 1 and stands at 55% from 14 Nov.
 
 The kernel builds exact solids from a recipe. It has stock solids, extrude, revolve, pattern and mirror, Booleans on analytic solids, certified fillet families, chamfers, planar shells, planar and cylindrical draft, exact lofts, and sweeps along lines, arcs and one spline. It proves where spline faces meet, cuts lofts from the side, and reads and writes STEP and IGES. It imports closed meshes, turns a scan into a clean part, reports mass with proved bounds and answers clash or clearance. A second kernel, the distance field, previews the same recipe and owns lattices and gyroids.
 
@@ -117,23 +137,37 @@ Twelve things neither reference kernel does are not in the count. They include a
 
 **App, alongside:** browser first. Kernel work runs off the interface thread, commands disabled in the browser work there, and a part built within tolerance shows as finished. Why here: the browser is where a new user tries a real file.
 
-**Checkpoint 1.** Comes before the spline fillets. First edit-chain scoreboard against OpenCASCADE and SMLib. Census rerun. Order of phase 2.
+**Checkpoint 1, 16 Nov.** Reached before the spline fillets. State of each milestone against its "done when" line:
+
+- 1.1: done. Numerical results carry tolerance, checks and repairs through import and spline cuts, and approximate STEP opens raw in OpenCASCADE and takes a later cut. The curved-housing chain moved to 2.1.
+- 1.2: done by its line. The census is published at 374 valid files (12.47%) beside the old 6.20%, and replacing an imported file re-points every reference it can match and names the rest. Import is still the largest gap against OpenCASCADE.
+- 1.3: open. 11 of the 14 recorded requests reach checked STEP inside 20M. The three loft top cuts carry into phase 2, lane 1.
+- 1.4: done. P1 to P5 build, edit, save, reopen and export through SolidDraft. The scoreboard still shows P3's membership point and P5's 16 unnamed faces or edges.
+- App: kernel work runs off the page. Cancel and the edit after it stay over 250 ms in the browser; the fix carries into the phase 2 app lane.
 
 ### Phase 2: the modelling lines we do not have yet
 
-Why this phase is second: these are whole lines of the count with nothing built. They matter less than phase 1 because a user can work around a missing surface tool, but not around a file that will not open or an edge that will not round. The order inside is the owner's order of 13 Nov.
+Why this phase is second: these are whole lines of the count with nothing built. They matter less than phase 1 because a user can work around a missing surface tool, but not around a file that will not open or an edge that will not round.
+
+**How phase 2 runs.** The owner chose three kernel lanes from the start at Checkpoint 1, so the longest chain, 2.2 then the rest of 2.3 then 2.5, starts on the first day. Lanes run side by side because no lane's result changes another lane's current job.
+
+- **First, the measures.** A short job before any lane needs them. The census-part hole is placed so it removes material in the reference kernels, P8, P9 and the curved-housing chain join the scoreboard as targets, and the definitions then stay fixed to Checkpoint 2.
+- **Lane 1, spline.** Finish 1.3's three loft top cuts at the 100M application default, then 2.1, then 2.5 once 2.2 and 2.3 have landed.
+- **Lane 2, import.** First rank the measured failure causes by files gained: export gaps (files that import but do not export valid) against first-step import refusals, from the Checkpoint 1 census data. Then stitch imported surface bodies into checked solids, which is 2.3's "faces sew into a solid" moved to the front. Then work the causes in ranked order, and take 2.3's trim, extend and thicken once 2.2 lands.
+- **Lane 3, new tools.** 2.2, then 2.4.
+- **App, alongside, on Claude Opus.** The Cancel fix first, then surface bodies shown and clearly marked, then the import health report, then each kernel item as it lands.
 
 | # | Milestone | What we are doing | Why here | Unlocks | Done when |
 |---|---|---|---|---|---|
 | 2.1 | Fillets between spline faces | Rounded edges on lofted and imported freeform parts, across more than one surface patch. | Needs 1.3. The centre curve of a spline fillet is found by the same engine that intersects spline faces. [One loft edge already rounds within 59 nm](docs/research/spline-fillet-offset-search.md). Moved from phase 1 on 16 Nov. | Finished freeform parts. P9, the lofted duct. The curved-housing chain of 1.1. | A fillet across several patches builds on a loft and on an imported part, and a radius edit keeps the names. The curved housing builds as loft, spline cut, fillet, one more edit, its STEP opens in OpenCASCADE with healing off and takes an edit there, and the later cuts on the filleted housing (old M8) build. |
-| 2.2 | NURBS toolkit | Freeform surface construction: Coons patch, surface through a grid of points, Gordon surface, guided skin, N-sided fill. | First of the new milestones in the owner's order. Three "not started" lines sit here. Surface bodies and direct edits need its tools. | Freeform surfacing. Lofts with guide curves. | Each surface builds and exports. Knot insertion, degree raise, split and join are public. First step: a dated decision that widens the 10 Nov port rule. |
-| 2.3 | Surface bodies | Open surfaces and wires as bodies. Sew, trim, extend, thicken into a solid. | Second in the owner's order. Direct edits (2.5) need its trim, extend and sew. | Surface modelling. Imported files that are not closed solids. | A surface trims, extends and thickens into a solid. Faces sew into a solid outside import. |
-| 2.4 | General sweeps | Extrude with taper. Sweep with a guide, with twist and along a helix. Extrude up to a curved face. | Two "not started" lines. It does not depend on 2.2 or 2.3, so it runs beside them. | Springs, threads, tapered and twisted shapes. P8, the spring and threaded boss. | P8 builds. |
-| 2.5 | Direct edits | Delete a face, a fillet or a hole and heal the solid. Move, offset or replace a face. | Needs 2.2 and 2.3. It pays only once imports work (1.2). | Editing bought-in parts that have no feature tree. | Each edit works on an imported solid. |
+| 2.2 | NURBS toolkit | Freeform surface construction: Coons patch, surface through a grid of points, Gordon surface, guided skin, N-sided fill. SMLib's surface-construction code may be adapted, with attribution, under the 16 Nov widening of the port rule. | Lane 3, from the first day. Three "not started" lines sit here. Surface bodies and direct edits need its tools. | Freeform surfacing. Lofts with guide curves. | Each surface builds and exports. Knot insertion, degree raise, split and join are public. |
+| 2.3 | Surface bodies | Open surfaces and wires as bodies. Sew, trim, extend, thicken into a solid. | Lane 2. Sewing comes first, as stitching imported surface bodies into checked solids; trim, extend and thicken follow 2.2. Direct edits (2.5) need its trim, extend and sew. | Surface modelling. Imported files that are not closed solids. | A surface trims, extends and thickens into a solid. Faces sew into a solid outside import. |
+| 2.4 | General sweeps | Extrude with taper. Sweep with a guide, with twist and along a helix. Extrude up to a curved face. | Lane 3, after 2.2. Two "not started" lines. It depends on neither 2.2 nor 2.3. | Springs, threads, tapered and twisted shapes. P8, the spring and threaded boss. | P8 builds. |
+| 2.5 | Direct edits | Delete a face, a fillet or a hole and heal the solid. Move, offset or replace a face. | Lane 1, after 2.1. Needs 2.2 and 2.3. It pays only once imports work (1.2). | Editing bought-in parts that have no feature tree. | Each edit works on an imported solid. |
 
 **App, alongside:** import health report, reverse-engineering workspace, direct-edit commands, reference axis and point, slot, draft check, exact sketch solver.
 
-**Checkpoint 2.** Scoreboard and census rerun. Order of phase 3.
+**Checkpoint 2.** Scoreboard and census rerun, and the coverage recount. Order of phase 3.
 
 ### Phase 3: drawings, assemblies, exchange and the last lines
 
@@ -211,6 +245,7 @@ Why last: the owner's ruling of 11 Nov. Clock targets were stalling capability w
 | 12 Nov | Spline faces meeting spline faces, by the 2026 method with exact proof. SMLib intersection code ported as a source of candidates. IGES import. Scan to clean part. First fillets between spline faces and on a loft edge. Coverage 52%. |
 | 13 Nov | Exact sections and first silhouettes. Side Booleans on lofts. Files with several solids. P1 inside 20M, down from 41.6M to 15.3M units. The bounded answer kind. In the app: Edit Suite frame, Loft, spline sweep, Offset, Thicken, feature patterns, proof lights, STEP proof reports, scan fit, exact clash. |
 | 14 Nov | Several bodies and Combine. Tolerance exit run recorded. `VISION.md` in both repositories. Release cut: Catallax 0.2.0, SolidDraft 0.5.0. Coverage 55%. |
+| 15 to 16 Nov | Phase 1. Numerical bodies under stated tolerances with approximate STEP. STEP import by tier, per-entity tolerances and source topology healing: 418 complete solid imports and 374 valid exports of 3,000. Spline loft Booleans: 11 of 14 recorded requests reach STEP. Mixed fillet corners, partial-oblique fillet ends, hollow drafts, three-edge chamfer corners, shells with side openings, skew holes through bevelled collars: P1 to P5 through SolidDraft. Body handover between kernel instances. Browser kernel worker. Verified STEP file replacement. First edit-chain scoreboard. Checkpoint 1. Catallax 0.3.0, SolidDraft 0.6.0. |
 
 ### Decisions
 
@@ -235,6 +270,11 @@ Why last: the owner's ruling of 11 Nov. Clock targets were stalling capability w
 | 14 Nov | One roadmap with checkpoints. Most critical first: the biggest gaps against OpenCASCADE lead. The allowance stays 20M. Speed and GPU work last. | Stop changing direction between checkpoints, and work on what hurts most. |
 | 15 Nov | Until phase 5 the application's default allowance is 100M. 20M stays the target, and every edit over it is measured per stage and listed for phase 5. | Slow parts still build in SolidDraft while capability comes first. |
 | 16 Nov | The owner moved Checkpoint 1 before the spline fillets. Milestone 1.5 is now 2.1, and the curved-housing chain moves with it. | Reach the first scoreboard sooner. |
+| 16 Nov | Stitch imported surface bodies into checked solids early in phase 2. | Import is the largest gap, and 2,202 census files open only as unchecked surface sets. |
+| 16 Nov | Phase 2 runs as three kernel lanes from the start. The import lane ranks measured failure causes before choosing its next batch. | Start the longest chain on the first day. Work where the files are. |
+| 16 Nov | The delivery rule of large PRs, minimal tests and no speed work stands until phase 5. | It finished phase 1, and its Later notes became the phase 5 list. |
+| 16 Nov | The 10 Nov port rule widens for 2.2: SMLib's surface-construction code may be adapted, with attribution, and Catallax's own checks decide what ships. | The NURBS toolkit is spline-only work. |
+| 16 Nov | Checkpoints stay undated, and the scoreboard and census run only at checkpoints. When model quota runs short, the owner decides at the time. | The owner's answers at Checkpoint 1. |
 
 ### Prototypes and research
 

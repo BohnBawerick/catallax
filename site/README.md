@@ -75,6 +75,8 @@ The import refuses an incomplete run and checks its recount against the run's ow
 
 The gallery and its per-case pages under `gallery/` are generated from the fillet corpus recipes and the committed projection; corpus expectations are never shown as results. Thumbnails are illustration chosen by family. Regenerate after changing `parts/fillets/cases.jsonl` or the projection. Every Rust excerpt on `kernel.html` links to its exact lines in the v0.1.5 release; keep the excerpt and link together when replacing one.
 
+`checkpoint-1.html` and `testing.html` are hand-written in the same chrome, and the homepage's Checkpoint 1 section links to both. Every number on them comes from `docs/checkpoints/checkpoint-1.md`, `docs/RELEASING.md`, `tools/checks/earlier-answers.json`, `tools/release/rebuild-corpus.jsonl` or a count on `main` that the PR adding them names. Change a number only from a newer report or run, and keep the homepage section's figures equal to the page.
+
 ## Multi-tool comparison
 
 `comparison-results.json` is a public projection of a completed five-tool benchmark, not manually entered figures. Generate the page after importing quiet-host results:

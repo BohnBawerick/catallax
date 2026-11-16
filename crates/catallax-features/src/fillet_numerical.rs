@@ -301,6 +301,61 @@ fn build_impl(
     let uv = trims.each_ref().map(coedge_uv);
     let axes = [along(&uv[0])?, along(&uv[1])?];
     let physical = [atlas(&original.faces[first], dec)?, atlas(&original.faces[second], dec)?];
+    if std::env::var_os("CATALLAX_FILLET_ORIENTATION_DIAGNOSTIC").is_some() {
+        let cross = |a: [f64; 3], b: [f64; 3]| [
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0],
+        ];
+        let dot = |a: [f64; 3], b: [f64; 3]| (0..3).map(|i| a[i] * b[i]).sum::<f64>();
+        for sample in 0..=2 {
+            let share = Rational::from_ratio(sample, 2).unwrap();
+            let t = &input.parameters[0] + &(&(&input.parameters[1] - &input.parameters[0]) * &share);
+            let mut records = Vec::new();
+            let mut raw = [[[0.0; 3]; 2]; 2];
+            let mut chart = [[[0.0; 3]; 2]; 2];
+            for side in 0..2 {
+                let face = &original.faces[sides[side]];
+                let binding = source.native_trims().iter().find(|binding| {
+                    binding.face == face.key && binding.edge == input.key
+                }).ok_or_else(|| bad("diagnostic selected edge has no native pcurve"))?;
+                let at = uv_at(&binding.curve, &t, dec)?;
+                let jet = physical[side].source().jet_box([&at[0], &at[0]], [&at[1], &at[1]], 64, dec)?;
+                let retained = physical[side].charts().iter().find(|chart| {
+                    (0..2).all(|axis| at[axis] >= chart.patch().domain()[axis][0]
+                        && at[axis] <= chart.patch().domain()[axis][1])
+                }).ok_or_else(|| bad("diagnostic point has no retained chart"))?;
+                let derivatives = retained.patch().derivatives_at(
+                    &at.each_ref().map(|value| Real::from_rational(value.clone())), dec,
+                )?.map(|value| [value.x.to_f64(), value.y.to_f64(), value.z.to_f64()]);
+                let free = 1 - axes[side];
+                let bounds = domain(&physical[side]);
+                let inward = if (&at[free] - &bounds[free][0]).abs()
+                    <= (&at[free] - &bounds[free][1]).abs() { 1.0 } else { -1.0 };
+                let sign = if face.sense == Sense::Same { 1.0 } else { -1.0 };
+                raw[side][0] = jet.first[free].each_ref().map(|value| inward * value.mid().to_f64_nearest());
+                raw[side][1] = cross(
+                    jet.first[0].each_ref().map(|value| value.mid().to_f64_nearest()),
+                    jet.first[1].each_ref().map(|value| value.mid().to_f64_nearest()),
+                ).map(|value| sign * value);
+                chart[side][0] = derivatives[free].map(|value| inward * value);
+                chart[side][1] = cross(derivatives[0], derivatives[1]).map(|value| sign * value);
+                records.push(serde_json::json!({
+                    "face":face.key,"sense":format!("{:?}",face.sense),
+                    "uv":at.each_ref().map(ToString::to_string),"free_axis":free,
+                    "raw_into":raw[side][0],"raw_outward_normal":raw[side][1],
+                    "chart_into":chart[side][0],"chart_outward_normal":chart[side][1],
+                }));
+            }
+            eprintln!("fillet_orientation {}", serde_json::json!({
+                "edge":input.key,"share":share.to_string(),
+                "point":point_at(&input.curve, &t, dec)?.each_ref().map(ToString::to_string),
+                "faces":records,
+                "raw_signed_dots":[dot(raw[0][0],raw[1][1]),dot(raw[1][0],raw[0][1])],
+                "chart_signed_dots":[dot(chart[0][0],chart[1][1]),dot(chart[1][0],chart[0][1])],
+            }));
+        }
+    }
     let turns = [
         directions(&physical[0], &trims[0], original.faces[first].sense, &source.options().tolerance_mm, dec)?,
         directions(&physical[1], &trims[1], original.faces[second].sense, &source.options().tolerance_mm, dec)?,

@@ -637,7 +637,7 @@ fn numerical_fillet_builds_on_the_smooth_loft_across_its_station_seam() {
             atlas.clone()
         });
         let radius = q("1/10");
-        let tolerance = q("1/10000");
+        let tolerance = q("1/10000000");
         let mut source_step = Vec::new();
         catallax_step::write_step(
             &built.model, &[built.result], &catallax_step::StepOptions::default(),

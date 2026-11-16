@@ -930,7 +930,7 @@ fn check_loops(
             }
             // Inscribed chord polygons can cross even when two real circular
             // rims are disjoint. Those pairs already passed disk clearance.
-            if (hole_circle && other_circle) || (j == 0 && other_circle) {
+            if other_circle && (hole_circle || j == 0) {
                 continue;
             }
             // Simple disjoint boundaries need one strict witness per component.

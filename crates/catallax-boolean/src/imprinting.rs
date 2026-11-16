@@ -381,20 +381,8 @@ fn cell(
         loops: vec![temporary_loop],
     });
     left_probe(model, temporary, barriers, dec, |model, point, _, dec| {
-        eprintln!(
-            "IMPRINT_CELL face={face:?} locate before={}",
-            catallax_numbers::current_operation_work().used
-        );
         let inside = locate(model, face, point, dec)? == Location::Inside;
-        eprintln!(
-            "IMPRINT_CELL face={face:?} inside={inside} signatures before={}",
-            catallax_numbers::current_operation_work().used
-        );
         let signature = regions.signatures_prepared(model, f.surface, groups, point, dec)?;
-        eprintln!(
-            "IMPRINT_CELL face={face:?} signatures after={}",
-            catallax_numbers::current_operation_work().used
-        );
         Ok(Some((inside, signature)))
     })
 }

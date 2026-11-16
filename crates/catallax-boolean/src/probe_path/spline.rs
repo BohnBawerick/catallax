@@ -235,17 +235,7 @@ fn on_patch(
         let q = patch.point_at(&to, dec)?;
         let mut blocked = None;
         for (index, &edge) in barriers.iter().enumerate() {
-            eprintln!(
-                "SPLINE_CLEAR edge={edge:?} curve={:?} before={}",
-                model.edge(edge).curve,
-                catallax_numbers::current_operation_work().used
-            );
-            let clear = clears(model, &path, &q, edge, dec)?;
-            eprintln!(
-                "SPLINE_CLEAR edge={edge:?} clear={clear} after={}",
-                catallax_numbers::current_operation_work().used
-            );
-            if !clear {
+            if !clears(model, &path, &q, edge, dec)? {
                 blocked = Some(index);
                 break;
             }

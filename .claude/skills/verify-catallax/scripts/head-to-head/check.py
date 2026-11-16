@@ -52,7 +52,7 @@ def check(case, variant, step_path, expected_faces):
                       'opened': True, 'roots': roots, 'valid': valid, 'faces': faces,
                       'expected_faces': expected_faces, 'face_count_matches': faces == expected_faces}
     if implicit is None:
-        result['membership'] = {'status': 'not-run', 'reason': 'no independent analytic predicate implemented for the complete trimmed P5 blend'}
+        result['membership'] = {'status': 'not-run', 'reason': 'no independent analytic predicate for this complete target (P5 trimmed blend, census parts)'}
         return result
     # Same 6^3 sampling scheme as the original report, with analytic target bounds.
     axes = [[bounds[i]+(bounds[i+3]-bounds[i])*k/3 for k in range(-1, 5)] for i in range(3)]

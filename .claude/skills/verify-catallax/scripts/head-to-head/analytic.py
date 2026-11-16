@@ -101,6 +101,9 @@ def properties(name, edit):
 
 def definition(case, label):
     name = case['recipe']
+    if name.startswith('census/'):
+        # Real census parts have no independent formula; only the STEP check applies.
+        return None, None, None
     family = Path(name).stem
     edit = float(case['edit']['value']) if label == 'edit' else None
     def box(p, lo, hi):

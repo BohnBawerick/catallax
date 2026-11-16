@@ -66,6 +66,10 @@ python3 -B site/render/comparison.py
 The first command projects public results into `site/comparison-results.json`, excluding installation paths and subprocess streams. The second regenerates `site/comparison.html` using only committed result and pin files. The page records source, tool, recipe and script hashes, machine class, CPU model, load range and measurement scope. Never publish local smoke timings as quiet-host evidence.
 
 
+## Census parts and engine selection
+
+`tools/checkpoint/checkpoint.py scoreboard` adds the ten retained census parts as private cases and runs only Catallax, CadQuery and smlibpy. A census case names its source file outside the checkout, pins its hash, and embeds a Catallax recipe: `import_step`, a cylinder and a subtraction. The edit changes the cylinder radius. Catallax receives the source bytes in the request's `files` map; CadQuery and smlibpy read the same file with their own STEP import. SolidCraft and Pali have no STEP import step here, so their census rows are `not-expressible`. Census parts have no analytic oracle, so only the STEP check applies.
+
 ## What the columns mean
 
 Catallax construction and edit each evaluate the complete recipe. Every phase has a separate fixed work allowance. The example measures the public feature builder, B-rep display mesh, requested volume/area/centroid and STEP export directly. Names are resolved on the two built results. Each phase retains its deterministic work and operation log; construction/edit count the executed recipe operations. There is no incremental edit cache claimed for Catallax. A refused construction does not prevent the independent edited recipe from being attempted. No successful prefix stands in for a whole target.

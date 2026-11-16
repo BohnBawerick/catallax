@@ -1,0 +1,169 @@
+# Checkpoint 1
+
+Status: skeleton with the dry-run numbers from 16 Nov 2026. The final numbers come from the rerun on main at the cut, 17 Nov 2026 00:00 UTC.
+
+This is step 2 of the checkpoint in `ROADMAP.md`: gather the results. The owner then picks the order of phase 2.
+
+## How to rerun
+
+Both runs are one command each. Run them on the work PC through `cx-offload`, from a clean checkout of the commit being measured.
+
+```sh
+TOOLS=~/cx-checkpoint1/tools        # pinned CadQuery, smlibpy and OCP install, made on first use
+SOURCES=~/cx-census/selected-step   # private census corpus
+SELECTION=~/cx-census/selection-private.json
+python3 -B tools/checkpoint/checkpoint.py scoreboard --tools $TOOLS --sources $SOURCES --selection $SELECTION --out RUN/scoreboard
+python3 -B tools/checkpoint/checkpoint.py census --tools $TOOLS --sources $SOURCES --selection $SELECTION --out RUN/census
+```
+
+Each command builds its own binaries and writes `scoreboard.md` or `census.md` beside its raw data. Expected wall time on the work PC, from the dry run: 18 min for the scoreboard and 14 min for the census, plus about 4 min for each command's release build from a cold target directory. Installing the tools the first time adds about 5 min.
+
+## Coverage count
+
+55% of the 61 capability lines, from the 14 Nov release count. Nobody has recounted since. The count says what exists, not how many real parts finish, so the scoreboard and census below are the measures of phase 1.
+
+## Edit-chain scoreboard
+
+Targets: P0 (eight hard-case recipes), P1 to P5, and the ten real census parts. P6 to P10 have no comparison definition yet ([P06 input pin](../phase1/P06/README.md)).
+
+Each target is built, then rebuilt with one committed scalar edit, in Catallax, OpenCASCADE (CadQuery 2.6.1 on OCCT 7.8.1) and SMLib (smlibpy 0.4.0). Each kernel runs the whole target script both times. Each kernel uses its own released import for the census parts.
+
+A census part's chain is: import the STEP file, drill one hole, then change the hole radius. The hole runs along the smallest bounding-box extent through the centre of the other two. Its radius is a tenth of the smaller remaining extent, and the edit makes it 1.5 times larger. `tools/checkpoint/cutter.py` takes the box from OCCT's reading of the source and rounds every value to 0.001 mm before any kernel runs, so all three get the same numbers. CadQuery and smlibpy read the STEP file with their default settings, which include healing; Catallax reads it without healing.
+
+**One definition of done.** The original and the edited target both build. Both STEP exports open in OCCT 8.0.1.1 as valid solids with the kernel's own face count. No independent check found a wrong value. Volume, area, centroid and the 216-point membership grid are checked only where `head-to-head/analytic.py` has a formula. The census parts have none, so the STEP check decides them.
+
+The edit chains are one edit long. No longer chain has an owner definition yet (P06 found none), so this run does not invent one.
+
+Dry run on main `c52fd8f4` with this tooling, work PC, 100M work per Catallax phase, 120 s per engine, one warmup and one measured sample.
+
+| Target | Catallax | OpenCASCADE | SMLib | Catallax work (build, edit) | Catallax names after edit |
+| --- | --- | --- | --- | ---: | --- |
+| P0 block and sphere | done | done | done | 633,934, 397,086 | kept |
+| P0 crossing pipes | edit display timed out | done | edit fuse failed | 3,169,337, 1,997,714 | not run |
+| P0 equal cylinder and sphere | done | done | done | 2,813, 76,393 | kept |
+| P0 general cone | build refused | done | done | 2,341, 2,341 | not run |
+| P0 general torus | build refused | done | done | 4, 4 | not run |
+| P0 line tangent | done | done | build fuse failed | 35,038, 39,208 | kept |
+| P0 near miss | done | done | build fuse failed | 3,625, 3,590 | kept |
+| P0 seam | done | done | done | 296,359, 280,564 | kept |
+| P1 bracket | done | done | done | 13,618,847, 13,479,812 | kept |
+| P2 collar | done | done | wrong volume and area | 1,345, 1,382 | kept |
+| P3 filleted boss | membership check failed | done | done | 20,773, 21,591 | kept |
+| P4 shelled tray | done | done | done | 917,132, 936,262 | kept |
+| P5 flanged housing | done | fillet failed | fillet failed | 1,058,398, 1,057,839 | 16 unnamed |
+| ABC 00000131 | done | done | done | 90,059, 89,979 | kept |
+| ABC 00000173 | build refused | done | done | 1,989,546, 1,989,756 | not run |
+| ABC 00000190 | done | done | done | 30,847, 30,727 | kept |
+| ABC 00000405 | done | done | done | 415,261, 410,460 | kept |
+| ABC 00000511 | done | done | done | 30,167, 30,047 | kept |
+| ABC 00000605 | done | done | done | 26,841, 27,014 | kept |
+| ABC 00000632 | done | done | done | 190,157, 190,157 | kept |
+| ABC 00000633 | done | done | done | 103,905, 104,427 | kept |
+| ABC 00000695 | done | done | done | 86,347, 83,014 | kept |
+| ABC 00000821 | done | done | done | 217,927, 218,127 | kept |
+
+| Kernel | Done, P0 to P5 (13) | Done, census parts (10) | Done in the published 0.2.0 comparison (13) |
+| --- | ---: | ---: | ---: |
+| Catallax | 9 | 9 | 6 |
+| OpenCASCADE (CadQuery 2.6.1) | 12 | 10 | 12 |
+| SMLib (smlibpy 0.4.0) | 8 | 10 | 8 |
+
+The last column applies the same rule to the [published comparison](../../site/comparison-results.json) at `3852c773`. Since then P1, P4 and P5 finish in Catallax. Every Catallax build used at most 13.6M work, under the 20M target.
+
+Names are Catallax's own check: every face origin and edge name of the original result resolves after the edit. The other two kernels have no persistent naming contract, so they have no names column. P5 builds and passes its STEP check, but 16 of its faces or edges carry no name, so its name check fails.
+
+## STEP census
+
+The same 3,000 ABC files, seed and source hashes as the [census](../research/step-census.md). Every file goes through import on main. Every full admission is exported and checked in OCCT. A file counts only when every imported body exports and passes `BRepCheck_Analyzer` after OCCT builder construction, which can heal pcurves internally.
+
+Dry run on main `c52fd8f4`, the 20M import and export allowances, a 60 s cap per file, four import workers and two export workers.
+
+| Measure | Files | Share of 3,000 |
+| --- | ---: | ---: |
+| Catallax, valid after OCCT builder construction | 374 | 12.47% |
+| OpenCASCADE, healed-valid | 2,701 | 90.03% |
+| Catallax, [previous capture](../research/step-census-circular-pcurves/README.md) | 369 | 12.30% |
+
+Five files are new (00000174, 00004152, 00004399, 00004452, 00009819) and none of the 369 is lost.
+
+| Admission | Files |
+| --- | ---: |
+| Full | 405 |
+| Partial (some source items not verified) | 3 |
+| Refused | 2,590 |
+| Timeout | 2 |
+
+The 408 admitted files split into 190 certified and 218 numerical approximate imports. Of the 405 full admissions, 374 export valid, 14 export invalid bodies, 15 refuse at `step.numerical-gap` and two time out.
+
+| First refusal cause | Files |
+| --- | ---: |
+| `incidence_gap` | 728 |
+| `import.numerical-unsupported-family` | 421 |
+| `numerical.invalid-trim` | 330 |
+| `resource_limit` | 222 |
+| `unsupported:ADVANCED_FACE` | 168 |
+| `planar_repair_not_verified` | 129 |
+| `self_intersecting` | 119 |
+| `self_intersection_not_verified` | 93 |
+| `unsupported:EDGE_CURVE` | 76 |
+| `not_solid` | 69 |
+| `unsupported:TOROIDAL_SURFACE` | 66 |
+| `unsupported:other_step_type` | 54 |
+| `unsupported:BREP_WITH_VOIDS` | 40 |
+| `unsupported:SURFACE_OF_LINEAR_EXTRUSION` | 31 |
+| `malformed` | 28 |
+| `unsupported:ELLIPSE` | 13 |
+| `unsupported:VERTEX_LOOP` | 3 |
+
+`tools/research/import_census.py` used to require every numerical import to state exactly 0.01 mm. On current main a few state slightly less, such as 0.009999999994 mm, so the collector now checks that every stated tolerance is at most the 0.01 mm cap and that the checked residual is within it.
+
+A refusal is the first stop only. Fixing one cause can move a file to the next cause rather than admit it.
+
+The OCCT figure is the published reference capture: normal transfer, default `ShapeFix_Shape`, then `BRepCheck_Analyzer`. Its tolerances differ from Catallax's, so the two numbers measure coverage, not a common tolerance.
+
+The tolerant-import tiers have not landed. Only per-entity tolerance storage is on main ([#659](https://github.com/BohnBawerick/catallax/pull/659)), so the census reports the two existing import categories, certified and numerical approximate, instead of tiers.
+
+## What still refuses and why
+
+From the dry run. The cut run replaces these.
+
+Scoreboard, Catallax:
+
+- **P0 general cone and general torus.** `intersect.traced-pair-required`: non-coaxial cone/cone and torus/torus intersections need certified branch tracing. Both reference kernels build them.
+- **P0 crossing pipes, edit.** The build answers in 1,997,714 work, then display meshing runs past the 120 s per-engine cap. This is a timeout, not a refusal.
+- **P3 filleted boss.** STEP is valid with the right face count, but OCCT's classifier puts one grid point outside the part (two after the edit) inside the exported solid. The published 0.2.0 comparison failed on the same points. Not yet diagnosed.
+- **P5 flanged housing.** Done, but 16 faces or edges carry no name. The published comparison did not run this check on P5, because P5 did not build then.
+- **ABC 00000173.** The drilled hole refuses at `boolean.no-rational-point`: no rational probe was certified strictly inside a face. Import alone answers.
+
+Scoreboard, reference kernels, for scale: OCCT fails the P5 junction fillet. SMLib fails P5's fillet, the fuses at line contact in P0 line tangent, near miss and crossing pipes, and reports a P2 volume and area outside the check's allowance.
+
+Census: 2,590 files refuse at import, with first causes in the table above. 31 full admissions do not export as valid solids: 14 invalid bodies, 15 `step.numerical-gap` export refusals and two export timeouts.
+
+Not rerun here: the 14 recorded spline Boolean requests of milestone 1.3. The roadmap's last count is that all 14 refuse before a STEP file is written.
+
+## Later: optimisation notes from merged PRs
+
+Phase 1 does no speed work. These are the costs that merged PRs recorded, kept here for the checkpoint review and for phase 5.
+
+- **Fillet-end vertices.** Exact-first spent 13.6M work rounding one fillet-end vertex, which OpenCASCADE computes numerically (roadmap lessons, 15 Nov).
+- **Partial-oblique fillet ends.** Radius 0.75 uses 30,019,099 work, over the 20M target ([#616](https://github.com/BohnBawerick/catallax/pull/616)).
+- **STEP export of curved faces.** The edited radius-0.75 mixed-corner fillet spent 8.5 s in STEP export, 99.2% of it in `step.face`, mostly cylinder and torus spans. Reusing Taylor control symmetry cut that to 7.4 s. The export uses only 807,063 work, so the clock cost sits in exact rational arithmetic under `fit::taylor_controls`, not in the work count ([#646](https://github.com/BohnBawerick/catallax/pull/646)).
+- **Body handover.** P1 handover export uses 81,482,582 work (182 ms) and import 34,914,680 work (92 ms); the GUI bracket export uses 23,872,737. All three exceed the 20M target and finish under the 100M guard ([#632](https://github.com/BohnBawerick/catallax/pull/632)).
+- **Face-mounted extrusions.** Keeping identity placements exact cut a captured SolidDraft cut from 19.0M to 14.6M work. Other placements may carry the same algebraic zero expressions ([#604](https://github.com/BohnBawerick/catallax/pull/604)).
+- **Spline-line queries.** The first Cartesian-box pose trial went over 20M; transverse Bezier subdivision removed it. Box-based pruning elsewhere may have the same cost ([#618](https://github.com/BohnBawerick/catallax/pull/618)).
+- **Import work limit.** 177 census files stopped at the 20M import allowance in the last admission capture. Four of them (00000011, 00000094, 00000205, 00000207) stop at 19,999,976 work ([#638](https://github.com/BohnBawerick/catallax/pull/638)). Optional curved source checks share one 1M prepayment, so a file with less than 1M left refuses there, and legacy planar intersection work is not fully metered ([census](../research/step-census.md)).
+- **Loft numerical admission.** The below-contact loft takes 10,219,174 work for construction, source conversion and numerical admission together ([#618](https://github.com/BohnBawerick/catallax/pull/618)).
+- **Slow steps at the 0.5.0 cut.** Loft 35 s, fillet on a loft edge 26 s, spline sweep 13 s, P5 fillet edit 4 to 6 s, field mass 3.5 to 7.7 s (roadmap 5.1).
+
+
+
+## Proposed order of phase 2
+
+The owner picks. This is a proposal with one reason each. It keeps the owner's 13 Nov order inside phase 2, with spline fillets and the curved-housing chain at the front of 2.1 as the captain set.
+
+1. **2.1 NURBS toolkit, starting with spline fillets and the curved-housing chain.** It holds the two phase-1 promises that moved, the curved-housing chain of 1.1 and the multi-patch fillet of 1.5. Nothing in these numbers outranks it, because neither the scoreboard nor the census has a spline-fillet case yet; P9, the lofted duct, still has no recipe.
+2. **2.2 Surface bodies.** OCCT opens 44 census files only as open shells and Catallax refuses 69 as `not_solid`. None of them can count until a surface body exists.
+3. **2.3 General sweeps.** It depends on neither 2.1 nor 2.2, so it can run beside them, and P8 is the only target part it unlocks.
+4. **2.4 Direct edits.** It needs the trim, extend and sew of 2.1 and 2.2, and it pays only once imports open, which the census says most files still do not.
+
+The numbers argue for one change beside this order. Import is still the largest gap: 12.47% of files reach a valid export against OCCT's 90.03%. The four largest refusal causes, `incidence_gap`, `import.numerical-unsupported-family`, `numerical.invalid-trim` and `resource_limit`, cover 1,701 files, and all four are 1.2 import work rather than a phase-2 line. I propose that import repair keeps running beside 2.1 as part of the resolve list, so it does not stop at the checkpoint.

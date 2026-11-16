@@ -103,8 +103,10 @@ def observe(binary, path, key, expected_hash, raw, timeout, baseline):
             if imported['import_category'] == 'numerical approximate':
                 assert imported['exact'] is False
                 assert imported['complete_body_bound'] == 'unestablished'
-                assert set(imported['tolerances_mm']) == {'1/100'}
-                assert Fraction(imported['max_checked_residual_mm']) <= Fraction(1, 100)
+                # Some imports state a tolerance just under the fixed 0.01 mm cap.
+                tolerances = [Fraction(t) for t in imported['tolerances_mm']]
+                assert tolerances and all(0 < t <= Fraction(1, 100) for t in tolerances)
+                assert Fraction(imported['max_checked_residual_mm']) <= max(tolerances)
             outcome = 'full' if source.get('coverage_complete') is True else 'partial'
         else:
             assert imported['outcome'] == 'refused'

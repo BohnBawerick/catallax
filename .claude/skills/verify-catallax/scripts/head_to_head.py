@@ -158,8 +158,19 @@ def solidcraft(case, binary, directory, args):
     return result
 
 
+def census_source(case):
+    """Read a private census source and check it against the case's pinned hash."""
+    data = Path(case['census']['source']).read_bytes()
+    if hashlib.sha256(data).hexdigest() != case['census']['source_sha256']:
+        raise ValueError(f'{case["recipe"]}: census source bytes changed')
+    return data
+
+
 def catallax(case, recipe, binary, directory, args):
-    save(directory / 'request.json', {'recipe': recipe, 'edited_recipe': edited_recipe(recipe, case['edit']), 'max_work': args.max_work})
+    request = {'recipe': recipe, 'edited_recipe': edited_recipe(recipe, case['edit']), 'max_work': args.max_work}
+    if 'census' in case:
+        request['files'] = {case['census']['source_sha256']: census_source(case).decode('utf-8')}
+    save(directory / 'request.json', request)
     execution = process([binary, directory / 'request.json', directory], directory, args.core, args.timeout)
     partial = directory / 'phases.json'
     result = json.loads(partial.read_text()) if partial.exists() else {}
@@ -169,6 +180,11 @@ def catallax(case, recipe, binary, directory, args):
         if 'values' in variant.get('measurement', {}):
             variant['measurement']['claimed'] = variant['measurement']['values']
     return result
+
+
+def not_expressible(reason):
+    return {'status': 'completed', 'variants': {label: {'build': {'status': 'not-expressible', 'reason': reason}}
+                                                for label in ('construction', 'edit')}}
 
 
 def compare_properties(claimed, oracle, bounded):
@@ -219,7 +235,8 @@ def benchmark(args):
     if args.core not in os.sched_getaffinity(0):
         raise ValueError('core is outside allowed affinity')
     pin = json.loads((DATA / 'reference.json').read_text())
-    if sha(args.reference) != pin['binary_sha256']:
+    wanted = getattr(args, 'engines', None)
+    if (wanted is None or 'solidcraft' in wanted) and sha(args.reference) != pin['binary_sha256']:
         raise ValueError('reference executable does not match the pinned released binary')
     engines = ['catallax', 'solidcraft']
     tools = {}
@@ -229,12 +246,20 @@ def benchmark(args):
         args.occt_python = args.external_runtime['checker']
         tools = args.external_runtime['tools']
         engines.extend(tools)
+    if wanted is not None:
+        if not set(wanted) <= set(engines):
+            raise ValueError(f'unknown or unprepared engines: {sorted(set(wanted) - set(engines))}')
+        engines = [engine for engine in engines if engine in wanted]
     root = Path(args.inputs).resolve()
-    cases = sorted((DATA / 'cases').rglob('*.json'))
+    # Private census cases embed their recipe and name a source outside the checkout.
+    census = Path(getattr(args, 'census_cases', None) or '/nonexistent')
+    labelled = [(p, p.relative_to(DATA / 'cases').as_posix()) for p in sorted((DATA / 'cases').rglob('*.json'))]
+    labelled += [(p, f'census/{p.name}') for p in sorted(census.glob('*.json'))]
     if args.part:
-        cases = [p for p in cases if p.relative_to(DATA / 'cases').as_posix() in args.part]
-        if len(cases) != len(set(args.part)):
-            raise ValueError('--part must name exact committed case filenames')
+        labelled = [(p, label) for p, label in labelled if label in args.part]
+        if len(labelled) != len(set(args.part)):
+            raise ValueError('--part must name exact case filenames')
+    cases = [p for p, _ in labelled]
     out = Path(args.out).resolve()
     out.mkdir(parents=True, exist_ok=True)
     if (out / 'head-to-head.json').exists():
@@ -255,10 +280,14 @@ def benchmark(args):
     try:
         for path in cases:
             case = json.loads(path.read_text())
-            recipe_path = root / case['recipe']
-            if sha(recipe_path) != case['recipe_sha256']:
-                raise ValueError(f'{case["recipe"]}: recipe changed since reference script was authored')
-            recipe = json.loads(recipe_path.read_text())
+            if 'census' in case:
+                recipe = case['census']['recipe']
+                census_source(case)
+            else:
+                recipe_path = root / case['recipe']
+                if sha(recipe_path) != case['recipe_sha256']:
+                    raise ValueError(f'{case["recipe"]}: recipe changed since reference script was authored')
+                recipe = json.loads(recipe_path.read_text())
             for index in range(args.repeats + 1):
                 offset = index % len(engines)
                 order = engines[offset:] + engines[:offset]
@@ -271,6 +300,8 @@ def benchmark(args):
                     directory.mkdir(parents=True, exist_ok=True)
                     if engine == 'catallax':
                         result = catallax(case, recipe, Path(args.binary).resolve(), directory, args)
+                    elif engine == 'solidcraft' and 'census' in case:
+                        result = not_expressible('the pinned SolidCraft scripts have no STEP import step')
                     elif engine == 'solidcraft':
                         result = solidcraft(case, Path(args.reference).resolve(), directory, args)
                     else:

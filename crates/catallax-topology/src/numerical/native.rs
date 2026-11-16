@@ -321,7 +321,7 @@ fn check_numerical_loops(
                 let at = if i == SUBDIVISIONS {
                     trim.uv[1].clone()
                 } else {
-                    let t = a + &(&step * Rational::from_i64(i));
+                    let t = a + &(&step * &Rational::from_i64(i));
                     let at = uv(curve, &t, dec)?;
                     [midpoint(&at[0], dec)?, midpoint(&at[1], dec)?]
                 };

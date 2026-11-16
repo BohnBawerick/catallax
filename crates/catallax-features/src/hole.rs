@@ -14,6 +14,8 @@ use catallax_topology::{Body, BodyId, BodyKind, Edge, Lump, Model, Sense, Shell,
 
 mod cap;
 pub use cap::{CapCurve, cap_curve};
+mod cap_ring;
+pub use cap_ring::append_planar_cap;
 
 /// One positive-height cylindrical or conical band of a drill tool.
 #[derive(Clone, Debug)]

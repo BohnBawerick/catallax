@@ -141,9 +141,11 @@ impl PatchPairIntersection {
                             dec,
                         )?);
                     }
-                    let polynomials =
-                        affine::reduce(equations.try_into().expect("three patch equations"), dec)?
-                            .map(RealPoly::from);
+                    let polynomials = affine::reduce::<3>(
+                        equations.try_into().expect("three patch equations"),
+                        dec,
+                    )?
+                    .map(RealPoly::from);
                     let jacobian = std::array::from_fn(|row| {
                         std::array::from_fn(|column| polynomials[row].partial(column))
                     });
@@ -374,6 +376,13 @@ impl PairTracePiece {
                 )
             })
             .collect();
+        if let Some(at) = affine::rational_point(&equations, &bounds, dec)? {
+            eprintln!(
+                "PAIR_RATIONAL_POINT work={}",
+                catallax_numbers::current_operation_work().used
+            );
+            return Ok(self.first().point(&[at[0].clone(), at[1].clone()]));
+        }
         let at = if self.definition.reconstruct {
             RealPoly::simple_algebraic_root_in_reconstructed(
                 &equations,

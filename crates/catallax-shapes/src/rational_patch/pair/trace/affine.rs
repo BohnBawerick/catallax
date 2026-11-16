@@ -66,7 +66,7 @@ pub(super) fn reduce(mut equations: [MPoly; 3], dec: &mut Decider) -> Result<[MP
         for (monomial, value) in terms {
             dec.charge_work(1)?;
             if monomial.exponents()[axis] == 0 {
-                replacement.push((monomial.exponents().to_vec(), -value / &coefficient));
+                replacement.push((monomial.exponents().to_vec(), -value / coefficient.clone()));
             }
         }
         let replacement = MPoly::from_terms(equations[row].nvars(), replacement);

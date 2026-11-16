@@ -235,6 +235,22 @@ def opening(row, checkpoint):
     )
 
 
+def retain_opening_checkpoint(row, stdout, expected):
+    checkpoints = []
+    for line in stdout.read_text().splitlines():
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if value.get("stage") == "open" and value.get("outcome") == "opened":
+            checkpoints.append(value)
+    if not checkpoints:
+        return False
+    assert len(checkpoints) == 1 and checkpoints[0]["source_sha256"] == expected
+    opening(row, checkpoints[0])
+    return True
+
+
 def observe(binary, source, baseline, folder, retain, max_rss_mb=6144):
     key, expected = baseline["model_id"], baseline["source_sha256"]
     row = dict(
@@ -271,29 +287,21 @@ def observe(binary, source, baseline, folder, retain, max_rss_mb=6144):
             )
         except (subprocess.TimeoutExpired, rss_guard.MemoryExceeded) as error:
             termination = "out_of_memory" if isinstance(error, rss_guard.MemoryExceeded) else "timeout"
-            checkpoints = []
-            for line in (folder / "producer.stdout").read_text().splitlines():
-                try:
-                    value = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if value.get("stage") == "open" and value.get("outcome") == "opened":
-                    checkpoints.append(value)
-            if checkpoints:
-                assert len(checkpoints) == 1 and checkpoints[0]["source_sha256"] == expected
-                opening(row, checkpoints[0])
+            opened = retain_opening_checkpoint(row, folder / "producer.stdout", expected)
             row.update(
-                timeout_stage="export" if checkpoints else "open",
+                timeout_stage="export" if opened else "open",
                 export_validity=termination,
             )
             if isinstance(error, rss_guard.MemoryExceeded):
                 row["observer_peak_rss_mb"] = error.peak_mb
-            if not checkpoints:
+            if not opened:
                 row["outcome"] = termination
             return row
         finally:
             assert digest(source) == expected
     if process.returncode or not (capture / "response.json").is_file():
+        if retain_opening_checkpoint(row, folder / "producer.stdout", expected):
+            row["export_validity"] = "process_error"
         return row | dict(cause="producer_process_or_missing_response")
     response = json.loads((capture / "response.json").read_text())
     assert response["source_sha256"] == expected and response["work_limit"] == WORK

@@ -48,6 +48,16 @@ Cyclic ordering of a periodic loop preserves the two seam uses on reversed cone 
 The output remains marked approximate, with its numerical checks and `complete_body_bound=unestablished` retained.
 Retained native B-spline trims on cones refuse with `numerical.native-cone-domain-unverified` until complete positive-height and periodic-domain checks cover those finite curves.
 
+### Multiple numerical face bounds
+
+The retained analytic admission path accepts multiple interior face boundaries
+through the shared numerical builder. Holes must be disjoint, strictly interior
+and not nested. Complete planar circular outer rims and holes receive continuous
+projected-disk clearance checks under the stated tolerance; general curved
+parameter walks retain their sampled checks.
+The [numerical trim contract](../interface-changes/2026-11-14-numerical-trim-sewing.md)
+defines the scope, padding and evidence names.
+
 ### Surface bodies
 
 `StepFile.surface_models` retains surface models separately from `StepFile.solids`.
@@ -230,6 +240,7 @@ Its source inventory coverage flag is the frozen source-inspection result at the
 Retained source surfaces without an admitted B-rep receive no checked STEP or valid-solid credit.
 All admitted bodies share one separate 20M export allowance, and actual written bytes are independently checked with the pinned OCCT builder protocol.
 The tier collector also caps each producer and independent reader at 6,144 MiB by default, using the shared RSS guard. Timeouts, memory terminations and process failures remain unmeasured rows rather than geometric losses. An unmeasured baseline pass prevents acceptance.
+A producer crash after its complete opening checkpoint also retains that opening verdict; only the unfinished export is a process error.
 Builder processing can heal internally; neither unhealed validity nor complete source fidelity follows from that result.
 The [frozen tier census](../research/step-census-opened/README.md) owns the measured counts, producer and limitations.
 

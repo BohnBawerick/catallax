@@ -122,3 +122,28 @@ The pinned OCCT builder reads that artifact as valid with one solid, six faces, 
 The smaller caller cap retains the source surfaces instead.
 Finite skew-line correspondence and complementary-conic-arc controls exercise the added sewing checks.
 These controls establish the implemented family, not recovery of all 2,202 older retained-surface files or export authority for arbitrary retained carriers.
+
+## Multiple numerical face-bound qualification
+
+Kernel producer `92a62c83f99afcea4009019b1b6aff4dcdf70d92` was measured once on the same 3,000 source hashes, with the preceding run's two workers, work limits, deadline and 6,144 MiB observer cap.
+
+| Qualified file set | Stitching capture | Multiple-bound candidate |
+| --- | ---: | ---: |
+| Complete-source solids | 418 | 550 |
+| Every solid exported and valid after OCCT builder processing | 384 | 479 |
+
+The measured gains are 132 complete-source solid files and 95 export-valid files.
+No previously qualified file loses its measured outcome, and no previous pass is unmeasured in its applicable stage.
+All new export-valid files are among the new complete-source solid admissions.
+The remaining 37 new admissions gain no export-valid credit.
+The first causes of the new solid files were 108 `numerical.invalid-trim`, 16 `self_intersection_not_verified` and eight `not_solid`.
+`00005188`, previously blocked by a complete circular outer rim with a hole, now exports valid; `00004869` still remains a surface result.
+
+Other opening outcomes are 129 partial files, 2,227 retained-surface files, 92 unopened inputs and the same two opening timeouts.
+Across full and partial files, 43 files contain invalid output and 43 refuse export; none gains export-valid credit.
+The timeout set is unchanged, with `00004777` retaining its completed opening verdict.
+No observer reaches its memory cap and no process error is recorded.
+
+The focused controls pass polygonal multiple holes, circular hole pairs, nested/touching/crossing refusals, caller-tolerance clearance and a thin annulus with different rim phases.
+Actual double-bore and annulus STEP files also pass the pinned OCCT builder's validity, volume and inside/outside checks.
+These remain numerical results with the recorded sampled and continuous-circle checks, not whole-body source-fidelity or exact proofs.

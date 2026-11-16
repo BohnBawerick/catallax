@@ -9,6 +9,8 @@ use serde_json::json;
 
 #[path = "hole_caps/shell.rs"]
 mod shell;
+#[path = "hole_caps/skew.rs"]
+mod skew;
 
 fn q(text: &str) -> Rational {
     Rational::parse(text).unwrap()

@@ -184,7 +184,7 @@ fn fixture(
         });
     }
     let mut bindings = Vec::new();
-    for (side, arcs) in caps.iter().enumerate() {
+    for side in 0..caps.len() {
         let indices: Vec<usize> = if side == 0 {
             (0..4).rev().collect()
         } else {
@@ -195,22 +195,20 @@ fn fixture(
         } else {
             Sense::Same
         };
-        face(
+        catallax_features::hole::append_planar_cap(
             &mut definition,
             &mut bindings,
-            format!("cap-{side}"),
-            Surface::Plane(cap(true, side == 0)),
+            &format!("cap-{side}"),
+            &cap(true, side == 0),
             if side == 0 {
                 Sense::Same
             } else {
                 Sense::Reversed
             },
-            indices
-                .into_iter()
-                .map(|i| (4 * side + i, sense, arcs[i].plane_uv().clone()))
-                .collect(),
+            &[indices.into_iter().map(|i| (4 * side + i, sense)).collect()],
             dec,
-        );
+        )
+        .unwrap();
     }
     for (i, quarter) in source.quarters().iter().enumerate() {
         let end = Rational::from_i64(i as i64 + 1);

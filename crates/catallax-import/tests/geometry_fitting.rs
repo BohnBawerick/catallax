@@ -216,3 +216,37 @@ fn hyperbola_fits_retain_a_bound_for_the_nonpolynomial_source() {
         std::fs::write(path, serde_json::to_vec_pretty(&rows).unwrap()).unwrap();
     }
 }
+
+#[test]
+fn signed_circle_offset_refuses_native_phase_loss_and_vanishing_radius() {
+    use catallax_numbers::{Outcome, Real};
+    for distance in ["1.", "2."] {
+        let bytes = format!(
+            "DATA;#1=CARTESIAN_POINT('',(0.,0.,0.));#2=AXIS2_PLACEMENT_3D('',#1,$,$);#3=CIRCLE('',#2,1.);#4=DIRECTION('',(0.,0.,1.));#5=OFFSET_CURVE_3D('',#3,{distance},.F.,#4);ENDSEC;"
+        );
+        let source = ParsedStep::read(bytes.as_bytes(), &mut Decider::default()).unwrap();
+        let mut dec = Decider::default();
+        assert!(source.native_curve(5, &q("1"), &mut dec).is_err());
+        if distance == "2." {
+            let chart = source
+                .curve_charts(5, &q("1"), AngleUnit::Radians, &mut dec)
+                .unwrap()
+                .remove(0);
+            let point = chart
+                .evaluate_box(&[[q("0"), q("0")]], 128, &mut dec)
+                .unwrap();
+            assert!(point[0].lo() <= q("-1") && point[0].hi() >= q("-1"));
+            assert!(point[0].hi() < q("0"));
+        }
+    }
+    let positive = source()
+        .native_curve(15, &q("1"), &mut Decider::default())
+        .unwrap();
+    let catallax_shapes::Curve::Circle(circle) = positive else {
+        panic!("positive offset")
+    };
+    assert!(matches!(
+        Decider::default().sign(&(&circle.radius_sq - &Real::from_rational(q("0.5625")))),
+        Outcome::ProvenCoincident(_)
+    ));
+}

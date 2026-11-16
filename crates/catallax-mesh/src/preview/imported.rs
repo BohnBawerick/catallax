@@ -103,6 +103,11 @@ enum SourceChart {
 impl SourceChart {
     fn new(surface: &Surface, dec: &mut Decider) -> Result<Self, Refusal> {
         let geometry = match surface {
+            Surface::Retained(_) => {
+                return Err(failure(
+                    "retained surface requires source-chart preview mapping",
+                ));
+            }
             Surface::BSpline(s) => return Ok(Self::Spline(s.geometry.to_surface(dec)?)),
             Surface::Plane(p) => GeomSurface::Plane(Plane {
                 origin: real_point(&p.origin),
@@ -274,6 +279,11 @@ enum EdgeCurve {
 impl EdgeCurve {
     fn new(edge: &OrientedEdge, dec: &mut Decider) -> Result<Self, Refusal> {
         Ok(match &edge.curve {
+            Curve::Retained(_) => {
+                return Err(failure(
+                    "retained curve requires source-chart preview mapping",
+                ));
+            }
             Curve::Line(origin, direction) => {
                 let origin = point(origin)?;
                 let direction = point(direction)?;

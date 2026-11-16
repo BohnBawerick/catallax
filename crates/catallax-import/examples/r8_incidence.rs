@@ -13,6 +13,9 @@ fn placement(p: &Placement) -> Value {
 
 fn curve(c: &Curve) -> Value {
     match c {
+        Curve::Retained(source) => {
+            json!({"kind":"retained","entity":source.entity(),"length_mm":source.length_mm().to_string()})
+        }
         Curve::Line(o, d) => json!({"kind":"line","origin":point(o),"direction":point(d)}),
         Curve::Circle(p, r) => {
             json!({"kind":"circle","placement":placement(p),"radius":r.to_string()})
@@ -29,6 +32,9 @@ fn curve(c: &Curve) -> Value {
 
 fn surface(s: &Surface) -> Value {
     match s {
+        Surface::Retained(source) => {
+            json!({"kind":"retained","entity":source.entity(),"length_mm":source.length_mm().to_string()})
+        }
         Surface::Plane(p) => json!({"kind":"plane","placement":placement(p)}),
         Surface::Cylinder(p, r) => {
             json!({"kind":"cylinder","placement":placement(p),"radius":r.to_string()})

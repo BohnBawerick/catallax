@@ -364,6 +364,11 @@ impl ParsedStep {
                             }
                         };
                         let radius = &circle.radius_sq.sqrt() - &(&distance * &direction);
+                        if !matches!(dec.sign(&radius), Outcome::Proven(StrictSign::Positive)) {
+                            return Err(invalid(
+                                "circle offset radius is not proved positive; signed phase requires finite mapping",
+                            ));
+                        }
                         shapes::Curve::Circle(shapes::Circle::new(
                             circle.center,
                             circle.normal,

@@ -3,6 +3,7 @@
 //! Source numbers keep their written units. Reading a declaration does not
 //! establish incidence, a material region or an approximation tolerance.
 
+pub(crate) mod adapter;
 mod decode;
 mod definitions;
 mod expression;
@@ -23,9 +24,10 @@ use catallax_numbers::Decider;
 use std::sync::Arc;
 
 /// One immutable Part 21 graph shared by geometry readers and the certified view.
-#[derive(Clone, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct ParsedStep {
     graph: Arc<Graph>,
+    source_sha256: String,
 }
 
 impl ParsedStep {
@@ -38,7 +40,10 @@ impl ParsedStep {
         let graph = Arc::new(crate::part21::parse(bytes)?);
         dec.check_deadline()
             .map_err(|_| ImportRefusal::ResourceLimit)?;
-        Ok(Self { graph })
+        Ok(Self {
+            graph,
+            source_sha256: crate::sha256_hex(bytes),
+        })
     }
 
     /// Original entity numbers in ascending order.
@@ -195,5 +200,42 @@ fn context_field(count: usize, id: EntityId) -> Result<usize, ImportRefusal> {
             id,
             "unrecognized representation context field layout",
         )),
+    }
+}
+
+/// An unmapped source carrier, retaining its complete graph and length units.
+/// It supplies no native incidence or material certificate.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct RetainedGeometry {
+    source: ParsedStep,
+    entity: EntityId,
+    length_mm: catallax_numbers::Rational,
+}
+impl RetainedGeometry {
+    pub(crate) fn identity(&self) -> String {
+        format!(
+            "{} #{} {}",
+            self.source.source_sha256, self.entity, self.length_mm
+        )
+    }
+    /// Immutable original declarations, including wrappers and associated geometry.
+    pub fn source(&self) -> &ParsedStep {
+        &self.source
+    }
+    /// Source instance number within this graph.
+    pub fn entity(&self) -> EntityId {
+        self.entity
+    }
+    /// Millimetres per written Cartesian length unit.
+    pub fn length_mm(&self) -> &catallax_numbers::Rational {
+        &self.length_mm
+    }
+    pub(crate) fn admission_refusal(&self) -> ImportRefusal {
+        ImportRefusal::NotSolid {
+            detail: format!(
+                "#{}: import.geometry-mapping-required: retained source carrier has no admitted native mapping",
+                self.entity
+            ),
+        }
     }
 }

@@ -56,6 +56,8 @@ pub struct Placement {
 /// A supported surface.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Surface {
+    /// Complete source carrier awaiting an explicit native or numerical mapping.
+    Retained(crate::geometry_source::RetainedGeometry),
     /// `PLANE`; the normal is the placement axis.
     Plane(Placement),
     /// `CYLINDRICAL_SURFACE`.
@@ -86,6 +88,8 @@ pub struct SemiAngle {
 /// A supported curve.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Curve {
+    /// Complete source carrier awaiting an explicit native or numerical mapping.
+    Retained(crate::geometry_source::RetainedGeometry),
     /// `LINE` through a point along a direction.
     Line(Vec3, Vec3),
     /// `CIRCLE`.
@@ -224,6 +228,37 @@ pub fn read_step_with_decider(bytes: &[u8], dec: &Decider) -> Result<StepFile, I
 
 pub(crate) fn read_graph(graph: &Graph, dec: &Decider) -> Result<StepFile, ImportRefusal> {
     Reader::new(graph, dec)?.file()
+}
+
+pub(crate) fn source_length_scale(graph: &Graph) -> Result<Rational, ImportRefusal> {
+    length_scale(graph)
+}
+pub(crate) fn source_curve(graph: &Graph, id: u64, dec: &Decider) -> Result<Curve, ImportRefusal> {
+    Reader::new(graph, dec)?.curve(id)
+}
+pub(crate) fn source_placement(
+    graph: &Graph,
+    id: u64,
+    dec: &Decider,
+) -> Result<Placement, ImportRefusal> {
+    Reader::new(graph, dec)?.placement(id)
+}
+pub(crate) fn source_surface(
+    graph: &Graph,
+    id: u64,
+    loops: &[FaceLoop],
+    dec: &Decider,
+) -> Result<Surface, ImportRefusal> {
+    let reader = Reader::new(graph, dec)?;
+    if reader
+        .entity(id)?
+        .part("SURFACE_OF_LINEAR_EXTRUSION")
+        .is_some()
+    {
+        reader.linear_extrusion(id, loops)
+    } else {
+        reader.surface(id)
+    }
 }
 
 fn unsupported(id: u64, e: &Entity) -> ImportRefusal {
@@ -755,7 +790,7 @@ fn degree_context(g: &Graph) -> bool {
 // subtypes (simple Part 21 entities do not spell out their supertypes). Check all
 // parts of complex entities too. MANIFOLD_SOLID_BREP is the sole admitted branch.
 // Schema audit: https://www.steptools.com/stds/stp_aim/html/t_solid_model.html
-fn unsupported_solid_model(name: &str) -> bool {
+pub(crate) fn unsupported_solid_model(name: &str) -> bool {
     matches!(
         name,
         "SOLID_MODEL"

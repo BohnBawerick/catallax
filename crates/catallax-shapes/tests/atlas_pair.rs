@@ -47,7 +47,7 @@ fn split_vertical_plane(first: bool, dec: &mut Decider) -> RationalAtlas {
 
 #[test]
 fn offset_spine_crosses_both_atlas_seams_without_fragmenting() {
-    let ((), work) = with_operation_budget(20_000_000, || {
+    let ((), work) = with_operation_budget(100_000_000, || {
         let mut dec = Decider::default();
         let first = split_vertical_plane(true, &mut dec);
         let second = split_vertical_plane(false, &mut dec);

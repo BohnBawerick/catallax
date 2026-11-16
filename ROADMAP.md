@@ -177,6 +177,7 @@ Why last: the owner's ruling of 11 Nov. Clock targets were stalling capability w
 - The GPU and every core carry what they can. [Booleans gain nothing from extra cores today](docs/research/run-ahead.md).
 - Simplify. Routes that the measurements show are not needed are removed.
 - Slow steps recorded at the 0.5.0 cut: loft 35 s, fillet on a loft edge 26 s, spline sweep 13 s, P5 fillet edit 4 to 6 s, field mass 3.5 to 7.7 s.
+- Later: the 2.4 P8 thread sweep exceeds 20M; its [per-stage record](docs/RECIPE.md#work-recorded-for-phase-5) distinguishes the completed fit from the refused whole-part Boolean. The 100M application allowance is unchanged.
 - Windows packages and signed downloads.
 
 **Final checkpoint.**

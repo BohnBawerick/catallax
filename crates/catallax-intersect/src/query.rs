@@ -376,6 +376,54 @@ fn cone_support(geom: &GeomStore, curve: CurveId) -> Option<&catallax_shapes::Co
         _ => None,
     })
 }
+// One certified off-curve point disproves equality. Matching witnesses do not.
+fn witness_separation(
+    geom: &GeomStore,
+    other: &Curve,
+    witnesses: impl Iterator<Item = Point3>,
+    dec: &mut Decider,
+) -> Option<Outcome<Apart>> {
+    let equations = other.equations(geom);
+    if equations.is_none()
+        && !matches!(
+            other,
+            Curve::PatchPair(_) | Curve::PatchSection(_) | Curve::BSpline(_)
+        )
+    {
+        return None;
+    }
+    for point in witnesses {
+        let off = match other {
+            Curve::PatchPair(branch) => branch.contains(&point, dec).map(|on| !on),
+            Curve::PatchSection(branch) => branch.contains(&point, dec).map(|on| !on),
+            Curve::BSpline(curve) => curve
+                .unique_parameter_of(&point, dec)
+                .map(|at| at.is_none()),
+            _ => {
+                let coordinates = [point.x, point.y, point.z];
+                let mut off = false;
+                for equation in equations.as_ref().unwrap() {
+                    match sign(&equation.eval_real(&coordinates), dec) {
+                        Ok(Sign::Zero) => (),
+                        Ok(_) => {
+                            off = true;
+                            break;
+                        }
+                        Err(error) => return Some(error.outcome()),
+                    }
+                }
+                Ok(off)
+            }
+        };
+        match off {
+            Ok(true) => return Some(Outcome::Proven(Apart)),
+            Ok(false) => (),
+            Err(error) => return Some(Outcome::Refused(error)),
+        }
+    }
+    None
+}
+
 pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) -> Outcome<Apart> {
     if let Err(e) = validate(geom, a, dec).and_then(|_| validate(geom, b, dec)) {
         return Outcome::Refused(e);
@@ -419,49 +467,34 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
         }
     }
     for (x, y) in [(a, b), (b, a)] {
-        let Curve::PatchPair(branch) = geom.curve(x) else {
-            continue;
-        };
-        for point in branch
-            .witnesses()
-            .chain(std::iter::once(branch.endpoints()[1].clone()))
-        {
-            let off = match geom.curve(y) {
-                Curve::PatchPair(other) => other.contains(&point, dec).map(|on| !on),
-                Curve::PatchSection(other) => other.contains(&point, dec).map(|on| !on),
-                Curve::BSpline(other) => other
-                    .unique_parameter_of(&point, dec)
-                    .map(|at| at.is_none()),
-                other => {
-                    let Some(equations) = other.equations(geom) else {
-                        continue;
-                    };
-                    let mut off = false;
-                    for equation in equations {
-                        match sign(
-                            &equation.eval_real(&[
-                                point.x.clone(),
-                                point.y.clone(),
-                                point.z.clone(),
-                            ]),
-                            dec,
-                        ) {
-                            Ok(Sign::Zero) => (),
-                            Ok(_) => {
-                                off = true;
-                                break;
-                            }
-                            Err(error) => return error.outcome(),
-                        }
-                    }
-                    Ok(off)
+        let other = geom.curve(y);
+        let separation = match geom.curve(x) {
+            Curve::PatchPair(branch) => witness_separation(
+                geom,
+                other,
+                branch
+                    .witnesses()
+                    .chain(std::iter::once(branch.endpoints()[1].clone())),
+                dec,
+            ),
+            Curve::PatchSection(branch) => {
+                // A bounded component cannot equal a whole unbounded line.
+                if matches!(other, Curve::Line(_)) {
+                    return Outcome::Proven(Apart);
                 }
-            };
-            match off {
-                Ok(true) => return Outcome::Proven(Apart),
-                Ok(false) => (),
-                Err(error) => return Outcome::Refused(error),
+                witness_separation(
+                    geom,
+                    other,
+                    branch
+                        .witnesses()
+                        .chain(std::iter::once(branch.endpoints()[1].clone())),
+                    dec,
+                )
             }
+            _ => continue,
+        };
+        if let Some(outcome) = separation {
+            return outcome;
         }
     }
     if matches!(geom.curve(a), Curve::PatchPair(_)) || matches!(geom.curve(b), Curve::PatchPair(_))
@@ -470,29 +503,6 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
             "intersect.patch-pair-equivalence",
             "the retained source lifts and exact witnesses do not prove component equivalence",
         ));
-    }
-    // A section lies in finitely many positive-weight chart hulls. Bounded
-    // components and unbounded lines differ even with the same straight support.
-    for (x, y) in [(a, b), (b, a)] {
-        let Curve::PatchSection(branch) = geom.curve(x) else {
-            continue;
-        };
-        if matches!(geom.curve(y), Curve::Line(_)) {
-            return Outcome::Proven(Apart);
-        }
-        let Curve::BSpline(curve) = geom.curve(y) else {
-            continue;
-        };
-        for point in branch
-            .witnesses()
-            .chain(std::iter::once(branch.endpoints()[1].clone()))
-        {
-            match curve.unique_parameter_of(&point, dec) {
-                Ok(None) => return Outcome::Proven(Apart),
-                Ok(Some(_)) => (),
-                Err(error) => return Outcome::Refused(error),
-            }
-        }
     }
     if matches!(geom.curve(a), Curve::PatchSection(_))
         || matches!(geom.curve(b), Curve::PatchSection(_))

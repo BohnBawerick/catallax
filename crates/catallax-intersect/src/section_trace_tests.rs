@@ -260,3 +260,33 @@ fn a_finite_straight_section_is_not_an_unbounded_line() {
     });
     assert!(!work.exhausted);
 }
+
+#[test]
+fn closed_section_witnesses_separate_nearby_circles_without_proving_equality() {
+    let ((), work) = with_operation_budget(20_000_000, || {
+        let mut dec = Decider::default();
+        let (mut geom, branch) = fixture(&mut dec);
+        for (radius_sq, matching) in [(q(3, 8), true), (q(375001, 1000000), false)] {
+            let circle = geom.add_curve(Curve::Circle(
+                catallax_shapes::Circle::new(
+                    Point3::new(Real::zero(), Real::zero(), q(3, 8).into()),
+                    Vector3::new(Real::zero(), Real::zero(), Real::one()),
+                    radius_sq.into(),
+                    Vector3::new(Real::one(), Real::zero(), Real::zero()),
+                    &mut dec,
+                )
+                .unwrap(),
+            ));
+            for (a, b) in [(branch, circle), (circle, branch)] {
+                let answer = same_curve(&geom, a, b, &mut dec);
+                if matching {
+                    assert!(matches!(answer, Outcome::Refused(error)
+                            if error.code == "intersect.parametric-coincidence"));
+                } else {
+                    assert!(matches!(answer, Outcome::Proven(catallax_shapes::Apart)));
+                }
+            }
+        }
+    });
+    assert!(!work.exhausted, "{} work units", work.used);
+}

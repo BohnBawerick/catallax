@@ -965,6 +965,24 @@ Numerical admission rechecks finite trims, endpoint agreement and shell topology
 
 Preview is unproved. Certified display bounds and property integration enclosures concern the retained rational fit only, not the original sweep. The numerical application result exposes that distinction instead of wrapping original-geometry measurements in an exact answer. Face origins remain operation-based; internal chart edges do not acquire persistent user edge names. The current numerical construction accepts one complete line, arc, helix or spline segment per spine and guide. A spline spine requires fixed orientation or a guide; unguided rotation-minimising transport is not implemented for a general spline. Boolean operations still use the fitted definitions and retain the existing intersector's coverage refusals.
 
+Curve comparison retains explicit-definition and complete-component equality proofs. A certified point on one retained branch that lies off another curve proves difference; matching witnesses never prove equality. [OpenCASCADE's curve-on-surface check](https://occt3d.com/dev/doc/refman/html/class_geom_lib___check_curve_on_surface.html) measures maximum distance. [SMLib's curve intersection](https://github.com/NVIDIA-Omniverse/usd-brep/blob/main/source/SMLib/src/SmCurve.cpp) separates analytic cases before its tolerance-based global check. Here the corresponding rejection remains exact because the retained witnesses and curve equations are already algebraic.
+
+##### Work recorded for Phase 5
+
+At checkpoint `a15881c1fd390a7b3f26fdb57eaebed4b1dcf5b0`, the unchanged P8 original and spring-rise edit reach the same prefix below. Both requests retain the 100M allowance. The thread fit completes, but the `threaded` Boolean refuses `intersect.parametric-coincidence`; neither complete part nor P8 STEP is claimed. Nested per-chart charges are included in the sweep row, not counted twice.
+
+| Stage | Work units | Outcome |
+|---|---:|---|
+| Plate and boss stock | 0 | Built |
+| Base union | 11,050 | Built |
+| Thread sketch | 1 | Built |
+| Thread sweep | 96,979,475 | Fitted carrier built; source motion numerical |
+| Threaded union | 1,955,993 | Refused component equivalence |
+| Complete request | 98,946,519 | Refused, allowance not exhausted |
+
+Later: the thread sweep exceeds the 20M target; retain this phase record for Phase 5 without enlarging the 100M application allowance.
+
+
 ### 4.12 Loft
 
 | Parameter | Value |

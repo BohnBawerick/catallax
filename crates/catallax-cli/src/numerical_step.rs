@@ -158,3 +158,78 @@ pub(crate) fn evaluate(value: &Value, source: &str, out: &Path) -> io::Result<Va
         }),
     )
 }
+
+/// Numerical-first STEP for an exact recipe body whose geometry has no exact
+/// STEP form (ROADMAP "Numerical first"). The tolerance is the exact writer's
+/// requested curve tolerance, fixed before any embedding work. `None` keeps
+/// the exact refusal when this embedding has no form for a carrier of the
+/// body. A refusal leaves no STEP file.
+pub(crate) fn embedded_exact(
+    model: &catallax_topology::Model,
+    body: catallax_topology::BodyId,
+    recipe: &catallax_recipe::Recipe,
+    out: &Path,
+    dec: &mut Decider,
+) -> io::Result<Option<Result<Value, catallax_numbers::Refusal>>> {
+    if !step::embeds(model, body) {
+        return Ok(None);
+    }
+    let tolerance = catallax_step::StepOptions::default().curve_tolerance;
+    let options = NumericalStepOptions {
+        max_scalar_rounding_error_mm: tolerance
+            .clone()
+            .min(NumericalStepOptions::default().max_scalar_rounding_error_mm),
+        ..Default::default()
+    };
+    let span = OperationSpan::begin("brep", &recipe.result, "numerical-step", dec);
+    let built = step::build_from_exact_model(
+        model,
+        body,
+        recipe.name.clone(),
+        NumericalOptions {
+            tolerance_mm: tolerance.clone(),
+        },
+        &options,
+        dec,
+    );
+    span.finish(dec, built.as_ref().err(), None);
+    let artifact = match built {
+        Ok((_, artifact)) => artifact,
+        Err(error) => return Ok(Some(Err(error))),
+    };
+    let path = out.join("answer.step");
+    let reread = match fs::write(&path, artifact.bytes()).and_then(|()| fs::read(&path)) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let _ = fs::remove_file(&path);
+            return Err(error);
+        }
+    };
+    let span = OperationSpan::begin("brep", &recipe.result, "numerical-step-reread", dec);
+    let checked = artifact.check_written(&reread, dec);
+    span.finish(dec, checked.as_ref().err(), None);
+    if let Err(error) = checked {
+        let _ = fs::remove_file(&path);
+        return Ok(Some(Err(error)));
+    }
+    let report = artifact.report();
+    let spline = report.spline_rounding.as_ref().map(|rounding| {
+        json!({
+            "max_native_parameter_error":rounding.max_parameter_error.to_string(),
+            "max_weight_error":rounding.max_weight_error.to_string()
+        })
+    });
+    Ok(Some(Ok(json!({
+        "file":"answer.step","approximate":true,"category":"approximate","proof":"numerical",
+        "seams":"required","sha256":format!("{:x}",Sha256::digest(&reread)),"bytes":reread.len(),
+        "checks":report.checks,"tolerance_mm":tolerance.to_string(),
+        "complete_body_bound":"unestablished",
+        "numerical":{"source":crate::numerical_evidence_summary(&report.source_evidence),
+            "emitted":crate::numerical_evidence_summary(&report.emitted_evidence)},
+        "native_trims":report.source_native_trims.len(),
+        "scalar_rounding_limit_mm":report.scalar_rounding_limit_mm.to_string(),
+        "max_scalar_rounding_error_mm":report.max_scalar_rounding_error_mm.to_string(),
+        "max_direction_ratio_rounding_error":report.max_direction_ratio_rounding_error.to_string(),
+        "spline_rounding":spline
+    }))))
+}

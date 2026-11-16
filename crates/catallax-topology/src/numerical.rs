@@ -15,6 +15,7 @@ use crate::{
 };
 
 mod analytic;
+mod atlas;
 mod curved;
 mod handover;
 mod native;
@@ -484,6 +485,23 @@ fn build_inner(
                 "this admission path requires an outer loop and at most one hole",
             ));
         }
+        // Chart-union containment is checked at sampled native UV locations,
+        // so an atlas face accepts no straight parameter trim, and its charts
+        // must fill their box so that the filled loop stays on them.
+        if let Surface::BSpline(SplineSupport::RationalAtlas(source)) = &face.surface {
+            atlas::check_filled(source, dec)?;
+            for (row, boundary) in face.loops.iter().enumerate() {
+                for use_index in 0..boundary.len() {
+                    dec.charge_work(1)?;
+                    if native.get(face_index, row, use_index).is_none() {
+                        return Err(bad(
+                            "trim",
+                            "an atlas face needs a native UV curve on every edge use",
+                        ));
+                    }
+                }
+            }
+        }
         // Validate the newly admitted second boundary before building its
         // coedges. A duplicated outer loop remains an invalid trim, as in N01.
         if face.loops.len() == 2 {
@@ -593,6 +611,19 @@ fn build_inner(
             .into(),
             scope: face.key.clone(),
         });
+        if matches!(
+            face.surface,
+            Surface::BSpline(SplineSupport::RationalAtlas(_))
+        ) {
+            checks.push(NumericalCheck::Passed {
+                name: "surface.atlas-charts-fill-box".into(),
+                scope: face.key.clone(),
+            });
+            checks.push(NumericalCheck::Passed {
+                name: "trim.sampled-atlas-chart-union".into(),
+                scope: face.key.clone(),
+            });
+        }
         if face.loops.len() == 2 {
             checks.push(NumericalCheck::Passed {
                 name: if sampled {
@@ -752,6 +783,22 @@ fn check_loop(
                     return Err(bad(
                         "trim",
                         "parameter trim leaves the retained patch domain",
+                    ));
+                }
+            }
+        }
+        // An atlas face evaluates its whole retained source, which can hold
+        // other components. Its trims must stay on its own charts.
+        if let Surface::BSpline(SplineSupport::RationalAtlas(atlas)) = &face.surface {
+            for p in [a, b] {
+                dec.charge_work(atlas.charts().len() as u64)?;
+                if !atlas.charts().iter().any(|chart| {
+                    let domain = chart.patch().domain();
+                    (0..2).all(|axis| p[axis] >= domain[axis][0] && p[axis] <= domain[axis][1])
+                }) {
+                    return Err(bad(
+                        "trim",
+                        "parameter trim leaves the charts of its atlas face",
                     ));
                 }
             }

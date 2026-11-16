@@ -38,7 +38,7 @@ pub(super) fn supports(surface: &Surface) -> bool {
         Surface::Plane(_)
             | Surface::Cylinder(_)
             | Surface::Cone(_)
-            | Surface::BSpline(SplineSupport::RationalPatch(_))
+            | Surface::BSpline(SplineSupport::RationalPatch(_) | SplineSupport::RationalAtlas(_))
     )
 }
 

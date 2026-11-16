@@ -110,6 +110,9 @@ pub(super) fn build(
             Surface::BSpline(SplineSupport::RationalPatch(patch)) => {
                 native::surface(&mut w, patch.carrier())?
             }
+            Surface::BSpline(SplineSupport::RationalAtlas(atlas)) => {
+                native::surface(&mut w, atlas.source())?
+            }
             _ => return Err(bad("unsupported", "unprepared numerical STEP surface")),
         });
     }

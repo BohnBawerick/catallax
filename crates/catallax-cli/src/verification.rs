@@ -607,6 +607,34 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
                             step["seams"] = json!("required");
                         }
                     }
+                    // Numerical first: no exact STEP form becomes a checked
+                    // approximate file, never an exact answer.
+                    Err(error) if error.code == "step.unsupported-geometry" => {
+                        match crate::numerical_step::embedded_exact(
+                            &built.model,
+                            built.result,
+                            &recipe,
+                            &request.out,
+                            &mut dec,
+                        )? {
+                            None => return Ok(refused(error.code, error.detail)),
+                            Some(Err(numerical)) => {
+                                return Ok(refused(numerical.code, numerical.detail));
+                            }
+                            Some(Ok(value)) => {
+                                step = value;
+                                marks.push(crate::mark_entry(
+                                    &catallax_numbers::Mark::new(
+                                        "step.numerical-approximate",
+                                        catallax_numbers::BoundKind::Value,
+                                        catallax_numbers::Rational::one(),
+                                        "numerically checked STEP embedding at the requested tolerance; complete body bound unestablished",
+                                    ),
+                                    None,
+                                ));
+                            }
+                        }
+                    }
                     Err(error) => return Ok(refused(error.code, error.detail)),
                 }
             }

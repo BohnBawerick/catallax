@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""M10 requests keep the 20M cap and publish no incomplete STEP result."""
+"""M10 requests keep the 20M cap; constructed results write approximate STEP."""
 
 import copy
 import hashlib
@@ -14,13 +14,14 @@ ROOT = Path(__file__).resolve().parents[2]
 BINARY = Path(os.environ.get('CATALLAX_VERIFY_BINARY', ROOT / 'target/release/catallax-verify')).resolve()
 DRIVER = ROOT / '.claude/skills/verify-catallax/scripts/control-catallax.py'
 ALLOWANCE = 20_000_000
+# None marks a numerically embedded approximate STEP answer.
 REFUSALS = (
-    *(['step.unsupported-geometry'] * 3),
+    *([None] * 3),
     *(['numbers.operation-budget'] * 3),
-    'step.unsupported-geometry',
+    None,
     'numbers.geometric-gap-unproven',
     *(['intersect.parametric-surface'] * 3),
-    *(['step.unsupported-geometry'] * 3),
+    *([None] * 3),
 )
 
 
@@ -123,7 +124,7 @@ def comparable(response):
 
 
 class M10SplineBooleanTests(unittest.TestCase):
-    def test_numbered_refusals_and_work_survive_worker_changes(self):
+    def test_numbered_outcomes_and_work_survive_worker_changes(self):
         with tempfile.TemporaryDirectory(prefix='catallax-m10-') as temporary:
             root = Path(temporary)
             rows = write_questions(root / 'questions.jsonl')
@@ -144,10 +145,15 @@ class M10SplineBooleanTests(unittest.TestCase):
                         response = case['response']
                         manifest = response['manifest']
                         self.assertFalse(case['cache_hit'])
-                        self.assertEqual(manifest['status'], 'refused')
                         self.assertEqual(response['work']['limit'], ALLOWANCE)
                         self.assertGreater(response['work']['used'], 0)
                         self.assertLessEqual(response['work']['used'], ALLOWANCE)
+                        operations = response['operation_log']['operations']
+                        if expected is None:
+                            self.assert_approximate(case, manifest, operations)
+                            observed.append(comparable(response))
+                            continue
+                        self.assertEqual(manifest['status'], 'refused')
                         code = manifest['refusal']['code']
                         self.assertEqual(code, expected)
                         self.assertTrue(manifest['refusal']['detail'])
@@ -155,8 +161,7 @@ class M10SplineBooleanTests(unittest.TestCase):
                         self.assertFalse((Path(case['path']) / 'answer.step').exists())
                         self.assertIsNone(manifest['step'])
                         self.assertIsNone(manifest['result'])
-                        operations = response['operation_log']['operations']
-                        if name.startswith(('side-', 'spline-pair-')) or name in ('through-cut', 'm7-cut'):
+                        if name == 'm7-cut':
                             construction = [op for op in operations if op['id'] == 'cut'
                                             and op['operation'] in ('boolean', 'extrude_through')]
                             self.assertEqual(len(construction), 1)
@@ -182,14 +187,39 @@ class M10SplineBooleanTests(unittest.TestCase):
                 else:
                     self.assertEqual(observed, baseline)
                 # A refused replay must also remove a previous published file.
-                first = Path(run['cases'][0]['path'])
+                index = [number for number, _, _ in rows].index('M10-008')
+                first = Path(run['cases'][index]['path'])
                 (first / 'answer.step').write_text('stale STEP result')
                 replay = subprocess.run([
                     str(BINARY), '--threads', str(workers), 'replay', str(first / 'question.json'),
                     '--out', str(first),
                 ], capture_output=True, text=True, check=True)
-                self.assertEqual(comparable(json.loads(replay.stdout)), observed[0])
+                self.assertEqual(comparable(json.loads(replay.stdout)), observed[index])
                 self.assertFalse((first / 'answer.step').exists())
+
+    def assert_approximate(self, case, manifest, operations):
+        """The exact writer's refusal is kept; the numerical file is checked and approximate."""
+        self.assertEqual(manifest['status'], 'answered')
+        self.assertIsNone(manifest['refusal'])
+        self.assertFalse(manifest['exact'])
+        self.assertEqual([mark['code'] for mark in manifest['marks']], ['step.numerical-approximate'])
+        step = manifest['step']
+        self.assertTrue(step['approximate'])
+        self.assertEqual(step['category'], 'approximate')
+        self.assertEqual(step['tolerance_mm'], '1/10000000')
+        self.assertEqual(step['complete_body_bound'], 'unestablished')
+        data = (Path(case['path']) / 'answer.step').read_bytes()
+        self.assertEqual(hashlib.sha256(data).hexdigest(), step['sha256'])
+        self.assertIn(b'complete_body_bound=unestablished', data)
+        construction = [op for op in operations if op['id'] == 'cut'
+                        and op['operation'] in ('boolean', 'extrude_through')]
+        self.assertEqual([op['status'] for op in construction], ['answered'])
+        exact = [op for op in operations if op['operation'] == 'step']
+        self.assertEqual(len(exact), 1)
+        self.assertEqual(exact[0]['refusal']['code'], 'step.unsupported-geometry')
+        self.assertEqual([op['operation'] for op in operations[-1:]], ['numerical-step-reread'])
+        numerical = [op for op in operations if op['operation'] == 'numerical-step']
+        self.assertEqual([op['status'] for op in numerical], ['answered'])
 
 
 if __name__ == '__main__':

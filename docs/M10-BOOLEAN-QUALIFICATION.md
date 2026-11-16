@@ -1,9 +1,9 @@
 # M10 spline boolean qualification
 
-The three side box/loft operations, the through-all loft cut and the three
-spline-pair operations construct solids and now write approximate STEP
-through the numerical embedding described below. The other seven exchange
-requests still refuse and produce no STEP file.
+Eleven original exchange requests now write checked approximate STEP: the
+three side box/loft operations, through-all loft cut, M7 prism cut, three
+imported-loft operations and three spline-pair operations. The three top
+requests still refuse at 20M and produce no STEP file.
 
 The request allowance is 20,000,000 work units, including construction and
 export. Tolerances and existing proof checks are unchanged. A budget row is
@@ -107,23 +107,70 @@ subtract gives the side box volume of 20.
 
 ## Verification
 
-The 15 November finite-contact rerun moves M10-009 through M10-011 past the
-curve-equivalence gate. Import still completes in 114,370 units. Each request
-then refuses at `intersect.parametric-surface` after 149,620 total units,
-because a native spline/rational-patch query needs a finite surface solver.
-The requests still produce no STEP. The table above retains the earlier
-measurement pair; the executable regression now checks this later query and
-its detail. The spline cap-shell controls retain their qualified Bezier
-section solver and must complete construction before refusing STEP export.
+The finite-query solver moves M10-009 through M10-011 past their native
+curve/patch gate. Positive-weight control hulls prove finite exclusion. An
+invertible constant-weight bilinear patch admits a quadric pullback for
+native quadratic curves and lines. Roots keep their original parameters;
+multiplicity and the two finite germs distinguish tangency from crossing.
+Whole finite containment has a separate control-hull check. Partial overlap
+and ruling lines still require explicit interval ownership and refuse.
+
+The exact writer's finite patch-row gate remains an exact refusal. Its
+`numbers.geometric-gap-unproven` now tries the shared numerical embedding,
+with the exact UV-domain preservation from the embedding owner. The result
+stays numerical at 1e-7 mm, with source and emitted checks and no complete
+body bound. The existing publication/reread tail is a shared helper; this
+does not change its file checks or the `embedded_exact` signature.
 
 The end-to-end test runs fresh requests with request-worker/kernel-thread
-counts 1/1 and 4/4. It compares complete manifests, operation logs and work,
-excluding diagnostic timings and statistics. It requires the seven constructed
-cases to answer with approximate STEP after the exact writer's refusal, M7 to
-reach the writer, import to complete for M10-009 through M10-011, and every
-refused output directory to contain no `answer.step`. A replay of M10-008 over
-a seeded stale STEP file must remove that file and retain the same outcome and
-work.
+counts 1/1 and 4/4. It compares manifests, operation logs and work, excluding
+diagnostic timings and statistics. Eleven cases must answer with approximate
+STEP after their retained exact-writer refusal. The three original top
+requests keep their classification budget refusal. A replay of M10-008 over
+a seeded stale file must replace it with the same checked STEP bytes.
+
+### Additional original-request acceptance
+
+At source `06468b4bd8df69aa2bd7ace53cf7ea50d0a3aefb`, each unchanged original
+`catallax-step/1` request completes construction, numerical admission, STEP
+and disk reread within the unchanged 20M allowance. The four actual files
+pass the healing-off OCP 8.0.1.1 reader, topology and material checks, volume
+comparison and a later cut. The M7 physical hole remains present. See the
+[generated receipts](phase1/spline-boolean-finite-queries/acceptance.json).
+
+| Number | Total work | Faces/edges/vertices | Volume mm3 |
+| --- | ---: | --- | ---: |
+| M10-008 | 2,240,515 | 9/18/12 | 14.333333333333336 |
+| M10-009 | 4,461,015 | 10/24/16 | 6.695312500000001 |
+| M10-010 | 4,695,558 | 12/30/20 | 22.6953125 |
+| M10-011 | 3,829,276 | 6/12/8 | 0.9713541666666666 |
+
+### Numerical top source construction
+
+The separate numerical API reuses complete exact intersection and imprint,
+then classifies material witnesses against planar stock or finite rays on
+the retained loft charts. Every reported ray hit keeps its native UV,
+normal enclosure and original-source residual checks. Numerical labels
+never enter exact classification or incidence facts. Selected face uses
+form a private surface collection with one opposed pair per edge; only an
+admitted `NumericalBody` leaves the embedding callback.
+
+The focused M10-006 source test independently checks all fifteen witnesses
+against the recorded natural-cubic loft and stock laws, then admits the
+four-face, six-edge, four-vertex numerical body at 1e-7 mm under 20M.
+This is source-body qualification, not a completed STEP request. Direct
+M10-004 and M10-005 numerical routes exhaust during native-trim admission.
+M10-006 admits its source at 19,908,212 work, then exhausts during STEP at
+19,999,962. The original top CLI path is unchanged; the unqualified slower
+adapter remains private. No top STEP or whole-milestone completion is claimed.
+
+The method follows OCCT's finite curve/quadric route in
+[`IntCurveSurface_Inter.gxx`](https://github.com/Open-Cascade-SAS/OCCT/blob/V7_9_0/src/IntCurveSurface/IntCurveSurface_Inter.gxx)
+and nearest regular finite-ray transition in
+[`BRepClass3d_SClassifier.cxx`](https://github.com/Open-Cascade-SAS/OCCT/blob/V7_9_0/src/BRepClass3d/BRepClass3d_SClassifier.cxx).
+The [SMLib port map](M25-INTERSECTION-PORT-SCOPE.md) places the bounded
+curve/surface query and finite overlap classification in step 6. No OCCT
+code was copied.
 
 The feature test retains the side Solid, one-material-lump and structural
 checks. Its through-all cut also requires one solid and two cap openings.

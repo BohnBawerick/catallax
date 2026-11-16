@@ -16,6 +16,8 @@ use catallax_shapes::{
 };
 use std::sync::Arc;
 
+mod spline_patch;
+
 #[derive(Clone, Copy)]
 enum PointConstruction {
     Canonical,
@@ -1128,6 +1130,12 @@ fn intersect_with(
         return Ok(Answer::exact(answer));
     }
     if let Some(answer) = crate::spline_plane::hits(geom, c, s, dec)? {
+        return Ok(Answer::exact(answer));
+    }
+    if spline_patch::disjoint(geom, c, s, dec)? {
+        return Ok(Answer::exact(CurveSurface::Disjoint));
+    }
+    if let Some(answer) = spline_patch::meetings(geom, c, s, dec)? {
         return Ok(Answer::exact(answer));
     }
     if matches!(form, CurveForm::Branch) && branch_plane_disjoint(geom, c, s, plan.as_deref(), dec)?

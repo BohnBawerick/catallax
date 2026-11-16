@@ -17,6 +17,8 @@ use catallax_topology::{
 mod band;
 mod checks;
 mod events;
+/// Numerical face selection for an original loft against a planar stock body.
+pub mod loft;
 mod material;
 mod partition;
 mod seams;

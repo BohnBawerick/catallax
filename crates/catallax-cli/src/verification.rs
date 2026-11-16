@@ -609,7 +609,12 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
                     }
                     // Numerical first: no exact STEP form becomes a checked
                     // approximate file, never an exact answer.
-                    Err(error) if error.code == "step.unsupported-geometry" => {
+                    Err(error)
+                        if matches!(
+                            error.code,
+                            "step.unsupported-geometry" | "numbers.geometric-gap-unproven"
+                        ) =>
+                    {
                         match crate::numerical_step::embedded_exact(
                             &built.model,
                             built.result,

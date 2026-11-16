@@ -1,0 +1,165 @@
+{
+  "source_head": "06468b4bd8df69aa2bd7ace53cf7ea50d0a3aefb",
+  "request_format": "unchanged catallax-step/1",
+  "cases": [
+    {
+      "case": "M10-008",
+      "question_format": "unchanged catallax-step/1",
+      "healing": false,
+      "ocp": "8.0.1.1",
+      "raw_valid": true,
+      "topology": {
+        "solids": 1,
+        "faces": 9,
+        "edges": 18,
+        "vertices": 12,
+        "two_loop_faces": 1
+      },
+      "volume_mm3": 14.333333333333336,
+      "expected_volume_mm3": 14.333333333333334,
+      "material": "inside",
+      "void": "outside",
+      "later_cut_valid": true,
+      "later_cut_volume_mm3": 13.645833333333332,
+      "work": {
+        "exhausted": false,
+        "limit": 20000000,
+        "over_target": false,
+        "target": 20000000,
+        "used": 2240515
+      },
+      "tolerance_mm": "1e-7",
+      "complete_body_bound": "unestablished",
+      "sha256": "658f3b4abae4decf9e1d60036772ccdfaa5ff905e5dc3c2f6e405f4fce4a57c5"
+    },
+    {
+      "case": "M10-009",
+      "sha256": "5b74321bfee1463790730e611ae3448b1feb045ee0f73eae1d567b8c111b0594",
+      "ocp": "8.0.1.1",
+      "healing": false,
+      "raw_valid": true,
+      "topology": {
+        "solids": 1,
+        "faces": 10,
+        "edges": 24,
+        "vertices": 16,
+        "two_loop_faces": 0
+      },
+      "volume_mm3": 6.695312500000001,
+      "reference_volume_mm3": 6.695312499565952,
+      "volume_tolerance_mm3": 1e-06,
+      "material_states": [
+        "inside",
+        "inside",
+        "outside",
+        "outside",
+        "outside"
+      ],
+      "reference_material_states": [
+        "inside",
+        "inside",
+        "outside",
+        "outside",
+        "outside"
+      ],
+      "later_cut_valid": true,
+      "later_cut_volume_mm3": 3.900095621744792,
+      "bytes_unchanged": true,
+      "work": {
+        "exhausted": false,
+        "limit": 20000000,
+        "over_target": false,
+        "target": 20000000,
+        "used": 4461015
+      },
+      "numerical_tolerance_mm": "1e-7",
+      "complete_body_bound": "unestablished"
+    },
+    {
+      "case": "M10-010",
+      "sha256": "ea67f79ea49c62524d0ca23489270fc72ba70ed33f233c5ccff226425ecb1daa",
+      "ocp": "8.0.1.1",
+      "healing": false,
+      "raw_valid": true,
+      "topology": {
+        "solids": 1,
+        "faces": 12,
+        "edges": 30,
+        "vertices": 20,
+        "two_loop_faces": 0
+      },
+      "volume_mm3": 22.6953125,
+      "reference_volume_mm3": 22.69531249785855,
+      "volume_tolerance_mm3": 1e-06,
+      "material_states": [
+        "inside",
+        "inside",
+        "inside",
+        "inside",
+        "outside"
+      ],
+      "reference_material_states": [
+        "inside",
+        "inside",
+        "inside",
+        "inside",
+        "outside"
+      ],
+      "later_cut_valid": true,
+      "later_cut_volume_mm3": 15.900095621744791,
+      "bytes_unchanged": true,
+      "work": {
+        "exhausted": false,
+        "limit": 20000000,
+        "over_target": false,
+        "target": 20000000,
+        "used": 4695558
+      },
+      "numerical_tolerance_mm": "1e-7",
+      "complete_body_bound": "unestablished"
+    },
+    {
+      "case": "M10-011",
+      "sha256": "8987882b323f3631a361b145b38c6dd6e839557481a9b065e949e25c585cb71b",
+      "ocp": "8.0.1.1",
+      "healing": false,
+      "raw_valid": true,
+      "topology": {
+        "solids": 1,
+        "faces": 6,
+        "edges": 12,
+        "vertices": 8,
+        "two_loop_faces": 0
+      },
+      "volume_mm3": 0.9713541666666666,
+      "reference_volume_mm3": 0.9713541679195039,
+      "volume_tolerance_mm3": 1e-06,
+      "material_states": [
+        "outside",
+        "outside",
+        "inside",
+        "outside",
+        "outside"
+      ],
+      "reference_material_states": [
+        "outside",
+        "outside",
+        "inside",
+        "outside",
+        "outside"
+      ],
+      "later_cut_valid": true,
+      "later_cut_volume_mm3": 0.725555419921875,
+      "bytes_unchanged": true,
+      "work": {
+        "exhausted": false,
+        "limit": 20000000,
+        "over_target": false,
+        "target": 20000000,
+        "used": 3829276
+      },
+      "numerical_tolerance_mm": "1e-7",
+      "complete_body_bound": "unestablished"
+    }
+  ]
+}

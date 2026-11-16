@@ -66,7 +66,7 @@ The app has the Edit Suite frame, a full 2D sketcher, the part features above, 2
 These set the order of phase 1.
 
 1. **Most real STEP files do not open as verified solids.** The same 3,000-file census now has 418 complete-source solid imports (13.93%), beside the original 186 (6.20%, about 6%). All expected solids export and pass OCCT builder validity in 384 files (12.80%); builder processing may heal internally. The new consumer also retains 119 mixed/partial files and 2,202 unverified source-surface sets, for 2,739 supported source openings (91.30%). These are separate from solid admission and checked exports. OpenCASCADE's reference remains 2,701 healed-valid solid files (90.03%) under its different protocol. [The census](docs/research/step-census-opened/README.md) records every input and remaining cause.
-2. **Booleans on spline faces do not reach a file.** Side cuts on a loft build. All 14 recorded spline Boolean requests still refuse before a STEP file is written.
+2. **The three loft top cuts still refuse at 20M.** Eleven of the 14 recorded spline Boolean requests now write checked approximate STEP. The original top requests exhaust exact classification. A separate numerical route admits the top-intersection source body, then exhausts STEP; its subtraction and union exhaust admission.
 3. **Fillets, shells and draft work on certified families only.** Edge and wall features are the weakest area at 39%, and no line in it is complete.
 
 A work unit counts exact arithmetic and is the same on every machine. The target per edit is 20 million units, about 2 to 4 seconds of proof work on one core. Until phase 5 the application allows 100 million.

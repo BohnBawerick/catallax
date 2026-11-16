@@ -217,39 +217,28 @@ fn admit(
     tolerance: &Rational,
     dec: &mut Decider,
 ) -> Result<Admitted, Value> {
-    if files.is_empty() {
-        match catallax_features::evaluate_numerical_hole(
+    let built = if files.is_empty() {
+        match catallax_features::evaluate_with_numerical_hole(
             recipe,
             NumericalOptions {
                 tolerance_mm: tolerance.clone(),
             },
             dec,
-        ) {
-            Ok(Some(built)) => {
+        )
+        .map_err(build_refusal)?
+        {
+            catallax_features::HoleEvaluation::Numerical(built) => {
                 let assembly = built.work_stages()[1];
                 let recipe_work = current_operation_work().used - assembly;
                 return Ok(Admitted {
-                    body: built.into_hole().into_body(),
+                    body: (*built).into_hole().into_body(),
                     recipe_work,
                 });
             }
-            Ok(None) => {}
-            Err(catallax_features::BuildError::Geometry { step, refusal }) => {
-                let mut manifest = refused(refusal.code, refusal.detail);
-                manifest["refusal"]["step"] = json!(step.to_string());
-                return Err(manifest);
-            }
-            Err(error) => return Err(refused("cli.invalid-recipe", error)),
+            catallax_features::HoleEvaluation::Standard(built) => *built,
         }
-    }
-    let built = match catallax_features::evaluate_with_files(recipe, files, dec) {
-        Ok(built) => built,
-        Err(catallax_features::BuildError::Geometry { step, refusal }) => {
-            let mut manifest = refused(refusal.code, refusal.detail);
-            manifest["refusal"]["step"] = json!(step.to_string());
-            return Err(manifest);
-        }
-        Err(error) => return Err(refused("cli.invalid-recipe", error)),
+    } else {
+        catallax_features::evaluate_with_files(recipe, files, dec).map_err(build_refusal)?
     };
     if !built.stand_ins.is_empty() {
         return Err(refused(
@@ -276,4 +265,15 @@ fn admit(
         Err(error) => return Err(refused(error.code, error.detail)),
     };
     Ok(Admitted { body, recipe_work })
+}
+
+fn build_refusal(error: catallax_features::BuildError) -> Value {
+    match error {
+        catallax_features::BuildError::Geometry { step, refusal } => {
+            let mut manifest = refused(refusal.code, refusal.detail);
+            manifest["refusal"]["step"] = json!(step.to_string());
+            manifest
+        }
+        error => refused("cli.invalid-recipe", error),
+    }
 }

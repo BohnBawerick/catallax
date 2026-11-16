@@ -266,3 +266,66 @@ fn skew_collar_numerical_request_exports_the_actual_hole_with_step_trace_spans()
         fs::remove_dir_all(dir).unwrap();
     }
 }
+
+fn numerical_hole_review_request(recipe: Value, label: &str) -> (Value, std::path::PathBuf, bool) {
+    let proof = std::env::var_os("CATALLAX_SKEW_REVIEW_PROOF");
+    let root = proof.as_ref().map_or_else(
+        || std::env::temp_dir().join(format!("catallax-hole-review-{}", std::process::id())),
+        std::path::PathBuf::from,
+    );
+    let dir = root.join(label);
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("answer.step"), b"STALE").unwrap();
+    let request = json!({"format":"catallax-request/1","source":"recipe","problem":{"format":"catallax-numerical-step/1","recipe":recipe,"tolerance_mm":"1e-7"},"max_work":20_000_000,"out":dir});
+    let mut child = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+        .arg("stream")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    writeln!(child.stdin.take().unwrap(), "{request}").unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+    let row = serde_json::from_slice(&output.stdout).unwrap();
+    fs::write(dir.join("test-response.json"), &output.stdout).unwrap();
+    (row, dir, proof.is_none())
+}
+#[test]
+fn numerical_hole_refuses_a_field_envelope() {
+    let mut recipe: Value =
+        serde_json::from_str(include_str!("../../../parts/P2-collar.json")).unwrap();
+    let steps = recipe["steps"].as_array_mut().unwrap();
+    steps.push(json!({"id":"infill","op":"lattice","region":"collar","cell":"cubic","size":"2","frame":{"rotation":["1","0","0","0"],"translation":["0","0","0"]},"radius":{"constant":"0.3"}}));
+    steps.push(json!({"id":"hole","op":"hole","target":"infill","diameter":"2","depth":"through","tip":"flat","at":[{"id":"radial-0","point":["21/2","12","0"],"direction":["1","-1","1"]}]}));
+    recipe["result"] = json!("hole");
+    let (row, dir, temporary) = numerical_hole_review_request(recipe, "field-envelope");
+    assert_eq!(row["manifest"]["status"], "refused", "{row}");
+    assert_eq!(row["manifest"]["refusal"]["code"], "field.stand-in-export");
+    assert!(!dir.join("answer.step").exists());
+    if temporary {
+        fs::remove_dir_all(dir).unwrap();
+    }
+}
+#[test]
+fn numerical_hole_fallback_reuses_the_prefix() {
+    let recipe = json!({"format":"catallax-recipe/3","name":"unsupported collar continuation stock","steps":[
+        {"id":"stock","op":"block","size":["8","8","6"],"pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}},
+        {"id":"hole","op":"hole","target":"stock","diameter":"2","depth":"through","tip":"flat","at":[{"id":"miss","point":["20","20","6"],"direction":["0","0","-1"]}]}
+    ],"result":"hole"});
+    let (row, dir, temporary) = numerical_hole_review_request(recipe, "unsupported-stock");
+    assert_eq!(row["manifest"]["status"], "answered", "{row}");
+    assert_eq!(row["manifest"]["result"]["faces"], 6);
+    let operations = row["operation_log"]["operations"].as_array().unwrap();
+    assert_eq!(
+        operations
+            .iter()
+            .filter(|operation| operation["operation"] == "block")
+            .count(),
+        1,
+        "{operations:?}"
+    );
+    assert!(dir.join("answer.step").exists());
+    if temporary {
+        fs::remove_dir_all(dir).unwrap();
+    }
+}

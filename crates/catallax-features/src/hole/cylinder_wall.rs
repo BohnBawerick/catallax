@@ -263,11 +263,13 @@ pub fn append_cylinder_wall(
             }
         }
         for (boundary, polygon) in holes {
-            let owners: Vec<_> = outers
-                .iter()
-                .enumerate()
-                .filter_map(|(i, (_, outer, _))| inside(&polygon[0], outer).then_some(i))
-                .collect();
+            let mut owners = Vec::new();
+            for (index, (_, outer, _)) in outers.iter().enumerate() {
+                dec.charge_work(1)?;
+                if inside(&polygon[0], outer, dec)? {
+                    owners.push(index);
+                }
+            }
             let [owner] = owners.as_slice() else {
                 return Err(bad("a cylinder hole has no unique enclosing region"));
             };
@@ -362,18 +364,39 @@ fn polygon(
     }
     Ok(result)
 }
-fn inside(point: &[Rational; 2], polygon: &[[Rational; 2]]) -> bool {
+fn inside(
+    point: &[Rational; 2],
+    polygon: &[[Rational; 2]],
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
     let mut parity = false;
     for (a, b) in polygon
         .iter()
         .zip(polygon.iter().cycle().skip(1))
         .take(polygon.len())
     {
+        dec.charge_work(1)?;
         if (a[1] > point[1]) != (b[1] > point[1])
             && point[0] < a[0].clone() + (&point[1] - &a[1]) * (&b[0] - &a[0]) / (&b[1] - &a[1])
         {
             parity = !parity
         }
     }
-    parity
+    Ok(parity)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use catallax_numbers::with_operation_budget;
+
+    #[test]
+    fn polygon_ownership_scan_obeys_the_work_limit() {
+        let polygon = vec![[q(0), q(0)]; 10_000];
+        let (result, work) = with_operation_budget(16, || {
+            inside(&[q(1), q(1)], &polygon, &mut Decider::default())
+        });
+        assert!(work.exhausted, "unmetered polygon scan: {work:?}");
+        assert_eq!(result.unwrap_err().code, "numbers.operation-budget");
+    }
 }

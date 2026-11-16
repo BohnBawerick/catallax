@@ -10,7 +10,7 @@ The current continuation accepts an annular cylinder with two outer conical beve
 
 The finite Cone/Cylinder and Cylinder/Cylinder producers retain the original compiled Hole axis, reference direction and signed axial interval. The consumer keeps every reported nonconstant wall piece and both native maps. Original ring ownership and requested quarter seams supply endpoint joins. Every join must fit the chosen tolerance.
 
-The cylinder-wall builder consumes directed shared boundaries and adds unmatched quarter seams. It retains all closed regions instead of selecting an area threshold. Planar caps use the same shared rings and projected tool sections, with a separate original bore loop. Complete numerical admission checks closure, finite trims, surface composition and joins. Missing exact incidence stays missing.
+The cylinder-wall builder consumes directed shared boundaries and adds unmatched quarter seams. It retains all closed regions instead of selecting an area threshold. Every polygon ownership query and every side visited by that query charges work and checks the caller limit. Planar caps use the same shared rings and projected tool sections, with a separate original bore loop. Complete numerical admission checks closure, finite trims, surface composition and joins. Missing exact incidence stays missing.
 
 The approach follows OCCT's connected directed-edge wire assembly and SMLib's requested-domain intersection and curve-on-surface checks recorded in [the P04 port map](../THIRD-PARTY.md). Shared circular curves can have different rational parameter weights in the cone and cylinder charts. The ring correspondence retains their native parameter and checks the resulting rational map in physical space.
 

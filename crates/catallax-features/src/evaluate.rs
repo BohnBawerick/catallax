@@ -449,19 +449,75 @@ pub fn evaluate_numerical_hole(
 ) -> Result<Option<NumericalHoleBuilt>, BuildError> {
     numerical_hole_request(recipe, None, options, dec)
 }
+/// A standard recipe build or a separate numerical Hole result.
+#[derive(Clone, Debug)]
+pub enum HoleEvaluation {
+    /// Result of the ordinary feature evaluator, retaining its marks and checks.
+    Standard(Box<Built>),
+    /// Checked numerical Hole result with its authored controls and origins.
+    Numerical(Box<NumericalHoleBuilt>),
+}
+
+/// Tries the numerical Hole continuation and resumes the ordinary evaluator
+/// from its retained prefix when that stock family is unsupported. One request
+/// allowance covers both the prefix and the selected suffix.
+pub fn evaluate_with_numerical_hole(
+    recipe: &Recipe,
+    options: catallax_topology::numerical::NumericalOptions,
+    dec: &mut Decider,
+) -> Result<HoleEvaluation, BuildError> {
+    hole_request(recipe, || {
+        match numerical_hole_impl(recipe, None, options, dec)? {
+            HoleAttempt::Numerical(built) => Ok(HoleEvaluation::Numerical(built)),
+            HoleAttempt::Standard { state, start } => {
+                evaluate_impl(recipe, &ImportFiles::new(), None, *state, start, dec).map(|state| {
+                    HoleEvaluation::Standard(Box::new(state.finish(Arc::new(recipe.clone()))))
+                })
+            }
+        }
+    })
+}
+
+enum HoleAttempt {
+    Numerical(Box<NumericalHoleBuilt>),
+    Standard {
+        state: Box<EvaluationState>,
+        start: usize,
+    },
+}
+impl HoleAttempt {
+    fn standard() -> Self {
+        Self::Standard {
+            state: Box::default(),
+            start: 0,
+        }
+    }
+    fn into_numerical(self) -> Option<NumericalHoleBuilt> {
+        match self {
+            Self::Numerical(built) => Some(*built),
+            Self::Standard { .. } => None,
+        }
+    }
+}
 fn numerical_hole_request(
     recipe: &Recipe,
     previous: Option<&NumericalHoleBuilt>,
     options: catallax_topology::numerical::NumericalOptions,
     dec: &mut Decider,
 ) -> Result<Option<NumericalHoleBuilt>, BuildError> {
+    hole_request(recipe, || {
+        numerical_hole_impl(recipe, previous, options, dec).map(HoleAttempt::into_numerical)
+    })
+}
+fn hole_request<T>(
+    recipe: &Recipe,
+    run: impl FnOnce() -> Result<T, BuildError>,
+) -> Result<T, BuildError> {
     if catallax_numbers::operation_budget_active() {
-        return numerical_hole_impl(recipe, previous, options, dec);
+        return run();
     }
     let (result, work) =
-        catallax_numbers::with_operation_budget(catallax_topology::numerical::DEFAULT_WORK, || {
-            numerical_hole_impl(recipe, previous, options, dec)
-        });
+        catallax_numbers::with_operation_budget(catallax_topology::numerical::DEFAULT_WORK, run);
     if work.exhausted {
         Err(BuildError::Geometry {
             step: recipe.result.clone(),
@@ -479,10 +535,10 @@ fn numerical_hole_impl(
     previous: Option<&NumericalHoleBuilt>,
     options: catallax_topology::numerical::NumericalOptions,
     dec: &mut Decider,
-) -> Result<Option<NumericalHoleBuilt>, BuildError> {
+) -> Result<HoleAttempt, BuildError> {
     recipe.check().map_err(BuildError::Recipe)?;
     let Some(step) = recipe.steps.last().filter(|step| step.id == recipe.result) else {
-        return Ok(None);
+        return Ok(HoleAttempt::standard());
     };
     let Operation::Hole {
         target,
@@ -493,7 +549,7 @@ fn numerical_hole_impl(
         head,
     } = &step.op
     else {
-        return Ok(None);
+        return Ok(HoleAttempt::standard());
     };
     if at.len() != 1
         || !matches!(depth, catallax_recipe::HoleDepth::Through)
@@ -501,7 +557,7 @@ fn numerical_hole_impl(
         || head.is_some()
         || !recipe.materials.is_empty()
     {
-        return Ok(None);
+        return Ok(HoleAttempt::standard());
     }
     let mut prefix = recipe.clone();
     prefix.steps.pop();
@@ -523,6 +579,12 @@ fn numerical_hole_impl(
     };
     let operation = catallax_numbers::OperationSpan::begin("brep", &step.id, "hole", dec);
     let result = (|| -> Result<Option<NumericalHoleBuilt>, Refusal> {
+        if !state.stand_ins.is_empty() {
+            return Err(Refusal::new(
+                "field.stand-in-export",
+                "numerical Hole requires retained boundary geometry",
+            ));
+        }
         crate::hole::validate(diameter.value(), depth, tip, head.as_ref())?;
         let span = crate::hole::HoleTool::new(
             &at[0],
@@ -578,7 +640,13 @@ fn numerical_hole_impl(
         }))
     })();
     operation.finish(dec, result.as_ref().err(), None);
-    result.map_err(geometry)
+    match result.map_err(geometry)? {
+        Some(built) => Ok(HoleAttempt::Numerical(Box::new(built))),
+        None => Ok(HoleAttempt::Standard {
+            state: Box::new(state),
+            start: prefix.steps.len(),
+        }),
+    }
 }
 
 /// Builds a recipe with caller-supplied immutable STEP and mesh sources.

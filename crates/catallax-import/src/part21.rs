@@ -46,21 +46,44 @@ fn malformed(detail: impl Into<String>) -> ImportRefusal {
     }
 }
 
-/// Parses the DATA section of a Part 21 file.
+/// Parses every DATA section of a Part 21 file, respecting quoted delimiters.
 pub(crate) fn parse(bytes: &[u8]) -> Result<Graph, ImportRefusal> {
     let text = std::str::from_utf8(bytes).map_err(|_| malformed("file is not UTF-8 text"))?;
     let text = strip_comments(text)?;
-    let upper_start = text
-        .find("DATA;")
-        .ok_or_else(|| malformed("no DATA section"))?;
-    let body = &text[upper_start + 5..];
-    let end = body
-        .find("ENDSEC;")
-        .ok_or_else(|| malformed("DATA section is not closed"))?;
+    let (mut in_data, mut seen_data) = (false, false);
     let mut graph = Graph::new();
-    for statement in split_statements(&body[..end])? {
+    for statement in split_statements(&text)? {
         let statement = statement.trim();
         if statement.is_empty() {
+            continue;
+        }
+        let mut section = Cursor::new(statement);
+        let keyword = section.keyword();
+        if keyword == "DATA" {
+            if in_data {
+                return Err(malformed("nested DATA section"));
+            }
+            section.skip_space();
+            if !section.done() {
+                section.args()?;
+                section.skip_space();
+                if !section.done() {
+                    return Err(malformed("trailing DATA section declaration text"));
+                }
+            }
+            in_data = true;
+            seen_data = true;
+            continue;
+        }
+        if keyword == "ENDSEC" {
+            section.skip_space();
+            if !section.done() {
+                return Err(malformed("trailing ENDSEC text"));
+            }
+            in_data = false;
+            continue;
+        }
+        if !in_data {
             continue;
         }
         let rest = statement
@@ -82,6 +105,12 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<Graph, ImportRefusal> {
         if graph.insert(id, Entity { parts }).is_some() {
             return Err(malformed(format!("entity #{id} defined twice")));
         }
+    }
+    if in_data {
+        return Err(malformed("DATA section is not closed"));
+    }
+    if !seen_data {
+        return Err(malformed("no DATA section"));
     }
     Ok(graph)
 }
@@ -144,8 +173,8 @@ impl<'a> Cursor<'a> {
         self.s[self.i..].chars().next()
     }
     fn skip_space(&mut self) {
-        while self.peek().is_some_and(char::is_whitespace) {
-            self.i += 1;
+        while let Some(c) = self.peek().filter(|c| c.is_whitespace()) {
+            self.i += c.len_utf8();
         }
     }
     fn expect(&mut self, c: char) -> Result<(), ImportRefusal> {
@@ -270,8 +299,8 @@ impl<'a> Cursor<'a> {
             Some('.') => {
                 self.i += 1;
                 let start = self.i;
-                while self.peek().is_some_and(|c| c != '.') {
-                    self.i += 1;
+                while let Some(c) = self.peek().filter(|c| *c != '.') {
+                    self.i += c.len_utf8();
                 }
                 let word = self.s[start..self.i].to_ascii_uppercase();
                 self.expect('.')?;

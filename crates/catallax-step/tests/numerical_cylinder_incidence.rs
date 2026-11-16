@@ -288,8 +288,17 @@ fn emitted_circle_pcurves_keep_constant_height_on_oblique_parallel_and_antiparal
     fn pair(entity: &str) -> [catallax_numbers::Rational; 2] {
         let (_, values) = entity.split_once(",(").unwrap();
         let (values, _) = values.split_once(')').unwrap();
-        let values: Vec<_> = values.split(',').map(q).collect();
+        let values: Vec<_> = values.split(',').map(step_number).collect();
         values.try_into().unwrap()
+    }
+    fn step_number(value: &str) -> catallax_numbers::Rational {
+        // STEP permits 0. and 1.E+2; the general rational parser requires a
+        // digit after the decimal point. Normalize this emitted syntax only.
+        let mut normalized = value.replace(".E", ".0E").replace(".e", ".0e");
+        if normalized.ends_with('.') {
+            normalized.push('0');
+        }
+        q(&normalized)
     }
     for antiparallel in [false, true] {
         let mut definition = chart(1);
@@ -362,7 +371,7 @@ fn emitted_circle_pcurves_keep_constant_height_on_oblique_parallel_and_antiparal
                     .next()
                     .unwrap()
                     .split(',')
-                    .map(q)
+                    .map(step_number)
                     .collect();
                 assert!(!components[0].is_zero() && !components[2].is_zero());
                 let line = references(entities[&refs[1]])[0];

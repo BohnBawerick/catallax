@@ -509,7 +509,11 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
     {
         return Outcome::Refused(Refusal::new(
             "intersect.parametric-coincidence",
-            "different patch branch definitions require an exact component-equivalence proof",
+            format!(
+                "different patch branch definitions require an exact component-equivalence proof ({:?}, {:?})",
+                geom.curve(a).kind(),
+                geom.curve(b).kind()
+            ),
         ));
     }
     if matches!(geom.curve(a), Curve::BSpline(_)) || matches!(geom.curve(b), Curve::BSpline(_)) {

@@ -14,7 +14,7 @@ use catallax_topology::{Sense, numerical::{NumericalBody, NumericalDefinition, N
 fn bad(detail: impl Into<String>) -> Refusal { Refusal::new("fillet.numerical-body", detail) }
 fn q(n: i64) -> Rational { Rational::from_i64(n) }
 fn flip(s: Sense) -> Sense { if s == Sense::Same { Sense::Reversed } else { Sense::Same } }
-fn scalar(value: &Real, dec: &Decider) -> Result<Rational, Refusal> { Ok(dec.enclose_budgeted_at(value, 128)?.mid()) }
+fn scalar(value: &Real, dec: &Decider) -> Result<Rational, Refusal> { Ok(dec.enclose_at(value, 128)?.mid()) }
 fn rational(value: f64) -> Result<Rational, Refusal> { Rational::from_f64_exact(value).ok_or_else(|| bad("non-finite numerical fillet parameter")) }
 fn point_at(curve: &Curve, t: &Rational, dec: &Decider) -> Result<[Rational; 3], Refusal> {
     match curve {

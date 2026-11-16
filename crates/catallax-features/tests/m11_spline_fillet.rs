@@ -638,6 +638,14 @@ fn numerical_fillet_builds_on_the_smooth_loft_across_its_station_seam() {
         });
         let radius = q("1/10");
         let tolerance = q("1/10000");
+        let mut source_step = Vec::new();
+        catallax_step::write_step(
+            &built.model, &[built.result], &catallax_step::StepOptions::default(),
+            &mut dec, &mut source_step,
+        ).unwrap();
+        if let Some(path) = std::env::var_os("CATALLAX_M11_STEP_OUT") {
+            std::fs::write(std::path::Path::new(&path).with_extension("source.step"), &source_step).unwrap();
+        }
         let options = catallax_topology::numerical::NumericalOptions { tolerance_mm: tolerance.clone() };
         let (source, native) = catallax_step::numerical::definition_from_exact_model(
             &built.model, built.result, recipe.name.clone(), &tolerance, &mut dec,

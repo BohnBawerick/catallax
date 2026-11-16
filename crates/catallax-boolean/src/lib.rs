@@ -252,11 +252,21 @@ fn staged(
         ($stage:expr, $operation:expr) => {{
             #[cfg(feature = "work-span")]
             let _stage = catallax_numbers::work_span::region(format!("{:?}", $stage));
+            eprintln!(
+                "BOOLEAN_STAGE {:?} before={}",
+                $stage,
+                catallax_numbers::current_operation_work().used
+            );
             let before = dec.stats().clone();
             let answer = $operation.map_err(|refusal| BooleanRefusal {
                 stage: $stage,
                 refusal,
             })?;
+            eprintln!(
+                "BOOLEAN_STAGE {:?} after={}",
+                $stage,
+                catallax_numbers::current_operation_work().used
+            );
             report.stages.push(StageRecord {
                 stage: $stage,
                 stats: statistics_delta(&before, dec.stats()),

@@ -131,6 +131,7 @@ pub(super) fn build(
     }
     let mut lines = Vec::new();
     for edge in &mut definition.edges {
+        let original_parameters = edge.parameters.clone();
         edge.parameters = edge
             .parameters
             .each_ref()
@@ -167,7 +168,13 @@ pub(super) fn build(
                 }));
             }
             Curve::BSpline(source) => {
-                edge.curve = Curve::BSpline(spline::curve(source, &mut errors, options, dec)?);
+                edge.curve = Curve::BSpline(spline::curve(
+                    source,
+                    &original_parameters,
+                    &mut errors,
+                    options,
+                    dec,
+                )?);
                 lines.push(None);
             }
             _ => {

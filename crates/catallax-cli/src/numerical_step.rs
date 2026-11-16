@@ -69,39 +69,12 @@ pub(crate) fn evaluate(value: &Value, source: &str, out: &Path) -> io::Result<Va
         }
     };
     let mut dec = Decider::default();
-    let built = match catallax_features::evaluate_with_files(&recipe, files, &mut dec) {
-        Ok(built) => built,
-        Err(catallax_features::BuildError::Geometry { step, refusal }) => {
-            let mut manifest = refused(refusal.code, refusal.detail);
-            manifest["refusal"]["step"] = json!(step.to_string());
-            return Ok(manifest);
-        }
-        Err(error) => return Ok(refused("cli.invalid-recipe", error)),
+    let admitted = match admit(&recipe, files, &tolerance, &mut dec) {
+        Ok(admitted) => admitted,
+        Err(manifest) => return Ok(manifest),
     };
-    if !built.stand_ins.is_empty() {
-        return Ok(refused(
-            "field.stand-in-export",
-            "numerical STEP requires retained boundary geometry",
-        ));
-    }
-    let recipe_work = current_operation_work().used;
-    let span = OperationSpan::begin("brep", &recipe.result, "numerical-admission", &dec);
-    let body =
-        numerical::definition_from_model(&built.model, built.result, recipe.name.clone(), &mut dec)
-            .and_then(|definition| {
-                numerical::build(
-                    definition,
-                    NumericalOptions {
-                        tolerance_mm: tolerance.clone(),
-                    },
-                    &mut dec,
-                )
-            });
-    span.finish(&dec, body.as_ref().err(), None);
-    let body = match body {
-        Ok(body) => body,
-        Err(error) => return Ok(refused(error.code, error.detail)),
-    };
+    let body = admitted.body;
+    let recipe_work = admitted.recipe_work;
     let admitted_work = current_operation_work().used;
     let options = NumericalStepOptions {
         max_scalar_rounding_error_mm: tolerance
@@ -232,4 +205,75 @@ pub(crate) fn embedded_exact(
         "max_direction_ratio_rounding_error":report.max_direction_ratio_rounding_error.to_string(),
         "spline_rounding":spline
     }))))
+}
+
+struct Admitted {
+    body: numerical::NumericalBody,
+    recipe_work: u64,
+}
+fn admit(
+    recipe: &catallax_recipe::Recipe,
+    files: &catallax_features::ImportFiles<'_>,
+    tolerance: &Rational,
+    dec: &mut Decider,
+) -> Result<Admitted, Value> {
+    let built = if files.is_empty() {
+        match catallax_features::evaluate_with_numerical_hole(
+            recipe,
+            NumericalOptions {
+                tolerance_mm: tolerance.clone(),
+            },
+            dec,
+        )
+        .map_err(build_refusal)?
+        {
+            catallax_features::HoleEvaluation::Numerical(built) => {
+                let assembly = built.work_stages()[1];
+                let recipe_work = current_operation_work().used - assembly;
+                return Ok(Admitted {
+                    body: (*built).into_hole().into_body(),
+                    recipe_work,
+                });
+            }
+            catallax_features::HoleEvaluation::Standard(built) => *built,
+        }
+    } else {
+        catallax_features::evaluate_with_files(recipe, files, dec).map_err(build_refusal)?
+    };
+    if !built.stand_ins.is_empty() {
+        return Err(refused(
+            "field.stand-in-export",
+            "numerical STEP requires retained boundary geometry",
+        ));
+    }
+    let recipe_work = current_operation_work().used;
+    let span = OperationSpan::begin("brep", &recipe.result, "numerical-admission", dec);
+    let body =
+        numerical::definition_from_model(&built.model, built.result, recipe.name.clone(), dec)
+            .and_then(|definition| {
+                numerical::build(
+                    definition,
+                    NumericalOptions {
+                        tolerance_mm: tolerance.clone(),
+                    },
+                    dec,
+                )
+            });
+    span.finish(dec, body.as_ref().err(), None);
+    let body = match body {
+        Ok(body) => body,
+        Err(error) => return Err(refused(error.code, error.detail)),
+    };
+    Ok(Admitted { body, recipe_work })
+}
+
+fn build_refusal(error: catallax_features::BuildError) -> Value {
+    match error {
+        catallax_features::BuildError::Geometry { step, refusal } => {
+            let mut manifest = refused(refusal.code, refusal.detail);
+            manifest["refusal"]["step"] = json!(step.to_string());
+            manifest
+        }
+        error => refused("cli.invalid-recipe", error),
+    }
 }

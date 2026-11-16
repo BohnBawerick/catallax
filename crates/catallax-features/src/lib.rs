@@ -106,8 +106,9 @@ pub use certified::{
 };
 pub use draft_build::ConsumedFace;
 pub use evaluate::{
-    BuildError, Built, EvaluationCheckpoint, ImportFiles, StandIn, evaluate, evaluate_certified,
-    evaluate_incremental, evaluate_incremental_with_files, evaluate_numerical, evaluate_with_files,
+    BuildError, Built, EvaluationCheckpoint, HoleEvaluation, ImportFiles, NumericalHoleBuilt,
+    StandIn, evaluate, evaluate_certified, evaluate_incremental, evaluate_incremental_with_files,
+    evaluate_numerical, evaluate_numerical_hole, evaluate_with_files, evaluate_with_numerical_hole,
     replay_numerical,
 };
 pub use extrude::extrude;

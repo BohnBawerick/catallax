@@ -7,10 +7,14 @@ use catallax_shapes::{BSplineSurface, Plane, Point3, Vector3};
 use catallax_topology::numerical::NumericalOptions;
 use serde_json::json;
 
+#[path = "hole_caps/rings.rs"]
+mod rings;
 #[path = "hole_caps/shell.rs"]
 mod shell;
 #[path = "hole_caps/skew.rs"]
 mod skew;
+#[path = "hole_caps/walls.rs"]
+mod walls;
 
 fn q(text: &str) -> Rational {
     Rational::parse(text).unwrap()

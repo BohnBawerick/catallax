@@ -160,7 +160,7 @@ Later admission and STEP consumers must preserve that mark.
 The stage order follows [OCCT ShapeFix_Shape](https://github.com/Open-Cascade-SAS/OCCT/blob/V8_0_0/src/ModelingAlgorithms/TKShHealing/ShapeFix/ShapeFix_Shape.cxx), [ShapeFix_Wire](https://github.com/Open-Cascade-SAS/OCCT/blob/V8_0_0/src/ModelingAlgorithms/TKShHealing/ShapeFix/ShapeFix_Wire.cxx) and [BRepBuilderAPI_Sewing](https://github.com/Open-Cascade-SAS/OCCT/blob/V8_0_0/src/ModelingAlgorithms/TKTopAlgo/BRepBuilderAPI/BRepBuilderAPI_Sewing.cxx), with explicit candidate publication and the caller's cap.
 The implemented repair family is conservative:
 
-- Sewing pairs mutually unique free line edges on different faces of the same shell. Parallel line carriers require both endpoint correspondences within the cap. Nonlinear free edges remain unresolved until finite-domain correspondence is established: equal carriers and endpoints can select complementary arcs. Ambiguous matches, different shells and different bodies are not sewn.
+- Sewing pairs mutually unique free line edges on different faces of the same shell. Both finite endpoint correspondences must fit the cap; the final source-to-retained carrier projection checks also bound slightly skew line segments. Identical circle and ellipse carriers sew only with identical endpoints and the same finite traversal, including reversed endpoint order. Complementary arcs never match. A later vertex join that changes a sewn conic's finite domain refuses the complete candidate. Other nonlinear boundaries, ambiguous matches, different shells and different bodies remain separate.
 - Wire connection first measures every declared adjacent gap and closure before applying endpoint joins. A disconnected ordering may instead use a unique walk through shared vertices, recording changed order and reversed uses. Small finite line intervals at or below the initial tolerance may be removed only when all incident supports are planar and every bound retains an edge. The measurement uses the original finite line, even after earlier joins. A closed circle is not a small line merely because its endpoints coincide.
 - Planar line boundaries receive finite segment crossing/touch and orientation checks. Shell checks find connected components and consistent opposite edge uses, reporting open, nonmanifold or nonorientable cases. A closed planar candidate may have its whole orientation reversed from its signed polyhedral volume.
 
@@ -203,7 +203,7 @@ The broad surface tier therefore does not itself assert finite embedding, closur
 The existing certified/numerical whole-file entry remains the first admission route.
 If that route refuses, each recognized body is tried independently, so one open or unsupported sibling cannot erase a valid body's result.
 The healer prepares a private one-body candidate under the original file hash.
-Known bad/open boundaries remain surfaces; pending checks may reach the existing numerical finite-trim builder and source-pair checks.
+Known bad/open boundaries remain surfaces; pending checks may reach the existing numerical finite-trim builder and source-pair checks. A retained source surface model with one connected, closed sewn shell may enter the same checked solid builder, independently of its original declaration. This does not fill missing faces or promote an already admitted surface model merely because it declares closure. The original surface kind, source graph and controls remain unchanged; failed solid admission retains the surfaces and its typed refusal.
 The retained-definition adapter also admits the checked planar-line repair family without refitting retained carriers.
 It retains the landed cone deviation and remaining-tolerance checks.
 Every numerical result remains approximate and records its source interpretation, even when retained 3D geometry has not moved.
@@ -229,6 +229,7 @@ The census observer separates supported source retention, admitted solid tiers a
 Its source inventory coverage flag is the frozen source-inspection result at the identical source hash; incomplete representation coverage is never promoted to a complete-source solid file.
 Retained source surfaces without an admitted B-rep receive no checked STEP or valid-solid credit.
 All admitted bodies share one separate 20M export allowance, and actual written bytes are independently checked with the pinned OCCT builder protocol.
+The tier collector also caps each producer and independent reader at 6,144 MiB by default, using the shared RSS guard. Timeouts, memory terminations and process failures remain unmeasured rows rather than geometric losses. An unmeasured baseline pass prevents acceptance.
 Builder processing can heal internally; neither unhealed validity nor complete source fidelity follows from that result.
 The [frozen tier census](../research/step-census-opened/README.md) owns the measured counts, producer and limitations.
 

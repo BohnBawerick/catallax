@@ -656,11 +656,22 @@ fn build_inner(
                 if i != 0 && i != SUBDIVISIONS && analytic::projected_edge(face, edge) {
                     uv = curved::parameters(&face.surface, &p, dec)?;
                 }
-                let q = face.surface.evaluate(
-                    &Ball::from_rational(&uv[0], BITS),
-                    &Ball::from_rational(&uv[1], BITS),
-                    dec,
-                )?;
+                let q = if matches!(
+                    face.surface,
+                    Surface::BSpline(SplineSupport::RationalPatch(_))
+                ) {
+                    native::point(
+                        &face.surface,
+                        &uv.clone().map(catallax_numbers::Real::from),
+                        dec,
+                    )?
+                } else {
+                    face.surface.evaluate(
+                        &Ball::from_rational(&uv[0], BITS),
+                        &Ball::from_rational(&uv[1], BITS),
+                        dec,
+                    )?
+                };
                 samples.push(NumericalSample {
                     parameters: vec![t, uv[0].clone(), uv[1].clone()],
                     distance_upper_mm: distance(&p, &q),

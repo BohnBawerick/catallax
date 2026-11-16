@@ -2,7 +2,10 @@
 use catallax_numbers::{
     Decider, NumericalCheck, NumericalRepair, Rational, Real, with_operation_budget,
 };
-use catallax_shapes::{BSplineCurve, Curve, Line, Plane, Point3, Surface, Vector3};
+use catallax_shapes::{
+    BSplineCurve, BSplineSurface, Curve, Line, Plane, Point3, RationalPatch, SplineSupport,
+    Surface, Vector3,
+};
 use catallax_topology::{
     Sense,
     numerical::{
@@ -143,6 +146,57 @@ fn options() -> NumericalOptions {
     NumericalOptions {
         tolerance_mm: q("0.01"),
     }
+}
+
+#[test]
+fn non_binary_patch_boundary_is_sampled_as_a_finite_point() {
+    let mut input = tube();
+    let face = &input.faces[2];
+    let points: Vec<_> = face.loops[0]
+        .iter()
+        .map(|trim| {
+            let edge = &input.edges[trim.edge];
+            let vertex = edge.vertices[usize::from(trim.sense == Sense::Reversed)];
+            let [x, y, z] = input.vertices[vertex].position.clone().map(Real::from);
+            Point3::new(x, y, z)
+        })
+        .collect();
+    let hi = q("894427191/400000000");
+    let mut dec = Decider::default();
+    let carrier = BSplineSurface::new(
+        [1, 1],
+        [
+            vec![q("0"), q("0"), hi.clone(), hi.clone()],
+            vec![q("0"), q("0"), q("1"), q("1")],
+        ],
+        [2, 2],
+        [0, 3, 1, 2].map(|i| points[i].clone()).to_vec(),
+        vec![Real::one(); 4],
+        &mut dec,
+    )
+    .unwrap();
+    input.faces[2].surface = Surface::BSpline(SplineSupport::RationalPatch(
+        RationalPatch::new(carrier, &mut dec).unwrap(),
+    ));
+    let corners = [
+        [q("0"), q("0")],
+        [hi.clone(), q("0")],
+        [hi.clone(), q("1")],
+        [q("0"), q("1")],
+    ];
+    for (i, trim) in input.faces[2].loops[0].iter_mut().enumerate() {
+        trim.uv = [corners[i].clone(), corners[(i + 1) % 4].clone()];
+    }
+    numerical::build(input.clone(), options(), &mut dec).unwrap();
+    let outside = &hi + &q("1/1000000");
+    input.faces[2].loops[0][0].uv[1][0] = outside.clone();
+    input.faces[2].loops[0][1].uv[0][0] = outside;
+    let refusal = numerical::build(input, options(), &mut dec).unwrap_err();
+    assert_eq!(refusal.code, "numerical.invalid-trim");
+    assert_eq!(
+        refusal.detail,
+        "parameter trim leaves the retained patch domain"
+    );
 }
 fn split(input: &mut NumericalDefinition, gap: &str) -> [usize; 2] {
     let keeper = input.edges[0].vertices[0];

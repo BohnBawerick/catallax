@@ -75,6 +75,20 @@ pub enum Construction {
     },
 }
 
+/// Bounded reconstruction of one retained finite line between its vertices.
+/// The segment-to-segment displacement bound follows by linear interpolation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LineRepair {
+    /// Source-scoped shared edge key.
+    pub edge: String,
+    /// Original carrier evaluated at its projected finite endpoint parameters.
+    pub source_segment_mm: [Vec3; 2],
+    /// Reconstructed finite segment between the retained endpoint positions.
+    pub result_segment_mm: [Vec3; 2],
+    /// Outward bound on finite-segment displacement, not whole-body deviation.
+    pub error_upper_mm: Rational,
+}
+
 /// Face correspondence for one completed edit. Failures publish no record.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EditRecord {
@@ -86,6 +100,8 @@ pub struct EditRecord {
     pub modified_faces: Vec<String>,
     /// Source-scoped face keys removed by this edit.
     pub deleted_faces: Vec<String>,
+    /// Explicit source-line corrections needed for closed, healing-free STEP.
+    pub line_repairs: Vec<LineRepair>,
 }
 
 #[derive(Debug)]
@@ -143,6 +159,15 @@ impl DirectSolid {
         }
         let solid = file.solids.pop().expect("checked one solid");
         let faces: Arc<[Face]> = solid.faces.into();
+        let current_faces = if let Some(healed) = opened.bodies()[index].healing() {
+            let mut definition = healed.definition(dec)?;
+            if definition.solids.len() != 1 || !definition.surface_models.is_empty() {
+                return Err(bad("direct.body-kind", "retained source healing must describe one solid"));
+            }
+            Arc::<[Face]>::from(definition.solids.pop().expect("checked one healed solid").faces)
+        } else {
+            faces.clone()
+        };
         let source = Arc::new(Source {
             sha256: opened.source().source_sha256().to_owned(),
             body_name: solid.name,
@@ -152,7 +177,7 @@ impl DirectSolid {
         });
         Ok(Self {
             source,
-            faces,
+            faces: current_faces,
             material: None,
             history: Vec::new(),
         })
@@ -228,6 +253,8 @@ impl DirectSolid {
                 support::replace(&mut faces, face, surface.clone(), dec)?
             }
         };
+        let line_cap = a::minimum(options.tolerance_mm.clone(), sewing.maximum_mm.clone(), dec)?;
+        let line_repairs = reconstruct_lines(&mut faces, &line_cap, dec)?;
         let by_name: BTreeMap<_, _> = faces.iter().map(|f| (f.name.as_str(), f)).collect();
         let mut modified_faces = Vec::new();
         let mut deleted_faces = Vec::new();
@@ -265,6 +292,7 @@ impl DirectSolid {
             construction,
             modified_faces,
             deleted_faces,
+            line_repairs,
         });
         dec.check_deadline()?;
         Ok(Self {
@@ -455,4 +483,61 @@ fn polygon_winding(
     } else {
         (-value).sign()
     }))
+}
+
+fn reconstruct_lines(faces: &mut [Face], cap: &Rational, dec: &mut Decider) -> Result<Vec<LineRepair>, ImportError> {
+    let mut seen = BTreeSet::new();
+    let mut curves = BTreeMap::new();
+    let mut repairs = Vec::new();
+    for face in faces.iter() {
+        for boundary in &face.loops {
+            for edge in &boundary.edges {
+                dec.charge_work(1)?;
+                if !seen.insert(edge.edge.clone()) { continue }
+                let Curve::Line(origin, direction) = &edge.curve else { continue };
+                let square = a::dot(direction, direction, dec)?;
+                if square.is_zero() {
+                    return Err(bad("direct.line-repair", "a retained source line has no direction"));
+                }
+                let mut projected = [edge.start.point.clone(), edge.end.point.clone()];
+                let mut error = Rational::zero();
+                for (point, vertex) in projected.iter_mut().zip([&edge.start.point, &edge.end.point]) {
+                    let delta = a::sub(vertex, origin, dec)?;
+                    let t = a::arithmetic(&a::dot(&delta, direction, dec)?, &square, '/', dec)?;
+                    *point = a::offset(origin, direction, &t, '+', dec)?;
+                    let squared = a::squared(vertex, point, dec)?;
+                    if !squared.is_zero() {
+                        let (_, upper) = a::sqrt_enclosure(&squared, dec)?;
+                        error = a::maximum(error, upper, dec)?;
+                    }
+                }
+                if error.is_zero() { continue }
+                if a::compare(&error, cap, dec)?.is_gt() {
+                    return Err(bad("direct.line-repair", "finite source-line reconstruction exceeds the stated displacement cap"));
+                }
+                let mut direction = a::sub(&edge.end.point, &edge.start.point, dec)?;
+                if crate::exact::is_zero(&direction) {
+                    return Err(bad("direct.topology-change", "finite line reconstruction would collapse an edge"));
+                }
+                if !edge.curve_same_sense {
+                    for value in &mut direction { *value = -&*value; }
+                }
+                curves.insert(edge.edge.clone(), Curve::Line(edge.start.point.clone(), direction));
+                repairs.push(LineRepair {
+                    edge: edge.edge.clone(),
+                    source_segment_mm: projected,
+                    result_segment_mm: [edge.start.point.clone(), edge.end.point.clone()],
+                    error_upper_mm: error,
+                });
+            }
+        }
+    }
+    for face in faces {
+        for boundary in &mut face.loops {
+            for edge in &mut boundary.edges {
+                if let Some(curve) = curves.get(&edge.edge) { edge.curve = curve.clone(); }
+            }
+        }
+    }
+    Ok(repairs)
 }

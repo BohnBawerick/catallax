@@ -139,7 +139,7 @@ fn main() {
         }
     };
     assert_eq!(before.source_sha256(), after.source_sha256());
-    assert_eq!(before.faces(), before.source_faces());
+    assert_eq!(before.source_faces(), after.source_faces());
     assert!(before.history().is_empty());
     let (exports, export_work) = with_operation_budget(100_000_000, || {
         let mut dec = Decider::default();

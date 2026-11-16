@@ -51,12 +51,15 @@ mod cut_curve;
 mod cut_trace;
 #[path = "spline_fillet/jets.rs"]
 mod jets;
+#[path = "spline_fillet/numerical.rs"]
+mod numerical;
 #[path = "spline_fillet/order.rs"]
 mod order;
 #[path = "spline_fillet/surface.rs"]
 mod surface;
 
 pub use cut_trace::FilletCutTrace;
+pub use numerical::{NumericalFilletSpine, NumericalSpineNode};
 use jets::{Exact, Jet, Support};
 
 /// The fitted face's target two-sided deviation, in nanometres.

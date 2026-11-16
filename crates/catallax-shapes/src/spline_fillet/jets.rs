@@ -327,6 +327,24 @@ impl Support {
         Ok(point.try_into().expect("three"))
     }
 
+    pub(super) fn contact_f64(&self, at: [f64; 2]) -> ([f64; 3], [f64; 3]) {
+        let h: [f64; 4] = std::array::from_fn(|i| self.h[i].f64(at));
+        let normal: [f64; 3] = std::array::from_fn(|i| self.normal[i].f64(at));
+        let length = normal.iter().map(|v| v * v).sum::<f64>().sqrt();
+        (
+            std::array::from_fn(|i| h[i] / h[3]),
+            normal.map(|v| v / length),
+        )
+    }
+
+    pub(super) fn evaluation_work(&self) -> u64 {
+        self.h
+            .iter()
+            .chain(&self.normal)
+            .map(|poly| 8 * poly.terms.len() as u64)
+            .sum()
+    }
+
     /// The centre `P + side r N/|N|` in binary64, for proposals only.
     fn centre_f64(&self, at: [f64; 2], radius: f64) -> [f64; 3] {
         let h: [f64; 4] = std::array::from_fn(|i| self.h[i].f64(at));

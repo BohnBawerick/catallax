@@ -51,40 +51,42 @@ fn offset_spine_crosses_both_atlas_seams_without_fragmenting() {
         let mut dec = Decider::default();
         let first = split_vertical_plane(true, &mut dec);
         let second = split_vertical_plane(false, &mut dec);
-        let meeting = first
-            .offset_meeting(
-                &second,
-                [
-                    Rational::from_ratio(1, 10).unwrap(),
-                    Rational::from_ratio(1, 5).unwrap(),
-                ],
-                &mut dec,
-            )
-            .unwrap();
-        let [branch] = meeting.branches() else {
-            panic!("an internal chart row must not split the offset spine");
-        };
-        assert!(!branch.is_closed());
-        let mut charts = std::collections::BTreeSet::new();
-        for arc in branch.arcs() {
-            charts.insert((arc.first_chart, arc.second_chart));
-            for end in &arc.ends {
-                let point = meeting.point(end);
-                for residual in [&point.x - &q(1, 5), &point.y + &q(1, 10)] {
-                    let enclosure = dec.enclose_budgeted_at(&residual, 128).unwrap();
-                    assert!(enclosure.contains_zero());
-                    assert!(enclosure.hi() - enclosure.lo() < Rational::one().mul_pow2(-80));
-                }
+        let tolerance = Rational::parse("0.0000001").unwrap();
+        let spine = catallax_shapes::NumericalFilletSpine::trace(
+            &[first, second],
+            [
+                Rational::from_ratio(1, 10).unwrap(),
+                Rational::from_ratio(1, 5).unwrap(),
+            ],
+            1,
+            [Rational::zero(), Rational::from_i64(2)],
+            [
+                Rational::from_ratio(3, 5).unwrap(),
+                Rational::from_ratio(9, 20).unwrap(),
+                Rational::zero(),
+            ],
+            tolerance.clone(),
+            &mut dec,
+        )
+        .unwrap();
+        let charts: std::collections::BTreeSet<_> =
+            spine.nodes().iter().map(|node| node.charts).collect();
+        assert_eq!(charts, [[0, 0], [1, 1]].into_iter().collect());
+        assert_eq!(spine.tolerance_mm(), &tolerance);
+        assert!(spine.sampled_error_mm() <= &tolerance);
+        let curve = spine.centre_curve(&mut dec).unwrap();
+        for i in 0..=32 {
+            let t = Rational::from_ratio(i, 16).unwrap();
+            let point = curve.evaluate_box([&t, &t], 128, &dec).unwrap();
+            for (value, expected) in point.iter().zip([
+                Rational::from_ratio(1, 5).unwrap(),
+                Rational::from_ratio(-1, 10).unwrap(),
+                t.clone(),
+            ]) {
+                assert!((value.lo() - &expected).abs() <= tolerance);
+                assert!((value.hi() - &expected).abs() <= tolerance);
             }
         }
-        assert_eq!(charts, [(0, 0), (1, 1)].into_iter().collect());
-        let ends = branch.ends().map(|end| meeting.point(end).z);
-        assert!(
-            (ends[0].as_rational() == Some(Rational::zero())
-                && ends[1].as_rational() == Some(Rational::from_i64(2)))
-                || (ends[1].as_rational() == Some(Rational::zero())
-                    && ends[0].as_rational() == Some(Rational::from_i64(2)))
-        );
     });
     assert!(!work.exhausted, "{work:?}");
 }

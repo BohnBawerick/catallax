@@ -88,7 +88,18 @@ fn roots(
     if poly.is_zero(dec)? {
         return Ok(());
     }
-    for parameter in poly.real_roots(dec)? {
+    let precision = dec.policy().max_precision_bits.min(128);
+    let local = if precision == 0 {
+        CellRoots::Unknown
+    } else {
+        monotone_root(&mut CellPolynomial::new(poly, precision, dec)?, domain, dec)?
+    };
+    let roots = match local {
+        CellRoots::Empty => return Ok(()),
+        CellRoots::One(root) => vec![root],
+        CellRoots::Unknown | CellRoots::Split => poly.real_roots(dec)?,
+    };
+    for parameter in roots {
         if exact_sign(&(&parameter - &Real::from(domain[0].clone())), dec)? != Sign::Negative
             && exact_sign(&(&Real::from(domain[1].clone()) - &parameter), dec)? != Sign::Negative
         {

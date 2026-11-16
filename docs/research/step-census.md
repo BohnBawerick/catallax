@@ -1,7 +1,7 @@
 # Census of 3,000 public STEP files
 
 Outcome: recorded. It is the measure of the import gap.
-When: 11 to 15 November 2026.
+When: 11 to 16 November 2026.
 
 ## What we were trying to achieve
 
@@ -17,50 +17,51 @@ A first attempt on 11 November stopped before measuring, because the archive cou
 
 ## Result
 
-The complete frozen-population export comparison records **361 of the original
-3,000 files (12.03%) with STEP exports valid after OCCT builder construction,
+The complete frozen-population export comparison records **369 of the original
+3,000 files (12.30%) with STEP exports valid after OCCT builder construction,
 which can heal pcurves internally**, beside **2,701 of 3,000 (90.0%) valid after
 normal OCCT transfer and default ShapeFix healing**. Neither number establishes
 unhealed validity, source fidelity or a common-tolerance comparison.
 
-The conditioning step is **400 admitted files, of which 361 are valid after
-builder construction (90.25%), 22 invalid, 16 export-refused and one timed out**.
+The conditioning step is **400 admitted files, of which 369 are valid after
+builder construction (92.25%), 14 invalid, 15 export-refused and two timed out**.
 All 400 imports reproduce their expected body counts (808 bodies).
 A file counts only when every expected body exports and passes whole-solid
 validity after builder processing.
-The [complete comparison](step-census-cylinder-seams/README.md),
-[3,000-ID table](step-census-cylinder-seams/results.csv),
-[candidate manifest](step-census-cylinder-seams/results.json),
-[matched-control manifest](step-census-cylinder-seams/matched-control.json) and
-[paired outcomes](step-census-cylinder-seams/comparison.json) retain all observations.
+The [complete comparison](step-census-circular-pcurves/README.md),
+[3,000-ID table](step-census-circular-pcurves/results.csv),
+[candidate manifest](step-census-circular-pcurves/results.json),
+[matched-control manifest](step-census-circular-pcurves/matched-control.json) and
+[paired outcomes](step-census-circular-pcurves/comparison.json) retain all observations.
 
-The isolated cylindrical-seam ordering repair recovers **seven actual files with
-no losses** from a matched control's 354 valid results. It changes only the
-starting point of a closed STEP edge loop. All 699 written body-file graphs
-remain identical when cyclic loop starts are normalized; 21 byte streams change.
-Candidate and control import work, source hashes, body counts and categories
-agree on all 400 inputs. The only changed production path is the analytic
-numerical STEP writer. The previous wire-closure diagnostic group contained 19
-files; that group size was not treated as a predicted recovery count.
-The prior [finite-circle comparison](step-census-arc-parameters/README.md)
-retains its distinct matched 322 to 354 measurement and 32 verified recoveries.
+The isolated constant-height circular-pcurve repair recovers **eight actual
+files with no losses** from the matched integrated control's 361 valid files.
+It preserves existing flat maps and tilted carriers, and retains the finite U
+chart. All 699 written body-file 3D graphs, oriented loops and pcurve surface
+associations remain identical; 33 byte streams change. Candidate and control
+import work, source hashes, body counts and categories agree on all 400 inputs.
+The only changed production path is the Plane/Cylinder numerical STEP writer.
+A broader 363-file experiment was withheld after four gains and two losses.
+The prior [seam-order comparison](step-census-cylinder-seams/README.md) retains
+its distinct 354 to 361 measurement and seven verified recoveries.
 
-The refusals remain 15 `step.numerical-gap` and one aggregate export work limit.
-File `00004777` again times out during export after import completed.
-Its export work and resulting validity remain unknown.
+All 15 returned refusals are `step.numerical-gap`. File `00002204`, previously
+refused at the aggregate export work limit, now times out during export and
+earns no recovery credit. `00004777` remains an export timeout. Both files'
+export work and validity remain unknown.
 All ten retained P06 controls remain valid after builder construction, including
-its possible internal healing. Actual part `00000363` retains both solids,
-matching the normal source-reference volumes and all 90 material probes.
+its possible internal healing. Actual part `00009338` retains one solid,
+matching the source-reference volume and all 45 material probes.
 The independent audit checks all 400 durable source hashes and 699 declared
-written body files; 677 reach builder checks, with 625 valid and 52 invalid bodies.
+written body files; 677 reach builder checks, with 645 valid and 32 invalid bodies.
 Valid bodies inside invalid multi-solid files earn no file credit.
 
 The measured repair producer is
-**`7563b40c48229cfd57407351f716c3a01867d2a2`**, with executable SHA-256
-`58128174b490ab39d1aa2927251a4a3769f90dcc5f91528befbb815497b8be25`.
-The matched control producer is **`0902b99f3e30893ce11cfb3d69488d55f93b2d92`**,
-with production kernel **`621cb33775218515db99a6399065b4abe8261e54`**.
-Its CSV is byte-identical to the earlier 354-file capture.
+**`2d53b8b1bc307b075c6ff8323aed0595a9e93468`**, with executable SHA-256
+`8b7e4f17a7ec3c0cedc3ba940d14c6fb9708a2b4de6e105d06399f45cc57212e`.
+The matched control producer/kernel is
+**`1e8b24b651c468e8f81cc1748fcc6a8b3fe3db3b`**. Its CSV and all 699 STEP files
+reproduce the prior 361-file capture after the intervening main integration.
 The prior [322-file export capture](step-census-export-validity/README.md) remains
 unchanged with its distinct producer and protocol identity.
 The original seed, source hashes and 3,000-file denominator are unchanged;

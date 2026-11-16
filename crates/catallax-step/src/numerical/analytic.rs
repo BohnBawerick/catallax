@@ -707,11 +707,38 @@ pub(super) fn build(
         for (f, trim, _) in &uses[index] {
             let face = &d.faces[*f];
             w.dec.charge_work(1)?;
-            let ends = if trim.sense == Sense::Same {
+            let mut ends = if trim.sense == Sense::Same {
                 trim.uv.clone()
             } else {
                 [trim.uv[1].clone(), trim.uv[0].clone()]
             };
+            if let (Surface::Cylinder(cylinder), Curve::Circle(circle)) =
+                (&face.surface, &edge.curve)
+                && edge.vertices[0] != edge.vertices[1]
+                && ends[0][1] != ends[1][1]
+            {
+                // A circle normal parallel to the cylinder axis gives a
+                // constant-height pcurve (OCCT ProjLib_Cylinder::Project).
+                // This cheap check uses the written rational directions.
+                // Keep existing flat maps, tilted carriers, the finite U chart
+                // and the canonical shared-vertex walk used for admission.
+                let normal = rational_vector(&circle.normal)?;
+                let axis = rational_vector(&cylinder.axis)?;
+                if charged_cross(&normal, &axis, w.dec)?
+                    .iter()
+                    .all(Rational::is_zero)
+                {
+                    let [_, _, height] = local(
+                        &cylinder.origin,
+                        &cylinder.axis,
+                        &cylinder.ref_dir,
+                        &rational_point(&circle.center)?,
+                    )?;
+                    let height = height.mid();
+                    ends[0][1] = height.clone();
+                    ends[1][1] = height;
+                }
+            }
             let (curve, actual) = pcurve(
                 &mut w,
                 &mut parameter,

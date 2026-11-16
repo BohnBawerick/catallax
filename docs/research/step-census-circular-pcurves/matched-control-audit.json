@@ -1,0 +1,52 @@
+{
+  "actual_cargo_log_artifact_and_executable_checked": true,
+  "all_3000_ids_hashes_and_denominator_checked": true,
+  "all_400_durable_source_hashes_rechecked": true,
+  "all_699_declared_step_files_byte_identical_to_previous_361_capture": true,
+  "all_808_expected_bodies_reproduced": true,
+  "all_declared_step_hashes_and_mm_radian_units_checked": true,
+  "all_import_work_counters_equal_previous_capture": true,
+  "all_previous_361_valid_files_retained": true,
+  "binary_sha256": "2d917b760606d9ba8d3aa94ff502936aaed5b51320b247430c59c4af8af49962",
+  "builder_checked_bodies": 677,
+  "builder_invalid_bodies": 52,
+  "builder_valid_bodies": 625,
+  "complete": true,
+  "csv_sha256": "890808462b91320ae054d226462ad34b04bf378dbced33a2e81fc57795e67974",
+  "export_outcomes": {
+    "export_refused": 16,
+    "raw_invalid": 22,
+    "raw_valid": 361,
+    "timeout": 1
+  },
+  "gained_ids": [],
+  "intervening_production_paths": [
+    "Cargo.lock",
+    "crates/catallax-features/src/hole.rs",
+    "crates/catallax-features/src/hole/cap.rs",
+    "crates/catallax-intersect/src/lib.rs",
+    "crates/catallax-intersect/src/pair/traced/numerical.rs",
+    "crates/catallax-intersect/src/pair/traced/numerical/checked.rs",
+    "crates/catallax-intersect/src/pair/traced/numerical/finite.rs",
+    "crates/catallax-mesh/Cargo.toml",
+    "crates/catallax-mesh/src/preview.rs",
+    "crates/catallax-mesh/src/preview/edges.rs",
+    "crates/catallax-mesh/src/triangulate.rs"
+  ],
+  "lost_ids": [],
+  "matched_control_binary_sha256": "58128174b490ab39d1aa2927251a4a3769f90dcc5f91528befbb815497b8be25",
+  "matched_control_csv_sha256": "890808462b91320ae054d226462ad34b04bf378dbced33a2e81fc57795e67974",
+  "matched_control_kernel_revision": "7563b40c48229cfd57407351f716c3a01867d2a2",
+  "matched_control_source_revision": "7563b40c48229cfd57407351f716c3a01867d2a2",
+  "new_main_control_before_next_fix": true,
+  "paired_outcomes": {
+    "export_refused -> export_refused": 16,
+    "raw_invalid -> raw_invalid": 22,
+    "raw_valid -> raw_valid": 361,
+    "timeout -> timeout": 1
+  },
+  "previous_capture_source_revision": "7563b40c48229cfd57407351f716c3a01867d2a2",
+  "source_revision": "1e8b24b651c468e8f81cc1748fcc6a8b3fe3db3b",
+  "validity_includes_occt_builder_internal_healing": true,
+  "written_body_files_checked": 699
+}

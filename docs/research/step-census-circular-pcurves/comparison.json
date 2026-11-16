@@ -1,0 +1,107 @@
+{
+  "all_400_import_work_source_hashes_body_counts_categories_match": true,
+  "by_import_category": {
+    "certified / raw_invalid": 9,
+    "certified / raw_valid": 177,
+    "certified / timeout": 1,
+    "numerical approximate / export_refused": 15,
+    "numerical approximate / raw_invalid": 5,
+    "numerical approximate / raw_valid": 192,
+    "numerical approximate / timeout": 1
+  },
+  "candidate_binary_sha256": "8b7e4f17a7ec3c0cedc3ba940d14c6fb9708a2b4de6e105d06399f45cc57212e",
+  "candidate_csv_sha256": "bbe34caeb3161804261583637de29d5ef4597f9c1918bcb510b56d643c1dd142",
+  "candidate_source_revision": "2d53b8b1bc307b075c6ff8323aed0595a9e93468",
+  "candidate_valid_files": 369,
+  "candidate_valid_of_admitted_percent": "92.25",
+  "candidate_valid_share_percent": "12.30",
+  "complete": true,
+  "denominator": 3000,
+  "expected_bodies": 808,
+  "format": "catallax-constant-height-circle-matched-census/1",
+  "frozen_admissions": 400,
+  "gained_ids": [
+    "00000718",
+    "00002553",
+    "00003124",
+    "00005223",
+    "00005497",
+    "00005774",
+    "00009338",
+    "00009656"
+  ],
+  "lost_ids": [],
+  "matched_control_binary_sha256": "2d917b760606d9ba8d3aa94ff502936aaed5b51320b247430c59c4af8af49962",
+  "matched_control_csv_sha256": "890808462b91320ae054d226462ad34b04bf378dbced33a2e81fc57795e67974",
+  "matched_control_kernel_revision": "1e8b24b651c468e8f81cc1748fcc6a8b3fe3db3b",
+  "matched_control_source_revision": "1e8b24b651c468e8f81cc1748fcc6a8b3fe3db3b",
+  "matched_control_valid_files": 361,
+  "only_changed_production_path": [
+    "crates/catallax-step/src/numerical/analytic.rs"
+  ],
+  "paired_outcomes": {
+    "export_refused -> export_refused": 15,
+    "export_refused -> timeout": 1,
+    "raw_invalid -> raw_invalid": 14,
+    "raw_invalid -> raw_valid": 8,
+    "raw_valid -> raw_valid": 361,
+    "timeout -> timeout": 1
+  },
+  "refusal_causes": {
+    "step.numerical-gap": 15
+  },
+  "retained_controls": {
+    "00000131": "raw_valid",
+    "00000173": "raw_valid",
+    "00000190": "raw_valid",
+    "00000405": "raw_valid",
+    "00000511": "raw_valid",
+    "00000605": "raw_valid",
+    "00000632": "raw_valid",
+    "00000633": "raw_valid",
+    "00000695": "raw_valid",
+    "00000821": "raw_valid"
+  },
+  "seed": 20261111,
+  "stage_work": {
+    "export_work_used": {
+      "maximum": 14150281,
+      "minimum": 50,
+      "observed": 398,
+      "per_stage_limit": 20000000,
+      "sum": 202430646
+    },
+    "import_work_used": {
+      "maximum": 18929210,
+      "minimum": 3567,
+      "observed": 400,
+      "per_stage_limit": 20000000,
+      "sum": 571316874
+    }
+  },
+  "timeouts": [
+    {
+      "export_work_used": "",
+      "import_work_used": "18929210",
+      "model_id": "00002204",
+      "no_recovery_credit": true,
+      "previous_cause": "resource_limit",
+      "previous_outcome": "export_refused",
+      "source_sha256": "bfeeb31933a1d7aea37847aaec022a387c3de0542342e62fdfcb8915b8a3a53e",
+      "timeout_stage": "export"
+    },
+    {
+      "export_work_used": "",
+      "import_work_used": "6798992",
+      "model_id": "00004777",
+      "no_recovery_credit": true,
+      "previous_cause": "",
+      "previous_outcome": "timeout",
+      "source_sha256": "eca9d80a98fa55a5eeb6ea4d690ab5f0d60a3b59c7eaa7493f5f793ec3fbfdbd",
+      "timeout_stage": "export"
+    }
+  ],
+  "unhealed_validity_established": false,
+  "validity_includes_occt_builder_internal_healing": true,
+  "validity_method": "direct OCCT builder construction, which can heal pcurves internally"
+}

@@ -1,0 +1,386 @@
+{
+  "complete": true,
+  "complete_source_fidelity_bound_established": false,
+  "material_probes": [
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        -123.6617710675814,
+        -2.9980633642472796,
+        1.5874999499999947
+      ]
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        -123.6617710675814,
+        -2.9980633642472796,
+        3.1749999999999967
+      ]
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        -123.6617710675814,
+        -2.9980633642472796,
+        4.762500049999998
+      ]
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        -123.6617710675814,
+        25.400000000000055,
+        1.5874999499999947
+      ]
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        -123.6617710675814,
+        25.400000000000055,
+        3.1749999999999967
+      ]
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        -123.6617710675814,
+        25.400000000000055,
+        4.762500049999998
+      ]
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        -123.6617710675814,
+        53.79806336424739,
+        1.5874999499999947
+      ]
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        -123.6617710675814,
+        53.79806336424739,
+        3.1749999999999967
+      ]
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        -123.6617710675814,
+        53.79806336424739,
+        4.762500049999998
+      ]
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -77.18301168219459,
+        -2.9980633642472796,
+        1.5874999499999947
+      ]
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -77.18301168219459,
+        -2.9980633642472796,
+        3.1749999999999967
+      ]
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -77.18301168219459,
+        -2.9980633642472796,
+        4.762500049999998
+      ]
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -77.18301168219459,
+        25.400000000000055,
+        1.5874999499999947
+      ]
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -77.18301168219459,
+        25.400000000000055,
+        3.1749999999999967
+      ]
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -77.18301168219459,
+        25.400000000000055,
+        4.762500049999998
+      ]
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        -77.18301168219459,
+        53.79806336424739,
+        1.5874999499999947
+      ]
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        -77.18301168219459,
+        53.79806336424739,
+        3.1749999999999967
+      ]
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        -77.18301168219459,
+        53.79806336424739,
+        4.762500049999998
+      ]
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -53.94363198950119,
+        -2.9980633642472796,
+        1.5874999499999947
+      ]
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -53.94363198950119,
+        -2.9980633642472796,
+        3.1749999999999967
+      ]
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -53.94363198950119,
+        -2.9980633642472796,
+        4.762500049999998
+      ]
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -53.94363198950119,
+        25.400000000000055,
+        1.5874999499999947
+      ]
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -53.94363198950119,
+        25.400000000000055,
+        3.1749999999999967
+      ]
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -53.94363198950119,
+        25.400000000000055,
+        4.762500049999998
+      ]
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -53.94363198950119,
+        53.79806336424739,
+        1.5874999499999947
+      ]
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -53.94363198950119,
+        53.79806336424739,
+        3.1749999999999967
+      ]
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -53.94363198950119,
+        53.79806336424739,
+        4.762500049999998
+      ]
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -30.704252296807795,
+        -2.9980633642472796,
+        1.5874999499999947
+      ]
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -30.704252296807795,
+        -2.9980633642472796,
+        3.1749999999999967
+      ]
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -30.704252296807795,
+        -2.9980633642472796,
+        4.762500049999998
+      ]
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -30.704252296807795,
+        25.400000000000055,
+        1.5874999499999947
+      ]
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -30.704252296807795,
+        25.400000000000055,
+        3.1749999999999967
+      ]
+    },
+    {
+      "expected_material": "inside",
+      "point_mm": [
+        -30.704252296807795,
+        25.400000000000055,
+        4.762500049999998
+      ]
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        -30.704252296807795,
+        53.79806336424739,
+        1.5874999499999947
+      ]
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        -30.704252296807795,
+        53.79806336424739,
+        3.1749999999999967
+      ]
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        -30.704252296807795,
+        53.79806336424739,
+        4.762500049999998
+      ]
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        15.774507088579014,
+        -2.9980633642472796,
+        1.5874999499999947
+      ]
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        15.774507088579014,
+        -2.9980633642472796,
+        3.1749999999999967
+      ]
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        15.774507088579014,
+        -2.9980633642472796,
+        4.762500049999998
+      ]
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        15.774507088579014,
+        25.400000000000055,
+        1.5874999499999947
+      ]
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        15.774507088579014,
+        25.400000000000055,
+        3.1749999999999967
+      ]
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        15.774507088579014,
+        25.400000000000055,
+        4.762500049999998
+      ]
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        15.774507088579014,
+        53.79806336424739,
+        1.5874999499999947
+      ]
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        15.774507088579014,
+        53.79806336424739,
+        3.1749999999999967
+      ]
+    },
+    {
+      "expected_material": "outside",
+      "point_mm": [
+        15.774507088579014,
+        53.79806336424739,
+        4.762500049999998
+      ]
+    }
+  ],
+  "model_id": "00009338",
+  "output_solid_count": 1,
+  "output_volume_mm3": 32799.79710011322,
+  "source_reference_method": "normal OCCT source root transfer, including internal processing/healing",
+  "source_reference_volume_mm3": 32799.79710011322,
+  "source_roots_transferred": 1,
+  "source_sha256": "9ccecf3ec505515049566e6dedc1fb653dd19682cca267951425f4e54166c7e5",
+  "source_solid_count": 1,
+  "step_sha256": "473d4b03528bab22b4ca8e20b60bc3864086ab8216cd474632ccc26bc6163df4",
+  "topology": {
+    "edges": 36,
+    "euler_with_face_holes": 2,
+    "faces": 14,
+    "solids": 1,
+    "two_loop_faces": 0,
+    "vertices": 24
+  },
+  "unhealed_validity_established": false,
+  "valid_after_builder_internal_processing": true,
+  "volume_comparison_tolerance_mm3": 1e-06
+}

@@ -284,6 +284,7 @@ Each entry links to a short file: what we were trying to achieve, why it was pro
 |---|---|---|
 | [Fillet prototypes: which kernel builds it, and patch-first](docs/research/fillet-prototypes.md) | Parked | No solid came out of either round. Certified fillet families replaced them. |
 | [Hard-intersection prototype](docs/research/hard-intersections.md) | Parked | The existing code answered 15 of 56 hard inputs. The two candidates answered 10 and 7. |
+| [Later: retained spline incidence images](docs/research/import-incidence-images.md) | Parked | Sixteen controls pass, but line/circle images and exact span refinement recover none of seventeen screened real files. |
 | [Tolerance as a speed lever](docs/research/tolerance-as-speed-lever.md) | Dropped | Exact-zero proofs are 0.4% to 12.4% of the work, so a tolerance does not make slow cases fit. |
 | [Decide-once merging](docs/research/decide-once-merging.md) | Dropped | No saved answer would have improved. |
 | [Threads inside one field request](docs/research/field-threads.md) | Adopted | Same bytes and work counts on 1 to 12 processors. |

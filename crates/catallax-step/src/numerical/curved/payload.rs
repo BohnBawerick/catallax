@@ -2,7 +2,9 @@
 
 use super::*;
 use catallax_numbers::Ball;
-use catallax_shapes::{BSplineCurve, BSplineSurface, Line, Plane, RationalPatch, SplineSupport};
+use catallax_shapes::{
+    BSplineCurve, BSplineSurface, Line, Plane, RationalAtlas, RationalPatch, SplineSupport,
+};
 
 mod spline;
 
@@ -217,6 +219,18 @@ pub(super) fn build(
             Surface::BSpline(SplineSupport::RationalPatch(source)) => {
                 let carrier = spline::surface(source.carrier(), &mut errors, options, dec)?;
                 face.surface = Surface::BSpline(RationalPatch::new(carrier, dec)?.into());
+                for trim in face.loops.iter_mut().flatten() {
+                    for uv in &mut trim.uv {
+                        for value in uv {
+                            *value = parameter(value, &mut errors, options, dec)?;
+                        }
+                    }
+                }
+                planes.push(None);
+            }
+            Surface::BSpline(SplineSupport::RationalAtlas(source)) => {
+                face.surface =
+                    Surface::BSpline(spline::atlas(source, &mut errors, options, dec)?.into());
                 for trim in face.loops.iter_mut().flatten() {
                     for uv in &mut trim.uv {
                         for value in uv {

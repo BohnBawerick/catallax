@@ -13,6 +13,8 @@ use catallax_topology::{
 
 mod analytic;
 mod curved;
+mod embed;
+pub use embed::{build_from_exact_model, definition_from_exact_model, embeds};
 
 /// Controls fixed before a numerical export. They do not change source tolerance.
 #[derive(Clone, Debug)]

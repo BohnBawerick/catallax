@@ -16,6 +16,8 @@ Milestone 2.2 constructs exact rational surface definitions. It does not create 
 
 No input curve moves, no knot snaps to a nearby value, and no numerical fit is labelled exact. Rational Gordon networks use Bernstein numerator/denominator products instead of replacing rational curves with polynomial approximations.
 
+Surface constructors take `&mut Decider`. Matrix and tensor dimension products are checked before allocation. Dense storage uses fallible reservation, and elimination, tensor interpolation, Bernstein elevation and Bernstein products debit the active operation allowance before their inner rational work. Exhaustion returns `numbers.operation-budget`; allocation failure returns `shapes.spline-construction-memory`.
+
 ## Reference methods
 
 The donor pin is SMLib `c9c5979f04cea8c38213004d4f04df0dcfb40d05`. Adapted units retain Apache-2.0 notices and appear in [the inventory](THIRD-PARTY.md).
@@ -33,6 +35,8 @@ The donor pin is SMLib `c9c5979f04cea8c38213004d4f04df0dcfb40d05`. Adapted units
 
 The caller states a positive tolerance before export. Decimal rounding is approximate unless every emitted control and weight is unchanged. Both the file description and `SplineSurfaceStepReport.exact` record that distinction. The report records the requested tolerance and a whole-surface distance bound. Excessive rounding or a nonpositive rounded weight refuses before writing bytes.
 
+`SplineSurfaceStepReport.uncertainty_mm` is the decimal value serialized in STEP. It rounds the proven bound upward, never above the caller's tolerance. Uncertainty precision increases independently of control-point precision when needed. If no representable bound fits within 1,000 significant digits, export refuses without writing.
+
 For each patch, let `e` bound the L1 control-point rounding error, `d` the weight rounding error, `r` the greatest L1 distance of a source control from the first control, and `w` the smallest emitted weight. Positive Bernstein bases give the bound `e + 2*r*d/w`. It bounds Euclidean distance as well. The largest patch bound is the file bound. Exact construction does not imply exact decimal STEP.
 
 ## Verification
@@ -43,8 +47,10 @@ On the work PC through `cx-offload`:
 cargo run -p catallax-step --example nurbs_toolkit -- OUTPUT_DIRECTORY
 ```
 
-The runnable example checks nonuniform point-grid interpolation, a 3-by-3 Gordon network, single-guide profile preservation, rational Coons boundaries with different degrees and knot vectors, nonplanar five-sided fill joins, weighted curve insertion/elevation/split/join, and surface insertion/elevation/split. It writes six STEP artifacts. The recorded run used 16,461 work units.
+The runnable example checks nonuniform point-grid interpolation, a 3-by-3 Gordon network, single-guide profile preservation, rational Coons boundaries with different degrees and knot vectors, nonplanar five-sided fill joins, weighted curve insertion/elevation/split/join, and surface insertion/elevation/split. It writes six STEP artifacts. With construction work charges included, the recorded run used 113,478 work units.
 
 The six files opened with `cadquery-ocp 8.0.1.1.0` through direct `StepToTopoDS_Builder.Init` on their geometric sets. No `TransferRoots` or `ShapeFix` ran. `read.stdsameparameter.mode` and `read.maxprecision.mode` were zero. All 16 emitted faces passed `BRepCheck_Analyzer`. Independent OCCT evaluation of the grid, Coons, Gordon and guided-skin laws had maximum sampled L1 error below `3.2e-15 mm`. This sample check is separate from the writer's whole-surface rounding bound. The two approximate exports had bounds below `1.4e-15 mm`, against a tolerance fixed at `1e-6 mm`.
+
+Focused regressions also pass for matrix and Bernstein allowance exhaustion, the reported `1.04104 mm` control rounded at two significant digits under a `0.041049 mm` cap, and refusal without partial output when the cap is too small.
 
 Surface-body operations, G1 N-sided joins and app commands are not established by this surface-definition and exchange proof. The roadmap's next surface-body milestone owns sewing, trimming, extension and thickening.

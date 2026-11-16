@@ -1,3 +1,5 @@
+//! Construction must stop at the caller's deterministic work allowance.
+
 use catallax_numbers::{Decider, Rational, with_operation_budget};
 use catallax_shapes::spline_tools::{RationalPoint, RationalSplineSurface};
 

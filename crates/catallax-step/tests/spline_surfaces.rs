@@ -1,3 +1,5 @@
+//! Decimal STEP uncertainty must cover actual rounding within the caller's cap.
+
 use catallax_numbers::{Decider, Rational};
 use catallax_shapes::spline_tools::RationalSplineSurface;
 use catallax_step::write_spline_surfaces_step;

@@ -3,10 +3,19 @@
 use super::*;
 use catallax_numbers::{RealPoly, ZeroProof};
 use catallax_shapes::{
-    BSplineCurve, Plane, SectionHits, SectionSurface, Sphere, Surface, SurfaceId,
+    BSplineCurve, Plane, SectionHits, SectionSurface, Sphere, SplineSupport, Surface, SurfaceId,
 };
 
 mod finite_line;
+
+pub(super) fn finite_line_cover(
+    model: &mut Model,
+    a: CurveId,
+    b: CurveId,
+    dec: &mut Decider,
+) -> Result<Option<FiniteLineCover>, Refusal> {
+    finite_line::cover(model, a, b, dec)
+}
 mod spline;
 
 pub(super) fn native_line_meetings(
@@ -18,18 +27,39 @@ pub(super) fn native_line_meetings(
     finite_line::meetings(model, a, b, dec)
 }
 
-pub(crate) enum FinitePlanePoints {
+pub(crate) enum FiniteSurfacePoints {
     Contained,
     Points(Vec<Point3>),
 }
 
 /// Complete finite point sets for clipping, without two-sided contact labels.
-pub(crate) fn finite_spline_plane_points(
+pub(crate) fn finite_surface_points(
     model: &Model,
     curve: CurveId,
     surface: SurfaceId,
     dec: &mut Decider,
-) -> Result<Option<FinitePlanePoints>, Refusal> {
+) -> Result<Option<FiniteSurfacePoints>, Refusal> {
+    if let (Curve::BSpline(spline), Surface::BSpline(support)) =
+        (model.geom().curve(curve), model.geom().surface(surface))
+    {
+        let answer = match support {
+            SplineSupport::RationalPatch(patch) => patch.spline_hits(spline, dec)?,
+            SplineSupport::RationalAtlas(atlas) => atlas.spline_hits(spline, dec)?,
+            _ => None,
+        };
+        return Ok(answer.map(|answer| match answer {
+            SectionHits::Contained => FiniteSurfacePoints::Contained,
+            SectionHits::Points(points) => FiniteSurfacePoints::Points(points),
+        }));
+    }
+    if let (Curve::PatchPair(branch), Surface::Plane(plane)) =
+        (model.geom().curve(curve), model.geom().surface(surface))
+    {
+        return Ok(Some(match branch.plane_hits(plane, dec)? {
+            SectionHits::Contained => FiniteSurfacePoints::Contained,
+            SectionHits::Points(points) => FiniteSurfacePoints::Points(points),
+        }));
+    }
     let (Curve::BSpline(spline), Surface::Plane(plane)) =
         (model.geom().curve(curve), model.geom().surface(surface))
     else {
@@ -52,8 +82,8 @@ pub(crate) fn finite_spline_plane_points(
         .implicit(surface)
         .ok_or_else(|| unresolved("the finite plane has no polynomial equation"))?;
     Ok(Some(match spline::hits(spline, equation, dec)? {
-        None => FinitePlanePoints::Contained,
-        Some(points) => FinitePlanePoints::Points(points),
+        None => FiniteSurfacePoints::Contained,
+        Some(points) => FiniteSurfacePoints::Points(points),
     }))
 }
 

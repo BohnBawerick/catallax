@@ -10,9 +10,10 @@ use crate::stages::{Imprinted, Selection};
 use catallax_intersect::{Component, SurfacePair, intersect_surfaces, same_curve, tangent_at};
 use catallax_numbers::{Answer, Answered, Decider, MarkLog, Outcome, Refusal, Sign};
 use catallax_recipe::{EdgeName, Origin};
-use catallax_shapes::{Curve, CurveId, GeomKey, PointId, SurfaceId};
+use catallax_shapes::{Curve, CurveId, GeomKey, PointId, SplineSupport, Surface, SurfaceId};
 use catallax_topology::{
-    Body, BodyId, BodyKind, Coedge, Edge, Face, FaceId, Loop, Lump, Model, Sense, Shell, Vertex,
+    Body, BodyId, BodyKind, Coedge, Edge, EdgeId, Face, FaceId, Loop, Lump, Model, Sense, Shell,
+    Vertex,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -211,6 +212,55 @@ fn pair(
     Ok(twins)
 }
 
+fn same_across_edge(
+    model: &mut Model,
+    a: SurfaceId,
+    b: SurfaceId,
+    edge: EdgeId,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    let equality = coincident(
+        model.geom().same_surface(a, b, dec),
+        "boolean.merge-ambiguous",
+    );
+    match equality {
+        Err(error)
+            if error.code == "shapes.parametric-query"
+                && matches!(
+                    model.geom().surface(a),
+                    Surface::BSpline(
+                        SplineSupport::RationalPatch(_) | SplineSupport::RationalAtlas(_)
+                    )
+                )
+                && matches!(
+                    model.geom().surface(b),
+                    Surface::BSpline(
+                        SplineSupport::RationalPatch(_) | SplineSupport::RationalAtlas(_)
+                    )
+                ) =>
+        {
+            let (from, to) = crate::geometry::natural_ends(model, edge);
+            let curve = model.edge(edge).curve;
+            let point = curve_sample(model, curve, from, to, dec)?;
+            let first = model.geom().normal(a, point, dec)?;
+            let second = model.geom().normal(b, point, dec)?;
+            // Nonparallel tangent planes prevent a smooth face merge.
+            // Keep this boundary without recording carrier inequality.
+            if sign(
+                &first.cross(&second).norm_squared(),
+                dec,
+                "boolean.merge-ambiguous",
+            )? == Sign::Positive
+            {
+                Ok(false)
+            } else {
+                Err(error)
+            }
+        }
+        answer => answer,
+    }
+}
+
 fn merge_faces(
     model: &mut Model,
     faces: &[FaceData],
@@ -233,10 +283,7 @@ fn merge_faces(
         if a.original == b.original {
             continue;
         }
-        if coincident(
-            model.geom().same_surface(a.surface, b.surface, dec),
-            "boolean.merge-ambiguous",
-        )? {
+        if same_across_edge(model, a.surface, b.surface, u.edge, dec)? {
             let edge = model.edge(u.edge).clone();
             let (from, to) = crate::geometry::natural_ends(model, u.edge);
             let point = curve_sample(model, edge.curve, from, to, dec)?;

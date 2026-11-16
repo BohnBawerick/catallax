@@ -1,7 +1,9 @@
 //! M12 no-growth evidence for later features on P1-P5 and retained-law offsets.
 
 use catallax_features::{BuildError, Built, evaluate, evaluate_certified};
-use catallax_numbers::{Decider, Rational, Refusal, set_threads, with_operation_budget};
+use catallax_numbers::{
+    Decider, OperationWork, Rational, Refusal, set_threads, with_operation_budget,
+};
 use catallax_recipe::{Recipe, StepId};
 use catallax_shapes::{SplineSupport, Surface};
 use catallax_topology::{BodyId, FIT_MARK, fitted_face_bound};
@@ -127,16 +129,15 @@ fn offset_recipe(chained: bool) -> Recipe {
     Recipe::parse(&value.to_string()).unwrap()
 }
 
-/// P1's base recipe stops at the plain operation allowance; no spline query
-/// spends it, so the refusal keeps the budget code and detail.
+/// If P1's base recipe exhausts ordinary arithmetic, the refusal keeps its
+/// plain budget code and detail.
 const ALLOWANCE_REFUSAL: (&str, &str) = (
     "numbers.operation-budget",
     "operation work allowance exhausted",
 );
 
-/// P5's longer chain spends the same allowance inside a fitted spline query
-/// while imprinting, so the refusal names that query and keeps the allowance
-/// detail as the reason.
+/// P5's longer chain can exhaust a reservation in a fitted spline query.
+/// The refusal names that imprint query and keeps the allowance detail.
 const FITTED_IMPRINT_REFUSAL: (&str, &str) = (
     "boolean.parametric-query",
     "fitted spline edge with a trimmed face (curve: spline, face: cylinder): no certified imprint proof inside the application allowance, operation work allowance exhausted",
@@ -145,8 +146,7 @@ const FITTED_IMPRINT_REFUSAL: (&str, &str) = (
 fn recorded_refusal(
     error: &BuildError,
     expected_step: &str,
-    used: u64,
-    expected_used: u64,
+    work: &OperationWork,
     expected: (&str, &str),
 ) -> (StepId, Refusal) {
     let BuildError::Geometry { step, refusal } = error else {
@@ -155,7 +155,10 @@ fn recorded_refusal(
     assert_eq!(step.as_str(), expected_step);
     assert_eq!(refusal.code, expected.0);
     assert_eq!(refusal.detail, expected.1);
-    assert_eq!(used, expected_used);
+    // A denied reservation can leave unused units. Exhaustion does not mean
+    // that every unit of the allowance was consumed.
+    assert!(work.exhausted, "{work:?}");
+    assert!(work.used <= ALLOWANCE, "{work:?}");
     (step.clone(), refusal.clone())
 }
 
@@ -190,21 +193,10 @@ fn recorded_error_does_not_accumulate_at_one_two_or_four_workers() {
                 with_operation_budget(ALLOWANCE, || evaluate(&recipe, &mut Decider::default()));
             if let Err(base_error) = base_result {
                 assert_eq!(label, "P1", "only P1's base refusal is recorded");
-                let expected = recorded_refusal(
-                    &base_error,
-                    "slot-cut-6",
-                    base_work.used,
-                    19_999_999,
-                    ALLOWANCE_REFUSAL,
-                );
+                let expected =
+                    recorded_refusal(&base_error, "slot-cut-6", &base_work, ALLOWANCE_REFUSAL);
                 let error = result.expect_err("the same base recipe must still refuse");
-                let actual = recorded_refusal(
-                    &error,
-                    "slot-cut-6",
-                    work.used,
-                    19_999_999,
-                    ALLOWANCE_REFUSAL,
-                );
+                let actual = recorded_refusal(&error, "slot-cut-6", &work, ALLOWANCE_REFUSAL);
                 assert_eq!(actual, expected);
                 assert_eq!(work.used, base_work.used);
                 assert_eq!(work.exhausted, base_work.exhausted);
@@ -214,13 +206,7 @@ fn recorded_error_does_not_accumulate_at_one_two_or_four_workers() {
             }
             let (result, work) = if label == "P5" && result.is_err() {
                 let error = result.expect_err("P5's longer chain remains a recorded gap");
-                let actual = recorded_refusal(
-                    &error,
-                    "cut_twice",
-                    work.used,
-                    20_000_000,
-                    FITTED_IMPRINT_REFUSAL,
-                );
+                let actual = recorded_refusal(&error, "cut_twice", &work, FITTED_IMPRINT_REFUSAL);
                 assert!(work.exhausted);
                 eprintln!("{label}: workers={workers}, longer chain unproved: {error}; {work:?}");
                 refusals.push((actual, work.used, work.exhausted));

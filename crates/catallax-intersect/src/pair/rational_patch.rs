@@ -142,3 +142,33 @@ pub(super) fn atlas(
         dec,
     )
 }
+
+pub(super) fn atlas_pair(
+    first: &RationalAtlas,
+    second: &RationalAtlas,
+    dec: &mut Decider,
+) -> Result<Plan, Refusal> {
+    let meeting = first.patch_meeting_with_cached_spans(second, dec)?;
+    let mut plan = Plan::empty();
+    for index in 0..meeting.branches().len() {
+        let curve = meeting.curve_branch(index, dec)?;
+        let mut singular = Vec::new();
+        if !curve.is_closed() {
+            for point in curve.endpoints() {
+                singular.push(plan.points.len());
+                plan.points.push(point);
+            }
+        }
+        plan.curves.push(Spec {
+            form: CurveForm::PatchPair(curve),
+            witness: None,
+            contact: Contact::Crossing,
+            singular,
+        });
+    }
+    if plan.curves.is_empty() {
+        Ok(Plan::disjoint())
+    } else {
+        Ok(plan)
+    }
+}

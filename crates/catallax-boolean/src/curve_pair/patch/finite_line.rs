@@ -6,6 +6,55 @@ fn coordinates(point: &Point3) -> [&Real; 3] {
     [&point.x, &point.y, &point.z]
 }
 
+pub(super) fn cover(
+    model: &mut Model,
+    a: CurveId,
+    b: CurveId,
+    dec: &mut Decider,
+) -> Result<Option<FiniteLineCover>, Refusal> {
+    let (finite, carrier, line) = match (model.geom().curve(a), model.geom().curve(b)) {
+        (Curve::BSpline(_), Curve::Line(line)) => (a, b, line.clone()),
+        (Curve::Line(line), Curve::BSpline(_)) => (b, a, line.clone()),
+        _ => return Ok(None),
+    };
+    let Some(positions) =
+        catallax_intersect::native_spline_line_segment(model.geom(), finite, dec)?
+    else {
+        return Ok(None);
+    };
+    if sign(
+        &line.dir.norm_squared(),
+        dec,
+        "boolean.patch-section-meetings",
+    )? == Sign::Zero
+    {
+        return Err(unresolved("finite cover requires a nonzero line direction"));
+    }
+    for point in &positions {
+        dec.charge_work(1)?;
+        if sign(
+            &point.minus(&line.origin).cross(&line.dir).norm_squared(),
+            dec,
+            "boolean.patch-section-meetings",
+        )? != Sign::Zero
+        {
+            return Ok(None);
+        }
+    }
+    let mut points = Vec::new();
+    for position in positions {
+        store(model, finite, carrier, position, &mut points, dec)?;
+    }
+    let ends = points
+        .try_into()
+        .map_err(|_| unresolved("finite line cover lost its two distinct source ends"))?;
+    Ok(Some(FiniteLineCover {
+        finite,
+        carrier,
+        ends,
+    }))
+}
+
 pub(super) fn meetings(
     model: &mut Model,
     a: CurveId,

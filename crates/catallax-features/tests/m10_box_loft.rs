@@ -16,6 +16,129 @@ fn loft_steps() -> Vec<Value> {
     fixture["steps"].as_array().unwrap().clone()
 }
 
+fn scaled(value: &mut Value, scale: &Rational, offset: &Rational) {
+    let original = Rational::parse(value.as_str().unwrap()).unwrap();
+    *value = json!((&(&original * scale) + offset).to_string());
+}
+
+fn loft_pair(
+    kind: &str,
+    reverse: bool,
+    scale: &Rational,
+    offset: &[Rational; 3],
+    gap: &Rational,
+) -> Recipe {
+    let mut steps = loft_steps();
+    let mut other = loft_steps();
+    for step in &mut other {
+        step["id"] = json!(format!("other_{}", step["id"].as_str().unwrap()));
+        if step["op"] == "sketch" {
+            step["plane"]["translation"][0] = json!(gap.to_string());
+        } else {
+            for section in step["sections"].as_array_mut().unwrap() {
+                section["profile"] =
+                    json!(format!("other_{}", section["profile"].as_str().unwrap()));
+            }
+        }
+    }
+    steps.extend(other);
+    for step in &mut steps {
+        if step["op"] != "sketch" {
+            continue;
+        }
+        for (value, offset) in step["plane"]["translation"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .zip(offset)
+        {
+            scaled(value, scale, offset);
+        }
+        for boundary in step["loops"].as_array_mut().unwrap() {
+            for segment in boundary.as_array_mut().unwrap() {
+                for coordinate in segment["to"].as_array_mut().unwrap() {
+                    scaled(coordinate, scale, &Rational::zero());
+                }
+                if let Some(controls) = segment.get_mut("controls") {
+                    for control in controls.as_array_mut().unwrap() {
+                        for coordinate in control.as_array_mut().unwrap() {
+                            scaled(coordinate, scale, &Rational::zero());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let (target, tool) = if reverse {
+        ("other_loft", "loft")
+    } else {
+        ("loft", "other_loft")
+    };
+    steps.push(json!({"id":"cut","op":"boolean","kind":kind,"target":target,"tool":tool}));
+    recipe(steps, "cut")
+}
+
+#[test]
+fn two_spline_lofts_keep_the_subtracted_material_and_finite_branch_ends() {
+    use catallax_boolean::Containment::{Inside, Outside};
+    for (kind, reverse, scale, offset, gap) in [
+        ("subtract", false, "1", ["0", "0", "0"], "1"),
+        ("subtract", true, "1", ["0", "0", "0"], "1"),
+    ] {
+        let ((), work) = with_operation_budget(20_000_000, || {
+            let scale = Rational::parse(scale).unwrap();
+            let offset = offset.map(|v| Rational::parse(v).unwrap());
+            let gap = Rational::parse(gap).unwrap();
+            let half_gap = gap.mul_pow2(-1);
+            let mut dec = Decider::default();
+            let source = loft_pair(kind, reverse, &scale, &offset, &gap);
+            let mut built = catallax_features::evaluate(&source, &mut dec).unwrap();
+            let body = built.model.body(built.result);
+            assert_eq!(body.kind, catallax_topology::BodyKind::Solid);
+            assert_eq!(body.lumps.len(), 1);
+            assert!(built.model.check(built.result).is_empty());
+            let left = (half_gap.clone(), half_gap.clone());
+            let right = (&Rational::from_i64(4) + &half_gap, half_gap);
+            let middle = (Rational::from_i64(2), Rational::from_ratio(1, 2).unwrap());
+            let witnesses = match kind {
+                "subtract" => vec![
+                    (if reverse { right } else { left }, Inside),
+                    (middle, Outside),
+                ],
+                "union" => vec![
+                    (left, Inside),
+                    (right, Inside),
+                    (middle, Inside),
+                    ((Rational::from_i64(-1), Rational::zero()), Outside),
+                ],
+                "intersect" => vec![(left, Outside), (right, Outside), (middle, Inside)],
+                _ => unreachable!(),
+            };
+            for ((x, y), expected) in witnesses {
+                let coordinates = [x, y, Rational::one()].each_ref().map(|v| v * &scale);
+                let p = Point3::new(
+                    Real::from(&coordinates[0] + &offset[0]),
+                    Real::from(&coordinates[1] + &offset[1]),
+                    Real::from(&coordinates[2] + &offset[2]),
+                );
+                assert!(
+                    matches!(catallax_boolean::classify_point(&mut built.model,built.result,&p,&mut dec),catallax_numbers::Outcome::Proven(actual) if actual==expected),
+                    "{kind} reverse={reverse} {p:?}"
+                );
+            }
+        });
+        assert!(
+            !work.exhausted,
+            "{kind} reverse={reverse} scale={scale} gap={gap}: {} work units",
+            work.used
+        );
+        println!(
+            "WORK pair {kind} reverse={reverse} scale={scale} gap={gap}: {}",
+            work.used
+        );
+    }
+}
+
 fn recipe(steps: Vec<Value>, result: &str) -> Recipe {
     let value =
         json!({"format":"catallax-recipe/5","name":"m10 box loft","steps":steps,"result":result});

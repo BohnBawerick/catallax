@@ -14,6 +14,7 @@ use catallax_shapes::{
 use std::sync::Arc;
 
 mod finite_line;
+mod finite_spline;
 
 /// Endpoints only when the complete finite spline point set is their segment.
 /// Positive weights, C0 continuity and the exact control hull prove coverage.
@@ -526,6 +527,16 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
             match first.proves_control_hull_separation(second, dec) {
                 Ok(true) => return Outcome::Proven(Apart),
                 Ok(false) => (),
+                Err(error) => return Outcome::Refused(error),
+            }
+            match finite_spline::same(first, second, dec) {
+                Ok(Some(true)) => {
+                    return Outcome::ProvenCoincident(catallax_numbers::Coincidence {
+                        proof: catallax_numbers::ZeroProof::Algebraic,
+                    });
+                }
+                Ok(Some(false)) => return Outcome::Proven(Apart),
+                Ok(None) => (),
                 Err(error) => return Outcome::Refused(error),
             }
         }

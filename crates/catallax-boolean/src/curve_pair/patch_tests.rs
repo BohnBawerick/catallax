@@ -10,6 +10,127 @@ fn q(n: i64, d: i64) -> Real {
 }
 
 #[test]
+fn a_partial_spline_span_cannot_become_a_whole_line_cover() {
+    let ((), work) = with_operation_budget(20_000_000, || {
+        let mut dec = Decider::default();
+        for reverse in [false, true] {
+            for direction in [-2, 2] {
+                let mut model = Model::new();
+                let mut controls = vec![
+                    Point3::new(q(0, 1), q(0, 1), q(0, 1)),
+                    Point3::new(q(1, 1), q(0, 1), q(0, 1)),
+                    Point3::new(q(2, 1), q(1, 1), q(0, 1)),
+                ];
+                if reverse {
+                    controls.reverse();
+                }
+                let spline = BSplineCurve::new(
+                    1,
+                    [2, 2, 3, 5, 5].map(Rational::from_i64).to_vec(),
+                    controls,
+                    vec![Real::one(); 3],
+                    &mut dec,
+                )
+                .unwrap();
+                let finite = model.geom_mut().add_curve(Curve::BSpline(spline));
+                let line = model.geom_mut().add_curve(Curve::Line(Line {
+                    origin: Point3::new(q(0, 1), q(0, 1), q(0, 1)),
+                    dir: Vector3::new(q(direction, 1), q(0, 1), q(0, 1)),
+                }));
+                for (a, b) in [(finite, line), (line, finite)] {
+                    assert!(
+                        finite_line_cover(&mut model, a, b, &mut dec)
+                            .unwrap()
+                            .is_none()
+                    );
+                    let error = match meetings(&mut model, a, b, &mut dec) {
+                        Err(error) => error,
+                        Ok(_) => panic!("partial overlap needs finite interval ownership"),
+                    };
+                    assert_eq!(error.code, "intersect.spline-line-overlap");
+                    assert!(!model.geom().facts().holds(
+                        FactKind::Coincident,
+                        GeomKey::Curve(finite),
+                        GeomKey::Curve(line),
+                    ));
+                }
+            }
+        }
+    });
+    assert!(!work.exhausted, "{work:?}");
+}
+
+#[test]
+fn finite_line_covers_keep_native_domains_and_do_not_mark_whole_curves_coincident() {
+    let ((), work) = with_operation_budget(20_000_000, || {
+        let mut dec = Decider::default();
+        for reverse in [false, true] {
+            for direction in [-2, 2] {
+                let mut model = Model::new();
+                let mut controls = vec![
+                    Point3::new(q(1, 1), q(0, 1), q(0, 1)),
+                    Point3::new(q(3, 1), q(0, 1), q(0, 1)),
+                ];
+                if reverse {
+                    controls.reverse();
+                }
+                let spline = BSplineCurve::new(
+                    1,
+                    [2, 2, 5, 5].map(Rational::from_i64).to_vec(),
+                    controls.clone(),
+                    vec![Real::one(); 2],
+                    &mut dec,
+                )
+                .unwrap();
+                let finite = model.geom_mut().add_curve(Curve::BSpline(spline));
+                let line = model.geom_mut().add_curve(Curve::Line(Line {
+                    origin: Point3::new(q(0, 1), q(0, 1), q(0, 1)),
+                    dir: Vector3::new(q(direction, 1), q(0, 1), q(0, 1)),
+                }));
+                for (a, b) in [(finite, line), (line, finite)] {
+                    let cover = finite_line_cover(&mut model, a, b, &mut dec)
+                        .unwrap()
+                        .unwrap();
+                    assert_eq!((cover.finite, cover.carrier), (finite, line));
+                    for (point, expected) in cover.ends.into_iter().zip(&controls) {
+                        exact_zero(
+                            &model.geom().position(point).minus(expected).norm_squared(),
+                            &mut dec,
+                        );
+                    }
+                    let Curve::BSpline(source) = model.geom().curve(finite) else {
+                        unreachable!()
+                    };
+                    assert_eq!(
+                        source.domain(),
+                        [&Rational::from_i64(2), &Rational::from_i64(5)]
+                    );
+                    assert!(matches!(
+                        same_curve(model.geom(), finite, line, &mut dec),
+                        Outcome::Proven(_)
+                    ));
+                    assert!(!model.geom().facts().holds(
+                        FactKind::Coincident,
+                        GeomKey::Curve(finite),
+                        GeomKey::Curve(line)
+                    ));
+                }
+                let off = model.geom_mut().add_curve(Curve::Line(Line {
+                    origin: Point3::new(q(0, 1), q(1, 1), q(0, 1)),
+                    dir: Vector3::new(q(1, 1), q(0, 1), q(0, 1)),
+                }));
+                assert!(
+                    finite_line_cover(&mut model, finite, off, &mut dec)
+                        .unwrap()
+                        .is_none()
+                );
+            }
+        }
+    });
+    assert!(!work.exhausted, "{work:?}");
+}
+
+#[test]
 fn native_straight_spline_meetings_keep_finite_ends_and_operand_senses() {
     let ((), work) = with_operation_budget(20_000_000, || {
         let mut dec = Decider::default();

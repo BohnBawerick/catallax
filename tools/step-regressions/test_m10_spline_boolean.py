@@ -20,7 +20,7 @@ REFUSALS = (
     'step.unsupported-geometry',
     'numbers.geometric-gap-unproven',
     *(['intersect.parametric-surface'] * 3),
-    *(['intersect.unsupported-pair'] * 3),
+    *(['step.unsupported-geometry'] * 3),
 )
 
 
@@ -156,7 +156,7 @@ class M10SplineBooleanTests(unittest.TestCase):
                         self.assertIsNone(manifest['step'])
                         self.assertIsNone(manifest['result'])
                         operations = response['operation_log']['operations']
-                        if name.startswith('side-') or name in ('through-cut', 'm7-cut'):
+                        if name.startswith(('side-', 'spline-pair-')) or name in ('through-cut', 'm7-cut'):
                             construction = [op for op in operations if op['id'] == 'cut'
                                             and op['operation'] in ('boolean', 'extrude_through')]
                             self.assertEqual(len(construction), 1)
@@ -170,7 +170,7 @@ class M10SplineBooleanTests(unittest.TestCase):
                             self.assertEqual(manifest['refusal']['detail'],
                                              'spline curve with rational patch: this intersection '
                                              'needs a finite parametric surface solver')
-                        if name.startswith(('top-', 'import-', 'spline-pair-')):
+                        if name.startswith(('top-', 'import-')):
                             self.assertEqual(operations[-1]['id'], 'cut')
                             self.assertEqual(operations[-1]['operation'], 'boolean')
                             self.assertEqual(operations[-1]['refusal']['code'], expected)

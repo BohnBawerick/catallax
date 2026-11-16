@@ -4,6 +4,8 @@ use super::*;
 
 mod affine;
 mod plane;
+mod spline;
+pub(crate) use spline::{SplineParameterHits, spline_parameters, spline_points};
 
 #[cfg(test)]
 mod linear_tests;

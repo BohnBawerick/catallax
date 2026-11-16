@@ -359,6 +359,14 @@ fn build_intersection(
     search(windows, false, started, after_windows, dec).map(Some)
 }
 
+#[derive(Clone, Debug)]
+pub(super) struct NativeFits {
+    pub(super) pieces: Vec<NumericalIntersectionPiece>,
+    pub(super) evidence: NumericalEvidence,
+    pub(super) trace_work: WorkReport,
+    pub(super) work_stages: NumericalNativeWork,
+}
+
 pub(super) fn search(
     windows: NumericalNativeWindows,
     quarters: bool,
@@ -366,10 +374,35 @@ pub(super) fn search(
     after_windows: u64,
     dec: &mut Decider,
 ) -> Result<NumericalNativeIntersection, Refusal> {
-    let a =
-        crate::pair::trace_candidates::surface(&windows.sources[0], &Isometry::identity(), dec)?;
-    let b =
-        crate::pair::trace_candidates::surface(&windows.sources[1], &Isometry::identity(), dec)?;
+    let fits = search_sources(
+        &windows.sources,
+        &windows.originals,
+        &windows.evidence,
+        quarters,
+        started,
+        after_windows,
+        dec,
+    )?;
+    Ok(NumericalNativeIntersection {
+        windows,
+        pieces: fits.pieces,
+        evidence: fits.evidence,
+        trace_work: fits.trace_work,
+        work_stages: fits.work_stages,
+    })
+}
+
+pub(super) fn search_sources(
+    sources: &[BSplineSurface; 2],
+    originals: &[Surface; 2],
+    source_evidence: &NumericalEvidence,
+    quarters: bool,
+    started: u64,
+    after_windows: u64,
+    dec: &mut Decider,
+) -> Result<NativeFits, Refusal> {
+    let a = crate::pair::trace_candidates::surface(&sources[0], &Isometry::identity(), dec)?;
+    let b = crate::pair::trace_candidates::surface(&sources[1], &Isometry::identity(), dec)?;
     let proposal_checks = [
         check_proposal_rows(&a, 0, dec)?,
         check_proposal_rows(&b, 1, dec)?,
@@ -377,11 +410,11 @@ pub(super) fn search(
     let after_sources = catallax_numbers::current_operation_work().used;
     let mut setup = after_sources - after_windows;
     let carriers = [
-        Carrier::new(&windows.originals[0], dec)?,
-        Carrier::new(&windows.originals[1], dec)?,
+        Carrier::new(&originals[0], dec)?,
+        Carrier::new(&originals[1], dec)?,
     ];
     let mut pieces = Vec::new();
-    let mut checks = windows.evidence.checks().to_vec();
+    let mut checks = source_evidence.checks().to_vec();
     checks.extend(proposal_checks);
     let mut trace_work = WorkReport::default();
     let mut tracing = 0;
@@ -410,7 +443,7 @@ pub(super) fn search(
             // These exact integer rectangles lie in both natural domains.
             // Intersector::new falls back to a natural domain on empty overlap.
             let mut intersector = Intersector::new(&a, float_domains[0], &b, float_domains[1]);
-            intersector.approx_tolerance = windows.evidence.tolerance_mm().to_f64_nearest() / 4.;
+            intersector.approx_tolerance = source_evidence.tolerance_mm().to_f64_nearest() / 4.;
             intersector.check_output_spans = true;
             let before_trace = catallax_numbers::current_operation_work().used;
             setup += before_trace - before_setup;
@@ -437,13 +470,7 @@ pub(super) fn search(
                     kind: fit.kind,
                     source_domains: domains.clone(),
                 };
-                checks.extend(check_piece(
-                    &piece,
-                    &windows.sources,
-                    &carriers,
-                    pieces.len(),
-                    dec,
-                )?);
+                checks.extend(check_piece(&piece, sources, &carriers, pieces.len(), dec)?);
                 pieces.push(piece);
             }
         }
@@ -465,7 +492,7 @@ pub(super) fn search(
         })
         .sum();
     dec.charge_work(samples as u64)?;
-    let evidence = NumericalEvidence::new(windows.evidence.tolerance_mm().clone(), checks, vec![])?;
+    let evidence = NumericalEvidence::new(source_evidence.tolerance_mm().clone(), checks, vec![])?;
     let finished = catallax_numbers::current_operation_work().used;
     let work_stages = NumericalNativeWork {
         windows: after_windows - started,
@@ -473,8 +500,7 @@ pub(super) fn search(
         tracing,
         fit_checks: finished - after_windows - setup - tracing,
     };
-    Ok(NumericalNativeIntersection {
-        windows,
+    Ok(NativeFits {
         pieces,
         evidence,
         trace_work,

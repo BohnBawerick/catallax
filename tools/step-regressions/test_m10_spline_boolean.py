@@ -18,9 +18,7 @@ ALLOWANCE = 20_000_000
 REFUSALS = (
     *([None] * 3),
     *(['numbers.operation-budget'] * 3),
-    None,
-    'numbers.geometric-gap-unproven',
-    *(['intersect.parametric-surface'] * 3),
+    *([None] * 5),
     *([None] * 3),
 )
 
@@ -150,7 +148,7 @@ class M10SplineBooleanTests(unittest.TestCase):
                         self.assertLessEqual(response['work']['used'], ALLOWANCE)
                         operations = response['operation_log']['operations']
                         if expected is None:
-                            self.assert_approximate(case, manifest, operations)
+                            self.assert_approximate(number, case, manifest, operations)
                             observed.append(comparable(response))
                             continue
                         self.assertEqual(manifest['status'], 'refused')
@@ -161,7 +159,7 @@ class M10SplineBooleanTests(unittest.TestCase):
                         self.assertFalse((Path(case['path']) / 'answer.step').exists())
                         self.assertIsNone(manifest['step'])
                         self.assertIsNone(manifest['result'])
-                        if name == 'm7-cut':
+                        if name == 'm7-cut' or name.startswith('import-'):
                             construction = [op for op in operations if op['id'] == 'cut'
                                             and op['operation'] in ('boolean', 'extrude_through')]
                             self.assertEqual(len(construction), 1)
@@ -172,10 +170,7 @@ class M10SplineBooleanTests(unittest.TestCase):
                             imported = [op for op in operations if op['operation'] == 'import_step']
                             self.assertEqual(len(imported), 1)
                             self.assertEqual(imported[0]['status'], 'answered')
-                            self.assertEqual(manifest['refusal']['detail'],
-                                             'spline curve with rational patch: this intersection '
-                                             'needs a finite parametric surface solver')
-                        if name.startswith(('top-', 'import-')):
+                        if name.startswith('top-'):
                             self.assertEqual(operations[-1]['id'], 'cut')
                             self.assertEqual(operations[-1]['operation'], 'boolean')
                             self.assertEqual(operations[-1]['refusal']['code'], expected)
@@ -186,7 +181,7 @@ class M10SplineBooleanTests(unittest.TestCase):
                     baseline = observed
                 else:
                     self.assertEqual(observed, baseline)
-                # A refused replay must also remove a previous published file.
+                # A replay must replace a stale file with the checked STEP bytes.
                 index = [number for number, _, _ in rows].index('M10-008')
                 first = Path(run['cases'][index]['path'])
                 (first / 'answer.step').write_text('stale STEP result')
@@ -195,9 +190,10 @@ class M10SplineBooleanTests(unittest.TestCase):
                     '--out', str(first),
                 ], capture_output=True, text=True, check=True)
                 self.assertEqual(comparable(json.loads(replay.stdout)), observed[index])
-                self.assertFalse((first / 'answer.step').exists())
+                self.assertEqual(hashlib.sha256((first / 'answer.step').read_bytes()).hexdigest(),
+                                 observed[index]['manifest']['step']['sha256'])
 
-    def assert_approximate(self, case, manifest, operations):
+    def assert_approximate(self, number, case, manifest, operations):
         """The exact writer's refusal is kept; the numerical file is checked and approximate."""
         self.assertEqual(manifest['status'], 'answered')
         self.assertIsNone(manifest['refusal'])
@@ -216,7 +212,9 @@ class M10SplineBooleanTests(unittest.TestCase):
         self.assertEqual([op['status'] for op in construction], ['answered'])
         exact = [op for op in operations if op['operation'] == 'step']
         self.assertEqual(len(exact), 1)
-        self.assertEqual(exact[0]['refusal']['code'], 'step.unsupported-geometry')
+        expected = ('numbers.geometric-gap-unproven' if 'M10-008' <= number <= 'M10-011'
+                    else 'step.unsupported-geometry')
+        self.assertEqual(exact[0]['refusal']['code'], expected)
         self.assertEqual([op['operation'] for op in operations[-1:]], ['numerical-step-reread'])
         numerical = [op for op in operations if op['operation'] == 'numerical-step']
         self.assertEqual([op['status'] for op in numerical], ['answered'])

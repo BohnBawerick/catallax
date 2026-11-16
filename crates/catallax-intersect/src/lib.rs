@@ -25,6 +25,8 @@ mod chart;
 mod fillet_cut;
 mod hits;
 mod math;
+/// Finite numerical ray meetings checked against original patch definitions.
+pub mod numerical_ray;
 mod pair;
 mod query;
 mod solve;

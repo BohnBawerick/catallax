@@ -1403,3 +1403,51 @@ pub fn global_curve_intersect(
     )?;
     Ok(solutions)
 }
+
+/// Runs the finite curve/surface query with the caller's allowance and deadline.
+/// Both intersection and owner tolerances use `tolerance`. Cancellation discards
+/// every partial solution, including results retained by nested ported helpers.
+pub fn global_curve_intersect_with_work(
+    surface: &BSplineSurface,
+    domain: Extent2,
+    curve: &BSplineCurve,
+    interval: Extent1,
+    tolerance: f64,
+    deadline: Option<std::time::Instant>,
+    callback: fn(u64, Option<std::time::Instant>) -> bool,
+) -> (
+    Result<SolutionArray, SolverRefusal>,
+    crate::surface_work::WorkReport,
+) {
+    let scope = match crate::surface_work::Scope::enter(callback, deadline) {
+        Ok(scope) => scope,
+        Err(fault) => {
+            return (
+                Err(fault.into()),
+                crate::surface_work::WorkReport::default(),
+            );
+        }
+    };
+    let source_items = surface
+        .control_points()
+        .len()
+        .saturating_add(surface.knots()[0].len())
+        .saturating_add(surface.knots()[1].len())
+        .saturating_add(curve.control_points().len())
+        .saturating_add(curve.knots().len());
+    let result = crate::surface_work::checkpoint(
+        crate::surface_work::Kind::Source,
+        u64::try_from(source_items).unwrap_or(u64::MAX),
+    )
+    .map_err(SolverRefusal::from)
+    .and_then(|()| {
+        global_curve_intersect(surface, domain, curve, interval, tolerance, Some(tolerance))
+    });
+    let report = scope.report();
+    let result = if report.cancelled {
+        Err(crate::Fault::Degenerate.into())
+    } else {
+        result
+    };
+    (result, report)
+}

@@ -22,6 +22,8 @@ mod native;
 pub use native::{NumericalNativeTrim, build_with_native_trims};
 mod source;
 pub use source::definition_from_model;
+/// Editable finite spline sheets with trim, extension and normal thickening.
+pub mod surface;
 
 /// Shared default work limit for a numerical build or continuation.
 pub const DEFAULT_WORK: u64 = 20_000_000;
@@ -342,7 +344,16 @@ pub fn build_surface_with_native_trims(
     options: NumericalOptions,
     dec: &mut Decider,
 ) -> Result<NumericalBody, Refusal> {
-    guarded(|| build_inner_kind(BodyKind::Surface, definition, native_trims, options, Vec::new(), dec))
+    guarded(|| {
+        build_inner_kind(
+            BodyKind::Surface,
+            definition,
+            native_trims,
+            options,
+            Vec::new(),
+            dec,
+        )
+    })
 }
 
 fn guarded<T>(run: impl FnOnce() -> Result<T, Refusal>) -> Result<T, Refusal> {
@@ -426,7 +437,14 @@ fn build_inner(
     repairs: Vec<NumericalRepair>,
     dec: &mut Decider,
 ) -> Result<NumericalBody, Refusal> {
-    build_inner_kind(BodyKind::Solid, definition, native_trims, options, repairs, dec)
+    build_inner_kind(
+        BodyKind::Solid,
+        definition,
+        native_trims,
+        options,
+        repairs,
+        dec,
+    )
 }
 
 fn build_inner_kind(

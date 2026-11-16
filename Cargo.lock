@@ -371,6 +371,7 @@ dependencies = [
  "catallax-numbers",
  "catallax-recipe",
  "catallax-shapes",
+ "catallax-trace",
  "im",
 ]
 

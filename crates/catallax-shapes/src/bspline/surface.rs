@@ -301,7 +301,9 @@ impl BSplineSurface {
         Ok(net)
     }
 
-    pub(crate) fn span_workspace(&self) -> [Vec<[Ball; 4]>; 2] {
+    /// Reusable scratch storage for finite-span evaluation. The evaluator grows
+    /// it when a later carrier needs more controls.
+    pub fn span_workspace(&self) -> [Vec<[Ball; 4]>; 2] {
         self.data
             .degrees
             .map(|degree| Vec::with_capacity(degree + 1))
@@ -377,7 +379,10 @@ impl BSplineSurface {
         ])
     }
 
-    pub(crate) fn jet_on_span(
+    /// Encloses a jet on an exact rational rectangle within one owned knot span.
+    /// Exact endpoint addresses avoid a binary ball crossing a finite boundary.
+    /// Span, rectangle and precision are checked before evaluation.
+    pub fn jet_on_span(
         &self,
         span: [usize; 2],
         domain: &[[Rational; 2]; 2],
@@ -385,6 +390,13 @@ impl BSplineSurface {
         dec: &Decider,
         workspace: &mut [Vec<[Ball; 4]>; 2],
     ) -> Result<BSplineJet, Refusal> {
+        dec.check_deadline()?;
+        if precision == 0 || precision > dec.policy().max_precision_bits {
+            return Err(Refusal::new(
+                "numbers.precision-limit",
+                "spline span precision exceeds caller policy",
+            ));
+        }
         let (values, denominator) =
             self.homogeneous_span(span, domain, precision, dec, workspace)?;
         Self::cartesian_jet(values, denominator, precision)

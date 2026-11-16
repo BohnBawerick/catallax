@@ -2041,6 +2041,20 @@ pub(crate) fn approximate_header(
     )
 }
 
+pub(crate) fn approximate_surface_header(
+    product_name: &str,
+    items: &[usize],
+    description: &str,
+) -> String {
+    representation_header(
+        product_name,
+        items,
+        None,
+        "MANIFOLD_SURFACE_SHAPE_REPRESENTATION",
+        description,
+    )
+}
+
 fn representation_header(
     product_name: &str,
     solids: &[usize],

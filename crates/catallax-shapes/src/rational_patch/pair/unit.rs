@@ -149,6 +149,7 @@ fn common_axis(fields: &[[[Rational; 2]; 2]]) -> Option<[i8; 2]> {
 
 /// The first certificate that holds over `alpha` against every cell.
 fn certificate(
+    ctx: &Context,
     alpha: &Cell,
     cells: &[Arc<Cell>],
     dec: &mut Decider,
@@ -198,6 +199,22 @@ fn certificate(
         }
         return Ok(Some(PairCertificate::NormalCone(component as u8)));
     }
+    if let Some(field) = ctx.correlated_fields[ctx.index([alpha.span, cells[0].span])]
+        .get()
+        .expect("the writer prepares span fields before the level")
+    {
+        let ranges = [
+            net::Dense::local(&field[0], &alpha.rect, dec)?
+                .bernstein(dec)?
+                .range(dec)?,
+            net::Dense::local(&field[1], &alpha.rect, dec)?
+                .bernstein(dec)?
+                .range(dec)?,
+        ];
+        if let Some(direction) = common_axis(&[ranges]) {
+            return Ok(Some(PairCertificate::FieldFirst(direction)));
+        }
+    }
     Ok(None)
 }
 
@@ -222,7 +239,7 @@ pub(super) fn process(ctx: &Context, node: &Node, dec: &mut Decider) -> Result<D
     let mut units = Vec::with_capacity(groups.len());
     let mut failing = None;
     for (span, cells) in &groups {
-        let Some(certificate) = certificate(alpha, cells, dec)? else {
+        let Some(certificate) = certificate(ctx, alpha, cells, dec)? else {
             failing = Some(cells.as_slice());
             break;
         };

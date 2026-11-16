@@ -66,6 +66,7 @@ pub(super) fn reduce(mut equations: [MPoly; 3], dec: &mut Decider) -> Result<[MP
         for (monomial, value) in terms {
             dec.charge_work(1)?;
             if monomial.exponents()[axis] == 0 {
+                dec.reserve_exact_arithmetic(&value, &coefficient, true)?;
                 replacement.push((monomial.exponents().to_vec(), -value / coefficient.clone()));
             }
         }

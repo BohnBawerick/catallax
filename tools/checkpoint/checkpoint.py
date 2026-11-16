@@ -318,6 +318,8 @@ def census(args):
         'refusal_causes': admission['after_fix_causes'],
         'import_out_of_memory': sorted(k for k, row in rows.items() if row['outcome'] == 'out_of_memory'),
         'export_out_of_memory': sorted(k for k, row in observed.items() if row['outcome'] == 'out_of_memory'),
+        'import_timeout': sorted(k for k, row in rows.items() if row['outcome'] == 'timeout'),
+        'export_timeout': sorted(k for k, row in observed.items() if row['outcome'] == 'timeout'),
         'max_rss_mb_per_observer': args.max_rss_mb,
         'export_outcomes': dict(Counter(r['outcome'] for r in observed.values())),
         'export_refusal_causes': dict(Counter(r.get('cause') for r in observed.values()
@@ -355,6 +357,14 @@ def census_markdown(r):
     lines += [f'| {k} | {v} |' for k, v in sorted(r['export_outcomes'].items())]
     if r['export_out_of_memory']:
         lines += ['', 'Out of memory at export: ' + ', '.join(r['export_out_of_memory']) + '.']
+    aborted = [(stage, kind, key) for stage, kind, field in (
+        ('import', 'out of memory', 'import_out_of_memory'), ('import', 'timed out', 'import_timeout'),
+        ('export', 'out of memory', 'export_out_of_memory'), ('export', 'timed out', 'export_timeout'))
+        for key in r[field]]
+    lines += ['', '## Not covered', '',
+              'Runs aborted for memory or time. They are not passes and not refusals of geometry; '
+              'the census did not measure them. The memory cap is sampled per observer, not a host-wide bound.', '']
+    lines += [f'- {key}: {stage} {kind}' for stage, kind, key in aborted] or ['- None.']
     if r['export_refusal_causes']:
         lines += ['', 'Export refusals: ' + ', '.join(f'`{k}` {v}' for k, v in r['export_refusal_causes'].items()) + '.']
     return '\n'.join(lines) + '\n'

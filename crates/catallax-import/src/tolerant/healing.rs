@@ -7,11 +7,12 @@ use std::collections::BTreeMap;
 use catallax_numbers::{Ball, Decider, Rational, Refusal, current_operation_work};
 use serde::{Deserialize, Serialize};
 
-use super::{Error, ToleranceEntity, ToleranceRecord, TolerantBody, TolerantFile};
+use super::{Error, ToleranceEntity, ToleranceRecord, TolerantBody, TolerantFile, TolerantUse};
 use crate::{Curve, Placement, StepFile, Surface, Vec3};
 
 mod checks;
 mod sewing;
+mod wire;
 
 /// A completed healing stage, with deterministic work charged to this request.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -64,6 +65,8 @@ pub enum HealingChange {
         boundary: usize,
         /// Original use indices in their new order.
         order: Vec<usize>,
+        /// Original use indices whose traversal was reversed.
+        reversed_use_indices: Vec<usize>,
     },
     /// An oriented boundary was reversed.
     BoundaryReversed {
@@ -82,6 +85,17 @@ pub enum HealingChange {
         face: String,
         /// Shell consistency or whole-solid outward orientation.
         cause: String,
+    },
+    /// A finite source line segment below the initial uncertainty was removed.
+    SmallLineRemoved {
+        /// Source body.
+        body: String,
+        /// Removed source edge; it is not rebound to a different edge.
+        edge: String,
+        /// Retained endpoint representing the collapsed segment.
+        retained_vertex: String,
+        /// Measured source segment length enclosure, in millimetres.
+        source_length_upper_mm: String,
     },
 }
 
@@ -245,7 +259,7 @@ pub fn heal(source: &TolerantFile, dec: &mut Decider) -> Result<HealedFile, Erro
                 let before = current_operation_work().used;
                 match stage {
                     "sewing" => sewing::sew(index, body, &mut plan, dec)?,
-                    "wire" => checks::wires(body, &mut plan, dec)?,
+                    "wire" => wire::fix(index, &source.bodies[index], body, &mut plan, dec)?,
                     "face" => checks::faces(index, body, &mut plan, dec)?,
                     "shell" => checks::shells(body, &mut plan, dec)?,
                     "solid" => checks::solid(body, &mut plan, dec)?,
@@ -580,4 +594,13 @@ fn usage(body: &TolerantBody, dec: &mut Decider) -> Result<Vec<Vec<EdgeUse>>, Er
         }
     }
     Ok(result)
+}
+
+fn endpoints(body: &TolerantBody, coedge: &TolerantUse) -> [usize; 2] {
+    let ends = body.edges[coedge.edge].vertices;
+    if coedge.forward {
+        ends
+    } else {
+        [ends[1], ends[0]]
+    }
 }

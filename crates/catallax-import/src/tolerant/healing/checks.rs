@@ -1,78 +1,8 @@
 //! Wire, face, shell and solid checks on the unpublished repair candidate.
-use super::super::TolerantUse;
 use super::*;
 use std::collections::VecDeque;
 
-fn endpoints(body: &TolerantBody, coedge: &TolerantUse) -> [usize; 2] {
-    let ends = body.edges[coedge.edge].vertices;
-    if coedge.forward {
-        ends
-    } else {
-        [ends[1], ends[0]]
-    }
-}
-
-pub(super) fn wires(
-    body: &mut TolerantBody,
-    plan: &mut Plan,
-    dec: &mut Decider,
-) -> Result<(), Error> {
-    for s in 0..body.shells.len() {
-        for f in 0..body.shells[s].faces.len() {
-            for b in 0..body.shells[s].faces[f].loops.len() {
-                let boundary = &body.shells[s].faces[f].loops[b];
-                let name = body.shells[s].faces[f].name.clone();
-                if boundary.edges.is_empty() {
-                    if boundary.vertex.is_some() {
-                        plan.passed(body, &name, "wire.retained-vertex-loop");
-                    } else {
-                        plan.unresolved(body, &name, "wire.empty-boundary");
-                    }
-                    continue;
-                }
-                let original = boundary.edges.clone();
-                let mut remaining: Vec<_> = original.iter().cloned().enumerate().collect();
-                let mut ordered = vec![remaining.remove(0)];
-                let first = endpoints(body, &ordered[0].1)[0];
-                let mut failed = false;
-                while !remaining.is_empty() {
-                    let wanted = endpoints(body, &ordered.last().expect("first use").1)[1];
-                    let mut choices = Vec::new();
-                    for (i, (_, coedge)) in remaining.iter().enumerate() {
-                        dec.charge_work(1)?;
-                        if endpoints(body, coedge)[0] == wanted {
-                            choices.push(i);
-                        }
-                    }
-                    if choices.len() != 1 {
-                        failed = true;
-                        break;
-                    }
-                    ordered.push(remaining.remove(choices[0]));
-                }
-                if failed || endpoints(body, &ordered.last().expect("first use").1)[1] != first {
-                    plan.unresolved(body, &name, "wire.open-or-ambiguous-order");
-                    continue;
-                }
-                let order: Vec<_> = ordered.iter().map(|(i, _)| *i).collect();
-                if order.iter().enumerate().any(|(i, j)| i != *j) {
-                    body.shells[s].faces[f].loops[b].edges =
-                        ordered.into_iter().map(|(_, coedge)| coedge).collect();
-                    plan.changes.push(HealingChange::WireReordered {
-                        body: body.name.clone(),
-                        face: name.clone(),
-                        boundary: b,
-                        order,
-                    });
-                }
-                plan.passed(body, &name, "wire.closed-shared-vertex-walk");
-            }
-        }
-    }
-    Ok(())
-}
-
-fn project_line(
+pub(super) fn project_line(
     point: &Vec3,
     origin: &Vec3,
     direction: &Vec3,
@@ -138,6 +68,28 @@ fn opposite(a: &Rational, b: &Rational) -> bool {
     !a.is_zero() && !b.is_zero() && a.sign() != b.sign()
 }
 
+fn between(
+    a: &Vec3,
+    b: &Vec3,
+    p: &Vec3,
+    plane: &Placement,
+    dec: &mut Decider,
+) -> Result<bool, Error> {
+    let y = cross(&plane.axis, &plane.ref_dir, dec)?;
+    let ab = sub(b, a, dec)?;
+    let ap = sub(p, a, dec)?;
+    for axis in [&plane.ref_dir, &y] {
+        let end = dot(&ab, axis, dec)?;
+        let point = dot(&ap, axis, dec)?;
+        let low = end.clone().min(Rational::zero());
+        let high = end.max(Rational::zero());
+        if compare(&point, &low, dec)?.is_lt() || compare(&point, &high, dec)?.is_gt() {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 // Validate the immutable source too. A carrier removed by sewing must never
 // escape its original incidence checks or acquire an unmeasured correspondence.
 pub(super) fn source_geometry(
@@ -147,6 +99,62 @@ pub(super) fn source_geometry(
     plan: &mut Plan,
     dec: &mut Decider,
 ) -> Result<(), Error> {
+    let targets: BTreeMap<_, _> = plan
+        .changes
+        .iter()
+        .filter_map(|change| match change {
+            HealingChange::VerticesJoined {
+                body,
+                source: vertex,
+                retained,
+                ..
+            } if *body == source.name => Some((vertex.clone(), retained.clone())),
+            _ => None,
+        })
+        .collect();
+    for vertex in &source.vertices {
+        dec.charge_work(1)?;
+        let mut retained = vertex.source.name.as_str();
+        let mut steps = 0;
+        while let Some(next) = targets.get(retained) {
+            dec.charge_work(1)?;
+            steps += 1;
+            if steps > candidate.vertices.len() {
+                return Err(failure(
+                    "import.healing-topology",
+                    "cyclic vertex correspondence",
+                ));
+            }
+            retained = next;
+        }
+        let index = *candidate
+            .vertex_indices
+            .get(retained)
+            .ok_or_else(|| failure("import.healing-topology", "unknown retained vertex"))?;
+        let current = &candidate.vertices[index].source.point;
+        if retained == vertex.source.name && *current == vertex.source.point {
+            continue;
+        }
+        let upper = distance_upper(
+            &distance_squared(&vertex.source.point, current, dec)?,
+            &source.options.maximum_mm,
+            dec,
+        )?;
+        plan.measured(
+            source,
+            &format!("{} -> {retained}", vertex.source.name),
+            "original-source-point-to-final-shared-vertex",
+            &upper,
+        );
+        for name in [vertex.source.name.as_str(), retained] {
+            plan.need(
+                body_index,
+                ToleranceEntity::Vertex(name.into()),
+                upper.clone(),
+                "healing.measured-final-vertex-correspondence",
+            );
+        }
+    }
     for edge in &source.edges {
         let Curve::Line(origin, direction) = &edge.curve else {
             continue;
@@ -271,6 +279,76 @@ pub(super) fn source_geometry(
             );
         }
     }
+    let collapsed: Vec<_> = plan
+        .changes
+        .iter()
+        .filter_map(|change| match change {
+            HealingChange::SmallLineRemoved {
+                body,
+                edge,
+                retained_vertex,
+                ..
+            } if *body == source.name => Some((edge.clone(), retained_vertex.clone())),
+            _ => None,
+        })
+        .collect();
+    for (name, vertex) in collapsed {
+        let edge = &source.edges[source.edge_indices[&name]];
+        let Curve::Line(origin, direction) = &edge.curve else {
+            unreachable!("small-line producer");
+        };
+        let mut retained = vertex.as_str();
+        let mut steps = 0;
+        while let Some(next) = targets.get(retained) {
+            dec.charge_work(1)?;
+            steps += 1;
+            if steps > candidate.vertices.len() {
+                return Err(failure(
+                    "import.healing-topology",
+                    "cyclic collapsed-edge correspondence",
+                ));
+            }
+            retained = next;
+        }
+        let point = &candidate.vertices[candidate.vertex_indices[retained]]
+            .source
+            .point;
+        let mut maximum = Rational::zero();
+        for endpoint in edge.vertices {
+            let projection = project_line(
+                &source.vertices[endpoint].source.point,
+                origin,
+                direction,
+                dec,
+            )?;
+            let upper = distance_upper(
+                &distance_squared(&projection, point, dec)?,
+                &source.options.maximum_mm,
+                dec,
+            )?;
+            if compare(&upper, &maximum, dec)?.is_gt() {
+                maximum = upper;
+            }
+        }
+        plan.measured(
+            source,
+            &format!("removed {name} -> {retained}"),
+            "complete-original-finite-line-segment-to-final-retained-vertex",
+            &maximum,
+        );
+        plan.need(
+            body_index,
+            ToleranceEntity::Edge(name),
+            maximum.clone(),
+            "healing.measured-collapsed-line-correspondence",
+        );
+        plan.need(
+            body_index,
+            ToleranceEntity::Vertex(retained.into()),
+            maximum,
+            "healing.measured-collapsed-line-correspondence",
+        );
+    }
     Ok(())
 }
 
@@ -328,6 +406,16 @@ pub(super) fn faces(
                 plan.unresolved(body, &face.name, "face.inter-boundary-containment-pending");
             }
             for (b, boundary) in face.loops.iter().enumerate() {
+                let mut closed = true;
+                for i in 0..boundary.edges.len() {
+                    dec.charge_work(1)?;
+                    closed &= endpoints(body, &boundary.edges[i])[1]
+                        == endpoints(body, &boundary.edges[(i + 1) % boundary.edges.len()])[0];
+                }
+                if !closed {
+                    plan.unresolved(body, &face.name, "face.open-boundary");
+                    continue;
+                }
                 if boundary.edges.len() < 3
                     || !boundary
                         .edges
@@ -392,12 +480,12 @@ pub(super) fn faces(
                         let ab_d = orientation(a, p, d, &plane.axis, dec)?;
                         let cd_a = orientation(c, d, a, &plane.axis, dec)?;
                         let cd_b = orientation(c, d, p, &plane.axis, dec)?;
-                        // A zero determinant is conservatively unresolved too;
-                        // this check never turns a touching polygon into a pass.
-                        crossing |= ab_c.is_zero()
-                            || ab_d.is_zero()
-                            || cd_a.is_zero()
-                            || cd_b.is_zero()
+                        // Collinearity on an infinite extension is not a trim
+                        // crossing. Test the finite projected segment too.
+                        crossing |= (ab_c.is_zero() && between(a, p, c, plane, dec)?)
+                            || (ab_d.is_zero() && between(a, p, d, plane, dec)?)
+                            || (cd_a.is_zero() && between(c, d, a, plane, dec)?)
+                            || (cd_b.is_zero() && between(c, d, p, plane, dec)?)
                             || (opposite(&ab_c, &ab_d) && opposite(&cd_a, &cd_b));
                     }
                 }

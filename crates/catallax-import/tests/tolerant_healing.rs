@@ -424,7 +424,8 @@ fn sewing_keeps_independent_source_bodies_and_their_bindings_separate() {
         | HealingChange::VerticesJoined { body, .. }
         | HealingChange::WireReordered { body, .. }
         | HealingChange::BoundaryReversed { body, .. }
-        | HealingChange::FaceReversed { body, .. } => body == unchanged,
+        | HealingChange::FaceReversed { body, .. }
+        | HealingChange::SmallLineRemoved { body, .. } => body == unchanged,
     }));
 }
 
@@ -501,4 +502,251 @@ fn a_replaced_source_carrier_cannot_escape_its_original_geometry_cap() {
     let error = healing::heal(&input, &mut Decider::default()).unwrap_err();
     assert!(matches!(error,tolerant::Error::Numerical(ref r) if r.code=="import.healing-cap"));
     assert_eq!(input, before);
+}
+
+fn split_wire_endpoint(gap: &str) -> String {
+    let mut soup = common::Soup::new();
+    let ring = [
+        ["0", "0", "0"],
+        ["2", "0", "0"],
+        ["2", "2", "0"],
+        ["0", "2", "0"],
+    ]
+    .map(|p| p.map(r));
+    soup.plane_face(&ring, &[], 2, true, &[r("0"), r("0"), r("0")]);
+    let mut text = soup.finish();
+    let file = catallax_import::read_step(text.as_bytes()).unwrap();
+    let edge = &file.solids[0].faces[0].loops[0].edges[0];
+    assert!(edge.forward);
+    let line = text
+        .lines()
+        .find(|l| l.starts_with(&format!("{}=", edge.edge)))
+        .unwrap()
+        .to_owned();
+    let mut fields: Vec<_> = line.split(',').map(str::to_owned).collect();
+    fields[2] = "#900004".into();
+    let x = (&r("2") + &r(gap)).to_decimal_exact().unwrap();
+    let points = format!(
+        "#900003=CARTESIAN_POINT('',({x},0.,0.));\n#900004=VERTEX_POINT('',#900003);\nENDSEC;\nEND-ISO-10303-21;"
+    );
+    text = text.replacen(&line, &fields.join(","), 1).replacen(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        &points,
+        1,
+    );
+    text
+}
+
+#[test]
+fn an_ordered_wire_gap_is_joined_from_measured_endpoints_without_exact_incidence() {
+    let input = read(&split_wire_endpoint("0.000001"));
+    let before = input.clone();
+    let healed = healing::heal(&input, &mut Decider::default()).unwrap();
+    assert_eq!(input, before);
+    assert!(healed.report().approximate);
+    assert!(
+        healed
+            .report()
+            .changes
+            .iter()
+            .any(|c| matches!(c, HealingChange::VerticesJoined { .. }))
+    );
+    assert!(
+        healed
+            .report()
+            .measurements
+            .iter()
+            .any(|m| m.check == "ordered-adjacent-source-endpoint-gap")
+    );
+    assert!(
+        !healed
+            .report()
+            .issues
+            .iter()
+            .any(|i| i.code.starts_with("wire.open"))
+    );
+    assert!(
+        healed
+            .report()
+            .issues
+            .iter()
+            .any(|i| i.code == "shell.open-or-nonmanifold")
+    );
+    assert!(!healed.tolerances().bodies[0].changes.is_empty());
+}
+
+#[test]
+fn an_over_cap_wire_gap_stays_unresolved_and_does_not_grow_tolerances() {
+    let input = read(&split_wire_endpoint("0.02"));
+    let before = input.clone();
+    let healed = healing::heal(&input, &mut Decider::default()).unwrap();
+    assert_eq!(input, before);
+    assert!(
+        healed
+            .report()
+            .issues
+            .iter()
+            .any(|i| i.code.starts_with("wire.open"))
+    );
+    assert!(healed.tolerances().bodies[0].changes.is_empty());
+    assert!(
+        !healed
+            .report()
+            .changes
+            .iter()
+            .any(|c| matches!(c, HealingChange::VerticesJoined { .. }))
+    );
+}
+
+fn split_box_edge(fraction: &str) -> String {
+    let text = box_step(BoxFixture::new(["2", "3", "4"]));
+    let file = catallax_import::read_step(text.as_bytes()).unwrap();
+    let edge = &file.solids[0].faces[0].loops[0].edges[0];
+    let point: [catallax_numbers::Rational; 3] = std::array::from_fn(|i| {
+        &edge.start.point[i] + &((&edge.end.point[i] - &edge.start.point[i]) * r(fraction))
+    });
+    let edge_line = text
+        .lines()
+        .find(|l| l.starts_with(&format!("{}=", edge.edge)))
+        .unwrap();
+    let mut fields: Vec<_> = edge_line.split(',').map(str::to_owned).collect();
+    let end = fields[2].clone();
+    fields[2] = "#900004".into();
+    let mut additions = vec![
+        format!(
+            "#900003=CARTESIAN_POINT('',({},{},{}));",
+            common::dec(&point[0]),
+            common::dec(&point[1]),
+            common::dec(&point[2])
+        ),
+        "#900004=VERTEX_POINT('',#900003);".into(),
+        format!(
+            "#900006=EDGE_CURVE('',#900004,{end},{},{}",
+            fields[3], fields[4]
+        ),
+    ];
+    let mut uses = std::collections::BTreeMap::new();
+    for line in text
+        .lines()
+        .filter(|l| l.contains("=ORIENTED_EDGE(") && l.contains(&format!(",{},", edge.edge)))
+    {
+        let (id, _) = line.split_once('=').unwrap();
+        let forward = line.ends_with(".T.);");
+        let next = format!("#{}", 900010 + uses.len());
+        additions.push(format!(
+            "{next}=ORIENTED_EDGE('',*,*,#900006,{});",
+            if forward { ".T." } else { ".F." }
+        ));
+        uses.insert(id.to_owned(), (next, forward));
+    }
+    let text = text
+        .lines()
+        .map(|line| {
+            if line == edge_line {
+                return fields.join(",");
+            }
+            if line.contains("=EDGE_LOOP(") {
+                let (prefix, tail) = line.split_once(",(").unwrap();
+                let mut expanded = Vec::new();
+                for reference in tail.split(')').next().unwrap().split(',') {
+                    if let Some((next, forward)) = uses.get(reference) {
+                        if *forward {
+                            expanded.extend([reference.to_owned(), next.clone()]);
+                        } else {
+                            expanded.extend([next.clone(), reference.to_owned()]);
+                        }
+                    } else {
+                        expanded.push(reference.to_owned());
+                    }
+                }
+                return format!("{prefix},({}));", expanded.join(","));
+            }
+            line.to_owned()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    text.replacen(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        &format!("{}\nENDSEC;\nEND-ISO-10303-21;", additions.join("\n")),
+        1,
+    )
+}
+
+#[test]
+fn only_finite_lines_below_the_initial_uncertainty_are_removed() {
+    for (index, fraction) in ["0", "0.000000001"].iter().enumerate() {
+        let input = read(&split_box_edge(fraction));
+        assert_eq!(
+            (
+                input.bodies()[0].edges().len(),
+                input.bodies()[0].vertices().len()
+            ),
+            (13, 9)
+        );
+        let healed = healing::heal(&input, &mut Decider::default()).unwrap();
+        assert_eq!(
+            healed
+                .report()
+                .changes
+                .iter()
+                .filter(|c| matches!(c, HealingChange::SmallLineRemoved { .. }))
+                .count(),
+            1
+        );
+        assert!(healed.report().approximate);
+        let body = checked_planar_fixture(&healed.definition(&mut Decider::default()).unwrap());
+        assert_eq!((body.counts().edges, body.counts().vertices), (12, 8));
+        let step =
+            catallax_step::numerical::build(&body, &Default::default(), &mut Decider::default())
+                .unwrap();
+        step.check_written(step.bytes(), &mut Decider::default())
+            .unwrap();
+        if let Ok(folder) = std::env::var("CATALLAX_HEALING_EVIDENCE") {
+            std::fs::write(
+                std::path::Path::new(&folder).join(format!("small-line-{index}.step")),
+                step.bytes(),
+            )
+            .unwrap();
+        }
+    }
+    let input = read(&split_box_edge("0.000001"));
+    let healed = healing::heal(&input, &mut Decider::default()).unwrap();
+    assert!(
+        !healed
+            .report()
+            .changes
+            .iter()
+            .any(|c| matches!(c, HealingChange::SmallLineRemoved { .. }))
+    );
+    let body = checked_planar_fixture(&healed.definition(&mut Decider::default()).unwrap());
+    assert_eq!((body.counts().edges, body.counts().vertices), (13, 9));
+    let step = catallax_step::numerical::build(&body, &Default::default(), &mut Decider::default())
+        .unwrap();
+    if let Ok(folder) = std::env::var("CATALLAX_HEALING_EVIDENCE") {
+        std::fs::write(
+            std::path::Path::new(&folder).join("preserved-line.step"),
+            step.bytes(),
+        )
+        .unwrap();
+    }
+}
+
+#[test]
+fn a_closed_circle_is_not_a_small_line_because_its_endpoint_chord_is_zero() {
+    let mut soup = common::Soup::new();
+    soup.cylinder(["0", "0", "0"], 2, "2", "1", common::Caps::Both);
+    let input = read(&soup.finish());
+    let original = input.definition(&mut Decider::default()).unwrap();
+    let healed = healing::heal(&input, &mut Decider::default()).unwrap();
+    assert!(
+        !healed
+            .report()
+            .changes
+            .iter()
+            .any(|c| matches!(c, HealingChange::SmallLineRemoved { .. }))
+    );
+    assert_eq!(
+        healed.definition(&mut Decider::default()).unwrap(),
+        original
+    );
 }

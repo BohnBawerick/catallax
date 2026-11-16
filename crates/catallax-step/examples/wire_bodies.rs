@@ -3,7 +3,7 @@ use catallax_numbers::{Decider, Rational, with_operation_budget};
 use catallax_shapes::spline_tools::RationalSplineCurve;
 use catallax_topology::{BodyKind, spline_wire};
 
-fn curve(points: [[i64; 3]; 3]) -> RationalSplineCurve {
+fn curve(points: [[i64; 3]; 3], dec: &Decider) -> RationalSplineCurve {
     RationalSplineCurve::new(
         2,
         [0, 0, 0, 1, 1, 1]
@@ -15,6 +15,7 @@ fn curve(points: [[i64; 3]; 3]) -> RationalSplineCurve {
             .map(|point| point.map(Rational::from_i64))
             .collect(),
         vec![Rational::one(); 3],
+        dec,
     )
     .unwrap()
 }
@@ -24,9 +25,9 @@ fn main() {
     std::fs::create_dir_all(&folder).unwrap();
     let (result, work) = with_operation_budget(catallax_topology::numerical::DEFAULT_WORK, || {
         let mut dec = Decider::default();
-        let a = curve([[0, 0, 0], [1, 1, 0], [2, 0, 0]]);
-        let b = curve([[2, 0, 0], [3, -1, 0], [4, 0, 0]]);
-        let closing = curve([[4, 0, 0], [2, -2, 1], [0, 0, 0]]);
+        let a = curve([[0, 0, 0], [1, 1, 0], [2, 0, 0]], &dec);
+        let b = curve([[2, 0, 0], [3, -1, 0], [4, 0, 0]], &dec);
+        let closing = curve([[4, 0, 0], [2, -2, 1], [0, 0, 0]], &dec);
         let ring = RationalSplineCurve::new(
             3,
             [0, 0, 0, 0, 1, 1, 1, 1]
@@ -38,6 +39,7 @@ fn main() {
                 .map(|p| p.map(Rational::from_i64))
                 .collect(),
             vec![Rational::one(); 4],
+            &dec,
         )
         .unwrap();
         assert!(spline_wire(&[a.clone(), a.clone()], &mut dec).is_err());

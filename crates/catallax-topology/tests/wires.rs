@@ -1,5 +1,6 @@
+//! Free-wire geometry survives journal relocation and orientation-reversing maps.
 use catallax_numbers::{Decider, MarkLog, Rational};
-use catallax_shapes::{Isometry, Pose, Position, RPoint3, RVector3};
+use catallax_shapes::{Isometry, Pose, RPoint3, RVector3};
 use catallax_topology::{Body, BodyId, BodyKind, Coedge, Model, Sense, Wire};
 
 fn points(model: &Model, body: BodyId) -> Vec<[Rational; 3]> {

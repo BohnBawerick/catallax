@@ -152,7 +152,7 @@ impl Problem {
                 down[j] -= h;
                 let plus = self.residual(t, up, dec);
                 let minus = self.residual(t, down, dec);
-                let (difference, width) = match (plus, minus) {
+                let (difference, width): ([f64; 3], f64) = match (plus, minus) {
                     (Ok(a), Ok(b)) => (std::array::from_fn(|i| a[i] - b[i]), 2.0 * h),
                     (Ok(a), Err(e)) if e.code == "fillet.numerical-spine" => (std::array::from_fn(|i| a[i] - residual[i]), h),
                     (Err(e), Ok(b)) if e.code == "fillet.numerical-spine" => (std::array::from_fn(|i| residual[i] - b[i]), h),
@@ -189,7 +189,7 @@ impl Problem {
 }
 fn offset_error(centre: &[Rational; 3], offsets: [&[Ball; 3]; 2]) -> Rational {
     offsets.into_iter().map(|offset| (0..3).fold(Rational::zero(), |sum, i| {
-        sum + (offset[i].lo() - &centre[i]).abs().max((offset[i].hi() - &centre[i]).abs())
+        sum + (&offset[i].lo() - &centre[i]).abs().max((&offset[i].hi() - &centre[i]).abs())
     })).max().expect("two offsets")
 }
 
@@ -240,10 +240,10 @@ impl NumericalFilletSpine {
             let mut middle = None;
             for i in 1..4 {
                 let share = Rational::from_ratio(i, 4).unwrap();
-                let tau = &a.tau + &((&b.tau - &a.tau) * &share);
+                let tau = &a.tau + &(&(&b.tau - &a.tau) * &share);
                 let checked = problem.solve(&tau, problem.guess(&a, &b, i as f64 / 4.0), dec)?;
                 let position_error = (0..3).fold(Rational::zero(), |sum, j| {
-                    sum + (&checked.centre[j] - &(&a.centre[j] + &((&b.centre[j] - &a.centre[j]) * &share))).abs()
+                    sum + (&checked.centre[j] - &(&a.centre[j] + &(&(&b.centre[j] - &a.centre[j]) * &share))).abs()
                 });
                 worst = worst.max(position_error);
                 samples += 1;

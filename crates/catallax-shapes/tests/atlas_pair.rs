@@ -83,8 +83,8 @@ fn offset_spine_crosses_both_atlas_seams_without_fragmenting() {
                 Rational::from_ratio(-1, 10).unwrap(),
                 t.clone(),
             ]) {
-                assert!((value.lo() - &expected).abs() <= tolerance);
-                assert!((value.hi() - &expected).abs() <= tolerance);
+                assert!((&value.lo() - &expected).abs() <= tolerance);
+                assert!((&value.hi() - &expected).abs() <= tolerance);
             }
         }
     });

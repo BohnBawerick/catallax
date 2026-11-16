@@ -15,6 +15,8 @@ impl PatchPairCurve {
         allow_initial_contact: bool,
         dec: &mut Decider,
     ) -> Result<bool, Refusal> {
+        let trace_start = catallax_numbers::current_operation_work().used;
+        eprintln!("PAIR_CLEAR enter work={trace_start}");
         let mut partial = None;
         for side in 0..2 {
             let mut patches = Vec::new();
@@ -31,6 +33,7 @@ impl PatchPairCurve {
                     patches.push(patch);
                 }
             }
+            eprintln!("PAIR_CLEAR side={side} patches={} before={} delta={}", patches.len(), catallax_numbers::current_operation_work().used, catallax_numbers::current_operation_work().used-trace_start);
             let answer = match spline_parameters(&patches, spline, dec) {
                 Ok(answer) => answer,
                 Err(error)
@@ -43,10 +46,12 @@ impl PatchPairCurve {
                 }
                 Err(error) => return Err(error),
             };
+            eprintln!("PAIR_CLEAR side={side} queried work={} delta={} kind={}", catallax_numbers::current_operation_work().used, catallax_numbers::current_operation_work().used-trace_start, match &answer {Some(SplineParameterHits::Points(p))=>p.len() as i64,Some(SplineParameterHits::Contained)=>-1,None=>-2});
             if let Some(SplineParameterHits::Points(parameters)) = answer {
                 let mut clear = true;
                 let initial = Real::from(spline.domain()[0].clone());
                 for parameter in parameters {
+                    eprintln!("PAIR_CLEAR compare work={}",catallax_numbers::current_operation_work().used);
                     dec.charge_work(1)?;
                     if !allow_initial_contact
                         || exact_sign(&(&parameter - &initial), dec)? != Sign::Zero
@@ -56,10 +61,12 @@ impl PatchPairCurve {
                     }
                 }
                 if clear {
+                    eprintln!("PAIR_CLEAR clear work={}",catallax_numbers::current_operation_work().used);
                     return Ok(true);
                 }
             }
         }
+        eprintln!("PAIR_CLEAR inconclusive work={}",catallax_numbers::current_operation_work().used);
         if let Some(error) = partial {
             return Err(error);
         }

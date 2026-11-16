@@ -272,10 +272,10 @@ impl NumericalFilletSpine {
                     spine.samples += 1;
                     if i == 2 { middle = Some(checked); }
                 }
-                upper = upper.max(worst);
                 if worst > spine.tolerance_mm.mul_pow2(-2) {
                     inserted.push((index + 1, middle.expect("checked midpoint")));
                 }
+                upper = upper.max(worst);
             }
             if inserted.is_empty() {
                 spine.sampled_error_mm = upper;

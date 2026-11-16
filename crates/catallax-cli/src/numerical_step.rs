@@ -51,7 +51,7 @@ pub(crate) fn evaluate(value: &Value, source: &str, out: &Path) -> io::Result<Va
         _ => return invalid("tolerance_mm must be a positive rational string".into()),
     };
     let mut dec = Decider::default();
-    let (admitted, result, sweep_checks) =
+    let (admitted, result) =
         if problem.recipe["format"] == "catallax-general-sweep/1" {
             let definition: catallax_features::general_sweep::SweepRecipe =
                 match serde_json::from_value(problem.recipe["definition"].clone()) {
@@ -70,9 +70,9 @@ pub(crate) fn evaluate(value: &Value, source: &str, out: &Path) -> io::Result<Va
                 Admitted {
                     body: swept.into_body(),
                     recipe_work: current_operation_work().used,
+                    sweep_checks: checks,
                 },
                 definition.name,
-                checks,
             )
         } else {
             let imported = match crate::import_recipe::parse(&problem.recipe) {
@@ -97,10 +97,11 @@ pub(crate) fn evaluate(value: &Value, source: &str, out: &Path) -> io::Result<Va
                 Ok(admitted) => admitted,
                 Err(manifest) => return Ok(manifest),
             };
-            (admitted, recipe.result.to_string(), Value::Null)
+            (admitted, recipe.result.to_string())
         };
     let body = admitted.body;
     let recipe_work = admitted.recipe_work;
+    let sweep_checks = admitted.sweep_checks;
     let admitted_work = current_operation_work().used;
     let options = NumericalStepOptions {
         max_scalar_rounding_error_mm: tolerance
@@ -247,6 +248,7 @@ pub(crate) fn publish_embedded(
 struct Admitted {
     body: numerical::NumericalBody,
     recipe_work: u64,
+    sweep_checks: Value,
 }
 fn admit(
     recipe: &catallax_recipe::Recipe,
@@ -254,6 +256,18 @@ fn admit(
     tolerance: &Rational,
     dec: &mut Decider,
 ) -> Result<Admitted, Value> {
+    if catallax_features::general_sweep::requires_numerical(recipe) && files.is_empty() {
+        let candidate=catallax_features::general_sweep::prepare_recipe(recipe,
+            NumericalOptions {tolerance_mm:tolerance.clone()},dec).map_err(build_refusal)?;
+        let recipe_work=current_operation_work().used;
+        let built=candidate.admit(|model,body,options,dec| {
+            let (definition,trims)=step::definition_from_exact_model(
+                model,body,recipe.name.clone(),&options.tolerance_mm,dec)?;
+            numerical::build_with_native_trims(definition,trims,options.clone(),dec)
+        },dec).map_err(|error|refused(error.code,error.detail))?;
+        return Ok(Admitted {body:built.body,recipe_work,
+            sweep_checks:serde_json::to_value(built.checks).expect("finite sweep checks")});
+    }
     let built = if files.is_empty() {
         match catallax_features::evaluate_with_numerical_hole(
             recipe,
@@ -270,6 +284,7 @@ fn admit(
                 return Ok(Admitted {
                     body: (*built).into_hole().into_body(),
                     recipe_work,
+                    sweep_checks: Value::Null,
                 });
             }
             catallax_features::HoleEvaluation::Standard(built) => *built,
@@ -301,7 +316,7 @@ fn admit(
         Ok(body) => body,
         Err(error) => return Err(refused(error.code, error.detail)),
     };
-    Ok(Admitted { body, recipe_work })
+    Ok(Admitted { body, recipe_work, sweep_checks: Value::Null })
 }
 
 fn build_refusal(error: catallax_features::BuildError) -> Value {

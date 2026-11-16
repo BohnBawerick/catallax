@@ -10,6 +10,9 @@ use catallax_topology::{Sense, numerical::{self, NumericalBody, NumericalDefinit
     NumericalEdge, NumericalFace, NumericalOptions, NumericalTrim, NumericalVertex}};
 use serde::{Deserialize, Serialize};
 
+mod recipe;
+pub use recipe::{RecipeCandidate, RecipeSwept, prepare_recipe, requires_numerical};
+pub(crate) use recipe::Context;
 /// Persisted generating definition. Reopening rebuilds and rechecks the geometry.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -18,8 +21,14 @@ pub struct SweepRecipe {
     pub name: String,
     /// Section boundaries in local XY. Nesting follows ordinary sketch semantics.
     pub loops: Vec<Loop>,
+    /// Authored world-space sketch plane. Omission attaches local XY at the spine start.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plane: Option<RecipePose>,
     /// Spine, parameterized from zero to one.
     pub path: SweepPath,
+    /// Fixed translation or rotation-minimising transport. A guide supplies its own frame.
+    #[serde(default = "rotation_minimising")]
+    pub orientation: catallax_recipe::SweepOrientation,
     /// Auxiliary spine. Correspondence uses equal normalized parameters, not arc length.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub guide: Option<SweepPath>,
@@ -41,12 +50,13 @@ pub struct SweepRecipe {
 pub enum SweepPath {
     /// A directed line segment.
     Line { start: RecipePoint, end: RecipePoint },
-    /// A helix about local Z, starting on local positive X.
+    /// The ordinary recipe helix definition, with its starting point retained.
     Helix {
-        radius_mm: Number,
-        pitch_mm: Number,
-        turns: Number,
-        frame: RecipePose,
+        start: RecipePoint,
+        centre: RecipePoint,
+        axis: catallax_recipe::Vector3,
+        angle: Number,
+        rise: Number,
     },
     /// A clamped, positive-weight rational B-spline.
     Spline {
@@ -82,7 +92,7 @@ impl Swept {
 
     /// Rebuilds transactionally. Previous admission evidence remains historical.
     pub fn edit(&self, recipe: SweepRecipe, dec: &mut Decider) -> Result<Self, Refusal> {
-        let (definition, checks) = definition(&recipe, dec)?;
+        let (definition, checks, _) = definition(&recipe, dec)?;
         let body = self.body.rebuild(definition, options(&recipe), dec)?;
         Ok(Self { recipe, body, checks })
     }
@@ -118,6 +128,10 @@ fn vector(p: V) -> Result<Vector3, Refusal> {
     Ok(Vector3::new(real(p[0])?, real(p[1])?, real(p[2])?))
 }
 fn flip(s: Sense) -> Sense { crate::extrude::reverse(s) }
+fn rotation_minimising() -> catallax_recipe::SweepOrientation {
+    catallax_recipe::SweepOrientation::RotationMinimising
+}
+
 fn options(recipe: &SweepRecipe) -> NumericalOptions {
     NumericalOptions { tolerance_mm: recipe.tolerance_mm.value().clone() }
 }
@@ -137,23 +151,26 @@ impl Path {
                 unit(delta)?;
                 Ok(Self::Line(a, delta))
             }
-            SweepPath::Helix { radius_mm, pitch_mm, turns, frame } => {
-                if radius_mm.value().sign() != Sign::Positive || turns.value().is_zero()
-                    || pitch_mm.value().is_zero() {
-                    return Err(bad("a helix needs positive radius, nonzero pitch and nonzero turns"));
+            SweepPath::Helix { start, centre, axis, angle, rise } => {
+                let as_point = |p: &RecipePoint| catallax_shapes::RPoint3::new(
+                    p.0[0].value().clone(),p.0[1].value().clone(),p.0[2].value().clone());
+                let a = as_point(start);
+                let c = as_point(centre);
+                let axis_r = catallax_shapes::RVector3::new(
+                    axis.0[0].value().clone(), axis.0[1].value().clone(), axis.0[2].value().clone());
+                let radius_r = a.minus(&c);
+                if axis_r.is_zero() || radius_r.is_zero() || angle.value().is_zero()
+                    || !axis_r.dot(&radius_r).is_zero() {
+                    return Err(bad("a helix needs nonzero axis, radius and angle, with its start in the centre plane"));
                 }
-                let pose = crate::profile::placement(frame, dec)?;
-                let mut coordinate = |x: &Real| -> Result<f64, Refusal> {
-                    Ok(dec.enclose_budgeted_at(x, 128)?.mid().to_f64_nearest())
-                };
-                let origin = [coordinate(&pose.translation.x)?, coordinate(&pose.translation.y)?, coordinate(&pose.translation.z)?];
-                let mut axes = [[0.0; 3]; 3];
-                for (i, axis) in axes.iter_mut().enumerate() {
-                    let mut input = [0; 3]; input[i] = 1;
-                    let v = pose.rotation.apply(&Vector3::new(input[0].into(), input[1].into(), input[2].into()));
-                    *axis = [coordinate(&v.x)?, coordinate(&v.y)?, coordinate(&v.z)?];
-                }
-                Ok(Self::Helix { radius: number(radius_mm), pitch: number(pitch_mm), turns: number(turns), origin, axes })
+                let z = unit(axis.0.each_ref().map(number))?;
+                let radial = sub(recipe_point(start),recipe_point(centre));
+                let radius = dot(radial,radial).sqrt();
+                let x = unit(radial)?;
+                let y = unit(cross(z,x))?;
+                let turns = number(angle)/360.0;
+                Ok(Self::Helix { radius, pitch: number(rise)/turns,
+                    turns, origin: recipe_point(centre), axes: [x,y,z] })
             }
             SweepPath::Spline { degree, control_points, weights, knots } => {
                 let points = control_points.iter().map(|p| {
@@ -198,15 +215,50 @@ impl Path {
 #[derive(Clone, Copy)]
 struct Frame { origin: V, x: V, y: V, scale: f64 }
 impl Frame {
-    fn at(path: &Path, guide: Option<&Path>, reference: V, twist: f64,
-        end_scale: f64, t: f64, dec: &mut Decider) -> Result<Self, Refusal> {
-        let (origin, tangent) = path.at(t, dec)?;
-        let tangent = unit(tangent)?;
-        let direction = if let Some(guide) = guide { sub(guide.at(t,dec)?.0,origin) } else { reference };
-        let x = unit(sub(direction,mul(tangent,dot(direction,tangent))))?;
-        let y = unit(cross(tangent,x))?;
-        let (s,c) = (twist*t).sin_cos();
-        Ok(Self { origin, x: add(mul(x,c),mul(y,s)), y: add(mul(y,c),mul(x,-s)), scale: 1.0+(end_scale-1.0)*t })
+    fn at(path: &Path, guide: Option<&Path>, reference: V, initial: Option<[V;2]>,
+        normal_offset: f64, twist: f64, end_scale: f64, t: f64,
+        orientation: catallax_recipe::SweepOrientation, dec: &mut Decider) -> Result<Self, Refusal> {
+        let base = |t: f64, dec: &mut Decider| -> Result<[V;3],Refusal> {
+            let (origin,tangent)=path.at(t,dec)?;
+            let tangent=unit(tangent)?;
+            if guide.is_none() {
+                if let Path::Helix { radius,pitch,turns,axes,.. }=path {
+                    let omega=std::f64::consts::TAU*turns;
+                    let (s,c)=(omega*t).sin_cos();
+                    let radial=add(mul(axes[0],c),mul(axes[1],s));
+                    let binormal=unit(cross(tangent,radial))?;
+                    let rise=pitch*turns;
+                    let speed=(radius*radius*omega*omega+rise*rise).sqrt();
+                    let (spin_s,spin_c)=(-omega*rise/speed*t).sin_cos();
+                    let x=add(mul(radial,spin_c),mul(binormal,spin_s));
+                    return Ok([x,cross(tangent,x),tangent]);
+                }
+            }
+            let direction=if let Some(guide)=guide {
+                sub(guide.at(t,dec)?.0,origin)
+            } else { reference };
+            let x=unit(sub(direction,mul(tangent,dot(direction,tangent))))?;
+            Ok([x,unit(cross(tangent,x))?,tangent])
+        };
+        let first=base(0.0,dec)?;
+        let current=base(t,dec)?;
+        let initial=initial.unwrap_or([first[0],first[1]]);
+        let carry=|v:V| {
+            if orientation==catallax_recipe::SweepOrientation::Fixed && guide.is_none() {
+                return v;
+            }
+            let components=first.map(|axis|dot(v,axis));
+            add(add(mul(current[0],components[0]),mul(current[1],components[1])),
+                mul(current[2],components[2]))
+        };
+        let (s,c)=(twist*t).sin_cos();
+        let turn=|v:V| add(add(mul(v,c),mul(cross(current[2],v),s)),
+            mul(current[2],dot(v,current[2])*(1.0-c)));
+        let x=turn(carry(initial[0]));
+        let y=turn(carry(initial[1]));
+        let scale=1.0+(end_scale-1.0)*t;
+        let origin=add(path.at(t,dec)?.0,mul(unit(cross(x,y))?,normal_offset*scale));
+        Ok(Self { origin,x,y,scale })
     }
     fn apply(&self, p: V) -> V { add(self.origin,add(mul(self.x,p[0]*self.scale),mul(self.y,p[1]*self.scale))) }
     fn plane(&self, dec: &mut Decider) -> Result<Plane, Refusal> {
@@ -233,24 +285,44 @@ fn cubic(p: &[V;4], t: f64) -> V {
 
 /// Builds an editable result without promoting fitted geometry into exact answers.
 pub fn build(recipe: &SweepRecipe, dec: &mut Decider) -> Result<Swept, Refusal> {
-    let (definition, checks) = definition(recipe, dec)?;
+    let (definition, checks, _) = definition(recipe, dec)?;
     let body = numerical::build(definition, options(recipe), dec)?;
     Ok(Swept { recipe: recipe.clone(), body, checks })
 }
 
-fn definition(recipe: &SweepRecipe, dec: &mut Decider) -> Result<(NumericalDefinition,SweepChecks), Refusal> {
+fn definition(recipe: &SweepRecipe, dec: &mut Decider) -> Result<(NumericalDefinition,SweepChecks,Vec<catallax_recipe::Role>), Refusal> {
     if recipe.name.trim().is_empty() || recipe.tolerance_mm.value().sign()!=Sign::Positive
         || recipe.end_scale.value().sign()!=Sign::Positive || recipe.max_sections==0 {
         return Err(bad("a name, positive tolerance, positive end scale and nonzero section allowance are required"));
     }
-    let profile = crate::Profile::new(&RecipePose::identity(), &recipe.loops, dec)?;
+    let profile = crate::Profile::new(recipe.plane.as_ref().unwrap_or(&RecipePose::identity()), &recipe.loops, dec)?;
     if profile.is_empty() { return Err(bad("a sweep needs a nonempty profile")); }
     let path = Path::new(&recipe.path,dec)?;
     let guide = recipe.guide.as_ref().map(|p| Path::new(p,dec)).transpose()?;
     let reference = recipe.reference.each_ref().map(number);
     let twist = number(&recipe.twist_degrees).to_radians();
     let end_scale = number(&recipe.end_scale);
-    let frame = |t, dec: &mut Decider| Frame::at(&path,guide.as_ref(),reference,twist,end_scale,t,dec);
+    let mut initial=None;
+    let mut normal_offset=0.0;
+    let mut anchor=[0.0;3];
+    if recipe.plane.is_some() {
+        let mut coordinate=|x:&Real| -> Result<f64,Refusal> {
+            Ok(dec.enclose_budgeted_at(x,128)?.mid().to_f64_nearest())
+        };
+        let mut axes=[[0.0;3];2];
+        for (i,axis) in axes.iter_mut().enumerate() {
+            let mut input=[0;3];input[i]=1;
+            let v=profile.pose.rotation.apply(&Vector3::new(input[0].into(),input[1].into(),input[2].into()));
+            *axis=[coordinate(&v.x)?,coordinate(&v.y)?,coordinate(&v.z)?];
+        }
+        let origin=[coordinate(&profile.pose.translation.x)?,coordinate(&profile.pose.translation.y)?,
+            coordinate(&profile.pose.translation.z)?];
+        anchor=path.at(0.0,dec)?.0;
+        normal_offset=dot(sub(origin,anchor),unit(cross(axes[0],axes[1]))?);
+        initial=Some(axes);
+    }
+    let frame = |t, dec: &mut Decider| Frame::at(&path,guide.as_ref(),reference,initial,
+        normal_offset,twist,end_scale,t,recipe.orientation,dec);
     let mut charts = Vec::new();
     let mut sample_controls = Vec::new();
     for (lp_index,lp) in recipe.loops.iter().enumerate() {
@@ -258,14 +330,19 @@ fn definition(recipe: &SweepRecipe, dec: &mut Decider) -> Result<(NumericalDefin
         let (parts,ids,forward) = crate::loft::charts::build(&profile,lp,start,dec)?;
         for part in parts {
             let coordinates = part.curve.controls().map(|p| {
-                Ok([dec.enclose_budgeted_at(&p.x,128)?.mid().to_f64_nearest(),
-                    dec.enclose_budgeted_at(&p.y,128)?.mid().to_f64_nearest(),0.0])
+                let world=[dec.enclose_budgeted_at(&p.x,128)?.mid().to_f64_nearest(),
+                    dec.enclose_budgeted_at(&p.y,128)?.mid().to_f64_nearest(),
+                    dec.enclose_budgeted_at(&p.z,128)?.mid().to_f64_nearest()];
+                Ok(if let Some(axes)=initial {
+                    let delta=sub(world,anchor);
+                    [dot(delta,axes[0]),dot(delta,axes[1]),0.0]
+                } else {world})
             }).collect::<Result<Vec<_>,Refusal>>()?;
             sample_controls.extend(coordinates.iter().copied());
             let mid = (&part.bounds[0]+&part.bounds[1]).mul_pow2(-1);
             let segment = ids.iter().enumerate().find(|(i,_)|
                 mid < Rational::from_ratio((i+1) as i64,ids.len() as i64).expect("segment count"))
-                .expect("authored interval").1.to_string();
+                .expect("authored interval").1.clone();
             charts.push((lp_index,part,coordinates,forward,segment));
         }
     }
@@ -298,7 +375,11 @@ fn definition(recipe: &SweepRecipe, dec: &mut Decider) -> Result<(NumericalDefin
         if checks.max_sample_error_mm <= tolerance/4.0 { break (sections,checks); }
         n=n.checked_mul(2).ok_or_else(|| bad("section count overflow"))?;
     };
-    let mut assembly = Assembly::new(recipe.name.clone(),recipe.loops.len());
+    let first_frame=frame(0.0,dec)?;
+    let orientation=dot(cross(first_frame.x,first_frame.y),path.at(0.0,dec)?.1);
+    if orientation==0.0 {return Err(bad("the initial sweep direction lies in the profile plane"));}
+    let positive=orientation>0.0;
+    let mut assembly = Assembly::new(recipe.name.clone(),recipe.loops.len(),positive);
     for (lp,chart,coordinates,forward,segment) in charts {
         for (station,section) in sections.iter().enumerate() {
             dec.charge_work(1)?;
@@ -319,7 +400,7 @@ fn definition(recipe: &SweepRecipe, dec: &mut Decider) -> Result<(NumericalDefin
         }
     }
     assembly.caps(frame(0.0,dec)?,frame(1.0,dec)?,dec)?;
-    Ok((assembly.definition,checks))
+    Ok((assembly.definition,checks,assembly.roles))
 }
 
 fn exact_controls(frames: [Frame; 4], p: V) -> Result<[Point3; 4], Refusal> {
@@ -331,12 +412,12 @@ fn exact_controls(frames: [Frame; 4], p: V) -> Result<[Point3; 4], Refusal> {
         let scale = rational(frame.scale)?;
         for (axis, value) in row.iter_mut().enumerate() {
             *value = rational(frame.origin[axis])?
-                + &scale * (rational(frame.x[axis])? * &px + rational(frame.y[axis])? * &py);
+                + &scale * &(&rational(frame.x[axis])? * &px + &rational(frame.y[axis])? * &py);
         }
     }
     let middle = |coefficients: [i64; 4]| -> [Rational; 3] {
         std::array::from_fn(|axis| {
-            (0..4).fold(q(0), |sum, i| sum + q(coefficients[i]) * &rows[i][axis]) / q(6)
+            (0..4).fold(q(0), |sum, i| sum + &q(coefficients[i]) * &rows[i][axis]) / q(6)
         })
     };
     let values = [rows[0].clone(), middle([-5, 18, -9, 2]),
@@ -351,11 +432,14 @@ struct Assembly {
     vertices: BTreeMap<VertexKey,usize>,
     edges: BTreeMap<EdgeKey,usize>,
     caps: Vec<[Vec<(Rational,NumericalTrim)>;2]>,
+    positive: bool,
+    roles: Vec<catallax_recipe::Role>,
 }
 impl Assembly {
-    fn new(name:String, loops:usize) -> Self {
+    fn new(name:String, loops:usize, positive:bool) -> Self {
         Self { definition:NumericalDefinition { name,vertices:Vec::new(),edges:Vec::new(),faces:Vec::new() },
-            vertices:BTreeMap::new(),edges:BTreeMap::new(),caps:(0..loops).map(|_| [Vec::new(),Vec::new()]).collect() }
+            vertices:BTreeMap::new(),edges:BTreeMap::new(),
+            caps:(0..loops).map(|_| [Vec::new(),Vec::new()]).collect(),positive,roles:Vec::new() }
     }
     fn vertex(&mut self,lp:usize,u:&Rational,v:&Rational,p:&Point3) -> Result<usize,Refusal> {
         let u=if *u==q(1) {q(0)} else {u.clone()};
@@ -368,8 +452,9 @@ impl Assembly {
         self.vertices.insert(key,id);
         Ok(id)
     }
-    fn side(&mut self,lp:usize,segment:&str,station:usize,patch:&RationalPatch,forward:bool,
+    fn side(&mut self,lp:usize,segment:&catallax_recipe::ElementId,station:usize,patch:&RationalPatch,forward:bool,
         first:bool,last:bool,start:&Frame,end:&Frame) -> Result<(),Refusal> {
+        let forward=forward==self.positive;
         let b=patch.domain();
         let carrier=patch.carrier();
         let [nu,nv]=carrier.control_count();
@@ -416,6 +501,7 @@ impl Assembly {
         if !forward {trims.reverse();}
         self.definition.faces.push(NumericalFace {key:format!("side/{lp}/{segment}/{station}/{}",b[0][0]),
             surface:Surface::BSpline(patch.clone().into()),sense:if forward {Sense::Same}else{Sense::Reversed},loops:vec![trims]});
+        self.roles.push(catallax_recipe::Role::Side {segment:segment.clone(),path:None});
         Ok(())
     }
     fn caps(&mut self,start:Frame,end:Frame,dec:&mut Decider) -> Result<(),Refusal> {
@@ -438,7 +524,8 @@ impl Assembly {
                 loops.push(walk);
             }
             self.definition.faces.push(NumericalFace {key:if cap==0 {"start"}else{"end"}.into(),
-                surface:Surface::Plane(frame.plane(dec)?),sense:if cap==0 {Sense::Reversed}else{Sense::Same},loops});
+                surface:Surface::Plane(frame.plane(dec)?),sense:if (cap==0)==self.positive {Sense::Reversed}else{Sense::Same},loops});
+            self.roles.push(if cap==0 {catallax_recipe::Role::Start}else{catallax_recipe::Role::End});
         }
         Ok(())
     }

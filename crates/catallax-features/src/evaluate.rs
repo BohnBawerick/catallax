@@ -391,6 +391,7 @@ pub fn evaluate(recipe: &Recipe, dec: &mut Decider) -> Result<Built, BuildError>
         recipe,
         &ImportFiles::new(),
         None,
+        None,
         EvaluationState::default(),
         0,
         dec,
@@ -470,7 +471,7 @@ pub fn evaluate_with_numerical_hole(
         match numerical_hole_impl(recipe, None, options, dec)? {
             HoleAttempt::Numerical(built) => Ok(HoleEvaluation::Numerical(built)),
             HoleAttempt::Standard { state, start } => {
-                evaluate_impl(recipe, &ImportFiles::new(), None, *state, start, dec).map(|state| {
+                evaluate_impl(recipe, &ImportFiles::new(), None, None, *state, start, dec).map(|state| {
                     HoleEvaluation::Standard(Box::new(state.finish(Arc::new(recipe.clone()))))
                 })
             }
@@ -567,6 +568,7 @@ fn numerical_hole_impl(
         &prefix,
         &ImportFiles::new(),
         None,
+        None,
         EvaluationState::default(),
         0,
         dec,
@@ -655,7 +657,7 @@ pub fn evaluate_with_files(
     files: &ImportFiles<'_>,
     dec: &mut Decider,
 ) -> Result<Built, BuildError> {
-    evaluate_impl(recipe, files, None, EvaluationState::default(), 0, dec)
+    evaluate_impl(recipe, files, None, None, EvaluationState::default(), 0, dec)
         .map(|state| state.finish(Arc::new(recipe.clone())))
 }
 
@@ -695,7 +697,7 @@ pub fn evaluate_incremental_with_files(
         }
         _ => (EvaluationState::default(), 0),
     };
-    let mut state = evaluate_impl(recipe, files, None, state, start, dec)?;
+    let mut state = evaluate_impl(recipe, files, None, None, state, start, dec)?;
     let profiles = std::mem::take(&mut state.profiles);
     let paths = std::mem::take(&mut state.paths);
     let bodies = state.bodies.clone();
@@ -719,6 +721,7 @@ pub fn evaluate_certified(
         recipe,
         &ImportFiles::new(),
         Some(&mut certification),
+        None,
         EvaluationState::default(),
         0,
         dec,
@@ -740,6 +743,7 @@ fn evaluate_impl(
     recipe: &Recipe,
     files: &ImportFiles<'_>,
     mut certification: Option<&mut crate::certified::CertificationContext<'_>>,
+    mut numerical_sweep: Option<&mut crate::general_sweep::Context>,
     state: EvaluationState,
     start: usize,
     dec: &mut Decider,
@@ -843,6 +847,11 @@ fn evaluate_impl(
         let mut build = |model: &mut Model,
                          dec: &mut Decider|
          -> Result<Option<BodyValue>, Refusal> {
+            if let Some(context) = numerical_sweep.as_deref_mut() {
+                if let Some((body, radius)) = context.stock(model, &step.op, &step.id, dec)? {
+                    return Ok(Some(BodyValue {body,radius}));
+                }
+            }
             if let Some((body, radius)) = crate::stock::build(model, &step.op, &step.id, dec)? {
                 return Ok(Some(BodyValue { body, radius }));
             }
@@ -1049,12 +1058,23 @@ fn evaluate_impl(
                     path,
                     orientation,
                 } => {
-                    let profile = &profiles[profile];
-                    let path = &paths[path];
-                    let body = path.build(model, profile, &step.id, *orientation, dec)?;
-                    BodyValue {
-                        body,
-                        radius: profile_radius(profile) + path.extent(),
+                    let helical = recipe.steps.iter().find(|s| &s.id == path)
+                        .is_some_and(|s| matches!(&s.op,Operation::Path {segments,..}
+                            if segments.iter().any(|s|matches!(s,catallax_recipe::PathSegment::Helix {..}))));
+                    if helical {
+                        let context=numerical_sweep.as_deref_mut().ok_or_else(||Refusal::new(
+                            "sweep.requires-numerical-evaluation",
+                            "helical sweeps require numerical admission under a stated tolerance"))?;
+                        let (body,radius)=context.sweep(model,recipe,profile,path,&step.id,*orientation,dec)?;
+                        BodyValue {body,radius}
+                    } else {
+                        let profile = &profiles[profile];
+                        let path = &paths[path];
+                        let body = path.build(model, profile, &step.id, *orientation, dec)?;
+                        BodyValue {
+                            body,
+                            radius: profile_radius(profile) + path.extent(),
+                        }
                     }
                 }
                 Operation::Revolve {
@@ -1742,10 +1762,15 @@ fn evaluate_impl(
                 None
             })
         } else if let Operation::Path { start, segments } = &step.op {
-            crate::sweep::Path::new(start, segments).map(|path| {
-                paths.insert(step.id.clone(), path);
-                None
-            })
+            if numerical_sweep.is_some() && segments.iter()
+                .any(|s| matches!(s,catallax_recipe::PathSegment::Helix {..})) {
+                Ok(None)
+            } else {
+                crate::sweep::Path::new(start, segments).map(|path| {
+                    paths.insert(step.id.clone(), path);
+                    None
+                })
+            }
         } else if let Operation::ScanImport { .. } = &step.op {
             // Reference data, RECIPE.md section 4.19.1: no body, and no body
             // operation may read it, so the B-rep has nothing to build.
@@ -1831,6 +1856,17 @@ pub(crate) fn import_refusal(error: catallax_import::ImportRefusal) -> Refusal {
         _ => None,
     };
     Refusal::new(code, format!("{error:?}")).keeping_any(undecided)
+}
+
+pub(crate) fn numerical_sweep_impl(
+    recipe: &Recipe,
+    context: &mut crate::general_sweep::Context,
+    dec: &mut Decider,
+) -> Result<(Model,BodyId),BuildError> {
+    let state=evaluate_impl(recipe,&ImportFiles::new(),None,Some(context),
+        EvaluationState::default(),0,dec)?;
+    let body=state.bodies[&recipe.result].body;
+    Ok((state.model,body))
 }
 
 /// Evaluate the opt-in numerical source and its edits atomically. Every stage shares

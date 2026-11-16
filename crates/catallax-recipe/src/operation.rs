@@ -706,6 +706,22 @@ pub enum PathSegment {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         corner_axis: Option<Vector3>,
     },
+    /// Rotation about an axis with simultaneous axial translation.
+    Helix {
+        /// Stable authored path segment identity.
+        id: ElementId,
+        /// Axis point in the plane of the preceding endpoint.
+        centre: Point3,
+        /// Nonzero axis direction.
+        axis: Vector3,
+        /// Nonzero signed rotation in degrees.
+        angle: Number,
+        /// Signed translation along the unit axis.
+        rise: Number,
+        /// Half-turn axis at a reversing join.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        corner_axis: Option<Vector3>,
+    },
     /// A clamped rational B-spline in model space, in versions 4 and 5.
     Spline {
         /// The authored segment id, retained across internal knot spans.
@@ -728,7 +744,8 @@ impl PathSegment {
     /// The segment's id.
     pub fn id(&self) -> &ElementId {
         match self {
-            Self::Line { id, .. } | Self::Arc { id, .. } | Self::Spline { id, .. } => id,
+            Self::Line { id, .. } | Self::Arc { id, .. } | Self::Helix { id, .. }
+            | Self::Spline { id, .. } => id,
         }
     }
 }
@@ -739,6 +756,7 @@ impl PathSegment {
         match self {
             Self::Line { corner_axis, .. }
             | Self::Arc { corner_axis, .. }
+            | Self::Helix { corner_axis, .. }
             | Self::Spline { corner_axis, .. } => corner_axis.as_ref(),
         }
     }

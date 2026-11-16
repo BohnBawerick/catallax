@@ -101,6 +101,7 @@ pub mod sharp_thicken;
 pub mod stand_in;
 mod stock;
 mod sweep;
+mod tapered_extrude;
 
 pub use certified::{
     BodyCertificate, CertificateKey, CertifiedBuilt, EnvelopeRegion, JunctionCertificate,
@@ -114,6 +115,7 @@ pub use evaluate::{
     replay_numerical,
 };
 pub use extrude::extrude;
+pub use tapered_extrude::extrude_tapered;
 pub use offset_fit::{EllipticOffsetFit, OffsetSpanBound, fit_elliptic_offset};
 pub use placement::{
     check_face_profile, copy_origin, face_placement, mirror_placement, pattern_placement,

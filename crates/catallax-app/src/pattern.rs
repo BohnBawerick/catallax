@@ -222,6 +222,18 @@ fn geometry(op: &mut Operation, recipe: &Recipe, map: &Isometry) -> Result<(), R
                             axial(axis)?;
                         }
                     }
+                    catallax_recipe::PathSegment::Helix {
+                        centre, axis, angle, corner_axis, ..
+                    } => {
+                        p(centre)?;
+                        v(axis)?;
+                        if map.reversing() {
+                            *angle = (-angle.value()).into();
+                        }
+                        if let Some(axis) = corner_axis {
+                            axial(axis)?;
+                        }
+                    }
                     catallax_recipe::PathSegment::Spline {
                         control_points,
                         corner_axis,

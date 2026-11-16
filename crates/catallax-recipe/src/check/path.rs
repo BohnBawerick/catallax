@@ -9,10 +9,15 @@ pub(super) fn check(
     start: &Point3,
     segments: &[PathSegment],
 ) -> Result<(), RecipeError> {
-    let mut previous = start;
+    let mut previous = Some(start);
     for segment in segments {
         match segment {
-            PathSegment::Line { to, .. } | PathSegment::Arc { to, .. } => previous = to,
+            PathSegment::Line { to, .. } | PathSegment::Arc { to, .. } => previous = Some(to),
+            PathSegment::Helix { .. } => {
+                // Its derived endpoint may be algebraic. The geometric builder
+                // checks subsequent joins against that endpoint.
+                previous = None;
+            }
             PathSegment::Spline {
                 id,
                 degree,
@@ -72,14 +77,12 @@ pub(super) fn check(
                     }
                     previous_knot = Some(knot);
                 }
-                if control_points.first() != Some(previous) {
+                if previous.is_some_and(|previous| control_points.first() != Some(previous)) {
                     return Err(invalid(
                         "first control must equal the preceding endpoint exactly",
                     ));
                 }
-                previous = control_points
-                    .last()
-                    .expect("validated positive control count");
+                previous = control_points.last();
             }
         }
     }

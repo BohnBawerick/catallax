@@ -108,12 +108,26 @@ pub(crate) fn spline_parameters(
     spline: &BSplineCurve,
     dec: &mut Decider,
 ) -> Result<Option<SplineParameterHits>, Refusal> {
+    let mut unique: Vec<&RationalPatch> = Vec::new();
+    for &patch in patches {
+        let mut duplicate = false;
+        for &previous in &unique {
+            dec.charge_work(1)?;
+            if std::ptr::eq(patch, previous) {
+                duplicate = true;
+                break;
+            }
+        }
+        if !duplicate {
+            unique.push(patch);
+        }
+    }
     let mut parameters = Vec::new();
     let (mut any_contained, mut all_contained) = (false, true);
     for (index, domain) in spline.spans() {
         let curve = spline.query_span_polynomials(index, dec)?;
         let mut pullbacks = Vec::new();
-        for patch in patches {
+        for patch in &unique {
             for span in &patch.data.spans {
                 let Some(pullback) = Pullback::new(span, &curve, dec)? else {
                     return Ok(None);
@@ -121,7 +135,6 @@ pub(crate) fn spline_parameters(
                 pullbacks.push(pullback);
             }
         }
-        let mut candidates = Vec::new();
         let mut partition = vec![Real::from(domain[0].clone()), Real::from(domain[1].clone())];
         for pullback in &pullbacks {
             if pullback.contained {
@@ -136,7 +149,15 @@ pub(crate) fn spline_parameters(
                     }
                 }
             } else {
+                let mut candidates = Vec::new();
                 roots(&pullback.equation, domain, &mut candidates, dec)?;
+                // Each root already belongs to this equation. Keep that
+                // ownership while checking its finite source domain.
+                for parameter in candidates {
+                    if pullback.inside(&parameter, dec)? {
+                        insert(&mut parameters, parameter, dec)?;
+                    }
+                }
             }
         }
         // Complete domain-boundary roots make membership constant inside
@@ -151,28 +172,12 @@ pub(crate) fn spline_parameters(
             all_contained &= contained;
         }
         for parameter in partition {
-            insert(&mut candidates, parameter, dec)?;
-        }
-        for parameter in candidates {
-            let mut incident = false;
-            for pullback in &pullbacks {
-                if (pullback.contained
-                    || exact_sign(
-                        &pullback
-                            .equation
-                            .eval_real(std::slice::from_ref(&parameter)),
-                        dec,
-                    )? == Sign::Zero)
-                    && pullback.inside(&parameter, dec)?
-                {
-                    incident = true;
+            for pullback in pullbacks.iter().filter(|p| p.contained) {
+                if pullback.inside(&parameter, dec)? {
+                    insert(&mut parameters, parameter, dec)?;
                     break;
                 }
             }
-            if !incident {
-                continue;
-            }
-            insert(&mut parameters, parameter, dec)?;
         }
     }
     if all_contained {

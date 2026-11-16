@@ -4,7 +4,7 @@ use super::*;
 use crate::rational_patch::trace_series::series;
 use std::collections::BTreeMap;
 
-mod affine;
+pub(super) mod affine;
 mod bounds;
 mod contract;
 mod curve;

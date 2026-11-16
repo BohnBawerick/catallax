@@ -730,8 +730,17 @@ pub(super) fn isolate(
         high.push(net::sub(&hi[k], &c, dec)?);
         centre.push(c);
     }
-    let moved: Vec<MPoly> = equations.iter().map(|p| shifted(p, &centre)).collect();
+    let mut moved: Vec<MPoly> = equations.iter().map(|p| shifted(p, &centre)).collect();
     charge_terms(&moved, dec)?;
+    if moved.len() == 3
+        && moved.iter().all(|p| p.nvars() == 3)
+        && moved.iter().any(|p| p.total_degree() == Some(1))
+        && moved
+            .iter()
+            .any(|p| p.total_degree().is_some_and(|d| d > 1))
+    {
+        moved = trace::affine::reduce(moved.try_into().unwrap(), dec)?.into();
+    }
     let system = Arc::new(PolySystem::new(moved).expect("square face system"));
     let candidate = RootBox::new(low, high).expect("ordered face box");
     Ok(match root_in(&system, &candidate, dec)? {

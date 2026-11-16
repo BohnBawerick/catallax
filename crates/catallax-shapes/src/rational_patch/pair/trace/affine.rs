@@ -33,7 +33,10 @@ fn substitute(
     Ok(result)
 }
 
-pub(super) fn reduce(mut equations: [MPoly; 3], dec: &mut Decider) -> Result<[MPoly; 3], Refusal> {
+pub(in crate::rational_patch::pair) fn reduce(
+    mut equations: [MPoly; 3],
+    dec: &mut Decider,
+) -> Result<[MPoly; 3], Refusal> {
     let mut used_rows = [false; 3];
     let mut used_axes = [false; 4];
     for _ in 0..3 {
@@ -45,7 +48,7 @@ pub(super) fn reduce(mut equations: [MPoly; 3], dec: &mut Decider) -> Result<[MP
             }
             let terms = equation.terms();
             dec.charge_work(terms.len() as u64)?;
-            for axis in (0..4).rev() {
+            for axis in (0..equation.nvars().min(4)).rev() {
                 dec.charge_work(terms.len() as u64 + 1)?;
                 if !used_axes[axis]
                     && let Some((_, coefficient)) =
@@ -86,6 +89,34 @@ pub(super) fn reduce(mut equations: [MPoly; 3], dec: &mut Decider) -> Result<[MP
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn affine_border_constraints_keep_the_original_three_parameters() {
+        let mut dec = Decider::default();
+        let [u, v, w] = std::array::from_fn(|axis| MPoly::var(3, axis));
+        let gap = MPoly::constant(3, Rational::from_ratio(1, 1000).unwrap());
+        let equations = [
+            &(&u - &v) - &gap,
+            &w - &MPoly::constant(3, Rational::from_ratio(1, 2).unwrap()),
+            &(&u - &(&u * &u)) - &(&v - &(&v * &v)),
+        ];
+        let reduced = reduce(equations.clone(), &mut dec).unwrap();
+        assert!(reduced.iter().all(|p| p.total_degree() == Some(1)));
+        for u in [
+            Rational::from_ratio(1001, 2000).unwrap(),
+            Rational::from_ratio(1, 2).unwrap(),
+        ] {
+            let point = [
+                u.clone(),
+                &u - &Rational::from_ratio(1, 1000).unwrap(),
+                Rational::from_ratio(1, 2).unwrap(),
+            ];
+            let before = equations.iter().all(|p| p.eval(&point).is_zero());
+            let after = reduced.iter().all(|p| p.eval(&point).is_zero());
+            assert_eq!(before, u == Rational::from_ratio(1001, 2000).unwrap());
+            assert_eq!(after, before);
+        }
+    }
 
     #[test]
     fn affine_source_constraints_remove_a_false_interval_singularity() {

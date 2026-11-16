@@ -1,8 +1,10 @@
-# Numerical skew collar Hole
+# Numerical skew collar hole
 
 `catallax_features::evaluate_numerical_hole` evaluates one terminal through Hole placement and returns a separate `NumericalHoleBuilt`. Callers choose `NumericalOptions` before evaluation. `edit` re-evaluates the authored recipe with explicit options. The original exact evaluator keeps its result type.
 
 The result exposes its recipe, numerical body, source-face origins and actual prefix/assembly work. Original stock faces keep their origin sets. New tool faces retain the compiled Entry/Wall band origins. Stable output keys and native parameter curves belong to the numerical body. The numerical STEP wrapper uses this continuation for supported recipes.
+
+Call `evaluate_with_numerical_hole` when the caller needs ordinary fallback. It returns `HoleEvaluation::Numerical` or `HoleEvaluation::Standard`, retaining the latter's original marks and checks. Unsupported stock resumes the ordinary evaluator from the already evaluated prefix under one shared allowance. Calling the optional entry point and then starting a separate ordinary evaluation would repeat that prefix. Both numerical entry points refuse field stand-ins with `field.stand-in-export` before Hole assembly.
 
 The current continuation accepts an annular cylinder with two outer conical bevels and two planar caps. It requires one constant-radius through tool separated from the bore. Other source families return `None`; unsupported arrangements within this continuation return a refusal. This change does not qualify blind holes, counterbores or a tool crossing the original bore.
 

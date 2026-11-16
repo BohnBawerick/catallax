@@ -606,12 +606,6 @@ impl Context {
         }
         equations.extend(extra);
         let fields = correlated::prepare(self, spans, dec)?;
-        if fields.is_some() {
-            eprintln!(
-                "PAIR_GRAPH spans={spans:?} rotation={:?} equations={equations:?}",
-                self.rotation
-            );
-        }
         let _ = self.correlated_fields[self.index(spans)].set(fields);
         let _ = slot.set(equations);
         Ok(())

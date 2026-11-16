@@ -277,34 +277,10 @@ impl RealPoly {
     /// rational equations. Either way they isolate candidates and certify
     /// every candidate in the original equation. Root domains and
     /// conjugate choices are never inferred from an eliminated equation alone.
-    #[track_caller]
     pub fn real_roots(&self, dec: &mut Decider) -> Result<Vec<Real>, Refusal> {
         assert_eq!(self.nvars(), 1);
         if let Some(p) = self.rational() {
-            let before = crate::current_operation_work().used;
-            let source = std::panic::Location::caller();
-            let polynomial = p.to_upoly(0).unwrap();
-            if before > 8_000_000 {
-                eprintln!(
-                    "ROOT_START {source} work={before} degree={} terms={} max_bits={}",
-                    polynomial.degree().unwrap_or(0),
-                    p.terms().len(),
-                    polynomial
-                        .coefficients()
-                        .iter()
-                        .map(|q| q.numerator().bit_length() + q.denominator().bit_length())
-                        .max()
-                        .unwrap_or(0)
-                );
-            }
-            let result = root_values(dec.real_roots(&polynomial));
-            if before > 8_000_000 {
-                eprintln!(
-                    "ROOT_END {source} delta={}",
-                    crate::current_operation_work().used - before
-                );
-            }
-            return result;
+            return root_values(dec.real_roots(&p.to_upoly(0).unwrap()));
         }
         for (_, coefficient) in self.terms() {
             dec.enclose(&coefficient, &Rational::one())?;

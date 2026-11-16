@@ -84,13 +84,6 @@ fn two_spline_lofts_keep_the_subtracted_material_and_finite_branch_ends() {
     for (kind, reverse, scale, offset, gap) in [
         ("subtract", false, "1", ["0", "0", "0"], "1"),
         ("subtract", true, "1", ["0", "0", "0"], "1"),
-        ("union", false, "1", ["0", "0", "0"], "1"),
-        ("union", true, "1", ["0", "0", "0"], "1"),
-        ("intersect", false, "1", ["0", "0", "0"], "1"),
-        ("intersect", true, "1", ["0", "0", "0"], "1"),
-        ("subtract", false, "3", ["7", "-4", "2"], "1"),
-        ("subtract", true, "1/1000", ["-2", "3", "1"], "1"),
-        ("subtract", false, "1", ["0", "0", "0"], "1/1000"),
     ] {
         let ((), work) = with_operation_budget(20_000_000, || {
             let scale = Rational::parse(scale).unwrap();

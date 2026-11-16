@@ -464,9 +464,12 @@ pub(crate) struct Scratch {
     pub faces: Vec<FaceId>,
 }
 
-pub(crate) fn scratch(faces: &[Face]) -> Result<Scratch, NotVerified> {
+pub(crate) fn scratch(
+    faces: &[Face],
+    deadline: Option<std::time::Instant>,
+) -> Result<Scratch, NotVerified> {
     let mut model = Model::new();
-    let faces = crate::build::scratch_faces(&mut model, faces).map_err(|e| {
+    let faces = crate::build::scratch_faces(&mut model, faces, deadline).map_err(|e| {
         Refusal::new(
             "import.pair-setup",
             format!("the faces could not be set up for the intersection engine: {e:?}"),

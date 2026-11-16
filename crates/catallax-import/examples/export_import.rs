@@ -74,8 +74,20 @@ fn run(bytes: &[u8], expected: &str, out: &Path, mut checkpoint: impl FnMut(&Val
         StepImport::Certified(imported) => ("certified", imported.bodies().len()),
         StepImport::Numerical(imported) => ("numerical approximate", imported.bodies().len()),
     };
+    // Observation is outside kernel work. Bind numerical source face keys and
+    // kinds to their generating definition order; external checks must map the
+    // actual emitted entities rather than assume this is OCCT traversal order.
+    let numerical_definitions = match &imported {
+        StepImport::Numerical(imported) => Some(imported.bodies().iter().enumerate().map(|(index, (key, body))| {
+            json!({"body":index,"source_body":key,"faces":body.definition().faces.iter().enumerate().map(|(index,face)| {
+                json!({"definition_index":index,"source_key":face.key,"surface_kind":format!("{:?}",face.surface.kind())})
+            }).collect::<Vec<_>>()})
+        }).collect::<Vec<_>>()),
+        StepImport::Certified(_) => None,
+    };
     let admission = json!({"stage":"import","outcome":"admitted","source_sha256":actual,
-        "import_category":category,"bodies":bodies,"work_used":import_work.used,"work_limit":DEFAULT_WORK});
+        "import_category":category,"bodies":bodies,"work_used":import_work.used,"work_limit":DEFAULT_WORK,
+        "numerical_definitions":numerical_definitions});
     // An export timeout must not erase the independently completed import row.
     checkpoint(&admission);
     let mut files = Vec::new();

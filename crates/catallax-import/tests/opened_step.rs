@@ -1,0 +1,127 @@
+//! Tier selection, retained siblings and replay from source plus controls.
+mod common;
+
+use catallax_import::{
+    numerical::StepImport,
+    sha256_hex,
+    tolerant::{
+        self,
+        opened::{self, BodyView, Tier},
+    },
+};
+use catallax_numbers::{Decider, with_operation_budget};
+use catallax_recipe::StepId;
+use common::{BoxFixture, box_step, boxes_step, r};
+
+fn open(source: &str) -> opened::OpenedStep {
+    opened::open_step(
+        source.as_bytes(),
+        &sha256_hex(source.as_bytes()),
+        &StepId::new("source").unwrap(),
+        Default::default(),
+        &mut Decider::default(),
+    )
+    .unwrap()
+}
+
+fn history(file: &opened::OpenedStep) -> serde_json::Value {
+    if let Some(healed) = file.bodies()[0].healing() {
+        return serde_json::json!({"healing":healed.report(),"tolerances":healed.tolerances()});
+    }
+    match file.admission(0).unwrap() {
+        StepImport::Numerical(admitted) => serde_json::to_value(admitted.record()).unwrap(),
+        _ => panic!("normal-gap repair must retain approximate history"),
+    }
+}
+
+#[test]
+fn a_good_sibling_remains_solid_while_an_open_body_retains_all_five_faces() {
+    let good = BoxFixture::new(["2", "3", "4"]);
+    let mut sheet = BoxFixture::new(["2", "3", "4"]);
+    sheet.origin = [r("5"), r("0"), r("0")];
+    sheet.omit = Some(0);
+    let source = boxes_step(&[good, sheet]);
+    let opened = open(&source);
+    assert_eq!(opened.bodies().len(), 2);
+    assert_eq!(opened.bodies()[0].tier(), Tier::ValidSolid);
+    assert!(!opened.bodies()[0].approximate());
+    assert!(matches!(opened.body(0), Some(BodyView::Certified { .. })));
+    assert_eq!(opened.bodies()[1].tier(), Tier::SurfaceBody);
+    let Some(BodyView::Surfaces { source, .. }) = opened.body(1) else {
+        panic!("source surface representation required")
+    };
+    assert_eq!(source.shells()[0].faces.len(), 5);
+    assert_ne!(opened.source().bodies()[0].name(), source.name());
+}
+
+#[test]
+fn admission_exhaustion_keeps_the_complete_prepaid_surface_representation() {
+    let source = box_step(BoxFixture::new(["2", "3", "4"]));
+    let hash = sha256_hex(source.as_bytes());
+    let (graph, read) = with_operation_budget(20_000_000, || {
+        tolerant::read_step(
+            source.as_bytes(),
+            &hash,
+            Default::default(),
+            &mut Decider::default(),
+        )
+    });
+    let graph = graph.unwrap();
+    let (result, work) = with_operation_budget(read.used + 128, || {
+        opened::open_step(
+            source.as_bytes(),
+            &hash,
+            &StepId::new("source").unwrap(),
+            Default::default(),
+            &mut Decider::default(),
+        )
+    });
+    let opened = result.unwrap();
+    assert!(work.exhausted);
+    assert_eq!(opened.source(), &graph);
+    assert_eq!(opened.bodies()[0].tier(), Tier::SurfaceBody);
+    assert!(opened.first_refusal().is_some());
+    assert!(matches!(
+        opened.body(0),
+        Some(BodyView::Surfaces {
+            candidate: None,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn normal_gap_replays_from_saved_source_controls_with_approximate_history() {
+    let mut fixture = BoxFixture::new(["2", "3", "4"]);
+    fixture.shift = Some((0, [r("0.001"), r("0"), r("0")]));
+    let source = box_step(fixture);
+    let original = open(&source);
+    let controls = serde_json::to_vec(&original.saved_controls()).unwrap();
+    let controls = serde_json::from_slice(&controls).unwrap();
+    let replayed = opened::reopen(
+        source.as_bytes(),
+        &controls,
+        &StepId::new("source").unwrap(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    for file in [&original, &replayed] {
+        assert_eq!(file.bodies()[0].tier(), Tier::RepairedSolid);
+        assert!(file.bodies()[0].approximate());
+        let Some(BodyView::Numerical(body)) = file.body(0) else {
+            panic!("approximate body required: {file:?}")
+        };
+        let counts = body.counts();
+        assert_eq!((counts.faces, counts.edges, counts.vertices), (6, 12, 8));
+    }
+    let retained = history(&original);
+    assert_eq!(retained, history(&replayed));
+    assert!(
+        retained.get("healing").is_some()
+            || ["changes", "face_tolerances", "source_incidence"]
+                .iter()
+                .any(|key| retained[*key]
+                    .as_array()
+                    .is_some_and(|values| !values.is_empty()))
+    );
+}

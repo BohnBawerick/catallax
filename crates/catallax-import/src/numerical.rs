@@ -298,6 +298,25 @@ fn import_inner(
     })))
 }
 
+// Only verified, retained source definitions from the opened-file transaction
+// enter here. The existing byte entry and its planar-only policy are unchanged.
+pub(crate) fn admit_retained_definition(
+    file: &crate::StepFile,
+    verified_sha256: &str,
+    strict_refusal: ImportRefusal,
+    options: &n::NumericalOptions,
+    dec: &mut Decider,
+) -> Result<StepImport, ImportError> {
+    if options.tolerance_mm.sign() != Sign::Positive
+        || options.tolerance_mm > crate::gap::auto_cap()
+    {
+        return Err(unsupported(
+            "retained numerical tolerance is outside the import cap",
+        ));
+    }
+    analytic::admit_definition(file, verified_sha256, strict_refusal, options, true, dec)
+}
+
 fn point(value: &Vec3) -> catallax_shapes::Point3 {
     RPoint3::new(value[0].clone(), value[1].clone(), value[2].clone()).to_real()
 }

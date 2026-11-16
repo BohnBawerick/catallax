@@ -762,25 +762,37 @@ pub(super) fn import(
     }
     dec.charge_work(bytes.len() as u64)?;
     let file = crate::read_step(bytes)?;
+    admit_definition(&file, verified_sha256, refusal, options, false, dec)
+}
+
+pub(super) fn admit_definition(
+    file: &crate::StepFile,
+    verified_sha256: &str,
+    refusal: ImportRefusal,
+    options: &n::NumericalOptions,
+    permit_planar: bool,
+    dec: &mut Decider,
+) -> Result<StepImport, ImportError> {
     if !file.surface_models.is_empty() {
         return Err(unsupported(
             "numerical analytic continuation must retain every surface model and its surface body kind",
         ));
     }
-    if !file
-        .solids
-        .iter()
-        .flat_map(|solid| &solid.faces)
-        .any(|face| {
-            matches!(
-                face.surface,
-                crate::Surface::Cylinder(..) | crate::Surface::Cone(..)
-            ) || face
-                .loops
-                .iter()
-                .flat_map(|bound| &bound.edges)
-                .any(|edge| matches!(edge.curve, crate::Curve::Circle(..)))
-        })
+    if !permit_planar
+        && !file
+            .solids
+            .iter()
+            .flat_map(|solid| &solid.faces)
+            .any(|face| {
+                matches!(
+                    face.surface,
+                    crate::Surface::Cylinder(..) | crate::Surface::Cone(..)
+                ) || face
+                    .loops
+                    .iter()
+                    .flat_map(|bound| &bound.edges)
+                    .any(|edge| matches!(edge.curve, crate::Curve::Circle(..)))
+            })
     {
         // Keep the previous planar-only policy and its export controls until
         // that separate family receives its own complete qualification.
@@ -803,8 +815,8 @@ pub(super) fn import(
         )
         .into());
     }
-    let continuation_options = cones::continuation_options(&file, options, dec)?;
-    let intersection_checks = intersection_checks(&file, OPTIONAL_EXACT_WORK, dec)?;
+    let continuation_options = cones::continuation_options(file, options, dec)?;
+    let intersection_checks = intersection_checks(file, OPTIONAL_EXACT_WORK, dec)?;
     let mut bodies = Vec::new();
     let mut topology_repairs = Vec::new();
     for solid in &file.solids {

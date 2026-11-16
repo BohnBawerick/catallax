@@ -659,17 +659,19 @@ pub fn measure_incidence(
         edge_name,
         face_name,
         step,
+        None,
     )
 }
 
 pub(crate) fn measure_solid(
     solid: &crate::Solid,
     refusal: &ImportRefusal,
+    deadline: Option<std::time::Instant>,
 ) -> Result<IncidenceGap, ImportRefusal> {
     let (edge_name, face_name, step) = target(refusal).ok_or_else(|| ImportRefusal::Malformed {
         detail: "expected a saved incidence refusal".into(),
     })?;
-    measure_faces(solid.faces.iter(), edge_name, face_name, step)
+    measure_faces(solid.faces.iter(), edge_name, face_name, step, deadline)
 }
 
 fn measure_faces<'a>(
@@ -677,6 +679,7 @@ fn measure_faces<'a>(
     edge_name: String,
     face_name: Option<String>,
     step: &str,
+    deadline: Option<std::time::Instant>,
 ) -> Result<IncidenceGap, ImportRefusal> {
     let pair = faces
         .filter(|f| face_name.as_ref().is_none_or(|name| name == &f.name))
@@ -691,6 +694,7 @@ fn measure_faces<'a>(
             detail: "saved incidence entities are absent from source".into(),
         })?;
     let mut dec = Decider::default();
+    dec.set_deadline(deadline);
     let measured = (|| {
         if step == "vertex_surface_incidence" {
             let mut lower = Rational::zero();

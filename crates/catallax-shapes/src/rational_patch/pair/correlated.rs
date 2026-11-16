@@ -203,12 +203,14 @@ pub(super) fn prepare(
     if ctx.lengths() != 0 {
         return Ok(None);
     }
-    fields(
-        &ctx.sides[0].spans[spans[0]],
-        &ctx.sides[1].spans[spans[1]],
-        &ctx.rotation,
-        dec,
-    )
+    let first = &ctx.sides[0].spans[spans[0]];
+    let second = &ctx.sides[1].spans[spans[1]];
+    if first.homogeneous[3].total_degree() != Some(0)
+        || second.homogeneous[3].total_degree() != Some(0)
+    {
+        return Ok(None);
+    }
+    fields(first, second, &ctx.rotation, dec)
 }
 
 #[cfg(test)]

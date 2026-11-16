@@ -177,9 +177,18 @@ impl DirectSolid {
         let current_faces = if let Some(healed) = opened.bodies()[index].healing() {
             let mut definition = healed.definition(dec)?;
             if definition.solids.len() != 1 || !definition.surface_models.is_empty() {
-                return Err(bad("direct.body-kind", "retained source healing must describe one solid"));
+                return Err(bad(
+                    "direct.body-kind",
+                    "retained source healing must describe one solid",
+                ));
             }
-            Arc::<[Face]>::from(definition.solids.pop().expect("checked one healed solid").faces)
+            Arc::<[Face]>::from(
+                definition
+                    .solids
+                    .pop()
+                    .expect("checked one healed solid")
+                    .faces,
+            )
         } else {
             faces.clone()
         };
@@ -219,7 +228,11 @@ impl DirectSolid {
     pub fn body(&self) -> BodyView<'_> {
         match &self.material {
             Some(material) => BodyView::Numerical(material.body()),
-            None => self.source.opened.body(self.source.body_index).expect("retained admitted source"),
+            None => self
+                .source
+                .opened
+                .body(self.source.body_index)
+                .expect("retained admitted source"),
         }
     }
     /// Sewing, source-pair and finite reconstruction evidence for a derivative.
@@ -502,7 +515,11 @@ fn polygon_winding(
     }))
 }
 
-fn reconstruct_lines(faces: &mut [Face], cap: &Rational, dec: &mut Decider) -> Result<Vec<LineRepair>, ImportError> {
+fn reconstruct_lines(
+    faces: &mut [Face],
+    cap: &Rational,
+    dec: &mut Decider,
+) -> Result<Vec<LineRepair>, ImportError> {
     let mut seen = BTreeSet::new();
     let mut curves = BTreeMap::new();
     let mut repairs = Vec::new();
@@ -510,15 +527,25 @@ fn reconstruct_lines(faces: &mut [Face], cap: &Rational, dec: &mut Decider) -> R
         for boundary in &face.loops {
             for edge in &boundary.edges {
                 dec.charge_work(1)?;
-                if !seen.insert(edge.edge.clone()) { continue }
-                let Curve::Line(origin, direction) = &edge.curve else { continue };
+                if !seen.insert(edge.edge.clone()) {
+                    continue;
+                }
+                let Curve::Line(origin, direction) = &edge.curve else {
+                    continue;
+                };
                 let square = a::dot(direction, direction, dec)?;
                 if square.is_zero() {
-                    return Err(bad("direct.line-repair", "a retained source line has no direction"));
+                    return Err(bad(
+                        "direct.line-repair",
+                        "a retained source line has no direction",
+                    ));
                 }
                 let mut projected = [edge.start.point.clone(), edge.end.point.clone()];
                 let mut error = Rational::zero();
-                for (point, vertex) in projected.iter_mut().zip([&edge.start.point, &edge.end.point]) {
+                for (point, vertex) in projected
+                    .iter_mut()
+                    .zip([&edge.start.point, &edge.end.point])
+                {
                     let delta = a::sub(vertex, origin, dec)?;
                     let t = a::arithmetic(&a::dot(&delta, direction, dec)?, &square, '/', dec)?;
                     *point = a::offset(origin, direction, &t, '+', dec)?;
@@ -528,18 +555,31 @@ fn reconstruct_lines(faces: &mut [Face], cap: &Rational, dec: &mut Decider) -> R
                         error = a::maximum(error, upper, dec)?;
                     }
                 }
-                if error.is_zero() { continue }
+                if error.is_zero() {
+                    continue;
+                }
                 if a::compare(&error, cap, dec)?.is_gt() {
-                    return Err(bad("direct.line-repair", "finite source-line reconstruction exceeds the stated displacement cap"));
+                    return Err(bad(
+                        "direct.line-repair",
+                        "finite source-line reconstruction exceeds the stated displacement cap",
+                    ));
                 }
                 let mut direction = a::sub(&edge.end.point, &edge.start.point, dec)?;
                 if crate::exact::is_zero(&direction) {
-                    return Err(bad("direct.topology-change", "finite line reconstruction would collapse an edge"));
+                    return Err(bad(
+                        "direct.topology-change",
+                        "finite line reconstruction would collapse an edge",
+                    ));
                 }
                 if !edge.curve_same_sense {
-                    for value in &mut direction { *value = -&*value; }
+                    for value in &mut direction {
+                        *value = -&*value;
+                    }
                 }
-                curves.insert(edge.edge.clone(), Curve::Line(edge.start.point.clone(), direction));
+                curves.insert(
+                    edge.edge.clone(),
+                    Curve::Line(edge.start.point.clone(), direction),
+                );
                 repairs.push(LineRepair {
                     edge: edge.edge.clone(),
                     source_segment_mm: projected,
@@ -552,18 +592,28 @@ fn reconstruct_lines(faces: &mut [Face], cap: &Rational, dec: &mut Decider) -> R
     for face in faces {
         for boundary in &mut face.loops {
             for edge in &mut boundary.edges {
-                if let Some(curve) = curves.get(&edge.edge) { edge.curve = curve.clone(); }
+                if let Some(curve) = curves.get(&edge.edge) {
+                    edge.curve = curve.clone();
+                }
             }
         }
     }
     Ok(repairs)
 }
 
-fn reconstruct_planar_vertices(faces: &mut [Face], cap: &Rational, dec: &mut Decider) -> Result<Vec<VertexRepair>, ImportError> {
+fn reconstruct_planar_vertices(
+    faces: &mut [Face],
+    cap: &Rational,
+    dec: &mut Decider,
+) -> Result<Vec<VertexRepair>, ImportError> {
     let incidence = vertex_owners(faces, dec)?;
-    let vertices: BTreeMap<_, _> = faces.iter().flat_map(|f| &f.loops)
-        .flat_map(|b| &b.edges).flat_map(|e| [&e.start, &e.end])
-        .map(|v| (v.name.as_str(), v)).collect();
+    let vertices: BTreeMap<_, _> = faces
+        .iter()
+        .flat_map(|f| &f.loops)
+        .flat_map(|b| &b.edges)
+        .flat_map(|e| [&e.start, &e.end])
+        .map(|v| (v.name.as_str(), v))
+        .collect();
     let mut moved = BTreeMap::new();
     let mut repairs = Vec::new();
     'vertices: for (key, vertex) in vertices {
@@ -571,20 +621,32 @@ fn reconstruct_planar_vertices(faces: &mut [Face], cap: &Rational, dec: &mut Dec
         let mut supports = [None; 3];
         let mut off_plane = false;
         for (j, i) in owners.iter().enumerate() {
-            let Surface::Plane(support) = &faces[*i].surface else { continue 'vertices };
-            if j < 3 { supports[j] = Some(support); }
+            let Surface::Plane(support) = &faces[*i].surface else {
+                continue 'vertices;
+            };
+            if j < 3 {
+                supports[j] = Some(support);
+            }
             let delta = a::sub(&vertex.point, &support.origin, dec)?;
             off_plane |= !a::dot(&delta, &support.axis, dec)?.is_zero();
         }
-        if !off_plane { continue }
+        if !off_plane {
+            continue;
+        }
         if owners.len() != 3 {
-            return Err(bad("direct.planar-corner", "a displaced planar corner needs three independent support planes"));
+            return Err(bad(
+                "direct.planar-corner",
+                "a displaced planar corner needs three independent support planes",
+            ));
         }
         let point = triple(supports.map(|p| p.expect("three planes")), dec)?;
         let square = a::squared(&vertex.point, &point, dec)?;
         let (_, error) = a::sqrt_enclosure(&square, dec)?;
         if a::compare(&error, cap, dec)?.is_gt() {
-            return Err(bad("direct.planar-corner", "retained planar corner reconstruction exceeds the stated displacement cap"));
+            return Err(bad(
+                "direct.planar-corner",
+                "retained planar corner reconstruction exceeds the stated displacement cap",
+            ));
         }
         repairs.push(VertexRepair {
             vertex: key.to_owned(),
@@ -598,11 +660,15 @@ fn reconstruct_planar_vertices(faces: &mut [Face], cap: &Rational, dec: &mut Dec
     for face in faces {
         for boundary in &mut face.loops {
             if let Some(vertex) = &mut boundary.vertex {
-                if let Some(point) = moved.get(&vertex.name) { vertex.point = point.clone(); }
+                if let Some(point) = moved.get(&vertex.name) {
+                    vertex.point = point.clone();
+                }
             }
             for edge in &mut boundary.edges {
                 for vertex in [&mut edge.start, &mut edge.end] {
-                    if let Some(point) = moved.get(&vertex.name) { vertex.point = point.clone(); }
+                    if let Some(point) = moved.get(&vertex.name) {
+                        vertex.point = point.clone();
+                    }
                 }
             }
         }

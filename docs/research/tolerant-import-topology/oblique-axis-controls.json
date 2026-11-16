@@ -1,0 +1,25 @@
+{
+  "cases": [
+    {
+      "file": "oblique-axis-antiparallel-false.step",
+      "material_probes_passed": 3,
+      "sha256": "36029388cd48e4a8998c89f3096cddfc0157a706fa05d16bd0b6a46e2b96ed53",
+      "valid_after_builder_internal_healing": true,
+      "volume_mm3": 0.7853981633974481
+    },
+    {
+      "file": "oblique-axis-antiparallel-true.step",
+      "material_probes_passed": 3,
+      "sha256": "8d548ee485fca6972b56576f21978577596576aef1ffb584f65a0fe11d76387b",
+      "valid_after_builder_internal_healing": true,
+      "volume_mm3": 0.7853981633974481
+    }
+  ],
+  "complete": true,
+  "complete_body_bound_established": false,
+  "format": "catallax-oblique-circle-height-controls/1",
+  "ocp_version": "8.0.1.1",
+  "producer": "69b9d5fd921e5f3268cf30861f0b49fe4ca49dd6",
+  "unhealed_validity_established": false,
+  "validity_includes_occt_builder_internal_healing": true
+}

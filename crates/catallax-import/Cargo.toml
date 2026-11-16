@@ -24,4 +24,5 @@ workspace = true
 
 [dev-dependencies]
 catallax-iges.workspace = true
+catallax-numbers = { workspace = true, features = ["test-deadline"] }
 catallax-step.workspace = true

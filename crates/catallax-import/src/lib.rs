@@ -43,6 +43,8 @@ mod repair;
 pub mod scan;
 mod spline_build;
 mod spline_embedding;
+/// Source topology with individual, capped vertex and edge tolerances.
+pub mod tolerant;
 
 pub use build::{build_file, build_solid, build_surface_model};
 pub use consume::{import_iges_bodies, import_step_bodies, sha256_hex};

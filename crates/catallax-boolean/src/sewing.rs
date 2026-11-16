@@ -12,7 +12,8 @@ use catallax_numbers::{Answer, Answered, Decider, MarkLog, Outcome, Refusal, Sig
 use catallax_recipe::{EdgeName, Origin};
 use catallax_shapes::{Curve, CurveId, GeomKey, PointId, SplineSupport, Surface, SurfaceId};
 use catallax_topology::{
-    Body, BodyId, BodyKind, Coedge, Edge, Face, FaceId, Loop, Lump, Model, Sense, Shell, Vertex,
+    Body, BodyId, BodyKind, Coedge, Edge, EdgeId, Face, FaceId, Loop, Lump, Model, Sense, Shell,
+    Vertex,
 };
 use std::collections::{BTreeMap, BTreeSet};
 

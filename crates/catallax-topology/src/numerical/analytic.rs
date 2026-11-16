@@ -37,11 +37,21 @@ pub(super) fn supports(surface: &Surface) -> bool {
         surface,
         Surface::Plane(_)
             | Surface::Cylinder(_)
+            | Surface::Cone(_)
             | Surface::BSpline(SplineSupport::RationalPatch(_))
     )
 }
 
 pub(super) fn validate_surface(surface: &Surface, dec: &mut Decider) -> Result<(), Refusal> {
+    if let Surface::Cone(cone) = surface {
+        catallax_shapes::Cone::new(
+            cone.apex.clone(),
+            cone.axis.clone(),
+            cone.slope.clone(),
+            cone.ref_dir.clone(),
+            dec,
+        )?;
+    }
     if let Surface::Cylinder(cylinder) = surface {
         catallax_shapes::Cylinder::from_radius_sq(
             cylinder.origin.clone(),
@@ -75,7 +85,18 @@ pub(super) fn check_loops(
     tolerance: &Rational,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
-    if let Surface::Cylinder(_) = face.surface {
+    if matches!(face.surface, Surface::Cone(_)) {
+        for uv in face.loops.iter().flatten().flat_map(|trim| &trim.uv) {
+            dec.charge_work(1)?;
+            if uv[1].sign() != Sign::Positive {
+                return Err(bad(
+                    "trim",
+                    "a finite cone chart must remain strictly above its apex",
+                ));
+            }
+        }
+    }
+    if matches!(face.surface, Surface::Cylinder(_) | Surface::Cone(_)) {
         // Ordinary contractible charts remain below one turn. A full band
         // must instead provide one shared seam with two translated UV uses.
         if !periodic_cell(face, edges, dec)? {
@@ -85,7 +106,7 @@ pub(super) fn check_loops(
                 if !seen.insert(trim.edge) {
                     return Err(bad(
                         "trim",
-                        "a paired seam must establish one complete cylinder period",
+                        "a paired seam must establish one complete angular period",
                     ));
                 }
             }
@@ -102,7 +123,7 @@ pub(super) fn check_loops(
             {
                 return Err(bad(
                     "trim",
-                    "a complete cylindrical band requires a paired seam",
+                    "a complete periodic band requires a paired seam",
                 ));
             }
         }

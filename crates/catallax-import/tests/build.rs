@@ -434,3 +434,48 @@ fn sha256_matches_the_known_empty_digest() {
         "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     );
 }
+
+#[test]
+fn a_step_cone_with_an_irrational_axis_length_imports_without_rounding_the_axis() {
+    let mut soup = Soup::new();
+    soup.cone(["0", "0", "0"], "1", "30.", Ok(("3", "3.449489742783178")));
+    let source = in_degrees(&soup.finish());
+    let mut transformed = String::new();
+    for line in source.lines() {
+        if line.contains("=CARTESIAN_POINT(") || line.contains("=DIRECTION(") {
+            let (prefix, xyz) = line.rsplit_once('(').unwrap();
+            let values = xyz
+                .trim_end_matches(&[')', ';'][..])
+                .split(',')
+                .map(r)
+                .collect::<Vec<_>>();
+            assert_eq!(values.len(), 3);
+            assert!(values[1].is_zero());
+            transformed.push_str(&format!(
+                "{prefix}({},{},{}));\n",
+                values[2].to_decimal_exact().unwrap(),
+                values[0].to_decimal_exact().unwrap(),
+                values[2].to_decimal_exact().unwrap()
+            ));
+        } else {
+            transformed.push_str(line);
+            transformed.push('\n');
+        }
+    }
+    let imported = catallax_import::apply(
+        &mut Model::new(),
+        transformed.as_bytes(),
+        "oblique-cone.step",
+        &Default::default(),
+        &[],
+        None,
+    )
+    .unwrap();
+    assert_eq!(imported.bodies.len(), 1);
+    let bounds = &imported.record.face_tolerances;
+    assert_eq!(bounds.len(), 1);
+    assert!(r(&bounds[0].deviation_upper_mm) <= r("1e-12"));
+    let (model, bodies) = import(&transformed, None).unwrap();
+    assert!(model.check(bodies[0]).is_empty());
+    assert_eq!(model.faces_of_body(bodies[0]).len(), 3);
+}

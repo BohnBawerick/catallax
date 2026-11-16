@@ -1,0 +1,805 @@
+{
+  "binary_sha256": "c54a8bafcda1d5671bc7299f6d12229b5d0d76ca14b52b3cbd68789741403715",
+  "body_tiers_assigned": false,
+  "cargo_artifact": {
+    "executable": "/home/pedro/offload/target/cx-slice-import/release/examples/tolerant_healing",
+    "features": [],
+    "filenames": [
+      "/home/pedro/offload/target/cx-slice-import/release/examples/tolerant_healing"
+    ],
+    "fresh": false,
+    "manifest_path": "/home/pedro/offload/wt/cx-slice-import/crates/catallax-import/Cargo.toml",
+    "package_id": "path+file:///home/pedro/offload/wt/cx-slice-import/crates/catallax-import#0.1.5",
+    "profile": {
+      "debug_assertions": false,
+      "debuginfo": 0,
+      "opt_level": "3",
+      "overflow_checks": false,
+      "test": false
+    },
+    "reason": "compiler-artifact",
+    "target": {
+      "crate_types": [
+        "bin"
+      ],
+      "doc": false,
+      "doctest": false,
+      "edition": "2024",
+      "kind": [
+        "example"
+      ],
+      "name": "tolerant_healing",
+      "src_path": "/home/pedro/offload/wt/cx-slice-import/crates/catallax-import/examples/tolerant_healing.rs",
+      "test": false
+    }
+  },
+  "cases": [
+    {
+      "approximate": false,
+      "body_tiers_assigned": false,
+      "changes_by_kind": {},
+      "checks_by_kind": {
+        "sewing.mutually-unique-finite-boundaries-with-capped-endpoint-correspondence": 1,
+        "shell.connected-face-incidence": 1,
+        "shell.two-opposite-uses-per-active-edge": 1,
+        "wire.closed-shared-vertex-walk": 8
+      },
+      "format": "catallax-healing-observation/1",
+      "healing_work_used": 2081,
+      "issues_by_code": {
+        "edge.native-parameter-incidence-pending": 4,
+        "face.finite-curved-embedding-pending": 2,
+        "face.inter-boundary-containment-pending": 2,
+        "face.nonpolygonal-boundary-pending": 4,
+        "solid.unresolved-prerequisites": 1
+      },
+      "kernel_work_used": 11092,
+      "measurement_count": 0,
+      "model_id": "00000131",
+      "preparation_work_used": 1816,
+      "publication_work_used": 76,
+      "record_sha256": "5a90db6fd135cb73bf36945b9b31089a90fb1236e3b6bac99fa06ca39f003ea5",
+      "retained_source_geometry_verified": true,
+      "solid_validity_checked": false,
+      "source_bodies": [
+        {
+          "declared_solid": true,
+          "edges": 4,
+          "faces": 4,
+          "name": "#37",
+          "vertices": 4
+        }
+      ],
+      "source_sha256": "fde1162a6bc2f0631564cb88b09fe98435d5d91e28b8c93c3ada871b6b826fbf",
+      "stages": [
+        {
+          "body": "#37",
+          "stage": "sewing",
+          "work_used": 56
+        },
+        {
+          "body": "#37",
+          "stage": "wire",
+          "work_used": 77
+        },
+        {
+          "body": "#37",
+          "stage": "face",
+          "work_used": 24
+        },
+        {
+          "body": "#37",
+          "stage": "shell",
+          "work_used": 32
+        },
+        {
+          "body": "#37",
+          "stage": "solid",
+          "work_used": 0
+        }
+      ],
+      "status": "candidate_complete",
+      "tolerance_growth_count": 0,
+      "work_exhausted": false
+    },
+    {
+      "approximate": false,
+      "body_tiers_assigned": false,
+      "changes_by_kind": {},
+      "checks_by_kind": {
+        "sewing.mutually-unique-finite-boundaries-with-capped-endpoint-correspondence": 1,
+        "shell.connected-face-incidence": 1,
+        "shell.two-opposite-uses-per-active-edge": 1,
+        "wire.closed-shared-vertex-walk": 8
+      },
+      "format": "catallax-healing-observation/1",
+      "healing_work_used": 2645,
+      "issues_by_code": {
+        "edge.native-parameter-incidence-pending": 4,
+        "face.finite-curved-embedding-pending": 3,
+        "face.nonpolygonal-boundary-pending": 2,
+        "solid.unresolved-prerequisites": 1
+      },
+      "kernel_work_used": 12496,
+      "measurement_count": 0,
+      "model_id": "00000173",
+      "preparation_work_used": 2382,
+      "publication_work_used": 76,
+      "record_sha256": "6a4788e170b3fabfcfe0196a266deb33d27c2b005fa5943a175b22fab0218790",
+      "retained_source_geometry_verified": true,
+      "solid_validity_checked": false,
+      "source_bodies": [
+        {
+          "declared_solid": true,
+          "edges": 4,
+          "faces": 5,
+          "name": "#40",
+          "vertices": 4
+        }
+      ],
+      "source_sha256": "e9e6ed7e80f621e605560b7080903775c380e5410a62bc3d138b8fd682570c7a",
+      "stages": [
+        {
+          "body": "#40",
+          "stage": "sewing",
+          "work_used": 56
+        },
+        {
+          "body": "#40",
+          "stage": "wire",
+          "work_used": 77
+        },
+        {
+          "body": "#40",
+          "stage": "face",
+          "work_used": 20
+        },
+        {
+          "body": "#40",
+          "stage": "shell",
+          "work_used": 34
+        },
+        {
+          "body": "#40",
+          "stage": "solid",
+          "work_used": 0
+        }
+      ],
+      "status": "candidate_complete",
+      "tolerance_growth_count": 0,
+      "work_exhausted": false
+    },
+    {
+      "approximate": false,
+      "body_tiers_assigned": false,
+      "changes_by_kind": {},
+      "checks_by_kind": {
+        "face.simple-nondegenerate-oriented-planar-line-boundary": 6,
+        "sewing.mutually-unique-finite-boundaries-with-capped-endpoint-correspondence": 1,
+        "shell.connected-face-incidence": 1,
+        "shell.two-opposite-uses-per-active-edge": 1,
+        "solid.positive-oriented-polyhedral-volume": 1,
+        "wire.closed-shared-vertex-walk": 6
+      },
+      "format": "catallax-healing-observation/1",
+      "healing_work_used": 47203,
+      "issues_by_code": {
+        "solid.cross-face-validity-pending": 1
+      },
+      "kernel_work_used": 61364,
+      "measurement_count": 96,
+      "model_id": "00000190",
+      "preparation_work_used": 6108,
+      "publication_work_used": 16124,
+      "record_sha256": "a5966fe02e5d7f4cc5702b47dd36a2496857d5e5d686489fa32fee083b911356",
+      "retained_source_geometry_verified": true,
+      "solid_validity_checked": false,
+      "source_bodies": [
+        {
+          "declared_solid": true,
+          "edges": 12,
+          "faces": 6,
+          "name": "#43",
+          "vertices": 8
+        }
+      ],
+      "source_sha256": "dffe2bf5f8be19d9fdde693be54c4f6c4732d2d333edd2dbd7cdd7cb05163948",
+      "stages": [
+        {
+          "body": "#43",
+          "stage": "sewing",
+          "work_used": 160
+        },
+        {
+          "body": "#43",
+          "stage": "wire",
+          "work_used": 791
+        },
+        {
+          "body": "#43",
+          "stage": "face",
+          "work_used": 22976
+        },
+        {
+          "body": "#43",
+          "stage": "shell",
+          "work_used": 84
+        },
+        {
+          "body": "#43",
+          "stage": "solid",
+          "work_used": 960
+        }
+      ],
+      "status": "candidate_complete",
+      "tolerance_growth_count": 0,
+      "work_exhausted": false
+    },
+    {
+      "approximate": false,
+      "body_tiers_assigned": false,
+      "changes_by_kind": {},
+      "checks_by_kind": {
+        "sewing.mutually-unique-finite-boundaries-with-capped-endpoint-correspondence": 1,
+        "shell.connected-face-incidence": 1,
+        "shell.two-opposite-uses-per-active-edge": 1,
+        "wire.closed-shared-vertex-walk": 8
+      },
+      "format": "catallax-healing-observation/1",
+      "healing_work_used": 2333,
+      "issues_by_code": {
+        "edge.native-parameter-incidence-pending": 4,
+        "face.finite-curved-embedding-pending": 2,
+        "face.inter-boundary-containment-pending": 2,
+        "face.nonpolygonal-boundary-pending": 4,
+        "solid.unresolved-prerequisites": 1
+      },
+      "kernel_work_used": 11332,
+      "measurement_count": 0,
+      "model_id": "00000405",
+      "preparation_work_used": 2068,
+      "publication_work_used": 76,
+      "record_sha256": "48b72c0e473b567ecb0da09c9109f5b98796ea244c3a39241604075c5d7bbfc8",
+      "retained_source_geometry_verified": true,
+      "solid_validity_checked": false,
+      "source_bodies": [
+        {
+          "declared_solid": true,
+          "edges": 4,
+          "faces": 4,
+          "name": "#37",
+          "vertices": 4
+        }
+      ],
+      "source_sha256": "855b700371c3ac43bc8764e03d94e688bf5df7a0be4c29576bfe6dcb8086c0f2",
+      "stages": [
+        {
+          "body": "#37",
+          "stage": "sewing",
+          "work_used": 56
+        },
+        {
+          "body": "#37",
+          "stage": "wire",
+          "work_used": 77
+        },
+        {
+          "body": "#37",
+          "stage": "face",
+          "work_used": 24
+        },
+        {
+          "body": "#37",
+          "stage": "shell",
+          "work_used": 32
+        },
+        {
+          "body": "#37",
+          "stage": "solid",
+          "work_used": 0
+        }
+      ],
+      "status": "candidate_complete",
+      "tolerance_growth_count": 0,
+      "work_exhausted": false
+    },
+    {
+      "approximate": false,
+      "body_tiers_assigned": false,
+      "changes_by_kind": {},
+      "checks_by_kind": {
+        "face.simple-nondegenerate-oriented-planar-line-boundary": 6,
+        "sewing.mutually-unique-finite-boundaries-with-capped-endpoint-correspondence": 1,
+        "shell.connected-face-incidence": 1,
+        "shell.two-opposite-uses-per-active-edge": 1,
+        "solid.positive-oriented-polyhedral-volume": 1,
+        "wire.closed-shared-vertex-walk": 6
+      },
+      "format": "catallax-healing-observation/1",
+      "healing_work_used": 49194,
+      "issues_by_code": {
+        "solid.cross-face-validity-pending": 1
+      },
+      "kernel_work_used": 63388,
+      "measurement_count": 96,
+      "model_id": "00000511",
+      "preparation_work_used": 9218,
+      "publication_work_used": 15564,
+      "record_sha256": "8cb555be525fc1ca41e232fa551696d69731ed42826edbaa2c920231b62df32e",
+      "retained_source_geometry_verified": true,
+      "solid_validity_checked": false,
+      "source_bodies": [
+        {
+          "declared_solid": true,
+          "edges": 12,
+          "faces": 6,
+          "name": "#43",
+          "vertices": 8
+        }
+      ],
+      "source_sha256": "50a920f6fd50aedf1afacc1c19cc3b4722a7f4a11dd293fa4d42916e696e09d5",
+      "stages": [
+        {
+          "body": "#43",
+          "stage": "sewing",
+          "work_used": 160
+        },
+        {
+          "body": "#43",
+          "stage": "wire",
+          "work_used": 791
+        },
+        {
+          "body": "#43",
+          "stage": "face",
+          "work_used": 22416
+        },
+        {
+          "body": "#43",
+          "stage": "shell",
+          "work_used": 84
+        },
+        {
+          "body": "#43",
+          "stage": "solid",
+          "work_used": 961
+        }
+      ],
+      "status": "candidate_complete",
+      "tolerance_growth_count": 0,
+      "work_exhausted": false
+    },
+    {
+      "approximate": false,
+      "body_tiers_assigned": false,
+      "changes_by_kind": {},
+      "checks_by_kind": {
+        "face.simple-nondegenerate-oriented-planar-line-boundary": 6,
+        "sewing.mutually-unique-finite-boundaries-with-capped-endpoint-correspondence": 1,
+        "shell.connected-face-incidence": 1,
+        "shell.two-opposite-uses-per-active-edge": 1,
+        "solid.positive-oriented-polyhedral-volume": 1,
+        "wire.closed-shared-vertex-walk": 6
+      },
+      "format": "catallax-healing-observation/1",
+      "healing_work_used": 44503,
+      "issues_by_code": {
+        "solid.cross-face-validity-pending": 1
+      },
+      "kernel_work_used": 58684,
+      "measurement_count": 96,
+      "model_id": "00000605",
+      "preparation_work_used": 4528,
+      "publication_work_used": 15564,
+      "record_sha256": "7a0a09c6e724ae811e0feb0302889fa83114321275e1af43467617ecc98addcb",
+      "retained_source_geometry_verified": true,
+      "solid_validity_checked": false,
+      "source_bodies": [
+        {
+          "declared_solid": true,
+          "edges": 12,
+          "faces": 6,
+          "name": "#43",
+          "vertices": 8
+        }
+      ],
+      "source_sha256": "913d6be2f284c3ddded0e37ccd44ac9393b575c800cdf7812a09482071ed56d9",
+      "stages": [
+        {
+          "body": "#43",
+          "stage": "sewing",
+          "work_used": 160
+        },
+        {
+          "body": "#43",
+          "stage": "wire",
+          "work_used": 791
+        },
+        {
+          "body": "#43",
+          "stage": "face",
+          "work_used": 22416
+        },
+        {
+          "body": "#43",
+          "stage": "shell",
+          "work_used": 84
+        },
+        {
+          "body": "#43",
+          "stage": "solid",
+          "work_used": 960
+        }
+      ],
+      "status": "candidate_complete",
+      "tolerance_growth_count": 0,
+      "work_exhausted": false
+    },
+    {
+      "approximate": false,
+      "body_tiers_assigned": false,
+      "changes_by_kind": {},
+      "checks_by_kind": {
+        "sewing.mutually-unique-finite-boundaries-with-capped-endpoint-correspondence": 1,
+        "shell.connected-face-incidence": 1,
+        "shell.two-opposite-uses-per-active-edge": 1,
+        "wire.closed-shared-vertex-walk": 12
+      },
+      "format": "catallax-healing-observation/1",
+      "healing_work_used": 3253,
+      "issues_by_code": {
+        "edge.native-parameter-incidence-pending": 6,
+        "face.finite-curved-embedding-pending": 3,
+        "face.inter-boundary-containment-pending": 3,
+        "face.nonpolygonal-boundary-pending": 6,
+        "solid.unresolved-prerequisites": 1
+      },
+      "kernel_work_used": 15555,
+      "measurement_count": 0,
+      "model_id": "00000632",
+      "preparation_work_used": 2892,
+      "publication_work_used": 80,
+      "record_sha256": "ad7ede65bb8a40eff99669ced49022b1345b62eb7f94ca0ba64a851908630ac6",
+      "retained_source_geometry_verified": true,
+      "solid_validity_checked": false,
+      "source_bodies": [
+        {
+          "declared_solid": true,
+          "edges": 6,
+          "faces": 6,
+          "name": "#43",
+          "vertices": 6
+        }
+      ],
+      "source_sha256": "4b28e439ccd5e4f736aae147aa07df2b33c8bc2c139bd3318f8be1d60241051a",
+      "stages": [
+        {
+          "body": "#43",
+          "stage": "sewing",
+          "work_used": 84
+        },
+        {
+          "body": "#43",
+          "stage": "wire",
+          "work_used": 113
+        },
+        {
+          "body": "#43",
+          "stage": "face",
+          "work_used": 36
+        },
+        {
+          "body": "#43",
+          "stage": "shell",
+          "work_used": 48
+        },
+        {
+          "body": "#43",
+          "stage": "solid",
+          "work_used": 0
+        }
+      ],
+      "status": "candidate_complete",
+      "tolerance_growth_count": 0,
+      "work_exhausted": false
+    },
+    {
+      "approximate": false,
+      "body_tiers_assigned": false,
+      "changes_by_kind": {},
+      "checks_by_kind": {
+        "face.simple-nondegenerate-oriented-planar-line-boundary": 6,
+        "sewing.mutually-unique-finite-boundaries-with-capped-endpoint-correspondence": 1,
+        "shell.connected-face-incidence": 1,
+        "shell.two-opposite-uses-per-active-edge": 1,
+        "wire.closed-shared-vertex-walk": 10
+      },
+      "format": "catallax-healing-observation/1",
+      "healing_work_used": 45191,
+      "issues_by_code": {
+        "edge.native-parameter-incidence-pending": 2,
+        "face.finite-curved-embedding-pending": 1,
+        "face.inter-boundary-containment-pending": 2,
+        "face.nonpolygonal-boundary-pending": 2,
+        "solid.unresolved-prerequisites": 1
+      },
+      "kernel_work_used": 61745,
+      "measurement_count": 96,
+      "model_id": "00000633",
+      "preparation_work_used": 6082,
+      "publication_work_used": 15568,
+      "record_sha256": "d60a418aa8d11ad25275119e2dead074a4838652985b9f87df89f985386aff0c",
+      "retained_source_geometry_verified": true,
+      "solid_validity_checked": false,
+      "source_bodies": [
+        {
+          "declared_solid": true,
+          "edges": 14,
+          "faces": 7,
+          "name": "#46",
+          "vertices": 10
+        }
+      ],
+      "source_sha256": "74a532c12724abc77aa5c2a2e4b89f166c66aebdbd8d02deab18294cdb7f0edd",
+      "stages": [
+        {
+          "body": "#46",
+          "stage": "sewing",
+          "work_used": 188
+        },
+        {
+          "body": "#46",
+          "stage": "wire",
+          "work_used": 827
+        },
+        {
+          "body": "#46",
+          "stage": "face",
+          "work_used": 22428
+        },
+        {
+          "body": "#46",
+          "stage": "shell",
+          "work_used": 98
+        },
+        {
+          "body": "#46",
+          "stage": "solid",
+          "work_used": 0
+        }
+      ],
+      "status": "candidate_complete",
+      "tolerance_growth_count": 0,
+      "work_exhausted": false
+    },
+    {
+      "approximate": false,
+      "body_tiers_assigned": false,
+      "changes_by_kind": {},
+      "checks_by_kind": {
+        "face.simple-nondegenerate-oriented-planar-line-boundary": 6,
+        "sewing.mutually-unique-finite-boundaries-with-capped-endpoint-correspondence": 1,
+        "shell.connected-face-incidence": 1,
+        "shell.two-opposite-uses-per-active-edge": 1,
+        "solid.positive-oriented-polyhedral-volume": 1,
+        "wire.closed-shared-vertex-walk": 6
+      },
+      "format": "catallax-healing-observation/1",
+      "healing_work_used": 44779,
+      "issues_by_code": {
+        "solid.cross-face-validity-pending": 1
+      },
+      "kernel_work_used": 58920,
+      "measurement_count": 96,
+      "model_id": "00000695",
+      "preparation_work_used": 4804,
+      "publication_work_used": 15564,
+      "record_sha256": "ce100e8b64ecbd61201d12f292b61bef6fc526cd05aad62fc6da362fb8ce03ad",
+      "retained_source_geometry_verified": true,
+      "solid_validity_checked": false,
+      "source_bodies": [
+        {
+          "declared_solid": true,
+          "edges": 12,
+          "faces": 6,
+          "name": "#43",
+          "vertices": 8
+        }
+      ],
+      "source_sha256": "5a9660c0f13e03afc6bdda7aacebe565790c2019bdc0deb288a3e921a448995f",
+      "stages": [
+        {
+          "body": "#43",
+          "stage": "sewing",
+          "work_used": 160
+        },
+        {
+          "body": "#43",
+          "stage": "wire",
+          "work_used": 791
+        },
+        {
+          "body": "#43",
+          "stage": "face",
+          "work_used": 22416
+        },
+        {
+          "body": "#43",
+          "stage": "shell",
+          "work_used": 84
+        },
+        {
+          "body": "#43",
+          "stage": "solid",
+          "work_used": 960
+        }
+      ],
+      "status": "candidate_complete",
+      "tolerance_growth_count": 0,
+      "work_exhausted": false
+    },
+    {
+      "approximate": false,
+      "body_tiers_assigned": false,
+      "changes_by_kind": {},
+      "checks_by_kind": {
+        "sewing.mutually-unique-finite-boundaries-with-capped-endpoint-correspondence": 1,
+        "shell.connected-face-incidence": 1,
+        "shell.two-opposite-uses-per-active-edge": 1,
+        "wire.closed-shared-vertex-walk": 4
+      },
+      "format": "catallax-healing-observation/1",
+      "healing_work_used": 1487,
+      "issues_by_code": {
+        "edge.native-parameter-incidence-pending": 2,
+        "face.finite-curved-embedding-pending": 1,
+        "face.nonpolygonal-boundary-pending": 2,
+        "solid.unresolved-prerequisites": 1
+      },
+      "kernel_work_used": 7984,
+      "measurement_count": 0,
+      "model_id": "00000821",
+      "preparation_work_used": 1316,
+      "publication_work_used": 72,
+      "record_sha256": "e4db006a41c89ae7f0e8eddfec1bfa5f67c5b69f99236c49ca9d6e31fe4a8046",
+      "retained_source_geometry_verified": true,
+      "solid_validity_checked": false,
+      "source_bodies": [
+        {
+          "declared_solid": true,
+          "edges": 2,
+          "faces": 3,
+          "name": "#34",
+          "vertices": 2
+        }
+      ],
+      "source_sha256": "222f5bd1ba5f202853a68902c88edfa49ca12a09bb57809ac8c29adf782a6ee0",
+      "stages": [
+        {
+          "body": "#34",
+          "stage": "sewing",
+          "work_used": 28
+        },
+        {
+          "body": "#34",
+          "stage": "wire",
+          "work_used": 41
+        },
+        {
+          "body": "#34",
+          "stage": "face",
+          "work_used": 12
+        },
+        {
+          "body": "#34",
+          "stage": "shell",
+          "work_used": 18
+        },
+        {
+          "body": "#34",
+          "stage": "solid",
+          "work_used": 0
+        }
+      ],
+      "status": "candidate_complete",
+      "tolerance_growth_count": 0,
+      "work_exhausted": false
+    },
+    {
+      "body_tiers_assigned": false,
+      "failed_body": "#91",
+      "failed_stage": "face",
+      "format": "catallax-healing-observation/1",
+      "healing_work_used": 19539921,
+      "kernel_work_used": 19597828,
+      "model_id": "00001413",
+      "preparation_work_used": 59426,
+      "publication_work_used": 0,
+      "record_sha256": "03a7a06644c3855241e4c07ca60a8f0e6c0b07d720ed50829b6b7e09b73030cd",
+      "refusal": "Numerical(Refusal { code: \"numbers.operation-budget\", detail: \"operation work allowance exhausted\" })",
+      "solid_validity_checked": false,
+      "source_bodies": [
+        {
+          "declared_solid": true,
+          "edges": 65,
+          "faces": 22,
+          "name": "#91",
+          "vertices": 44
+        }
+      ],
+      "source_sha256": "56a8e532c7677a24dfbcde905499bd966981132ae255391f07188bc1a5a898f4",
+      "stages": [
+        {
+          "body": "#91",
+          "stage": "sewing",
+          "work_used": 868
+        },
+        {
+          "body": "#91",
+          "stage": "wire",
+          "work_used": 4670
+        },
+        {
+          "body": "#91",
+          "stage": "face",
+          "work_used": 19474957
+        }
+      ],
+      "status": "healing_refused_source_retained",
+      "work_exhausted": true
+    },
+    {
+      "body_tiers_assigned": false,
+      "failed_body": "#67",
+      "failed_stage": "face",
+      "format": "catallax-healing-observation/1",
+      "healing_work_used": 18905320,
+      "kernel_work_used": 18941030,
+      "model_id": "00009338",
+      "preparation_work_used": 44856,
+      "publication_work_used": 0,
+      "record_sha256": "6a331965f77630fda1038d4cc481eaeaedfcd0833a5a80a310966c50a326062b",
+      "refusal": "Numerical(Refusal { code: \"numbers.operation-budget\", detail: \"operation work allowance exhausted\" })",
+      "solid_validity_checked": false,
+      "source_bodies": [
+        {
+          "declared_solid": true,
+          "edges": 36,
+          "faces": 14,
+          "name": "#67",
+          "vertices": 24
+        }
+      ],
+      "source_sha256": "9ccecf3ec505515049566e6dedc1fb653dd19682cca267951425f4e54166c7e5",
+      "stages": [
+        {
+          "body": "#67",
+          "stage": "sewing",
+          "work_used": 480
+        },
+        {
+          "body": "#67",
+          "stage": "wire",
+          "work_used": 2007
+        },
+        {
+          "body": "#67",
+          "stage": "face",
+          "work_used": 18857977
+        }
+      ],
+      "status": "healing_refused_source_retained",
+      "work_exhausted": true
+    }
+  ],
+  "complete": true,
+  "complete_source_body_bound_established": false,
+  "operation_work_allowance": 20000000,
+  "outcomes": {
+    "candidate_complete": 10,
+    "healing_refused_source_retained": 2
+  },
+  "process_timeout_seconds": 60,
+  "producer": "1faccbee22ff1d5ef94c9d56dadcac8736280b8c",
+  "solid_validity_checked": false
+}

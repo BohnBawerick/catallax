@@ -144,8 +144,52 @@ Reopen prepays the complete saved inventory and history, including quadratic wor
 Saved values use canonical integers or fractions; exponent notation is rejected before it can expand into a large integer.
 The replay compares current entity values and history with explicit work charges, without constructing a second full record.
 Changed or renumbered sources require separate correspondence and never inherit these bindings automatically.
-This API does not add geometry-reading families or implement the later ShapeFix-style healing and body tiers.
+This storage API does not add geometry-reading families or assign body tiers.
 The existing certified and numerical import entry points retain their current behavior.
+
+### Transactional source healing
+
+`tolerant::healing::heal` prepares a separate candidate from a `TolerantFile`.
+Its stages are sewing, wire, face, shell and solid, in that order for each body.
+The input graph and its immutable source SHA-256 remain available through `HealedFile::source`.
+`definition` exposes the derived source definition; it does not construct an admitted solid.
+`report` lists topology changes, measured local distances, checks actually passed and unresolved conditions.
+Any topology change or tolerance growth sets `approximate`, including an orientation-only repair.
+Later admission and STEP consumers must preserve that mark.
+
+The stage order follows [OCCT ShapeFix_Shape](https://github.com/Open-Cascade-SAS/OCCT/blob/V8_0_0/src/ModelingAlgorithms/TKShHealing/ShapeFix/ShapeFix_Shape.cxx), [ShapeFix_Wire](https://github.com/Open-Cascade-SAS/OCCT/blob/V8_0_0/src/ModelingAlgorithms/TKShHealing/ShapeFix/ShapeFix_Wire.cxx) and [BRepBuilderAPI_Sewing](https://github.com/Open-Cascade-SAS/OCCT/blob/V8_0_0/src/ModelingAlgorithms/TKTopAlgo/BRepBuilderAPI/BRepBuilderAPI_Sewing.cxx), with explicit candidate publication and the caller's cap.
+The implemented repair family is conservative:
+
+- Sewing pairs mutually unique free line edges on different faces of the same shell. Parallel line carriers require both endpoint correspondences within the cap. Nonlinear free edges remain unresolved until finite-domain correspondence is established: equal carriers and endpoints can select complementary arcs. Ambiguous matches, different shells and different bodies are not sewn.
+- Wire connection first measures every declared adjacent gap and closure before applying endpoint joins. A disconnected ordering may instead use a unique walk through shared vertices, recording changed order and reversed uses. Small finite line intervals at or below the initial tolerance may be removed only when all incident supports are planar and every bound retains an edge. The measurement uses the original finite line, even after earlier joins. A closed circle is not a small line merely because its endpoints coincide.
+- Planar line boundaries receive finite segment crossing/touch and orientation checks. Shell checks find connected components and consistent opposite edge uses, reporting open, nonmanifold or nonorientable cases. A closed planar candidate may have its whole orientation reversed from its signed polyhedral volume.
+
+These operations retain source surfaces, line carriers, spline definitions and retained vertex coordinates.
+They change explicitly recorded topology uses and orientation, rather than refitting source geometry.
+Curved incidence, curved finite embedding, multiple-bound containment and cross-face validity remain named unresolved checks where the implementation cannot establish them.
+Positive signed volume alone never grants solid validity.
+A candidate with unresolved checks is available to the subsequent surface/solid tier consumer; this API itself assigns no tier.
+
+Before publication, the healer checks every original vertex against its final retained target, every original line endpoint against its original carrier, and each original finite line interval against its incident source planes.
+It also measures replaced finite line intervals against the retained carrier and removed small lines against their final retained vertex.
+These final checks include source geometry removed from active uses, so sewing cannot hide a bad discarded carrier.
+All required local tolerance maxima and edge-to-endpoint propagation are gathered and checked against the cap before ledger updates.
+The ledger records committed increases; the separate measurements establish their geometric need.
+These checks do not establish complete trimmed-face or whole-body source deviation.
+
+Cap, topology, deadline or work refusal discards the complete private candidate, including earlier tentative repairs.
+The caller's source graph and tolerance ledger remain unchanged.
+`attempt` additionally returns the original typed refusal, failed stage/body and work spent on completed and partially failed stages, without exposing candidate geometry.
+Preparation, all five stages and publication share the active allowance; a standalone call installs the unchanged 20M allowance.
+Scans of cross-body change and issue logs prepay every potentially visited entry, including entries rejected by the body filter.
+The final deadline checkpoint runs after the result fields are constructed.
+`tolerant::reopen` also checks the deadline after its final saved-field comparison.
+
+`HealedFile::tolerances` describes the derived graph's entity values and history.
+The tolerance record alone cannot reconstruct topology changes; retaining the healing report and immutable source is required.
+The report is an observation of these repairs, not an independently trusted solid certificate or a new persisted application format.
+The existing recipe repair/approval path retains its own source-bound records and policy.
+The [healer measurements](../research/tolerant-import-healing/README.md) retain the actual fixtures and real-file outcomes.
 
 ### IGES source recognition
 

@@ -3,11 +3,64 @@
 use catallax_numbers::{
     Decider, Outcome, Rational, Real, Refusal, ZeroProof, with_operation_budget,
 };
-use catallax_shapes::{BSplineSurface, Plane, Point3, RationalAtlas, SectionHits, Vector3};
+use catallax_shapes::{
+    BSplineCurve, BSplineSurface, Plane, Point3, RationalAtlas, SectionHits, Vector3,
+};
 use std::num::NonZeroUsize;
 
 fn q(n: i64, d: i64) -> Real {
     Real::from_rational(Rational::from_ratio(n, d).unwrap())
+}
+
+#[test]
+fn retained_source_clearance_keeps_native_initial_and_later_contacts() {
+    for reversed in [false, true] {
+        let ((), work) = with_operation_budget(20_000_000, || {
+            let mut dec = Decider::default();
+            let cylinder = cylinder(true, false, false, &mut dec).unwrap();
+            let plane = plane(&mut dec);
+            let meeting = if reversed {
+                plane.patch_meeting_with_cached_spans(&cylinder, &mut dec)
+            } else {
+                cylinder.patch_meeting_with_cached_spans(&plane, &mut dec)
+            }
+            .unwrap();
+            let component = meeting.curve_branch(0, &mut dec).unwrap();
+            for (x, heights, allowed, expected) in [
+                (1, vec![q(1, 5), q(1, 1)], true, true),
+                (1, vec![q(1, 5), q(1, 1)], false, false),
+                (1, vec![q(0, 1), q(1, 1)], true, false),
+                (1, vec![q(0, 1), q(1, 5)], true, false),
+                (1, vec![q(1, 1), q(2, 1)], false, true),
+                (3, vec![q(0, 1), q(1, 1)], false, true),
+                (1, vec![q(1, 5), q(6, 5), q(1, 5)], true, false),
+            ] {
+                let degree = heights.len() - 1;
+                let knots = std::iter::repeat_n(Rational::from_i64(2), degree + 1)
+                    .chain(std::iter::repeat_n(Rational::from_i64(5), degree + 1))
+                    .collect();
+                let path = BSplineCurve::new(
+                    degree,
+                    knots,
+                    heights
+                        .into_iter()
+                        .map(|z| Point3::new(q(x, 1), Real::zero(), z))
+                        .collect(),
+                    vec![Real::one(); degree + 1],
+                    &mut dec,
+                )
+                .unwrap();
+                assert_eq!(
+                    component
+                        .clears_spline_sources(&path, allowed, &mut dec)
+                        .unwrap(),
+                    expected,
+                    "reversed={reversed},x={x},degree={degree},allowed={allowed}"
+                );
+            }
+        });
+        assert!(!work.exhausted, "{work:?}");
+    }
 }
 
 #[test]

@@ -96,30 +96,8 @@ fn clears(
     match model.geom().curve(curve_id) {
         Curve::BSpline(curve) => clears_native(path, q, curve, dec),
         Curve::PatchPair(branch) => {
-            let before = catallax_numbers::current_operation_work().used;
             let spline = path_curve(path, dec)?;
-            eprintln!(
-                "probe path conversion degree={} controls={} work={}",
-                spline.degree(),
-                spline.control_count(),
-                catallax_numbers::current_operation_work().used - before
-            );
-            let Some(points) = branch.spline_points(&spline, dec)? else {
-                return Ok(false);
-            };
-            for point in points {
-                dec.charge_work(1)?;
-                let parameter = spline.unique_parameter_of(&point, dec)?.ok_or_else(|| {
-                    crate::geometry::refusal(
-                        "boolean.spline-face-probe",
-                        "retained path meeting lost its native preimage",
-                    )
-                })?;
-                if coefficient_sign(parameter.value(), dec)? != Sign::Zero {
-                    return Ok(false);
-                }
-            }
-            Ok(true)
+            branch.clears_spline_sources(&spline, true, dec)
         }
         Curve::PatchSection(branch) => {
             let equation = branch.surface().surface().implicit().ok_or_else(|| {
@@ -157,6 +135,13 @@ fn path_curve(path: &Path, dec: &mut Decider) -> Result<BSplineCurve, Refusal> {
         .max()
         .unwrap_or(0)
         .max(1);
+    let coefficient_work = (degree as u64 + 1).checked_mul(4).ok_or_else(|| {
+        crate::geometry::refusal(
+            "boolean.spline-face-probe",
+            "path coefficient work bound overflowed",
+        )
+    })?;
+    dec.charge_work(coefficient_work)?;
     let coefficients =
         coordinates.map(|p| (0..=degree).map(|i| p.coefficient(i)).collect::<Vec<_>>());
     let mut controls = Vec::new();

@@ -1,17 +1,20 @@
-//! Complete isolated path meetings from either retained source cover.
+//! Sufficient path clearance against either complete retained source cover.
 
 use super::*;
-use crate::{BSplineCurve, SectionHits};
+use crate::BSplineCurve;
+use crate::rational_patch::{SplineParameterHits, spline_parameters};
 
 impl PatchPairCurve {
-    /// Complete isolated meetings of a finite native spline and this component.
-    /// `None` means no source cover supplies a point-only query. Containment is
-    /// never replaced by selected endpoints or an empty point set.
-    pub fn spline_points(
+    /// Proves that the finite path avoids a complete source cover of this
+    /// component. Only its initial native parameter may be permitted to meet.
+    /// False is inconclusive: contained/unsupported queries and meetings with
+    /// unrelated parts of a source cover never become an empty point set.
+    pub fn clears_spline_sources(
         &self,
         spline: &BSplineCurve,
+        allow_initial_contact: bool,
         dec: &mut Decider,
-    ) -> Result<Option<Vec<Point3>>, Refusal> {
+    ) -> Result<bool, Refusal> {
         let mut partial = None;
         for side in 0..2 {
             let mut patches = Vec::new();
@@ -28,20 +31,7 @@ impl PatchPairCurve {
                     patches.push(patch);
                 }
             }
-            let before = catallax_numbers::current_operation_work().used;
-            let queried = crate::rational_patch::spline_points(&patches, spline, dec);
-            eprintln!(
-                "pair spline source side={side} patches={} work={} outcome={}",
-                patches.len(),
-                catallax_numbers::current_operation_work().used - before,
-                match &queried {
-                    Ok(Some(SectionHits::Contained)) => "contained",
-                    Ok(Some(SectionHits::Points(_))) => "points",
-                    Ok(None) => "unsupported",
-                    Err(_) => "refused",
-                }
-            );
-            let answer = match queried {
+            let answer = match spline_parameters(&patches, spline, dec) {
                 Ok(answer) => answer,
                 Err(error)
                     if error.code == "shapes.rational-patch-unproven"
@@ -53,20 +43,26 @@ impl PatchPairCurve {
                 }
                 Err(error) => return Err(error),
             };
-            if let Some(SectionHits::Points(candidates)) = answer {
-                let mut points = Vec::new();
-                for point in candidates {
+            if let Some(SplineParameterHits::Points(parameters)) = answer {
+                let mut clear = true;
+                let initial = Real::from(spline.domain()[0].clone());
+                for parameter in parameters {
                     dec.charge_work(1)?;
-                    if self.contains(&point, dec)? {
-                        points.push(point);
+                    if !allow_initial_contact
+                        || exact_sign(&(parameter - &initial), dec)? != Sign::Zero
+                    {
+                        clear = false;
+                        break;
                     }
                 }
-                return Ok(Some(points));
+                if clear {
+                    return Ok(true);
+                }
             }
         }
         if let Some(error) = partial {
             return Err(error);
         }
-        Ok(None)
+        Ok(false)
     }
 }

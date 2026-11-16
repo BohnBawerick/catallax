@@ -19,7 +19,7 @@ pub use pair::{
 };
 mod differential;
 mod query;
-pub(crate) use query::spline_points;
+pub(crate) use query::{SplineParameterHits, spline_parameters, spline_points};
 mod range;
 mod ruled;
 mod section;

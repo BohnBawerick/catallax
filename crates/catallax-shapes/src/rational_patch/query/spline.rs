@@ -98,12 +98,17 @@ fn roots(
     Ok(())
 }
 
-pub(crate) fn spline_points(
+pub(crate) enum SplineParameterHits {
+    Contained,
+    Points(Vec<Real>),
+}
+
+pub(crate) fn spline_parameters(
     patches: &[&RationalPatch],
     spline: &BSplineCurve,
     dec: &mut Decider,
-) -> Result<Option<SectionHits>, Refusal> {
-    let mut points: Vec<Point3> = Vec::new();
+) -> Result<Option<SplineParameterHits>, Refusal> {
+    let mut parameters = Vec::new();
     let (mut any_contained, mut all_contained) = (false, true);
     for (index, domain) in spline.spans() {
         let curve = spline.query_span_polynomials(index, dec)?;
@@ -167,30 +172,41 @@ pub(crate) fn spline_points(
             if !incident {
                 continue;
             }
-            let value: [Real; 4] = curve
-                .each_ref()
-                .map(|p| p.eval_real(std::slice::from_ref(&parameter)));
-            let point = Point3::new(
-                &value[0] / &value[3],
-                &value[1] / &value[3],
-                &value[2] / &value[3],
-            );
-            let mut duplicate = false;
-            for previous in &points {
-                duplicate |= exact_sign(&point.minus(previous).norm_squared(), dec)? == Sign::Zero;
-            }
-            if !duplicate {
-                points.push(point);
-            }
+            insert(&mut parameters, parameter, dec)?;
         }
     }
     if all_contained {
-        return Ok(Some(SectionHits::Contained));
+        return Ok(Some(SplineParameterHits::Contained));
     }
     if any_contained {
         return Err(unproven(
             "partial spline containment needs finite interval ownership",
         ));
+    }
+    Ok(Some(SplineParameterHits::Points(parameters)))
+}
+
+pub(crate) fn spline_points(
+    patches: &[&RationalPatch],
+    spline: &BSplineCurve,
+    dec: &mut Decider,
+) -> Result<Option<SectionHits>, Refusal> {
+    let Some(answer) = spline_parameters(patches, spline, dec)? else {
+        return Ok(None);
+    };
+    let SplineParameterHits::Points(parameters) = answer else {
+        return Ok(Some(SectionHits::Contained));
+    };
+    let mut points: Vec<Point3> = Vec::new();
+    for parameter in parameters {
+        let point = spline.point_at(&parameter, dec)?;
+        let mut duplicate = false;
+        for previous in &points {
+            duplicate |= exact_sign(&point.minus(previous).norm_squared(), dec)? == Sign::Zero;
+        }
+        if !duplicate {
+            points.push(point)
+        }
     }
     Ok(Some(SectionHits::Points(points)))
 }

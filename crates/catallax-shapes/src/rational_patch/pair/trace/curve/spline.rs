@@ -49,7 +49,7 @@ impl PatchPairCurve {
                 for parameter in parameters {
                     dec.charge_work(1)?;
                     if !allow_initial_contact
-                        || exact_sign(&(parameter - &initial), dec)? != Sign::Zero
+                        || exact_sign(&(&parameter - &initial), dec)? != Sign::Zero
                     {
                         clear = false;
                         break;

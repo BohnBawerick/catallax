@@ -68,7 +68,8 @@ fn run(out: &Path) {
     );
     let extended = trimmed.extend(0, q("0"), &mut dec).unwrap();
     assert_eq!(extended.surface().domain()[0], [&q("0"), &q("4/5")]);
-    let solid = extended.thicken(q("2/5"), &mut dec).unwrap();
+    let thickness = std::env::args().nth(2).unwrap_or_else(|| "2/5".into());
+    let solid = extended.thicken(q(&thickness), &mut dec).unwrap();
     assert_eq!(solid.kind(), BodyKind::Solid);
     assert_eq!(solid.counts().faces, 6);
     assert_eq!(solid.counts().edges, 12);
@@ -85,7 +86,7 @@ fn run(out: &Path) {
         export(out, "extended-sheet", extended.body(), &mut dec),
         export(out, "thickened-solid", &solid, &mut dec),
     ];
-    let report = json!({"format":"catallax-surface-body-proof/1","checks":"surface kind retained; exact parameter trim; tangential extension source samples; normal offset samples; closed thickened topology; retained source face key","exports":exports});
+    let report = json!({"format":"catallax-surface-body-proof/1","signed_thickness_mm":thickness,"checks":"surface kind retained; exact parameter trim; tangential extension source samples; normal offset samples; closed thickened topology; retained source face key","exports":exports});
     fs::write(
         out.join("surface-body-report.json"),
         serde_json::to_vec_pretty(&report).unwrap(),
@@ -96,7 +97,7 @@ fn run(out: &Path) {
 fn main() {
     let path = std::env::args()
         .nth(1)
-        .expect("usage: surface_bodies OUTPUT_DIRECTORY");
+        .expect("usage: surface_bodies OUTPUT_DIRECTORY [SIGNED_THICKNESS]");
     let (_, work) = with_operation_budget(100_000_000, || run(Path::new(&path)));
     assert!(!work.exhausted);
     println!("work={}", work.used);

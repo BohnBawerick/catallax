@@ -59,21 +59,22 @@ fn packed(problem: &Problem, node: &NumericalSpineNode, dec: &mut Decider) -> Re
 /// Derivatives of the local three-station interpolating quadratic. In
 /// particular, end derivatives are not first-order secants.
 pub(super) fn station_slopes<'a, const N: usize>(
+    count: usize,
     parameter: impl Fn(usize) -> &'a Rational,
-    values: &[[Rational; N]],
+    values: impl Fn(usize) -> &'a [Rational; N],
 ) -> Vec<[Rational; N]> {
-    let mut slopes = Vec::with_capacity(values.len());
-    for i in 0..values.len() {
-        let a = i.saturating_sub(1).min(values.len() - 3);
+    let mut slopes = Vec::with_capacity(count);
+    for i in 0..count {
+        let a = i.saturating_sub(1).min(count - 3);
         let h0 = parameter(a + 1) - parameter(a);
         let h1 = parameter(a + 2) - parameter(a + 1);
         let width = &h0 + &h1;
         slopes.push(std::array::from_fn(|j| {
-            let d0 = (&values[a + 1][j] - &values[a][j]) / h0.clone();
-            let d1 = (&values[a + 2][j] - &values[a + 1][j]) / h1.clone();
+            let d0 = (&values(a + 1)[j] - &values(a)[j]) / h0.clone();
+            let d1 = (&values(a + 2)[j] - &values(a + 1)[j]) / h1.clone();
             let numerator = if i == 0 {
                 &(&(&h0 + &width) * &d0) - &(&h0 * &d1)
-            } else if i + 1 == values.len() {
+            } else if i + 1 == count {
                 &(&(&h1 + &width) * &d1) - &(&h1 * &d0)
             } else {
                 &(&h1 * &d0) + &(&h0 * &d1)
@@ -84,16 +85,19 @@ pub(super) fn station_slopes<'a, const N: usize>(
     slopes
 }
 
-fn hermite(nodes: &[NumericalSpineNode], values: &[Packed]) -> (Vec<Rational>, Vec<Packed>) {
-    let slopes = station_slopes(|i| &nodes[i].tau, values);
+pub(super) fn hermite<'a, const N: usize>(
+    nodes: &'a [NumericalSpineNode],
+    values: impl Fn(usize) -> &'a [Rational; N],
+) -> (Vec<Rational>, Vec<[Rational; N]>) {
+    let slopes = station_slopes(nodes.len(), |i| &nodes[i].tau, &values);
     let mut knots = vec![nodes[0].tau.clone(); 4];
     let mut controls = Vec::with_capacity(3 * (nodes.len() - 1) + 1);
-    controls.push(values[0].clone());
+    controls.push((*values(0)).clone());
     for i in 0..nodes.len() - 1 {
         let third = (&nodes[i + 1].tau - &nodes[i].tau) / Rational::from_i64(3);
-        controls.push(std::array::from_fn(|j| &values[i][j] + &(&third * &slopes[i][j])));
-        controls.push(std::array::from_fn(|j| &values[i + 1][j] - &(&third * &slopes[i + 1][j])));
-        controls.push(values[i + 1].clone());
+        controls.push(std::array::from_fn(|j| &values(i)[j] + &(&third * &slopes[i][j])));
+        controls.push(std::array::from_fn(|j| &values(i + 1)[j] - &(&third * &slopes[i + 1][j])));
+        controls.push((*values(i + 1)).clone());
         if i + 1 < nodes.len() - 1 { knots.extend(std::iter::repeat_n(nodes[i + 1].tau.clone(), 3)); }
     }
     knots.extend(std::iter::repeat_n(nodes.last().expect("stations").tau.clone(), 4));
@@ -107,7 +111,7 @@ struct Candidate {
 }
 fn candidate(nodes: &[NumericalSpineNode], values: &[Packed], dec: &mut Decider) -> Result<Candidate, Refusal> {
     dec.charge_work((nodes.len() as u64) * 128)?;
-    let (knots, data) = hermite(nodes, values);
+    let (knots, data) = hermite(nodes, |i| &values[i]);
     let mut controls = Vec::with_capacity(3 * data.len());
     let mut weights = Vec::with_capacity(3 * data.len());
     let mut rail_points: [Vec<Point3>; 2] = std::array::from_fn(|_| Vec::with_capacity(data.len()));
@@ -206,10 +210,8 @@ impl NumericalSplineFillet {
                     let share = Rational::from_ratio(i, 4).unwrap();
                     let tau = &pair[0].tau + &(&(&pair[1].tau - &pair[0].tau) * &share);
                     let node = spine.problem.solve(&tau, spine.problem.guess(&pair[0], &pair[1], i as f64 / 4.0), dec)?;
-                    let centre_error = (0..3).fold(Rational::zero(), |sum, k| {
-                        let chord = &pair[0].centre[k] + &(&(&pair[1].centre[k] - &pair[0].centre[k]) * &share);
-                        sum + (&node.centre[k] - &chord).abs()
-                    });
+                    let centre_error = spine.centre_error(&node, dec)?;
+                    span_upper = span_upper.max(centre_error.clone());
                     centre_upper = centre_upper.max(centre_error);
                     let truth = packed(&spine.problem, &node, dec)?;
                     for j in 0..=4 {
@@ -238,6 +240,7 @@ impl NumericalSplineFillet {
                 return Err(bad("numerical fillet carrier cannot meet its stated sampled tolerance within the subdivision limit"));
             }
             for (index, node) in inserted.into_iter().rev() { spine.nodes.insert(index, node); }
+            spine.centre_curve = super::centre_fit(&spine.nodes, dec)?;
         }
         unreachable!("fit returns at its subdivision limit")
     }

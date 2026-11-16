@@ -111,11 +111,12 @@ pub struct NumericalSpineNode {
     pub centre: [Rational; 3],
 }
 
-/// A numerical centre polyline with explicit sampled checks, never exact authority.
+/// A C1 cubic centre curve with sampled numerical checks, never exact authority.
 #[derive(Clone, Debug)]
 pub struct NumericalFilletSpine {
     problem: Arc<Problem>,
     nodes: Vec<NumericalSpineNode>,
+    centre_curve: BSplineCurve,
     tolerance_mm: Rational,
     sampled_error_mm: Rational,
     samples: usize,
@@ -206,6 +207,15 @@ fn offset_error(centre: &[Rational; 3], offsets: [&[Ball; 3]; 2]) -> Rational {
     })).max().expect("two offsets")
 }
 
+fn centre_fit(nodes: &[NumericalSpineNode], dec: &mut Decider) -> Result<BSplineCurve, Refusal> {
+    let (knots, controls) = carrier::hermite(nodes, |i| &nodes[i].centre);
+    let weights = vec![Real::one(); controls.len()];
+    let points = controls.into_iter().map(|[x, y, z]| {
+        Point3::new(Real::from_rational(x), Real::from_rational(y), Real::from_rational(z))
+    }).collect();
+    BSplineCurve::new(3, knots, points, weights, dec)
+}
+
 impl NumericalFilletSpine {
     /// Marches one selected branch as a graph over `axis` of the first support.
     /// The seed supplies its other parameter and both parameters of the second.
@@ -234,66 +244,67 @@ impl NumericalFilletSpine {
             ], axis, tolerance,
         };
         let first = problem.solve(&range[0], seed.each_ref().map(Rational::to_f64_nearest), dec)?;
-        let mut coarse = vec![first];
+        let mut nodes = vec![first];
         for i in 1..=8 {
             let tau = &range[0] + &((&range[1] - &range[0]) * Rational::from_ratio(i, 8).unwrap());
-            let previous = coarse.last().expect("first station");
+            let previous = nodes.last().expect("first station");
             let guess = problem.guess(previous, previous, 0.0);
-            coarse.push(problem.solve(&tau, guess, dec)?);
+            nodes.push(problem.solve(&tau, guess, dec)?);
         }
-        let mut pending: Vec<_> = coarse.windows(2).rev().map(|pair| (pair[0].clone(), pair[1].clone(), 0)).collect();
-        let mut nodes = Vec::new();
-        let mut sampled_error_mm = Rational::zero();
-        let mut samples = coarse.len();
-        while let Some((a, b, depth)) = pending.pop() {
-            if nodes.len() + pending.len() >= MAX_NODES {
-                return Err(bad("numerical spine exceeds the station limit at the stated tolerance"));
+        let centre_curve = centre_fit(&nodes, dec)?;
+        let mut spine = Self {
+            problem: Arc::new(problem), samples: nodes.len(), nodes, centre_curve,
+            tolerance_mm, sampled_error_mm: Rational::zero(),
+        };
+        for round in 0..=MAX_DEPTH {
+            let mut inserted = Vec::new();
+            let mut upper = Rational::zero();
+            for (index, pair) in spine.nodes.windows(2).enumerate() {
+                let mut worst = Rational::zero();
+                let mut middle = None;
+                for i in 1..4 {
+                    let share = Rational::from_ratio(i, 4).unwrap();
+                    let tau = &pair[0].tau + &(&(&pair[1].tau - &pair[0].tau) * &share);
+                    let checked = spine.problem.solve(
+                        &tau, spine.problem.guess(&pair[0], &pair[1], i as f64 / 4.0), dec,
+                    )?;
+                    worst = worst.max(spine.centre_error(&checked, dec)?);
+                    spine.samples += 1;
+                    if i == 2 { middle = Some(checked); }
+                }
+                upper = upper.max(worst);
+                if worst > spine.tolerance_mm.mul_pow2(-2) {
+                    inserted.push((index + 1, middle.expect("checked midpoint")));
+                }
             }
-            let mut worst = Rational::zero();
-            let mut middle = None;
-            for i in 1..4 {
-                let share = Rational::from_ratio(i, 4).unwrap();
-                let tau = &a.tau + &(&(&b.tau - &a.tau) * &share);
-                let checked = problem.solve(&tau, problem.guess(&a, &b, i as f64 / 4.0), dec)?;
-                let position_error = (0..3).fold(Rational::zero(), |sum, j| {
-                    sum + (&checked.centre[j] - &(&a.centre[j] + &(&(&b.centre[j] - &a.centre[j]) * &share))).abs()
-                });
-                worst = worst.max(position_error);
-                samples += 1;
-                if i == 2 { middle = Some(checked); }
+            if inserted.is_empty() {
+                spine.sampled_error_mm = upper;
+                return Ok(spine);
             }
-            if worst > tolerance_mm.mul_pow2(-2) {
-                if depth == MAX_DEPTH { return Err(bad("numerical spine subdivision depth exhausted at the stated tolerance")); }
-                let middle = middle.expect("checked midpoint");
-                pending.push((middle.clone(), b, depth + 1));
-                pending.push((a, middle, depth + 1));
-            } else {
-                sampled_error_mm = sampled_error_mm.max(worst);
-                if nodes.is_empty() { nodes.push(a); }
-                nodes.push(b);
+            if round == MAX_DEPTH || spine.nodes.len() + inserted.len() > MAX_NODES {
+                return Err(bad("numerical cubic spine cannot meet its sampled tolerance within the subdivision limit"));
             }
+            for (index, node) in inserted.into_iter().rev() { spine.nodes.insert(index, node); }
+            spine.centre_curve = centre_fit(&spine.nodes, dec)?;
         }
-        Ok(Self { problem: Arc::new(problem), nodes, tolerance_mm, sampled_error_mm, samples })
+        unreachable!("trace returns at its subdivision limit")
     }
     /// Ordered stations, including both ends and every accepted span boundary.
     pub fn nodes(&self) -> &[NumericalSpineNode] { &self.nodes }
     /// Declared numerical tolerance in millimetres, not a global bound.
     pub fn tolerance_mm(&self) -> &Rational { &self.tolerance_mm }
-    /// Largest checked quarter-point error from the centre polyline, in L1 mm.
+    /// Largest checked quarter-point error from the cubic centre curve, in L1 mm.
     pub fn sampled_error_mm(&self) -> &Rational { &self.sampled_error_mm }
     /// Number of Newton stations checked, including rejected coarse spans.
     pub fn samples(&self) -> usize { self.samples }
-    /// Retains the checked centre polyline as a degree-one B-spline.
-    pub fn centre_curve(&self, dec: &mut Decider) -> Result<BSplineCurve, Refusal> {
-        let mut knots = Vec::with_capacity(self.nodes.len() + 2);
-        knots.push(self.nodes[0].tau.clone());
-        knots.extend(self.nodes.iter().map(|node| node.tau.clone()));
-        knots.push(self.nodes.last().expect("nonempty spine").tau.clone());
-        let controls = self.nodes.iter().map(|node| Point3::new(
-            Real::from_rational(node.centre[0].clone()),
-            Real::from_rational(node.centre[1].clone()),
-            Real::from_rational(node.centre[2].clone()),
-        )).collect();
-        BSplineCurve::new(1, knots, controls, vec![Real::one(); self.nodes.len()], dec)
+    /// The C1 cubic reconstruction checked against the offset-centre stations.
+    pub fn centre_curve(&self) -> &BSplineCurve { &self.centre_curve }
+
+    fn centre_error(&self, node: &NumericalSpineNode, dec: &mut Decider) -> Result<Rational, Refusal> {
+        let fitted = self.centre_curve.evaluate_box([&node.tau, &node.tau], 128, dec)?;
+        Ok((0..3).fold(Rational::zero(), |sum, axis| {
+            sum + (&fitted[axis].lo() - &node.centre[axis]).abs()
+                .max((&fitted[axis].hi() - &node.centre[axis]).abs())
+        }))
     }
 }

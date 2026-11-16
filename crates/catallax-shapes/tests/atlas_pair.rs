@@ -74,7 +74,7 @@ fn offset_spine_crosses_both_atlas_seams_without_fragmenting() {
         assert_eq!(charts, [[0, 0], [1, 1]].into_iter().collect());
         assert_eq!(spine.tolerance_mm(), &tolerance);
         assert!(spine.sampled_error_mm() <= &tolerance);
-        let curve = spine.centre_curve(&mut dec).unwrap();
+        let curve = spine.centre_curve();
         for i in 0..=32 {
             let t = Rational::from_ratio(i, 16).unwrap();
             let point = curve.evaluate_box([&t, &t], 128, &dec).unwrap();

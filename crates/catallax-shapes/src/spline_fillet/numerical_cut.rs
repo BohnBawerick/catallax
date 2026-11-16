@@ -79,7 +79,7 @@ impl NumericalSplineFillet {
                 let (tau, point) = root(&s, dec)?;
                 samples.push([point[0].clone(), point[1].clone(), point[2].clone(), tau, s]);
             }
-            let slopes = super::carrier::station_slopes(|i| &samples[i][4], &samples);
+            let slopes = super::carrier::station_slopes(samples.len(), |i| &samples[i][4], |i| &samples[i]);
             let mut controls = vec![samples[0].clone()];
             let mut knots = vec![Rational::zero(); 4];
             for i in 0..density {

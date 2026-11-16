@@ -295,6 +295,11 @@ fn compact(d: &mut NumericalDefinition) {
     for edge in &mut d.edges { edge.vertices = edge.vertices.map(|v| vertex_map[v]); }
 }
 
+fn at_stage(stage: &str, mut refusal: Refusal) -> Refusal {
+    refusal.detail = format!("numerical spline fillet {stage}: {}", refusal.detail);
+    refusal
+}
+
 #[allow(clippy::too_many_arguments)]
 fn build_impl(
     source: Arc<NumericalBody>, edge_key: &str, key: &str, radius: Rational,
@@ -326,8 +331,10 @@ fn build_impl(
         return Err(bad("this numerical spline fillet requires a convex selected edge"));
     }
     let extended = [
-        NumericalFilletSpine::extended_support(&physical[0], axes[0], &Rational::from_ratio(1, 4).unwrap(), dec)?,
-        NumericalFilletSpine::extended_support(&physical[1], axes[1], &Rational::from_ratio(1, 4).unwrap(), dec)?,
+        NumericalFilletSpine::extended_support(&physical[0], axes[0], &Rational::from_ratio(1, 4).unwrap(), dec)
+            .map_err(|error| at_stage("first support extension", error))?,
+        NumericalFilletSpine::extended_support(&physical[1], axes[1], &Rational::from_ratio(1, 4).unwrap(), dec)
+            .map_err(|error| at_stage("second support extension", error))?,
     ];
     let mut range = [uv[0][0][axes[0]].clone(), uv[0][1][axes[0]].clone()];
     range.sort();
@@ -339,12 +346,19 @@ fn build_impl(
         + &(&(&uv[0][1][1 - axes[0]] - &uv[0][0][1 - axes[0]]) * &share);
     let seed = [first_seed, second_seed[0].clone(), second_seed[1].clone()];
     let distances = sides.map(|face| if original.faces[face].sense == Sense::Same { -radius.clone() } else { radius.clone() });
-    let spine = NumericalFilletSpine::trace(&extended, distances, axes[0], range, seed, tolerance_mm.clone(), dec)?;
-    let fillet = NumericalSplineFillet::fit(spine, dec)?;
+    let spine = NumericalFilletSpine::trace(&extended, distances, axes[0], range, seed, tolerance_mm.clone(), dec)
+        .map_err(|error| at_stage("centre reconstruction", error))?;
+    let fillet = NumericalSplineFillet::fit(spine, dec)
+        .map_err(|error| at_stage("carrier reconstruction", error))?;
     let caps = [end_face(original, input.vertices[0], sides)?, end_face(original, input.vertices[1], sides)?];
     if caps[0] == caps[1] { return Err(bad("a numerical spline fillet needs two distinct end faces")); }
     let planes = [plane(&original.faces[caps[0]], dec)?, plane(&original.faces[caps[1]], dec)?];
-    let cuts = [fillet.plane_cut(planes[0].0.clone(), planes[0].1.clone(), dec)?, fillet.plane_cut(planes[1].0.clone(), planes[1].1.clone(), dec)?];
+    let cuts = [
+        fillet.plane_cut(planes[0].0.clone(), planes[0].1.clone(), dec)
+            .map_err(|error| at_stage("first end-plane cut", error))?,
+        fillet.plane_cut(planes[1].0.clone(), planes[1].1.clone(), dec)
+            .map_err(|error| at_stage("second end-plane cut", error))?,
+    ];
     let mut d = original.clone();
     d.name = format!("{} / {key}", original.name);
     let mut bindings: Bindings = source.native_trims().iter().map(|binding| ((binding.face.clone(), binding.edge.clone()), binding.curve.clone())).collect();
@@ -438,12 +452,8 @@ fn build_impl(
     let du = jet.first[0].each_ref().map(|v| v.mid().to_f64_nearest());
     let dv = jet.first[1].each_ref().map(|v| v.mid().to_f64_nearest());
     let normal = [du[1] * dv[2] - du[2] * dv[1], du[2] * dv[0] - du[0] * dv[2], du[0] * dv[1] - du[1] * dv[0]];
-    let stations = fillet.spine().nodes();
-    let index = stations.partition_point(|node| node.tau <= tau).clamp(1, stations.len() - 1) - 1;
-    let share = (&tau - &stations[index].tau) / (&stations[index + 1].tau - &stations[index].tau);
-    let centre: [Rational; 3] = std::array::from_fn(|i| &stations[index].centre[i]
-        + &(&(&stations[index + 1].centre[i] - &stations[index].centre[i]) * &share));
-    let direction = (0..3).map(|i| normal[i] * (jet.value[i].mid().to_f64_nearest() - centre[i].to_f64_nearest())).sum::<f64>();
+    let centre = fillet.spine().centre_curve().evaluate_box([&tau, &tau], 128, dec)?;
+    let direction = (0..3).map(|i| normal[i] * (jet.value[i].mid().to_f64_nearest() - centre[i].mid().to_f64_nearest())).sum::<f64>();
     if !direction.is_finite() || direction == 0.0 { return Err(bad("numerical fillet material orientation is unresolved")); }
     d.faces.push(NumericalFace { key: face_key, surface: Surface::BSpline(SplineSupport::RationalAtlas(fillet.surface().clone())), sense: if direction > 0.0 { Sense::Same } else { Sense::Reversed }, loops: vec![boundary] });
     let mut native_trims = Vec::new();
@@ -459,6 +469,7 @@ fn build_impl(
         }
     }
     compact(&mut d);
-    let body = previous.unwrap_or(&source).rebuild_with_native_trims(d, native_trims, source.options().clone(), dec)?;
+    let body = previous.unwrap_or(&source).rebuild_with_native_trims(d, native_trims, source.options().clone(), dec)
+        .map_err(|error| at_stage("body native admission", error))?;
     Ok(NumericalFilletBuilt { source, body, edge: edge_key.into(), key: key.into(), radius, tolerance_mm, fillet, constrained_parameter_controls })
 }

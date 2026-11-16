@@ -10,6 +10,9 @@
 use crate::{BSplineCurve, BSplineSurface, Point3};
 use catallax_numbers::{Decider, Rational, Real, Refusal, Sign};
 
+mod build;
+mod edit;
+
 /// Euclidean millimetre coordinates. Weights are always stored separately.
 pub type RationalPoint = [Rational; 3];
 // Weighted coordinates, never Euclidean coordinates plus a weight.

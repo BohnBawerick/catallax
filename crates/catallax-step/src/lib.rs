@@ -35,12 +35,14 @@ mod poles;
 mod rational_atlas;
 mod regularize;
 mod seams;
+mod spline_surfaces;
 mod trim;
 mod uv;
 mod uv_loop;
 mod wire;
 
 pub use certified_spline::{CertifiedSplineStepOptions, write_spline_prism_step};
+pub use spline_surfaces::{SplineSurfaceStepReport, write_spline_surfaces_step};
 
 /// Export options.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]

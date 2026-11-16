@@ -4,6 +4,7 @@ use super::*;
 use crate::rational_patch::trace_series::series;
 use std::collections::BTreeMap;
 
+mod affine;
 mod bounds;
 mod contract;
 mod curve;
@@ -134,14 +135,15 @@ impl PatchPairIntersection {
                     });
                     let mut equations = Vec::with_capacity(3);
                     for k in 0..3 {
-                        equations.push(RealPoly::from(difference(
+                        equations.push(difference(
                             &product(&a[k], &b[3], dec)?,
                             &product(&b[k], &a[3], dec)?,
                             dec,
-                        )?));
+                        )?);
                     }
-                    let polynomials: [RealPoly; 3] =
-                        equations.try_into().expect("three patch equations");
+                    let polynomials =
+                        affine::reduce(equations.try_into().expect("three patch equations"), dec)?
+                            .map(RealPoly::from);
                     let jacobian = std::array::from_fn(|row| {
                         std::array::from_fn(|column| polynomials[row].partial(column))
                     });

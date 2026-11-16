@@ -258,8 +258,8 @@ mod tests {
                 &mut dec,
             )?;
             let patch = RationalPatch::new(carrier, &mut dec)?;
-            // X=3u,Y=5v,Z=(u-1/2)^2+(v-1/2)^2. The balanced
-            // projection is (X/3,2Y/5), with smallest Jacobian eigenvalue 1.
+            // X=3u,Y=5v,Z=(u-1/2)^2+(v-1/2)^2. Its centre-dual
+            // projection is (X/3,Y/5), whose Jacobian is exactly I.
             assert_eq!(patch.embedding_lower_bound().sign(), Sign::Positive);
             assert!(patch.embedding_lower_bound() <= &Rational::one());
             Ok(())
@@ -312,6 +312,52 @@ mod tests {
                     .parameters_at(&Point3::new(4.into(), 5.into(), Real::zero()), &mut dec)?
                     .is_none()
             );
+            Ok(())
+        });
+        assert!(!work.exhausted);
+        result.unwrap();
+    }
+
+    #[test]
+    fn metric_balance_does_not_replace_a_valid_centre_dual_projection() {
+        let (result, work) = with_operation_budget(20_000_000, || -> Result<(), Refusal> {
+            let mut dec = Decider::default();
+            // A stretched conformal quadratic: after the centre-dual
+            // projection its symmetric Jacobian is (1+9u/10) I > 0.
+            // Blind row balancing would make it indefinite near u=-1.
+            let linear = [-1, 0, 1];
+            let square = [1, -1, 1];
+            let mut points = Vec::new();
+            for u in 0..3 {
+                for v in 0..3 {
+                    let x = &q(10, 1)
+                        * &(&q(linear[u], 1) + &(&q(9, 20) * &q(square[u] - square[v], 1)));
+                    let y = &q(linear[v], 1) * &(&q(1, 1) + &q(9 * linear[u], 10));
+                    points.push(Point3::new(x.into(), y.into(), Real::zero()));
+                }
+            }
+            let knots = [-1, -1, -1, 1, 1, 1].map(Rational::from_i64).to_vec();
+            let carrier = BSplineSurface::new(
+                [2, 2],
+                [knots.clone(), knots],
+                [3, 3],
+                points,
+                vec![Real::one(); 9],
+                &mut dec,
+            )?;
+            let patch = RationalPatch::new(carrier, &mut dec)?;
+            let at = patch
+                .parameters_at(
+                    &Point3::new(5.into(), q(29, 40).into(), Real::zero()),
+                    &mut dec,
+                )?
+                .expect("the existing finite point remains invertible");
+            for coordinate in at {
+                assert_eq!(
+                    exact_sign(&(&coordinate - &Real::from(q(1, 2))), &mut dec)?,
+                    Sign::Zero
+                );
+            }
             Ok(())
         });
         assert!(!work.exhausted);

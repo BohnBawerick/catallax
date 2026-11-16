@@ -171,7 +171,7 @@ pub struct Reader<'a> {
     objects: &'a [Option<Box<dyn Any>>],
     decider: &'a mut Decider,
     handles: &'a HandleRanges,
-    rationals: &'a RefCell<RationalCache>,
+    rationals: &'a mut RationalCache,
 }
 
 impl<'a> Reader<'a> {
@@ -345,14 +345,14 @@ pub fn decode<T: Codec>(bytes: &[u8], decider: &mut Decider) -> Result<T, Refusa
     registry.add::<T>();
     let mut objects = Vec::new();
     let handles = RefCell::new(HashMap::new());
-    let rationals = RefCell::new(RationalCache::default());
+    let mut rationals = RationalCache::default();
     let mut reader = Reader {
         data: &bytes[12..end],
         at: 0,
         objects: &objects,
         decider,
         handles: &handles,
-        rationals: &rationals,
+        rationals: &mut rationals,
     };
     if String::read(&mut reader)? != type_name::<T>() {
         return Err(invalid("wrong body handover kind"));
@@ -387,7 +387,7 @@ pub fn decode<T: Codec>(bytes: &[u8], decider: &mut Decider) -> Result<T, Refusa
             objects: &objects,
             decider,
             handles: &handles,
-            rationals: &rationals,
+            rationals: &mut rationals,
         };
         let id = u32::read(&mut reader)?;
         if id as usize >= count || objects[id as usize].is_some() {
@@ -407,7 +407,7 @@ pub fn decode<T: Codec>(bytes: &[u8], decider: &mut Decider) -> Result<T, Refusa
             objects: &objects,
             decider,
             handles: &handles,
-            rationals: &rationals,
+            rationals: &mut rationals,
         };
         let value = factory(&mut record)?;
         record.finish()?;
@@ -419,7 +419,7 @@ pub fn decode<T: Codec>(bytes: &[u8], decider: &mut Decider) -> Result<T, Refusa
         objects: &objects,
         decider,
         handles: &handles,
-        rationals: &rationals,
+        rationals: &mut rationals,
     };
     let length = reader.count()?;
     let start = reader.at;
@@ -431,7 +431,7 @@ pub fn decode<T: Codec>(bytes: &[u8], decider: &mut Decider) -> Result<T, Refusa
         objects: &objects,
         decider,
         handles: &handles,
-        rationals: &rationals,
+        rationals: &mut rationals,
     };
     let value = T::read(&mut root)?;
     root.finish()?;
@@ -492,7 +492,7 @@ impl Codec for crate::Rational {
         let key = &r.data[start..r.at];
         r.decider.charge_work(key.len() as u64)?;
         // Only identical encodings reuse a completed canonicality check.
-        if let Some(value) = r.rationals.borrow().values.get(key) {
+        if let Some(value) = r.rationals.values.get(key) {
             return Ok(value.clone());
         }
         let n = crate::Integer(num_bigint::BigInt::from_signed_bytes_le(numerator));
@@ -505,7 +505,7 @@ impl Codec for crate::Rational {
         if value.n != n || value.d != d {
             return Err(invalid("noncanonical rational"));
         }
-        let mut cache = r.rationals.borrow_mut();
+        let cache = &mut *r.rationals;
         if cache.values.len() == cache.values.capacity() {
             r.decider.charge_work(cache.bytes as u64)?;
             cache.values.try_reserve(1).map_err(|_| {

@@ -5,7 +5,8 @@ transfer. The first occurrence still checks the positive denominator and runs
 `Rational::new`, then compares the normalized result with the encoded integers.
 Only an identical pair of length-prefixed integer encodings can reuse that
 result. New encodings, including unreduced fractions and invalid denominators,
-pass through the existing checks. The cache does not survive the request.
+pass through the existing checks. One decode owns the cache and lends it
+exclusively to its reader views. The cache does not survive the request.
 
 Integer decoding also borrows its byte slice instead of allocating and metering
 a temporary vector one byte at a time. It charges the entire slice before
@@ -65,9 +66,9 @@ fall from 432.8 ms to 187.6 ms. Warm measurements follow three unrecorded reads.
 Import work changes from 12,705,134 to 13,830,917 units because
 cache operations also consume work. Export work remains 23,872,737 units.
 
-The measured Chrome result meets the 250 ms edit budget, but does not meet the
-requested margin below 150 ms. That target remains open. SolidDraft itself was
-not rebuilt or retested in this Catallax change.
+The standalone Chrome kernel result does not meet the requested margin below
+150 ms. That target remains open. SolidDraft was not rebuilt or retested here;
+its performance comparison will happen after the app can pin this kernel revision.
 
 The Blade was overloaded during its later Chrome measurements, with load
 averages above 37 on a 12-thread host. Those runs are not a controlled timing
@@ -113,3 +114,10 @@ round trips, allowance exhaustion on cached reads, and noncanonical or invalid
 fractions after a cache hit, invalid fixed-array elements, and duplicate or
 out-of-range shared IDs. The CI-selected all-target clippy check and
 `ci/run fmt` also pass.
+
+The run-ahead source-state inventory guard passes under nextest 0.9.148's CI
+profile with the exclusively borrowed cache. A native-generated bracket payload
+also decodes in wasm32 and re-encodes to the same 3,779,427 bytes, with read work
+13,830,917 and write work 23,872,737. The pre-fix archived shard reproduced the
+inventory failure; an additional graded-field test reached the local 600-second
+limit despite passing hosted CI in 152.8 seconds.

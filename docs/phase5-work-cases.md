@@ -21,3 +21,9 @@ available with `--ignored`. The complete 100M top requests also have an explicit
 slow regression. Required Python CI still checks all three 20M refusals and artifact
 absence, in the `step-regressions-slow` job. The listed full-request counts come from the recorded source before the
 review's narrower predispatch checks; those long requests were not repeated.
+
+Incomplete 2.1 case: the 1e-7 mm multi-patch fillet probe still refuses at the
+100M ceiling in cross-face native world-distance sampling; its exact/default
+controls pass. Retain the [final-admission work split](research/spline-fillet-offset-search.md#16-november-numerical-multi-patch-continuation-not-yet-a-body)
+and the earlier 29,335,696-work carrier/cap-only result for phase 5. The exact
+offset proof across atlas seams on perpendicular planes also exhausts at 100M.

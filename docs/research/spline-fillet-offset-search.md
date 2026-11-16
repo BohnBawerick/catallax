@@ -45,3 +45,43 @@ The builder rounds one convex edge between two single-patch faces whose ends mee
 - [M27-SPLINE-FILLET-SCOPE.md](../M27-SPLINE-FILLET-SCOPE.md): https://github.com/BohnBawerick/catallax/pull/400
 - [M11-OFFSET-PROOF.md](../M11-OFFSET-PROOF.md): https://github.com/BohnBawerick/catallax/pull/445
 - [M11-COVERAGE.md](../M11-COVERAGE.md): https://github.com/BohnBawerick/catallax/pull/521, https://github.com/BohnBawerick/catallax/pull/523, https://github.com/BohnBawerick/catallax/pull/526
+
+## 16 November: numerical multi-patch continuation, not yet a body
+
+The phase-2.1 continuation uses metered Newton offset contacts across atlas
+charts, C1 cubic centre/section fits and paired world/native-UV end cuts.
+The sampled tolerance is 1e-7 mm, not a whole-face or whole-body bound.
+The perpendicular-plane seam and circular-section controls pass. An earlier
+curved-loft carrier/cap-only probe passed at 1e-4 mm in 29,335,696 work; that
+is not acceptance of the current, stricter full-body request.
+
+Declared numerical carriers use sampled chart-box coverage and nine UV-walk
+locations per coedge. Only the new fillet carrier is declared numerical in
+this probe. Source-carrier checks are unchanged. Edge, incidence, endpoint,
+join and world-distance checks keep their existing algorithms and full
+clipped native-knot-span sample grids. The exact chart-gap control and
+default native continuation/repair/support-edit/handover control pass.
+
+The smooth three-section loft's full body probe still exhausts the 100M
+request allowance. Its final-admission work before refusal is:
+
+| Check authority | Charged work |
+|---|---:|
+| Numerical face-local | 1,271,040 |
+| Exact source-face-local | 6,540,591 |
+| Cross-face checks and setup | 3,417,006 |
+| Final-admission total | 11,228,637 |
+
+The last unfinished check is native edge-to-surface distance sampling for
+`round/blend/#20 / round/cap/#14`. These counts cover final admission only;
+the same request allowance also covers the preceding source and fillet work.
+No admitted body, filleted STEP, radius-edit result or imported-part/housing
+acceptance is claimed. The test is
+`m11_spline_fillet::numerical_fillet_builds_on_the_smooth_loft_across_its_station_seam`.
+
+The interpolation and separate UV/3D-curve representation follow the
+[SMLib rail-blend/lift workflow](https://github.com/NVIDIA-Omniverse/usd-brep/blob/main/source/SMLib/src/SmFilletSolver.cpp#L8465-L8520)
+and [OpenCASCADE's paired intersection curves](https://dev.opencascade.org/doc/refman/html/class_int_tools___face_face.html).
+Numerical face-local admission uses Catallax's finite sampling convention,
+not either kernel's complete wire certification. No reference source was ported.
+

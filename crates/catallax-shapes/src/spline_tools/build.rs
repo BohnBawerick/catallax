@@ -375,6 +375,9 @@ fn cardinals_on_knots(
         u64::try_from(entries).map_err(|_| invalid("interpolation work count overflows"))?,
     )?;
     axis(degree, &knots, n, dec)?;
+    if knots.first() != Some(&knots[degree]) || knots.last() != Some(&knots[n]) {
+        return Err(invalid("prescribed interpolation requires clamped knot ends"));
+    }
     if nodes.windows(2).any(|pair| pair[0] >= pair[1])
         || nodes[0] < knots[degree]
         || nodes[n - 1] > knots[n]
@@ -538,7 +541,7 @@ impl RationalSplineSurface {
         Self::interpolate_grid(parameters, degrees, points, None, dec)
     }
 
-    /// Interpolates a u-major grid in a prescribed expanded knot basis.
+    /// Interpolates a u-major grid in a prescribed clamped expanded knot basis.
     /// Parameters must increase inside each active domain; singular systems refuse.
     pub fn through_grid_on_knots(
         parameters: [&[Rational]; 2],

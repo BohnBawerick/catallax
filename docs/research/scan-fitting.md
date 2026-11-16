@@ -38,7 +38,7 @@ Do not add it now. The P3 miss is a missing torus fit and a missing assembly rul
 
 ## What is still open
 
-Tori, chamfers, pockets, steps and features off the stock axes. Free-form regions wait for spline Booleans and spline fillets (milestones 1.3 and 1.5). The record shows no run on a real scan, only on points sampled from our own parts.
+Tori, chamfers, pockets, steps and features off the stock axes. Free-form regions wait for spline Booleans and spline fillets (milestones 1.3 and 2.1). The record shows no run on a real scan, only on points sampled from our own parts.
 
 ## Sources
 

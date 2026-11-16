@@ -84,7 +84,7 @@ Twelve things neither reference kernel does are not in the count. They include a
 - Release notes list the slow steps and the two export timeouts, with working links.
 - Faults found at the cut: the macOS test panic is fixed on main. The lattice and gyroid export that timed out is rerun on a quiet machine.
 - Docs match the cut. This file replaces the old plan and roadmap files.
-- Three quick re-checks: whether the later cuts on the filleted P5 housing already build (part of 1.3), the last 72,166 units on P4's scoreboard run, and P1 with its fast route off.
+- Three quick re-checks: whether the later cuts on the filleted P5 housing already build (deferred to 2.1), the last 72,166 units on P4's scoreboard run, and P1 with its fast route off.
 
 **Checkpoint 0.** This roadmap is adopted. Coverage is 55%. Review the 13 pending PRD proposals with the owner (section 14 of [the archived plan](docs/archive/PLAN-2026-11.md#14-proposed-prd-changes)).
 
@@ -94,7 +94,7 @@ Twelve things neither reference kernel does are not in the count. They include a
 - Doing: where an exact proof is unavailable, because it is missing or too costly, the kernel builds the geometry numerically within a stated tolerance. Each result records its tolerance, the checks it passed and any repair. Its STEP file is written and marked approximate.
 - Why here: it is the base under all three gaps. Real files miss exact rules by micrometres. Spline Booleans stop on a gap or a coincidence they cannot prove. OpenCASCADE and SMLib work to a tolerance throughout. We will work to one only where the exact proof is missing or too costly.
 - Unlocks: milestones 1.2 and 1.3 below, the spline fillets of 2.1, and the first bounded-answer rule, for [tangent contact](docs/research/tangent-touch.md).
-- Done when: numerical results carry their tolerance, checks and repair history through import (1.2) and spline cuts (1.3). A STEP file marked approximate opens in OpenCASCADE with healing off. The curved-housing chain (loft, spline cut, fillet across patches, one more edit, STEP opened by OpenCASCADE) closes with the spline fillets in phase 2 (2.1).
+- Done when: numerical results carry their tolerance, checks and repair history through import (1.2) and spline cuts (1.3). A STEP file marked approximate opens in OpenCASCADE with healing off and takes an edit there. The curved-housing chain (loft, spline cut, fillet across patches, one more edit, STEP opened by OpenCASCADE) closes with the spline fillets in phase 2 (2.1).
 
 **1.2 Real-file import**
 - Doing: opening real STEP files under those tolerances, analytic files first, then spline files. What still refuses is counted by cause.
@@ -107,7 +107,7 @@ Twelve things neither reference kernel does are not in the count. They include a
 - Doing: Booleans on lofts and imported freeform parts that finish and export.
 - Why here: cuts and joins shape every part after its first feature, and today they stop at the first freeform face. It comes after 1.1 because 4 of the 14 refusals are unproved gaps and coincidences, which the rules of 1.1 are meant to settle.
 - Unlocks: every freeform part past its first cut, and the spline fillets of milestone 2.1.
-- Done when: the 14 recorded spline Boolean requests and the loft top cut build and reach STEP. The later cuts on the housing build with the fillets of 2.1.
+- Done when: the 14 recorded spline Boolean requests and the loft top cut build and reach STEP. The later cuts on the filleted housing are not a criterion here. They are deferred to 2.1.
 
 **1.4 Everyday edge and wall features**
 - Doing: fillets over mixed corners, shells with side openings, hollow oblique draft, chamfer corners and general holes on ordinary prismatic and turned parts.
@@ -125,7 +125,7 @@ Why this phase is second: these are whole lines of the count with nothing built.
 
 | # | Milestone | What we are doing | Why here | Unlocks | Done when |
 |---|---|---|---|---|---|
-| 2.1 | Fillets between spline faces | Rounded edges on lofted and imported freeform parts, across more than one surface patch. | Needs 1.3. The centre curve of a spline fillet is found by the same engine that intersects spline faces. [One loft edge already rounds within 59 nm](docs/research/spline-fillet-offset-search.md). Moved from phase 1 on 16 Nov. | Finished freeform parts. P9, the lofted duct. The curved-housing chain of 1.1. | A fillet across several patches builds on a loft and on an imported part, and a radius edit keeps the names. The curved housing builds as loft, spline cut, fillet, one more edit, and its STEP opens in OpenCASCADE with healing off. |
+| 2.1 | Fillets between spline faces | Rounded edges on lofted and imported freeform parts, across more than one surface patch. | Needs 1.3. The centre curve of a spline fillet is found by the same engine that intersects spline faces. [One loft edge already rounds within 59 nm](docs/research/spline-fillet-offset-search.md). Moved from phase 1 on 16 Nov. | Finished freeform parts. P9, the lofted duct. The curved-housing chain of 1.1. | A fillet across several patches builds on a loft and on an imported part, and a radius edit keeps the names. The curved housing builds as loft, spline cut, fillet, one more edit, its STEP opens in OpenCASCADE with healing off and takes an edit there, and the later cuts on the filleted housing (old M8) build. |
 | 2.2 | NURBS toolkit | Freeform surface construction: Coons patch, surface through a grid of points, Gordon surface, guided skin, N-sided fill. | First of the new milestones in the owner's order. Three "not started" lines sit here. Surface bodies and direct edits need its tools. | Freeform surfacing. Lofts with guide curves. | Each surface builds and exports. Knot insertion, degree raise, split and join are public. First step: a dated decision that widens the 10 Nov port rule. |
 | 2.3 | Surface bodies | Open surfaces and wires as bodies. Sew, trim, extend, thicken into a solid. | Second in the owner's order. Direct edits (2.5) need its trim, extend and sew. | Surface modelling. Imported files that are not closed solids. | A surface trims, extends and thickens into a solid. Faces sew into a solid outside import. |
 | 2.4 | General sweeps | Extrude with taper. Sweep with a guide, with twist and along a helix. Extrude up to a curved face. | Two "not started" lines. It does not depend on 2.2 or 2.3, so it runs beside them. | Springs, threads, tapered and twisted shapes. P8, the spring and threaded boss. | P8 builds. |
@@ -286,7 +286,7 @@ To be written, each short:
 | M2 to M5 The first part in SolidDraft, everyday features, distance features, general fillets and draft | 1.4 Everyday edge and wall features |
 | M6 The roadmap and the decisions written down | Reached. This file replaces its plan. |
 | M7 Lofts and spline sweeps finished | Reached. See the history for 10 and 11 Nov. |
-| M8 Cuts after a fitted fillet | Part of 1.3 Cuts and joins on spline faces |
+| M8 Cuts after a fitted fillet | Deferred to 2.1 Fillets between spline faces |
 | M9 Spline intersections ported | Part of 1.3 Cuts and joins on spline faces |
 | M10 Catallax cuts and joins spline faces | 1.3 Cuts and joins on spline faces |
 | M11 Fillets between spline faces | 2.1 Fillets between spline faces |

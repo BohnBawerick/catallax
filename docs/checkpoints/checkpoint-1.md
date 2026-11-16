@@ -139,6 +139,22 @@ The tolerant-import tiers landed in [#669](https://github.com/BohnBawerick/catal
 
 The openings count includes 119 mixed or partial files and 2,202 retained unverified source-surface sets. It is not a solid import or a valid export, so it stays out of the headline. #669 reports no loss against 405 complete solids and 374 valid exports.
 
+## App
+
+The browser app's kernel work now runs off the page's thread. #320, #321 and #322 landed; #322 moved browser builds, edits, Undo, Redo and opening a part into a kernel worker, whose built bodies the page adopts, with a "Building the part" bar and Cancel. On the bracket in headless Chromium with CI's flags, the longest page freeze went from 7.4 s to about 0.2-0.4 s on open, from 2.8 s and then 7 s to 0.2-0.5 s on a depth edit, and from 2.7-2.9 s to about 0 on Undo and Redo. #323, waiting on CI with its web build already green, makes the page take the worker's bodies without reading their exact geometry. That brings the depth edit to 65-190 ms. The first exact command after an edit (Measure, Check, export, section, sketch on a face) then waits behind a "Reading the part" bar for about 0.2-0.7 s. #327, green and waiting for review, repins Catallax to 8bf3999a with #657 and #650. Measured on the same app revision, #657 gives no gain on the bracket: 192 ms inside the hand-over read on the old pin and 199 ms on the new one, and every page timing within run-to-run spread. #650 lets the near-coincident flange use its early preview, so two display tests were flipped. Later: the viewport reads its pick back from the GPU every frame the pointer rests on it, which software rendering holds for 0.7-1 s. That keeps Cancel and the edit after it over 250 ms in CI's browser, so the 250 ms browser check stays out of the web job.
+
+Since that was written, SolidDraft #327 (the repin to `8bf3999a`) and the app hand-over PRs have landed.
+
+P1 to P5 pass through SolidDraft on Catallax main `47fb0a2e`, run on the work PC on 16 Nov with the app's scenario runner. Each part builds, takes its committed edit, undoes and redoes, saves, reopens with the same geometry, and exports STEP from a fresh process. Every export, original, edited and reopened, is valid in OCCT with healing off. This is milestone 1.4's "done when" line. Timing budgets, which are advisory, were not met on P1 and P5.
+
+| Part | Edit | STEP export work |
+| --- | --- | ---: |
+| P1 | slot dimension | 15.12M |
+| P2 | chamfer 1 to 0.75 | 0.54M |
+| P3 | junction fillet 2 to 2.5 | 0.93M |
+| P4 | shell wall 2 to 1.5 | 1.25M |
+| P5 | junction fillet 2 to 2.5 | 4.50M |
+
 ## What still refuses and why
 
 From the dry run. The cut run replaces these.

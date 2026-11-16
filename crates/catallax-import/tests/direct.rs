@@ -185,16 +185,9 @@ fn inherited_line_gap_is_bounded_and_reconstructed_before_step_export() {
         let before =
             DirectSolid::from_opened(std::sync::Arc::new(opened), 0, &mut Decider::default())
                 .unwrap();
-        let cap = before
-            .faces()
-            .iter()
-            .find(|face| {
-                matches!(&face.surface,
-            Surface::Plane(p) if p.origin[2]==r("4") && !p.axis[2].is_zero())
-            })
-            .unwrap()
-            .name
-            .clone();
+        // The first source line lies on x=0; edit x=2 so its noisy carrier
+        // remains untouched by the requested support reconstruction.
+        let cap = positive_x(&before);
         let after = before
             .apply(
                 Edit::OffsetFace {
@@ -232,10 +225,10 @@ fn inherited_line_gap_is_bounded_and_reconstructed_before_step_export() {
             .iter()
             .flat_map(|f| &f.loops)
             .flat_map(|b| &b.edges)
-            .flat_map(|e| [&e.start.point[2], &e.end.point[2]])
+            .flat_map(|e| [&e.start.point[0], &e.end.point[0]])
             .max()
             .unwrap();
-        assert_eq!(highest, &r("5"));
+        assert_eq!(highest, &r("3"));
         for edge in emitted.solids[0]
             .faces
             .iter()

@@ -486,6 +486,7 @@ impl Ctx<'_> {
             ) if segment.as_str() == "wall" => Ok(()),
             (
                 O::Extrude { .. }
+                | O::ExtrudeTapered { .. }
                 | O::ExtrudeOnFace { .. }
                 | O::ExtrudeTo { .. }
                 | O::ExtrudeNext { .. }
@@ -507,6 +508,7 @@ impl Ctx<'_> {
             ) => Ok(()),
             (
                 O::Extrude { profile, .. }
+                | O::ExtrudeTapered { profile, .. }
                 | O::ExtrudeOnFace { profile, .. }
                 | O::ExtrudeThrough { profile, .. }
                 | O::ExtrudeTo { profile, .. }

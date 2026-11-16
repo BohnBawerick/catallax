@@ -18,6 +18,8 @@ use catallax_topology::{
 use serde::{Deserialize, Serialize};
 
 mod recipe;
+#[cfg(test)]
+mod tests;
 pub(crate) use recipe::Context;
 pub use recipe::{RecipeCandidate, RecipeSwept, prepare_recipe, requires_numerical};
 /// Persisted generating definition. Reopening rebuilds and rechecks the geometry.

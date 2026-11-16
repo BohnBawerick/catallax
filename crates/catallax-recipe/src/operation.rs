@@ -137,6 +137,16 @@ pub enum Operation {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         direction: Option<Vector3>,
     },
+    /// A normal extrusion with every side drafted about the starting sketch plane.
+    ExtrudeTapered {
+        /// The sketch step.
+        profile: StepId,
+        /// Nonzero signed normal distance.
+        distance: Number,
+        /// Draft angle in degrees, strictly between -90 and 90.
+        /// Positive angles narrow the material along the extrusion direction.
+        angle: Number,
+    },
     /// Sweeps local profile coordinates from an exact supporting face plane.
     ExtrudeOnFace {
         /// An XY profile; its placement must be the identity.
@@ -433,6 +443,7 @@ impl Operation {
             Operation::Sketch { .. } => "sketch",
             Operation::Path { .. } => "path",
             Operation::Extrude { .. } => "extrude",
+            Operation::ExtrudeTapered { .. } => "extrude_tapered",
             Operation::ExtrudeOnFace { .. } => "extrude_on_face",
             Operation::ExtrudeThrough { .. } => "extrude_through",
             Operation::ExtrudeTo { .. } => "extrude_to",
@@ -487,7 +498,8 @@ impl Operation {
             | Operation::ImportIges { .. }
             | Operation::ImportMesh { .. }
             | Operation::ScanImport { .. } => vec![],
-            Operation::Extrude { profile, .. } | Operation::Revolve { profile, .. } => {
+            Operation::Extrude { profile, .. } | Operation::ExtrudeTapered {profile,..}
+            | Operation::Revolve { profile, .. } => {
                 vec![(profile, Profile)]
             }
             Operation::ExtrudeOnFace { body, profile, .. } => {

@@ -19,6 +19,17 @@ pub fn extrude_tapered(
     angle_degrees: &Rational,
     dec: &mut Decider,
 ) -> Result<BodyId, Refusal> {
+    with_radius(model, profile, step, distance, angle_degrees, dec).map(|(body, _)| body)
+}
+
+pub(crate) fn with_radius(
+    model: &mut Model,
+    profile: &Profile,
+    step: &StepId,
+    distance: &Rational,
+    angle_degrees: &Rational,
+    dec: &mut Decider,
+) -> Result<(BodyId, Rational), Refusal> {
     let normal = profile
         .pose
         .rotation
@@ -43,7 +54,10 @@ pub fn extrude_tapered(
     )?;
     let body = crate::extrude::extrude_with_decider(model, profile, step, distance, None, dec)?;
     if angle_degrees.is_zero() || profile.is_empty() {
-        return Ok(body);
+        return Ok((
+            body,
+            crate::evaluate::profile_radius(profile) + distance.abs(),
+        ));
     }
     let origins: BTreeSet<_> = model
         .faces_of_body(body)
@@ -60,7 +74,7 @@ pub fn extrude_tapered(
             near: None,
         })
         .collect();
-    let (body, _, _) =
+    let (body, _, radius) =
         crate::draft_build::build(model, body, &selected, &definition, None, step, dec)?;
-    Ok(body)
+    Ok((body, radius))
 }

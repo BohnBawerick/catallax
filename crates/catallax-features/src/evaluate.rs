@@ -980,6 +980,11 @@ fn evaluate_impl(
                         radius: profile_radius(profile) + distance.value().abs(),
                     }
                 }
+                Operation::ExtrudeTapered {profile,distance,angle} => {
+                    let (body,radius)=crate::tapered_extrude::with_radius(
+                        model,&profiles[profile],&step.id,distance.value(),angle.value(),dec)?;
+                    BodyValue {body,radius}
+                }
                 Operation::ExtrudeOnFace {
                     profile,
                     body,

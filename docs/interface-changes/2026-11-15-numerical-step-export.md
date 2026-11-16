@@ -66,6 +66,16 @@ written reference direction perpendicular to its written plane normal, following
 OCCT's `StepToGeom::MakeAxis2Placement` and `gp_Ax2` construction. It independently
 rechecks that selected decimal geometry through N01/N02 at the fixed tolerance.
 
+The analytic writer translates a cylindrical seam cell's U coordinates together
+by an integral period, placing its minimum U in the existing nearest-origin
+angular chart. This applies to one four-use boundary with opposite uses of a
+shared edge. A reader can otherwise project circular rims into a new period
+while leaving the seam's two pcurves behind, making the face unorientable despite
+coincident 3D geometry. Vertices, 3D carriers, coedge directions and source data
+are unchanged; the translated decimal payload and actual pcurves retain all
+existing numerical checks. Other face layouts, native-UV and conical paths are
+unchanged. Neither tolerance nor the existing periodic-chart work policy grows.
+
 Callers obtain bytes via `artifact.bytes()` and provenance via `artifact.report()`.
 After writing, `artifact.check_written(&reread_bytes, &mut decider)` checks complete
 byte identity to that checked artifact and rereads its seam syntax. Building an

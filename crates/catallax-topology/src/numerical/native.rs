@@ -27,17 +27,20 @@ pub struct NumericalNativeTrim {
 pub(super) struct Index<'a> {
     curves: BTreeMap<(usize, usize, usize), &'a BSplineCurve>,
     faces: BTreeSet<usize>,
+    sampled_carriers: &'a BTreeSet<String>,
 }
 
 impl<'a> Index<'a> {
     pub fn new(
         definition: &NumericalDefinition,
         bindings: &'a [NumericalNativeTrim],
+        sampled_carriers: &'a BTreeSet<String>,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
         let mut index = Self {
             curves: BTreeMap::new(),
             faces: BTreeSet::new(),
+            sampled_carriers,
         };
         if bindings.is_empty() {
             return Ok(index);
@@ -211,6 +214,9 @@ pub(super) fn check_loops(
     tolerance: &Rational,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
+    if index.sampled_carriers.contains(&face.key) {
+        return check_numerical_loops(face_index, face, edges, index, dec);
+    }
     if !index.has_face(face_index) {
         return analytic::check_loops(face, edges, tolerance, dec);
     }
@@ -285,6 +291,51 @@ pub(super) fn check_loops(
     super::check_loops(&sampled, analytic_family.then_some((face, edges)), dec)
 }
 
+// Face-local UV topology uses nine locations per coedge for a declared
+// numerical carrier. World-distance and endpoint checks keep the complete
+// existing clipped-knot-span grid in `samples` and `join_samples`.
+fn check_numerical_loops(
+    face_index: usize,
+    face: &NumericalFace,
+    edges: &[NumericalEdge],
+    index: &Index<'_>,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    let mut loops = Vec::with_capacity(face.loops.len());
+    for (row, boundary) in face.loops.iter().enumerate() {
+        let mut polygon = Vec::with_capacity(boundary.len() * SUBDIVISIONS as usize);
+        for (use_index, trim) in boundary.iter().enumerate() {
+            let edge = edges.get(trim.edge)
+                .ok_or_else(|| bad("trim", "trim names an unknown edge"))?;
+            let curve = index.get(face_index, row, use_index)
+                .ok_or_else(|| bad("trim", "a numerical atlas face needs a native UV curve on every edge"))?;
+            let [a, b] = if trim.sense == Sense::Same {
+                edge.parameters.each_ref()
+            } else {
+                [&edge.parameters[1], &edge.parameters[0]]
+            };
+            let step = (b - a) / Rational::from_i64(SUBDIVISIONS);
+            let mut previous = trim.uv[0].clone();
+            for i in 1..=SUBDIVISIONS {
+                dec.charge_work(1)?;
+                let at = if i == SUBDIVISIONS {
+                    trim.uv[1].clone()
+                } else {
+                    let t = a + &(&step * Rational::from_i64(i));
+                    let at = uv(curve, &t, dec)?;
+                    [midpoint(&at[0], dec)?, midpoint(&at[1], dec)?]
+                };
+                polygon.push(NumericalTrim {
+                    edge: trim.edge, sense: trim.sense, uv: [previous, at.clone()],
+                });
+                previous = at;
+            }
+        }
+        loops.push(polygon);
+    }
+    super::check_boundaries(face, &loops, dec)
+}
+
 /// Builds with retained native UV curves at the 3D edges' finite parameters.
 /// Every binding is checked; continuations retain and recheck these definitions.
 /// Empty bindings preserve the ordinary numerical build path.
@@ -299,9 +350,11 @@ pub fn build_with_native_trims(
     guarded(|| build_inner(definition, native_trims, BTreeSet::new(), options, Vec::new(), dec))
 }
 
-/// Admits explicitly numerical atlas carriers with sampled box coverage.
-/// The declaration changes only their chart-coverage check, not edge, loop,
-/// incidence, or distance checks. Undeclared faces keep exact chart coverage.
+/// Admits explicitly numerical atlas carriers with sampled face-local checks.
+/// Their UV walks use nine locations per coedge; chart coverage uses a 9 by 9
+/// grid. Edge, incidence, endpoint, join and world-distance checks are unchanged,
+/// including the complete existing clipped-knot-span distance sample grid.
+/// Undeclared faces retain their original admission path.
 pub fn build_with_sampled_carriers(
     definition: NumericalDefinition,
     native_trims: Vec<NumericalNativeTrim>,
@@ -321,7 +374,7 @@ impl NumericalBody {
     pub fn source_sampled_carriers(&self) -> &BTreeSet<String> {
         &self.source_sampled_carriers
     }
-    /// Current carriers whose chart-box coverage was checked only at samples.
+    /// Current declared numerical carriers using sampled face-local checks.
     pub fn sampled_carriers(&self) -> &BTreeSet<String> {
         &self.sampled_carriers
     }

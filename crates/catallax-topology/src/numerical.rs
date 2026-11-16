@@ -150,9 +150,11 @@ impl Default for NumericalOptions {
 /// continuous projected-disk clearance checks, not chord-polygon pair tests.
 /// Other curved boundary containment remains sampled and explicitly unresolved
 /// between nodes.
-/// Explicitly declared numerical atlas carriers may instead use a 9 by 9
-/// sampled chart-box coverage check. Their evidence says sampled coverage,
-/// never filled-box proof. Other faces retain the exact chart-union test.
+/// Explicitly declared numerical atlas carriers use a 9 by 9 chart-box grid
+/// and nine UV-walk locations per coedge for face-local checks. Their evidence
+/// says numerical samples, never continuous filled-box or curved-loop proof.
+/// Edge, incidence, endpoint, join and world-distance checks retain the full
+/// existing native-knot-span sampling grid. Other faces keep their original path.
 /// The checks do not establish whole-body separation, global self-intersection
 /// freedom or a whole-body approximation bound. They grant no STEP export authority.
 /// Approximate export requires a numerical writer and its own output checks.
@@ -185,7 +187,7 @@ pub struct NumericalHistory {
     pub definition: NumericalDefinition,
     /// Native parameter curves checked at this stage.
     pub native_trims: Vec<NumericalNativeTrim>,
-    /// Numerical carriers admitted with sampled, not exact, chart-box coverage.
+    /// Numerical carriers admitted with sampled face-local checks.
     pub sampled_carriers: BTreeSet<String>,
     /// The controls used at this stage.
     pub options: NumericalOptions,
@@ -442,6 +444,25 @@ fn keys<'a>(values: impl Iterator<Item = &'a str>, dec: &mut Decider) -> Result<
     Ok(())
 }
 
+struct AdmissionStage {
+    name: &'static str,
+    scope: String,
+    start: u64,
+}
+impl Drop for AdmissionStage {
+    fn drop(&mut self) {
+        eprintln!("native_admission stage={} scope={:?} work={}",
+            self.name, self.scope,
+            catallax_numbers::current_operation_work().used.saturating_sub(self.start));
+    }
+}
+fn admission_stage(name: &'static str, scope: impl FnOnce() -> String) -> Option<AdmissionStage> {
+    std::env::var_os("CATALLAX_NATIVE_ADMISSION_TRACE")?;
+    Some(AdmissionStage {
+        name, scope: scope(), start: catallax_numbers::current_operation_work().used,
+    })
+}
+
 fn build_inner(
     definition: NumericalDefinition,
     native_trims: Vec<NumericalNativeTrim>,
@@ -486,7 +507,7 @@ fn build_inner_kind(
             return Err(bad("unsupported", "sampled carrier coverage requires a retained rational atlas"));
         }
     }
-    let native = native::Index::new(&definition, &native_trims, dec)?;
+    let native = native::Index::new(&definition, &native_trims, &sampled_carriers, dec)?;
     let mut model = Model::new();
     let vertices: Vec<_> = definition
         .vertices
@@ -550,8 +571,12 @@ fn build_inner_kind(
             end: Some(vertices[edge.vertices[1]]),
         }));
     }
+    drop(definitions_stage);
     let mut faces = Vec::new();
     for (face_index, face) in definition.faces.iter().enumerate() {
+        let carrier_stage = admission_stage(
+            if sampled_carriers.contains(&face.key) { "carrier/numerical-face" } else { "carrier/exact-face" },
+            || face.key.clone());
         dec.charge_work(1)?;
         if !analytic::supports(&face.surface) {
             return Err(bad(
@@ -637,6 +662,7 @@ fn build_inner_kind(
         wires: Vec::new(),
         marks: MarkLog::new(),
     });
+    let structure_stage = admission_stage("incidence/cross", || definition.name.clone());
     if let Some(fault) = crate::check::structure(&model, body).into_iter().next() {
         return Err(Refusal::new(fault.code, fault.detail));
     }
@@ -651,7 +677,9 @@ fn build_inner_kind(
         name: "topology.structure".into(),
         scope: definition.name.clone(),
     }];
+    drop(structure_stage);
     for edge in &definition.edges {
+        let _endpoints = admission_stage("edge-endpoints/cross", || edge.key.clone());
         let mut samples = Vec::new();
         for i in 0..2 {
             dec.charge_work(1)?;
@@ -674,6 +702,9 @@ fn build_inner_kind(
     }
     for (face_index, face) in definition.faces.iter().enumerate() {
         if face.loops.len() == 1 {
+            let _loop = admission_stage(
+                if sampled_carriers.contains(&face.key) { "uv-loop/numerical-face" } else { "uv-loop/exact-face" },
+                || face.key.clone());
             native::check_loops(
                 face_index,
                 face,
@@ -683,16 +714,16 @@ fn build_inner_kind(
                 dec,
             )?;
         }
-        checks.extend(native::join_samples(
-            face_index,
-            face,
-            &definition.edges,
-            &native,
-            dec,
-        )?);
+        let joins = {
+            let _joins = admission_stage("world-joins/cross", || face.key.clone());
+            native::join_samples(face_index, face, &definition.edges, &native, dec)?
+        };
+        checks.extend(joins);
         let sampled = native.has_face(face_index) || analytic::projected(face, &definition.edges);
         checks.push(NumericalCheck::Passed {
-            name: if sampled {
+            name: if sampled_carriers.contains(&face.key) {
+                "trim.numerical-carrier-sampled-simple-oriented-parameter-loop-9-per-use"
+            } else if sampled {
                 "trim.sampled-simple-oriented-parameter-loop"
             } else {
                 "trim.simple-oriented-parameter-loop"
@@ -713,7 +744,11 @@ fn build_inner_kind(
                 scope: face.key.clone(),
             });
             checks.push(NumericalCheck::Passed {
-                name: "trim.sampled-atlas-chart-union".into(),
+                name: if sampled_carriers.contains(&face.key) {
+                    "trim.numerical-carrier-sampled-atlas-chart-union-9-per-use"
+                } else {
+                    "trim.sampled-atlas-chart-union"
+                }.into(),
                 scope: face.key.clone(),
             });
         }
@@ -725,7 +760,9 @@ fn build_inner_kind(
                     analytic::complete_circle(boundary, &definition.edges).is_some()
                 });
             checks.push(NumericalCheck::Passed {
-                name: if planar_circle_clearance {
+                name: if sampled_carriers.contains(&face.key) {
+                    "trim.numerical-carrier-sampled-hole-contained-disjoint"
+                } else if planar_circle_clearance {
                     "trim.sampled-boundaries-with-continuous-circle-clearance"
                 } else if sampled {
                     "trim.sampled-hole-contained-disjoint"
@@ -767,6 +804,8 @@ fn build_inner_kind(
         {
             let edge = &definition.edges[trim.edge];
             if let Some(curve) = native.get(face_index, boundary_index, use_index) {
+                let _samples = admission_stage("world-native-trim/cross",
+                    || format!("{} / {}", face.key, edge.key));
                 let (samples, endpoints) = native::samples(face, trim, edge, curve, dec)?;
                 checks.push(NumericalCheck::Samples {
                     name: "trim.native-endpoint-position".into(),
@@ -780,6 +819,8 @@ fn build_inner_kind(
                 });
                 continue;
             }
+            let _samples = admission_stage("world-ordinary-trim/cross",
+                || format!("{} / {}", face.key, edge.key));
             let [a, b] = if trim.sense == Sense::Same {
                 edge.parameters.each_ref()
             } else {
@@ -826,7 +867,10 @@ fn build_inner_kind(
             });
         }
     }
-    let evidence = NumericalEvidence::new(options.tolerance_mm.clone(), checks, repairs)?;
+    let evidence = {
+        let _evidence = admission_stage("distance-evidence/cross", || definition.name.clone());
+        NumericalEvidence::new(options.tolerance_mm.clone(), checks, repairs)?
+    };
     dec.check_deadline()?;
     Ok(NumericalBody {
         source: definition.clone(),

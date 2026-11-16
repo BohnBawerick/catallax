@@ -202,6 +202,13 @@ pub struct RepresentationContext {
 /// Topology declarations. Shell closure and orientation remain source claims.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Topology {
+    /// Geometric-set elements, retaining the curve-only subtype declaration.
+    GeometricSet {
+        /// Point, curve or surface references.
+        elements: Vec<EntityId>,
+        /// Whether this is a GEOMETRIC_CURVE_SET.
+        curves_only: bool,
+    },
     /// Outer connected face set and oriented inner-shell references.
     Solid {
         /// Outer shell or connected face set.
@@ -274,4 +281,26 @@ pub enum PlacementLink {
     Relationship([EntityId; 2], EntityId),
     /// Source and target representation items defining a transformation.
     ItemDefinedTransformation([EntityId; 2]),
+}
+
+/// A model declaration, before assembly occurrence placement or body admission.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct ModelDeclaration {
+    /// Source model instance.
+    pub entity: EntityId,
+    /// Declared model family, not a validity or material certificate.
+    pub kind: ModelDeclarationKind,
+}
+
+/// Source model families. A geometric set can contain points or curves as well.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ModelDeclarationKind {
+    /// A manifold or faceted solid, possibly with void shells.
+    Solid,
+    /// A shell-based surface model.
+    Shells,
+    /// A face-based surface model.
+    Faces,
+    /// A set of geometry without B-rep topology.
+    Geometry,
 }

@@ -16,6 +16,8 @@ fn fields<'a>(
 
 pub(super) fn read(e: &Entity, id: EntityId) -> Result<Topology, ImportRefusal> {
     let kinds = [
+        "GEOMETRIC_CURVE_SET",
+        "GEOMETRIC_SET",
         "BREP_WITH_VOIDS",
         "FACETED_BREP",
         "MANIFOLD_SOLID_BREP",
@@ -49,6 +51,17 @@ pub(super) fn read(e: &Entity, id: EntityId) -> Result<Topology, ImportRefusal> 
         })?;
     let (a, n) = fields(e, kind, 1, id)?;
     Ok(match kind {
+        "GEOMETRIC_SET" | "GEOMETRIC_CURVE_SET" => {
+            let (a, n) = if e.parts.len() == 1 || kind == "GEOMETRIC_SET" {
+                (a, n)
+            } else {
+                fields(e, "GEOMETRIC_SET", 1, id)?
+            };
+            Topology::GeometricSet {
+                elements: references(a, n, id)?,
+                curves_only: kind == "GEOMETRIC_CURVE_SET",
+            }
+        }
         "BREP_WITH_VOIDS" => {
             let outer = if e.parts.len() == 1 {
                 reference(a, 1, id)?

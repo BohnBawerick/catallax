@@ -79,6 +79,37 @@ impl ParsedStep {
         topology::placement_link(e, id)
     }
 
+    /// Model declarations in source order. Assembly representations can refer
+    /// to these as prototypes; resolve mapping links before placing bodies.
+    pub fn model_declarations(
+        &self,
+        dec: &mut Decider,
+    ) -> Result<Vec<ModelDeclaration>, ImportRefusal> {
+        let mut out = Vec::new();
+        for (&id, e) in self.graph.iter() {
+            dec.charge_work(1)
+                .map_err(|_| ImportRefusal::ResourceLimit)?;
+            let kind = if e.part("MANIFOLD_SOLID_BREP").is_some()
+                || e.part("FACETED_BREP").is_some()
+                || e.part("BREP_WITH_VOIDS").is_some()
+            {
+                Some(ModelDeclarationKind::Solid)
+            } else if e.part("SHELL_BASED_SURFACE_MODEL").is_some() {
+                Some(ModelDeclarationKind::Shells)
+            } else if e.part("FACE_BASED_SURFACE_MODEL").is_some() {
+                Some(ModelDeclarationKind::Faces)
+            } else if e.part("GEOMETRIC_SET").is_some() || e.part("GEOMETRIC_CURVE_SET").is_some() {
+                Some(ModelDeclarationKind::Geometry)
+            } else {
+                None
+            };
+            if let Some(kind) = kind {
+                out.push(ModelDeclaration { entity: id, kind });
+            }
+        }
+        Ok(out)
+    }
+
     /// Existing exact-source recognition over the same parsed graph.
     pub fn certified_view(&self, dec: &Decider) -> Result<crate::StepFile, ImportRefusal> {
         crate::recognize::read_graph(&self.graph, dec)

@@ -440,3 +440,34 @@ fn units_are_resolved_per_context_without_rounding_degree_conversion() {
     );
     assert!(s.context_units(3, &mut Decider::default()).is_err());
 }
+
+#[test]
+fn geometry_sets_and_model_declarations_do_not_infer_closed_solids() {
+    use catallax_import::geometry_source::{ModelDeclarationKind, Topology};
+    let s=read("
+#1=GEOMETRIC_SET('geometry',(#10,#11));
+#2=GEOMETRIC_CURVE_SET('curves',(#11));
+#3=(GEOMETRIC_CURVE_SET() GEOMETRIC_REPRESENTATION_ITEM() GEOMETRIC_SET((#11)) REPRESENTATION_ITEM('curves'));
+#4=SHELL_BASED_SURFACE_MODEL('surface',(#20));
+#5=BREP_WITH_VOIDS('solid',#21,(#22));
+");
+    assert_eq!(
+        s.topology(1, &mut Decider::default()).unwrap(),
+        Topology::GeometricSet {
+            elements: vec![10, 11],
+            curves_only: false
+        }
+    );
+    assert_eq!(
+        s.topology(2, &mut Decider::default()).unwrap(),
+        s.topology(3, &mut Decider::default()).unwrap()
+    );
+    let models = s.model_declarations(&mut Decider::default()).unwrap();
+    assert_eq!(
+        models.iter().map(|m| m.entity).collect::<Vec<_>>(),
+        vec![1, 2, 3, 4, 5]
+    );
+    assert_eq!(models[0].kind, ModelDeclarationKind::Geometry);
+    assert_eq!(models[3].kind, ModelDeclarationKind::Shells);
+    assert_eq!(models[4].kind, ModelDeclarationKind::Solid);
+}

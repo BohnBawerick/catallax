@@ -30,7 +30,7 @@ Each target is built, then rebuilt with one committed scalar edit, in Catallax, 
 
 A census part's chain is: import the STEP file, drill one hole, then change the hole radius. The hole runs along the smallest bounding-box extent through the centre of the other two. Its radius is a tenth of the smaller remaining extent, and the edit makes it 1.5 times larger. `tools/checkpoint/cutter.py` takes the box from OCCT's reading of the source and rounds every value to 0.001 mm before any kernel runs, so all three get the same numbers. CadQuery and smlibpy read the STEP file with their default settings, which include healing; Catallax reads it without healing.
 
-**One definition of done.** The original and the edited target both build. Both STEP exports open in OCCT 8.0.1.1 as valid solids with the kernel's own face count. No independent check found a wrong value. Volume, area, centroid and the 216-point membership grid are checked only where `head-to-head/analytic.py` has a formula. The census parts have none, so the STEP check decides them.
+**One definition of done.** The original and the edited target both build. Both STEP exports open in OCCT 8.0.1.1 as valid closed solids with the kernel's own face count: at least one solid, every shell closed, and no face outside a solid. No independent check found a wrong value. On a census part, the drill and the radius change must each lower the volume of the exported solid, measured in OCCT, by more than a millionth of the source volume. Volume, area, centroid and the 216-point membership grid are checked only where `head-to-head/analytic.py` has a formula. The census parts have none, so the STEP check decides them.
 
 The edit chains are one edit long. No longer chain has an owner definition yet (P06 found none), so this run does not invent one.
 
@@ -51,24 +51,30 @@ Dry run on main `c52fd8f4` with this tooling, work PC, 100M work per Catallax ph
 | P3 filleted boss | membership check failed | done | done | 20,773, 21,591 | kept |
 | P4 shelled tray | done | done | done | 917,132, 936,262 | kept |
 | P5 flanged housing | done | fillet failed | fillet failed | 1,058,398, 1,057,839 | 16 unnamed |
-| ABC 00000131 | done | done | done | 90,059, 89,979 | kept |
+| ABC 00000131 | drill removed nothing | drill removed nothing | drill raised the volume | 90,059, 89,979 | kept |
 | ABC 00000173 | build refused | done | done | 1,989,546, 1,989,756 | not run |
 | ABC 00000190 | done | done | done | 30,847, 30,727 | kept |
 | ABC 00000405 | done | done | done | 415,261, 410,460 | kept |
 | ABC 00000511 | done | done | done | 30,167, 30,047 | kept |
 | ABC 00000605 | done | done | done | 26,841, 27,014 | kept |
-| ABC 00000632 | done | done | done | 190,157, 190,157 | kept |
-| ABC 00000633 | done | done | done | 103,905, 104,427 | kept |
+| ABC 00000632 | drill removed nothing | drill removed nothing | drill raised the volume | 190,157, 190,157 | kept |
+| ABC 00000633 | drill removed nothing | drill removed nothing | radius change removed nothing | 103,905, 104,427 | kept |
 | ABC 00000695 | done | done | done | 86,347, 83,014 | kept |
-| ABC 00000821 | done | done | done | 217,927, 218,127 | kept |
+| ABC 00000821 | done | done | drill raised the volume | 217,927, 218,127 | kept |
 
 | Kernel | Done, P0 to P5 (13) | Done, census parts (10) | Done in the published 0.2.0 comparison (13) |
 | --- | ---: | ---: | ---: |
-| Catallax | 9 | 9 | 6 |
-| OpenCASCADE (CadQuery 2.6.1) | 12 | 10 | 12 |
-| SMLib (smlibpy 0.4.0) | 8 | 10 | 8 |
+| Catallax | 9 | 6 | 6 |
+| OpenCASCADE (CadQuery 2.6.1) | 12 | 7 | 12 |
+| SMLib (smlibpy 0.4.0) | 8 | 6 | 8 |
 
 The last column applies the same rule to the [published comparison](../../site/comparison-results.json) at `3852c773`. Since then P1, P4 and P5 finish in Catallax. Every Catallax build used at most 13.6M work, under the 20M target.
+
+The census rows come from a rerun of the ten census parts with the material rule. The P0 to P5 STEP files of the dry run were checked again under the closed-solid rule and no verdict changed; line tangent and near miss pass with two closed solids each.
+
+On 00000131, 00000632 and 00000633 the hole lands inside an existing bore, so Catallax's and OCCT's volumes do not change at all. These three edits test nothing as defined. Picking a hole position that cuts material, for example by trying a few offsets from the centre, would make them count; it is not done here.
+
+SMLib's exported solids measure 0.28% to 0.33% more volume in OCCT than the source file, after a subtraction. That is why its rows read "raised the volume". The cause is not diagnosed.
 
 Names are Catallax's own check: every face origin and edge name of the original result resolves after the edit. The other two kernels have no persistent naming contract, so they have no names column. P5 builds and passes its STEP check, but 16 of its faces or edges carry no name, so its name check fails.
 
@@ -134,8 +140,9 @@ Scoreboard, Catallax:
 - **P3 filleted boss.** STEP is valid with the right face count, but OCCT's classifier puts one grid point outside the part (two after the edit) inside the exported solid. The published 0.2.0 comparison failed on the same points. Not yet diagnosed.
 - **P5 flanged housing.** Done, but 16 faces or edges carry no name. The published comparison did not run this check on P5, because P5 did not build then.
 - **ABC 00000173.** The drilled hole refuses at `boolean.no-rational-point`: no rational probe was certified strictly inside a face. Import alone answers.
+- **ABC 00000131, 00000632, 00000633.** Not refusals: the hole as defined removes no material in any kernel, so these rows are not done for anyone.
 
-Scoreboard, reference kernels, for scale: OCCT fails the P5 junction fillet. SMLib fails P5's fillet, the fuses at line contact in P0 line tangent, near miss and crossing pipes, and reports a P2 volume and area outside the check's allowance.
+Scoreboard, reference kernels, for scale: OCCT fails the P5 junction fillet. SMLib fails P5's fillet, the fuses at line contact in P0 line tangent, near miss and crossing pipes, and reports a P2 volume and area outside the check's allowance. Its drilled census parts 00000131, 00000632 and 00000821 export with more volume than the source.
 
 Census: 2,590 files refuse at import, with first causes in the table above. 31 full admissions do not export as valid solids: 14 invalid bodies, 15 `step.numerical-gap` export refusals and two export timeouts.
 

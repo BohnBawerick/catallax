@@ -346,7 +346,7 @@ fn emitted_checks(
             *q = written(q, options)?;
         }
     }
-    for edge in &mut d.edges {
+    for (edge, source) in d.edges.iter_mut().zip(&body.definition().edges) {
         dec.charge_work(1)?;
         let Curve::Line(line) = &mut edge.curve else {
             return Err(bad("unsupported", "finite line required"));
@@ -379,6 +379,15 @@ fn emitted_checks(
                 let delta = difference(&d.vertices[edge.vertices[i]].position, &origin, dec)?;
                 edge.parameters[i] = arithmetic(&dot(&delta, &dir, dec)?, &squared, '/', dec)?;
             }
+        }
+        let written_order = edge.parameters[0].cmp(&edge.parameters[1]);
+        if written_order != std::cmp::Ordering::Equal
+            && written_order != source.parameters[0].cmp(&source.parameters[1])
+        {
+            return Err(bad(
+                "rounding-topology",
+                "written vertices reverse the retained finite line",
+            ));
         }
         line.origin = point_from(&origin);
         line.dir = Vector3::new(
@@ -492,9 +501,9 @@ impl Writer<'_> {
     }
 }
 /// Builds a separate approximate STEP artifact for a checked numerical body.
-/// The planar line family retains its rational incidence and oblique-frame
-/// checks. Native spline edges and rational patches recheck the decimal payload
-/// numerically under the body's stated tolerance, with all physical loops.
+/// Planar lines, native spline edges and rational patches retain their carriers
+/// and explicit physical loops. The selected decimal payload is checked under
+/// the body's stated tolerance; source incidence need not be exactly zero.
 /// Unsupported carriers refuse. No topology is inferred and no vertex is healed.
 /// The source tolerance is metadata, not a STEP global uncertainty or body bound.
 /// The caller's allowance covers all work; no global policy is changed.
@@ -566,15 +575,6 @@ fn build_inner(
         };
         let origin = rational_point(&line.origin)?;
         let dir = rational_vector(&line.dir)?;
-        for (i, t) in edge.parameters.iter().enumerate() {
-            let value = std::array::from_fn::<_, 3, _>(|k| &origin[k] + &(&dir[k] * t));
-            if value != d.vertices[edge.vertices[i]].position {
-                return Err(bad(
-                    "gap",
-                    "retained line endpoint and vertex differ; no export healing",
-                ));
-            }
-        }
         let point = w.point(&origin)?;
         let direction = w.direction(&dir)?;
         let magnitude = if let Some(a) = axis(&dir, false) {
@@ -631,25 +631,6 @@ fn build_inner(
             let mut uses = Vec::new();
             for trim in boundary {
                 w.dec.charge_work(1)?;
-                let edge = &d.edges[trim.edge];
-                let endpoint = if trim.sense == Sense::Same {
-                    edge.vertices
-                } else {
-                    [edge.vertices[1], edge.vertices[0]]
-                };
-                for endpoint in endpoint {
-                    // STEP retains these world-space boundary vertices. Its
-                    // implicit planar parameters need not equal the source's
-                    // numerical UV midpoints; no point or carrier is moved.
-                    let position = &d.vertices[endpoint].position;
-                    let delta = difference(position, &origin, w.dec)?;
-                    if !dot(&normal, &delta, w.dec)?.is_zero() {
-                        return Err(bad(
-                            "gap",
-                            "retained boundary vertex is off its plane; no export healing",
-                        ));
-                    }
-                }
                 uses.push(w.graph.add(
                     "ORIENTED_EDGE",
                     vec![
@@ -693,7 +674,7 @@ fn build_inner(
         emitted_evidence,
         None,
         vec![
-            "source.retained-line-endpoints-and-plane-incidence".into(),
+            "source.retained-line-and-plane-carriers".into(),
             "file.decimal-model-numerical-admission".into(),
             "file.canonical-byte-identity".into(),
             "file.planar-seam-contract".into(),

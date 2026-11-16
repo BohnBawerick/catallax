@@ -40,6 +40,13 @@ Surfaces: `PLANE`, `CYLINDRICAL_SURFACE`, `CONICAL_SURFACE`, `SPHERICAL_SURFACE`
 
 Face keys are the `ADVANCED_FACE` entity names, as in `docs/RECIPE.md` section 4.18.
 
+Numerical bodies with plane, cylinder and cone faces and line or circle edges export through the analytic STEP writer.
+Cone pcurves retain axial height as their STEP v coordinate, following OCCT's `GeomConvert_Units::DegreeToRadian` conversion to generator distance on import.
+The writer checks the actual decimal placement and semi-angle against each emitted pcurve and edge.
+Semi-angle rounding is recorded in radians separately from length errors.
+Cyclic ordering of a periodic loop preserves the two seam uses on reversed cone faces.
+The output remains marked approximate, with its numerical checks and `complete_body_bound=unestablished` retained.
+
 ### Surface bodies
 
 `StepFile.surface_models` retains surface models separately from `StepFile.solids`.

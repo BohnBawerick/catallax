@@ -93,7 +93,7 @@ pub(super) fn sew(
     for (index, &a) in free.iter().enumerate() {
         for &b in &free[index + 1..] {
             dec.charge_work(1)?;
-            if before[a][0].0 != before[b][0].0 || before[a][0].1 == before[b][0].1 {
+            if before[a][0].shell != before[b][0].shell || before[a][0].face == before[b][0].face {
                 continue;
             }
             if let Some(found) = correspondence(body, a, b, dec)? {

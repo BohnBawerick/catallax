@@ -201,7 +201,7 @@ def scoreboard_markdown(report, rows, seconds):
              f'{report["timing"]["timeout_seconds_per_engine"]:.0f} s per engine. '
              f'Wall time {seconds / 60:.1f} min.', '',
              'Done: the original and the edited target both build, both STEP exports open '
-             'in OCCT 8.0.1.1 as one valid closed solid with the kernel\'s own face count, and no '
+             'in OCCT 8.0.1.1 as valid closed solids with the kernel\'s own face count, and no '
              'independent check found a wrong value. On a census part the drill and the radius '
              'change must each lower the OCCT-measured volume.', '',
              '| Target | ' + ' | '.join(KERNEL_NAMES[e] for e in engines) + ' | Catallax work (build, edit) | Catallax names |',

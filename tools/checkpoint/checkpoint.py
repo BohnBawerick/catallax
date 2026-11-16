@@ -304,6 +304,10 @@ def census(args):
         csv.field_size_limit(64 * 1024 * 1024)
         before = {r['model_id'] for r in csv.DictReader(stream) if r['validity_outcome'] == 'raw_valid'}
     valid = {key for key, row in observed.items() if row['outcome'] == 'raw_valid'}
+    # A previous pass that this run aborted for memory or time was not measured,
+    # so it is neither kept nor lost.
+    aborted = ({k for k, row in rows.items() if row['outcome'] in ('timeout', 'out_of_memory')}
+               | {k for k, row in observed.items() if row['outcome'] in ('timeout', 'out_of_memory')})
     report = {
         'format': 'catallax-checkpoint-census/1', 'source_revision': revision,
         'import_binary_sha256': admission['binary_sha256'], 'export_binary_sha256': digest(exporter),
@@ -313,7 +317,9 @@ def census(args):
         'occt_healed_valid': OCCT_HEALED_VALID,
         'occt_healed_valid_share_percent': f'{100 * OCCT_HEALED_VALID / DENOMINATOR:.2f}',
         'previous_valid_after_builder': len(before),
-        'gained_since_previous': sorted(valid - before), 'lost_since_previous': sorted(before - valid),
+        'gained_since_previous': sorted(valid - before),
+        'lost_since_previous': sorted(before - valid - aborted),
+        'previous_not_measured': sorted((before - valid) & aborted),
         'admission_outcomes': admission['outcomes'], 'import_categories': admission['import_categories'],
         'refusal_causes': admission['after_fix_causes'],
         'import_out_of_memory': sorted(k for k, row in rows.items() if row['outcome'] == 'out_of_memory'),
@@ -343,7 +349,9 @@ def census_markdown(r):
              f'| OpenCASCADE, healed-valid (published reference) | {r["occt_healed_valid"]} | {r["occt_healed_valid_share_percent"]}% |',
              f'| Catallax, previous capture | {r["previous_valid_after_builder"]} | {100 * r["previous_valid_after_builder"] / 3000:.2f}% |',
              '', f'Gained since the previous capture: {len(r["gained_since_previous"])}. '
-             f'Lost: {len(r["lost_since_previous"])} {r["lost_since_previous"]}.', '',
+             f'Lost, measured and no longer valid: {len(r["lost_since_previous"])} {r["lost_since_previous"]}. '
+             f'Previously valid but not measured this run (aborted, see Not covered): '
+             f'{len(r["previous_not_measured"])} {r["previous_not_measured"]}.', '',
              '| Admission | Files |', '| --- | ---: |']
     lines += [f'| {k} | {v} |' for k, v in sorted(r['admission_outcomes'].items())]
     lines += ['', '| Import category | Files |', '| --- | ---: |']

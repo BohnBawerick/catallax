@@ -1,3 +1,4 @@
+//! Signed normal offsets preserve geometry supported between global sample nodes.
 use catallax_numbers::{Decider, Rational, Real, with_operation_budget};
 use catallax_shapes::{SplineSupport, Surface, spline_tools::RationalSplineSurface};
 use catallax_topology::numerical::{NumericalBody, NumericalOptions, surface::SplineSurfaceBody};

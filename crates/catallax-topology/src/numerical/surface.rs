@@ -297,7 +297,7 @@ impl SplineSurfaceBody {
     }
 
     /// Thickens along the unit normal by a nonzero signed distance. The source
-    /// cap remains exact. Bicubic offset pieces cover every source knot span;
+    /// cap remains exact. Cubic interpolation uses every source knot span;
     /// independent node/midpoint checks include both one-sided knot limits.
     /// Ruled Coons rims close the shell without requiring equal cap bases.
     /// Checks are sampled, not a whole-body deviation or injectivity proof.
@@ -519,59 +519,12 @@ fn fit_normal_offset(
                 );
             }
         }
-        let mut controls: Vec<Option<RationalPoint>> = reserve(size, dec)?;
-        controls.resize_with(size, || None);
-        for (ui, _) in intervals[0].iter().enumerate() {
-            for (vi, _) in intervals[1].iter().enumerate() {
-                let points: [RationalPoint; 16] = std::array::from_fn(|i| {
-                    samples[(3 * ui + i / 4) * counts[1] + 3 * vi + i % 4].clone()
-                });
-                let patch = RationalSplineSurface::through_grid(
-                    [
-                        &parameters[0][3 * ui..3 * ui + 4],
-                        &parameters[1][3 * vi..3 * vi + 4],
-                    ],
-                    [3, 3],
-                    &points,
-                    dec,
-                )?;
-                for (i, point) in patch.controls().iter().enumerate() {
-                    let index = (3 * ui + i / 4) * counts[1] + 3 * vi + i % 4;
-                    if let Some(previous) = &controls[index] {
-                        if previous != point {
-                            return Err(failure("offset patches disagree on a shared boundary"));
-                        }
-                    } else {
-                        controls[index] = Some(point.clone());
-                    }
-                }
-            }
-        }
-        let mut knots = [Vec::new(), Vec::new()];
-        for axis in 0..2 {
-            let knot_count = counts[axis]
-                .checked_add(4)
-                .ok_or_else(|| failure("offset knot count overflows"))?;
-            knots[axis] = reserve(knot_count, dec)?;
-            for (i, interval) in intervals[axis].iter().enumerate() {
-                let multiplicity = if i == 0 { 4 } else { 3 };
-                knots[axis].extend((0..multiplicity).map(|_| interval.bounds[0].clone()));
-            }
-            let end = &intervals[axis]
-                .last()
-                .expect("active intervals exist")
-                .bounds[1];
-            knots[axis].extend((0..4).map(|_| end.clone()));
-        }
-        let controls = controls
-            .into_iter()
-            .map(|point| {
-                point.ok_or_else(|| failure("offset interpolation left an unfilled control"))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let mut weights = reserve(size, dec)?;
-        weights.resize(size, Rational::one());
-        let offset = RationalSplineSurface::new([3, 3], knots, counts, controls, weights, dec)?;
+        let offset = RationalSplineSurface::through_grid(
+            [&parameters[0], &parameters[1]],
+            [3, 3],
+            &samples,
+            dec,
+        )?;
         let candidate = offset.to_surface(dec)?;
         let mut candidate_work = candidate.span_workspace();
         let mut checks = reserve(product(intervals[0].len(), intervals[1].len())?, dec)?;

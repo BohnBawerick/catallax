@@ -6,6 +6,7 @@ pub(super) fn face(
     faces: &mut Vec<Face>,
     key: &str,
     fillet: bool,
+    tolerance_mm: &Rational,
     dec: &mut Decider,
 ) -> Result<Construction, ImportError> {
     let selected = index(faces, key)?;
@@ -102,12 +103,25 @@ pub(super) fn face(
             let delta = a::sub(&cylinder.origin, &side.origin, dec)?;
             let distance = a::dot(&delta, &side.axis, dec)?;
             let lhs = a::arithmetic(&distance, &distance, '*', dec)?;
-            let rr = a::arithmetic(radius, radius, '*', dec)?;
-            let rhs = a::arithmetic(&rr, &a::dot(&side.axis, &side.axis, dec)?, '*', dec)?;
-            if lhs != rhs {
+            let norm_squared = a::dot(&side.axis, &side.axis, dec)?;
+            let lower = a::maximum(
+                a::arithmetic(radius, tolerance_mm, '-', dec)?,
+                Rational::zero(),
+                dec,
+            )?;
+            let upper = a::arithmetic(radius, tolerance_mm, '+', dec)?;
+            let lower_squared = a::arithmetic(&lower, &lower, '*', dec)?;
+            let upper_squared = a::arithmetic(&upper, &upper, '*', dec)?;
+            let lower_squared = a::arithmetic(&lower_squared, &norm_squared, '*', dec)?;
+            let upper_squared = a::arithmetic(&upper_squared, &norm_squared, '*', dec)?;
+            // Squared inequalities enclose the actual normal-distance error
+            // without treating rounded imported normals as exact tangency.
+            if a::compare(&lhs, &lower_squared, dec)?.is_lt()
+                || a::compare(&lhs, &upper_squared, dec)?.is_gt()
+            {
                 return Err(bad(
                     "direct.fillet-tangency",
-                    "retained side supports do not certify cylindrical tangency",
+                    "retained side-support tangency exceeds the stated millimetre tolerance",
                 ));
             }
         }

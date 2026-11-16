@@ -201,8 +201,12 @@ impl DirectSolid {
         charge_copy(&self.faces, dec)?;
         let mut faces = self.faces.to_vec();
         let construction = match &edit {
-            Edit::DeleteFace { face } => removal::face(&mut faces, face, false, dec)?,
-            Edit::DeleteFillet { face } => removal::face(&mut faces, face, true, dec)?,
+            Edit::DeleteFace { face } => {
+                removal::face(&mut faces, face, false, &options.tolerance_mm, dec)?
+            }
+            Edit::DeleteFillet { face } => {
+                removal::face(&mut faces, face, true, &options.tolerance_mm, dec)?
+            }
             Edit::DeleteHole { face } => removal::hole(&mut faces, face, dec)?,
             Edit::MoveFace {
                 face,

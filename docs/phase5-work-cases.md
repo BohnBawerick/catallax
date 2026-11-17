@@ -35,7 +35,7 @@ All rows above 20M remain phase-5 work cases.
 | Direct numerical STEP and reread | 80,265,942 | Built; raw OpenCASCADE read and later cut pass |
 | Radius edit, 1/10 to 3/20 mm | 99,999,999 | `numbers.operation-budget` |
 | Imported-part fillet request | 98,434,067 | `numbers.operation-budget` during input import/evaluation |
-| Housing loft, spline cut, fillet | 20,220,641 | `fillet.numerical-body`: one support is planar |
+| Smooth-roof/top-box proxy, not the frozen housing | 20,220,641 | `fillet.numerical-body`: one support is planar |
 | M8 k01 wall hole | 99,999,841 | `numbers.operation-budget` |
 | M8 k02 top slot | 2,283,280 | `intersect.parametric-surface`: non-separated transverse crossing |
 | M8 k03 rim notch | 25,402,897 | `boolean.parametric-query`: finite curve solver unavailable |
@@ -52,12 +52,30 @@ All rows above 20M remain phase-5 work cases.
 
 Milestone 2.1 remains open: stable radius-edit names, an imported-part fillet,
 the completed housing chain and intersecting later M8 cuts are not proved.
-The housing's later edit was not attempted after its fillet refusal.
-The permanent loft regression checks geometry and either stable edited names
-or a typed work refusal; it does not claim a successful radius edit.
+The proxy's later edit was not attempted after its fillet refusal. The actual
+frozen curved-housing recipe is `tools/checkpoint/phase2/curved-housing.json`.
+The follow-on loft regression requires a successful radius edit and stable
+face, edge and vertex names; that candidate currently fails as recorded below.
 See the [numerical method and final-admission split](research/spline-fillet-offset-search.md#16-november-numerical-multi-patch-body-and-raw-step).
 
 Historical cases retained for phase 5: the 1e-4 mm carrier/cap-only request
 took 29,335,696 work, and exact offset proof across atlas seams on
 perpendicular planes exhausts at 100M. Optional numerical-body handover
 encoding also exhausts 100M; no transfer-engine performance change was made.
+
+## Part-two radius candidate, 17 November
+
+The original 0.1 to 0.15 mm radius change was localized to the first end-plane
+cut at 100M. Bounded interpolation replaces the scalar bisection proposals,
+without changing its residual threshold, feature tolerance or work allowance.
+
+| Stage | Charged work | Result |
+|---|---:|---|
+| Multi-patch loft fillet body | 92,314,860 | Built; independent radius/cap geometry passes |
+| Radius edit, 1/10 to 3/20 mm | 99,999,973 | `numbers.operation-budget` in the first end-plane cut |
+
+The candidate passes the existing two-chart carrier/cap control and all three
+admission controls, but still does not build the radius edit. No edited-name,
+edited-geometry or edited-STEP success is claimed. The first cut remains the
+same blocked geometric stage; the following import and frozen-housing work
+has not started.

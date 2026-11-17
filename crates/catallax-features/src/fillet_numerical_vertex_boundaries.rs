@@ -63,7 +63,7 @@ fn vector(v: &Vector3, dec: &mut Decider) -> Result<[Ball; 3], Refusal> {
 }
 
 /// Contract the homogeneous U control rows with exact de Boor coefficients.
-fn isocurve(
+pub(crate) fn isocurve(
     surface: &BSplineSurface,
     tau: &Rational,
     dec: &mut Decider,

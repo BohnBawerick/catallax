@@ -4,6 +4,9 @@
 #[path = "fillet_numerical_vertex_boundaries.rs"]
 pub(crate) mod boundaries;
 
+#[path = "fillet_numerical_vertex_junctions.rs"]
+pub(crate) mod junctions;
+
 use catallax_numbers::{Ball, Decider, NumericalCheck, NumericalSample, Rational, Refusal, Sign};
 use catallax_shapes::{
     NumericalFilletCorner, NumericalFilletSupport, RPoint3, RVector3, Sphere, Surface,

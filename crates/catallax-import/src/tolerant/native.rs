@@ -761,47 +761,6 @@ impl NativeCurve {
         self.0
             .periodic_sample(location, [self.1.then_some(self.0.period), None], dec)
     }
-    fn analytic_seed(
-        &self,
-        target: [f64; 3],
-        dec: &mut Decider,
-    ) -> Result<Option<NativeLocation>, Error> {
-        let mut points = [[0.0; 3]; 3];
-        for (index, point) in points.iter_mut().enumerate() {
-            let parameter = self.0.period * index as f64 / 4.0;
-            match self
-                .location(parameter)
-                .and_then(|location| self.sample(location, dec))
-            {
-                Ok(sample) => *point = sample.point_mm,
-                Err(error) if control(&error) => return Err(error),
-                Err(_) => return Ok(None),
-            }
-        }
-        let centre = std::array::from_fn(|axis| points[0][axis] * 0.5 + points[2][axis] * 0.5);
-        let x = difference(points[0], centre);
-        let y = difference(points[1], centre);
-        let (xx, xy, yy) = (dot(x, x), dot(x, y), dot(y, y));
-        let determinant = xx * yy - xy * xy;
-        if !determinant.is_finite() || determinant <= 128.0 * f64::EPSILON * xx * yy {
-            return Ok(None);
-        }
-        let delta = difference(target, centre);
-        let (dx, dy) = (dot(delta, x), dot(delta, y));
-        let cosine = (dx * yy - dy * xy) / determinant;
-        let sine = (dy * xx - dx * xy) / determinant;
-        if !cosine.is_finite() || !sine.is_finite() || cosine.hypot(sine) <= 0.0 {
-            return Ok(None);
-        }
-        let parameter = sine.atan2(cosine).rem_euclid(std::f64::consts::TAU)
-            * (self.0.period / std::f64::consts::TAU);
-        match self.location(parameter) {
-            Ok(location) => Ok(Some(location)),
-            Err(error) if control(&error) => Err(error),
-            Err(_) => Ok(None),
-        }
-    }
-
     /// Fit a source parameter and retain the observed residual.
     pub fn project(
         &self,
@@ -809,11 +768,6 @@ impl NativeCurve {
         seed: Option<NativeLocation>,
         dec: &mut Decider,
     ) -> Result<NativeProjection, Error> {
-        let seed = match seed {
-            Some(seed) => Some(seed),
-            None if self.1 => self.analytic_seed(point_mm, dec)?,
-            None => None,
-        };
         self.0.project(point_mm, seed, dec)
     }
 }

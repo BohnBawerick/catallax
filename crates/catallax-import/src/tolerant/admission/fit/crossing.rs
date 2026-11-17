@@ -123,6 +123,12 @@ pub(super) fn cut(
                     }
                     let a = state.edges[left.edge].as_ref().expect("active edge");
                     let b = state.edges[right.edge].as_ref().expect("active edge");
+                    let endpoint_parameters = [a, b].map(|edge| {
+                        [
+                            edge.points[0].0.parameters[0],
+                            edge.points.last().expect("finite edge").0.parameters[0],
+                        ]
+                    });
                     let mut crossing: Option<([f64; 2], NativeSample)> = None;
                     for x in a.points.windows(2) {
                         for y in b.points.windows(2) {
@@ -142,6 +148,29 @@ pub(super) fn cut(
                             let Some(found) = intersection(a, b, seed, precision, dec)? else {
                                 continue;
                             };
+                            let ordinary_endpoint = (0..2).any(|first| {
+                                (0..2).any(|second| {
+                                    body.edges[left.edge].vertices[first]
+                                        == body.edges[right.edge].vertices[second]
+                                        && [first, second].into_iter().enumerate().all(
+                                            |(axis, endpoint)| {
+                                                let value = endpoint_parameters[axis][endpoint];
+                                                let width = (endpoint_parameters[axis][1]
+                                                    - endpoint_parameters[axis][0])
+                                                    .abs();
+                                                (found.0[axis] - value).abs()
+                                                    <= 64.0
+                                                        * f64::EPSILON
+                                                        * width
+                                                            .max(value.abs())
+                                                            .max(found.0[axis].abs())
+                                            },
+                                        )
+                                })
+                            });
+                            if ordinary_endpoint {
+                                continue;
+                            }
                             let displacement =
                                 norm(subtract(found.1.point_mm, state.vertices[vertex].point_mm))
                                     + found.1.uncertainty_mm

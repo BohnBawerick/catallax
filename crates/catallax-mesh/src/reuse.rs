@@ -118,7 +118,13 @@ impl<'a> Previous<'a> {
         let mut remap = BTreeMap::new();
         let mut reverse = BTreeMap::new();
         let mut bind = |old: usize, new: usize| -> Option<()> {
-            if self.mesh.positions.get(old)? != boundaries.mesh.positions.get(new)?
+            if self
+                .mesh
+                .positions
+                .get(old)?
+                .iter()
+                .zip(boundaries.mesh.positions.get(new)?)
+                .any(|(a, b)| a.to_bits() != b.to_bits())
                 || remap.get(&old).is_some_and(|&value| value != new)
                 || reverse.get(&new).is_some_and(|&value| value != old)
             {

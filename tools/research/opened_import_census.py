@@ -129,21 +129,42 @@ def raw_surface(path):
             Interface_Static.SetIVal_s(key, value)
 
 
-def product_reachable_entities(model):
-    """Traverse actual STEP product-bound shape representations, not free shapes."""
-    from OCP.Interface import Interface_Graph
+def step_reference_graph(data):
+    """Read serialized references without interpreting strings or report comments."""
+    import re
+    graph, current = {}, None
+    tokens = re.finditer(rb"'(?:''|[^'])*'|/\*.*?\*/|#([0-9]+)(\s*=)?|;", data, re.S)
+    for token in tokens:
+        if token[1] is not None:
+            target = int(token[1])
+            if token[2] is not None:
+                current = target
+                graph[current] = set()
+            elif current is not None:
+                graph[current].add(target)
+        elif token[0] == b";":
+            current = None
+    return graph
+
+
+def product_reachable_entities(model, data, identifiers):
+    """Bind OCCT product roots to references in the actual emitted STEP bytes."""
     from OCP.StepShape import StepShape_ShapeDefinitionRepresentation
+
+    # Keep wrappers alive while binding typed references. OCP 8.0.1.1 returns
+    # zero for both model.Number and IdentLabel, including model.Value entries.
+    entities = [model.Value(index) for index in range(1, model.NbEntities() + 1)]
+    labels = dict(zip(entities, identifiers))
+    references = step_reference_graph(data)
+    assert set(references) == set(identifiers)
 
     def product_bound(property_definition):
         pending, seen = [property_definition], set()
         while pending:
             value = pending.pop()
-            if value is None:
+            if value is None or labels[value] in seen:
                 continue
-            index = model.Number(value)
-            if index in seen:
-                continue
-            seen.add(index)
+            seen.add(labels[value])
             definition = value.Definition()
             if (definition.ProductDefinition() is not None
                     or definition.ProductDefinitionRelationship() is not None):
@@ -154,25 +175,18 @@ def product_reachable_entities(model):
         return False
 
     pending = []
-    for index in range(1, model.NbEntities() + 1):
-        entity = model.Value(index)
+    for entity in entities:
         if isinstance(entity, StepShape_ShapeDefinitionRepresentation):
             definition = entity.Definition().PropertyDefinition()
             if definition is not None and product_bound(definition):
-                pending.append(entity.UsedRepresentation())
-    graph, reached = Interface_Graph(model), set()
+                pending.append(labels[entity.UsedRepresentation()])
+    reached = set()
     while pending:
-        entity = pending.pop()
-        if entity is None:
+        identifier = pending.pop()
+        if identifier in reached:
             continue
-        index = model.Number(entity)
-        if index in reached:
-            continue
-        reached.add(index)
-        shared = graph.Shareds(entity)
-        while shared.More():
-            pending.append(shared.Value())
-            shared.Next()
+        reached.add(identifier)
+        pending.extend(references[identifier])
     return reached
 
 
@@ -208,10 +222,10 @@ def raw_native_document(path, entry):
         # OCP 8.0.1.1 leaves IdentLabel unset (zero), so bind the actual P21
         # instance numbers to reader record ordinals, not to optional labels.
         import re
-        identifiers = [int(value) for value in re.findall(rb"^#([0-9]+)=", path.read_bytes(), re.M)]
+        source_bytes = path.read_bytes()
+        identifiers = [int(value) for value in re.findall(rb"^#([0-9]+)=", source_bytes, re.M)]
         assert len(identifiers) == model.NbEntities() and len(set(identifiers)) == len(identifiers)
-        product_reached = product_reachable_entities(model)
-        reached_identifiers = {identifiers[index - 1] for index in product_reached}
+        reached_identifiers = product_reachable_entities(model, source_bytes, identifiers)
         labelled = {}
         for index, identifier in enumerate(identifiers, 1):
             entity = model.Value(index)

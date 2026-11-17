@@ -6,10 +6,21 @@ import sys
 import tempfile
 import unittest
 
-from opened_import_census import comparison_outcomes, observe, export_inventory, document_export_refusal
+from opened_import_census import comparison_outcomes, observe, export_inventory, document_export_refusal, step_reference_graph
 
 
 class StageComparisonTests(unittest.TestCase):
+    def test_quoted_and_commented_references_cannot_attach_detached_geometry(self):
+        data = b"""#1=SHAPE_REPRESENTATION('not #2; ''still #2''',(#3),#4);
+            /* #1=SHAPE_REPRESENTATION('',(#2),#4); */
+            #2=MANIFOLD_SOLID_BREP('detached',#5);
+            #3=AXIS2_PLACEMENT_3D('',#4,$,$);
+            #4=CARTESIAN_POINT('',(0.,0.,0.));
+            #5=CLOSED_SHELL('',());"""
+        references = step_reference_graph(data)
+        self.assertEqual(references[1], {3, 4})
+        self.assertEqual(references[2], {5})
+
     def test_unmeasured_stages_and_measured_inventory_losses_stay_separate(self):
         rows = {
             "export_timeout": dict(outcome="full", observed_body_count=1, export_validity="timeout"),

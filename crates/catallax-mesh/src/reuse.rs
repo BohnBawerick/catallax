@@ -134,21 +134,9 @@ impl<'a> Previous<'a> {
                     if !same_vertex(self.model, Some(*a), model, Some(*b)) {
                         return None;
                     }
-                    let new = boundaries.vertices[b];
-                    let position = boundaries.mesh.positions[new];
-                    // Singleton trims have no EdgeMesh entry. Refuse ambiguous
-                    // coordinate aliases instead of welding distinct vertices.
-                    let mut candidates = self
-                        .mesh
-                        .positions
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, point)| **point == position);
-                    let old = candidates.next()?.0;
-                    if candidates.next().is_some() {
-                        return None;
-                    }
-                    bind(old, new)?;
+                    // Singleton trims bound the chart. Their poles are emitted
+                    // as face-local samples, not the unused topological point
+                    // reserved by edges::sample. Keep that generation order.
                 }
                 (Loop::Coedges(a), Loop::Coedges(b)) if a.len() == b.len() => {
                     for (&a, &b) in a.iter().zip(b) {

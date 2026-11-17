@@ -263,42 +263,69 @@ fn reused_depth_edit_is_watertight_with_fresh_face_and_edge_handles() {
 
 #[test]
 fn neighbour_chart_edit_invalidates_unchanged_caps_when_shared_samples_change() {
+    fn cap(
+        model: &mut Model,
+        bottom: topology::FaceId,
+        side: topology::FaceId,
+        z: &str,
+        radius: &str,
+    ) -> BodyId {
+        let Loop::Coedges(cap_coedges) = model.loop_(model.face(bottom).loops[0]) else {
+            unreachable!()
+        };
+        let ring = model.coedge(cap_coedges[0]).edge;
+        let mut face = model.face(side).clone();
+        face.loops.retain(|&boundary| {
+            matches!(model.loop_(boundary), Loop::Coedges(cs) if model.coedge(cs[0]).edge == ring)
+        });
+        face.surface = model
+            .geom_mut()
+            .add_surface(Surface::Sphere(catallax_shapes::Sphere {
+                center: RPoint3::new(0.into(), 0.into(), Rational::parse(z).unwrap()).into(),
+                radius: Rational::parse(radius).unwrap().into(),
+                axis: RVector3::new(0.into(), 0.into(), 1.into()).into(),
+                ref_dir: RVector3::new(1.into(), 0.into(), 0.into()).into(),
+            }));
+        let side = model.add_face(face);
+        let shell = model.add_shell(Shell {
+            faces: vec![bottom, side],
+        });
+        let lump = model.add_lump(Lump {
+            shells: vec![shell],
+        });
+        model.add_body(Body {
+            kind: BodyKind::Solid,
+            lumps: vec![lump],
+            wires: vec![],
+            marks: MarkLog::default(),
+        })
+    }
     let mut model = Model::new();
-    let body = topology::cylinder(&mut model, 2.into(), 5.into(), &Pose::identity()).unwrap();
+    let cylinder = topology::cylinder(&mut model, 2.into(), 5.into(), &Pose::identity()).unwrap();
+    let faces = model.faces_of_body(cylinder);
+    let bottom = *faces.iter().find(|&&id| {
+        matches!(model.geom().surface(model.face(id).surface), Surface::Plane(plane) if plane.normal.z.to_f64() < 0.0)
+    }).unwrap();
+    let side = *faces
+        .iter()
+        .find(|&&id| {
+            matches!(
+                model.geom().surface(model.face(id).surface),
+                Surface::Cylinder(_)
+            )
+        })
+        .unwrap();
+    let body = cap(&mut model, bottom, side, "0", "2");
     let options = options();
     let before = mesh(&model, body);
     let mut edited = model.clone();
-    let faces = model
-        .faces_of_body(body)
-        .into_iter()
-        .map(|id| {
-            let mut face = model.face(id).clone();
-            let Surface::Cylinder(mut cylinder) = model.geom().surface(face.surface).clone() else {
-                return id;
-            };
-            cylinder.ref_dir = RVector3::new(1.into(), 2.into(), 0.into()).into();
-            face.surface = edited.geom_mut().add_surface(Surface::Cylinder(cylinder));
-            edited.add_face(face)
-        })
-        .collect();
-    let shell = edited.add_shell(Shell { faces });
-    let lump = edited.add_lump(Lump {
-        shells: vec![shell],
-    });
-    let new_body = edited.add_body(Body {
-        kind: BodyKind::Solid,
-        lumps: vec![lump],
-        wires: vec![],
-        marks: MarkLog::default(),
-    });
+    // Both spheres meet z=0 in the same radius-2 circle. The larger sphere's
+    // chart needs finer edge samples even though the planar cap did not change.
+    let new_body = cap(&mut edited, bottom, side, "63/8", "65/8");
     let fresh = mesh(&edited, new_body);
-    assert!(
-        before
-            .edges
-            .iter()
-            .zip(&fresh.edges)
-            .any(|(a, b)| a.vertices.len() != b.vertices.len()),
-        "the edited adjacent chart must change shared-edge samples",
+    assert_ne!(
+        before.edges[0].vertices.len(),
+        fresh.edges[0].vertices.len()
     );
     let reused = crate::mesh_body_reusing(
         &edited,

@@ -484,13 +484,55 @@ fn constrained_rail(
         return Err(bad("a finite support pcurve has no clipped span"));
     }
     let last = controls.len() - 1;
-    for (index, uv) in [(0, &ends[0]), (last, &ends[1])] {
-        let next = Point3::new(uv[0].clone().into(), uv[1].clone().into(), Real::zero());
-        changed += usize::from(
-            controls[index].x.as_rational() != Some(uv[0].clone())
-                || controls[index].y.as_rational() != Some(uv[1].clone()),
-        );
-        controls[index] = next;
+    let original = [
+        [scalar(&controls[0].x, dec)?, scalar(&controls[0].y, dec)?],
+        [
+            scalar(&controls[last].x, dec)?,
+            scalar(&controls[last].y, dec)?,
+        ],
+    ];
+    if original != ends {
+        // One affine UV map preserves the curve's knot spans and weights.
+        // Moving only its end pole can reverse a tiny clipped first/last span.
+        let direction: [Rational; 2] =
+            std::array::from_fn(|axis| &original[1][axis] - &original[0][axis]);
+        let norm = &direction[0] * &direction[0] + &direction[1] * &direction[1];
+        let shifts: [[Rational; 2]; 2] = std::array::from_fn(|end| {
+            std::array::from_fn(|axis| &ends[end][axis] - &original[end][axis])
+        });
+        if norm.sign() == Sign::Zero {
+            if shifts[0] != shifts[1] {
+                return Err(bad(
+                    "coincident pcurve ends require different canonical positions",
+                ));
+            }
+        } else {
+            let orientation = (0..2).fold(Rational::zero(), |sum, axis| {
+                sum + &direction[axis] * &(&ends[1][axis] - &ends[0][axis])
+            });
+            if orientation.sign() != Sign::Positive {
+                return Err(bad(
+                    "canonical pcurve contacts reverse the retained UV chord",
+                ));
+            }
+        }
+        let change: [Rational; 2] = std::array::from_fn(|axis| &shifts[1][axis] - &shifts[0][axis]);
+        for point in &mut controls {
+            dec.charge_work(1)?;
+            let old = [scalar(&point.x, dec)?, scalar(&point.y, dec)?];
+            let share = if norm.sign() == Sign::Zero {
+                Rational::zero()
+            } else {
+                (0..2).fold(Rational::zero(), |sum, axis| {
+                    sum + &(&old[axis] - &original[0][axis]) * &direction[axis]
+                }) / &norm
+            };
+            let uv: [Rational; 2] = std::array::from_fn(|axis| {
+                &old[axis] + &shifts[0][axis] + &(&share * &change[axis])
+            });
+            changed += usize::from(uv != old);
+            *point = Point3::new(uv[0].clone().into(), uv[1].clone().into(), Real::zero());
+        }
     }
     knots.extend(std::iter::repeat_n(range[1].clone(), degree + 1));
     Ok((

@@ -20,6 +20,9 @@ use crate::{Curve, Face, Placement, Surface, Vec3, Vertex};
 mod removal;
 mod support;
 
+#[cfg(test)]
+mod tests;
+
 /// One requested material change, in millimetres and original entity keys.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Edit {
@@ -283,6 +286,18 @@ impl DirectSolid {
                 support::replace(&mut faces, face, surface, dec)?
             }
         };
+        self.admit_edit(edit, faces, construction, sewing, options, dec)
+    }
+
+    fn admit_edit(
+        &self,
+        edit: Edit,
+        mut faces: Vec<Face>,
+        construction: Construction,
+        sewing: ToleranceOptions,
+        options: n::NumericalOptions,
+        dec: &mut Decider,
+    ) -> Result<Self, ImportError> {
         if let Construction::Numerical {
             offset_error_upper_mm,
             intersection_error_upper_mm,

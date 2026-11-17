@@ -407,60 +407,6 @@ fn same_uv(a: &[Real; 2], b: &[Real; 2], dec: &mut Decider) -> Result<bool, Refu
     Ok(true)
 }
 
-// The caller has proved one Bernstein sign variation on this edge. Narrow
-// that crossing before certifying its exact coordinate in a padded local box.
-fn local_edge_root(
-    polynomial: &RealPoly,
-    interval: &[Rational; 2],
-    dec: &mut Decider,
-) -> Result<Option<Real>, Refusal> {
-    let bits = dec.policy().max_precision_bits.min(128);
-    if bits == 0
-        || polynomial.rational().is_none()
-        || polynomial
-            .total_degree(dec)?
-            .is_none_or(|degree| degree <= 2)
-    {
-        return Ok(None);
-    }
-    let sign_at = |at: &Rational, dec: &mut Decider| {
-        exact_sign(&polynomial.eval_real(&[Real::from(at.clone())]), dec)
-    };
-    let [mut lo, mut hi] = interval.clone();
-    let lower = sign_at(&lo, dec)?;
-    let upper = sign_at(&hi, dec)?;
-    if lower == Sign::Zero {
-        return Ok(Some(lo.into()));
-    }
-    if upper == Sign::Zero {
-        return Ok(Some(hi.into()));
-    }
-    if lower == upper {
-        return Ok(None);
-    }
-    for _ in 0..16 {
-        dec.charge_work(1)?;
-        let middle = (&lo + &hi).mul_pow2(-1);
-        let sign = sign_at(&middle, dec)?;
-        if sign == Sign::Zero {
-            return Ok(Some(middle.into()));
-        }
-        if sign == lower {
-            lo = middle;
-        } else {
-            hi = middle;
-        }
-    }
-    let width = &hi - &lo;
-    let bounds = [[&lo - &width, &hi + &width]];
-    match RealPoly::simple_root_in(std::slice::from_ref(polynomial), &bounds, bits, dec) {
-        Ok(Some(mut root)) => Ok(Some(root.swap_remove(0))),
-        Ok(None) => Ok(None),
-        Err(error) if error.code == "numbers.root-not-certified" => Ok(None),
-        Err(error) => Err(error),
-    }
-}
-
 fn edge_root(
     equation: &RealPoly,
     domain: &Domain,
@@ -474,15 +420,13 @@ fn edge_root(
         &RealPoly::constant(2, Real::from_rational(bound.clone())),
     );
     let polynomial = axis_polynomial(&restricted, 1 - fixed, dec)?;
-    let mut found = local_edge_root(&polynomial, &domain[1 - fixed], dec)?;
-    if found.is_none() {
-        for root in polynomial.real_roots(dec)? {
-            if in_range(&root, &domain[1 - fixed], dec)? {
-                if found.is_some() {
-                    return Err(failure("a certified cell edge has multiple isolated roots"));
-                }
-                found = Some(root);
+    let mut found = None;
+    for root in polynomial.real_roots(dec)? {
+        if in_range(&root, &domain[1 - fixed], dec)? {
+            if found.is_some() {
+                return Err(failure("a certified cell edge has multiple isolated roots"));
             }
+            found = Some(root);
         }
     }
     let root = found.ok_or_else(|| failure("a certified edge crossing has no isolated root"))?;
@@ -1054,32 +998,6 @@ mod tests {
                     &mut dec,
                 )?);
                 assert!(!branch.contains(point, &mut dec)?);
-                Ok(())
-            });
-        assert!(!work.exhausted);
-        result.unwrap();
-    }
-
-    #[test]
-    fn local_edge_certificate_keeps_the_nearby_outside_root_outside() {
-        let (result, work) =
-            catallax_numbers::with_operation_budget(20_000_000, || -> Result<(), Refusal> {
-                let mut dec = Decider::default();
-                let epsilon = Rational::from_ratio(1, 1_000_000_000_000).unwrap();
-                let square = RealPoly::var(2, 1).pow_u32(2);
-                let small = RealPoly::constant(2, Real::from(&epsilon * &epsilon));
-                let other = &square + &RealPoly::constant(2, Real::one());
-                let equation = &(&square - &small) * &other;
-                let domain = [
-                    [Rational::zero(), Rational::one()],
-                    [Rational::zero(), Rational::one()],
-                ];
-                let point = edge_root(&equation, &domain, 0, &mut dec)?;
-                assert_eq!(exact_sign(&point[0], &mut dec)?, Sign::Zero);
-                assert_eq!(
-                    exact_sign(&(&point[1] - &Real::from(epsilon)), &mut dec)?,
-                    Sign::Zero,
-                );
                 Ok(())
             });
         assert!(!work.exhausted);

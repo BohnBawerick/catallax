@@ -922,3 +922,32 @@ fn repeated_large_factor_keeps_its_multiplicity() {
         }
     }
 }
+
+#[test]
+fn modular_rational_exclusion_preserves_real_and_rational_roots() {
+    let denominator = Integer::one().mul_pow2(607) - Integer::one();
+    let small = Rational::new(Integer::one(), denominator).unwrap();
+    for degree in [4, 6] {
+        let mut coefficients = vec![Rational::zero(); degree + 1];
+        coefficients[0] = r("-2");
+        coefficients[1] = small.clone();
+        coefficients[degree] = Rational::one();
+        let polynomial = UPoly::new(coefficients);
+        let result = measured_roots("modular irrational exclusion", &polynomial);
+        assert_eq!(result.len(), 2);
+        let oracle: Vec<_> = polynomial.coefficients().iter().map(oq).collect();
+        for root in &result {
+            assert_eq!(root.multiplicity, 1);
+            assert!(root.value.as_rational().is_none());
+            check_irrational_certificate(&root.value);
+            let (lo, hi) = root.value.isolating_interval();
+            assert!(oracle_eval(&oracle, &oq(&lo)) * oracle_eval(&oracle, &oq(&hi)) < 0);
+        }
+        assert!(result[0].value.isolating_interval().1 < result[1].value.isolating_interval().0);
+    }
+    let polynomial = &UPoly::new(vec![-&small, Rational::one()]) * &poly(&[-2, 0, 0, 0, 1]);
+    let result = measured_roots("modular inconclusive rational root", &polynomial);
+    assert_eq!(result.len(), 3);
+    assert_eq!(result[1].value.as_rational(), Some(&small));
+    assert_eq!(result[1].multiplicity, 1);
+}

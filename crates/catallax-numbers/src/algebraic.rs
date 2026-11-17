@@ -584,18 +584,28 @@ pub(crate) fn rational_root_possible(
     work: &mut Work,
 ) -> Result<bool, &'static str> {
     debug_assert_eq!(polynomial.degree(), Some(3));
-    debug_assert_eq!(polynomial.coefficients()[3], Rational::one());
+    rational_root_possible_modulo(polynomial, &mut [0u32; 4], work)
+}
+
+// A monic rational polynomial has no rational root if a reduction at a prime
+// avoiding every denominator has no root in that prime field.
+fn rational_root_possible_modulo(
+    polynomial: &UPoly,
+    coefficients: &mut [u32],
+    work: &mut Work,
+) -> Result<bool, &'static str> {
+    debug_assert_eq!(polynomial.coefficients().last(), Some(&Rational::one()));
+    debug_assert_eq!(polynomial.coefficients().len(), coefficients.len());
     'prime: for prime in [
         3u32, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59,
     ] {
-        work.charge(u64::from(prime) * 16)?;
+        work.charge(u64::from(prime) * 4 * coefficients.len() as u64)?;
         let modulo = |value: &Integer| {
             Integer(&value.0 % i64::from(prime))
                 .to_i64()
                 .unwrap()
                 .rem_euclid(i64::from(prime)) as u32
         };
-        let mut coefficients = [0u32; 4];
         for (out, coefficient) in coefficients.iter_mut().zip(polynomial.coefficients()) {
             work.exact(coefficient, coefficient, false)?;
             let denominator = modulo(coefficient.denominator());
@@ -928,7 +938,16 @@ fn isolate_square_free(f: &UPoly, work: &mut Work) -> Result<Vec<Algebraic>, &'s
         let complete = candidates.is_some();
         (candidates, complete)
     };
-    let rational_complete = enumeration_complete;
+    let rational_complete = if enumeration_complete {
+        true
+    } else if remaining.degree().is_some_and(|degree| degree >= 3) {
+        let mut coefficients = vec![0u32; remaining.coefficients().len()];
+        bounded_exact(work, |work| {
+            rational_root_possible_modulo(&remaining, &mut coefficients, work)
+        })? == Some(false)
+    } else {
+        false
+    };
     if let Some(candidates) = candidates {
         for r in candidates {
             if filtered_sign(&remaining, &r, work)? == Sign::Zero {

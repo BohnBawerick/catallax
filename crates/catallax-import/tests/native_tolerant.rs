@@ -600,12 +600,30 @@ fn an_out_of_domain_source_trace_is_rebuilt_from_the_actual_curve() {
         .unwrap();
     assert!(trace.reconstructed);
     assert!(trace.source_pcurve.is_none());
-    assert!(
-        trace
-            .samples
-            .iter()
-            .all(|sample| sample.surface.parameters[1].abs() <= std::f64::consts::FRAC_PI_2)
-    );
+    let tolerance = native.bodies()[0]
+        .definition()
+        .edges()
+        .iter()
+        .find(|edge| edge.name == "#21")
+        .unwrap()
+        .tolerance_mm()
+        .to_f64_nearest();
+    let surface = native.native_surface(33).unwrap();
+    let curve = native.native_curve(26).unwrap();
+    for sample in &trace.samples {
+        let actual = surface
+            .sample(sample.surface, &mut Decider::default())
+            .unwrap();
+        let expected = curve.sample(sample.curve, &mut Decider::default()).unwrap();
+        let residual = (0..3).fold(0.0_f64, |distance, axis| {
+            distance.hypot(actual.point_mm[axis] - expected.point_mm[axis])
+        }) + actual.uncertainty_mm
+            + expected.uncertainty_mm;
+        assert!(
+            residual <= tolerance,
+            "rebuilt trace residual {residual} exceeds {tolerance}"
+        );
+    }
     let file = native.export_body(0, &mut Decider::default()).unwrap();
     if let Ok(folder) = std::env::var("CATALLAX_HEALING_EVIDENCE") {
         std::fs::write(

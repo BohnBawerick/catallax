@@ -220,7 +220,11 @@ pub struct RealRoot {
     pub multiplicity: u32,
 }
 
-pub(crate) fn isolate(p: &UPoly, work: &mut Work) -> Result<Vec<RealRoot>, &'static str> {
+pub(crate) fn isolate(
+    p: &UPoly,
+    coarse_brackets: bool,
+    work: &mut Work,
+) -> Result<Vec<RealRoot>, &'static str> {
     if p.degree() == Some(0) {
         work.check_deadline()?;
         return Ok(Vec::new());
@@ -262,7 +266,7 @@ pub(crate) fn isolate(p: &UPoly, work: &mut Work) -> Result<Vec<RealRoot>, &'sta
     if p.degree() == Some(2) {
         // A nonsquare discriminant proves both roots simple without a GCD.
         roots.extend(
-            isolate_square_free(p, work)?
+            isolate_square_free(p, coarse_brackets, work)?
                 .into_iter()
                 .map(|value| RealRoot {
                     value,
@@ -286,7 +290,7 @@ pub(crate) fn isolate(p: &UPoly, work: &mut Work) -> Result<Vec<RealRoot>, &'sta
             p.square_free_factors_checked(&|| work.check_deadline())?
         };
         for (f, multiplicity) in factors {
-            for value in isolate_square_free(&f, work)? {
+            for value in isolate_square_free(&f, coarse_brackets, work)? {
                 roots.push(RealRoot {
                     value,
                     multiplicity,
@@ -896,7 +900,11 @@ fn target_quadratic(
     Ok(true)
 }
 
-fn isolate_square_free(f: &UPoly, work: &mut Work) -> Result<Vec<Algebraic>, &'static str> {
+fn isolate_square_free(
+    f: &UPoly,
+    coarse_brackets: bool,
+    work: &mut Work,
+) -> Result<Vec<Algebraic>, &'static str> {
     if f.degree() == Some(1) {
         let a = &f.coefficients()[0];
         let b = &f.coefficients()[1];
@@ -940,7 +948,7 @@ fn isolate_square_free(f: &UPoly, work: &mut Work) -> Result<Vec<Algebraic>, &'s
     };
     let rational_complete = if enumeration_complete {
         true
-    } else if remaining.degree().is_some_and(|degree| degree >= 3) {
+    } else if coarse_brackets && remaining.degree().is_some_and(|degree| degree >= 3) {
         let mut coefficients = vec![0u32; remaining.coefficients().len()];
         bounded_exact(work, |work| {
             rational_root_possible_modulo(&remaining, &mut coefficients, work)
@@ -969,7 +977,7 @@ fn isolate_square_free(f: &UPoly, work: &mut Work) -> Result<Vec<Algebraic>, &'s
         && let Some(factors) = split_quartic(&remaining, work)?
     {
         for factor in factors {
-            result.extend(isolate_square_free(&factor, work)?);
+            result.extend(isolate_square_free(&factor, coarse_brackets, work)?);
         }
         return Ok(result);
     }

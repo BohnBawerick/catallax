@@ -205,6 +205,7 @@ const ROOT_CACHE_ENTRIES: usize = 128;
 #[derive(Debug)]
 pub(crate) struct CachedRoots {
     polynomial: Arc<UPoly>,
+    coarse_brackets: bool,
     roots: Vec<RealRoot>,
     work: u64,
 }
@@ -929,6 +930,23 @@ impl Decider {
     /// All real roots in increasing order, with exact rational roots and multiplicities.
     #[cfg_attr(feature = "work-profile", track_caller)]
     pub fn real_roots(&mut self, p: &UPoly) -> Outcome<Vec<RealRoot>> {
+        self.real_roots_with_brackets(p, false)
+    }
+
+    /// Complete exact roots, allowing wider isolating brackets after a modular
+    /// irrationality certificate. Ordinary queries retain their established
+    /// reconstruction brackets and do not reuse these publication records.
+    #[cfg_attr(feature = "work-profile", track_caller)]
+    pub fn real_roots_with_coarse_brackets(&mut self, p: &UPoly) -> Outcome<Vec<RealRoot>> {
+        self.real_roots_with_brackets(p, true)
+    }
+
+    #[cfg_attr(feature = "work-profile", track_caller)]
+    fn real_roots_with_brackets(
+        &mut self,
+        p: &UPoly,
+        coarse_brackets: bool,
+    ) -> Outcome<Vec<RealRoot>> {
         #[cfg(feature = "work-profile")]
         let _span = crate::profile::Span::enter("real_roots");
         self.stats.decisions += 1;
@@ -946,10 +964,18 @@ impl Decider {
         // isolation certificates that geometry predicates repeatedly request.
         let memoize = p.degree().is_some_and(|degree| degree > 1);
         let (cached, already_paid) = if memoize {
-            if let Some(certificate) = crate::operation::root_list_proof(p, self.policy) {
+            if let Some(certificate) =
+                crate::operation::root_list_proof(p, self.policy, coarse_brackets)
+            {
                 (Some(certificate), true)
             } else {
-                (self.root_cache.get(p).cloned(), false)
+                (
+                    self.root_cache
+                        .get(p)
+                        .filter(|cached| cached.coarse_brackets == coarse_brackets)
+                        .cloned(),
+                    false,
+                )
             }
         } else {
             (None, false)
@@ -965,7 +991,7 @@ impl Decider {
                 };
                 reservation.map(|()| cached.roots.clone())
             }
-            None => isolate(p, &mut work),
+            None => isolate(p, coarse_brackets, &mut work),
         };
         self.account(&work);
         if self.expired() {
@@ -977,17 +1003,20 @@ impl Decider {
                     let certificate = cached.unwrap_or_else(|| {
                         Arc::new(CachedRoots {
                             polynomial: Arc::new(p.clone()),
+                            coarse_brackets,
                             roots: roots.clone(),
                             work: work.used,
                         })
                     });
                     if !cache_hit {
-                        if self.root_cache.len() == ROOT_CACHE_ENTRIES {
-                            let oldest = self.root_cache_order.pop_front().unwrap();
-                            self.root_cache.remove(oldest.as_ref());
+                        if !self.root_cache.contains_key(p) {
+                            if self.root_cache.len() == ROOT_CACHE_ENTRIES {
+                                let oldest = self.root_cache_order.pop_front().unwrap();
+                                self.root_cache.remove(oldest.as_ref());
+                            }
+                            self.root_cache_order
+                                .push_back(certificate.polynomial.clone());
                         }
-                        self.root_cache_order
-                            .push_back(certificate.polynomial.clone());
                         self.root_cache
                             .insert(certificate.polynomial.clone(), certificate.clone());
                         if self.expired() {
@@ -998,6 +1027,7 @@ impl Decider {
                         crate::operation::record_root_list_proof(
                             &certificate.polynomial,
                             self.policy,
+                            coarse_brackets,
                             &certificate,
                         );
                     }
@@ -2189,17 +2219,21 @@ pub(crate) fn bisect_root(
 
 /// Root isolation, or an adopted record of it. Isolation reads no cache, so
 /// its record is the roots and the work as two amounts.
-fn isolate(p: &UPoly, work: &mut Work) -> Result<Vec<RealRoot>, &'static str> {
+fn isolate(
+    p: &UPoly,
+    coarse_brackets: bool,
+    work: &mut Work,
+) -> Result<Vec<RealRoot>, &'static str> {
     if !crate::ahead::engaged() {
-        return algebraic::isolate(p, work);
+        return algebraic::isolate(p, coarse_brackets, work);
     }
     debug_assert_eq!(work.used, 0, "isolation opens its decision");
     let key = crate::ahead::Key {
-        question: crate::ahead::Question::Roots(Arc::new(p.clone())),
+        question: crate::ahead::Question::Roots(Arc::new(p.clone()), coarse_brackets),
         policy: work.policy,
     };
     let (isolated, adopted) = crate::ahead::decide(&mut Isolation(work), key, |host| {
-        let roots = algebraic::isolate(p, host.0);
+        let roots = algebraic::isolate(p, coarse_brackets, host.0);
         Isolated {
             roots,
             used: host.0.used,

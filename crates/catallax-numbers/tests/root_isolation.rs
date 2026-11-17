@@ -933,7 +933,11 @@ fn modular_rational_exclusion_preserves_real_and_rational_roots() {
         coefficients[1] = small.clone();
         coefficients[degree] = Rational::one();
         let polynomial = UPoly::new(coefficients);
-        let result = measured_roots("modular irrational exclusion", &polynomial);
+        let Outcome::Proven(result) =
+            Decider::default().real_roots_with_coarse_brackets(&polynomial)
+        else {
+            panic!("modular irrational exclusion must isolate the real roots");
+        };
         assert_eq!(result.len(), 2);
         let oracle: Vec<_> = polynomial.coefficients().iter().map(oq).collect();
         for root in &result {
@@ -946,8 +950,41 @@ fn modular_rational_exclusion_preserves_real_and_rational_roots() {
         assert!(result[0].value.isolating_interval().1 < result[1].value.isolating_interval().0);
     }
     let polynomial = &UPoly::new(vec![-&small, Rational::one()]) * &poly(&[-2, 0, 0, 0, 1]);
-    let result = measured_roots("modular inconclusive rational root", &polynomial);
+    let Outcome::Proven(result) = Decider::default().real_roots_with_coarse_brackets(&polynomial)
+    else {
+        panic!("an inconclusive modular filter must preserve rational-root reconstruction");
+    };
     assert_eq!(result.len(), 3);
     assert_eq!(result[1].value.as_rational(), Some(&small));
     assert_eq!(result[1].multiplicity, 1);
+}
+
+#[test]
+fn coarse_root_publication_does_not_change_ordinary_root_certificates() {
+    let small = Rational::new(
+        Integer::one(),
+        Integer::one().mul_pow2(127) - Integer::one(),
+    )
+    .unwrap();
+    let polynomial = UPoly::new(vec![r("-2"), small, r("0"), r("0"), r("0"), r("0"), r("1")]);
+    let certificates = |values: Vec<RealRoot>| {
+        values
+            .into_iter()
+            .map(|root| (root.value.isolating_interval(), root.multiplicity))
+            .collect::<Vec<_>>()
+    };
+    let expected = certificates(roots(&mut Decider::default(), &polynomial));
+    let (_, work) = with_operation_budget(10_000_000, || {
+        let mut decider = Decider::default();
+        let Outcome::Proven(coarse) = decider.real_roots_with_coarse_brackets(&polynomial) else {
+            panic!("coarse publication must isolate these irrational roots");
+        };
+        assert_ne!(certificates(coarse), expected);
+        assert_eq!(certificates(roots(&mut decider, &polynomial)), expected);
+        assert_eq!(
+            certificates(roots(&mut Decider::default(), &polynomial)),
+            expected,
+        );
+    });
+    assert!(!work.exhausted);
 }

@@ -421,7 +421,7 @@ fn edge_root(
     );
     let polynomial = axis_polynomial(&restricted, 1 - fixed, dec)?;
     let mut found = None;
-    for root in polynomial.real_roots(dec)? {
+    for root in polynomial.real_roots_with_coarse_brackets(dec)? {
         if in_range(&root, &domain[1 - fixed], dec)? {
             if found.is_some() {
                 return Err(failure("a certified cell edge has multiple isolated roots"));

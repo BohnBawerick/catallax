@@ -1,0 +1,28 @@
+{
+  "format": "catallax-recipe/4",
+  "name": "SolidDraft 0.6.0 demo",
+  "description": "The three populate_demo extrusions from SolidDraft v0.6.0: centred 120 by 90 top plate, centred 120 by 60 front flange extruded with flip, and centred diameter 24 top boss. Profiles retain the shipped rectangle and circle representations.",
+  "steps": [
+    { "id": "plate-profile", "op": "sketch", "plane": { "rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "0"] }, "loops": [[
+      { "kind": "line", "id": "a", "to": ["60", "-45"] },
+      { "kind": "line", "id": "b", "to": ["60", "45"] },
+      { "kind": "line", "id": "c", "to": ["-60", "45"] },
+      { "kind": "line", "id": "d", "to": ["-60", "-45"] }
+    ]] },
+    { "id": "plate", "op": "extrude", "profile": "plate-profile", "distance": "10" },
+    { "id": "flange-profile", "op": "sketch", "plane": { "rotation": ["1", "1", "0", "0"], "translation": ["0", "0", "0"] }, "loops": [[
+      { "kind": "line", "id": "a", "to": ["60", "-30"] },
+      { "kind": "line", "id": "b", "to": ["60", "30"] },
+      { "kind": "line", "id": "c", "to": ["-60", "30"] },
+      { "kind": "line", "id": "d", "to": ["-60", "-30"] }
+    ]] },
+    { "id": "flange", "op": "extrude", "profile": "flange-profile", "distance": "-10" },
+    { "id": "base", "op": "boolean", "kind": "union", "target": "plate", "tool": "flange" },
+    { "id": "boss-profile", "op": "sketch", "plane": { "rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "0"] }, "loops": [[
+      { "kind": "circle", "id": "circle", "centre": ["0", "0"], "radius": "12" }
+    ]] },
+    { "id": "boss", "op": "extrude", "profile": "boss-profile", "distance": "24" },
+    { "id": "demo", "op": "boolean", "kind": "union", "target": "base", "tool": "boss" }
+  ],
+  "result": "demo"
+}

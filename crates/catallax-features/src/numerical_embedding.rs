@@ -21,7 +21,9 @@ use catallax_topology::numerical::{
 use catallax_topology::{BodyId, EdgeId, Loop, Model, Sense, VertexId};
 use std::collections::{BTreeMap, BTreeSet};
 
+mod charts;
 mod nurbs;
+mod rings;
 use nurbs::{Curve64, Surface64, concatenate, distance, dot, interpolate, lerp, sub};
 
 const BITS: u32 = 128;
@@ -63,21 +65,21 @@ fn scalar(value: &Real, dec: &Decider) -> Result<Rational, Refusal> {
 // Callers recheck its physical point before retaining a trim.
 fn inverse_seed(
     surface: &Surface,
-    mut point: [Ball; 3],
+    point: &mut [Ball; 3],
     tolerance: &Rational,
     dec: &mut Decider,
-) -> Result<[Rational; 2], Refusal> {
-    if let Some(uv) = surface.parameters_of(&point, dec)? {
-        return Ok(uv.each_ref().map(Ball::mid));
+) -> Result<([Rational; 2], bool), Refusal> {
+    if let Some(uv) = surface.parameters_of(point, dec)? {
+        return Ok((uv.each_ref().map(Ball::mid), false));
     }
     let displacement = Ball::from_rational(&tolerance.mul_pow2(-6), BITS);
     for axis in 0..3 {
         let shifted = &point[axis] + &displacement;
         let original = std::mem::replace(&mut point[axis], shifted);
-        let proposal = surface.parameters_of(&point, dec)?;
+        let proposal = surface.parameters_of(point, dec)?;
         point[axis] = original;
         if let Some(uv) = proposal {
-            return Ok(uv.each_ref().map(Ball::mid));
+            return Ok((uv.each_ref().map(Ball::mid), true));
         }
     }
     Err(fit_failure(
@@ -93,7 +95,7 @@ pub(crate) fn surface_parameters(
 ) -> Result<[Rational; 2], Refusal> {
     inverse_seed(
         surface,
-        [
+        &mut [
             dec.enclose_budgeted_at(&point.x, BITS)?,
             dec.enclose_budgeted_at(&point.y, BITS)?,
             dec.enclose_budgeted_at(&point.z, BITS)?,
@@ -101,9 +103,10 @@ pub(crate) fn surface_parameters(
         tolerance,
         dec,
     )
+    .map(|(uv, _)| uv)
 }
 
-/// Structural precheck for one shell with finite coedges and no seam repeats.
+/// Structural precheck for one shell with finite coedges or circular rings.
 /// Native carriers and explicit line/circle/spline edges are retained; other
 /// curves require a retained trace. This does not qualify charts or admission.
 pub fn embeds(model: &Model, body: BodyId) -> bool {
@@ -130,7 +133,7 @@ pub fn embeds(model: &Model, body: BodyId) -> bool {
     }
     model.edges_of_body(body).into_iter().all(|id| {
         let edge = model.edge(id);
-        edge.start.is_some() && edge.end.is_some()
+        (edge.start.is_some() && edge.end.is_some()) || rings::is_ring(model, id)
     })
 }
 
@@ -235,6 +238,13 @@ fn carrier<'a>(surface: &'a Surface, dec: &mut Decider) -> Result<Carrier<'a>, R
                 bounds,
             )))
         }
+        Surface::BSpline(source) => {
+            let source = source.carrier();
+            Carrier::Spline(Box::new(SplineFace::new(
+                Surface64::new(source, dec)?,
+                source.domain().map(|range| range.map(Clone::clone)),
+            )))
+        }
         _ => Carrier::Native(surface),
     })
 }
@@ -284,12 +294,11 @@ impl<'a> ParametricFace<'a> {
         match self {
             Self::Spline(face) => face.surface.invert(point, face.region, previous, dec),
             Self::Native(surface) => {
-                let p = [exact(point[0])?, exact(point[1])?, exact(point[2])?]
+                let mut p = [exact(point[0])?, exact(point[1])?, exact(point[2])?]
                     .each_ref()
                     .map(|q| Ball::from_rational(q, BITS));
-                let mut uv = inverse_seed(surface, p, &tolerances.projection, dec)?
-                    .each_ref()
-                    .map(Rational::to_f64_nearest);
+                let (seed, displaced) = inverse_seed(surface, &mut p, &tolerances.projection, dec)?;
+                let mut uv = seed.each_ref().map(Rational::to_f64_nearest);
                 if let Some(previous) = previous {
                     for axis in 0..2 {
                         if surface.domain()[axis] == catallax_shapes::ParamKind::Periodic {
@@ -304,7 +313,40 @@ impl<'a> ParametricFace<'a> {
                         "a native inverse parameter is outside binary64 range",
                     ));
                 }
-                Ok(uv)
+                if !displaced {
+                    return Ok(uv);
+                }
+                // The seam displacement chooses a branch, not a different
+                // physical endpoint. Refine its UV against the original point.
+                for _ in 0..8 {
+                    dec.charge_work(1)?;
+                    let at = [exact(uv[0])?, exact(uv[1])?]
+                        .each_ref()
+                        .map(|q| Ball::from_rational(q, BITS));
+                    let position = surface.evaluate(&at[0], &at[1], dec)?;
+                    let error: [f64; 3] =
+                        std::array::from_fn(|i| (&position[i] - &p[i]).mid().to_f64_nearest());
+                    if dot(error, error).sqrt() <= tolerances.sample / 8.0 {
+                        return Ok(uv);
+                    }
+                    let [du, dv] = surface
+                        .derivatives(&at[0], &at[1], dec)?
+                        .map(|d| d.each_ref().map(|q| q.mid().to_f64_nearest()));
+                    let a = dot(du, du);
+                    let b = dot(du, dv);
+                    let c = dot(dv, dv);
+                    let d = dot(du, error);
+                    let e = dot(dv, error);
+                    let determinant = a * c - b * b;
+                    if determinant <= 0.0 || !determinant.is_finite() {
+                        return Err(fit_failure("the native seam inverse tangent system is singular"));
+                    }
+                    uv = [
+                        uv[0] - (c * d - b * e) / determinant,
+                        uv[1] - (a * e - b * d) / determinant,
+                    ];
+                }
+                Err(fit_failure("the native seam inverse did not refine its original point"))
             }
         }
     }
@@ -795,6 +837,19 @@ pub fn definition_from_exact_model(
             position,
         });
     }
+    let ring_vertices = rings::vertices(model, body, &mut vertices, &mut approx, dec)?;
+    let edge_ends: BTreeMap<EdgeId, [usize; 2]> = model
+        .edges_of_body(body)
+        .into_iter()
+        .map(|id| {
+            let edge = model.edge(id);
+            let ends = match [edge.start, edge.end] {
+                [Some(a), Some(b)] => [vertex_index[&a], vertex_index[&b]],
+                _ => [ring_vertices[&id]; 2],
+            };
+            (id, ends)
+        })
+        .collect();
     let face_ids = model.faces_of_body(body);
     let mut carriers = Vec::with_capacity(face_ids.len());
     let mut edge_faces: BTreeMap<EdgeId, Vec<usize>> = BTreeMap::new();
@@ -812,8 +867,7 @@ pub fn definition_from_exact_model(
             for coedge in uses {
                 let edge = model.coedge(*coedge).edge;
                 edge_faces.entry(edge).or_default().push(index);
-                let edge = model.edge(edge);
-                for vertex in [edge.start, edge.end].map(|v| vertex_index[&v.expect("finite")]) {
+                for vertex in edge_ends[&edge] {
                     if uvs.contains_key(&(index, vertex)) {
                         continue;
                     }
@@ -850,10 +904,12 @@ pub fn definition_from_exact_model(
                             let face = ParametricFace::Native(surface);
                             let target = approx[vertex];
                             let at = face.invert(target, previous_native_uv, &tolerances, dec)?;
-                            if distance(face.point(at, dec)?, target) > tolerances.sample {
-                                return Err(fit_failure(
-                                    "a vertex has no native face parameter within tolerance",
-                                ));
+                            let error = distance(face.point(at, dec)?, target);
+                            if error > tolerances.sample {
+                                return Err(fit_failure(format!(
+                                    "vertex {} on {id:?} has native UV {at:?} with residual {error:e} mm above {:e} mm",
+                                    vertices[vertex].key, tolerances.sample
+                                )));
                             }
                             previous_native_uv = Some(at);
                             Uv {
@@ -867,6 +923,7 @@ pub fn definition_from_exact_model(
             }
         }
     }
+    charts::lift(model, body, &carriers, &edge_ends, &approx, &mut uvs, &tolerances, dec)?;
     let edge_ids = model.edges_of_body(body);
     let edge_index: BTreeMap<EdgeId, usize> = edge_ids
         .iter()
@@ -878,7 +935,7 @@ pub fn definition_from_exact_model(
     for (index, id) in edge_ids.iter().enumerate() {
         dec.charge_work(1)?;
         let edge = model.edge(*id);
-        let ends = [edge.start, edge.end].map(|v| vertex_index[&v.expect("finite")]);
+        let ends = edge_ends[id];
         let faces = edge_faces.get(id).cloned().unwrap_or_default();
         let curve = model.geom().curve(edge.curve);
         match curve {
@@ -897,14 +954,14 @@ pub fn definition_from_exact_model(
                     _ => unreachable!("retained primitive curve"),
                 };
                 let parameter = |vertex: usize, dec: &mut Decider| -> Result<Rational, Refusal> {
-                    let p = model
-                        .geom()
-                        .position(model.vertex(vertex_ids[vertex]).point);
                     Ok(match curve {
-                        Curve::Line(line) => scalar(
-                            &(p.minus(&line.origin).dot(&line.dir) / line.dir.norm_squared()),
-                            dec,
-                        )?,
+                        Curve::Line(line) => {
+                            let p = model.geom().position(model.vertex(vertex_ids[vertex]).point);
+                            scalar(
+                                &(p.minus(&line.origin).dot(&line.dir) / line.dir.norm_squared()),
+                                dec,
+                            )?
+                        }
                         Curve::Circle(_) => {
                             let Native::Circle(circle) = &native else {
                                 unreachable!("retained circle proposal")
@@ -912,6 +969,7 @@ pub fn definition_from_exact_model(
                             exact(circle.phase(approx[vertex]))?
                         }
                         Curve::BSpline(spline) => {
+                            let p = model.geom().position(model.vertex(vertex_ids[vertex]).point);
                             let at = spline.unique_parameter_of(&p, dec)?.ok_or_else(|| {
                                 Refusal::new(
                                     "features.numerical-embedding-gap",
@@ -943,6 +1001,11 @@ pub fn definition_from_exact_model(
                     let Some(parametric) = carriers[*face].parametric() else {
                         continue;
                     };
+                    if ends[0] == ends[1] && matches!(curve, Curve::Circle(_))
+                        && matches!(parametric, ParametricFace::Native(_))
+                    {
+                        continue;
+                    }
                     let [a, b] = ends.map(|vertex| &uvs[&(*face, vertex)]);
                     let ends = if ascending { [a, b] } else { [b, a] };
                     uv_curves.insert(
@@ -1041,12 +1104,14 @@ pub fn definition_from_exact_model(
             }
             loops.push(trims);
         }
-        faces.push(NumericalFace {
+        let mut numerical_face = NumericalFace {
             key,
             surface: model.geom().surface(face.surface).clone(),
             sense: face.sense,
             loops,
-        });
+        };
+        rings::close_band(&mut numerical_face, &vertices, &mut edges, dec)?;
+        faces.push(numerical_face);
     }
     Ok((
         NumericalDefinition {

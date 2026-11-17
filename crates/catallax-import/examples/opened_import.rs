@@ -172,7 +172,8 @@ fn run(
     let (exported, export_work) = with_operation_budget(DEFAULT_WORK, || {
         let mut dec = Decider::default();
         if let Some(native) = opened.tolerant_admission() {
-            let bytes = native.export_step(&mut dec).map_err(native_error)?;
+            let file = native.export_step(&mut dec).map_err(native_error)?;
+            let bytes = file.bytes();
             let mut maxima = std::collections::BTreeMap::<&str, f64>::new();
             for tolerance in &native.evidence().tolerances {
                 let maximum = maxima.entry(&tolerance.body).or_default();
@@ -185,9 +186,10 @@ fn run(
                     "parts":if solid.definition().declared_solid() {1} else {counts.shells},
                     "counts":{"faces":counts.faces,"edges":counts.edges,"vertices":counts.vertices},
                     "tolerance_mm":maxima[solid.name()],
+                    "entities":file.source_body_roots()[body],
                 })
             }).collect();
-            files.push(save_export(out, "document.step", &bytes, json!({
+            files.push(save_export(out, "document.step", bytes, json!({
                 "bodies":(0..native.bodies().len()).collect::<Vec<_>>(), "kind":"native_document",
                 "source_roots":roots,"unit_factors":native.source_unit_factors(),
                 "authority":"native_sampled",

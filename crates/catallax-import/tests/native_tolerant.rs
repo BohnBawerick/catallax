@@ -20,7 +20,7 @@ fn native_entity_tolerances_absorb_shared_vertex_error_beyond_the_checked_cap() 
     let original = box_step(BoxFixture::new(["2", "3", "4"]));
     let mut dec = Decider::default();
     let parsed = ParsedStep::read(original.as_bytes(), &mut dec).unwrap();
-    let vertex = parsed.entities().find(|&entity| parsed.entity_types(entity).unwrap().iter().any(|kind| kind == "VERTEX_POINT")).unwrap();
+    let vertex = parsed.entities().find(|&entity| parsed.entity_types(entity).unwrap().contains(&"VERTEX_POINT")).unwrap();
     let Topology::Vertex(point) = parsed.topology(vertex, &mut dec).unwrap() else { unreachable!() };
     let prefix = format!("#{point}=");
     let source = original.lines().map(|line| {

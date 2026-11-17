@@ -129,6 +129,10 @@ def raw_surface(path):
             Interface_Static.SetIVal_s(key, value)
 
 
+class NativeInvalid(Exception):
+    """A translated native B-rep failed validity or source-topology coverage."""
+
+
 def raw_native_document(path, entry):
     """Check every named native root before default occurrence transfer.
 
@@ -159,14 +163,14 @@ def raw_native_document(path, entry):
             assert Interface_Static.SetIVal_s(key, value), key
         assert reader.ReadFile(str(path)) == IFSelect_RetDone
         model = reader.StepModel()
-        named = {}
+        labelled = {}
         for index in range(1, model.NbEntities() + 1):
             entity = model.Value(index)
             if isinstance(entity, StepShape_ManifoldSolidBrep):
-                named.setdefault(entity.Name().ToCString(), []).append(entity)
+                labelled[model.IdentLabel(entity)] = entity
         roots = []
         for root in entry["source_roots"]:
-            entities = named.get(root["name"], [])
+            entities = [labelled[entity] for entity in root["entities"]]
             assert len(entities) == root["parts"], (root["name"], len(entities), root["parts"])
             tolerance = root["tolerance_mm"]
             assert math.isfinite(tolerance) and tolerance > 0
@@ -179,19 +183,21 @@ def raw_native_document(path, entry):
             aggregate.MakeCompound(compound)
             for entity in entities:
                 builder = StepToTopoDS_Builder()
-                builder.SetPrecision(tolerance)
+                builder.SetPrecision(min(tolerance, 1e-7))
                 builder.SetMaxTol(tolerance)
                 builder.Init(entity, process, factors)
                 assert builder.IsDone(), root["name"]
                 shape = builder.Value()
                 assert topology(shape)["solids"] == 1
-                assert BRepCheck_Analyzer(shape).IsValid(), root["name"]
+                if not BRepCheck_Analyzer(shape).IsValid():
+                    raise NativeInvalid(f"{root['name']}: raw native solid invalid")
                 aggregate.Add(compound, shape)
             counts = topology(compound)
             for key, expected in root["counts"].items():
-                assert counts[key] == expected, (root["name"], key, counts[key], expected)
+                if counts[key] != expected:
+                    raise NativeInvalid(f"{root['name']}: {key} coverage {counts[key]} != {expected}")
             roots.append(dict(body=root["body"], source_root=root["name"], topology=counts,
-                              builder_precision_mm=tolerance, builder_max_tolerance_mm=tolerance))
+                              builder_precision_mm=min(tolerance, 1e-7), builder_max_tolerance_mm=tolerance))
     finally:
         for key, value in previous.items():
             Interface_Static.SetIVal_s(key, value)
@@ -199,7 +205,8 @@ def raw_native_document(path, entry):
     assert expected_roots > 0 and reader.TransferRoots() == expected_roots
     shape = reader.OneShape()
     assert not shape.IsNull() and topology(shape)["solids"] > 0
-    assert BRepCheck_Analyzer(shape).IsValid(), "default occurrence transfer invalid"
+    if not BRepCheck_Analyzer(shape).IsValid():
+        raise NativeInvalid("default occurrence transfer invalid")
     return topology(shape), roots
 
 
@@ -239,6 +246,9 @@ def raw(args):
                     if BRepCheck_Analyzer(shape).IsValid()
                     else "invalid_after_builder"
                 )
+        except NativeInvalid as error:
+            outcome, counts = "invalid_after_builder", None
+            print(type(error).__name__, str(error), file=sys.stderr)
         except Exception as error:
             outcome, counts = "reader_refused", None
             print(type(error).__name__, str(error), file=sys.stderr)

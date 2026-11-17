@@ -15,18 +15,35 @@ struct Builder<'a> {
 }
 impl Builder<'_> {
     fn add(&mut self, kind: &str, parameters: Vec<Param>) -> Result<u64, Error> {
+        self.complex(vec![(kind.into(), parameters)])
+    }
+    fn complex(&mut self, parts: Vec<(String, Vec<Param>)>) -> Result<u64, Error> {
         let id = self.next;
         self.next = self.next.checked_add(1).ok_or_else(|| invalid("import.tolerant-broken-reference", "STEP entity index overflow"))?;
-        self.set(id, kind, parameters);
+        self.changes.insert(id, Entity { parts });
         Ok(id)
     }
-    fn set(&mut self, id: u64, kind: &str, parameters: Vec<Param>) {
-        self.changes.insert(id, Entity { parts: vec![(kind.into(), parameters)] });
+    fn set(&mut self, id: u64, kind: &str, parameters: Vec<Param>) -> Result<(), Error> {
+        let value = Entity { parts: vec![(kind.into(), parameters)] };
+        if self.changes.get(&id).is_some_and(|prior| *prior != value) {
+            return Err(invalid("import.tolerant-shared-repair-conflict", format!("independent repairs require different bindings for shared entity #{id}")));
+        }
+        self.changes.insert(id, value);
+        Ok(())
     }
     fn existing(&self, name: &str, expected: &str) -> Option<u64> {
         let id = name.strip_prefix('#')?.parse().ok()?;
         self.parsed.source_graph().get(&id)?.part(expected)?;
         Some(id)
+    }
+    fn name(&self, source_name: &str) -> Param {
+        let source = source_name.strip_prefix('#').and_then(|value| value.parse().ok())
+            .and_then(|id| self.parsed.source_graph().get(&id));
+        let value = source.and_then(|entity| {
+            entity.part("REPRESENTATION_ITEM").and_then(|parameters| parameters.first())
+                .or_else(|| entity.parts.iter().find_map(|(_, parameters)| parameters.first().filter(|value| matches!(value, Param::Str(_)))))
+        });
+        value.filter(|value| matches!(value, Param::Str(_))).cloned().unwrap_or_else(|| text(source_name))
     }
     fn point(&mut self, position: &Vec3, scale: &Rational) -> Result<u64, Error> {
         let coordinates = position.iter().map(|coordinate| decimal(&(coordinate / scale))).collect::<Result<Vec<_>, _>>()?;
@@ -71,41 +88,73 @@ fn decimal(value: &Rational) -> Result<Param, Error> {
     Ok(Param::Number(format!("{number:.17e}")))
 }
 
+pub(super) struct Rebuilt {
+    pub changes: Graph,
+    pub body_roots: Vec<Vec<u64>>,
+}
+
 pub(super) fn rebuild(
     parsed: &ParsedStep,
     bodies: &[TolerantSolid],
     scale: &Rational,
     dec: &mut Decider,
-) -> Result<Graph, Error> {
+) -> Result<Rebuilt, Error> {
     let next = parsed.entities().last().unwrap_or(0).checked_add(1)
         .ok_or_else(|| invalid("import.tolerant-broken-reference", "STEP entity index overflow"))?;
     let mut builder = Builder { parsed, changes: Graph::new(), next };
-    let mut expanded_roots = BTreeMap::<u64, Vec<u64>>::new();
+    let mut expanded_roots = BTreeMap::<u64, usize>::new();
+    let mut body_roots = Vec::with_capacity(bodies.len());
+    let mut written_vertices = BTreeMap::<&str, (&Vec3, u64)>::new();
+    let mut written_edges = BTreeMap::<&str, ([u64; 2], &Curve, bool, u64)>::new();
+    let mut written_faces = BTreeMap::<&str, (&super::TolerantBody, &super::super::TolerantFace, u64)>::new();
+    let mut reversed_faces = BTreeMap::<u64, u64>::new();
     for solid in bodies {
         let body = &solid.body;
         let root: u64 = body.name.strip_prefix('#').and_then(|value| value.parse().ok())
             .ok_or_else(|| invalid("import.tolerant-broken-reference", "native body lacks a source root"))?;
-        let old_shells = match parsed.topology(root, dec)? {
-            Topology::Solid { outer, voids } => std::iter::once(outer).chain(voids).collect(),
-            Topology::SurfaceModel(shells) | Topology::FaceModel(shells) => shells,
-            _ => return Err(invalid("import.tolerant-broken-topology", "native body root has no finite shells")),
-        };
-        let mut vertices = Vec::with_capacity(body.vertices.len());
-        for vertex in &body.vertices {
-            dec.charge_work(1)?;
-            let point = builder.point(&vertex.source.point, scale)?;
-            let id = match builder.existing(&vertex.source.name, "VERTEX_POINT") {
-                Some(id) => { builder.set(id, "VERTEX_POINT", vec![text(&vertex.source.name), reference_to(point)]); id }
-                None => builder.add("VERTEX_POINT", vec![text(&vertex.source.name), reference_to(point)])?,
-            };
-            vertices.push(id);
+        if !matches!(parsed.topology(root, dec)?, Topology::Solid { .. } | Topology::SurfaceModel(_) | Topology::FaceModel(_)) {
+            return Err(invalid("import.tolerant-broken-topology", "native body root has no finite shells"));
         }
         let mut active = vec![false; body.edges.len()];
-        for shell in &body.shells { for face in &shell.faces { for boundary in &face.loops { for usage in &boundary.edges { active[usage.edge] = true; } } } }
+        let mut active_vertices = vec![false; body.vertices.len()];
+        for shell in &body.shells { for face in &shell.faces { for boundary in &face.loops {
+            if let Some(vertex) = boundary.vertex { active_vertices[vertex] = true; }
+            for usage in &boundary.edges {
+                active[usage.edge] = true;
+                for vertex in body.edges[usage.edge].vertices { active_vertices[vertex] = true; }
+            }
+        } } }
+        let mut vertices = vec![None; body.vertices.len()];
+        for (index, vertex) in body.vertices.iter().enumerate() {
+            if !active_vertices[index] { continue; }
+            dec.charge_work(1)?;
+            if let Some(&(prior, id)) = written_vertices.get(vertex.source.name.as_str()) {
+                if prior != &vertex.source.point {
+                    return Err(invalid("import.tolerant-shared-repair-conflict", format!("shared vertex {} has different repaired positions", vertex.source.name)));
+                }
+                vertices[index] = Some(id);
+                continue;
+            }
+            let point = builder.point(&vertex.source.point, scale)?;
+            let id = match builder.existing(&vertex.source.name, "VERTEX_POINT") {
+                Some(id) => { builder.set(id, "VERTEX_POINT", vec![builder.name(&vertex.source.name), reference_to(point)])?; id }
+                None => builder.add("VERTEX_POINT", vec![builder.name(&vertex.source.name), reference_to(point)])?,
+            };
+            written_vertices.insert(&vertex.source.name, (&vertex.source.point, id));
+            vertices[index] = Some(id);
+        }
         let mut edges = vec![None; body.edges.len()];
         for (index, edge) in body.edges.iter().enumerate() {
             if !active[index] { continue; }
             dec.charge_work(1)?;
+            let endpoints = edge.vertices.map(|vertex| vertices[vertex].expect("active endpoint"));
+            if let Some(&(prior, curve, sense, id)) = written_edges.get(edge.name.as_str()) {
+                if prior != endpoints || curve != &edge.curve || sense != edge.curve_same_sense {
+                    return Err(invalid("import.tolerant-shared-repair-conflict", format!("shared edge {} has different repaired geometry", edge.name)));
+                }
+                edges[index] = Some(id);
+                continue;
+            }
             let curve = match builder.source_curve(&edge.name, dec)? {
                 Some(curve) => curve,
                 None => match &edge.curve {
@@ -118,18 +167,31 @@ pub(super) fn rebuild(
                     _ => return Err(invalid("import.tolerant-broken-reference", "native edge has no exportable source carrier")),
                 },
             };
-            let parameters = vec![text(&edge.name), reference_to(vertices[edge.vertices[0]]), reference_to(vertices[edge.vertices[1]]), reference_to(curve), boolean(edge.curve_same_sense)];
+            let parameters = vec![builder.name(&edge.name), reference_to(endpoints[0]), reference_to(endpoints[1]), reference_to(curve), boolean(edge.curve_same_sense)];
             let entity = match builder.existing(&edge.name, "EDGE_CURVE") {
-                Some(entity) => { builder.set(entity, "EDGE_CURVE", parameters); entity }
+                Some(entity) => { builder.set(entity, "EDGE_CURVE", parameters)?; entity }
                 None => builder.add("EDGE_CURVE", parameters)?,
             };
             edges[index] = Some(entity);
+            written_edges.insert(&edge.name, (endpoints, &edge.curve, edge.curve_same_sense, entity));
         }
         let mut shells = Vec::with_capacity(body.shells.len());
-        for (shell_index, shell) in body.shells.iter().enumerate() {
+        for shell in &body.shells {
             let mut faces = Vec::with_capacity(shell.faces.len());
             for face in &shell.faces {
                 dec.charge_work(1)?;
+                if let Some(&(prior_body, prior, entity)) = written_faces.get(face.name.as_str()) {
+                    let reversed = same_face(body, face, prior_body, prior)
+                        .ok_or_else(|| invalid("import.tolerant-shared-repair-conflict", format!("shared face {} has different repaired trims", face.name)))?;
+                    let entity = if reversed {
+                        match reversed_faces.entry(entity) {
+                            std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
+                            std::collections::btree_map::Entry::Vacant(entry) => *entry.insert(builder.add("ORIENTED_FACE", vec![builder.name(&face.name), Param::Derived, reference_to(entity), boolean(false)])?),
+                        }
+                    } else { entity };
+                    faces.push(entity);
+                    continue;
+                }
                 let surface = match builder.source_surface(&face.name, dec)? {
                     Some(surface) => surface,
                     None => match &face.surface {
@@ -143,7 +205,7 @@ pub(super) fn rebuild(
                 let mut bounds = Vec::with_capacity(face.loops.len());
                 for boundary in &face.loops {
                     let loop_id = if let Some(vertex) = boundary.vertex {
-                        builder.add("VERTEX_LOOP", vec![text(""), reference_to(vertices[vertex])])?
+                        builder.add("VERTEX_LOOP", vec![text(""), reference_to(vertices[vertex].expect("active vertex loop"))])?
                     } else {
                         let mut uses = Vec::with_capacity(boundary.edges.len());
                         for usage in &boundary.edges {
@@ -154,18 +216,19 @@ pub(super) fn rebuild(
                     };
                     bounds.push(builder.add(if boundary.outer { "FACE_OUTER_BOUND" } else { "FACE_BOUND" }, vec![text(""), reference_to(loop_id), boolean(boundary.orientation)])?);
                 }
-                let parameters = vec![text(&face.name), references(bounds), reference_to(surface), boolean(face.same_sense)];
+                let parameters = vec![builder.name(&face.name), references(bounds), reference_to(surface), boolean(face.same_sense)];
                 let entity = match builder.existing(&face.name, "ADVANCED_FACE").or_else(|| builder.existing(&face.name, "FACE_SURFACE")).or_else(|| builder.existing(&face.name, "FACE")) {
-                    Some(entity) => { builder.set(entity, "ADVANCED_FACE", parameters); entity }
+                    Some(entity) => { builder.set(entity, "ADVANCED_FACE", parameters)?; entity }
                     None => builder.add("ADVANCED_FACE", parameters)?,
                 };
                 faces.push(entity);
+                written_faces.insert(&face.name, (body, face, entity));
             }
-            let parameters = vec![text(&shell.name), references(faces)];
-            let entity = match old_shells.get(shell_index) {
-                Some(&old) => { let entity = builder.shell_id(old, dec)?; builder.set(entity, "CLOSED_SHELL", parameters); entity }
-                None => builder.add("CLOSED_SHELL", parameters)?,
-            };
+            let source: u64 = shell.name.strip_prefix('#').and_then(|name| name.parse().ok())
+                .ok_or_else(|| invalid("import.tolerant-broken-reference", "native shell lacks a source identity"))?;
+            let entity = builder.shell_id(source, dec)?;
+            let parameters = vec![builder.name(&format!("#{entity}")), references(faces)];
+            builder.set(entity, "CLOSED_SHELL", parameters)?;
             shells.push(entity);
         }
         if body.declared_solid && shells.len() > 1 {
@@ -173,14 +236,16 @@ pub(super) fn rebuild(
             for &shell in &shells[1..] {
                 voids.push(builder.add("ORIENTED_CLOSED_SHELL", vec![text(""), Param::Derived, reference_to(shell), boolean(true)])?);
             }
-            builder.set(root, "BREP_WITH_VOIDS", vec![text(&body.name), reference_to(shells[0]), references(voids)]);
+            builder.set(root, "BREP_WITH_VOIDS", vec![builder.name(&body.name), reference_to(shells[0]), references(voids)])?;
+            body_roots.push(vec![root]);
         } else {
             let mut roots = Vec::with_capacity(shells.len());
             for (index, shell) in shells.into_iter().enumerate() {
-                let parameters = vec![text(&body.name), reference_to(shell)];
-                roots.push(if index == 0 { builder.set(root, "MANIFOLD_SOLID_BREP", parameters); root } else { builder.add("MANIFOLD_SOLID_BREP", parameters)? });
+                let parameters = vec![builder.name(&body.name), reference_to(shell)];
+                roots.push(if index == 0 { builder.set(root, "MANIFOLD_SOLID_BREP", parameters)?; root } else { builder.add("MANIFOLD_SOLID_BREP", parameters)? });
             }
-            if roots.len() > 1 { expanded_roots.insert(root, roots); }
+            if roots.len() > 1 { expanded_roots.insert(root, body_roots.len()); }
+            body_roots.push(roots);
         }
     }
     // Preserve the original occurrence/assembly graph. Only representation items
@@ -195,7 +260,7 @@ pub(super) fn rebuild(
                 if let Param::Ref(root) = item
                     && let Some(roots) = expanded_roots.get(root)
                 {
-                    replacement.extend(roots.iter().copied().map(reference_to));
+                    replacement.extend(body_roots[*roots].iter().copied().map(reference_to));
                     changed = true;
                 } else { replacement.push(item.clone()); }
             }
@@ -213,7 +278,7 @@ pub(super) fn rebuild(
             }
         }
     }
-    Ok(builder.changes)
+    Ok(Rebuilt { changes: builder.changes, body_roots })
 }
 
 pub(super) fn standalone_frame(parsed: &ParsedStep, changes: &mut Graph, name: &str, dec: &mut Decider) -> Result<u64, Error> {
@@ -232,38 +297,35 @@ pub(super) fn standalone_frame(parsed: &ParsedStep, changes: &mut Graph, name: &
     for entity in parsed.entities() {
         dec.charge_work(1)?;
         let kinds = parsed.entity_types(entity)?;
-        if kinds.iter().any(|kind| kind == "GEOMETRIC_REPRESENTATION_CONTEXT") {
+        if kinds.contains(&"GEOMETRIC_REPRESENTATION_CONTEXT") {
             let candidate = parsed.representation_context(entity)?;
             if candidate.dimension == Some(3) && !candidate.units.is_empty() {
                 context = Some(entity);
                 break;
             }
         }
-        if kinds.iter().any(|kind| matches!(kind.as_str(), "LENGTH_UNIT" | "PLANE_ANGLE_UNIT" | "SOLID_ANGLE_UNIT")) {
+        if kinds.iter().any(|kind| matches!(*kind, "LENGTH_UNIT" | "PLANE_ANGLE_UNIT" | "SOLID_ANGLE_UNIT")) {
             units.push(entity);
         }
     }
     let context = if let Some(context) = context { context } else {
         if units.is_empty() {
-            let unit = builder.next; builder.next += 1;
-            builder.changes.insert(unit, Entity { parts: vec![
+            let unit = builder.complex(vec![
                 ("LENGTH_UNIT".into(), vec![]), ("NAMED_UNIT".into(), vec![Param::Derived]),
                 ("SI_UNIT".into(), vec![Param::Enum("MILLI".into()), Param::Enum("METRE".into())]),
-            ] });
+            ])?;
             units.push(unit);
-            let unit = builder.next; builder.next += 1;
-            builder.changes.insert(unit, Entity { parts: vec![
+            let unit = builder.complex(vec![
                 ("NAMED_UNIT".into(), vec![Param::Derived]), ("PLANE_ANGLE_UNIT".into(), vec![]),
                 ("SI_UNIT".into(), vec![Param::Unset, Param::Enum("RADIAN".into())]),
-            ] });
+            ])?;
             units.push(unit);
         }
-        let context = builder.next; builder.next += 1;
-        builder.changes.insert(context, Entity { parts: vec![
+        let context = builder.complex(vec![
             ("GEOMETRIC_REPRESENTATION_CONTEXT".into(), vec![Param::Number("3".into())]),
             ("GLOBAL_UNIT_ASSIGNED_CONTEXT".into(), vec![references(units)]),
             ("REPRESENTATION_CONTEXT".into(), vec![text(""), text("")]),
-        ] });
+        ])?;
         context
     };
     let application = builder.add("APPLICATION_CONTEXT", vec![text("automotive_design")])?;
@@ -277,4 +339,22 @@ pub(super) fn standalone_frame(parsed: &ParsedStep, changes: &mut Graph, name: &
     let root = builder.add("SHAPE_DEFINITION_REPRESENTATION", vec![reference_to(shape), reference_to(representation)])?;
     *changes = builder.changes;
     Ok(root)
+}
+
+fn same_face(body: &super::TolerantBody, face: &super::super::TolerantFace, prior_body: &super::TolerantBody, prior: &super::super::TolerantFace) -> Option<bool> {
+    if face.surface != prior.surface || face.loops.len() != prior.loops.len() { return None; }
+    let reversed = face.same_sense != prior.same_sense;
+    for (boundary, previous) in face.loops.iter().zip(&prior.loops) {
+        let vertex = boundary.vertex.map(|index| body.vertices[index].source.name.as_str());
+        let prior_vertex = previous.vertex.map(|index| prior_body.vertices[index].source.name.as_str());
+        if boundary.outer != previous.outer || boundary.orientation != (previous.orientation ^ reversed)
+            || vertex != prior_vertex || boundary.edges.len() != previous.edges.len()
+        { return None; }
+        for (usage, previous) in boundary.edges.iter().zip(&previous.edges) {
+            if usage.forward != previous.forward
+                || body.edges[usage.edge].name != prior_body.edges[previous.edge].name
+            { return None; }
+        }
+    }
+    Some(reversed)
 }

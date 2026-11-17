@@ -364,3 +364,30 @@ fn sub_ulp_guide_turn_moves_the_retained_section_at_large_coordinates() {
             < Rational::from_ratio(1, 160_000).unwrap()
     );
 }
+
+#[test]
+fn authored_terminal_scale_loss_cannot_hide_in_the_affine_fit() {
+    let mut recipe = line_definition();
+    let SweepPath::Line { end, .. } = &mut recipe.path else {
+        unreachable!()
+    };
+    end.0[2] = q(3).into();
+    recipe.end_scale = Rational::from_ratio(10_000_000_000_000_001, 10_000_000_000_000_000)
+        .unwrap()
+        .into();
+    let retained = build(&recipe, &mut Decider::default()).unwrap();
+    recipe.tolerance_mm = Rational::from_ratio(1, 1_000_000_000_000_000_000)
+        .unwrap()
+        .into();
+    assert_eq!(
+        build(&recipe, &mut Decider::default()).unwrap_err().code,
+        "sweep.scale-sample-tolerance",
+    );
+    assert_eq!(
+        retained
+            .edit(recipe, &mut Decider::default())
+            .unwrap_err()
+            .code,
+        "sweep.scale-sample-tolerance",
+    );
+}

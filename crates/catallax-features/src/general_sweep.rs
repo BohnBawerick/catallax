@@ -830,10 +830,39 @@ fn definition(
     }
     let tolerance = number(&recipe.tolerance_mm);
     let profile_allowance = recipe.tolerance_mm.value() / &q(4);
-    if profile_squared > &profile_allowance * &profile_allowance {
+    let input_limit_squared = &profile_allowance * &profile_allowance;
+    if profile_squared > input_limit_squared {
         return Err(bad(
             "the numerical profile proposal does not meet the stated sample tolerance",
         ));
+    }
+    let mut scale_samples = 0;
+    let terminal_scale = rational(1.0 + (end_scale - 1.0))?;
+    if &terminal_scale != recipe.end_scale.value() {
+        let terminal = frame.at(1.0, dec)?;
+        let loss = Real::from(terminal_scale - recipe.end_scale.value());
+        let x = vector(terminal.x)?;
+        let y = vector(terminal.y)?;
+        let offset = vector(unit(cross(terminal.x, terminal.y))?)?.scaled(&real(normal_offset)?);
+        for p in &sample_controls {
+            let x = x.scaled(&real(p[0])?);
+            let y = y.scaled(&real(p[1])?);
+            let radial = Vector3::new(
+                &x.x + &y.x + &offset.x,
+                &x.y + &y.y + &offset.y,
+                &x.z + &y.z + &offset.z,
+            );
+            let upper = dec
+                .enclose_budgeted_at(&radial.scaled(&loss).norm_squared(), 128)?
+                .hi();
+            if upper > input_limit_squared {
+                return Err(Refusal::new(
+                    "sweep.scale-sample-tolerance",
+                    "authored terminal scale conversion exceeds the stated sample tolerance",
+                ));
+            }
+            scale_samples += 1;
+        }
     }
     let linear = matches!(path, Path::Line(..)) && guide.is_none() && twist == 0.0;
     let (sections, checks) = loop {
@@ -856,7 +885,7 @@ fn definition(
             .map_err(|_| bad("section capacity cannot be reserved"))?;
         let mut checks = SweepChecks {
             sections: n,
-            checked_points: motion_samples + profile_samples,
+            checked_points: motion_samples + profile_samples + scale_samples,
             max_sample_error_mm: 0.0,
             max_profile_sample_error_mm: profile_error,
             max_motion_endpoint_error_mm: motion_error,

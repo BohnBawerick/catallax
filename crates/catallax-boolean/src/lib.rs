@@ -4,6 +4,9 @@
 //! imprint, classify, keep, sew. Plus exact containment of rational points
 //! and rational points inside faces.
 //!
+//! [`check_body`] explicitly checks structure and opposite-sheet overlaps on
+//! matching carriers, with conservative spatial pruning before exact proofs.
+//!
 //! The contract is `docs/pieces/05-boolean-engine.md`.
 //!
 //! Face imprints are oriented halfedge arrangements. Equal tangents are

@@ -9,6 +9,10 @@ use catallax_topology::{BodyId, FaceId, Model, TopologyFault};
 /// Carrier matching covers analytic supports and definition-identical spline
 /// carriers. This is not a general surface self-intersection test. Shared edges,
 /// isolated contacts and disjoint trims on a common carrier are permitted.
+///
+/// Finite boxes are screened before carrier and normal proofs. Index construction
+/// and candidate traversal consume the caller's allowance; unknown bounds retain
+/// the full proof path.
 /// Bound and proof queries use a model fork, leaving the input and its handles unchanged.
 pub fn check_body(
     model: &Model,

@@ -475,21 +475,34 @@ fn an_existing_wire_is_reordered_without_losing_any_edge_use() {
         opened.bodies()[0].tier(),
         tolerant::opened::Tier::SurfaceBody
     );
-    let native = opened.tolerant_admission().unwrap();
+    let repairs = match opened.body(0).unwrap() {
+        tolerant::opened::BodyView::Tolerant { import, .. } => &import.evidence().repairs,
+        _ => {
+            &opened.bodies()[0]
+                .healing()
+                .expect("the checked admission must retain its wire-repair history")
+                .report()
+                .changes
+        }
+    };
     assert!(
-        native
-            .evidence()
-            .repairs
+        repairs
             .iter()
             .any(|change| matches!(change, HealingChange::WireReordered { .. }))
     );
-    assert_eq!(
-        (
-            native.bodies()[0].counts().faces,
-            native.bodies()[0].counts().edges
-        ),
-        (6, 12)
-    );
+    match opened.body(0).unwrap() {
+        tolerant::opened::BodyView::Numerical(body) => {
+            assert_eq!((body.counts().faces, body.counts().edges), (6, 12));
+        }
+        tolerant::opened::BodyView::Tolerant { import, body } => {
+            let counts = import.bodies()[body].counts();
+            assert_eq!((counts.faces, counts.edges), (6, 12));
+        }
+        tolerant::opened::BodyView::Certified { model, body } => {
+            assert_eq!(model.body(body).kind, catallax_topology::BodyKind::Solid);
+        }
+        tolerant::opened::BodyView::Surfaces { .. } => panic!("wire repair must retain a solid"),
+    }
 }
 
 fn reverse_last_flag(line: &str) -> String {

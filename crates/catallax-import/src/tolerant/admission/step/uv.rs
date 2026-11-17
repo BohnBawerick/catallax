@@ -137,22 +137,14 @@ impl<'a> Writer<'a> {
         };
         let mut controls = Vec::with_capacity(2);
         for sample in endpoints {
-            controls.push(
-                builder.add(
-                    "CARTESIAN_POINT",
-                    vec![
-                        text(""),
-                        Param::List(
-                            sample
-                                .surface
-                                .parameters
-                                .into_iter()
-                                .map(number)
-                                .collect::<Result<_, _>>()?,
-                        ),
-                    ],
-                )?,
-            );
+            let coordinates = sample
+                .surface
+                .parameters
+                .into_iter()
+                .map(number)
+                .collect::<Result<_, _>>()?;
+            let point = builder.add("CARTESIAN_POINT", vec![text(""), Param::List(coordinates)])?;
+            controls.push(point);
         }
         let knots = if t0 < t1 {
             [t0 * scale, t1 * scale]

@@ -225,9 +225,6 @@ fn default_opening_preserves_checked_material_in_a_multi_body_document() {
         let Some(BodyView::Certified { model, body }) = default.body(index) else {
             panic!("default opening downgraded previously checked material");
         };
-        assert_eq!(
-            model.body(body).kind,
-            catallax_topology::BodyKind::Solid
-        );
+        assert_eq!(model.body(body).kind, catallax_topology::BodyKind::Solid);
     }
 }

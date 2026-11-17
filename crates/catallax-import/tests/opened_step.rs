@@ -25,8 +25,8 @@ fn open(source: &str) -> opened::OpenedStep {
 }
 
 fn history(file: &opened::OpenedStep) -> serde_json::Value {
-    if let Some(native) = file.tolerant_admission() {
-        return serde_json::to_value(native.evidence()).unwrap();
+    if let Some(BodyView::Tolerant { import, .. }) = file.body(0) {
+        return serde_json::to_value(import.evidence()).unwrap();
     }
     if let Some(healed) = file.bodies()[0].healing() {
         return serde_json::json!({"healing":healed.report(),"tolerances":healed.tolerances()});

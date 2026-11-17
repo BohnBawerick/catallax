@@ -129,7 +129,6 @@ def raw_surface(path):
             Interface_Static.SetIVal_s(key, value)
 
 
-
 def raw_native_document(path, entry):
     """Check every named native root before default occurrence transfer.
 

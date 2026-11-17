@@ -58,8 +58,8 @@ impl Fit<'_> {
         }
         if depth >= 24
             || output.len() >= 65_536
-            || parameter == left.curve.parameters[0]
-            || parameter == right.curve.parameters[0]
+            || parameter <= left.curve.parameters[0].min(right.curve.parameters[0])
+            || parameter >= left.curve.parameters[0].max(right.curve.parameters[0])
         {
             return Err(invalid(
                 "import.tolerant-trace-resolution",

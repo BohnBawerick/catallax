@@ -27,6 +27,20 @@ fn read(text: &str) -> tolerant::TolerantFile {
     .unwrap()
 }
 
+fn native_open(text: &str) -> tolerant::opened::OpenedStep {
+    let (result, work) = with_operation_budget(20_000_000, || {
+        tolerant::opened::open_step(
+            text.as_bytes(),
+            &sha256_hex(text.as_bytes()),
+            &catallax_recipe::StepId::new("wire-control").unwrap(),
+            Default::default(),
+            &mut Decider::default(),
+        )
+    });
+    assert!(!work.exhausted);
+    result.unwrap()
+}
+
 #[test]
 fn coincident_circle_endpoints_sew_only_the_same_finite_arc() {
     for sense in [false, true] {
@@ -456,6 +470,26 @@ fn an_existing_wire_is_reordered_without_losing_any_edge_use() {
         ),
         (6, 12, 8)
     );
+    let opened = native_open(&text);
+    assert_ne!(
+        opened.bodies()[0].tier(),
+        tolerant::opened::Tier::SurfaceBody
+    );
+    let native = opened.tolerant_admission().unwrap();
+    assert!(
+        native
+            .evidence()
+            .repairs
+            .iter()
+            .any(|change| matches!(change, HealingChange::WireReordered { .. }))
+    );
+    assert_eq!(
+        (
+            native.bodies()[0].counts().faces,
+            native.bodies()[0].counts().edges
+        ),
+        (6, 12)
+    );
 }
 
 fn reverse_last_flag(line: &str) -> String {
@@ -706,6 +740,11 @@ fn an_ordered_wire_gap_is_joined_from_measured_endpoints_without_exact_incidence
             .any(|i| i.code == "shell.open-or-nonmanifold")
     );
     assert!(!healed.tolerances().bodies[0].changes.is_empty());
+    let opened = native_open(&split_wire_endpoint("0.000001"));
+    assert_eq!(
+        opened.bodies()[0].first_blocker(),
+        Some(tolerant::admission::NativeStage::ShellIncidence)
+    );
 }
 
 #[test]
@@ -728,6 +767,19 @@ fn an_over_cap_wire_gap_stays_unresolved_and_does_not_grow_tolerances() {
             .changes
             .iter()
             .any(|c| matches!(c, HealingChange::VerticesJoined { .. }))
+    );
+    let opened = native_open(&split_wire_endpoint("0.02"));
+    assert_eq!(
+        opened.bodies()[0].first_blocker(),
+        Some(tolerant::admission::NativeStage::WireConnection)
+    );
+    assert!(
+        opened
+            .tolerant_admission()
+            .unwrap()
+            .evidence()
+            .repairs
+            .is_empty()
     );
 }
 

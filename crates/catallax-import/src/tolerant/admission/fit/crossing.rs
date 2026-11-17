@@ -89,7 +89,7 @@ fn intersection(
             p[1] + (aw * ab - bw * aa) / determinant,
         ];
         let next = std::array::from_fn(|axis| next[axis].clamp(limits[axis][0], limits[axis][1]));
-        if next == p {
+        if next.map(f64::to_bits) == p.map(f64::to_bits) {
             return Ok(None);
         }
         p = next;

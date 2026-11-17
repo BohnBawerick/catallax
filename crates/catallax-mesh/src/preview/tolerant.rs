@@ -527,7 +527,12 @@ pub fn preview_tolerant_body(
             FaceOutput {
                 name: &face.name,
                 same_sense: face.same_sense,
-                skip_collapsed: natural.is_some(),
+                skip_collapsed: natural.is_some()
+                    || face
+                        .loops
+                        .iter()
+                        .flat_map(|boundary| &boundary.edges)
+                        .any(|usage| body.edges()[usage.edge].degenerate),
             },
             &carrier,
             cdt,

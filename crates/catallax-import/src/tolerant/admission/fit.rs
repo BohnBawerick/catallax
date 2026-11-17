@@ -1033,9 +1033,17 @@ pub(super) fn check_body(
                                         dec,
                                     )?;
                                     let surface = surface.as_ref().expect("source pcurve surface");
-                                    let aligned = surface
-                                        .align_parameters(uv, Some(projection.location.parameters));
-                                    if aligned != uv {
+                                    if surface.periods().into_iter().enumerate().any(
+                                        |(axis, period)| {
+                                            period.is_some_and(|period| {
+                                                ((projection.location.parameters[axis] - uv[axis])
+                                                    / period)
+                                                    .round()
+                                                    .abs()
+                                                    >= 1.0
+                                            })
+                                        },
+                                    ) {
                                         return Ok::<_, Error>(false);
                                     }
                                     let point = surface.sample(surface.location(uv)?, dec)?;

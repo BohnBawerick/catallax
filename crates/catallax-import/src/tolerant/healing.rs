@@ -382,23 +382,6 @@ pub(crate) fn repair_native_topology(
     dec.charge_work(count as u64 + 1)?;
     let mut candidate = source.clone();
     let mut plan = Plan::default();
-    let mut span = Rational::zero();
-    for axis in 0..3 {
-        let mut values = candidate
-            .vertices
-            .iter()
-            .map(|vertex| &vertex.source.point[axis]);
-        if let Some(first) = values.next() {
-            let (mut low, mut high) = (first, first);
-            for value in values {
-                low = low.min(value);
-                high = high.max(value);
-            }
-            span = &span + &(high - low);
-        }
-    }
-    candidate.options.maximum_mm =
-        (&span + &candidate.options.initial_mm).max(source.options.maximum_mm.clone());
     *stage = super::admission::NativeStage::WireConnection;
     wire::fix(0, source, &mut candidate, &mut plan, dec)?;
     if let Some(issue) = plan
@@ -412,7 +395,6 @@ pub(crate) fn repair_native_topology(
         )
         .into());
     }
-    candidate.options.maximum_mm = source.options.maximum_mm.clone();
     *stage = super::admission::NativeStage::Sewing;
     native_sewing::sew(
         0,

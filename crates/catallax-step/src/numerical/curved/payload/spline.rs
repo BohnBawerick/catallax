@@ -110,12 +110,36 @@ fn finite_curve(
 pub(super) fn uv_curve(
     source: &BSplineCurve,
     parameters: &[Rational; 2],
+    target_parameters: &[Rational; 2],
     errors: &mut Errors,
     options: &NumericalStepOptions,
     dec: &mut Decider,
 ) -> Result<BSplineCurve, Refusal> {
     let source = finite_curve(source, parameters, true, dec)?;
-    let knots = knots(source.knots(), errors, options, dec)?;
+    let knots = if parameters == target_parameters {
+        knots(source.knots(), errors, options, dec)?
+    } else {
+        let scale =
+            (&target_parameters[1] - &target_parameters[0]) / (&parameters[1] - &parameters[0]);
+        if scale.sign() != Sign::Positive {
+            return Err(bad(
+                "rounding-topology",
+                "a fitted pcurve cannot reverse or collapse its native parameter domain",
+            ));
+        }
+        let mut knots = Vec::with_capacity(source.knots().len());
+        for knot in source.knots() {
+            let mapped = &target_parameters[0] + &(&scale * &(knot - &parameters[0]));
+            knots.push(rounded(
+                &Real::from(mapped),
+                &mut errors.spline.max_parameter_error,
+                options,
+                false,
+                dec,
+            )?);
+        }
+        knots
+    };
     let controls = source
         .controls()
         .map(|p| {

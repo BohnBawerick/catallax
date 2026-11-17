@@ -217,3 +217,7 @@ There are no measured admission/body-inventory losses, export-valid losses or un
 The candidate preserves positive Gershgorin margins and otherwise attempts a positive-definite symmetric projected-Jacobian determinant/trace bound. Thirteen focused tests pass, including a non-ruled cubic sheet without diagonal dominance, indefinite and negative-diagonal refusal controls, and the existing ruled-chart controls. Controls, knots, weights, complete-domain coverage, join checks, tolerances and proof limits stay unchanged. No shared import helper changes.
 
 Six initial refusals change without completing a solid file: `00003966` advances from the support bound to an existing spline endpoint incidence gap; `00005482`, `00006039` and `00007760` advance from that support refusal to a resource limit; `00001166` and `00001707` change from a resource limit to incidence gaps. Resource limits are run facts, not geometric refusals. Five screened real files still retain surface bodies; passing a support proof alone does not admit a solid.
+
+### Later
+
+The rational support primitive is parked on `fm/cx-import-unsupported-surfaces`, pushed without a PR. Reuse it only with a rational-boundary/import batch that demonstrates a file-level gain. The current endpoint-incidence and resource gates remain; a changed first refusal is not a completed solid. This run does not justify wider tolerances, larger work caps or weaker certificates.

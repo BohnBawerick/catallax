@@ -1529,6 +1529,7 @@ pub(crate) fn build(
     model: &Model,
     body: BodyId,
     options: &MeshOptions,
+    previous: Option<(&Model, &Mesh)>,
     dec: &mut Decider,
 ) -> Answered<Mesh> {
     if catallax_topology::DraftedCylinder::of_body(model, body, dec)?.is_some() {
@@ -1546,7 +1547,19 @@ pub(crate) fn build(
     {
         return crate::spline_prism::build(model, body, &faces, options, dec);
     }
-    let (value, marks) = build_junction(model, body, options, junction, false, dec)?;
+    let previous = previous
+        .filter(|_| !faces.is_empty())
+        .map(|(model, mesh)| crate::reuse::Previous::new(model, mesh, dec))
+        .transpose()?;
+    let (value, marks) = build_junction(
+        model,
+        body,
+        options,
+        junction,
+        false,
+        previous.as_ref(),
+        dec,
+    )?;
     Ok(Answer { value, marks })
 }
 
@@ -1566,7 +1579,7 @@ pub(crate) fn build_position(
     }
     let faces = model.faces_of_body(body);
     let junction = crate::junction::prepare_position(model, &faces, options, dec)?;
-    build_junction(model, body, options, Some(junction), true, dec)
+    build_junction(model, body, options, Some(junction), true, None, dec)
 }
 
 fn build_junction(
@@ -1575,6 +1588,7 @@ fn build_junction(
     options: &MeshOptions,
     junction: Option<crate::junction::Junction>,
     position_only: bool,
+    previous: Option<&crate::reuse::Previous<'_>>,
     dec: &mut Decider,
 ) -> Result<(Mesh, catallax_numbers::MarkLog), Refusal> {
     let faces = model.faces_of_body(body);
@@ -1589,67 +1603,84 @@ fn build_junction(
     let mut prior_chords = BTreeSet::new();
     for face in faces {
         let start = boundaries.mesh.triangles.len();
-        if fitted(face) {
-            junction.as_ref().expect("fitted face").triangulate(
-                face,
-                &mut boundaries,
-                options,
-                position_only,
-            )?;
-        } else if let Surface::Plane(plane) = &charts[&face].surface {
-            crate::planar::build(model, face, plane, &mut boundaries, options, dec).map_err(
-                |mut e| {
-                    e.detail = format!("face {}: {}", face.index(), e.detail);
-                    e
-                },
-            )?;
-        } else {
-            if let Some(center) =
-                crate::bounded::minor_angle_center(model, face, &charts[&face], &boundaries, dec)?
-            {
-                charts.get_mut(&face).unwrap().restrict(1, center);
-            }
-            let strip = matches!(
-                charts[&face].surface,
-                Surface::Cylinder(_)
-                    | Surface::EllipticCylinder(_)
-                    | Surface::Cone(_)
-                    | Surface::Torus(_)
-            ) && crate::ruled::build(
-                model,
-                face,
-                &charts[&face],
-                &mut boundaries,
-                options,
-                dec,
-            )?;
-            if !strip {
-                let positions = boundaries.mesh.positions.len();
-                let result = face_mesh(
-                    model,
+        let reused = previous
+            .map(|previous| {
+                previous.append(model, face, &mut boundaries, &prior_chords, options, dec)
+            })
+            .transpose()?
+            .unwrap_or(false);
+        if !reused {
+            if fitted(face) {
+                junction.as_ref().expect("fitted face").triangulate(
                     face,
-                    charts.get_mut(&face).unwrap(),
                     &mut boundaries,
                     options,
-                    &prior_chords,
+                    position_only,
+                )?;
+            } else if let Surface::Plane(plane) = &charts[&face].surface {
+                crate::planar::build(model, face, plane, &mut boundaries, options, dec).map_err(
+                    |mut e| {
+                        e.detail = format!("face {}: {}", face.index(), e.detail);
+                        e
+                    },
+                )?;
+            } else {
+                if let Some(center) = crate::bounded::minor_angle_center(
+                    model,
+                    face,
+                    &charts[&face],
+                    &boundaries,
                     dec,
-                );
-                match result {
-                    Err(error)
-                        if error.code == "mesh.precision-or-budget"
-                            && crate::periodic::eligible(model, face, &charts[&face], options) =>
-                    {
-                        boundaries.mesh.positions.truncate(positions);
-                        crate::periodic::build(
-                            model,
-                            face,
-                            &charts[&face],
-                            &mut boundaries,
-                            options,
-                            dec,
-                        )?;
+                )? {
+                    charts.get_mut(&face).unwrap().restrict(1, center);
+                }
+                let strip = matches!(
+                    charts[&face].surface,
+                    Surface::Cylinder(_)
+                        | Surface::EllipticCylinder(_)
+                        | Surface::Cone(_)
+                        | Surface::Torus(_)
+                ) && crate::ruled::build(
+                    model,
+                    face,
+                    &charts[&face],
+                    &mut boundaries,
+                    options,
+                    dec,
+                )?;
+                if !strip {
+                    let positions = boundaries.mesh.positions.len();
+                    let result = face_mesh(
+                        model,
+                        face,
+                        charts.get_mut(&face).unwrap(),
+                        &mut boundaries,
+                        options,
+                        &prior_chords,
+                        dec,
+                    );
+                    match result {
+                        Err(error)
+                            if error.code == "mesh.precision-or-budget"
+                                && crate::periodic::eligible(
+                                    model,
+                                    face,
+                                    &charts[&face],
+                                    options,
+                                ) =>
+                        {
+                            boundaries.mesh.positions.truncate(positions);
+                            crate::periodic::build(
+                                model,
+                                face,
+                                &charts[&face],
+                                &mut boundaries,
+                                options,
+                                dec,
+                            )?;
+                        }
+                        other => other?,
                     }
-                    other => other?,
                 }
             }
         }

@@ -269,6 +269,18 @@ fn shared_rows_sew_even_with_degree_changes_and_nonlinear_parameters() {
         )
         .unwrap_or_else(|error| panic!("{kind:?}: {error:?}"))
         .value;
+        let reused = catallax_mesh::mesh_body_reusing(
+            &fixture.model,
+            fixture.body,
+            &options,
+            &fixture.model,
+            &options,
+            &mesh,
+            &mut Decider::default(),
+        )
+        .unwrap_or_else(|error| panic!("{kind:?}: {error:?}"))
+        .value;
+        assert_eq!(reused, mesh, "{kind:?}: unchanged structured junction grid");
         let expected: BTreeSet<_> = fixture
             .model
             .faces_of_body(fixture.body)

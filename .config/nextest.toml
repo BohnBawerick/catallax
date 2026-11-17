@@ -7,3 +7,8 @@ slow-timeout = { period = "60s", terminate-after = 10 }
 [[profile.ci.overrides]]
 filter = 'binary_id(catallax-cli::numerical_loft_source) & test(=recorded_top_intersection_admits_a_numerical_source_body)'
 slow-timeout = { period = "60s", terminate-after = 20 }
+
+# Construction, independent proof and radius edit have separate work allowances.
+[[profile.ci.overrides]]
+filter = 'binary_id(catallax-features::m11_spline_fillet) & test(=numerical_fillet_builds_on_the_smooth_loft_across_its_station_seam)'
+slow-timeout = { period = "60s", terminate-after = 20 }

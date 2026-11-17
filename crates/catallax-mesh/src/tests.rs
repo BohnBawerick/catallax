@@ -174,6 +174,266 @@ fn primitives_close_at_seams_poles_and_apices_with_bounded_chords() {
     }
 }
 
+#[test]
+fn reused_unchanged_mesh_equals_fresh_mesh_including_seams_and_controls() {
+    let mut model = Model::new();
+    let bodies = [
+        topology::block(
+            &mut model,
+            [2.into(), 3.into(), 5.into()],
+            &Pose::identity(),
+        )
+        .unwrap(),
+        topology::cylinder(&mut model, 2.into(), 5.into(), &Pose::identity()).unwrap(),
+        topology::sphere(&mut model, 2.into(), &Pose::identity()).unwrap(),
+        topology::cone(&mut model, 3.into(), 0.into(), 4.into(), &Pose::identity()).unwrap(),
+        topology::torus(&mut model, 3.into(), 1.into(), &Pose::identity()).unwrap(),
+    ];
+    for body in bodies {
+        for options in [
+            options(),
+            MeshOptions {
+                max_aspect_ratio: Some(2.into()),
+                max_edge_length: Some(2.into()),
+                ..options()
+            },
+        ] {
+            let fresh = mesh_body(&model, body, &options, &mut Decider::default()).unwrap();
+            let reused = crate::mesh_body_reusing(
+                &model,
+                body,
+                &options,
+                &model,
+                &options,
+                &fresh.value,
+                &mut Decider::default(),
+            )
+            .unwrap();
+            assert_eq!(reused.value, fresh.value);
+            assert_eq!(reused.marks, fresh.marks);
+            assert_closed(&reused.value);
+        }
+    }
+}
+
+#[test]
+fn reused_depth_edit_is_watertight_with_fresh_face_and_edge_handles() {
+    fn bored_block(height: i64, padding: bool) -> (Model, BodyId) {
+        let mut model = Model::new();
+        if padding {
+            topology::sphere(&mut model, 1.into(), &Pose::identity()).unwrap();
+        }
+        let block = topology::block(
+            &mut model,
+            [8.into(), 6.into(), height.into()],
+            &Pose::identity(),
+        )
+        .unwrap();
+        let cutter = topology::cylinder(&mut model, 1.into(), 6.into(), &pose(4, 3, -1)).unwrap();
+        let body = boolean(
+            &mut model,
+            block,
+            cutter,
+            BoolOp::Subtract,
+            &mut Decider::default(),
+        )
+        .unwrap()
+        .body;
+        (model, body)
+    }
+    let (old_model, old_body) = bored_block(2, false);
+    let before = mesh(&old_model, old_body);
+    let (model, body) = bored_block(3, true);
+    let options = options();
+    let reused = crate::mesh_body_reusing(
+        &model,
+        body,
+        &options,
+        &old_model,
+        &options,
+        &before,
+        &mut Decider::default(),
+    )
+    .unwrap()
+    .value;
+    assert_closed(&reused);
+    assert_accuracy(&model, &reused);
+    assert_eq!(reused, mesh(&model, body));
+}
+
+#[test]
+fn neighbour_chart_edit_invalidates_unchanged_caps_when_shared_samples_change() {
+    fn cap(
+        model: &mut Model,
+        bottom: topology::FaceId,
+        side: topology::FaceId,
+        z: &str,
+        radius: &str,
+    ) -> BodyId {
+        let Loop::Coedges(cap_coedges) = model.loop_(model.face(bottom).loops[0]) else {
+            unreachable!()
+        };
+        let ring = model.coedge(cap_coedges[0]).edge;
+        let mut face = model.face(side).clone();
+        face.loops.retain(|&boundary| {
+            matches!(model.loop_(boundary), Loop::Coedges(cs) if model.coedge(cs[0]).edge == ring)
+        });
+        face.surface = model
+            .geom_mut()
+            .add_surface(Surface::Sphere(catallax_shapes::Sphere {
+                center: RPoint3::new(0.into(), 0.into(), Rational::parse(z).unwrap()).into(),
+                radius: Rational::parse(radius).unwrap().into(),
+                axis: RVector3::new(0.into(), 0.into(), 1.into()).into(),
+                ref_dir: RVector3::new(1.into(), 0.into(), 0.into()).into(),
+            }));
+        let side = model.add_face(face);
+        let shell = model.add_shell(Shell {
+            faces: vec![bottom, side],
+        });
+        let lump = model.add_lump(Lump {
+            shells: vec![shell],
+        });
+        model.add_body(Body {
+            kind: BodyKind::Solid,
+            lumps: vec![lump],
+            wires: vec![],
+            marks: MarkLog::default(),
+        })
+    }
+    let mut model = Model::new();
+    let cylinder = topology::cylinder(&mut model, 2.into(), 5.into(), &Pose::identity()).unwrap();
+    let faces = model.faces_of_body(cylinder);
+    let bottom = *faces.iter().find(|&&id| {
+        matches!(model.geom().surface(model.face(id).surface), Surface::Plane(plane) if plane.normal.z.to_f64() < 0.0)
+    }).unwrap();
+    let side = *faces
+        .iter()
+        .find(|&&id| {
+            matches!(
+                model.geom().surface(model.face(id).surface),
+                Surface::Cylinder(_)
+            )
+        })
+        .unwrap();
+    let body = cap(&mut model, bottom, side, "0", "2");
+    let options = options();
+    let before = mesh(&model, body);
+    let mut edited = model.clone();
+    // Both spheres meet z=0 in the same radius-2 circle. The larger sphere's
+    // chart needs finer edge samples even though the planar cap did not change.
+    let new_body = cap(&mut edited, bottom, side, "63/8", "65/8");
+    let fresh = mesh(&edited, new_body);
+    assert_ne!(
+        before.edges[0].vertices.len(),
+        fresh.edges[0].vertices.len()
+    );
+    let reused = crate::mesh_body_reusing(
+        &edited,
+        new_body,
+        &options,
+        &model,
+        &options,
+        &before,
+        &mut Decider::default(),
+    )
+    .unwrap()
+    .value;
+    assert_closed(&reused);
+    assert_accuracy(&edited, &reused);
+    assert_eq!(reused, fresh);
+}
+
+#[test]
+fn changed_mesh_controls_cannot_reuse_a_coarser_face_proof() {
+    let mut model = Model::new();
+    let body = topology::sphere(&mut model, 2.into(), &Pose::identity()).unwrap();
+    let before = mesh(&model, body);
+    let finer = MeshOptions {
+        chord_tolerance: Rational::parse("0.04").unwrap(),
+        ..options()
+    };
+    let reused = crate::mesh_body_reusing(
+        &model,
+        body,
+        &finer,
+        &model,
+        &options(),
+        &before,
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let fresh = mesh_body(&model, body, &finer, &mut Decider::default()).unwrap();
+    assert_eq!(reused.value, fresh.value);
+    assert_eq!(reused.marks, fresh.marks);
+    assert_closed(&reused.value);
+}
+
+#[test]
+fn reuse_nonmatching_faces_cannot_bypass_the_operation_allowance() {
+    fn blocks(model: &mut Model, z: i64) -> BodyId {
+        let mut lumps = Vec::new();
+        for x in 0..8 {
+            let block = topology::block(model, [2.into(), 3.into(), 4.into()], &pose(x * 10, 0, z))
+                .unwrap();
+            lumps.extend_from_slice(&model.body(block).lumps);
+        }
+        model.add_body(Body {
+            kind: BodyKind::Solid,
+            lumps,
+            wires: vec![],
+            marks: MarkLog::default(),
+        })
+    }
+    let mut model = Model::new();
+    let old_body = blocks(&mut model, 0);
+    let previous = mesh(&model, old_body);
+    let body = blocks(&mut model, 1);
+    let options = options();
+    let (fresh, full_work) = catallax_numbers::with_operation_budget(1_000_000, || {
+        mesh_body(&model, body, &options, &mut Decider::default())
+    });
+    assert_closed(&fresh.unwrap().value);
+    let (answer, work) = catallax_numbers::with_operation_budget(full_work.used, || {
+        crate::mesh_body_reusing(
+            &model,
+            body,
+            &options,
+            &model,
+            &options,
+            &previous,
+            &mut Decider::default(),
+        )
+    });
+    assert_eq!(answer.unwrap_err().code, "numbers.operation-budget");
+    assert!(work.exhausted);
+}
+
+#[test]
+fn reused_mesh_charges_its_copied_triangle_corners() {
+    let mut model = Model::new();
+    let body = topology::sphere(&mut model, 2.into(), &Pose::identity()).unwrap();
+    let previous = mesh(&model, body);
+    let options = options();
+    let triangle_copy_work = previous.triangles.len() as u64 * 3;
+    let run = || {
+        crate::mesh_body_reusing(
+            &model,
+            body,
+            &options,
+            &model,
+            &options,
+            &previous,
+            &mut Decider::default(),
+        )
+    };
+    let (answer, work) = catallax_numbers::with_operation_budget(1_000_000, run);
+    assert_eq!(answer.unwrap().value, previous);
+    assert!(work.used >= triangle_copy_work);
+    let (answer, work) = catallax_numbers::with_operation_budget(triangle_copy_work - 1, run);
+    assert_eq!(answer.unwrap_err().code, "numbers.operation-budget");
+    assert!(work.exhausted);
+}
+
 fn lens(op: BoolOp) -> (Model, BodyId) {
     let mut model = Model::new();
     let a = topology::sphere(&mut model, 2.into(), &Pose::identity()).unwrap();

@@ -143,6 +143,27 @@ fn display(options: &MeshOptions) {
     assert!(!work.exhausted);
     assert_eq!(mesh.faces.len(), 3);
     check_mesh(mesh, options);
+    let built = app.built().built();
+    let (fresh, full_work) = with_operation_budget(20_000_000, || {
+        catallax_mesh::mesh_body(&built.model, built.result, options, &mut Decider::default())
+    });
+    let (reused, reuse_work) = with_operation_budget(full_work.used, || {
+        catallax_mesh::mesh_body_reusing(
+            &built.model,
+            built.result,
+            options,
+            &built.model,
+            options,
+            mesh,
+            &mut Decider::default(),
+        )
+    });
+    let fresh = fresh.unwrap();
+    let reused = reused.unwrap();
+    assert_eq!(reused.value, fresh.value);
+    assert_eq!(reused.marks, fresh.marks);
+    assert!(!reuse_work.exhausted);
+    assert_eq!(reuse_work.used, full_work.used);
     if let Some(limit) = &options.angular_deviation {
         let built = app.built().built();
         check_sampled_angles(&built.model, built.result, mesh, limit);

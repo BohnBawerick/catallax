@@ -182,7 +182,7 @@ pub(crate) enum Question {
     EncloseAllAt(Vec<Real>, u32),
     RationalIdentity(Real),
     RationalValue(Real),
-    Roots(Arc<UPoly>),
+    Roots(Arc<UPoly>, bool),
 }
 
 pub(crate) struct Key {
@@ -200,7 +200,7 @@ impl Key {
             Question::EncloseAllAt(..) => 4,
             Question::RationalIdentity(_) => 5,
             Question::RationalValue(_) => 6,
-            Question::Roots(_) => 7,
+            Question::Roots(..) => 7,
         }
     }
 
@@ -228,7 +228,10 @@ impl Key {
                 }
                 precision.hash(&mut state);
             }
-            Question::Roots(polynomial) => polynomial.hash(&mut state),
+            Question::Roots(polynomial, coarse_brackets) => {
+                polynomial.hash(&mut state);
+                coarse_brackets.hash(&mut state);
+            }
         }
         state.finish()
     }
@@ -255,7 +258,9 @@ impl Key {
                     && a.len() == b.len()
                     && a.iter().zip(b).all(|(a, b)| pairing.same(a, b, epoch))
             }
-            (Question::Roots(a), Question::Roots(b)) => a == b,
+            (Question::Roots(a, coarse_a), Question::Roots(b, coarse_b)) => {
+                a == b && coarse_a == coarse_b
+            }
             _ => false,
         };
         same.then_some(pairing)

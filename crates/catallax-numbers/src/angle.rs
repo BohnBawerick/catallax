@@ -89,7 +89,7 @@ pub(crate) fn construct(angle: &Rational, work: &mut Work) -> Result<[Real; 2], 
         // Reserve before allocating degree-sized polynomials or visiting indices.
         work.charge((order as u64).saturating_mul(order as u64))?;
         let polynomial = real_cyclotomic(order, work)?;
-        let roots = algebraic::isolate(&polynomial, work)?;
+        let roots = algebraic::isolate(&polynomial, false, work)?;
         let mut count = 0;
         let mut index = 0;
         for j in 1..=order / 2 {

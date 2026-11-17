@@ -421,20 +421,21 @@ fn edge_root(
     );
     let polynomial = axis_polynomial(&restricted, 1 - fixed, dec)?;
     let mut found = None;
-    for root in polynomial.real_roots(dec)? {
+    for root in polynomial.real_roots_with_coarse_brackets(dec)? {
         if in_range(&root, &domain[1 - fixed], dec)? {
             if found.is_some() {
                 return Err(failure("a certified cell edge has multiple isolated roots"));
             }
-            let mut at = [
-                Real::from_rational(bound.clone()),
-                Real::from_rational(bound.clone()),
-            ];
-            at[1 - fixed] = root;
-            found = Some(at);
+            found = Some(root);
         }
     }
-    found.ok_or_else(|| failure("a certified edge crossing has no isolated root"))
+    let root = found.ok_or_else(|| failure("a certified edge crossing has no isolated root"))?;
+    let mut at = [
+        Real::from_rational(bound.clone()),
+        Real::from_rational(bound.clone()),
+    ];
+    at[1 - fixed] = root;
+    Ok(at)
 }
 
 /// Charts searched together, in one shared parameter space.

@@ -279,9 +279,32 @@ impl RealPoly {
     /// conjugate choices are never inferred from an eliminated equation alone.
     #[cfg_attr(feature = "work-span", track_caller)]
     pub fn real_roots(&self, dec: &mut Decider) -> Result<Vec<Real>, Refusal> {
+        self.real_roots_with_brackets(dec, false)
+    }
+
+    /// As [`Self::real_roots`], allowing wider isolating brackets after exact
+    /// modular rational-root exclusion. This also applies to norm eliminants.
+    #[cfg_attr(feature = "work-span", track_caller)]
+    pub fn real_roots_with_coarse_brackets(&self, dec: &mut Decider) -> Result<Vec<Real>, Refusal> {
+        self.real_roots_with_brackets(dec, true)
+    }
+
+    #[cfg_attr(feature = "work-span", track_caller)]
+    fn real_roots_with_brackets(
+        &self,
+        dec: &mut Decider,
+        coarse_brackets: bool,
+    ) -> Result<Vec<Real>, Refusal> {
+        let isolate = |dec: &mut Decider, polynomial: &crate::UPoly| {
+            if coarse_brackets {
+                dec.real_roots_with_coarse_brackets(polynomial)
+            } else {
+                dec.real_roots(polynomial)
+            }
+        };
         assert_eq!(self.nvars(), 1);
         if let Some(p) = self.rational() {
-            return root_values(dec.real_roots(&p.to_upoly(0).unwrap()));
+            return root_values(isolate(dec, &p.to_upoly(0).unwrap()));
         }
         for (_, coefficient) in self.terms() {
             dec.enclose(&coefficient, &Rational::one())?;
@@ -338,7 +361,7 @@ impl RealPoly {
         // expression node.
         if let Some(split) = dec.real_poly_tower_split(self)? {
             let mut roots = Vec::new();
-            for candidate in root_values(dec.real_roots(&split.norm))? {
+            for candidate in root_values(isolate(dec, &split.norm))? {
                 if tree_sign(&split.sign, &candidate, dec)? == Sign::Zero {
                     roots.push(candidate);
                 }
@@ -346,7 +369,7 @@ impl RealPoly {
             return Ok(roots);
         }
         let eliminant = dec.real_poly_eliminant(self)?;
-        let candidates = root_values(dec.real_roots(&eliminant))?;
+        let candidates = root_values(isolate(dec, &eliminant))?;
         let mut roots = Vec::new();
         for candidate in candidates {
             if !nonzero(&self.eval_real(std::slice::from_ref(&candidate)), dec)? {

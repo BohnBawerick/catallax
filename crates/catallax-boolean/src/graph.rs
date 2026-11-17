@@ -288,41 +288,6 @@ fn carrier_hits(
                     complete.insert(surface, Vec::new());
                     continue;
                 }
-                if refusal.code == "intersect.parametric-surface" {
-                    fn dump_patch(label: &str, patch: &catallax_shapes::RationalPatch) {
-                        let source = patch.carrier();
-                        eprintln!(
-                            "P8_PAIR {label} degrees={:?} count={:?} knots={:?}",
-                            source.degrees(),
-                            source.control_count(),
-                            source.knots(),
-                        );
-                        eprintln!("P8_PAIR {label} controls={:?}", source.controls());
-                        eprintln!("P8_PAIR {label} weights={:?}", source.weights());
-                    }
-                    match model.geom().curve(curve) {
-                        catallax_shapes::Curve::PatchSection(branch) => {
-                            eprintln!(
-                                "P8_PAIR section={:?} parameters={:?}",
-                                branch.surface(),
-                                branch.parameter_endpoints(),
-                            );
-                            for patch in branch.charts() {
-                                dump_patch("curve-source", patch);
-                            }
-                        }
-                        catallax_shapes::Curve::PatchPair(_) => {
-                            eprintln!("P8_PAIR curve-kind=patch-pair");
-                        }
-                        other => eprintln!("P8_PAIR curve={other:?}"),
-                    }
-                    match model.geom().surface(surface) {
-                        catallax_shapes::Surface::BSpline(
-                            catallax_shapes::SplineSupport::RationalPatch(patch),
-                        ) => dump_patch("target", patch),
-                        other => eprintln!("P8_PAIR target={other:?}"),
-                    }
-                }
                 return Err(named_curve(model, curve, surface, refusal));
             }
         };

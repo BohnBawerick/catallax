@@ -293,13 +293,7 @@ pub(super) fn rebuild(
     Ok(Rebuilt { changes: builder.changes, body_roots, checks })
 }
 
-pub(super) fn standalone_frame(parsed: &ParsedStep, changes: &mut Graph, name: &str, dec: &mut Decider) -> Result<u64, Error> {
-    let roots: Vec<_> = changes.iter().filter_map(|(&id, entity)| {
-        entity.parts.iter().any(|(kind, parameters)| {
-            matches!(kind.as_str(), "MANIFOLD_SOLID_BREP" | "BREP_WITH_VOIDS")
-                && matches!(parameters.first(), Some(Param::Str(value)) if value == name)
-        }).then_some(id)
-    }).collect();
+pub(super) fn standalone_frame(parsed: &ParsedStep, changes: &mut Graph, name: &str, roots: &[u64], dec: &mut Decider) -> Result<u64, Error> {
     if roots.is_empty() { return Err(invalid("import.tolerant-broken-topology", "selected body has no reconstructed solid root")); }
     let next = parsed.entities().chain(changes.keys().copied()).max().unwrap_or(0).checked_add(1)
         .ok_or_else(|| invalid("import.tolerant-broken-reference", "STEP entity index overflow"))?;
@@ -347,7 +341,7 @@ pub(super) fn standalone_frame(parsed: &ParsedStep, changes: &mut Graph, name: &
     let definition_context = builder.add("PRODUCT_DEFINITION_CONTEXT", vec![text("part definition"), reference_to(application), text("design")])?;
     let definition = builder.add("PRODUCT_DEFINITION", vec![text("design"), text(""), reference_to(formation), reference_to(definition_context)])?;
     let shape = builder.add("PRODUCT_DEFINITION_SHAPE", vec![text(""), text(""), reference_to(definition)])?;
-    let representation = builder.add("ADVANCED_BREP_SHAPE_REPRESENTATION", vec![text(name), references(roots), reference_to(context)])?;
+    let representation = builder.add("ADVANCED_BREP_SHAPE_REPRESENTATION", vec![text(name), references(roots.iter().copied()), reference_to(context)])?;
     let root = builder.add("SHAPE_DEFINITION_REPRESENTATION", vec![reference_to(shape), reference_to(representation)])?;
     *changes = builder.changes;
     Ok(root)

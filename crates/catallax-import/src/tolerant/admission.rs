@@ -232,7 +232,7 @@ impl TolerantImport {
         let body = self.bodies.get(index)
             .ok_or_else(|| invalid("import.tolerant-body-index", "body index is out of range"))?;
         let mut built = step::rebuild(self, std::slice::from_ref(body), dec)?;
-        let root = step::standalone_frame(&self.parsed, &mut built.changes, body.name(), dec)?;
+        let root = step::standalone_frame(&self.parsed, &mut built.changes, body.name(), &built.body_roots[0], dec)?;
         let metadata = serde_json::to_string(&ExportEvidence {
             export_scope: "body_local_geometry",
             source_bodies: Some(&[index]),

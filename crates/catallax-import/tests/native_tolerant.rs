@@ -49,6 +49,7 @@ const TUBE: &str = "ISO-10303-21;\nHEADER;FILE_SCHEMA(('AUTOMOTIVE_DESIGN'));END
 #9=B_SPLINE_SURFACE_WITH_KNOTS('',1,1,((#1,#2),(#3,#4),(#5,#6),(#7,#8)),.UNSPECIFIED.,.T.,.F.,.F.,(2,1,1,2),(2,2),(0.,1.,2.,3.),(0.,1.),.UNSPECIFIED.);\n\
 #10=ADVANCED_FACE('',(),#9,.T.);#11=CLOSED_SHELL('',(#10));#12=MANIFOLD_SOLID_BREP('',#11);\n\
 #90=(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT(.MILLI.,.METRE.));\n\
+#91=(GEOMETRIC_REPRESENTATION_CONTEXT(3)GLOBAL_UNIT_ASSIGNED_CONTEXT((#90))REPRESENTATION_CONTEXT('',''));\n\
 ENDSEC;END-ISO-10303-21;";
 
 #[test]
@@ -77,7 +78,8 @@ fn sewing_does_not_match_bowed_spline_edges_by_endpoints_alone() {
 #26=EDGE_LOOP('',(#22,#23));#27=EDGE_LOOP('',(#24,#25));#28=FACE_OUTER_BOUND('',#26,.T.);#29=FACE_OUTER_BOUND('',#27,.T.);\n\
 #30=ADVANCED_FACE('',(#28),#11,.T.);#31=ADVANCED_FACE('',(#29),#11,.F.);\n\
 #32=CLOSED_SHELL('',(#30,#31));#33=MANIFOLD_SOLID_BREP('',#32);\n\
-#90=(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT(.MILLI.,.METRE.));ENDSEC;END-ISO-10303-21;";
+#90=(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT(.MILLI.,.METRE.));\n\
+#91=(GEOMETRIC_REPRESENTATION_CONTEXT(3)GLOBAL_UNIT_ASSIGNED_CONTEXT((#90))REPRESENTATION_CONTEXT('',''));ENDSEC;END-ISO-10303-21;";
     let opened = open(source);
     assert_eq!(opened.bodies()[0].tier(), Tier::SurfaceBody);
     let BodyView::Surfaces { source, .. } = opened.body(0).unwrap() else { panic!("different finite spline images must not become a closed solid") };

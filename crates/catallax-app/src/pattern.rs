@@ -285,10 +285,10 @@ fn geometry(op: &mut Operation, recipe: &Recipe, map: &Isometry) -> Result<(), R
             }
         }
         Sweep { twist, .. } => {
-            if map.reversing() {
-                if let Some(twist) = twist {
-                    *twist = (-twist.value()).into();
-                }
+            if map.reversing()
+                && let Some(twist) = twist
+            {
+                *twist = (-twist.value()).into();
             }
         }
         Boolean { .. }

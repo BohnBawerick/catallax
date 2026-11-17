@@ -217,6 +217,9 @@ impl SectionSurface {
     /// `X, Y, Z, W`. Each monomial of the affine equation keeps its exact
     /// coefficient; missing powers of `W` complete it to degree two.
     fn quadratic_form(&self) -> Vec<([usize; 2], Real)> {
+        if matches!(self, Self::Plane(_) | Self::Torus(_)) {
+            return Vec::new();
+        }
         let implicit = self
             .surface()
             .implicit()
@@ -242,33 +245,66 @@ impl SectionSurface {
     /// this surface's degree in the patch coordinates. Its zero set in the
     /// span is the section, and its sign is the side on positive weights.
     pub(super) fn equation(&self, span: &Span) -> RealPoly {
+        self.equation_in(&span.coordinates, 2, &self.quadratic_form())
+    }
+
+    /// Proves that some point of a complete finite spline leaves this cut's
+    /// implicit surface. A nonzero span polynomial cannot vanish throughout
+    /// its nonempty parameter interval. `false` supplies no component-equality
+    /// proof and does not select a cone nappe.
+    pub fn proves_curve_not_contained(
+        &self,
+        curve: &crate::BSplineCurve,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        self.validate(dec)?;
+        let quadratic = self.quadratic_form();
+        for (span, _) in curve.spans() {
+            dec.charge_work(1)?;
+            let coordinates = curve.span_polynomials(span, dec)?;
+            if !self.equation_in(&coordinates, 1, &quadratic).is_zero(dec)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    fn equation_in(
+        &self,
+        coordinates: &[RealPoly; 4],
+        variables: usize,
+        quadratic: &[([usize; 2], Real)],
+    ) -> RealPoly {
         match self {
             Self::Plane(plane) => {
                 let point = [&plane.origin.x, &plane.origin.y, &plane.origin.z];
                 let normal = [&plane.normal.x, &plane.normal.y, &plane.normal.z];
-                (0..3).fold(RealPoly::zero(2), |sum, i| {
-                    sum + (&span.coordinates[i] - &span.coordinates[3].scale(point[i]))
-                        .scale(normal[i])
+                (0..3).fold(RealPoly::zero(variables), |sum, i| {
+                    sum + (&coordinates[i] - &coordinates[3].scale(point[i])).scale(normal[i])
                 })
             }
-            Self::Cylinder(_) | Self::Sphere(_) | Self::Cone(_) => self
-                .quadratic_form()
-                .into_iter()
-                .fold(RealPoly::zero(2), |sum, ([i, j], coefficient)| {
-                    sum + (&span.coordinates[i] * &span.coordinates[j]).scale(&coefficient)
-                }),
+            Self::Cylinder(_) | Self::Sphere(_) | Self::Cone(_) => {
+                quadratic
+                    .iter()
+                    .fold(RealPoly::zero(variables), |sum, (indices, coefficient)| {
+                        sum + (&coordinates[indices[0]] * &coordinates[indices[1]])
+                            .scale(coefficient)
+                    })
+            }
             Self::Torus(torus) => {
                 let d: [RealPoly; 3] = std::array::from_fn(|i| {
-                    &span.coordinates[i]
-                        - &span.coordinates[3]
+                    &coordinates[i]
+                        - &coordinates[3]
                             .scale([&torus.center.x, &torus.center.y, &torus.center.z][i])
                 });
-                let q = d.iter().fold(RealPoly::zero(2), |sum, p| sum + p * p);
+                let q = d
+                    .iter()
+                    .fold(RealPoly::zero(variables), |sum, p| sum + p * p);
                 let h = d
                     .iter()
                     .zip([&torus.axis.x, &torus.axis.y, &torus.axis.z])
-                    .fold(RealPoly::zero(2), |sum, (p, a)| sum + p.scale(a));
-                let w2 = &span.coordinates[3] * &span.coordinates[3];
+                    .fold(RealPoly::zero(variables), |sum, (p, a)| sum + p.scale(a));
+                let w2 = &coordinates[3] * &coordinates[3];
                 let a = &q + &w2.scale(&(&torus.major.square() - &torus.minor.square()));
                 let radial = q - (&h * &h).scale(&(&Real::one() / &torus.axis.norm_squared()));
                 &a * &a - (&radial * &w2).scale(&(&Real::from_i64(4) * &torus.major.square()))

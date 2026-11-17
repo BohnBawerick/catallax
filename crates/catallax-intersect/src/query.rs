@@ -376,6 +376,110 @@ fn cone_support(geom: &GeomStore, curve: CurveId) -> Option<&catallax_shapes::Co
         _ => None,
     })
 }
+fn control_hull<'a>(
+    controls: impl Iterator<Item = &'a Point3>,
+    bits: u32,
+    dec: &mut Decider,
+) -> Result<[Ball; 3], Refusal> {
+    let mut hull: Option<[Ball; 3]> = None;
+    for point in controls {
+        dec.charge_work(1)?;
+        let value = [
+            dec.enclose_budgeted_at(&point.x, bits)?,
+            dec.enclose_budgeted_at(&point.y, bits)?,
+            dec.enclose_budgeted_at(&point.z, bits)?,
+        ];
+        hull = Some(match hull {
+            None => value,
+            Some(old) => std::array::from_fn(|axis| old[axis].hull(&value[axis])),
+        });
+    }
+    Ok(hull.expect("validated finite spline carriers have Cartesian controls"))
+}
+
+// One certified off-curve point disproves equality. Matching witnesses do not.
+fn witness_separation<I: Iterator<Item = Point3>>(
+    geom: &GeomStore,
+    other: &Curve,
+    witnesses: impl Fn() -> I,
+    dec: &mut Decider,
+) -> Option<Outcome<Apart>> {
+    let bits = dec.policy().max_precision_bits.min(128);
+    if bits > 0 {
+        let hull = match other {
+            Curve::BSpline(curve) => Some(control_hull(curve.controls(), bits, dec)),
+            Curve::PatchSection(branch) => Some(control_hull(
+                branch
+                    .charts()
+                    .iter()
+                    .flat_map(|chart| chart.carrier().controls().iter()),
+                bits,
+                dec,
+            )),
+            _ => None,
+        };
+        if let Some(hull) = hull {
+            let hull = match hull {
+                Ok(hull) => hull,
+                Err(error) => return Some(Outcome::Refused(error)),
+            };
+            // Scan all candidates before trying exact membership: the first
+            // endpoint can be shared even when an interior witness is apart.
+            // Positive weights keep every finite curve in its control hull.
+            for point in witnesses() {
+                for (axis, coordinate) in [&point.x, &point.y, &point.z].into_iter().enumerate() {
+                    let value = match dec.enclose_budgeted_at(coordinate, bits) {
+                        Ok(value) => value,
+                        Err(error) => return Some(Outcome::Refused(error)),
+                    };
+                    if value.hi() < hull[axis].lo() || value.lo() > hull[axis].hi() {
+                        return Some(Outcome::Proven(Apart));
+                    }
+                }
+            }
+        }
+    }
+    let equations = other.equations(geom);
+    if equations.is_none()
+        && !matches!(
+            other,
+            Curve::PatchPair(_) | Curve::PatchSection(_) | Curve::BSpline(_)
+        )
+    {
+        return None;
+    }
+    for point in witnesses() {
+        let off = match other {
+            Curve::PatchPair(branch) => branch.contains(&point, dec).map(|on| !on),
+            Curve::PatchSection(branch) => branch.contains(&point, dec).map(|on| !on),
+            Curve::BSpline(curve) => curve
+                .unique_parameter_of(&point, dec)
+                .map(|at| at.is_none()),
+            _ => {
+                let coordinates = [point.x, point.y, point.z];
+                let mut off = false;
+                for equation in equations.as_ref().unwrap() {
+                    match sign(&equation.eval_real(&coordinates), dec) {
+                        Ok(Sign::Zero) => (),
+                        Ok(_) => {
+                            off = true;
+                            break;
+                        }
+                        Err(error) => return Some(error.outcome()),
+                    }
+                }
+                Ok(off)
+            }
+        };
+        match off {
+            Ok(true) => return Some(Outcome::Proven(Apart)),
+            Ok(false) => (),
+            Err(error) => return Some(Outcome::Refused(error)),
+        }
+    }
+    None
+}
+
 pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) -> Outcome<Apart> {
     if let Err(e) = validate(geom, a, dec).and_then(|_| validate(geom, b, dec)) {
         return Outcome::Refused(e);
@@ -393,6 +497,16 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
         return Outcome::ProvenCoincident(catallax_numbers::Coincidence {
             proof: catallax_numbers::ZeroProof::Algebraic,
         });
+    }
+    for (x, y) in [(a, b), (b, a)] {
+        if let (Curve::PatchSection(branch), Curve::BSpline(curve)) = (geom.curve(x), geom.curve(y))
+        {
+            match branch.surface().proves_curve_not_contained(curve, dec) {
+                Ok(true) => return Outcome::Proven(Apart),
+                Ok(false) => (),
+                Err(error) => return Outcome::Refused(error),
+            }
+        }
     }
     if let (Curve::PatchSection(x), Curve::PatchSection(y)) = (geom.curve(a), geom.curve(b)) {
         match x.same_component(y, dec) {
@@ -419,49 +533,38 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
         }
     }
     for (x, y) in [(a, b), (b, a)] {
-        let Curve::PatchPair(branch) = geom.curve(x) else {
-            continue;
-        };
-        for point in branch
-            .witnesses()
-            .chain(std::iter::once(branch.endpoints()[1].clone()))
-        {
-            let off = match geom.curve(y) {
-                Curve::PatchPair(other) => other.contains(&point, dec).map(|on| !on),
-                Curve::PatchSection(other) => other.contains(&point, dec).map(|on| !on),
-                Curve::BSpline(other) => other
-                    .unique_parameter_of(&point, dec)
-                    .map(|at| at.is_none()),
-                other => {
-                    let Some(equations) = other.equations(geom) else {
-                        continue;
-                    };
-                    let mut off = false;
-                    for equation in equations {
-                        match sign(
-                            &equation.eval_real(&[
-                                point.x.clone(),
-                                point.y.clone(),
-                                point.z.clone(),
-                            ]),
-                            dec,
-                        ) {
-                            Ok(Sign::Zero) => (),
-                            Ok(_) => {
-                                off = true;
-                                break;
-                            }
-                            Err(error) => return error.outcome(),
-                        }
-                    }
-                    Ok(off)
+        let other = geom.curve(y);
+        let separation = match geom.curve(x) {
+            Curve::PatchPair(branch) => witness_separation(
+                geom,
+                other,
+                || {
+                    branch
+                        .witnesses()
+                        .chain(std::iter::once(branch.endpoints()[1].clone()))
+                },
+                dec,
+            ),
+            Curve::PatchSection(branch) => {
+                // A bounded component cannot equal a whole unbounded line.
+                if matches!(other, Curve::Line(_)) {
+                    return Outcome::Proven(Apart);
                 }
-            };
-            match off {
-                Ok(true) => return Outcome::Proven(Apart),
-                Ok(false) => (),
-                Err(error) => return Outcome::Refused(error),
+                witness_separation(
+                    geom,
+                    other,
+                    || {
+                        branch
+                            .witnesses()
+                            .chain(std::iter::once(branch.endpoints()[1].clone()))
+                    },
+                    dec,
+                )
             }
+            _ => continue,
+        };
+        if let Some(outcome) = separation {
+            return outcome;
         }
     }
     if matches!(geom.curve(a), Curve::PatchPair(_)) || matches!(geom.curve(b), Curve::PatchPair(_))
@@ -471,35 +574,16 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
             "the retained source lifts and exact witnesses do not prove component equivalence",
         ));
     }
-    // A section lies in finitely many positive-weight chart hulls. Bounded
-    // components and unbounded lines differ even with the same straight support.
-    for (x, y) in [(a, b), (b, a)] {
-        let Curve::PatchSection(branch) = geom.curve(x) else {
-            continue;
-        };
-        if matches!(geom.curve(y), Curve::Line(_)) {
-            return Outcome::Proven(Apart);
-        }
-        let Curve::BSpline(curve) = geom.curve(y) else {
-            continue;
-        };
-        for point in branch
-            .witnesses()
-            .chain(std::iter::once(branch.endpoints()[1].clone()))
-        {
-            match curve.unique_parameter_of(&point, dec) {
-                Ok(None) => return Outcome::Proven(Apart),
-                Ok(Some(_)) => (),
-                Err(error) => return Outcome::Refused(error),
-            }
-        }
-    }
     if matches!(geom.curve(a), Curve::PatchSection(_))
         || matches!(geom.curve(b), Curve::PatchSection(_))
     {
         return Outcome::Refused(Refusal::new(
             "intersect.parametric-coincidence",
-            "different patch branch definitions require an exact component-equivalence proof",
+            format!(
+                "different patch branch definitions require an exact component-equivalence proof ({:?}, {:?})",
+                geom.curve(a).kind(),
+                geom.curve(b).kind()
+            ),
         ));
     }
     if matches!(geom.curve(a), Curve::BSpline(_)) || matches!(geom.curve(b), Curve::BSpline(_)) {

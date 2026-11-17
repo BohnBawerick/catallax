@@ -10,12 +10,12 @@ pub(crate) struct PolynomialBounds {
     tangents: [[Grid; 3]; 2],
 }
 
-fn quotient(a: &Rational, b: &Rational, dec: &mut Decider) -> Result<Rational, Refusal> {
+pub(super) fn quotient(a: &Rational, b: &Rational, dec: &mut Decider) -> Result<Rational, Refusal> {
     dec.reserve_exact_arithmetic(a, b, true)?;
     Ok(a / b)
 }
 
-fn bernstein(poly: &Dense, dec: &mut Decider) -> Result<Grid, Refusal> {
+pub(super) fn bernstein(poly: &Dense, dec: &mut Decider) -> Result<Grid, Refusal> {
     let unsupported = || {
         Refusal::new(
             "shapes.rational-atlas-polynomial-degree",
@@ -33,6 +33,52 @@ fn bernstein(poly: &Dense, dec: &mut Decider) -> Result<Grid, Refusal> {
         }
     }
     poly.bernstein(dec)
+}
+
+pub(super) fn restriction(
+    domain: &Domain,
+    widths: &[Rational; 2],
+    cell: &Domain,
+    dec: &mut Decider,
+) -> Result<[[Rational; 2]; 2], Refusal> {
+    let mut cuts = std::array::from_fn(|_| std::array::from_fn(|_| Rational::zero()));
+    for (axis, bounds) in cell.iter().enumerate() {
+        if less(&bounds[0], &domain[axis][0], dec)?
+            || less(&domain[axis][1], &bounds[1], dec)?
+            || !less(&bounds[0], &bounds[1], dec)?
+        {
+            return Err(Refusal::new(
+                "shapes.rational-atlas-polynomial-domain",
+                "a derivative cell must be a nonempty restriction of its source span",
+            ));
+        }
+        let low = sub(&bounds[0], &domain[axis][0], dec)?;
+        let high = sub(&bounds[1], &domain[axis][0], dec)?;
+        cuts[axis] = [
+            quotient(&low, &high, dec)?,
+            quotient(&high, &widths[axis], dec)?,
+        ];
+    }
+    Ok(cuts)
+}
+
+pub(super) fn restricted_range(
+    grid: &Grid,
+    cuts: &[[Rational; 2]; 2],
+    dec: &mut Decider,
+) -> Result<[Rational; 2], Refusal> {
+    let mut grid = Cow::Borrowed(grid);
+    for (axis, [low, high]) in cuts.iter().enumerate() {
+        if *high != Rational::one() {
+            let [next, _] = grid.split(axis, high, dec)?;
+            grid = Cow::Owned(next);
+        }
+        if !low.is_zero() {
+            let [_, next] = grid.split(axis, low, dec)?;
+            grid = Cow::Owned(next);
+        }
+    }
+    grid.range(dec)
 }
 
 impl PolynomialBounds {
@@ -87,39 +133,9 @@ impl PolynomialBounds {
         bits: u32,
         dec: &mut Decider,
     ) -> Result<[[Ball; 3]; 2], Refusal> {
-        let mut cuts: [[Rational; 2]; 2] =
-            std::array::from_fn(|_| std::array::from_fn(|_| Rational::zero()));
-        for (axis, bounds) in cell.iter().enumerate() {
-            if less(&bounds[0], &self.domain[axis][0], dec)?
-                || less(&self.domain[axis][1], &bounds[1], dec)?
-                || !less(&bounds[0], &bounds[1], dec)?
-            {
-                return Err(Refusal::new(
-                    "shapes.rational-atlas-polynomial-domain",
-                    "a derivative cell must be a nonempty restriction of its source span",
-                ));
-            }
-            let low = sub(&bounds[0], &self.domain[axis][0], dec)?;
-            let high = sub(&bounds[1], &self.domain[axis][0], dec)?;
-            // Clip at high first, then at low/high in the remaining net.
-            cuts[axis] = [
-                quotient(&low, &high, dec)?,
-                quotient(&high, &self.widths[axis], dec)?,
-            ];
-        }
+        let cuts = restriction(&self.domain, &self.widths, cell, dec)?;
         let range = |grid: &Grid, dec: &mut Decider| -> Result<Ball, Refusal> {
-            let mut grid = Cow::Borrowed(grid);
-            for (axis, [low, high]) in cuts.iter().enumerate() {
-                if *high != Rational::one() {
-                    let [next, _] = grid.split(axis, high, dec)?;
-                    grid = Cow::Owned(next);
-                }
-                if !low.is_zero() {
-                    let [_, next] = grid.split(axis, low, dec)?;
-                    grid = Cow::Owned(next);
-                }
-            }
-            let [lo, hi] = grid.range(dec)?;
+            let [lo, hi] = restricted_range(grid, &cuts, dec)?;
             Ok(Ball::from_rational(&lo, bits).hull(&Ball::from_rational(&hi, bits)))
         };
         let weight = range(&self.weight, dec)?;

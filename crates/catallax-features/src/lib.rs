@@ -65,6 +65,8 @@ pub mod fillet;
 mod fillet_build;
 /// Exact spherical corners where three perpendicular convex strips meet.
 pub mod fillet_corner;
+/// Editable numerical sweeps with guides, twist and helical paths.
+pub mod general_sweep;
 /// Definition-based hole meridians, shared with independent field compilation.
 pub mod hole;
 /// Explicit transactional STEP replacement and bounded multiple-solid admission.
@@ -99,6 +101,7 @@ pub mod sharp_thicken;
 pub mod stand_in;
 mod stock;
 mod sweep;
+mod tapered_extrude;
 
 pub use certified::{
     BodyCertificate, CertificateKey, CertifiedBuilt, EnvelopeRegion, JunctionCertificate,
@@ -119,3 +122,4 @@ pub use placement::{
 pub use profile::Profile;
 pub use revolve::revolve;
 pub use stock::evaluate_canonical_stock;
+pub use tapered_extrude::extrude_tapered;

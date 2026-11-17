@@ -639,21 +639,34 @@ fn contact_answer(family: &str, boundary: bool, copy: usize) -> (String, String,
             torus.minor = &torus.minor * scale;
         }
         let surface = SectionSurface::of(&surface.surface().transformed(pose)).unwrap();
-        planar_patch(points, &mut dec).sections(&surface, &mut dec)
+        let section = planar_patch(points, &mut dec).sections(&surface, &mut dec)?;
+        if family == "torus" && boundary {
+            assert!(section.curves().next().is_none());
+            assert!(section.branches().is_empty());
+            let [point] = section.points() else {
+                panic!("one isolated boundary contact");
+            };
+            let original = p("5/4", "0", "0");
+            let expected = pose.apply_point(&Point3::new(
+                &original.x * scale,
+                &original.y * scale,
+                &original.z * scale,
+            ));
+            equal(point, &expected, &mut dec);
+        }
+        Ok::<_, catallax_numbers::Refusal>(section)
     });
     assert!(!work.exhausted);
+    if family == "torus" && boundary {
+        result.unwrap();
+        println!(
+            "WORK {family}-isolated boundary={boundary} copy={copy}: {} units",
+            work.used
+        );
+        return ("isolated-corner".to_owned(), String::new(), work.used);
+    }
     let error = result.unwrap_err();
-    assert_eq!(
-        error.code,
-        format!(
-            "intersect.patch-{family}-{}",
-            if family == "torus" && boundary {
-                "nonregular"
-            } else {
-                "tangent"
-            }
-        )
-    );
+    assert_eq!(error.code, format!("intersect.patch-{family}-tangent"));
     println!(
         "WORK {family}-flush boundary={boundary} copy={copy}: {} units; {}",
         work.used, error.code
@@ -662,7 +675,7 @@ fn contact_answer(family: &str, boundary: bool, copy: usize) -> (String, String,
 }
 
 #[test]
-fn flush_and_boundary_contacts_refuse_on_copies_and_at_every_worker_count() {
+fn flush_curves_refuse_and_isolated_boundary_contacts_are_retained() {
     let cases = FAMILIES
         .into_iter()
         .flat_map(|f| {

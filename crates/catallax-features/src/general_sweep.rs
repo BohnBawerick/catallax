@@ -840,7 +840,7 @@ fn definition(
     let terminal_scale = rational(1.0 + (end_scale - 1.0))?;
     if &terminal_scale != recipe.end_scale.value() {
         let terminal = frame.at(1.0, dec)?;
-        let loss = Real::from(terminal_scale - recipe.end_scale.value());
+        let loss = Real::from(&terminal_scale - recipe.end_scale.value());
         let x = vector(terminal.x)?;
         let y = vector(terminal.y)?;
         let offset = vector(unit(cross(terminal.x, terminal.y))?)?.scaled(&real(normal_offset)?);
@@ -848,9 +848,9 @@ fn definition(
             let x = x.scaled(&real(p[0])?);
             let y = y.scaled(&real(p[1])?);
             let radial = Vector3::new(
-                &x.x + &y.x + &offset.x,
-                &x.y + &y.y + &offset.y,
-                &x.z + &y.z + &offset.z,
+                &(&x.x + &y.x) + &offset.x,
+                &(&x.y + &y.y) + &offset.y,
+                &(&x.z + &y.z) + &offset.z,
             );
             let upper = dec
                 .enclose_budgeted_at(&radial.scaled(&loss).norm_squared(), 128)?

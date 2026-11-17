@@ -266,9 +266,9 @@ pub fn open_step(
     dec: &mut Decider,
 ) -> Result<OpenedStep, Error> {
     let before = current_operation_work().used;
-    let (parsed, source) = admission::prepare(bytes, expected_sha256, options, dec)?;
+    let (parsed, source, angles) = admission::prepare(bytes, expected_sha256, options, dec)?;
     let read_work_used = current_operation_work().used.saturating_sub(before);
-    open_prepared(bytes, step, parsed, source, read_work_used, dec)
+    open_prepared(bytes, step, parsed, source, angles, read_work_used, dec)
 }
 
 fn open_prepared(
@@ -276,6 +276,7 @@ fn open_prepared(
     step: &StepId,
     parsed: Arc<crate::geometry_source::ParsedStep>,
     source: Arc<TolerantFile>,
+    angles: crate::geometry_source::AngleUnit,
     read_work_used: u64,
     dec: &mut Decider,
 ) -> Result<OpenedStep, Error> {
@@ -317,7 +318,7 @@ fn open_prepared(
     {
         return Ok(result);
     }
-    match admission::admit(parsed, Arc::clone(&result.source), dec) {
+    match admission::admit(parsed, Arc::clone(&result.source), angles, dec) {
         Ok(native) => {
             for (index, outcome) in result.bodies.iter_mut().enumerate() {
                 if outcome.tier == Tier::SurfaceBody {
@@ -564,7 +565,8 @@ pub fn reopen(
         initial_mm: parse(&controls.initial_mm)?,
         maximum_mm: parse(&controls.maximum_mm)?,
     };
-    let (parsed, source) = admission::prepare(bytes, &controls.source_sha256, options, dec)?;
+    let (parsed, source, angles) =
+        admission::prepare(bytes, &controls.source_sha256, options, dec)?;
     if source.bodies.len() != controls.bodies.len()
         || source
             .bodies
@@ -578,7 +580,7 @@ pub fn reopen(
         ));
     }
     let read_work_used = current_operation_work().used.saturating_sub(before);
-    open_prepared(bytes, step, parsed, source, read_work_used, dec)
+    open_prepared(bytes, step, parsed, source, angles, read_work_used, dec)
 }
 
 #[cfg(test)]

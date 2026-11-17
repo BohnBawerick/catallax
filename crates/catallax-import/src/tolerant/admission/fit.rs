@@ -369,6 +369,40 @@ fn finite_edge(
         };
         edge_tolerance.measure(sample.uncertainty_mm)?;
         points.push((location, sample));
+        if station == 0 || station == STATIONS {
+            let endpoint = usize::from(station == STATIONS);
+            let vertex = edge.vertices[endpoint];
+            let target = vertices[vertex];
+            let residual = norm(subtract(sample.point_mm, target.point_mm))
+                + sample.uncertainty_mm
+                + target.uncertainty_mm;
+            vertex_tolerances[vertex].measure(residual)?;
+            edge_tolerance.measure(residual)?;
+        }
+    }
+    if edge.vertices[0] == edge.vertices[1] {
+        let first = points.first().expect("finite samples").1;
+        let last = points.last().expect("finite samples").1;
+        let gap = norm(subtract(first.point_mm, last.point_mm))
+            + first.uncertainty_mm
+            + last.uncertainty_mm;
+        if gap > body.options.initial_mm.to_f64_nearest() {
+            return Err(invalid(
+                "import.tolerant-broken-topology",
+                format!(
+                    "{}: finite self-loop curve endpoints are not closed",
+                    edge.name
+                ),
+            ));
+        }
+        evidence.sampled_checks.push(SampledCheck {
+            body: body.name.clone(),
+            scope: edge.name.clone(),
+            check: "edge.finite-self-loop-endpoints-closed",
+            samples: 2,
+            maximum_residual_mm: gap,
+            converged: 2,
+        });
     }
     evidence.sampled_checks.push(SampledCheck {
         body: body.name.clone(),

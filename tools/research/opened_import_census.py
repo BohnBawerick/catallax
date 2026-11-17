@@ -522,8 +522,7 @@ def comparison_outcomes(by_id, expected_full, expected_valid, prior_rows):
         key for key, row in by_id.items() if row.get("export_validity") in unknown
     }
     transitions = {}
-    downgrades, demotions = [], []
-    demoted_bodies = 0
+    downgrades, cooccurrences = [], {}
     for key, row in by_id.items():
         before = recorded_tiers(prior_rows.get(key, {}))
         after = recorded_tiers(row)
@@ -547,9 +546,8 @@ def comparison_outcomes(by_id, expected_full, expected_valid, prior_rows):
             if lowered:
                 downgrades.append(key)
             if checked_drop > 0 and native_gain > 0:
-                transition = "checked_to_tolerant"
-                demotions.append(key)
-                demoted_bodies += min(checked_drop, native_gain)
+                transition = "checked_loss_with_tolerant_gain"
+                cooccurrences[key] = dict(checked_loss=checked_drop, tolerant_gain=native_gain)
             else:
                 transition = (
                     "downgraded" if lowered else
@@ -572,13 +570,12 @@ def comparison_outcomes(by_id, expected_full, expected_valid, prior_rows):
         solid_coverage_losses=sorted(coverage_losses),
         tier_losses=sorted(coverage_losses | set(downgrades)),
         recorded_tier_downgrades=sorted(downgrades),
-        checked_to_tolerant_demotions=sorted(demotions),
-        checked_to_tolerant_demotion_files=len(demotions),
-        checked_to_tolerant_body_demotions_lower_bound=demoted_bodies,
+        checked_loss_tolerant_gain=dict(sorted(cooccurrences.items())),
+        checked_loss_tolerant_gain_files=len(cooccurrences),
         tier_comparison_unknown=unknown_tiers,
         tier_comparison_unknown_count=len(unknown_tiers),
         tier_transition_counts=dict(Counter(v["tier_transition"] for v in transitions.values())),
-        tier_comparison_basis="recorded per-file tier totals; historical body identities are not inferred",
+        tier_comparison_basis="aggregate per-file tier counts; co-occurrence does not establish same-body transitions",
         per_file_tier_transitions=transitions,
         frozen_valid_export_losses=sorted(
             key for key in expected_valid
@@ -823,7 +820,7 @@ def collect(args):
                     "tier_losses",
                     "frozen_valid_export_losses",
                     "acceptance_passed",
-                    "checked_to_tolerant_demotion_files",
+                    "checked_loss_tolerant_gain_files",
                     "tier_comparison_unknown_count",
                 ]
             }

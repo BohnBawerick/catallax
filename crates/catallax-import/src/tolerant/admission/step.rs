@@ -42,11 +42,6 @@ impl Builder<'_> {
         self.changes.insert(id, value);
         Ok(())
     }
-    fn existing(&self, name: &str, expected: &str) -> Option<u64> {
-        let id = name.strip_prefix('#')?.parse().ok()?;
-        self.parsed.source_graph().get(&id)?.part(expected)?;
-        Some(id)
-    }
     fn name(&self, source_name: &str) -> Param {
         let source = source_name
             .strip_prefix('#')
@@ -192,11 +187,6 @@ pub(super) fn rebuild(
     let mut expanded_roots = BTreeMap::<u64, usize>::new();
     let mut body_roots = Vec::with_capacity(bodies.len());
     let mut uv = uv::Writer::new(import);
-    let mut written_vertices = BTreeMap::<&str, (&Vec3, u64)>::new();
-    let mut written_edges = BTreeMap::<&str, ([u64; 2], &Curve, bool, u64)>::new();
-    let mut written_faces =
-        BTreeMap::<&str, (&super::TolerantBody, &super::super::TolerantFace, u64)>::new();
-    let mut reversed_faces = BTreeMap::<u64, u64>::new();
     for solid in bodies {
         let body = &solid.body;
         let mut trims = BTreeMap::<&str, Vec<&super::NativeTrim>>::new();
@@ -250,35 +240,11 @@ pub(super) fn rebuild(
                 continue;
             }
             dec.charge_work(1)?;
-            if let Some(&(prior, id)) = written_vertices.get(vertex.source.name.as_str()) {
-                if prior != &vertex.source.point {
-                    return Err(invalid(
-                        "import.tolerant-shared-repair-conflict",
-                        format!(
-                            "shared vertex {} has different repaired positions",
-                            vertex.source.name
-                        ),
-                    ));
-                }
-                vertices[index] = Some(id);
-                continue;
-            }
             let point = builder.point(&vertex.source.point, scale)?;
-            let id = match builder.existing(&vertex.source.name, "VERTEX_POINT") {
-                Some(id) => {
-                    builder.set(
-                        id,
-                        "VERTEX_POINT",
-                        vec![builder.name(&vertex.source.name), reference_to(point)],
-                    )?;
-                    id
-                }
-                None => builder.add(
-                    "VERTEX_POINT",
-                    vec![builder.name(&vertex.source.name), reference_to(point)],
-                )?,
-            };
-            written_vertices.insert(&vertex.source.name, (&vertex.source.point, id));
+            let id = builder.add(
+                "VERTEX_POINT",
+                vec![builder.name(&vertex.source.name), reference_to(point)],
+            )?;
             vertices[index] = Some(id);
         }
         let mut edges = vec![None; body.edges.len()];
@@ -290,16 +256,6 @@ pub(super) fn rebuild(
             let endpoints = edge
                 .vertices
                 .map(|vertex| vertices[vertex].expect("active endpoint"));
-            if let Some(&(prior, curve, sense, id)) = written_edges.get(edge.name.as_str()) {
-                if prior != endpoints || curve != &edge.curve || sense != edge.curve_same_sense {
-                    return Err(invalid(
-                        "import.tolerant-shared-repair-conflict",
-                        format!("shared edge {} has different repaired geometry", edge.name),
-                    ));
-                }
-                edges[index] = Some(id);
-                continue;
-            }
             let curve = match builder.source_curve(&edge.name, dec)? {
                 Some(curve) => curve,
                 None => match &edge.curve {
@@ -341,52 +297,13 @@ pub(super) fn rebuild(
                 reference_to(curve),
                 boolean(edge.curve_same_sense),
             ];
-            let entity = match builder.existing(&edge.name, "EDGE_CURVE") {
-                Some(entity) => {
-                    builder.set(entity, "EDGE_CURVE", parameters)?;
-                    entity
-                }
-                None => builder.add("EDGE_CURVE", parameters)?,
-            };
-            edges[index] = Some(entity);
-            written_edges.insert(
-                &edge.name,
-                (endpoints, &edge.curve, edge.curve_same_sense, entity),
-            );
+            edges[index] = Some(builder.add("EDGE_CURVE", parameters)?);
         }
         let mut shells = Vec::with_capacity(body.shells.len());
         for shell in &body.shells {
             let mut faces = Vec::with_capacity(shell.faces.len());
             for face in &shell.faces {
                 dec.charge_work(1)?;
-                if let Some(&(prior_body, prior, entity)) = written_faces.get(face.name.as_str()) {
-                    let reversed = same_face(body, face, prior_body, prior).ok_or_else(|| {
-                        invalid(
-                            "import.tolerant-shared-repair-conflict",
-                            format!("shared face {} has different repaired trims", face.name),
-                        )
-                    })?;
-                    let entity = if reversed {
-                        match reversed_faces.entry(entity) {
-                            std::collections::btree_map::Entry::Occupied(entry) => *entry.get(),
-                            std::collections::btree_map::Entry::Vacant(entry) => {
-                                *entry.insert(builder.add(
-                                    "ORIENTED_FACE",
-                                    vec![
-                                        builder.name(&face.name),
-                                        Param::Derived,
-                                        reference_to(entity),
-                                        boolean(false),
-                                    ],
-                                )?)
-                            }
-                        }
-                    } else {
-                        entity
-                    };
-                    faces.push(entity);
-                    continue;
-                }
                 let surface = match builder.source_surface(&face.name, dec)? {
                     Some(surface) => surface,
                     None => match &face.surface {
@@ -453,19 +370,7 @@ pub(super) fn rebuild(
                     reference_to(surface),
                     boolean(face.same_sense),
                 ];
-                let entity = match builder
-                    .existing(&face.name, "ADVANCED_FACE")
-                    .or_else(|| builder.existing(&face.name, "FACE_SURFACE"))
-                    .or_else(|| builder.existing(&face.name, "FACE"))
-                {
-                    Some(entity) => {
-                        builder.set(entity, "ADVANCED_FACE", parameters)?;
-                        entity
-                    }
-                    None => builder.add("ADVANCED_FACE", parameters)?,
-                };
-                faces.push(entity);
-                written_faces.insert(&face.name, (body, face, entity));
+                faces.push(builder.add("ADVANCED_FACE", parameters)?);
             }
             let source: u64 = shell
                 .name
@@ -477,9 +382,11 @@ pub(super) fn rebuild(
                         "native shell lacks a source identity",
                     )
                 })?;
-            let entity = builder.shell_id(source, dec)?;
-            let parameters = vec![builder.name(&format!("#{entity}")), references(faces)];
-            builder.set(entity, "CLOSED_SHELL", parameters)?;
+            let source = builder.shell_id(source, dec)?;
+            let entity = builder.add(
+                "CLOSED_SHELL",
+                vec![builder.name(&format!("#{source}")), references(faces)],
+            )?;
             shells.push(entity);
         }
         if body.declared_solid && shells.len() > 1 {
@@ -701,39 +608,4 @@ pub(super) fn standalone_frame(
     )?;
     *changes = builder.changes;
     Ok(root)
-}
-
-fn same_face(
-    body: &super::TolerantBody,
-    face: &super::super::TolerantFace,
-    prior_body: &super::TolerantBody,
-    prior: &super::super::TolerantFace,
-) -> Option<bool> {
-    if face.surface != prior.surface || face.loops.len() != prior.loops.len() {
-        return None;
-    }
-    let reversed = face.same_sense != prior.same_sense;
-    for (boundary, previous) in face.loops.iter().zip(&prior.loops) {
-        let vertex = boundary
-            .vertex
-            .map(|index| body.vertices[index].source.name.as_str());
-        let prior_vertex = previous
-            .vertex
-            .map(|index| prior_body.vertices[index].source.name.as_str());
-        if boundary.outer != previous.outer
-            || boundary.orientation != (previous.orientation ^ reversed)
-            || vertex != prior_vertex
-            || boundary.edges.len() != previous.edges.len()
-        {
-            return None;
-        }
-        for (usage, previous) in boundary.edges.iter().zip(&previous.edges) {
-            if usage.forward != previous.forward
-                || body.edges[usage.edge].name != prior_body.edges[previous.edge].name
-            {
-                return None;
-            }
-        }
-    }
-    Some(reversed)
 }

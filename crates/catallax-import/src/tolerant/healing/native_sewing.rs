@@ -80,6 +80,18 @@ fn sample_edge(
         for (station, value) in samples.iter_mut().enumerate().skip(1) {
             *value = evaluate(station, dec)?;
         }
+        if edge.vertices[0] == edge.vertices[1] {
+            let last = samples[STATIONS];
+            let gap = distance(&first.point_mm, &last.point_mm)
+                + first.uncertainty_mm
+                + last.uncertainty_mm;
+            if gap > body.options.initial_mm.to_f64_nearest() {
+                return Err(failure(
+                    "import.tolerant-broken-topology",
+                    "finite self-loop source curve has distinct endpoints",
+                ));
+            }
+        }
         return Ok(samples);
     }
     let Curve::Line(origin, direction) = &edge.curve else {

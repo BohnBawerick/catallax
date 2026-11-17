@@ -242,7 +242,7 @@ A producer crash after its complete opening checkpoint also retains that opening
 Builder processing can heal internally; neither unhealed validity nor complete source fidelity follows from that result.
 The [frozen tier census](../research/step-census-opened/README.md) owns the measured counts, producer and limitations.
 
-`collect --tier-baseline PRIOR.csv` additionally pins a hash-matched prior census for per-file tier comparison. Recorded tier totals are compared separately from solid coverage; checked-to-tolerant demotions are reported even when the file stays full with the same body count. Missing tier inventories or changed body inventories produce explicit unknown transitions. Historical aggregate totals do not establish body-identity correspondence; the demoted-body count is a lower bound.
+`collect --tier-baseline PRIOR.csv` additionally pins a hash-matched prior census for per-file tier comparison. Recorded tier totals are compared separately from solid coverage, including co-occurring checked-count loss and tolerant-count gain while a file stays full. Missing tier inventories or changed body inventories produce explicit unknown comparisons. Historical aggregate totals establish neither body-identity correspondence nor a lower bound on same-body demotions.
 
 ### IGES source recognition
 

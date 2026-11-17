@@ -45,6 +45,7 @@ pub(super) struct Writer<'a> {
     import: &'a TolerantImport,
     context: Option<u64>,
     checks: Vec<SampledCheck>,
+    bases: BTreeMap<u64, u64>,
 }
 
 impl<'a> Writer<'a> {
@@ -53,10 +54,90 @@ impl<'a> Writer<'a> {
             import,
             context: None,
             checks: Vec::new(),
+            bases: BTreeMap::new(),
         }
     }
     pub(super) fn into_checks(self) -> Vec<SampledCheck> {
         self.checks
+    }
+
+    fn basis_curve(
+        &mut self,
+        builder: &mut Builder<'_>,
+        original: u64,
+        depth: usize,
+        dec: &mut Decider,
+    ) -> Result<u64, Error> {
+        if let Some(&basis) = self.bases.get(&original) {
+            return Ok(basis);
+        }
+        if depth == 128 {
+            return Err(invalid(
+                "import.tolerant-broken-reference",
+                "cyclic or excessive curve wrappers",
+            ));
+        }
+        if !builder.parsed.source_graph().contains_key(&original) {
+            return Ok(original);
+        }
+        let mut replacements = Vec::new();
+        let basis = match builder.parsed.geometry(original, dec)? {
+            Geometry::Curve(Curve::SurfaceCurve(parent, ..)) => {
+                self.basis_curve(builder, parent, depth + 1, dec)?
+            }
+            Geometry::Curve(
+                Curve::Replica(parent, _)
+                | Curve::Offset3d(parent, ..)
+                | Curve::Trimmed(parent, ..),
+            )
+            | Geometry::CompositeSegment(_, _, parent) => {
+                let basis = self.basis_curve(builder, parent, depth + 1, dec)?;
+                if basis != parent {
+                    replacements.push((parent, basis));
+                }
+                original
+            }
+            Geometry::Curve(Curve::Composite(segments, _)) => {
+                for segment in segments {
+                    let basis = self.basis_curve(builder, segment, depth + 1, dec)?;
+                    if basis != segment {
+                        replacements.push((segment, basis));
+                    }
+                }
+                original
+            }
+            _ => original,
+        };
+        let basis = if replacements.is_empty() {
+            basis
+        } else {
+            fn rebind(value: &mut Param, replacements: &[(u64, u64)]) {
+                match value {
+                    Param::Ref(id) => {
+                        if let Some((_, replacement)) =
+                            replacements.iter().find(|(source, _)| *source == *id)
+                        {
+                            *id = *replacement;
+                        }
+                    }
+                    Param::List(values) | Param::Typed(_, values) => {
+                        for value in values {
+                            rebind(value, replacements);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let mut value = builder.parsed.source_graph()[&original].clone();
+            for (_, parameters) in &mut value.parts {
+                for parameter in parameters {
+                    rebind(parameter, &replacements);
+                }
+            }
+            builder.complex(value.parts)?
+        };
+        self.bases.insert(original, basis);
+        Ok(basis)
     }
 
     fn affine(
@@ -211,12 +292,13 @@ impl<'a> Writer<'a> {
         trims: &[&NativeTrim],
         dec: &mut Decider,
     ) -> Result<u64, Error> {
-        // STEP's associated_geometry has at most two entries. Do not invent a
-        // per-face mapping for a compound's higher-valence shared source edge.
+        // Each emitted topology edge belongs to one body and only its uses.
         if trims.len() > 2 {
-            return Ok(original);
+            return Err(invalid(
+                "import.tolerant-non-manifold",
+                "one body's edge has more than two pcurve associations",
+            ));
         }
-        let mut generated = false;
         let mut associated = Vec::with_capacity(trims.len());
         let mut surfaces = Vec::with_capacity(trims.len());
         let mut all_pcurves = true;
@@ -227,10 +309,7 @@ impl<'a> Writer<'a> {
             surfaces.push(surface);
             let curve = self.affine(builder, edge, original, surface, trim, dec)?;
             associated.push(match curve {
-                Some(curve) => {
-                    generated = true;
-                    curve
-                }
+                Some(curve) => curve,
                 None => match trim.source_pcurve {
                     Some(curve) => curve,
                     None => {
@@ -240,21 +319,9 @@ impl<'a> Writer<'a> {
                 },
             });
         }
-        if !generated {
-            return Ok(original);
-        }
-        let mut basis = original;
-        for depth in 0..32 {
-            match builder.parsed.geometry(basis, dec)? {
-                Geometry::Curve(Curve::SurfaceCurve(parent, ..)) => basis = parent,
-                _ => break,
-            }
-            if depth == 31 {
-                return Err(invalid(
-                    "import.tolerant-broken-reference",
-                    "cyclic surface-curve basis",
-                ));
-            }
+        let basis = self.basis_curve(builder, original, 0, dec)?;
+        if associated.is_empty() {
+            return Ok(basis);
         }
         let seam = all_pcurves && surfaces.len() == 2 && surfaces[0] == surfaces[1];
         builder.add(

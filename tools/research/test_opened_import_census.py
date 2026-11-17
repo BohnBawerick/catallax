@@ -58,7 +58,7 @@ class StageComparisonTests(unittest.TestCase):
             self.assertEqual(comparison["frozen_valid_export_losses"], [])
             self.assertEqual(comparison["baseline_not_measured"], ["source"])
 
-    def test_checked_to_tolerant_demotion_is_not_hidden_by_full_coverage(self):
+    def test_checked_loss_and_tolerant_gain_are_aggregate_observations(self):
         current = {
             key: dict(
                 outcome="full", observed_body_count=1, all_solids_export_valid=True,
@@ -77,11 +77,24 @@ class StageComparisonTests(unittest.TestCase):
             ),
             "unknown": dict(outcome="full", bodies="1"),
         }
-        result = comparison_outcomes(current, {key: 1 for key in current}, set(), prior)
+        current["swapped"] = dict(
+            outcome="full", observed_body_count=2, valid_solid_body_count=0,
+            repaired_solid_body_count=0, tolerant_solid_body_count=1, surface_body_count=1,
+        )
+        prior["swapped"] = dict(
+            observed_body_count=2, valid_solid_body_count=0,
+            repaired_solid_body_count=1, surface_body_count=1,
+        )
+        result = comparison_outcomes(current, {key: row["observed_body_count"] for key, row in current.items()}, set(), prior)
         self.assertEqual(result["solid_coverage_losses"], [])
-        self.assertEqual(result["tier_losses"], ["demoted"])
-        self.assertEqual(result["checked_to_tolerant_demotions"], ["demoted"])
-        self.assertEqual(result["checked_to_tolerant_demotion_files"], 1)
+        self.assertEqual(result["tier_losses"], ["demoted", "swapped"])
+        self.assertEqual(result["checked_loss_tolerant_gain_files"], 2)
+        self.assertEqual(result["checked_loss_tolerant_gain"]["swapped"],
+                         dict(checked_loss=1, tolerant_gain=1))
+        self.assertEqual(
+            result["per_file_tier_transitions"]["swapped"]["tier_transition"],
+            "checked_loss_with_tolerant_gain",
+        )
         self.assertEqual(result["tier_comparison_unknown"], ["unknown"])
         self.assertEqual(
             result["per_file_tier_transitions"]["unknown"]["tier_transition"],

@@ -1,5 +1,7 @@
 //! Native admission must not inherit proof gates or invent material closure.
 mod common;
+#[path = "common/shared_curve.rs"]
+mod shared_curve;
 
 use catallax_import::{
     geometry_source::{ParsedStep, Topology},
@@ -299,6 +301,21 @@ fn selected_body_step_report_does_not_disclose_sibling_geometry_or_repairs() {
             .any(|repair| repair["body"] == sibling)
     );
     let bytes = native.export_body(0, &mut dec).unwrap();
+    let parsed = ParsedStep::read(&bytes, &mut dec).unwrap();
+    let roots = parsed
+        .entities()
+        .filter(|&entity| {
+            matches!(
+                parsed.topology(entity, &mut dec),
+                Ok(Topology::Solid { .. } | Topology::SurfaceModel(_) | Topology::FaceModel(_))
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        roots,
+        vec![selected.strip_prefix('#').unwrap().parse::<u64>().unwrap()],
+        "body-local STEP exposed an unselected body root"
+    );
     let text = std::str::from_utf8(&bytes).unwrap();
     let json = text
         .split("/* CATALLAX_REPORT_JSON ")
@@ -342,5 +359,96 @@ fn selected_body_step_report_does_not_disclose_sibling_geometry_or_repairs() {
     );
     for check in report["export_checks"].as_array().unwrap() {
         assert_eq!(check["body"], selected);
+    }
+}
+
+#[test]
+fn a_finite_open_spline_cannot_become_closed_by_repeating_its_vertex() {
+    let source = common::elliptical_extrusion::SOURCE.replace(
+        "#12=ELLIPSE('opposite-axis lower ellipse',#9,2.,1.);",
+        "#12=B_SPLINE_CURVE_WITH_KNOTS('',1,(#3,#100),.UNSPECIFIED.,.F.,.F.,(2,2),(0.,1.),.UNSPECIFIED.);",
+    ).replace("ENDSEC;\nEND-ISO-10303-21;",
+        "#100=CARTESIAN_POINT('',(8.,0.,0.));\nENDSEC;\nEND-ISO-10303-21;");
+    let result = tolerant::admission::import_step(
+        source.as_bytes(),
+        &sha256_hex(source.as_bytes()),
+        Default::default(),
+        &mut Decider::default(),
+    );
+    assert!(matches!(&result, Err(tolerant::Error::Numerical(error))
+        if error.code == "import.tolerant-broken-topology"));
+}
+
+#[test]
+fn mixed_angular_contexts_refuse_before_the_default_checked_upgrade() {
+    let source = common::in_degrees(common::elliptical_extrusion::SOURCE).replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#99994=(GEOMETRIC_REPRESENTATION_CONTEXT(3)GLOBAL_UNIT_ASSIGNED_CONTEXT((#42,#99990,#44))REPRESENTATION_CONTEXT('',''));\nENDSEC;\nEND-ISO-10303-21;",
+    );
+    let (result, work) = with_operation_budget(20_000_000, || {
+        opened::open_step(
+            source.as_bytes(),
+            &sha256_hex(source.as_bytes()),
+            &StepId::new("mixed-units").unwrap(),
+            Default::default(),
+            &mut Decider::default(),
+        )
+    });
+    assert!(!work.exhausted);
+    assert!(matches!(&result, Err(tolerant::Error::Numerical(error))
+        if error.code == "import.tolerant-ambiguous-units"));
+}
+
+#[test]
+fn shared_curve_pcurves_stay_with_each_exported_body() {
+    use catallax_import::geometry_source::{Curve as SourceCurve, Geometry};
+    use std::collections::BTreeSet;
+
+    let fixture = shared_curve::boxes();
+    let mut dec = Decider::default();
+    let native = tolerant::admission::import_step(
+        fixture.source.as_bytes(),
+        &sha256_hex(fixture.source.as_bytes()),
+        Default::default(),
+        &mut dec,
+    )
+    .unwrap();
+    let selected = native.export_body(1, &mut dec).unwrap();
+    let parsed = ParsedStep::read(&selected, &mut dec).unwrap();
+    for surface in fixture.first_surfaces {
+        assert!(
+            parsed.entity_types(surface).is_err(),
+            "a sibling-only carrier remained reachable from body-local STEP"
+        );
+    }
+    let document = native.export_step(&mut dec).unwrap();
+    let parsed = ParsedStep::read(document.bytes(), &mut dec).unwrap();
+    for root in fixture.roots {
+        for (edge, surfaces) in shared_curve::uses(&parsed, root, &mut dec) {
+            let Topology::Edge {
+                curve: Some(curve), ..
+            } = parsed.topology(edge, &mut dec).unwrap()
+            else {
+                unreachable!()
+            };
+            let Geometry::Curve(SourceCurve::SurfaceCurve(_, associated, _, _)) =
+                parsed.geometry(curve, &mut dec).unwrap()
+            else {
+                panic!("each body's edge needs its own surface associations");
+            };
+            let actual = associated
+                .into_iter()
+                .map(|id| match parsed.geometry(id, &mut dec).unwrap() {
+                    Geometry::Curve(SourceCurve::Pcurve(surface, _)) => surface,
+                    Geometry::Surface(_) => id,
+                    _ => panic!("invalid curve-on-surface association"),
+                })
+                .collect::<BTreeSet<_>>();
+            assert_eq!(
+                actual,
+                surfaces.into_iter().collect::<BTreeSet<_>>(),
+                "the writer reused another body's pcurve associations"
+            );
+        }
     }
 }

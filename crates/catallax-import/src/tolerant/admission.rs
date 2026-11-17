@@ -328,28 +328,29 @@ fn invalid(code: &'static str, detail: impl Into<String>) -> Error {
     Refusal::new(code, detail).into()
 }
 
-fn source_angles(
-    parsed: &ParsedStep,
-    scale: &Rational,
-    dec: &mut Decider,
-) -> Result<AngleUnit, Error> {
+fn source_angles(parsed: &ParsedStep, dec: &mut Decider) -> Result<AngleUnit, Error> {
+    let mut selected = None;
     for entity in parsed.entities() {
         if parsed
             .entity_types(entity)?
             .contains(&"GLOBAL_UNIT_ASSIGNED_CONTEXT")
+            && parsed.representation_context(entity)?.dimension == Some(3)
         {
-            let context = parsed.representation_context(entity)?;
-            if context.dimension == Some(3) {
-                let units = parsed.context_units(entity, dec)?;
-                if units.length_mm.as_ref().is_none_or(|value| value == scale)
-                    && let Some(angles) = units.plane_angle
-                {
-                    return Ok(angles);
-                }
+            let units = parsed.context_units(entity, dec)?;
+            let angles = match units.plane_angle.unwrap_or(AngleUnit::Radians) {
+                AngleUnit::ScaledRadians(scale) if scale == Rational::one() => AngleUnit::Radians,
+                angles => angles,
+            };
+            if selected.as_ref().is_some_and(|prior| prior != &angles) {
+                return Err(invalid(
+                    "import.tolerant-ambiguous-units",
+                    "3D representation contexts assign different plane-angle units",
+                ));
             }
+            selected = Some(angles);
         }
     }
-    Ok(AngleUnit::Radians)
+    Ok(selected.unwrap_or(AngleUnit::Radians))
 }
 
 /// Admit a separately labelled tolerant document without whole-domain proof gates.
@@ -360,8 +361,8 @@ pub fn import_step(
     options: ToleranceOptions,
     dec: &mut Decider,
 ) -> Result<TolerantImport, Error> {
-    let (parsed, source) = prepare(bytes, expected_sha256, options, dec)?;
-    admit(parsed, source, dec)
+    let (parsed, source, angles) = prepare(bytes, expected_sha256, options, dec)?;
+    admit(parsed, source, angles, dec)
 }
 
 pub(crate) fn prepare(
@@ -369,7 +370,7 @@ pub(crate) fn prepare(
     expected_sha256: &str,
     options: ToleranceOptions,
     dec: &mut Decider,
-) -> Result<(Arc<ParsedStep>, Arc<TolerantFile>), Error> {
+) -> Result<(Arc<ParsedStep>, Arc<TolerantFile>, AngleUnit), Error> {
     if options.initial_mm < Rational::zero()
         || options.maximum_mm <= Rational::zero()
         || options.initial_mm > options.maximum_mm
@@ -388,6 +389,7 @@ pub(crate) fn prepare(
         .into());
     }
     parsed.schemas()?;
+    let angles = source_angles(&parsed, dec)?;
     let definition = parsed.native_definition(dec)?;
     let mut source = TolerantFile {
         source_sha256: expected_sha256.into(),
@@ -402,15 +404,15 @@ pub(crate) fn prepare(
         }
         source.bodies.push(body);
     }
-    Ok((parsed, Arc::new(source)))
+    Ok((parsed, Arc::new(source), angles))
 }
 
 pub(crate) fn admit(
     parsed: Arc<ParsedStep>,
     source: Arc<TolerantFile>,
+    angles: AngleUnit,
     dec: &mut Decider,
 ) -> Result<TolerantImport, Error> {
-    let angles = source_angles(&parsed, &source.mm_per_unit, dec)?;
     let repaired = healing::repair_native_topology(&source, &parsed, &angles, dec)?;
     let mut evidence = TolerantEvidence {
         method: "catallax-tolerant-native-v1",

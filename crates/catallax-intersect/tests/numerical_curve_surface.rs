@@ -3,8 +3,35 @@
 mod fixture;
 
 use catallax_intersect::{numerical_curve_surface::patch_meetings, trace};
-use catallax_numbers::{Ball, Decider, Rational, with_operation_budget};
-use catallax_shapes::{Curve, GeomStore, PointDef};
+use catallax_numbers::{Ball, Decider, Outcome, Rational, ZeroProof, with_operation_budget};
+use catallax_shapes::{Curve, GeomStore, PointDef, SectionHits};
+
+#[test]
+fn captured_native_shared_boundary_preserves_exact_endpoint() {
+    let ((), work) = with_operation_budget(100_000_000, || {
+        let mut dec = Decider::default();
+        let (source, cut, target) = fixture::patches(&mut dec);
+        let section = source.sections(&cut, &mut dec).unwrap();
+        let [branch] = section.branches() else {
+            panic!("the captured source has one component");
+        };
+        let answer = branch.patch_hits(&target, &mut dec).unwrap().unwrap();
+        let SectionHits::Points(points) = answer else {
+            panic!("the adjacent native patch meets only at the shared endpoint");
+        };
+        assert_eq!(points.len(), 1);
+        let expected = branch.endpoints()[1].clone();
+        match dec.sign(&points[0].minus(&expected).norm_squared()) {
+            Outcome::ProvenCoincident(proof) => {
+                assert_ne!(proof.proof, ZeroProof::SeparationBound);
+            }
+            other => panic!("the original exact endpoint changed: {other:?}"),
+        }
+        assert!(branch.patch_hits(&source, &mut dec).unwrap().is_none());
+    });
+    assert!(!work.exhausted, "{work:?}");
+    eprintln!("exact shared-boundary work: {work:?}");
+}
 
 #[test]
 fn captured_native_curve_accepts_crossing_and_refuses_tangency_and_overlap() {

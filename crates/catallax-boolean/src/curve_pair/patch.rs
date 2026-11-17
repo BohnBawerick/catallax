@@ -39,6 +39,14 @@ pub(crate) fn finite_surface_points(
     surface: SurfaceId,
     dec: &mut Decider,
 ) -> Result<Option<FiniteSurfacePoints>, Refusal> {
+    if let (Curve::PatchSection(branch), Surface::BSpline(SplineSupport::RationalPatch(patch))) =
+        (model.geom().curve(curve), model.geom().surface(surface))
+    {
+        return Ok(branch.patch_hits(patch, dec)?.map(|answer| match answer {
+            SectionHits::Contained => FiniteSurfacePoints::Contained,
+            SectionHits::Points(points) => FiniteSurfacePoints::Points(points),
+        }));
+    }
     if let (Curve::BSpline(spline), Surface::BSpline(support)) =
         (model.geom().curve(curve), model.geom().surface(surface))
     {

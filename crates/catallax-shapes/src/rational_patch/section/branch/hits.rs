@@ -1,7 +1,9 @@
-//! Where a section branch meets a third analytic surface.
+//! Where a section branch meets an analytic or certified native support.
 
 use super::*;
 use catallax_numbers::{BoxRoots, BudgetPolicy, Outcome, PolySystem, RootBox};
+
+mod patch;
 
 /// Deepest box split while isolating the meetings within one arc cell.
 const MAX_HIT_DEPTH: u32 = 24;

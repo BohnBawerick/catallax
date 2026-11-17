@@ -58,7 +58,7 @@ fn a_good_sibling_remains_solid_while_an_open_body_retains_all_five_faces() {
 fn admission_exhaustion_keeps_the_complete_prepaid_surface_representation() {
     let source = box_step(BoxFixture::new(["2", "3", "4"]));
     let hash = sha256_hex(source.as_bytes());
-    let baseline = open(&source);
+    let (baseline, _) = with_operation_budget(20_000_000, || open(&source));
     let (result, work) = with_operation_budget(baseline.read_work_used() + 128, || {
         opened::open_step(
             source.as_bytes(),

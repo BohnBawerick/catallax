@@ -29,6 +29,7 @@ pub(super) struct Context<'a> {
     pcurves: BTreeMap<u64, Arc<NativeUvCurve>>,
     repair_cap: f64,
     pub(super) stage: super::NativeStage,
+    pub(super) repair_boundaries: bool,
 }
 #[derive(Debug)]
 pub(super) struct Carriers {
@@ -53,6 +54,7 @@ impl<'a> Context<'a> {
             pcurves: BTreeMap::new(),
             repair_cap,
             stage: super::NativeStage::BodyBuild,
+            repair_boundaries: true,
         }
     }
     pub fn into_carriers(self) -> Carriers {
@@ -346,7 +348,10 @@ fn finite_edge(
         },
         None => None,
     };
-    let carrier = if edge.degenerate {
+    // Main's source-admission path uses written source parameters.
+    let carrier = if let Some(entity) = source_curve.filter(|_| !context.repair_boundaries) {
+        PhysicalCurve::Native(context.curve(entity, dec)?)
+    } else if edge.degenerate {
         PhysicalCurve::Point(vertices[edge.vertices[0]].point_mm)
     } else if let Curve::Line(origin, direction) = &edge.curve {
         if let Some(entity) = source_curve {
@@ -835,19 +840,21 @@ pub(super) fn check_body(
             None
         });
     }
-    context.stage = super::NativeStage::CrossingCut;
-    crossing::cut(
-        context,
-        body,
-        crossing::State {
-            vertices: &mut vertices,
-            edges: &mut edges,
-            vertex_tolerances: &mut vertex_tolerances,
-            edge_tolerances: &mut edge_tolerances,
-        },
-        evidence,
-        dec,
-    )?;
+    if context.repair_boundaries {
+        context.stage = super::NativeStage::CrossingCut;
+        crossing::cut(
+            context,
+            body,
+            crossing::State {
+                vertices: &mut vertices,
+                edges: &mut edges,
+                vertex_tolerances: &mut vertex_tolerances,
+                edge_tolerances: &mut edge_tolerances,
+            },
+            evidence,
+            dec,
+        )?;
+    }
     for shell in &body.shells {
         for face in &shell.faces {
             context.stage = super::NativeStage::SurfaceFit;
@@ -941,8 +948,23 @@ pub(super) fn check_body(
                             STATIONS => Some(body.edges[usage.edge].vertices[1]),
                             _ => None,
                         };
-                        let fit_target = target;
-                        let seed = if station == 0 {
+                        let fit_target = if context.repair_boundaries {
+                            target
+                        } else {
+                            vertex.map_or(target, |vertex| vertices[vertex])
+                        };
+                        let seed = if !context.repair_boundaries {
+                            match &surface {
+                                Some(surface) => pcurve_seed(
+                                    surface,
+                                    pcurve.as_deref(),
+                                    curve_location.parameters[0],
+                                    previous,
+                                    dec,
+                                )?,
+                                None => previous,
+                            }
+                        } else if station == 0 {
                             match &pcurve {
                                 Some(curve) => {
                                     let sampled = curve.sample(
@@ -1002,7 +1024,8 @@ pub(super) fn check_body(
                         let mut pole_seed = false;
                         let seed = match (&surface, seed) {
                             (Some(surface), Some(seed)) => {
-                                pole_seed = station == 0
+                                pole_seed = context.repair_boundaries
+                                    && station == 0
                                     && previous.is_some()
                                     && poles::collapsed(
                                         surface,
@@ -1073,7 +1096,7 @@ pub(super) fn check_body(
                                         + projection.sample.uncertainty_mm;
                             }
                         }
-                        if preserve_pcurve {
+                        if context.repair_boundaries && preserve_pcurve {
                             let retained =
                                 (|| {
                                     let (uv, _) = pcurve.as_ref().expect("retained trace").sample(
@@ -1143,7 +1166,9 @@ pub(super) fn check_body(
                             converged: projection.converged,
                         });
                     }
-                    if let Some(surface) = &surface {
+                    if context.repair_boundaries
+                        && let Some(surface) = &surface
+                    {
                         let endpoints = body.edges[usage.edge].vertices;
                         let endpoints = if usage.forward {
                             endpoints
@@ -1194,7 +1219,8 @@ pub(super) fn check_body(
                             sample_count += 1;
                         }
                     }
-                    let reconstructed = !preserve_pcurve && surface.is_some();
+                    let reconstructed =
+                        context.repair_boundaries && !preserve_pcurve && surface.is_some();
                     let projected = if reconstructed {
                         context.stage = super::NativeStage::TraceRebuild;
                         trace::planar::project(
@@ -1259,7 +1285,8 @@ pub(super) fn check_body(
                         use_index,
                         edge: body.edges[usage.edge].name.clone(),
                         forward: usage.forward,
-                        source_pcurve: source_pcurve.filter(|_| preserve_pcurve),
+                        source_pcurve: source_pcurve
+                            .filter(|_| !context.repair_boundaries || preserve_pcurve),
                         samples,
                         reconstructed,
                         projected,
@@ -1352,7 +1379,9 @@ pub(super) fn check_body(
         })?;
     }
     context.stage = super::NativeStage::PoleBoundary;
-    counts.edges += poles::insert(context, body, evidence, dec)?;
+    if context.repair_boundaries {
+        counts.edges += poles::insert(context, body, evidence, dec)?;
+    }
     let attained = evidence
         .tolerances
         .iter()

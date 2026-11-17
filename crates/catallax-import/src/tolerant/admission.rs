@@ -568,7 +568,7 @@ pub fn import_step(
     dec: &mut Decider,
 ) -> Result<TolerantImport, Error> {
     let (parsed, source, angles) = prepare(bytes, expected_sha256, options, dec)?;
-    let imported = admit(parsed, source, angles, dec)?;
+    let imported = admit(parsed, source, angles, AdmissionPolicy::Repair, dec)?;
     if imported.bodies.is_empty() {
         return Err(imported
             .body_errors
@@ -629,10 +629,16 @@ pub(crate) fn prepare(
     Ok((parsed, Arc::new(source), angles))
 }
 
+pub(crate) enum AdmissionPolicy<'a> {
+    Repair,
+    MainFirst(&'a [bool]),
+}
+
 pub(crate) fn admit(
     parsed: Arc<ParsedStep>,
     source: Arc<TolerantFile>,
     angles: AngleUnit,
+    policy: AdmissionPolicy<'_>,
     dec: &mut Decider,
 ) -> Result<TolerantImport, Error> {
     let mut fits = fit::Context::new(
@@ -657,74 +663,93 @@ pub(crate) fn admit(
     };
     let mut bodies = Vec::with_capacity(source.bodies.len());
     let mut body_errors = vec![None; source.bodies.len()];
-    for (source_index, original) in source.bodies.iter().enumerate() {
-        let checkpoint = evidence.checkpoint();
-        let before = catallax_numbers::current_operation_work().used;
-        fits.stage = NativeStage::BodyBuild;
-        if catallax_numbers::current_operation_work().exhausted {
-            body_errors[source_index] = Some(NativeBodyFailure {
-                stage: NativeStage::RequestLimit,
-                error: ImportRefusal::ResourceLimit.into(),
-                work_used: 0,
-            });
-            continue;
-        }
-        let candidate = (|| {
-            let repaired = healing::repair_native_topology(
-                original,
-                &parsed,
-                &source.mm_per_unit,
-                &angles,
-                &mut fits.curves,
-                &mut fits.stage,
-                dec,
-            )?;
-            evidence.repairs.extend(repaired.changes);
-            evidence.topology_checks.extend(repaired.checks);
-            evidence.topology_measurements.extend(repaired.measurements);
-            for issue in repaired.issues {
-                if issue.code.starts_with("shell.")
-                    || issue.code.starts_with("wire.open")
-                    || issue.code == "wire.empty-boundary"
-                {
-                    return Err(invalid(
-                        "import.tolerant-non-manifold",
-                        format!("{} {}: {}", issue.body, issue.scope, issue.code),
-                    ));
-                }
-                evidence.warnings.push(NativeWarning {
-                    body: Some(issue.body),
-                    scope: issue.scope,
-                    code: "topology-repair-limitation",
-                    detail: issue.code,
-                });
+    let (rounds, incomplete): (&[bool], Option<&[bool]>) = match policy {
+        AdmissionPolicy::Repair => (&[true], None),
+        AdmissionPolicy::MainFirst(incomplete) => (&[false, true], Some(incomplete)),
+    };
+    let mut settled = vec![false; source.bodies.len()];
+    for &repair_boundaries in rounds {
+        fits.repair_boundaries = repair_boundaries;
+        for (source_index, original) in source.bodies.iter().enumerate() {
+            if settled[source_index] || incomplete.is_some_and(|needed| !needed[source_index]) {
+                continue;
             }
-            let mut body = repaired.candidate;
-            let counts = fit::check_body(&mut fits, &mut body, &mut evidence, dec)?;
-            dec.check_deadline()?;
+            let checkpoint = evidence.checkpoint();
+            let before = catallax_numbers::current_operation_work().used;
+            fits.stage = NativeStage::BodyBuild;
             if catallax_numbers::current_operation_work().exhausted {
-                return Err(ImportRefusal::ResourceLimit.into());
-            }
-            Ok(TolerantSolid {
-                body,
-                counts,
-                source_index,
-            })
-        })();
-        match candidate {
-            Ok(body) => bodies.push(body),
-            Err(error) => {
-                evidence.rollback(checkpoint);
                 body_errors[source_index] = Some(NativeBodyFailure {
-                    stage: fits.stage,
-                    error,
-                    work_used: catallax_numbers::current_operation_work()
-                        .used
-                        .saturating_sub(before),
+                    stage: NativeStage::RequestLimit,
+                    error: ImportRefusal::ResourceLimit.into(),
+                    work_used: 0,
                 });
+                continue;
             }
+            let candidate = (|| {
+                let repaired = healing::repair_native_topology(
+                    original,
+                    &parsed,
+                    &source.mm_per_unit,
+                    &angles,
+                    &mut fits.curves,
+                    &mut fits.stage,
+                    dec,
+                )?;
+                evidence.repairs.extend(repaired.changes);
+                evidence.topology_checks.extend(repaired.checks);
+                evidence.topology_measurements.extend(repaired.measurements);
+                for issue in repaired.issues {
+                    if issue.code.starts_with("shell.")
+                        || issue.code.starts_with("wire.open")
+                        || issue.code == "wire.empty-boundary"
+                    {
+                        return Err(invalid(
+                            "import.tolerant-non-manifold",
+                            format!("{} {}: {}", issue.body, issue.scope, issue.code),
+                        ));
+                    }
+                    evidence.warnings.push(NativeWarning {
+                        body: Some(issue.body),
+                        scope: issue.scope,
+                        code: "topology-repair-limitation",
+                        detail: issue.code,
+                    });
+                }
+                let mut body = repaired.candidate;
+                let counts = fit::check_body(&mut fits, &mut body, &mut evidence, dec)?;
+                dec.check_deadline()?;
+                if catallax_numbers::current_operation_work().exhausted {
+                    return Err(ImportRefusal::ResourceLimit.into());
+                }
+                Ok(TolerantSolid {
+                    body,
+                    counts,
+                    source_index,
+                })
+            })();
+            match candidate {
+                Ok(body) => {
+                    settled[source_index] = true;
+                    body_errors[source_index] = None;
+                    bodies.push(body);
+                }
+                Err(error) => {
+                    evidence.rollback(checkpoint);
+                    body_errors[source_index] = Some(NativeBodyFailure {
+                        stage: fits.stage,
+                        error,
+                        work_used: catallax_numbers::current_operation_work()
+                            .used
+                            .saturating_sub(before),
+                    });
+                }
+            }
+        }
+        if catallax_numbers::current_operation_work().exhausted {
+            break;
         }
     }
+    bodies.sort_unstable_by_key(TolerantSolid::source_index);
     evidence.warnings.push(NativeWarning {
         body: None,
         scope: "document".into(),

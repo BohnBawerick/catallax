@@ -515,29 +515,34 @@ fn a_bad_first_body_cannot_refuse_a_usable_later_sibling() {
 }
 
 #[test]
-fn checked_upgrade_exhaustion_keeps_the_already_built_native_body() {
-    let source = box_step(BoxFixture::new(["2", "3", "4"]));
-    let baseline = open(&source);
-    let allowance = baseline.read_work_used() + baseline.native_admission_work_used() + 10;
-    let (opened, work) = with_operation_budget(allowance, || {
+fn main_admission_keeps_a_complete_checked_file_before_optional_boundary_work() {
+    let boxes: Vec<_> = (0..20)
+        .map(|index| {
+            let mut fixture = BoxFixture::new(["2", "3", "4"]);
+            fixture.origin[0] = r(&(index * 20).to_string());
+            fixture
+        })
+        .collect();
+    let source = common::boxes_step(&boxes);
+    let (opened, work) = with_operation_budget(20_000_000, || {
         opened::open_step(
             source.as_bytes(),
             &sha256_hex(source.as_bytes()),
-            &StepId::new("upgrade").unwrap(),
+            &StepId::new("main-first").unwrap(),
             Default::default(),
             &mut Decider::default(),
         )
     });
     let opened = opened.unwrap();
-    assert!(work.exhausted);
-    assert_eq!(opened.bodies()[0].tier(), Tier::TolerantSolid);
-    assert!(opened.bodies()[0].upgrade_refusal().is_some());
-    assert!(opened.bodies()[0].first_blocker().is_none());
-    let BodyView::Tolerant { import, body } = opened.body(0).unwrap() else {
-        panic!("optional proof must not discard the native body")
-    };
-    assert_eq!(import.bodies()[body].counts().faces, 6);
-    import.export_body(body, &mut Decider::default()).unwrap();
+    assert!(!work.exhausted);
+    assert_eq!(opened.bodies().len(), boxes.len());
+    for index in 0..boxes.len() {
+        assert_eq!(opened.bodies()[index].tier(), Tier::ValidSolid);
+        let BodyView::Certified { model, body } = opened.body(index).unwrap() else {
+            panic!("the existing checked result must survive optional boundary work");
+        };
+        assert_eq!(model.body(body).kind, catallax_topology::BodyKind::Solid);
+    }
 }
 
 #[test]

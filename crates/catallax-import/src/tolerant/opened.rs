@@ -271,9 +271,9 @@ fn strict_retry(
     }
 }
 
-/// Default opening policy: retain source carrier references, then build and heal
-/// each body independently. Stricter proof upgrades the resulting body afterward.
-/// A failed candidate or upgrade cannot discard already usable siblings.
+/// Default opening policy: preserve the existing main admission first, then
+/// build and heal only its refused or incomplete bodies from the shared source.
+/// A failed candidate cannot discard already usable siblings.
 ///
 /// Exhausted optional work retains the prepaid source representation.
 /// No implicit work cap is installed for native admission.
@@ -287,10 +287,11 @@ pub fn open_step(
     let before = current_operation_work().used;
     let (parsed, source, angles) = admission::prepare(bytes, expected_sha256, options, dec)?;
     let read_work_used = current_operation_work().used.saturating_sub(before);
-    open_prepared(step, parsed, source, angles, read_work_used, dec)
+    open_prepared(bytes, step, parsed, source, angles, read_work_used, dec)
 }
 
 fn open_prepared(
+    bytes: &[u8],
     step: &StepId,
     parsed: Arc<crate::geometry_source::ParsedStep>,
     source: Arc<TolerantFile>,
@@ -325,10 +326,27 @@ fn open_prepared(
         checked_upgrade_work_used: 0,
     };
     let before = current_operation_work().used;
+    if operation_budget_active() {
+        checked_admit(bytes, step, &mut result, dec);
+    } else {
+        let reservation = catallax_numbers::OperationAllowance::reserve(n::DEFAULT_WORK)?;
+        reservation.run(|| checked_admit(bytes, step, &mut result, dec));
+    }
+    result.checked_upgrade_work_used = current_operation_work().used.saturating_sub(before);
+    let incomplete: Vec<_> = result
+        .bodies
+        .iter()
+        .map(|body| body.tier == Tier::SurfaceBody)
+        .collect();
+    if incomplete.iter().all(|needed| !needed) {
+        return Ok(result);
+    }
+    let before = current_operation_work().used;
     let native = Arc::new(admission::admit(
         parsed,
         Arc::clone(&result.source),
         angles,
+        admission::AdmissionPolicy::MainFirst(&incomplete),
         dec,
     )?);
     result.native_admission_work_used = current_operation_work().used.saturating_sub(before);
@@ -354,7 +372,7 @@ fn open_prepared(
             let reservation = catallax_numbers::OperationAllowance::reserve(n::DEFAULT_WORK)?;
             reservation.run(|| upgrade_native(&mut result, step, dec));
         }
-        result.checked_upgrade_work_used = current_operation_work().used.saturating_sub(before);
+        result.checked_upgrade_work_used += current_operation_work().used.saturating_sub(before);
     }
     Ok(result)
 }
@@ -673,7 +691,7 @@ pub fn reopen(
         ));
     }
     let read_work_used = current_operation_work().used.saturating_sub(before);
-    open_prepared(step, parsed, source, angles, read_work_used, dec)
+    open_prepared(bytes, step, parsed, source, angles, read_work_used, dec)
 }
 
 #[cfg(test)]

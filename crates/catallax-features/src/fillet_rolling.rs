@@ -244,11 +244,10 @@ pub(crate) fn construct(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use catallax_numbers::{BudgetPolicy, with_operation_budget};
-    use catallax_numbers::{Fact, FactKind, FactOrigin};
-    use catallax_shapes::Point3;
-    use catallax_shapes::{GeomKey, PointDef, Pose};
+    use catallax_numbers::{BudgetPolicy, Fact, FactKind, FactOrigin, Real, with_operation_budget};
+    use catallax_shapes::{Curve, GeomKey, Point3, PointDef, Pose};
     use catallax_topology::{Coedge, Edge, Loop, Lump, Shell, Vertex};
+    use std::collections::BTreeMap;
 
     fn split_cylinder_rims(model: &mut Model) -> (BodyId, Vec<([EdgeId; 2], Rational)>) {
         let original = catallax_topology::cylinder(

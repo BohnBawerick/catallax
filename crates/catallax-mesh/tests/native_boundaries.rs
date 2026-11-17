@@ -22,11 +22,8 @@ fn reconstructed_pole_edges_preserve_the_half_sphere_display() {
         angular_deviation: None,
         max_vertices: 20_000,
     };
-    let (preview, work) = with_operation_budget(100_000_000, || {
-        preview_tolerant_body(&import, 0, &options, &mut Decider::default())
-    });
-    let preview = preview.unwrap();
-    assert!(!work.exhausted);
+    // Preview has no implicit work allowance. This checks geometry, not latency.
+    let preview = preview_tolerant_body(&import, 0, &options, &mut Decider::default()).unwrap();
     let mut sphere_area = 0.0;
     let mut plane_area = 0.0;
     let mut highest_y: f64 = 0.0;

@@ -587,7 +587,6 @@ fn intersection_checks(
     optional_allowance: u64,
     dec: &mut Decider,
 ) -> Result<SourceChecks, ImportError> {
-    let _probe = CheckedStageProbe::new("analytic.intersection_checks", "file");
     let mut checks = Vec::new();
     let mut optional = Vec::new();
     for solid in &file.solids {
@@ -810,7 +809,6 @@ pub(super) fn admit_definition(
     permit_planar: bool,
     dec: &mut Decider,
 ) -> Result<StepImport, ImportError> {
-    let _probe = CheckedStageProbe::new("analytic.admit_definition", "file");
     if !file.surface_models.is_empty() {
         return Err(unsupported(
             "numerical analytic continuation must retain every surface model and its surface body kind",
@@ -838,16 +836,14 @@ pub(super) fn admit_definition(
         // that separate family receives its own complete qualification.
         return Err(refusal.into());
     }
-    let face_tolerances = {
-        let _probe = CheckedStageProbe::new("analytic.cone_tolerances", "file");
-        file.solids
-            .iter()
-            .map(crate::cone::tolerances)
-            .collect::<Result<Vec<_>, _>>()?
-    }
-    .into_iter()
-    .flatten()
-    .collect::<Vec<_>>();
+    let face_tolerances = file
+        .solids
+        .iter()
+        .map(crate::cone::tolerances)
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
     if face_tolerances.iter().any(|bound| {
         Rational::parse(&bound.deviation_upper_mm).expect("producer bound") > options.tolerance_mm
     }) {
@@ -857,25 +853,19 @@ pub(super) fn admit_definition(
         )
         .into());
     }
-    let continuation_options = {
-        let _probe = CheckedStageProbe::new("analytic.continuation_options", "file");
-        cones::continuation_options(file, options, dec)?
-    };
+    let continuation_options = cones::continuation_options(file, options, dec)?;
     let intersection_checks = intersection_checks(file, OPTIONAL_EXACT_WORK, dec)?;
     let mut bodies = Vec::new();
     let mut topology_repairs = Vec::new();
     for solid in &file.solids {
-        bodies.push((solid.name.clone(), {
-            let _probe = CheckedStageProbe::new("analytic.topology_build", &solid.name);
+        bodies.push((
+            solid.name.clone(),
             n::build(
-                {
-                    let _probe = CheckedStageProbe::new("analytic.definition", &solid.name);
-                    definition(solid, &mut topology_repairs, dec)?
-                },
+                definition(solid, &mut topology_repairs, dec)?,
                 continuation_options.clone(),
                 dec,
-            )?
-        }));
+            )?,
+        ));
     }
     if bodies.is_empty() {
         return Err(unsupported("source contains no numerical solids"));

@@ -12,32 +12,6 @@ use catallax_topology::{BodyId, Model, Sense, numerical as n};
 
 use crate::{ImportRefusal, RepairRecord, Solid, Vec3};
 
-pub(crate) struct CheckedStageProbe<'a> {
-    stage: &'static str,
-    body: &'a str,
-}
-
-impl<'a> CheckedStageProbe<'a> {
-    pub(crate) fn new(stage: &'static str, body: &'a str) -> Self {
-        let work = catallax_numbers::current_operation_work();
-        eprintln!(
-            "CX_CHECKED_STAGE\tbegin\t{stage}\t{body}\t{}\t{}",
-            work.used, work.exhausted
-        );
-        Self { stage, body }
-    }
-}
-
-impl Drop for CheckedStageProbe<'_> {
-    fn drop(&mut self) {
-        let work = catallax_numbers::current_operation_work();
-        eprintln!(
-            "CX_CHECKED_STAGE\tend\t{}\t{}\t{}\t{}",
-            self.stage, self.body, work.used, work.exhausted
-        );
-    }
-}
-
 mod analytic;
 mod cones;
 
@@ -227,7 +201,6 @@ fn import_inner(
     options: &n::NumericalOptions,
     dec: &mut Decider,
 ) -> Result<StepImport, ImportError> {
-    let _probe = CheckedStageProbe::new("numerical.file_import", "file");
     // Verification is part of this request, including a mismatch that would
     // otherwise return before any geometry work. Do not hash an unmetered slice.
     dec.charge_work(bytes.len() as u64).map_err(|refusal| {
@@ -266,30 +239,20 @@ fn import_inner(
         )
         .into());
     }
-    let file = {
-        let _probe = CheckedStageProbe::new("numerical.repair_source_decode", "file");
-        crate::read_step(bytes)?
-    };
-    let has_cone = {
-        let _probe = CheckedStageProbe::new("numerical.cone_scan", "file");
-        cones::in_file(&file, None, dec)?
-    };
-    if has_cone {
+    let file = crate::read_step(bytes)?;
+    if cones::in_file(&file, None, dec)? {
         return analytic::import(bytes, expected_sha256, strict_refusal, options, dec);
     }
-    let imported = match {
-        let _probe = CheckedStageProbe::new("numerical.source_repair", "file");
-        crate::repair::apply_file(
-            &mut Model::new(),
-            file,
-            expected_sha256,
-            "source.step",
-            &Default::default(),
-            &[],
-            Some(step),
-            None,
-        )
-    } {
+    let imported = match crate::repair::apply_file(
+        &mut Model::new(),
+        file,
+        expected_sha256,
+        "source.step",
+        &Default::default(),
+        &[],
+        Some(step),
+        None,
+    ) {
         Ok(imported) => imported,
         Err(error) if cones::eligible(bytes, &error, dec)? => {
             return analytic::import(bytes, expected_sha256, error, options, dec);
@@ -347,7 +310,6 @@ pub(crate) fn admit_retained_definition(
     options: &n::NumericalOptions,
     dec: &mut Decider,
 ) -> Result<StepImport, ImportError> {
-    let _probe = CheckedStageProbe::new("numerical.retained_definition", "file");
     if options.tolerance_mm.sign() != Sign::Positive
         || options.tolerance_mm > crate::gap::auto_cap()
     {

@@ -8,7 +8,6 @@ pub(super) fn project_line(
     direction: &Vec3,
     dec: &mut Decider,
 ) -> Result<Vec3, Error> {
-    let _probe = crate::numerical::CheckedStageProbe::new("healing.project_line", "point");
     let length = dot(direction, direction, dec)?;
     if length.is_zero() {
         return Err(failure(
@@ -401,10 +400,6 @@ pub(super) fn faces(
         .filter(|(i, _)| !uses[*i].is_empty())
     {
         if let Curve::Line(origin, direction) = &edge.curve {
-            let _probe = crate::numerical::CheckedStageProbe::new(
-                "healing.face.edge_line_incidence",
-                &edge.name,
-            );
             for (end, vertex) in edge.vertices.iter().enumerate() {
                 let point = &body.vertices[*vertex].source.point;
                 let projected = project_line(point, origin, direction, dec)?;
@@ -471,10 +466,6 @@ pub(super) fn faces(
                     .collect();
                 for coedge in &boundary.edges {
                     let edge = &body.edges[coedge.edge];
-                    let _probe = crate::numerical::CheckedStageProbe::new(
-                        "healing.face.line_plane_incidence",
-                        &edge.name,
-                    );
                     let Curve::Line(origin, direction) = &edge.curve else {
                         unreachable!()
                     };
@@ -509,33 +500,27 @@ pub(super) fn faces(
                     );
                 }
                 let mut crossing = false;
-                {
-                    let _probe = crate::numerical::CheckedStageProbe::new(
-                        "healing.face.polygon_crossing",
-                        &face.name,
-                    );
-                    for i in 0..points.len() {
-                        for j in i + 1..points.len() {
-                            dec.charge_work(1)?;
-                            if j == i + 1 || (i == 0 && j + 1 == points.len()) {
-                                continue;
-                            }
-                            let a = &points[i];
-                            let c = &points[j];
-                            let d = &points[(j + 1) % points.len()];
-                            let p = &points[(i + 1) % points.len()];
-                            let ab_c = orientation(a, p, c, &plane.axis, dec)?;
-                            let ab_d = orientation(a, p, d, &plane.axis, dec)?;
-                            let cd_a = orientation(c, d, a, &plane.axis, dec)?;
-                            let cd_b = orientation(c, d, p, &plane.axis, dec)?;
-                            // Collinearity on an infinite extension is not a trim
-                            // crossing. Test the finite projected segment too.
-                            crossing |= (ab_c.is_zero() && between(a, p, c, plane, dec)?)
-                                || (ab_d.is_zero() && between(a, p, d, plane, dec)?)
-                                || (cd_a.is_zero() && between(c, d, a, plane, dec)?)
-                                || (cd_b.is_zero() && between(c, d, p, plane, dec)?)
-                                || (opposite(&ab_c, &ab_d) && opposite(&cd_a, &cd_b));
+                for i in 0..points.len() {
+                    for j in i + 1..points.len() {
+                        dec.charge_work(1)?;
+                        if j == i + 1 || (i == 0 && j + 1 == points.len()) {
+                            continue;
                         }
+                        let a = &points[i];
+                        let c = &points[j];
+                        let d = &points[(j + 1) % points.len()];
+                        let p = &points[(i + 1) % points.len()];
+                        let ab_c = orientation(a, p, c, &plane.axis, dec)?;
+                        let ab_d = orientation(a, p, d, &plane.axis, dec)?;
+                        let cd_a = orientation(c, d, a, &plane.axis, dec)?;
+                        let cd_b = orientation(c, d, p, &plane.axis, dec)?;
+                        // Collinearity on an infinite extension is not a trim
+                        // crossing. Test the finite projected segment too.
+                        crossing |= (ab_c.is_zero() && between(a, p, c, plane, dec)?)
+                            || (ab_d.is_zero() && between(a, p, d, plane, dec)?)
+                            || (cd_a.is_zero() && between(c, d, a, plane, dec)?)
+                            || (cd_b.is_zero() && between(c, d, p, plane, dec)?)
+                            || (opposite(&ab_c, &ab_d) && opposite(&cd_a, &cd_b));
                     }
                 }
                 if crossing {
@@ -547,19 +532,13 @@ pub(super) fn faces(
                     continue;
                 }
                 let mut area = Rational::zero();
-                {
-                    let _probe = crate::numerical::CheckedStageProbe::new(
-                        "healing.face.polygon_orientation",
-                        &face.name,
-                    );
-                    for i in 0..points.len() {
-                        let value = dot(
-                            &cross(&points[i], &points[(i + 1) % points.len()], dec)?,
-                            &plane.axis,
-                            dec,
-                        )?;
-                        area = arithmetic(&area, &value, '+', dec)?;
-                    }
+                for i in 0..points.len() {
+                    let value = dot(
+                        &cross(&points[i], &points[(i + 1) % points.len()], dec)?,
+                        &plane.axis,
+                        dec,
+                    )?;
+                    area = arithmetic(&area, &value, '+', dec)?;
                 }
                 if area.is_zero() {
                     plan.unresolved(body, &face.name, "face.zero-projected-area");

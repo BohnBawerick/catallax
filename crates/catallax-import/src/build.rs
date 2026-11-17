@@ -149,7 +149,6 @@ fn build_solid_with_repair(
     repair: bool,
     deadline: Option<Instant>,
 ) -> Result<BodyId, ImportRefusal> {
-    let _probe = crate::numerical::CheckedStageProbe::new("strict.solid_with_repair", &solid.name);
     if !repair {
         return build_solid_exact(model, solid, step, &MarkLog::new(), deadline);
     }
@@ -160,11 +159,7 @@ fn build_solid_with_repair(
         return result;
     }
     *model = original.clone();
-    let gap = Box::new({
-        let _probe =
-            crate::numerical::CheckedStageProbe::new("strict.incidence_measure", &solid.name);
-        crate::incidence::measure_solid(solid, refusal, deadline)?
-    });
+    let gap = Box::new(crate::incidence::measure_solid(solid, refusal, deadline)?);
     let cap = crate::gap::auto_cap();
     if Rational::parse(&gap.distance_lower_mm).expect("measured decimal") > cap {
         return Err(ImportRefusal::IncidenceGap {
@@ -249,18 +244,13 @@ fn build_source_faces(
     step: Option<&StepId>,
     deadline: Option<Instant>,
 ) -> Result<Vec<catallax_topology::FaceId>, ImportRefusal> {
-    let _probe = crate::numerical::CheckedStageProbe::new("strict.source_faces", name);
     let has_spline = has_spline_faces(source);
     if !has_spline {
-        let _probe =
-            crate::numerical::CheckedStageProbe::new("strict.intersections_before_faces", name);
         crate::intersect::check_faces_with_deadline(name, source, None, deadline)?;
     }
     let mut b = Builder::with_deadline(model, false, deadline);
     let mut faces = Vec::new();
     for face in source {
-        let _probe =
-            crate::numerical::CheckedStageProbe::new("strict.face_construction", &face.name);
         let origins = step
             .map(|step| {
                 vec![Origin {
@@ -274,8 +264,6 @@ fn build_source_faces(
         faces.push(b.face(face, origins)?);
     }
     if has_spline {
-        let _probe =
-            crate::numerical::CheckedStageProbe::new("strict.intersections_after_faces", name);
         crate::intersect::check_faces_with_deadline(
             name,
             source,

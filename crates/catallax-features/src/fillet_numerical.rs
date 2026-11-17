@@ -523,12 +523,13 @@ fn constrained_rail(
             let share = if norm.sign() == Sign::Zero {
                 Rational::zero()
             } else {
-                (0..2).fold(Rational::zero(), |sum, axis| {
+                let along = (0..2).fold(Rational::zero(), |sum, axis| {
                     sum + &(&old[axis] - &original[0][axis]) * &direction[axis]
-                }) / &norm
+                });
+                &along / &norm
             };
             let uv: [Rational; 2] = std::array::from_fn(|axis| {
-                &old[axis] + &shifts[0][axis] + &(&share * &change[axis])
+                &old[axis] + &shifts[0][axis] + (&share * &change[axis])
             });
             changed += usize::from(uv != old);
             *point = Point3::new(uv[0].clone().into(), uv[1].clone().into(), Real::zero());

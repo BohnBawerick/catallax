@@ -381,3 +381,50 @@ fn close_meetings_in_neighbouring_spans_are_both_kept_in_either_direction() {
         assert_eq!(xs[0] < xs[1], xs == sorted);
     }
 }
+
+#[test]
+fn open_sections_can_share_an_endpoint_without_being_the_same_curve() {
+    let ((), work) = with_operation_budget(1_000_000, || {
+        let mut dec = Decider::default();
+        let mut geom = GeomStore::new();
+        let mut section = |low: i64, high: i64| {
+            let knots = [0, 0, 1, 1]
+                .map(catallax_numbers::Rational::from_i64)
+                .to_vec();
+            let carrier = catallax_shapes::BSplineSurface::new(
+                [1, 1],
+                [knots.clone(), knots],
+                [2, 2],
+                [[0, low, 0], [0, high, 0], [1, low, 0], [1, high, 0]]
+                    .map(|[x, y, z]| Point3::new(x.into(), y.into(), z.into()))
+                    .to_vec(),
+                vec![Real::one(); 4],
+                &mut dec,
+            )
+            .unwrap();
+            let atlas = RationalAtlas::partition(carrier, [false, false], &mut dec)
+                .unwrap()
+                .remove(0);
+            let cut = atlas.sections(&plane(0, "1/2", 1), &mut dec).unwrap();
+            assert_eq!(cut.branches().len(), 1);
+            assert!(!cut.branches()[0].is_closed());
+            geom.add_curve(Curve::PatchSection(cut.branches()[0].clone()))
+        };
+        let first = section(0, 1);
+        let second = section(1, 2);
+        let shared = geom.add_point(PointDef::Explicit(Point3::new(
+            r("1/2").into(),
+            Real::one(),
+            Real::zero(),
+        )));
+        for (a, b) in [(first, second), (second, first)] {
+            assert!(matches!(
+                same_curve(&geom, a, b, &mut dec),
+                Outcome::Proven(_)
+            ));
+            assert!(on_curve(&geom, a, shared, &mut dec).is_coincident());
+            assert!(on_curve(&geom, b, shared, &mut dec).is_coincident());
+        }
+    });
+    assert!(!work.exhausted);
+}

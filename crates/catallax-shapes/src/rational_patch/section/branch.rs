@@ -191,7 +191,10 @@ impl PatchSectionBranch {
     /// exact and deterministic, so with equal carrier definitions one shared
     /// cell end decides. On the same charts with
     /// different cutting surfaces, a cell end where the other cut polynomial
-    /// is nonzero proves the sets differ. `None` when neither proof applies.
+    /// is nonzero proves the sets differ. Single-chart components inherit the
+    /// patch's global embedding: an open arc and a cycle cannot be equal,
+    /// and equal open arcs must have the same unordered geometric endpoints.
+    /// Endpoint enclosure overlap proves nothing. `None` when no proof applies.
     pub fn same_component(&self, other: &Self, dec: &mut Decider) -> Result<Option<bool>, Refusal> {
         let same_charts = self.charts.len() == other.charts.len()
             && self
@@ -200,6 +203,32 @@ impl PatchSectionBranch {
                 .zip(other.charts.iter())
                 .all(|(a, b)| a.carrier().same_definition(b.carrier()));
         if !same_charts {
+            if self.charts.len() == 1 && other.charts.len() == 1 {
+                if self.closed != other.closed {
+                    return Ok(Some(false));
+                }
+                let bits = dec.policy().max_precision_bits.min(128);
+                if !self.closed && bits > 0 {
+                    let ends = |branch: &Self, dec: &mut Decider| {
+                        let [a, b] = branch.endpoints();
+                        Ok::<_, Refusal>([
+                            math::budgeted_point(&a, bits, dec)?,
+                            math::budgeted_point(&b, bits, dec)?,
+                        ])
+                    };
+                    let a = ends(self, dec)?;
+                    let b = ends(other, dec)?;
+                    let disjoint = |a: &[Ball; 3], b: &[Ball; 3]| {
+                        (0..3)
+                            .any(|axis| a[axis].hi() < b[axis].lo() || b[axis].hi() < a[axis].lo())
+                    };
+                    let forward = !disjoint(&a[0], &b[0]) && !disjoint(&a[1], &b[1]);
+                    let backward = !disjoint(&a[0], &b[1]) && !disjoint(&a[1], &b[0]);
+                    if !forward && !backward {
+                        return Ok(Some(false));
+                    }
+                }
+            }
             return Ok(None);
         }
         if self
@@ -1025,6 +1054,81 @@ mod tests {
                     &mut dec,
                 )?);
                 assert!(!branch.contains(point, &mut dec)?);
+                Ok(())
+            });
+        assert!(!work.exhausted);
+        result.unwrap();
+    }
+
+    #[test]
+    fn embedded_open_arcs_need_matching_endpoints_but_matching_is_not_equality() {
+        let (result, work) =
+            catallax_numbers::with_operation_budget(20_000_000, || -> Result<(), Refusal> {
+                let mut dec = Decider::default();
+                let q = |n, d| Rational::from_ratio(n, d).unwrap();
+                let cut = SectionSurface::Cylinder(Cylinder {
+                    origin: Point3::new(Real::zero(), Real::zero(), Real::zero()),
+                    axis: Vector3::new(Real::zero(), Real::zero(), Real::one()),
+                    radius_sq: Real::one(),
+                    ref_dir: Vector3::new(Real::one(), Real::zero(), Real::zero()),
+                });
+                let linear = [q(0, 1), q(1, 2), q(1, 1)];
+                let square = [q(0, 1), q(0, 1), q(1, 1)];
+                let knots = [0, 0, 0, 1, 1, 1].map(Rational::from_i64).to_vec();
+                let mut branches = Vec::new();
+                for (height, y_scale) in [(0, q(1, 1)), (1, q(1, 1)), (2, q(1, 1)), (0, q(1, 2))] {
+                    let mut points = Vec::new();
+                    for u in 0..3 {
+                        for v in 0..3 {
+                            let x = linear[u].clone();
+                            let y = &linear[v] * &y_scale;
+                            let z = match height {
+                                1 => &x * &y * q(1, 10),
+                                2 => (&square[u] + &square[v] - q(1, 1)) * q(1, 10),
+                                _ => Rational::zero(),
+                            };
+                            points.push(Point3::new(x.into(), y.into(), z.into()));
+                        }
+                    }
+                    let patch = RationalPatch::new(
+                        BSplineSurface::new(
+                            [2, 2],
+                            [knots.clone(), knots.clone()],
+                            [3, 3],
+                            points,
+                            vec![Real::one(); 9],
+                            &mut dec,
+                        )?,
+                        &mut dec,
+                    )?;
+                    let section = search(&patch, &cut, &mut dec)?;
+                    let [branch] = section.branches() else {
+                        panic!("one embedded open cylinder section");
+                    };
+                    assert!(!branch.is_closed());
+                    branches.push(branch.clone());
+                }
+                // The full quarter circle and its proper subarc share one
+                // endpoint, not their complete finite point sets.
+                assert_eq!(
+                    branches[0].same_component(&branches[3], &mut dec)?,
+                    Some(false)
+                );
+                // Z=XY/10 bows away from Z=0 but has the same two endpoints.
+                assert_ne!(
+                    branches[0].same_component(&branches[1], &mut dec)?,
+                    Some(true)
+                );
+                // Z=(X²+Y²-1)/10 is identically zero on the cylinder:
+                // different carrier definitions still give the same arc.
+                assert_ne!(
+                    branches[0].same_component(&branches[2], &mut dec)?,
+                    Some(false)
+                );
+                assert_ne!(
+                    branches[0].same_component(&branches[2].reversed(), &mut dec)?,
+                    Some(false)
+                );
                 Ok(())
             });
         assert!(!work.exhausted);

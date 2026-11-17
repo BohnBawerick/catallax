@@ -1458,6 +1458,21 @@ fn evaluate_impl(
                     corner,
                 } => {
                     let target = &bodies[body];
+                    if let Some(context) = numerical.as_deref_mut() {
+                        context.fillet(
+                            model,
+                            target,
+                            edges,
+                            radius.value(),
+                            overflow.as_ref(),
+                            *corner,
+                            &fillets,
+                            &step.id,
+                            recipe,
+                            dec,
+                        )?;
+                        return Ok(None);
+                    }
                     let attempt =
                         if let Some(catallax_recipe::FilletOverflow::KeepNeighbours(limits)) =
                             overflow
@@ -1485,28 +1500,7 @@ fn evaluate_impl(
                                 dec,
                             )
                         };
-                    let (body, definitions) = match attempt {
-                        Ok(result) => result,
-                        Err(refusal) => {
-                            let Some(context) = numerical.as_deref_mut() else {
-                                return Err(refusal);
-                            };
-                            context.fillet(
-                                model,
-                                target,
-                                edges,
-                                radius.value(),
-                                overflow.as_ref(),
-                                *corner,
-                                &fillets,
-                                &step.id,
-                                recipe,
-                                refusal,
-                                dec,
-                            )?;
-                            return Ok(None);
-                        }
-                    };
+                    let (body, definitions) = attempt?;
                     fillets.extend(definitions);
                     BodyValue {
                         body,

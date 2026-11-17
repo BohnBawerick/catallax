@@ -77,15 +77,9 @@ impl Context {
         earlier: &[crate::fillet::FilletDefinition],
         step: &StepId,
         recipe: &Recipe,
-        exact_refusal: Refusal,
         dec: &mut Decider,
     ) -> Result<(), Refusal> {
-        if exact_refusal.code.starts_with("numbers.")
-            || radius.sign() != catallax_numbers::Sign::Positive
-        {
-            return Err(exact_refusal);
-        }
-        let mut attempt = || {
+        let result = (|| {
             if overflow.is_some() || corner.is_some_and(|value| value != FilletCorner::Cliff) {
                 return Err(Refusal::new(
                     "features.numerical-fillet-closure",
@@ -114,6 +108,14 @@ impl Context {
                 ));
             }
             let tolerance = Rational::from_ratio(1, 10_000_000).unwrap();
+            let chains = crate::fillet::numerical::rolling::construct(
+                model,
+                target.body,
+                &selected,
+                radius,
+                &tolerance,
+                dec,
+            )?;
             let (definition, trims) = crate::numerical_embedding::definition_from_exact_model(
                 model,
                 target.body,
@@ -134,58 +136,34 @@ impl Context {
                 .into_iter()
                 .map(|face| (format!("{face:?}"), model.face_origins(face).to_vec()))
                 .collect();
-            let body = if let [edge] = selected.as_slice() {
-                let name = model.edge_name(target.body, *edge).ok_or_else(|| {
+            for strip in chains.iter().flat_map(|chain| &chain.strips) {
+                let edge = strip.source.edge;
+                let name = model.edge_name(target.body, edge).ok_or_else(|| {
                     Refusal::new(
                         "features.numerical-fillet-name",
-                        format!("selected edge {edge:?} has no canonical recipe name"),
+                        format!("rolled edge {edge:?} has no canonical recipe name"),
                     )
                 })?;
-                let edge_key = format!("{edge:?}");
                 source_origins.insert(
-                    format!("{step}/blend/{edge_key}"),
+                    format!("{step}/blend/{edge:?}"),
                     vec![Origin {
                         step: step.clone(),
                         role: Role::Blend { edge: name },
                     }],
                 );
-                crate::fillet::numerical::build(
-                    source,
-                    &edge_key,
+            }
+            let body = if chains.len() == 1 && chains[0].strips.len() == 1 && !chains[0].closed {
+                crate::fillet::numerical::body::cap_strip(
+                    &source,
+                    &chains[0].strips[0],
                     step.as_str(),
-                    radius.clone(),
-                    tolerance,
-                    dec,
-                )?
-                .into_body()
-            } else {
-                let chains = crate::fillet::numerical::rolling::construct(
-                    model,
-                    target.body,
-                    &selected,
-                    radius,
                     &tolerance,
                     dec,
-                )?;
+                )?
+            } else {
                 let corners = crate::fillet::numerical::vertex::construct(
                     model, &chains, radius, &tolerance, dec,
                 )?;
-                for strip in chains.iter().flat_map(|chain| &chain.strips) {
-                    let edge = strip.source.edge;
-                    let name = model.edge_name(target.body, edge).ok_or_else(|| {
-                        Refusal::new(
-                            "features.numerical-fillet-name",
-                            format!("rolled edge {edge:?} has no canonical recipe name"),
-                        )
-                    })?;
-                    source_origins.insert(
-                        format!("{step}/blend/{edge:?}"),
-                        vec![Origin {
-                            step: step.clone(),
-                            role: Role::Blend { edge: name },
-                        }],
-                    );
-                }
                 for corner in &corners {
                     let vertex =
                         model
@@ -238,22 +216,16 @@ impl Context {
                 body,
                 origins,
             })
-        };
-        let result = attempt().map_err(|mut refusal: Refusal| {
-            refusal.detail = format!(
-                "exact path refused {}: {}; numerical continuation refused {}: {}",
-                exact_refusal.code, exact_refusal.detail, refusal.code, refusal.detail
-            );
-            refusal
-        })?;
+        })()?;
         self.bodies.insert(step.clone(), Arc::new(result));
         Ok(())
     }
 }
 
-/// Evaluates a matching exact prefix once, then tries exact fillets before
-/// numerical continuation in the same active request allowance. Numerical
-/// results never enter an exact checkpoint. Files retain their ordinary checks.
+/// Evaluates the matching exact prefix and constructs fillets numerically first.
+/// No speculative exact producer spends or gates this construction allowance.
+/// Explicit exact-only evaluation remains a separate caller-scheduled request;
+/// it never converts or replaces this retained numerical geometry.
 pub fn evaluate_incremental_outcome(
     recipe: &Recipe,
     prefix: Option<EvaluationCheckpoint>,

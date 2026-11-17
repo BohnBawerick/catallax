@@ -409,3 +409,21 @@ needs different topology. Naming the reached face uses the actual
 original plane border and its input neighbour, not an untrimmed carrier.
 On the five-edge owner selection the geometry gives 25-17=8 mm; none of
 these dimensions or recipe roles enter the algorithm.
+
+### Numerical-first ordinary evaluation
+
+The typed application evaluator enters rolling construction before any exact
+fillet producer. It does not try an exact build and then inherit that attempt's
+exhausted allowance or refusal. Genuine native R4/R8 contact constraints still
+run inside the general constructor before fitting.
+
+Single open strips use the same rolling producer and the existing actual
+neighbour-surface cuts; networks use the junction publisher. The old single-edge
+numerical producer is no longer the typed evaluator's separate construction
+choice. Numerical source admission follows successful candidate construction,
+so a proved contact refusal does not first pay for output-source admission.
+
+The exact-only evaluation API remains separate. The construction request does
+not schedule it, spend work on it or replace a retained numerical result with
+its output. The current numerical body/outcome authority still forbids labelling
+sampled geometry exact or converting it to an exact continuation checkpoint.

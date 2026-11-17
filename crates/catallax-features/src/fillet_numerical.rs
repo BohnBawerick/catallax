@@ -26,6 +26,8 @@ pub(crate) mod body;
 pub(crate) mod rolling;
 #[path = "fillet_numerical_vertex.rs"]
 pub(crate) mod vertex;
+#[path = "fillet_rolling_vertex_body.rs"]
+pub(crate) mod vertex_body;
 
 fn bad(detail: impl Into<String>) -> Refusal {
     Refusal::new("fillet.numerical-body", detail)

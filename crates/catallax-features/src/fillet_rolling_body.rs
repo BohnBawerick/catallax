@@ -5,7 +5,7 @@ use super::*;
 use catallax_shapes::NumericalSurfaceCut;
 use catallax_topology::numerical::NumericalOptions;
 
-fn occurrence(
+pub(super) fn occurrence(
     d: &NumericalDefinition,
     face: usize,
     edge: usize,
@@ -21,7 +21,7 @@ fn occurrence(
     found.ok_or_else(|| bad("a rolling support lost its selected boundary occurrence"))
 }
 
-fn material_sense(
+pub(super) fn material_sense(
     strip: &RolledStrip,
     tau: &Rational,
     dec: &mut Decider,
@@ -317,6 +317,19 @@ pub(crate) fn cap_strip(
         loops: vec![boundary],
     });
     native.push(vec![blend_native]);
+    let mut sampled = source.sampled_carriers().clone();
+    sampled.insert(face_key);
+    publish(source, d, native, sampled, tolerance, dec)
+}
+
+pub(super) fn publish(
+    source: &NumericalBody,
+    mut d: NumericalDefinition,
+    native: NativeRows,
+    sampled: BTreeSet<String>,
+    tolerance: &Rational,
+    dec: &mut Decider,
+) -> Result<NumericalBody, Refusal> {
     let mut bindings = Vec::new();
     for (face, rows) in d.faces.iter().zip(native) {
         for (boundary, (row, curves)) in face.loops.iter().zip(rows).enumerate() {
@@ -334,8 +347,6 @@ pub(crate) fn cap_strip(
         }
     }
     compact(&mut d);
-    let mut sampled = source.sampled_carriers().clone();
-    sampled.insert(face_key);
     source
         .rebuild_with_sampled_carriers(
             d,
@@ -346,7 +357,7 @@ pub(crate) fn cap_strip(
             },
             dec,
         )
-        .map_err(|error| at_stage("real-domain strip publication", error))
+        .map_err(|error| at_stage("real-domain publication", error))
 }
 
 #[cfg(test)]

@@ -342,3 +342,10 @@ endpoint constraints remain subject to the unchanged physical admission
 tolerance; they are not incidence certificates. The one-edge regression
 checks all six original planar face domains, including the rounded cap's
 area. Network/junction publication and owner acceptance remain separate gates.
+
+Three-support network publication reuses each common ball's canonical
+support contacts as shared vertices. Each extracted section is one world
+edge shared by a strip and its sphere, with the paired native parameter
+curves and recorded orientation kept together. Source loop occurrences are
+replaced before the complete network enters numerical solid admission.
+This topology stage adds no exactness claim to the fitted geometry.

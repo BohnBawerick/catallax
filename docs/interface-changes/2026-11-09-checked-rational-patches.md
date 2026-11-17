@@ -14,6 +14,8 @@ The clamped knots, controls and positive weights remain authoritative. Construct
 
 A complete-cell positive symmetric-Jacobian bound establishes a globally injective regular projection. The proof uses unit-domain coordinates, independent of the affine units of authored knots. `domain`, `point_at`, `derivatives_at` and shared-row stations retain original knot coordinates. `embedding_lower_bound` and `embedding_cover` expose the certified unit-domain projection margins. Internal position-continuous knot joins must also have compatible oriented tangent planes. A failed certificate returns `shapes.rational-patch-unproven`, not an impossible-geometry claim.
 
+The projected symmetric Jacobian need not be diagonally dominant. An existing positive Gershgorin margin is kept unchanged. Otherwise, positive diagonal lower bounds `a,d` and an off-diagonal magnitude bound `c` prove positive definiteness when `a*d-c*c > 0`. Dividing that determinant lower bound by the trace upper bound gives a positive lower bound on the smallest eigenvalue. This is the same whole-domain strong-monotonicity certificate, not a pointwise regularity or sampling substitute. The additional exact arithmetic is charged to the caller's unchanged work allowance; domain subdivision, depth limits and join checks are unchanged.
+
 `RationalPatchFace` checks four complete physical rows, endpoint identity, a sewn vertex cycle and material-relative orientation. It does not certify nonintersection between different faces of a body. Arbitrary trimming, holes in the parameter rectangle and intersection-defined boundary correspondence remain outside this face certificate. Matching endpoints alone never authorizes a row. Names stay on the existing physical faces, edges and vertices; reflection preserves origins and reverses the tensor face/loop orientation as required.
 
 Finite preimages validate original world-coordinate equations. Normal and side queries do not extend the finite chart into an infinite implicit surface. Whole-line intersections enumerate transverse finite hits; tangencies and contained curve families refuse. Plane sections retain their generating patch and plane, and emit exact rational curves for the supported univariate/affine-parameter cases. General unresolved algebraic tracing remains a typed gap.
@@ -51,6 +53,8 @@ Shape cases live in [`catallax-shapes/tests/rational_patches.rs`](../../crates/c
 | Tangent line and contained line family | Same test: typed refusal, not an empty hit list |
 | Rational hyperbolic plane section | `hyperbolic_plane_sections_retain_the_exact_curve_and_definition` |
 | Folded definition and internal crease | `folded_and_creased_definitions_cannot_acquire_an_embedding_certificate` |
+| Non-ruled cubic sheet with positive symmetric Jacobian but no diagonal dominance | `a_positive_projected_jacobian_need_not_be_diagonally_dominant`: checked chart and unchanged exact position |
+| Positive diagonals with indefinite symmetric Jacobian, or negative diagonal intervals | `indefinite_or_negative_projected_diagonals_do_not_certify_a_chart`: typed refusal |
 | Flat G1 parameter-speed jump, including angular control | `a_g1_speed_jump_keeps_angular_mesh_control` |
 | Huge translated, non-dyadic knots | `huge_translated_non_dyadic_knots_do_not_lose_the_chart` |
 | Interior extrema distinct from the control polygon | `exact_ranges_enclose_geometry_rather_than_the_control_polygon` |

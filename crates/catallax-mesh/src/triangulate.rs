@@ -578,7 +578,7 @@ impl FaceBuilder<'_> {
             widths[0] / counts[0] as f64
         };
         let stretch = du / (widths[1] / counts[1] as f64);
-        if stretch.is_finite() && stretch > 0.0 && stretch != self.stretch {
+        if stretch.is_finite() && stretch > 0.0 && stretch.to_bits() != self.stretch.to_bits() {
             self.stretch = stretch;
             let nodes = self
                 .cdt

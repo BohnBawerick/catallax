@@ -581,12 +581,11 @@ fn joined_lines_and_arc_endpoints_are_made_exact_before_the_kernel() {
     let Operation::Sketch { loops, .. } = &converted.recipe.steps[0].op else {
         panic!()
     };
-    let catallax_recipe::Segment::Arc { to, centre, .. } = &loops[0].0[0] else {
+    let catallax_recipe::Segment::Arc { to, .. } = &loops[0].0[0] else {
         panic!()
     };
-    let x = to.0[0].value() - centre.0[0].value();
-    let y = to.0[1].value() - centre.0[1].value();
-    assert_eq!(&x * &x + &y * &y, Rational::one());
+    assert_eq!(to.0[0].value(), &Rational::zero());
+    assert_eq!(to.0[1].value(), &Rational::parse("1.000000001").unwrap());
     let built = catallax_app::build(
         &converted.recipe,
         &MeshOptions::default(),
@@ -601,6 +600,22 @@ fn joined_lines_and_arc_endpoints_are_made_exact_before_the_kernel() {
             .flatten()
             .any(|o| matches!(&o.role,Role::Side { segment,.. } if segment.as_str()=="l0s0"))
     );
+}
+
+#[test]
+fn short_arc_roundoff_cannot_move_its_centre_outside_the_source_tolerance() {
+    let steps = vec![
+        json!({"id":"p","op":"profile","plane":"XY","loops":{"outer":[
+            {"type":"arc","center":[0,0],"from":[1000,0],"to":[1000.00000001,0.000001]},
+            {"type":"line","from":[1000.00000001,0.000001],"to":[0,0]},
+            {"type":"line","from":[0,0],"to":[1000,0]}
+        ]}}),
+        json!({"id":"b","op":"extrude","profile":"p","distance":2}),
+    ];
+    assert!(matches!(
+        convert(&recipe(steps, "b")),
+        Err(ConversionError::Invalid { .. })
+    ));
 }
 
 #[test]

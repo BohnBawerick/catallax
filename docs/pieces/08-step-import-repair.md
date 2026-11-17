@@ -55,7 +55,7 @@ The separate tolerant native projector retains the source surface and original p
 
 For an offset of a regular ring-torus basis, the native source equation keeps the signed minor coefficient `r + d` in the original UV. It does not construct an equivalent checked torus, fit a replacement surface, reverse the chart or acquire an embedding certificate. Horn/spindle bases retain their oriented derivative-normal expression. These equations do not change tolerance limits or the existing RationalPatch proof.
 
-Tolerant STEP evidence uses `CATALLAX_EVIDENCE_JSON_PARTS/1` in `FILE_DESCRIPTION`. Concatenating the subsequent description strings in order reconstructs the complete JSON payload; bounded UTF-8 chunks avoid OCCT scanner overflow without dropping repair or tolerance records.
+Tolerant STEP export keeps `FILE_DESCRIPTION` short and stores the complete evidence in ordered `CATALLAX_REPORT_JSON` comments. Concatenating their payloads reconstructs the JSON report, including per-entity tolerance, repair and check records; JSON slash escaping prevents embedded names from opening or closing STEP comments.
 
 ### Multiple numerical face bounds
 

@@ -810,26 +810,12 @@ pub(super) fn check_body(
                             _ => None,
                         };
                         let fit_target = vertex.map_or(target, |vertex| vertices[vertex]);
-                        let seed = if station == 0 {
-                            match &pcurve {
-                                Some(curve) => {
-                                    let (uv, _) = curve.sample(
-                                        NativeLocation {
-                                            chart: 0,
-                                            parameters: [curve_location.parameters[0], 0.0],
-                                        },
-                                        dec,
-                                    )?;
-                                    Some(NativeLocation {
-                                        chart: previous
-                                            .map_or(0, |value: NativeLocation| value.chart),
-                                        parameters: uv,
-                                    })
-                                }
-                                None => previous,
+                        let seed = match &pcurve {
+                            Some(curve) => {
+                                let (uv, _) = curve.sample(NativeLocation { chart: 0, parameters: [curve_location.parameters[0], 0.0] }, dec)?;
+                                Some(NativeLocation { chart: previous.map_or(0, |value: NativeLocation| value.chart), parameters: uv })
                             }
-                        } else {
-                            previous
+                            None => previous,
                         };
                         let seed = match (&surface, seed) {
                             (Some(surface), Some(seed)) => {

@@ -396,15 +396,24 @@ impl Carrier {
                 let b = dot(jacobian[0], jacobian[1]);
                 let d = dot(jacobian[1], jacobian[1]);
                 let determinant = a * d - b * b;
-                if determinant <= 1e-24 * (a + d).powi(2) || !determinant.is_finite() {
+                if !determinant.is_finite() {
                     break;
                 }
-                let first = dot(jacobian[0], residual);
-                let second = dot(jacobian[1], residual);
-                delta = [
-                    (d * first - b * second) / determinant,
-                    (a * second - b * first) / determinant,
-                ];
+                if determinant <= 1e-24 * (a + d).powi(2) {
+                    let axis = usize::from(d > a);
+                    let squared_speed = [a, d][axis];
+                    if squared_speed <= 0.0 || !squared_speed.is_finite() {
+                        break;
+                    }
+                    delta[axis] = dot(jacobian[axis], residual) / squared_speed;
+                } else {
+                    let first = dot(jacobian[0], residual);
+                    let second = dot(jacobian[1], residual);
+                    delta = [
+                        (d * first - b * second) / determinant,
+                        (a * second - b * first) / determinant,
+                    ];
+                }
             }
             let mut improved = false;
             for reduction in 0..8 {

@@ -681,14 +681,37 @@ fn default_opening_exports_a_rebuilt_trace_instead_of_an_inconsistent_authored_t
             })
         })
         .expect("exported curved edge needs its cap pcurve");
-    let emitted = NativeUvCurve::from_source(
-        &parsed,
-        emitted_pcurve,
-        &r("1"),
-        AngleUnit::Radians,
-        &mut dec,
-    )
-    .unwrap();
+    let Geometry::Curve(Curve::Pcurve(_, representation)) =
+        parsed.geometry(emitted_pcurve, &mut dec).unwrap()
+    else {
+        unreachable!()
+    };
+    let representation = parsed.representation(representation).unwrap();
+    let Geometry::Curve(Curve::Replica(conic, transform)) =
+        parsed.geometry(representation.items[0], &mut dec).unwrap()
+    else {
+        panic!("projected conic needs its emitted UV frame");
+    };
+    let Geometry::Transformation(transform) = parsed.geometry(transform, &mut dec).unwrap() else {
+        unreachable!()
+    };
+    let Geometry::Point(origin) = parsed.geometry(transform.origin, &mut dec).unwrap() else {
+        unreachable!()
+    };
+    let axes: [[f64; 2]; 2] = std::array::from_fn(|axis| {
+        let Geometry::Direction(direction) = parsed
+            .geometry(transform.axes[axis].unwrap(), &mut dec)
+            .unwrap()
+        else {
+            unreachable!()
+        };
+        let direction = [direction[0].to_f64_nearest(), direction[1].to_f64_nearest()];
+        let length = direction[0].hypot(direction[1]);
+        direction.map(|coordinate| coordinate / length)
+    });
+    let scale = transform.scales[0].as_ref().unwrap().to_f64_nearest();
+    let emitted =
+        NativeUvCurve::from_source(&parsed, conic, &r("1"), AngleUnit::Radians, &mut dec).unwrap();
     for sample in &trace.samples {
         let (uv, _) = emitted
             .sample(
@@ -699,6 +722,9 @@ fn default_opening_exports_a_rebuilt_trace_instead_of_an_inconsistent_authored_t
                 &mut dec,
             )
             .unwrap();
+        let uv = std::array::from_fn(|axis| {
+            origin[axis].to_f64_nearest() + scale * (axes[0][axis] * uv[0] + axes[1][axis] * uv[1])
+        });
         let actual = surface
             .sample(surface.location(uv).unwrap(), &mut dec)
             .unwrap();

@@ -486,10 +486,15 @@ pub(crate) fn search_cover(
         Edge(usize),
         Corner([Real; 2]),
     }
+    struct CornerContact {
+        chart: usize,
+        parameters: [Real; 2],
+        point: Point3,
+    }
     let start = dec.stats().work;
     let mut record = SectionSearch::default();
     let mut arcs = Vec::new();
-    let mut points: Vec<Point3> = Vec::new();
+    let mut points: Vec<CornerContact> = Vec::new();
     for (ci, patch) in cover.charts.iter().enumerate() {
         let [du, dv] = patch.carrier().degrees();
         for (si, span) in patch.data.spans.iter().enumerate() {
@@ -519,14 +524,19 @@ pub(crate) fn search_cover(
                         let point = span.point(&at);
                         let mut duplicate = false;
                         for previous in &points {
-                            if exact_sign(&point.minus(previous).norm_squared(), dec)? == Sign::Zero
+                            if exact_sign(&point.minus(&previous.point).norm_squared(), dec)?
+                                == Sign::Zero
                             {
                                 duplicate = true;
                                 break;
                             }
                         }
                         if !duplicate {
-                            points.push(point);
+                            points.push(CornerContact {
+                                chart: ci,
+                                parameters: at,
+                                point,
+                            });
                         }
                     }
                     if isolated {
@@ -752,16 +762,58 @@ pub(crate) fn search_cover(
         });
     }
     let mut isolated = Vec::new();
-    for point in points {
+    for contact in points {
         let mut covered = false;
-        for branch in &branches {
-            if branch.contains(&point, dec)? {
-                covered = true;
-                break;
+        'branches: for branch in &branches {
+            for (chart, patch) in branch.charts.iter().enumerate() {
+                if branch.cells.iter().all(|cell| cell.chart != chart) {
+                    continue;
+                }
+                if chart == contact.chart {
+                    // A certified regular cell contains every cut zero in its
+                    // box. This contact already has its exact native binding.
+                    for cell in &branch.cells {
+                        if cell.chart == chart && contains(&cell.domain, &contact.parameters, dec)?
+                        {
+                            covered = true;
+                            break 'branches;
+                        }
+                    }
+                    continue;
+                }
+                // A different atlas chart need not use the same parameters.
+                // Retain its original exact endpoint and preimage checks.
+                for cell in &branch.cells {
+                    if cell.chart == chart {
+                        for end in &cell.ends {
+                            if exact_sign(
+                                &branch
+                                    .span(cell)
+                                    .point(end)
+                                    .minus(&contact.point)
+                                    .norm_squared(),
+                                dec,
+                            )? == Sign::Zero
+                            {
+                                covered = true;
+                                break 'branches;
+                            }
+                        }
+                    }
+                }
+                let Some(at) = patch.parameters_at(&contact.point, dec)? else {
+                    continue;
+                };
+                for cell in &branch.cells {
+                    if cell.chart == chart && contains(&cell.domain, &at, dec)? {
+                        covered = true;
+                        break 'branches;
+                    }
+                }
             }
         }
         if !covered {
-            isolated.push(point);
+            isolated.push(contact.point);
         }
     }
     record.work = dec.stats().work - start;
@@ -887,6 +939,63 @@ mod tests {
                         assert!(branch.contains(&corner, &mut dec)?);
                     }
                 }
+                Ok(())
+            });
+        assert!(!work.exhausted);
+        result.unwrap();
+    }
+
+    #[test]
+    fn native_contact_parameters_separate_an_isolated_point_from_an_arc() {
+        let (result, work) =
+            catallax_numbers::with_operation_budget(20_000_000, || -> Result<(), Refusal> {
+                let mut dec = Decider::default();
+                let q = |n, d| Rational::from_ratio(n, d).unwrap();
+                let linear = [q(0, 1), q(1, 2), q(1, 1)];
+                let square = [q(0, 1), q(0, 1), q(1, 1)];
+                let mut points = Vec::new();
+                for u in 0..3 {
+                    for v in 0..3 {
+                        // Z=(u+v)(u+v-1/2)/10 on [0,1]².
+                        let z = (&square[u] + &square[v]) * q(1, 10)
+                            + (&linear[u] * &linear[v]) * q(1, 5)
+                            - (&linear[u] + &linear[v]) * q(1, 20);
+                        points.push(Point3::new(
+                            linear[u].clone().into(),
+                            linear[v].clone().into(),
+                            z.into(),
+                        ));
+                    }
+                }
+                let knots = [0, 0, 0, 1, 1, 1].map(Rational::from_i64).to_vec();
+                let carrier = BSplineSurface::new(
+                    [2, 2],
+                    [knots.clone(), knots],
+                    [3, 3],
+                    points,
+                    vec![Real::one(); 9],
+                    &mut dec,
+                )?;
+                let patch = RationalPatch::new(carrier, &mut dec)?;
+                let cut = SectionSurface::Plane(Plane {
+                    origin: Point3::new(Real::zero(), Real::zero(), Real::zero()),
+                    normal: Vector3::new(Real::zero(), Real::zero(), Real::one()),
+                    ref_dir: Vector3::new(Real::one(), Real::zero(), Real::zero()),
+                });
+                let section = search(&patch, &cut, &mut dec)?;
+                let [point] = section.points() else {
+                    panic!("only the origin is an isolated point");
+                };
+                for coordinate in [&point.x, &point.y, &point.z] {
+                    assert_eq!(exact_sign(coordinate, &mut dec)?, Sign::Zero);
+                }
+                let [branch] = section.branches() else {
+                    panic!("one separate regular arc");
+                };
+                assert!(branch.contains(
+                    &Point3::new(q(1, 4).into(), q(1, 4).into(), Real::zero()),
+                    &mut dec,
+                )?);
                 Ok(())
             });
         assert!(!work.exhausted);

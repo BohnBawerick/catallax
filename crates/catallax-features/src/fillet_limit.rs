@@ -114,12 +114,7 @@ fn axis_foot(cylinder: &Cylinder, at: &Point3) -> Point3 {
 /// The conditions on a ball centre for a straight generator between a plane
 /// and a parallel cylinder: the centre lies on the plane's offset line and on
 /// the cylinder's offset circle, which must cross.
-fn plane_cylinder(
-    plane: &Plane,
-    cylinder: &Cylinder,
-    same: [bool; 2],
-    k: &Real,
-) -> Vec<Affine> {
+fn plane_cylinder(plane: &Plane, cylinder: &Cylinder, same: [bool; 2], k: &Real) -> Vec<Affine> {
     let inside = k * &toward(same[1]);
     let outward = unit(&plane.normal).scaled(&toward(same[0]));
     let height = plane
@@ -205,11 +200,9 @@ fn contact_limit(
 ) -> Result<Option<Real>, Refusal> {
     let k = Real::from_i64(if convex { 1 } else { -1 });
     let conditions = match (&supports[0], &supports[1], edge) {
-        (Surface::Plane(p), Surface::Cylinder(c), Curve::Line(e)) => {
-            plane_cylinder(p, c, e, same, &k)
-        }
-        (Surface::Cylinder(c), Surface::Plane(p), Curve::Line(e)) => {
-            plane_cylinder(p, c, e, [same[1], same[0]], &k)
+        (Surface::Plane(p), Surface::Cylinder(c), Curve::Line(_)) => plane_cylinder(p, c, same, &k),
+        (Surface::Cylinder(c), Surface::Plane(p), Curve::Line(_)) => {
+            plane_cylinder(p, c, [same[1], same[0]], &k)
         }
         (Surface::Cylinder(a), Surface::Cylinder(b), Curve::Line(e)) => {
             cylinders(a, b, e, same, &k)

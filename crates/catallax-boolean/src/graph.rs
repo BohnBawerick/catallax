@@ -596,6 +596,8 @@ fn same_faces(a: &SectionEdge, b: &SectionEdge) -> bool {
 // by the ordinary graph. The append-only model snapshot shares its history;
 // all optional witnesses and support meetings stay private to this probe.
 fn boundaries_apart(model: &Model, first: &[FaceId], second: &[FaceId], dec: &mut Decider) -> bool {
+    #[cfg(feature = "work-span")]
+    let _probe_region = catallax_numbers::work_span::region("boundary pruning probe");
     let mut probe = model.clone();
     let mut bounds = crate::bounds::FaceBounds::new(false);
     let mut pairs = BTreeMap::new();

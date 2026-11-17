@@ -56,13 +56,14 @@ fn recorded_top_intersection_admits_a_numerical_source_body() {
                 assert_eq!(model.body(collection).kind, BodyKind::Surface);
                 let counts = model.counts(collection);
                 assert_eq!((counts.faces, counts.edges, counts.vertices), (4, 6, 4));
-                let (definition, trims) = catallax_step::numerical::definition_from_exact_model(
-                    model,
-                    collection,
-                    recipe.name.clone(),
-                    &options.tolerance_mm,
-                    dec,
-                )?;
+                let (definition, trims) =
+                    catallax_features::numerical_embedding::definition_from_exact_model(
+                        model,
+                        collection,
+                        recipe.name.clone(),
+                        &options.tolerance_mm,
+                        dec,
+                    )?;
                 numerical::build_with_native_trims(definition, trims, options, dec)
             })
             .unwrap();

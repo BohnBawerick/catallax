@@ -79,6 +79,8 @@ mod loft;
 mod mesh_import;
 /// Separate checked numerical edit definitions and replay.
 pub mod numerical;
+/// Approximate embedding of retained topology and carriers for numerical admission.
+pub mod numerical_embedding;
 mod offset_fit;
 mod placement;
 mod planar_distance;

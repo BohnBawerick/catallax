@@ -1,27 +1,24 @@
-//! Numerical embedding of a retained exact B-rep whose geometry has no exact
-//! STEP form.
+//! Numerical embedding of retained exact topology and carriers.
 //!
-//! The topology, planes and native spline carriers are kept. Each exact
-//! patch-section or patch-pair edge becomes a fitted cubic spline, and every
-//! edge use on a spline face receives a fitted native UV curve at that edge's
-//! own parameter. Binary64 arithmetic only proposes these fits. Numerical
-//! admission rechecks every edge, trim and loop at 128 bits under the stated
-//! tolerance, and the numerical writer rechecks its decimal payload. The
-//! result is approximate; no exact answer or complete body bound follows.
+//! Planes and native spline carriers are kept. Each traced patch-section or
+//! patch-pair edge becomes a fitted cubic, and every spline-face edge use gets
+//! a fitted native UV curve at that edge's parameter. Binary64 arithmetic only
+//! proposes fits. Numerical admission must recheck every edge, trim and loop
+//! at 128 bits under the declared tolerance. This returns no admitted body,
+//! exact answer, complete body bound, or STEP authority.
 //!
 //! This follows OCCT's face/face section, which approximates each section as
 //! one 3D B-spline and one 2D B-spline on each face (`IntTools_FaceFace` with
 //! curve and both pcurve approximations enabled) before the Boolean stores
 //! them on its section edges.
 
-use super::*;
-use catallax_numbers::Ball;
-use catallax_shapes::{BSplineCurve, Plane, SplineSupport};
+use catallax_numbers::{Ball, Decider, Rational, Real, Refusal};
+use catallax_shapes::{BSplineCurve, Curve, Plane, Point3, SplineSupport, Surface};
 use catallax_topology::numerical::{
-    NumericalDefinition, NumericalEdge, NumericalFace, NumericalNativeTrim, NumericalOptions,
-    NumericalTrim, NumericalVertex,
+    NumericalDefinition, NumericalEdge, NumericalFace, NumericalNativeTrim, NumericalTrim,
+    NumericalVertex,
 };
-use catallax_topology::{BodyId, EdgeId, Loop, Model, VertexId};
+use catallax_topology::{BodyId, EdgeId, Loop, Model, Sense, VertexId};
 use std::collections::{BTreeMap, BTreeSet};
 
 mod nurbs;
@@ -38,11 +35,11 @@ const MAX_SPANS: usize = 256;
 const CHECK_SHARES: [f64; 7] = [0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875];
 
 fn unsupported(detail: &str) -> Refusal {
-    bad("unsupported", detail)
+    Refusal::new("features.numerical-embedding-unsupported", detail)
 }
 
 fn fit_failure(detail: impl Into<String>) -> Refusal {
-    Refusal::new("step.numerical-fit", detail)
+    Refusal::new("features.numerical-embedding-fit", detail)
 }
 
 fn f64_point(p: &Point3) -> [f64; 3] {
@@ -657,9 +654,12 @@ pub fn definition_from_exact_model(
                                 .position
                                 .each_ref()
                                 .map(|q| Ball::from_rational(q, BITS));
-                            let at = surface
-                                .parameters_of(&p, dec)?
-                                .ok_or_else(|| bad("gap", "a vertex has no plane parameter"))?;
+                            let at = surface.parameters_of(&p, dec)?.ok_or_else(|| {
+                                Refusal::new(
+                                    "features.numerical-embedding-gap",
+                                    "a vertex has no plane parameter",
+                                )
+                            })?;
                             let exact = at.each_ref().map(Ball::mid);
                             Uv {
                                 approx: exact.each_ref().map(Rational::to_f64_nearest),
@@ -711,7 +711,10 @@ pub fn definition_from_exact_model(
                         )?,
                         Curve::BSpline(spline) => {
                             let at = spline.unique_parameter_of(&p, dec)?.ok_or_else(|| {
-                                bad("gap", "a vertex has no finite spline parameter")
+                                Refusal::new(
+                                    "features.numerical-embedding-gap",
+                                    "a vertex has no finite spline parameter",
+                                )
                             })?;
                             let [lo, hi] = spline.domain();
                             scalar(at.value(), dec)?.max(lo.clone()).min(hi.clone())
@@ -846,31 +849,6 @@ pub fn definition_from_exact_model(
         },
         native_trims,
     ))
-}
-
-/// Embeds, admits and writes a retained exact body as an approximate STEP
-/// artifact under `options`, stated before any work. Admission and the
-/// writer's decimal payload are each checked at that tolerance.
-pub fn build_from_exact_model(
-    model: &Model,
-    body: BodyId,
-    name: String,
-    options: NumericalOptions,
-    step: &NumericalStepOptions,
-    dec: &mut Decider,
-) -> Result<(NumericalBody, NumericalStep), Refusal> {
-    guarded(|| {
-        let (definition, native_trims) =
-            definition_from_exact_model(model, body, name, &options.tolerance_mm, dec)?;
-        let body = catallax_topology::numerical::build_with_native_trims(
-            definition,
-            native_trims,
-            options,
-            dec,
-        )?;
-        let artifact = build(&body, step, dec)?;
-        Ok((body, artifact))
-    })
 }
 
 #[cfg(test)]

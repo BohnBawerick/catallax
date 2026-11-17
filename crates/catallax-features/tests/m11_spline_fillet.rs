@@ -655,7 +655,7 @@ fn numerical_fillet_builds_on_the_smooth_loft_across_its_station_seam() {
         let options = catallax_topology::numerical::NumericalOptions {
             tolerance_mm: tolerance.clone(),
         };
-        let (source, native) = catallax_step::numerical::definition_from_exact_model(
+        let (source, native) = catallax_features::numerical_embedding::definition_from_exact_model(
             &built.model,
             built.result,
             recipe.name.clone(),

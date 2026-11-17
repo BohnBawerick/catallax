@@ -1,8 +1,8 @@
 //! Numerical admission keeps an atlas face's trims on that face's own charts.
 
+use catallax_features::numerical_embedding::definition_from_exact_model;
 use catallax_numbers::{Decider, Rational, with_operation_budget};
 use catallax_shapes::{RationalAtlas, SplineSupport, Surface};
-use catallax_step::numerical::definition_from_exact_model;
 use catallax_topology::numerical::{NumericalOptions, build_with_native_trims};
 
 #[test]

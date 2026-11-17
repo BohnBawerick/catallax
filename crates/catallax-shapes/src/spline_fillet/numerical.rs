@@ -15,6 +15,11 @@ pub use carrier::NumericalSplineFillet;
 mod cut;
 #[path = "numerical_extend.rs"]
 mod extend;
+#[path = "numerical_support.rs"]
+mod support;
+pub use support::NumericalFilletSupport;
+#[path = "numerical_walk.rs"]
+mod walk;
 pub use cut::NumericalFilletCut;
 
 const MAX_DEPTH: u32 = 24;
@@ -29,98 +34,31 @@ fn rational(value: f64) -> Result<Rational, Refusal> {
 fn norm(value: [f64; 3]) -> f64 {
     value.iter().map(|v| v * v).sum::<f64>().sqrt()
 }
-fn inverse(mut a: [[f64; 3]; 3], mut b: [f64; 3]) -> Option<[f64; 3]> {
-    for k in 0..3 {
-        let pivot = (k..3).max_by(|&i, &j| a[i][k].abs().total_cmp(&a[j][k].abs()))?;
+fn inverse<const N: usize>(mut a: [[f64; N]; N], mut b: [f64; N]) -> Option<[f64; N]> {
+    for k in 0..N {
+        let pivot = (k..N).max_by(|&i, &j| a[i][k].abs().total_cmp(&a[j][k].abs()))?;
         if !a[pivot][k].is_finite() || a[pivot][k].abs() < f64::MIN_POSITIVE {
             return None;
         }
         a.swap(k, pivot);
         b.swap(k, pivot);
         let divisor = a[k][k];
-        for j in k..3 {
+        for j in k..N {
             a[k][j] /= divisor;
         }
         b[k] /= divisor;
-        for i in 0..3 {
+        for i in 0..N {
             if i == k {
                 continue;
             }
             let scale = a[i][k];
-            for j in k..3 {
+            for j in k..N {
                 a[i][j] -= scale * a[k][j];
             }
             b[i] -= scale * b[k];
         }
     }
     b.iter().all(|v| v.is_finite()).then_some(b)
-}
-
-#[derive(Debug)]
-struct LogicalSupport {
-    charts: Vec<Support>,
-    distance: Rational,
-}
-impl LogicalSupport {
-    fn new(atlas: &RationalAtlas, distance: Rational, dec: &mut Decider) -> Result<Self, Refusal> {
-        let side = if distance.sign() == Sign::Negative {
-            Sign::Negative
-        } else {
-            Sign::Positive
-        };
-        let charts = atlas
-            .charts()
-            .iter()
-            .map(|chart| Support::new(chart.patch(), side, dec))
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(Self { charts, distance })
-    }
-    fn chart(&self, at: [f64; 2]) -> Result<(usize, &Support), Refusal> {
-        self.charts
-            .iter()
-            .enumerate()
-            .find(|(_, chart)| {
-                (0..2).all(|i| {
-                    at[i] >= chart.domain[i][0].to_f64_nearest()
-                        && at[i] <= chart.domain[i][1].to_f64_nearest()
-                })
-            })
-            .ok_or_else(|| bad("contact parameters leave the retained atlas cover"))
-    }
-    fn centre(&self, at: [f64; 2], dec: &mut Decider) -> Result<[f64; 3], Refusal> {
-        let (_, chart) = self.chart(at)?;
-        dec.charge_work(chart.evaluation_work())?;
-        let (point, normal) = chart.contact_f64(at);
-        let d = self.distance.to_f64_nearest();
-        let centre = std::array::from_fn(|i| point[i] + d * normal[i]);
-        if centre.iter().all(|v| v.is_finite()) {
-            Ok(centre)
-        } else {
-            Err(bad("non-finite offset evaluation"))
-        }
-    }
-    fn checked(
-        &self,
-        at: &[Rational; 2],
-        dec: &mut Decider,
-    ) -> Result<(usize, [Ball; 3]), Refusal> {
-        let (index, chart) = self.chart(at.each_ref().map(Rational::to_f64_nearest))?;
-        if !(0..2).all(|i| at[i] >= chart.domain[i][0] && at[i] <= chart.domain[i][1]) {
-            return Err(bad("rounded contact leaves its selected chart"));
-        }
-        let mut meter = Meter::default();
-        let contact = chart.contact(
-            &at.each_ref().map(|t| Jet::constant(ball(t), 0)),
-            &mut meter,
-        )?;
-        meter.charge(dec)?;
-        dec.charge_work(6)?;
-        let d = ball(&self.distance);
-        Ok((
-            index,
-            std::array::from_fn(|i| &contact.point[i].0[0] + &(&d * &contact.unit[i].0[0])),
-        ))
-    }
 }
 
 /// One checked numerical station. Chart indices refer to the input atlases.
@@ -148,14 +86,23 @@ pub struct NumericalFilletSpine {
 }
 
 #[derive(Debug)]
+enum SpineGuide {
+    Coordinate(usize),
+    Curve(BSplineCurve),
+}
+
+#[derive(Debug)]
 struct Problem {
-    supports: [LogicalSupport; 2],
-    axis: usize,
+    supports: [NumericalFilletSupport; 2],
+    guide: SpineGuide,
     tolerance: f64,
 }
 impl Problem {
     fn params<T: Clone>(&self, tau: T, x: &[T; 3]) -> [[T; 2]; 2] {
-        let first = if self.axis == 0 {
+        let SpineGuide::Coordinate(axis) = self.guide else {
+            unreachable!("coordinate solver needs a coordinate guide")
+        };
+        let first = if axis == 0 {
             [tau, x[0].clone()]
         } else {
             [x[0].clone(), tau]
@@ -169,6 +116,20 @@ impl Problem {
         Ok(std::array::from_fn(|i| a[i] - b[i]))
     }
     fn solve(
+        &self,
+        tau: &Rational,
+        seed: [f64; 4],
+        dec: &mut Decider,
+    ) -> Result<NumericalSpineNode, Refusal> {
+        match &self.guide {
+            SpineGuide::Coordinate(axis) => {
+                self.solve_axis(tau, [seed[1 - axis], seed[2], seed[3]], dec)
+            }
+            SpineGuide::Curve(curve) => self.solve_guided(curve, tau, seed, dec),
+        }
+    }
+
+    fn solve_axis(
         &self,
         tau: &Rational,
         mut x: [f64; 3],
@@ -244,13 +205,9 @@ impl Problem {
         }
         Err(bad("numerical offset-spine Newton iteration limit reached"))
     }
-    fn guess(&self, a: &NumericalSpineNode, b: &NumericalSpineNode, share: f64) -> [f64; 3] {
+    fn guess(&self, a: &NumericalSpineNode, b: &NumericalSpineNode, share: f64) -> [f64; 4] {
         let extract = |n: &NumericalSpineNode| {
-            [
-                n.parameters[0][1 - self.axis].to_f64_nearest(),
-                n.parameters[1][0].to_f64_nearest(),
-                n.parameters[1][1].to_f64_nearest(),
-            ]
+            std::array::from_fn::<_, 4, _>(|i| n.parameters[i / 2][i % 2].to_f64_nearest())
         };
         let (a, b) = (extract(a), extract(b));
         std::array::from_fn(|i| a[i] + share * (b[i] - a[i]))
@@ -311,17 +268,62 @@ impl NumericalFilletSpine {
         }
         let problem = Problem {
             supports: [
-                LogicalSupport::new(&supports[0], distances[0].clone(), dec)?,
-                LogicalSupport::new(&supports[1], distances[1].clone(), dec)?,
+                NumericalFilletSupport::from_atlas(&supports[0], distances[0].clone(), dec)?,
+                NumericalFilletSupport::from_atlas(&supports[1], distances[1].clone(), dec)?,
             ],
-            axis,
+            guide: SpineGuide::Coordinate(axis),
             tolerance,
         };
-        let first = problem.solve(
-            &range[0],
-            seed.each_ref().map(Rational::to_f64_nearest),
+        let parameters = problem.params(range[0].clone(), &seed);
+        Self::trace_problem(
+            problem,
+            range,
+            std::array::from_fn(|i| parameters[i / 2][i % 2].to_f64_nearest()),
+            tolerance_mm,
             dec,
-        )?;
+        )
+    }
+
+    /// Walks equal signed-offset contacts in planes normal to `guide`.
+    /// Contact, guide-plane and fitted-quarter checks are numerical. A failed
+    /// walk returns its cause rather than replacing the selected branch.
+    pub fn walk(
+        supports: [NumericalFilletSupport; 2],
+        guide: BSplineCurve,
+        range: [Rational; 2],
+        seed: [[Rational; 2]; 2],
+        tolerance_mm: Rational,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        let tolerance = tolerance_mm.to_f64_nearest();
+        if range[0] >= range[1]
+            || tolerance_mm.sign() != Sign::Positive
+            || !tolerance.is_finite()
+            || tolerance <= 0.0
+        {
+            return Err(bad("walking needs an increasing range and finite positive tolerance"));
+        }
+        let domain = guide.domain();
+        if &range[0] < domain[0] || &range[1] > domain[1] {
+            return Err(bad("walking range leaves the retained guide"));
+        }
+        Self::trace_problem(
+            Problem { supports, guide: SpineGuide::Curve(guide), tolerance },
+            range,
+            std::array::from_fn(|i| seed[i / 2][i % 2].to_f64_nearest()),
+            tolerance_mm,
+            dec,
+        )
+    }
+
+    fn trace_problem(
+        problem: Problem,
+        range: [Rational; 2],
+        seed: [f64; 4],
+        tolerance_mm: Rational,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        let first = problem.solve(&range[0], seed, dec)?;
         let mut nodes = vec![first];
         for i in 1..=8 {
             let tau = &range[0] + &((&range[1] - &range[0]) * Rational::from_ratio(i, 8).unwrap());

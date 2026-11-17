@@ -34,9 +34,7 @@ fn packed(
         let at = node.parameters[side]
             .each_ref()
             .map(Rational::to_f64_nearest);
-        let (_, chart) = support.chart(at)?;
-        dec.charge_work(chart.evaluation_work())?;
-        let (point, normal) = chart.contact_f64(at);
+        let (point, normal) = support.contact_f64(at, dec)?;
         points[side] = point;
         let sign = if support.distance.sign() == Sign::Negative {
             1.0
@@ -236,18 +234,12 @@ fn rail_error(
     let uv = candidate.parameters[side].evaluate_box([tau, tau], 128, dec)?;
     let at = [uv[0].mid(), uv[1].mid()];
     let support = &problem.supports[side];
-    let (_, chart) = support.chart(at.each_ref().map(Rational::to_f64_nearest))?;
-    let mut meter = Meter::default();
-    let contact = chart.contact(
-        &at.each_ref().map(|p| Jet::constant(ball(p), 0)),
-        &mut meter,
-    )?;
-    meter.charge(dec)?;
+    let contact = support.contact(&at, dec)?;
     let point = candidate.rails[side].evaluate_box([tau, tau], 128, dec)?;
     Ok((0..3).fold(Rational::zero(), |sum, i| {
-        sum + (&point[i].lo() - &contact.point[i].0[0].hi())
+        sum + (&point[i].lo() - &contact.point[i].hi())
             .abs()
-            .max((&point[i].hi() - &contact.point[i].0[0].lo()).abs())
+            .max((&point[i].hi() - &contact.point[i].lo()).abs())
     }))
 }
 

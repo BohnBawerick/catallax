@@ -181,8 +181,19 @@ impl Problem {
         let section_upper = section.to_f64_nearest();
         let limit = self.tolerance / 8.0;
         if offset_upper > limit || section_upper > limit {
+            let midpoint_residual = plane
+                .residual(centre.each_ref().map(Rational::to_f64_nearest))
+                .abs();
+            let diameter = |values: &[Ball; 3]| {
+                values
+                    .iter()
+                    .map(|value| (value.hi() - value.lo()).to_f64_nearest())
+                    .fold(0.0, f64::max)
+            };
+            let point_diameter = diameter(&plane.point);
+            let normal_diameter = diameter(&plane.normal);
             return Err(bad(format!(
-                "rolling-ball station at tau {tau}: offset residual upper {offset_upper:.9e} mm (exceeds limit: {}); guide-plane residual upper {section_upper:.9e} mm (exceeds limit: {}); limit {limit:.9e} mm",
+                "rolling-ball station at tau {tau}: offset residual upper {offset_upper:.9e} mm (exceeds limit: {}); guide-plane residual upper {section_upper:.9e} mm (exceeds limit: {}); limit {limit:.9e} mm; checked-centre midpoint plane residual {midpoint_residual:.9e} mm; guide point diameter {point_diameter:.9e} mm; guide unit-normal diameter {normal_diameter:.9e}",
                 offset_upper > limit,
                 section_upper > limit,
             )));

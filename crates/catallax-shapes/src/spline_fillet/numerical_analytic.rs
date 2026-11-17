@@ -31,6 +31,18 @@ pub(super) struct Analytic64 {
     profile: Profile,
 }
 
+fn scalar(value: &Real, dec: &mut Decider) -> Result<f64, Refusal> {
+    let value = if let Some(value) = value.as_rational() {
+        value.to_f64_nearest()
+    } else {
+        dec.enclose_budgeted_at(value, 128)?.mid().to_f64_nearest()
+    };
+    if !value.is_finite() {
+        return Err(bad("native rolling-ball scalar is outside binary64 range"));
+    }
+    Ok(value)
+}
+
 fn unit(value: [f64; 3]) -> Result<[f64; 3], Refusal> {
     let length = norm(value);
     if !length.is_finite() || length <= 0.0 {
@@ -43,26 +55,26 @@ impl Analytic64 {
     pub(super) fn new(surface: &Surface, dec: &mut Decider) -> Result<Option<Self>, Refusal> {
         let profile = match surface {
             Surface::Plane(_) => Profile::Plane,
-            Surface::Cylinder(value) => Profile::Cylinder(value.radius().to_f64()),
+            Surface::Cylinder(value) => Profile::Cylinder(scalar(&value.radius(), dec)?),
             Surface::Cone(value) => {
-                let slope = value.slope.to_f64();
+                let slope = scalar(&value.slope, dec)?;
                 Profile::Cone {
                     slope,
                     inverse_normal_length: 1.0 / (1.0 + slope * slope).sqrt(),
                 }
             }
-            Surface::Sphere(value) => Profile::Sphere(value.radius.to_f64()),
+            Surface::Sphere(value) => Profile::Sphere(scalar(&value.radius, dec)?),
             Surface::Torus(value) => Profile::Torus {
-                major: value.major.to_f64(),
-                minor: value.minor.to_f64(),
+                major: scalar(&value.major, dec)?,
+                minor: scalar(&value.minor, dec)?,
             },
             Surface::TorusSheet(value) => Profile::Torus {
-                major: value.major.to_f64(),
-                minor: value.minor.to_f64(),
+                major: scalar(&value.major, dec)?,
+                minor: scalar(&value.minor, dec)?,
             },
             Surface::EllipticCylinder(value) => Profile::Ellipse {
-                major: value.major_sq.sqrt().to_f64(),
-                minor: value.minor_sq.sqrt().to_f64(),
+                major: scalar(&value.major_sq.sqrt(), dec)?,
+                minor: scalar(&value.minor_sq.sqrt(), dec)?,
             },
             Surface::BSpline(_) => return Ok(None),
         };
@@ -70,20 +82,25 @@ impl Analytic64 {
         let (origin, axis, reference) = surface
             .definition_frame()
             .ok_or_else(|| bad("native support has no analytic frame"))?;
-        let e3 = unit([axis.x.to_f64(), axis.y.to_f64(), axis.z.to_f64()])?;
+        let e3 = unit([
+            scalar(&axis.x, dec)?,
+            scalar(&axis.y, dec)?,
+            scalar(&axis.z, dec)?,
+        ])?;
         let e1 = unit([
-            reference.x.to_f64(),
-            reference.y.to_f64(),
-            reference.z.to_f64(),
+            scalar(&reference.x, dec)?,
+            scalar(&reference.y, dec)?,
+            scalar(&reference.z, dec)?,
         ])?;
         let e2 = std::array::from_fn(|i| {
             let (j, k) = ((i + 1) % 3, (i + 2) % 3);
             e3[j] * e1[k] - e3[k] * e1[j]
         });
-        let origin = [origin.x.to_f64(), origin.y.to_f64(), origin.z.to_f64()];
-        if !origin.iter().all(|value| value.is_finite()) {
-            return Err(bad("native rolling-ball origin is outside binary64 range"));
-        }
+        let origin = [
+            scalar(&origin.x, dec)?,
+            scalar(&origin.y, dec)?,
+            scalar(&origin.z, dec)?,
+        ];
         Ok(Some(Self {
             origin,
             frame: [e1, e2, e3],

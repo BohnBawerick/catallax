@@ -299,3 +299,23 @@ admitting the fitted strip's regular chart cover. Whole prefix-plus-fillet
 work is 75,128,530, not exhausted. The command takes 175.49 seconds including
 compilation. This is a failed owner request, not a passing fillet or an
 isolated chart-proof cost.
+
+## Final native source embedding admission
+
+The embedding owner's final P5 source proof at
+`f16d9d680c8b81feffc86df05610d5f24901332b` admits all 41 original edges
+of its 22-face body, retaining 11 added paired seam edges. Its unchanged
+tolerance is 1e-7 mm and its whole operation allowance is 100M.
+
+| Stage | Work |
+|---|---:|
+| Source construction | 1,073,248 |
+| Native embedding | 21,468,886 |
+| Native B-rep admission | 29,943,064 |
+| Whole request | 52,485,198 |
+
+Embedding, admission and the whole request remain over the 20M target.
+These are the owner's measured stage counters, not a CPU profile or a
+like-for-like timing benchmark. This proves source admission, not a fillet,
+radius edit, later cut or STEP exchange. Owner, demo, bracket and P1 source
+admission also pass below 20M in that handoff.

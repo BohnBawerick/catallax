@@ -54,8 +54,8 @@ Milestone 2.1 remains open: stable radius-edit names, an imported-part fillet,
 the completed housing chain and intersecting later M8 cuts are not proved.
 The proxy's later edit was not attempted after its fillet refusal. The actual
 frozen curved-housing recipe is `tools/checkpoint/phase2/curved-housing.json`.
-The follow-on loft regression requires a successful radius edit and stable
-face, edge and vertex names; that candidate currently fails as recorded below.
+The loft regression preserves the bounded-refusal contract. Successful edits
+must keep face, edge and vertex names and pass independent geometry checks.
 See the [numerical method and final-admission split](research/spline-fillet-offset-search.md#16-november-numerical-multi-patch-body-and-raw-step).
 
 Historical cases retained for phase 5: the 1e-4 mm carrier/cap-only request
@@ -66,16 +66,20 @@ encoding also exhausts 100M; no transfer-engine performance change was made.
 ## Part-two radius candidate, 17 November
 
 The original 0.1 to 0.15 mm radius change was localized to the first end-plane
-cut at 100M. Bounded interpolation replaces the scalar bisection proposals,
-without changing its residual threshold, feature tolerance or work allowance.
+cut at 100M. A bounded-interpolation candidate kept the residual threshold,
+feature tolerance and work allowance unchanged, but did not finish the edit.
 
 | Stage | Charged work | Result |
 |---|---:|---|
 | Multi-patch loft fillet body | 92,314,860 | Built; independent radius/cap geometry passes |
+| Independent initial-body radius/cap checks | 626,608 | Passed in a separate proof scope |
 | Radius edit, 1/10 to 3/20 mm | 99,999,973 | `numbers.operation-budget` in the first end-plane cut |
 
 The candidate passes the existing two-chart carrier/cap control and all three
 admission controls, but still does not build the radius edit. No edited-name,
-edited-geometry or edited-STEP success is claimed. The first cut remains the
-same blocked geometric stage; the following import and frozen-housing work
-has not started.
+edited-geometry or edited-STEP success is claimed. The candidate was parked
+and the original bisection retained. The listed rows are separate measured
+request scopes, not an internal profile or one combined request. Internal
+charges before the failing cut were not collected. Steering on 17 November
+defers another radius attempt and moves on to import and the real frozen
+housing.

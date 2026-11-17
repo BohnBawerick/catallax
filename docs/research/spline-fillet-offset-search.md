@@ -154,16 +154,15 @@ tolerance and reported the typed geometric stage, not just the work limit.
 uses derivative-free Brent interpolation inside a bracket.
 [SMLib's fillet solver](https://github.com/NVIDIA-Omniverse/usd-brep/blob/main/source/SMLib/src/SmFilletSolver.cpp#L2997-L3038)
 instead sets bounded Newton equations for its coupled contact problem.
-The local end cut is already a scalar equation on a fitted carrier, so it
-follows the OCCT bounded-interpolation approach. It uses a secant proposal
-alternating with mandatory bisection, not the full Brent interpolation
-scheme. No reference implementation was copied.
+The end-cut candidate followed the OCCT bounded-interpolation approach,
+using a secant proposal alternating with mandatory bisection rather than
+the full Brent scheme. It still exhausted 100M in the first cut, so the
+candidate was parked and the original bisection retained. No reference
+implementation was copied.
 
-Binary64 interpolation only proposes the next parameter. The parameter must
-stay strictly within the retained bracket; non-finite or out-of-bracket
-proposals fall back to its midpoint. Every returned point passes the same
-128-bit plane-residual check as before. The 80-iteration limit, cap fitting
-tolerance and paired world/native-UV checks are unchanged. Neither the
-scalar solve nor the finite curve checks establish exact intersection
-authority or a complete branch result.
+In that experiment binary64 interpolation only proposed the next parameter.
+Returned points still passed the same 128-bit plane-residual check, with
+unchanged cap fitting tolerance and paired world/native-UV checks. The
+measured request split is in the phase-5 record. No successful strict radius
+edit or exact intersection authority was established.
 

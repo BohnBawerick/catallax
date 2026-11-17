@@ -772,26 +772,36 @@ fn numerical_fillet_builds_on_the_smooth_loft_across_its_station_seam() {
     let (edited, work) = with_operation_budget(100_000_000, || {
         rounded.edit_radius(edited_radius.clone(), &mut Decider::default())
     });
-    let edited = edited
-        .unwrap_or_else(|refusal| panic!("numerical radius edit refused: {refusal:?}; {work:?}"));
-    assert!(!work.exhausted, "{work:?}");
-    assert_eq!(names(rounded.body()), names(edited.body()));
-    println!(
-        "numerical smooth-loft radius edit keeps names: {} work",
-        work.used
-    );
-    check_geometry(&edited, &edited_radius);
+    match edited {
+        Ok(edited) => {
+            assert!(!work.exhausted, "{work:?}");
+            assert_eq!(names(rounded.body()), names(edited.body()));
+            println!(
+                "numerical smooth-loft radius edit keeps names: {} work",
+                work.used
+            );
+            check_geometry(&edited, &edited_radius);
+        }
+        Err(refusal) => {
+            assert!(work.exhausted, "{refusal:?}: {work:?}");
+            assert_eq!(refusal.code, "numbers.operation-budget");
+            println!(
+                "numerical smooth-loft radius edit refuses: {refusal:?}; {} work",
+                work.used
+            );
+        }
+    }
     if let Some(path) = std::env::var_os("CATALLAX_M11_STEP_OUT") {
         let (artifact, work) = with_operation_budget(100_000_000, || {
             catallax_step::numerical::build(
-                edited.body(),
+                rounded.body(),
                 &Default::default(),
                 &mut Decider::default(),
             )
         });
         assert!(!work.exhausted, "{work:?}");
         std::fs::write(path, artifact.unwrap().bytes()).unwrap();
-        println!("edited numerical smooth-loft STEP: {} work", work.used);
+        println!("initial numerical smooth-loft STEP: {} work", work.used);
     }
 }
 

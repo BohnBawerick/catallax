@@ -516,6 +516,35 @@ mod tests {
                     }
                 }
             }
+            let before_candidates = current_operation_work().used;
+            let candidates =
+                construct(model, built.result, &chains, &radius, &tolerance, &mut dec).unwrap();
+            junction_work += current_operation_work().used - before_candidates;
+            let join = candidates
+                .iter()
+                .find(|candidate| candidate.source == vertex)
+                .unwrap();
+            assert!(
+                join.patches.is_empty(),
+                "tangent-chain dispatch must not invent a corner face"
+            );
+            for strip in 0..2 {
+                for source_end in 0..2 {
+                    assert_eq!(
+                        candidates
+                            .iter()
+                            .flat_map(|candidate| &candidate.terminations)
+                            .filter(|termination| {
+                                termination.strip.chain == 0
+                                    && termination.strip.strip == strip
+                                    && termination.strip.source_end == source_end
+                            })
+                            .count(),
+                        1,
+                        "the tangent chain and both actual free ends must close"
+                    );
+                }
+            }
             (after_rolling - before, junction_work)
         });
         assert!(!work.exhausted);

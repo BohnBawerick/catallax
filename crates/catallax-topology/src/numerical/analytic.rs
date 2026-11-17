@@ -2,6 +2,8 @@
 
 use super::*;
 
+mod toroids;
+
 pub(super) fn validate_circle(
     circle: &catallax_shapes::Circle,
     parameters: &[Rational; 2],
@@ -38,6 +40,7 @@ pub(super) fn supports(surface: &Surface) -> bool {
         Surface::Plane(_)
             | Surface::Cylinder(_)
             | Surface::Cone(_)
+            | Surface::Torus(_)
             | Surface::BSpline(SplineSupport::RationalPatch(_) | SplineSupport::RationalAtlas(_))
     )
 }
@@ -58,6 +61,16 @@ pub(super) fn validate_surface(surface: &Surface, dec: &mut Decider) -> Result<(
             cylinder.axis.clone(),
             cylinder.radius_sq.clone(),
             cylinder.ref_dir.clone(),
+            dec,
+        )?;
+    }
+    if let Surface::Torus(torus) = surface {
+        catallax_shapes::Torus::new(
+            torus.center.clone(),
+            torus.axis.clone(),
+            torus.major.clone(),
+            torus.minor.clone(),
+            torus.ref_dir.clone(),
             dec,
         )?;
     }
@@ -85,6 +98,10 @@ pub(super) fn check_loops(
     tolerance: &Rational,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
+    if matches!(face.surface, Surface::Torus(_)) {
+        toroids::check_loops(face, edges, dec)?;
+        return super::check_loops(face, None, dec);
+    }
     if matches!(face.surface, Surface::Cone(_)) {
         for uv in face.loops.iter().flatten().flat_map(|trim| &trim.uv) {
             dec.charge_work(1)?;

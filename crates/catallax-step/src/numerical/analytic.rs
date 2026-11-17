@@ -9,6 +9,7 @@ use catallax_topology::numerical::{self as n, NumericalDefinition};
 const BITS: u32 = 128;
 
 mod cones;
+mod toroids;
 
 pub(super) fn applies(body: &NumericalBody) -> bool {
     let d = body.definition();
@@ -19,16 +20,19 @@ pub(super) fn applies(body: &NumericalBody) -> bool {
         && d.faces.iter().all(|face| {
             matches!(
                 face.surface,
-                Surface::Plane(_) | Surface::Cylinder(_) | Surface::Cone(_)
+                Surface::Plane(_) | Surface::Cylinder(_) | Surface::Cone(_) | Surface::Torus(_)
             )
         })
         && (d
             .edges
             .iter()
             .any(|edge| matches!(edge.curve, Curve::Circle(_)))
-            || d.faces
-                .iter()
-                .any(|face| matches!(face.surface, Surface::Cylinder(_) | Surface::Cone(_))))
+            || d.faces.iter().any(|face| {
+                matches!(
+                    face.surface,
+                    Surface::Cylinder(_) | Surface::Cone(_) | Surface::Torus(_)
+                )
+            }))
 }
 
 fn round3(p: &[Rational; 3], options: &NumericalStepOptions) -> Result<[Rational; 3], Refusal> {
@@ -147,9 +151,10 @@ fn uv(
             Ok([angle(&x, &y, &old[0], dec)?, z.mid()])
         }
         Surface::Cone(cone) => cones::uv(cone, p, old, dec),
+        Surface::Torus(torus) => toroids::uv(torus, p, old, dec),
         _ => Err(bad(
             "unsupported",
-            "analytic writer requires planes, cylinders or cones",
+            "analytic writer requires planes, cylinders, cones or ring tori",
         )),
     }
 }
@@ -213,6 +218,7 @@ fn rounded_surfaces(
                 cone_parameters = Some(parameters);
                 (id, surface)
             }
+            Surface::Torus(torus) => toroids::rounded(w, &face.key, torus)?,
             _ => {
                 return Err(bad(
                     "unsupported",
@@ -749,7 +755,12 @@ pub(super) fn build(
     // Validate the actual rounded chart before classifying a repeated edge as
     // a seam. Admission requires a complete periodic cell for such an edge;
     // use count alone is not a geometric seam condition.
-    let admitted = n::build(d, body.options().clone(), w.dec)?;
+    let recheck = if body.kind() == catallax_topology::BodyKind::Surface {
+        n::build_surface
+    } else {
+        n::build
+    };
+    let admitted = recheck(d, body.options().clone(), w.dec)?;
     let d = admitted.definition();
     let mut parameter = ParameterRounding {
         error: Rational::zero(),
@@ -850,7 +861,10 @@ pub(super) fn build(
         let mut bounds = Vec::new();
         for (i, boundary) in face.loops.iter().enumerate() {
             let mut uses = Vec::new();
-            let start = if matches!(face.surface, Surface::Cylinder(_) | Surface::Cone(_)) {
+            let start = if matches!(
+                face.surface,
+                Surface::Cylinder(_) | Surface::Cone(_) | Surface::Torus(_)
+            ) {
                 seam_loop_start(boundary, &d.edges, face.sense, w.dec)?
             } else {
                 0
@@ -900,10 +914,15 @@ pub(super) fn build(
         parameter.error
     );
     let has_cones = cone_parameters.iter().any(Option::is_some);
-    let has_cylinders = d
-        .faces
-        .iter()
-        .any(|face| matches!(face.surface, Surface::Cylinder(_)));
+    let mut has_cylinders = false;
+    let mut has_tori = false;
+    for face in &d.faces {
+        match face.surface {
+            Surface::Cylinder(_) => has_cylinders = true,
+            Surface::Torus(_) => has_tori = true,
+            _ => {}
+        }
+    }
     let angle_error = cone_parameters
         .iter()
         .flatten()
@@ -918,12 +937,6 @@ pub(super) fn build(
     let mut file_checks = vec![
         "source.retained-shared-analytic-boundaries".into(),
         "file.decimal-analytic-carriers-and-pcurves-numerical-admission".into(),
-        if has_cones && !has_cylinders {
-            "file.explicit-conical-pcurves"
-        } else {
-            "file.explicit-cylindrical-pcurves"
-        }
-        .into(),
         "file.canonical-byte-identity".into(),
         "file.approximate-category-no-global-bound".into(),
         format!(
@@ -931,10 +944,14 @@ pub(super) fn build(
             parameter.error
         ),
     ];
+    if has_cylinders {
+        file_checks.push("file.explicit-cylindrical-pcurves".into());
+    }
+    if has_tori {
+        file_checks.push("file.explicit-toroidal-pcurves".into());
+    }
     if has_cones {
-        if has_cylinders {
-            file_checks.push("file.explicit-conical-pcurves".into());
-        }
+        file_checks.push("file.explicit-conical-pcurves".into());
         file_checks.push("file.cone-step-v-axial-height".into());
         file_checks.push(format!(
             "file.cone-semi-angle-rounding-max-rad={angle_error}"

@@ -178,11 +178,15 @@ fn run(
                 let maximum = maxima.entry(&tolerance.body).or_default();
                 *maximum = maximum.max(tolerance.tolerance_mm);
             }
-            let roots: Vec<_> = native.bodies().iter().enumerate().map(|(body, solid)| json!({
-                "body":body, "name":solid.name(),
-                "parts":if solid.definition().declared_solid() {1} else {solid.counts().shells},
-                "tolerance_mm":maxima[solid.name()],
-            })).collect();
+            let roots: Vec<_> = native.bodies().iter().enumerate().map(|(body, solid)| {
+                let counts = solid.counts();
+                json!({
+                    "body":body, "name":solid.name(),
+                    "parts":if solid.definition().declared_solid() {1} else {counts.shells},
+                    "counts":{"faces":counts.faces,"edges":counts.edges,"vertices":counts.vertices},
+                    "tolerance_mm":maxima[solid.name()],
+                })
+            }).collect();
             files.push(save_export(out, "document.step", &bytes, json!({
                 "bodies":(0..native.bodies().len()).collect::<Vec<_>>(), "kind":"native_document",
                 "source_roots":roots,"unit_factors":native.source_unit_factors(),

@@ -16,7 +16,7 @@ impl ParsedStep {
     }
 
     /// Serialize actual parsed geometry and repaired topology, not input bytes.
-    /// The evidence travels in FILE_DESCRIPTION; no exact authority is inferred.
+    /// The evidence travels in ignored report comments; no exact authority is inferred.
     pub(crate) fn write_tolerant_step(
         &self,
         changes: &Graph,
@@ -31,17 +31,7 @@ impl ParsedStep {
         };
         let mut output = String::with_capacity(evidence_json.len() + ids.len() * 80);
         output.push_str("ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION((");
-        quoted(&mut output, "CATALLAX TOLERANT: sampled fits, measured local tolerances; not certified. Concatenate following description strings for JSON evidence.");
-        // Bound individual scanner tokens without dropping any evidence.
-        let mut remaining = evidence_json;
-        while !remaining.is_empty() {
-            dec.check_deadline()?;
-            let mut end = remaining.len().min(2048);
-            while !remaining.is_char_boundary(end) { end -= 1; }
-            output.push_str(",\n");
-            quoted(&mut output, &remaining[..end]);
-            remaining = &remaining[end..];
-        }
+        quoted(&mut output, "CATALLAX TOLERANT: sampled native B-rep, not certified; per-entity millimetre tolerances and repair/check record: CATALLAX_REPORT_JSON comments");
         output.push_str("),'2;1');\nFILE_NAME('catallax-tolerant.step','',(''),(''),'Catallax','Catallax','');\nFILE_SCHEMA((");
         if schemas.is_empty() {
             quoted(&mut output, "AUTOMOTIVE_DESIGN");
@@ -53,7 +43,23 @@ impl ParsedStep {
                 quoted(&mut output, schema);
             }
         }
-        output.push_str("));\nENDSEC;\nDATA;\n");
+        output.push_str("));\nENDSEC;\n");
+        // Concatenating comment payloads reconstructs one JSON report. Escaped
+        // JSON slashes cannot start or terminate STEP comments, even in names.
+        let mut remaining = evidence_json;
+        while !remaining.is_empty() {
+            dec.check_deadline()?;
+            let mut end = remaining.len().min(2048);
+            while !remaining.is_char_boundary(end) { end -= 1; }
+            output.push_str("/* CATALLAX_REPORT_JSON ");
+            for character in remaining[..end].chars() {
+                if character == '/' { output.push('\\'); }
+                output.push(character);
+            }
+            output.push_str(" */\n");
+            remaining = &remaining[end..];
+        }
+        output.push_str("DATA;\n");
         for id in ids {
             dec.check_deadline()?;
             dec.charge_work(1)?;

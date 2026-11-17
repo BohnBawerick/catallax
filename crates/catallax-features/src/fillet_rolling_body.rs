@@ -330,6 +330,24 @@ pub(super) fn publish(
     tolerance: &Rational,
     dec: &mut Decider,
 ) -> Result<NumericalBody, Refusal> {
+    #[cfg(test)]
+    for face in &d.faces {
+        eprintln!(
+            "candidate-uv {} {:?}: {:?}",
+            face.key,
+            face.sense,
+            face.loops
+                .iter()
+                .map(|row| row
+                    .iter()
+                    .map(|trim| trim
+                        .uv
+                        .each_ref()
+                        .map(|uv| uv.each_ref().map(|value| value.to_f64_nearest())))
+                    .collect::<Vec<_>>())
+                .collect::<Vec<_>>()
+        );
+    }
     let mut bindings = Vec::new();
     for (face, rows) in d.faces.iter().zip(native) {
         for (boundary, (row, curves)) in face.loops.iter().zip(rows).enumerate() {

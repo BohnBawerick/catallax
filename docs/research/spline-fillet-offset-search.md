@@ -166,3 +166,57 @@ unchanged cap fitting tolerance and paired world/native-UV checks. The
 measured request split is in the phase-5 record. No successful strict radius
 edit or exact intersection authority was established.
 
+
+## 17 November: finite clearance before general continuation
+
+The everyday-part scout found false overflow refusals, not exhausted work:
+the guard compared complete carriers instead of the retained patches.
+An infinite cylinder could meet a rounded side below its actual trim. A
+boss-base torus of rolling radius `r` reached `R + 2r` in that test, although
+its retained strip stopped at its contact radius `R + r`.
+
+The ordinary recipe fillet builder now encloses complete straight-meridian
+ring regions by their edge and contact circles. Existing cut hulls still
+bound finite straight strips. A spherical corner gets a pyramid containing
+its contact cone's sphere sector. Trimmed neighbour boxes come from
+`catallax_measure::face_bounding_box`, not the neighbour's complete support.
+Disjoint finite bounds prove clearance. Overlap and unavailable bounds stay
+unresolved and retain the intersector or continuation refusal.
+
+This follows the face-aware bounding approach of
+[OCCT `BRepBndLib`](https://occt3d.com/dev/doc/refman/html/class_b_rep_bnd_lib.html)
+and [SMLib `SmFace::CalculateBoundingBox`](https://github.com/NVIDIA-Omniverse/usd-brep/blob/main/source/SMLib/src/SmFace.cpp#L819-L925).
+SMLib uses finite edges for linear surface directions and the trimmed UV
+domain otherwise. The new corner bound uses its exact positive contact cone
+and Cauchy-Schwarz. No sampling or tolerance change enters these clearance
+proofs, and no reference implementation was copied.
+
+The new `trimmed_fillet_clearance` regression exercises ordinary feature
+evaluation, topology, independent mass or material controls, and STEP:
+
+| Case | Build work | STEP work |
+|---|---:|---:|
+| Box corner R10 | 1,889 | 89,631 |
+| Box corner R15 | 1,874 | 94,614 |
+| Box corner R19 | 1,874 | 93,588 |
+| Boss base R4 | 13,844 | 1,973 |
+| Boss base R5 | 13,588 | 1,973 |
+| Boss base R6 | 13,588 | 1,973 |
+| D12 hole, axis 12 mm from wall, R3 | 13,258 | 1,903 |
+| Chamfered cylinder rim R2 | 30,641 | 21,155 |
+
+All eight emitted files open as valid closed single solids through raw
+OCP 8.0.1.1 `StepToTopoDS_Builder`, with healing, SameParameter and
+TransferRoots off. Each takes a valid material-removing OpenCASCADE cut.
+The owner's pocket is not yet accepted: its separately owned coplanar cut
+fix must remove the coincident lid first. Demo edge coverage is not inferred
+from these eight cases.
+
+The separate native rolling-ball continuation implementation follows
+[OCCT `BRepBlend_Walking`](https://occt3d.com/dev/doc/refman/html/class_b_rep_blend___walking.html)
+and [SMLib's constant-radius contact and section-plane equations](https://github.com/NVIDIA-Omniverse/usd-brep/blob/main/source/SMLib/src/SmFilletSolver.cpp#L2665-L2715).
+Accepted contacts and guide sections receive interval residual checks at
+the declared 100 nm tolerance. It is not yet the application's fallback.
+The cone rim and three-support ball checks pass; the cylinder rim still
+exhausts 100M inside continuation. Further continuation work follows the
+ordered clearance, intersection and arc-end repairs.

@@ -159,3 +159,18 @@ The restored permanent loft regression passes with the original bisection:
 96,732,996 work for body admission, 626,466 for independent geometry, and a
 typed radius-edit refusal at 99,999,999 in its separate request. No successful
 strict radius edit is inferred from the passing bounded-refusal contract.
+
+## Native rolling-ball continuation, 17 November
+
+The new standalone native cylinder-rim continuation exhausts an unchanged
+100M request at 100 nm, both before and after separating binary64 analytic
+proposals from interval acceptance. The refusal is
+`numbers.operation-budget` inside `NumericalFilletSpine::walk`, before its
+independent geometry controls. The failing request's exact final work count
+was not retained. This is an incomplete new continuation path, not a work
+diagnosis for the owner's everyday fillet refusals.
+
+The same run builds the cone rim at 13,724,976 work and checks the
+three-plane common ball and singular-contact refusal at 5,746. Successful
+cone continuation retains 259 checked stations. No budget or tolerance was
+widened. Further walker work follows the ordered trimmed-clearance repairs.

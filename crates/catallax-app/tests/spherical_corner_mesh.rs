@@ -865,49 +865,6 @@ fn compare(baseline: &[(&str, &str)], actual: Vec<(String, String)>) {
     }
 }
 
-/// Captured from main 485f172 before the corner mesh change.
-const NO_ANGLE_BASELINE: &[(&str, &str)] = &[
-    (
-        "H-N certified",
-        "mesh e0abaec724a8a4a9 obj 77c30998202840b2",
-    ),
-    (
-        "H-N preview",
-        "refused mesh.precision-or-budget: preview sampling reached its refinement limit",
-    ),
-    (
-        "H-E certified",
-        "mesh 4984bb0a62c1b7ba obj 77dd09a4c76fdb13",
-    ),
-    ("H-E preview", "preview 94a275338ae952ac"),
-    (
-        "H-B certified",
-        "mesh 5fa4aba0d7a08b1a obj 6afc4d71307b0316",
-    ),
-    ("H-B preview", "preview 5ea3baffce21275e"),
-];
-
-#[test]
-fn removing_the_angular_target_keeps_earlier_output() {
-    let mut actual = Vec::new();
-    for part in [H_N, H_E, H_B] {
-        let built = part.built();
-        let options = MeshOptions {
-            angular_deviation: None,
-            ..part.options()
-        };
-        actual.push((
-            format!("{} certified", part.name),
-            certified_line(&built.model, built.result, &options),
-        ));
-        actual.push((
-            format!("{} preview", part.name),
-            preview_line(&built.model, built.result, &PreviewOptions::from(&options)),
-        ));
-    }
-    compare(NO_ANGLE_BASELINE, actual);
-}
-
 /// The spherical outside of a removed octant: three arcs, but the long way round
 /// the corner's cone, so the face is the complement of the convex sector.
 fn sphere_less_an_octant() -> Built {

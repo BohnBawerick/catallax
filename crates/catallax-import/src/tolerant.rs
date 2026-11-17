@@ -445,13 +445,22 @@ impl TolerantBody {
     /// Decode this retained body under the caller's work allowance.
     /// The immutable declaration remains unchanged if decoding fails.
     pub fn materialize(&self, dec: &mut Decider) -> Result<std::borrow::Cow<'_, Self>, Error> {
+        self.materialize_as(true, dec)
+    }
+
+    fn materialize_as(
+        &self,
+        native: bool,
+        dec: &mut Decider,
+    ) -> Result<std::borrow::Cow<'_, Self>, Error> {
         let Some(source) = &self.deferred_source else {
             return Ok(std::borrow::Cow::Borrowed(self));
         };
-        let definition = source.source().native_body_definition(
+        let definition = source.source().body_definition(
             source.entity(),
             self.declared_solid,
             source.length_mm(),
+            native,
             dec,
         )?;
         let mut body = Self::new(&self.name, self.declared_solid, &self.options);
@@ -496,15 +505,15 @@ impl TolerantFile {
         &self.bodies
     }
     fn one_body(&self, index: usize, dec: &mut Decider) -> Result<Self, Error> {
-        let body = &self.bodies[index];
+        let body = self.bodies[index].materialize_as(false, dec)?;
         charge_text(&self.source_sha256, dec)?;
         healing::charge_value(&self.mm_per_unit, dec)?;
-        healing::charge_body(body, dec)?;
+        healing::charge_body(&body, dec)?;
         Ok(Self {
             source_sha256: self.source_sha256.clone(),
             mm_per_unit: self.mm_per_unit.clone(),
             options: body.options.clone(),
-            bodies: vec![body.clone()],
+            bodies: vec![body.into_owned()],
         })
     }
     /// Reconstruct the retained source definition for geometry consumers.

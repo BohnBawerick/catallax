@@ -114,7 +114,10 @@ fn admission_exhaustion_keeps_the_complete_prepaid_surface_representation() {
 fn normal_gap_replays_from_saved_source_controls_with_approximate_history() {
     let mut fixture = BoxFixture::new(["2", "3", "4"]);
     fixture.shift = Some((0, [r("0.001"), r("0"), r("0")]));
-    let source = box_step(fixture);
+    let mut sheet = BoxFixture::new(["2", "3", "4"]);
+    sheet.origin = [r("5"), r("0"), r("0")];
+    sheet.omit = Some(0);
+    let source = boxes_step(&[fixture, sheet]);
     let original = open(&source);
     let controls = serde_json::to_vec(&original.saved_controls()).unwrap();
     let controls = serde_json::from_slice(&controls).unwrap();
@@ -129,6 +132,7 @@ fn normal_gap_replays_from_saved_source_controls_with_approximate_history() {
         assert_eq!(file.bodies()[0].tier(), Tier::RepairedSolid);
         assert!(file.bodies()[0].approximate());
         assert_eq!(checked_artifact(file).0, (6, 12, 8));
+        assert_eq!(file.bodies()[1].tier(), Tier::SurfaceBody);
     }
     let retained = history(&original);
     assert_eq!(retained, history(&replayed));

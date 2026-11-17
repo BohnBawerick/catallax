@@ -50,11 +50,12 @@ impl ParsedStep {
         }
     }
 
-    pub(crate) fn native_body_definition(
+    pub(crate) fn body_definition(
         &self,
         entity: EntityId,
         solid: bool,
         scale: &Rational,
+        native: bool,
         dec: &mut Decider,
     ) -> Result<BodyDefinition, ImportRefusal> {
         Adapter {
@@ -62,7 +63,7 @@ impl ParsedStep {
             scale: scale.clone(),
             dec,
             active: BTreeSet::new(),
-            native: true,
+            native,
         }
         .model(entity, solid)
     }

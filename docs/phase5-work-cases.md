@@ -248,3 +248,17 @@ isolated profile of the cut solver. Actual trimmed neighbour-face domains
 and closed-body admission are not included. The release test takes 1.11
 seconds; `proof-general-neighbour-cut-1/` retains the bounded command,
 revision, PID/group records, full output and exit.
+
+## Capped rolling-strip solid, 17 November
+
+One R1 edge of a 20×30×40 box now completes the general contact walk,
+two actual neighbour intersections, retained-border/support-loop edits
+and unchanged numerical solid admission at 1e-7 mm. The whole request,
+including its original prefix and numerical source conversion, spends
+72,898,257 work under the unchanged 100M allowance. It is above the 20M
+target and remains recorded for phase 5; no internal stage profile was
+collected. The independent six-plane area controls run after that request.
+
+The release test takes 27.54 seconds (100.91 with compilation). This proves
+one closed capped-strip body, not network/corner publication, STEP exchange
+or the owner part. No cap, tolerance or admission guard was changed.

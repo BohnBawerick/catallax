@@ -220,3 +220,46 @@ the declared 1e-7 mm tolerance, or 0.1 nm. It is not yet the application's fallb
 The cone rim and three-support ball checks pass; the cylinder rim still
 exhausts 100M inside continuation. Further continuation work follows the
 ordered clearance, intersection and arc-end repairs.
+
+## 17 November: native angular charts and the ordinary numerical outcome
+
+The native numerical boundary now admits regular spherical charts and reuses
+the ring-torus implementation from the analytic-family lane. A full turn
+requires a rectangular paired seam cell; repeated edges without a complete
+period translation refuse. Sphere latitude stays strictly away from its
+poles. Fitted native trims additionally need positive homogeneous weights
+and a complete cropped Bézier control hull inside the supported finite
+chart. These are local chart checks, not a global body-embedding proof.
+
+The parameter convention follows [OCCT `Geom_SphericalSurface`](https://occt3d.com/dev/doc/refman/html/class_geom___spherical_surface.html):
+longitude and latitude in radians. SMLib's
+[`SmSphere`](https://github.com/NVIDIA-Omniverse/usd-brep/blob/main/source/SMLib/src/SmSphere.cpp)
+and [`SmTorus`](https://github.com/NVIDIA-Omniverse/usd-brep/blob/main/source/SMLib/src/SmTorus.cpp)
+also retain the analytic generating circles, but express their angular
+intervals in degrees. No degree convention or reference implementation was
+copied into Catallax.
+
+After rebasing onto the analytic-family fixes, independent 100M requests at
+1e-7 mm produce:
+
+| Native body | Admission work | STEP work |
+|---|---:|---:|
+| Ring torus, each of four cyclic seam-walk starts | 16,811 | 37,991–37,997 |
+| Spherical wedge with four planar neighbours | 87,125 | 110,379 |
+
+All five STEP files open as valid closed single solids through raw OCP
+8.0.1.1, with healing, SameParameter and TransferRoots off. Each takes a
+valid material-removing cut. The rebase preserves their bytes. A separate
+spherical native-UV trim admission uses 91,129 work. Mixed native/spline
+conversion and STEP emission remain outside this proof.
+
+The ordinary `build_incremental_without_display` application API now
+returns `EvaluatedApplicationOutcome`: either its exact application body
+or an opaque numerical body with its source recipe and face origins.
+`build_incremental_with_files_without_display` carries the same distinction
+with resolved files. Numerical results have no exact model or reusable
+exact checkpoint. The multichart loft fillet consumer passes through this
+ordinary route at 96,733,000 work with one unchanged 100M allowance; its
+fitted blend is geometrically displaced from the old sharp edge. This does
+not prove native-chain fallback, later edits, imported-part fillets, or the
+owner's pocket.

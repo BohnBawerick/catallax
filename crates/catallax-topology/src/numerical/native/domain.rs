@@ -17,18 +17,25 @@ pub(super) fn check(
         .ok_or_else(|| bad("trim", "a native analytic chart needs a finite boundary"))?;
     let mut bounds: [[Rational; 2]; 2] =
         std::array::from_fn(|axis| [first.uv[0][axis].clone(), first.uv[0][axis].clone()]);
+    for point in face.loops.iter().flatten().flat_map(|trim| &trim.uv) {
+        for axis in 0..2 {
+            if point[axis] < bounds[axis][0] {
+                bounds[axis][0] = point[axis].clone();
+            }
+            if point[axis] > bounds[axis][1] {
+                bounds[axis][1] = point[axis].clone();
+            }
+        }
+    }
+    let cone_turn = matches!(face.surface, Surface::Cone(_))
+        .then(|| Ball::pi(BITS).lo().mul_pow2(1));
+    let cell = if cone_turn.as_ref().is_some_and(|turn| &bounds[0][1] - &bounds[0][0] >= *turn) {
+        analytic::periodic_cell(face, edges, dec)?
+    } else {
+        None
+    };
     for (row, boundary) in face.loops.iter().enumerate() {
         for (use_index, trim) in boundary.iter().enumerate() {
-            for point in &trim.uv {
-                for axis in 0..2 {
-                    if point[axis] < bounds[axis][0] {
-                        bounds[axis][0] = point[axis].clone();
-                    }
-                    if point[axis] > bounds[axis][1] {
-                        bounds[axis][1] = point[axis].clone();
-                    }
-                }
-            }
             let Some(curve) = index.get(face_index, row, use_index) else {
                 continue;
             };
@@ -55,6 +62,14 @@ pub(super) fn check(
                         return Err(Refusal::new(
                             "numerical.native-domain-weight-unverified",
                             "the native parameter hull needs separated positive rational weights",
+                        ));
+                    }
+                    if let Some(cell) = &cell
+                        && !cell.contains_control(&control, dec)?
+                    {
+                        return Err(Refusal::new(
+                            "numerical.native-cone-domain-unverified",
+                            format!("face {} edge {}: the complete native-curve hull leaves its paired affine fundamental cell", face.key, edge.key),
                         ));
                     }
                     for axis in 0..2 {
@@ -85,18 +100,15 @@ pub(super) fn check(
             }
         }
     }
-    if matches!(face.surface, Surface::Cone(_)) {
+    if let Some(turn) = cone_turn {
         if bounds[1][0].sign() != Sign::Positive {
             return Err(Refusal::new(
                 "numerical.native-cone-domain-unverified",
                 "the complete native-curve hull must stay strictly above the cone apex",
             ));
         }
-        let turn = Ball::pi(BITS).mid().mul_pow2(1);
         let width = &bounds[0][1] - &bounds[0][0];
-        if width >= Ball::pi(BITS).lo().mul_pow2(1)
-            && (width != turn || !analytic::periodic_cell(face, edges, dec)?)
-        {
+        if width >= turn && cell.is_none() {
             return Err(Refusal::new(
                 "numerical.native-cone-domain-unverified",
                 "the complete native-curve hull needs a regular angular chart or one paired fundamental cell",

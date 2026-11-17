@@ -107,3 +107,50 @@ fn native_cone_trims_keep_complete_positive_height_and_periodic_domains() {
         assert_eq!(error.code, "numerical.native-cone-domain-unverified");
     }
 }
+
+#[test]
+fn sloping_paired_cone_cells_bound_the_complete_native_hull_not_its_u_box() {
+    use catallax_numbers::Rational;
+    let mut definition = fixture::positive_bore();
+    let drift = Rational::parse("0.000000000001").unwrap();
+    let face = definition.faces.iter_mut()
+        .find(|face| matches!(face.surface, Surface::Cone(_))).unwrap();
+    for uv in face.loops.iter_mut().flatten().flat_map(|trim| &mut trim.uv) {
+        uv[0] = &uv[0] + &(&drift * &uv[1]);
+    }
+    let mut binding = native_seam(&definition);
+    let options = n::NumericalOptions { tolerance_mm: Rational::parse("0.0000001").unwrap() };
+    let body = n::build_with_native_trims(
+        definition.clone(), vec![binding.clone()], options.clone(), &mut Decider::default(),
+    ).unwrap();
+    let counts = body.counts();
+    assert_eq!((counts.faces, counts.edges, counts.vertices), (7, 15, 10));
+
+    // The forged control leaves the sloping cut between valid endpoints, but
+    // remains inside the unchanged global u bounds and physical tolerance.
+    let controls: Vec<_> = binding.curve.controls().cloned().collect();
+    let x = controls.iter().map(|p| p.x.as_rational().unwrap()).collect::<Vec<_>>();
+    let y = controls.iter().map(|p| p.y.as_rational().unwrap()).collect::<Vec<_>>();
+    let face = definition.faces.iter()
+        .find(|face| matches!(face.surface, Surface::Cone(_))).unwrap();
+    let mut values = face.loops.iter().flatten().flat_map(|trim| &trim.uv).map(|uv| &uv[0]);
+    let first = values.next().unwrap();
+    let (lo, hi) = values.fold((first, first), |(lo, hi), value| (lo.min(value), hi.max(value)));
+    let high_cut = x[0] > (lo + hi).mul_pow2(-1);
+    let bulge = (&x[1] - &x[0]).abs().mul_pow2(-2);
+    let middle = Point3::new(
+        ((&x[0] + &x[1]).mul_pow2(-1) + if high_cut { bulge.clone() } else { -bulge }).into(),
+        (&y[0] + &y[1]).mul_pow2(-1).into(),
+        Real::zero(),
+    );
+    let [lo, hi] = binding.curve.domain();
+    binding.curve = BSplineCurve::new(
+        2, vec![lo.clone(), lo.clone(), lo.clone(), hi.clone(), hi.clone(), hi.clone()],
+        vec![controls[0].clone(), middle, controls[1].clone()],
+        vec![Real::one(); 3], &mut Decider::default(),
+    ).unwrap();
+    let error = n::build_with_native_trims(
+        definition, vec![binding], options, &mut Decider::default(),
+    ).unwrap_err();
+    assert_eq!(error.code, "numerical.native-cone-domain-unverified");
+}

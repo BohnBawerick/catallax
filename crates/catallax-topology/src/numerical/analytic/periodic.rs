@@ -1,4 +1,5 @@
 use super::*;
+use catallax_numbers::Real;
 
 pub(super) fn check_loops(
     face: &NumericalFace,
@@ -35,7 +36,7 @@ pub(super) fn check_loops(
         if width < Ball::pi(BITS).lo() * Rational::from_i64(2) {
             continue;
         }
-        if width != period() || !paired_seam(face, edges, axis, dec)? {
+        if width != period() || paired_seam(face, edges, axis, dec)?.is_none() {
             return Err(Refusal::new(
                 code,
                 format!(
@@ -74,18 +75,44 @@ fn translated_seam(first: &NumericalTrim, second: &NumericalTrim, axis: usize) -
         && second.uv[0][other] == first.uv[1][other]
 }
 
+pub(in crate::numerical) struct Cell {
+    axis: usize,
+    origin: [Rational; 2],
+    height: Rational,
+    drift: Rational,
+    bounds: [Rational; 2],
+}
+
+impl Cell {
+    /// Positive-weight homogeneous controls stay in the translated affine
+    /// cell exactly, without projecting a sloping cell onto a wider u box.
+    pub(in crate::numerical) fn contains_control(
+        &self, control: &[Real; 4], dec: &Decider,
+    ) -> Result<bool, Refusal> {
+        let offset = |axis: usize| {
+            &control[axis] - &(&control[3] * &Real::from(self.origin[axis].clone()))
+        };
+        let across = &(&offset(self.axis) * &Real::from(self.height.clone()))
+            - &(&offset(1 - self.axis) * &Real::from(self.drift.clone()));
+        let lower = &across - &(&control[3] * &Real::from(self.bounds[0].clone()));
+        let upper = &across - &(&control[3] * &Real::from(self.bounds[1].clone()));
+        Ok(dec.enclose_at(&lower, BITS)?.lo().sign() != Sign::Negative
+            && dec.enclose_at(&upper, BITS)?.hi().sign() != Sign::Positive)
+    }
+}
+
 pub(super) fn paired_seam(
     face: &NumericalFace,
     edges: &[NumericalEdge],
     axis: usize,
     dec: &mut Decider,
-) -> Result<bool, Refusal> {
+) -> Result<Option<Cell>, Refusal> {
     let other = 1 - axis;
     let Some(boundary) = face.loops.first() else {
-        return Ok(false);
+        return Ok(None);
     };
     if boundary.len() < 4 {
-        return Ok(false);
+        return Ok(None);
     }
     for (i, first) in boundary.iter().enumerate() {
         for (j, second) in boundary.iter().enumerate().skip(i + 1) {
@@ -132,10 +159,12 @@ pub(super) fn paired_seam(
             if face.loops.iter().skip(1).flatten().flat_map(|trim| &trim.uv)
                 .any(|point| { let value = across(point); value <= low || value >= high })
             {
-                return Ok(false);
+                return Ok(None);
             }
-            return Ok(true);
+            return Ok(Some(Cell {
+                axis, origin: first.uv[0].clone(), height, drift, bounds: [low, high],
+            }));
         }
     }
-    Ok(false)
+    Ok(None)
 }

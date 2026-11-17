@@ -128,7 +128,7 @@ pub(super) fn check_loops(
     if matches!(face.surface, Surface::Cylinder(_) | Surface::Cone(_)) {
         // Ordinary contractible charts remain below one turn. A full band
         // must instead provide one shared seam with two translated UV uses.
-        if !periodic_cell(face, edges, dec)? {
+        if periodic_cell(face, edges, dec)?.is_none() {
             let mut seen = BTreeSet::new();
             for trim in face.loops.iter().flatten() {
                 dec.charge_work(1)?;
@@ -238,7 +238,7 @@ pub(super) fn periodic_cell(
     face: &NumericalFace,
     edges: &[NumericalEdge],
     dec: &mut Decider,
-) -> Result<bool, Refusal> {
+) -> Result<Option<periodic::Cell>, Refusal> {
     periodic::paired_seam(face, edges, 0, dec)
 }
 

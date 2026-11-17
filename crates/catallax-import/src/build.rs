@@ -121,6 +121,7 @@ fn build_surface_model_with_deadline(
     let body = model.add_body(Body {
         kind: BodyKind::Surface,
         lumps,
+        wires: Vec::new(),
         marks: MarkLog::new(),
     });
     if let Some(fault) = model.check(body).first() {
@@ -224,6 +225,7 @@ fn build_solid_exact(
     let body = model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: marks.clone(),
     });
     if let Some(fault) = model.check(body).first() {

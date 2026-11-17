@@ -303,6 +303,7 @@ pub(crate) fn assemble(
     let cells = model.add_body(Body {
         kind: BodyKind::Solid,
         lumps,
+        wires: Vec::new(),
         marks: MarkLog::new(),
     });
     catallax_topology::coalesce_rational_charts(model, cells, groups, dec)

@@ -249,6 +249,35 @@ pub(super) fn source_geometry(
         let (Curve::Line(old_origin, old_direction), Curve::Line(origin, direction)) =
             (&original.curve, &result.curve)
         else {
+            // Conics are sewn only with unchanged finite domains. A later
+            // transitive vertex join must not change either arc's endpoints.
+            charge_curve(&original.curve, dec)?;
+            charge_curve(&result.curve, dec)?;
+            if original.curve != result.curve
+                || (result.curve_same_sense ^ reversed) != original.curve_same_sense
+            {
+                return Err(failure(
+                    "import.healing-finite-correspondence",
+                    "sewn conic carrier or traversal changed",
+                ));
+            }
+            for end in 0..2 {
+                let old = &source.vertices[original.vertices[if reversed { 1 - end } else { end }]]
+                    .source
+                    .point;
+                let current = &candidate.vertices[result.vertices[end]].source.point;
+                if !distance_squared(old, current, dec)?.is_zero() {
+                    return Err(failure(
+                        "import.healing-finite-correspondence",
+                        "a later vertex join changed a sewn conic's finite domain",
+                    ));
+                }
+            }
+            plan.passed(
+                source,
+                &replaced,
+                "original-conic-to-final-retained-conic-identical-finite-domain",
+            );
             continue;
         };
         let mut maximum = Rational::zero();
@@ -646,10 +675,6 @@ pub(super) fn solid(
     plan: &mut Plan,
     dec: &mut Decider,
 ) -> Result<(), Error> {
-    if !body.declared_solid {
-        plan.passed(body, &body.name, "solid.source-surface-kind-retained");
-        return Ok(());
-    }
     // Conservatively prepay the full scan even if an own-body issue permits
     // early termination; no cross-body metadata inspection is free.
     dec.charge_work(plan.issues.len() as u64)?;

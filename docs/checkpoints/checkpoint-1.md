@@ -16,6 +16,8 @@ python3 -B tools/checkpoint/checkpoint.py scoreboard --tools $TOOLS --sources $S
 python3 -B tools/checkpoint/checkpoint.py census --tools $TOOLS --sources $SOURCES --selection $SELECTION --out RUN/census
 ```
 
+After this cut, the scoreboard command also runs the phase-2 targets (P8, P9 and the curved-housing chain), and it moves a census hole off-centre when the centred hole removes nothing. [tools/checkpoint/phase2](../../tools/checkpoint/phase2/README.md) defines both. The cut-run tables below used the earlier command.
+
 Each command builds its own binaries and writes `scoreboard.md` or `census.md` beside its raw data. Wall time on the work PC at the cut: 14.2 min for the scoreboard and 13.0 min for the census, on a warm target directory. A cold release build adds about 4 min to each command. Installing the tools the first time adds about 5 min.
 
 ## Coverage count
@@ -282,6 +284,7 @@ Phase 1 does no speed work. These are the costs that merged PRs recorded, kept h
 - **Numerical body handover.** Intern repeated checked definitions and evidence in the `NumericalBody` handover. The initial and edited encodes cost 24.18M and 48.26M work, the decodes 10.57M and 21.05M ([#667](https://github.com/BohnBawerick/catallax/pull/667), Later).
 - **Per-body import charts.** Prepare derivative expressions once per chart, not once per fitted cell ([#670](https://github.com/BohnBawerick/catallax/pull/670), Later).
 - **Slow steps at the 0.5.0 cut.** Loft 35 s, fillet on a loft edge 26 s, spline sweep 13 s, P5 fillet edit 4 to 6 s, field mass 3.5 to 7.7 s (roadmap 5.1).
+- **Sketch fillet measurement.** In SolidDraft's `sketch-fillet-chamfer-split` scenario, the requested measurement at step 2 takes 1.56 to 1.88 s against its 1,000 ms budget, under the 2,000 ms gate. The budget overrun predates 0.6.0: in five alternating runs on one machine, SolidDraft 0.5.0 on Catallax 0.2.0 took 1.56 to 1.85 s and 0.6.0 on Catallax 0.3.0 took 1.75 to 1.88 s ([SolidDraft #330](https://github.com/ZIGRAWBOHNBAWERICK/soliddraft/pull/330)).
 
 
 

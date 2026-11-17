@@ -12,6 +12,176 @@ fn q(n: i64, d: i64) -> Real {
     Real::from_rational(Rational::from_ratio(n, d).unwrap())
 }
 
+fn split_vertical_plane(first: bool, dec: &mut Decider) -> RationalAtlas {
+    let controls = [-1, 1]
+        .into_iter()
+        .flat_map(|horizontal| {
+            [0, 1, 2].map(|height| {
+                if first {
+                    Point3::new(q(horizontal, 1), q(0, 1), q(height, 1))
+                } else {
+                    Point3::new(q(0, 1), q(horizontal, 1), q(height, 1))
+                }
+            })
+        })
+        .collect();
+    let source = BSplineSurface::new(
+        [1, 1],
+        [
+            [0, 0, 1, 1].map(Rational::from_i64).to_vec(),
+            [0, 0, 1, 2, 2].map(Rational::from_i64).to_vec(),
+        ],
+        [2, 3],
+        controls,
+        vec![Real::one(); 6],
+        dec,
+    )
+    .unwrap();
+    let [atlas] =
+        <[_; 1]>::try_from(RationalAtlas::partition(source, [false, false], dec).unwrap()).unwrap();
+    assert_eq!(atlas.charts().len(), 2);
+    atlas
+}
+
+#[test]
+fn offset_spine_crosses_both_atlas_seams_without_fragmenting() {
+    let ((), work) = with_operation_budget(100_000_000, || {
+        let mut dec = Decider::default();
+        let first = split_vertical_plane(true, &mut dec);
+        let second = split_vertical_plane(false, &mut dec);
+        let tolerance = Rational::parse("0.0000001").unwrap();
+        let spine = catallax_shapes::NumericalFilletSpine::trace(
+            &[first, second],
+            [
+                Rational::from_ratio(1, 10).unwrap(),
+                Rational::from_ratio(1, 5).unwrap(),
+            ],
+            1,
+            [Rational::zero(), Rational::from_i64(2)],
+            [
+                Rational::from_ratio(3, 5).unwrap(),
+                Rational::from_ratio(9, 20).unwrap(),
+                Rational::zero(),
+            ],
+            tolerance.clone(),
+            &mut dec,
+        )
+        .unwrap();
+        let charts: std::collections::BTreeSet<_> =
+            spine.nodes().iter().map(|node| node.charts).collect();
+        assert_eq!(charts, [[0, 0], [1, 1]].into_iter().collect());
+        assert_eq!(spine.tolerance_mm(), &tolerance);
+        assert!(spine.sampled_error_mm() <= &tolerance);
+        let curve = spine.centre_curve();
+        for i in 0..=32 {
+            let t = Rational::from_ratio(i, 16).unwrap();
+            let point = curve.evaluate_box([&t, &t], 128, &dec).unwrap();
+            for (value, expected) in point.iter().zip([
+                Rational::from_ratio(1, 5).unwrap(),
+                Rational::from_ratio(-1, 10).unwrap(),
+                t.clone(),
+            ]) {
+                assert!((&value.lo() - &expected).abs() <= tolerance);
+                assert!((&value.hi() - &expected).abs() <= tolerance);
+            }
+        }
+    });
+    assert!(!work.exhausted, "{work:?}");
+}
+
+#[test]
+fn numerical_fillet_crosses_chart_seams_with_circular_sections() {
+    let ((), work) = with_operation_budget(100_000_000, || {
+        let mut dec = Decider::default();
+        let supports = [
+            split_vertical_plane(true, &mut dec),
+            split_vertical_plane(false, &mut dec),
+        ];
+        let supports = supports.map(|support| {
+            catallax_shapes::NumericalFilletSpine::extended_support(
+                &support,
+                1,
+                &Rational::from_ratio(1, 4).unwrap(),
+                &mut dec,
+            )
+            .unwrap()
+        });
+        let radius = Rational::from_ratio(1, 10).unwrap();
+        let tolerance = Rational::parse("0.0000001").unwrap();
+        let spine = catallax_shapes::NumericalFilletSpine::trace(
+            &supports,
+            [radius.clone(), radius.clone()],
+            1,
+            [
+                Rational::from_ratio(-1, 2).unwrap(),
+                Rational::from_ratio(5, 2).unwrap(),
+            ],
+            [
+                Rational::from_ratio(11, 20).unwrap(),
+                Rational::from_ratio(9, 20).unwrap(),
+                Rational::from_ratio(-1, 2).unwrap(),
+            ],
+            tolerance.clone(),
+            &mut dec,
+        )
+        .unwrap();
+        let fillet = catallax_shapes::NumericalSplineFillet::fit(spine, &mut dec).unwrap();
+        assert!(fillet.sampled_error_mm() <= &tolerance);
+        let source = fillet.surface().source();
+        for i in -4..=20 {
+            let tau = Rational::from_ratio(i, 8).unwrap();
+            for j in 0..=8 {
+                let across = Rational::from_ratio(j, 8).unwrap();
+                let point = source
+                    .evaluate_box([&tau, &tau], [&across, &across], 128, &dec)
+                    .unwrap();
+                let x = &point[0] - &catallax_numbers::Ball::from_rational(&radius, 128);
+                let y = &point[1] + &catallax_numbers::Ball::from_rational(&radius, 128);
+                let square = &x.pow_u32(2) + &y.pow_u32(2);
+                let error = (&square.lo() - &(&radius * &radius))
+                    .abs()
+                    .max((&square.hi() - &(&radius * &radius)).abs());
+                assert!(error <= &tolerance * &radius);
+                assert!((&point[2].lo() - &tau).abs() <= tolerance);
+                assert!((&point[2].hi() - &tau).abs() <= tolerance);
+                if j == 0 {
+                    assert!(point[1].lo().abs().max(point[1].hi().abs()) <= tolerance);
+                }
+                if j == 8 {
+                    assert!(point[0].lo().abs().max(point[0].hi().abs()) <= tolerance);
+                }
+            }
+        }
+        for normal in [[0, 0, 1], [1, 0, 1]] {
+            let cut = fillet
+                .plane_cut(normal.map(Rational::from_i64), Rational::zero(), &mut dec)
+                .unwrap();
+            for i in 0..=32 {
+                let s = Rational::from_ratio(i, 32).unwrap();
+                let point = cut.curve().evaluate_box([&s, &s], 128, &dec).unwrap();
+                let uv = cut.parameters().evaluate_box([&s, &s], 128, &dec).unwrap();
+                let tau = uv[0].mid();
+                let across = uv[1].mid();
+                let on_fillet = source
+                    .evaluate_box([&tau, &tau], [&across, &across], 128, &dec)
+                    .unwrap();
+                let residual = &point[2]
+                    + &(&point[0]
+                        * &catallax_numbers::Ball::from_rational(
+                            &Rational::from_i64(normal[0]),
+                            128,
+                        ));
+                assert!(residual.lo().abs().max(residual.hi().abs()) <= tolerance);
+                for k in 0..3 {
+                    assert!((&point[k].lo() - &on_fillet[k].hi()).abs() <= tolerance);
+                    assert!((&point[k].hi() - &on_fillet[k].lo()).abs() <= tolerance);
+                }
+            }
+        }
+    });
+    assert!(!work.exhausted, "{work:?}");
+}
+
 #[test]
 fn retained_source_clearance_keeps_native_initial_and_later_contacts() {
     for reversed in [false, true] {

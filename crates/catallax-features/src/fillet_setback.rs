@@ -353,6 +353,7 @@ pub(super) fn region(
     let region = model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: Default::default(),
     });
     let faults = model.check(region);

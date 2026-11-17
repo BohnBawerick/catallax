@@ -6,6 +6,16 @@ specified edges. A missing operation must raise NotImplementedError.
 from pathlib import Path
 
 
+def rounded_rectangle(hw, hh, r):
+    """Lines and quarter arcs counterclockwise from the right side's lower end, as the
+    P9 recipe's first section: ('line', a, b) or ('arc', a, midpoint, b) in (x, y)."""
+    m = r * (1 - 2 ** -0.5)
+    return [('line', (hw, -hh + r), (hw, hh - r)), ('arc', (hw, hh - r), (hw - m, hh - m), (hw - r, hh)),
+            ('line', (hw - r, hh), (-hw + r, hh)), ('arc', (-hw + r, hh), (-hw + m, hh - m), (-hw, hh - r)),
+            ('line', (-hw, hh - r), (-hw, -hh + r)), ('arc', (-hw, -hh + r), (-hw + m, -hh + m), (-hw + r, -hh)),
+            ('line', (-hw + r, -hh), (hw - r, -hh)), ('arc', (hw - r, -hh), (hw - m, -hh + m), (hw, -hh + r))]
+
+
 def build(api, name, edit=None, case=None):
     box, cyl, sphere = api.box, api.cylinder, api.sphere
     union, cut, common = api.union, api.cut, api.common
@@ -16,6 +26,24 @@ def build(api, name, edit=None, case=None):
         part = api.import_step(case['census']['source'])
         return cut(part, cyl(edit or float(cutter['radius']), float(cutter['height']),
                              tuple(map(float, cutter['base'])), tuple(cutter['axis'])))
+    if name.startswith('phase2/'):
+        # Phase-2 checkpoint targets; tools/checkpoint/phase2/README.md gives each definition.
+        family = Path(name).stem
+        if family == 'P8-spring-threaded-boss':
+            part = union(box((50, 50, 4), (-25, -25, 0)), cyl(8, 20, (0, 0, 4)))
+            part = union(part, api.coil(8, 7, 2880, 12, 0.6))
+            return union(part, api.coil(17, 2.5, 1800, edit or 15, 1))
+        if family == 'P9-lofted-duct':
+            # Wall = outer loft minus an inner loft inset by 2, 1 mm past each end. The
+            # edit opens the inner outlet radius, thinning the round end's wall.
+            outer = api.loft([('segments', rounded_rectangle(20, 10, 5), 0), ('circle', 12, 40)])
+            inner = api.loft([('segments', rounded_rectangle(18, 8, 3), -1), ('circle', edit or 10, 41)])
+            return cut(outer, inner)
+        if family == 'curved-housing':
+            housing = api.loft([('circle', 10, 0), ('circle', edit or 14, 15), ('circle', 10, 30)])
+            tool = api.bezier_prism([(-20, 34), (-10, 20), (10, 20), (20, 34)], 40, 20, -40)
+            return api.blend_above(cut(housing, tool), 1, 2)
+        raise ValueError(name)
     if name.startswith('P0/'):
         family = Path(name).stem
         height = edit if family not in ('block-sphere', 'general-torus') else None

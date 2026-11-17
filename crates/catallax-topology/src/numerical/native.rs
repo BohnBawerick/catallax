@@ -27,18 +27,31 @@ pub struct NumericalNativeTrim {
 pub(super) struct Index<'a> {
     curves: BTreeMap<(usize, usize, usize), &'a BSplineCurve>,
     faces: BTreeSet<usize>,
+    sampled_carriers: &'a BTreeSet<String>,
+    numerical_edges: BTreeSet<usize>,
 }
 
 impl<'a> Index<'a> {
     pub fn new(
         definition: &NumericalDefinition,
         bindings: &'a [NumericalNativeTrim],
+        sampled_carriers: &'a BTreeSet<String>,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
         let mut index = Self {
             curves: BTreeMap::new(),
             faces: BTreeSet::new(),
+            sampled_carriers,
+            numerical_edges: BTreeSet::new(),
         };
+        for face in &definition.faces {
+            if sampled_carriers.contains(&face.key) {
+                for trim in face.loops.iter().flatten() {
+                    dec.charge_work(1)?;
+                    index.numerical_edges.insert(trim.edge);
+                }
+            }
+        }
         if bindings.is_empty() {
             return Ok(index);
         }
@@ -93,6 +106,9 @@ impl<'a> Index<'a> {
     }
     pub fn has_face(&self, face: usize) -> bool {
         self.faces.contains(&face)
+    }
+    pub fn numerical_pair(&self, edge: usize) -> bool {
+        self.numerical_edges.contains(&edge)
     }
 }
 
@@ -169,14 +185,39 @@ pub(super) fn point(
     }
 }
 
+fn numerical_parameters(
+    edge: &NumericalEdge,
+    sense: Sense,
+    dec: &mut Decider,
+) -> Result<Vec<Rational>, Refusal> {
+    let [a, b] = if sense == Sense::Same {
+        edge.parameters.each_ref()
+    } else {
+        [&edge.parameters[1], &edge.parameters[0]]
+    };
+    let span = b - a;
+    let mut points = Vec::with_capacity(SUBDIVISIONS as usize + 1);
+    for i in 0..=SUBDIVISIONS {
+        dec.charge_work(1)?;
+        let share = Rational::from_ratio(i, SUBDIVISIONS).unwrap();
+        points.push(a + &(&share * &span));
+    }
+    Ok(points)
+}
+
 pub(super) fn samples(
     face: &NumericalFace,
     trim: &NumericalTrim,
     edge: &NumericalEdge,
     curve: &BSplineCurve,
+    numerical_pair: bool,
     dec: &mut Decider,
 ) -> Result<(Vec<NumericalSample>, Vec<NumericalSample>), Refusal> {
-    let ts = parameters(edge, curve, trim.sense, dec)?;
+    let ts = if numerical_pair {
+        numerical_parameters(edge, trim.sense, dec)?
+    } else {
+        parameters(edge, curve, trim.sense, dec)?
+    };
     let mut samples = Vec::new();
     let mut endpoints = Vec::new();
     for (i, t) in ts.iter().enumerate() {
@@ -211,6 +252,9 @@ pub(super) fn check_loops(
     tolerance: &Rational,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
+    if index.sampled_carriers.contains(&face.key) {
+        return check_numerical_loops(face_index, face, edges, index, dec);
+    }
     if !index.has_face(face_index) {
         return analytic::check_loops(face, edges, tolerance, dec);
     }
@@ -282,7 +326,59 @@ pub(super) fn check_loops(
         }
         sampled.loops.push(polygon);
     }
-    super::check_loops(&sampled, dec)
+    super::check_loops(&sampled, analytic_family.then_some((face, edges)), dec)
+}
+
+// Face-local UV topology uses nine locations per coedge for a declared
+// numerical carrier. Incident face-pairs use labelled numerical distance
+// samples; exact-exact pairs keep the clipped-knot-span grid.
+fn check_numerical_loops(
+    face_index: usize,
+    face: &NumericalFace,
+    edges: &[NumericalEdge],
+    index: &Index<'_>,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    let mut loops = Vec::with_capacity(face.loops.len());
+    for (row, boundary) in face.loops.iter().enumerate() {
+        let mut polygon = Vec::with_capacity(boundary.len() * SUBDIVISIONS as usize);
+        for (use_index, trim) in boundary.iter().enumerate() {
+            let edge = edges
+                .get(trim.edge)
+                .ok_or_else(|| bad("trim", "trim names an unknown edge"))?;
+            let curve = index.get(face_index, row, use_index).ok_or_else(|| {
+                bad(
+                    "trim",
+                    "a numerical atlas face needs a native UV curve on every edge",
+                )
+            })?;
+            let [a, b] = if trim.sense == Sense::Same {
+                edge.parameters.each_ref()
+            } else {
+                [&edge.parameters[1], &edge.parameters[0]]
+            };
+            let step = (b - a) / Rational::from_i64(SUBDIVISIONS);
+            let mut previous = trim.uv[0].clone();
+            for i in 1..=SUBDIVISIONS {
+                dec.charge_work(1)?;
+                let at = if i == SUBDIVISIONS {
+                    trim.uv[1].clone()
+                } else {
+                    let t = a + &(&step * &Rational::from_i64(i));
+                    let at = uv(curve, &t, dec)?;
+                    [midpoint(&at[0], dec)?, midpoint(&at[1], dec)?]
+                };
+                polygon.push(NumericalTrim {
+                    edge: trim.edge,
+                    sense: trim.sense,
+                    uv: [previous, at.clone()],
+                });
+                previous = at;
+            }
+        }
+        loops.push(polygon);
+    }
+    super::check_boundaries(face, &loops, None, dec)
 }
 
 /// Builds with retained native UV curves at the 3D edges' finite parameters.
@@ -296,13 +392,54 @@ pub fn build_with_native_trims(
     options: NumericalOptions,
     dec: &mut Decider,
 ) -> Result<NumericalBody, Refusal> {
-    guarded(|| build_inner(definition, native_trims, options, Vec::new(), dec))
+    guarded(|| {
+        build_inner(
+            definition,
+            native_trims,
+            BTreeSet::new(),
+            options,
+            Vec::new(),
+            dec,
+        )
+    })
+}
+
+/// Admits explicitly numerical atlas carriers with sampled face-local checks.
+/// Their UV walks use nine locations per coedge; chart coverage uses a 9 by 9
+/// grid. Incident face-pairs use labelled numerical distance samples at the
+/// unchanged tolerance; exact-exact pairs keep their original sample grids.
+/// Undeclared face-local checks retain their original admission path.
+pub fn build_with_sampled_carriers(
+    definition: NumericalDefinition,
+    native_trims: Vec<NumericalNativeTrim>,
+    sampled_carriers: BTreeSet<String>,
+    options: NumericalOptions,
+    dec: &mut Decider,
+) -> Result<NumericalBody, Refusal> {
+    guarded(|| {
+        build_inner(
+            definition,
+            native_trims,
+            sampled_carriers,
+            options,
+            Vec::new(),
+            dec,
+        )
+    })
 }
 
 impl NumericalBody {
     /// Original native parameter curves, including curves retained through edits.
     pub fn source_native_trims(&self) -> &[NumericalNativeTrim] {
         &self.source_native_trims
+    }
+    /// Original carriers declared numerical, retained through continuations.
+    pub fn source_sampled_carriers(&self) -> &BTreeSet<String> {
+        &self.source_sampled_carriers
+    }
+    /// Current declared numerical carriers using sampled face-local checks.
+    pub fn sampled_carriers(&self) -> &BTreeSet<String> {
+        &self.sampled_carriers
     }
     /// Current native parameter curves, bound to stable finite coedge uses.
     pub fn native_trims(&self) -> &[NumericalNativeTrim] {
@@ -316,10 +453,39 @@ impl NumericalBody {
         options: NumericalOptions,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
+        let sampled_carriers = self
+            .sampled_carriers
+            .iter()
+            .filter(|key| {
+                definition.faces.iter().any(|face| {
+                    &face.key == *key
+                        && matches!(
+                            face.surface,
+                            Surface::BSpline(SplineSupport::RationalAtlas(_))
+                        )
+                })
+            })
+            .cloned()
+            .collect();
+        self.rebuild_with_sampled_carriers(definition, native_trims, sampled_carriers, options, dec)
+    }
+
+    /// Rechecks an edit with an explicit current numerical-carrier declaration.
+    /// Source declarations and earlier check records remain historical.
+    pub fn rebuild_with_sampled_carriers(
+        &self,
+        definition: NumericalDefinition,
+        native_trims: Vec<NumericalNativeTrim>,
+        sampled_carriers: BTreeSet<String>,
+        options: NumericalOptions,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
         guarded(|| {
-            let mut next = build_inner(
+            let mut next = build_inner_kind(
+                self.kind(),
                 definition,
                 native_trims,
+                sampled_carriers,
                 options,
                 self.evidence.repairs().to_vec(),
                 dec,

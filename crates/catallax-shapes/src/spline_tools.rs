@@ -4,11 +4,14 @@
 // domains, typed refusals and caller-owned work/cancellation checkpoints.
 // Adapted from rust-brep crates/kernel/src/curve/construction.rs,
 // N_CrvExtractCrvSeg, commit 4c83df59d777ccfcb14f441b1c8d984d1b5d93ab.
-//! Exact finite-domain extraction of exchange spline definitions. These data
+//! Exact rational spline construction and finite-domain editing. These definitions
 //! carry no regularity, trim, incidence or solid certificate.
 
 use crate::{BSplineCurve, BSplineSurface, Point3};
 use catallax_numbers::{Decider, Rational, Real, Refusal, Sign};
+
+mod build;
+mod edit;
 
 /// Euclidean millimetre coordinates. Weights are always stored separately.
 pub type RationalPoint = [Rational; 3];

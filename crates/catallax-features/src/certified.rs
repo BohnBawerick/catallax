@@ -660,6 +660,7 @@ impl<'a> CertificationContext<'a> {
                 model.add_body(Body {
                     kind: BodyKind::Empty,
                     lumps: Vec::new(),
+                    wires: Vec::new(),
                     marks: MarkLog::new(),
                 }),
                 Representation::Empty,
@@ -788,6 +789,7 @@ impl<'a> CertificationContext<'a> {
                     model.add_body(Body {
                         kind: BodyKind::Empty,
                         lumps: Vec::new(),
+                        wires: Vec::new(),
                         marks: MarkLog::new(),
                     }),
                     Representation::Empty,
@@ -917,6 +919,7 @@ impl<'a> CertificationContext<'a> {
                 model.add_body(Body {
                     kind: BodyKind::Empty,
                     lumps: Vec::new(),
+                    wires: Vec::new(),
                     marks: MarkLog::new(),
                 }),
                 Representation::Empty,

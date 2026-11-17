@@ -25,6 +25,10 @@ DRIVER = '.claude/skills/verify-catallax/scripts/control-catallax.py'
 RAW_POLICY = 'tools/checks/known-raw-invalid.json'
 CORRECTIONS = 'tools/checks/replay-corrections.json'
 UPGRADES = 'tools/checks/replay-upgrades.json'
+# Both OpenCASCADE STEP jobs run whenever the verifier is built. The slow one
+# holds the long required checks so the main one keeps its old run time.
+STEP_JOBS = ('step-regressions', 'step-regressions-slow')
+BINARY_JOBS = frozenset({'build', *STEP_JOBS, 'replay', 'scoreboard'})
 UPGRADE_FORMAT = 'catallax-merge-upgrades/1'
 UPGRADE_CLASS = 'budget-refusal-to-answer'
 # A former budget refusal that now answers with an empty body. It writes no file
@@ -150,7 +154,7 @@ def selection_errors(selection, metadata=None):
         errors.append('missing mandatory fmt or invalid job partitions')
     if jobs.get('tests') and not jobs.get('test-build'):
         errors.append('tests require test-build')
-    if any(name in jobs for name in ('replay', 'step-regressions', 'scoreboard')) and not jobs.get('build'):
+    if any(name in jobs for name in ('replay', *STEP_JOBS, 'scoreboard')) and not jobs.get('build'):
         errors.append('binary consumers require build')
     if set(jobs) & {'clippy', 'tests', 'test-build'} and not selection.get('packages'):
         errors.append('selected Cargo checks require nonempty packages')
@@ -243,15 +247,16 @@ def select(paths, rules, graph, build_graph, event='pull_request', ref='', chang
             jobs['test-build'] = 1
     if build:
         jobs['build'] = 1
-        if 'step-regressions' in rules['jobs']:
-            jobs['step-regressions'] = 1
+        for name in STEP_JOBS:
+            if name in rules['jobs']:
+                jobs[name] = 1
     if replay:
         jobs['replay'] = rules['jobs']['replay']
     if scoreboard:
         jobs['scoreboard'] = 1
     # A newly declared job is mandatory until its own reviewed routing exists.
     for name, partitions in rules['jobs'].items():
-        if name not in {'fmt', 'clippy', 'tests', 'test-build', 'build', 'step-regressions',
+        if name not in {'fmt', 'clippy', 'tests', 'test-build', 'build', *STEP_JOBS,
                         'replay', 'scoreboard'}:
             jobs[name] = partitions
     return {'packages': sorted(packages), 'jobs': jobs,
@@ -268,7 +273,7 @@ def union_selection(base, candidate):
         if 'tests' in jobs:
             jobs['test-build'] = 1
         if 'build' in jobs:
-            jobs['step-regressions'] = 1
+            jobs.update(dict.fromkeys(STEP_JOBS, 1))
     return {'packages': sorted(set(base['packages']) | set(candidate['packages'])),
             'jobs': jobs,
             'ci_only': ci_only,
@@ -742,7 +747,7 @@ def decide(plan, reported, records, binary_sha256=None, actual_jobs=()):
         seen.add(key)
         expected = dict(plan['identity'])
         expected['result'] = 'success'
-        if name in {'build', 'step-regressions', 'replay', 'scoreboard'}:
+        if name in BINARY_JOBS:
             expected['binary_sha256'] = binary_sha256
         else:
             expected['binary_sha256'] = None
@@ -756,7 +761,7 @@ def decide(plan, reported, records, binary_sha256=None, actual_jobs=()):
         for field, value in expected.items():
             if type(record.get(field)) is not type(value) or record.get(field) != value:
                 errors.append(f'{name}: stale {field}: evidence={record.get(field)!r}, candidate={value!r}')
-        if name in {'build', 'step-regressions', 'replay', 'scoreboard'} and not binary_sha256:
+        if name in BINARY_JOBS and not binary_sha256:
             errors.append(f'{name}: missing binary_sha256 from current build')
     for name, count in required.items():
         if name in {'release-evidence', 'release-dry-run'}:

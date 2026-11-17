@@ -127,7 +127,7 @@ pub(super) fn check_loops(
                 ));
             }
         }
-        return super::check_loops(face, dec);
+        return super::check_loops(face, None, dec);
     }
     if !projected(face, edges)
         || !face.loops.iter().flatten().any(|trim| {
@@ -138,27 +138,28 @@ pub(super) fn check_loops(
     {
         return curved::check_loops(face, edges, dec);
     }
-    // A sampled polygon cannot establish full-circle clearance: its chords
-    // omit the circular bulges between samples. Keep this new complete-rim
-    // family behind a continuous conservative disk/segment separation check.
-    for (i, boundary) in face.loops.iter().enumerate() {
+    // Chord polygons omit circular bulges. Complete rims additionally require
+    // continuous projected-disk containment and separation under the stated cap.
+    let mut complete = false;
+    for boundary in &face.loops {
         for trim in boundary {
             dec.charge_work(1)?;
             if let Some(edge) = edges.get(trim.edge)
                 && edge.vertices[0] == edge.vertices[1]
                 && matches!(edge.curve, Curve::Circle(_))
             {
-                if boundary.len() != 1 || (i == 0 && face.loops.len() != 1) {
+                if boundary.len() != 1 {
                     return Err(bad(
                         "trim",
-                        "complete planar circles require a standalone cap or one polygonal outer boundary",
+                        "a complete planar circle must own its boundary",
                     ));
                 }
-                if i == 1 {
-                    circle_clearance(face, edges, tolerance, dec)?;
-                }
+                complete = true;
             }
         }
+    }
+    if complete && face.loops.len() > 1 {
+        circle_clearance(face, edges, tolerance, dec)?;
     }
     let mut sampled = face.clone();
     sampled.loops.clear();
@@ -195,7 +196,7 @@ pub(super) fn check_loops(
         }
         sampled.loops.push(polygon);
     }
-    super::check_loops(&sampled, dec)
+    super::check_loops(&sampled, Some((face, edges)), dec)
 }
 
 fn period() -> Rational {
@@ -259,15 +260,12 @@ fn periodic_cell(
     Ok(false)
 }
 
-/// This predicate names only the newly admitted complete circular hole family.
-pub(super) fn circular_hole<'a>(
-    face: &NumericalFace,
+/// A complete finite circular boundary, independently of its material role.
+pub(super) fn complete_circle<'a>(
+    boundary: &[NumericalTrim],
     edges: &'a [NumericalEdge],
 ) -> Option<&'a catallax_shapes::Circle> {
-    let [_, hole] = face.loops.as_slice() else {
-        return None;
-    };
-    let [trim] = hole.as_slice() else { return None };
+    let [trim] = boundary else { return None };
     let edge = edges.get(trim.edge)?;
     if edge.vertices[0] != edge.vertices[1] {
         return None;
@@ -278,67 +276,165 @@ pub(super) fn circular_hole<'a>(
     }
 }
 
+struct ProjectedCircle {
+    center: [Ball; 2],
+    enclosing_radius: Rational,
+    interior_radius: Option<Rational>,
+}
+
+fn projected_circle(
+    face: &NumericalFace,
+    circle: &catallax_shapes::Circle,
+    outer: bool,
+    tolerance: &Rational,
+    dec: &mut Decider,
+) -> Result<ProjectedCircle, Refusal> {
+    let center = [
+        dec.enclose_budgeted_at(&circle.center.x, BITS)?,
+        dec.enclose_budgeted_at(&circle.center.y, BITS)?,
+        dec.enclose_budgeted_at(&circle.center.z, BITS)?,
+    ];
+    let center = face
+        .surface
+        .parameters_of(&center, dec)?
+        .ok_or_else(|| bad("trim", "circular boundary has no finite planar projection"))?;
+    let radius = dec
+        .enclose_budgeted_at(&circle.radius_sq, BITS)?
+        .sqrt()
+        .ok_or_else(|| bad("trim", "circular boundary radius is unresolved"))?;
+    let interior_radius = if outer {
+        let Surface::Plane(plane) = &face.surface else {
+            return Err(bad("trim", "circular boundary needs a planar support"));
+        };
+        let normal = [
+            dec.enclose_budgeted_at(&circle.normal.x, BITS)?,
+            dec.enclose_budgeted_at(&circle.normal.y, BITS)?,
+            dec.enclose_budgeted_at(&circle.normal.z, BITS)?,
+        ];
+        let plane_normal = [
+            dec.enclose_budgeted_at(&plane.normal.x, BITS)?,
+            dec.enclose_budgeted_at(&plane.normal.y, BITS)?,
+            dec.enclose_budgeted_at(&plane.normal.z, BITS)?,
+        ];
+        let dot = &normal[0] * &plane_normal[0]
+            + &normal[1] * &plane_normal[1]
+            + &normal[2] * &plane_normal[2];
+        let normal_sq = normal[0].square() + normal[1].square() + normal[2].square();
+        let plane_sq =
+            plane_normal[0].square() + plane_normal[1].square() + plane_normal[2].square();
+        let cosine = dot
+            .square()
+            .checked_div(&(normal_sq * plane_sq))
+            .and_then(|value| value.sqrt())
+            .ok_or_else(|| bad("trim", "circular outer projection is unresolved"))?;
+        // A tilted circle projects to an ellipse. Its inscribed disk uses
+        // r*|cos(angle)|, not the enclosing radius used for holes.
+        Some(&(&radius.lo() * &cosine.lo()) - tolerance)
+    } else {
+        None
+    };
+    Ok(ProjectedCircle {
+        center,
+        enclosing_radius: &radius.hi() + tolerance,
+        interior_radius,
+    })
+}
+
+fn segment_distance_squared(
+    center: &[Ball; 2],
+    trim: &NumericalTrim,
+    dec: &mut Decider,
+) -> Result<Ball, Refusal> {
+    dec.charge_work(1)?;
+    let [a, b] = &trim.uv;
+    let v = [&b[0] - &a[0], &b[1] - &a[1]];
+    let length = &v[0] * &v[0] + &v[1] * &v[1];
+    if length.is_zero() {
+        return Err(bad("trim", "empty boundary segment"));
+    }
+    let delta: [Ball; 2] = std::array::from_fn(|i| &center[i] - &Ball::from_rational(&a[i], BITS));
+    let parameter = (&delta[0] * &Ball::from_rational(&v[0], BITS)
+        + &delta[1] * &Ball::from_rational(&v[1], BITS))
+        .checked_div(&Ball::from_rational(&length, BITS))
+        .ok_or_else(|| bad("trim", "boundary segment projection is unresolved"))?;
+    let zero = Rational::zero();
+    let one = Rational::one();
+    let lo = Ball::from_rational(&parameter.lo().max(zero.clone()).min(one.clone()), BITS);
+    let hi = Ball::from_rational(&parameter.hi().max(zero).min(one), BITS);
+    let parameter = lo.hull(&hi);
+    let residual: [Ball; 2] =
+        std::array::from_fn(|i| &delta[i] - &(&parameter * &Ball::from_rational(&v[i], BITS)));
+    Ok(residual[0].square() + residual[1].square())
+}
+
 fn circle_clearance(
     face: &NumericalFace,
     edges: &[NumericalEdge],
     tolerance: &Rational,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
-    let circle =
-        circular_hole(face, edges).ok_or_else(|| bad("trim", "missing complete circular hole"))?;
-    let center: Vec<_> = [&circle.center.x, &circle.center.y, &circle.center.z]
-        .into_iter()
-        .map(|x| dec.enclose_budgeted_at(x, BITS))
-        .collect::<Result<_, _>>()?;
-    let center: [Ball; 3] = center.try_into().unwrap();
-    let uv = face.surface.parameters_of(&center, dec)?.ok_or_else(|| {
-        bad(
-            "trim",
-            "circular hole center has no finite planar projection",
-        )
-    })?;
-    // Orthogonal projection cannot enlarge a circle. The enclosing disk also
-    // covers small tolerated carrier tilts, without claiming exact coplanarity.
-    let radius = dec
-        .enclose_budgeted_at(&circle.radius_sq, BITS)?
-        .sqrt()
-        .ok_or_else(|| bad("trim", "circular hole radius is unresolved"))?;
-    let padded = &radius.hi() + tolerance;
-    let radius_sq = &padded * &padded;
-    let zero = Rational::zero();
-    let one = Rational::one();
-    for trim in &face.loops[0] {
-        dec.charge_work(1)?;
-        if !edges
-            .get(trim.edge)
-            .is_some_and(|e| matches!(e.curve, Curve::Line(_)))
-        {
-            return Err(bad(
-                "trim",
-                "complete circular holes require a polygonal outer boundary",
-            ));
-        }
-        let [a, b] = &trim.uv;
-        let v = [&b[0] - &a[0], &b[1] - &a[1]];
-        let length = &v[0] * &v[0] + &v[1] * &v[1];
-        if length.is_zero() {
-            return Err(bad("trim", "empty outer segment"));
-        }
-        let delta: [Ball; 2] = std::array::from_fn(|i| &uv[i] - &Ball::from_rational(&a[i], BITS));
-        let parameter = (&delta[0] * &Ball::from_rational(&v[0], BITS)
-            + &delta[1] * &Ball::from_rational(&v[1], BITS))
-            .checked_div(&Ball::from_rational(&length, BITS))
-            .ok_or_else(|| bad("trim", "outer segment projection is unresolved"))?;
-        let lo = Ball::from_rational(&parameter.lo().max(zero.clone()).min(one.clone()), BITS);
-        let hi = Ball::from_rational(&parameter.hi().max(zero.clone()).min(one.clone()), BITS);
-        let parameter = lo.hull(&hi);
-        let residual: [Ball; 2] =
-            std::array::from_fn(|i| &delta[i] - &(&parameter * &Ball::from_rational(&v[i], BITS)));
-        if (residual[0].square() + residual[1].square()).lo() <= radius_sq {
-            return Err(bad(
-                "trim",
-                "complete circular hole lacks continuous clearance above the requested tolerance",
-            ));
+    let mut circles = Vec::with_capacity(face.loops.len());
+    for (index, boundary) in face.loops.iter().enumerate() {
+        circles.push(
+            complete_circle(boundary, edges)
+                .map(|circle| projected_circle(face, circle, index == 0, tolerance, dec))
+                .transpose()?,
+        );
+    }
+    for (i, circle) in circles.iter().enumerate() {
+        let Some(circle) = circle else { continue };
+        for (j, boundary) in face.loops.iter().enumerate() {
+            if i == j {
+                continue;
+            }
+            dec.charge_work(1)?;
+            if let Some(other) = &circles[j] {
+                if i > j {
+                    continue;
+                }
+                let distance = ((&circle.center[0] - &other.center[0]).square()
+                    + (&circle.center[1] - &other.center[1]).square())
+                .sqrt()
+                .ok_or_else(|| bad("trim", "circle separation is unresolved"))?;
+                let clear = if let Some(radius) = &circle.interior_radius {
+                    &distance.hi() + &other.enclosing_radius < *radius
+                } else {
+                    distance.lo() > &circle.enclosing_radius + &other.enclosing_radius
+                };
+                if !clear {
+                    return Err(bad("trim", "circular boundaries lack continuous clearance"));
+                }
+                continue;
+            }
+            for trim in boundary {
+                if !edges
+                    .get(trim.edge)
+                    .is_some_and(|edge| matches!(edge.curve, Curve::Line(_)))
+                {
+                    return Err(bad(
+                        "trim",
+                        "complete circular boundaries need finite-line or complete-circle neighbours",
+                    ));
+                }
+                if let Some(radius) = &circle.interior_radius {
+                    dec.charge_work(1)?;
+                    let delta: [Ball; 2] = std::array::from_fn(|axis| {
+                        &circle.center[axis] - &Ball::from_rational(&trim.uv[0][axis], BITS)
+                    });
+                    if radius.sign() != Sign::Positive
+                        || (delta[0].square() + delta[1].square()).hi() >= radius * radius
+                    {
+                        return Err(bad("trim", "hole leaves the circular outer boundary"));
+                    }
+                } else if segment_distance_squared(&circle.center, trim, dec)?.lo()
+                    <= &circle.enclosing_radius * &circle.enclosing_radius
+                {
+                    return Err(bad(
+                        "trim",
+                        "complete circular hole lacks continuous clearance above the requested tolerance",
+                    ));
+                }
+            }
         }
     }
     Ok(())

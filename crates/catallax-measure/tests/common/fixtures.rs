@@ -706,6 +706,7 @@ pub fn build(case: Case, scale: &Rational, pose: &Pose) -> Fixture {
             let body = m.add_body(Body {
                 kind: BodyKind::Solid,
                 lumps: vec![lump],
+                wires: Vec::new(),
                 marks: MarkLog::new(),
             });
             (body, faces)
@@ -843,6 +844,7 @@ pub fn thin_spherical_shell(gap: &Rational) -> Fixture {
     let body = model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: MarkLog::new(),
     });
     let ri = from_kernel(&inner);

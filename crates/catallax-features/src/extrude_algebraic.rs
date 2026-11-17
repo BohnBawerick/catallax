@@ -289,6 +289,7 @@ pub(super) fn extrude(
             BodyKind::Solid
         },
         lumps,
+        wires: Vec::new(),
         marks: MarkLog::new(),
     }))
 }

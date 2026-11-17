@@ -22,13 +22,15 @@ This change adds the result contract and reporting, without making any operation
 
 The project owner set the direction for the work after M1 on 10 November 2026. The decisions were taken between milestones, as the 26 October decisions were. [PLAN section 10.1](archive/PLAN-2026-11.md#101-milestones) now says that a dated decision in this file is how direction changes, whether or not it falls at a milestone. [PLAN.md](archive/PLAN-2026-11.md) orders the resulting work as milestones M6 to M26. These are direction decisions only: no public signature, outcome, manifest, default or refusal code changes here, so they need no interface-change fragment.
 
-### NURBS first, with ported code in three areas
+### NURBS first, with scoped SMLib ports
 
-The B-rep first finishes the spline faces Catallax makes itself: checked rational patches, lofts and spline sweeps. Catallax adopts code ported from SMLib only where NURBS leave no other efficient way:
+The B-rep first finishes the spline faces Catallax makes itself: checked rational patches, lofts and spline sweeps. The owner's 10 November rule allowed SMLib adaptations in three areas:
 
 1. intersections of spline faces with each other and with analytic faces;
 2. blends between spline faces;
 3. general surface fitting, and only if Catallax's own fitters are shown unable to cover arbitrary blends.
+
+On 17 November 2026, milestone 2.2 records the owner's approval to widen that rule to NURBS surface construction and its knot operations. Coons patches, grid interpolation, Gordon surfaces, guided skins and N-sided fills may adapt the pinned SMLib construction routines. Exact definitions stay separate from regularity and topology certificates. The [toolkit contract](NURBS-TOOLKIT.md) records the chosen algorithms and STEP rounding bound.
 
 Under the owner's 11 November ruling, the intersection port is extracted straight into Catallax, adapted from the donor repository named in [NOTICE](../NOTICE) and from the pinned SMLib sources, and each adapted file keeps the licence notice and attribution that NOTICE and [THIRD-PARTY.md](THIRD-PARTY.md) describe. The full port continues outside Catallax. Nothing in Catallax waits on it.
 

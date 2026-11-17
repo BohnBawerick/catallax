@@ -176,6 +176,121 @@ pub(super) fn surface(
     )
 }
 
+fn rational_homogeneous(source: &BSplineSurface, index: usize) -> Option<[Rational; 4]> {
+    let p = source.controls()[index].as_rational()?;
+    let w = source.weights()[index].as_rational()?;
+    Some([&p.x * &w, &p.y * &w, &p.z * &w, w])
+}
+
+/// Encode exact C1 joins in the knot multiplicity before decimal rounding.
+/// At a degree-fold knot, inverse knot insertion removes just the redundant
+/// pole strip. The homogeneous equality is exact; non-removable joins stay.
+fn continuity_basis<'a>(
+    source: &'a BSplineSurface,
+    dec: &mut Decider,
+) -> Result<std::borrow::Cow<'a, BSplineSurface>, Refusal> {
+    let mut carrier = std::borrow::Cow::Borrowed(source);
+    for axis in 0..2 {
+        let degree = carrier.degrees()[axis];
+        if degree < 2 {
+            continue;
+        }
+        let counts = carrier.control_count();
+        let knots = carrier.knots()[axis];
+        let mut dropped = Vec::new();
+        let mut begin = degree + 1;
+        while begin < counts[axis] {
+            dec.charge_work(1)?;
+            let mut end = begin + 1;
+            while end < knots.len() && knots[end] == knots[begin] {
+                end += 1;
+            }
+            if knots[begin] > knots[degree] && end - begin == degree {
+                let strip = begin - 1;
+                let alpha = &(&knots[begin] - &knots[strip]) / &(&knots[end] - &knots[strip]);
+                let beta = &Rational::one() - &alpha;
+                let mut redundant = true;
+                for cross in 0..counts[1 - axis] {
+                    let indices = [strip - 1, strip, strip + 1].map(|at| {
+                        if axis == 0 {
+                            at * counts[1] + cross
+                        } else {
+                            cross * counts[1] + at
+                        }
+                    });
+                    let [Some(a), Some(b), Some(c)] =
+                        indices.map(|i| rational_homogeneous(&carrier, i))
+                    else {
+                        redundant = false;
+                        break;
+                    };
+                    for k in 0..4 {
+                        dec.charge_work(1)?;
+                        if b[k] != &(&beta * &a[k]) + &(&alpha * &c[k]) {
+                            redundant = false;
+                            break;
+                        }
+                    }
+                    if !redundant {
+                        break;
+                    }
+                }
+                if redundant {
+                    dropped.push((end - 1, strip));
+                }
+            }
+            begin = end;
+        }
+        if dropped.is_empty() {
+            continue;
+        }
+        let output_knots = std::array::from_fn(|other| {
+            let row = carrier.knots()[other];
+            if other != axis {
+                return row.to_vec();
+            }
+            row.iter()
+                .enumerate()
+                .filter(|(i, _)| dropped.binary_search_by_key(i, |d| d.0).is_err())
+                .map(|(_, q)| q.clone())
+                .collect()
+        });
+        let retained = |index: &usize| {
+            let strip = if axis == 0 {
+                index / counts[1]
+            } else {
+                index % counts[1]
+            };
+            dropped.binary_search_by_key(&strip, |d| d.1).is_err()
+        };
+        let controls = carrier
+            .controls()
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| retained(i))
+            .map(|(_, p)| p.clone())
+            .collect();
+        let weights = carrier
+            .weights()
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| retained(i))
+            .map(|(_, w)| w.clone())
+            .collect();
+        let mut output_counts = counts;
+        output_counts[axis] -= dropped.len();
+        carrier = std::borrow::Cow::Owned(BSplineSurface::new(
+            carrier.degrees(),
+            output_knots,
+            output_counts,
+            controls,
+            weights,
+            dec,
+        )?);
+    }
+    Ok(carrier)
+}
+
 /// The written atlas face: the rounded source, partitioned again, keeping
 /// the component whose charts have the original domains after rounding.
 pub(super) fn atlas(
@@ -184,7 +299,8 @@ pub(super) fn atlas(
     options: &NumericalStepOptions,
     dec: &mut Decider,
 ) -> Result<RationalAtlas, Refusal> {
-    let carrier = surface(source.source(), errors, options, dec)?;
+    let basis = continuity_basis(source.source(), dec)?;
+    let carrier = surface(&basis, errors, options, dec)?;
     let mut wanted = Vec::with_capacity(source.charts().len());
     for chart in source.charts() {
         let mut domain = chart.patch().domain().clone();
@@ -216,6 +332,67 @@ pub(super) fn atlas(
 mod tests {
     use super::*;
     use catallax_numbers::with_operation_budget;
+
+    #[test]
+    fn decimal_export_keeps_an_exact_c1_join_as_one_face() {
+        let ((), work) = with_operation_budget(20_000_000, || {
+            let mut dec = Decider::default();
+            let controls = (0..2)
+                .flat_map(|x| {
+                    (0..5).map(move |j| {
+                        Point3::new(
+                            x.into(),
+                            Rational::from_ratio(j as i64, 3).unwrap().into(),
+                            Rational::from_ratio([0, 1, 0, -1, 0][j], 3).unwrap().into(),
+                        )
+                    })
+                })
+                .collect();
+            let source = BSplineSurface::new(
+                [1, 2],
+                [
+                    [0, 0, 1, 1].map(Rational::from_i64).to_vec(),
+                    [0, 0, 0, 1, 1, 2, 2, 2].map(Rational::from_i64).to_vec(),
+                ],
+                [2, 5],
+                controls,
+                vec![Real::one(); 10],
+                &mut dec,
+            )
+            .unwrap();
+            let [source]: [_; 1] = RationalAtlas::partition(source, [false; 2], &mut dec)
+                .unwrap()
+                .try_into()
+                .unwrap();
+            let written = atlas(
+                &source,
+                &mut Errors::default(),
+                &NumericalStepOptions::default(),
+                &mut dec,
+            )
+            .unwrap();
+            let tolerance = Rational::from_ratio(1, 10_000_000).unwrap();
+            for u in [Rational::zero(), Rational::one()] {
+                for i in 0..=8 {
+                    let v = Rational::from_ratio(i, 4).unwrap();
+                    let a = source
+                        .source()
+                        .evaluate_box([&u, &u], [&v, &v], 128, &dec)
+                        .unwrap();
+                    let b = written
+                        .source()
+                        .evaluate_box([&u, &u], [&v, &v], 128, &dec)
+                        .unwrap();
+                    for k in 0..3 {
+                        let error = &a[k] - &b[k];
+                        assert!(error.lo().abs() <= tolerance);
+                        assert!(error.hi().abs() <= tolerance);
+                    }
+                }
+            }
+        });
+        assert!(!work.exhausted, "{work:?}");
+    }
 
     #[test]
     fn a_finite_uv_basis_keeps_native_parameters_across_partial_spans() {

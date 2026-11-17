@@ -14,6 +14,7 @@ use super::{Error, ToleranceEntity, ToleranceRecord, TolerantBody, TolerantFile,
 use crate::{Curve, Placement, StepFile, Surface, Vec3};
 
 mod checks;
+pub(crate) mod constructed;
 mod sewing;
 mod wire;
 

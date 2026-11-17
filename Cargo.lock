@@ -356,6 +356,7 @@ version = "0.1.5"
 dependencies = [
  "catallax-boolean",
  "catallax-features",
+ "catallax-import",
  "catallax-intersect",
  "catallax-measure",
  "catallax-numbers",
@@ -372,6 +373,7 @@ dependencies = [
  "catallax-numbers",
  "catallax-recipe",
  "catallax-shapes",
+ "catallax-trace",
  "im",
 ]
 

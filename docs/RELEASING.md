@@ -144,9 +144,12 @@ Read results with `boat ci --repo BohnBawerick/catallax`, `boat ci job <id>` and
 services; no saved snapshots or Boat credentials are needed in CI.
 
 `build` publishes the verifier without waiting for OpenCASCADE regressions.
-`step-regressions`, `replay` and `scoreboard` then consume that same verifier
-independently. Under normal source selection, the final gate requires both new
-jobs whenever their original tests or build checks were selected. STEP evidence
+`step-regressions`, `step-regressions-slow`, `replay` and `scoreboard` then
+consume that same verifier independently. `step-regressions-slow` runs the
+`slow_*.py` files in `tools/step-regressions`: required checks that take most of
+an hour, kept apart so the rest of the STEP regressions finish sooner. Under
+normal source selection, the final gate requires `test-build` whenever tests were
+selected and both STEP jobs whenever build checks were selected. STEP evidence
 must match the build's binary digest. Replay execution and comparison rules are
 unchanged.
 

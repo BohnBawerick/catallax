@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Checkpoint 1 | Catallax</title>
+<meta name="description" content="Catallax 0.3.0 measured against OpenCASCADE and SMLib on the same parts, and on 3,000 public STEP files, at Checkpoint 1 on 16 November 2026.">
+<link rel="canonical" href="https://kernel.zigrawbohnbawerick.org/checkpoint-1.html">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0b0c0d">
+<link rel="icon" href="brand/mark.svg" type="image/svg+xml">
+<script>document.documentElement.classList.add('js')</script>
+<link rel="stylesheet" href="brand/fonts.css">
+<link rel="stylesheet" href="brand/tokens.css">
+<link rel="stylesheet" href="bare.css">
+<link rel="stylesheet" href="read.css">
+<link rel="stylesheet" href="evidence.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<symbol id="s-projection" viewBox="0 0 48 24"><path d="M3 8.5 25 3v18L3 15.5Z"/><circle cx="37" cy="12" r="9"/><circle cx="37" cy="12" r="4"/></symbol>
+</svg>
+<a class="skip" href="#main">Skip to content</a>
+<div class="frame" aria-hidden="true"></div>
+<header class="bar">
+  <a class="bar__brand" href="index.html" aria-label="Catallax, home"><img src="brand/mark.svg" alt="" width="28" height="28"><span>catallax</span></a>
+  <a class="bar__link" href="checkpoint-1.html" aria-current="page">Checkpoint 1</a>
+  <a class="bar__link" href="testing.html">Testing</a>
+  <a class="bar__link" href="https://github.com/BohnBawerick/catallax" target="_blank" rel="noopener">Code</a>
+</header>
+<main id="main" class="read ev">
+  <header class="read__head">
+    <h1>
+      <span class="ln"><span>Checkpoint 1.</span></span>
+      <span class="ln"><span>Where the kernel <em>stands</em>.</span></span>
+    </h1>
+    <span class="dim js-only" aria-hidden="true"><i></i><b></b><i></i></span>
+  </header>
+  <p class="ev__lede">The first phase of the roadmap ended on 16 November 2026. We built the same parts in Catallax, OpenCASCADE and SMLib, and imported 3,000 public STEP files. <a href="https://github.com/BohnBawerick/catallax/releases/tag/v0.3.0" target="_blank" rel="noopener">Catallax 0.3.0</a> is cut from the commit these numbers measure.</p>
+
+  <section aria-labelledby="scoreboard">
+    <h2 class="ev__h" id="scoreboard">Edit-chain scoreboard</h2>
+    <p>Each target part is built, then built again after one dimension changes. The test parts are P0, eight hard intersection cases, and P1 to P5: a bracket, a collar, a filleted boss, a shelled tray and a flanged housing. The real parts are ten files from the public STEP census below. On each real part, every kernel drills one hole through the middle, then makes the hole 1.5 times wider.</p>
+    <p>One definition of done for all three kernels: both versions build, both STEP exports open in OpenCASCADE as valid closed solids with the right number of faces, and no independent check finds a wrong value. On a real part, the hole and the wider hole must each remove material.</p>
+    <div class="table-wrap"><table class="ev__table ev__table--num">
+      <thead><tr><th scope="col">Kernel</th><th scope="col">Test parts done, of 13</th><th scope="col">Real parts done, of 10</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Catallax</th><td>10</td><td>6</td></tr>
+        <tr><th scope="row">OpenCASCADE <small>CadQuery 2.6.1</small></th><td>12</td><td>7</td></tr>
+        <tr><th scope="row">SMLib <small>smlibpy 0.4.0</small></th><td>8</td><td>6</td></tr>
+      </tbody>
+    </table></div>
+    <p>In the earlier <a href="comparison.html">comparison of release 0.2.0</a>, Catallax finished 6 of the 13 test parts by the same rule. The crossing pipes, the bracket, the shelled tray and the flanged housing now finish as well.</p>
+    <h3>Where Catallax falls short</h3>
+    <ul class="ev__list">
+      <li>The general cone and general torus test parts are refused. Catallax cannot yet trace where those surfaces cross. Both other kernels build them.</li>
+      <li>The filleted boss builds and exports a valid file, but one check point lands on the wrong side of the surface. The cause is not yet found.</li>
+      <li>The flanged housing counts as done, but 16 of its faces or edges lose their names after the edit.</li>
+      <li>On one real part, 00000173, the drilled hole is refused.</li>
+    </ul>
+    <p>On three real parts the hole lands inside an existing bore, so it removes no material in any kernel. Those three count as not done for all three kernels. OpenCASCADE fails the flanged housing's fillet. SMLib fails that fillet too, along with three of the hard intersection cases and the collar's volume check.</p>
+    <details class="code"><summary class="mono">Show all 23 targets</summary>
+    <div class="table-wrap"><table class="ev__table ev__cases">
+      <thead><tr><th scope="col">Target</th><th scope="col">Catallax</th><th scope="col">OpenCASCADE</th><th scope="col">SMLib</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">P0 block and sphere</th><td>Done</td><td>Done</td><td>Done</td></tr>
+        <tr><th scope="row">P0 crossing pipes</th><td>Done</td><td>Done</td><td>Edit failed</td></tr>
+        <tr><th scope="row">P0 equal cylinder and sphere</th><td>Done</td><td>Done</td><td>Done</td></tr>
+        <tr><th scope="row">P0 general cone</th><td>Refused</td><td>Done</td><td>Done</td></tr>
+        <tr><th scope="row">P0 general torus</th><td>Refused</td><td>Done</td><td>Done</td></tr>
+        <tr><th scope="row">P0 line tangent</th><td>Done</td><td>Done</td><td>Build failed</td></tr>
+        <tr><th scope="row">P0 near miss</th><td>Done</td><td>Done</td><td>Build failed</td></tr>
+        <tr><th scope="row">P0 seam</th><td>Done</td><td>Done</td><td>Done</td></tr>
+        <tr><th scope="row">P1 bracket</th><td>Done</td><td>Done</td><td>Done</td></tr>
+        <tr><th scope="row">P2 collar</th><td>Done</td><td>Done</td><td>Wrong volume and area</td></tr>
+        <tr><th scope="row">P3 filleted boss</th><td>Point check failed</td><td>Done</td><td>Done</td></tr>
+        <tr><th scope="row">P4 shelled tray</th><td>Done</td><td>Done</td><td>Done</td></tr>
+        <tr><th scope="row">P5 flanged housing</th><td>Done</td><td>Fillet failed</td><td>Fillet failed</td></tr>
+        <tr><th scope="row">00000131</th><td>Hole removed nothing</td><td>Hole removed nothing</td><td>Hole added volume</td></tr>
+        <tr><th scope="row">00000173</th><td>Refused</td><td>Done</td><td>Done</td></tr>
+        <tr><th scope="row">00000190</th><td>Done</td><td>Done</td><td>Done</td></tr>
+        <tr><th scope="row">00000405</th><td>Done</td><td>Done</td><td>Done</td></tr>
+        <tr><th scope="row">00000511</th><td>Done</td><td>Done</td><td>Done</td></tr>
+        <tr><th scope="row">00000605</th><td>Done</td><td>Done</td><td>Done</td></tr>
+        <tr><th scope="row">00000632</th><td>Hole removed nothing</td><td>Hole removed nothing</td><td>Hole added volume</td></tr>
+        <tr><th scope="row">00000633</th><td>Hole removed nothing</td><td>Hole removed nothing</td><td>Wider hole removed nothing</td></tr>
+        <tr><th scope="row">00000695</th><td>Done</td><td>Done</td><td>Done</td></tr>
+        <tr><th scope="row">00000821</th><td>Done</td><td>Done</td><td>Hole added volume</td></tr>
+      </tbody>
+    </table></div>
+    </details>
+  </section>
+
+  <section aria-labelledby="census">
+    <h2 class="ev__h" id="census">3,000 real STEP files</h2>
+    <p>The census takes 3,000 models from the public ABC collection, picked with a fixed seed, and imports every one. A file counts for Catallax only when every body in it imports, exports again as STEP, and that export passes OpenCASCADE's validity check. The check runs after the OpenCASCADE builder, which may heal pcurves, the curves that trim each face.</p>
+    <div class="table-wrap"><table class="ev__table ev__table--num">
+      <thead><tr><th scope="col">Measure</th><th scope="col">Files</th><th scope="col">Share of 3,000</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Catallax, valid after export <small>after the OpenCASCADE builder, which may heal pcurves</small></th><td>374</td><td>12.47%</td></tr>
+        <tr><th scope="row">OpenCASCADE, valid after its default repair</th><td>2,701</td><td>90.03%</td></tr>
+        <tr><th scope="row">Catallax, previous count</th><td>369</td><td>12.30%</td></tr>
+      </tbody>
+    </table></div>
+    <p>Import is the largest gap between Catallax and OpenCASCADE. The two figures are not measured at one tolerance: OpenCASCADE repairs each file with its default healing before the check, and its tolerances differ from Catallax's. They compare how many files each kernel opens, not accuracy.</p>
+    <p>2,590 files are refused at import, each with a recorded reason. The four most common reasons cover 1,701 files.</p>
+  </section>
+
+  <section aria-labelledby="numerical">
+    <h2 class="ev__h" id="numerical">Numerical first, and import by tiers</h2>
+    <p>Catallax used to need an exact proof for every step. Now, where an exact proof is missing or too costly, it builds within a tolerance stated before the operation, as OpenCASCADE and SMLib do. It checks the result separately at that tolerance and marks it, and its STEP file, as approximate. A numerical result is never labelled exact.</p>
+    <p>Of the 408 census files Catallax admitted at the checkpoint, 190 are certified exact and 218 are numerical approximate imports.</p>
+    <p>Import now opens a file in tiers. A file that becomes a checked solid is a complete import. A file that cannot yet become one can still open, with its surfaces kept but not checked. That surface set cannot be exported as a solid. The tier code was measured on its own full census when it landed:</p>
+    <div class="table-wrap"><table class="ev__table ev__table--num">
+      <thead><tr><th scope="col">Tier census</th><th scope="col">Files</th><th scope="col">Share of 3,000</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Complete solid imports</th><td>418</td><td>13.93%</td></tr>
+        <tr><th scope="row">Every solid exports and passes OpenCASCADE's check <small>after the OpenCASCADE builder, which may heal pcurves</small></th><td>384</td><td>12.80%</td></tr>
+        <tr><th scope="row">Opens at any tier <small>not a checked solid</small></th><td>2,739</td><td>91.30%</td></tr>
+      </tbody>
+    </table></div>
+    <p>The last row includes 2,202 files that open only as unchecked surface sets. It is not a solid import, so it is not the headline. Before this work, Catallax admitted 186 of the 3,000 files.</p>
+  </section>
+
+  <section aria-labelledby="spline">
+    <h2 class="ev__h" id="spline">Cuts on freeform solids</h2>
+    <p>Lofted solids have freeform spline faces. Cutting and joining them needs the kernel to find where two such faces meet. Of 14 recorded test requests, 11 now write a checked approximate STEP file within Catallax's work target of 20 million units. The three cuts across the top of a loft are still refused, so this milestone stays open into phase 2.</p>
+  </section>
+
+  <section aria-labelledby="app">
+    <h2 class="ev__h" id="app">In SolidDraft</h2>
+    <p>The test parts P1 to P5 build in SolidDraft, take their edit, undo and redo, save, reopen with the same geometry, and export STEP. Every export opens as valid in OpenCASCADE with repair turned off.</p>
+    <p>In the browser, kernel work now runs off the page. Opening the bracket used to freeze the page for 7.4 s; the longest freeze is now about 0.2 to 0.4 s.</p>
+  </section>
+
+  <section aria-labelledby="release">
+    <h2 class="ev__h" id="release">Catallax 0.3.0</h2>
+    <p>The release is cut from the commit the checkpoint measured. It is an alpha. Downloads and checksums are on the <a href="https://github.com/BohnBawerick/catallax/releases/tag/v0.3.0" target="_blank" rel="noopener">0.3.0 release page</a>. Since 0.2.0 it adds:</p>
+    <ul class="ev__list">
+      <li>STEP import of real files: numerical import of planar, cylindrical, conical and spline surfaces, per-part tolerances, repair of the file's own topology, and opening by tier.</li>
+      <li>Approximate STEP export for numerical results, curved faces with holes, cones and spline cut results.</li>
+      <li>Cuts and joins on lofted solids: 11 of the 14 recorded requests.</li>
+      <li>Everyday features: mixed fillet corners, hollow drafts, chamfers where three edges meet, shells with side openings, and skew holes through bevelled collars.</li>
+      <li>Replacing an imported STEP file while keeping the faces and edges that match.</li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="next">
+    <h2 class="ev__h" id="next">Next: phase 2</h2>
+    <p>Phase 2 adds modelling tools Catallax does not have yet: fillets between freeform faces, a NURBS surface toolkit, open surface bodies that sew, trim and thicken into solids, sweeps such as springs and threads, and direct edits on imported parts. It runs as three kernel lanes at once. One lane finishes the loft cuts, then the freeform fillets, then direct edits. One works on import, starting with sewing imported surface sets into checked solids. One builds the surface toolkit, then the sweeps. The scoreboard and the census run again at Checkpoint 2.</p>
+    <div class="scope">
+      <p>Every number on this page comes from the <a href="https://github.com/BohnBawerick/catallax/blob/main/docs/checkpoints/checkpoint-1.md" target="_blank" rel="noopener">Checkpoint 1 report</a>, which has the method, the raw tables and the commands to rerun them. The plan is in the <a href="https://github.com/BohnBawerick/catallax/blob/main/ROADMAP.md" target="_blank" rel="noopener">roadmap</a>.</p>
+    </div>
+  </section>
+</main>
+<footer class="block mono">
+  <div class="block__cell block__cell--sym"><svg class="sym sym--wide"><use href="#s-projection"/></svg></div>
+  <div class="block__cell"><small>Title</small><span>Checkpoint 1</span></div>
+  <div class="block__cell"><small>Source</small><a href="https://github.com/BohnBawerick/catallax/blob/main/docs/checkpoints/checkpoint-1.md" target="_blank" rel="noopener">Checkpoint report</a></div>
+  <div class="block__cell"><small>Drawn</small><a href="https://zigrawbohnbawerick.org/" target="_blank" rel="noopener">Zigrawbohnbawerick Pty Ltd</a></div>
+  <div class="block__cell"><small>Licence</small><a href="https://github.com/BohnBawerick/catallax/blob/main/LICENSE" target="_blank" rel="noopener">MIT</a></div>
+  <div class="block__cell"><small>Owner</small><a href="https://zigrawbohnbawerick.org/" target="_blank" rel="noopener">© 2026 Zigrawbohnbawerick Pty Ltd</a></div>
+  <div class="block__cell"><small>Notes</small><span class="block__links"><a href="why.html">Why</a><a href="thanks.html">Thanks</a><a href="THIRD-PARTY.txt">Third-party licences</a></span></div>
+</footer>
+<script src="read.js"></script>
+</body>
+</html>

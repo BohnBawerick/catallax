@@ -128,19 +128,26 @@ fn coarse_oblique_payload_must_pass_its_own_checks() {
 }
 
 #[test]
-fn oblique_export_preserves_the_source_endpoint_gap_refusal() {
+fn oblique_export_keeps_tolerated_source_residuals_numerical() {
     let mut d = definition();
     d.vertices[0].position[0] = &d.vertices[0].position[0] + &tube::q("0.005");
     let body = source::build(d, NumericalOptions::default(), &mut Decider::default()).unwrap();
-    assert_eq!(
-        numerical::build(
-            &body,
-            &NumericalStepOptions::default(),
-            &mut Decider::default()
-        )
-        .unwrap_err()
-        .code,
-        "step.numerical-gap"
+    let artifact = numerical::build(
+        &body,
+        &NumericalStepOptions::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let minimum_residual = tube::q("0.0049");
+    assert!(
+        artifact
+            .report()
+            .emitted_evidence
+            .checks()
+            .iter()
+            .any(|check| matches!(check,
+                NumericalCheck::Samples { samples, .. }
+                    if samples.iter().any(|sample| sample.distance_upper_mm > minimum_residual)))
     );
 }
 
@@ -167,22 +174,29 @@ fn numerical_uv_roundoff_does_not_move_or_refuse_a_planar_boundary() {
 }
 
 #[test]
-fn a_tolerated_plane_carrier_gap_still_refuses_without_healing() {
+fn a_tolerated_plane_carrier_gap_remains_in_the_payload_checks() {
     let mut d = tube::tube();
     let Surface::Plane(plane) = &mut d.faces[0].surface else {
         unreachable!()
     };
     plane.origin.z = &plane.origin.z + &Real::from(tube::q("0.005"));
     let body = source::build(d, NumericalOptions::default(), &mut Decider::default()).unwrap();
-    assert_eq!(
-        numerical::build(
-            &body,
-            &NumericalStepOptions::default(),
-            &mut Decider::default()
-        )
-        .unwrap_err()
-        .code,
-        "step.numerical-gap"
+    let artifact = numerical::build(
+        &body,
+        &NumericalStepOptions::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let minimum_residual = tube::q("0.0049");
+    assert!(
+        artifact
+            .report()
+            .emitted_evidence
+            .checks()
+            .iter()
+            .any(|check| matches!(check,
+                NumericalCheck::Samples { samples, .. }
+                    if samples.iter().any(|sample| sample.distance_upper_mm > minimum_residual)))
     );
 }
 

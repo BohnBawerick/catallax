@@ -41,20 +41,24 @@ fn dot(a: [i64; 3], b: [i64; 3]) -> i64 {
 }
 
 fn tube() -> NumericalDefinition {
-    let outer = [[0, 0], [4, 0], [4, 4], [0, 4]];
-    let hole = [[1, 1], [1, 3], [3, 3], [3, 1]];
+    perforated(
+        [[0, 0], [4, 0], [4, 4], [0, 4]],
+        &[[[1, 1], [1, 3], [3, 3], [3, 1]]],
+    )
+}
+
+fn perforated(outer: [[i64; 2]; 4], holes: &[[[i64; 2]; 4]]) -> NumericalDefinition {
     let at = |p: [i64; 2], z| [p[0], p[1], z];
+    let rings = || std::iter::once(&outer).chain(holes.iter());
     let mut polygons = vec![
-        vec![
-            outer.map(|p| at(p, 1)).to_vec(),
-            hole.map(|p| at(p, 1)).to_vec(),
-        ],
-        vec![
-            outer.into_iter().rev().map(|p| at(p, 0)).collect(),
-            hole.into_iter().rev().map(|p| at(p, 0)).collect(),
-        ],
+        rings()
+            .map(|ring| ring.map(|p| at(p, 1)).to_vec())
+            .collect(),
+        rings()
+            .map(|ring| ring.iter().rev().map(|p| at(*p, 0)).collect())
+            .collect(),
     ];
-    for ring in [outer, hole] {
+    for ring in rings() {
         for i in 0..4 {
             let (a, b) = (ring[i], ring[(i + 1) % 4]);
             polygons.push(vec![vec![at(a, 0), at(b, 0), at(b, 1), at(a, 1)]]);
@@ -590,3 +594,34 @@ fn curved_hole_sampling_does_not_claim_containment_between_nodes() {
 
 #[path = "numerical_trim/native.rs"]
 mod native;
+
+#[test]
+fn multiple_polygonal_holes_must_be_disjoint_and_not_nested() {
+    let outer = [[0, 0], [8, 0], [8, 8], [0, 8]];
+    let first = [[1, 1], [1, 3], [3, 3], [3, 1]];
+    let second = [[5, 1], [5, 3], [7, 3], [7, 1]];
+    let body = numerical::build(
+        perforated(outer, &[first, second]),
+        options(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let counts = body.counts();
+    assert_eq!((counts.faces, counts.edges, counts.vertices), (14, 36, 24));
+    for holes in [
+        [first, [[3, 1], [3, 3], [5, 3], [5, 1]]],
+        [first, [[2, 1], [2, 3], [4, 3], [4, 1]]],
+        [
+            [[1, 1], [1, 5], [5, 5], [5, 1]],
+            [[2, 2], [2, 3], [3, 3], [3, 2]],
+        ],
+    ] {
+        let error = numerical::build(
+            perforated(outer, &holes),
+            options(),
+            &mut Decider::default(),
+        )
+        .unwrap_err();
+        assert_eq!(error.code, "numerical.invalid-trim");
+    }
+}

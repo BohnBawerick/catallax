@@ -5,6 +5,8 @@ Catallax's original code remains MIT licensed. The following adapted files are A
 | Catallax file | Donor unit | Adaptation |
 | --- | --- | --- |
 | `crates/catallax-shapes/src/spline_tools.rs` | rust-brep `crates/kernel/src/curve/construction.rs`, `N_CrvExtractCrvSeg` | Exact `Rational` weighted-coordinate endpoint insertion and tensor restriction. Separate Euclidean controls and positive weights, finite-domain checks, typed refusals and caller work checkpoints |
+| `crates/catallax-shapes/src/spline_tools/edit.rs` | SMLib `NL_CrvTool.cpp`, `N_CrvInsertKnot`, `N_CrvSplit`; `NL_Bezier.cpp`, `N_BezElevateDegree` | Exact rational knot insertion, split and Bezier degree elevation. Immutable outputs, no parameter snapping, exact endpoint checks on joins. |
+| `crates/catallax-shapes/src/spline_tools/build.rs` | SMLib `NL_SrfAdv.cpp`, `N_CreateGordonSrf`, `N_CreateCoonsSrf`; `NL_SrfFit.cpp`, tensor interpolation | Exact rational interpolation and Gordon Boolean sums. Positive-denominator Bernstein products retain rational boundaries instead of fitting polynomial replacements. Explicit network parameters and exact intersections replace averaging and curve movement. N-sided C0 fill uses shared spokes and Coons quadrilaterals, not SMLib's G1 corner-blend solver. |
 | `crates/catallax-mesh/src/preview/imported.rs` | rust-brep `crates/kernel/src/tess_subdivide_mesh.rs`, `ST_TessSubdivideSrf` rectangle stack and midpoint bisection | Immutable source knots, Catallax interval evaluation, sampled flatness, bounded work and memory, shared STEP edges and unproved `PreviewMesh` output |
 | `crates/catallax-trace/src/scalar.rs` | SMLib `SmMath`, `SmTol::GetScaledZero`; rust-brep `vector2d.rs`, `sm_geom_utility.rs` | Constants and clamped scalar functions only, without SMLib's error state; inverse sine and cosine from `libm` |
 | `crates/catallax-trace/src/vector.rs` | rust-brep `crates/kernel/src/vector2d.rs` and `vector3d.rs` (`SmVector2d`, `SmVector3d`) | The operations the intersection chain enters, `Fault` results and named cross products |
@@ -61,9 +63,9 @@ The donor units are pinned to rust-brep commit `4c83df59d777ccfcb14f441b1c8d984d
 
 `dist-workspace.toml` explicitly includes `NOTICE` and `licenses/` in platform archives. The universal macOS assembler retains those assets, and the release smoke checks their bytes against the source checkout before exercising the packaged programs.
 
-No donor topology, error-state machinery, status codes, oracle implementation, C++ runtime emulation, TBB or fitting routines are included. The adapters use existing Catallax dependencies. The donor's floating-point differential records do not qualify these changed exact-arithmetic algorithms or certify preview triangles.
+No donor topology, error-state machinery, status codes, oracle implementation, C++ runtime emulation or TBB is included. The adapters use existing Catallax dependencies. The donor's floating-point differential records do not qualify these changed exact-arithmetic algorithms or certify preview triangles.
 
-Surface fitting was deliberately deferred. Current Catallax spline families already have checked carriers and writers. Donor fitting becomes useful when a new definition-held family, such as a loft or general sweep, needs a carrier and its boundary and whole-domain proof contract exists. Exact surface definitions and the existing certified STEP intersection-curve fitter are unchanged.
+Milestone 2.2 includes exact surface interpolation under the owner's widened surface-building approval, recorded on 17 November 2026. General least-squares surface approximation is not included. Toolkit definitions carry no regularity, injectivity, sewing or solid certificate. Existing certified STEP intersection-curve fitting is unchanged.
 
 The [M10 plane fixtures](../crates/catallax-intersect/tests/fixtures/patch-plane/README.md)
 and [cylinder and sphere fixtures](../crates/catallax-intersect/tests/fixtures/patch-quadric/README.md)

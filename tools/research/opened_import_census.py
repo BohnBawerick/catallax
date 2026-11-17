@@ -16,6 +16,7 @@ from pathlib import Path, PurePosixPath
 import subprocess
 import sys
 import time
+import rss_guard
 
 from export_validity_census import (
     ADMISSIONS_SHA,
@@ -234,7 +235,23 @@ def opening(row, checkpoint):
     )
 
 
-def observe(binary, source, baseline, folder, retain):
+def retain_opening_checkpoint(row, stdout, expected):
+    checkpoints = []
+    for line in stdout.read_text().splitlines():
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if value.get("stage") == "open" and value.get("outcome") == "opened":
+            checkpoints.append(value)
+    if not checkpoints:
+        return False
+    assert len(checkpoints) == 1 and checkpoints[0]["source_sha256"] == expected
+    opening(row, checkpoints[0])
+    return True
+
+
+def observe(binary, source, baseline, folder, retain, max_rss_mb=6144):
     key, expected = baseline["model_id"], baseline["source_sha256"]
     row = dict(
         model_id=key,
@@ -260,33 +277,31 @@ def observe(binary, source, baseline, folder, retain):
         "wb"
     ) as err:
         try:
-            process = subprocess.run(
+            process = rss_guard.run(
                 command,
                 stdout=out,
                 stderr=err,
                 timeout=60,
-                check=False,
+                max_rss_mb=max_rss_mb,
                 env={**os.environ, "CATALLAX_THREADS": "1"},
             )
-        except subprocess.TimeoutExpired:
-            checkpoints = []
-            for line in (folder / "producer.stdout").read_text().splitlines():
-                try:
-                    value = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if value.get("stage") == "open" and value.get("outcome") == "opened":
-                    checkpoints.append(value)
-            if checkpoints:
-                assert len(checkpoints) == 1 and checkpoints[0]["source_sha256"] == expected
-                opening(row, checkpoints[0])
-            row.update(timeout_stage="export" if checkpoints else "open", export_validity="timeout")
-            if not checkpoints:
-                row["outcome"] = "timeout"
+        except (subprocess.TimeoutExpired, rss_guard.MemoryExceeded) as error:
+            termination = "out_of_memory" if isinstance(error, rss_guard.MemoryExceeded) else "timeout"
+            opened = retain_opening_checkpoint(row, folder / "producer.stdout", expected)
+            row.update(
+                timeout_stage="export" if opened else "open",
+                export_validity=termination,
+            )
+            if isinstance(error, rss_guard.MemoryExceeded):
+                row["observer_peak_rss_mb"] = error.peak_mb
+            if not opened:
+                row["outcome"] = termination
             return row
         finally:
             assert digest(source) == expected
     if process.returncode or not (capture / "response.json").is_file():
+        if retain_opening_checkpoint(row, folder / "producer.stdout", expected):
+            row["export_validity"] = "process_error"
         return row | dict(cause="producer_process_or_missing_response")
     response = json.loads((capture / "response.json").read_text())
     assert response["source_sha256"] == expected and response["work_limit"] == WORK
@@ -320,7 +335,7 @@ def observe(binary, source, baseline, folder, retain):
         return row | dict(export_validity="timeout", timeout_stage="raw_reader")
     with (folder / "raw.stdout").open("wb") as out, (folder / "raw.stderr").open("wb") as err:
         try:
-            process = subprocess.run(
+            process = rss_guard.run(
                 [
                     sys.executable,
                     "-B",
@@ -336,10 +351,11 @@ def observe(binary, source, baseline, folder, retain):
                 stdout=out,
                 stderr=err,
                 timeout=remaining,
-                check=False,
+                max_rss_mb=max_rss_mb,
             )
-        except subprocess.TimeoutExpired:
-            return row | dict(export_validity="timeout", timeout_stage="raw_reader")
+        except (subprocess.TimeoutExpired, rss_guard.MemoryExceeded) as error:
+            termination = "out_of_memory" if isinstance(error, rss_guard.MemoryExceeded) else "timeout"
+            return row | dict(export_validity=termination, timeout_stage="raw_reader")
     if process.returncode or not (folder / "raw.json").is_file():
         return row | dict(export_validity="process_error", cause="raw_process_or_missing_response")
     checked = json.loads((folder / "raw.json").read_text())
@@ -377,8 +393,33 @@ def observe(binary, source, baseline, folder, retain):
     return row
 
 
+def comparison_outcomes(by_id, expected_full, expected_valid):
+    unknown = {"timeout", "out_of_memory", "process_error"}
+    opening_unknown = {key for key, row in by_id.items() if row["outcome"] in unknown}
+    export_unknown = opening_unknown | {
+        key for key, row in by_id.items() if row.get("export_validity") in unknown
+    }
+    return dict(
+        tier_losses=sorted(
+            key for key, count in expected_full.items()
+            if key not in opening_unknown
+            and (by_id[key]["outcome"] != "full"
+                 or by_id[key].get("observed_body_count") != count)
+        ),
+        frozen_valid_export_losses=sorted(
+            key for key in expected_valid
+            if key not in export_unknown and not by_id[key].get("all_solids_export_valid")
+        ),
+        not_measured=sorted(export_unknown),
+        baseline_not_measured=sorted(
+            (set(expected_full) & opening_unknown) | (expected_valid & export_unknown)
+        ),
+    )
+
+
 def collect(args):
     assert args.workers == 2 and not args.out.resolve().is_relative_to(ROOT)
+    assert args.max_rss_mb > 0
     assert digest(BASELINE) == ADMISSIONS_SHA and digest(args.source_hashes) == HASHES_SHA
     assert digest(args.selection) == SELECTION_SHA
     frozen_manifest = json.loads(BASELINE.with_suffix(".json").read_text())
@@ -450,6 +491,7 @@ def collect(args):
         observation_timeout_seconds=60,
         workers=2,
         per_import_workers=1,
+        max_rss_mb_per_observer=args.max_rss_mb,
         ocp_version="8.0.1.1",
         unhealed_validity_established=False,
         complete_source_body_bound_established=False,
@@ -471,7 +513,8 @@ def collect(args):
     with ThreadPoolExecutor(max_workers=2) as pool:
         pending = {
             pool.submit(
-                observe, binary, files[k], baseline[k], args.out / "parts" / k, k in retained
+                observe, binary, files[k], baseline[k], args.out / "parts" / k, k in retained,
+                args.max_rss_mb,
             ): k
             for k in sorted(hashes)
             if k not in rows
@@ -526,12 +569,7 @@ def collect(args):
     expected_valid = {k for k, r in validity.items() if r["validity_outcome"] == "raw_valid"}
     expected_valid.update(r["model_id"] for r in cone_reference["results"])
     assert len(expected_full) == 405 and len(expected_valid) == 374
-    tier_losses = [
-        k
-        for k, count in expected_full.items()
-        if by_id[k]["outcome"] != "full" or by_id[k].get("observed_body_count") != count
-    ]
-    export_losses = [k for k in expected_valid if not by_id[k].get("all_solids_export_valid")]
+    comparison = comparison_outcomes(by_id, expected_full, expected_valid)
     outcomes = Counter(r["outcome"] for r in observations)
     exports = Counter(r.get("export_validity", "not_reached") for r in observations)
     opened = sum(r["opened"] for r in observations)
@@ -560,13 +598,13 @@ def collect(args):
             name: sum(r.get(name + "_body_count", 0) for r in observations)
             for name in ["valid_solid", "repaired_solid", "surface"]
         },
-        tier_losses=tier_losses,
-        frozen_valid_export_losses=export_losses,
+        **comparison,
         baseline_full_solid_files=405,
         baseline_valid_export_files=374,
         integrated_00009338_preserved=preserved_9338,
-        acceptance_passed=not tier_losses
-        and not export_losses
+        acceptance_passed=not comparison["tier_losses"]
+        and not comparison["frozen_valid_export_losses"]
+        and not comparison["baseline_not_measured"]
         and not outcomes["process_error"]
         and not exports["process_error"]
         and preserved_9338,
@@ -613,6 +651,7 @@ def main():
     for field in ["build-record", "sources", "selection", "source-hashes", "out"]:
         command.add_argument("--" + field, type=Path, required=True)
     command.add_argument("--workers", type=int, default=2)
+    command.add_argument("--max-rss-mb", type=int, default=6144)
     command.add_argument("--resume", action="store_true")
     args = parser.parse_args()
     {"build": build, "raw": raw, "collect": collect}[args.command](args)

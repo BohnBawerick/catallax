@@ -15,6 +15,8 @@ use crate::{ImportRefusal, RepairRecord, Solid, Vec3};
 mod analytic;
 mod cones;
 
+pub use analytic::constructed::{SewnSurfaceBody, sew_constructed_surfaces};
+
 /// Numerical reconstruction of finite parameter trims, retaining the immutable
 /// source's shared vertices and analytic carriers. No geometric displacement or
 /// complete source/body deviation bound is inferred from its sampled checks.

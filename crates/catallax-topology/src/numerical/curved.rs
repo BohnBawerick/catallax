@@ -28,7 +28,7 @@ pub(super) fn check_loops(
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
     if !projected(face, edges) {
-        return super::check_loops(face, dec);
+        return super::check_loops(face, None, dec);
     }
     let mut sampled = face.clone();
     sampled.loops.clear();
@@ -65,5 +65,5 @@ pub(super) fn check_loops(
         }
         sampled.loops.push(polygon);
     }
-    super::check_loops(&sampled, dec)
+    super::check_loops(&sampled, None, dec)
 }

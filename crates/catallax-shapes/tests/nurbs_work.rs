@@ -1,0 +1,124 @@
+//! Construction must stop at the caller's deterministic work allowance.
+
+use catallax_numbers::{Decider, Rational, with_operation_budget};
+use catallax_shapes::spline_tools::{RationalPoint, RationalSplineSurface};
+
+#[test]
+fn dense_grid_construction_refuses_when_its_rational_work_exhausts_the_allowance() {
+    let nodes: Vec<_> = (0..4)
+        .map(|i| Rational::from_ratio(i, 3).unwrap())
+        .collect();
+    let points: Vec<RationalPoint> = nodes
+        .iter()
+        .flat_map(|u| nodes.iter().map(move |v| [u.clone(), v.clone(), u * v]))
+        .collect();
+    // The smaller limit cannot admit even the dense matrix storage; the larger
+    // one admits that storage but must stop the rational solve or tensor work.
+    for allowance in [16, 512] {
+        let (result, work) = with_operation_budget(allowance, || {
+            RationalSplineSurface::through_grid(
+                [&nodes, &nodes],
+                [3, 3],
+                &points,
+                &mut Decider::default(),
+            )
+        });
+        assert_eq!(result.unwrap_err().code, "numbers.operation-budget");
+        assert!(work.exhausted);
+        assert!(work.used <= allowance);
+    }
+    let (surface, work) = with_operation_budget(100_000, || {
+        RationalSplineSurface::through_grid(
+            [&nodes, &nodes],
+            [3, 3],
+            &points,
+            &mut Decider::default(),
+        )
+    });
+    let surface = surface.unwrap();
+    assert!(!work.exhausted);
+    let middle = Rational::from_ratio(1, 2).unwrap();
+    assert_eq!(
+        surface
+            .point_at(&middle, &middle, &Decider::default())
+            .unwrap(),
+        [middle.clone(), middle, Rational::from_ratio(1, 4).unwrap()]
+    );
+}
+
+#[test]
+fn prescribed_grid_basis_refuses_nonclamped_zero_width_endpoint_spans() {
+    let q = |text: &str| Rational::parse(text).unwrap();
+    let u = ["0", "1/3", "2/3", "1"].map(q);
+    let v = ["0", "1"].map(q);
+    let points: Vec<_> = u
+        .iter()
+        .flat_map(|u| v.iter().map(move |v| [u.clone(), v.clone(), u * v]))
+        .collect();
+    let result = RationalSplineSurface::through_grid_on_knots(
+        [&u, &v],
+        [2, 1],
+        [
+            ["0", "0", "0", "1", "1", "2", "2"].map(q).to_vec(),
+            ["0", "0", "1", "1"].map(q).to_vec(),
+        ],
+        &points,
+        &mut Decider::default(),
+    );
+    assert_eq!(result.unwrap_err().code, "shapes.spline-exchange-data");
+    let surface = RationalSplineSurface::through_grid_on_knots(
+        [&u, &v],
+        [2, 1],
+        [
+            ["0", "0", "0", "1/2", "1", "1", "1"].map(q).to_vec(),
+            ["0", "0", "1", "1"].map(q).to_vec(),
+        ],
+        &points,
+        &mut Decider::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        surface
+            .point_at(&q("1/2"), &q("1/2"), &Decider::default())
+            .unwrap(),
+        [q("1/2"), q("1/2"), q("1/4")]
+    );
+}
+
+#[test]
+fn ruled_surface_is_euclidean_linear_between_distinct_rational_bases() {
+    use catallax_shapes::spline_tools::RationalSplineCurve;
+    let q = |text: &str| Rational::parse(text).unwrap();
+    let dec = &mut Decider::default();
+    let a = RationalSplineCurve::new(
+        2,
+        ["0", "0", "0", "1/2", "1", "1", "1"].map(q).to_vec(),
+        [[0, 0, 0], [1, 0, 1], [2, 0, 0], [3, 0, 1]]
+            .map(|p| p.map(Rational::from_i64))
+            .to_vec(),
+        ["2", "3", "1", "2"].map(q).to_vec(),
+        dec,
+    )
+    .unwrap();
+    let b = RationalSplineCurve::new(
+        3,
+        ["0", "0", "0", "0", "1", "1", "1", "1"].map(q).to_vec(),
+        [[0, 2, 1], [1, 3, 2], [2, 2, 3], [3, 2, 4]]
+            .map(|p| p.map(Rational::from_i64))
+            .to_vec(),
+        ["4", "1", "2", "3"].map(q).to_vec(),
+        dec,
+    )
+    .unwrap();
+    let surface = RationalSplineSurface::ruled(&a, &b, dec).unwrap();
+    for u in [q("0"), q("1/3"), q("1/2"), q("2/3"), q("1")] {
+        let first = a.point_at(&u, dec).unwrap();
+        let second = b.point_at(&u, dec).unwrap();
+        for v in [q("0"), q("1/4"), q("1")] {
+            let expected = std::array::from_fn(|axis| {
+                &(&first[axis] * &(&q("1") - &v)) + &(&second[axis] * &v)
+            });
+            assert_eq!(surface.point_at(&u, &v, dec).unwrap(), expected);
+        }
+    }
+}

@@ -181,7 +181,7 @@ def render(projection_path):
   <header class="read__head">
 {heading(['One definition', 'of <em>done</em>.'])}
   </header>
-  <p class="ev__lede">Catallax {escape(p["source_tag"])}, OpenCASCADE and SMLib, run on the same {total} cases and scored by the same rule.</p>
+  <p class="ev__lede">Catallax {escape(p["source_tag"])}, OpenCASCADE and SMLib, run on the same {total} cases and scored by the same rule. Newer results, from <a href="https://github.com/BohnBawerick/catallax/releases/tag/v0.3.0" target="_blank" rel="noopener">Catallax 0.3.0</a>, are on the <a href="checkpoint-1.html">Checkpoint 1 page</a>.</p>
 
   <section class="done" aria-labelledby="rule">
     <h2 class="ev__h" id="rule">The rule</h2>

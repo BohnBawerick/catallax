@@ -101,8 +101,9 @@ def properties(name, edit):
 
 def definition(case, label):
     name = case['recipe']
-    if name.startswith('census/'):
-        # Real census parts have no independent formula; only the STEP check applies.
+    if name.startswith(('census/', 'phase2/')):
+        # Real census parts and the phase-2 sweep, loft and spline-fillet targets have
+        # no independent formula here; only the STEP check applies.
         return None, None, None
     family = Path(name).stem
     edit = float(case['edit']['value']) if label == 'edit' else None

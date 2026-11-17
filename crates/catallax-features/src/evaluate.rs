@@ -1300,6 +1300,7 @@ fn evaluate_impl(
                             let tool = model.add_body(catallax_topology::Body {
                                 kind: BodyKind::Solid,
                                 lumps,
+                                wires: Vec::new(),
                                 marks: Default::default(),
                             });
                             body = boolean(model, body, tool, BoolOp::Subtract, dec)
@@ -1352,6 +1353,7 @@ fn evaluate_impl(
                             model.add_body(catallax_topology::Body {
                                 kind: BodyKind::Empty,
                                 lumps: Vec::new(),
+                                wires: Vec::new(),
                                 marks: catallax_topology::without_fit_mark(
                                     &model.body(a.body).marks,
                                 ),

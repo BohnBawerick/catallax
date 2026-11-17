@@ -624,6 +624,7 @@ pub fn revolve(
         let body = model.add_body(Body {
             kind: BodyKind::Solid,
             lumps: vec![lump],
+            wires: Vec::new(),
             marks: MarkLog::new(),
         });
         let body = if merge_caps {

@@ -19,9 +19,11 @@ mod atlas;
 mod curved;
 mod handover;
 mod native;
-pub use native::{NumericalNativeTrim, build_with_native_trims};
+pub use native::{NumericalNativeTrim, build_with_native_trims, build_with_sampled_carriers};
 mod source;
 pub use source::definition_from_model;
+/// Editable finite spline sheets with trim, extension and normal thickening.
+pub mod surface;
 
 /// Shared default work limit for a numerical build or continuation.
 pub const DEFAULT_WORK: u64 = 20_000_000;
@@ -73,8 +75,8 @@ pub struct NumericalFace {
     pub surface: Surface,
     /// Material normal relative to the support normal.
     pub sense: Sense,
-    /// Ordered finite loops: one simple outer loop and optionally one interior hole.
-    /// The hole runs opposite to the outer loop and may not touch its boundary.
+    /// Ordered finite loops: one simple outer loop followed by interior holes.
+    /// Holes run opposite to the outer loop, remain disjoint and may not nest.
     /// Planar native-spline walks receive sampled parameter-polygon checks.
     pub loops: Vec<Vec<NumericalTrim>>,
 }
@@ -89,7 +91,8 @@ pub struct NumericalDefinition {
     pub vertices: Vec<NumericalVertex>,
     /// Shared finite edges.
     pub edges: Vec<NumericalEdge>,
-    /// Faces of one connected closed shell.
+    /// Faces of one connected shell. `build` requires closure; `build_surface`
+    /// permits boundary edges without asserting enclosed material.
     pub faces: Vec<NumericalFace>,
 }
 
@@ -142,9 +145,17 @@ impl Default for NumericalOptions {
 /// span at the same finite native parameter. Their endpoint correspondence is
 /// checked in millimetres against the declared loop endpoints. Every edge endpoint is
 /// checked against its vertex. These are pointwise distance enclosures, not bounds
-/// between samples. For projected or retained native UV walks, loop simplicity and hole placement
-/// refer to the sampled polygon. Continuous containment and disjointness remain
-/// unresolved and have no unqualified check entry.
+/// between samples. Projected or retained native UV walks keep their sampled
+/// simplicity checks. Complete planar circular boundaries additionally receive
+/// continuous projected-disk clearance checks, not chord-polygon pair tests.
+/// Other curved boundary containment remains sampled and explicitly unresolved
+/// between nodes.
+/// Explicitly declared numerical atlas carriers use a 9 by 9 chart-box grid
+/// and nine UV-walk locations per coedge for face-local checks. Their evidence
+/// says numerical samples, never continuous filled-box or curved-loop proof.
+/// Incident face-pairs use nine native edge parameters for labelled numerical
+/// distance samples. Exact-exact pairs retain the full native-knot-span grid.
+/// Other face-local checks keep their original path; incidence stays unchanged.
 /// The checks do not establish whole-body separation, global self-intersection
 /// freedom or a whole-body approximation bound. They grant no STEP export authority.
 /// Approximate export requires a numerical writer and its own output checks.
@@ -159,6 +170,8 @@ impl Default for NumericalOptions {
 pub struct NumericalBody {
     source: NumericalDefinition,
     source_native_trims: Vec<NumericalNativeTrim>,
+    source_sampled_carriers: BTreeSet<String>,
+    sampled_carriers: BTreeSet<String>,
     native_trims: Vec<NumericalNativeTrim>,
     history: Vec<NumericalHistory>,
     definition: NumericalDefinition,
@@ -175,6 +188,8 @@ pub struct NumericalHistory {
     pub definition: NumericalDefinition,
     /// Native parameter curves checked at this stage.
     pub native_trims: Vec<NumericalNativeTrim>,
+    /// Numerical carriers admitted with sampled face-local checks.
+    pub sampled_carriers: BTreeSet<String>,
     /// The controls used at this stage.
     pub options: NumericalOptions,
     /// The checks and cumulative repair history at this stage.
@@ -203,10 +218,12 @@ impl NumericalBody {
     fn inherit(&mut self, previous: &Self) {
         self.source = previous.source.clone();
         self.source_native_trims = previous.source_native_trims.clone();
+        self.source_sampled_carriers = previous.source_sampled_carriers.clone();
         self.history = previous.history.clone();
         self.history.push(NumericalHistory {
             definition: previous.definition.clone(),
             native_trims: previous.native_trims.clone(),
+            sampled_carriers: previous.sampled_carriers.clone(),
             options: previous.options.clone(),
             evidence: previous.evidence.clone(),
         });
@@ -295,9 +312,11 @@ impl NumericalBody {
                     distance_upper_mm: movement,
                 });
             }
-            let mut next = build_inner(
+            let mut next = build_inner_kind(
+                self.kind(),
                 definition,
                 self.native_trims.clone(),
+                self.sampled_carriers.clone(),
                 self.options.clone(),
                 repairs,
                 dec,
@@ -317,7 +336,60 @@ pub fn build(
     options: NumericalOptions,
     dec: &mut Decider,
 ) -> Result<NumericalBody, Refusal> {
-    guarded(|| build_inner(definition, Vec::new(), options, Vec::new(), dec))
+    guarded(|| {
+        build_inner(
+            definition,
+            Vec::new(),
+            BTreeSet::new(),
+            options,
+            Vec::new(),
+            dec,
+        )
+    })
+}
+
+/// Builds an open or closed surface shell under stated numerical tolerances.
+/// Boundary edges have one use; shared edges require two opposite uses.
+/// The existing surface topology checker validates boundary cycles, connectivity,
+/// vertex fans and Euler characteristic. No material or solid volume is inferred.
+pub fn build_surface(
+    definition: NumericalDefinition,
+    options: NumericalOptions,
+    dec: &mut Decider,
+) -> Result<NumericalBody, Refusal> {
+    build_surface_with_native_trims(definition, Vec::new(), options, dec)
+}
+
+/// Builds a surface shell with retained native parameter curves.
+/// Its sample checks and limitations match `build_with_native_trims`.
+pub fn build_surface_with_native_trims(
+    definition: NumericalDefinition,
+    native_trims: Vec<NumericalNativeTrim>,
+    options: NumericalOptions,
+    dec: &mut Decider,
+) -> Result<NumericalBody, Refusal> {
+    build_surface_with_sampled_carriers(definition, native_trims, BTreeSet::new(), options, dec)
+}
+
+/// Builds a numerical surface shell while retaining declared sampled carriers.
+pub fn build_surface_with_sampled_carriers(
+    definition: NumericalDefinition,
+    native_trims: Vec<NumericalNativeTrim>,
+    sampled_carriers: BTreeSet<String>,
+    options: NumericalOptions,
+    dec: &mut Decider,
+) -> Result<NumericalBody, Refusal> {
+    guarded(|| {
+        build_inner_kind(
+            BodyKind::Surface,
+            definition,
+            native_trims,
+            sampled_carriers,
+            options,
+            Vec::new(),
+            dec,
+        )
+    })
 }
 
 fn guarded<T>(run: impl FnOnce() -> Result<T, Refusal>) -> Result<T, Refusal> {
@@ -397,6 +469,27 @@ fn keys<'a>(values: impl Iterator<Item = &'a str>, dec: &mut Decider) -> Result<
 fn build_inner(
     definition: NumericalDefinition,
     native_trims: Vec<NumericalNativeTrim>,
+    sampled_carriers: BTreeSet<String>,
+    options: NumericalOptions,
+    repairs: Vec<NumericalRepair>,
+    dec: &mut Decider,
+) -> Result<NumericalBody, Refusal> {
+    build_inner_kind(
+        BodyKind::Solid,
+        definition,
+        native_trims,
+        sampled_carriers,
+        options,
+        repairs,
+        dec,
+    )
+}
+
+fn build_inner_kind(
+    kind: BodyKind,
+    definition: NumericalDefinition,
+    native_trims: Vec<NumericalNativeTrim>,
+    sampled_carriers: BTreeSet<String>,
     options: NumericalOptions,
     repairs: Vec<NumericalRepair>,
     dec: &mut Decider,
@@ -412,7 +505,23 @@ fn build_inner(
     keys(definition.vertices.iter().map(|v| v.key.as_str()), dec)?;
     keys(definition.edges.iter().map(|e| e.key.as_str()), dec)?;
     keys(definition.faces.iter().map(|f| f.key.as_str()), dec)?;
-    let native = native::Index::new(&definition, &native_trims, dec)?;
+    for key in &sampled_carriers {
+        let face = definition
+            .faces
+            .iter()
+            .find(|face| &face.key == key)
+            .ok_or_else(|| bad("definition", "sampled carrier names an unknown face"))?;
+        if !matches!(
+            face.surface,
+            Surface::BSpline(SplineSupport::RationalAtlas(_))
+        ) {
+            return Err(bad(
+                "unsupported",
+                "sampled carrier coverage requires a retained rational atlas",
+            ));
+        }
+    }
+    let native = native::Index::new(&definition, &native_trims, &sampled_carriers, dec)?;
     let mut model = Model::new();
     let vertices: Vec<_> = definition
         .vertices
@@ -494,17 +603,18 @@ fn build_inner(
                 dec,
             )?;
         }
-        if face.loops.is_empty() || face.loops.len() > 2 {
-            return Err(bad(
-                "trim",
-                "this admission path requires an outer loop and at most one hole",
-            ));
+        if face.loops.is_empty() {
+            return Err(bad("trim", "this admission path requires an outer loop"));
         }
-        // Chart-union containment is checked at sampled native UV locations,
-        // so an atlas face accepts no straight parameter trim, and its charts
-        // must fill their box so that the filled loop stays on them.
+        // Every atlas edge needs native UV data. Exact faces also establish
+        // complete chart-box coverage; explicitly numerical carriers record
+        // sampled coverage only.
         if let Surface::BSpline(SplineSupport::RationalAtlas(source)) = &face.surface {
-            atlas::check_filled(source, dec)?;
+            if sampled_carriers.contains(&face.key) {
+                atlas::check_sampled(source, dec)?;
+            } else {
+                atlas::check_filled(source, dec)?;
+            }
             for (row, boundary) in face.loops.iter().enumerate() {
                 for use_index in 0..boundary.len() {
                     dec.charge_work(1)?;
@@ -517,9 +627,9 @@ fn build_inner(
                 }
             }
         }
-        // Validate the newly admitted second boundary before building its
-        // coedges. A duplicated outer loop remains an invalid trim, as in N01.
-        if face.loops.len() == 2 {
+        // Validate every interior boundary before building its coedges.
+        // Duplicated, nested or crossing boundaries remain invalid trims.
+        if face.loops.len() > 1 {
             native::check_loops(
                 face_index,
                 face,
@@ -557,8 +667,9 @@ fn build_inner(
         shells: vec![shell],
     });
     let body = model.add_body(Body {
-        kind: BodyKind::Solid,
+        kind,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: MarkLog::new(),
     });
     if let Some(fault) = crate::check::structure(&model, body).into_iter().next() {
@@ -575,7 +686,7 @@ fn build_inner(
         name: "topology.structure".into(),
         scope: definition.name.clone(),
     }];
-    for edge in &definition.edges {
+    for (edge_index, edge) in definition.edges.iter().enumerate() {
         let mut samples = Vec::new();
         for i in 0..2 {
             dec.charge_work(1)?;
@@ -591,7 +702,12 @@ fn build_inner(
             });
         }
         checks.push(NumericalCheck::Samples {
-            name: "edge.vertex-distance".into(),
+            name: if native.numerical_pair(edge_index) {
+                "edge.numerical-pair-vertex-distance"
+            } else {
+                "edge.vertex-distance"
+            }
+            .into(),
             scope: edge.key.clone(),
             samples,
         });
@@ -616,7 +732,9 @@ fn build_inner(
         )?);
         let sampled = native.has_face(face_index) || analytic::projected(face, &definition.edges);
         checks.push(NumericalCheck::Passed {
-            name: if sampled {
+            name: if sampled_carriers.contains(&face.key) {
+                "trim.numerical-carrier-sampled-simple-oriented-parameter-loop-9-per-use"
+            } else if sampled {
                 "trim.sampled-simple-oriented-parameter-loop"
             } else {
                 "trim.simple-oriented-parameter-loop"
@@ -629,17 +747,37 @@ fn build_inner(
             Surface::BSpline(SplineSupport::RationalAtlas(_))
         ) {
             checks.push(NumericalCheck::Passed {
-                name: "surface.atlas-charts-fill-box".into(),
+                name: if sampled_carriers.contains(&face.key) {
+                    "surface.sampled-atlas-chart-box-coverage-9x9"
+                } else {
+                    "surface.atlas-charts-fill-box"
+                }
+                .into(),
                 scope: face.key.clone(),
             });
             checks.push(NumericalCheck::Passed {
-                name: "trim.sampled-atlas-chart-union".into(),
+                name: if sampled_carriers.contains(&face.key) {
+                    "trim.numerical-carrier-sampled-atlas-chart-union-9-per-use"
+                } else {
+                    "trim.sampled-atlas-chart-union"
+                }
+                .into(),
                 scope: face.key.clone(),
             });
         }
-        if face.loops.len() == 2 {
+        if face.loops.len() > 1 {
+            // This family necessarily ran analytic::circle_clearance during
+            // loop validation. Native curves on rational patches did not.
+            let planar_circle_clearance = matches!(face.surface, Surface::Plane(_))
+                && face.loops.iter().any(|boundary| {
+                    analytic::complete_circle(boundary, &definition.edges).is_some()
+                });
             checks.push(NumericalCheck::Passed {
-                name: if sampled {
+                name: if sampled_carriers.contains(&face.key) {
+                    "trim.numerical-carrier-sampled-hole-contained-disjoint"
+                } else if planar_circle_clearance {
+                    "trim.sampled-boundaries-with-continuous-circle-clearance"
+                } else if sampled {
                     "trim.sampled-hole-contained-disjoint"
                 } else {
                     "trim.hole-contained-disjoint"
@@ -647,9 +785,21 @@ fn build_inner(
                 .into(),
                 scope: face.key.clone(),
             });
-            if analytic::circular_hole(face, &definition.edges).is_some() {
+            if planar_circle_clearance
+                && face.loops.iter().skip(1).any(|boundary| {
+                    analytic::complete_circle(boundary, &definition.edges).is_some()
+                })
+            {
                 checks.push(NumericalCheck::Passed {
                     name: "trim.continuous-circle-hole-clearance".into(),
+                    scope: face.key.clone(),
+                });
+            }
+            if planar_circle_clearance
+                && analytic::complete_circle(&face.loops[0], &definition.edges).is_some()
+            {
+                checks.push(NumericalCheck::Passed {
+                    name: "trim.continuous-circle-outer-clearance".into(),
                     scope: face.key.clone(),
                 });
             }
@@ -666,15 +816,27 @@ fn build_inner(
             .enumerate()
         {
             let edge = &definition.edges[trim.edge];
+            let numerical_pair = native.numerical_pair(trim.edge);
             if let Some(curve) = native.get(face_index, boundary_index, use_index) {
-                let (samples, endpoints) = native::samples(face, trim, edge, curve, dec)?;
+                let (samples, endpoints) =
+                    native::samples(face, trim, edge, curve, numerical_pair, dec)?;
                 checks.push(NumericalCheck::Samples {
-                    name: "trim.native-endpoint-position".into(),
+                    name: if numerical_pair {
+                        "trim.numerical-pair-native-endpoint-position"
+                    } else {
+                        "trim.native-endpoint-position"
+                    }
+                    .into(),
                     scope: format!("face {:?}, edge {:?}, use {index}", face.key, edge.key),
                     samples: endpoints,
                 });
                 checks.push(NumericalCheck::Samples {
-                    name: "trim.edge-surface-distance".into(),
+                    name: if numerical_pair {
+                        "trim.numerical-pair-edge-surface-distance"
+                    } else {
+                        "trim.edge-surface-distance"
+                    }
+                    .into(),
                     scope: format!("face {:?}, edge {:?}, use {index}", face.key, edge.key),
                     samples,
                 });
@@ -720,7 +882,12 @@ fn build_inner(
                 });
             }
             checks.push(NumericalCheck::Samples {
-                name: "trim.edge-surface-distance".into(),
+                name: if numerical_pair {
+                    "trim.numerical-pair-edge-surface-distance"
+                } else {
+                    "trim.edge-surface-distance"
+                }
+                .into(),
                 scope: format!("face {:?}, edge {:?}, use {index}", face.key, edge.key),
                 samples,
             });
@@ -731,6 +898,8 @@ fn build_inner(
     Ok(NumericalBody {
         source: definition.clone(),
         source_native_trims: native_trims.clone(),
+        source_sampled_carriers: sampled_carriers.clone(),
+        sampled_carriers,
         native_trims,
         history: Vec::new(),
         definition,
@@ -870,36 +1039,73 @@ fn check_distinct_boundary_vertices(
     Ok(())
 }
 
-fn check_loops(face: &NumericalFace, dec: &mut Decider) -> Result<(), Refusal> {
-    for (i, boundary) in face.loops.iter().enumerate() {
+fn inside_loop(
+    point: &[Rational; 2],
+    boundary: &[NumericalTrim],
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    let mut inside = false;
+    for edge in boundary {
+        dec.charge_work(1)?;
+        let [a, b] = &edge.uv;
+        if (a[1] > point[1]) != (b[1] > point[1])
+            && (orient(a, b, point).sign() == Sign::Positive) == (b[1] > a[1])
+        {
+            inside = !inside;
+        }
+    }
+    Ok(inside)
+}
+
+fn check_loops(
+    face: &NumericalFace,
+    cleared_circles: Option<(&NumericalFace, &[NumericalEdge])>,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    check_boundaries(face, &face.loops, cleared_circles, dec)
+}
+
+fn check_boundaries(
+    face: &NumericalFace,
+    boundaries: &[Vec<NumericalTrim>],
+    cleared_circles: Option<(&NumericalFace, &[NumericalEdge])>,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    for (i, boundary) in boundaries.iter().enumerate() {
         check_loop(face, boundary, i != 0, dec)?;
     }
-    if face.loops.len() == 2 {
-        let outer = &face.loops[0];
-        let hole = &face.loops[1];
-        for a in outer {
-            for b in hole {
-                dec.charge_work(1)?;
-                if intersects(&a.uv[0], &a.uv[1], &b.uv[0], &b.uv[1]) {
-                    return Err(bad("trim", "hole crosses or touches the outer loop"));
+    for (i, hole) in boundaries.iter().enumerate().skip(1) {
+        let hole_circle = cleared_circles.is_some_and(|(source, edges)| {
+            analytic::complete_circle(&source.loops[i], edges).is_some()
+        });
+        for (j, other) in boundaries[..i].iter().enumerate() {
+            let other_circle = cleared_circles.is_some_and(|(source, edges)| {
+                analytic::complete_circle(&source.loops[j], edges).is_some()
+            });
+            if !hole_circle && !other_circle {
+                for a in other {
+                    for b in hole {
+                        dec.charge_work(1)?;
+                        if intersects(&a.uv[0], &a.uv[1], &b.uv[0], &b.uv[1]) {
+                            return Err(bad("trim", "hole crosses or touches another boundary"));
+                        }
+                    }
                 }
             }
-        }
-        // Boundaries are disjoint and individually simple. One strict interior
-        // witness therefore places this entire hole inside the outer polygon.
-        let point = &hole[0].uv[0];
-        let mut inside = false;
-        for edge in outer {
-            dec.charge_work(1)?;
-            let [a, b] = &edge.uv;
-            if (a[1] > point[1]) != (b[1] > point[1])
-                && (orient(a, b, point).sign() == Sign::Positive) == (b[1] > a[1])
-            {
-                inside = !inside;
+            // Inscribed chord polygons can cross even when two real circular
+            // rims are disjoint. Those pairs already passed disk clearance.
+            if other_circle && (hole_circle || j == 0) {
+                continue;
             }
-        }
-        if !inside {
-            return Err(bad("trim", "hole is not strictly inside the outer loop"));
+            // Simple disjoint boundaries need one strict witness per component.
+            let contained = inside_loop(&hole[0].uv[0], other, dec)?;
+            if j == 0 {
+                if !contained {
+                    return Err(bad("trim", "hole is not strictly inside the outer loop"));
+                }
+            } else if contained || inside_loop(&other[0].uv[0], hole, dec)? {
+                return Err(bad("trim", "interior holes overlap or nest"));
+            }
         }
     }
     Ok(())
@@ -987,7 +1193,14 @@ pub fn sew(
             }
         }
         definition.vertices = retained;
-        let mut body = build_inner(definition, Vec::new(), options, repairs, dec)?;
+        let mut body = build_inner(
+            definition,
+            Vec::new(),
+            BTreeSet::new(),
+            options,
+            repairs,
+            dec,
+        )?;
         body.source = input.clone();
         let mut checks = body.evidence.checks().to_vec();
         for &[keeper, removed] in pairs {

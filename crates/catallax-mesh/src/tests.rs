@@ -312,6 +312,7 @@ fn split_torus_closes_both_periodic_dimensions_across_shared_rings() {
     let body = model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: MarkLog::new(),
     });
     let result = mesh(&model, body);
@@ -417,6 +418,7 @@ fn a_sphere_boundary_through_definition_poles_uses_a_regular_chart() {
     let body = model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: MarkLog::new(),
     });
     let result = mesh(&model, body);
@@ -813,6 +815,7 @@ fn elliptic_cylinder(placement: &Pose, oblique_caps: bool) -> (Model, BodyId) {
     let body = model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: MarkLog::new(),
     });
     (model, body)
@@ -1046,6 +1049,7 @@ fn conic_section(parabola: bool) -> (Model, BodyId) {
     let body = model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: MarkLog::new(),
     });
     (model, body)
@@ -1215,6 +1219,7 @@ fn oblique_elliptic_cylinder_shares_circular_cap_rails() {
     let body = model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: MarkLog::new(),
     });
     let options = MeshOptions::default();
@@ -1301,6 +1306,7 @@ fn torus_trimmed_between_non_grid_latitudes_closes_across_both_seams() {
     let body = model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: MarkLog::new(),
     });
     let options = MeshOptions::default();

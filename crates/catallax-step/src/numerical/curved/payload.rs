@@ -236,8 +236,11 @@ pub(super) fn build(
                 planes.push(None);
             }
             Surface::BSpline(SplineSupport::RationalAtlas(source)) => {
-                face.surface =
-                    Surface::BSpline(spline::atlas(source, &mut errors, options, dec)?.into());
+                let written =
+                    spline::atlas(source, &mut errors, options, dec).map_err(|error| {
+                        Refusal::new(error.code, format!("face {:?}: {}", face.key, error.detail))
+                    })?;
+                face.surface = Surface::BSpline(written.into());
                 for trim in face.loops.iter_mut().flatten() {
                     for uv in &mut trim.uv {
                         for value in uv {
@@ -269,9 +272,15 @@ pub(super) fn build(
             trim.curve = spline::uv_curve(&trim.curve, parameters, &mut errors, options, dec)?;
         }
     }
-    let emitted = catallax_topology::numerical::build_with_native_trims(
+    let build = if body.kind() == BodyKind::Surface {
+        catallax_topology::numerical::build_surface_with_sampled_carriers
+    } else {
+        catallax_topology::numerical::build_with_sampled_carriers
+    };
+    let emitted = build(
         definition,
         native_trims,
+        body.sampled_carriers().clone(),
         body.options().clone(),
         dec,
     )?;

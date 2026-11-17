@@ -251,6 +251,38 @@ jobs:
           job: step-regressions
           binary: target/release/catallax-verify
 
+  # The slow_*.py files hold required checks that would hold step-regressions
+  # for most of an hour, such as the M10 top cuts that spend their whole 20M
+  # allowance before refusing. They run beside step-regressions on the same verifier.
+  step-regressions-slow:
+    needs: [select, build]
+    if: needs.select.outputs.step-regressions-slow == 'true'
+    runs-on: ${{ needs.select.outputs.boat == 'true' && 'boat' || 'ubuntu-latest' }}
+    # Required 20M top-cut proof waits can exceed 45 minutes before phase 5.
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: check-selection
+          path: ${{ runner.temp }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: check-binary
+          path: target/release
+      - name: Slow OpenCASCADE STEP regressions
+        run: |
+          chmod +x target/release/catallax-verify
+          python3 -m venv "$RUNNER_TEMP/occt"
+          "$RUNNER_TEMP/occt/bin/pip" install cadquery-ocp==8.0.1.1.0
+          "$RUNNER_TEMP/occt/bin/python" -B -m unittest discover -s tools/step-regressions -p 'slow_*.py' -v
+      - uses: ./.github/actions/check-evidence
+        with:
+          job: step-regressions-slow
+          binary: target/release/catallax-verify
+
   replay:
     name: replay (${{ matrix.partition }})
     needs: [select, build]
@@ -402,7 +434,7 @@ jobs:
 
   check:
     if: always()
-    needs: [select, fmt, clippy, build, test-build, tests, step-regressions, replay, scoreboard, release-evidence, release-dry-run]
+    needs: [select, fmt, clippy, build, test-build, tests, step-regressions, step-regressions-slow, replay, scoreboard, release-evidence, release-dry-run]
     runs-on: ${{ fromJSON(needs.select.outputs.light || '["ubuntu-latest"]') }}
     timeout-minutes: 10
     steps:

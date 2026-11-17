@@ -472,6 +472,7 @@ fn centroid_separation_ignores_the_absolute_floor() {
     let body = model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: Default::default(),
     });
     assert!(model.check(body).is_empty());
@@ -599,6 +600,7 @@ fn integer_periodic_lifts_keep_the_whole_surface_in_the_enclosure() {
     let body = model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: Default::default(),
     });
     assert!(model.check(body).is_empty());

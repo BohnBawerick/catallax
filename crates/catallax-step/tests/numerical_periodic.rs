@@ -240,3 +240,108 @@ fn equivalent_closed_rim_directions_and_periods_emit_the_same_step() {
         }
     }
 }
+
+#[test]
+fn multiple_bores_and_complete_annular_caps_write_checked_step() {
+    for (name, definition, expected) in [
+        (
+            "multiple-bores",
+            fixture::bores(&["-0.5", "0.5"], "0.4"),
+            [8, 18, 12],
+        ),
+        ("annulus", fixture::annulus("2"), [4, 6, 4]),
+    ] {
+        let body = n::build(
+            definition,
+            n::NumericalOptions::default(),
+            &mut Decider::default(),
+        )
+        .unwrap();
+        let file = output::build(
+            &body,
+            &NumericalStepOptions::default(),
+            &mut Decider::default(),
+        )
+        .unwrap();
+        assert_eq!(file.report().counts, expected);
+        file.check_written(file.bytes(), &mut Decider::default())
+            .unwrap();
+        if let Ok(path) = std::env::var("CATALLAX_ANALYTIC_EVIDENCE") {
+            std::fs::write(
+                std::path::Path::new(&path).join(format!("{name}.step")),
+                file.bytes(),
+            )
+            .unwrap();
+        }
+    }
+}
+
+#[test]
+fn cylinder_cells_keep_reader_compatible_charts_across_period_gauges() {
+    let period = Ball::pi(128).mid() * Rational::from_i64(2);
+    let export = |definition| {
+        let body = n::build(
+            definition,
+            n::NumericalOptions::default(),
+            &mut Decider::default(),
+        )
+        .unwrap();
+        output::build(
+            &body,
+            &NumericalStepOptions::default(),
+            &mut Decider::default(),
+        )
+        .unwrap()
+    };
+    for negative_height in [false, true] {
+        let mut baseline = fixture::annulus("2");
+        if negative_height {
+            let height = fixture::q("2");
+            let shift = catallax_numbers::Real::from(height.clone());
+            for face in &mut baseline.faces {
+                if let Surface::Cylinder(cylinder) = &mut face.surface {
+                    cylinder.origin.z = &cylinder.origin.z + &shift;
+                    for uv in face
+                        .loops
+                        .iter_mut()
+                        .flatten()
+                        .flat_map(|trim| &mut trim.uv)
+                    {
+                        uv[1] = &uv[1] - &height;
+                    }
+                }
+            }
+        }
+        let expected = export(baseline.clone());
+        for turns in [-2, -1, 0, 1, 2] {
+            let mut definition = baseline.clone();
+            let shift = &period * &Rational::from_i64(turns);
+            for face in &mut definition.faces {
+                if matches!(face.surface, Surface::Cylinder(_)) {
+                    for uv in face
+                        .loops
+                        .iter_mut()
+                        .flatten()
+                        .flat_map(|trim| &mut trim.uv)
+                    {
+                        uv[0] = &uv[0] + &shift;
+                    }
+                }
+            }
+            let file = export(definition);
+            assert_eq!(
+                file.bytes(),
+                expected.bytes(),
+                "negative_height={negative_height}, turns={turns}"
+            );
+            if let Ok(path) = std::env::var("CATALLAX_ANALYTIC_EVIDENCE") {
+                std::fs::write(
+                    std::path::Path::new(&path)
+                        .join(format!("period-gauge-{negative_height}-{turns}.step")),
+                    file.bytes(),
+                )
+                .unwrap();
+            }
+        }
+    }
+}

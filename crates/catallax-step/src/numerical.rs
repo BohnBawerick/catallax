@@ -7,7 +7,7 @@ use catallax_numbers::{
 };
 use catallax_shapes::{Curve, Point3, Surface, Vector3};
 use catallax_topology::{
-    Sense,
+    BodyKind, Sense,
     numerical::{DEFAULT_WORK, NumericalBody},
 };
 
@@ -48,6 +48,8 @@ pub struct NumericalSplineRounding {
 /// Source and file checks with separate scopes; always a numerical result.
 #[derive(Clone, Debug)]
 pub struct NumericalStepReport {
+    /// The retained body kind. An open surface is never reported as a solid.
+    pub kind: BodyKind,
     /// Original generating input, before any explicit sewing or later edits.
     pub original_definition: catallax_topology::numerical::NumericalDefinition,
     /// Native parameter curves in the original generating input.
@@ -346,7 +348,7 @@ fn emitted_checks(
             *q = written(q, options)?;
         }
     }
-    for edge in &mut d.edges {
+    for (edge, source) in d.edges.iter_mut().zip(&body.definition().edges) {
         dec.charge_work(1)?;
         let Curve::Line(line) = &mut edge.curve else {
             return Err(bad("unsupported", "finite line required"));
@@ -379,6 +381,15 @@ fn emitted_checks(
                 let delta = difference(&d.vertices[edge.vertices[i]].position, &origin, dec)?;
                 edge.parameters[i] = arithmetic(&dot(&delta, &dir, dec)?, &squared, '/', dec)?;
             }
+        }
+        let written_order = edge.parameters[0].cmp(&edge.parameters[1]);
+        if written_order != std::cmp::Ordering::Equal
+            && written_order != source.parameters[0].cmp(&source.parameters[1])
+        {
+            return Err(bad(
+                "rounding-topology",
+                "written vertices reverse the retained finite line",
+            ));
         }
         line.origin = point_from(&origin);
         line.dir = Vector3::new(
@@ -443,11 +454,12 @@ fn emitted_checks(
             }
         }
     }
-    Ok(
+    let emitted = if body.kind() == BodyKind::Surface {
+        catallax_topology::numerical::build_surface(d, body.options().clone(), dec)?
+    } else {
         catallax_topology::numerical::build(d, body.options().clone(), dec)?
-            .evidence()
-            .clone(),
-    )
+    };
+    Ok(emitted.evidence().clone())
 }
 
 struct Writer<'a> {
@@ -492,9 +504,9 @@ impl Writer<'_> {
     }
 }
 /// Builds a separate approximate STEP artifact for a checked numerical body.
-/// The planar line family retains its rational incidence and oblique-frame
-/// checks. Native spline edges and rational patches recheck the decimal payload
-/// numerically under the body's stated tolerance, with all physical loops.
+/// Planar lines, native spline edges and rational patches retain their carriers
+/// and explicit physical loops. The selected decimal payload is checked under
+/// the body's stated tolerance; source incidence need not be exactly zero.
 /// Unsupported carriers refuse. No topology is inferred and no vertex is healed.
 /// The source tolerance is metadata, not a STEP global uncertainty or body bound.
 /// The caller's allowance covers all work; no global policy is changed.
@@ -566,15 +578,6 @@ fn build_inner(
         };
         let origin = rational_point(&line.origin)?;
         let dir = rational_vector(&line.dir)?;
-        for (i, t) in edge.parameters.iter().enumerate() {
-            let value = std::array::from_fn::<_, 3, _>(|k| &origin[k] + &(&dir[k] * t));
-            if value != d.vertices[edge.vertices[i]].position {
-                return Err(bad(
-                    "gap",
-                    "retained line endpoint and vertex differ; no export healing",
-                ));
-            }
-        }
         let point = w.point(&origin)?;
         let direction = w.direction(&dir)?;
         let magnitude = if let Some(a) = axis(&dir, false) {
@@ -631,25 +634,6 @@ fn build_inner(
             let mut uses = Vec::new();
             for trim in boundary {
                 w.dec.charge_work(1)?;
-                let edge = &d.edges[trim.edge];
-                let endpoint = if trim.sense == Sense::Same {
-                    edge.vertices
-                } else {
-                    [edge.vertices[1], edge.vertices[0]]
-                };
-                for endpoint in endpoint {
-                    // STEP retains these world-space boundary vertices. Its
-                    // implicit planar parameters need not equal the source's
-                    // numerical UV midpoints; no point or carrier is moved.
-                    let position = &d.vertices[endpoint].position;
-                    let delta = difference(position, &origin, w.dec)?;
-                    if !dot(&normal, &delta, w.dec)?.is_zero() {
-                        return Err(bad(
-                            "gap",
-                            "retained boundary vertex is off its plane; no export healing",
-                        ));
-                    }
-                }
                 uses.push(w.graph.add(
                     "ORIENTED_EDGE",
                     vec![
@@ -681,11 +665,7 @@ fn build_inner(
             ],
         ));
     }
-    let shell = w.graph.add("CLOSED_SHELL", vec![text("''"), refs(faces)]);
-    let solid = w.graph.add(
-        "MANIFOLD_SOLID_BREP",
-        vec![text("'numerical approximate'"), shell.into()],
-    );
+    let solid = w.representation(faces, body)?;
     let emitted_evidence = emitted_checks(body, options, w.dec)?;
     w.finish(
         solid,
@@ -693,7 +673,7 @@ fn build_inner(
         emitted_evidence,
         None,
         vec![
-            "source.retained-line-endpoints-and-plane-incidence".into(),
+            "source.retained-line-and-plane-carriers".into(),
             "file.decimal-model-numerical-admission".into(),
             "file.canonical-byte-identity".into(),
             "file.planar-seam-contract".into(),
@@ -703,6 +683,42 @@ fn build_inner(
 }
 
 impl Writer<'_> {
+    fn representation(&mut self, faces: Vec<Id>, body: &NumericalBody) -> Result<Id, Refusal> {
+        if body.kind() == BodyKind::Surface {
+            self.dec.charge_work(body.definition().edges.len() as u64)?;
+            let mut uses = vec![0usize; body.definition().edges.len()];
+            for trim in body
+                .definition()
+                .faces
+                .iter()
+                .flat_map(|f| f.loops.iter().flatten())
+            {
+                self.dec.charge_work(1)?;
+                uses[trim.edge] += 1;
+            }
+            let shell = self.graph.add(
+                if uses.iter().all(|n| *n == 2) {
+                    "CLOSED_SHELL"
+                } else {
+                    "OPEN_SHELL"
+                },
+                vec![text("''"), refs(faces)],
+            );
+            Ok(self.graph.add(
+                "SHELL_BASED_SURFACE_MODEL",
+                vec![text("'numerical approximate surface'"), refs([shell])],
+            ))
+        } else {
+            let shell = self
+                .graph
+                .add("CLOSED_SHELL", vec![text("''"), refs(faces)]);
+            Ok(self.graph.add(
+                "MANIFOLD_SOLID_BREP",
+                vec![text("'numerical approximate'"), shell.into()],
+            ))
+        }
+    }
+
     fn finish(
         self,
         solid: Id,
@@ -736,12 +752,13 @@ impl Writer<'_> {
         }
         let mut file = self.graph.write(&[solid], |roots| {
             // Reuse AP242 product/unit framing, not its exact-model uncertainty claim.
-            crate::export::approximate_header(&options.product_name, roots, &description)
+            numerical_header(body, &options.product_name, roots, &description)
         });
         file.push_str("ENDSEC;\nEND-ISO-10303-21;\n");
         let artifact = NumericalStep {
             bytes: file.into_bytes(),
             report: NumericalStepReport {
+                kind: body.kind(),
                 original_definition: body.source_definition().clone(),
                 original_native_trims: body.source_native_trims().to_vec(),
                 source_native_trims: body.native_trims().to_vec(),
@@ -761,5 +778,18 @@ impl Writer<'_> {
         };
         artifact.check_written(artifact.bytes(), self.dec)?;
         Ok(artifact)
+    }
+}
+
+fn numerical_header(
+    body: &NumericalBody,
+    name: &str,
+    items: &[usize],
+    description: &str,
+) -> String {
+    if body.kind() == BodyKind::Surface {
+        crate::export::approximate_surface_header(name, items, description)
+    } else {
+        crate::export::approximate_header(name, items, description)
     }
 }

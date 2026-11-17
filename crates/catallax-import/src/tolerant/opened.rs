@@ -366,14 +366,23 @@ pub fn open_step(
             outcome.healed = Some(healed);
             continue;
         }
-        let may_admit = single.bodies[0].declared_solid
+        let may_admit = healed.bodies()[0].shells.len() == 1
             && healed.report().issues.iter().all(|issue| {
                 issue.code.ends_with("-pending")
                     || issue.code == "solid.unresolved-prerequisites"
                     || issue.code == "wire.small-line-requires-curved-or-empty-boundary-analysis"
             });
         if may_admit {
-            match healed.definition(dec).and_then(|definition| {
+            match healed.definition(dec).and_then(|mut definition| {
+                // Only an already connected, closed candidate reaches here.
+                // Source surface declarations remain unchanged in `source`.
+                if let Some(surface) = definition.surface_models.pop() {
+                    let mut shells = surface.shells;
+                    definition.solids.push(crate::Solid {
+                        name: surface.name,
+                        faces: shells.remove(0).faces,
+                    });
+                }
                 numerical::admit_retained_definition(
                     &definition,
                     expected_sha256,

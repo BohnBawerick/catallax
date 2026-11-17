@@ -125,3 +125,77 @@ fn normal_gap_replays_from_saved_source_controls_with_approximate_history() {
                     .is_some_and(|values| !values.is_empty()))
     );
 }
+
+#[test]
+fn retained_surface_sewing_requires_closure_within_the_callers_cap() {
+    let mut fixture = BoxFixture::new(["2", "3", "4"]);
+    fixture.shift = Some((0, [r("0.001"), r("0"), r("0")]));
+    let source = box_step(fixture)
+        .lines()
+        .map(|line| {
+            if line.contains("MANIFOLD_SOLID_BREP") {
+                let (id, _) = line.split_once('=').unwrap();
+                let shell = line.split(",#").nth(1).unwrap().trim_end_matches(");");
+                format!("{id}=SHELL_BASED_SURFACE_MODEL('',(#{shell}));")
+            } else {
+                line.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let hash = sha256_hex(source.as_bytes());
+    let step = StepId::new("source").unwrap();
+    for (cap, expected) in [
+        ("0.002", Tier::RepairedSolid),
+        ("0.0005", Tier::SurfaceBody),
+    ] {
+        let options = tolerant::ToleranceOptions {
+            maximum_mm: r(cap),
+            ..Default::default()
+        };
+        let opened = opened::open_step(
+            source.as_bytes(),
+            &hash,
+            &step,
+            options,
+            &mut Decider::default(),
+        )
+        .unwrap();
+        assert_eq!(opened.bodies()[0].tier(), expected);
+        assert!(!opened.source().bodies()[0].declared_solid());
+        assert_eq!(opened.source().bodies()[0].shells()[0].faces.len(), 6);
+        assert!(opened.source().bodies()[0].tolerance_changes().is_empty());
+        if expected == Tier::SurfaceBody {
+            assert!(matches!(opened.body(0), Some(BodyView::Surfaces { .. })));
+            assert!(opened.bodies()[0].refusal().is_some());
+            continue;
+        }
+        let Some(BodyView::Numerical(body)) = opened.body(0) else {
+            panic!("checked numerical solid required")
+        };
+        let counts = body.counts();
+        assert_eq!((counts.faces, counts.edges, counts.vertices), (6, 12, 8));
+        let exported =
+            catallax_step::numerical::build(body, &Default::default(), &mut Decider::default())
+                .unwrap();
+        exported
+            .check_written(exported.bytes(), &mut Decider::default())
+            .unwrap();
+        let replayed = opened::reopen(
+            source.as_bytes(),
+            &opened.saved_controls(),
+            &step,
+            &mut Decider::default(),
+        )
+        .unwrap();
+        assert_eq!(replayed.bodies()[0].tier(), Tier::RepairedSolid);
+        assert_eq!(history(&opened), history(&replayed));
+        if let Ok(folder) = std::env::var("CATALLAX_HEALING_EVIDENCE") {
+            std::fs::write(
+                std::path::Path::new(&folder).join("stitched-surface.step"),
+                exported.bytes(),
+            )
+            .unwrap();
+        }
+    }
+}

@@ -102,3 +102,102 @@ The comparison is retained as context, rather than rerunning or renaming those r
 To reproduce, build the clean producer with `tools/research/opened_import_census.py build --record <outside-checkout-record>`.
 Run its `collect` command with that record, the frozen selected source directory, original private selection, published source-hash manifest and a new outside-checkout capture directory under OCP 8.0.1.1.
 The observer header owns its individual-file invocation; `--retain-controls` saves source/control artifacts for the selected ten parts.
+
+## Retained-surface sewing qualification
+
+The single 3,000-file run at kernel producer `b9f7fc355032563d26479215dbd78b0628f9296b` uses two workers, one 20M opening allowance and one aggregate 20M export allowance per file, a 60-second file deadline, and a 6,144 MiB cap on each producer and independent reader.
+It records 418 complete-source solid files and 384 files with every solid exported valid, identical file sets to the frozen tier capture above.
+There are no new complete solid or export-valid files from this sewing change.
+The remaining outcomes are 128 partial files, 2,360 retained-surface files, 92 unopened inputs and two opening timeouts.
+The opening count differs from the older producer; this run does not attribute that difference to sewing.
+
+The opening timeouts remain `00000187` and `00008201`; `00004777` retains its completed solid opening and times out only at export.
+No observer reaches the memory cap and no process error is recorded.
+The collector's stage-attribution correction was checked against the saved rows without rerunning observers.
+It reports no measured tier or export loss and no unmeasured baseline pass in the applicable stage.
+The original and corrected aggregation receipts remain separate.
+
+The public normal-offset surface fixture also sews into a numerical solid, replays from its immutable source and controls, and writes an actual STEP file.
+The pinned OCCT builder reads that artifact as valid with one solid, six faces, twelve edges and eight vertices.
+The smaller caller cap retains the source surfaces instead.
+Finite skew-line correspondence and complementary-conic-arc controls exercise the added sewing checks.
+These controls establish the implemented family, not recovery of all 2,202 older retained-surface files or export authority for arbitrary retained carriers.
+
+## Multiple numerical face-bound qualification
+
+Kernel producer `92a62c83f99afcea4009019b1b6aff4dcdf70d92` was measured once on the same 3,000 source hashes, with the preceding run's two workers, work limits, deadline and 6,144 MiB observer cap.
+
+| Qualified file set | Stitching capture | Multiple-bound candidate |
+| --- | ---: | ---: |
+| Complete-source solids | 418 | 550 |
+| Every solid exported and valid after OCCT builder processing | 384 | 479 |
+
+The measured gains are 132 complete-source solid files and 95 export-valid files.
+No previously qualified file loses its measured outcome, and no previous pass is unmeasured in its applicable stage.
+All new export-valid files are among the new complete-source solid admissions.
+The remaining 37 new admissions gain no export-valid credit.
+The first causes of the new solid files were 108 `numerical.invalid-trim`, 16 `self_intersection_not_verified` and eight `not_solid`.
+`00005188`, previously blocked by a complete circular outer rim with a hole, now exports valid; `00004869` still remains a surface result.
+
+Other opening outcomes are 129 partial files, 2,227 retained-surface files, 92 unopened inputs and the same two opening timeouts.
+Across full and partial files, 43 have `invalid_after_builder` as their primary export outcome and 43 refuse export; 44 contain an invalid written body, including one export-refused file.
+The timeout set is unchanged, with `00004777` retaining its completed opening verdict.
+No observer reaches its memory cap and no process error is recorded.
+
+The focused controls pass polygonal multiple holes, circular hole pairs, nested/touching/crossing refusals, caller-tolerance clearance and a thin annulus with different rim phases.
+Actual double-bore and annulus STEP files also pass the pinned OCCT builder's validity, volume and inside/outside checks.
+These remain numerical results with the recorded sampled and continuous-circle checks, not whole-body source-fidelity or exact proofs.
+
+## Numerical planar export qualification
+
+Kernel producer `fd24f13ab8fbc92ba4d5e8eca6ad3d6605b12e90` was measured once on the same 3,000 source hashes, with two workers, unchanged 20M opening and aggregate export allowances, a 60-second file bound and 6,144 MiB caps.
+
+| File measure | Multiple-bound capture | Numerical export candidate |
+| --- | ---: | ---: |
+| Complete-source solids | 550 | 550 |
+| Every solid exported and valid after OCCT builder processing | 479 | 507 |
+| Primary `invalid_after_builder` export outcome, full and partial | 43 | 46 |
+| Any invalid written body, full and partial | 44 | 46 |
+| Export refusal, full and partial | 43 | 1 |
+
+The 28 newly export-valid files were already complete-source admissions, each previously stopped by `step.numerical-gap`.
+The 550-file solid set and its body inventories are unchanged; there are no measured losses or unmeasured previous passes.
+Of 31 complete-source numerical-gap candidates, three still produce invalid output and receive no credit: `00001687`, `00005501` and `00008723`.
+Twelve of the preceding qualification's 13 newly admitted gap cases now export valid; its other 24 invalid-output cases remain invalid.
+The difference between primary invalid outcomes and files containing an invalid body accounts for an invalid prefix already written before an export refusal.
+
+The same opening timeouts (`00000187`, `00008201`) and export timeout (`00004777`) remain run facts.
+No observer reaches its memory cap and no process error occurs.
+The sole remaining export refusal is `numbers.operation-budget` for `00002204`; it is not a geometric diagnosis.
+
+The planar writer retains source vertices, lines and planes and rechecks the selected decimal payload at the body's unchanged tolerance.
+It no longer demands exact-zero source incidence, but rejects a reversed finite-line walk and retains existing collapsed-payload refusals.
+Fourteen focused STEP/oblique controls pass, including decoding a written source gap without healing it.
+Actual `00000835` and `00000018` outputs have all three and all sixteen bodies valid after the pinned builder, respectively.
+The first exported `00000835` body also takes a valid material-removing box cut without altering its input bytes.
+These observations grant neither a whole-body source-fidelity bound nor export-valid credit without independent checks.
+
+## Cylindrical period-chart qualification
+
+Kernel producer `06910e4076e41530620fb66d8a811c4fdac69297` was measured once on the same 3,000 source hashes, with two workers, 6,144 MiB caps, unchanged 20M allowances and the 60-second file bound.
+
+| File measure | Numerical export capture | Period-chart candidate |
+| --- | ---: | ---: |
+| Complete-source solids | 550 | 550 |
+| Every solid exported and valid after OCCT builder processing | 507 | 516 |
+| Any invalid written body, full and partial | 46 | 37 |
+| Export refusal, full and partial | 1 | 1 |
+
+All nine newly export-valid files were already fully admitted and had an invalid-after-builder export outcome.
+Their IDs are `00000265`, `00000269`, `00001929`, `00004622`, `00004623`, `00005002`, `00005763`, `00007405` and `00008723`.
+There are no measured admission/body-inventory losses, export-valid losses or unmeasured previous passes.
+`00001687` and `00005501` remain invalid and receive no new credit.
+The same two opening timeouts, one export timeout and `00002204` export work refusal remain run facts; no memory termination or process error occurs.
+
+The first invalidity in `00008723` was localised before selecting the fix: the reader moved circular pcurves into a different U period while retaining the seam branches, making one cylindrical face unorientable.
+A diagnostic common-period translation restored validity; cyclic loop rotation alone did not.
+Independent authored annulus controls reproduced the sensitivity for both face senses.
+The candidate passes six periodic STEP tests and ten actual period-gauge/signed-height annulus artifacts with the expected topology and volume.
+All three real-part bodies now validate, with unchanged written 3D entity tables.
+Only the existing four-sided cylindrical seam-cell chart is translated; 3D geometry, source data, tolerance and the existing numerical checks remain unchanged.
+Builder processing can occur internally, and no complete source-fidelity or unhealed-validity claim is made.

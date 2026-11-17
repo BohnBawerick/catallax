@@ -449,6 +449,13 @@ fn evaluate(request: &Request) -> std::io::Result<Value> {
                 return Ok(manifest);
             }
             let mut dec = Decider::default();
+            if request.source == "recipe"
+                && checks.is_none()
+                && let Some(manifest) =
+                    crate::numerical_loft_step::evaluate(&recipe, files, &request.out, &mut dec)?
+            {
+                return Ok(manifest);
+            }
             let mut built = match catallax_features::evaluate_with_files(&recipe, files, &mut dec) {
                 Ok(built) => built,
                 Err(catallax_features::BuildError::Geometry { step, refusal }) => {

@@ -186,7 +186,7 @@ fn planar_box(
     Ok(Some(bounds))
 }
 
-fn face_box(
+pub(crate) fn face_box(
     model: &mut Model,
     face: FaceId,
     planar: bool,

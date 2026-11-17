@@ -856,7 +856,10 @@ pub(super) fn build(
         let mut bounds = Vec::new();
         for (i, boundary) in face.loops.iter().enumerate() {
             let mut uses = Vec::new();
-            let start = if matches!(face.surface, Surface::Cylinder(_) | Surface::Cone(_)) {
+            let start = if matches!(
+                face.surface,
+                Surface::Cylinder(_) | Surface::Cone(_) | Surface::Torus(_)
+            ) {
                 seam_loop_start(boundary, &d.edges, face.sense, w.dec)?
             } else {
                 0

@@ -412,7 +412,6 @@ fn squared(a: &Point2, b: &Point2) -> Rational {
 fn close(a: &Point2, b: &Point2) -> bool {
     squared(a, b) <= Rational::parse("1e-14").unwrap()
 }
-fn snap_arc(start: &Point2, centre: &Point2, target: &Point2, step: &str) -> Result<Point2> {
 fn fit_arc_centre(start: &Point2, centre: Point2, target: &Point2, step: &str) -> Result<Point2> {
     let start_radius = squared(start, &centre);
     let target_radius = squared(target, &centre);
@@ -440,6 +439,7 @@ fn fit_arc_centre(start: &Point2, centre: Point2, target: &Point2, step: &str) -
     Ok(fitted)
 }
 
+fn project_circle_point(start: &Point2, centre: &Point2, target: &Point2, step: &str) -> Result<Point2> {
     let s: [Rational; 2] = std::array::from_fn(|i| start.0[i].value() - centre.0[i].value());
     let t: [Rational; 2] = std::array::from_fn(|i| target.0[i].value() - centre.0[i].value());
     let r = &s[0] * &s[0] + &s[1] * &s[1];
@@ -543,15 +543,7 @@ fn convert_loop(input: Vec<InputSegment>, li: usize, step: &str) -> Result<Loop>
             InputSegment::Arc {
                 center, clockwise, ..
             } => {
-                let centre = point(*center)?;
-                let snapped = snap_arc(&previous, &centre, &to, step)?;
-                if i + 1 == input.len() && snapped != initial {
-                    return Err(not_yet(
-                        step,
-                        "soliddraft.arc-closure",
-                        "all-arc loop requires a shared exact closure construction",
-                    ));
-                }
+                let centre = fit_arc_centre(&previous, point(*center)?, &to, step)?;
                 Segment::Arc {
                     id,
                     centre,
@@ -856,7 +848,7 @@ fn ellipse_point(
         Number::new((x * &d[1] - y * &d[0]) / (&n * ratio.value())),
     ]);
     let zero = point([0.0, 0.0])?;
-    let unit = snap_arc(&point([1.0, 0.0])?, &zero, &local, step)?;
+    let unit = project_circle_point(&point([1.0, 0.0])?, &zero, &local, step)?;
     let u = unit.0[0].value();
     let v = unit.0[1].value() * ratio.value();
     let result = Point2([

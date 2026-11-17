@@ -2,11 +2,12 @@
 use super::*;
 
 #[derive(Clone)]
-struct Match {
-    other: usize,
-    reversed: bool,
-    gaps: [Rational; 2],
-    check: &'static str,
+pub(super) struct Match {
+    pub(super) other: usize,
+    pub(super) reversed: bool,
+    pub(super) gaps: [Rational; 2],
+    pub(super) check: &'static str,
+    pub(super) maximum_sample_mm: Option<Rational>,
 }
 
 fn correspondence(
@@ -53,6 +54,7 @@ fn correspondence(
                 other: b,
                 reversed,
                 gaps: [distances[0].clone(), distances[1].clone()],
+                maximum_sample_mm: None,
                 check: if exact_arc {
                     "identical-conic-carrier-endpoints-and-finite-traversal"
                 } else {
@@ -83,6 +85,23 @@ pub(super) fn sew(
     plan: &mut Plan,
     dec: &mut Decider,
 ) -> Result<(), Error> {
+    sew_with(body_index, body, plan, dec, false, false, correspondence)
+}
+
+pub(super) fn sew_with(
+    body_index: usize,
+    body: &mut TolerantBody,
+    plan: &mut Plan,
+    dec: &mut Decider,
+    allow_same_face: bool,
+    allow_cross_shells: bool,
+    mut correspondence: impl FnMut(
+        &TolerantBody,
+        usize,
+        usize,
+        &mut Decider,
+    ) -> Result<Option<Match>, Error>,
+) -> Result<(), Error> {
     let before = usage(body, dec)?;
     let free: Vec<_> = before
         .iter()
@@ -90,11 +109,19 @@ pub(super) fn sew(
         .filter(|(_, uses)| uses.len() == 1)
         .map(|(i, _)| i)
         .collect();
+    if free.is_empty() {
+        plan.passed(body, &body.name, "sewing.no-free-boundaries");
+        return Ok(());
+    }
     let mut choices: Vec<Vec<Match>> = vec![Vec::new(); body.edges.len()];
     for (index, &a) in free.iter().enumerate() {
         for &b in &free[index + 1..] {
             dec.charge_work(1)?;
-            if before[a][0].shell != before[b][0].shell || before[a][0].face == before[b][0].face {
+            if (!allow_cross_shells && before[a][0].shell != before[b][0].shell)
+                || (!allow_same_face
+                    && before[a][0].shell == before[b][0].shell
+                    && before[a][0].face == before[b][0].face)
+            {
                 continue;
             }
             if let Some(found) = correspondence(body, a, b, dec)? {
@@ -104,6 +131,7 @@ pub(super) fn sew(
                     reversed: found.reversed,
                     gaps: found.gaps,
                     check: found.check,
+                    maximum_sample_mm: found.maximum_sample_mm,
                 });
             }
         }
@@ -148,7 +176,16 @@ pub(super) fn sew(
                 }
             }
         }
-        let maximum = gaps[0].clone().max(gaps[1].clone());
+        let mut maximum = gaps[0].clone().max(gaps[1].clone());
+        if let Some(sampled) = &found.maximum_sample_mm {
+            maximum = maximum.max(sampled.clone());
+            plan.measurements.push(HealingMeasurement {
+                body: body.name.clone(),
+                scope: format!("{}:{}", left.name, right.name),
+                check: "17-native-source-curve-sample-pairs-not-a-whole-edge-bound".into(),
+                distance_upper_mm: sampled.to_string(),
+            });
+        }
         for name in [&left.name, &right.name] {
             plan.need(
                 body_index,

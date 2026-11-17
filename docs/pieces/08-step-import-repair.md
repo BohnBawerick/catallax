@@ -204,29 +204,29 @@ The [healer measurements](../research/tolerant-import-healing/README.md) retain 
 ### Per-body opening tiers and source replay
 
 `tolerant::opened::open_step` retains the supported reader's source definitions before attempting body admission.
-Each `BodyOutcome` reports `ValidSolid`, `RepairedSolid` or `SurfaceBody`, with an explicit approximation flag and the actual refusal/check history.
-`BodyView` distinguishes a checked model, a separately checked numerical B-rep, and retained source surfaces with unresolved boundary checks.
-Retained source surfaces expose no exact model or solid authority.
+Each `BodyOutcome` reports `ValidSolid`, `RepairedSolid`, `TolerantSolid` or `SurfaceBody`, with an explicit approximation flag and actual refusal/check history.
+`BodyView` distinguishes a checked model, a separately checked numerical B-rep, native sampled geometry and retained source surfaces.
+Neither native sampled geometry nor retained source surfaces expose an exact `Model` or a conversion to certified solid authority.
 An already admitted surface model retains its existing checked surface B-rep and surface kind.
 The broad surface tier therefore does not itself assert finite embedding, closure or material; the view and recorded checks determine the available operations.
 
-The existing certified/numerical whole-file entry remains the first admission route.
-If that route refuses, each recognized body is tried independently, so one open or unsupported sibling cannot erase a valid body's result.
-The healer prepares a private one-body candidate under the original file hash.
-Known bad/open boundaries remain surfaces; pending checks may reach the existing numerical finite-trim builder and source-pair checks. A retained source surface model with one connected, closed sewn shell may enter the same checked solid builder, independently of its original declaration. This does not fill missing faces or promote an already admitted surface model merely because it declares closure. The original surface kind, source graph and controls remain unchanged; failed solid admission retains the surfaces and its typed refusal.
-The retained-definition adapter also admits the checked planar-line repair family without refitting retained carriers.
-It retains the landed cone deviation and remaining-tolerance checks.
-Every numerical result remains approximate and records its source interpretation, even when retained 3D geometry has not moved.
-Cheap exact source derivatives keep their existing source marks and are classified as repaired, separately from their construction facts.
+The default reuses the prepaid source for a certified/numerical upgrade under the caller's ordinary allowance, without a separate 1M sub-cap, and retains successful higher labels. Otherwise native admission samples the original carriers, grows per-entity tolerances from measured residuals, repairs source-declared wire connections, sews mutually unique boundary pairs within the stated sewing cap, and checks closed manifold incidence. Native seam matching compares 17 source-curve samples, not endpoints alone. A failed native document candidate is discarded atomically; retained source surfaces and already successful higher-tier siblings remain available.
 
-Default controls remain 0.0000001 mm initial entity tolerance and a 0.01 mm maximum.
-Recognition, source retention, the whole-file attempt, sibling attempts and healing share the unchanged 20M opening allowance.
+Finite self-loop curves must have measured endpoint incidence and close within the initial entity tolerance before admission or sewing; a repeated topological vertex is not closure evidence. All assigned 3D angular contexts are resolved before interpreting source geometry. Disagreeing radians/degrees contexts refuse with `import.tolerant-ambiguous-units`; per-representation angular evaluation and export are not implemented.
+
+`TolerantSolid` means these recorded local and topology checks passed. It does not establish whole-domain embedding, global self-intersection absence, outward material orientation or a complete source-to-body deviation bound. Natural edgeless faces must close both parameter directions, including collapsed pole rims; one closed spline direction does not cap an open tube. `open_checked_step` retains the explicit former certified/numerical policy.
+
+`TolerantImport` exposes immutable source definitions, native curve/surface evaluators, sampled UV trims, entity tolerances, repairs and checks. `catallax_mesh::preview_tolerant_body` samples those carriers into an explicitly unproved display mesh. Native STEP export rebuilds topology and preserves source carrier definitions, labels, schemas and the source occurrence graph. Selected-body export is body-local geometry with a fresh product frame, not an assembly export. Shared source edges receive separate emitted topology and pcurve associations for each body; wrapped 3D bases cannot pull in sibling-only surface associations. Affine UV pcurves are regenerated only after sampled correspondence checks at the entity tolerance; nonlinear retained pcurves are not silently replaced by fitted polylines.
+
+Native files have a short approximate `FILE_DESCRIPTION`. Concatenate the payloads of the ordered `CATALLAX_REPORT_JSON` comments and decode JSON to recover the repair/check record; JSON slash escapes prevent source strings from terminating those ignored STEP comments. Body-local exports include only the selected body's geometry, tolerances, repairs and checks, plus source-wide authority limitations.
+
+Default controls remain 0.0000001 mm initial entity tolerance and a 0.01 mm sewing displacement cap. Native measured entity tolerances may grow beyond that cap and are reported individually; this is not the fixed-cap checked policy. The library introduces no implicit native work allowance. The existing census observer still applies a shared 20M opening allowance and records exhausted work separately from geometry refusals.
 Output slots are reserved before optional admission work.
 A late admission budget/deadline refusal discards that admission and leaves the previously read source representation, rather than returning partial candidate geometry as a solid.
 An `Ok` result can therefore contain only retained surfaces even when optional work exhausted the outer allowance.
 Callers must handle body views explicitly instead of interpreting success as solid admission.
 Source hash mismatch, unsupported recognition and unreadable geometry remain typed failures before a readable source result is available.
-No existing import, proposal/approval, recipe or application entry is silently switched to this consumer.
+Existing recipe construction and proposal/approval entries retain their explicit checked contracts; this default changes the opened-import consumer, not certified model construction.
 
 `OpenedStep::saved_controls` saves the original `catallax-import-tolerances/1` source record.
 `opened::reopen` verifies that record against the immutable source, rejects a purported source record containing later tolerance growth, then reruns the selector with the recorded controls and the caller's step identity.
@@ -243,6 +243,8 @@ The tier collector also caps each producer and independent reader at 6,144 MiB b
 A producer crash after its complete opening checkpoint also retains that opening verdict; only the unfinished export is a process error.
 Builder processing can heal internally; neither unhealed validity nor complete source fidelity follows from that result.
 The [frozen tier census](../research/step-census-opened/README.md) owns the measured counts, producer and limitations.
+
+`collect --tier-baseline PRIOR.csv` additionally pins a hash-matched prior census for per-file tier comparison. Recorded tier totals are compared separately from solid coverage, including co-occurring checked-count loss and tolerant-count gain while a file stays full. Missing tier inventories or changed body inventories produce explicit unknown comparisons. Historical aggregate totals establish neither body-identity correspondence nor a lower bound on same-body demotions.
 
 ### IGES source recognition
 

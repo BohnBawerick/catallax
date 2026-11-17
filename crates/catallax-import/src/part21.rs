@@ -40,6 +40,12 @@ impl Entity {
 
 pub(crate) type Graph = BTreeMap<u64, Entity>;
 
+pub(crate) struct Document {
+    pub graph: Graph,
+    pub schemas: Vec<String>,
+    pub schema_error: Option<String>,
+}
+
 fn malformed(detail: impl Into<String>) -> ImportRefusal {
     ImportRefusal::Malformed {
         detail: detail.into(),
@@ -48,10 +54,16 @@ fn malformed(detail: impl Into<String>) -> ImportRefusal {
 
 /// Parses every DATA section of a Part 21 file, respecting quoted delimiters.
 pub(crate) fn parse(bytes: &[u8]) -> Result<Graph, ImportRefusal> {
+    Ok(parse_document(bytes)?.graph)
+}
+
+pub(crate) fn parse_document(bytes: &[u8]) -> Result<Document, ImportRefusal> {
     let text = std::str::from_utf8(bytes).map_err(|_| malformed("file is not UTF-8 text"))?;
     let text = strip_comments(text)?;
     let (mut in_data, mut seen_data) = (false, false);
     let mut graph = Graph::new();
+    let mut schemas = Vec::new();
+    let mut schema_error = None;
     for statement in split_statements(&text)? {
         let statement = statement.trim();
         if statement.is_empty() {
@@ -59,6 +71,28 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<Graph, ImportRefusal> {
         }
         let mut section = Cursor::new(statement);
         let keyword = section.keyword();
+        if keyword == "FILE_SCHEMA" && !in_data {
+            match section.args() {
+                Ok(values) => {
+                    for value in values {
+                        if let Param::List(names) = value {
+                            for name in names {
+                                if let Param::Str(name) = name {
+                                    schemas.push(name);
+                                } else {
+                                    schema_error =
+                                        Some("FILE_SCHEMA contains a non-string name".into());
+                                }
+                            }
+                        } else {
+                            schema_error = Some("FILE_SCHEMA has no schema-name list".into());
+                        }
+                    }
+                }
+                Err(error) => schema_error = Some(format!("{error:?}")),
+            }
+            continue;
+        }
         if keyword == "DATA" {
             if in_data {
                 return Err(malformed("nested DATA section"));
@@ -112,7 +146,11 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<Graph, ImportRefusal> {
     if !seen_data {
         return Err(malformed("no DATA section"));
     }
-    Ok(graph)
+    Ok(Document {
+        graph,
+        schemas,
+        schema_error,
+    })
 }
 
 fn strip_comments(text: &str) -> Result<String, ImportRefusal> {

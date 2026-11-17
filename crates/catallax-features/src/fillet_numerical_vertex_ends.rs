@@ -299,6 +299,110 @@ mod tests {
                     .unwrap();
                 assert!(super::super::gap(&world, &neighbor).unwrap() <= tolerance);
             }
+            let split = Rational::from_ratio(1, 3).unwrap();
+            let zero = Rational::zero();
+            let one = Rational::one();
+            let middle = boundary
+                .curve
+                .evaluate_box([&split, &split], BITS, &dec)
+                .unwrap()
+                .map(|value| value.mid());
+            let uv = boundary.sides[1]
+                .parameters
+                .evaluate_box([&split, &split], BITS, &dec)
+                .unwrap();
+            let left = super::super::assembly::restrict_boundary(
+                boundary,
+                [&zero, &split],
+                [0, 2],
+                &mut dec,
+            )
+            .unwrap();
+            let right = super::super::assembly::restrict_boundary(
+                boundary,
+                [&split, &one],
+                [2, 1],
+                &mut dec,
+            )
+            .unwrap();
+            for (piece, a, b) in [(&left, &zero, &split), (&right, &split, &one)] {
+                for index in 0..=31 {
+                    let t = Rational::from_ratio(index, 31).unwrap();
+                    let original_t = a + &(&(b - a) * &t);
+                    for (original, restricted) in [
+                        (&boundary.curve, &piece.curve),
+                        (&boundary.sides[0].parameters, &piece.sides[0].parameters),
+                        (&boundary.sides[1].parameters, &piece.sides[1].parameters),
+                    ] {
+                        let expected = original
+                            .evaluate_box([&original_t, &original_t], BITS, &dec)
+                            .unwrap();
+                        let actual = restricted.evaluate_box([&t, &t], BITS, &dec).unwrap();
+                        for axis in 0..3 {
+                            let delta = &actual[axis] - &expected[axis];
+                            assert!(
+                                delta.lo() <= Rational::zero() && delta.hi() >= Rational::zero()
+                            );
+                        }
+                    }
+                }
+            }
+            let original = section.terminations.into_iter().next().unwrap();
+            let mut contacts = section.contacts;
+            contacts.push(VertexContact {
+                position: middle,
+                parameters: vec![(neighbor, [uv[0].mid(), uv[1].mid()])],
+            });
+            let mut assembled = VertexJunction {
+                source: vertex,
+                contacts,
+                boundaries: vec![right, left],
+                terminations: Vec::new(),
+                patches: Vec::new(),
+                checks: Vec::new(),
+            };
+            super::super::assembly::bind_termination(
+                model,
+                &chains,
+                original.strip,
+                original.tau,
+                original.contacts,
+                &[0, 1],
+                &mut assembled,
+                &tolerance,
+                &mut dec,
+            )
+            .unwrap();
+            super::super::assembly::check_boundaries(
+                model,
+                &chains,
+                &mut assembled,
+                &tolerance,
+                &mut dec,
+            )
+            .unwrap();
+            let termination = &assembled.terminations[0];
+            let mut previous = assembled.contacts[termination.contacts[0]].position.clone();
+            for &(index, sense) in &termination.boundaries {
+                let curve = &assembled.boundaries[index].curve;
+                let (a, b) = if sense == Sense::Same {
+                    (&zero, &one)
+                } else {
+                    (&one, &zero)
+                };
+                let start = curve.evaluate_box([a, a], BITS, &dec).unwrap();
+                assert!(upper_distance(&start, &previous) <= tolerance);
+                previous = curve
+                    .evaluate_box([b, b], BITS, &dec)
+                    .unwrap()
+                    .map(|value| value.mid());
+            }
+            let target = &assembled.contacts[termination.contacts[1]].position;
+            assert!(
+                (0..3).fold(Rational::zero(), |sum, i| sum
+                    + (&previous[i] - &target[i]).abs())
+                    <= tolerance
+            );
             (after_rolling - before, after_end - after_rolling)
         });
         assert!(!work.exhausted);

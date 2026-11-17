@@ -346,3 +346,19 @@ The first two requests are below 20M; the ordinary application command takes
 the target. It is one strip, not the six-edge rim or an admitted fillet body;
 the full-rim 100M failure remains open. Walk and fit components were not
 separated in this measurement. No tolerance, physical guard or cap changed.
+
+At `b4a3dc39676d698ff944e7eeeb734e6764185435`, noncharging test
+snapshots separate that same 61,539,101-work R3.99 request:
+
+| Measured component | Work | Retained stations | Completed station checks |
+|---|---:|---:|---:|
+| Offset-centre walk | 17,888,503 | 324 | 7,686 |
+| Carrier and rail fit | 42,872,488 | 324 | 8,655 cumulative |
+
+Other source, selection and guide setup was not separately measured.
+The smallest walked tau span is approximately
+[0.9989062718, 0.9993796174], width 4.733456089e-4.
+The fit component remains above 20M and is assigned to its owner; the
+walk and actual split-cylinder walk refusal remain separate correctness
+investigations. These are request work snapshots, not a CPU profile.
+No production geometry, accounting, guard, tolerance or allowance changed.

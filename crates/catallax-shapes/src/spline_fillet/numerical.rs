@@ -293,8 +293,8 @@ impl NumericalFilletSpine {
     /// Walks the intersection of signed offsets in planes normal to `guide`.
     /// Contact, guide-plane and fitted-quarter checks are numerical. A failed
     /// walk returns its cause rather than replacing the selected branch.
-    /// Outside the guide's finite interval its endpoint tangent lines define
-    /// the sections. Those tails select the walk, not an extrapolated support.
+    /// Outside the guide's finite interval its endpoint two-jets define the
+    /// sections. Those tails select the walk, not an extrapolated support.
     pub fn walk(
         supports: [NumericalFilletSupport; 2],
         guide: BSplineCurve,
@@ -324,6 +324,33 @@ impl NumericalFilletSpine {
             tolerance_mm,
             dec,
         )
+    }
+
+    fn at_refinement(
+        &self,
+        mut refusal: Refusal,
+        phase: &str,
+        round: usize,
+        tau: Option<&Rational>,
+    ) -> Refusal {
+        let shortest = self
+            .nodes
+            .windows(2)
+            .map(|pair| (&pair[0].tau, &pair[1].tau, &pair[1].tau - &pair[0].tau))
+            .min_by(|a, b| a.2.cmp(&b.2))
+            .expect("a refining spine has station spans");
+        refusal.detail.push_str(&format!(
+            "; adaptive {phase} round {round}, {} nodes, {} completed samples, minimum station tau span approx [{:.9e},{:.9e}], width {:.9e}",
+            self.nodes.len(), self.samples, shortest.0.to_f64_nearest(),
+            shortest.1.to_f64_nearest(), shortest.2.to_f64_nearest(),
+        ));
+        if let Some(tau) = tau {
+            refusal.detail.push_str(&format!(
+                "; attempted tau approx {:.9e}",
+                tau.to_f64_nearest(),
+            ));
+        }
+        refusal
     }
 
     fn trace_problem(
@@ -359,12 +386,19 @@ impl NumericalFilletSpine {
                 for i in 1..4 {
                     let share = Rational::from_ratio(i, 4).unwrap();
                     let tau = &pair[0].tau + &(&(&pair[1].tau - &pair[0].tau) * &share);
-                    let checked = spine.problem.solve(
-                        &tau,
-                        spine.problem.guess(&pair[0], &pair[1], i as f64 / 4.0),
-                        dec,
-                    )?;
-                    worst = worst.max(spine.centre_error(&checked, dec)?);
+                    let checked = spine
+                        .problem
+                        .solve(
+                            &tau,
+                            spine.problem.guess(&pair[0], &pair[1], i as f64 / 4.0),
+                            dec,
+                        )
+                        .map_err(|error| {
+                            spine.at_refinement(error, "offset station", round, Some(&tau))
+                        })?;
+                    worst = worst.max(spine.centre_error(&checked, dec).map_err(|error| {
+                        spine.at_refinement(error, "centre check", round, Some(&tau))
+                    })?);
                     spine.samples += 1;
                     if i == 2 {
                         middle = Some(checked);
@@ -387,7 +421,9 @@ impl NumericalFilletSpine {
             for (index, node) in inserted.into_iter().rev() {
                 spine.nodes.insert(index, node);
             }
-            spine.centre_curve = centre_fit(&spine.nodes, dec)?;
+            spine.centre_curve = centre_fit(&spine.nodes, dec).map_err(|error| {
+                spine.at_refinement(error, "centre reconstruction", round, None)
+            })?;
         }
         unreachable!("trace returns at its subdivision limit")
     }

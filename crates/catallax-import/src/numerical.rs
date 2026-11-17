@@ -12,6 +12,32 @@ use catallax_topology::{BodyId, Model, Sense, numerical as n};
 
 use crate::{ImportRefusal, RepairRecord, Solid, Vec3};
 
+pub(crate) struct CheckedStageProbe<'a> {
+    stage: &'static str,
+    body: &'a str,
+}
+
+impl<'a> CheckedStageProbe<'a> {
+    pub(crate) fn new(stage: &'static str, body: &'a str) -> Self {
+        let work = catallax_numbers::current_operation_work();
+        eprintln!(
+            "CX_CHECKED_STAGE\tbegin\t{stage}\t{body}\t{}\t{}",
+            work.used, work.exhausted
+        );
+        Self { stage, body }
+    }
+}
+
+impl Drop for CheckedStageProbe<'_> {
+    fn drop(&mut self) {
+        let work = catallax_numbers::current_operation_work();
+        eprintln!(
+            "CX_CHECKED_STAGE\tend\t{}\t{}\t{}\t{}",
+            self.stage, self.body, work.used, work.exhausted
+        );
+    }
+}
+
 mod analytic;
 mod cones;
 
@@ -201,6 +227,7 @@ fn import_inner(
     options: &n::NumericalOptions,
     dec: &mut Decider,
 ) -> Result<StepImport, ImportError> {
+    let _probe = CheckedStageProbe::new("numerical.file_import", "file");
     // Verification is part of this request, including a mismatch that would
     // otherwise return before any geometry work. Do not hash an unmetered slice.
     dec.charge_work(bytes.len() as u64).map_err(|refusal| {
@@ -310,6 +337,7 @@ pub(crate) fn admit_retained_definition(
     options: &n::NumericalOptions,
     dec: &mut Decider,
 ) -> Result<StepImport, ImportError> {
+    let _probe = CheckedStageProbe::new("numerical.retained_definition", "file");
     if options.tolerance_mm.sign() != Sign::Positive
         || options.tolerance_mm > crate::gap::auto_cap()
     {

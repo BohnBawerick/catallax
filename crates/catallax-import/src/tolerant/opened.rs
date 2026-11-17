@@ -514,7 +514,10 @@ fn checked_admit(bytes: &[u8], step: &StepId, result: &mut OpenedStep, dec: &mut
         tolerance_mm: result.source.options.maximum_mm.clone(),
     };
     let before = current_operation_work().used;
-    let admission = numerical::import_step(bytes, expected_sha256, step, &numerical_options, dec);
+    let admission = {
+        let _probe = numerical::CheckedStageProbe::new("checked.file_import", "file");
+        numerical::import_step(bytes, expected_sha256, step, &numerical_options, dec)
+    };
     result.file_admission_work_used = current_operation_work().used.saturating_sub(before);
     match admission {
         Ok(admitted) => {
@@ -557,8 +560,13 @@ fn checked_admit(bytes: &[u8], step: &StepId, result: &mut OpenedStep, dec: &mut
         if current_operation_work().exhausted {
             break;
         }
+        let _body_probe =
+            numerical::CheckedStageProbe::new("checked.body", &result.source.bodies[index].name);
         let outcome = &mut result.bodies[index];
-        let single = match result.source.one_body(index, dec) {
+        let single = match {
+            let _probe = numerical::CheckedStageProbe::new("checked.body_decode", "body");
+            result.source.one_body(index, dec)
+        } {
             Ok(single) => single,
             Err(error) => {
                 let stop = control_refusal(&error);
@@ -569,7 +577,10 @@ fn checked_admit(bytes: &[u8], step: &StepId, result: &mut OpenedStep, dec: &mut
                 continue;
             }
         };
-        let definition = match single.definition(dec) {
+        let definition = match {
+            let _probe = numerical::CheckedStageProbe::new("checked.body_definition", "body");
+            single.definition(dec)
+        } {
             Ok(definition) => definition,
             Err(error) => {
                 let stop = control_refusal(&error);
@@ -580,7 +591,10 @@ fn checked_admit(bytes: &[u8], step: &StepId, result: &mut OpenedStep, dec: &mut
                 continue;
             }
         };
-        let strict_refusal = match strict_retry(outcome, &definition, step, dec) {
+        let strict_refusal = match {
+            let _probe = numerical::CheckedStageProbe::new("checked.body_strict", "body");
+            strict_retry(outcome, &definition, step, dec)
+        } {
             Ok(None) => continue,
             Ok(Some(error)) => error,
             Err(error) => {
@@ -592,7 +606,10 @@ fn checked_admit(bytes: &[u8], step: &StepId, result: &mut OpenedStep, dec: &mut
         if current_operation_work().exhausted {
             break;
         }
-        let healed = match healing::attempt(&single, dec) {
+        let healed = match {
+            let _probe = numerical::CheckedStageProbe::new("checked.body_healing", "body");
+            healing::attempt(&single, dec)
+        } {
             Ok(healed) => Box::new(healed),
             Err(failure) => {
                 let stop = control_refusal(&failure.error);
@@ -617,7 +634,11 @@ fn checked_admit(bytes: &[u8], step: &StepId, result: &mut OpenedStep, dec: &mut
                     || issue.code == "wire.small-line-requires-curved-or-empty-boundary-analysis"
             });
         if may_admit {
-            match healed.definition(dec).and_then(|mut definition| {
+            let definition = {
+                let _probe = numerical::CheckedStageProbe::new("checked.healed_definition", "body");
+                healed.definition(dec)
+            };
+            match definition.and_then(|mut definition| {
                 // Only an already connected, closed candidate reaches here.
                 // Source surface declarations remain unchanged in `source`.
                 if let Some(surface) = definition.surface_models.pop() {

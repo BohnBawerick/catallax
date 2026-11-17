@@ -27,7 +27,10 @@ pub fn import_step_bodies(
     expected_sha256: &str,
     step: &StepId,
 ) -> Result<Vec<BodyId>, ImportRefusal> {
-    let actual = sha256_hex(bytes);
+    let actual = {
+        let _probe = crate::numerical::CheckedStageProbe::new("strict.file_hash", "file");
+        sha256_hex(bytes)
+    };
     if actual != expected_sha256 {
         return Err(ImportRefusal::HashMismatch {
             expected: expected_sha256.to_string(),
@@ -35,7 +38,14 @@ pub fn import_step_bodies(
         });
     }
     let mut candidate = model.clone();
-    let bodies = build_file(&mut candidate, &read_step(bytes)?, Some(step))?;
+    let file = {
+        let _probe = crate::numerical::CheckedStageProbe::new("strict.file_decode", "file");
+        read_step(bytes)?
+    };
+    let bodies = {
+        let _probe = crate::numerical::CheckedStageProbe::new("strict.file_build", "file");
+        build_file(&mut candidate, &file, Some(step))?
+    };
     if catallax_numbers::current_operation_work().exhausted {
         return Err(ImportRefusal::ResourceLimit);
     }

@@ -329,6 +329,7 @@ ENDSEC;",
             .unwrap();
             for (surface, scale, units, point) in [
                 (3, "1", AngleUnit::Degrees, ["0", "5", "0"]),
+                (3, "1", AngleUnit::Degrees, ["0", "-5", "0"]),
                 (4, "1", AngleUnit::Radians, ["-1", "0", "0"]),
                 (8, "10", AngleUnit::Degrees, ["30", "10", "30"]),
                 (9, "10", AngleUnit::Degrees, ["30", "20", "30"]),
@@ -336,6 +337,31 @@ ENDSEC;",
             ] {
                 let scale = q(scale);
                 let point = point.map(q);
+                let native = crate::tolerant::native::NativeSurface::from_source(
+                    &source,
+                    surface,
+                    &scale,
+                    units.clone(),
+                    &mut dec,
+                )
+                .unwrap();
+                let target = point.each_ref().map(Rational::to_f64_nearest);
+                let projection = native.project(target, None, &mut dec).unwrap();
+                assert!(
+                    projection.converged && projection.residual_mm < 1e-7,
+                    "surface #{surface}: {projection:?}"
+                );
+                assert!(
+                    projection
+                        .sample
+                        .point_mm
+                        .into_iter()
+                        .zip(target)
+                        .map(|(actual, expected)| (actual - expected).abs())
+                        .sum::<f64>()
+                        < 1e-7,
+                    "surface #{surface}: {projection:?}"
+                );
                 let compiled = FamilySeeds::from_source(&source, surface, &scale, &units, &mut dec)
                     .unwrap()
                     .unwrap();

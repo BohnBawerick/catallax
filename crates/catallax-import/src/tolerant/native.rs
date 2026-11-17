@@ -1,5 +1,9 @@
 //! Sampled source-carrier fits. These types confer no exact-model authority.
 
+mod family_seeds;
+
+use family_seeds::FamilySeeds;
+
 use catallax_numbers::{Decider, Rational, Refusal};
 use serde::Serialize;
 
@@ -337,6 +341,7 @@ impl Carrier {
         &self,
         target: [f64; 3],
         seed: Option<NativeLocation>,
+        family: Option<&FamilySeeds>,
         dec: &mut Decider,
     ) -> Result<NativeProjection, Error> {
         if target.iter().any(|value| !value.is_finite()) {
@@ -350,6 +355,23 @@ impl Carrier {
                 return Ok(candidate);
             }
             best = Some(candidate);
+        }
+        if let Some(family) = family {
+            let point = target.map(Rational::from_f64_exact);
+            if let [Some(x), Some(y), Some(z)] = point {
+                for parameters in family.seeds(&[x, y, z], dec).map_err(mapped)? {
+                    let parameters = parameters.each_ref().map(Rational::to_f64_nearest);
+                    let Ok(location) = self.location(parameters) else { continue };
+                    if let Some(candidate) = self.refine(target, location, dec)? {
+                        if candidate.converged {
+                            return Ok(candidate);
+                        }
+                        if best.as_ref().is_none_or(|old| candidate.residual_mm < old.residual_mm) {
+                            best = Some(candidate);
+                        }
+                    }
+                }
+            }
         }
         for (chart, data) in self.charts.iter().enumerate() {
             let center = std::array::from_fn(|axis| {
@@ -416,7 +438,7 @@ impl Carrier {
 
 /// A physical source surface with sampled UV fitting, not an embedding proof.
 #[derive(Debug)]
-pub struct NativeSurface(Carrier, [Option<f64>; 2]);
+pub struct NativeSurface(Carrier, [Option<f64>; 2], Option<FamilySeeds>);
 impl NativeSurface {
     /// Compile source charts without any whole-domain topology admission.
     pub fn from_source(
@@ -432,7 +454,8 @@ impl NativeSurface {
         let carrier = Carrier::new(entity, charts, 2, CoordinateSpace::Millimetres, &angles)?;
         let periodic = surface_periodic_axes(source, entity, dec)?;
         let periods = periodic.map(|periodic| periodic.then_some(carrier.period));
-        Ok(Self(carrier, periods))
+        let family = FamilySeeds::from_source(source, entity, length_mm, &angles, dec).map_err(mapped)?;
+        Ok(Self(carrier, periods, family))
     }
     /// Original source surface identity.
     pub fn source(&self) -> EntityId {
@@ -519,7 +542,7 @@ impl NativeSurface {
         seed: Option<NativeLocation>,
         dec: &mut Decider,
     ) -> Result<NativeProjection, Error> {
-        self.0.project(point_mm, seed, dec)
+        self.0.project(point_mm, seed, self.2.as_ref(), dec)
     }
 }
 
@@ -637,7 +660,7 @@ impl NativeCurve {
         seed: Option<NativeLocation>,
         dec: &mut Decider,
     ) -> Result<NativeProjection, Error> {
-        self.0.project(point_mm, seed, dec)
+        self.0.project(point_mm, seed, None, dec)
     }
 }
 

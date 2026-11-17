@@ -87,24 +87,18 @@ fn source_surface(patch: &RationalPatch, dec: &mut Decider) -> Result<BSplineSur
         }
         controls.push(ControlPoint { coordinates });
     }
-    let mut knots = Vec::with_capacity(2);
-    for row in source.knots() {
-        let mut values = Vec::with_capacity(row.len());
+    let mut knots = [Vec::new(), Vec::new()];
+    for (values, row) in knots.iter_mut().zip(source.knots()) {
+        values.reserve_exact(row.len());
         for knot in row {
             dec.charge_work(1)?;
             let value = knot.to_f64_nearest();
             exact(value)?;
             values.push(value);
         }
-        knots.push(values);
     }
-    BSplineSurface::new(
-        source.degrees(),
-        knots.try_into().unwrap(),
-        source.control_count(),
-        controls,
-    )
-    .map_err(|error| bad(format!("finite patch adaptation failed: {error:?}")))
+    BSplineSurface::new(source.degrees(), knots, source.control_count(), controls)
+        .map_err(|error| bad(format!("finite patch adaptation failed: {error:?}")))
 }
 
 #[derive(Clone)]

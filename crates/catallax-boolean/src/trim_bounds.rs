@@ -652,7 +652,10 @@ impl TrimBounds {
         surface: SurfaceId,
         dec: &mut Decider,
     ) -> bool {
-        if !self.enabled {
+        // Native sections carry certified finite UV cells independently of
+        // rolling-fillet activation. Their explicit component bounds can use
+        // the same complete-support cache.
+        if !self.enabled && !matches!(model.geom().curve(curve), Curve::PatchSection(_)) {
             return false;
         }
         let Ok(Some(support)) = self.support(model, surface, dec) else {
@@ -789,6 +792,83 @@ mod curve_exclusion_tests {
                     .carrier_misses_support(&model, curve, &enclosure, surface, &mut dec,)
             );
         }
+    }
+
+    #[test]
+    fn native_component_exclusion_without_rolling_bands_keeps_contacts() {
+        use catallax_shapes::{BSplineSurface, Cylinder, RationalPatch, SectionSurface};
+
+        let ((), work) = catallax_numbers::with_operation_budget(100_000_000, || {
+            let mut dec = Decider::default();
+            let patch = |controls, dec: &mut Decider| {
+                let knots = || {
+                    vec![
+                        Rational::zero(),
+                        Rational::zero(),
+                        Rational::one(),
+                        Rational::one(),
+                    ]
+                };
+                RationalPatch::new(
+                    BSplineSurface::new(
+                        [1, 1],
+                        [knots(), knots()],
+                        [2, 2],
+                        controls,
+                        vec![Real::one(); 4],
+                        dec,
+                    )
+                    .unwrap(),
+                    dec,
+                )
+                .unwrap()
+            };
+            let source = patch(
+                [[-2, -2, 4], [-2, 2, -4], [2, -2, -4], [2, 2, 4]]
+                    .into_iter()
+                    .map(|[x, y, z]| {
+                        Point3::new(Real::from_i64(x), Real::from_i64(y), Real::from_i64(z))
+                    })
+                    .collect(),
+                &mut dec,
+            );
+            let cut = SectionSurface::Cylinder(Cylinder {
+                origin: Point3::origin(),
+                axis: Vector3::new(Real::zero(), Real::zero(), Real::one()),
+                radius_sq: Real::one(),
+                ref_dir: Vector3::new(Real::one(), Real::zero(), Real::zero()),
+            });
+            let section = source.sections(&cut, &mut dec).unwrap();
+            let [branch] = section.branches() else {
+                panic!("the saddle/cylinder section has one component");
+            };
+            let enclosure = branch.control_hull(&mut dec).unwrap();
+            let mut model = Model::new();
+            let curve = model
+                .geom_mut()
+                .add_curve(Curve::PatchSection(branch.clone()));
+            let height = Real::from_i64(20);
+            let opposite = patch(
+                source
+                    .carrier()
+                    .controls()
+                    .iter()
+                    .map(|point| Point3::new(point.x.clone(), point.y.clone(), height.clone()))
+                    .collect(),
+                &mut dec,
+            );
+            let mut bounds = TrimBounds::default();
+            for (patch, excluded) in [(opposite, true), (source, false)] {
+                let surface = model
+                    .geom_mut()
+                    .add_surface(Surface::BSpline(SplineSupport::RationalPatch(patch)));
+                assert_eq!(
+                    bounds.carrier_misses_support(&model, curve, &enclosure, surface, &mut dec),
+                    excluded,
+                );
+            }
+        });
+        assert!(!work.exhausted, "{work:?}");
     }
 }
 

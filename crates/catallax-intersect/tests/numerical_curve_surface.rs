@@ -34,6 +34,15 @@ fn captured_native_shared_boundary_preserves_exact_endpoint() {
         assert!(points.is_empty());
         let opposite = fixture::opposite_target(&mut dec);
         let bounds = branch.control_hull(&mut dec).unwrap();
+        for endpoint in branch.endpoints() {
+            for (axis, value) in [&endpoint.x, &endpoint.y, &endpoint.z].into_iter().enumerate() {
+                let point = dec.enclose_budgeted_at(value, 128).unwrap().to_interval();
+                assert!(
+                    bounds[axis].lo() <= point.hi() && point.lo() <= bounds[axis].hi(),
+                    "{bounds:?}: endpoint axis {axis} is outside the component enclosure"
+                );
+            }
+        }
         let opposite_top = opposite
             .carrier()
             .controls()

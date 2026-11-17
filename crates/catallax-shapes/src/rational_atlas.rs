@@ -205,33 +205,17 @@ impl RationalAtlas {
     }
 
     /// Opt-in admission from exact rational homogeneous span coefficients.
-    /// Derivative numerators are cancelled before Bernstein enclosure; the
-    /// projection, complete cover and exact C0/G1 joins are unchanged.
-    /// Non-rational coefficients refuse rather than using an approximation.
+    /// Unit Bezier controls avoid a global-to-local polynomial round trip.
+    /// Derivative cancellation, projection, complete cover and exact C0/G1
+    /// joins are unchanged. Non-rational coefficients refuse, never approximate.
     pub fn partition_with_polynomial_bounds(
         source: BSplineSurface,
         periodic: [bool; 2],
         dec: &mut Decider,
     ) -> Result<Vec<Self>, Refusal> {
         let mut bounds = BTreeMap::new();
-        let knots = source.knots();
         for indices in source.span_indices() {
-            let coordinates = source.span_polynomials(indices, dec)?;
-            let [Some(x), Some(y), Some(z), Some(w)] =
-                coordinates.each_ref().map(|p| p.as_rational())
-            else {
-                return Err(Refusal::new(
-                    "shapes.rational-atlas-polynomial-coefficients",
-                    "polynomial-bound admission needs exact rational homogeneous span coefficients",
-                ));
-            };
-            let domain = std::array::from_fn(|axis| {
-                [
-                    knots[axis][indices[axis]].clone(),
-                    knots[axis][indices[axis] + 1].clone(),
-                ]
-            });
-            bounds.insert(indices, PolynomialBounds::new(&[x, y, z, w], domain, dec)?);
+            bounds.insert(indices, PolynomialBounds::from_span(&source, indices, dec)?);
         }
         let cover = cover(&source, Some(&bounds), dec)?;
         Self::joined(source, periodic, cover, dec)

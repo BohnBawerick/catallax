@@ -174,6 +174,168 @@ fn primitives_close_at_seams_poles_and_apices_with_bounded_chords() {
     }
 }
 
+#[test]
+fn reused_unchanged_mesh_equals_fresh_mesh_including_seams_and_controls() {
+    let mut model = Model::new();
+    let bodies = [
+        topology::block(
+            &mut model,
+            [2.into(), 3.into(), 5.into()],
+            &Pose::identity(),
+        )
+        .unwrap(),
+        topology::cylinder(&mut model, 2.into(), 5.into(), &Pose::identity()).unwrap(),
+        topology::sphere(&mut model, 2.into(), &Pose::identity()).unwrap(),
+        topology::cone(&mut model, 3.into(), 0.into(), 4.into(), &Pose::identity()).unwrap(),
+        topology::torus(&mut model, 3.into(), 1.into(), &Pose::identity()).unwrap(),
+    ];
+    for body in bodies {
+        for options in [
+            options(),
+            MeshOptions {
+                max_aspect_ratio: Some(2.into()),
+                max_edge_length: Some(2.into()),
+                ..options()
+            },
+        ] {
+            let fresh = mesh_body(&model, body, &options, &mut Decider::default()).unwrap();
+            let reused = crate::mesh_body_reusing(
+                &model,
+                body,
+                &options,
+                &model,
+                &options,
+                &fresh.value,
+                &mut Decider::default(),
+            )
+            .unwrap();
+            assert_eq!(reused, fresh);
+            assert_closed(&reused.value);
+        }
+    }
+}
+
+#[test]
+fn reused_depth_edit_is_watertight_with_fresh_face_and_edge_handles() {
+    fn bored_block(height: i64) -> (Model, BodyId) {
+        let mut model = Model::new();
+        let block = topology::block(
+            &mut model,
+            [8.into(), 6.into(), height.into()],
+            &Pose::identity(),
+        )
+        .unwrap();
+        let cutter = topology::cylinder(&mut model, 1.into(), 6.into(), &pose(4, 3, -1)).unwrap();
+        let body = boolean(
+            &mut model,
+            block,
+            cutter,
+            BoolOp::Subtract,
+            &mut Decider::default(),
+        )
+        .unwrap()
+        .body;
+        (model, body)
+    }
+    let (old_model, old_body) = bored_block(2);
+    let before = mesh(&old_model, old_body);
+    let (model, body) = bored_block(3);
+    let options = options();
+    let reused = crate::mesh_body_reusing(
+        &model,
+        body,
+        &options,
+        &old_model,
+        &options,
+        &before,
+        &mut Decider::default(),
+    )
+    .unwrap()
+    .value;
+    assert_closed(&reused);
+    assert_accuracy(&model, &reused);
+    assert_eq!(reused, mesh(&model, body));
+}
+
+#[test]
+fn neighbour_chart_edit_invalidates_unchanged_caps_when_shared_samples_change() {
+    let mut model = Model::new();
+    let body = topology::cylinder(&mut model, 2.into(), 5.into(), &Pose::identity()).unwrap();
+    let options = options();
+    let before = mesh(&model, body);
+    let mut edited = model.clone();
+    let faces = model
+        .faces_of_body(body)
+        .into_iter()
+        .map(|id| {
+            let mut face = model.face(id).clone();
+            let Surface::Cylinder(mut cylinder) = model.geom().surface(face.surface).clone() else {
+                return id;
+            };
+            cylinder.ref_dir = RVector3::new(1.into(), 2.into(), 0.into()).into();
+            face.surface = edited.geom_mut().add_surface(Surface::Cylinder(cylinder));
+            edited.add_face(face)
+        })
+        .collect();
+    let shell = edited.add_shell(Shell { faces });
+    let lump = edited.add_lump(Lump {
+        shells: vec![shell],
+    });
+    let new_body = edited.add_body(Body {
+        kind: BodyKind::Solid,
+        lumps: vec![lump],
+        wires: vec![],
+        marks: MarkLog::default(),
+    });
+    let fresh = mesh(&edited, new_body);
+    assert!(
+        before
+            .edges
+            .iter()
+            .zip(&fresh.edges)
+            .any(|(a, b)| a.vertices.len() != b.vertices.len()),
+        "the edited adjacent chart must change shared-edge samples",
+    );
+    let reused = crate::mesh_body_reusing(
+        &edited,
+        new_body,
+        &options,
+        &model,
+        &options,
+        &before,
+        &mut Decider::default(),
+    )
+    .unwrap()
+    .value;
+    assert_closed(&reused);
+    assert_accuracy(&edited, &reused);
+    assert_eq!(reused, fresh);
+}
+
+#[test]
+fn changed_mesh_controls_cannot_reuse_a_coarser_face_proof() {
+    let mut model = Model::new();
+    let body = topology::sphere(&mut model, 2.into(), &Pose::identity()).unwrap();
+    let before = mesh(&model, body);
+    let finer = MeshOptions {
+        chord_tolerance: Rational::parse("0.04").unwrap(),
+        ..options()
+    };
+    let reused = crate::mesh_body_reusing(
+        &model,
+        body,
+        &finer,
+        &model,
+        &options(),
+        &before,
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let fresh = mesh_body(&model, body, &finer, &mut Decider::default()).unwrap();
+    assert_eq!(reused, fresh);
+    assert_closed(&reused.value);
+}
+
 fn lens(op: BoolOp) -> (Model, BodyId) {
     let mut model = Model::new();
     let a = topology::sphere(&mut model, 2.into(), &Pose::identity()).unwrap();

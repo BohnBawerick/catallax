@@ -173,6 +173,17 @@ fn exported_ellipse_extrusion_has_a_continuous_side_uv_wire() {
             opened.bodies()[0].refusal()
         );
     };
+    for tolerance in import
+        .evidence()
+        .tolerances
+        .iter()
+        .filter(|row| row.kind == "vertex")
+    {
+        assert!(
+            tolerance.maximum_sample_residual_mm < 1e-6,
+            "a closed conic must start at its fitted source vertex: {tolerance:?}"
+        );
+    }
     let mut dec = Decider::default();
     let bytes = import.export_body(body, &mut dec).unwrap().into_bytes();
     if let Ok(folder) = std::env::var("CATALLAX_HEALING_EVIDENCE") {
@@ -244,23 +255,29 @@ fn exported_ellipse_extrusion_has_a_continuous_side_uv_wire() {
         let charts = parsed
             .curve_charts(pcurve, &r("1"), AngleUnit::Radians, &mut dec)
             .unwrap();
-        let limits = &charts[0].domain()[0];
+        let limits = charts
+            .iter()
+            .fold([f64::INFINITY, f64::NEG_INFINITY], |limits, chart| {
+                [
+                    limits[0].min(chart.domain()[0][0].as_ref().unwrap().to_f64_nearest()),
+                    limits[1].max(chart.domain()[0][1].as_ref().unwrap().to_f64_nearest()),
+                ]
+            });
         let carrier =
             NativeUvCurve::from_source(&parsed, pcurve, &r("1"), AngleUnit::Radians, &mut dec)
                 .unwrap();
-        let mut endpoints =
-            [limits[0].as_ref().unwrap(), limits[1].as_ref().unwrap()].map(|limit| {
-                carrier
-                    .sample(
-                        NativeLocation {
-                            chart: 0,
-                            parameters: [limit.to_f64_nearest(), 0.0],
-                        },
-                        &mut dec,
-                    )
-                    .unwrap()
-                    .0
-            });
+        let mut endpoints = limits.map(|limit| {
+            carrier
+                .sample(
+                    NativeLocation {
+                        chart: 0,
+                        parameters: [limit, 0.0],
+                    },
+                    &mut dec,
+                )
+                .unwrap()
+                .0
+        });
         if forward != sense {
             endpoints.reverse();
         }

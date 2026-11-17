@@ -706,6 +706,13 @@ impl NativeCurve {
             endpoints = endpoints.map(|parameter| parameter.rem_euclid(self.0.period));
         }
         if closed {
+            if self.1 {
+                return Ok(if same_sense {
+                    [endpoints[0], endpoints[0] + self.0.period]
+                } else {
+                    [endpoints[0] + self.0.period, endpoints[0]]
+                });
+            }
             let mut domain: Option<[f64; 2]> = None;
             for chart in &self.0.charts {
                 if let [Some(low), Some(high)] = &chart.domain()[0] {
@@ -719,12 +726,6 @@ impl NativeCurve {
             }
             return if let Some([low, high]) = domain {
                 Ok(if same_sense { [low, high] } else { [high, low] })
-            } else if self.1 {
-                Ok(if same_sense {
-                    [endpoints[0], endpoints[0] + self.0.period]
-                } else {
-                    [endpoints[0] + self.0.period, endpoints[0]]
-                })
             } else {
                 Err(broken(
                     "closed edge has no finite or periodic source curve domain",

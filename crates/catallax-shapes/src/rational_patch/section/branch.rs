@@ -62,7 +62,7 @@ impl PatchSectionBranch {
     pub fn surface(&self) -> &SectionSurface {
         &self.surface
     }
-    /// Outward Cartesian control hull of this complete component's certified UV cells.
+    /// Outward axis-aligned box of the certified UV cells' Cartesian control hulls.
     ///
     /// Each cell is restricted by exact positive-weight Bezier extraction.
     /// Unresolved hardware weight bounds return the whole space, never exclusion.
@@ -80,18 +80,13 @@ impl PatchSectionBranch {
                 cell.domain.each_ref().map(|[lo, hi]| [lo, hi]),
                 dec,
             )?;
-            for point in controls {
-                dec.charge_work(1)?;
-                let weight = point[3].approx();
-                if weight.lo() <= 0.0 {
-                    return Ok([Interval::entire(); 3]);
-                }
-                let next = std::array::from_fn(|axis| point[axis].approx() / weight);
-                bounds = Some(match bounds {
-                    None => next,
-                    Some(previous) => std::array::from_fn(|axis| previous[axis].hull(&next[axis])),
-                });
-            }
+            let Some(next) = homogeneous_control_hull(&controls, dec)? else {
+                return Ok([Interval::entire(); 3]);
+            };
+            bounds = Some(match bounds {
+                None => next,
+                Some(previous) => std::array::from_fn(|axis| previous[axis].hull(&next[axis])),
+            });
         }
         Ok(bounds.expect("a retained component has certified cells"))
     }
@@ -329,6 +324,28 @@ impl PatchSectionBranch {
         du.scaled(&(&velocity[0] * &along))
             .plus(&dv.scaled(&(&velocity[1] * &along)))
     }
+}
+
+fn homogeneous_control_hull(
+    controls: &[[Real; 4]],
+    dec: &mut Decider,
+) -> Result<Option<[catallax_numbers::Interval; 3]>, Refusal> {
+    use catallax_numbers::Interval;
+
+    let mut bounds: Option<[Interval; 3]> = None;
+    for point in controls {
+        dec.charge_work(1)?;
+        let weight = point[3].approx();
+        if weight.lo() <= 0.0 {
+            return Ok(None);
+        }
+        let next = std::array::from_fn(|axis| point[axis].approx() / weight);
+        bounds = Some(match bounds {
+            None => next,
+            Some(previous) => std::array::from_fn(|axis| previous[axis].hull(&next[axis])),
+        });
+    }
+    Ok(bounds)
 }
 
 #[derive(Clone)]

@@ -28,14 +28,18 @@ fn captured_native_shared_boundary_preserves_exact_endpoint() {
             other => panic!("the original exact endpoint changed: {other:?}"),
         }
         let diagonal = fixture::diagonal_target(&mut dec);
-        let Some(SectionHits::Points(points)) = branch.patch_hits(&diagonal, &mut dec).unwrap() else {
+        let Some(SectionHits::Points(points)) = branch.patch_hits(&diagonal, &mut dec).unwrap()
+        else {
             panic!("the captured diagonal patch strictly misses the retained cylinder");
         };
         assert!(points.is_empty());
         let opposite = fixture::opposite_target(&mut dec);
         let bounds = branch.control_hull(&mut dec).unwrap();
         for endpoint in branch.endpoints() {
-            for (axis, value) in [&endpoint.x, &endpoint.y, &endpoint.z].into_iter().enumerate() {
+            for (axis, value) in [&endpoint.x, &endpoint.y, &endpoint.z]
+                .into_iter()
+                .enumerate()
+            {
                 let point = dec.enclose_budgeted_at(value, 128).unwrap().to_interval();
                 assert!(
                     bounds[axis].lo() <= point.hi() && point.lo() <= bounds[axis].hi(),
@@ -51,6 +55,15 @@ fn captured_native_shared_boundary_preserves_exact_endpoint() {
             .fold(f64::NEG_INFINITY, f64::max);
         assert!(bounds[2].lo() > opposite_top, "{bounds:?}");
         eprintln!("native component bounds: {bounds:?}");
+        let adjacent_turn = fixture::adjacent_turn_target(&mut dec);
+        assert!(
+            cut.excludes_patch_in_box(&adjacent_turn, &bounds, &mut dec)
+                .unwrap()
+        );
+        assert!(
+            !cut.excludes_patch_in_box(&target, &bounds, &mut dec)
+                .unwrap()
+        );
         assert!(branch.patch_hits(&source, &mut dec).unwrap().is_none());
     });
     assert!(!work.exhausted, "{work:?}");

@@ -4,6 +4,8 @@ use super::*;
 use crate::SplineBoundary;
 use catallax_numbers::Interval;
 
+mod box_exclusion;
+
 fn hull(patch: &RationalPatch, dec: &mut Decider) -> Result<[Interval; 3], Refusal> {
     let mut points = patch.carrier().controls().iter();
     let first = points.next().expect("an admitted patch has controls");

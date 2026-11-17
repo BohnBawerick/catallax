@@ -330,7 +330,7 @@ impl NumericalFilletSpine {
         &self,
         mut refusal: Refusal,
         phase: &str,
-        round: usize,
+        round: u32,
         tau: Option<&Rational>,
     ) -> Refusal {
         let shortest = self

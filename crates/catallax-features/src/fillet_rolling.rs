@@ -3,8 +3,7 @@
 
 use catallax_numbers::{Ball, Decider, NumericalCheck, Rational, Refusal, Sign};
 use catallax_shapes::{
-    NumericalFilletSpine, NumericalFilletSupport, NumericalSplineFillet, Point3, SplineSupport,
-    Surface,
+    NumericalFilletSpine, NumericalFilletSupport, NumericalSplineFillet, SplineSupport, Surface,
 };
 use catallax_topology::{BodyId, EdgeId, Model, Sense};
 
@@ -55,38 +54,6 @@ fn separated_sign(value: &Ball, detail: &str) -> Result<Sign, Refusal> {
     } else {
         Err(bad(detail))
     }
-}
-
-// These are initial guesses, not projected-point or incidence certificates.
-// A chart seam may have no unique inverse. A small Cartesian displacement can
-// choose a neighbouring chart; the contact walk then checks the actual support.
-fn parameters(
-    surface: &Surface,
-    point: &Point3,
-    tolerance: &Rational,
-    dec: &mut Decider,
-) -> Result<[Rational; 2], Refusal> {
-    let mut p = [
-        dec.enclose_budgeted_at(&point.x, 128)?,
-        dec.enclose_budgeted_at(&point.y, 128)?,
-        dec.enclose_budgeted_at(&point.z, 128)?,
-    ];
-    if let Some(uv) = surface.parameters_of(&p, dec)? {
-        return Ok(uv.each_ref().map(Ball::mid));
-    }
-    let displacement = Ball::from_rational(&tolerance.mul_pow2(-6), 128);
-    for axis in 0..3 {
-        let shifted = &p[axis] + &displacement;
-        let original = std::mem::replace(&mut p[axis], shifted);
-        let proposal = surface.parameters_of(&p, dec)?;
-        p[axis] = original;
-        if let Some(uv) = proposal {
-            return Ok(uv.each_ref().map(Ball::mid));
-        }
-    }
-    Err(bad(
-        "the selected edge endpoint has no regular support-chart seed",
-    ))
 }
 
 fn support(
@@ -173,8 +140,18 @@ pub(crate) fn construct(
             };
             let seed = |side: usize, dec: &mut Decider| -> Result<SideSeed, Refusal> {
                 let endpoints = [
-                    parameters(&surfaces[side], &guide.ends[0], tolerance, dec)?,
-                    parameters(&surfaces[side], &guide.ends[1], tolerance, dec)?,
+                    numerical_embedding::surface_parameters(
+                        &surfaces[side],
+                        &guide.ends[0],
+                        tolerance,
+                        dec,
+                    )?,
+                    numerical_embedding::surface_parameters(
+                        &surfaces[side],
+                        &guide.ends[1],
+                        tolerance,
+                        dec,
+                    )?,
                 ];
                 let normal = surfaces[side].normal_at(&guide.ends[0], dec)?;
                 let values = [
@@ -260,6 +237,7 @@ pub(crate) fn construct(
 mod tests {
     use super::*;
     use catallax_numbers::{BudgetPolicy, with_operation_budget};
+    use catallax_shapes::Point3;
 
     fn signed_plane_distance(
         model: &Model,

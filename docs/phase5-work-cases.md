@@ -233,3 +233,12 @@ stage profile was collected, so the radius-dependent cost has no attributed
 cause. The release test passed in 59.09 seconds; its bounded command,
 revision, process-group/PID records, full log and exit are retained in
 `proof-general-contact-box-2/` in the task evidence directory.
+
+The separate nonplanar-neighbour request passes in 33,629,407 work at the
+same allowance and tolerance. Its scope includes one R1 strip, construction
+of the quadratic neighbour `z = 10 + x²/100 + y²/50`, a selected transverse
+cut and independent world/both-pcurve geometry controls. It is not an
+isolated profile of the cut solver. Actual trimmed neighbour-face domains
+and closed-body admission are not included. The release test takes 1.11
+seconds; `proof-general-neighbour-cut-1/` retains the bounded command,
+revision, PID/group records, full output and exit.

@@ -54,10 +54,54 @@ fn scalar(value: &Real, dec: &Decider) -> Result<Rational, Refusal> {
     Ok(dec.enclose_at(value, BITS)?.mid())
 }
 
-/// Whether every retained carrier of `body` has a numerical embedding here:
-/// one closed shell of planes and retained rational patches or atlases, at
-/// most one hole per face, and finite line, native spline, patch-section or
-/// patch-pair edges. This is a cheap structural precheck, not admission.
+// Inverse results select a chart; they are not incidence certificates. At a
+// seam, a small displaced proposal chooses a neighbouring representative.
+// Callers recheck its physical point before retaining a trim.
+fn inverse_seed(
+    surface: &Surface,
+    mut point: [Ball; 3],
+    tolerance: &Rational,
+    dec: &mut Decider,
+) -> Result<[Rational; 2], Refusal> {
+    if let Some(uv) = surface.parameters_of(&point, dec)? {
+        return Ok(uv.each_ref().map(Ball::mid));
+    }
+    let displacement = Ball::from_rational(&tolerance.mul_pow2(-6), BITS);
+    for axis in 0..3 {
+        let shifted = &point[axis] + &displacement;
+        let original = std::mem::replace(&mut point[axis], shifted);
+        let proposal = surface.parameters_of(&point, dec)?;
+        point[axis] = original;
+        if let Some(uv) = proposal {
+            return Ok(uv.each_ref().map(Ball::mid));
+        }
+    }
+    Err(fit_failure(
+        "the point has no regular surface-chart inverse seed",
+    ))
+}
+
+pub(crate) fn surface_parameters(
+    surface: &Surface,
+    point: &Point3,
+    tolerance: &Rational,
+    dec: &mut Decider,
+) -> Result<[Rational; 2], Refusal> {
+    inverse_seed(
+        surface,
+        [
+            dec.enclose_budgeted_at(&point.x, BITS)?,
+            dec.enclose_budgeted_at(&point.y, BITS)?,
+            dec.enclose_budgeted_at(&point.z, BITS)?,
+        ],
+        tolerance,
+        dec,
+    )
+}
+
+/// Structural precheck for one shell with finite coedges and no seam repeats.
+/// Native carriers and explicit line/circle/spline edges are retained; other
+/// curves require a retained trace. This does not qualify charts or admission.
 pub fn embeds(model: &Model, body: BodyId) -> bool {
     let counts = model.counts(body);
     if counts.lumps != 1 || counts.shells != 1 {
@@ -65,15 +109,7 @@ pub fn embeds(model: &Model, body: BodyId) -> bool {
     }
     for face in model.faces_of_body(body) {
         let face = model.face(face);
-        if !matches!(
-            model.geom().surface(face.surface),
-            Surface::Plane(_)
-                | Surface::BSpline(
-                    SplineSupport::RationalPatch(_) | SplineSupport::RationalAtlas(_)
-                )
-        ) || face.loops.is_empty()
-            || face.loops.len() > 2
-        {
+        if face.loops.is_empty() {
             return false;
         }
         let mut seen = BTreeSet::new();
@@ -90,12 +126,7 @@ pub fn embeds(model: &Model, body: BodyId) -> bool {
     }
     model.edges_of_body(body).into_iter().all(|id| {
         let edge = model.edge(id);
-        edge.start.is_some()
-            && edge.end.is_some()
-            && matches!(
-                model.geom().curve(edge.curve),
-                Curve::Line(_) | Curve::BSpline(_) | Curve::PatchSection(_) | Curve::PatchPair(_)
-            )
+        edge.start.is_some() && edge.end.is_some()
     })
 }
 
@@ -137,12 +168,23 @@ impl SplineFace {
     }
 }
 
-enum Carrier {
+enum Carrier<'a> {
     Plane { origin: [f64; 3], normal: [f64; 3] },
     Spline(Box<SplineFace>),
+    Native(&'a Surface),
 }
 
-fn carrier(surface: &Surface, dec: &mut Decider) -> Result<Carrier, Refusal> {
+impl Carrier<'_> {
+    fn parametric(&self) -> Option<ParametricFace<'_>> {
+        match self {
+            Self::Plane { .. } => None,
+            Self::Spline(face) => Some(ParametricFace::Spline(face)),
+            Self::Native(surface) => Some(ParametricFace::Native(surface)),
+        }
+    }
+}
+
+fn carrier<'a>(surface: &'a Surface, dec: &mut Decider) -> Result<Carrier<'a>, Refusal> {
     // The exact box round a nonempty set of rectangles.
     let bounds = |domains: &mut dyn Iterator<Item = &[[Rational; 2]; 2]>| {
         let mut bounds: Option<[[Rational; 2]; 2]> = None;
@@ -189,12 +231,79 @@ fn carrier(surface: &Surface, dec: &mut Decider) -> Result<Carrier, Refusal> {
                 bounds,
             )))
         }
-        _ => {
-            return Err(unsupported(
-                "numerical embedding needs planes or rational spline faces",
+        _ => Carrier::Native(surface),
+    })
+}
+
+#[derive(Clone, Copy)]
+enum ParametricFace<'a> {
+    Spline(&'a SplineFace),
+    Native(&'a Surface),
+}
+
+impl<'a> ParametricFace<'a> {
+    fn spline(self) -> Option<&'a SplineFace> {
+        match self {
+            Self::Spline(face) => Some(face),
+            Self::Native(_) => None,
+        }
+    }
+
+    fn point(self, uv: [f64; 2], dec: &mut Decider) -> Result<[f64; 3], Refusal> {
+        let point = match self {
+            Self::Spline(face) => face.surface.point(uv),
+            Self::Native(surface) => {
+                let at = [exact(uv[0])?, exact(uv[1])?]
+                    .each_ref()
+                    .map(|q| Ball::from_rational(q, BITS));
+                surface
+                    .evaluate(&at[0], &at[1], dec)?
+                    .each_ref()
+                    .map(|v| v.mid().to_f64_nearest())
+            }
+        };
+        if !point.iter().all(|v| v.is_finite()) {
+            return Err(fit_failure(
+                "a native surface point is outside binary64 range",
             ));
         }
-    })
+        Ok(point)
+    }
+
+    fn invert(
+        self,
+        point: [f64; 3],
+        previous: Option<[f64; 2]>,
+        tolerances: &Tolerances,
+        dec: &mut Decider,
+    ) -> Result<[f64; 2], Refusal> {
+        match self {
+            Self::Spline(face) => face.surface.invert(point, face.region, previous, dec),
+            Self::Native(surface) => {
+                let p = [exact(point[0])?, exact(point[1])?, exact(point[2])?]
+                    .each_ref()
+                    .map(|q| Ball::from_rational(q, BITS));
+                let mut uv = inverse_seed(surface, p, &tolerances.projection, dec)?
+                    .each_ref()
+                    .map(Rational::to_f64_nearest);
+                if let Some(previous) = previous {
+                    for axis in 0..2 {
+                        if surface.domain()[axis] == catallax_shapes::ParamKind::Periodic {
+                            let turns =
+                                ((previous[axis] - uv[axis]) / std::f64::consts::TAU).round();
+                            uv[axis] += turns * std::f64::consts::TAU;
+                        }
+                    }
+                }
+                if !uv.iter().all(|v| v.is_finite()) {
+                    return Err(fit_failure(
+                        "a native inverse parameter is outside binary64 range",
+                    ));
+                }
+                Ok(uv)
+            }
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -203,8 +312,58 @@ struct Uv {
     approx: [f64; 2],
 }
 
+struct Circle64 {
+    center: [f64; 3],
+    x: [f64; 3],
+    y: [f64; 3],
+    radius: f64,
+}
+
+impl Circle64 {
+    fn new(circle: &catallax_shapes::Circle, dec: &mut Decider) -> Result<Self, Refusal> {
+        let plane = Surface::Plane(Plane {
+            origin: circle.center.clone(),
+            normal: circle.normal.clone(),
+            ref_dir: circle.ref_dir.clone(),
+        });
+        let zero = Ball::from_rational(&Rational::zero(), BITS);
+        let [x, y] = plane.derivatives(&zero, &zero, dec)?;
+        let result = Self {
+            center: f64_point(&circle.center),
+            x: x.each_ref().map(|v| v.mid().to_f64_nearest()),
+            y: y.each_ref().map(|v| v.mid().to_f64_nearest()),
+            radius: scalar(&circle.radius_sq.sqrt(), dec)?.to_f64_nearest(),
+        };
+        if result.radius <= 0.0
+            || !result.radius.is_finite()
+            || !result
+                .center
+                .iter()
+                .chain(&result.x)
+                .chain(&result.y)
+                .all(|v| v.is_finite())
+        {
+            return Err(fit_failure(
+                "a retained circle has no finite binary64 proposal frame",
+            ));
+        }
+        Ok(result)
+    }
+
+    fn point(&self, t: f64) -> [f64; 3] {
+        let (sin, cos) = t.sin_cos();
+        std::array::from_fn(|i| self.center[i] + self.radius * (self.x[i] * cos + self.y[i] * sin))
+    }
+
+    fn phase(&self, point: [f64; 3]) -> f64 {
+        let delta = sub(point, self.center);
+        dot(delta, self.y).atan2(dot(delta, self.x))
+    }
+}
+
 enum Native {
     Line { origin: [f64; 3], dir: [f64; 3] },
+    Circle(Circle64),
     Spline(Curve64),
 }
 
@@ -212,6 +371,7 @@ impl Native {
     fn point(&self, t: f64) -> [f64; 3] {
         match self {
             Self::Line { origin, dir } => std::array::from_fn(|c| origin[c] + t * dir[c]),
+            Self::Circle(circle) => circle.point(t),
             Self::Spline(curve) => curve.point(t),
         }
     }
@@ -220,6 +380,7 @@ impl Native {
 struct Tolerances {
     sample: f64,
     fit: f64,
+    projection: Rational,
 }
 
 fn rational_curve<const D: usize>(
@@ -277,10 +438,10 @@ fn uv_end(uv: &Uv) -> [Rational; 3] {
     [uv.exact[0].clone(), uv.exact[1].clone(), Rational::zero()]
 }
 
-// A native UV curve for a line or native spline edge on a spline face, at
-// that edge's own parameter over `interval`, ascending.
+// A native UV curve for a retained line, circle or spline at that edge's
+// own parameter over `interval`, ascending.
 fn native_uv(
-    face: &SplineFace,
+    face: ParametricFace<'_>,
     edge: &Native,
     interval: [&Rational; 2],
     ends: [&Uv; 2],
@@ -297,10 +458,8 @@ fn native_uv(
         let mut sampled = true;
         for t in &parameters[1..density] {
             let point = edge.point(*t);
-            let uv = face
-                .surface
-                .invert(point, face.region, uvs.last().copied(), dec)?;
-            if distance(face.surface.point(uv), point) > tolerances.sample {
+            let uv = face.invert(point, uvs.last().copied(), tolerances, dec)?;
+            if distance(face.point(uv, dec)?, point) > tolerances.sample {
                 sampled = false;
                 break;
             }
@@ -317,7 +476,7 @@ fn native_uv(
                 dec.charge_work(1)?;
                 let t = lerp([pair[0], pair[1]], share);
                 let uv = nurbs::evaluate(&knots, &controls, t);
-                if distance(face.surface.point(uv), edge.point(t)) > tolerances.fit {
+                if distance(face.point(uv, dec)?, edge.point(t)) > tolerances.fit {
                     fits = false;
                     break 'spans;
                 }
@@ -329,7 +488,7 @@ fn native_uv(
                 &controls,
                 interval,
                 ends.map(uv_end),
-                Some(face),
+                face.spline(),
                 dec,
             );
         }
@@ -358,7 +517,7 @@ fn piecewise<const D: usize>(
 }
 
 struct FittedUse<'a> {
-    face: &'a SplineFace,
+    face: ParametricFace<'a>,
     ends: [&'a Uv; 2],
 }
 
@@ -452,13 +611,10 @@ fn fitted_edge(
         'faces: for face_use in uses {
             let mut uvs = vec![face_use.ends[0].approx];
             for point in &points[1..n] {
-                let uv = face_use.face.surface.invert(
-                    *point,
-                    face_use.face.region,
-                    uvs.last().copied(),
-                    dec,
-                )?;
-                if distance(face_use.face.surface.point(uv), *point) > tolerances.sample {
+                let uv = face_use
+                    .face
+                    .invert(*point, uvs.last().copied(), tolerances, dec)?;
+                if distance(face_use.face.point(uv, dec)?, *point) > tolerances.sample {
                     sampled = false;
                     break 'faces;
                 }
@@ -483,7 +639,7 @@ fn fitted_edge(
                 let point = nurbs::evaluate(&knots, &controls, s);
                 for (face_use, uv_controls) in uses.iter().zip(&uv_fits) {
                     let uv = nurbs::evaluate(&knots, uv_controls, s);
-                    worst = worst.max(distance(face_use.face.surface.point(uv), point));
+                    worst = worst.max(distance(face_use.face.point(uv, dec)?, point));
                 }
                 for (origin, normal) in planes {
                     worst = worst.max(dot(sub(point, *origin), *normal).abs());
@@ -510,7 +666,7 @@ fn fitted_edge(
                 uv_controls,
                 domain,
                 face_use.ends.map(uv_end),
-                Some(face_use.face),
+                face_use.face.spline(),
                 dec,
             )?);
         }
@@ -608,6 +764,7 @@ pub fn definition_from_exact_model(
     let tolerances = Tolerances {
         sample: tolerance / 64.0,
         fit: tolerance / 4.0,
+        projection: tolerance_mm.clone(),
     };
     let vertex_ids = model.vertices_of_body(body);
     let vertex_index: BTreeMap<VertexId, usize> = vertex_ids
@@ -636,6 +793,7 @@ pub fn definition_from_exact_model(
         let face = model.face(*id);
         let surface = model.geom().surface(face.surface);
         carriers.push(carrier(surface, dec)?);
+        let mut previous_native_uv = None;
         for lp in &face.loops {
             let Loop::Coedges(uses) = model.loop_(*lp) else {
                 unreachable!("checked by embeds")
@@ -677,6 +835,21 @@ pub fn definition_from_exact_model(
                                 approx: at,
                             }
                         }
+                        Carrier::Native(surface) => {
+                            let face = ParametricFace::Native(surface);
+                            let target = approx[vertex];
+                            let at = face.invert(target, previous_native_uv, &tolerances, dec)?;
+                            if distance(face.point(at, dec)?, target) > tolerances.sample {
+                                return Err(fit_failure(
+                                    "a vertex has no native face parameter within tolerance",
+                                ));
+                            }
+                            previous_native_uv = Some(at);
+                            Uv {
+                                exact: [exact(at[0])?, exact(at[1])?],
+                                approx: at,
+                            }
+                        }
                     };
                     uvs.insert((index, vertex), uv);
                 }
@@ -698,17 +871,35 @@ pub fn definition_from_exact_model(
         let faces = edge_faces.get(id).cloned().unwrap_or_default();
         let curve = model.geom().curve(edge.curve);
         match curve {
-            Curve::Line(_) | Curve::BSpline(_) => {
-                let mut parameters = Vec::with_capacity(2);
-                for vertex in ends {
+            Curve::Line(_) | Curve::Circle(_) | Curve::BSpline(_) => {
+                let native = match curve {
+                    Curve::Line(line) => Native::Line {
+                        origin: f64_point(&line.origin),
+                        dir: [
+                            line.dir.x.to_f64(),
+                            line.dir.y.to_f64(),
+                            line.dir.z.to_f64(),
+                        ],
+                    },
+                    Curve::Circle(circle) => Native::Circle(Circle64::new(circle, dec)?),
+                    Curve::BSpline(spline) => Native::Spline(Curve64::new(spline, dec)?),
+                    _ => unreachable!("retained primitive curve"),
+                };
+                let parameter = |vertex: usize, dec: &mut Decider| -> Result<Rational, Refusal> {
                     let p = model
                         .geom()
                         .position(model.vertex(vertex_ids[vertex]).point);
-                    parameters.push(match curve {
+                    Ok(match curve {
                         Curve::Line(line) => scalar(
                             &(p.minus(&line.origin).dot(&line.dir) / line.dir.norm_squared()),
                             dec,
                         )?,
+                        Curve::Circle(_) => {
+                            let Native::Circle(circle) = &native else {
+                                unreachable!("retained circle proposal")
+                            };
+                            exact(circle.phase(f64_point(&p)))?
+                        }
                         Curve::BSpline(spline) => {
                             let at = spline.unique_parameter_of(&p, dec)?.ok_or_else(|| {
                                 Refusal::new(
@@ -719,22 +910,18 @@ pub fn definition_from_exact_model(
                             let [lo, hi] = spline.domain();
                             scalar(at.value(), dec)?.max(lo.clone()).min(hi.clone())
                         }
-                        _ => unreachable!(),
-                    });
-                }
-                let parameters: [Rational; 2] = parameters.try_into().unwrap();
-                let native = match curve {
-                    Curve::Line(line) => Native::Line {
-                        origin: f64_point(&line.origin),
-                        dir: f64_point(&Point3::new(
-                            line.dir.x.clone(),
-                            line.dir.y.clone(),
-                            line.dir.z.clone(),
-                        )),
-                    },
-                    Curve::BSpline(spline) => Native::Spline(Curve64::new(spline, dec)?),
-                    _ => unreachable!(),
+                        _ => unreachable!("retained primitive curve"),
+                    })
                 };
+                let mut parameters = [parameter(ends[0], dec)?, parameter(ends[1], dec)?];
+                if matches!(curve, Curve::Circle(_)) {
+                    let period = Ball::pi(BITS).mid().mul_pow2(1);
+                    if edge.sense == Sense::Same && parameters[1] <= parameters[0] {
+                        parameters[1] = &parameters[1] + &period;
+                    } else if edge.sense == Sense::Reversed && parameters[1] >= parameters[0] {
+                        parameters[1] = &parameters[1] - &period;
+                    }
+                }
                 let ascending = parameters[0] < parameters[1];
                 let interval = if ascending {
                     [&parameters[0], &parameters[1]]
@@ -742,14 +929,14 @@ pub fn definition_from_exact_model(
                     [&parameters[1], &parameters[0]]
                 };
                 for face in &faces {
-                    let Carrier::Spline(spline) = &carriers[*face] else {
+                    let Some(parametric) = carriers[*face].parametric() else {
                         continue;
                     };
                     let [a, b] = ends.map(|vertex| &uvs[&(*face, vertex)]);
                     let ends = if ascending { [a, b] } else { [b, a] };
                     uv_curves.insert(
                         (*face, index),
-                        native_uv(spline, &native, interval, ends, &tolerances, dec)?,
+                        native_uv(parametric, &native, interval, ends, &tolerances, dec)?,
                     );
                 }
                 edges.push(NumericalEdge {
@@ -759,16 +946,16 @@ pub fn definition_from_exact_model(
                     parameters,
                 });
             }
-            Curve::PatchSection(_) | Curve::PatchPair(_) => {
+            _ => {
                 let mut uses = Vec::new();
-                let mut spline_faces = Vec::new();
+                let mut parametric_faces = Vec::new();
                 let mut planes = Vec::new();
                 for face in &faces {
                     match &carriers[*face] {
-                        Carrier::Spline(spline) => {
-                            spline_faces.push(*face);
+                        Carrier::Spline(_) | Carrier::Native(_) => {
+                            parametric_faces.push(*face);
                             uses.push(FittedUse {
-                                face: spline,
+                                face: carriers[*face].parametric().expect("parametric carrier"),
                                 ends: ends.map(|vertex| &uvs[&(*face, vertex)]),
                             });
                         }
@@ -784,7 +971,7 @@ pub fn definition_from_exact_model(
                     &tolerances,
                     dec,
                 )?;
-                for (face, uv) in spline_faces.into_iter().zip(fitted_uvs) {
+                for (face, uv) in parametric_faces.into_iter().zip(fitted_uvs) {
                     uv_curves.insert((face, index), uv);
                 }
                 edges.push(NumericalEdge {
@@ -794,7 +981,6 @@ pub fn definition_from_exact_model(
                     parameters: [Rational::zero(), Rational::one()],
                 });
             }
-            _ => unreachable!("checked by embeds"),
         }
     }
     let mut faces = Vec::with_capacity(face_ids.len());

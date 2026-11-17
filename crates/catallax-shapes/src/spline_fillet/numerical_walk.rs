@@ -12,9 +12,9 @@ struct SectionPlane {
 
 impl SectionPlane {
     fn new(guide: &BSplineCurve, tau: &Rational, dec: &mut Decider) -> Result<Self, Refusal> {
-        // The guide selects sections; it is not a support surface. Outside its
-        // retained interval use the endpoint tangent line, so a real neighbour
-        // can cut a strip beyond the sharp edge's endpoint.
+        // Continue the endpoint two-jet, not a tangent line: a curvature jump
+        // in the guide changes the offset walk's speed at the join. This only
+        // selects sections outside the edge; it does not extend support faces.
         let domain = guide.domain();
         let anchor = if tau < domain[0] {
             domain[0]
@@ -23,12 +23,20 @@ impl SectionPlane {
         } else {
             tau
         };
-        let [mut point, tangent] =
-            guide.first_box_reusing([anchor, anchor], 128, dec, &mut Vec::new())?;
-        if anchor != tau {
-            let offset = Ball::from_rational(&(tau - anchor), 128);
-            point = std::array::from_fn(|i| &point[i] + &(&tangent[i] * &offset));
-        }
+        let (point, tangent) = if anchor == tau {
+            guide.first_box_reusing([anchor, anchor], 128, dec, &mut Vec::new())?
+        } else {
+            let jet = guide.jet_box([anchor, anchor], 128, dec)?;
+            let delta = tau - anchor;
+            let offset = Ball::from_rational(&delta, 128);
+            let quadratic = Ball::from_rational(&(&delta * &delta).mul_pow2(-1), 128);
+            let point = std::array::from_fn(|i| {
+                let linear = &jet.value[i] + &(&jet.first[i] * &offset);
+                &linear + &(&jet.second[i] * &quadratic)
+            });
+            let tangent = std::array::from_fn(|i| &jet.first[i] + &(&jet.second[i] * &offset));
+            (point, tangent)
+        };
         dec.charge_work(16)?;
         let square = &(&tangent[0].square() + &tangent[1].square()) + &tangent[2].square();
         if square.lo().sign() != Sign::Positive {

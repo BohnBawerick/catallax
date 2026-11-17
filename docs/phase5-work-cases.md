@@ -218,6 +218,13 @@ still above 20M under the unchanged 100M allowance and 1e-7 mm tolerance.
 This is not a simple native fillet or an internal stage profile. The
 separate repaired-body/export-provenance consumer also passes.
 
+After the generic feature-result payload, whole-curve UV retargeting and
+verified embedding integration, this ordinary consumer passes at 96,863,834
+whole-request work in 148.57 seconds (255.01 with compilation). It still
+uses 100M and 1e-7 mm. The preceding bounded attempt timed out after
+1056.73 seconds in the test, before its owner diagnostic ran; the approved
+exact disjoint-UV-box predicate is included in the passing integration.
+
 ## General rolling-ball contact stage, 17 November
 
 The new material-side/radius regression constructs all 12 untrimmed contact

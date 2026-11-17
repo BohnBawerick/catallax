@@ -276,6 +276,100 @@ mod tests {
     }
 
     #[test]
+    fn curved_owner_strip_keeps_its_radius_across_both_guide_extensions() {
+        let tolerance = Rational::parse("0.0000001").unwrap();
+        let (fillet, work) = with_operation_budget(100_000_000, || {
+            let mut dec = Decider::new(BudgetPolicy {
+                max_work: 100_000_000,
+                ..Default::default()
+            });
+            let recipe = catallax_recipe::Recipe::parse(include_str!(
+                "../tests/fixtures/owner-curved-pocket.json"
+            ))
+            .unwrap();
+            let source = crate::evaluate(&recipe, &mut dec).unwrap();
+            let selection: catallax_recipe::EdgeSelection = serde_json::from_str(
+                r#"[
+                {"between":[
+                    {"step":"blank","role":{"side":{"segment":"right-round"}}},
+                    {"step":"pocket-tool","role":{"side":{"segment":"near"}}}
+                ]}
+            ]"#,
+            )
+            .unwrap();
+            let selected = crate::fillet_build::select(
+                &source.model,
+                source.result,
+                &selection,
+                true,
+                &[],
+                &mut dec,
+            )
+            .unwrap();
+            construct(
+                &source.model,
+                source.result,
+                &selected,
+                &Rational::one(),
+                &tolerance,
+                &mut dec,
+            )
+            .unwrap()
+            .into_iter()
+            .flat_map(|chain| chain.strips)
+            .find(|strip| strip.source.edge == selected[0])
+            .unwrap()
+            .fillet
+        });
+        println!(
+            "curved owner source and one regular rolling strip work={}",
+            work.used
+        );
+        assert!(!work.exhausted, "{work:?}");
+
+        let dec = Decider::new(BudgetPolicy {
+            max_work: 100_000_000,
+            ..Default::default()
+        });
+        let carrier = fillet.surface().source();
+        let domain = fillet.spine().centre_curve().domain();
+        let width = domain[1] - domain[0];
+        let x = Ball::from_rational(&Rational::from_i64(15), 128);
+        let z = Ball::from_rational(&Rational::from_i64(35), 128);
+        let centre_y = Rational::parse("-50.335").unwrap();
+        let radius = Rational::from_i64(24);
+        let check_tolerance = tolerance.mul_pow2(1);
+        for i in 0..=17 {
+            let share = Rational::from_ratio(i, 17).unwrap();
+            let tau = domain[0] + &(&width * &share);
+            let centre = fillet
+                .spine()
+                .centre_curve()
+                .evaluate_box([&tau, &tau], 128, &dec)
+                .unwrap();
+            within(&centre[1], &centre_y, &check_tolerance);
+            let dx = &centre[0] - &x;
+            let dz = &centre[2] - &z;
+            within(
+                &(dx.square() + dz.square()).sqrt().unwrap(),
+                &radius,
+                &check_tolerance,
+            );
+            for j in 0..=7 {
+                let v = Rational::from_ratio(j, 7).unwrap();
+                let point = carrier
+                    .evaluate_box([&tau, &tau], [&v, &v], 128, &dec)
+                    .unwrap();
+                let square = (0..3)
+                    .fold(Ball::from_rational(&Rational::zero(), 128), |sum, axis| {
+                        &sum + &(&point[axis] - &centre[axis]).square()
+                    });
+                within(&square.sqrt().unwrap(), &Rational::one(), &check_tolerance);
+            }
+        }
+    }
+
+    #[test]
     fn rolling_box_contacts_keep_the_material_side_for_every_edge_orientation() {
         for radius in ["0.5", "1", "2", "5"] {
             let ((), work) = with_operation_budget(100_000_000, || {

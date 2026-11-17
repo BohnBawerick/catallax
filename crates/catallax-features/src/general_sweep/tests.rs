@@ -230,3 +230,34 @@ fn standalone_build_and_edit_preserve_the_callers_work_allowance() {
     assert!(work.exhausted);
     assert!(work.used <= 1);
 }
+
+#[test]
+fn authored_spine_endpoint_rounding_is_checked_before_admission() {
+    let mut lost = line_definition();
+    let SweepPath::Line { end, .. } = &mut lost.path else {
+        unreachable!()
+    };
+    end.0[2] = Rational::from_ratio(100_000_000_000_000_001, 10)
+        .unwrap()
+        .into();
+    let error = build(&lost, &mut Decider::default()).unwrap_err();
+    assert_eq!(error.code, "sweep.motion-sample-tolerance");
+
+    let mut retained = line_definition();
+    let endpoint = Rational::from_ratio(41, 10).unwrap();
+    let SweepPath::Line { end, .. } = &mut retained.path else {
+        unreachable!()
+    };
+    end.0[2] = endpoint.clone().into();
+    let swept = build(&retained, &mut Decider::default()).unwrap();
+    let conversion = (rational(endpoint.to_f64_nearest()).unwrap() - endpoint)
+        .abs()
+        .to_f64_nearest();
+    assert!(conversion > 0.0);
+    assert!(swept.checks().max_sample_error_mm >= conversion);
+    assert!(swept.checks().max_sample_error_mm <= 0.001 / 4.0);
+    assert_eq!(
+        swept.edit(lost, &mut Decider::default()).unwrap_err().code,
+        "sweep.motion-sample-tolerance",
+    );
+}

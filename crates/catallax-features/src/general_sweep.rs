@@ -17,6 +17,7 @@ use catallax_topology::{
 };
 use serde::{Deserialize, Serialize};
 
+mod motion;
 mod recipe;
 #[cfg(test)]
 mod tests;
@@ -97,7 +98,7 @@ pub struct SweepChecks {
     pub sections: usize,
     /// Number of checked profile and section sample locations.
     pub checked_points: usize,
-    /// Largest section-law residual at a checked binary64 sample.
+    /// Outward norm bound at checked authored rational section samples.
     pub max_sample_error_mm: f64,
     /// Maximum source-profile sample displacement after numerical scalar fitting.
     pub max_profile_sample_error_mm: f64,
@@ -495,22 +496,6 @@ struct Section {
     t: [Rational; 2],
     frames: [Frame; 4],
 }
-fn controls(values: [V; 4]) -> [V; 4] {
-    let [a, b, c, d] = values;
-    [
-        a,
-        std::array::from_fn(|i| (-5.0 * a[i] + 18.0 * b[i] - 9.0 * c[i] + 2.0 * d[i]) / 6.0),
-        std::array::from_fn(|i| (2.0 * a[i] - 9.0 * b[i] + 18.0 * c[i] - 5.0 * d[i]) / 6.0),
-        d,
-    ]
-}
-fn cubic(p: &[V; 4], t: f64) -> V {
-    let s = 1.0 - t;
-    add(
-        add(mul(p[0], s * s * s), mul(p[1], 3.0 * s * s * t)),
-        add(mul(p[2], 3.0 * s * t * t), mul(p[3], t * t * t)),
-    )
-}
 
 /// Builds an editable result without promoting fitted geometry into exact answers.
 pub fn build(recipe: &SweepRecipe, dec: &mut Decider) -> Result<Swept, Refusal> {
@@ -595,6 +580,7 @@ fn definition(
         orientation: recipe.orientation,
     };
     let first_frame = frame.at(0.0, dec)?;
+    let source = motion::SourceLaw::new(recipe, &path, guide.as_ref(), &profile, dec)?;
     let origin = point(first_frame.origin)?;
     let scale = real(first_frame.scale)?;
     let x = vector(first_frame.x)?.scaled(&scale);
@@ -684,7 +670,22 @@ fn definition(
                 profile_squared = profile_squared.max(upper);
                 profile_samples += 1;
             }
-            sample_controls.extend(coordinates.iter().copied());
+            // Three binary64 coordinates and two 128-bit midpoint/radius
+            // balls, each with two 64-bit exponents: a portable fixed payload.
+            let capacity = u64::try_from(coordinates.len())
+                .ok()
+                .and_then(|n| n.checked_mul(3 * 8 + 2 * 2 * (128 / 8 + 8)))
+                .ok_or_else(|| bad("source control capacity overflow"))?;
+            dec.charge_work(capacity)?;
+            sample_controls
+                .try_reserve(coordinates.len())
+                .map_err(|_| bad("source control capacity cannot be reserved"))?;
+            for (original, fitted) in part.curve.controls().zip(&coordinates) {
+                sample_controls.push(motion::Control {
+                    fitted: *fitted,
+                    authored: source.control(original, dec)?,
+                });
+            }
             let mid = (&part.bounds[0] + &part.bounds[1]).mul_pow2(-1);
             let segment = ids
                 .iter()
@@ -722,6 +723,9 @@ fn definition(
             "the numerical profile proposal does not meet the stated sample tolerance",
         ));
     }
+    let linear = matches!(path, Path::Line(..)) && guide.is_none() && twist == 0.0;
+    let allowance_squared = &profile_allowance * &profile_allowance;
+    let mut endpoints_checked = false;
     let (sections, checks) = loop {
         if n > recipe.max_sections {
             return Err(bad(
@@ -736,6 +740,26 @@ fn definition(
             .and_then(|n| n.checked_mul(4 * 10 * 8))
             .ok_or_else(|| bad("section capacity overflow"))?;
         dec.charge_work(capacity)?;
+        if !endpoints_checked {
+            for (parameter, proposed) in [(q(0), first_frame), (q(1), frame.at(1.0, dec)?)] {
+                let authored = source.at(&parameter, dec)?;
+                for control in &sample_controls {
+                    let [x, y, z] = affine_row(
+                        proposed,
+                        &[rational(control.fitted[0])?, rational(control.fitted[1])?],
+                    )?;
+                    let point = Point3::new(x.into(), y.into(), z.into());
+                    if source.error(&authored, &control.authored, &point, dec)? > allowance_squared
+                    {
+                        return Err(Refusal::new(
+                            "sweep.motion-sample-tolerance",
+                            "an authored motion endpoint exceeds the stated sample tolerance",
+                        ));
+                    }
+                }
+            }
+            endpoints_checked = true;
+        }
         let mut sections = Vec::new();
         sections
             .try_reserve_exact(n)
@@ -746,6 +770,7 @@ fn definition(
             max_sample_error_mm: 0.0,
             max_profile_sample_error_mm: profile_error,
         };
+        let mut max_squared = q(0);
         for i in 0..n {
             let t = |j| (i as f64 + j as f64 / 3.0) / n as f64;
             let frames = [
@@ -754,29 +779,40 @@ fn definition(
                 frame.at(t(2), dec)?,
                 frame.at(t(3), dec)?,
             ];
-            for p in &sample_controls {
-                let fit = controls(frames.map(|f| f.apply(*p)));
-                for j in 1..8 {
-                    let local = j as f64 / 8.0;
-                    let target = frame.at((i as f64 + local) / n as f64, dec)?.apply(*p);
-                    let delta = sub(cubic(&fit, local), target);
-                    let error = libm::sqrt(dot(delta, delta));
-                    if !error.is_finite() {
-                        return Err(bad("nonfinite sampled fitting error"));
-                    }
+            let bounds = [
+                Rational::from_ratio(i as i64, n as i64).expect("section count"),
+                Rational::from_ratio((i + 1) as i64, n as i64).expect("section count"),
+            ];
+            let span = &bounds[1] - &bounds[0];
+            let mut sample = |j| {
+                let local = Rational::from_ratio(j, 8).expect("fixed sample");
+                source.at(&(&bounds[0] + &(&span * &local)), dec)
+            };
+            let authored = [
+                sample(0)?,
+                sample(1)?,
+                sample(2)?,
+                sample(3)?,
+                sample(4)?,
+                sample(5)?,
+                sample(6)?,
+                sample(7)?,
+                sample(8)?,
+            ];
+            for control in &sample_controls {
+                let fit = motion::Fit::new(frames, control.fitted, linear)?;
+                for (j, sample) in authored.iter().enumerate() {
+                    let local = Rational::from_ratio(j as i64, 8).expect("fixed sample");
+                    let point = fit.at(&local);
+                    let upper = source.error(sample, &control.authored, &point, dec)?;
+                    max_squared = max_squared.max(upper);
                     checks.checked_points += 1;
-                    checks.max_sample_error_mm = checks.max_sample_error_mm.max(error);
                 }
             }
-            sections.push(Section {
-                t: [
-                    Rational::from_ratio(i as i64, n as i64).expect("section count"),
-                    Rational::from_ratio((i + 1) as i64, n as i64).expect("section count"),
-                ],
-                frames,
-            });
+            sections.push(Section { t: bounds, frames });
         }
-        if checks.max_sample_error_mm <= tolerance / 4.0 {
+        checks.max_sample_error_mm = motion::error_bound(&max_squared)?;
+        if max_squared <= allowance_squared {
             break (sections, checks);
         }
         n = match (&path, &guide) {
@@ -799,7 +835,6 @@ fn definition(
     }
     let positive = orientation > 0.0;
     let mut assembly = Assembly::new(recipe.name.clone(), recipe.loops.len(), positive);
-    let linear = matches!(path, Path::Line(..)) && guide.is_none() && twist == 0.0;
     let degree = if linear { 1 } else { 3 };
     for (lp, chart, coordinates, forward, segment) in charts {
         for (station, section) in sections.iter().enumerate() {

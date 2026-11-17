@@ -195,3 +195,19 @@ unchanged 100M allowance per public request; none was dropped or weakened.
 Raw OCP 8.0.1.1 independently agrees with all four controls at 1e-7 mm and
 checks a valid closed single solid and a material-removing edit, with healing,
 SameParameter and TransferRoots off. Query cost remains a phase-5 case.
+
+## Ordinary numerical fillet application request, 17 November
+
+`catallax_app::build_incremental_without_display` now retains the cross-chart
+loft fillet as a typed numerical outcome. Building its exact prefix and
+resuming the fillet share one unchanged 100M allowance: 96,733,000 work.
+The declared tolerance remains 1e-7 mm. Canonical face origins and an
+independent fitted-geometry control pass; no exact checkpoint is produced.
+
+The existing direct numerical proof used the release profile. The first
+application check instead used an unoptimized test build and exceeded its
+900-second SSH deadline; its final work and outcome were not recovered.
+The comparable release application regression passes in 169.69 seconds
+(305.90 seconds including compilation). No kernel algorithm, tolerance or
+work cap was changed to obtain this result. Future remote proofs retain
+launch PIDs, logs and a wall deadline covering the entire offload group.

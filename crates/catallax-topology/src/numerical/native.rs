@@ -5,6 +5,7 @@ use catallax_numbers::Real;
 use catallax_shapes::BSplineCurve;
 use std::collections::BTreeMap;
 
+mod domain;
 mod joins;
 pub(super) use joins::samples as join_samples;
 
@@ -81,12 +82,6 @@ impl<'a> Index<'a> {
                 return Err(Refusal::new(
                     "numerical.native-cone-domain-unverified",
                     "native cone trims require complete positive-height and periodic-domain checks",
-                ));
-            }
-            if matches!(definition.faces[face].surface, Surface::Torus(_)) {
-                return Err(Refusal::new(
-                    "numerical.native-torus-domain-unverified",
-                    "native torus trims require complete two-axis periodic-domain checks",
                 ));
             }
             let [lo, hi] = binding.curve.domain();
@@ -258,6 +253,11 @@ pub(super) fn check_loops(
     tolerance: &Rational,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
+    if index.has_face(face_index) && matches!(face.surface, Surface::Sphere(_) | Surface::Torus(_))
+    {
+        domain::check(face_index, face, edges, index, dec)?;
+        analytic::check_periodic_domain(face, edges, dec)?;
+    }
     if index.sampled_carriers.contains(&face.key) {
         return check_numerical_loops(face_index, face, edges, index, dec);
     }

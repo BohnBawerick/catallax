@@ -2,7 +2,7 @@
 
 use super::*;
 
-mod toroids;
+mod periodic;
 
 pub(super) fn validate_circle(
     circle: &catallax_shapes::Circle,
@@ -40,6 +40,7 @@ pub(super) fn supports(surface: &Surface) -> bool {
         Surface::Plane(_)
             | Surface::Cylinder(_)
             | Surface::Cone(_)
+            | Surface::Sphere(_)
             | Surface::Torus(_)
             | Surface::BSpline(SplineSupport::RationalPatch(_) | SplineSupport::RationalAtlas(_))
     )
@@ -61,6 +62,15 @@ pub(super) fn validate_surface(surface: &Surface, dec: &mut Decider) -> Result<(
             cylinder.axis.clone(),
             cylinder.radius_sq.clone(),
             cylinder.ref_dir.clone(),
+            dec,
+        )?;
+    }
+    if let Surface::Sphere(sphere) = surface {
+        catallax_shapes::Sphere::new(
+            sphere.center.clone(),
+            sphere.radius.clone(),
+            sphere.axis.clone(),
+            sphere.ref_dir.clone(),
             dec,
         )?;
     }
@@ -98,8 +108,8 @@ pub(super) fn check_loops(
     tolerance: &Rational,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
-    if matches!(face.surface, Surface::Torus(_)) {
-        toroids::check_loops(face, edges, dec)?;
+    if matches!(face.surface, Surface::Sphere(_) | Surface::Torus(_)) {
+        check_periodic_domain(face, edges, dec)?;
         return super::check_loops(face, None, dec);
     }
     if matches!(face.surface, Surface::Cone(_)) {
@@ -455,4 +465,72 @@ fn circle_clearance(
         }
     }
     Ok(())
+}
+
+// A regular longitude/latitude chart excludes both poles. SMLib's analytic
+// sphere and OCCT's spherical surface use the same latitude convention
+// (degrees in SMLib, radians here and in STEP).
+fn latitude_domain(lo: &Rational, hi: &Rational) -> Result<(), Refusal> {
+    let half_pi = Ball::pi(BITS).lo().mul_pow2(-1);
+    if lo <= &(-&half_pi) || hi >= &half_pi {
+        return Err(Refusal::new(
+            "numerical.sphere-pole-domain-unverified",
+            "a regular sphere chart must stay strictly between both latitude poles",
+        ));
+    }
+    Ok(())
+}
+
+/// Complete control-hull bounds for a native parameter curve, not samples.
+/// Wrapped native seams retain their separate refusal until certified.
+pub(super) fn check_native_domain(
+    surface: &Surface,
+    bounds: &[[Rational; 2]; 2],
+) -> Result<(), Refusal> {
+    let (axes, code) = match surface {
+        Surface::Sphere(_) => (1, "numerical.native-sphere-domain-unverified"),
+        Surface::Torus(_) => (2, "numerical.native-torus-domain-unverified"),
+        _ => {
+            return Err(bad(
+                "unsupported",
+                "native angular bounds require a sphere or ring torus",
+            ));
+        }
+    };
+    let turn = Ball::pi(BITS).lo() * Rational::from_i64(2);
+    for range in &bounds[..axes] {
+        if &range[1] - &range[0] >= turn {
+            return Err(Refusal::new(
+                code,
+                "the complete native-curve hull needs a single regular angular chart; a wrapped native seam has no complete certificate",
+            ));
+        }
+    }
+    if matches!(surface, Surface::Sphere(_)) {
+        latitude_domain(&bounds[1][0], &bounds[1][1])?;
+    }
+    Ok(())
+}
+
+pub(super) fn check_periodic_domain(
+    face: &NumericalFace,
+    edges: &[NumericalEdge],
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    if matches!(face.surface, Surface::Sphere(_)) {
+        let mut values = face
+            .loops
+            .iter()
+            .flatten()
+            .flat_map(|trim| &trim.uv)
+            .map(|uv| &uv[1]);
+        let first = values
+            .next()
+            .ok_or_else(|| bad("trim", "a sphere needs a finite chart boundary"))?;
+        let (lo, hi) = values.fold((first, first), |(lo, hi), value| {
+            (lo.min(value), hi.max(value))
+        });
+        latitude_domain(lo, hi)?;
+    }
+    periodic::check_loops(face, edges, dec)
 }

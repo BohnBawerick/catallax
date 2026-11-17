@@ -9,6 +9,7 @@ use catallax_topology::numerical::{self as n, NumericalDefinition};
 const BITS: u32 = 128;
 
 mod cones;
+mod spheres;
 mod toroids;
 
 pub(super) fn applies(body: &NumericalBody) -> bool {
@@ -20,7 +21,11 @@ pub(super) fn applies(body: &NumericalBody) -> bool {
         && d.faces.iter().all(|face| {
             matches!(
                 face.surface,
-                Surface::Plane(_) | Surface::Cylinder(_) | Surface::Cone(_) | Surface::Torus(_)
+                Surface::Plane(_)
+                    | Surface::Cylinder(_)
+                    | Surface::Cone(_)
+                    | Surface::Sphere(_)
+                    | Surface::Torus(_)
             )
         })
         && (d
@@ -30,7 +35,10 @@ pub(super) fn applies(body: &NumericalBody) -> bool {
             || d.faces.iter().any(|face| {
                 matches!(
                     face.surface,
-                    Surface::Cylinder(_) | Surface::Cone(_) | Surface::Torus(_)
+                    Surface::Cylinder(_)
+                        | Surface::Cone(_)
+                        | Surface::Sphere(_)
+                        | Surface::Torus(_)
                 )
             }))
 }
@@ -151,10 +159,11 @@ fn uv(
             Ok([angle(&x, &y, &old[0], dec)?, z.mid()])
         }
         Surface::Cone(cone) => cones::uv(cone, p, old, dec),
+        Surface::Sphere(sphere) => spheres::uv(sphere, p, old, dec),
         Surface::Torus(torus) => toroids::uv(torus, p, old, dec),
         _ => Err(bad(
             "unsupported",
-            "analytic writer requires planes, cylinders, cones or ring tori",
+            "analytic writer requires planes, cylinders, cones, spheres or ring tori",
         )),
     }
 }
@@ -218,11 +227,12 @@ fn rounded_surfaces(
                 cone_parameters = Some(parameters);
                 (id, surface)
             }
+            Surface::Sphere(sphere) => spheres::rounded(w, &face.key, sphere)?,
             Surface::Torus(torus) => toroids::rounded(w, &face.key, torus)?,
             _ => {
                 return Err(bad(
                     "unsupported",
-                    "analytic writer requires planes or cylinders",
+                    "analytic writer requires planes, cylinders, cones, spheres or ring tori",
                 ));
             }
         };
@@ -863,7 +873,7 @@ pub(super) fn build(
             let mut uses = Vec::new();
             let start = if matches!(
                 face.surface,
-                Surface::Cylinder(_) | Surface::Cone(_) | Surface::Torus(_)
+                Surface::Cylinder(_) | Surface::Cone(_) | Surface::Sphere(_) | Surface::Torus(_)
             ) {
                 seam_loop_start(boundary, &d.edges, face.sense, w.dec)?
             } else {

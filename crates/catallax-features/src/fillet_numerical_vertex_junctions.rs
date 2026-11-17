@@ -208,12 +208,12 @@ pub(crate) fn tangent_pair(
         source_geometry(model, sources[0], vertex, ends[0], dec)?,
         source_geometry(model, sources[1], vertex, ends[1], dec)?,
     ];
-    let mut source_error = length(&std::array::from_fn(|i| {
+    let mut source_error = &length(&std::array::from_fn(|i| {
         &geometry[0].0[i] + &geometry[1].0[i]
     }))? * radius;
     for side in 0..2 {
         source_error =
-            source_error.max(gap(&geometry[0].1[side], &geometry[1].1[side ^ swap])? * radius);
+            source_error.max(&gap(&geometry[0].1[side], &geometry[1].1[side ^ swap])? * radius);
     }
     if source_error > *tolerance {
         return Err(bad(
@@ -337,7 +337,7 @@ pub(crate) fn tangent_pair(
             } else if alignment.lo().sign() != Sign::Positive {
                 return Err(bad("tangent section normal orientation is unresolved"));
             }
-            error = error.max(gap(&normals[0], &normals[1])? * radius);
+            error = error.max(&gap(&normals[0], &normals[1])? * radius);
             if s.is_zero() {
                 error = error.max(endpoint_error[0].clone());
             }

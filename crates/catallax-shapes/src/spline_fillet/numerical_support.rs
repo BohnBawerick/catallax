@@ -33,6 +33,7 @@ impl NumericalFilletSupport {
     ) -> Result<Self, Refusal> {
         if signed_distance.sign() == Sign::Zero
             || !signed_distance.to_f64_nearest().is_finite()
+            || signed_distance.to_f64_nearest() == 0.0
         {
             return Err(bad("rolling-ball support needs a finite nonzero distance"));
         }
@@ -168,6 +169,9 @@ fn native_contact(
     precision: u32,
     dec: &mut Decider,
 ) -> Result<([Ball; 3], [Ball; 3]), Refusal> {
+    if matches!(surface, Surface::Cone(_)) && at[1].sign() != Sign::Positive {
+        return Err(bad("rolling-ball contact leaves the cone's positive-height chart"));
+    }
     let parameters = at.each_ref().map(|value| Ball::from_rational(value, precision));
     let point = surface.evaluate(&parameters[0], &parameters[1], dec)?;
     let [du, dv] = surface.derivatives(&parameters[0], &parameters[1], dec)?;

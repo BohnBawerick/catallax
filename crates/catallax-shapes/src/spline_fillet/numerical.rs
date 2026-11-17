@@ -284,7 +284,7 @@ impl NumericalFilletSpine {
         )
     }
 
-    /// Walks equal signed-offset contacts in planes normal to `guide`.
+    /// Walks the intersection of signed offsets in planes normal to `guide`.
     /// Contact, guide-plane and fitted-quarter checks are numerical. A failed
     /// walk returns its cause rather than replacing the selected branch.
     pub fn walk(

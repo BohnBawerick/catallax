@@ -129,9 +129,6 @@ def raw_surface(path):
             Interface_Static.SetIVal_s(key, value)
 
 
-class NativeInvalid(Exception):
-    """A translated native B-rep failed validity or source-topology coverage."""
-
 
 def raw_native_document(path, entry):
     """Check every named native root before default occurrence transfer.
@@ -269,9 +266,6 @@ def raw(args):
                     else "invalid_after_builder"
                 )
                 valid_solids = int(entry["kind"] == "solid" and outcome == "valid_after_builder")
-        except NativeInvalid as error:
-            outcome, counts = "invalid_after_builder", None
-            print(type(error).__name__, str(error), file=sys.stderr)
         except Exception as error:
             outcome, counts = "reader_refused", None
             print(type(error).__name__, str(error), file=sys.stderr)

@@ -428,9 +428,6 @@ pub fn preview_tolerant_body(
                     } else {
                         row.len() - 1 - offset
                     }];
-                    if nodes.last().is_some_and(|node| node.mesh == index) {
-                        continue;
-                    }
                     let seed = trim_seed(
                         trim,
                         if usage.forward {
@@ -459,6 +456,11 @@ pub fn preview_tolerant_body(
                             .parameters
                         }
                     };
+                    if nodes.last().is_some_and(|node| {
+                        node.mesh == index && (node.uv[0] - uv[0]).hypot(node.uv[1] - uv[1]) <= 1e-8
+                    }) {
+                        continue;
+                    }
                     nodes.push(Node { uv, mesh: index });
                 }
             }

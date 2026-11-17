@@ -1009,9 +1009,9 @@ When a complete control box is too loose, native clipping can subdivide the targ
 
 ##### Work recorded for Phase 5
 
-The unchanged P8 original and spring-rise edit reach the same prefix below under the explicit 100M application allowance and 0.01 mm generating tolerance. Common-denominator normalization, residual-driven helix fitting and shared-net projection selection retain the declared source checks. The thread uses 59 sections and 236 charts, rather than the earlier fixed-floor 128 sections and 512 charts. Endpoint-bound preparation, modular rational-root exclusion and open-versus-closed carrier identity clear the earlier work-budget refusal. Both variants now refuse `intersect.parametric-surface` during finite curve/rational-patch clipping in `threaded = base ∪ thread`, with the allowance unexhausted. The spring and final union are not reached; neither a completed original/edit body nor P8 STEP is claimed. Nested per-chart charges belong to the sweep row, not a second total.
+At the carrier-repair checkpoint, the unchanged P8 original and spring-rise edit reached the same prefix below under the explicit 100M application allowance and 0.01 mm generating tolerance. Common-denominator normalization, residual-driven helix fitting and shared-net projection selection retain the declared source checks. The thread uses 59 sections and 236 charts, rather than the earlier fixed-floor 128 sections and 512 charts. Endpoint-bound preparation, modular rational-root exclusion and open-versus-closed carrier identity cleared the earlier work-budget refusal. Both variants refused `intersect.parametric-surface` during finite curve/rational-patch clipping in `threaded = base ∪ thread`, with the allowance unexhausted. The spring and final union were not reached. Nested per-chart charges belong to the sweep row, not a second total.
 
-| Stage | Witness-separation checkpoint | Narrow-repair checkpoint | Carrier-repair checkpoint | Latest outcome |
+| Stage | Witness-separation checkpoint | Narrow-repair checkpoint | Carrier-repair checkpoint | Carrier-repair outcome |
 |---|---:|---:|---:|---|
 | Plate and boss stock | 0 | 0 | 0 | Built |
 | Base union | 11,050 | 11,050 | 11,050 | Built |
@@ -1020,7 +1020,10 @@ The unchanged P8 original and spring-rise edit reach the same prefix below under
 | Threaded union | 3,007,286 | 66,112,656 | 21,738,949 | Finite curve/rational-patch solver gap |
 | Request before refusal | 99,997,812 | 99,999,992 | 55,626,285 | `intersect.parametric-surface` |
 
+The native-clipping continuation passes two Boolean exclusion regressions and two captured native-curve tests, including shared-side ownership, adjacent-turn exclusion, transverse numerical contacts and refusal of tangent/overlap intervals. The exact fixture consumes 14,907,954 work. Original P8 now exhausts the unchanged 100M allowance at 99,879,180 during the threaded union (65,991,844 for that union); the thread sweep remains 33,876,285. The spring, edited P8, persistence and raw STEP remain unproved. The preceding bounded-exclusion candidate also exhausted the allowance. This is a repeated resource barrier, not completed P8.
+
 Later: thread fitting still exceeds the 20M target; retain this phase record for Phase 5 without enlarging the 100M application allowance.
+Later: reuse per-cut/native-patch bound certificates within one Boolean operation, preserving the existing resource-price convention.
 
 After the source-review repairs, the standalone quarter helix builds, applies a rise edit, saves and reopens with identical edited/reopened STEP bytes under explicit 100M request allowances and `max_sections=2`. Build work is 1,229,367; edit/reopen work is 1,199,767 each. STEP export uses 4,530,003 initially and 4,530,440 after edit/reopen. All three STEP bodies open in OpenCASCADE with healing off as valid, closed, one-solid bodies with ten faces matching the numerical producer. This proves that feature case, not complete P8.
 

@@ -321,7 +321,13 @@ pub fn preview_tolerant_body(
         .map(|vertex| push(&mut mesh, point(&vertex.source.point)?, options))
         .collect::<Result<Vec<_>, _>>()?;
     let mut edges = BTreeMap::new();
+    let mut collapsed_vertices = vec![false; mesh.positions.len()];
     for edge in body.edges() {
+        if edge.degenerate {
+            for vertex in edge.vertices {
+                collapsed_vertices[vertices[vertex]] = true;
+            }
+        }
         let Some(trim) = first_trim.get(edge.name.as_str()) else {
             continue;
         };
@@ -428,6 +434,10 @@ pub fn preview_tolerant_body(
                     } else {
                         row.len() - 1 - offset
                     }];
+                    let collapsed = collapsed_vertices.get(index).copied().unwrap_or(false);
+                    if !collapsed && nodes.last().is_some_and(|node| node.mesh == index) {
+                        continue;
+                    }
                     let seed = trim_seed(
                         trim,
                         if usage.forward {
@@ -467,9 +477,47 @@ pub fn preview_tolerant_body(
             if nodes.len() < 4 || nodes[0].mesh != nodes.last().unwrap().mesh {
                 return Err(failure("native trim loop is not closed"));
             }
-            let gap = (nodes[0].uv[0] - nodes.last().unwrap().uv[0])
-                .hypot(nodes[0].uv[1] - nodes.last().unwrap().uv[1]);
-            if gap > 1e-8 {
+            let first = nodes[0];
+            let last = *nodes.last().unwrap();
+            let first_usage = &boundary.edges[if boundary.orientation {
+                0
+            } else {
+                boundary.edges.len() - 1
+            }];
+            let vertex = body.edges()[first_usage.edge].vertices
+                [usize::from(first_usage.forward != boundary.orientation)];
+            let tolerance = body.vertices()[vertex].tolerance_mm().to_f64_nearest();
+            for endpoint in [first, last] {
+                if distance(
+                    carrier.position(endpoint.uv, dec)?,
+                    mesh.positions[first.mesh],
+                ) > tolerance
+                {
+                    return Err(failure(
+                        "native UV closure exceeds its measured vertex tolerance",
+                    ));
+                }
+            }
+            let periodic = match &carrier {
+                Carrier::Native(surface) => {
+                    surface
+                        .periods()
+                        .into_iter()
+                        .enumerate()
+                        .any(|(axis, period)| {
+                            period.is_some_and(|period| {
+                                let delta = last.uv[axis] - first.uv[axis];
+                                let turns = (delta / period).round();
+                                turns.abs() >= 1.0
+                                    && (delta - turns * period).abs() <= period * 1e-6
+                            })
+                        })
+                }
+                Carrier::Inferred(_) => {
+                    (first.uv[0] - last.uv[0]).hypot(first.uv[1] - last.uv[1]) > 1e-8
+                }
+            };
+            if periodic {
                 winding.push(nodes);
             } else {
                 nodes.pop();

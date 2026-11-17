@@ -10,6 +10,10 @@ use crate::BSplineSurface;
 const ROWS: usize = 16;
 type Packed = [Rational; ROWS];
 
+#[cfg(test)]
+#[path = "numerical_carrier/tests.rs"]
+mod tests;
+
 /// A numerical rolling-ball carrier and its checked native parameter rails.
 #[derive(Clone, Debug)]
 pub struct NumericalSplineFillet {
@@ -73,31 +77,40 @@ fn packed(
     Ok(result)
 }
 
-/// Derivatives of the local three-station interpolating quadratic. In
-/// particular, end derivatives are not first-order secants.
+/// Derivatives of the local interpolant through up to five stations. Quartic
+/// endpoint jets avoid the third-order position error of quadratic slopes.
 pub(super) fn station_slopes<'a, const N: usize>(
     count: usize,
     parameter: impl Fn(usize) -> &'a Rational,
     values: impl Fn(usize) -> &'a [Rational; N],
 ) -> Vec<[Rational; N]> {
+    assert!(count >= 3);
+    let width = count.min(5);
     let mut slopes = Vec::with_capacity(count);
     for i in 0..count {
-        let a = i.saturating_sub(1).min(count - 3);
-        let h0 = parameter(a + 1) - parameter(a);
-        let h1 = parameter(a + 2) - parameter(a + 1);
-        let width = &h0 + &h1;
-        slopes.push(std::array::from_fn(|j| {
-            let d0 = (&values(a + 1)[j] - &values(a)[j]) / h0.clone();
-            let d1 = (&values(a + 2)[j] - &values(a + 1)[j]) / h1.clone();
-            let numerator = if i == 0 {
-                &(&(&h0 + &width) * &d0) - &(&h0 * &d1)
-            } else if i + 1 == count {
-                &(&(&h1 + &width) * &d1) - &(&h1 * &d0)
-            } else {
-                &(&h1 * &d0) + &(&h0 * &d1)
-            };
-            numerator / width.clone()
-        }));
+        let first = i.saturating_sub(width / 2).min(count - width);
+        let at = parameter(i);
+        let base = values(i);
+        let mut derivative = std::array::from_fn(|_| Rational::zero());
+        for j in first..first + width {
+            if j == i { continue; }
+            let x = parameter(j);
+            let mut numerator = Rational::one();
+            let mut denominator = x - at;
+            for k in first..first + width {
+                if k == i || k == j { continue; }
+                let other = parameter(k);
+                numerator = numerator * (at - other);
+                denominator = denominator * (x - other);
+            }
+            let weight = numerator / denominator;
+            let sample = values(j);
+            for coordinate in 0..N {
+                derivative[coordinate] = &derivative[coordinate]
+                    + &(&weight * &(&sample[coordinate] - &base[coordinate]));
+            }
+        }
+        slopes.push(derivative);
     }
     slopes
 }
@@ -307,8 +320,11 @@ impl NumericalSplineFillet {
                 upper = upper.max(span_upper);
             }
             if inserted.is_empty() {
+                // These homogeneous coefficients are exact rationals. Cancel
+                // derivative numerators before enclosure: raw quotient jets
+                // lose the position/weight correlation on thin curved strips.
                 let [surface] = <[_; 1]>::try_from(
-                    RationalAtlas::partition(fitted.surface, [false, false], dec)
+                    RationalAtlas::partition_with_polynomial_bounds(fitted.surface, [false, false], dec)
                         .map_err(|mut error| {
                             let smallest = spine.nodes.windows(2)
                                 .map(|pair| &pair[1].tau - &pair[0].tau)

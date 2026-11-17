@@ -44,11 +44,15 @@ impl Spline<'_> {
 pub(in super::super) fn project(
     context: &Context<'_>,
     surface: &NativeSurface,
+    plane: Option<&PlaneFrame>,
     edge: &EdgeSamples,
     samples: &[UvSample],
     precision: f64,
     dec: &mut Decider,
 ) -> Result<Option<ProjectedTrace>, Error> {
+    let Some(plane) = plane else {
+        return Ok(None);
+    };
     if !matches!(
         context.parsed.geometry(surface.source(), dec)?,
         Geometry::Surface(SourceSurface::Plane(_))
@@ -66,6 +70,9 @@ pub(in super::super) fn project(
                 basis = Some(source);
                 break;
             }
+            Geometry::Curve(SourceCurve::Circle(..) | SourceCurve::Ellipse(..)) => {
+                return conic(plane, surface, edge, samples, precision, dec);
+            }
             _ => return Ok(None),
         }
     }
@@ -78,7 +85,7 @@ pub(in super::super) fn project(
         .map_err(crate::tolerant::native::mapped)?;
     let mut controls = Vec::with_capacity(curve.controls().len());
     for control in curve.controls() {
-        let projected = surface.project(point(control)?.point_mm, None, dec)?;
+        let projected = plane.project(point(control)?);
         controls.push(projected.location.parameters);
     }
     let largest = curve.weights().iter().max().expect("positive weights");
@@ -116,8 +123,64 @@ pub(in super::super) fn project(
             return Ok(None);
         }
     }
-    Ok(Some(ProjectedTrace {
+    Ok(Some(ProjectedTrace::Spline {
         source_curve: source,
         controls,
+    }))
+}
+
+fn conic(
+    plane: &PlaneFrame,
+    surface: &NativeSurface,
+    edge: &EdgeSamples,
+    samples: &[UvSample],
+    precision: f64,
+    dec: &mut Decider,
+) -> Result<Option<ProjectedTrace>, Error> {
+    let PhysicalCurve::Native(curve) = &edge.carrier else {
+        return Ok(None);
+    };
+    let period = curve.angular_period();
+    let mut points = [[0.0; 2]; 3];
+    for (index, point) in points.iter_mut().enumerate() {
+        let (_, sample) = edge
+            .carrier
+            .sample_at(period * index as f64 / 4.0, 0, dec)?;
+        *point = plane.project(sample).location.parameters;
+    }
+    let centre = std::array::from_fn(|axis| points[0][axis] * 0.5 + points[2][axis] * 0.5);
+    let vectors = [points[0], points[1]]
+        .map(|point| std::array::from_fn::<_, 2, _>(|axis| point[axis] - centre[axis]));
+    let radii = vectors.map(|vector| vector[0].hypot(vector[1]));
+    if radii
+        .iter()
+        .any(|radius| !radius.is_finite() || *radius <= 0.0)
+    {
+        return Ok(None);
+    }
+    let axes =
+        std::array::from_fn::<_, 2, _>(|index| vectors[index].map(|value| value / radii[index]));
+    if (axes[0][0] * axes[1][0] + axes[0][1] * axes[1][1]).abs() > 128.0 * f64::EPSILON {
+        return Ok(None);
+    }
+    for sample in samples {
+        let angle = sample.curve.parameters[0] / period * std::f64::consts::TAU;
+        let (sin, cos) = angle.sin_cos();
+        let uv = std::array::from_fn(|axis| {
+            centre[axis] + vectors[0][axis] * cos + vectors[1][axis] * sin
+        });
+        let actual = surface.sample(surface.location(uv)?, dec)?;
+        let expected = surface.sample(sample.surface, dec)?;
+        let residual = norm(subtract(actual.point_mm, expected.point_mm))
+            + actual.uncertainty_mm
+            + expected.uncertainty_mm;
+        if residual > precision.max(128.0 * f64::EPSILON * norm(expected.point_mm).max(1.0)) {
+            return Ok(None);
+        }
+    }
+    Ok(Some(ProjectedTrace::Conic {
+        centre,
+        axes,
+        radii,
     }))
 }

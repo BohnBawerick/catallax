@@ -124,7 +124,14 @@ fn complex_face_and_edge_inheritance_preserve_the_source_inventory() {
         );
     let opened = open(&source);
     assert_eq!(opened.bodies().len(), 1);
-    assert_eq!(opened.source().bodies()[0].edges().len(), 4);
+    assert_eq!(
+        opened.source().bodies()[0]
+            .materialize(&mut Decider::default())
+            .unwrap()
+            .edges()
+            .len(),
+        4
+    );
     assert!(matches!(opened.body(0), Some(BodyView::Certified { .. })));
 }
 
@@ -134,7 +141,10 @@ fn bare_edge_endpoints_do_not_invent_a_straight_curve() {
     let opened = open(&source);
     assert_eq!(opened.bodies()[0].tier(), Tier::SurfaceBody);
     assert!(matches!(opened.body(0), Some(BodyView::Surfaces { .. })));
-    let edge = opened.source().bodies()[0]
+    let source_body = opened.source().bodies()[0]
+        .materialize(&mut Decider::default())
+        .unwrap();
+    let edge = source_body
         .edges()
         .iter()
         .find(|e| e.name == "#20")

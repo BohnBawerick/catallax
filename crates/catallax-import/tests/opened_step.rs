@@ -37,6 +37,30 @@ fn history(file: &opened::OpenedStep) -> serde_json::Value {
     }
 }
 
+fn checked_artifact(file: &opened::OpenedStep) -> ((usize, usize, usize), Vec<u8>) {
+    let mut dec = Decider::default();
+    match file.body(0).unwrap() {
+        BodyView::Certified { model, body } => {
+            let counts = model.counts(body);
+            let mut bytes = Vec::new();
+            catallax_step::write_step(model, &[body], &Default::default(), &mut dec, &mut bytes)
+                .unwrap();
+            ((counts.faces, counts.edges, counts.vertices), bytes)
+        }
+        BodyView::Numerical(body) => {
+            let counts = body.counts();
+            let written =
+                catallax_step::numerical::build(body, &Default::default(), &mut dec).unwrap();
+            written.check_written(written.bytes(), &mut dec).unwrap();
+            (
+                (counts.faces, counts.edges, counts.vertices),
+                written.bytes().to_vec(),
+            )
+        }
+        _ => panic!("stricter checked upgrade required"),
+    }
+}
+
 #[test]
 fn a_good_sibling_remains_solid_while_an_open_body_retains_all_five_faces() {
     let good = BoxFixture::new(["2", "3", "4"]);
@@ -104,17 +128,13 @@ fn normal_gap_replays_from_saved_source_controls_with_approximate_history() {
     for file in [&original, &replayed] {
         assert_eq!(file.bodies()[0].tier(), Tier::RepairedSolid);
         assert!(file.bodies()[0].approximate());
-        let Some(BodyView::Numerical(body)) = file.body(0) else {
-            panic!("approximate body required: {file:?}")
-        };
-        let counts = body.counts();
-        assert_eq!((counts.faces, counts.edges, counts.vertices), (6, 12, 8));
+        assert_eq!(checked_artifact(file).0, (6, 12, 8));
     }
     let retained = history(&original);
     assert_eq!(retained, history(&replayed));
     assert!(
         retained.get("healing").is_some()
-            || ["changes", "face_tolerances", "source_incidence"]
+            || ["repairs", "changes", "face_tolerances", "source_incidence"]
                 .iter()
                 .any(|key| retained[*key]
                     .as_array()
@@ -174,17 +194,8 @@ fn retained_surface_sewing_requires_closure_within_the_callers_cap() {
             assert!(opened.bodies()[0].refusal().is_some());
             continue;
         }
-        let Some(BodyView::Numerical(body)) = opened.body(0) else {
-            panic!("checked numerical solid required")
-        };
-        let counts = body.counts();
-        assert_eq!((counts.faces, counts.edges, counts.vertices), (6, 12, 8));
-        let exported =
-            catallax_step::numerical::build(body, &Default::default(), &mut Decider::default())
-                .unwrap();
-        exported
-            .check_written(exported.bytes(), &mut Decider::default())
-            .unwrap();
+        let (counts, exported) = checked_artifact(&opened);
+        assert_eq!(counts, (6, 12, 8));
         let replayed = opened::reopen(
             source.as_bytes(),
             &opened.saved_controls(),
@@ -197,7 +208,7 @@ fn retained_surface_sewing_requires_closure_within_the_callers_cap() {
         if let Ok(folder) = std::env::var("CATALLAX_HEALING_EVIDENCE") {
             std::fs::write(
                 std::path::Path::new(&folder).join("stitched-surface.step"),
-                exported.bytes(),
+                &exported,
             )
             .unwrap();
         }

@@ -89,13 +89,26 @@ pub struct NativeTrim {
     pub projected: Option<ProjectedTrace>,
 }
 
-/// A source spline's controls projected into a plane's original UV units.
+/// A plane trace that preserves the source curve's parameterization.
 #[derive(Clone, Debug, Serialize)]
-pub struct ProjectedTrace {
-    /// Source 3D B-spline basis; knots and weights remain unchanged.
-    pub source_curve: u64,
-    /// Measured native plane coordinates of its control points.
-    pub controls: Vec<[f64; 2]>,
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ProjectedTrace {
+    /// Projected source spline with unchanged exact knots and weights.
+    Spline {
+        /// Source 3D B-spline basis.
+        source_curve: u64,
+        /// Measured native plane coordinates of its controls.
+        controls: Vec<[f64; 2]>,
+    },
+    /// Analytic conic in the plane's original UV units.
+    Conic {
+        /// UV centre.
+        centre: [f64; 2],
+        /// Unit UV directions for cosine and sine, including reflected frames.
+        axes: [[f64; 2]; 2],
+        /// Radii along those directions.
+        radii: [f64; 2],
+    },
 }
 
 /// Sampled natural closure of an edgeless native face.

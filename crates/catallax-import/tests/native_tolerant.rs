@@ -175,6 +175,13 @@ fn exported_ellipse_extrusion_has_a_continuous_side_uv_wire() {
     };
     let mut dec = Decider::default();
     let bytes = import.export_body(body, &mut dec).unwrap().into_bytes();
+    if let Ok(folder) = std::env::var("CATALLAX_HEALING_EVIDENCE") {
+        std::fs::write(
+            std::path::Path::new(&folder).join("native-ellipse.step"),
+            &bytes,
+        )
+        .unwrap();
+    }
     let parsed = ParsedStep::read(&bytes, &mut dec).unwrap();
     let side = parsed
         .entities()

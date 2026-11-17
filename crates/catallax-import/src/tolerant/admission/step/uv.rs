@@ -145,14 +145,79 @@ impl<'a> Writer<'a> {
         )
     }
 
+    fn conic(
+        &mut self,
+        builder: &mut Builder<'_>,
+        surface: u64,
+        centre: [f64; 2],
+        axes: [[f64; 2]; 2],
+        radii: [f64; 2],
+    ) -> Result<u64, Error> {
+        let coordinates = |builder: &mut Builder<'_>, kind, values: [f64; 2]| {
+            builder.add(
+                kind,
+                vec![
+                    text(""),
+                    Param::List(values.into_iter().map(number).collect::<Result<_, _>>()?),
+                ],
+            )
+        };
+        let zero = coordinates(builder, "CARTESIAN_POINT", [0.0; 2])?;
+        let unit_x = coordinates(builder, "DIRECTION", [1.0, 0.0])?;
+        let placement = builder.add(
+            "AXIS2_PLACEMENT_2D",
+            vec![text(""), reference_to(zero), reference_to(unit_x)],
+        )?;
+        let ellipse = builder.add(
+            "ELLIPSE",
+            vec![
+                text(""),
+                reference_to(placement),
+                number(radii[0])?,
+                number(radii[1])?,
+            ],
+        )?;
+        let origin = coordinates(builder, "CARTESIAN_POINT", centre)?;
+        let x = coordinates(builder, "DIRECTION", axes[0])?;
+        let y = coordinates(builder, "DIRECTION", axes[1])?;
+        let transform = builder.add(
+            "CARTESIAN_TRANSFORMATION_OPERATOR_2D",
+            vec![
+                text(""),
+                reference_to(x),
+                reference_to(y),
+                reference_to(origin),
+                number(1.0)?,
+            ],
+        )?;
+        let curve = builder.add(
+            "CURVE_REPLICA",
+            vec![text(""), reference_to(ellipse), reference_to(transform)],
+        )?;
+        self.wrap(builder, surface, curve)
+    }
+
     fn projected(
         &mut self,
         builder: &mut Builder<'_>,
         surface: u64,
         trace: &super::super::ProjectedTrace,
     ) -> Result<u64, Error> {
-        let mut controls = Vec::with_capacity(trace.controls.len());
-        for control in &trace.controls {
+        let (source_curve, uv_controls) = match trace {
+            super::super::ProjectedTrace::Spline {
+                source_curve,
+                controls,
+            } => (source_curve, controls),
+            super::super::ProjectedTrace::Conic {
+                centre,
+                axes,
+                radii,
+            } => {
+                return self.conic(builder, surface, *centre, *axes, *radii);
+            }
+        };
+        let mut controls = Vec::with_capacity(uv_controls.len());
+        for control in uv_controls {
             controls.push(builder.add(
                 "CARTESIAN_POINT",
                 vec![text(""),
@@ -162,7 +227,7 @@ impl<'a> Writer<'a> {
         let mut entity = builder
             .parsed
             .source_graph()
-            .get(&trace.source_curve)
+            .get(source_curve)
             .ok_or_else(|| {
                 invalid(
                     "import.tolerant-broken-reference",

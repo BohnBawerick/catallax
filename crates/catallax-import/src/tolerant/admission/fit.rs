@@ -219,6 +219,13 @@ impl PlaneFrame {
         let position = std::array::from_fn(|i| {
             self.origin[i] + parameters[0] * self.x[i] + parameters[1] * self.y[i]
         });
+        let uncertainty = 64.0
+            * f64::EPSILON
+            * (norm(self.origin)
+                + norm(target.point_mm)
+                + norm(position)
+                + parameters[0].abs()
+                + parameters[1].abs());
         NativeProjection {
             location: NativeLocation {
                 chart: 0,
@@ -226,11 +233,11 @@ impl PlaneFrame {
             },
             sample: NativeSample {
                 point_mm: position,
-                uncertainty_mm: 8.0 * f64::EPSILON * norm(position),
+                uncertainty_mm: uncertainty,
             },
             residual_mm: norm(subtract(position, target.point_mm))
                 + target.uncertainty_mm
-                + 8.0 * f64::EPSILON * norm(position),
+                + uncertainty,
             iterations: 1,
             converged: true,
         }
@@ -907,7 +914,7 @@ pub(super) fn check_body(
                             STATIONS => Some(body.edges[usage.edge].vertices[1]),
                             _ => None,
                         };
-                        let fit_target = vertex.map_or(target, |vertex| vertices[vertex]);
+                        let fit_target = target;
                         let seed = if station == 0 {
                             match &pcurve {
                                 Some(curve) => {
@@ -1001,6 +1008,7 @@ pub(super) fn check_body(
                         };
                         if let Some(surface) = &surface
                             && !pole_seed
+                            && plane.is_none()
                         {
                             let parameters = surface.align_parameters(
                                 projection.location.parameters,
@@ -1052,8 +1060,13 @@ pub(super) fn check_body(
                         tolerance.measure(projection.sample.uncertainty_mm)?;
                         edge_tolerances[usage.edge].measure(residual + tolerance.tolerance)?;
                         if let Some(vertex) = vertex {
-                            vertex_tolerances[vertex]
-                                .measure(projection.residual_mm + fit_target.uncertainty_mm)?;
+                            vertex_tolerances[vertex].measure(
+                                norm(subtract(
+                                    projection.sample.point_mm,
+                                    vertices[vertex].point_mm,
+                                )) + projection.sample.uncertainty_mm
+                                    + vertices[vertex].uncertainty_mm,
+                            )?;
                         }
                         fit_residual = fit_residual
                             .max(residual)
@@ -1092,6 +1105,7 @@ pub(super) fn check_body(
                         trace::planar::project(
                             context,
                             surface.as_ref().expect("native surface"),
+                            plane.as_ref(),
                             edge,
                             &samples,
                             body.options.initial_mm.to_f64_nearest(),

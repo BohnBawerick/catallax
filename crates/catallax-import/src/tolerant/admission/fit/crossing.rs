@@ -319,17 +319,16 @@ ENDSEC;END-ISO-10303-21;";
                 assert_eq!(body, original);
             } else {
                 result.unwrap();
-                assert_eq!(
-                    body.vertices[1].source.point,
-                    std::array::from_fn(|_| Rational::zero())
+                assert!(norm(point(&body.vertices[1].source.point).unwrap().point_mm) < 1e-12);
+                assert!(
+                    (body.edges[0].source_range.as_ref().unwrap()[1].to_f64_nearest() - 1.0).abs()
+                        < 1e-12
                 );
-                assert_eq!(
-                    body.edges[0].source_range.as_ref().unwrap()[1],
-                    Rational::one()
-                );
-                assert_eq!(
-                    body.edges[1].source_range.as_ref().unwrap()[0],
-                    Rational::zero()
+                assert!(
+                    body.edges[1].source_range.as_ref().unwrap()[0]
+                        .to_f64_nearest()
+                        .abs()
+                        < 1e-12
                 );
                 assert!(matches!(
                     evidence.repairs.as_slice(),

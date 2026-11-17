@@ -201,3 +201,7 @@ The candidate passes six periodic STEP tests and ten actual period-gauge/signed-
 All three real-part bodies now validate, with unchanged written 3D entity tables.
 Only the existing four-sided cylindrical seam-cell chart is translated; 3D geometry, source data, tolerance and the existing numerical checks remain unchanged.
 Builder processing can occur internally, and no complete source-fidelity or unhealed-validity claim is made.
+
+## Mixed finite-arc/circle prototype: Later
+
+The unqualified `fm/cx-import-mixed-arc-trims` branch is parked without a PR after the owner redirected the lane to tolerant-tier measurement. The measured baseline identifies 22 complete-source, non-exhausted files with the same mixed-circle neighbour refusal. The prototype adds continuous planar arc/chord box clearance and authored closed-bore controls, but its tests and census have not run; it receives no admission or export-valid credit.

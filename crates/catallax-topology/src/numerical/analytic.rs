@@ -367,6 +367,71 @@ fn segment_distance_squared(
     Ok(residual[0].square() + residual[1].square())
 }
 
+fn arc_clearance(
+    face: &NumericalFace,
+    edge: &NumericalEdge,
+    trim: &NumericalTrim,
+    circle: &ProjectedCircle,
+    tolerance: &Rational,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    // Reserve the arc's tolerance as for complete-circle pairs.
+    let radius = match &circle.interior_radius {
+        Some(radius) => radius - tolerance,
+        None => &circle.enclosing_radius + tolerance,
+    };
+    if radius.sign() != Sign::Positive {
+        return Err(bad("trim", "circular clearance has no positive radius"));
+    }
+    let radius_squared = &radius * &radius;
+    let [a, b] = if trim.sense == Sense::Same {
+        edge.parameters.each_ref()
+    } else {
+        [&edge.parameters[1], &edge.parameters[0]]
+    };
+    let span = b - a;
+    for i in 0..SUBDIVISIONS {
+        dec.charge_work(1)?;
+        let endpoints = [i, i + 1]
+            .map(|station| a + &(&span * &Rational::from_ratio(station, SUBDIVISIONS).unwrap()));
+        let parameter = Ball::from_rational(&endpoints[0], BITS)
+            .hull(&Ball::from_rational(&endpoints[1], BITS));
+        let point = edge
+            .curve
+            .evaluate(&parameter, dec)?
+            .ok_or_else(|| bad("trim", "finite circular arc has no continuous enclosure"))?;
+        let mut uv = face
+            .surface
+            .parameters_of(&point, dec)?
+            .ok_or_else(|| bad("trim", "finite circular arc has no planar projection"))?;
+        // These are the same cells used by the polygon check below. Their
+        // convex boxes must contain both the arc and its sampled chord, so the
+        // winding cannot change through a circular hole between sample nodes.
+        for axis in 0..2 {
+            if i == 0 {
+                uv[axis] = uv[axis].hull(&Ball::from_rational(&trim.uv[0][axis], BITS));
+            }
+            if i + 1 == SUBDIVISIONS {
+                uv[axis] = uv[axis].hull(&Ball::from_rational(&trim.uv[1][axis], BITS));
+            }
+        }
+        let distance =
+            (&uv[0] - &circle.center[0]).square() + (&uv[1] - &circle.center[1]).square();
+        let clear = if circle.interior_radius.is_some() {
+            distance.hi() < radius_squared
+        } else {
+            distance.lo() > radius_squared
+        };
+        if !clear {
+            return Err(bad(
+                "trim",
+                "finite circular arc lacks continuous clearance from the circular boundary",
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn circle_clearance(
     face: &NumericalFace,
     edges: &[NumericalEdge],
@@ -407,13 +472,19 @@ fn circle_clearance(
                 continue;
             }
             for trim in boundary {
-                if !edges
+                let edge = edges
                     .get(trim.edge)
-                    .is_some_and(|edge| matches!(edge.curve, Curve::Line(_)))
+                    .ok_or_else(|| bad("trim", "trim names an unknown edge"))?;
+                if matches!(edge.curve, Curve::Circle(_))
+                    && matches!(face.surface, Surface::Plane(_))
                 {
+                    arc_clearance(face, edge, trim, circle, tolerance, dec)?;
+                    continue;
+                }
+                if !matches!(edge.curve, Curve::Line(_)) {
                     return Err(bad(
                         "trim",
-                        "complete circular boundaries need finite-line or complete-circle neighbours",
+                        "complete circular boundaries need finite-line or circular neighbours",
                     ));
                 }
                 if let Some(radius) = &circle.interior_radius {

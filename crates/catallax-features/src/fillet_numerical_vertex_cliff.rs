@@ -340,6 +340,89 @@ mod tests {
                     );
                 }
             }
+            let deep_end = section.ends[1];
+            let junction = super::super::assembly::cliff(
+                model, &chains, vertex, section, &tolerance, &mut dec,
+            )
+            .unwrap();
+            assert!(
+                junction.patches.is_empty(),
+                "Cliff must not substitute a sphere or Smooth patch"
+            );
+            let deep = junction
+                .terminations
+                .iter()
+                .find(|termination| {
+                    termination.strip.chain == deep_end.chain
+                        && termination.strip.strip == deep_end.strip
+                        && termination.strip.source_end == deep_end.source_end
+                })
+                .unwrap();
+            assert_ne!(
+                deep.tau[0], deep.tau[1],
+                "unequal reach needs distinct rail parameters"
+            );
+            let mut previous = junction.contacts[deep.contacts[0]].position.clone();
+            for &(index, sense) in &deep.boundaries {
+                let boundary = &junction.boundaries[index];
+                let zero = Rational::zero();
+                let one = Rational::one();
+                let (a, b) = if sense == catallax_topology::Sense::Same {
+                    (&zero, &one)
+                } else {
+                    (&one, &zero)
+                };
+                let start = boundary.curve.evaluate_box([a, a], BITS, &dec).unwrap();
+                assert!(super::super::upper_distance(&start, &previous) <= tolerance);
+                previous = boundary
+                    .curve
+                    .evaluate_box([b, b], BITS, &dec)
+                    .unwrap()
+                    .map(|value| value.mid());
+                for j in 0..=31 {
+                    let t = Rational::from_ratio(j, 31).unwrap();
+                    let world = boundary.curve.evaluate_box([&t, &t], BITS, &dec).unwrap();
+                    for side in &boundary.sides {
+                        let native = side
+                            .parameters
+                            .point_at(&catallax_numbers::Real::from_rational(t.clone()), &mut dec)
+                            .unwrap();
+                        let uv = [
+                            dec.enclose_budgeted_at(&native.x, BITS).unwrap(),
+                            dec.enclose_budgeted_at(&native.y, BITS).unwrap(),
+                        ];
+                        let composed = match side.face {
+                            super::super::JunctionFace::Strip(end) => chains[end.chain].strips
+                                [end.strip]
+                                .fillet
+                                .surface()
+                                .source()
+                                .evaluate_box(
+                                    [&uv[0].lo(), &uv[0].hi()],
+                                    [&uv[1].lo(), &uv[1].hi()],
+                                    BITS,
+                                    &dec,
+                                )
+                                .unwrap(),
+                            super::super::JunctionFace::Source(face) => model
+                                .geom()
+                                .surface(model.face(face).surface)
+                                .evaluate(&uv[0], &uv[1], &mut dec)
+                                .unwrap(),
+                            super::super::JunctionFace::Patch(_) => {
+                                panic!("Cliff termination should not invent a patch")
+                            }
+                        };
+                        assert!(gap(&world, &composed).unwrap() <= tolerance);
+                    }
+                }
+            }
+            let target = &junction.contacts[deep.contacts[1]].position;
+            assert!(
+                (0..3).fold(Rational::zero(), |sum, i| sum
+                    + (&previous[i] - &target[i]).abs())
+                    <= tolerance
+            );
         });
         assert!(!work.exhausted);
         println!(

@@ -395,7 +395,7 @@ fn open_sections_can_share_an_endpoint_without_being_the_same_curve() {
                 [1, 1],
                 [knots.clone(), knots],
                 [2, 2],
-                [[0, low, 0], [0, high, 0], [1, low, 0], [1, high, 0]]
+                [[0, low, 0], [0, high, 0], [2, low, 0], [2, high, 0]]
                     .map(|[x, y, z]| Point3::new(x.into(), y.into(), z.into()))
                     .to_vec(),
                 vec![Real::one(); 4],
@@ -405,7 +405,13 @@ fn open_sections_can_share_an_endpoint_without_being_the_same_curve() {
             let atlas = RationalAtlas::partition(carrier, [false, false], &mut dec)
                 .unwrap()
                 .remove(0);
-            let cut = atlas.sections(&plane(0, "1/2", 1), &mut dec).unwrap();
+            let cylinder = SectionSurface::Cylinder(catallax_shapes::Cylinder {
+                origin: Point3::new(Real::zero(), Real::zero(), Real::zero()),
+                axis: Vector3::new(Real::zero(), Real::zero(), Real::one()),
+                radius_sq: Real::from_i64(2),
+                ref_dir: Vector3::new(Real::one(), Real::zero(), Real::zero()),
+            });
+            let cut = atlas.sections(&cylinder, &mut dec).unwrap();
             assert_eq!(cut.branches().len(), 1);
             assert!(!cut.branches()[0].is_closed());
             geom.add_curve(Curve::PatchSection(cut.branches()[0].clone()))
@@ -413,7 +419,7 @@ fn open_sections_can_share_an_endpoint_without_being_the_same_curve() {
         let first = section(0, 1);
         let second = section(1, 2);
         let shared = geom.add_point(PointDef::Explicit(Point3::new(
-            r("1/2").into(),
+            Real::one(),
             Real::one(),
             Real::zero(),
         )));

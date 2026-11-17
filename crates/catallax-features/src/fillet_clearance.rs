@@ -34,7 +34,7 @@ pub(super) fn ring_hull(
         for axis in 0..3 {
             let normal = [&circle.normal.x, &circle.normal.y, &circle.normal.z][axis];
             let centre = [&circle.center.x, &circle.center.y, &circle.center.z][axis];
-            let extent = (&circle.radius_sq * &(Real::one() - normal.square() / &squared)).sqrt();
+            let extent = (&circle.radius_sq * &(Real::one() - &normal.square() / &squared)).sqrt();
             let lo = centre - &extent;
             let hi = centre + &extent;
             if index == 0 || sign(&(&lo - &low[axis]), dec)? == Sign::Negative {
@@ -126,7 +126,7 @@ pub(super) fn outside_face(
         Ok(answer) => answer.value,
         Err(refusal)
             if matches!(
-                refusal.code.as_str(),
+                refusal.code,
                 "measure.unsupported-surface"
                     | "measure.unsupported-curve"
                     | "measure.rational-patch-domain"

@@ -12,7 +12,23 @@ struct SectionPlane {
 
 impl SectionPlane {
     fn new(guide: &BSplineCurve, tau: &Rational, dec: &mut Decider) -> Result<Self, Refusal> {
-        let [point, tangent] = guide.first_box_reusing([tau, tau], 128, dec, &mut Vec::new())?;
+        // The guide selects sections; it is not a support surface. Outside its
+        // retained interval use the endpoint tangent line, so a real neighbour
+        // can cut a strip beyond the sharp edge's endpoint.
+        let domain = guide.domain();
+        let anchor = if tau < domain[0] {
+            domain[0]
+        } else if tau > domain[1] {
+            domain[1]
+        } else {
+            tau
+        };
+        let [mut point, tangent] =
+            guide.first_box_reusing([anchor, anchor], 128, dec, &mut Vec::new())?;
+        if anchor != tau {
+            let offset = Ball::from_rational(&(tau - anchor), 128);
+            point = std::array::from_fn(|i| &point[i] + &(&tangent[i] * &offset));
+        }
         dec.charge_work(16)?;
         let square = &(&tangent[0].square() + &tangent[1].square()) + &tangent[2].square();
         if square.lo().sign() != Sign::Positive {

@@ -64,6 +64,9 @@ mod sector;
 #[path = "fillet_variable.rs"]
 mod variable;
 
+#[path = "fillet_chains.rs"]
+pub(crate) mod chains;
+
 pub(crate) use variable::build as build_variable;
 
 use fillet_envelope::Clearance;

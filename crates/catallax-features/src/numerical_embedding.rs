@@ -851,6 +851,173 @@ pub fn definition_from_exact_model(
     ))
 }
 
+pub(crate) struct FilletGuide {
+    pub curve: BSplineCurve,
+    pub ends: [Point3; 2],
+    pub check: catallax_numbers::NumericalCheck,
+}
+
+/// Fits a section-plane guide from the retained curve trace, not its carrier
+/// classification. This includes Boolean intersections whose line/circle
+/// identity is no longer explicit. The checks below bound sampled deviation,
+/// not the deviation between samples or the completeness of a branch.
+pub(crate) fn fillet_guide(
+    model: &Model,
+    edge_id: EdgeId,
+    tolerance: &Rational,
+    dec: &mut Decider,
+) -> Result<FilletGuide, Refusal> {
+    let edge = model.edge(edge_id);
+    let mut ends = [edge.start, edge.end].map(|v| v.map(|v| model.vertex(v).point));
+    let reversed = edge.sense == Sense::Reversed;
+    if reversed {
+        ends.reverse();
+    }
+    let trace = catallax_intersect::trace(model.geom(), edge.curve, ends[0], ends[1], dec)?.value;
+    let pieces = trace.pieces();
+    if pieces.is_empty() {
+        return Err(fit_failure(
+            "a selected fillet edge has no retained trace pieces",
+        ));
+    }
+    let at = |index: usize| {
+        &pieces[if reversed {
+            pieces.len() - 1 - index
+        } else {
+            index
+        }]
+    };
+    let point = |piece: &catallax_intersect::TracePiece, share: f64, dec: &Decider| {
+        let parameter = exact(if reversed { 1.0 - share } else { share })?;
+        piece.evaluate(&Ball::from_rational(&parameter, BITS), dec)
+    };
+    let first = at(0).evaluate_exact(
+        &if reversed {
+            Rational::one()
+        } else {
+            Rational::zero()
+        },
+        dec,
+    )?;
+    let last = at(pieces.len() - 1).evaluate_exact(
+        &if reversed {
+            Rational::zero()
+        } else {
+            Rational::one()
+        },
+        dec,
+    )?;
+    let bound = tolerance.mul_pow2(-2);
+    let proposal_bound = tolerance.to_f64_nearest() / 8.0;
+    let mut fits = Vec::with_capacity(pieces.len());
+    let mut samples = Vec::new();
+    for index in 0..pieces.len() {
+        let piece = at(index);
+        let mut fitted = None;
+        for density in DENSITIES {
+            if density * pieces.len() > MAX_SPANS {
+                return Err(fit_failure(
+                    "a fillet guide exceeds the trace fit's span limit",
+                ));
+            }
+            let mut parameters = Vec::with_capacity(density + 1);
+            let mut points = Vec::with_capacity(density + 1);
+            for j in 0..=density {
+                dec.charge_work(1)?;
+                let share = j as f64 / density as f64;
+                parameters.push((index as f64 + share) / pieces.len() as f64);
+                points.push(
+                    point(piece, share, dec)?
+                        .each_ref()
+                        .map(|v| v.mid().to_f64_nearest()),
+                );
+            }
+            let (knots, controls) = interpolate(&parameters, &points, dec)?;
+            let mut acceptable = true;
+            'checks: for j in 0..density {
+                for share in CHECK_SHARES {
+                    dec.charge_work(1)?;
+                    let local = (j as f64 + share) / density as f64;
+                    let parameter = (index as f64 + local) / pieces.len() as f64;
+                    let reference = point(piece, local, dec)?
+                        .each_ref()
+                        .map(|v| v.mid().to_f64_nearest());
+                    if distance(nurbs::evaluate(&knots, &controls, parameter), reference)
+                        > proposal_bound
+                    {
+                        acceptable = false;
+                        break 'checks;
+                    }
+                }
+            }
+            if acceptable {
+                fitted = Some((knots, controls, density));
+                break;
+            }
+        }
+        let (knots, controls, density) = fitted.ok_or_else(|| {
+            fit_failure(
+                "a fillet guide cannot fit its retained trace within the declared tolerance",
+            )
+        })?;
+        fits.push((knots, controls));
+        for j in 0..density {
+            for share in CHECK_SHARES {
+                let local = exact((j as f64 + share) / density as f64)?;
+                let parameter = (&Rational::from_i64(index as i64) + &local)
+                    / Rational::from_i64(pieces.len() as i64);
+                samples.push((index, local, parameter));
+            }
+        }
+    }
+    let (knots, controls) = concatenate(fits);
+    let coordinates = |p: &Point3| -> Result<[Rational; 3], Refusal> {
+        Ok([scalar(&p.x, dec)?, scalar(&p.y, dec)?, scalar(&p.z, dec)?])
+    };
+    let curve = rational_curve(
+        &knots,
+        &controls,
+        [&Rational::zero(), &Rational::one()],
+        [coordinates(&first)?, coordinates(&last)?],
+        None,
+        dec,
+    )?;
+    let mut checked = Vec::with_capacity(samples.len());
+    for (index, local, parameter) in samples {
+        dec.charge_work(1)?;
+        let native = if reversed {
+            &Rational::one() - &local
+        } else {
+            local
+        };
+        let reference = at(index).evaluate(&Ball::from_rational(&native, BITS), dec)?;
+        let actual = curve.evaluate_box([&parameter, &parameter], BITS, dec)?;
+        let delta: [Ball; 3] = std::array::from_fn(|axis| &actual[axis] - &reference[axis]);
+        let error = (delta[0].square() + delta[1].square() + delta[2].square())
+            .sqrt()
+            .ok_or_else(|| fit_failure("fillet guide deviation cannot be enclosed"))?
+            .hi();
+        if error > bound {
+            return Err(fit_failure(
+                "the written fillet guide misses its retained trace at a checked sample",
+            ));
+        }
+        checked.push(catallax_numbers::NumericalSample {
+            parameters: vec![parameter],
+            distance_upper_mm: error,
+        });
+    }
+    Ok(FilletGuide {
+        curve,
+        ends: [first, last],
+        check: catallax_numbers::NumericalCheck::Samples {
+            name: "fillet.source-guide-sampled-deviation".into(),
+            scope: format!("{edge_id:?}"),
+            samples: checked,
+        },
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

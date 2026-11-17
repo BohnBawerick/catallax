@@ -29,15 +29,15 @@ pub(super) struct Contact {
 
 impl NumericalFilletSupport {
     /// Retains the surface's native parameters. A negative distance places the
-    /// ball opposite `S_u cross S_v`; it does not reverse the parameterization.
+    /// ball opposite `S_u cross S_v`; zero traces the unoffset sharp guide.
     pub fn new(
         surface: Surface,
         signed_distance: Rational,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
         let distance64 = signed_distance.to_f64_nearest();
-        if signed_distance.sign() == Sign::Zero || !distance64.is_finite() || distance64 == 0.0 {
-            return Err(bad("rolling-ball support needs a finite nonzero distance"));
+        if !distance64.is_finite() || (!signed_distance.is_zero() && distance64 == 0.0) {
+            return Err(bad("support offset distance is outside binary64 range"));
         }
         if let Surface::BSpline(SplineSupport::RationalAtlas(atlas)) = &surface {
             return Self::from_atlas(atlas, signed_distance, dec);

@@ -250,12 +250,12 @@ fn centre_fit(nodes: &[NumericalSpineNode], dec: &mut Decider) -> Result<BSpline
 
 impl NumericalFilletSpine {
     /// Marches one selected branch as a graph over `axis` of the first support.
+    /// The same support adapters serve offset walks and zero-offset sharp guides.
     /// The seed supplies its other parameter and both parameters of the second.
     /// Quarter-point position checks adaptively split each span. They do not
     /// establish branch completeness, uniqueness, or deviation between samples.
     pub fn trace(
-        supports: &[RationalAtlas; 2],
-        distances: [Rational; 2],
+        supports: [NumericalFilletSupport; 2],
         axis: usize,
         range: [Rational; 2],
         seed: [Rational; 3],
@@ -272,10 +272,7 @@ impl NumericalFilletSpine {
             return Err(bad("spine tolerance is outside binary64 range"));
         }
         let problem = Problem {
-            supports: [
-                NumericalFilletSupport::from_atlas(&supports[0], distances[0].clone(), dec)?,
-                NumericalFilletSupport::from_atlas(&supports[1], distances[1].clone(), dec)?,
-            ],
+            supports,
             guide: SpineGuide::Coordinate(axis),
             tolerance,
         };
@@ -292,6 +289,8 @@ impl NumericalFilletSpine {
     /// Walks the intersection of signed offsets in planes normal to `guide`.
     /// Contact, guide-plane and fitted-quarter checks are numerical. A failed
     /// walk returns its cause rather than replacing the selected branch.
+    /// Outside the guide's finite interval its endpoint tangent lines define
+    /// the sections. Those tails select the walk, not an extrapolated support.
     pub fn walk(
         supports: [NumericalFilletSupport; 2],
         guide: BSplineCurve,
@@ -309,10 +308,6 @@ impl NumericalFilletSpine {
             return Err(bad(
                 "walking needs an increasing range and finite positive tolerance",
             ));
-        }
-        let domain = guide.domain();
-        if &range[0] < domain[0] || &range[1] > domain[1] {
-            return Err(bad("walking range leaves the retained guide"));
         }
         Self::trace_problem(
             Problem {

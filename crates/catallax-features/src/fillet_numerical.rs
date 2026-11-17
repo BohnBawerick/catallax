@@ -20,6 +20,9 @@ use catallax_topology::{
     },
 };
 
+#[path = "fillet_rolling.rs"]
+pub(crate) mod rolling;
+
 fn bad(detail: impl Into<String>) -> Refusal {
     Refusal::new("fillet.numerical-body", detail)
 }
@@ -664,16 +667,23 @@ fn build_impl(
             radius.clone()
         }
     });
-    let spine = NumericalFilletSpine::trace(
-        &extended,
-        distances,
-        axes[0],
-        range,
-        seed,
-        tolerance_mm.clone(),
-        dec,
-    )
-    .map_err(|error| at_stage("centre reconstruction", error))?;
+    let [first, second] = extended;
+    let [first_distance, second_distance] = distances;
+    let supports = [
+        catallax_shapes::NumericalFilletSupport::new(
+            Surface::BSpline(first.into()),
+            first_distance,
+            dec,
+        )?,
+        catallax_shapes::NumericalFilletSupport::new(
+            Surface::BSpline(second.into()),
+            second_distance,
+            dec,
+        )?,
+    ];
+    let spine =
+        NumericalFilletSpine::trace(supports, axes[0], range, seed, tolerance_mm.clone(), dec)
+            .map_err(|error| at_stage("centre reconstruction", error))?;
     let fillet = NumericalSplineFillet::fit(spine, dec)
         .map_err(|error| at_stage("carrier reconstruction", error))?;
     let caps = [

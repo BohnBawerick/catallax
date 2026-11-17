@@ -63,6 +63,8 @@ fn native_entity_tolerances_absorb_shared_vertex_error_beyond_the_checked_cap() 
         .join("\n");
     let opened = open(&source);
     assert_eq!(opened.bodies()[0].tier(), Tier::TolerantSolid);
+    assert!(opened.bodies()[0].checked_refusal().is_some());
+    assert!(opened.bodies()[0].refusal().is_none());
     let BodyView::Tolerant { import, body } = opened.body(0).unwrap() else {
         panic!("measured native geometry required")
     };
@@ -589,20 +591,30 @@ fn missing_sphere_pole_edges_are_reconstructed_from_measured_collapse() {
 }
 
 #[test]
-fn an_out_of_domain_source_trace_is_rebuilt_from_the_actual_curve() {
+fn default_opening_exports_a_rebuilt_trace_instead_of_an_inconsistent_authored_trace() {
+    use catallax_import::geometry_source::{AngleUnit, Curve, Geometry};
+    use catallax_import::tolerant::native::{NativeLocation, NativeUvCurve};
     let source = include_str!("fixtures/half-sphere-missing-poles.step").replace(
         "#40 = CARTESIAN_POINT('',(0.,-6.28318530718));",
         "#40 = CARTESIAN_POINT('',(0.,100.));",
     );
-    let (native, work) = with_operation_budget(20_000_000, || {
-        tolerant::admission::import_step(
+    let (opened, work) = with_operation_budget(20_000_000, || {
+        opened::open_step(
             source.as_bytes(),
             &sha256_hex(source.as_bytes()),
+            &StepId::new("bad-authored-trace").unwrap(),
             Default::default(),
             &mut Decider::default(),
         )
     });
-    let native = native.unwrap();
+    let opened = opened.unwrap();
+    let Some(BodyView::Tolerant {
+        import: native,
+        body,
+    }) = opened.body(0)
+    else {
+        panic!("default opening must repair the native trace");
+    };
     assert!(!work.exhausted);
     let trace = native
         .evidence()
@@ -612,7 +624,7 @@ fn an_out_of_domain_source_trace_is_rebuilt_from_the_actual_curve() {
         .unwrap();
     assert!(trace.reconstructed);
     assert!(trace.source_pcurve.is_none());
-    let tolerance = native.bodies()[0]
+    let tolerance = native.bodies()[body]
         .definition()
         .edges()
         .iter()
@@ -623,21 +635,62 @@ fn an_out_of_domain_source_trace_is_rebuilt_from_the_actual_curve() {
     let surface = native.native_surface(33).unwrap();
     assert!(surface.location([0.0, 100.0]).is_err());
     let curve = native.native_curve(26).unwrap();
+    let file = native.export_body(body, &mut Decider::default()).unwrap();
+    let mut dec = Decider::default();
+    let parsed = ParsedStep::read(file.bytes(), &mut dec).unwrap();
+    let emitted_pcurve = parsed
+        .entities()
+        .find_map(|entity| {
+            let Topology::Edge {
+                curve: Some(curve), ..
+            } = parsed.topology(entity, &mut dec).ok()?
+            else {
+                return None;
+            };
+            let Geometry::Curve(Curve::SurfaceCurve(27, associated, _, _)) =
+                parsed.geometry(curve, &mut dec).ok()?
+            else {
+                return None;
+            };
+            associated.into_iter().find(|&pcurve| {
+                matches!(
+                    parsed.geometry(pcurve, &mut dec),
+                    Ok(Geometry::Curve(Curve::Pcurve(33, _)))
+                )
+            })
+        })
+        .expect("exported curved edge needs its sphere pcurve");
+    let emitted = NativeUvCurve::from_source(
+        &parsed,
+        emitted_pcurve,
+        &r("1"),
+        AngleUnit::Radians,
+        &mut dec,
+    )
+    .unwrap();
     for sample in &trace.samples {
-        let actual = surface
-            .sample(sample.surface, &mut Decider::default())
+        let (uv, _) = emitted
+            .sample(
+                NativeLocation {
+                    chart: 0,
+                    parameters: sample.curve.parameters,
+                },
+                &mut dec,
+            )
             .unwrap();
-        let expected = curve.sample(sample.curve, &mut Decider::default()).unwrap();
+        let actual = surface
+            .sample(surface.location(uv).unwrap(), &mut dec)
+            .unwrap();
+        let expected = curve.sample(sample.curve, &mut dec).unwrap();
         let residual = (0..3).fold(0.0_f64, |distance, axis| {
             distance.hypot(actual.point_mm[axis] - expected.point_mm[axis])
         }) + actual.uncertainty_mm
             + expected.uncertainty_mm;
         assert!(
             residual <= tolerance,
-            "rebuilt trace residual {residual} exceeds {tolerance}"
+            "emitted pcurve leaves the 3D edge by {residual}"
         );
     }
-    let file = native.export_body(0, &mut Decider::default()).unwrap();
     if let Ok(folder) = std::env::var("CATALLAX_HEALING_EVIDENCE") {
         std::fs::write(
             std::path::Path::new(&folder).join("native-rebuilt-trace.step"),

@@ -1096,7 +1096,7 @@ pub(super) fn check_body(
                                         + projection.sample.uncertainty_mm;
                             }
                         }
-                        if context.repair_boundaries && preserve_pcurve {
+                        if preserve_pcurve {
                             let retained =
                                 (|| {
                                     let (uv, _) = pcurve.as_ref().expect("retained trace").sample(
@@ -1135,6 +1135,14 @@ pub(super) fn check_body(
                                 }
                                 Err(_) => false,
                             };
+                        }
+                        if !context.repair_boundaries && source_pcurve.is_some() && !preserve_pcurve
+                        {
+                            context.stage = super::NativeStage::TraceRebuild;
+                            return Err(invalid(
+                                "import.tolerant-inconsistent-trace",
+                                "authored pcurve does not match the sampled edge on its surface",
+                            ));
                         }
                         let residual = norm(subtract(projection.sample.point_mm, target.point_mm))
                             + projection.sample.uncertainty_mm
@@ -1285,8 +1293,7 @@ pub(super) fn check_body(
                         use_index,
                         edge: body.edges[usage.edge].name.clone(),
                         forward: usage.forward,
-                        source_pcurve: source_pcurve
-                            .filter(|_| !context.repair_boundaries || preserve_pcurve),
+                        source_pcurve: source_pcurve.filter(|_| preserve_pcurve),
                         samples,
                         reconstructed,
                         projected,

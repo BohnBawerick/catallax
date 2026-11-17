@@ -47,6 +47,7 @@ pub struct BodyOutcome {
     storage: Storage,
     healed: Option<Box<healing::HealedFile>>,
     refusal: Option<Error>,
+    checked_refusal: Option<Error>,
     healing_failure: Option<Box<healing::HealingFailure>>,
     upgrade_refusal: Option<Error>,
     first_blocker: Option<admission::NativeStage>,
@@ -63,6 +64,10 @@ impl BodyOutcome {
     /// Actual remaining construction/admission refusal.
     pub fn refusal(&self) -> Option<&Error> {
         self.refusal.as_ref()
+    }
+    /// Earlier checked-tier refusal retained after successful native fallback.
+    pub fn checked_refusal(&self) -> Option<&Error> {
+        self.checked_refusal.as_ref()
     }
     /// Successful candidate checks and complete repair history, when attempted.
     pub fn healing(&self) -> Option<&healing::HealedFile> {
@@ -310,6 +315,7 @@ fn open_prepared(
                 storage: Storage::Source,
                 healed: None,
                 refusal: None,
+                checked_refusal: None,
                 healing_failure: None,
                 upgrade_refusal: None,
                 first_blocker: None,
@@ -359,6 +365,7 @@ fn open_prepared(
     }
     for (index, body) in native.bodies().iter().enumerate() {
         let outcome = &mut result.bodies[body.source_index()];
+        outcome.checked_refusal = outcome.refusal.take();
         outcome.storage = Storage::Tolerant(index);
         outcome.tier = Tier::TolerantSolid;
         outcome.approximate = true;
@@ -479,6 +486,7 @@ pub fn open_checked_step(
             storage: Storage::Source,
             healed: None,
             refusal: None,
+            checked_refusal: None,
             healing_failure: None,
             upgrade_refusal: None,
             first_blocker: None,
@@ -710,6 +718,7 @@ mod tests {
             storage: Storage::Source,
             healed: None,
             refusal: None,
+            checked_refusal: None,
             healing_failure: None,
             upgrade_refusal: None,
             first_blocker: None,

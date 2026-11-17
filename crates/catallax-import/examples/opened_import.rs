@@ -59,6 +59,7 @@ fn bodies(opened: &OpenedStep) -> Vec<Value> {
                 .map(|failure|json!({"stage":failure.stage,"refusal":error(&failure.error),
                     "resource_limited":failure.resource_limited(),"work_used":failure.work_used})),
             "upgrade_refusal":outcome.upgrade_refusal().map(error),
+            "checked_refusal":outcome.checked_refusal().map(error),
             "refusal":outcome.refusal().map(error),
             "healing_refusal":outcome.healing_failure().map(|f|json!({"refusal":error(&f.error),"stage":f.failed_stage,"body":f.body,
                 "stages":f.stages,"preparation_work_used":f.preparation_work_used,"publication_work_used":f.publication_work_used})),

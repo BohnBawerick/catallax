@@ -5,6 +5,7 @@ use crate::SplineBoundary;
 use catallax_numbers::Interval;
 
 mod box_exclusion;
+mod shared_plane;
 
 fn hull(patch: &RationalPatch, dec: &mut Decider) -> Result<[Interval; 3], Refusal> {
     let mut points = patch.carrier().controls().iter();
@@ -248,9 +249,10 @@ impl PatchSectionBranch {
     /// Positive spline weights make disjoint Cartesian control hull boxes an
     /// exclusion proof. A strictly signed Bernstein net for the retained cut
     /// also excludes a target patch. Opposite Bezier sides with equal rational
-    /// controls and weights identify the same normalized boundary. A common
-    /// strictly monotone projection proves the supports meet only there; its
-    /// scalar cut roots retain the section solver's exact representation.
+    /// controls and weights identify the same normalized boundary. Strict
+    /// opposite control halfspaces through a planar side, or a common strongly
+    /// monotone projection, prove the supports meet only there. Scalar cut
+    /// roots retain the section solver's exact representation.
     /// Finite side contacts need not be transverse. No numerical meeting
     /// becomes an incidence fact. `None` means no exact certificate applied.
     pub fn patch_hits(
@@ -280,7 +282,8 @@ impl PatchSectionBranch {
             (SplineBoundary::VMax, SplineBoundary::VMin, 1, true),
         ] {
             if same_boundary(source, first, other, second, dec)?
-                && jointly_embedded(self, other, axis, high, dec)?
+                && (shared_plane::separates(source, other, first, axis, high, dec)?
+                    || jointly_embedded(self, other, axis, high, dec)?)
             {
                 return Ok(boundary_points(self, axis, high, dec)?.map(SectionHits::Points));
             }

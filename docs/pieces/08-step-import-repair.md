@@ -40,13 +40,16 @@ Surfaces: `PLANE`, `CYLINDRICAL_SURFACE`, `CONICAL_SURFACE`, `SPHERICAL_SURFACE`
 
 Face keys are the `ADVANCED_FACE` entity names, as in `docs/RECIPE.md` section 4.18.
 
-Numerical bodies with plane, cylinder and cone faces and line or circle edges export through the analytic STEP writer.
+Numerical bodies with plane, cylinder, cone and retained ring-torus faces and line or circle edges export through the analytic STEP writer.
 Cone pcurves retain axial height as their STEP v coordinate, following OCCT's `GeomConvert_Units::DegreeToRadian` conversion to generator distance on import.
 The writer checks the actual decimal placement and semi-angle against each emitted pcurve and edge.
 Semi-angle rounding is recorded in radians separately from length errors, with the maximum distance from both endpoints of the enclosed source angle to its written decimal.
 Cyclic ordering of a periodic loop preserves the two seam uses on reversed cone faces.
 The output remains marked approximate, with its numerical checks and `complete_body_bound=unestablished` retained.
 Retained native B-spline trims on cones refuse with `numerical.native-cone-domain-unverified` until complete positive-height and periodic-domain checks cover those finite curves.
+
+Retained ring tori use their original angular surface definition. Finite charts must stay within one turn in each coordinate; an exactly complete period requires the paired opposite seam uses on the same outer boundary. Circular rim pairs with matching retained phase anchors can acquire a recorded `paired_torus_iso_circle/1` seam, without moving the source vertices or curves. The writer rotates only the closed walk to preserve OCCT's two seam-chart selections.
+Horn and spindle sources retain `import.toroidal-sheet-unverified` on this higher-authority path; selecting only an outer sheet would discard original geometry. Arbitrary native trims retain `numerical.native-torus-domain-unverified`. These are certificate limits, not diagnoses that the source surfaces are invalid.
 
 ### Multiple numerical face bounds
 

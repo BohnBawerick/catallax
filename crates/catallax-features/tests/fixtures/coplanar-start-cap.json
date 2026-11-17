@@ -1,0 +1,32 @@
+{
+  "format": "catallax-recipe/4",
+  "name": "Coplanar pocket across a tangent flat and round",
+  "steps": [
+    {
+      "id": "profile", "op": "sketch",
+      "plane": {"rotation": ["1", "1", "0", "0"], "translation": ["0", "0", "0"]},
+      "loops": [[
+        {"id": "bottom", "kind": "line", "to": ["40", "0"]},
+        {"id": "right", "kind": "line", "to": ["40", "35"]},
+        {"id": "right_round", "kind": "arc", "centre": ["15", "35"], "to": ["15", "60"], "turn": "ccw"},
+        {"id": "flat_top", "kind": "line", "to": ["-15", "60"]},
+        {"id": "left_round", "kind": "arc", "centre": ["-15", "35"], "to": ["-40", "35"], "turn": "ccw"},
+        {"id": "left", "kind": "line", "to": ["-40", "0"]}
+      ]]
+    },
+    {"id": "base", "op": "extrude", "profile": "profile", "distance": "76", "direction": ["0", "-1", "0"]},
+    {
+      "id": "mouth", "op": "sketch",
+      "plane": {"rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "60"]},
+      "loops": [[
+        {"id": "a", "kind": "line", "to": ["32", "-49.335"]},
+        {"id": "b", "kind": "line", "to": ["32", "-26.665"]},
+        {"id": "c", "kind": "line", "to": ["-2", "-26.665"]},
+        {"id": "d", "kind": "line", "to": ["-2", "-49.335"]}
+      ]]
+    },
+    {"id": "pocket", "op": "extrude", "profile": "mouth", "distance": "35", "direction": ["0", "0", "-1"]},
+    {"id": "cut", "op": "boolean", "kind": "subtract", "target": "base", "tool": "pocket"}
+  ],
+  "result": "cut"
+}

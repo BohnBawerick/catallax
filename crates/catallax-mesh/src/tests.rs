@@ -209,7 +209,8 @@ fn reused_unchanged_mesh_equals_fresh_mesh_including_seams_and_controls() {
                 &mut Decider::default(),
             )
             .unwrap();
-            assert_eq!(reused, fresh);
+            assert_eq!(reused.value, fresh.value);
+            assert_eq!(reused.marks, fresh.marks);
             assert_closed(&reused.value);
         }
     }
@@ -217,8 +218,11 @@ fn reused_unchanged_mesh_equals_fresh_mesh_including_seams_and_controls() {
 
 #[test]
 fn reused_depth_edit_is_watertight_with_fresh_face_and_edge_handles() {
-    fn bored_block(height: i64) -> (Model, BodyId) {
+    fn bored_block(height: i64, padding: bool) -> (Model, BodyId) {
         let mut model = Model::new();
+        if padding {
+            topology::sphere(&mut model, 1.into(), &Pose::identity()).unwrap();
+        }
         let block = topology::block(
             &mut model,
             [8.into(), 6.into(), height.into()],
@@ -237,9 +241,9 @@ fn reused_depth_edit_is_watertight_with_fresh_face_and_edge_handles() {
         .body;
         (model, body)
     }
-    let (old_model, old_body) = bored_block(2);
+    let (old_model, old_body) = bored_block(2, false);
     let before = mesh(&old_model, old_body);
-    let (model, body) = bored_block(3);
+    let (model, body) = bored_block(3, true);
     let options = options();
     let reused = crate::mesh_body_reusing(
         &model,
@@ -332,7 +336,8 @@ fn changed_mesh_controls_cannot_reuse_a_coarser_face_proof() {
     )
     .unwrap();
     let fresh = mesh_body(&model, body, &finer, &mut Decider::default()).unwrap();
-    assert_eq!(reused, fresh);
+    assert_eq!(reused.value, fresh.value);
+    assert_eq!(reused.marks, fresh.marks);
     assert_closed(&reused.value);
 }
 

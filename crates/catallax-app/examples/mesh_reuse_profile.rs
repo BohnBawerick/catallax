@@ -60,7 +60,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &previous.value,
         &mut Decider::default(),
     )?;
-    assert_eq!(unchanged, previous);
+    assert_eq!(unchanged.value, previous.value);
+    assert_eq!(unchanged.marks, previous.marks);
     let mut pairs = Vec::new();
     // Warm up both paths, then alternate their order. Geometry construction,
     // equality/closure checks and JSON encoding are outside the measured calls.

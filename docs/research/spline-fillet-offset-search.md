@@ -365,3 +365,28 @@ Coincident ends with incompatible targets and a reversed target chord
 return typed causes. The affine arithmetic is rational; physical
 same-parameter checks and the constructed fillet remain numerical at
 1e-7 mm. No loop or physical admission guard was relaxed.
+
+### Early native contact limits
+
+A plane parallel to a circular cylinder's axis has straight intersection
+generators even when the selected edge is stored as `Curve::Intersection`.
+The early check therefore uses the native support geometry, not a Line
+carrier test. It reuses the strict affine inequalities for the signed
+offset plane and cylinder over every selected chain before strip walking
+or fitting, retaining the first proved contact limit.
+
+This follows [OCCT's analytic plane/cylinder offset construction](https://github.com/Open-Cascade-SAS/OCCT/blob/V7_9_0/src/ChFiKPart/ChFiKPart_ComputeData_FilPlnCyl.cxx)
+and [SMLib's signed constant-radius offset equality](https://github.com/NVIDIA-Omniverse/usd-brep/blob/3fd5b9548d19aa8c12c29bc9637a96d42a06f8a5/source/SMLib/src/SmFilletStandardSolver.cpp#L168-L230).
+It does not invoke an exact fillet producer or gate the general constructor
+when the cheap proof is unavailable. A reached face is named only after
+the critical original-cylinder contact lies on an actual finite boundary
+line coedge shared with that input face, not an untrimmed carrier guess.
+
+The real six-edge owner R5 request now refuses at the exact R4 contact
+limit and names its original outer-side face. The ordinary application
+retains `fillet.radius-too-large`, `; reaches face #57` and the terminal
+`; radius limit 4 mm` hint. Contact proof, source context and the warning
+that a contact bound does not prove a fitting radius precede that hint.
+The existing one-third-bound test also checks the SDK's terminal parser
+without losing the exact proof or the rounded legacy accessor.
+Request scopes and costs are in the [phase-5 ledger](../phase5-work-cases.md#owner-radius-overflow-eligibility).

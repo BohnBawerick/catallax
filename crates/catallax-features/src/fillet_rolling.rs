@@ -218,6 +218,8 @@ pub(crate) fn construct(
                 support(second, second_offset, &seeds[1].endpoints, &margin, dec)?,
             ];
             let [[first_seed, _], [second_seed, _]] = seeds.map(|seed| seed.endpoints);
+            #[cfg(test)]
+            let walk_before = catallax_numbers::current_operation_work().used;
             let spine = NumericalFilletSpine::walk(
                 supports,
                 guide.curve,
@@ -236,6 +238,27 @@ pub(crate) fn construct(
                     error,
                 )
             })?;
+            #[cfg(test)]
+            let walk_after = catallax_numbers::current_operation_work().used;
+            #[cfg(test)]
+            {
+                let shortest = spine
+                    .nodes()
+                    .windows(2)
+                    .map(|pair| (&pair[0].tau, &pair[1].tau, &pair[1].tau - &pair[0].tau))
+                    .min_by(|a, b| a.2.cmp(&b.2))
+                    .expect("a walked strip has station spans");
+                println!(
+                    "rolling walk edge={:?} work={} nodes={} samples={} shortest_tau=[{:.9e},{:.9e}] width={:.9e}",
+                    source.edge,
+                    walk_after - walk_before,
+                    spine.nodes().len(),
+                    spine.samples(),
+                    shortest.0.to_f64_nearest(),
+                    shortest.1.to_f64_nearest(),
+                    shortest.2.to_f64_nearest(),
+                );
+            }
             let fillet = NumericalSplineFillet::fit(spine, dec).map_err(|error| {
                 super::at_stage(
                     &format!(
@@ -246,6 +269,14 @@ pub(crate) fn construct(
                     error,
                 )
             })?;
+            #[cfg(test)]
+            println!(
+                "rolling fit edge={:?} work={} nodes={} samples={}",
+                source.edge,
+                catallax_numbers::current_operation_work().used - walk_after,
+                fillet.spine().nodes().len(),
+                fillet.spine().samples(),
+            );
             result.checks.push(guide.check);
             result.strips.push(RolledStrip {
                 source,

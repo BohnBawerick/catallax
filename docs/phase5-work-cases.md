@@ -319,3 +319,30 @@ These are the owner's measured stage counters, not a CPU profile or a
 like-for-like timing benchmark. This proves source admission, not a fillet,
 radius edit, later cut or STEP exchange. Owner, demo, bracket and P1 source
 admission also pass below 20M in that handoff.
+
+## Owner radius overflow eligibility
+
+At `fc1205299ef397eac024cd199eef39cdc303ebea`, the retained R25 owner
+source, six-edge selection and R5 rolling request exhaust 99,999,988 work
+under the unchanged 100M allowance and 1e-7 mm tolerance. Runtime is 44.94s
+(51.63s command). This is a failed whole request, not an isolated stage
+profile or a passing fillet.
+
+The initial cheap contact proof accepted only Line carriers. A separate
+source-only diagnostic spends 516,540 work and identifies the thin-wall
+edge as an Intersection curve on native cylinder and parallel-plane
+supports. The geometric constraint therefore needs no Line representation.
+At `3b138022e22f599169b9e1ce2a7912295ce45158`, the corrected constraint
+uses the native supports rather than the edge's representation:
+
+| Request scope | Work | Result |
+|---|---:|---|
+| Source, six-edge selection, early R5 contact proof | 535,459 | R4 and the actual input side face; 0.05s |
+| Ordinary application source/checkpoint and six-edge R5 call | 670,379 | Typed R4 refusal, input face #57, terminal hint |
+| Source and one curved owner strip at R3.99 | 61,539,101 | Numerical strip and independent radius controls; 255.80s |
+
+The first two requests are below 20M; the ordinary application command takes
+59.12s including 54.39s standalone compilation. The R3.99 cost remains above
+the target. It is one strip, not the six-edge rim or an admitted fillet body;
+the full-rim 100M failure remains open. Walk and fit components were not
+separated in this measurement. No tolerance, physical guard or cap changed.

@@ -425,8 +425,10 @@ mod tests {
 
     #[test]
     fn recipe_preparation_and_admission_require_a_caller_work_scope() {
-        let recipe: Recipe =
+        let mut input: serde_json::Value =
             serde_json::from_str(include_str!("../../tests/fixtures/straight-sweep.json")).unwrap();
+        input["steps"][2]["twist"] = "90".into();
+        let recipe: Recipe = serde_json::from_value(input).unwrap();
         let options = || NumericalOptions {
             tolerance_mm: Rational::from_ratio(1, 100).unwrap(),
         };

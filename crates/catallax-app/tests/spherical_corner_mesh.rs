@@ -1157,9 +1157,11 @@ fn pole_crossing_preview_and_small_circle_trims_keep_their_geometry() {
     let mesh = check_preview("small circles", &built.model, built.result, preview);
     check_preview_surface_samples(&built.model, &mesh, &options.chord_tolerance);
     assert!(
-        mesh.positions
+        mesh.triangles
             .iter()
-            .flatten()
-            .all(|coordinate| *coordinate >= 0.5 - 1e-10)
+            .flat_map(|triangle| triangle.vertices)
+            .all(|vertex| mesh.positions[vertex]
+                .iter()
+                .all(|coordinate| *coordinate >= 0.5 - 1e-10))
     );
 }

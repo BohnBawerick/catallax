@@ -2,6 +2,11 @@
 //! Tangent pairs follow SMLib's checked shared-section case. Agreement between
 //! fitted carriers is sampled numerical evidence, not exact coincidence.
 
+#[path = "fillet_numerical_vertex_cliff.rs"]
+pub(crate) mod cliff;
+#[path = "fillet_numerical_vertex_ends.rs"]
+pub(crate) mod ends;
+
 use catallax_numbers::{
     Ball, Decider, NumericalCheck, NumericalSample, Rational, Real, Refusal, Sign,
 };

@@ -31,9 +31,17 @@ impl ParsedStep {
         };
         let mut output = String::with_capacity(evidence_json.len() + ids.len() * 80);
         output.push_str("ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION((");
-        quoted(&mut output, "CATALLAX TOLERANT: sampled fits, measured local tolerances; not certified");
-        output.push(',');
-        quoted(&mut output, evidence_json);
+        quoted(&mut output, "CATALLAX TOLERANT: sampled fits, measured local tolerances; not certified. Concatenate following description strings for JSON evidence.");
+        // Bound individual scanner tokens without dropping any evidence.
+        let mut remaining = evidence_json;
+        while !remaining.is_empty() {
+            dec.check_deadline()?;
+            let mut end = remaining.len().min(2048);
+            while !remaining.is_char_boundary(end) { end -= 1; }
+            output.push_str(",\n");
+            quoted(&mut output, &remaining[..end]);
+            remaining = &remaining[end..];
+        }
         output.push_str("),'2;1');\nFILE_NAME('catallax-tolerant.step','',(''),(''),'Catallax','Catallax','');\nFILE_SCHEMA((");
         if schemas.is_empty() {
             quoted(&mut output, "AUTOMOTIVE_DESIGN");

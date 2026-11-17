@@ -385,12 +385,16 @@ impl Carrier {
                     _ => 0.0,
                 }
             });
-            let origin = NativeLocation {
-                chart,
-                parameters: center,
+            // Finite limits already determine the scan ranges. Origin samples
+            // and derivatives contribute only to an unbounded search envelope.
+            let (base, derivatives) = if data.domain().iter().take(self.dimension)
+                .any(|bounds| bounds.iter().any(Option::is_none))
+            {
+                let origin = NativeLocation { chart, parameters: center };
+                (self.try_sample(origin, dec)?, self.jacobian(origin, dec)?)
+            } else {
+                (None, None)
             };
-            let base = self.try_sample(origin, dec)?;
-            let derivatives = self.jacobian(origin, dec)?;
             let mut ranges = [[0.0; 2]; 2];
             for axis in 0..self.dimension {
                 ranges[axis] = match (&data.domain()[axis][0], &data.domain()[axis][1]) {

@@ -959,6 +959,8 @@ The section construction follows [OpenCASCADE MakePipeShell](https://dev.opencas
 
 An integer number of helix turns does not generally return a rotation-minimising frame: its torsion contributes holonomy. An authored oblique section therefore cannot be copied by a plain axial screw motion. [OCCT's rigid-instance reuse](https://occt3d.com/dev/doc/refman/html/class_b_rep_builder_a_p_i___transform.html) applies when the complete geometry is a rigid copy, not merely its centreline. This implementation retains the authored frame instead of substituting Frenet transport.
 
+Without an authored plane, the saved `reference` seeds the initial perpendicular heading, including for a helix. An authored plane instead retains its section axes; a guide supplies its own relative transport frame.
+
 For single rational bicubic charts the kernel couples the projected Jacobian numerators before taking exact Bernstein hulls, following the homogeneous control-hull principle used in [SMLib's Bezier bounds](https://github.com/NVIDIA-Omniverse/usd-brep/blob/main/source/SMLib/src/SmBSplineCurve.cpp). Positive diagonal lower bounds and a strict determinant bound prove the same positive symmetric Jacobian and global embedding as the existing interval criterion. [OCCT's B-spline constructor checks](https://occt3d.com/dev/doc/refman/html/class_geom___b_spline_surface.html) validate the representation, not this whole-chart embedding claim. The existing finite cell, depth and caller work allowances are unchanged. Analytic stock remains analytic through the recipe's prefix Booleans.
 
 The coupled proof clears the six centre-dual projection coefficients' denominators by one positive common factor before polynomial arithmetic. It divides that factor out of the final margin, leaving the selected projection, geometry and strong-monotonicity bound unchanged by this normalization. This is exact homogeneous normalization, not a reduced precision, tolerance or arithmetic charge.
@@ -971,9 +973,11 @@ Contact reduction retains each certificate's native chart and exact parameters. 
 
 Branch membership uses the existing conservative spatial-box preimage before a general eliminant: a missed finite patch, or a parameter cover disjoint from every retained arc cell, proves absence. A surviving cover proves no incidence and still requires the original exact preimage/equation checks. Endpoint identity stays first; precision, subdivision and caller-work limits are unchanged.
 
-Each accepted rational chart has its own exact embedding proof about the fitted carrier. Agreement with the authored motion is numerical. Profile fitting checks nine locations per source chart. Section fitting checks seven interior locations per longitudinal span for every profile control, aiming at one quarter of the caller's tolerance. `max_sections` and the active work allowance remain finite and are never enlarged on failure. The report retains both source-profile and section-law sample residuals. These checks establish no continuous or whole-body approximation bound.
+Each accepted rational chart has its own exact embedding proof about the fitted carrier. Agreement with the authored motion is numerical. Profile checks evaluate the unrounded authored curve at nine parameters and enclose its difference from the fitted initial section in the declared section frame. Squared sample bounds are compared with the exact tolerance/4 allowance before converting diagnostics to binary64; unresolved or excessive displacement refuses. Section fitting still checks seven interior locations per longitudinal span for every profile control at binary64 samples. `max_sections` and the active work allowance remain finite and are never enlarged on failure. These checks establish no continuous or whole-body approximation bound.
 
 Unguided helices seed the cubic fit with at most a quarter turn per span, retaining the separate authored-twist floor. Failed fits propose a finer count from the fourth-order interpolation-error ratio, then run the same seven-point checks again; the estimate never admits geometry. Counts strictly increase and still refuse at `max_sections` or the caller's work allowance. Guided and general-spline fits retain their existing refinement. This follows [SMLib's sample-error-driven span fitting](https://github.com/NVIDIA-Omniverse/usd-brep/blob/main/source/SMLib/src/SmCurve.cpp) and [OCCT's tolerance with a finite V-span limit](https://dev.opencascade.org/doc/refman/html/class_b_rep_offset_a_p_i___make_pipe_shell.html), without SMLib's small-span force-pass escape.
+
+Standalone `build` and `edit` apply one numerical work allowance to fitting and final admission together, retaining an existing caller allowance rather than nesting or resetting it. Without one, they use the existing 20M numerical default. Before allocating section capacity, the builder meters the fixed section-frame payload and uses fallible reservation. Arithmetic charge rates, the 100M application allowance and the tolerance are unchanged.
 
 Numerical admission rechecks finite trims, endpoint agreement and shell topology under the stated tolerance. Approximate STEP export checks its emitted decimal payload separately. `catallax-numerical-step/1` through source `recipe` requests this path with a positive `tolerance_mm`. Its manifest reports `proof: "numerical"`, `exact: false` and an unestablished complete-body bound.
 
@@ -989,18 +993,18 @@ A native spline also cannot equal a retained section if a complete span leaves t
 
 The unchanged P8 original and spring-rise edit reach the same prefix below. Both report the typed `numbers.operation-budget` refusal at `threaded = base ∪ thread` under the explicit 100M application allowance. The witness-separation checkpoint clears the earlier component-equivalence refusal. Common-denominator normalization, residual-driven helix fitting and shared-net projection selection retain the declared source checks. The latest verified thread uses 59 sections and 236 charts, rather than the earlier fixed-floor 128 sections and 512 charts. The spring and final union are not reached; neither completed original/edit body nor P8 STEP is claimed. Nested per-chart charges belong to the sweep row, not a second total.
 
-| Stage | Witness-separation checkpoint | Latest finite-preimage checkpoint | Latest outcome |
+| Stage | Witness-separation checkpoint | Latest review-repair checkpoint | Latest outcome |
 |---|---:|---:|---|
 | Plate and boss stock | 0 | 0 | Built |
 | Base union | 11,050 | 11,050 | Built |
 | Thread sketch | 1 | 1 | Built |
-| Thread sweep | 96,979,475 | 33,680,247 | Fitted carrier built; source motion numerical |
-| Threaded union | 3,007,286 | 66,308,683 | Request allowance exhausted |
-| Complete request | 99,997,812 | 99,999,981 | `numbers.operation-budget` |
+| Thread sweep | 96,979,475 | 33,876,285 | Fitted carrier built; source motion numerical |
+| Threaded union | 3,007,286 | 66,112,644 | Request allowance exhausted |
+| Complete request | 99,997,812 | 99,999,980 | `numbers.operation-budget` |
 
 Later: thread fitting still exceeds the 20M target; retain this phase record for Phase 5 without enlarging the 100M application allowance.
 
-At the shared-net checkpoint the standalone quarter helix builds, applies a rise edit, saves and reopens with identical edited/reopened STEP bytes under explicit 100M request allowances and `max_sections=2`. All three STEP bodies open in OpenCASCADE with healing off as valid, closed, one-solid bodies with ten faces matching the numerical producer. This proves that feature case, not complete P8.
+After the source-review repairs, the standalone quarter helix builds, applies a rise edit, saves and reopens with identical edited/reopened STEP bytes under explicit 100M request allowances and `max_sections=2`. Build work is 1,229,367; edit/reopen work is 1,199,767 each. STEP export uses 4,530,003 initially and 4,530,440 after edit/reopen. All three STEP bodies open in OpenCASCADE with healing off as valid, closed, one-solid bodies with ten faces matching the numerical producer. This proves that feature case, not complete P8.
 
 ### 4.12 Loft
 

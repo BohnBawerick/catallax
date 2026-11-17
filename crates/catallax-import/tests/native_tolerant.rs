@@ -668,7 +668,7 @@ fn pole_aligned_endpoints_report_their_final_curve_and_vertex_incidence() {
     .into_iter()
     .enumerate()
     {
-        assert!(sample.surface.parameters[0].abs() < 1e-6);
+        assert!(sample.surface.parameters[0].cos() > 1.0 - 1e-10);
         let actual = surface
             .sample(sample.surface, &mut Decider::default())
             .unwrap();

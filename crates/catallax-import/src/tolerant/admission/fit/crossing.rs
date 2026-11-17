@@ -185,7 +185,7 @@ pub(super) fn cut(
                                 ));
                             }
                             if let Some(previous) = crossing
-                                && (previous.0 != found.0
+                                && (previous.0.map(f64::to_bits) != found.0.map(f64::to_bits)
                                     || norm(subtract(previous.1.point_mm, found.1.point_mm))
                                         > precision)
                             {

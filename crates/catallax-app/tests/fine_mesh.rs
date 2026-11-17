@@ -106,10 +106,10 @@ fn check_geometry(model: &Model, mesh: &Mesh, options: &MeshOptions) {
                 };
                 let cosine = sign * (0..3).map(|i| cross[i] * normal[i]).sum::<f64>()
                     / (norm * analytic_norm);
-                assert!(
-                    cosine.clamp(-1.0, 1.0).acos()
-                        <= options.angular_deviation.as_ref().unwrap().to_f64_nearest() + 1e-8
-                );
+                assert!(cosine > 0.0, "face winding opposes the material normal");
+                if let Some(limit) = &options.angular_deviation {
+                    assert!(cosine.clamp(-1.0, 1.0).acos() <= limit.to_f64_nearest() + 1e-8);
+                }
             }
         }
     }
@@ -248,4 +248,51 @@ fn rotated_cones_and_apices_preserve_bounds_without_increasing_baseline_vertices
         );
         check_geometry(&built.model, &mesh, &options);
     }
+}
+
+#[test]
+fn plane_trimmed_countersinks_keep_the_untrimmed_mesh_scale_and_certificates() {
+    let mut input: serde_json::Value =
+        serde_json::from_str(include_str!("../benches/fine_mesh/bracket.json")).unwrap();
+    let bolts = input["steps"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|step| step["id"] == "bolts")
+        .unwrap();
+    bolts["head"] = serde_json::json!({"countersink": {"diameter": "16", "angle": "90"}});
+    let recipe = Recipe::parse(&input.to_string()).unwrap();
+    let built = catallax_features::evaluate(&recipe, &mut Decider::default()).unwrap();
+    let options = MeshOptions {
+        chord_tolerance: "0.01".parse().unwrap(),
+        ..MeshOptions::default()
+    };
+    let mesh = mesh_body(
+        &built.model,
+        built.result,
+        &options,
+        &mut Decider::default(),
+    )
+    .unwrap()
+    .value;
+    check_geometry(&built.model, &mesh, &options);
+    let mut cones = 0;
+    for face in &mesh.faces {
+        if matches!(
+            built
+                .model
+                .geom()
+                .surface(built.model.face(face.face).surface),
+            Surface::Cone(_)
+        ) {
+            cones += 1;
+            assert!(
+                face.triangles.len() <= 6_500,
+                "cone {} needs {} triangles at 0.01 mm",
+                face.face.index(),
+                face.triangles.len()
+            );
+        }
+    }
+    assert_eq!(cones, 4);
 }

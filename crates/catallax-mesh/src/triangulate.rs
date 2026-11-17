@@ -38,10 +38,8 @@ struct FaceBuilder<'a> {
     options: &'a MeshOptions,
     // A cylinder trimmed obliquely, which gets ruled columns and rows.
     ruled: bool,
-    // Scales `v` for the triangulation's own distances. A cylinder's `u` counts
-    // turns and its `v` millimetres, so without this Delaunay sees a large
-    // cylinder as squashed round its waist and joins points across it. Those
-    // long slivers stand up off the surface, and proofs still use `uv`.
+    // Delaunay distances use the seed-cell metric, not mixed turns and
+    // millimetres. Samples and all certificates retain their original UVs.
     stretch: f64,
     unproved: bool,
     positions: &'a mut Vec<[f64; 3]>,
@@ -298,8 +296,9 @@ impl FaceBuilder<'_> {
             let spans: [(i64, i64); 2] = std::array::from_fn(|i| {
                 let [start, end] = self.bounds[i];
                 let scale = counts[i] as f64 / (end - start);
-                let first = libm::floor((centers[i] - radius - start) * scale) as i64;
-                let last = libm::ceil((centers[i] + radius - start) * scale) as i64;
+                let stretch = if i == 0 { 1.0 } else { self.stretch };
+                let first = libm::floor(((centers[i] - radius) / stretch - start) * scale) as i64;
+                let last = libm::ceil(((centers[i] + radius) / stretch - start) * scale) as i64;
                 (
                     first.saturating_sub(1).max(ranges[i].0),
                     last.saturating_add(1).min(ranges[i].1),
@@ -310,7 +309,8 @@ impl FaceBuilder<'_> {
                 for j in spans[1].0..=spans[1].1 {
                     self.dec.check_deadline()?;
                     let v = parameter(1, j);
-                    if (u - a.x) * (u - b.x) + (v - a.y) * (v - b.y) < 0.0 {
+                    let at = v * self.stretch;
+                    if (u - a.x) * (u - b.x) + (at - a.y) * (at - b.y) < 0.0 {
                         protected.insert(key([u, v]));
                     }
                 }
@@ -572,6 +572,25 @@ impl FaceBuilder<'_> {
                 return Err(failure("tolerance exceeds the deterministic grid budget"));
             }
         }
+        let du = if align_rails {
+            rail_du
+        } else {
+            widths[0] / counts[0] as f64
+        };
+        let stretch = du / (widths[1] / counts[1] as f64);
+        if stretch.is_finite() && stretch > 0.0 && stretch.to_bits() != self.stretch.to_bits() {
+            self.stretch = stretch;
+            let nodes = self
+                .cdt
+                .vertices()
+                .map(|vertex| {
+                    let mut node = *vertex.data();
+                    node.at = self.place([node.uv.x, node.uv.y]);
+                    node
+                })
+                .collect();
+            self.bulk_load(nodes)?;
+        }
         let ranges: [(i64, i64); 2] = std::array::from_fn(|i| {
             if self.chart.periodic[i] {
                 (-(counts[i] as i64), 2 * counts[i] as i64)
@@ -688,7 +707,7 @@ impl FaceBuilder<'_> {
         };
         let mut central = BTreeMap::new();
         for f in self.cdt.inner_faces() {
-            let points = f.positions();
+            let points = f.vertices().map(|vertex| vertex.data().uv);
             let center = [
                 (points[0].x + points[1].x + points[2].x) / 3.0,
                 (points[0].y + points[1].y + points[2].y) / 3.0,
@@ -723,7 +742,9 @@ impl FaceBuilder<'_> {
                         }
                         seed = Some(left);
                     } else if let Some(other) = e.rev().face().as_inner()
-                        && let Some(&other) = central.get(&triangle_key(other.positions()))
+                        && let Some(&other) = central.get(&triangle_key(
+                            other.vertices().map(|vertex| vertex.data().uv),
+                        ))
                         && seen.insert(other.index())
                     {
                         queue.push_back(other);
@@ -1067,16 +1088,6 @@ fn ruled(model: &Model, face: FaceId, chart: &Chart, options: &MeshOptions) -> b
         })
 }
 
-// One turn of a cylinder measures `hessian[0] / TAU`, so `v` divided by that is
-// in turns as well.
-fn stretch(ruled: bool, hessian: &[Rational; 3]) -> f64 {
-    if ruled {
-        std::f64::consts::TAU / hessian[0].to_f64_nearest()
-    } else {
-        1.0
-    }
-}
-
 fn face_mesh(
     model: &Model,
     face_id: FaceId,
@@ -1146,7 +1157,7 @@ fn face_mesh(
         chart,
         options,
         ruled: is_ruled,
-        stretch: stretch(is_ruled, &hessian),
+        stretch: 1.0,
         unproved: false,
         positions: &mut boundaries.mesh.positions,
         rails: &boundaries.rails,
@@ -1823,7 +1834,7 @@ pub(crate) fn build_preview(
             chart,
             options: &options,
             ruled: is_ruled,
-            stretch: stretch(is_ruled, &hessian),
+            stretch: 1.0,
             unproved: true,
             positions: &mut boundaries.mesh.positions,
             rails: &rails,

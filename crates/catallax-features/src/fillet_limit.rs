@@ -433,10 +433,20 @@ fn rim_end_limit(
                 let border = model.edge(border_id);
                 if border_id == source.edge
                     || (border.start != Some(endpoint) && border.end != Some(endpoint))
-                    || !matches!(model.geom().curve(border.curve), Curve::Line(_))
                 {
                     continue;
                 }
+                let Curve::Line(line) = model.geom().curve(border.curve) else {
+                    continue;
+                };
+                let line_square = line.dir.norm_squared();
+                let offset = centre.minus(&line.origin);
+                let point = line
+                    .origin
+                    .plus(&line.dir.scaled(&(&offset.dot(&line.dir) / &line_square)));
+                // Use the native line, not endpoint differences carrying
+                // unrelated algebraic trim roots, for the exact distance.
+                let distance = root(&(&offset.cross(&line.dir).norm_squared() / &line_square));
                 let (Some(a), Some(b)) = (border.start, border.end) else {
                     continue;
                 };
@@ -447,14 +457,12 @@ fn rim_end_limit(
                 if sign(&square, dec)? != Sign::Positive {
                     continue;
                 }
-                let along = centre.minus(&a).dot(&direction);
+                let along = point.minus(&a).dot(&direction);
                 if sign(&along, dec)? == Sign::Negative
                     || sign(&(&along - &square), dec)? == Sign::Positive
                 {
                     continue;
                 }
-                let point = a.plus(&direction.scaled(&(&along / &square)));
-                let distance = root(&point.minus(&centre).norm_squared());
                 let limit = &cylinder.radius() - &distance;
                 if sign(&limit, dec)? != Sign::Positive
                     || sign(&(requested - &limit), dec)? == Sign::Negative

@@ -621,7 +621,7 @@ fn shell_inside(
 
 pub(crate) fn make_maximal(model: &mut Model, body: BodyId, dec: &mut Decider) -> Answered<BodyId> {
     if model.body(body).kind == BodyKind::Empty {
-        return checked(model, body);
+        return checked(model, body, dec);
     }
     let selection = Selection {
         faces: model
@@ -695,7 +695,7 @@ fn rebuild(
             wires: Vec::new(),
             marks,
         });
-        return checked(model, body);
+        return checked(model, body, dec);
     }
     let (original, uses, by_edge) = read(model, selection);
     let twins = pair(model, &original, &uses, &by_edge, dec)?;
@@ -924,7 +924,7 @@ fn rebuild(
             wires: Vec::new(),
             marks,
         });
-        return checked(model, body);
+        return checked(model, body, dec);
     }
     let mut shell_faces: BTreeMap<usize, Vec<FaceId>> = BTreeMap::new();
     for (i, face) in faces.iter().enumerate() {
@@ -1042,15 +1042,15 @@ fn rebuild(
         wires: Vec::new(),
         marks,
     });
-    checked(model, body)
+    checked(model, body, dec)
 }
 
-fn checked(model: &Model, body: BodyId) -> Answered<BodyId> {
-    if let Some(fault) = model.check(body).into_iter().next() {
+fn checked(model: &Model, body: BodyId, dec: &mut Decider) -> Answered<BodyId> {
+    if let Some(fault) = crate::check_body(model, body, dec)?.into_iter().next() {
         return Err(refusal(
             catallax_numbers::GEOMETRIC_GAP_UNPROVEN,
             format!(
-                "publication topology check failed: {}: {}",
+                "publication body check failed: {}: {}",
                 fault.code, fault.detail
             ),
         ));

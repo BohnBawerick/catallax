@@ -203,7 +203,7 @@ pub fn build_incremental_with_display_result(
     rendering_build(|| {
         let checkpoint = evaluate_incremental(recipe, prefix, decider).map_err(Error::Build)?;
         let built = checkpoint.built();
-        check_result(built)?;
+        check_result(built, decider)?;
         if catallax_numbers::current_operation_work().exhausted {
             return Err(Error::ResourceLimit);
         }
@@ -433,14 +433,19 @@ pub fn build_incremental_without_display(
     bounded_build(|| {
         let checkpoint = evaluate_incremental(recipe, prefix, decider).map_err(Error::Build)?;
         let built = checkpoint.built();
-        check_result(built)?;
+        check_result(built, decider)?;
         let names = result_names(&built.model, built.result);
         Ok(EvaluatedApplicationBody { checkpoint, names })
     })
 }
 
-fn check_result(built: &Built) -> Result<(), Error> {
-    let faults = built.model.check(built.result);
+fn check_result(built: &Built, decider: &mut Decider) -> Result<(), Error> {
+    let faults = catallax_boolean::check_body(&built.model, built.result, decider).map_err(
+        |refusal| Error::Build(BuildError::Geometry {
+            step: built.recipe().result.clone(),
+            refusal,
+        }),
+    )?;
     if faults.is_empty() {
         Ok(())
     } else {
@@ -453,7 +458,7 @@ fn display_and_names(
     options: &MeshOptions,
     decider: &mut Decider,
 ) -> Result<(Answer<Mesh>, Names), Error> {
-    check_result(built)?;
+    check_result(built, decider)?;
     let display =
         mesh_body(&built.model, built.result, options, decider).map_err(Error::Display)?;
     let names = result_names(&built.model, built.result);

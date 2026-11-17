@@ -413,6 +413,33 @@ fn close(a: &Point2, b: &Point2) -> bool {
     squared(a, b) <= Rational::parse("1e-14").unwrap()
 }
 fn snap_arc(start: &Point2, centre: &Point2, target: &Point2, step: &str) -> Result<Point2> {
+fn fit_arc_centre(start: &Point2, centre: Point2, target: &Point2, step: &str) -> Result<Point2> {
+    let start_radius = squared(start, &centre);
+    let target_radius = squared(target, &centre);
+    if start_radius.is_zero() || target_radius.is_zero() {
+        return Err(invalid(Some(step), "zero-radius arc"));
+    }
+    if start_radius == target_radius {
+        return Ok(centre);
+    }
+    // The nearest centre on the chord's perpendicular bisector keeps both shared
+    // vertices exact, so a neighbouring line cannot tilt out of its authored plane.
+    let chord: [Rational; 2] =
+        std::array::from_fn(|i| target.0[i].value() - start.0[i].value());
+    let scale = (target_radius - start_radius)
+        / (Rational::from_i64(2) * (&chord[0] * &chord[0] + &chord[1] * &chord[1]));
+    let fitted = Point2(std::array::from_fn(|i| {
+        Number::new(centre.0[i].value() + &scale * &chord[i])
+    }));
+    if !close(&fitted, &centre) {
+        return Err(invalid(
+            Some(step),
+            "arc centre is outside source join tolerance",
+        ));
+    }
+    Ok(fitted)
+}
+
     let s: [Rational; 2] = std::array::from_fn(|i| start.0[i].value() - centre.0[i].value());
     let t: [Rational; 2] = std::array::from_fn(|i| target.0[i].value() - centre.0[i].value());
     let r = &s[0] * &s[0] + &s[1] * &s[1];
@@ -464,7 +491,7 @@ fn snap_arc(start: &Point2, centre: &Point2, target: &Point2, step: &str) -> Res
     Ok(result)
 }
 
-fn convert_loop(mut input: Vec<InputSegment>, li: usize, step: &str) -> Result<Loop> {
+fn convert_loop(input: Vec<InputSegment>, li: usize, step: &str) -> Result<Loop> {
     if input.is_empty() {
         return Err(invalid(Some(step), "empty profile loop"));
     }
@@ -489,17 +516,10 @@ fn convert_loop(mut input: Vec<InputSegment>, li: usize, step: &str) -> Result<L
             radius: positive(*radius, step)?,
         }]));
     }
-    // End on a line where possible, so closure never moves an already snapped arc.
-    let shift = input
-        .iter()
-        .rposition(|s| matches!(s, InputSegment::Line { .. }))
-        .map_or(0, |i| (i + 1) % input.len());
-    input.rotate_left(shift);
-    let initial = end(input.last().unwrap())?;
-    let mut previous = initial.clone();
+    let mut previous = end(input.last().unwrap())?;
     let mut output = Vec::with_capacity(input.len());
     for (i, s) in input.iter().enumerate() {
-        let id = ElementId::new(format!("l{li}s{}", (i + shift) % input.len())).unwrap();
+        let id = ElementId::new(format!("l{li}s{i}")).unwrap();
         let (from, to) = match s {
             InputSegment::Line { from, to } | InputSegment::Arc { from, to, .. } => {
                 (point(*from)?, point(*to)?)
@@ -535,7 +555,7 @@ fn convert_loop(mut input: Vec<InputSegment>, li: usize, step: &str) -> Result<L
                 Segment::Arc {
                     id,
                     centre,
-                    to: snapped,
+                    to,
                     turn: if *clockwise { Turn::Cw } else { Turn::Ccw },
                 }
             }

@@ -295,7 +295,7 @@ impl RealPoly {
         dec: &mut Decider,
         coarse_brackets: bool,
     ) -> Result<Vec<Real>, Refusal> {
-        let isolate = |dec: &mut Decider, polynomial: &UPoly| {
+        let isolate = |dec: &mut Decider, polynomial: &crate::UPoly| {
             if coarse_brackets {
                 dec.real_roots_with_coarse_brackets(polynomial)
             } else {

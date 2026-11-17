@@ -365,7 +365,8 @@ mod tests {
                 }
             });
             println!(
-                "untrimmed box strips radius={radius} work={work}; not a closed-body acceptance"
+                "untrimmed box strips radius={radius} work={}; not a closed-body acceptance",
+                work.used
             );
         }
     }

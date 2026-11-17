@@ -1,6 +1,6 @@
 #[path = "../tests/common/mod.rs"]
 mod common;
-use common::soup::Soup;
+use common::Soup;
 use std::{error::Error, fs, path::PathBuf};
 
 fn main() -> Result<(), Box<dyn Error>> {

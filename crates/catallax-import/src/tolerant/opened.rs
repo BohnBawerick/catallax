@@ -103,6 +103,7 @@ pub enum BodyView<'a> {
 #[derive(Debug)]
 pub struct OpenedStep {
     source: Arc<TolerantFile>,
+    source_graph: Option<Arc<crate::geometry_source::ParsedStep>>,
     bodies: Vec<BodyOutcome>,
     admission: Option<StepImport>,
     native_admission: Option<Arc<admission::TolerantImport>>,
@@ -111,9 +112,14 @@ pub struct OpenedStep {
     file_admission_work_used: u64,
 }
 impl OpenedStep {
-    /// Immutable supported source graph, including every original entity.
+    /// Immutable original body definitions, before any repair.
     pub fn source(&self) -> &TolerantFile {
         &self.source
+    }
+    /// Original geometry, units and occurrence graph. Default opening retains
+    /// this even when native fitting fails; checked-only opening may omit it.
+    pub fn parsed_source(&self) -> Option<&crate::geometry_source::ParsedStep> {
+        self.source_graph.as_deref()
     }
     /// Source solids followed by surface models, in original reader order.
     pub fn bodies(&self) -> &[BodyOutcome] {
@@ -260,8 +266,19 @@ pub fn open_step(
     dec: &mut Decider,
 ) -> Result<OpenedStep, Error> {
     let before = current_operation_work().used;
-    let (parsed, source) = admission::prepare(bytes, expected_sha256, options.clone(), dec)?;
+    let (parsed, source) = admission::prepare(bytes, expected_sha256, options, dec)?;
     let read_work_used = current_operation_work().used.saturating_sub(before);
+    open_prepared(bytes, step, parsed, source, read_work_used, dec)
+}
+
+fn open_prepared(
+    bytes: &[u8],
+    step: &StepId,
+    parsed: Arc<crate::geometry_source::ParsedStep>,
+    source: Arc<TolerantFile>,
+    read_work_used: u64,
+    dec: &mut Decider,
+) -> Result<OpenedStep, Error> {
     dec.charge_work(source.bodies.len() as u64 + 1)?;
     let mut result = OpenedStep {
         bodies: source.bodies.iter().map(|_| BodyOutcome {
@@ -273,6 +290,7 @@ pub fn open_step(
             healing_failure: None,
         }).collect(),
         source,
+        source_graph: Some(Arc::clone(&parsed)),
         admission: None,
         native_admission: None,
         first_refusal: None,
@@ -285,7 +303,7 @@ pub fn open_step(
         let before = current_operation_work().used;
         let reservation = catallax_numbers::OperationAllowance::reserve(allowance)?;
         let (upgrade, _) = reservation.run(|| {
-            open_checked_step(bytes, expected_sha256, step, options, dec)
+            open_checked_step(bytes, &result.source.source_sha256, step, result.source.options.clone(), dec)
         });
         result.file_admission_work_used = current_operation_work().used.saturating_sub(before);
         match upgrade {
@@ -370,6 +388,7 @@ pub fn open_checked_step(
     };
     let mut result = OpenedStep {
         source: Arc::new(source),
+        source_graph: None,
         bodies,
         admission: None,
         native_admission: None,
@@ -525,29 +544,37 @@ pub fn reopen(
     step: &StepId,
     dec: &mut Decider,
 ) -> Result<OpenedStep, Error> {
-    if !operation_budget_active() {
-        return with_operation_budget(n::DEFAULT_WORK, || reopen(bytes, controls, step, dec)).0;
+    let before = current_operation_work().used;
+    super::charge_record(controls, dec)?;
+    if controls.format != "catallax-import-tolerances/1" {
+        return Err(super::invalid("unsupported tolerance record format"));
     }
-    let verified = super::reopen(bytes, controls, dec)?;
-    dec.charge_work(verified.bodies.len() as u64)?;
-    if verified
-        .bodies
-        .iter()
-        .any(TolerantBody::has_tolerance_repairs)
-    {
+    if controls.bodies.iter().any(|body| !body.changes.is_empty()) {
         return Err(catallax_numbers::Refusal::new(
-            "import.opened-controls",
-            "saved source controls must precede healing",
-        )
-        .into());
+            "import.opened-controls", "saved source controls must precede healing",
+        ).into());
     }
-    open_step(
-        bytes,
-        &controls.source_sha256,
-        step,
-        verified.options.clone(),
-        dec,
-    )
+    let parse = |text: &str| {
+        let value = catallax_numbers::Rational::parse(text)
+            .map_err(|_| super::invalid("invalid rational millimetre value"))?;
+        if value.to_string() != text {
+            return Err(super::invalid("noncanonical rational millimetre value"));
+        }
+        Ok(value)
+    };
+    let options = ToleranceOptions {
+        initial_mm: parse(&controls.initial_mm)?,
+        maximum_mm: parse(&controls.maximum_mm)?,
+    };
+    let (parsed, source) = admission::prepare(bytes, &controls.source_sha256, options, dec)?;
+    if source.bodies.len() != controls.bodies.len()
+        || source.bodies.iter().zip(&controls.bodies).any(|(body, saved)| body.name != saved.name)
+        || !super::matches_record(&source, controls, dec)?
+    {
+        return Err(super::invalid("saved source controls differ from the immutable source inventory"));
+    }
+    let read_work_used = current_operation_work().used.saturating_sub(before);
+    open_prepared(bytes, step, parsed, source, read_work_used, dec)
 }
 
 #[cfg(test)]

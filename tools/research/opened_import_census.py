@@ -129,6 +129,80 @@ def raw_surface(path):
             Interface_Static.SetIVal_s(key, value)
 
 
+def raw_native_document(path, entry):
+    """Check every named native root before default occurrence transfer.
+
+    Prototype checks use raw StepToTopoDS, explicit source dimensional factors
+    and the stated maximum local tolerance of that source body. Default
+    TransferRoots is a separate occurrence-graph check, not a raw-body rescue.
+    """
+    import math
+    from OCP.BRep import BRep_Builder
+    from OCP.BRepCheck import BRepCheck_Analyzer
+    from OCP.IFSelect import IFSelect_RetDone
+    from OCP.Interface import Interface_Static
+    from OCP.STEPControl import STEPControl_Reader
+    from OCP.StepData import StepData_Factors
+    from OCP.StepShape import StepShape_ManifoldSolidBrep
+    from OCP.StepToTopoDS import StepToTopoDS_Builder
+    from OCP.TopoDS import TopoDS_Compound
+    from OCP.Transfer import Transfer_TransientProcess
+    from check_numerical_step import topology
+
+    factors_values = entry["unit_factors"]
+    assert len(factors_values) == 3 and all(math.isfinite(v) and v > 0 for v in factors_values)
+    reader = STEPControl_Reader()
+    settings = {"read.stdsameparameter.mode": 0, "read.maxprecision.mode": 0}
+    previous = {key: Interface_Static.IVal_s(key) for key in settings}
+    try:
+        for key, value in settings.items():
+            assert Interface_Static.SetIVal_s(key, value), key
+        assert reader.ReadFile(str(path)) == IFSelect_RetDone
+        model = reader.StepModel()
+        named = {}
+        for index in range(1, model.NbEntities() + 1):
+            entity = model.Value(index)
+            if isinstance(entity, StepShape_ManifoldSolidBrep):
+                named.setdefault(entity.Name().ToCString(), []).append(entity)
+        roots = []
+        for root in entry["source_roots"]:
+            entities = named.get(root["name"], [])
+            assert len(entities) == root["parts"], (root["name"], len(entities), root["parts"])
+            tolerance = root["tolerance_mm"]
+            assert math.isfinite(tolerance) and tolerance > 0
+            factors = StepData_Factors()
+            factors.InitializeFactors(*factors_values)
+            process = Transfer_TransientProcess()
+            process.SetModel(model)
+            compound = TopoDS_Compound()
+            aggregate = BRep_Builder()
+            aggregate.MakeCompound(compound)
+            for entity in entities:
+                builder = StepToTopoDS_Builder()
+                builder.SetPrecision(tolerance)
+                builder.SetMaxTol(tolerance)
+                builder.Init(entity, process, factors)
+                assert builder.IsDone(), root["name"]
+                shape = builder.Value()
+                assert topology(shape)["solids"] == 1
+                assert BRepCheck_Analyzer(shape).IsValid(), root["name"]
+                aggregate.Add(compound, shape)
+            counts = topology(compound)
+            for key, expected in root["counts"].items():
+                assert counts[key] == expected, (root["name"], key, counts[key], expected)
+            roots.append(dict(body=root["body"], source_root=root["name"], topology=counts,
+                              builder_precision_mm=tolerance, builder_max_tolerance_mm=tolerance))
+    finally:
+        for key, value in previous.items():
+            Interface_Static.SetIVal_s(key, value)
+    expected_roots = reader.NbRootsForTransfer()
+    assert expected_roots > 0 and reader.TransferRoots() == expected_roots
+    shape = reader.OneShape()
+    assert not shape.IsNull() and topology(shape)["solids"] > 0
+    assert BRepCheck_Analyzer(shape).IsValid(), "default occurrence transfer invalid"
+    return topology(shape), roots
+
+
 def raw(args):
     helper = ROOT / "tools/step-regressions/check_numerical_step.py"
     assert digest(helper) == RAW_HELPER_SHA
@@ -142,31 +216,44 @@ def raw(args):
     assert response["source_sha256"] == args.source_sha256
     results = []
     for entry in response["files"]:
-        assert entry["file"] == f"body-{entry['body']}.step"
+        bodies = entry["bodies"]
+        assert bodies and len(set(bodies)) == len(bodies)
+        native = entry["kind"] == "native_document"
+        assert entry["file"] == ("document.step" if native else f"body-{bodies[0]}.step")
         path = args.capture / entry["file"]
         assert digest(path) == entry["sha256"] and path.stat().st_size == entry["bytes"]
         before = path.read_bytes()
         try:
-            assert b"SI_UNIT(.MILLI.,.METRE.)" in b"".join(before.split())
-            shape = raw_solid(path) if entry["kind"] == "solid" else raw_surface(path)
-            counts = topology(shape)
-            assert counts["solids"] == (1 if entry["kind"] == "solid" else 0)
-            outcome = (
-                "valid_after_builder"
-                if BRepCheck_Analyzer(shape).IsValid()
-                else "invalid_after_builder"
-            )
+            if native:
+                counts, native_roots = raw_native_document(path, entry)
+                assert sorted(root["body"] for root in native_roots) == sorted(bodies)
+                outcome = "valid_after_builder"
+            else:
+                assert len(bodies) == 1
+                assert b"SI_UNIT(.MILLI.,.METRE.)" in b"".join(before.split())
+                shape = raw_solid(path) if entry["kind"] == "solid" else raw_surface(path)
+                counts = topology(shape)
+                assert counts["solids"] == (1 if entry["kind"] == "solid" else 0)
+                outcome = (
+                    "valid_after_builder"
+                    if BRepCheck_Analyzer(shape).IsValid()
+                    else "invalid_after_builder"
+                )
         except Exception as error:
             outcome, counts = "reader_refused", None
             print(type(error).__name__, str(error), file=sys.stderr)
         assert path.read_bytes() == before
         results.append(
             dict(
-                body=entry["body"],
+                bodies=bodies,
                 kind=entry["kind"],
                 sha256=entry["sha256"],
                 outcome=outcome,
                 topology=counts,
+                validation_method=(
+                    "raw_source_roots_at_stated_tolerance_then_default_occurrence_transfer"
+                    if native else "raw_identity_unit_builder_at_fixed_precision"
+                ),
             )
         )
     save(
@@ -191,7 +278,7 @@ def cause(refusal):
 def opening(row, checkpoint):
     bodies = checkpoint["bodies"]
     tiers = Counter(b["tier"] for b in bodies)
-    solids = tiers["valid_solid"] + tiers["repaired_solid"]
+    solids = tiers["valid_solid"] + tiers["repaired_solid"] + tiers["tolerant_solid"]
     row.update(
         opened=bool(bodies),
         outcome=(
@@ -206,6 +293,7 @@ def opening(row, checkpoint):
         observed_body_count=len(bodies),
         valid_solid_body_count=tiers["valid_solid"],
         repaired_solid_body_count=tiers["repaired_solid"],
+        tolerant_solid_body_count=tiers["tolerant_solid"],
         surface_body_count=tiers["surface_body"],
         open_work_used=checkpoint["work_used"],
         open_work_exhausted=checkpoint["work_exhausted"],
@@ -318,7 +406,7 @@ def observe(binary, source, baseline, folder, retain, max_rss_mb=6144):
     opening(row, response["open"])
     row.update(
         export_work_used=response["work_used"],
-        exported_body_count=len(response["files"]),
+        exported_body_count=len({body for entry in response["files"] for body in entry["bodies"]}),
         exported_step_hashes=[f["sha256"] for f in response["files"]],
     )
     if response["outcome"] == "refused":
@@ -361,9 +449,12 @@ def observe(binary, source, baseline, folder, retain, max_rss_mb=6144):
     checked = json.loads((folder / "raw.json").read_text())
     assert checked["source_sha256"] == expected and checked["ocp_version"] == "8.0.1.1"
     assert [f["sha256"] for f in checked["files"]] == row["exported_step_hashes"]
-    counts = Counter((f["kind"], f["outcome"]) for f in checked["files"])
+    counts = Counter(
+        (entry["kind"], entry["outcome"])
+        for entry in checked["files"] for _ in entry["bodies"]
+    )
     row.update(
-        valid_exported_solid_count=counts["solid", "valid_after_builder"],
+        valid_exported_solid_count=counts["solid", "valid_after_builder"] + counts["native_document", "valid_after_builder"],
         valid_exported_surface_count=counts["surface", "valid_after_builder"],
         invalid_exported_body_count=sum(
             v for (k, o), v in counts.items() if o == "invalid_after_builder"
@@ -596,7 +687,7 @@ def collect(args):
         all_solids_export_valid_share_percent=f"{qualified/30:.2f}",
         body_tiers={
             name: sum(r.get(name + "_body_count", 0) for r in observations)
-            for name in ["valid_solid", "repaired_solid", "surface"]
+            for name in ["valid_solid", "repaired_solid", "tolerant_solid", "surface"]
         },
         **comparison,
         baseline_full_solid_files=405,

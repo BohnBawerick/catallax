@@ -19,9 +19,18 @@ pub(super) struct Context<'a> {
     surfaces: BTreeMap<u64, Arc<NativeSurface>>,
     pcurves: BTreeMap<u64, Arc<NativeUvCurve>>,
 }
+#[derive(Debug)]
+pub(super) struct Carriers {
+    pub(super) curves: BTreeMap<u64, Arc<NativeCurve>>,
+    pub(super) surfaces: BTreeMap<u64, Arc<NativeSurface>>,
+    pub(super) angles: AngleUnit,
+}
 impl<'a> Context<'a> {
-    pub fn new(parsed: &'a ParsedStep, scale: &'a Rational, angles: AngleUnit) -> Self {
-        Self { parsed, scale, angles, curves: BTreeMap::new(), surfaces: BTreeMap::new(), pcurves: BTreeMap::new() }
+    pub fn new(parsed: &'a ParsedStep, scale: &'a Rational, angles: AngleUnit, curves: BTreeMap<u64, Arc<NativeCurve>>) -> Self {
+        Self { parsed, scale, angles, curves, surfaces: BTreeMap::new(), pcurves: BTreeMap::new() }
+    }
+    pub fn into_carriers(self) -> Carriers {
+        Carriers { curves: self.curves, surfaces: self.surfaces, angles: self.angles }
     }
     fn curve(&mut self, entity: u64, dec: &mut Decider) -> Result<Arc<NativeCurve>, Error> {
         if let Some(curve) = self.curves.get(&entity) { return Ok(Arc::clone(curve)); }
@@ -164,35 +173,7 @@ fn finite_edge(
     }
     let mut parameters = [endpoint_fits[0].location.parameters[0], endpoint_fits[1].location.parameters[0]];
     if let PhysicalCurve::Native(curve) = &carrier {
-        let periodic = match source_curve {
-            Some(entity) => angular_curve(context, entity, dec)?,
-            None => matches!(edge.curve, Curve::Circle(..) | Curve::Ellipse(..)),
-        };
-        if edge.vertices[0] == edge.vertices[1] {
-            let mut domain: Option<[f64; 2]> = None;
-            for index in 0..curve.chart_count() {
-                if let [Some(low), Some(high)] = &curve.domain(index)[0] {
-                    let low = low.to_f64_nearest(); let high = high.to_f64_nearest();
-                    domain = Some(match domain { None => [low, high], Some([a, b]) => [a.min(low), b.max(high)] });
-                }
-            }
-            parameters = if let Some([low, high]) = domain {
-                if edge.curve_same_sense { [low, high] } else { [high, low] }
-            } else if periodic {
-                [parameters[0], parameters[0] + if edge.curve_same_sense { curve.angular_period() } else { -curve.angular_period() }]
-            } else {
-                return Err(invalid("import.tolerant-broken-geometry", format!("{} is closed but has no finite or periodic curve domain", edge.name)));
-            };
-        } else if periodic {
-            let period = curve.angular_period();
-            if edge.curve_same_sense {
-                parameters[1] += ((parameters[0] - parameters[1]) / period).floor().max(0.0) * period;
-                if parameters[1] <= parameters[0] { parameters[1] += period; }
-            } else {
-                parameters[1] -= ((parameters[1] - parameters[0]) / period).floor().max(0.0) * period;
-                if parameters[1] >= parameters[0] { parameters[1] -= period; }
-            }
-        }
+        parameters = curve.finite_range(parameters, edge.curve_same_sense, edge.vertices[0] == edge.vertices[1])?;
     }
     let mut points = Vec::with_capacity(STATIONS + 1);
     let mut preferred = endpoint_fits[0].location.chart;
@@ -217,27 +198,7 @@ fn finite_edge(
     Ok(EdgeSamples { points, source_curve })
 }
 
-fn angular_curve(context: &Context<'_>, mut entity: u64, dec: &mut Decider) -> Result<bool, Error> {
-    for _ in 0..32 {
-        match context.parsed.geometry(entity, dec)? {
-            Geometry::Curve(SourceCurve::Circle(..) | SourceCurve::Ellipse(..)) => return Ok(true),
-            Geometry::Curve(SourceCurve::Replica(parent, _) | SourceCurve::Offset3d(parent, ..) | SourceCurve::SurfaceCurve(parent, ..)) => entity = parent,
-            _ => return Ok(false),
-        }
-    }
-    Err(invalid("import.tolerant-broken-reference", "cyclic or excessive curve wrappers"))
-}
 
-fn surface_location(surface: &NativeSurface, parameters: [f64; 2]) -> Result<NativeLocation, Error> {
-    let chart = (0..surface.chart_count()).find(|&chart| {
-        (0..2).all(|axis| {
-            let limits = &surface.domain(chart)[axis];
-            limits[0].as_ref().is_none_or(|low| parameters[axis] >= low.to_f64_nearest())
-                && limits[1].as_ref().is_none_or(|high| parameters[axis] <= high.to_f64_nearest())
-        })
-    }).ok_or_else(|| invalid("import.tolerant-broken-geometry", "sample lies outside every native surface span"))?;
-    Ok(NativeLocation { chart, parameters })
-}
 
 fn closed_surface_samples(
     context: &Context<'_>,
@@ -245,7 +206,7 @@ fn closed_surface_samples(
     surface: &NativeSurface,
     tolerance: &mut Accumulator,
     dec: &mut Decider,
-) -> Result<usize, Error> {
+) -> Result<(usize, [[f64; 2]; 2]), Error> {
     use crate::geometry_source::Surface as SourceSurface;
     let mut angular = [false; 2];
     let mut declared = [false; 2];
@@ -291,7 +252,7 @@ fn closed_surface_samples(
                 parameters[axis] = limits[axis][side];
                 parameters[1 - axis] = limits[1 - axis][0]
                     + (limits[1 - axis][1] - limits[1 - axis][0]) * station as f64 / STATIONS as f64;
-                let sample = surface.sample(surface_location(surface, parameters)?, dec)?;
+                let sample = surface.sample(surface.location(parameters)?, dec)?;
                 tolerance.measure(sample.uncertainty_mm)?;
                 rims[side].push(sample);
                 count += 1;
@@ -310,7 +271,7 @@ fn closed_surface_samples(
             return Err(invalid("import.tolerant-broken-topology", "edgeless face has an unmatched, noncollapsed native surface boundary"));
         }
     }
-    Ok(count)
+    Ok((count, limits))
 }
 
 fn return_finite_limits(limits: [&Option<Rational>; 2]) -> Result<[f64; 2], Error> {
@@ -419,9 +380,23 @@ pub(super) fn check_body(
             let mut tolerance = Accumulator::new(body.options.initial_mm.to_f64_nearest());
             let mut sample_count = 0;
             let mut converged_count = 0;
+            let mut fit_residual: f64 = 0.0;
             let mut repeated = BTreeMap::<usize, usize>::new();
             for (boundary_index, boundary) in face.loops.iter().enumerate() {
                 let mut previous = None;
+                if let Some(vertex) = boundary.vertex {
+                    let target = vertices[vertex];
+                    let projection = match &surface {
+                        Some(surface) => surface.project(target.point_mm, None, dec)?,
+                        None => plane.as_ref().expect("inferred plane").project(target),
+                    };
+                    let residual = projection.residual_mm + target.uncertainty_mm;
+                    vertex_tolerances[vertex].measure(residual)?;
+                    tolerance.measure(projection.sample.uncertainty_mm)?;
+                    fit_residual = fit_residual.max(residual);
+                    sample_count += 1;
+                    converged_count += usize::from(projection.converged);
+                }
                 for usage in &boundary.edges {
                     let edge = edges[usage.edge].as_ref().expect("active source edge");
                     let associated = match (edge.source_curve, surface_entity) { (Some(curve), Some(surface)) => pcurves(context, curve, surface, dec)?, _ => Vec::new() };
@@ -434,6 +409,12 @@ pub(super) fn check_body(
                         dec.charge_work(1)?;
                         let index = if usage.forward { station } else { STATIONS - station };
                         let (curve_location, target) = edge.points[index];
+                        let vertex = match index {
+                            0 => Some(body.edges[usage.edge].vertices[0]),
+                            STATIONS => Some(body.edges[usage.edge].vertices[1]),
+                            _ => None,
+                        };
+                        let fit_target = vertex.map_or(target, |vertex| vertices[vertex]);
                         let seed = if station == 0 {
                             match &pcurve {
                                 Some(curve) => {
@@ -444,32 +425,46 @@ pub(super) fn check_body(
                             }
                         } else { previous };
                         let projection = match &surface {
-                            Some(surface) => surface.project(target.point_mm, seed, dec)?,
-                            None => plane.as_ref().expect("inferred plane").project(target),
+                            Some(surface) => surface.project(fit_target.point_mm, seed, dec)?,
+                            None => plane.as_ref().expect("inferred plane").project(fit_target),
                         };
-                        let residual = projection.residual_mm + target.uncertainty_mm;
-                        tolerance.measure(residual + edge_tolerances[usage.edge].tolerance)?;
-                        edge_tolerances[usage.edge].measure(residual)?;
+                        let residual = norm(subtract(projection.sample.point_mm, target.point_mm))
+                            + projection.sample.uncertainty_mm + target.uncertainty_mm;
+                        tolerance.measure(projection.sample.uncertainty_mm)?;
+                        edge_tolerances[usage.edge].measure(residual + tolerance.tolerance)?;
+                        if let Some(vertex) = vertex {
+                            vertex_tolerances[vertex].measure(projection.residual_mm + fit_target.uncertainty_mm)?;
+                        }
+                        fit_residual = fit_residual.max(residual).max(projection.residual_mm + fit_target.uncertainty_mm);
                         sample_count += 1;
                         converged_count += usize::from(projection.converged);
                         previous = Some(projection.location);
                         samples.push(UvSample { fraction: station as f64 / STATIONS as f64, curve: curve_location, surface: projection.location, residual_mm: residual, converged: projection.converged });
                     }
-                    evidence.native_trims.push(NativeTrim { face: face.name.clone(), boundary: boundary_index, edge: body.edges[usage.edge].name.clone(), forward: usage.forward, source_pcurve, samples });
+                    evidence.native_trims.push(NativeTrim { body: body.name.clone(), face: face.name.clone(), boundary: boundary_index, edge: body.edges[usage.edge].name.clone(), forward: usage.forward, source_pcurve, samples });
                 }
             }
             if face.loops.iter().all(|boundary| boundary.edges.is_empty()) {
                 let surface = surface.as_ref().ok_or_else(|| invalid("import.tolerant-broken-reference", "closed face has no native surface"))?;
                 let entity = surface_entity.expect("native surface source identity");
-                let samples = closed_surface_samples(context, entity, surface, &mut tolerance, dec)?;
+                let (samples, bounds) = closed_surface_samples(context, entity, surface, &mut tolerance, dec)?;
+                evidence.native_domains.push(super::NativeDomain { body: body.name.clone(), face: face.name.clone(), bounds });
                 sample_count += samples;
                 converged_count += samples;
             }
             if converged_count < sample_count {
                 evidence.warnings.push(NativeWarning { scope: face.name.clone(), code: "native-uv-fits-not-all-converged", detail: format!("{converged_count}/{sample_count} fit samples reached the stopping width; actual residuals are retained in local tolerances") });
             }
-            evidence.sampled_checks.push(SampledCheck { body: body.name.clone(), scope: face.name.clone(), check: "face.native-uv-sampled-fit", samples: sample_count, maximum_residual_mm: tolerance.residual, converged: converged_count });
+            evidence.sampled_checks.push(SampledCheck { body: body.name.clone(), scope: face.name.clone(), check: "face.native-uv-sampled-fit", samples: sample_count, maximum_residual_mm: fit_residual.max(tolerance.residual), converged: converged_count });
             evidence.tolerances.push(tolerance.record(&body.name, "face", &face.name));
+            for boundary in &face.loops {
+                if let Some(vertex) = boundary.vertex {
+                    vertex_tolerances[vertex].tolerance = vertex_tolerances[vertex].tolerance.max(tolerance.tolerance);
+                }
+                for usage in &boundary.edges {
+                    edge_tolerances[usage.edge].tolerance = edge_tolerances[usage.edge].tolerance.max(tolerance.tolerance);
+                }
+            }
         }
     }
     for (index, accumulator) in edge_tolerances.iter().enumerate() {

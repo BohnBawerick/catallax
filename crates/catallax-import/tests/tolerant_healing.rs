@@ -559,6 +559,7 @@ fn sewing_keeps_independent_source_bodies_and_their_bindings_separate() {
         | HealingChange::WireReordered { body, .. }
         | HealingChange::BoundaryReversed { body, .. }
         | HealingChange::FaceReversed { body, .. }
+        | HealingChange::ShellsSewn { body, .. }
         | HealingChange::SmallLineRemoved { body, .. } => body == unchanged,
     }));
 }

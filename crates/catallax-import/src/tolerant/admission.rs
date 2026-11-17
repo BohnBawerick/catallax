@@ -7,7 +7,7 @@ use catallax_numbers::{Decider, Rational, Refusal};
 use serde::Serialize;
 
 use crate::geometry_source::{AngleUnit, ParsedStep};
-use crate::{ImportRefusal, sha256_hex};
+use crate::ImportRefusal;
 
 use super::{Error, ToleranceOptions, TolerantBody, TolerantFile, healing};
 
@@ -66,6 +66,8 @@ pub struct UvSample {
 /// A finite native trim, retaining original source geometry and its UV samples.
 #[derive(Clone, Debug, Serialize)]
 pub struct NativeTrim {
+    /// Source body containing this edge use.
+    pub body: String,
     /// Source face.
     pub face: String,
     /// Source boundary index.
@@ -78,6 +80,17 @@ pub struct NativeTrim {
     pub source_pcurve: Option<u64>,
     /// Actual native correspondence samples.
     pub samples: Vec<UvSample>,
+}
+
+/// Sampled natural closure of an edgeless native face.
+#[derive(Clone, Debug, Serialize)]
+pub struct NativeDomain {
+    /// Source body.
+    pub body: String,
+    /// Source face.
+    pub face: String,
+    /// Original source parameter limits, one [minimum, maximum] per axis.
+    pub bounds: [[f64; 2]; 2],
 }
 
 /// A numerical warning retained on the result rather than promoted to a theorem.
@@ -114,6 +127,8 @@ pub struct TolerantEvidence {
     pub warnings: Vec<NativeWarning>,
     /// Finite source-native edge/face correspondences.
     pub native_trims: Vec<NativeTrim>,
+    /// Natural domains whose opposing rims or poles were sampled for closure.
+    pub native_domains: Vec<NativeDomain>,
 }
 
 /// Counts of a closed, oriented source-topology candidate.
@@ -147,18 +162,24 @@ impl TolerantSolid {
 /// A tolerant source document, including its original occurrence graph.
 #[derive(Debug)]
 pub struct TolerantImport {
-    parsed: ParsedStep,
+    parsed: Arc<ParsedStep>,
     source: Arc<TolerantFile>,
     bodies: Vec<TolerantSolid>,
     evidence: TolerantEvidence,
+    carriers: fit::Carriers,
 }
 impl TolerantImport {
     /// Immutable supported source definitions. Occurrence links remain in the document.
     pub fn source(&self) -> &TolerantFile { &self.source }
-    /// Shared original source record, without copying its geometry.
-    pub(crate) fn shared_source(&self) -> Arc<TolerantFile> { Arc::clone(&self.source) }
     /// Tolerant body definitions, in source-model order.
     pub fn bodies(&self) -> &[TolerantSolid] { &self.bodies }
+    /// Reconstruct one admitted native candidate as source geometry, without
+    /// converting it into a certified kernel model.
+    pub fn body_definition(&self, index: usize, dec: &mut Decider) -> Result<crate::StepFile, Error> {
+        let body = self.bodies.get(index)
+            .ok_or_else(|| invalid("import.tolerant-body-index", "body index is out of range"))?;
+        self.source.definition_of(std::slice::from_ref(&body.body), dec)
+    }
     /// All measured tolerances, samples, repairs and limitations.
     pub fn evidence(&self) -> &TolerantEvidence { &self.evidence }
     /// Actual immutable source identity.
@@ -169,10 +190,41 @@ impl TolerantImport {
         let changes = step::rebuild(&self.parsed, &self.bodies, &self.source.mm_per_unit, dec)?;
         let metadata = serde_json::to_string(&self.evidence)
             .map_err(|error| Refusal::new("import.tolerant-evidence", error.to_string()))?;
-        Ok(self.parsed.write_tolerant_step(&changes, self.parsed.schemas()?, &metadata, dec)?)
+        Ok(self.parsed.write_tolerant_step(&changes, self.parsed.schemas()?, &metadata, None, dec)?)
+    }
+    /// Export selected body-local geometry. Product occurrences and unrelated
+    /// bodies are excluded; use `export_step` to preserve the source document.
+    pub fn export_body(&self, index: usize, dec: &mut Decider) -> Result<Vec<u8>, Error> {
+        let body = self.bodies.get(index)
+            .ok_or_else(|| invalid("import.tolerant-body-index", "body index is out of range"))?;
+        let mut changes = step::rebuild(&self.parsed, std::slice::from_ref(body), &self.source.mm_per_unit, dec)?;
+        let root = step::standalone_frame(&self.parsed, &mut changes, body.name(), dec)?;
+        let metadata = serde_json::to_string(&serde_json::json!({
+            "export_scope": {"kind": "body_local_geometry", "body": index, "source_body": body.name()},
+            "source_document_evidence": &self.evidence,
+        })).map_err(|error| Refusal::new("import.tolerant-evidence", error.to_string()))?;
+        Ok(self.parsed.write_tolerant_step(&changes, self.parsed.schemas()?, &metadata, Some(&[root]), dec)?)
+    }
+    /// Source-to-OCCT dimensional factors for independent native export checks.
+    /// These describe source units, not an adjustment made by a repair.
+    pub fn source_unit_factors(&self) -> [f64; 3] {
+        let angle = match &self.carriers.angles {
+            AngleUnit::Radians => 1.0,
+            AngleUnit::Degrees => std::f64::consts::PI / 180.0,
+            AngleUnit::ScaledRadians(scale) => scale.to_f64_nearest(),
+        };
+        [self.source.mm_per_unit.to_f64_nearest(), angle, 1.0]
     }
     /// Original parsed geometry and occurrence declarations for native display.
     pub fn parsed_source(&self) -> &ParsedStep { &self.parsed }
+    /// Already compiled physical source surface, in its original native UV.
+    pub fn native_surface(&self, entity: u64) -> Option<&super::native::NativeSurface> {
+        self.carriers.surfaces.get(&entity).map(Arc::as_ref)
+    }
+    /// Already compiled source curve, without a finite-edge proof requirement.
+    pub fn native_curve(&self, entity: u64) -> Option<&super::native::NativeCurve> {
+        self.carriers.curves.get(&entity).map(Arc::as_ref)
+    }
 }
 
 fn invalid(code: &'static str, detail: impl Into<String>) -> Error {
@@ -213,14 +265,14 @@ pub(crate) fn prepare(
     expected_sha256: &str,
     options: ToleranceOptions,
     dec: &mut Decider,
-) -> Result<(ParsedStep, Arc<TolerantFile>), Error> {
+) -> Result<(Arc<ParsedStep>, Arc<TolerantFile>), Error> {
     if options.initial_mm < Rational::zero()
         || options.maximum_mm <= Rational::zero()
         || options.initial_mm > options.maximum_mm
     {
         return Err(invalid("import.invalid-tolerances", "invalid source tolerance controls"));
     }
-    let parsed = ParsedStep::read(bytes, dec)?;
+    let parsed = Arc::new(ParsedStep::read(bytes, dec)?);
     if parsed.source_sha256() != expected_sha256 {
         return Err(ImportRefusal::HashMismatch {
             expected: expected_sha256.into(),
@@ -246,12 +298,12 @@ pub(crate) fn prepare(
 }
 
 pub(crate) fn admit(
-    parsed: ParsedStep,
+    parsed: Arc<ParsedStep>,
     source: Arc<TolerantFile>,
     dec: &mut Decider,
 ) -> Result<TolerantImport, Error> {
     let angles = source_angles(&parsed, &source.mm_per_unit, dec)?;
-    let repaired = healing::repair_native_topology(&source, dec)?;
+    let repaired = healing::repair_native_topology(&source, &parsed, &angles, dec)?;
     let mut evidence = TolerantEvidence {
         method: "catallax-tolerant-native-v1",
         source_sha256: source.source_sha256.clone(),
@@ -263,6 +315,7 @@ pub(crate) fn admit(
         topology_measurements: repaired.measurements,
         warnings: Vec::new(),
         native_trims: Vec::new(),
+        native_domains: Vec::new(),
     };
     for issue in repaired.issues {
         if issue.code.starts_with("shell.") || issue.code.starts_with("wire.open") || issue.code == "wire.empty-boundary" {
@@ -275,7 +328,7 @@ pub(crate) fn admit(
         });
     }
     let mut bodies = Vec::with_capacity(repaired.candidate.bodies.len());
-    let mut fits = fit::Context::new(&parsed, &source.mm_per_unit, angles);
+    let mut fits = fit::Context::new(&parsed, &source.mm_per_unit, angles, repaired.curves);
     for mut body in repaired.candidate.bodies {
         let counts = fit::check_body(&mut fits, &mut body, &mut evidence, dec)?;
         bodies.push(TolerantSolid { body, counts });
@@ -288,5 +341,6 @@ pub(crate) fn admit(
         code: "sampled-authority",
         detail: "Native edge/surface fits are sampled. Global embedding, unsampled self-intersection and a complete source-to-result deviation bound are not claimed.".into(),
     });
-    Ok(TolerantImport { parsed, source, bodies, evidence })
+    let carriers = fits.into_carriers();
+    Ok(TolerantImport { parsed, source, bodies, evidence, carriers })
 }

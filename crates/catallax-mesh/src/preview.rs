@@ -10,6 +10,8 @@ use crate::{MeshOptions, Triangle};
 pub(crate) mod edges;
 mod imported;
 mod spline;
+mod tolerant;
+pub use tolerant::preview_tolerant_body;
 pub use imported::{StepPreview, preview_step};
 pub(crate) mod strips;
 

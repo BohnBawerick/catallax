@@ -16,6 +16,7 @@ use crate::{Curve, Placement, StepFile, Surface, Vec3};
 mod checks;
 pub(crate) mod constructed;
 mod sewing;
+mod native_sewing;
 mod wire;
 
 /// A completed healing stage, with deterministic work charged to this request.
@@ -100,6 +101,15 @@ pub enum HealingChange {
         retained_vertex: String,
         /// Measured source segment length enclosure, in millimetres.
         source_length_upper_mm: String,
+    },
+    /// Source surface shells joined by sampled finite-edge correspondences.
+    ShellsSewn {
+        /// Source body.
+        body: String,
+        /// Original shell names in this connected component.
+        source_shells: Vec<String>,
+        /// Shell name retained by the rebuilt candidate.
+        retained_shell: String,
     },
 }
 
@@ -269,12 +279,15 @@ pub(crate) struct NativeTopologyRepair {
     pub checks: Vec<HealingCheck>,
     pub measurements: Vec<HealingMeasurement>,
     pub issues: Vec<HealingIssue>,
+    pub curves: BTreeMap<u64, std::sync::Arc<super::native::NativeCurve>>,
 }
 
 /// Repair source walks and shell orientations without asking for a global
 /// geometry or solid certificate. The native sampled tier performs its own fits.
 pub(crate) fn repair_native_topology(
     source: &TolerantFile,
+    parsed: &crate::geometry_source::ParsedStep,
+    angles: &crate::geometry_source::AngleUnit,
     dec: &mut Decider,
 ) -> Result<NativeTopologyRepair, Error> {
     let count = source.bodies.iter().map(|body| {
@@ -284,6 +297,7 @@ pub(crate) fn repair_native_topology(
     dec.charge_work(count as u64 + 1)?;
     let mut candidate = source.clone();
     let mut plan = Plan::default();
+    let mut curves = BTreeMap::new();
     for (index, body) in candidate.bodies.iter_mut().enumerate() {
         // This is only a search envelope for source-declared wire connections,
         // not an assigned tolerance. Actual local growth remains measured.
@@ -302,6 +316,10 @@ pub(crate) fn repair_native_topology(
         body.options.maximum_mm = (&span + &body.options.initial_mm)
             .max(body.options.maximum_mm.clone());
         wire::fix(index, &source.bodies[index], body, &mut plan, dec)?;
+        // Free-edge sewing has no declared source connection. Unlike repairing
+        // a broken source walk, it must respect the caller's stated sew width.
+        body.options.maximum_mm = source.bodies[index].options.maximum_mm.clone();
+        native_sewing::sew(index, body, parsed, &source.mm_per_unit, angles, &mut curves, &mut plan, dec)?;
         checks::shells(body, &mut plan, dec)?;
     }
     for need in &plan.growth {
@@ -322,6 +340,7 @@ pub(crate) fn repair_native_topology(
         checks: plan.checks,
         measurements: plan.measurements,
         issues: plan.issues,
+        curves,
     })
 }
 

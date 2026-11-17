@@ -215,3 +215,66 @@ pub(super) fn rebuild(
     }
     Ok(builder.changes)
 }
+
+pub(super) fn standalone_frame(parsed: &ParsedStep, changes: &mut Graph, name: &str, dec: &mut Decider) -> Result<u64, Error> {
+    let roots: Vec<_> = changes.iter().filter_map(|(&id, entity)| {
+        entity.parts.iter().any(|(kind, parameters)| {
+            matches!(kind.as_str(), "MANIFOLD_SOLID_BREP" | "BREP_WITH_VOIDS")
+                && matches!(parameters.first(), Some(Param::Str(value)) if value == name)
+        }).then_some(id)
+    }).collect();
+    if roots.is_empty() { return Err(invalid("import.tolerant-broken-topology", "selected body has no reconstructed solid root")); }
+    let next = parsed.entities().chain(changes.keys().copied()).max().unwrap_or(0).checked_add(1)
+        .ok_or_else(|| invalid("import.tolerant-broken-reference", "STEP entity index overflow"))?;
+    let mut builder = Builder { parsed, changes: std::mem::take(changes), next };
+    let mut context = None;
+    let mut units = Vec::new();
+    for entity in parsed.entities() {
+        dec.charge_work(1)?;
+        let kinds = parsed.entity_types(entity)?;
+        if kinds.iter().any(|kind| kind == "GEOMETRIC_REPRESENTATION_CONTEXT") {
+            let candidate = parsed.representation_context(entity)?;
+            if candidate.dimension == Some(3) && !candidate.units.is_empty() {
+                context = Some(entity);
+                break;
+            }
+        }
+        if kinds.iter().any(|kind| matches!(kind.as_str(), "LENGTH_UNIT" | "PLANE_ANGLE_UNIT" | "SOLID_ANGLE_UNIT")) {
+            units.push(entity);
+        }
+    }
+    let context = if let Some(context) = context { context } else {
+        if units.is_empty() {
+            let unit = builder.next; builder.next += 1;
+            builder.changes.insert(unit, Entity { parts: vec![
+                ("LENGTH_UNIT".into(), vec![]), ("NAMED_UNIT".into(), vec![Param::Derived]),
+                ("SI_UNIT".into(), vec![Param::Enum("MILLI".into()), Param::Enum("METRE".into())]),
+            ] });
+            units.push(unit);
+            let unit = builder.next; builder.next += 1;
+            builder.changes.insert(unit, Entity { parts: vec![
+                ("NAMED_UNIT".into(), vec![Param::Derived]), ("PLANE_ANGLE_UNIT".into(), vec![]),
+                ("SI_UNIT".into(), vec![Param::Unset, Param::Enum("RADIAN".into())]),
+            ] });
+            units.push(unit);
+        }
+        let context = builder.next; builder.next += 1;
+        builder.changes.insert(context, Entity { parts: vec![
+            ("GEOMETRIC_REPRESENTATION_CONTEXT".into(), vec![Param::Number("3".into())]),
+            ("GLOBAL_UNIT_ASSIGNED_CONTEXT".into(), vec![references(units)]),
+            ("REPRESENTATION_CONTEXT".into(), vec![text(""), text("")]),
+        ] });
+        context
+    };
+    let application = builder.add("APPLICATION_CONTEXT", vec![text("automotive_design")])?;
+    let product_context = builder.add("PRODUCT_CONTEXT", vec![text(""), reference_to(application), text("mechanical")])?;
+    let product = builder.add("PRODUCT", vec![text(name), text(name), text("tolerant body-local geometry"), references([product_context])])?;
+    let formation = builder.add("PRODUCT_DEFINITION_FORMATION", vec![text(""), text(""), reference_to(product)])?;
+    let definition_context = builder.add("PRODUCT_DEFINITION_CONTEXT", vec![text("part definition"), reference_to(application), text("design")])?;
+    let definition = builder.add("PRODUCT_DEFINITION", vec![text("design"), text(""), reference_to(formation), reference_to(definition_context)])?;
+    let shape = builder.add("PRODUCT_DEFINITION_SHAPE", vec![text(""), text(""), reference_to(definition)])?;
+    let representation = builder.add("ADVANCED_BREP_SHAPE_REPRESENTATION", vec![text(name), references(roots), reference_to(context)])?;
+    let root = builder.add("SHAPE_DEFINITION_REPRESENTATION", vec![reference_to(shape), reference_to(representation)])?;
+    *changes = builder.changes;
+    Ok(root)
+}

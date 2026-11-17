@@ -121,6 +121,20 @@ impl Carrier {
         })
     }
 
+    fn location(&self, parameters: [f64; 2]) -> Result<NativeLocation, Error> {
+        if parameters[..self.dimension].iter().any(|value| !value.is_finite()) {
+            return Err(broken("native parameters are not finite"));
+        }
+        let chart = self.charts.iter().position(|chart| {
+            (0..self.dimension).all(|axis| {
+                let bounds = &chart.domain()[axis];
+                bounds[0].as_ref().is_none_or(|low| parameters[axis] >= low.to_f64_nearest())
+                    && bounds[1].as_ref().is_none_or(|high| parameters[axis] <= high.to_f64_nearest())
+            })
+        }).ok_or_else(|| broken("parameters are outside every native source chart"))?;
+        Ok(NativeLocation { chart, parameters })
+    }
+
     fn sample(&self, location: NativeLocation, dec: &mut Decider) -> Result<NativeSample, Error> {
         dec.check_deadline()?;
         dec.charge_work(1)?;
@@ -394,20 +408,34 @@ impl NativeSurface {
     pub fn domain(&self, chart: usize) -> &[[Option<Rational>; 2]; 2] { self.0.charts[chart].domain() }
     /// Angular period in the source's plane-angle unit.
     pub fn angular_period(&self) -> f64 { self.0.period }
+    /// Resolve original source UV to its native knot span.
+    pub fn location(&self, parameters: [f64; 2]) -> Result<NativeLocation, Error> { self.0.location(parameters) }
     /// One physical sample in original source UV.
     pub fn sample(&self, location: NativeLocation, dec: &mut Decider) -> Result<NativeSample, Error> { self.0.sample(location, dec) }
+    /// Finite-difference normal direction at one sample. `None` means the
+    /// sampled frame collapsed; it is not a whole-face regularity theorem.
+    pub fn sampled_normal(&self, location: NativeLocation, dec: &mut Decider) -> Result<Option<[f64; 3]>, Error> {
+        let Some([mut a, mut b]) = self.0.jacobian(location, dec)? else { return Ok(None); };
+        let scale = |vector: &[f64; 3]| vector.iter().map(|value| value.abs()).fold(0.0, f64::max);
+        let first = scale(&a); let second = scale(&b);
+        if first == 0.0 || second == 0.0 || !first.is_finite() || !second.is_finite() { return Ok(None); }
+        a = a.map(|value| value / first); b = b.map(|value| value / second);
+        let normal = [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+        Ok(normal.iter().any(|value| *value != 0.0).then_some(normal))
+    }
     /// Fit source UV and report the actual sampled residual and convergence.
     pub fn project(&self, point_mm: [f64; 3], seed: Option<NativeLocation>, dec: &mut Decider) -> Result<NativeProjection, Error> { self.0.project(point_mm, seed, dec) }
 }
 
 /// A physical source curve, independent of any finite-edge certificate.
 #[derive(Debug)]
-pub struct NativeCurve(Carrier);
+pub struct NativeCurve(Carrier, bool);
 impl NativeCurve {
     /// Compile physical source curves without monotonicity or embedding gates.
     pub fn from_source(source: &ParsedStep, entity: EntityId, length_mm: &Rational, angles: AngleUnit, dec: &mut Decider) -> Result<Self, Error> {
         let charts = source.curve_charts(entity, length_mm, angles.clone(), dec).map_err(mapped)?;
-        Ok(Self(Carrier::new(entity, charts, 1, CoordinateSpace::Millimetres, &angles)?))
+        let angular = angular_curve(source, entity, dec)?;
+        Ok(Self(Carrier::new(entity, charts, 1, CoordinateSpace::Millimetres, &angles)?, angular))
     }
     /// Original curve identity.
     pub fn source(&self) -> EntityId { self.0.source }
@@ -415,12 +443,58 @@ impl NativeCurve {
     pub fn chart_count(&self) -> usize { self.0.charts.len() }
     /// Original exact limits, not reconstructed finite-edge parameters.
     pub fn domain(&self, chart: usize) -> &[[Option<Rational>; 2]; 2] { self.0.charts[chart].domain() }
+    /// Resolve an original source parameter to its native knot span.
+    pub fn location(&self, parameter: f64) -> Result<NativeLocation, Error> { self.0.location([parameter, 0.0]) }
     /// Source angular period for periodic analytic curves.
     pub fn angular_period(&self) -> f64 { self.0.period }
+    /// Resolve a finite source EDGE_CURVE traversal from fitted endpoint
+    /// parameters. Closed analytic curves use the source angular period;
+    /// closed splines use their declared finite native domain.
+    pub fn finite_range(&self, mut endpoints: [f64; 2], same_sense: bool, closed: bool) -> Result<[f64; 2], Error> {
+        if closed {
+            let mut domain: Option<[f64; 2]> = None;
+            for chart in &self.0.charts {
+                if let [Some(low), Some(high)] = &chart.domain()[0] {
+                    let low = low.to_f64_nearest(); let high = high.to_f64_nearest();
+                    domain = Some(match domain { None => [low, high], Some([a, b]) => [a.min(low), b.max(high)] });
+                }
+            }
+            return if let Some([low, high]) = domain {
+                Ok(if same_sense { [low, high] } else { [high, low] })
+            } else if self.1 {
+                Ok([endpoints[0], endpoints[0] + if same_sense { self.0.period } else { -self.0.period }])
+            } else {
+                Err(broken("closed edge has no finite or periodic source curve domain"))
+            };
+        }
+        if self.1 {
+            let period = self.0.period;
+            if same_sense {
+                endpoints[1] += ((endpoints[0] - endpoints[1]) / period).floor().max(0.0) * period;
+                if endpoints[1] <= endpoints[0] { endpoints[1] += period; }
+            } else {
+                endpoints[1] -= ((endpoints[1] - endpoints[0]) / period).floor().max(0.0) * period;
+                if endpoints[1] >= endpoints[0] { endpoints[1] -= period; }
+            }
+        }
+        Ok(endpoints)
+    }
     /// One physical curve sample.
     pub fn sample(&self, location: NativeLocation, dec: &mut Decider) -> Result<NativeSample, Error> { self.0.sample(location, dec) }
     /// Fit a source parameter and retain the observed residual.
     pub fn project(&self, point_mm: [f64; 3], seed: Option<NativeLocation>, dec: &mut Decider) -> Result<NativeProjection, Error> { self.0.project(point_mm, seed, dec) }
+}
+
+fn angular_curve(source: &ParsedStep, mut entity: EntityId, dec: &mut Decider) -> Result<bool, Error> {
+    use crate::geometry_source::{Curve, Geometry};
+    for _ in 0..32 {
+        match source.geometry(entity, dec)? {
+            Geometry::Curve(Curve::Circle(..) | Curve::Ellipse(..)) => return Ok(true),
+            Geometry::Curve(Curve::Replica(parent, _) | Curve::Offset3d(parent, ..) | Curve::SurfaceCurve(parent, ..)) => entity = parent,
+            _ => return Ok(false),
+        }
+    }
+    Err(broken("cyclic or excessive curve wrappers"))
 }
 
 /// A source PCURVE. Its values are UV coordinates, never Cartesian millimetres.

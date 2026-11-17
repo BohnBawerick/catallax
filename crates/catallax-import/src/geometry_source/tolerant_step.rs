@@ -22,9 +22,14 @@ impl ParsedStep {
         changes: &Graph,
         schemas: &[String],
         evidence_json: &str,
+        roots: Option<&[u64]>,
         dec: &mut Decider,
     ) -> Result<Vec<u8>, Refusal> {
-        let mut output = String::with_capacity(evidence_json.len() + self.graph.len() * 80);
+        let ids = match roots {
+            Some(roots) => reachable(&self.graph, changes, roots, dec)?,
+            None => self.graph.keys().chain(changes.keys()).copied().collect(),
+        };
+        let mut output = String::with_capacity(evidence_json.len() + ids.len() * 80);
         output.push_str("ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION((");
         quoted(&mut output, "CATALLAX TOLERANT: sampled fits, measured local tolerances; not certified");
         output.push(',');
@@ -41,7 +46,6 @@ impl ParsedStep {
             }
         }
         output.push_str("));\nENDSEC;\nDATA;\n");
-        let ids: BTreeSet<_> = self.graph.keys().chain(changes.keys()).copied().collect();
         for id in ids {
             dec.check_deadline()?;
             dec.charge_work(1)?;
@@ -66,6 +70,31 @@ impl ParsedStep {
         dec.charge_work(output.len() as u64)?;
         Ok(output.into_bytes())
     }
+}
+
+fn reachable(source: &Graph, changes: &Graph, roots: &[u64], dec: &mut Decider) -> Result<BTreeSet<u64>, Refusal> {
+    fn references(value: &Param, pending: &mut Vec<u64>, dec: &mut Decider) -> Result<(), Refusal> {
+        dec.charge_work(1)?;
+        match value {
+            Param::Ref(id) => pending.push(*id),
+            Param::List(values) | Param::Typed(_, values) => {
+                for value in values { references(value, pending, dec)?; }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+    let mut pending = roots.to_vec();
+    let mut seen = BTreeSet::new();
+    while let Some(id) = pending.pop() {
+        if !seen.insert(id) { continue; }
+        let entity = changes.get(&id).or_else(|| source.get(&id))
+            .ok_or_else(|| Refusal::new("import.tolerant-broken-reference", format!("absent entity #{id}")))?;
+        for (_, parameters) in &entity.parts {
+            for value in parameters { references(value, &mut pending, dec)?; }
+        }
+    }
+    Ok(seen)
 }
 
 fn validate(entity: &Entity, source: &Graph, changes: &Graph, dec: &mut Decider) -> Result<(), Refusal> {

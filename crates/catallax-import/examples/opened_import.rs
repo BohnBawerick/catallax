@@ -45,6 +45,10 @@ fn bodies(opened: &OpenedStep) -> Vec<Value> {
                 let c = body.counts();
                 ("numerical", json!({"faces":c.faces,"edges":c.edges,"vertices":c.vertices}), true)
             }
+            BodyView::Tolerant { import, body } => {
+                let c = import.bodies()[body].counts();
+                ("native_sampled", json!({"faces":c.faces,"edges":c.edges,"vertices":c.vertices}), true)
+            }
             BodyView::Surfaces { .. } => ("retained_source_surfaces", Value::Null, false),
         };
         json!({"body":index,"source_body":source.name(),"declared_solid":source.declared_solid(),
@@ -98,10 +102,30 @@ fn export(
             file.check_written(file.bytes(), dec)?;
             Ok(Some((file.bytes().to_vec(), "solid")))
         }
+        BodyView::Tolerant { import, body } => import.export_body(body, dec)
+            .map(|bytes| Some((bytes, "solid"))).map_err(native_error),
         // No exact/numerical B-rep was admitted, so there is no checked STEP
         // authority. Retained input bytes are separate from a body export.
         BodyView::Surfaces { .. } => Ok(None),
     }
+}
+
+fn native_error(error: tolerant::Error) -> Refusal {
+    match error {
+        tolerant::Error::Numerical(error) => error,
+        other => Refusal::new("import.native-export", format!("{other:?}")),
+    }
+}
+
+fn save_export(out: &Path, name: &str, bytes: &[u8], mut record: Value) -> Result<Value, Refusal> {
+    let path = out.join(name);
+    std::fs::write(&path, bytes).map_err(|error| Refusal::new("observer.write", error.to_string()))?;
+    let saved = std::fs::read(path).map_err(|error| Refusal::new("observer.reread", error.to_string()))?;
+    if saved != bytes { return Err(Refusal::new("observer.byte-identity", "written bytes changed")); }
+    record["file"] = json!(name);
+    record["bytes"] = json!(saved.len());
+    record["sha256"] = json!(sha256_hex(&saved));
+    Ok(record)
 }
 
 fn run(
@@ -147,23 +171,31 @@ fn run(
     let mut failed_body = None;
     let (exported, export_work) = with_operation_budget(DEFAULT_WORK, || {
         let mut dec = Decider::default();
+        if let Some(native) = opened.tolerant_admission() {
+            let bytes = native.export_step(&mut dec).map_err(native_error)?;
+            let mut maxima = std::collections::BTreeMap::<&str, f64>::new();
+            for tolerance in &native.evidence().tolerances {
+                let maximum = maxima.entry(&tolerance.body).or_default();
+                *maximum = maximum.max(tolerance.tolerance_mm);
+            }
+            let roots: Vec<_> = native.bodies().iter().enumerate().map(|(body, solid)| json!({
+                "body":body, "name":solid.name(),
+                "parts":if solid.definition().declared_solid() {1} else {solid.counts().shells},
+                "tolerance_mm":maxima[solid.name()],
+            })).collect();
+            files.push(save_export(out, "document.step", &bytes, json!({
+                "bodies":(0..native.bodies().len()).collect::<Vec<_>>(), "kind":"native_document",
+                "source_roots":roots,"unit_factors":native.source_unit_factors(),
+                "authority":"native_sampled",
+            }))?);
+            return Ok::<_, Refusal>(());
+        }
         for index in 0..opened.bodies().len() {
             failed_body = Some(index);
             dec.charge_work(1)?;
             if let Some((bytes, kind)) = export(&opened, index, &mut dec)? {
                 let file = format!("body-{index}.step");
-                let path = out.join(&file);
-                std::fs::write(&path, &bytes)
-                    .map_err(|e| Refusal::new("observer.write", e.to_string()))?;
-                let saved = std::fs::read(path)
-                    .map_err(|e| Refusal::new("observer.reread", e.to_string()))?;
-                if saved != bytes {
-                    return Err(Refusal::new(
-                        "observer.byte-identity",
-                        "written bytes changed",
-                    ));
-                }
-                files.push(json!({"body":index,"kind":kind,"file":file,"bytes":saved.len(),"sha256":sha256_hex(&saved)}));
+                files.push(save_export(out, &file, &bytes, json!({"bodies":[index],"kind":kind}))?);
             }
         }
         failed_body = None;
@@ -176,7 +208,9 @@ fn run(
         json!({"stage":"export","outcome":if refusal.is_none()&&!export_work.exhausted {"complete"} else {"refused"},
         "source_sha256":actual,"open":checkpoint,"files":files,"failed_body":failed_body,"refusal":refusal,
         "work_used":export_work.used,"work_exhausted":export_work.exhausted,"work_limit":DEFAULT_WORK,
-        "diagnostics":diagnostics(&opened),"complete_source_body_bound_established":false}),
+        "diagnostics":diagnostics(&opened),
+        "native_evidence":opened.tolerant_admission().map(|native|native.evidence()),
+        "complete_source_body_bound_established":false}),
     )
 }
 

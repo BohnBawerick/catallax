@@ -997,18 +997,22 @@ Before algebraic membership checks, retained branch witnesses are tested against
 
 A native spline also cannot equal a retained section if a complete span leaves that section's analytic cutting surface. The existing homogeneous implicit substitution now handles curve spans as well as surface spans; a proved nonzero pullback polynomial supplies this exact rejection without solving algebraic point preimages. A zero polynomial proves no component equality. This follows [OCCT's separate curve/quadric path](https://occt3d.com/dev/doc/refman/html/class_int_curve_surface___h_inter.html); unlike a full [SMLib curve/surface intersection](https://github.com/NVIDIA-Omniverse/usd-brep/blob/main/source/SMLib/src/SmCurve.cpp), this rejection needs neither intersection roots nor a tolerance.
 
+For open section components on one globally embedded chart, separated endpoint sets also disprove point-set equality. The Boolean pass prepares these outward endpoint bounds once per immutable curve, using the bounded enclosure API and the existing face-bound cache convention. Matching bounds prove nothing. Such an open component has distinct endpoints and cannot equal a whole closed circle or ellipse, even when every sampled witness belongs to that conic. Closed and multi-chart components keep their prior comparison path.
+
+Certified native cell-edge root queries retain their algebraic representation while permitting wider isolating brackets. When bounded rational-divisor enumeration is incomplete, a rootless prime reduction of the monic polynomial can exclude every rational root. Primes dividing any coefficient denominator are skipped. This proves no absence of irrational real roots; the complete real-root isolator still enumerates them. The optional reduction uses the existing bounded-exact allowance and charged arithmetic. An inconclusive reduction leaves coefficient-grid reconstruction responsible. Ordinary scalar roots, cyclotomic angles and tower resolvents retain their prior reconstruction path. Decider caches, request proofs and run-ahead identities distinguish these publication strategies: a coarse native-edge certificate must not change an ordinary query's brackets, enclosure-derived STEP bounds or work.
+
 ##### Work recorded for Phase 5
 
-The unchanged P8 original and spring-rise edit reach the same prefix below. Both report the typed `numbers.operation-budget` refusal at `threaded = base ∪ thread` under the explicit 100M application allowance. The witness-separation checkpoint clears the earlier component-equivalence refusal. Common-denominator normalization, residual-driven helix fitting and shared-net projection selection retain the declared source checks. The latest verified thread uses 59 sections and 236 charts, rather than the earlier fixed-floor 128 sections and 512 charts. The spring and final union are not reached; neither completed original/edit body nor P8 STEP is claimed. Nested per-chart charges belong to the sweep row, not a second total.
+The unchanged P8 original and spring-rise edit reach the same prefix below under the explicit 100M application allowance and 0.01 mm generating tolerance. Common-denominator normalization, residual-driven helix fitting and shared-net projection selection retain the declared source checks. The thread uses 59 sections and 236 charts, rather than the earlier fixed-floor 128 sections and 512 charts. Endpoint-bound preparation, modular rational-root exclusion and open-versus-closed carrier identity clear the earlier work-budget refusal. Both variants now refuse `intersect.parametric-surface` during finite curve/rational-patch clipping in `threaded = base ∪ thread`, with the allowance unexhausted. The spring and final union are not reached; neither a completed original/edit body nor P8 STEP is claimed. Nested per-chart charges belong to the sweep row, not a second total.
 
-| Stage | Witness-separation checkpoint | Latest narrow-repair checkpoint | Latest outcome |
-|---|---:|---:|---|
-| Plate and boss stock | 0 | 0 | Built |
-| Base union | 11,050 | 11,050 | Built |
-| Thread sketch | 1 | 1 | Built |
-| Thread sweep | 96,979,475 | 33,876,285 | Fitted carrier built; source motion numerical |
-| Threaded union | 3,007,286 | 66,112,656 | Request allowance exhausted |
-| Complete request | 99,997,812 | 99,999,992 | `numbers.operation-budget` |
+| Stage | Witness-separation checkpoint | Narrow-repair checkpoint | Carrier-repair checkpoint | Latest outcome |
+|---|---:|---:|---:|---|
+| Plate and boss stock | 0 | 0 | 0 | Built |
+| Base union | 11,050 | 11,050 | 11,050 | Built |
+| Thread sketch | 1 | 1 | 1 | Built |
+| Thread sweep | 96,979,475 | 33,876,285 | 33,876,285 | Fitted carrier built; source motion numerical |
+| Threaded union | 3,007,286 | 66,112,656 | 21,738,949 | Finite curve/rational-patch solver gap |
+| Request before refusal | 99,997,812 | 99,999,992 | 55,626,285 | `intersect.parametric-surface` |
 
 Later: thread fitting still exceeds the 20M target; retain this phase record for Phase 5 without enlarging the 100M application allowance.
 

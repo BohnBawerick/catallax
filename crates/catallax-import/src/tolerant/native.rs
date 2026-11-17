@@ -1,5 +1,9 @@
 //! Sampled source-carrier fits. These types confer no exact-model authority.
 
+mod family_seeds;
+
+use family_seeds::FamilySeeds;
+
 use catallax_numbers::{Decider, Rational, Refusal};
 use serde::Serialize;
 
@@ -86,6 +90,10 @@ fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
 
 fn difference(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
     std::array::from_fn(|axis| a[axis] - b[axis])
+}
+
+fn same_location(a: &NativeLocation, b: &NativeLocation) -> bool {
+    a.chart == b.chart && a.parameters.map(f64::to_bits) == b.parameters.map(f64::to_bits)
 }
 
 impl Carrier {
@@ -423,6 +431,12 @@ impl Carrier {
                     location.parameters[axis] += scale * delta[axis];
                 }
                 location = self.clamp(location);
+                // The retained best sample already evaluates these exact bits;
+                // evaluating it again cannot satisfy the strict improvement test.
+                if same_location(&location, &best.location) {
+                    dec.check_deadline()?;
+                    continue;
+                }
                 if let Some(sample) = self.try_sample(location, dec)? {
                     let residual_mm = distance(sample.point_mm, target) + sample.uncertainty_mm;
                     if residual_mm < best.residual_mm {
@@ -449,6 +463,7 @@ impl Carrier {
         &self,
         target: [f64; 3],
         seed: Option<NativeLocation>,
+        family: Option<&FamilySeeds>,
         dec: &mut Decider,
     ) -> Result<NativeProjection, Error> {
         if target.iter().any(|value| !value.is_finite()) {
@@ -463,6 +478,28 @@ impl Carrier {
             }
             best = Some(candidate);
         }
+        if let Some(family) = family {
+            let point = target.map(Rational::from_f64_exact);
+            if let [Some(x), Some(y), Some(z)] = point {
+                for parameters in family.seeds(&[x, y, z], dec).map_err(mapped)? {
+                    let parameters = parameters.each_ref().map(Rational::to_f64_nearest);
+                    let Ok(location) = self.location(parameters) else {
+                        continue;
+                    };
+                    if let Some(candidate) = self.refine(target, location, dec)? {
+                        if candidate.converged {
+                            return Ok(candidate);
+                        }
+                        if best
+                            .as_ref()
+                            .is_none_or(|old| candidate.residual_mm < old.residual_mm)
+                        {
+                            best = Some(candidate);
+                        }
+                    }
+                }
+            }
+        }
         for (chart, data) in self.charts.iter().enumerate() {
             let center = std::array::from_fn(|axis| {
                 match (&data.domain()[axis][0], &data.domain()[axis][1]) {
@@ -470,12 +507,22 @@ impl Carrier {
                     _ => 0.0,
                 }
             });
-            let origin = NativeLocation {
-                chart,
-                parameters: center,
+            // Finite limits already determine the scan ranges. Origin samples
+            // and derivatives contribute only to an unbounded search envelope.
+            let (base, derivatives) = if data
+                .domain()
+                .iter()
+                .take(self.dimension)
+                .any(|bounds| bounds.iter().any(Option::is_none))
+            {
+                let origin = NativeLocation {
+                    chart,
+                    parameters: center,
+                };
+                (self.try_sample(origin, dec)?, self.jacobian(origin, dec)?)
+            } else {
+                (None, None)
             };
-            let base = self.try_sample(origin, dec)?;
-            let derivatives = self.jacobian(origin, dec)?;
             let mut ranges = [[0.0; 2]; 2];
             for axis in 0..self.dimension {
                 ranges[axis] = match (&data.domain()[axis][0], &data.domain()[axis][1]) {
@@ -528,7 +575,7 @@ impl Carrier {
 
 /// A physical source surface with sampled UV fitting, not an embedding proof.
 #[derive(Debug)]
-pub struct NativeSurface(Carrier, [Option<f64>; 2]);
+pub struct NativeSurface(Carrier, [Option<f64>; 2], Option<FamilySeeds>);
 impl NativeSurface {
     /// Compile source charts without any whole-domain topology admission.
     pub fn from_source(
@@ -544,7 +591,9 @@ impl NativeSurface {
         let carrier = Carrier::new(entity, charts, 2, CoordinateSpace::Millimetres, &angles)?;
         let periodic = surface_periodic_axes(source, entity, dec)?;
         let periods = periodic.map(|periodic| periodic.then_some(carrier.period));
-        Ok(Self(carrier, periods))
+        let family =
+            FamilySeeds::from_source(source, entity, length_mm, &angles, dec).map_err(mapped)?;
+        Ok(Self(carrier, periods, family))
     }
     /// Original source surface identity.
     pub fn source(&self) -> EntityId {
@@ -647,7 +696,7 @@ impl NativeSurface {
                 self.0.location(parameters)
             })
             .transpose()?;
-        let mut projection = self.0.project(point_mm, canonical, dec)?;
+        let mut projection = self.0.project(point_mm, canonical, self.2.as_ref(), dec)?;
         if let Some(seed) = seed {
             let parameters =
                 self.align_parameters(projection.location.parameters, Some(seed.parameters));
@@ -777,7 +826,7 @@ impl NativeCurve {
         seed: Option<NativeLocation>,
         dec: &mut Decider,
     ) -> Result<NativeProjection, Error> {
-        self.0.project(point_mm, seed, dec)
+        self.0.project(point_mm, seed, None, dec)
     }
 }
 
@@ -874,5 +923,19 @@ impl NativeUvCurve {
             self.0
                 .periodic_sample(location, [self.1.then_some(self.0.period), None], dec)?;
         Ok(([value.point_mm[0], value.point_mm[1]], value.uncertainty_mm))
+    }
+
+    pub(crate) fn hint(
+        &self,
+        parameter: f64,
+        dec: &mut Decider,
+    ) -> Result<Option<[f64; 2]>, Error> {
+        let Ok(location) = self.0.location([parameter, 0.0]) else {
+            return Ok(None);
+        };
+        Ok(self
+            .0
+            .try_sample(location, dec)?
+            .map(|sample| [sample.point_mm[0], sample.point_mm[1]]))
     }
 }

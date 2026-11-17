@@ -280,6 +280,7 @@ fn census(bytes: &[u8]) -> Value {
         "file_schemas": document.schemas, "schema_error": document.schema_error,
         "data_sections": sections.count, "unsupported_data_sections": sections.unsupported,
         "data_section_scan_complete": sections.scan_complete,
+        "file_schemas": document.schemas, "file_schema_error": document.schema_error,
         "referenced_faces": faces, "face_kinds": kinds, "unreferenced_faces": unreferenced,
         "missing_references": missing.len(), "unresolved_faces": unresolved_faces,
         "assembly_or_mapping_entities": instances,

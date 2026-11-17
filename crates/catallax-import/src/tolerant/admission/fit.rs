@@ -90,19 +90,29 @@ impl<'a> Context<'a> {
         self.surfaces.insert(entity, Arc::clone(&surface));
         Ok(surface)
     }
-    fn pcurve(&mut self, entity: u64, dec: &mut Decider) -> Result<Arc<NativeUvCurve>, Error> {
+    fn pcurve(
+        &mut self,
+        entity: u64,
+        dec: &mut Decider,
+    ) -> Result<Option<Arc<NativeUvCurve>>, Error> {
         if let Some(curve) = self.pcurves.get(&entity) {
-            return Ok(Arc::clone(curve));
+            return Ok(Some(Arc::clone(curve)));
         }
-        let curve = Arc::new(NativeUvCurve::from_source(
+        let curve = match NativeUvCurve::from_source(
             self.parsed,
             entity,
             self.scale,
             self.angles.clone(),
             dec,
-        )?);
+        ) {
+            Ok(curve) => Arc::new(curve),
+            Err(error) if crate::tolerant::native::control(&error) => return Err(error),
+            // This carrier is only an optional hint. Required 3D curve and
+            // surface compilation above still propagates its own refusals.
+            Err(_) => return Ok(None),
+        };
         self.pcurves.insert(entity, Arc::clone(&curve));
-        Ok(curve)
+        Ok(Some(curve))
     }
 }
 
@@ -651,6 +661,27 @@ fn pcurves(
     ))
 }
 
+fn pcurve_seed(
+    surface: &NativeSurface,
+    pcurve: Option<&NativeUvCurve>,
+    parameter: f64,
+    previous: Option<NativeLocation>,
+    dec: &mut Decider,
+) -> Result<Option<NativeLocation>, Error> {
+    let Some(uv) = pcurve
+        .map(|curve| curve.hint(parameter, dec))
+        .transpose()?
+        .flatten()
+    else {
+        return Ok(previous);
+    };
+    let uv = surface.align_parameters(uv, previous.map(|location| location.parameters));
+    Ok(surface.location(uv).ok().or(previous))
+}
+
+#[cfg(test)]
+mod tests;
+
 fn manifold(body: &TolerantBody, dec: &mut Decider) -> Result<TolerantCounts, Error> {
     let mut active_edges = vec![false; body.edges.len()];
     let mut active_vertices = vec![false; body.vertices.len()];
@@ -891,14 +922,10 @@ pub(super) fn check_body(
                         .get(*occurrence % associated.len().max(1))
                         .copied();
                     *occurrence += 1;
-                    let pcurve = match source_pcurve
+                    let pcurve = source_pcurve
                         .map(|entity| context.pcurve(entity, dec))
-                        .transpose()
-                    {
-                        Ok(curve) => curve,
-                        Err(error) if super::super::native::control(&error) => return Err(error),
-                        Err(_) => None,
-                    };
+                        .transpose()?
+                        .flatten();
                     let mut preserve_pcurve = pcurve.is_some();
                     let mut samples = Vec::with_capacity(STATIONS + 1);
                     for station in 0..=STATIONS {
@@ -946,7 +973,16 @@ pub(super) fn check_body(
                                 None => previous,
                             }
                         } else {
-                            previous
+                            match &surface {
+                                Some(surface) => pcurve_seed(
+                                    surface,
+                                    pcurve.as_deref(),
+                                    curve_location.parameters[0],
+                                    previous,
+                                    dec,
+                                )?,
+                                None => previous,
+                            }
                         };
                         let seed = match (&surface, seed) {
                             (Some(surface), Some(seed)) => {

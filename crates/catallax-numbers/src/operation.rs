@@ -75,7 +75,7 @@ impl Eq for RootProofKey {}
 // Persistent maps: a loop handed to workers takes a copy for each of them
 // without copying the entries.
 type RootProofs = im::OrdMap<RootProofKey, Arc<RootEnclosure>>;
-type RootListProofs = im::OrdMap<(u32, u64), im::HashMap<Arc<UPoly>, Arc<CachedRoots>>>;
+type RootListProofs = im::OrdMap<(u32, u64, bool), im::HashMap<Arc<UPoly>, Arc<CachedRoots>>>;
 type EnclosureKey = (*const crate::real::Node, u32, u32, u64, bool);
 type EnclosureProofs = HashMap<EnclosureKey, (Arc<crate::real::Node>, EnclosureProof)>;
 
@@ -742,10 +742,11 @@ pub(crate) fn record_root_proof(
 }
 
 // Policy-bounded exact shortcuts can change isolation certificates and cold
-// fees. Reuse a complete root list only for the same polynomial and policy.
+// fees. Reuse only the same polynomial, policy and bracket-publication strategy.
 pub(crate) fn root_list_proof(
     polynomial: &UPoly,
     policy: BudgetPolicy,
+    coarse_brackets: bool,
 ) -> Option<Arc<CachedRoots>> {
     if ACTIVE.with(|slot| slot.borrow().is_none()) {
         return None;
@@ -754,7 +755,7 @@ pub(crate) fn root_list_proof(
     let found = ROOT_LIST_PROOFS.with(|proofs| {
         proofs
             .borrow()
-            .get(&(policy.max_precision_bits, policy.max_work))
+            .get(&(policy.max_precision_bits, policy.max_work, coarse_brackets))
             .and_then(|polynomials| polynomials.get(polynomial))
             .cloned()
     });
@@ -768,13 +769,14 @@ pub(crate) fn root_list_proof(
 pub(crate) fn record_root_list_proof(
     polynomial: &Arc<UPoly>,
     policy: BudgetPolicy,
+    coarse_brackets: bool,
     certificate: &Arc<CachedRoots>,
 ) {
     if ACTIVE.with(|slot| slot.borrow().is_some()) {
         ROOT_LIST_PROOFS.with(|proofs| {
             proofs
                 .borrow_mut()
-                .entry((policy.max_precision_bits, policy.max_work))
+                .entry((policy.max_precision_bits, policy.max_work, coarse_brackets))
                 .or_default()
                 .insert(polynomial.clone(), certificate.clone());
         });

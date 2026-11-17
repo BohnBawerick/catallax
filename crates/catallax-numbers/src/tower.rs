@@ -371,7 +371,7 @@ impl Tower {
             if !crate::algebraic::rational_root_possible(&resolvent, w.work)? {
                 return Ok(None);
             }
-            for candidate in crate::algebraic::isolate(&resolvent, w.work)? {
+            for candidate in crate::algebraic::isolate(&resolvent, false, w.work)? {
                 let Some(z) = candidate
                     .value
                     .as_rational()

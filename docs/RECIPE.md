@@ -995,18 +995,20 @@ A native spline also cannot equal a retained section if a complete span leaves t
 
 The unchanged P8 original and spring-rise edit reach the same prefix below. Both report the typed `numbers.operation-budget` refusal at `threaded = base ∪ thread` under the explicit 100M application allowance. The witness-separation checkpoint clears the earlier component-equivalence refusal. Common-denominator normalization, residual-driven helix fitting and shared-net projection selection retain the declared source checks. The latest verified thread uses 59 sections and 236 charts, rather than the earlier fixed-floor 128 sections and 512 charts. The spring and final union are not reached; neither completed original/edit body nor P8 STEP is claimed. Nested per-chart charges belong to the sweep row, not a second total.
 
-| Stage | Witness-separation checkpoint | Latest review-repair checkpoint | Latest outcome |
+| Stage | Witness-separation checkpoint | Latest narrow-repair checkpoint | Latest outcome |
 |---|---:|---:|---|
 | Plate and boss stock | 0 | 0 | Built |
 | Base union | 11,050 | 11,050 | Built |
 | Thread sketch | 1 | 1 | Built |
 | Thread sweep | 96,979,475 | 33,876,285 | Fitted carrier built; source motion numerical |
-| Threaded union | 3,007,286 | 66,112,644 | Request allowance exhausted |
-| Complete request | 99,997,812 | 99,999,980 | `numbers.operation-budget` |
+| Threaded union | 3,007,286 | 66,112,656 | Request allowance exhausted |
+| Complete request | 99,997,812 | 99,999,992 | `numbers.operation-budget` |
 
 Later: thread fitting still exceeds the 20M target; retain this phase record for Phase 5 without enlarging the 100M application allowance.
 
 After the source-review repairs, the standalone quarter helix builds, applies a rise edit, saves and reopens with identical edited/reopened STEP bytes under explicit 100M request allowances and `max_sections=2`. Build work is 1,229,367; edit/reopen work is 1,199,767 each. STEP export uses 4,530,003 initially and 4,530,440 after edit/reopen. All three STEP bodies open in OpenCASCADE with healing off as valid, closed, one-solid bodies with ten faces matching the numerical producer. This proves that feature case, not complete P8.
+
+The guide/twist 90° → 180° and helical-twist 30° → 45° cases likewise build, edit, save and reopen with identical edited/reopened STEP bytes. All six files read raw as valid, closed, one-solid bodies. Face-count checks use each artifact's own producer count, including when the edit changes the section count.
 
 ### 4.12 Loft
 

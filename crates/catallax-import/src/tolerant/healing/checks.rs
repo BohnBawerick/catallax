@@ -91,14 +91,29 @@ fn between(
 }
 
 // Validate the immutable source too. A carrier removed by sewing must never
-// escape its original incidence checks or acquire an unmeasured correspondence.
+// escape its original incidence checks or acquire an unproved correspondence.
 pub(super) fn source_geometry(
     body_index: usize,
     source: &TolerantBody,
     candidate: &TolerantBody,
     plan: &mut Plan,
+    bounds: IncidenceBounds,
     dec: &mut Decider,
 ) -> Result<(), Error> {
+    let (point_check, point_cause, plane_check, plane_cause) = match bounds {
+        IncidenceBounds::Tight => (
+            "original-source-point-to-original-line-carrier",
+            "healing.original-source-vertex-incidence",
+            "original-finite-line-segment-to-original-plane",
+            "healing.original-source-finite-line-incidence",
+        ),
+        IncidenceBounds::CapCertified => (
+            "original-source-point-to-original-line-carrier.exact-squared-cap-upper-bound",
+            "healing.cap-certified-original-source-vertex-incidence",
+            "original-finite-line-segment-to-original-plane.exact-squared-cap-upper-bound",
+            "healing.cap-certified-original-source-finite-line-incidence",
+        ),
+    };
     // The log contains changes for every body. Prepay the complete visited span,
     // including foreign-body entries rejected by the filter.
     dec.charge_work(plan.changes.len() as u64)?;
@@ -165,7 +180,7 @@ pub(super) fn source_geometry(
         for (end, vertex) in edge.vertices.iter().enumerate() {
             let point = &source.vertices[*vertex].source.point;
             let projection = project_line(point, origin, direction, dec)?;
-            let upper = distance_upper(
+            let upper = bounds.upper(
                 &distance_squared(point, &projection, dec)?,
                 &source.options.maximum_mm,
                 dec,
@@ -173,14 +188,14 @@ pub(super) fn source_geometry(
             plan.measured(
                 source,
                 &format!("original {} endpoint {end}", edge.name),
-                "original-source-point-to-original-line-carrier",
+                point_check,
                 &upper,
             );
             plan.need(
                 body_index,
                 ToleranceEntity::Vertex(source.vertices[*vertex].source.name.clone()),
                 upper,
-                "healing.original-source-vertex-incidence",
+                point_cause,
             );
         }
     }
@@ -203,7 +218,7 @@ pub(super) fn source_geometry(
                             direction,
                             dec,
                         )?;
-                        let upper = distance_upper(
+                        let upper = bounds.upper(
                             &plane_squared(&point, plane, dec)?,
                             &source.options.maximum_mm,
                             dec,
@@ -215,14 +230,14 @@ pub(super) fn source_geometry(
                     plan.measured(
                         source,
                         &format!("original {} on {}", edge.name, face.name),
-                        "original-finite-line-segment-to-original-plane",
+                        plane_check,
                         &maximum,
                     );
                     plan.need(
                         body_index,
                         ToleranceEntity::Edge(edge.name.clone()),
                         maximum,
-                        "healing.original-source-finite-line-incidence",
+                        plane_cause,
                     );
                 }
             }
@@ -390,8 +405,23 @@ pub(super) fn faces(
     body_index: usize,
     body: &mut TolerantBody,
     plan: &mut Plan,
+    bounds: IncidenceBounds,
     dec: &mut Decider,
 ) -> Result<(), Error> {
+    let (point_check, point_cause, plane_check, plane_cause) = match bounds {
+        IncidenceBounds::Tight => (
+            "point-to-retained-line-carrier",
+            "healing.measured-vertex-curve-incidence",
+            "complete-line-segment-between-projected-endpoints-to-plane",
+            "healing.measured-finite-line-plane-incidence",
+        ),
+        IncidenceBounds::CapCertified => (
+            "point-to-retained-line-carrier.exact-squared-cap-upper-bound",
+            "healing.cap-certified-vertex-curve-incidence",
+            "complete-line-segment-between-projected-endpoints-to-plane.exact-squared-cap-upper-bound",
+            "healing.cap-certified-finite-line-plane-incidence",
+        ),
+    };
     let uses = usage(body, dec)?;
     for (index, edge) in body
         .edges
@@ -403,7 +433,7 @@ pub(super) fn faces(
             for (end, vertex) in edge.vertices.iter().enumerate() {
                 let point = &body.vertices[*vertex].source.point;
                 let projected = project_line(point, origin, direction, dec)?;
-                let upper = distance_upper(
+                let upper = bounds.upper(
                     &distance_squared(point, &projected, dec)?,
                     &body.options.maximum_mm,
                     dec,
@@ -411,14 +441,14 @@ pub(super) fn faces(
                 plan.measured(
                     body,
                     &format!("{} endpoint {end}", edge.name),
-                    "point-to-retained-line-carrier",
+                    point_check,
                     &upper,
                 );
                 plan.need(
                     body_index,
                     ToleranceEntity::Vertex(body.vertices[*vertex].source.name.clone()),
                     upper,
-                    "healing.measured-vertex-curve-incidence",
+                    point_cause,
                 );
             }
         } else {
@@ -477,7 +507,7 @@ pub(super) fn faces(
                             direction,
                             dec,
                         )?;
-                        let upper = distance_upper(
+                        let upper = bounds.upper(
                             &plane_squared(&point, plane, dec)?,
                             &body.options.maximum_mm,
                             dec,
@@ -489,14 +519,14 @@ pub(super) fn faces(
                     plan.measured(
                         body,
                         &format!("{} on {}", edge.name, face.name),
-                        "complete-line-segment-between-projected-endpoints-to-plane",
+                        plane_check,
                         &maximum,
                     );
                     plan.need(
                         body_index,
                         ToleranceEntity::Edge(edge.name.clone()),
                         maximum,
-                        "healing.measured-finite-line-plane-incidence",
+                        plane_cause,
                     );
                 }
                 let mut crossing = false;
@@ -753,7 +783,14 @@ mod tests {
             });
         }
         let (result, work) = with_operation_budget(512, || {
-            source_geometry(0, &body, &body, &mut changes, &mut Decider::default())
+            source_geometry(
+                0,
+                &body,
+                &body,
+                &mut changes,
+                IncidenceBounds::Tight,
+                &mut Decider::default(),
+            )
         });
         assert!(work.exhausted);
         assert!(matches!(result, Err(Error::Numerical(r)) if r.code == "numbers.operation-budget"));

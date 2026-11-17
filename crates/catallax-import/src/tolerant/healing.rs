@@ -205,9 +205,9 @@ pub struct HealingMeasurement {
     pub body: String,
     /// Source entity or incidence, including endpoint index where relevant.
     pub scope: String,
-    /// The measured geometric quantity and its domain.
+    /// Geometric quantity, domain and bound-proving method.
     pub check: String,
-    /// Actual attained upper distance, in millimetres.
+    /// Proven upper distance in millimetres, not necessarily a measured residual.
     pub distance_upper_mm: String,
 }
 
@@ -220,7 +220,7 @@ pub struct HealingReport {
     pub changes: Vec<HealingChange>,
     /// Every completed discrete check.
     pub checks: Vec<HealingCheck>,
-    /// Geometry measurements behind requested local tolerances.
+    /// Source correspondence bounds behind requested local tolerances.
     pub measurements: Vec<HealingMeasurement>,
     /// Conditions which remain unresolved; these never grant solid validity.
     pub issues: Vec<HealingIssue>,
@@ -453,15 +453,50 @@ pub fn heal(source: &TolerantFile, dec: &mut Decider) -> Result<HealedFile, Erro
     attempt(source, dec).map_err(|failure| failure.error)
 }
 
+#[derive(Clone, Copy)]
+pub(super) enum IncidenceBounds {
+    Tight,
+    CapCertified,
+}
+
+impl IncidenceBounds {
+    fn upper(
+        self,
+        squared: &Rational,
+        cap: &Rational,
+        dec: &mut Decider,
+    ) -> Result<Rational, Error> {
+        match self {
+            Self::Tight => distance_upper(squared, cap, dec),
+            Self::CapCertified => {
+                require_distance_cap(squared, cap, dec)?;
+                Ok(if squared.is_zero() {
+                    Rational::zero()
+                } else {
+                    cap.clone()
+                })
+            }
+        }
+    }
+}
+
 /// As [`heal`], retaining stage measurements even on cap or work refusal.
 /// Failure diagnostics never contain a partially repaired candidate.
 pub fn attempt(
     source: &TolerantFile,
     dec: &mut Decider,
 ) -> Result<HealedFile, Box<HealingFailure>> {
+    attempt_with_bounds(source, IncidenceBounds::Tight, dec)
+}
+
+pub(super) fn attempt_with_bounds(
+    source: &TolerantFile,
+    bounds: IncidenceBounds,
+    dec: &mut Decider,
+) -> Result<HealedFile, Box<HealingFailure>> {
     if !operation_budget_active() {
         return with_operation_budget(catallax_topology::numerical::DEFAULT_WORK, || {
-            attempt(source, dec)
+            attempt_with_bounds(source, bounds, dec)
         })
         .0;
     }
@@ -487,7 +522,7 @@ pub fn attempt(
                 let stage_result = match stage {
                     "sewing" => sewing::sew(index, body, &mut plan, dec),
                     "wire" => wire::fix(index, &source.bodies[index], body, &mut plan, dec),
-                    "face" => checks::faces(index, body, &mut plan, dec),
+                    "face" => checks::faces(index, body, &mut plan, bounds, dec),
                     "shell" => checks::shells(body, &mut plan, dec),
                     "solid" => checks::solid(body, &mut plan, dec),
                     _ => unreachable!(),
@@ -505,7 +540,7 @@ pub fn attempt(
         failed_stage = "publication";
         failed_body = None;
         for (index, body) in candidate.bodies.iter().enumerate() {
-            checks::source_geometry(index, &source.bodies[index], body, &mut plan, dec)?;
+            checks::source_geometry(index, &source.bodies[index], body, &mut plan, bounds, dec)?;
         }
         // Gather maxima and endpoint propagation before making any ledger
         // change. Even a late refusal discards this whole private candidate.
@@ -654,11 +689,11 @@ fn distance_squared(a: &Vec3, b: &Vec3, dec: &mut Decider) -> Result<Rational, E
     dot(&d, &d, dec)
 }
 
-fn distance_upper(
+fn require_distance_cap(
     squared: &Rational,
     cap: &Rational,
     dec: &mut Decider,
-) -> Result<Rational, Error> {
+) -> Result<(), Error> {
     let squared_cap = arithmetic(cap, cap, '*', dec)?;
     if compare(squared, &squared_cap, dec)?.is_gt() {
         return Err(failure(
@@ -666,6 +701,15 @@ fn distance_upper(
             "measured source correspondence exceeds the healing cap",
         ));
     }
+    Ok(())
+}
+
+fn distance_upper(
+    squared: &Rational,
+    cap: &Rational,
+    dec: &mut Decider,
+) -> Result<Rational, Error> {
+    require_distance_cap(squared, cap, dec)?;
     charge_value(squared, dec)?;
     let bits = squared
         .numerator()

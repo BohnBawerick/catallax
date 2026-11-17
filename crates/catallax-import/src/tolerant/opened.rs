@@ -333,10 +333,24 @@ fn open_prepared(
     };
     let before = current_operation_work().used;
     if operation_budget_active() {
-        checked_admit(bytes, step, &mut result, dec);
+        checked_admit(
+            bytes,
+            step,
+            &mut result,
+            healing::IncidenceBounds::CapCertified,
+            dec,
+        );
     } else {
         let reservation = catallax_numbers::OperationAllowance::reserve(n::DEFAULT_WORK)?;
-        reservation.run(|| checked_admit(bytes, step, &mut result, dec));
+        reservation.run(|| {
+            checked_admit(
+                bytes,
+                step,
+                &mut result,
+                healing::IncidenceBounds::CapCertified,
+                dec,
+            )
+        });
     }
     result.checked_upgrade_work_used = current_operation_work().used.saturating_sub(before);
     let incomplete: Vec<_> = result
@@ -504,11 +518,23 @@ pub fn open_checked_step(
         native_admission_work_used: 0,
         checked_upgrade_work_used: 0,
     };
-    checked_admit(bytes, step, &mut result, dec);
+    checked_admit(
+        bytes,
+        step,
+        &mut result,
+        healing::IncidenceBounds::Tight,
+        dec,
+    );
     Ok(result)
 }
 
-fn checked_admit(bytes: &[u8], step: &StepId, result: &mut OpenedStep, dec: &mut Decider) {
+fn checked_admit(
+    bytes: &[u8],
+    step: &StepId,
+    result: &mut OpenedStep,
+    bounds: healing::IncidenceBounds,
+    dec: &mut Decider,
+) {
     let expected_sha256 = result.source.source_sha256.as_str();
     let numerical_options = n::NumericalOptions {
         tolerance_mm: result.source.options.maximum_mm.clone(),
@@ -592,7 +618,7 @@ fn checked_admit(bytes: &[u8], step: &StepId, result: &mut OpenedStep, dec: &mut
         if current_operation_work().exhausted {
             break;
         }
-        let healed = match healing::attempt(&single, dec) {
+        let healed = match healing::attempt_with_bounds(&single, bounds, dec) {
             Ok(healed) => Box::new(healed),
             Err(failure) => {
                 let stop = control_refusal(&failure.error);

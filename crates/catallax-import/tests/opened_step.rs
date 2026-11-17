@@ -147,6 +147,77 @@ fn normal_gap_replays_from_saved_source_controls_with_approximate_history() {
 }
 
 #[test]
+fn import_cap_proofs_stay_conservative_while_explicit_checked_bounds_stay_tight() {
+    let mut fixture = BoxFixture::new(["2", "3", "4"]);
+    fixture.shift = Some((0, [r("0.001"), r("0"), r("0")]));
+    let mut sheet = BoxFixture::new(["2", "3", "4"]);
+    sheet.origin = [r("5"), r("0"), r("0")];
+    sheet.omit = Some(0);
+    let source = boxes_step(&[fixture, sheet]);
+    let hash = sha256_hex(source.as_bytes());
+    let step = StepId::new("bounded-incidence").unwrap();
+    let cap = r("0.005");
+    let options = tolerant::ToleranceOptions {
+        maximum_mm: cap.clone(),
+        ..Default::default()
+    };
+    let imported = opened::open_step(
+        source.as_bytes(),
+        &hash,
+        &step,
+        options.clone(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let checked = opened::open_checked_step(
+        source.as_bytes(),
+        &hash,
+        &step,
+        options,
+        &mut Decider::default(),
+    )
+    .unwrap();
+    for file in [&imported, &checked] {
+        assert_eq!(file.bodies()[0].tier(), Tier::RepairedSolid);
+        assert!(file.bodies()[0].approximate());
+        assert_eq!(checked_artifact(file).0, (6, 12, 8));
+        assert_eq!(file.bodies()[1].tier(), Tier::SurfaceBody);
+    }
+    let import_report = imported.bodies()[0].healing().unwrap().report();
+    let mut saw_conservative_cap = false;
+    for measurement in import_report.measurements.iter().filter(|measurement| {
+        measurement
+            .check
+            .ends_with(".exact-squared-cap-upper-bound")
+    }) {
+        let bound = r(&measurement.distance_upper_mm);
+        assert!(bound.is_zero() || bound == cap);
+        saw_conservative_cap |= bound == cap;
+    }
+    assert!(saw_conservative_cap);
+    let strict_report = checked.bodies()[0].healing().unwrap().report();
+    assert!(!strict_report.measurements.iter().any(|measurement| {
+        measurement
+            .check
+            .ends_with(".exact-squared-cap-upper-bound")
+    }));
+    let tight = strict_report
+        .measurements
+        .iter()
+        .filter(|measurement| {
+            matches!(
+                measurement.check.as_str(),
+                "point-to-retained-line-carrier"
+                    | "complete-line-segment-between-projected-endpoints-to-plane"
+            )
+        })
+        .map(|measurement| r(&measurement.distance_upper_mm))
+        .max()
+        .unwrap();
+    assert!(tight > r("0") && tight < cap);
+}
+
+#[test]
 fn retained_surface_sewing_requires_closure_within_the_callers_cap() {
     let mut fixture = BoxFixture::new(["2", "3", "4"]);
     fixture.shift = Some((0, [r("0.001"), r("0"), r("0")]));

@@ -263,6 +263,68 @@ fn failure(code: &'static str, detail: &str) -> Error {
     Refusal::new(code, detail).into()
 }
 
+pub(crate) struct NativeTopologyRepair {
+    pub candidate: TolerantFile,
+    pub changes: Vec<HealingChange>,
+    pub checks: Vec<HealingCheck>,
+    pub measurements: Vec<HealingMeasurement>,
+    pub issues: Vec<HealingIssue>,
+}
+
+/// Repair source walks and shell orientations without asking for a global
+/// geometry or solid certificate. The native sampled tier performs its own fits.
+pub(crate) fn repair_native_topology(
+    source: &TolerantFile,
+    dec: &mut Decider,
+) -> Result<NativeTopologyRepair, Error> {
+    let count = source.bodies.iter().map(|body| {
+        body.vertices.len() + body.edges.len()
+            + body.shells.iter().map(|shell| shell.faces.len()).sum::<usize>()
+    }).sum::<usize>();
+    dec.charge_work(count as u64 + 1)?;
+    let mut candidate = source.clone();
+    let mut plan = Plan::default();
+    for (index, body) in candidate.bodies.iter_mut().enumerate() {
+        // This is only a search envelope for source-declared wire connections,
+        // not an assigned tolerance. Actual local growth remains measured.
+        let mut span = Rational::zero();
+        for axis in 0..3 {
+            let mut values = body.vertices.iter().map(|vertex| &vertex.source.point[axis]);
+            if let Some(first) = values.next() {
+                let (mut low, mut high) = (first, first);
+                for value in values {
+                    low = low.min(value);
+                    high = high.max(value);
+                }
+                span = &span + &(high - low);
+            }
+        }
+        body.options.maximum_mm = (&span + &body.options.initial_mm)
+            .max(body.options.maximum_mm.clone());
+        wire::fix(index, &source.bodies[index], body, &mut plan, dec)?;
+        checks::shells(body, &mut plan, dec)?;
+    }
+    for need in &plan.growth {
+        let body = &mut candidate.bodies[need.body];
+        body.options.maximum_mm = body.options.maximum_mm.clone().max(need.required.clone());
+        match &need.entity {
+            ToleranceEntity::Vertex(name) => {
+                body.grow_vertex_tolerance(name, need.required.clone(), &need.cause, dec)?;
+            }
+            ToleranceEntity::Edge(name) => {
+                body.grow_edge_tolerance(name, need.required.clone(), &need.cause, dec)?;
+            }
+        }
+    }
+    Ok(NativeTopologyRepair {
+        candidate,
+        changes: plan.changes,
+        checks: plan.checks,
+        measurements: plan.measurements,
+        issues: plan.issues,
+    })
+}
+
 /// Repair a private candidate, then publish its geometry and tolerance changes
 /// together. Cap, topology, deadline or work failure leaves `source` untouched.
 /// Unresolved checks remain explicit for later surface/solid tier assignment.

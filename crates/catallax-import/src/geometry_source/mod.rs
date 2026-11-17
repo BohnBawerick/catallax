@@ -12,6 +12,7 @@ mod mapping;
 mod parametric;
 mod topology;
 mod units;
+mod tolerant_step;
 pub use definitions::*;
 pub use fitting::{FitOptions, FittedCurve, FittedSurface};
 pub use mapping::{Frame, MappingError};
@@ -28,6 +29,8 @@ use std::sync::Arc;
 pub struct ParsedStep {
     graph: Arc<Graph>,
     source_sha256: String,
+    schemas: Vec<String>,
+    schema_error: Option<String>,
 }
 
 impl ParsedStep {
@@ -37,13 +40,28 @@ impl ParsedStep {
             .map_err(|_| ImportRefusal::ResourceLimit)?;
         dec.check_deadline()
             .map_err(|_| ImportRefusal::ResourceLimit)?;
-        let graph = Arc::new(crate::part21::parse(bytes)?);
+        let document = crate::part21::parse_document(bytes)?;
+        let graph = Arc::new(document.graph);
         dec.check_deadline()
             .map_err(|_| ImportRefusal::ResourceLimit)?;
         Ok(Self {
             graph,
             source_sha256: crate::sha256_hex(bytes),
+            schemas: document.schemas,
+            schema_error: document.schema_error,
         })
+    }
+
+    /// Immutable input identity shared by native and certified source views.
+    pub fn source_sha256(&self) -> &str {
+        &self.source_sha256
+    }
+
+    pub(crate) fn schemas(&self) -> Result<&[String], ImportRefusal> {
+        match &self.schema_error {
+            Some(detail) => Err(ImportRefusal::Malformed { detail: detail.clone() }),
+            None => Ok(&self.schemas),
+        }
     }
 
     /// Original entity numbers in ascending order.

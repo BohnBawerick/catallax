@@ -177,6 +177,17 @@ pub fn current_operation_work() -> OperationWork {
         )
     })
 }
+/// Remaining work in the active request, or `None` outside a bounded request.
+/// Optional subordinate proofs can reserve a fraction without exhausting the
+/// caller's allowance before the main operation starts.
+pub fn remaining_operation_work() -> Option<u64> {
+    ACTIVE.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .map(|state| state.limit.saturating_sub(state.used))
+    })
+}
+
 
 /// Runs a synchronous operation with a deterministic work allowance.
 ///

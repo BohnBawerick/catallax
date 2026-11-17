@@ -13,6 +13,7 @@ fn frame(path: &Path, t: f64, twist: f64, initial: Option<[V; 2]>) -> Frame {
     FrameLaw {
         path,
         guide: None,
+        line_guide: None,
         reference: [1.0, 0.0, 0.0],
         initial,
         normal_offset: 0.0,
@@ -79,6 +80,7 @@ fn guide_rotation_and_authored_twist_both_move_the_section() {
     let frame = FrameLaw {
         path: &path,
         guide: Some(&guide),
+        line_guide: None,
         reference: [1.0, 0.0, 0.0],
         initial: None,
         normal_offset: 0.0,
@@ -114,6 +116,7 @@ fn a_projected_reference_is_not_mislabelled_as_spline_parallel_transport() {
     let refusal = FrameLaw {
         path: &path,
         guide: None,
+        line_guide: None,
         reference: [1.0, 0.0, 0.0],
         initial: None,
         normal_offset: 0.0,
@@ -133,6 +136,7 @@ fn standalone_helix_heading_places_an_asymmetric_section() {
     let start = FrameLaw {
         path: &path,
         guide: None,
+        line_guide: None,
         reference: [0.0, 0.0, 1.0],
         initial: None,
         normal_offset: 0.0,
@@ -298,6 +302,7 @@ fn authored_line_difference_preserves_the_section_heading() {
     let frame = FrameLaw {
         path: &path,
         guide: None,
+        line_guide: None,
         reference: [1.0, 0.0, 0.0],
         initial: None,
         normal_offset: 0.0,
@@ -310,4 +315,52 @@ fn authored_line_difference_preserves_the_section_heading() {
     let normal = cross(frame.x, frame.y);
     assert!(normal[0] > 0.02 && normal[0] < 0.03);
     assert!(normal[2] > 0.99);
+}
+
+#[test]
+fn sub_ulp_guide_turn_moves_the_retained_section_at_large_coordinates() {
+    let mut recipe = line_definition();
+    let base = q(1_i64 << 40);
+    let ulp = Rational::from_ratio(1, 4096).unwrap();
+    let mut plane = RecipePose::identity();
+    plane.translation.0[0] = base.clone().into();
+    plane.translation.0[1] = base.clone().into();
+    recipe.plane = Some(plane);
+    let p = |x: Rational, y: Rational, z: i64| RecipePoint([x.into(), y.into(), q(z).into()]);
+    recipe.path = SweepPath::Line {
+        start: p(base.clone(), base.clone(), 0),
+        end: p(base.clone(), base.clone(), 4),
+    };
+    let guide_x = &base + &(&q(4) * &ulp);
+    recipe.guide = Some(SweepPath::Line {
+        start: p(guide_x.clone(), base.clone(), 0),
+        end: p(
+            guide_x,
+            &base + &(&Rational::from_ratio(49, 100).unwrap() * &ulp),
+            4,
+        ),
+    });
+    recipe.tolerance_mm = Rational::from_ratio(1, 100).unwrap().into();
+    recipe.max_sections = 64;
+    let mut dec = Decider::default();
+    let swept = build(&recipe, &mut dec).unwrap();
+    assert!(swept.checks().max_motion_endpoint_error_mm.unwrap() < 0.01 / 4.0);
+    let (generated, _, _) = guarded(|| definition(&recipe, &mut dec)).unwrap();
+    let corner = generated
+        .vertices
+        .iter()
+        .filter(|vertex| vertex.position[2] == q(4))
+        .max_by(|a, b| a.position[0].cmp(&b.position[0]))
+        .unwrap();
+    let x = Real::from(&corner.position[0] - &base);
+    let y = Real::from(&corner.position[1] - &base);
+    assert!(&corner.position[1] - &base > Rational::from_ratio(45, 100).unwrap());
+    let length = Real::from(162_401).sqrt();
+    let dx = &x - &(&Real::from(1600) / &length);
+    let dy = &y - &(&Real::from(196) / &length);
+    let residual = &dx.square() + &dy.square();
+    assert!(
+        dec.enclose_budgeted_at(&residual, 128).unwrap().hi()
+            < Rational::from_ratio(1, 160_000).unwrap()
+    );
 }

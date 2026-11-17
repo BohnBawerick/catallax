@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 use catallax_numbers::{Decider, Rational, Real, Refusal, Sign};
 use catallax_recipe::{Loop, Number, Point3 as RecipePoint, Pose as RecipePose};
 use catallax_shapes::{
-    BSplineCurve, BSplineSurface, Curve, Plane, Point3, RationalPatch, SplineBoundary, Surface,
-    Vector3,
+    BSplineCurve, BSplineSurface, Curve, Plane, Point3, RVector3, RationalPatch, SplineBoundary,
+    Surface, Vector3,
 };
 use catallax_topology::{
     Sense,
@@ -416,6 +416,59 @@ impl Path {
     }
 }
 
+struct LineGuide {
+    offset: RVector3,
+    change: RVector3,
+}
+impl LineGuide {
+    fn new(spine: &SweepPath, guide: Option<&SweepPath>) -> Option<Self> {
+        let (
+            SweepPath::Line { start, end },
+            Some(SweepPath::Line {
+                start: guide_start,
+                end: guide_end,
+            }),
+        ) = (spine, guide)
+        else {
+            return None;
+        };
+        let difference = |a: &RecipePoint, b: &RecipePoint| {
+            RVector3::new(
+                a.0[0].value() - b.0[0].value(),
+                a.0[1].value() - b.0[1].value(),
+                a.0[2].value() - b.0[2].value(),
+            )
+        };
+        let tangent = difference(end, start);
+        let offset = difference(guide_start, start);
+        let change = difference(guide_end, end).minus(&offset);
+        // (T × PQ) × T is the transverse guide direction times |T|².
+        // Preserve both subtraction and projection before scalar conversion.
+        let project = |v: &RVector3| tangent.cross(v).cross(&tangent);
+        Some(Self {
+            offset: project(&offset),
+            change: project(&change),
+        })
+    }
+    fn at(&self, t: f64, dec: &mut Decider) -> Result<V, Refusal> {
+        dec.charge_work(1)?;
+        let direction = self.offset.plus(&self.change.scaled(&rational(t)?));
+        let scale = direction
+            .x
+            .abs()
+            .max(direction.y.abs())
+            .max(direction.z.abs());
+        if scale.is_zero() {
+            return Err(bad("a guide needs a nonzero transverse direction"));
+        }
+        unit([
+            (&direction.x / &scale).to_f64_nearest(),
+            (&direction.y / &scale).to_f64_nearest(),
+            (&direction.z / &scale).to_f64_nearest(),
+        ])
+    }
+}
+
 #[derive(Clone, Copy)]
 struct Frame {
     origin: V,
@@ -426,6 +479,7 @@ struct Frame {
 struct FrameLaw<'a> {
     path: &'a Path,
     guide: Option<&'a Path>,
+    line_guide: Option<&'a LineGuide>,
     reference: V,
     initial: Option<[V; 2]>,
     normal_offset: f64,
@@ -438,6 +492,7 @@ impl FrameLaw<'_> {
         let Self {
             path,
             guide,
+            line_guide,
             reference,
             initial,
             normal_offset,
@@ -476,12 +531,16 @@ impl FrameLaw<'_> {
                 let x = add(mul(radial, spin_c), mul(binormal, spin_s));
                 return Ok([x, cross(tangent, x), tangent]);
             }
-            let direction = if let Some(guide) = guide {
-                sub(guide.at(t, dec)?.0, origin)
+            let x = if let Some(line_guide) = line_guide {
+                line_guide.at(t, dec)?
             } else {
-                reference
+                let direction = if let Some(guide) = guide {
+                    sub(guide.at(t, dec)?.0, origin)
+                } else {
+                    reference
+                };
+                unit(sub(direction, mul(tangent, dot(direction, tangent))))?
             };
-            let x = unit(sub(direction, mul(tangent, dot(direction, tangent))))?;
             Ok([x, unit(cross(tangent, x))?, tangent])
         };
         let first = base(0.0, dec)?;
@@ -612,6 +671,7 @@ fn definition(
         .map(|p| Path::new(p, dec))
         .transpose()?;
     let (motion_samples, motion_error) = motion_endpoints(recipe, &path, guide.as_ref(), dec)?;
+    let line_guide = LineGuide::new(&recipe.path, recipe.guide.as_ref());
     let twist = number(&recipe.twist_degrees).to_radians();
     let end_scale = number(&recipe.end_scale);
     let mut initial = None;
@@ -647,6 +707,7 @@ fn definition(
     let frame = FrameLaw {
         path: &path,
         guide: guide.as_ref(),
+        line_guide: line_guide.as_ref(),
         reference,
         initial,
         normal_offset,

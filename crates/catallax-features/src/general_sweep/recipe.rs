@@ -27,10 +27,23 @@ pub struct RecipeSwept {
     pub face_origins: BTreeMap<String, Vec<Origin>>,
 }
 
+fn require_budget() -> Result<(), Refusal> {
+    if catallax_numbers::operation_budget_active() {
+        Ok(())
+    } else {
+        Err(Refusal::new(
+            "sweep.operation-budget-required",
+            "prepare_recipe and admit require one caller-owned work allowance covering both stages",
+        ))
+    }
+}
+
 impl RecipeCandidate {
     /// Embeds the fitted geometry and admits only a numerical body. This follows
     /// the existing numerical Boolean selection callback convention. No exact
     /// evaluation checkpoint is returned or made available by this producer.
+    /// The caller must keep the same operation-budget scope active across
+    /// `prepare_recipe` and this admission callback; neither stage resets it.
     pub fn admit<T>(
         self,
         admit: impl FnOnce(
@@ -41,6 +54,7 @@ impl RecipeCandidate {
         ) -> Result<(NumericalBody, T), Refusal>,
         dec: &mut Decider,
     ) -> Result<(RecipeSwept, T), Refusal> {
+        require_budget()?;
         let face_origins = self
             .model
             .faces_of_body(self.body)
@@ -103,11 +117,16 @@ pub(crate) fn path_needs_numerical(recipe: &Recipe, path: &StepId) -> bool {
 
 /// Constructs the fitted recipe privately. The caller must supply the numerical
 /// embedding/admission consumer before obtaining an editable numerical body.
+/// Requires a caller-owned operation budget that remains active through `admit`.
 pub fn prepare_recipe(
     recipe: &Recipe,
     options: NumericalOptions,
     dec: &mut Decider,
 ) -> Result<RecipeCandidate, crate::BuildError> {
+    require_budget().map_err(|refusal| crate::BuildError::Geometry {
+        step: recipe.result.clone(),
+        refusal,
+    })?;
     let mut context = Context {
         tolerance: options.tolerance_mm.clone(),
         checks: BTreeMap::new(),
@@ -402,5 +421,44 @@ mod tests {
         });
         assert!(!work.exhausted);
         result.unwrap();
+    }
+
+    #[test]
+    fn recipe_preparation_and_admission_require_a_caller_work_scope() {
+        let recipe: Recipe =
+            serde_json::from_str(include_str!("../../tests/fixtures/straight-sweep.json")).unwrap();
+        let options = || NumericalOptions {
+            tolerance_mm: Rational::from_ratio(1, 100).unwrap(),
+        };
+        let error = prepare_recipe(&recipe, options(), &mut Decider::default())
+            .err()
+            .expect("unbudgeted construction must refuse");
+        let crate::BuildError::Geometry { refusal, .. } = error else {
+            panic!("expected a work-scope refusal")
+        };
+        assert_eq!(refusal.code, "sweep.operation-budget-required");
+
+        let (prepared, work) = catallax_numbers::with_operation_budget(20_000_000, || {
+            prepare_recipe(&recipe, options(), &mut Decider::default())
+        });
+        assert!(!work.exhausted);
+        let candidate = prepared.unwrap();
+        let error = candidate
+            .admit::<()>(
+                |_, _, _, _| panic!("an admission callback must not run outside a work scope"),
+                &mut Decider::default(),
+            )
+            .err()
+            .expect("unbudgeted admission must refuse");
+        assert_eq!(error.code, "sweep.operation-budget-required");
+
+        let (result, work) = catallax_numbers::with_operation_budget(1, || {
+            prepare_recipe(&recipe, options(), &mut Decider::default())
+        });
+        let crate::BuildError::Geometry { refusal, .. } = result.err().unwrap() else {
+            panic!("expected caller work exhaustion")
+        };
+        assert_eq!(refusal.code, "numbers.operation-budget");
+        assert!(work.exhausted && work.used <= 1);
     }
 }

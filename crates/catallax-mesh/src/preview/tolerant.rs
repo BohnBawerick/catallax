@@ -321,13 +321,7 @@ pub fn preview_tolerant_body(
         .map(|vertex| push(&mut mesh, point(&vertex.source.point)?, options))
         .collect::<Result<Vec<_>, _>>()?;
     let mut edges = BTreeMap::new();
-    let mut collapsed_vertices = vec![false; mesh.positions.len()];
     for edge in body.edges() {
-        if edge.degenerate {
-            for vertex in edge.vertices {
-                collapsed_vertices[vertices[vertex]] = true;
-            }
-        }
         let Some(trim) = first_trim.get(edge.name.as_str()) else {
             continue;
         };
@@ -380,6 +374,14 @@ pub fn preview_tolerant_body(
         edges.insert(edge.name.as_str(), samples);
     }
     for face in body.shells().iter().flat_map(|shell| &shell.faces) {
+        let collapsed_vertices = face
+            .loops
+            .iter()
+            .flat_map(|boundary| &boundary.edges)
+            .map(|usage| &body.edges()[usage.edge])
+            .filter(|edge| edge.degenerate)
+            .flat_map(|edge| edge.vertices.map(|vertex| vertices[vertex]))
+            .collect::<std::collections::BTreeSet<_>>();
         let source_id = face
             .name
             .strip_prefix('#')
@@ -434,7 +436,7 @@ pub fn preview_tolerant_body(
                     } else {
                         row.len() - 1 - offset
                     }];
-                    let collapsed = collapsed_vertices.get(index).copied().unwrap_or(false);
+                    let collapsed = collapsed_vertices.contains(&index);
                     if !collapsed && nodes.last().is_some_and(|node| node.mesh == index) {
                         continue;
                     }

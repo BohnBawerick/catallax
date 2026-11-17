@@ -948,6 +948,21 @@ pub(super) fn check_body(
                         } else {
                             previous
                         };
+                        let seed = match (&surface, seed) {
+                            (Some(surface), Some(seed)) => {
+                                match surface.location(seed.parameters) {
+                                    Ok(_) => Some(seed),
+                                    Err(error) if super::super::native::control(&error) => {
+                                        return Err(error);
+                                    }
+                                    Err(_) => {
+                                        preserve_pcurve = false;
+                                        None
+                                    }
+                                }
+                            }
+                            _ => seed,
+                        };
                         let mut pole_seed = false;
                         let seed = match (&surface, seed) {
                             (Some(surface), Some(seed)) => {

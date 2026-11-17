@@ -575,3 +575,43 @@ fn missing_sphere_pole_edges_are_reconstructed_from_measured_collapse() {
         .unwrap();
     }
 }
+
+#[test]
+fn an_out_of_domain_source_trace_is_rebuilt_from_the_actual_curve() {
+    let source = include_str!("fixtures/half-sphere-missing-poles.step").replace(
+        "#40 = CARTESIAN_POINT('',(0.,-6.28318530718));",
+        "#40 = CARTESIAN_POINT('',(0.,100.));",
+    );
+    let (native, work) = with_operation_budget(20_000_000, || {
+        tolerant::admission::import_step(
+            source.as_bytes(),
+            &sha256_hex(source.as_bytes()),
+            Default::default(),
+            &mut Decider::default(),
+        )
+    });
+    let native = native.unwrap();
+    assert!(!work.exhausted);
+    let trace = native
+        .evidence()
+        .native_trims
+        .iter()
+        .find(|trace| trace.face == "#17" && trace.edge == "#21")
+        .unwrap();
+    assert!(trace.reconstructed);
+    assert!(trace.source_pcurve.is_none());
+    assert!(
+        trace
+            .samples
+            .iter()
+            .all(|sample| sample.surface.parameters[1].abs() <= std::f64::consts::FRAC_PI_2)
+    );
+    let file = native.export_body(0, &mut Decider::default()).unwrap();
+    if let Ok(folder) = std::env::var("CATALLAX_HEALING_EVIDENCE") {
+        std::fs::write(
+            std::path::Path::new(&folder).join("native-rebuilt-trace.step"),
+            file.bytes(),
+        )
+        .unwrap();
+    }
+}

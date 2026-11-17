@@ -232,3 +232,17 @@ There are no lost or unmeasured baseline passes. All 12 candidate files retain s
 At that candidate, seven focused original-source projection cases pass, including scaled units, a spindle inner sheet and its offset, oblique ellipse extrusion and a signed negative torus offset. A generated normal-offset half-torus reaches the sampled tolerant-solid tier and writes STEP that the direct OCCT 8.0.1.1.0 builder reads valid at 1e-7 mm, without an explicit ShapeFix call. Its native `Geom_OffsetSurface` definition and parameters remain present; volume is 197.39208802180022 mm³ versus 197.39208802178717 expected.
 
 At producer `778bd0ead5c57af305b6654aa1a0ce0f1f0d164c`, the oblique half-ellipse extrusion reaches the same sampled tier and writes an artifact, but its raw-reader UV-period closure is unresolved and receives no export-valid credit. Keeping master-curve flags or rotating the closed walk does not resolve that case. Dropping PCURVE associations also fails raw validity and changes the observed volume, so it is not an accepted workaround. No complete-source body-deviation or unhealed-validity claim is made.
+
+## Remaining named families after native UV repair
+
+Producer `9785090cb796b3109f0c926de63b6fa1d189c28c`, on the shared native period-alignment repair, supersedes the focused extrusion failure above. Both actual exports pass the direct raw OCCT reader at 1e-7 mm with both read modes zero and no explicit ShapeFix. The extrusion remains `Geom_SurfaceOfLinearExtrusion`, with its original ellipse radii and signed direction; volume is 37.69911184307269 mm³ versus 37.69911184307752 expected. The offset remains `Geom_OffsetSurface` and retains the preceding volume result. The seven physical projection controls also pass at this producer.
+
+The requested follow-on measures every explicitly remaining named file, without selecting easier replacements. Source-manifest SHA-256 is `9f126eccbeb2decf3e5afbc18f2c1a1e432dcdb029f2f9d888e58fde6ccd9bb9`; actual observer binary SHA-256 is `76cf47191cec94d9a0945e3de96015679adcf2866c4097a7156dc68be3f70bed`. Source hashes are verified before and after each observation. The same two-worker, separate 20M opening/export, 60-second and 6,144 MiB controls apply.
+
+| Named remaining family | Files evaluated | Structured source retained | Any admitted solid | Every solid exported valid |
+| --- | ---: | ---: | ---: | ---: |
+| Toroidal surface | 30 | 30 | 0 | 0 |
+| Offset surface | 20 | 20 | 0 | 0 |
+| Linear extrusion | 14 | 14 | 0 | 0 |
+
+All 64 files therefore open only as retained source, comprising 764 source bodies; none is a recovered solid or valid-solid export. There are no timeouts, memory terminations or process errors. Remaining cause sets overlap: 57 files report operation-budget refusal and eight report non-manifold topology; the outer opening allowance is exhausted in 56 files. These outcomes grant no real-file admission gain, do not label original CAD corrupt, and do not replace the frozen 3,000-file qualification.

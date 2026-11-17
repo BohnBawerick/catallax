@@ -584,8 +584,8 @@ mod tests {
         let width = domain[1] - domain[0];
         let x = Ball::from_rational(&Rational::from_i64(15), 128);
         let z = Ball::from_rational(&Rational::from_i64(35), 128);
-        let centre_y = Rational::parse("-49.335").unwrap() - &fillet_radius;
-        let radius = Rational::from_i64(25) - &fillet_radius;
+        let centre_y = &Rational::parse("-49.335").unwrap() - &fillet_radius;
+        let radius = &Rational::from_i64(25) - &fillet_radius;
         let check_tolerance = tolerance.mul_pow2(1);
         for i in 0..=17 {
             let share = Rational::from_ratio(i, 17).unwrap();

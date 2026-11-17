@@ -685,66 +685,70 @@ fn numerical_fillet_builds_on_the_smooth_loft_across_its_station_seam() {
     assert!(!work.exhausted, "{work:?}");
     println!("numerical smooth-loft fillet: {} work", work.used);
     // Independent geometry checks do not consume the modeled app request.
-    let ((), proof_work) = with_operation_budget(100_000_000, || {
-        let dec = Decider::default();
-        let fillet = rounded.fillet();
-        let radial_tolerance = &(&q("2") * &radius) * &tolerance;
-        for node in fillet.spine().nodes() {
-            for side in 0..2 {
-                let uv = &node.parameters[side];
-                let native = supports[side].source().domain();
-                if uv[0] < *native[0][0]
-                    || uv[0] > *native[0][1]
-                    || uv[1] < *native[1][0]
-                    || uv[1] > *native[1][1]
-                {
-                    continue;
+    let check_geometry = |rounded: &catallax_features::fillet::numerical::NumericalFilletBuilt,
+                          radius: &Rational| {
+        let ((), proof_work) = with_operation_budget(100_000_000, || {
+            let dec = Decider::default();
+            let fillet = rounded.fillet();
+            let radial_tolerance = &(&q("2") * radius) * &tolerance;
+            for node in fillet.spine().nodes() {
+                for side in 0..2 {
+                    let uv = &node.parameters[side];
+                    let native = supports[side].source().domain();
+                    if uv[0] < *native[0][0]
+                        || uv[0] > *native[0][1]
+                        || uv[1] < *native[1][0]
+                        || uv[1] > *native[1][1]
+                    {
+                        continue;
+                    }
+                    let point = supports[side]
+                        .source()
+                        .evaluate_box([&uv[0], &uv[0]], [&uv[1], &uv[1]], 128, &dec)
+                        .unwrap();
+                    let square = (0..3).fold(
+                        catallax_numbers::Ball::from_rational(&q("0"), 128),
+                        |sum, k| {
+                            let delta = &point[k]
+                                - &catallax_numbers::Ball::from_rational(&node.centre[k], 128);
+                            &sum + &delta.pow_u32(2)
+                        },
+                    );
+                    assert!((&square.lo() - &(radius * radius)).abs() <= radial_tolerance);
+                    assert!((&square.hi() - &(radius * radius)).abs() <= radial_tolerance);
                 }
-                let point = supports[side]
-                    .source()
-                    .evaluate_box([&uv[0], &uv[0]], [&uv[1], &uv[1]], 128, &dec)
-                    .unwrap();
-                let square = (0..3).fold(
-                    catallax_numbers::Ball::from_rational(&q("0"), 128),
-                    |sum, k| {
-                        let delta = &point[k]
-                            - &catallax_numbers::Ball::from_rational(&node.centre[k], 128);
-                        &sum + &delta.pow_u32(2)
-                    },
-                );
-                assert!((&square.lo() - &(&radius * &radius)).abs() <= radial_tolerance);
-                assert!((&square.hi() - &(&radius * &radius)).abs() <= radial_tolerance);
             }
-        }
-        for edge in rounded
-            .body()
-            .definition()
-            .edges
-            .iter()
-            .filter(|edge| edge.key.starts_with("round/cap/"))
-        {
-            let Curve::BSpline(curve) = &edge.curve else {
-                panic!("cap cut must retain its native spline");
-            };
-            let vertex = &rounded.body().definition().vertices[edge.vertices[0]].position;
-            let height = if vertex[2].abs() < (&vertex[2] - &q("2")).abs() {
-                q("0")
-            } else {
-                q("2")
-            };
-            for i in 0..=16 {
-                let s = Rational::from_ratio(i, 16).unwrap();
-                let point = curve.evaluate_box([&s, &s], 128, &dec).unwrap();
-                assert!((&point[2].lo() - &height).abs() <= tolerance);
-                assert!((&point[2].hi() - &height).abs() <= tolerance);
+            for edge in rounded
+                .body()
+                .definition()
+                .edges
+                .iter()
+                .filter(|edge| edge.key.starts_with("round/cap/"))
+            {
+                let Curve::BSpline(curve) = &edge.curve else {
+                    panic!("cap cut must retain its native spline");
+                };
+                let vertex = &rounded.body().definition().vertices[edge.vertices[0]].position;
+                let height = if vertex[2].abs() < (&vertex[2] - &q("2")).abs() {
+                    q("0")
+                } else {
+                    q("2")
+                };
+                for i in 0..=16 {
+                    let s = Rational::from_ratio(i, 16).unwrap();
+                    let point = curve.evaluate_box([&s, &s], 128, &dec).unwrap();
+                    assert!((&point[2].lo() - &height).abs() <= tolerance);
+                    assert!((&point[2].hi() - &height).abs() <= tolerance);
+                }
             }
-        }
-    });
-    assert!(!proof_work.exhausted, "{proof_work:?}");
-    println!(
-        "independent numerical-body geometry checks: {} work",
-        proof_work.used
-    );
+        });
+        assert!(!proof_work.exhausted, "{proof_work:?}");
+        println!(
+            "independent numerical-body geometry checks at radius {radius}: {} work",
+            proof_work.used
+        );
+    };
+    check_geometry(&rounded, &radius);
     let names = |body: &catallax_topology::numerical::NumericalBody| {
         (
             body.definition()
@@ -757,40 +761,37 @@ fn numerical_fillet_builds_on_the_smooth_loft_across_its_station_seam() {
                 .iter()
                 .map(|edge| edge.key.clone())
                 .collect::<std::collections::BTreeSet<_>>(),
+            body.definition()
+                .vertices
+                .iter()
+                .map(|vertex| vertex.key.clone())
+                .collect::<std::collections::BTreeSet<_>>(),
         )
     };
+    let edited_radius = q("3/20");
     let (edited, work) = with_operation_budget(100_000_000, || {
-        rounded.edit_radius(q("3/20"), &mut Decider::default())
+        rounded.edit_radius(edited_radius.clone(), &mut Decider::default())
     });
-    match edited {
-        Ok(edited) => {
-            assert!(!work.exhausted, "{work:?}");
-            assert_eq!(names(rounded.body()), names(edited.body()));
-            println!(
-                "numerical smooth-loft radius edit keeps names: {} work",
-                work.used
-            );
-        }
-        Err(refusal) => {
-            assert!(work.exhausted, "{refusal:?}: {work:?}");
-            assert_eq!(refusal.code, "numbers.operation-budget");
-            println!(
-                "numerical smooth-loft radius edit refuses at its work ceiling: {} work; {refusal:?}",
-                work.used,
-            );
-        }
-    }
+    let edited = edited
+        .unwrap_or_else(|refusal| panic!("numerical radius edit refused: {refusal:?}; {work:?}"));
+    assert!(!work.exhausted, "{work:?}");
+    assert_eq!(names(rounded.body()), names(edited.body()));
+    println!(
+        "numerical smooth-loft radius edit keeps names: {} work",
+        work.used
+    );
+    check_geometry(&edited, &edited_radius);
     if let Some(path) = std::env::var_os("CATALLAX_M11_STEP_OUT") {
         let (artifact, work) = with_operation_budget(100_000_000, || {
             catallax_step::numerical::build(
-                rounded.body(),
+                edited.body(),
                 &Default::default(),
                 &mut Decider::default(),
             )
         });
         assert!(!work.exhausted, "{work:?}");
         std::fs::write(path, artifact.unwrap().bytes()).unwrap();
-        println!("direct numerical smooth-loft STEP: {} work", work.used);
+        println!("edited numerical smooth-loft STEP: {} work", work.used);
     }
 }
 

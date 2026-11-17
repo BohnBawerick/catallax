@@ -144,3 +144,26 @@ Current-main surface kinds, continuous planar-circle clearance and
 certified handover migration are preserved.
 
 
+## 17 November: radius-edit end cuts
+
+The radius change from 0.1 mm to 0.15 mm exhausted its 100M allowance in
+the first end-plane cut. The diagnostic retained the original 1e-7 mm
+tolerance and reported the typed geometric stage, not just the work limit.
+
+[OCCT's `math_BracketedRoot`](https://occt3d.com/dev/doc/refman/html/classmath___bracketed_root.html)
+uses derivative-free Brent interpolation inside a bracket.
+[SMLib's fillet solver](https://github.com/NVIDIA-Omniverse/usd-brep/blob/main/source/SMLib/src/SmFilletSolver.cpp#L2997-L3038)
+instead sets bounded Newton equations for its coupled contact problem.
+The local end cut is already a scalar equation on a fitted carrier, so it
+follows the OCCT bounded-interpolation approach. It uses a secant proposal
+alternating with mandatory bisection, not the full Brent interpolation
+scheme. No reference implementation was copied.
+
+Binary64 interpolation only proposes the next parameter. The parameter must
+stay strictly within the retained bracket; non-finite or out-of-bracket
+proposals fall back to its midpoint. Every returned point passes the same
+128-bit plane-residual check as before. The 80-iteration limit, cap fitting
+tolerance and paired world/native-UV checks are unchanged. Neither the
+scalar solve nor the finite curve checks establish exact intersection
+authority or a complete branch result.
+

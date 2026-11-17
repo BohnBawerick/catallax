@@ -40,7 +40,7 @@ fn magnitude(value: &Ball) -> Rational {
 
 impl NumericalSplineFillet {
     /// Intersects an end plane numerically as one graph `tau(s)` across the
-    /// carrier. Bisection and finite residual checks have no exact authority.
+    /// carrier. Bounded interpolation and residual checks have numerical authority.
     /// A non-bracketed or unresolved cut returns its cause rather than a curve.
     pub fn plane_cut(
         &self,
@@ -61,6 +61,7 @@ impl NumericalSplineFillet {
         }
         let tolerance = self.spine().tolerance_mm().mul_pow2(-2);
         let root_tolerance = &tolerance * &lower;
+        let root_target = root_tolerance.mul_pow2(-4);
         let source = self.surface().source();
         let domain = source.domain()[0];
         let root = |s: &Rational,
@@ -70,30 +71,59 @@ impl NumericalSplineFillet {
             let mut hi = domain[1].clone();
             let at =
                 |tau: &Rational, dec: &Decider| source.evaluate_box([tau, tau], [s, s], 128, dec);
-            let a = plane_value(&at(&lo, dec)?, &normal, &offset).mid();
-            let b = plane_value(&at(&hi, dec)?, &normal, &offset).mid();
+            let mut a = {
+                let point = at(&lo, dec)?;
+                let value = plane_value(&point, &normal, &offset);
+                if magnitude(&value) <= root_target {
+                    return Ok((lo, point.map(|value| value.mid())));
+                }
+                value.mid()
+            };
+            let mut b = {
+                let point = at(&hi, dec)?;
+                let value = plane_value(&point, &normal, &offset);
+                if magnitude(&value) <= root_target {
+                    return Ok((hi, point.map(|value| value.mid())));
+                }
+                value.mid()
+            };
             if a.sign() == b.sign() && a.sign() != Sign::Zero {
                 return Err(bad(
                     "fillet end plane does not bracket a transverse cut across the carrier",
                 ));
             }
-            for _ in 0..80 {
+            for iteration in 0..80 {
                 dec.check_deadline()?;
-                let tau = (&lo + &hi).mul_pow2(-1);
+                // Interpolation proposes a point only. Every second step bisects,
+                // so a poor secant cannot leave the bracket stalled at one end.
+                let proposal = if iteration % 2 == 0 {
+                    dec.charge_work(8)?;
+                    let (left, right) = (lo.to_f64_nearest(), hi.to_f64_nearest());
+                    let (fa, fb) = (a.to_f64_nearest(), b.to_f64_nearest());
+                    Rational::from_f64_exact(left + (right - left) * (fa / (fa - fb)))
+                } else {
+                    None
+                };
+                let tau = proposal
+                    .filter(|at| *at > lo && *at < hi)
+                    .unwrap_or_else(|| (&lo + &hi).mul_pow2(-1));
                 let point = at(&tau, dec)?;
                 let value = plane_value(&point, &normal, &offset);
                 dec.charge_work(32)?;
-                if magnitude(&value) <= root_tolerance.mul_pow2(-4) {
+                if magnitude(&value) <= root_target {
                     return Ok((tau, point.each_ref().map(Ball::mid)));
                 }
-                if value.mid().sign() == a.sign() {
+                let value = value.mid();
+                if value.sign() == a.sign() {
                     lo = tau;
+                    a = value;
                 } else {
                     hi = tau;
+                    b = value;
                 }
             }
             Err(bad(
-                "fillet end-plane bisection cannot meet the stated tolerance",
+                "fillet end-plane bracketed solve cannot meet the stated tolerance",
             ))
         };
         let mut last_error = Rational::zero();

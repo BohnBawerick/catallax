@@ -5,7 +5,8 @@ use super::*;
 
 struct SectionPlane {
     point: [Ball; 3],
-    normal: [Ball; 3],
+    tangent: [Ball; 3],
+    inverse_length: Ball,
     point64: [f64; 3],
     normal64: [f64; 3],
 }
@@ -44,13 +45,14 @@ impl SectionPlane {
                 "rolling-ball guide has a singular or unresolved tangent",
             ));
         }
-        let inverse = square
+        let inverse_length = square
             .sqrt()
             .and_then(|length| length.recip())
             .ok_or_else(|| bad("rolling-ball guide tangent cannot be normalized"))?;
-        let normal = tangent.map(|value| &value * &inverse);
         let point64 = point.each_ref().map(|value| value.mid().to_f64_nearest());
-        let normal64 = normal.each_ref().map(|value| value.mid().to_f64_nearest());
+        let tangent64 = tangent.each_ref().map(|value| value.mid().to_f64_nearest());
+        let length64 = norm(tangent64);
+        let normal64 = tangent64.map(|value| value / length64);
         if !point64
             .iter()
             .chain(&normal64)
@@ -60,7 +62,8 @@ impl SectionPlane {
         }
         Ok(Self {
             point,
-            normal,
+            tangent,
+            inverse_length,
             point64,
             normal64,
         })
@@ -77,11 +80,14 @@ impl SectionPlane {
         centre: &[Rational; 3],
         dec: &mut Decider,
     ) -> Result<Rational, Refusal> {
-        dec.charge_work(9)?;
+        dec.charge_work(10)?;
+        // Keep the common positive inverse length outside the dot product:
+        // distributing its interval loses correlation between cancelling terms.
         let residual = (0..3).fold(Ball::from_rational(&Rational::zero(), 128), |sum, i| {
             let delta = &Ball::from_rational(&centre[i], 128) - &self.point[i];
-            sum + (&delta * &self.normal[i])
+            sum + (&delta * &self.tangent[i])
         });
+        let residual = residual * &self.inverse_length;
         Ok(residual.lo().abs().max(residual.hi().abs()))
     }
 }
@@ -191,7 +197,11 @@ impl Problem {
                     .fold(0.0, f64::max)
             };
             let point_diameter = diameter(&plane.point);
-            let normal_diameter = diameter(&plane.normal);
+            let normal = plane
+                .tangent
+                .each_ref()
+                .map(|value| value * &plane.inverse_length);
+            let normal_diameter = diameter(&normal);
             return Err(bad(format!(
                 "rolling-ball station at tau {tau}: offset residual upper {offset_upper:.9e} mm (exceeds limit: {}); guide-plane residual upper {section_upper:.9e} mm (exceeds limit: {}); limit {limit:.9e} mm; checked-centre midpoint plane residual {midpoint_residual:.9e} mm; guide point diameter {point_diameter:.9e} mm; guide unit-normal diameter {normal_diameter:.9e}",
                 offset_upper > limit,

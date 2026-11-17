@@ -83,3 +83,64 @@ request scopes, not an internal profile or one combined request. Internal
 charges before the failing cut were not collected. Steering on 17 November
 defers another radius attempt and moves on to import and the real frozen
 housing.
+
+## Imported-part continuation, 17 November
+
+The retained 27,210-byte unfilleted loft STEP is read through the public import
+API, before numerical embedding and filleting. Its SHA-256 is
+`859a5f0f1443cf394ece5bb6d7c07dcb79d6de5ff79bbc36560110f03303411a`.
+
+| Stage | Charged work | Result |
+|---|---:|---|
+| Import application | 98,427,317 | `numbers.operation-budget` |
+| Numerical embedding, admission and fillet | Not reached | No imported fillet result |
+
+All charged work belongs to `import.apply`. The retained cause is
+`SelfIntersectionNotVerified` for source solid `#21`, faces `#23` and `#207`,
+because its verification exhausted the work allowance. This is not a proved
+self-intersection. No import implementation, tolerance or work limit changed.
+
+## Frozen housing and M8 continuation, 17 November
+
+The actual housing is
+`tools/checkpoint/phase2/curved-housing.json`, SHA-256
+`803558dbb48dab4add6fc1ba70d3ea8a2ac11ba044b8256d2c7ea9030c51e7e6`.
+Its recorded edit changes the middle section radius from 14 to 15. Each
+chain uses one 100M request. Incremental checkpoints retain only prefixes
+already charged in that same request.
+
+| Variant | Loft work | Tool work | Cut work | Total work | Result |
+|---|---:|---:|---:|---:|---|
+| Original | 1,371,690 | 50 | 139,526 | 1,511,266 | `intersect.unsupported-pair` |
+| Middle-radius edit | 1,371,698 | 50 | 139,526 | 1,511,274 | `intersect.unsupported-pair` |
+
+Both stop at `cut`: rational atlas with Bezier extrusion spline, outside
+piece-4 pair coverage. Neither reaches the fillet, so neither establishes
+an editable filleted housing or its STEP. These are the real arch-housing
+results, not the earlier smooth-roof/top-box proxy.
+
+All 13 original files under
+`crates/catallax-features/tests/fixtures/p5-later-cuts/` were then run
+unchanged, each under its own 100M request:
+
+| Case | Prefix work | Final step work | Total work | Result |
+|---|---:|---:|---:|---|
+| k01 wall hole | 1,058,398 | 98,941,443 | 99,999,841 | `numbers.operation-budget` |
+| k02 top slot | 1,058,398 | 1,224,882 | 2,283,280 | `intersect.parametric-surface`, non-separated transverse crossing |
+| k03 rim notch | 1,058,398 | 24,344,499 | 25,402,897 | `boolean.parametric-query`, finite solver unavailable |
+| k04 torus pocket | 1,058,398 | 98,941,599 | 99,999,997 | `numbers.operation-budget` |
+| k05 plane notch | 1,058,398 | 82,013,695 | 83,072,093 | `numbers.operation-budget` |
+| k06 cylinder drill | 1,058,398 | 82,010,092 | 83,068,490 | `numbers.operation-budget` |
+| k07 cone drill | 1,058,398 | 98,923,535 | 99,981,933 | `numbers.operation-budget` |
+| k08 sphere dimple | 1,058,398 | 98,931,318 | 99,989,716 | `numbers.operation-budget` |
+| k09 ring groove | 1,058,398 | 81,575,808 | 82,634,206 | `numbers.operation-budget` |
+| k10 axis section | 1,058,398 | 81,573,472 | 82,631,870 | `numbers.operation-budget` |
+| k11 offset section | 1,058,398 | 82,009,922 | 83,068,320 | `numbers.operation-budget` |
+| k12 far disjoint | 1,058,398 | 9,038,752 | 10,097,150 | Built, 22 faces |
+| k13 fillet first | 21,973 | 3,449,241 | 3,471,214 | `intersect.unsupported-pair`, cone/torus sign unproved |
+
+For k13 the failing final step is `drilled`; the other rows reach `later-cut`.
+Only k12 builds, and its separate STEP request writes in 260,103 work,
+SHA-256 `203ae123b49186c571eb47fb5f0b8b5859c3e95f8bbc2214f27e073154d6c891`.
+A disjoint subtraction adds no intersecting-cut coverage. All stages over
+20M remain phase-5 cases; no work limit or tolerance was widened.

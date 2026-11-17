@@ -397,33 +397,38 @@ fn control_hull<'a>(
     Ok(hull.expect("validated finite spline carriers have Cartesian controls"))
 }
 
-// Open regular components have intrinsic endpoint sets. Separated endpoints
-// disprove equality, not intersection; matching endpoints prove neither.
+// On an embedded chart, open components have intrinsic endpoint sets.
+// Separation disproves equality, not intersection; matching ends prove neither.
 fn open_endpoints_differ(
     a: &[Point3; 2],
     b: &[Point3; 2],
     dec: &mut Decider,
 ) -> Result<bool, Refusal> {
-    let bits = dec.policy().max_precision_bits.min(128);
-    if bits == 0 {
+    let maximum = dec.policy().max_precision_bits.min(128);
+    if maximum == 0 {
         return Ok(false);
     }
-    for (a, b) in [
-        ([&a[0].x, &a[1].x], [&b[0].x, &b[1].x]),
-        ([&a[0].y, &a[1].y], [&b[0].y, &b[1].y]),
-        ([&a[0].z, &a[1].z], [&b[0].z, &b[1].z]),
-    ] {
-        let b = [
-            dec.enclose_budgeted_at(b[0], bits)?,
-            dec.enclose_budgeted_at(b[1], bits)?,
-        ];
-        for coordinate in a {
-            let value = dec.enclose_budgeted_at(coordinate, bits)?;
-            if b.iter()
-                .all(|other| value.hi() < other.lo() || value.lo() > other.hi())
-            {
-                return Ok(true);
+    for bits in [maximum.min(16), maximum] {
+        for (a, b) in [
+            ([&a[0].x, &a[1].x], [&b[0].x, &b[1].x]),
+            ([&a[0].y, &a[1].y], [&b[0].y, &b[1].y]),
+            ([&a[0].z, &a[1].z], [&b[0].z, &b[1].z]),
+        ] {
+            let b = [
+                dec.enclose_budgeted_at(b[0], bits)?,
+                dec.enclose_budgeted_at(b[1], bits)?,
+            ];
+            for coordinate in a {
+                let value = dec.enclose_budgeted_at(coordinate, bits)?;
+                if b.iter()
+                    .all(|other| value.hi() < other.lo() || value.lo() > other.hi())
+                {
+                    return Ok(true);
+                }
             }
+        }
+        if bits == maximum {
+            break;
         }
     }
     Ok(false)
@@ -551,7 +556,7 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
             Ok(None) => (),
             Err(error) => return Outcome::Refused(error),
         }
-        if !x.is_closed() && !y.is_closed() {
+        if x.charts().len() == 1 && y.charts().len() == 1 && !x.is_closed() && !y.is_closed() {
             match open_endpoints_differ(&x.endpoints(), &y.endpoints(), dec) {
                 Ok(true) => return Outcome::Proven(Apart),
                 Ok(false) => (),

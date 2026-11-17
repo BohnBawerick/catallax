@@ -1,6 +1,9 @@
 //! Numerical common-ball closures of three incident rolling strips.
 //! The owner publishes these candidates only after actual face-domain clipping.
 
+#[path = "fillet_numerical_vertex_boundaries.rs"]
+pub(crate) mod boundaries;
+
 use catallax_numbers::{Ball, Decider, NumericalCheck, NumericalSample, Rational, Refusal, Sign};
 use catallax_shapes::{
     NumericalFilletCorner, NumericalFilletSupport, RPoint3, RVector3, Sphere, Surface,

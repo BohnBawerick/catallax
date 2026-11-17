@@ -609,6 +609,7 @@ fn an_out_of_domain_source_trace_is_rebuilt_from_the_actual_curve() {
         .tolerance_mm()
         .to_f64_nearest();
     let surface = native.native_surface(33).unwrap();
+    assert!(surface.location([0.0, 100.0]).is_err());
     let curve = native.native_curve(26).unwrap();
     for sample in &trace.samples {
         let actual = surface

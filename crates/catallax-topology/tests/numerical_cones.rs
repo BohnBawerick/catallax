@@ -52,7 +52,7 @@ fn native_seam(d: &n::NumericalDefinition) -> n::NumericalNativeTrim {
 }
 
 #[test]
-fn native_cone_trims_refuse_until_complete_domain_checks() {
+fn native_cone_trims_keep_complete_positive_height_and_periodic_domains() {
     let positive = fixture::positive_bore();
     n::build(
         positive.clone(),
@@ -68,17 +68,42 @@ fn native_cone_trims_refuse_until_complete_domain_checks() {
     )
     .unwrap_err();
     assert_eq!(error.code, "numerical.invalid-trim");
-    assert!(error.detail.contains("above its apex"));
-    for d in [positive, negative] {
-        let binding = native_seam(&d);
+    let body = n::build_with_native_trims(
+        positive.clone(),
+        vec![native_seam(&positive)],
+        n::NumericalOptions::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let counts = body.counts();
+    assert_eq!((counts.faces, counts.edges, counts.vertices), (7, 15, 10));
+    let error = n::build_with_native_trims(
+        negative.clone(), vec![native_seam(&negative)],
+        n::NumericalOptions::default(), &mut Decider::default(),
+    ).unwrap_err();
+    assert_eq!(error.code, "numerical.native-cone-domain-unverified");
+
+    // Positive endpoints do not authorize an interior apex crossing or a
+    // second angular turn hidden in the native parameter-curve hull.
+    for apex in [true, false] {
+        let mut binding = native_seam(&positive);
+        let controls: Vec<_> = binding.curve.controls().cloned().collect();
+        let mut middle = controls[0].clone();
+        if apex {
+            middle.y = Real::from_i64(-8);
+        } else {
+            middle.x = (catallax_numbers::Ball::pi(128).mid().mul_pow2(2)).into();
+        }
+        let [lo, hi] = binding.curve.domain();
+        binding.curve = BSplineCurve::new(
+            2, vec![lo.clone(), lo.clone(), lo.clone(), hi.clone(), hi.clone(), hi.clone()],
+            vec![controls[0].clone(), middle, controls[1].clone()],
+            vec![Real::one(); 3], &mut Decider::default(),
+        ).unwrap();
         let error = n::build_with_native_trims(
-            d,
-            vec![binding],
-            n::NumericalOptions::default(),
-            &mut Decider::default(),
-        )
-        .unwrap_err();
+            positive.clone(), vec![binding],
+            n::NumericalOptions::default(), &mut Decider::default(),
+        ).unwrap_err();
         assert_eq!(error.code, "numerical.native-cone-domain-unverified");
-        assert!(error.detail.contains("positive-height and periodic-domain"));
     }
 }

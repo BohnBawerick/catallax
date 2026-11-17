@@ -78,12 +78,6 @@ impl<'a> Index<'a> {
             if edge.key != binding.edge {
                 return Err(bad("trim", "native trim address names a different edge"));
             }
-            if matches!(definition.faces[face].surface, Surface::Cone(_)) {
-                return Err(Refusal::new(
-                    "numerical.native-cone-domain-unverified",
-                    "native cone trims require complete positive-height and periodic-domain checks",
-                ));
-            }
             let [lo, hi] = binding.curve.domain();
             if edge.parameters.iter().any(|t| t < lo || t > hi) {
                 return Err(bad(
@@ -258,6 +252,13 @@ pub(super) fn check_loops(
         domain::check(face_index, face, edges, index, dec)?;
         analytic::check_periodic_domain(face, edges, dec)?;
     }
+    if index.has_face(face_index)
+        && (matches!(face.surface, Surface::Cone(_))
+            || matches!(&face.surface, Surface::BSpline(source)
+                if !matches!(source, SplineSupport::RationalPatch(_) | SplineSupport::RationalAtlas(_))))
+    {
+        domain::check(face_index, face, edges, index, dec)?;
+    }
     if index.sampled_carriers.contains(&face.key) {
         return check_numerical_loops(face_index, face, edges, index, dec);
     }
@@ -390,8 +391,8 @@ fn check_numerical_loops(
 /// Builds with retained native UV curves at the 3D edges' finite parameters.
 /// Every binding is checked; continuations retain and recheck these definitions.
 /// Empty bindings preserve the ordinary numerical build path.
-/// Cone bindings refuse until complete positive-height and periodic-domain
-/// constraints are checked over their finite curves.
+/// Cone parameter-curve hulls must retain a finite angular domain and stay
+/// strictly above the apex.
 pub fn build_with_native_trims(
     definition: NumericalDefinition,
     native_trims: Vec<NumericalNativeTrim>,

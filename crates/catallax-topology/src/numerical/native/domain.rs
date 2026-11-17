@@ -1,4 +1,4 @@
-//! Complete parameter-image hulls for regular native analytic charts.
+//! Complete parameter-image hulls for native analytic and retained spline charts.
 
 use super::*;
 
@@ -85,5 +85,35 @@ pub(super) fn check(
             }
         }
     }
-    analytic::check_native_domain(&face.surface, &bounds)
+    if matches!(face.surface, Surface::Cone(_)) {
+        if bounds[1][0].sign() != Sign::Positive {
+            return Err(Refusal::new(
+                "numerical.native-cone-domain-unverified",
+                "the complete native-curve hull must stay strictly above the cone apex",
+            ));
+        }
+        let turn = Ball::pi(BITS).mid().mul_pow2(1);
+        let width = &bounds[0][1] - &bounds[0][0];
+        if width >= Ball::pi(BITS).lo().mul_pow2(1)
+            && (width != turn || !analytic::periodic_cell(face, edges, dec)?)
+        {
+            return Err(Refusal::new(
+                "numerical.native-cone-domain-unverified",
+                "the complete native-curve hull needs a regular angular chart or one paired fundamental cell",
+            ));
+        }
+        return Ok(());
+    }
+    if let Surface::BSpline(source) = &face.surface {
+        let domain = source.carrier().domain();
+        if (0..2).any(|axis| bounds[axis][0] < *domain[axis][0] || bounds[axis][1] > *domain[axis][1]) {
+            return Err(Refusal::new(
+                "numerical.native-spline-domain-unverified",
+                "the complete native-curve hull leaves its retained spline carrier domain",
+            ));
+        }
+        Ok(())
+    } else {
+        analytic::check_native_domain(&face.surface, &bounds)
+    }
 }

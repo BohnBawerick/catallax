@@ -1,16 +1,77 @@
 //! Report exact construction, native embedding and numerical admission per recipe.
-//! Usage: cargo run -p catallax-features --example embedding_admission -- RECIPE...
+//! Usage: cargo run -p catallax-features --example embedding_admission -- [--inspect] RECIPE...
 
 use catallax_numbers::{
-    BudgetPolicy, Decider, Rational, current_operation_work, with_operation_budget,
+    Ball, BudgetPolicy, Decider, Rational, current_operation_work, with_operation_budget,
 };
 use catallax_recipe::Recipe;
-use catallax_shapes::Curve;
+use catallax_shapes::{Curve, Surface};
 use catallax_topology::numerical::{NumericalOptions, build_with_native_trims};
+use catallax_topology::{BodyId, Loop, Model};
 use serde_json::json;
 use std::{error::Error, fs, process::ExitCode};
 
-fn run(path: &str) -> Result<bool, Box<dyn Error>> {
+fn source_topology(path: &str, model: &Model, body: BodyId) {
+    for id in model.faces_of_body(body) {
+        let face = model.face(id);
+        let boundaries: Vec<_> = face.loops.iter().map(|lp| {
+            let Loop::Coedges(uses) = model.loop_(*lp) else { return json!({"point_loop": true}) };
+            json!(uses.iter().map(|coedge| {
+                let coedge = model.coedge(*coedge);
+                let edge = model.edge(coedge.edge);
+                let kind = match model.geom().curve(edge.curve) {
+                    Curve::Circle(_) => "circle", Curve::Line(_) => "line",
+                    Curve::BSpline(_) => "spline", _ => "traced",
+                };
+                let geometry = if let Curve::Circle(circle) = model.geom().curve(edge.curve) {
+                    let mut dec = Decider::default();
+                    Some(json!({
+                        "center": ([&circle.center.x, &circle.center.y, &circle.center.z]
+                            .map(|value| dec.enclose_at(value, 128).map(|v| v.mid().to_f64_nearest()).ok())),
+                        "radius_sq": dec.enclose_at(&circle.radius_sq, 128)
+                            .map(|v| v.mid().to_f64_nearest()).ok(),
+                    }))
+                } else {
+                    None
+                };
+                json!({"edge": format!("{:?}", coedge.edge), "curve": kind,
+                    "sense": format!("{:?}", coedge.sense), "edge_sense": format!("{:?}", edge.sense),
+                    "start": format!("{:?}", edge.start), "end": format!("{:?}", edge.end),
+                    "geometry": geometry})
+            }).collect::<Vec<_>>())
+        }).collect();
+        let surface = model.geom().surface(face.surface);
+        let spline = match surface {
+            Surface::BSpline(source) => {
+                let domain = source.carrier().domain();
+                let mut corners = Vec::with_capacity(4);
+                for u in domain[0] {
+                    for v in domain[1] {
+                        let derivatives = source.carrier().derivatives(
+                            &Ball::from_rational(u, 128), &Ball::from_rational(v, 128), &Decider::default(),
+                        );
+                        let derivatives = match derivatives {
+                            Ok(jet) => json!(jet.map(|axis| axis.each_ref().map(|value| value.mid().to_f64_nearest()))),
+                            Err(error) => json!({"error": error.to_string()}),
+                        };
+                        corners.push(json!({"uv": [u.to_string(), v.to_string()], "derivatives": derivatives}));
+                    }
+                }
+                Some(json!({
+                    "family_tag": format!("{:?}", std::mem::discriminant(source)),
+                    "degrees": source.carrier().degrees(), "control_count": source.carrier().control_count(),
+                    "knots": source.carrier().knots().map(|row| row.iter().map(ToString::to_string).collect::<Vec<_>>()),
+                    "corners": corners,
+                }))
+            }
+            _ => None,
+        };
+        println!("{}", json!({"recipe": path, "stage": "source-topology", "face": format!("{id:?}"),
+            "surface": format!("{:?}", surface.kind()), "spline": spline, "boundaries": boundaries}));
+    }
+}
+
+fn run(path: &str, inspect: bool) -> Result<bool, Box<dyn Error>> {
     let recipe = Recipe::parse(&fs::read_to_string(path)?)?;
     let (passed, work) = with_operation_budget(100_000_000, || {
         let mut dec = Decider::new(BudgetPolicy {
@@ -25,6 +86,12 @@ fn run(path: &str) -> Result<bool, Box<dyn Error>> {
             }
         };
         let construction_work = current_operation_work().used;
+        if inspect {
+            source_topology(path, &built.model, built.result);
+            println!("{}", json!({"recipe": path, "stage": "inspected", "faces": built.model.faces_of_body(built.result).len(),
+                "edges": built.model.edges_of_body(built.result).len(), "construction_work": construction_work}));
+            return true;
+        }
         let source_edges = built.model.edges_of_body(built.result);
         let tolerance = Rational::parse("0.0000001").unwrap();
         let (definition, native) = match catallax_features::numerical_embedding::definition_from_exact_model(
@@ -33,6 +100,7 @@ fn run(path: &str) -> Result<bool, Box<dyn Error>> {
             Ok(definition) => definition,
             Err(error) => {
                 println!("{}", json!({"recipe": path, "stage": "embedding", "error": error.to_string(), "construction_work": construction_work, "embedding_work": current_operation_work().used - construction_work}));
+                source_topology(path, &built.model, built.result);
                 return false;
             }
         };
@@ -46,6 +114,13 @@ fn run(path: &str) -> Result<bool, Box<dyn Error>> {
             };
             json!({"edge": edge.key, "source_curve": family, "native_trims": native.iter().filter(|trim| trim.edge == edge.key).count()})
         }).collect();
+        println!("{}", json!({
+            "recipe": path, "stage": "embedded",
+            "faces": definition.faces.len(), "edges": definition.edges.len(),
+            "source_edges": source_edges.len(), "native_trims": native.len(),
+            "construction_work": construction_work,
+            "embedding_work": embedding_end - construction_work,
+        }));
         let body = match build_with_native_trims(
             definition, native, NumericalOptions { tolerance_mm: tolerance }, &mut dec,
         ) {
@@ -73,14 +148,16 @@ fn run(path: &str) -> Result<bool, Box<dyn Error>> {
 }
 
 fn main() -> ExitCode {
-    let paths: Vec<_> = std::env::args().skip(1).collect();
+    let mut paths: Vec<_> = std::env::args().skip(1).collect();
+    let inspect = paths.first().is_some_and(|arg| arg == "--inspect");
+    if inspect { paths.remove(0); }
     if paths.is_empty() {
-        eprintln!("usage: embedding_admission RECIPE...");
+        eprintln!("usage: embedding_admission [--inspect] RECIPE...");
         return ExitCode::FAILURE;
     }
     let mut passed = true;
     for path in paths {
-        match run(&path) {
+        match run(&path, inspect) {
             Ok(result) => passed &= result,
             Err(error) => {
                 eprintln!("{path}: {error}");

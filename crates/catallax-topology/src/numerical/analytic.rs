@@ -3,6 +3,8 @@
 use super::*;
 
 mod periodic;
+#[cfg(test)]
+mod tests;
 
 pub(super) fn validate_circle(
     circle: &catallax_shapes::Circle,
@@ -42,7 +44,7 @@ pub(super) fn supports(surface: &Surface) -> bool {
             | Surface::Cone(_)
             | Surface::Sphere(_)
             | Surface::Torus(_)
-            | Surface::BSpline(SplineSupport::RationalPatch(_) | SplineSupport::RationalAtlas(_))
+            | Surface::BSpline(_)
     )
 }
 
@@ -230,61 +232,14 @@ fn period() -> Rational {
     Ball::pi(BITS).mid() * Rational::from_i64(2)
 }
 
-/// Recognize a fundamental parameter cell, rather than admitting an arbitrary
-/// wide polygon. The two seam branches may slope after decimal frame rounding,
-/// but must be exact translations by one canonical period at both endpoints.
-fn periodic_cell(
+/// A single-period fundamental cell with opposite translated seam uses.
+/// Its rims may contain several retained arcs and need not have constant height.
+pub(super) fn periodic_cell(
     face: &NumericalFace,
     edges: &[NumericalEdge],
     dec: &mut Decider,
 ) -> Result<bool, Refusal> {
-    let [boundary] = face.loops.as_slice() else {
-        return Ok(false);
-    };
-    if boundary.len() != 4 {
-        return Ok(false);
-    }
-    for offset in 0..2 {
-        dec.charge_work(1)?;
-        let [a, b, c, d] = std::array::from_fn::<_, 4, _>(|i| &boundary[(i + offset) % 4]);
-        let Some(first) = edges.get(a.edge) else {
-            return Ok(false);
-        };
-        let Some(second) = edges.get(c.edge) else {
-            return Ok(false);
-        };
-        let Some(seam) = edges.get(b.edge) else {
-            return Ok(false);
-        };
-        if a.edge == c.edge
-            || b.edge != d.edge
-            || b.sense == d.sense
-            || !matches!(first.curve, Curve::Circle(_))
-            || !matches!(second.curve, Curve::Circle(_))
-            || first.vertices[0] != first.vertices[1]
-            || second.vertices[0] != second.vertices[1]
-            || !matches!(seam.curve, Curve::Line(_))
-            || seam.vertices[0] == seam.vertices[1]
-        {
-            continue;
-        }
-        let p = period();
-        if [&a.uv, &c.uv]
-            .iter()
-            .any(|uv| uv[0][1] != uv[1][1] || (&uv[1][0] - &uv[0][0]).abs() != p)
-        {
-            continue;
-        }
-        let translation = &b.uv[0][0] - &d.uv[1][0];
-        if translation.abs() == p
-            && &b.uv[1][0] - &d.uv[0][0] == translation
-            && b.uv[0][1] == d.uv[1][1]
-            && b.uv[1][1] == d.uv[0][1]
-        {
-            return Ok(true);
-        }
-    }
-    Ok(false)
+    periodic::paired_seam(face, edges, 0, dec)
 }
 
 /// A complete finite circular boundary, independently of its material role.
@@ -429,18 +384,45 @@ fn circle_clearance(
                     distance.lo() > &circle.enclosing_radius + &other.enclosing_radius
                 };
                 if !clear {
-                    return Err(bad("trim", "circular boundaries lack continuous clearance"));
+                    return Err(bad("trim", format!(
+                        "face {} circular boundaries {i}/{j} lack continuous clearance: center distance {}, enclosing radii {}/{}, first interior radius {:?}",
+                        face.key, distance.mid().to_f64_nearest(),
+                        circle.enclosing_radius.to_f64_nearest(), other.enclosing_radius.to_f64_nearest(),
+                        circle.interior_radius.as_ref().map(Rational::to_f64_nearest),
+                    )));
                 }
                 continue;
             }
             for trim in boundary {
-                if !edges
+                let edge = edges
                     .get(trim.edge)
-                    .is_some_and(|edge| matches!(edge.curve, Curve::Line(_)))
-                {
+                    .ok_or_else(|| bad("trim", "trim names an unknown edge"))?;
+                if let Curve::Circle(arc) = &edge.curve {
+                    // The complete projected ellipse bounds every retained arc.
+                    // Its enclosing and inscribed disks certify both nesting
+                    // directions without trusting the arc's endpoint chords.
+                    let other = projected_circle(face, arc, true, tolerance, dec)?;
+                    let distance = ((&circle.center[0] - &other.center[0]).square()
+                        + (&circle.center[1] - &other.center[1]).square())
+                    .sqrt()
+                    .ok_or_else(|| bad("trim", "circle/arc separation is unresolved"))?;
+                    let clear = if let Some(radius) = &circle.interior_radius {
+                        &distance.hi() + &other.enclosing_radius < *radius
+                    } else {
+                        distance.lo() > &circle.enclosing_radius + &other.enclosing_radius
+                            || other.interior_radius.as_ref().is_some_and(|radius| {
+                                &distance.hi() + &circle.enclosing_radius < *radius
+                            })
+                    };
+                    if !clear {
+                        return Err(bad("trim", "circular arc lacks continuous rim clearance"));
+                    }
+                    continue;
+                }
+                if !matches!(edge.curve, Curve::Line(_)) {
                     return Err(bad(
                         "trim",
-                        "complete circular boundaries need finite-line or complete-circle neighbours",
+                        "complete circular boundaries need finite-line, circular-arc or complete-circle neighbours",
                     ));
                 }
                 if let Some(radius) = &circle.interior_radius {

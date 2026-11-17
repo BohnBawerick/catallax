@@ -23,6 +23,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 mod charts;
 mod nurbs;
+mod planar;
 mod rings;
 use nurbs::{Curve64, Surface64, concatenate, distance, dot, interpolate, lerp, sub};
 
@@ -438,11 +439,12 @@ fn rational_curve<const D: usize>(
     dec: &mut Decider,
 ) -> Result<BSplineCurve, Refusal> {
     dec.charge_work((knots.len() + D * controls.len()) as u64)?;
+    let degree = knots.len() - controls.len() - 1;
     let mut exact_knots = Vec::with_capacity(knots.len());
     for (i, knot) in knots.iter().enumerate() {
-        exact_knots.push(if i < 4 {
+        exact_knots.push(if i <= degree {
             domain[0].clone()
-        } else if i + 4 >= knots.len() {
+        } else if i + degree + 1 >= knots.len() {
             domain[1].clone()
         } else {
             exact(*knot)?
@@ -477,7 +479,7 @@ fn rational_curve<const D: usize>(
         points.push(Point3::new(x.into(), y.into(), z.into()));
     }
     let weights = vec![Real::one(); points.len()];
-    BSplineCurve::new(3, exact_knots, points, weights, dec)
+    BSplineCurve::new(degree, exact_knots, points, weights, dec)
 }
 
 fn uv_end(uv: &Uv) -> [Rational; 3] {
@@ -496,57 +498,93 @@ fn native_uv(
 ) -> Result<BSplineCurve, Refusal> {
     let range = interval.map(Rational::to_f64_nearest);
     let mut failure = None;
+    let mut cuts = None;
     for density in DENSITIES {
-        let parameters: Vec<f64> = (0..=density)
-            .map(|j| lerp(range, j as f64 / density as f64))
-            .collect();
-        let mut uvs = Vec::with_capacity(parameters.len());
-        uvs.push(ends[0].approx);
-        let mut sampled = true;
-        for t in &parameters[1..density] {
-            let point = edge.point(*t);
-            let uv = face.invert(point, uvs.last().copied(), tolerances, dec)?;
-            let error = distance(face.point(uv, dec)?, point);
-            if error > tolerances.sample {
-                failure = Some(("inverse", density, *t, error, tolerances.sample));
-                sampled = false;
-                break;
+        for partitioned in [false, true] {
+            let sections = if partitioned {
+                if cuts.is_none() {
+                    cuts = Some(charts::parameter_cuts(face, edge, range, ends, tolerances, dec)?);
+                }
+                cuts.as_ref().unwrap().as_slice()
+            } else {
+                &range
+            };
+            let pieces = sections.len() - 1;
+            if partitioned && DENSITIES[0] * pieces > density {
+                continue;
             }
-            uvs.push(uv);
-        }
-        if !sampled {
-            continue;
-        }
-        uvs.push(ends[1].approx);
-        let (knots, controls) = interpolate(&parameters, &uvs, dec)?;
-        let mut fits = true;
-        'spans: for pair in parameters.windows(2) {
-            for share in CHECK_SHARES {
-                dec.charge_work(1)?;
-                let t = lerp([pair[0], pair[1]], share);
-                let uv = nurbs::evaluate(&knots, &controls, t);
-                let error = distance(face.point(uv, dec)?, edge.point(t));
-                if error > tolerances.fit {
-                    failure = Some(("fit", density, t, error, tolerances.fit));
-                    fits = false;
-                    break 'spans;
+            let mut parameters = Vec::with_capacity(density + 1);
+            let mut breaks = Vec::new();
+            parameters.push(range[0]);
+            if partitioned {
+                breaks.reserve(pieces + 1);
+                breaks.push(0);
+            }
+            for (index, section) in sections.windows(2).enumerate() {
+                let count = density / pieces + usize::from(index < density % pieces);
+                for j in 1..=count {
+                    parameters.push(if j == count { section[1] } else {
+                        lerp([section[0], section[1]], j as f64 / count as f64)
+                    });
+                }
+                if partitioned { breaks.push(parameters.len() - 1); }
+            }
+            let mut uvs = Vec::with_capacity(parameters.len());
+            uvs.push(ends[0].approx);
+            let mut sampled = true;
+            for t in &parameters[1..density] {
+                let point = edge.point(*t);
+                let uv = face.invert(point, uvs.last().copied(), tolerances, dec)?;
+                let error = distance(face.point(uv, dec)?, point);
+                if error > tolerances.sample {
+                    failure = Some(("inverse", density, *t, error, tolerances.sample));
+                    sampled = false;
+                    break;
+                }
+                uvs.push(uv);
+            }
+            if !sampled { continue; }
+            uvs.push(ends[1].approx);
+            let (knots, controls) = if partitioned {
+                piecewise_quartic(&parameters, &uvs, &breaks, dec)?
+            } else {
+                interpolate(&parameters, &uvs, dec)?
+            };
+            let mut fits = true;
+            'spans: for pair in parameters.windows(2) {
+                for share in CHECK_SHARES {
+                    dec.charge_work(1)?;
+                    let t = lerp([pair[0], pair[1]], share);
+                    let uv = nurbs::evaluate(&knots, &controls, t);
+                    let error = distance(face.point(uv, dec)?, edge.point(t));
+                    if error > tolerances.fit {
+                        failure = Some(("fit", density, t, error, tolerances.fit));
+                        fits = false;
+                        break 'spans;
+                    }
                 }
             }
-        }
-        if fits {
-            return rational_curve(
-                &knots,
-                &controls,
-                interval,
-                ends.map(uv_end),
-                face.spline(),
-                dec,
-            );
+            if fits {
+                return rational_curve(
+                    &knots, &controls, interval, ends.map(uv_end), face.spline(), dec,
+                );
+            }
         }
     }
     let (stage, density, parameter, error, limit) = failure.expect("all densities failed");
+    let source_ends = [edge.point(range[0]), edge.point(range[1])];
+    let surface_ends = [face.point(ends[0].approx, dec)?, face.point(ends[1].approx, dec)?];
+    let endpoint_errors = std::array::from_fn::<_, 2, _>(|i| distance(source_ends[i], surface_ends[i]));
+    let chart_knots = face.spline().map(|face| {
+        [0, 1].map(|axis| {
+            let knots = face.surface.internal_knots(axis);
+            (knots.len(), knots.iter().enumerate()
+                .filter(|(i, knot)| *i == 0 || **knot != knots[*i - 1]).count())
+        })
+    });
+    let chart_jets = face.spline().map(|face| ends.map(|uv| face.surface.jet(uv.approx)));
     Err(fit_failure(format!(
-        "native UV {stage} residual {error:e} mm exceeds {limit:e} mm at parameter {parameter:e} with density {density}"
+        "native UV {stage} residual {error:e} mm exceeds {limit:e} mm at parameter {parameter:e} with density {density}; endpoint residuals {endpoint_errors:?}, curve ends {source_ends:?}, surface ends {surface_ends:?}, chart knot counts (total, unique) {chart_knots:?}, endpoint jets {chart_jets:?}"
     )))
 }
 
@@ -564,6 +602,27 @@ fn piecewise<const D: usize>(
             &values[pair[0]..=pair[1]],
             dec,
         )?);
+    }
+    Ok(concatenate(pieces))
+}
+
+fn piecewise_quartic<const D: usize>(
+    parameters: &[f64],
+    values: &[[f64; D]],
+    breaks: &[usize],
+    dec: &mut Decider,
+) -> Result<(Vec<f64>, Vec<[f64; D]>), Refusal> {
+    let mut pieces = Vec::new();
+    for pair in breaks.windows(2) {
+        let mut from = pair[0];
+        while from < pair[1] {
+            let to = if pair[1] - from < 8 { pair[1] } else { from + 4 };
+            let indices = std::array::from_fn::<_, 5, _>(|i| from + (i * (to - from) + 2) / 4);
+            pieces.push(nurbs::interpolate_quartic(
+                &indices.map(|i| parameters[i]), &indices.map(|i| values[i]), dec,
+            )?);
+            from = to;
+        }
     }
     Ok(concatenate(pieces))
 }
@@ -923,7 +982,8 @@ pub fn definition_from_exact_model(
             }
         }
     }
-    charts::lift(model, body, &carriers, &edge_ends, &approx, &mut uvs, &tolerances, dec)?;
+    let mut endpoint_uvs = BTreeMap::new();
+    charts::lift(model, body, &carriers, &edge_ends, &approx, &mut uvs, &mut endpoint_uvs, &tolerances, dec)?;
     let edge_ids = model.edges_of_body(body);
     let edge_index: BTreeMap<EdgeId, usize> = edge_ids
         .iter()
@@ -1006,7 +1066,9 @@ pub fn definition_from_exact_model(
                     {
                         continue;
                     }
-                    let [a, b] = ends.map(|vertex| &uvs[&(*face, vertex)]);
+                    let [a, b] = ends.map(|vertex| {
+                        endpoint_uvs.get(&(*face, *id, vertex)).unwrap_or(&uvs[&(*face, vertex)])
+                    });
                     let ends = if ascending { [a, b] } else { [b, a] };
                     uv_curves.insert(
                         (*face, index),
@@ -1041,7 +1103,9 @@ pub fn definition_from_exact_model(
                             parametric_faces.push(*face);
                             uses.push(FittedUse {
                                 face: carriers[*face].parametric().expect("parametric carrier"),
-                                ends: ends.map(|vertex| &uvs[&(*face, vertex)]),
+                                ends: ends.map(|vertex| {
+                                    endpoint_uvs.get(&(*face, *id, vertex)).unwrap_or(&uvs[&(*face, vertex)])
+                                }),
                             });
                         }
                         Carrier::Plane { origin, normal } => planes.push((*origin, *normal)),
@@ -1075,12 +1139,12 @@ pub fn definition_from_exact_model(
         let face = model.face(*id);
         let key = format!("{id:?}");
         let mut loops = Vec::with_capacity(face.loops.len());
-        for (boundary, lp) in face.loops.iter().enumerate() {
+        for lp in &face.loops {
             let Loop::Coedges(coedges) = model.loop_(*lp) else {
                 unreachable!("checked by embeds")
             };
             let mut trims = Vec::with_capacity(coedges.len());
-            for (use_index, coedge) in coedges.iter().enumerate() {
+            for coedge in coedges {
                 let coedge = model.coedge(*coedge);
                 let edge = edge_index[&coedge.edge];
                 let mut walked = edges[edge].vertices;
@@ -1090,17 +1154,11 @@ pub fn definition_from_exact_model(
                 trims.push(NumericalTrim {
                     edge,
                     sense: coedge.sense,
-                    uv: walked.map(|vertex| uvs[&(index, vertex)].exact.clone()),
+                    uv: walked.map(|vertex| {
+                        endpoint_uvs.get(&(index, coedge.edge, vertex))
+                            .unwrap_or(&uvs[&(index, vertex)]).exact.clone()
+                    }),
                 });
-                if let Some(curve) = uv_curves.get(&(index, edge)) {
-                    native_trims.push(NumericalNativeTrim {
-                        face: key.clone(),
-                        boundary,
-                        use_index,
-                        edge: edges[edge].key.clone(),
-                        curve: curve.clone(),
-                    });
-                }
             }
             loops.push(trims);
         }
@@ -1110,7 +1168,18 @@ pub fn definition_from_exact_model(
             sense: face.sense,
             loops,
         };
+        planar::outer_first(&mut numerical_face, &edges, dec)?;
         rings::close_band(&mut numerical_face, &vertices, &mut edges, dec)?;
+        for (boundary, uses) in numerical_face.loops.iter().enumerate() {
+            for (use_index, trim) in uses.iter().enumerate() {
+                if let Some(curve) = uv_curves.get(&(index, trim.edge)) {
+                    native_trims.push(NumericalNativeTrim {
+                        face: numerical_face.key.clone(), boundary, use_index,
+                        edge: edges[trim.edge].key.clone(), curve: curve.clone(),
+                    });
+                }
+            }
+        }
         faces.push(numerical_face);
     }
     Ok((
@@ -1184,64 +1253,85 @@ pub(crate) fn fillet_guide(
     let proposal_bound = tolerance.to_f64_nearest() / 8.0;
     let mut fits = Vec::with_capacity(pieces.len());
     let mut samples = Vec::new();
-    for index in 0..pieces.len() {
-        let piece = at(index);
-        let mut fitted = None;
-        for density in DENSITIES {
-            if density * pieces.len() > MAX_SPANS {
-                return Err(fit_failure(
-                    "a fillet guide exceeds the trace fit's span limit",
-                ));
-            }
-            let mut parameters = Vec::with_capacity(density + 1);
-            let mut points = Vec::with_capacity(density + 1);
-            for j in 0..=density {
-                dec.charge_work(1)?;
-                let share = j as f64 / density as f64;
-                parameters.push((index as f64 + share) / pieces.len() as f64);
-                points.push(
-                    point(piece, share, dec)?
-                        .each_ref()
-                        .map(|v| v.mid().to_f64_nearest()),
-                );
-            }
-            let (knots, controls) = interpolate(&parameters, &points, dec)?;
-            let mut acceptable = true;
-            'checks: for j in 0..density {
-                for share in CHECK_SHARES {
+    if DENSITIES[0] * pieces.len() > MAX_SPANS {
+        return Err(fit_failure("a fillet guide exceeds the trace fit's span limit"));
+    }
+    // Keep the cheap cubic path. A smooth conic can exhaust its density
+    // allowance, so also try quintics with the same samples and span cap.
+    // Each attempt uses one common degree across all retained trace pieces.
+    for degree in [3, 5] {
+        fits.clear();
+        samples.clear();
+        'pieces: for index in 0..pieces.len() {
+            let piece = at(index);
+            let mut fitted = None;
+            for density in DENSITIES {
+                if density * pieces.len() > MAX_SPANS {
+                    break;
+                }
+                if density < degree {
+                    continue;
+                }
+                let mut parameters = Vec::with_capacity(density + 1);
+                let mut points = Vec::with_capacity(density + 1);
+                for j in 0..=density {
                     dec.charge_work(1)?;
-                    let local = (j as f64 + share) / density as f64;
-                    let parameter = (index as f64 + local) / pieces.len() as f64;
-                    let reference = point(piece, local, dec)?
-                        .each_ref()
-                        .map(|v| v.mid().to_f64_nearest());
-                    if distance(nurbs::evaluate(&knots, &controls, parameter), reference)
-                        > proposal_bound
-                    {
-                        acceptable = false;
-                        break 'checks;
+                    let share = j as f64 / density as f64;
+                    parameters.push((index as f64 + share) / pieces.len() as f64);
+                    points.push(
+                        point(piece, share, dec)?
+                            .each_ref()
+                            .map(|v| v.mid().to_f64_nearest()),
+                    );
+                }
+                let (knots, controls) = if degree == 3 {
+                    interpolate(&parameters, &points, dec)?
+                } else {
+                    nurbs::interpolate_quintic(&parameters, &points, dec)?
+                };
+                let mut acceptable = true;
+                'checks: for j in 0..density {
+                    for share in CHECK_SHARES {
+                        dec.charge_work(1)?;
+                        let local = (j as f64 + share) / density as f64;
+                        let parameter = (index as f64 + local) / pieces.len() as f64;
+                        let reference = point(piece, local, dec)?
+                            .each_ref()
+                            .map(|v| v.mid().to_f64_nearest());
+                        if distance(nurbs::evaluate(&knots, &controls, parameter), reference)
+                            > proposal_bound
+                        {
+                            acceptable = false;
+                            break 'checks;
+                        }
                     }
                 }
+                if acceptable {
+                    fitted = Some((knots, controls, density));
+                    break;
+                }
             }
-            if acceptable {
-                fitted = Some((knots, controls, density));
-                break;
-            }
-        }
-        let (knots, controls, density) = fitted.ok_or_else(|| {
-            fit_failure(
-                "a fillet guide cannot fit its retained trace within the declared tolerance",
-            )
-        })?;
-        fits.push((knots, controls));
-        for j in 0..density {
-            for share in CHECK_SHARES {
-                let local = exact((j as f64 + share) / density as f64)?;
-                let parameter = (&Rational::from_i64(index as i64) + &local)
-                    / Rational::from_i64(pieces.len() as i64);
-                samples.push((index, local, parameter));
+            let Some((knots, controls, density)) = fitted else {
+                break 'pieces;
+            };
+            fits.push((knots, controls));
+            for j in 0..density {
+                for share in CHECK_SHARES {
+                    let local = exact((j as f64 + share) / density as f64)?;
+                    let parameter = (&Rational::from_i64(index as i64) + &local)
+                        / Rational::from_i64(pieces.len() as i64);
+                    samples.push((index, local, parameter));
+                }
             }
         }
+        if fits.len() == pieces.len() {
+            break;
+        }
+    }
+    if fits.len() != pieces.len() {
+        return Err(fit_failure(
+            "a fillet guide cannot fit its retained trace within the declared tolerance and span allowance",
+        ));
     }
     let (knots, controls) = concatenate(fits);
     let coordinates = |p: &Point3| -> Result<[Rational; 3], Refusal> {
@@ -1295,6 +1385,64 @@ pub(crate) fn fillet_guide(
 mod tests {
     use super::*;
     use catallax_shapes::BSplineSurface;
+
+    #[test]
+    fn native_uv_follows_piecewise_carrier_parameters_without_extra_density() {
+        let mut dec = Decider::default();
+        let root_two = Real::from_i64(2).sqrt();
+        let middle = &root_two - &Real::one();
+        let half = Real::from(Rational::from_ratio(1, 2).unwrap());
+        let weight = &(&Real::from_i64(2) + &root_two).sqrt() * &half;
+        let diagonal = &Real::one() / &root_two;
+        let radius = Real::from_i64(25);
+        let rows = [
+            [Real::one(), Real::zero()], [Real::one(), middle.clone()],
+            [diagonal.clone(), diagonal], [middle, Real::one()],
+            [Real::zero(), Real::one()],
+        ];
+        let third = Rational::from_ratio(1, 3).unwrap();
+        let controls = rows.iter().flat_map(|[x, y]| {
+            [0, 10].map(|z| Point3::new(x * &radius, y * &radius, Real::from_i64(z)))
+        }).collect();
+        let source = BSplineSurface::new(
+            [2, 1],
+            [
+                vec![Rational::zero(); 3].into_iter().chain([third.clone(), third])
+                    .chain(vec![Rational::one(); 3]).collect(),
+                vec![Rational::zero(), Rational::zero(), Rational::one(), Rational::one()],
+            ],
+            [5, 2], controls,
+            [Real::one(), weight.clone(), Real::one(), weight, Real::one()]
+                .into_iter().flat_map(|w| [w.clone(), w]).collect(),
+            &mut dec,
+        ).unwrap();
+        let face = SplineFace::new(Surface64::new(&source, &mut dec).unwrap(),
+            std::array::from_fn(|_| [Rational::zero(), Rational::one()]));
+        let ends = [0, 1].map(|u| Uv {
+            exact: [Rational::from_i64(u), Rational::zero()], approx: [u as f64, 0.0],
+        });
+        let end = Ball::pi(BITS).mid().mul_pow2(-1);
+        let tolerance = Rational::parse("0.0000001").unwrap();
+        let uv = native_uv(
+            ParametricFace::Spline(&face),
+            &Native::Circle(Circle64 { center: [0.0; 3], x: [1.0, 0.0, 0.0], y: [0.0, 1.0, 0.0], radius: 25.0 }),
+            [&Rational::zero(), &end], [&ends[0], &ends[1]],
+            &Tolerances { sample: 1e-7 / 64.0, fit: 2.5e-8, projection: tolerance },
+            &mut dec,
+        ).unwrap();
+        let mut maximum = 0.0_f64;
+        for i in 0..=96 {
+            let at = &end * &Rational::from_ratio(i, 96).unwrap();
+            let parameters = uv.point_at(&Real::from(at.clone()), &mut dec).unwrap();
+            let u = dec.enclose_at(&parameters.x, BITS).unwrap();
+            let v = dec.enclose_at(&parameters.y, BITS).unwrap();
+            let point = source.evaluate(&u, &v, &dec).unwrap()
+                .each_ref().map(|v| v.mid().to_f64_nearest());
+            let angle = at.to_f64_nearest();
+            maximum = maximum.max(distance(point, [25.0 * angle.cos(), 25.0 * angle.sin(), 0.0]));
+        }
+        assert!(maximum <= 1e-7, "carrier-chart physical residual={maximum:e} mm");
+    }
 
     // A bilinear patch over [0, 1/3] x [1/10, 2/3]; no side is a binary64 value.
     fn face() -> SplineFace {
@@ -1377,5 +1525,57 @@ mod tests {
                 .controls()
                 .all(|p| p.x.as_rational() == Some(third.clone()))
         );
+    }
+
+    #[test]
+    fn half_circle_guides_keep_the_retained_branch_and_direction_at_fixed_density() {
+        use catallax_shapes::{Circle, PointDef, RPoint3, RVector3};
+        use catallax_topology::{Edge, Vertex};
+        let (_, work) = catallax_numbers::with_operation_budget(100_000_000, || {
+            for lower in [false, true] {
+                for sense in [Sense::Same, Sense::Reversed] {
+                    let q = Rational::from_i64;
+                    let mut model = Model::new();
+                    let curve = model.geom_mut().add_curve(Curve::Circle(Circle {
+                        center: RPoint3::new(q(0), q(0), q(0)).to_real(),
+                        normal: RVector3::new(q(0), q(0), q(1)).to_real(),
+                        ref_dir: RVector3::new(q(1), q(0), q(0)).to_real(),
+                        radius_sq: q(400).into(),
+                    }));
+                    let vertices = [20, -20].map(|x| {
+                        let point = model.geom_mut().add_point(PointDef::Explicit(
+                            RPoint3::new(q(x), q(0), q(0)).to_real(),
+                        ));
+                        model.add_vertex(Vertex { point })
+                    });
+                    let mut ends = if lower { [vertices[1], vertices[0]] } else { vertices };
+                    if sense == Sense::Reversed { ends.reverse(); }
+                    let edge = model.add_edge(Edge {
+                        curve, sense, start: Some(ends[0]), end: Some(ends[1]),
+                    });
+                    let mut dec = Decider::default();
+                    let tolerance = Rational::parse("0.0000001").unwrap();
+                    let before = catallax_numbers::current_operation_work().used;
+                    let guide = fillet_guide(&model, edge, &tolerance, &mut dec).unwrap();
+                    let fitting_work = catallax_numbers::current_operation_work().used - before;
+                    let mut worst: f64 = 0.0;
+                    for i in 0..=96 {
+                        let t = Rational::from_ratio(i, 96).unwrap();
+                        let p = guide.curve.evaluate_box([&t, &t], BITS, &dec).unwrap()
+                            .each_ref().map(|v| v.mid().to_f64_nearest());
+                        worst = worst.max((p[0].hypot(p[1]) - 20.0).abs()).max(p[2].abs());
+                        assert!(if lower { p[1] < 2.5e-8 } else { p[1] > -2.5e-8 });
+                        if i == 0 || i == 96 {
+                            let vertex = ends[usize::from(i == 96)];
+                            let expected = model.geom().position(model.vertex(vertex).point);
+                            assert!(distance(p, f64_point(&expected, &dec).unwrap()) <= 2.5e-8);
+                        }
+                    }
+                    assert!(worst <= 2.5e-8, "radial/plane residual {worst}");
+                    println!("half-guide lower={lower} sense={sense:?} work={fitting_work} radial_error_mm={worst}");
+                }
+            }
+        });
+        assert!(!work.exhausted);
     }
 }

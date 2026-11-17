@@ -10,6 +10,7 @@ pub(super) fn lift(
     edge_ends: &BTreeMap<EdgeId, [usize; 2]>,
     points: &[[f64; 3]],
     uvs: &mut BTreeMap<(usize, usize), Uv>,
+    endpoints: &mut BTreeMap<(usize, EdgeId, usize), Uv>,
     tolerances: &Tolerances,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
@@ -65,20 +66,27 @@ pub(super) fn lift(
                 let ends = edge_ends[&coedge.edge];
                 let end = ends[usize::from(coedge.sense == Sense::Same)];
                 let at = face.invert(points[end], Some(previous), tolerances, dec)?;
+                let mut exact_at = [exact(at[0])?, exact(at[1])?];
                 for axis in 0..2 {
                     bounds[axis][0] = bounds[axis][0].min(at[axis]);
                     bounds[axis][1] = bounds[axis][1].max(at[axis]);
-                    if end == first_vertex && periodic[axis]
-                        && (at[axis] - initial[axis]).abs() > std::f64::consts::PI
-                    {
-                        return Err(unsupported(&format!(
-                            "finite boundary on {id:?} winds in periodic axis {axis} and needs an explicit seam"
-                        )));
+                    if end == first_vertex && periodic[axis] {
+                        let turns = ((at[axis] - initial[axis]) / std::f64::consts::TAU).round();
+                        if turns.abs() > 1.0 {
+                            return Err(unsupported("a boundary winds more than once around its carrier"));
+                        }
+                        exact_at[axis] = &uvs[&(index, first_vertex)].exact[axis]
+                            + &(Ball::pi(BITS).mid().mul_pow2(1) * exact(turns)?);
                     }
                 }
                 if end != first_vertex {
                     uvs.insert((index, end), Uv {
                         exact: [exact(at[0])?, exact(at[1])?], approx: at,
+                    });
+                }
+                else {
+                    endpoints.insert((index, coedge.edge, end), Uv {
+                        exact: exact_at, approx: at,
                     });
                 }
                 previous = at;
@@ -87,4 +95,67 @@ pub(super) fn lift(
         }
     }
     Ok(())
+}
+
+pub(super) fn parameter_cuts(
+    face: ParametricFace<'_>,
+    edge: &Native,
+    range: [f64; 2],
+    ends: [&Uv; 2],
+    tolerances: &Tolerances,
+    dec: &mut Decider,
+) -> Result<Vec<f64>, Refusal> {
+    let mut cuts = Vec::new();
+    if let Native::Spline(curve) = edge {
+        cuts.extend_from_slice(curve.internal_knots());
+    }
+    if let Some(spline) = face.spline()
+        && (0..2).any(|axis| !spline.surface.internal_knots(axis).is_empty())
+    {
+        const PROBES: usize = DENSITIES[0];
+        let parameters: [f64; PROBES + 1] =
+            std::array::from_fn(|i| lerp(range, i as f64 / PROBES as f64));
+        let mut uv = [[0.0; 2]; PROBES + 1];
+        uv[0] = ends[0].approx;
+        uv[PROBES] = ends[1].approx;
+        for i in 1..PROBES {
+            uv[i] = face.invert(edge.point(parameters[i]), Some(uv[i - 1]), tolerances, dec)?;
+        }
+        for axis in 0..2 {
+            let mut previous = None;
+            for knot in spline.surface.internal_knots(axis) {
+                if previous == Some(*knot) { continue; }
+                previous = Some(*knot);
+                for i in 0..PROBES {
+                    dec.charge_work(1)?;
+                    let a = uv[i][axis] - knot;
+                    let b = uv[i + 1][axis] - knot;
+                    if a == 0.0 { cuts.push(parameters[i]); }
+                    if b == 0.0 { cuts.push(parameters[i + 1]); }
+                    if a * b >= 0.0 { continue; }
+                    let mut bracket = [parameters[i], parameters[i + 1]];
+                    let mut seeds = [uv[i], uv[i + 1]];
+                    let increasing = b > a;
+                    for _ in 0..64 {
+                        dec.charge_work(1)?;
+                        let parameter = lerp(bracket, 0.5);
+                        if parameter == bracket[0] || parameter == bracket[1] { break; }
+                        let seed = std::array::from_fn(|axis| lerp([seeds[0][axis], seeds[1][axis]], 0.5));
+                        let at = face.invert(edge.point(parameter), Some(seed), tolerances, dec)?;
+                        let side = usize::from((at[axis] < *knot) != increasing);
+                        bracket[side] = parameter;
+                        seeds[side] = at;
+                    }
+                    cuts.push(lerp(bracket, 0.5));
+                }
+            }
+        }
+    }
+    let noise = 16.0 * f64::EPSILON * range[0].abs().max(range[1].abs()).max(range[1] - range[0]);
+    cuts.retain(|t| *t > range[0] + noise && *t < range[1] - noise);
+    cuts.sort_by(f64::total_cmp);
+    cuts.dedup_by(|a, b| (*a - *b).abs() <= noise);
+    cuts.insert(0, range[0]);
+    cuts.push(range[1]);
+    Ok(cuts)
 }

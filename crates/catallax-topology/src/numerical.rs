@@ -25,6 +25,9 @@ pub use source::definition_from_model;
 /// Editable finite spline sheets with trim, extension and normal thickening.
 pub mod surface;
 
+#[cfg(test)]
+mod segment_tests;
+
 /// Shared default work limit for a numerical build or continuation.
 pub const DEFAULT_WORK: u64 = 20_000_000;
 const SUBDIVISIONS: i64 = 8;
@@ -70,8 +73,8 @@ pub struct NumericalTrim {
 pub struct NumericalFace {
     /// Stable key, unique among faces. It survives a surface replacement.
     pub key: String,
-    /// A plane, finite cylinder or cone chart, or embedded rational patch.
-    /// The trim need not be a patch row.
+    /// A finite analytic chart or retained regular B-spline carrier.
+    /// The trim need not follow a carrier parameter row.
     pub surface: Surface,
     /// Material normal relative to the support normal.
     pub sense: Sense,
@@ -591,7 +594,7 @@ fn build_inner_kind(
         if !analytic::supports(&face.surface) {
             return Err(bad(
                 "unsupported",
-                "numerical admission supports planes, finite cylinder or cone charts and embedded rational patches",
+                "numerical admission needs a supported finite analytic chart or retained regular spline carrier",
             ));
         }
         analytic::validate_surface(&face.surface, dec)?;
@@ -913,15 +916,20 @@ fn build_inner_kind(
 fn orient(a: &[Rational; 2], b: &[Rational; 2], c: &[Rational; 2]) -> Rational {
     (&b[0] - &a[0]) * (&c[1] - &a[1]) - (&b[1] - &a[1]) * (&c[0] - &a[0])
 }
+fn in_segment_box(a: &[Rational; 2], b: &[Rational; 2], p: &[Rational; 2]) -> bool {
+    (0..2).all(|i| &p[i] >= (&a[i]).min(&b[i]) && &p[i] <= (&a[i]).max(&b[i]))
+}
 fn on_segment(a: &[Rational; 2], b: &[Rational; 2], p: &[Rational; 2]) -> bool {
-    orient(a, b, p).is_zero()
-        && (0..2).all(|i| {
-            p[i] >= a[i].clone().min(b[i].clone()) && p[i] <= a[i].clone().max(b[i].clone())
-        })
+    in_segment_box(a, b, p) && orient(a, b, p).is_zero()
 }
 fn intersects(a: &[Rational; 2], b: &[Rational; 2], c: &[Rational; 2], d: &[Rational; 2]) -> bool {
-    if on_segment(a, b, c) || on_segment(a, b, d) || on_segment(c, d, a) || on_segment(c, d, b) {
-        return true;
+    // Disjoint exact boxes certify separation without reducing any determinant
+    // fractions. Native pcurve samples can have large unrelated denominators.
+    if (0..2).any(|i| {
+        (&a[i]).min(&b[i]) > (&c[i]).max(&d[i])
+            || (&c[i]).min(&d[i]) > (&a[i]).max(&b[i])
+    }) {
+        return false;
     }
     let signs = [
         orient(a, b, c),
@@ -930,6 +938,13 @@ fn intersects(a: &[Rational; 2], b: &[Rational; 2], c: &[Rational; 2], d: &[Rati
         orient(c, d, b),
     ]
     .map(|v| v.sign());
+    if (signs[0] == Sign::Zero && in_segment_box(a, b, c))
+        || (signs[1] == Sign::Zero && in_segment_box(a, b, d))
+        || (signs[2] == Sign::Zero && in_segment_box(c, d, a))
+        || (signs[3] == Sign::Zero && in_segment_box(c, d, b))
+    {
+        return true;
+    }
     signs.iter().all(|s| *s != Sign::Zero) && signs[0] != signs[1] && signs[2] != signs[3]
 }
 fn check_loop(
@@ -981,6 +996,16 @@ fn check_loop(
                         "parameter trim leaves the charts of its atlas face",
                     ));
                 }
+            }
+        }
+        if let Surface::BSpline(source) = &face.surface
+            && !matches!(source, SplineSupport::RationalPatch(_) | SplineSupport::RationalAtlas(_))
+        {
+            let domain = source.carrier().domain();
+            if [a, b].iter().any(|point| (0..2).any(|axis| {
+                point[axis] < *domain[axis][0] || point[axis] > *domain[axis][1]
+            })) {
+                return Err(bad("trim", "parameter trim leaves its retained spline carrier domain"));
             }
         }
         area = area + (&a[0] * &b[1] - &a[1] * &b[0]);

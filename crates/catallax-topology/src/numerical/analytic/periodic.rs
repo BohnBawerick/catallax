@@ -39,7 +39,7 @@ pub(super) fn check_loops(
             return Err(Refusal::new(
                 code,
                 format!(
-                    "a {family} chart must stay below one turn in each periodic parameter or retain a rectangular paired single-period cell with strictly interior holes"
+                    "a {family} chart must stay below one turn in each periodic parameter or retain a paired single-period fundamental cell with strictly interior holes"
                 ),
             ));
         }
@@ -74,7 +74,7 @@ fn translated_seam(first: &NumericalTrim, second: &NumericalTrim, axis: usize) -
         && second.uv[0][other] == first.uv[1][other]
 }
 
-fn paired_seam(
+pub(super) fn paired_seam(
     face: &NumericalFace,
     edges: &[NumericalEdge],
     axis: usize,
@@ -84,9 +84,7 @@ fn paired_seam(
     let Some(boundary) = face.loops.first() else {
         return Ok(false);
     };
-    // Only a rectangular paired cell is covered by this certificate. A seam
-    // on one interval cannot authorize other identified contacts after wrapping.
-    if boundary.len() != 4 {
+    if boundary.len() < 4 {
         return Ok(false);
     }
     for (i, first) in boundary.iter().enumerate() {
@@ -95,36 +93,48 @@ fn paired_seam(
             if first.edge != second.edge || first.sense == second.sense {
                 continue;
             }
-            if edges.get(first.edge).is_none() {
+            let Some(edge) = edges.get(first.edge) else {
                 return Err(bad("trim", "periodic seam names an unknown edge"));
-            }
-            if translated_seam(first, second, axis)
-                && first.uv[0][axis] == first.uv[1][axis]
-                && second.uv[0][axis] == second.uv[1][axis]
-                && first.uv[0][other] != first.uv[1][other]
-                && boundary.iter().enumerate().all(|(index, rim)| {
-                    index == i
-                        || index == j
-                        || (rim.uv[0][other] == rim.uv[1][other]
-                            && (rim.uv[0][other] == first.uv[0][other]
-                                || rim.uv[0][other] == first.uv[1][other])
-                            && (&rim.uv[1][axis] - &rim.uv[0][axis]).abs() == period())
-                })
+            };
+            if matches!(face.surface, Surface::Cylinder(_) | Surface::Cone(_))
+                && !matches!(edge.curve, Curve::Line(_))
             {
-                let low = (&first.uv[0][axis]).min(&second.uv[0][axis]);
-                let high = (&first.uv[0][axis]).max(&second.uv[0][axis]);
-                if face
-                    .loops
-                    .iter()
-                    .skip(1)
-                    .flatten()
-                    .flat_map(|trim| &trim.uv)
-                    .any(|uv| &uv[axis] <= low || &uv[axis] >= high)
-                {
-                    return Ok(false);
-                }
-                return Ok(true);
+                continue;
             }
+            if !translated_seam(first, second, axis)
+                || first.uv[0][other] == first.uv[1][other]
+            {
+                continue;
+            }
+            // Subtract the affine seam direction before measuring across the
+            // cell. Decimal frame rounding may give both seam branches a slope.
+            let height = &first.uv[1][other] - &first.uv[0][other];
+            let drift = &first.uv[1][axis] - &first.uv[0][axis];
+            let across = |point: &[Rational; 2]| {
+                &(&point[axis] - &first.uv[0][axis]) * &height
+                    - &(&point[other] - &first.uv[0][other]) * &drift
+            };
+            let shift = across(&second.uv[0]);
+            let low = Rational::zero().min(shift.clone());
+            let high = Rational::zero().max(shift);
+            if !boundary.iter().enumerate().all(|(index, rim)| {
+                if index == i || index == j { return true; }
+                let a = across(&rim.uv[0]);
+                let b = across(&rim.uv[1]);
+                [(&a, &rim.uv[0]), (&b, &rim.uv[1])].iter().all(|(value, point)| {
+                    **value >= low && **value <= high
+                        && (**value != low && **value != high
+                            || first.uv.contains(point) || second.uv.contains(point))
+                }) && !(a == b && (a == low || a == high))
+            }) {
+                continue;
+            }
+            if face.loops.iter().skip(1).flatten().flat_map(|trim| &trim.uv)
+                .any(|point| { let value = across(point); value <= low || value >= high })
+            {
+                return Ok(false);
+            }
+            return Ok(true);
         }
     }
     Ok(false)

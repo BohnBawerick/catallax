@@ -28,6 +28,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let b = built.bodies[&StepId::new("pocket")?];
         let model = &mut built.model;
         let mut dec = Decider::default();
+        let mut production = model.clone();
+        let actual = catallax_boolean::boolean(&mut production, a, b, BoolOp::Subtract, &mut dec)
+            .map_err(|error| format!("{error:?}"))?;
+        let actual_faces = production.faces_of_body(actual.body);
+        println!("production faces={} faults={:?}", actual_faces.len(), production.check(actual.body));
+        show(&production, "production", &actual_faces, &mut dec);
         show(model, "input a", &model.faces_of_body(a), &mut dec);
         show(model, "input b", &model.faces_of_body(b), &mut dec);
         let graph = intersect(model, a, b, &mut dec)?.value;

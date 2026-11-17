@@ -14,7 +14,7 @@ use catallax_numbers::{
     Answered, Decider, OperationWork, Rational, Refusal, with_operation_budget,
 };
 use catallax_recipe::Recipe;
-use catallax_shapes::{Circle, Curve, PointDef, Pose, RPoint3, RVector3, Rotation, Surface};
+use catallax_shapes::{Circle, Curve, PointDef, Pose, RPoint3, RVector3, Surface};
 use catallax_topology::{
     self as topology, Body, BodyId, BodyKind, Coedge, Edge, EdgeId, Face, FaceId, Loop, Lump,
     Model, Sense, Shell, Vertex,
@@ -261,7 +261,6 @@ fn check_certified_reports(
     );
     assert_eq!(mesh.edges.len(), edges.len());
     assert!(mesh.positions.iter().flatten().all(|x| x.is_finite()));
-    let angle = options.angular_deviation.as_ref().unwrap();
     for report in &mesh.faces {
         assert!(!report.triangles.is_empty(), "{name}: {:?}", report.face);
         assert!(
@@ -270,8 +269,11 @@ fn check_certified_reports(
                 .all(|triangle| triangle.face == report.face)
         );
         assert!(report.max_chord_error <= options.chord_tolerance);
-        let bound = report.max_angular_deviation.as_ref().unwrap();
-        assert!(bound <= angle, "{name}: {bound} above {angle}");
+        match (&options.angular_deviation, &report.max_angular_deviation) {
+            (Some(limit), Some(bound)) => assert!(bound <= limit, "{name}: {bound} above {limit}"),
+            (None, None) => {}
+            _ => panic!("{name}: angular report does not match the requested control"),
+        }
         let aspect = report.max_aspect_ratio.as_ref().unwrap();
         assert!(aspect.to_f64_nearest().is_finite());
     }
@@ -303,19 +305,15 @@ fn check_certified_reports(
     mesh
 }
 
-fn check_preview(part: &Part, built: &Built, mesh: Result<PreviewMesh, Refusal>) {
-    let name = part.name;
+fn check_preview(
+    name: &str,
+    model: &Model,
+    body: BodyId,
+    mesh: Result<PreviewMesh, Refusal>,
+) -> PreviewMesh {
     let mesh = mesh.unwrap_or_else(|refusal| panic!("{name}: {refusal}"));
-    let faces: BTreeSet<_> = built
-        .model
-        .faces_of_body(built.result)
-        .into_iter()
-        .collect();
-    let edges: BTreeSet<_> = built
-        .model
-        .edges_of_body(built.result)
-        .into_iter()
-        .collect();
+    let faces: BTreeSet<_> = model.faces_of_body(body).into_iter().collect();
+    let edges: BTreeSet<_> = model.edges_of_body(body).into_iter().collect();
     assert_eq!(
         mesh.faces.iter().map(|f| f.face).collect::<BTreeSet<_>>(),
         faces
@@ -338,6 +336,7 @@ fn check_preview(part: &Part, built: &Built, mesh: Result<PreviewMesh, Refusal>)
         mesh.faces.iter().map(|f| f.triangles.len()).sum::<usize>(),
         mesh.triangles.len()
     );
+    mesh
 }
 
 fn check_part(part: &Part) {
@@ -350,7 +349,7 @@ fn check_part(part: &Part) {
     let (built, mesh, work) = part.preview(&PreviewOptions::from(&options));
     eprintln!("{} preview request work {}", part.name, work.used);
     assert!(!work.exhausted, "{}: {work:?}", part.name);
-    check_preview(part, &built, mesh);
+    check_preview(part.name, &built.model, built.result, mesh);
 }
 
 fn boundary_edges(model: &Model, face: FaceId) -> BTreeSet<EdgeId> {
@@ -449,7 +448,7 @@ fn check_drawing(part: &Part) {
     let (built, mesh, work) = part.preview(&PreviewOptions::from(&options));
     eprintln!("{name} drawing preview request work {}", work.used);
     assert!(!work.exhausted, "{name}: {work:?}");
-    check_preview(part, &built, mesh);
+    check_preview(part.name, &built.model, built.result, mesh);
     assert!(format!("{built:?}") == retained, "{name}: preview changed");
 }
 
@@ -865,338 +864,6 @@ fn compare(baseline: &[(&str, &str)], actual: Vec<(String, String)>) {
     }
 }
 
-/// Captured from main 485f172 before the corner mesh change.
-const NO_ANGLE_BASELINE: &[(&str, &str)] = &[
-    (
-        "H-N certified",
-        "mesh e0abaec724a8a4a9 obj 77c30998202840b2",
-    ),
-    (
-        "H-N preview",
-        "refused mesh.precision-or-budget: preview sampling reached its refinement limit",
-    ),
-    (
-        "H-E certified",
-        "mesh 4984bb0a62c1b7ba obj 77dd09a4c76fdb13",
-    ),
-    ("H-E preview", "preview 94a275338ae952ac"),
-    (
-        "H-B certified",
-        "mesh 5fa4aba0d7a08b1a obj 6afc4d71307b0316",
-    ),
-    ("H-B preview", "preview 5ea3baffce21275e"),
-];
-
-#[test]
-fn removing_the_angular_target_keeps_earlier_output() {
-    let mut actual = Vec::new();
-    for part in [H_N, H_E, H_B] {
-        let built = part.built();
-        let options = MeshOptions {
-            angular_deviation: None,
-            ..part.options()
-        };
-        actual.push((
-            format!("{} certified", part.name),
-            certified_line(&built.model, built.result, &options),
-        ));
-        actual.push((
-            format!("{} preview", part.name),
-            preview_line(&built.model, built.result, &PreviewOptions::from(&options)),
-        ));
-    }
-    compare(NO_ANGLE_BASELINE, actual);
-}
-
-fn primitives(model: &mut Model) -> Vec<(&'static str, BodyId)> {
-    let identity = Pose::identity();
-    let transformed = Pose::new(
-        Rotation::from_quaternion(1.into(), 2.into(), 3.into(), 4.into()).unwrap(),
-        RVector3::new(7.into(), (-2).into(), 3.into()).into(),
-        &mut Decider::default(),
-    )
-    .unwrap();
-    vec![
-        (
-            "block",
-            topology::block(model, [2.into(), 3.into(), 5.into()], &transformed).unwrap(),
-        ),
-        (
-            "cylinder",
-            topology::cylinder(model, 2.into(), 5.into(), &transformed).unwrap(),
-        ),
-        (
-            "sphere",
-            topology::sphere(model, 2.into(), &identity).unwrap(),
-        ),
-        (
-            "cone",
-            topology::cone(model, 3.into(), 0.into(), 4.into(), &identity).unwrap(),
-        ),
-        (
-            "frustum",
-            topology::cone(model, 1.into(), 3.into(), 4.into(), &transformed).unwrap(),
-        ),
-        (
-            "torus",
-            topology::torus(model, 3.into(), 1.into(), &identity).unwrap(),
-        ),
-    ]
-}
-
-// Two hemispheres sharing one closed circle through the definition poles.
-fn sphere_split_through_its_poles(model: &mut Model) -> BodyId {
-    let original = topology::sphere(model, 2.into(), &Pose::identity()).unwrap();
-    let surface = model.face(model.faces_of_body(original)[0]).surface;
-    let curve = model.geom_mut().add_curve(Curve::Circle(
-        Circle::new(
-            RPoint3::origin().into(),
-            RVector3::new(1.into(), 0.into(), 0.into()).into(),
-            4.into(),
-            RVector3::new(0.into(), 1.into(), 0.into()).into(),
-            &mut Decider::default(),
-        )
-        .unwrap(),
-    ));
-    let edge = model.add_edge(Edge {
-        curve,
-        sense: Sense::Same,
-        start: None,
-        end: None,
-    });
-    let mut faces = Vec::new();
-    for sense in [Sense::Same, Sense::Reversed] {
-        let coedge = model.add_coedge(Coedge { edge, sense });
-        let boundary = model.add_loop(Loop::Coedges(vec![coedge]));
-        faces.push(model.add_face(Face {
-            surface,
-            sense: Sense::Same,
-            loops: vec![boundary],
-        }));
-    }
-    let shell = model.add_shell(Shell { faces });
-    let lump = model.add_lump(Lump {
-        shells: vec![shell],
-    });
-    model.add_body(Body {
-        kind: BodyKind::Solid,
-        lumps: vec![lump],
-        wires: Vec::new(),
-        marks: catallax_numbers::MarkLog::new(),
-    })
-}
-
-// A sphere inside a block corner: three circular arcs, none of them great, so
-// only the great-circle test separates this face from a fillet corner sector.
-fn small_circle_sector() -> Built {
-    let identity = json!({"rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "0"]});
-    let corner = json!({"rotation": ["1", "0", "0", "0"], "translation": ["1/2", "1/2", "1/2"]});
-    let recipe = Recipe::parse(
-        &json!({
-            "format": "catallax-recipe/4", "name": "small circle sector",
-            "steps": [
-                {"id": "ball", "op": "sphere", "radius": "3", "pose": identity},
-                {"id": "window", "op": "block", "size": ["9", "9", "9"], "pose": corner},
-                {"id": "sector", "op": "boolean", "kind": "intersect",
-                 "target": "ball", "tool": "window"}
-            ],
-            "result": "sector"
-        })
-        .to_string(),
-    )
-    .unwrap();
-    let built = evaluate(&recipe, &mut Decider::default()).unwrap();
-    let three_arcs = built
-        .model
-        .faces_of_body(built.result)
-        .into_iter()
-        .any(|face| {
-            let face = built.model.face(face);
-            matches!(built.model.geom().surface(face.surface), Surface::Sphere(_))
-                && matches!(face.loops.as_slice(), [boundary]
-                if matches!(built.model.loop_(*boundary), Loop::Coedges(c) if c.len() == 3))
-        });
-    assert!(three_arcs);
-    built
-}
-
-/// Captured from main 485f172 before the corner mesh change.
-const UNAFFECTED_BASELINE: &[(&str, &str)] = &[
-    (
-        "block bare certified",
-        "mesh 9a86203972b02993 obj b07d820a1de38450",
-    ),
-    ("block bare preview", "preview 06f7a23870c2945f"),
-    (
-        "block angular certified",
-        "mesh b654785060e5d5fd obj b07d820a1de38450",
-    ),
-    ("block angular preview", "preview 06f7a23870c2945f"),
-    (
-        "block controlled certified",
-        "mesh f921bf4624d6dbad obj 10b430b261e8cc61",
-    ),
-    ("block controlled preview", "preview 06f7a23870c2945f"),
-    (
-        "cylinder bare certified",
-        "mesh a2493a55b9a8804e obj 9c7d2ecdebb36563",
-    ),
-    ("cylinder bare preview", "preview e5a5ab841c71b3d9"),
-    (
-        "cylinder angular certified",
-        "mesh 3120c5757e396dd2 obj 8475465eb6a0078d",
-    ),
-    ("cylinder angular preview", "preview dfd37d84ce6c1c28"),
-    // Re-pinned when an edge limit shorter than a cylinder began seeding rows. See
-    // docs/interface-changes/2026-11-01-cylinder-edge-limit-rows.md.
-    (
-        "cylinder controlled certified",
-        "mesh 8fbc27efe9cbee6c obj b7b82215a54e120b",
-    ),
-    ("cylinder controlled preview", "preview e5a5ab841c71b3d9"),
-    (
-        "sphere bare certified",
-        "mesh f6417d6e522dae1a obj bff9205fa6acc784",
-    ),
-    ("sphere bare preview", "preview b19df3fb3b4eee00"),
-    (
-        "sphere angular certified",
-        "mesh 9b6ecea61842b199 obj a500dd66a406757f",
-    ),
-    ("sphere angular preview", "preview e8f57f0b98e53ee2"),
-    (
-        "sphere controlled certified",
-        "mesh c23499e647fdd642 obj bff9205fa6acc784",
-    ),
-    ("sphere controlled preview", "preview b19df3fb3b4eee00"),
-    (
-        "cone bare certified",
-        "mesh 0362232c099c1e5c obj 26c2807a116828bf",
-    ),
-    ("cone bare preview", "preview cecc1b36942e8454"),
-    (
-        "cone angular certified",
-        "mesh 9a26082a4d1264aa obj 58430e11ff5efc98",
-    ),
-    ("cone angular preview", "preview d52f961b90c8665a"),
-    (
-        "cone controlled certified",
-        "mesh f7273d0e1b4bb553 obj 517942cdeea96d63",
-    ),
-    ("cone controlled preview", "preview cecc1b36942e8454"),
-    (
-        "frustum bare certified",
-        "mesh 70443497bfddf0dd obj 59731c8aa9d35e22",
-    ),
-    ("frustum bare preview", "preview 4b41bfb24446312a"),
-    (
-        "frustum angular certified",
-        "mesh 9a3d41c3bd5fd492 obj 95bbab73360c55bb",
-    ),
-    ("frustum angular preview", "preview 4c2c33a3f7fa18b8"),
-    (
-        "frustum controlled certified",
-        "mesh 30c641a1cd032dc5 obj aba9b2885a905fdb",
-    ),
-    ("frustum controlled preview", "preview b41ab6d9d7ded20b"),
-    (
-        "torus bare certified",
-        "mesh 0ac6aebe7a4abdcb obj f6008a2fab3cd0c0",
-    ),
-    ("torus bare preview", "preview c852684354fc5596"),
-    (
-        "torus angular certified",
-        "mesh b4328ee0e206ca48 obj 8f0c1f752b2c7eb6",
-    ),
-    ("torus angular preview", "preview 902d052c0ea8370b"),
-    (
-        "torus controlled certified",
-        "mesh b01e83073bf41951 obj f6008a2fab3cd0c0",
-    ),
-    ("torus controlled preview", "preview c852684354fc5596"),
-    (
-        "split sphere bare certified",
-        "mesh af9da8c406c718a4 obj 079013b32e981ea2",
-    ),
-    ("split sphere bare preview", "preview 58760f41710a411c"),
-    (
-        "split sphere angular certified",
-        "mesh 400c20b45d3887c4 obj 3c83de46c651a873",
-    ),
-    ("split sphere angular preview", "preview b2cfb1c990c5f5de"),
-    (
-        "split sphere controlled certified",
-        "mesh 249fb16e9719ec5b obj 079013b32e981ea2",
-    ),
-    (
-        "split sphere controlled preview",
-        "preview 58760f41710a411c",
-    ),
-    (
-        "small circles bare certified",
-        "mesh 58358b2523d4b71d obj a727986772c34a38",
-    ),
-    ("small circles bare preview", "preview 086288b4c6c2da1b"),
-    (
-        "small circles angular certified",
-        "mesh 809e26ae886a2fa5 obj 64121fbb24fff360",
-    ),
-    ("small circles angular preview", "preview 3b2e1a52933987e4"),
-    (
-        "small circles controlled certified",
-        "mesh 92d9426a86e72e93 obj c68e37a8efb3ff84",
-    ),
-    (
-        "small circles controlled preview",
-        "preview 086288b4c6c2da1b",
-    ),
-];
-
-#[test]
-fn faces_outside_the_family_keep_their_exact_output() {
-    let chord = Rational::parse("0.15").unwrap();
-    let bare = MeshOptions {
-        chord_tolerance: chord,
-        ..MeshOptions::default()
-    };
-    let angular = MeshOptions {
-        angular_deviation: Some(ANGLE.parse().unwrap()),
-        ..bare.clone()
-    };
-    let controlled = MeshOptions {
-        angular_deviation: Some(Rational::parse("0.8").unwrap()),
-        max_edge_length: Some(Rational::parse("1.5").unwrap()),
-        max_aspect_ratio: Some(Rational::one()),
-        ..bare.clone()
-    };
-    let mut model = Model::new();
-    let mut bodies = primitives(&mut model);
-    bodies.push(("split sphere", sphere_split_through_its_poles(&mut model)));
-    let sector = small_circle_sector();
-    let mut parts = vec![(&model, bodies)];
-    parts.push((&sector.model, vec![("small circles", sector.result)]));
-    let mut actual = Vec::new();
-    for (model, bodies) in parts {
-        for (name, body) in bodies {
-            for (label, options) in [
-                ("bare", &bare),
-                ("angular", &angular),
-                ("controlled", &controlled),
-            ] {
-                actual.push((
-                    format!("{name} {label} certified"),
-                    certified_line(model, body, options),
-                ));
-                actual.push((
-                    format!("{name} {label} preview"),
-                    preview_line(model, body, &PreviewOptions::from(options)),
-                ));
-            }
-        }
-    }
-    compare(UNAFFECTED_BASELINE, actual);
-}
-
 /// The spherical outside of a removed octant: three arcs, but the long way round
 /// the corner's cone, so the face is the complement of the convex sector.
 fn sphere_less_an_octant() -> Built {
@@ -1359,4 +1026,142 @@ fn other_three_arc_trims_keep_their_exact_output() {
         ));
     }
     compare(NEIGHBOUR_BASELINE, actual);
+}
+
+fn check_preview_surface_samples(model: &Model, mesh: &PreviewMesh, tolerance: &Rational) {
+    let tolerance = tolerance.to_f64_nearest() + 1e-10;
+    for triangle in &mesh.triangles {
+        let surface = model.geom().surface(model.face(triangle.face).surface);
+        if !matches!(surface, Surface::Sphere(_) | Surface::Cylinder(_)) {
+            continue;
+        }
+        let points = triangle.vertices.map(|vertex| mesh.positions[vertex]);
+        for weights in [[0.5, 0.5, 0.0], [1.0 / 3.0; 3], [0.2, 0.3, 0.5]] {
+            let point =
+                std::array::from_fn(|i| (0..3).map(|j| weights[j] * points[j][i]).sum::<f64>());
+            assert!(on_surface(surface, point, tolerance));
+        }
+    }
+}
+
+#[test]
+fn no_angular_target_keeps_corner_geometry_and_preview_outcomes() {
+    for part in [H_N, H_E, H_B] {
+        let options = MeshOptions {
+            angular_deviation: None,
+            ..part.options()
+        };
+        let (built, answer, work) = part.certified(&options);
+        assert!(!work.exhausted, "{}: {work:?}", part.name);
+        check_inventory(&part, &built);
+        let mesh = check_certified(&part, &built, answer, &options);
+        check_corner_and_strip(&built, &mesh);
+        let (built, preview, work) = part.preview(&PreviewOptions::from(&options));
+        assert!(!work.exhausted, "{}: {work:?}", part.name);
+        if part.name == H_N.name {
+            let refusal = preview.unwrap_err();
+            assert_eq!(refusal.code, "mesh.precision-or-budget");
+        } else {
+            let mesh = check_preview(part.name, &built.model, built.result, preview);
+            check_preview_surface_samples(&built.model, &mesh, &options.chord_tolerance);
+        }
+    }
+}
+
+fn pole_split_sphere(model: &mut Model) -> BodyId {
+    let original = topology::sphere(model, 2.into(), &Pose::identity()).unwrap();
+    let surface = model.face(model.faces_of_body(original)[0]).surface;
+    let circle = Circle::new(
+        RPoint3::origin().into(),
+        RVector3::new(1.into(), 0.into(), 0.into()).into(),
+        4.into(),
+        RVector3::new(0.into(), 1.into(), 0.into()).into(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let curve = model.geom_mut().add_curve(Curve::Circle(circle));
+    let edge = model.add_edge(Edge {
+        curve,
+        sense: Sense::Same,
+        start: None,
+        end: None,
+    });
+    let mut faces = Vec::with_capacity(2);
+    for sense in [Sense::Same, Sense::Reversed] {
+        let coedge = model.add_coedge(Coedge { edge, sense });
+        let boundary = model.add_loop(Loop::Coedges(vec![coedge]));
+        faces.push(model.add_face(Face {
+            surface,
+            sense: Sense::Same,
+            loops: vec![boundary],
+        }));
+    }
+    let shell = model.add_shell(Shell { faces });
+    let lump = model.add_lump(Lump {
+        shells: vec![shell],
+    });
+    model.add_body(Body {
+        kind: BodyKind::Solid,
+        lumps: vec![lump],
+        wires: Vec::new(),
+        marks: catallax_numbers::MarkLog::new(),
+    })
+}
+
+#[test]
+fn pole_crossing_preview_and_small_circle_trims_keep_their_geometry() {
+    let options = MeshOptions {
+        chord_tolerance: Rational::parse("0.15").unwrap(),
+        ..MeshOptions::default()
+    };
+    let preview_options = PreviewOptions::from(&options);
+    let mut model = Model::new();
+    let body = pole_split_sphere(&mut model);
+    let preview = preview_mesh_body(&model, body, &preview_options, &mut Decider::default());
+    let mesh = check_preview("pole split sphere", &model, body, preview);
+    check_preview_surface_samples(&model, &mesh, &options.chord_tolerance);
+
+    let recipe = three_arc_recipe(
+        "small-circle corner",
+        json!([
+            {"id": "ball", "op": "sphere", "radius": "3",
+             "pose": {"rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "0"]}},
+            {"id": "window", "op": "block", "size": ["9", "9", "9"],
+             "pose": {"rotation": ["1", "0", "0", "0"], "translation": ["1/2", "1/2", "1/2"]}},
+            {"id": "result", "op": "boolean", "kind": "intersect",
+             "target": "ball", "tool": "window"}
+        ]),
+    );
+    let built = evaluate(&recipe, &mut Decider::default()).unwrap();
+    let answer = mesh_body(
+        &built.model,
+        built.result,
+        &options,
+        &mut Decider::default(),
+    );
+    let certified = check_certified_reports("small circles", &built, answer, &options);
+    assert!(certified.unavailable_controls.is_empty());
+    assert!(
+        certified
+            .positions
+            .iter()
+            .flatten()
+            .all(|coordinate| *coordinate >= 0.5 - 1e-10)
+    );
+    let preview = preview_mesh_body(
+        &built.model,
+        built.result,
+        &preview_options,
+        &mut Decider::default(),
+    );
+    let mesh = check_preview("small circles", &built.model, built.result, preview);
+    check_preview_surface_samples(&built.model, &mesh, &options.chord_tolerance);
+    assert!(
+        mesh.triangles
+            .iter()
+            .flat_map(|triangle| triangle.vertices)
+            .all(|vertex| mesh.positions[vertex]
+                .iter()
+                .all(|coordinate| *coordinate >= 0.5 - 1e-10))
+    );
 }

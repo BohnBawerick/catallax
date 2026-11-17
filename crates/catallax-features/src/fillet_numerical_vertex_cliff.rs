@@ -1,11 +1,12 @@
-//! Contact setup for OCCT-style Cliff intersections. The actual fitted rails
+//! OCCT-style Cliff carrier sections. The actual fitted rails
 //! remain authoritative; a failed finite-domain solve never extrapolates them.
 
 use catallax_numbers::{Decider, Rational, Refusal, Sign};
-use catallax_topology::{Model, VertexId};
+use catallax_shapes::{NumericalSurfaceCut, SplineSupport, Surface};
+use catallax_topology::{BodyId, Model, VertexId};
 
-use super::super::super::rolling::RolledChain;
-use super::{BITS, StripEnd, bad, gap, strip};
+use super::super::super::{at_stage, rolling::RolledChain};
+use super::{BITS, StripEnd, VertexJunction, bad, ends, gap, strip};
 
 pub(crate) fn common_contact(
     model: &Model,
@@ -117,6 +118,121 @@ pub(crate) fn common_contact(
     )))
 }
 
+pub(crate) struct CliffSection {
+    /// Shallower strip first. Native curves in `cut` follow this order.
+    pub ends: [StripEnd; 2],
+    pub common: [usize; 2],
+    pub caps: [VertexJunction; 2],
+    pub cut: NumericalSurfaceCut,
+}
+
+/// Intersect the actual carriers after their outer-face cuts establish reach.
+/// Unequal reach requires retaining an additional piece of the deeper cap.
+pub(crate) fn shared_section(
+    model: &Model,
+    body: BodyId,
+    chains: &[RolledChain],
+    vertex: VertexId,
+    mut strip_ends: [StripEnd; 2],
+    mut common_tau: [Rational; 2],
+    tolerance: &Rational,
+    dec: &mut Decider,
+) -> Result<CliffSection, Refusal> {
+    let mut sources = [
+        strip(model, chains, vertex, strip_ends[0])?,
+        strip(model, chains, vertex, strip_ends[1])?,
+    ];
+    if !sources[0].convex || !sources[1].convex {
+        return Err(bad(
+            "this Cliff section needs two convex strips over the pocket corner",
+        ));
+    }
+    let mut common = sources[0]
+        .source
+        .faces
+        .iter()
+        .enumerate()
+        .find_map(|(i, face)| {
+            sources[1]
+                .source
+                .faces
+                .iter()
+                .position(|other| other == face)
+                .map(|j| [i, j])
+        })
+        .ok_or_else(|| bad("Cliff section has no common source support"))?;
+    let mut caps = [
+        ends::face_end(model, body, chains, vertex, strip_ends[0], tolerance, dec)
+            .map_err(|error| at_stage("first Cliff neighbor section", error))?,
+        ends::face_end(model, body, chains, vertex, strip_ends[1], tolerance, dec)
+            .map_err(|error| at_stage("second Cliff neighbor section", error))?,
+    ];
+    let point = model.geom().position(model.vertex(vertex).point);
+    let near = [
+        dec.enclose_budgeted_at(&point.x, BITS)?.mid(),
+        dec.enclose_budgeted_at(&point.y, BITS)?.mid(),
+        dec.enclose_budgeted_at(&point.z, BITS)?.mid(),
+    ];
+    let reach = |index: usize| {
+        let contact = &caps[index].contacts[1 - common[index]].position;
+        (0..3).fold(Rational::zero(), |sum, i| {
+            let delta = &contact[i] - &near[i];
+            sum + (&delta * &delta)
+        })
+    };
+    // A numerical ordering proposal. The retained curves and rail contacts
+    // must still satisfy the actual world/native composition tolerance.
+    if reach(1) < reach(0) {
+        sources.swap(0, 1);
+        strip_ends.swap(0, 1);
+        common_tau.swap(0, 1);
+        common.swap(0, 1);
+        caps.swap(0, 1);
+    }
+    let seed = if common[0] == 0 {
+        [
+            common_tau[0].clone(),
+            common_tau[1].clone(),
+            Rational::from_i64(common[1] as i64),
+        ]
+    } else {
+        [
+            caps[0].terminations[0].tau[0].clone(),
+            caps[1].terminations[0].tau[1 - common[1]].clone(),
+            Rational::from_i64((1 - common[1]) as i64),
+        ]
+    };
+    let other = Surface::BSpline(SplineSupport::RationalAtlas(
+        sources[1].fillet.surface().clone(),
+    ));
+    let cut = sources[0]
+        .fillet
+        .surface_cut(other, seed, dec)
+        .map_err(|error| at_stage("two fitted Cliff carriers", error))?;
+    let at = Rational::from_i64(common[0] as i64);
+    let world = cut.curve().evaluate_box([&at, &at], BITS, dec)?;
+    for side in 0..2 {
+        let rail = sources[side]
+            .fillet
+            .rail(common[side])
+            .ok_or_else(|| bad("Cliff common rail is missing"))?;
+        let native = cut.parameters()[side].evaluate_box([&at, &at], BITS, dec)?;
+        let tau = native[0].mid();
+        let contact = rail.evaluate_box([&tau, &tau], BITS, dec)?;
+        if gap(&world, &contact)? > *tolerance {
+            return Err(bad(
+                "Cliff carrier intersection leaves a common contact rail",
+            ));
+        }
+    }
+    Ok(CliffSection {
+        ends: strip_ends,
+        common,
+        caps,
+        cut,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -124,7 +240,7 @@ mod tests {
     use catallax_recipe::{Recipe, Role};
 
     #[test]
-    fn owner_vertex_cylindrical_cliff_common_contact_is_retained() {
+    fn owner_vertex_cylindrical_cliff_section_has_paired_native_curves() {
         let ((), work) = with_operation_budget(100_000_000, || {
             let mut dec = Decider::new(BudgetPolicy {
                 max_work: 100_000_000,
@@ -183,10 +299,51 @@ mod tests {
                     );
                 }
             }
+            let section = shared_section(
+                model,
+                built.result,
+                &chains,
+                vertex,
+                ends,
+                tau,
+                &tolerance,
+                &mut dec,
+            )
+            .unwrap();
+            for index in 0..=31 {
+                let s = Rational::from_ratio(index, 31).unwrap();
+                let world = section
+                    .cut
+                    .curve()
+                    .evaluate_box([&s, &s], BITS, &dec)
+                    .unwrap();
+                for side in 0..2 {
+                    let end = section.ends[side];
+                    let uv = section.cut.parameters()[side]
+                        .evaluate_box([&s, &s], BITS, &dec)
+                        .unwrap();
+                    let surface = chains[end.chain].strips[end.strip]
+                        .fillet
+                        .surface()
+                        .source();
+                    let composed = surface
+                        .evaluate_box(
+                            [&uv[0].lo(), &uv[0].hi()],
+                            [&uv[1].lo(), &uv[1].hi()],
+                            BITS,
+                            &dec,
+                        )
+                        .unwrap();
+                    assert!(
+                        gap(&world, &composed).unwrap() <= tolerance,
+                        "actual Cliff section at {s}"
+                    );
+                }
+            }
         });
         assert!(!work.exhausted);
         println!(
-            "owner cylindrical Cliff common-contact work={}; actual retained rails, no extrapolation",
+            "owner cylindrical Cliff section work={}; actual fitted carriers and native curves, no extrapolation",
             work.used
         );
     }

@@ -12,7 +12,7 @@ const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_SCHEMA(('AUTOMOTIVE_DESIGN'));E
 #31=CARTESIAN_POINT('',(0.,99.));#32=CARTESIAN_POINT('',(1.,99.));#33=CARTESIAN_POINT('',(2.,99.));
 #34=B_SPLINE_CURVE_WITH_KNOTS('',1,(#31,#32,#33),.UNSPECIFIED.,.F.,.F.,(2,1,2),(0.,1.,2.),.UNSPECIFIED.);
 #35=DEFINITIONAL_REPRESENTATION('',(#34),#20);#36=PCURVE('',#14,#35);
-#40=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#4);#41=COMPOSITE_CURVE('',(#40),.F.);
+#41=OFFSET_CURVE_2D('',#4,0.25,.F.);
 #42=DEFINITIONAL_REPRESENTATION('',(#41),#20);#43=PCURVE('',#14,#42);
 ENDSEC;END-ISO-10303-21;";
 
@@ -76,7 +76,7 @@ fn optional_pcurve_compilation_preserves_fitting_and_control_refusals() {
     let fit = surface.project([1.5, 0.0, 0.0], seed, &mut dec).unwrap();
     assert!(
         fit.residual_mm < 1.0e-6,
-        "an unsupported optional composite pcurve must not prevent native 3D fitting"
+        "an unsupported optional 2D-offset pcurve must not prevent native 3D fitting"
     );
     let (result, work) = with_operation_budget(0, || context.pcurve(22, &mut dec));
     assert!(crate::tolerant::native::control(&result.unwrap_err()));

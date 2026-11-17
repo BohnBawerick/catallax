@@ -6,7 +6,7 @@ import sys
 import tempfile
 import unittest
 
-from opened_import_census import comparison_outcomes, observe, export_inventory
+from opened_import_census import comparison_outcomes, observe, export_inventory, document_export_refusal
 
 
 class StageComparisonTests(unittest.TestCase):
@@ -53,6 +53,8 @@ class StageComparisonTests(unittest.TestCase):
             self.assertEqual(row["outcome"], "full")
             self.assertEqual(row["observed_body_count"], 1)
             self.assertEqual(row["export_validity"], "process_error")
+            self.assertIsNone(row["has_valid_exported_solid"])
+            self.assertTrue(row["any_valid_exported_solid_count_is_lower_bound"])
             comparison = comparison_outcomes({"source": row}, {"source": 1}, {"source"}, {})
             self.assertEqual(comparison["tier_losses"], [])
             self.assertEqual(comparison["frozen_valid_export_losses"], [])
@@ -139,6 +141,42 @@ class StageComparisonTests(unittest.TestCase):
         self.assertFalse(inventory["export_observation_complete"])
         files[0].update(outcome="valid_after_builder", valid_solid_count=1)
         self.assertTrue(export_inventory(files, 2, True, False)["has_valid_exported_solid"])
+
+    def test_a_refused_part_leaves_other_native_parts_unmeasured(self):
+        for root in [
+            dict(outcome="reader_refused", parts_expected=2, parts_inspected=0, observation_complete=False),
+            dict(outcome="reader_refused"),
+        ]:
+            files = [dict(kind="native_document", bodies=[0], outcome="invalid_after_builder",
+                          valid_solid_count=0, raw_source_roots=[root])]
+            inventory = export_inventory(files, 1, True, True)
+            self.assertIsNone(inventory["has_valid_exported_solid"])
+            self.assertFalse(inventory["export_observation_complete"])
+            self.assertTrue(inventory["any_valid_exported_solid_count_is_lower_bound"])
+            row = dict(inventory, outcome="full", observed_body_count=1,
+                       export_validity="raw_observation_incomplete")
+            comparison = comparison_outcomes({"source": row}, {"source": 1}, {"source"}, {})
+            self.assertEqual(comparison["not_measured"], ["source"])
+            self.assertEqual(comparison["baseline_not_measured"], ["source"])
+            self.assertEqual(comparison["frozen_valid_export_losses"], [])
+            files[0]["valid_solid_count"] = 1
+            inventory = export_inventory(files, 1, True, True)
+            self.assertTrue(inventory["has_valid_exported_solid"])
+            self.assertEqual(inventory["any_valid_exported_solid_count"], 1)
+            self.assertTrue(inventory["any_valid_exported_solid_count_is_lower_bound"])
+
+    def test_document_refusals_are_counted_before_any_sibling_fallback(self):
+        response = dict(stage="export", failed_body=None, files=[], open=dict(bodies=[{}]),
+                        work_exhausted=False, refusal=dict(code="import.unsupported", detail="refused"))
+        self.assertEqual(document_export_refusal(response), "import.unsupported")
+        response["failed_body"] = 0
+        self.assertIsNone(document_export_refusal(response))
+        response["failed_body"] = None
+        response["work_exhausted"] = True
+        self.assertIsNone(document_export_refusal(response))
+        response["work_exhausted"] = False
+        response["refusal"]["code"] = "numbers.operation-budget"
+        self.assertIsNone(document_export_refusal(response))
 
 if __name__ == "__main__":
     unittest.main()

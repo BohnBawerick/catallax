@@ -243,6 +243,27 @@ fn authored_spine_endpoint_rounding_is_checked_before_admission() {
     let error = build(&lost, &mut Decider::default()).unwrap_err();
     assert_eq!(error.code, "sweep.motion-sample-tolerance");
 
+    let mut lost_guide = line_definition();
+    let SweepPath::Line { start, end } = &mut lost_guide.path else {
+        unreachable!()
+    };
+    start.0[0] = q(10_000_000_000_000_000).into();
+    end.0[0] = q(10_000_000_000_000_000).into();
+    lost_guide.guide = Some(
+        serde_json::from_value(serde_json::json!({
+            "kind": "line",
+            "start": ["10000000000000000.1", "0.0000001", "0"],
+            "end": ["10000000000000000.1", "0.0000001", "4"]
+        }))
+        .unwrap(),
+    );
+    assert_eq!(
+        build(&lost_guide, &mut Decider::default())
+            .unwrap_err()
+            .code,
+        "sweep.motion-sample-tolerance",
+    );
+
     let mut retained = line_definition();
     let endpoint = Rational::from_ratio(41, 10).unwrap();
     let SweepPath::Line { end, .. } = &mut retained.path else {
@@ -254,10 +275,39 @@ fn authored_spine_endpoint_rounding_is_checked_before_admission() {
         .abs()
         .to_f64_nearest();
     assert!(conversion > 0.0);
-    assert!(swept.checks().max_sample_error_mm >= conversion);
-    assert!(swept.checks().max_sample_error_mm <= 0.001 / 4.0);
+    let error = swept.checks().max_motion_endpoint_error_mm.unwrap();
+    assert!(error >= conversion);
+    assert!(error <= 0.001 / 4.0);
     assert_eq!(
         swept.edit(lost, &mut Decider::default()).unwrap_err().code,
         "sweep.motion-sample-tolerance",
     );
+}
+
+#[test]
+fn authored_line_difference_preserves_the_section_heading() {
+    let mut recipe = line_definition();
+    recipe.path = serde_json::from_value(serde_json::json!({
+        "kind": "line",
+        "start": ["10000000000000000.1", "0", "0"],
+        "end": ["10000000000000000.2", "0", "4"]
+    }))
+    .unwrap();
+    let mut dec = Decider::default();
+    let path = Path::new(&recipe.path, &mut dec).unwrap();
+    let frame = FrameLaw {
+        path: &path,
+        guide: None,
+        reference: [1.0, 0.0, 0.0],
+        initial: None,
+        normal_offset: 0.0,
+        twist: 0.0,
+        end_scale: 1.0,
+        orientation: catallax_recipe::SweepOrientation::RotationMinimizing,
+    }
+    .at(0.5, &mut dec)
+    .unwrap();
+    let normal = cross(frame.x, frame.y);
+    assert!(normal[0] > 0.02 && normal[0] < 0.03);
+    assert!(normal[2] > 0.99);
 }

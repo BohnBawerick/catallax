@@ -602,6 +602,10 @@ fn checked_admit(bytes: &[u8], step: &StepId, result: &mut OpenedStep, dec: &mut
                 break;
             }
         };
+        eprintln!(
+            "CX_CHECKED_REFUSAL\t{}\t{strict_refusal:?}",
+            result.source.bodies[index].name
+        );
         outcome.refusal = Some(strict_refusal.clone().into());
         if current_operation_work().exhausted {
             break;

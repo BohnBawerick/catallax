@@ -659,6 +659,7 @@ fn distance_upper(
     cap: &Rational,
     dec: &mut Decider,
 ) -> Result<Rational, Error> {
+    let _probe = crate::numerical::CheckedStageProbe::new("healing.distance_upper", "distance");
     let squared_cap = arithmetic(cap, cap, '*', dec)?;
     if compare(squared, &squared_cap, dec)?.is_gt() {
         return Err(failure(
@@ -666,6 +667,8 @@ fn distance_upper(
             "measured source correspondence exceeds the healing cap",
         ));
     }
+    let _probe =
+        crate::numerical::CheckedStageProbe::new("healing.distance_tightening", "distance");
     charge_value(squared, dec)?;
     let bits = squared
         .numerator()

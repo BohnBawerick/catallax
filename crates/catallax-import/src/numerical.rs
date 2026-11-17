@@ -266,20 +266,30 @@ fn import_inner(
         )
         .into());
     }
-    let file = crate::read_step(bytes)?;
-    if cones::in_file(&file, None, dec)? {
+    let file = {
+        let _probe = CheckedStageProbe::new("numerical.repair_source_decode", "file");
+        crate::read_step(bytes)?
+    };
+    let has_cone = {
+        let _probe = CheckedStageProbe::new("numerical.cone_scan", "file");
+        cones::in_file(&file, None, dec)?
+    };
+    if has_cone {
         return analytic::import(bytes, expected_sha256, strict_refusal, options, dec);
     }
-    let imported = match crate::repair::apply_file(
-        &mut Model::new(),
-        file,
-        expected_sha256,
-        "source.step",
-        &Default::default(),
-        &[],
-        Some(step),
-        None,
-    ) {
+    let imported = match {
+        let _probe = CheckedStageProbe::new("numerical.source_repair", "file");
+        crate::repair::apply_file(
+            &mut Model::new(),
+            file,
+            expected_sha256,
+            "source.step",
+            &Default::default(),
+            &[],
+            Some(step),
+            None,
+        )
+    } {
         Ok(imported) => imported,
         Err(error) if cones::eligible(bytes, &error, dec)? => {
             return analytic::import(bytes, expected_sha256, error, options, dec);

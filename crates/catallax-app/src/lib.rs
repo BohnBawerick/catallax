@@ -54,6 +54,7 @@ pub use preview::{
 };
 pub mod soliddraft;
 pub use certified::{CertifiedApplicationBody, build_certified, certify_built};
+pub use outcome::{EvaluatedApplicationOutcome, NumericalApplicationBody};
 
 use std::{collections::BTreeMap, fmt};
 

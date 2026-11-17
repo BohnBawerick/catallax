@@ -236,6 +236,10 @@ fn carrier_hits(
     let mut found = Vec::new();
     let mut marks = MarkLog::new();
     let mut complete = Complete::new();
+    let native_enclosure = match model.geom().curve(curve) {
+        catallax_shapes::Curve::PatchSection(branch) => Some(branch.control_hull(dec)?),
+        _ => None,
+    };
     let enclosure = exclusions
         .then(|| crate::carrier_bounds::enclosure(model.geom(), curve))
         .flatten();
@@ -247,6 +251,12 @@ fn carrier_hits(
         {
             // A strict exclusion proves the complete meeting empty, including
             // all tangencies and isolated points. Retain its coverage proof.
+            complete.insert(surface, Vec::new());
+            continue;
+        }
+        if let Some(bounds) = &native_enclosure
+            && trimmed.carrier_misses_support(model, curve, bounds, surface, dec)
+        {
             complete.insert(surface, Vec::new());
             continue;
         }
@@ -287,24 +297,6 @@ fn carrier_hits(
                 {
                     complete.insert(surface, Vec::new());
                     continue;
-                }
-                if let (
-                    catallax_shapes::Curve::PatchSection(branch),
-                    catallax_shapes::Surface::BSpline(
-                        catallax_shapes::SplineSupport::RationalPatch(target),
-                    ),
-                ) = (model.geom().curve(curve), model.geom().surface(surface))
-                {
-                    eprintln!("P8_CLIP_META curve={curve:?} surface={surface:?} exclusions={exclusions}");
-                    for (label, patch) in [("SOURCE", &branch.charts()[0]), ("TARGET", target)] {
-                        eprintln!("P8_{label}_META degrees={:?} count={:?} knots={:?}", patch.carrier().degrees(), patch.carrier().control_count(), patch.carrier().knots());
-                        for p in patch.carrier().controls() {
-                            eprintln!("P8_{label}_CONTROL {:?} {:?} {:?}", p.x.rational_ref(), p.y.rational_ref(), p.z.rational_ref());
-                        }
-                        for w in patch.carrier().weights() {
-                            eprintln!("P8_{label}_WEIGHT {:?}", w.rational_ref());
-                        }
-                    }
                 }
                 return Err(named_curve(model, curve, surface, refusal));
             }

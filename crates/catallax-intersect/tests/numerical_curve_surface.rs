@@ -32,6 +32,16 @@ fn captured_native_shared_boundary_preserves_exact_endpoint() {
             panic!("the captured diagonal patch strictly misses the retained cylinder");
         };
         assert!(points.is_empty());
+        let opposite = fixture::opposite_target(&mut dec);
+        let bounds = branch.control_hull(&mut dec).unwrap();
+        let opposite_top = opposite
+            .carrier()
+            .controls()
+            .iter()
+            .map(|point| point.z.approx().hi())
+            .fold(f64::NEG_INFINITY, f64::max);
+        assert!(bounds[2].lo() > opposite_top, "{bounds:?}");
+        eprintln!("native component bounds: {bounds:?}");
         assert!(branch.patch_hits(&source, &mut dec).unwrap().is_none());
     });
     assert!(!work.exhausted, "{work:?}");

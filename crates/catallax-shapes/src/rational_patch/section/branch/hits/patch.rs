@@ -181,6 +181,27 @@ fn boundary_points(
     let source = &branch.charts[0];
     let span = &source.data.spans[0];
     let fixed = Real::from_rational(source.domain()[axis][usize::from(high)].clone());
+    if branch.cells.iter().all(|cell| 1 - cell.solved == axis) {
+        // The free coordinate is affine and nonconstant on every cell. A
+        // global chart-side value therefore occurs only at its existing ends.
+        let mut points = Vec::new();
+        let mut previous = None;
+        for cell in branch.cells.iter() {
+            for at in &cell.ends {
+                if exact_sign(&(&at[axis] - &fixed), dec)? != Sign::Zero {
+                    continue;
+                }
+                if let Some(previous) = previous
+                    && same_uv(previous, at, dec)?
+                {
+                    continue;
+                }
+                points.push(span.point(at));
+                previous = Some(at);
+            }
+        }
+        return Ok(Some(points));
+    }
     let restricted = branch
         .surface
         .equation(span)

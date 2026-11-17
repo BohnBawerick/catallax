@@ -62,6 +62,40 @@ impl PatchSectionBranch {
     pub fn surface(&self) -> &SectionSurface {
         &self.surface
     }
+    /// Outward Cartesian control hull of this complete component's certified UV cells.
+    ///
+    /// Each cell is restricted by exact positive-weight Bezier extraction.
+    /// Unresolved hardware weight bounds return the whole space, never exclusion.
+    pub fn control_hull(
+        &self,
+        dec: &mut Decider,
+    ) -> Result<[catallax_numbers::Interval; 3], Refusal> {
+        use catallax_numbers::Interval;
+
+        let mut bounds: Option<[Interval; 3]> = None;
+        for cell in self.cells.iter() {
+            let patch = &self.charts[cell.chart];
+            let controls = patch.carrier().span_bezier_controls_on(
+                self.span(cell).indices,
+                cell.domain.each_ref().map(|[lo, hi]| [lo, hi]),
+                dec,
+            )?;
+            for point in controls {
+                dec.charge_work(1)?;
+                let weight = point[3].approx();
+                if weight.lo() <= 0.0 {
+                    return Ok([Interval::entire(); 3]);
+                }
+                let next = std::array::from_fn(|axis| point[axis].approx() / weight);
+                bounds = Some(match bounds {
+                    None => next,
+                    Some(previous) => std::array::from_fn(|axis| previous[axis].hull(&next[axis])),
+                });
+            }
+        }
+        Ok(bounds.expect("a retained component has certified cells"))
+    }
+
     /// Whether the exact endpoint graph is a cycle.
     pub fn is_closed(&self) -> bool {
         self.closed

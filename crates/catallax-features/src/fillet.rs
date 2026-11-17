@@ -13,6 +13,10 @@ use crate::profile::sign;
 #[path = "fillet_parallel.rs"]
 mod parallel;
 
+/// Explicit numerical spline-edge fillets and radius edits.
+#[path = "fillet_numerical.rs"]
+pub mod numerical;
+
 /// The exact generating definition of one elementary fillet strip.
 #[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct FilletDefinition {

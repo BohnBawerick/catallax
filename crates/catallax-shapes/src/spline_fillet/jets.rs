@@ -155,6 +155,7 @@ pub(super) fn constant(value: &Rational, order: usize) -> Jet {
 }
 
 /// A polynomial in two parameters with ball coefficients.
+#[derive(Debug)]
 pub(super) struct Poly {
     terms: Vec<(usize, usize, Ball, f64)>,
     pub(super) degree: [usize; 2],
@@ -212,6 +213,7 @@ pub(super) fn powers(at: &[Jet; 2], degree: [usize; 2], meter: &mut Meter) -> [V
 
 /// One support: its homogeneous coordinates and normal `N`, a positive
 /// multiple of `P_u x P_v`, with the side of the ball's centre.
+#[derive(Debug)]
 pub(super) struct Support {
     pub(super) exact: [MPoly; 4],
     h: [Poly; 4],
@@ -325,6 +327,24 @@ impl Support {
             point.push(meter.div(coordinate, &h[3])?);
         }
         Ok(point.try_into().expect("three"))
+    }
+
+    pub(super) fn contact_f64(&self, at: [f64; 2]) -> ([f64; 3], [f64; 3]) {
+        let h: [f64; 4] = std::array::from_fn(|i| self.h[i].f64(at));
+        let normal: [f64; 3] = std::array::from_fn(|i| self.normal[i].f64(at));
+        let length = normal.iter().map(|v| v * v).sum::<f64>().sqrt();
+        (
+            std::array::from_fn(|i| h[i] / h[3]),
+            normal.map(|v| v / length),
+        )
+    }
+
+    pub(super) fn evaluation_work(&self) -> u64 {
+        self.h
+            .iter()
+            .chain(&self.normal)
+            .map(|poly| 8 * poly.terms.len() as u64)
+            .sum()
     }
 
     /// The centre `P + side r N/|N|` in binary64, for proposals only.

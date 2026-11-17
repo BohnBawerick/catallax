@@ -19,7 +19,7 @@ mod atlas;
 mod curved;
 mod handover;
 mod native;
-pub use native::{NumericalNativeTrim, build_with_native_trims};
+pub use native::{NumericalNativeTrim, build_with_native_trims, build_with_sampled_carriers};
 mod source;
 pub use source::definition_from_model;
 /// Editable finite spline sheets with trim, extension and normal thickening.
@@ -150,6 +150,12 @@ impl Default for NumericalOptions {
 /// continuous projected-disk clearance checks, not chord-polygon pair tests.
 /// Other curved boundary containment remains sampled and explicitly unresolved
 /// between nodes.
+/// Explicitly declared numerical atlas carriers use a 9 by 9 chart-box grid
+/// and nine UV-walk locations per coedge for face-local checks. Their evidence
+/// says numerical samples, never continuous filled-box or curved-loop proof.
+/// Incident face-pairs use nine native edge parameters for labelled numerical
+/// distance samples. Exact-exact pairs retain the full native-knot-span grid.
+/// Other face-local checks keep their original path; incidence stays unchanged.
 /// The checks do not establish whole-body separation, global self-intersection
 /// freedom or a whole-body approximation bound. They grant no STEP export authority.
 /// Approximate export requires a numerical writer and its own output checks.
@@ -164,6 +170,8 @@ impl Default for NumericalOptions {
 pub struct NumericalBody {
     source: NumericalDefinition,
     source_native_trims: Vec<NumericalNativeTrim>,
+    source_sampled_carriers: BTreeSet<String>,
+    sampled_carriers: BTreeSet<String>,
     native_trims: Vec<NumericalNativeTrim>,
     history: Vec<NumericalHistory>,
     definition: NumericalDefinition,
@@ -180,6 +188,8 @@ pub struct NumericalHistory {
     pub definition: NumericalDefinition,
     /// Native parameter curves checked at this stage.
     pub native_trims: Vec<NumericalNativeTrim>,
+    /// Numerical carriers admitted with sampled face-local checks.
+    pub sampled_carriers: BTreeSet<String>,
     /// The controls used at this stage.
     pub options: NumericalOptions,
     /// The checks and cumulative repair history at this stage.
@@ -208,10 +218,12 @@ impl NumericalBody {
     fn inherit(&mut self, previous: &Self) {
         self.source = previous.source.clone();
         self.source_native_trims = previous.source_native_trims.clone();
+        self.source_sampled_carriers = previous.source_sampled_carriers.clone();
         self.history = previous.history.clone();
         self.history.push(NumericalHistory {
             definition: previous.definition.clone(),
             native_trims: previous.native_trims.clone(),
+            sampled_carriers: previous.sampled_carriers.clone(),
             options: previous.options.clone(),
             evidence: previous.evidence.clone(),
         });
@@ -304,6 +316,7 @@ impl NumericalBody {
                 self.kind(),
                 definition,
                 self.native_trims.clone(),
+                self.sampled_carriers.clone(),
                 self.options.clone(),
                 repairs,
                 dec,
@@ -323,7 +336,16 @@ pub fn build(
     options: NumericalOptions,
     dec: &mut Decider,
 ) -> Result<NumericalBody, Refusal> {
-    guarded(|| build_inner(definition, Vec::new(), options, Vec::new(), dec))
+    guarded(|| {
+        build_inner(
+            definition,
+            Vec::new(),
+            BTreeSet::new(),
+            options,
+            Vec::new(),
+            dec,
+        )
+    })
 }
 
 /// Builds an open or closed surface shell under stated numerical tolerances.
@@ -346,11 +368,23 @@ pub fn build_surface_with_native_trims(
     options: NumericalOptions,
     dec: &mut Decider,
 ) -> Result<NumericalBody, Refusal> {
+    build_surface_with_sampled_carriers(definition, native_trims, BTreeSet::new(), options, dec)
+}
+
+/// Builds a numerical surface shell while retaining declared sampled carriers.
+pub fn build_surface_with_sampled_carriers(
+    definition: NumericalDefinition,
+    native_trims: Vec<NumericalNativeTrim>,
+    sampled_carriers: BTreeSet<String>,
+    options: NumericalOptions,
+    dec: &mut Decider,
+) -> Result<NumericalBody, Refusal> {
     guarded(|| {
         build_inner_kind(
             BodyKind::Surface,
             definition,
             native_trims,
+            sampled_carriers,
             options,
             Vec::new(),
             dec,
@@ -435,6 +469,7 @@ fn keys<'a>(values: impl Iterator<Item = &'a str>, dec: &mut Decider) -> Result<
 fn build_inner(
     definition: NumericalDefinition,
     native_trims: Vec<NumericalNativeTrim>,
+    sampled_carriers: BTreeSet<String>,
     options: NumericalOptions,
     repairs: Vec<NumericalRepair>,
     dec: &mut Decider,
@@ -443,6 +478,7 @@ fn build_inner(
         BodyKind::Solid,
         definition,
         native_trims,
+        sampled_carriers,
         options,
         repairs,
         dec,
@@ -453,6 +489,7 @@ fn build_inner_kind(
     kind: BodyKind,
     definition: NumericalDefinition,
     native_trims: Vec<NumericalNativeTrim>,
+    sampled_carriers: BTreeSet<String>,
     options: NumericalOptions,
     repairs: Vec<NumericalRepair>,
     dec: &mut Decider,
@@ -468,7 +505,23 @@ fn build_inner_kind(
     keys(definition.vertices.iter().map(|v| v.key.as_str()), dec)?;
     keys(definition.edges.iter().map(|e| e.key.as_str()), dec)?;
     keys(definition.faces.iter().map(|f| f.key.as_str()), dec)?;
-    let native = native::Index::new(&definition, &native_trims, dec)?;
+    for key in &sampled_carriers {
+        let face = definition
+            .faces
+            .iter()
+            .find(|face| &face.key == key)
+            .ok_or_else(|| bad("definition", "sampled carrier names an unknown face"))?;
+        if !matches!(
+            face.surface,
+            Surface::BSpline(SplineSupport::RationalAtlas(_))
+        ) {
+            return Err(bad(
+                "unsupported",
+                "sampled carrier coverage requires a retained rational atlas",
+            ));
+        }
+    }
+    let native = native::Index::new(&definition, &native_trims, &sampled_carriers, dec)?;
     let mut model = Model::new();
     let vertices: Vec<_> = definition
         .vertices
@@ -553,11 +606,15 @@ fn build_inner_kind(
         if face.loops.is_empty() {
             return Err(bad("trim", "this admission path requires an outer loop"));
         }
-        // Chart-union containment is checked at sampled native UV locations,
-        // so an atlas face accepts no straight parameter trim, and its charts
-        // must fill their box so that the filled loop stays on them.
+        // Every atlas edge needs native UV data. Exact faces also establish
+        // complete chart-box coverage; explicitly numerical carriers record
+        // sampled coverage only.
         if let Surface::BSpline(SplineSupport::RationalAtlas(source)) = &face.surface {
-            atlas::check_filled(source, dec)?;
+            if sampled_carriers.contains(&face.key) {
+                atlas::check_sampled(source, dec)?;
+            } else {
+                atlas::check_filled(source, dec)?;
+            }
             for (row, boundary) in face.loops.iter().enumerate() {
                 for use_index in 0..boundary.len() {
                     dec.charge_work(1)?;
@@ -629,7 +686,7 @@ fn build_inner_kind(
         name: "topology.structure".into(),
         scope: definition.name.clone(),
     }];
-    for edge in &definition.edges {
+    for (edge_index, edge) in definition.edges.iter().enumerate() {
         let mut samples = Vec::new();
         for i in 0..2 {
             dec.charge_work(1)?;
@@ -645,7 +702,12 @@ fn build_inner_kind(
             });
         }
         checks.push(NumericalCheck::Samples {
-            name: "edge.vertex-distance".into(),
+            name: if native.numerical_pair(edge_index) {
+                "edge.numerical-pair-vertex-distance"
+            } else {
+                "edge.vertex-distance"
+            }
+            .into(),
             scope: edge.key.clone(),
             samples,
         });
@@ -670,7 +732,9 @@ fn build_inner_kind(
         )?);
         let sampled = native.has_face(face_index) || analytic::projected(face, &definition.edges);
         checks.push(NumericalCheck::Passed {
-            name: if sampled {
+            name: if sampled_carriers.contains(&face.key) {
+                "trim.numerical-carrier-sampled-simple-oriented-parameter-loop-9-per-use"
+            } else if sampled {
                 "trim.sampled-simple-oriented-parameter-loop"
             } else {
                 "trim.simple-oriented-parameter-loop"
@@ -683,11 +747,21 @@ fn build_inner_kind(
             Surface::BSpline(SplineSupport::RationalAtlas(_))
         ) {
             checks.push(NumericalCheck::Passed {
-                name: "surface.atlas-charts-fill-box".into(),
+                name: if sampled_carriers.contains(&face.key) {
+                    "surface.sampled-atlas-chart-box-coverage-9x9"
+                } else {
+                    "surface.atlas-charts-fill-box"
+                }
+                .into(),
                 scope: face.key.clone(),
             });
             checks.push(NumericalCheck::Passed {
-                name: "trim.sampled-atlas-chart-union".into(),
+                name: if sampled_carriers.contains(&face.key) {
+                    "trim.numerical-carrier-sampled-atlas-chart-union-9-per-use"
+                } else {
+                    "trim.sampled-atlas-chart-union"
+                }
+                .into(),
                 scope: face.key.clone(),
             });
         }
@@ -699,7 +773,9 @@ fn build_inner_kind(
                     analytic::complete_circle(boundary, &definition.edges).is_some()
                 });
             checks.push(NumericalCheck::Passed {
-                name: if planar_circle_clearance {
+                name: if sampled_carriers.contains(&face.key) {
+                    "trim.numerical-carrier-sampled-hole-contained-disjoint"
+                } else if planar_circle_clearance {
                     "trim.sampled-boundaries-with-continuous-circle-clearance"
                 } else if sampled {
                     "trim.sampled-hole-contained-disjoint"
@@ -740,15 +816,27 @@ fn build_inner_kind(
             .enumerate()
         {
             let edge = &definition.edges[trim.edge];
+            let numerical_pair = native.numerical_pair(trim.edge);
             if let Some(curve) = native.get(face_index, boundary_index, use_index) {
-                let (samples, endpoints) = native::samples(face, trim, edge, curve, dec)?;
+                let (samples, endpoints) =
+                    native::samples(face, trim, edge, curve, numerical_pair, dec)?;
                 checks.push(NumericalCheck::Samples {
-                    name: "trim.native-endpoint-position".into(),
+                    name: if numerical_pair {
+                        "trim.numerical-pair-native-endpoint-position"
+                    } else {
+                        "trim.native-endpoint-position"
+                    }
+                    .into(),
                     scope: format!("face {:?}, edge {:?}, use {index}", face.key, edge.key),
                     samples: endpoints,
                 });
                 checks.push(NumericalCheck::Samples {
-                    name: "trim.edge-surface-distance".into(),
+                    name: if numerical_pair {
+                        "trim.numerical-pair-edge-surface-distance"
+                    } else {
+                        "trim.edge-surface-distance"
+                    }
+                    .into(),
                     scope: format!("face {:?}, edge {:?}, use {index}", face.key, edge.key),
                     samples,
                 });
@@ -794,7 +882,12 @@ fn build_inner_kind(
                 });
             }
             checks.push(NumericalCheck::Samples {
-                name: "trim.edge-surface-distance".into(),
+                name: if numerical_pair {
+                    "trim.numerical-pair-edge-surface-distance"
+                } else {
+                    "trim.edge-surface-distance"
+                }
+                .into(),
                 scope: format!("face {:?}, edge {:?}, use {index}", face.key, edge.key),
                 samples,
             });
@@ -805,6 +898,8 @@ fn build_inner_kind(
     Ok(NumericalBody {
         source: definition.clone(),
         source_native_trims: native_trims.clone(),
+        source_sampled_carriers: sampled_carriers.clone(),
+        sampled_carriers,
         native_trims,
         history: Vec::new(),
         definition,
@@ -967,14 +1062,23 @@ fn check_loops(
     cleared_circles: Option<(&NumericalFace, &[NumericalEdge])>,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
-    for (i, boundary) in face.loops.iter().enumerate() {
+    check_boundaries(face, &face.loops, cleared_circles, dec)
+}
+
+fn check_boundaries(
+    face: &NumericalFace,
+    boundaries: &[Vec<NumericalTrim>],
+    cleared_circles: Option<(&NumericalFace, &[NumericalEdge])>,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    for (i, boundary) in boundaries.iter().enumerate() {
         check_loop(face, boundary, i != 0, dec)?;
     }
-    for (i, hole) in face.loops.iter().enumerate().skip(1) {
+    for (i, hole) in boundaries.iter().enumerate().skip(1) {
         let hole_circle = cleared_circles.is_some_and(|(source, edges)| {
             analytic::complete_circle(&source.loops[i], edges).is_some()
         });
-        for (j, other) in face.loops[..i].iter().enumerate() {
+        for (j, other) in boundaries[..i].iter().enumerate() {
             let other_circle = cleared_circles.is_some_and(|(source, edges)| {
                 analytic::complete_circle(&source.loops[j], edges).is_some()
             });
@@ -1089,7 +1193,14 @@ pub fn sew(
             }
         }
         definition.vertices = retained;
-        let mut body = build_inner(definition, Vec::new(), options, repairs, dec)?;
+        let mut body = build_inner(
+            definition,
+            Vec::new(),
+            BTreeSet::new(),
+            options,
+            repairs,
+            dec,
+        )?;
         body.source = input.clone();
         let mut checks = body.evidence.checks().to_vec();
         for &[keeper, removed] in pairs {

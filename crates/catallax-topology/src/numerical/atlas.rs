@@ -2,10 +2,10 @@
 //!
 //! An atlas face evaluates its whole source surface, which can hold other
 //! components. Sampled boundary containment alone does not place a filled loop
-//! on the face's charts: a ring of charts round a missing centre has a loop
-//! whose samples all lie on charts while its interior does not. Admission
-//! therefore requires the charts to fill their parameter box exactly. A loop
-//! whose boundary lies in that box then encloses only chart points.
+//! on the face's charts. Default admission requires exact chart-box coverage;
+//! a ring with a missing centre refuses. Explicitly numerical carriers may
+//! instead record sampled box coverage, without claiming filled interior
+//! containment between samples.
 
 use super::*;
 use catallax_shapes::RationalAtlas;
@@ -69,6 +69,60 @@ pub(super) fn check_filled(atlas: &RationalAtlas, dec: &mut Decider) -> Result<(
     }
 }
 
+fn sampled_fills_box<'a>(
+    domains: impl Clone + ExactSizeIterator<Item = &'a Domain>,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    let mut remaining = domains.clone();
+    let Some(first) = remaining.next() else {
+        return Ok(false);
+    };
+    let mut bounds = first.each_ref().map(|axis| [&axis[0], &axis[1]]);
+    dec.charge_work(4 * domains.len() as u64)?;
+    for domain in remaining {
+        for axis in 0..2 {
+            if &domain[axis][0] < bounds[axis][0] {
+                bounds[axis][0] = &domain[axis][0];
+            }
+            if &domain[axis][1] > bounds[axis][1] {
+                bounds[axis][1] = &domain[axis][1];
+            }
+        }
+    }
+    const SIDE: usize = SUBDIVISIONS as usize + 1;
+    let shares: [Rational; SIDE] =
+        std::array::from_fn(|i| Rational::from_ratio(i as i64, SUBDIVISIONS).unwrap());
+    let grid: [[Rational; SIDE]; 2] = std::array::from_fn(|axis| {
+        let width = bounds[axis][1] - bounds[axis][0];
+        std::array::from_fn(|i| bounds[axis][0] + &(&width * &shares[i]))
+    });
+    for u in &grid[0] {
+        for v in &grid[1] {
+            dec.charge_work(domains.len() as u64)?;
+            if !domains.clone().any(|domain| {
+                &domain[0][0] <= u && u <= &domain[0][1] && &domain[1][0] <= v && v <= &domain[1][1]
+            }) {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(true)
+}
+
+pub(super) fn check_sampled(atlas: &RationalAtlas, dec: &mut Decider) -> Result<(), Refusal> {
+    if sampled_fills_box(
+        atlas.charts().iter().map(|chart| chart.patch().domain()),
+        dec,
+    )? {
+        Ok(())
+    } else {
+        Err(bad(
+            "unsupported",
+            "a numerical carrier fails its sampled atlas box coverage check",
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -103,6 +157,26 @@ mod tests {
             .collect();
         assert!(fills_box(&refs(&roof), &mut dec).unwrap());
         assert!(!fills_box(&refs(&roof[1..]), &mut dec).unwrap());
+    }
+
+    #[test]
+    fn a_gap_between_samples_still_fails_exact_chart_coverage() {
+        let zero = Rational::zero();
+        let one = Rational::one();
+        let a = Rational::from_ratio(1, 32).unwrap();
+        let b = Rational::from_ratio(1, 16).unwrap();
+        let domains = [
+            [[zero.clone(), a.clone()], [zero.clone(), one.clone()]],
+            [[b.clone(), one.clone()], [zero.clone(), one.clone()]],
+            [[a.clone(), b.clone()], [zero, a.clone()]],
+            [[a, b.clone()], [b, one]],
+        ];
+        let mut dec = Decider::default();
+        assert!(sampled_fills_box(domains.iter(), &mut dec).unwrap());
+        let refs: Vec<_> = domains.iter().collect();
+        assert!(!fills_box(&refs, &mut dec).unwrap());
+        let visible_gap = [cell(0, 0), cell(2, 0)];
+        assert!(!sampled_fills_box(visible_gap.iter(), &mut dec).unwrap());
     }
 
     #[test]

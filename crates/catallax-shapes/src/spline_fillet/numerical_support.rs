@@ -6,7 +6,10 @@ use crate::{SplineSupport, Surface};
 #[derive(Debug)]
 enum Geometry {
     Atlas(Vec<Support>),
-    Native(Surface),
+    Native {
+        surface: Surface,
+        proposal: Option<super::analytic::Analytic64>,
+    },
 }
 
 /// A support's native parameterization and signed rolling-ball distance.
@@ -15,6 +18,7 @@ enum Geometry {
 pub struct NumericalFilletSupport {
     geometry: Geometry,
     pub(super) distance: Rational,
+    distance64: f64,
 }
 
 pub(super) struct Contact {
@@ -31,18 +35,20 @@ impl NumericalFilletSupport {
         signed_distance: Rational,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
-        if signed_distance.sign() == Sign::Zero
-            || !signed_distance.to_f64_nearest().is_finite()
-            || signed_distance.to_f64_nearest() == 0.0
-        {
+        let distance64 = signed_distance.to_f64_nearest();
+        if signed_distance.sign() == Sign::Zero || !distance64.is_finite() || distance64 == 0.0 {
             return Err(bad("rolling-ball support needs a finite nonzero distance"));
         }
         if let Surface::BSpline(SplineSupport::RationalAtlas(atlas)) = &surface {
             return Self::from_atlas(atlas, signed_distance, dec);
         }
         Ok(Self {
-            geometry: Geometry::Native(surface),
+            geometry: Geometry::Native {
+                proposal: super::analytic::Analytic64::new(&surface, dec)?,
+                surface,
+            },
             distance: signed_distance,
+            distance64,
         })
     }
 
@@ -63,6 +69,7 @@ impl NumericalFilletSupport {
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             geometry: Geometry::Atlas(charts),
+            distance64: distance.to_f64_nearest(),
             distance,
         })
     }
@@ -91,7 +98,17 @@ impl NumericalFilletSupport {
                 dec.charge_work(chart.evaluation_work())?;
                 Ok(chart.contact_f64(at))
             }
-            Geometry::Native(surface) => {
+            Geometry::Native {
+                proposal: Some(proposal),
+                ..
+            } => {
+                dec.charge_work(64)?;
+                proposal.contact(at)
+            }
+            Geometry::Native {
+                surface,
+                proposal: None,
+            } => {
                 let parameters = [rational(at[0])?, rational(at[1])?];
                 let (point, normal) = native_contact(surface, &parameters, 64, dec)?;
                 Ok((
@@ -102,13 +119,9 @@ impl NumericalFilletSupport {
         }
     }
 
-    pub(super) fn centre(
-        &self,
-        at: [f64; 2],
-        dec: &mut Decider,
-    ) -> Result<[f64; 3], Refusal> {
+    pub(super) fn centre(&self, at: [f64; 2], dec: &mut Decider) -> Result<[f64; 3], Refusal> {
         let (point, normal) = self.contact_f64(at, dec)?;
-        let d = self.distance.to_f64_nearest();
+        let d = self.distance64;
         let centre = std::array::from_fn(|i| point[i] + d * normal[i]);
         if centre.iter().all(|v| v.is_finite()) {
             Ok(centre)
@@ -137,13 +150,21 @@ impl NumericalFilletSupport {
                 meter.charge(dec)?;
                 Ok(Contact {
                     chart: index,
-                    point: contact.point.map(|jet| jet.0.into_iter().next().expect("order zero")),
-                    normal: contact.unit.map(|jet| jet.0.into_iter().next().expect("order zero")),
+                    point: contact
+                        .point
+                        .map(|jet| jet.0.into_iter().next().expect("order zero")),
+                    normal: contact
+                        .unit
+                        .map(|jet| jet.0.into_iter().next().expect("order zero")),
                 })
             }
-            Geometry::Native(surface) => {
+            Geometry::Native { surface, .. } => {
                 let (point, normal) = native_contact(surface, at, 128, dec)?;
-                Ok(Contact { chart: 0, point, normal })
+                Ok(Contact {
+                    chart: 0,
+                    point,
+                    normal,
+                })
             }
         }
     }
@@ -170,9 +191,13 @@ fn native_contact(
     dec: &mut Decider,
 ) -> Result<([Ball; 3], [Ball; 3]), Refusal> {
     if matches!(surface, Surface::Cone(_)) && at[1].sign() != Sign::Positive {
-        return Err(bad("rolling-ball contact leaves the cone's positive-height chart"));
+        return Err(bad(
+            "rolling-ball contact leaves the cone's positive-height chart",
+        ));
     }
-    let parameters = at.each_ref().map(|value| Ball::from_rational(value, precision));
+    let parameters = at
+        .each_ref()
+        .map(|value| Ball::from_rational(value, precision));
     let point = surface.evaluate(&parameters[0], &parameters[1], dec)?;
     let [du, dv] = surface.derivatives(&parameters[0], &parameters[1], dec)?;
     dec.charge_work(32)?;
@@ -182,7 +207,9 @@ fn native_contact(
     });
     let square = &(&cross[0].square() + &cross[1].square()) + &cross[2].square();
     if square.lo().sign() != Sign::Positive {
-        return Err(bad("rolling-ball contact has an unresolved or singular native normal"));
+        return Err(bad(
+            "rolling-ball contact has an unresolved or singular native normal",
+        ));
     }
     let inverse_length = square
         .sqrt()

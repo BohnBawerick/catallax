@@ -16,7 +16,9 @@ impl SectionPlane {
         dec.charge_work(16)?;
         let square = &(&tangent[0].square() + &tangent[1].square()) + &tangent[2].square();
         if square.lo().sign() != Sign::Positive {
-            return Err(bad("rolling-ball guide has a singular or unresolved tangent"));
+            return Err(bad(
+                "rolling-ball guide has a singular or unresolved tangent",
+            ));
         }
         let inverse = square
             .sqrt()
@@ -25,17 +27,32 @@ impl SectionPlane {
         let normal = tangent.map(|value| &value * &inverse);
         let point64 = point.each_ref().map(|value| value.mid().to_f64_nearest());
         let normal64 = normal.each_ref().map(|value| value.mid().to_f64_nearest());
-        if !point64.iter().chain(&normal64).all(|value| value.is_finite()) {
+        if !point64
+            .iter()
+            .chain(&normal64)
+            .all(|value| value.is_finite())
+        {
             return Err(bad("rolling-ball guide is outside binary64 range"));
         }
-        Ok(Self { point, normal, point64, normal64 })
+        Ok(Self {
+            point,
+            normal,
+            point64,
+            normal64,
+        })
     }
 
     fn residual(&self, centre: [f64; 3]) -> f64 {
-        (0..3).map(|i| (centre[i] - self.point64[i]) * self.normal64[i]).sum()
+        (0..3)
+            .map(|i| (centre[i] - self.point64[i]) * self.normal64[i])
+            .sum()
     }
 
-    fn checked_error(&self, centre: &[Rational; 3], dec: &mut Decider) -> Result<Rational, Refusal> {
+    fn checked_error(
+        &self,
+        centre: &[Rational; 3],
+        dec: &mut Decider,
+    ) -> Result<Rational, Refusal> {
         dec.charge_work(9)?;
         let residual = (0..3).fold(Ball::from_rational(&Rational::zero(), 128), |sum, i| {
             let delta = &Ball::from_rational(&centre[i], 128) - &self.point[i];
@@ -71,16 +88,17 @@ pub(super) fn newton<const N: usize>(
             let mut down = x;
             up[j] += h;
             down[j] -= h;
-            let (difference, width): ([f64; N], f64) = match (residual(up, dec), residual(down, dec)) {
-                (Ok(a), Ok(b)) => (std::array::from_fn(|i| a[i] - b[i]), 2.0 * h),
-                (Ok(a), Err(e)) if e.code == "fillet.numerical-spine" => {
-                    (std::array::from_fn(|i| a[i] - value[i]), h)
-                }
-                (Err(e), Ok(b)) if e.code == "fillet.numerical-spine" => {
-                    (std::array::from_fn(|i| value[i] - b[i]), h)
-                }
-                (Err(e), _) | (_, Err(e)) => return Err(e),
-            };
+            let (difference, width): ([f64; N], f64) =
+                match (residual(up, dec), residual(down, dec)) {
+                    (Ok(a), Ok(b)) => (std::array::from_fn(|i| a[i] - b[i]), 2.0 * h),
+                    (Ok(a), Err(e)) if e.code == "fillet.numerical-spine" => {
+                        (std::array::from_fn(|i| a[i] - value[i]), h)
+                    }
+                    (Err(e), Ok(b)) if e.code == "fillet.numerical-spine" => {
+                        (std::array::from_fn(|i| value[i] - b[i]), h)
+                    }
+                    (Err(e), _) | (_, Err(e)) => return Err(e),
+                };
             for i in 0..N {
                 jacobian[i][j] = difference[i] / width;
             }
@@ -116,12 +134,20 @@ impl Problem {
         dec: &mut Decider,
     ) -> Result<NumericalSpineNode, Refusal> {
         let plane = SectionPlane::new(guide, tau, dec)?;
-        let x = newton(seed, self.tolerance, |x, dec| {
-            let a = self.supports[0].centre([x[0], x[1]], dec)?;
-            let b = self.supports[1].centre([x[2], x[3]], dec)?;
-            Ok([a[0] - b[0], a[1] - b[1], a[2] - b[2], plane.residual(a)])
-        }, dec)?;
-        let parameters = [[rational(x[0])?, rational(x[1])?], [rational(x[2])?, rational(x[3])?]];
+        let x = newton(
+            seed,
+            self.tolerance,
+            |x, dec| {
+                let a = self.supports[0].centre([x[0], x[1]], dec)?;
+                let b = self.supports[1].centre([x[2], x[3]], dec)?;
+                Ok([a[0] - b[0], a[1] - b[1], a[2] - b[2], plane.residual(a)])
+            },
+            dec,
+        )?;
+        let parameters = [
+            [rational(x[0])?, rational(x[1])?],
+            [rational(x[2])?, rational(x[3])?],
+        ];
         let (ca, a) = self.supports[0].checked(&parameters[0], dec)?;
         let (cb, b) = self.supports[1].checked(&parameters[1], dec)?;
         let centre = std::array::from_fn(|i| (&a[i].mid() + &b[i].mid()).mul_pow2(-1));
@@ -130,10 +156,15 @@ impl Problem {
         if offset.to_f64_nearest() > self.tolerance / 8.0
             || section.to_f64_nearest() > self.tolerance / 8.0
         {
-            return Err(bad("rolling-ball station exceeds its numerical offset or guide-plane tolerance"));
+            return Err(bad(
+                "rolling-ball station exceeds its numerical offset or guide-plane tolerance",
+            ));
         }
         Ok(NumericalSpineNode {
-            tau: tau.clone(), parameters, charts: [ca, cb], centre,
+            tau: tau.clone(),
+            parameters,
+            charts: [ca, cb],
+            centre,
         })
     }
 }

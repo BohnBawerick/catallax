@@ -8,6 +8,11 @@ use crate::{BSplineCurve, Point3, RationalAtlas};
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal, Sign};
 use std::sync::Arc;
 
+#[path = "numerical_analytic.rs"]
+mod analytic;
+#[path = "numerical_corner.rs"]
+mod corner;
+pub use corner::NumericalFilletCorner;
 #[path = "numerical_carrier.rs"]
 mod carrier;
 pub use carrier::NumericalSplineFillet;
@@ -301,14 +306,20 @@ impl NumericalFilletSpine {
             || !tolerance.is_finite()
             || tolerance <= 0.0
         {
-            return Err(bad("walking needs an increasing range and finite positive tolerance"));
+            return Err(bad(
+                "walking needs an increasing range and finite positive tolerance",
+            ));
         }
         let domain = guide.domain();
         if &range[0] < domain[0] || &range[1] > domain[1] {
             return Err(bad("walking range leaves the retained guide"));
         }
         Self::trace_problem(
-            Problem { supports, guide: SpineGuide::Curve(guide), tolerance },
+            Problem {
+                supports,
+                guide: SpineGuide::Curve(guide),
+                tolerance,
+            },
             range,
             std::array::from_fn(|i| seed[i / 2][i % 2].to_f64_nearest()),
             tolerance_mm,

@@ -64,7 +64,11 @@ impl Fit<'_> {
             return Err(invalid(
                 "import.tolerant-trace-resolution",
                 &format!(
-                    "native UV reconstruction did not reach its stated precision at depth {depth}: chord deviation {error} mm, source residual {residual} mm"
+                    "native UV reconstruction did not reach its stated precision at depth {depth}: chord deviation {error} mm, source residual {residual} mm, interval {:?}..{:?}, UV {:?}..{:?}",
+                    left.curve.parameters,
+                    right.curve.parameters,
+                    left.surface.parameters,
+                    right.surface.parameters
                 ),
             ));
         }

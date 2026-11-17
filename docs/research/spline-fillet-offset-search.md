@@ -246,12 +246,28 @@ After rebasing onto the analytic-family fixes, independent 100M requests at
 |---|---:|---:|
 | Ring torus, each of four cyclic seam-walk starts | 16,811 | 37,991–37,997 |
 | Spherical wedge with four planar neighbours | 87,125 | 110,379 |
+| Spherical wedge with fitted native UV trim | 91,129 | 4,470,183 |
+| Same wedge with shifted circle parameter frame | 91,129 | 4,470,189 |
+| Toroidal wedge with fitted native UV trim | 87,683 | 3,433,161 |
 
-All five STEP files open as valid closed single solids through raw OCP
-8.0.1.1, with healing, SameParameter and TransferRoots off. Each takes a
-valid material-removing cut. The rebase preserves their bytes. A separate
-spherical native-UV trim admission uses 91,129 work. Mixed native/spline
-conversion and STEP emission remain outside this proof.
+The five iso-curve STEP files open as valid closed single solids through raw
+OCP 8.0.1.1, with healing, SameParameter and TransferRoots off. Each takes a
+valid material-removing cut. The parent rebase preserves their bytes.
+The three fitted-trim files also pass raw validity and subsequent cuts.
+The two spherical sources emit identical bytes despite their different
+circle parameter frames; the toroidal wedge also retains its concave
+cylindrical neighbour. Generic native-model embedding and native fillet
+assembly remain outside these carrier proofs.
+
+Both STEP paths share one native circle phase/frame preparation and one
+native surface codec. Fitted UV knot ranges move with the written circle
+range, following [OCCT `BSplCLib::Reparametrize`](https://occt3d.com/dev/doc/refman/html/class_b_spl_c_lib.html#a3d67bbc71b74521a3648ee3d47d64f11)
+and SMLib's [coordinated 3D/pcurve edge reparameterization](https://github.com/NVIDIA-Omniverse/usd-brep/blob/3fd5b9548d19aa8c12c29bc9637a96d42a06f8a5/source/SMLib/src/SmProtoTopology.cpp#L1195-L1224).
+The affine knot transformation is rational; decimal carriers and pcurves
+still require numerical admission and measured distance checks. Closed
+circles with fitted pcurves retain a typed full-period knot-domain refusal.
+The shared analytic codec's rational native frame/radius requirement also
+remains explicit; numerical inputs are not labelled exact.
 
 The ordinary `build_incremental_without_display` application API now
 returns `EvaluatedApplicationOutcome`: either its exact application body

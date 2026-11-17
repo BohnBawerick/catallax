@@ -269,7 +269,8 @@ fn exported_ellipse_extrusion_has_a_continuous_side_uv_wire() {
 fn selected_body_step_report_does_not_disclose_sibling_geometry_or_repairs() {
     let mut first = BoxFixture::new(["2", "3", "4"]);
     first.shift = Some((0, [r("0.001"), r("0"), r("0")]));
-    let mut second = first;
+    let mut second = BoxFixture::new(["2", "3", "4"]);
+    second.shift = Some((0, [r("0.001"), r("0"), r("0")]));
     second.origin = [r("20"), r("0"), r("0")];
     let source = common::boxes_step(&[first, second]);
     let mut dec = Decider::default();

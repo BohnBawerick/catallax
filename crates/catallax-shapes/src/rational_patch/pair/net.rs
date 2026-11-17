@@ -7,6 +7,8 @@ use std::sync::OnceLock;
 
 mod admission;
 pub(crate) use admission::PolynomialBounds;
+mod projected;
+pub(crate) use projected::ProjectedJacobian;
 mod prepared;
 pub(super) use prepared::SpanNets;
 

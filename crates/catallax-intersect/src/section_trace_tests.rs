@@ -257,6 +257,153 @@ fn a_finite_straight_section_is_not_an_unbounded_line() {
             );
         }
         assert_eq!(dec.stats().coincident_separation, 0);
+        let finite = geom.add_curve(Curve::BSpline(
+            catallax_shapes::BSplineCurve::new(
+                1,
+                [0, 0, 1, 1].map(Rational::from_i64).to_vec(),
+                vec![
+                    Point3::new(Real::zero(), Real::zero(), q(3, 4).into()),
+                    Point3::new(q(3, 4).into(), Real::zero(), Real::zero()),
+                ],
+                vec![Real::one(); 2],
+                &mut dec,
+            )
+            .unwrap(),
+        ));
+        for (a, b) in [(curve, finite), (finite, curve)] {
+            let relation = same_curve(&geom, a, b, &mut dec);
+            assert!(!matches!(relation, Outcome::Proven(Apart)), "{relation:?}");
+        }
+    });
+    assert!(!work.exhausted);
+}
+
+#[test]
+fn closed_section_witnesses_separate_nearby_circles_without_proving_equality() {
+    let ((), work) = with_operation_budget(20_000_000, || {
+        let mut dec = Decider::default();
+        let (mut geom, branch) = fixture(&mut dec);
+        for (radius_sq, matching) in [(q(3, 8), true), (q(375001, 1000000), false)] {
+            let circle = geom.add_curve(Curve::Circle(
+                catallax_shapes::Circle::new(
+                    Point3::new(Real::zero(), Real::zero(), q(3, 8).into()),
+                    Vector3::new(Real::zero(), Real::zero(), Real::one()),
+                    radius_sq.into(),
+                    Vector3::new(Real::one(), Real::zero(), Real::zero()),
+                    &mut dec,
+                )
+                .unwrap(),
+            ));
+            for (a, b) in [(branch, circle), (circle, branch)] {
+                let answer = same_curve(&geom, a, b, &mut dec);
+                if matching {
+                    assert!(matches!(answer, Outcome::Refused(error)
+                            if error.code == "intersect.parametric-coincidence"));
+                } else {
+                    assert!(matches!(answer, Outcome::Proven(catallax_shapes::Apart)));
+                }
+            }
+        }
+    });
+    assert!(!work.exhausted, "{} work units", work.used);
+}
+
+#[test]
+fn a_shared_endpoint_does_not_hide_a_section_witness_outside_the_spline_hull() {
+    let ((), work) = with_operation_budget(20_000_000, || {
+        let mut dec = Decider::default();
+        let (mut geom, curve) = fixture(&mut dec);
+        let Curve::PatchSection(branch) = geom.curve(curve) else {
+            unreachable!()
+        };
+        let first = branch.witnesses().next().unwrap();
+        let opposite = Point3::new(-&first.x, -&first.y, first.z.clone());
+        let diameter = geom.add_curve(Curve::BSpline(
+            catallax_shapes::BSplineCurve::new(
+                1,
+                [0, 0, 1, 1].map(Rational::from_i64).to_vec(),
+                vec![first, opposite],
+                vec![Real::one(); 2],
+                &mut dec,
+            )
+            .unwrap(),
+        ));
+        for (a, b) in [(curve, diameter), (diameter, curve)] {
+            assert!(matches!(
+                same_curve(&geom, a, b, &mut dec),
+                Outcome::Proven(Apart)
+            ));
+        }
+    });
+    assert!(!work.exhausted);
+}
+
+#[test]
+fn spline_endpoints_on_a_cylinder_do_not_prove_whole_curve_coincidence() {
+    let ((), work) = with_operation_budget(20_000_000, || {
+        let mut dec = Decider::default();
+        let cut = SectionSurface::Cylinder(catallax_shapes::Cylinder {
+            origin: Point3::new(Real::zero(), Real::zero(), Real::zero()),
+            axis: Vector3::new(Real::zero(), Real::zero(), Real::one()),
+            radius_sq: q(1, 2).into(),
+            ref_dir: Vector3::new(Real::one(), Real::zero(), Real::zero()),
+        });
+        let controls = [-1, 1]
+            .into_iter()
+            .flat_map(|x| [-1, 1].map(move |y| Point3::new(x.into(), y.into(), Real::zero())))
+            .collect();
+        let knots = [0, 0, 1, 1].map(Rational::from_i64).to_vec();
+        let patch = RationalPatch::new(
+            BSplineSurface::new(
+                [1, 1],
+                [knots.clone(), knots.clone()],
+                [2, 2],
+                controls,
+                vec![Real::one(); 4],
+                &mut dec,
+            )
+            .unwrap(),
+            &mut dec,
+        )
+        .unwrap();
+        let branch = patch.sections(&cut, &mut dec).unwrap().branches()[0].clone();
+        let curve = catallax_shapes::BSplineCurve::new(
+            3,
+            [0, 0, 0, 0, 1, 1, 1, 1].map(Rational::from_i64).to_vec(),
+            vec![
+                Point3::new(q(1, 2).into(), q(1, 2).into(), Real::zero()),
+                Point3::new(2.into(), 2.into(), Real::zero()),
+                Point3::new((-2).into(), (-2).into(), Real::zero()),
+                Point3::new(q(-1, 2).into(), q(1, 2).into(), Real::zero()),
+            ],
+            vec![Real::one(); 4],
+            &mut dec,
+        )
+        .unwrap();
+        let generator = catallax_shapes::BSplineCurve::new(
+            1,
+            knots,
+            vec![
+                Point3::new(q(1, 2).into(), q(1, 2).into(), Real::zero()),
+                Point3::new(q(1, 2).into(), q(1, 2).into(), Real::one()),
+            ],
+            vec![Real::one(), Real::from_i64(2)],
+            &mut dec,
+        )
+        .unwrap();
+        assert!(
+            !cut.proves_curve_not_contained(&generator, &mut dec)
+                .unwrap()
+        );
+        let mut geom = GeomStore::new();
+        let branch = geom.add_curve(Curve::PatchSection(branch));
+        let curve = geom.add_curve(Curve::BSpline(curve));
+        for (a, b) in [(branch, curve), (curve, branch)] {
+            assert!(matches!(
+                same_curve(&geom, a, b, &mut dec),
+                Outcome::Proven(Apart)
+            ));
+        }
     });
     assert!(!work.exhausted);
 }

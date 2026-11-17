@@ -1,0 +1,525 @@
+//! Coupled rational Bernstein certificates for a chart's existing projection.
+//!
+//! The projected Jacobian is N/W². Bounds are taken after the exact coordinate
+//! combinations and quotient-rule cancellations, not on independent XYZ jets.
+//! Positive diagonal bounds and ab - c²/4 > 0 prove a positive symmetric part.
+//! Its determinant/trace bound, divided by max(W)², retains the same global
+//! strong-monotonicity invariant as interval admission. No sample is a proof.
+
+use super::admission::{bernstein, quotient, restricted_range, restriction};
+use super::*;
+
+pub(crate) struct ProjectedJacobian {
+    domain: Domain,
+    widths: [Rational; 2],
+    projection_scale: Rational,
+    weight: Grid,
+    diagonal: [Grid; 2],
+    off_sum: Grid,
+    whole_margin: Rational,
+}
+
+fn direction(vector: &Vector3) -> Result<[&Rational; 3], Refusal> {
+    let missing = || {
+        Refusal::new(
+            "shapes.rational-patch-unproven",
+            "the coupled Bernstein certificate needs a rational centre projection",
+        )
+    };
+    Ok([
+        vector.x.rational_ref().ok_or_else(missing)?,
+        vector.y.rational_ref().ok_or_else(missing)?,
+        vector.z.rational_ref().ok_or_else(missing)?,
+    ])
+}
+
+// Both projection rows use one positive scale, so the symmetric Jacobian's
+// positivity is unchanged. Convert its margin back before publishing it.
+fn integral_projection(
+    projection: &[Vector3; 2],
+    dec: &mut Decider,
+) -> Result<([Vector3; 2], Rational), Refusal> {
+    let mut scale = Rational::one();
+    for vector in projection {
+        for component in direction(vector)? {
+            let denominator = Rational::from_integer(component.denominator().clone());
+            // For positive integers C,D: lcm(C,D) = numerator(C/D) * D.
+            // Division and multiplication retain their existing work charges.
+            let ratio = quotient(&scale, &denominator, dec)?;
+            let cofactor = Rational::from_integer(ratio.numerator().clone());
+            scale = mul(&cofactor, &denominator, dec)?;
+        }
+    }
+    let row = |vector: &Vector3, dec: &mut Decider| -> Result<Vector3, Refusal> {
+        let components = direction(vector)?;
+        Ok(Vector3::new(
+            mul(components[0], &scale, dec)?.into(),
+            mul(components[1], &scale, dec)?.into(),
+            mul(components[2], &scale, dec)?.into(),
+        ))
+    };
+    Ok((
+        [row(&projection[0], dec)?, row(&projection[1], dec)?],
+        scale,
+    ))
+}
+
+fn combine(terms: &[(&Dense, &Rational)], dec: &mut Decider) -> Result<Dense, Refusal> {
+    let mut degree = [0usize; 2];
+    for (poly, factor) in terms {
+        if !factor.is_zero() {
+            degree = std::array::from_fn(|axis| degree[axis].max(poly.deg[axis]));
+        }
+    }
+    let mut result = Dense::zero(degree);
+    for (poly, factor) in terms {
+        if factor.is_zero() {
+            continue;
+        }
+        for i in 0..=poly.deg[0] {
+            for j in 0..=poly.deg[1] {
+                let coefficient = poly.at(i, j);
+                if coefficient.is_zero() {
+                    continue;
+                }
+                let term = mul(coefficient, factor, dec)?;
+                let value = add(result.at(i, j), &term, dec)?;
+                *result.at_mut(i, j) = value;
+            }
+        }
+    }
+    Ok(result.trimmed())
+}
+
+fn projection_bound(
+    weight: &Grid,
+    diagonal: [&Grid; 2],
+    off_sum: &Grid,
+    cuts: &[[Rational; 2]; 2],
+    projection_scale: &Rational,
+    dec: &mut Decider,
+) -> Result<Rational, Refusal> {
+    let weight = restricted_range(weight, cuts, dec)?;
+    let a = restricted_range(diagonal[0], cuts, dec)?;
+    let b = restricted_range(diagonal[1], cuts, dec)?;
+    if weight[0].sign() != Sign::Positive
+        || a[0].sign() != Sign::Positive
+        || b[0].sign() != Sign::Positive
+    {
+        return Ok(Rational::zero());
+    }
+    let off = restricted_range(off_sum, cuts, dec)?;
+    let ends = off.each_ref().map(|value| value.abs());
+    let upper = if less(&ends[0], &ends[1], dec)? {
+        &ends[1]
+    } else {
+        &ends[0]
+    };
+    let squared = mul(upper, upper, dec)?;
+    let quarter = quotient(&squared, &Rational::from_i64(4), dec)?;
+    let along = mul(&a[0], &b[0], dec)?;
+    let determinant = sub(&along, &quarter, dec)?;
+    if determinant.sign() != Sign::Positive {
+        return Ok(Rational::zero());
+    }
+    let trace = add(&a[1], &b[1], dec)?;
+    let weight_squared = mul(&weight[1], &weight[1], dec)?;
+    let denominator = mul(&trace, &weight_squared, dec)?;
+    let denominator = mul(&denominator, projection_scale, dec)?;
+    quotient(&determinant, &denominator, dec)
+}
+
+fn corner_obstruction(
+    diagonal: &[Grid; 2],
+    off_sum: &Grid,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    for u in 0..2 {
+        for v in 0..2 {
+            let index = |grid: &Grid| u * grid.deg[0] * (grid.deg[1] + 1) + v * grid.deg[1];
+            let a = &diagonal[0].v[index(&diagonal[0])];
+            let b = &diagonal[1].v[index(&diagonal[1])];
+            if a.sign() != Sign::Positive || b.sign() != Sign::Positive {
+                return Ok(true);
+            }
+            let c = &off_sum.v[index(off_sum)];
+            let along = mul(a, b, dec)?;
+            let along = mul(&along, &Rational::from_i64(4), dec)?;
+            let squared = mul(c, c, dec)?;
+            if sub(&along, &squared, dec)?.sign() != Sign::Positive {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+impl ProjectedJacobian {
+    pub(crate) fn new(
+        homogeneous: &[MPoly; 4],
+        projection: &mut [Vector3; 2],
+        domain: Domain,
+        balance: &Rational,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        let (integral, projection_scale) = integral_projection(projection, dec)?;
+        let local = [
+            Dense::local(&homogeneous[0], &domain, dec)?,
+            Dense::local(&homogeneous[1], &domain, dec)?,
+            Dense::local(&homogeneous[2], &domain, dec)?,
+            Dense::local(&homogeneous[3], &domain, dec)?,
+        ];
+        let weight = bernstein(&local[3], dec)?;
+        if !weight.all_positive() {
+            return Err(Refusal::new(
+                "shapes.rational-atlas-polynomial-weights",
+                "the exact span weight has no strictly positive Bernstein hull",
+            ));
+        }
+        let mut project = |vector: &Vector3| {
+            let a = direction(vector)?;
+            combine(
+                &[(&local[0], a[0]), (&local[1], a[1]), (&local[2], a[2])],
+                dec,
+            )
+        };
+        let projected = [project(&integral[0])?, project(&integral[1])?];
+        let dw = [local[3].derivative(0, dec)?, local[3].derivative(1, dec)?];
+        let derivative = |coordinate: &Dense, axis: usize, dec: &mut Decider| {
+            let dn = coordinate.derivative(axis, dec)?;
+            let left = local[3].mul(&dn, dec)?;
+            let right = coordinate.mul(&dw[axis], dec)?;
+            left.sub(&right, dec)
+        };
+        let n11 = derivative(&projected[0], 0, dec)?;
+        let n22 = derivative(&projected[1], 1, dec)?;
+        let n12 = derivative(&projected[0], 1, dec)?;
+        let n21 = derivative(&projected[1], 0, dec)?;
+        let one = Rational::one();
+        let off = combine(&[(&n12, &one), (&n21, &one)], dec)?;
+        let mut diagonal = [bernstein(&n11, dec)?, bernstein(&n22, dec)?];
+        let mut off_sum = bernstein(&off, dec)?;
+        let cuts = std::array::from_fn(|_| [Rational::zero(), Rational::one()]);
+        let mut whole_margin = projection_bound(
+            &weight,
+            diagonal.each_ref(),
+            &off_sum,
+            &cuts,
+            &projection_scale,
+            dec,
+        )?;
+        if whole_margin.sign() != Sign::Positive && *balance != one {
+            let scaled = combine(&[(&n22, balance)], dec)?;
+            let scaled_diagonal = bernstein(&scaled, dec)?;
+            let scaled_off = combine(&[(&n12, &one), (&n21, balance)], dec)?;
+            let scaled_off = bernstein(&scaled_off, dec)?;
+            let balanced_margin = projection_bound(
+                &weight,
+                [&diagonal[0], &scaled_diagonal],
+                &scaled_off,
+                &cuts,
+                &projection_scale,
+                dec,
+            )?;
+            // Prefer a complete certificate, not sampled positivity. If both
+            // hulls are inconclusive, preserve the original cover unless an
+            // exact corner coefficient proves that projection impossible.
+            if balanced_margin.sign() == Sign::Positive
+                || corner_obstruction(&diagonal, &off_sum, dec)?
+            {
+                diagonal[1] = scaled_diagonal;
+                off_sum = scaled_off;
+                whole_margin = balanced_margin;
+                projection[1] = projection[1].scaled(&Real::from(balance.clone()));
+            }
+        }
+        let widths = [
+            sub(&domain[0][1], &domain[0][0], dec)?,
+            sub(&domain[1][1], &domain[1][0], dec)?,
+        ];
+        Ok(Self {
+            domain,
+            widths,
+            projection_scale,
+            weight,
+            diagonal,
+            off_sum,
+            whole_margin,
+        })
+    }
+
+    pub(crate) fn margin(&self, cell: &Domain, dec: &mut Decider) -> Result<Rational, Refusal> {
+        if *cell == self.domain {
+            return Ok(self.whole_margin.clone());
+        }
+        let cuts = restriction(&self.domain, &self.widths, cell, dec)?;
+        projection_bound(
+            &self.weight,
+            self.diagonal.each_ref(),
+            &self.off_sum,
+            &cuts,
+            &self.projection_scale,
+            dec,
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{BSplineSurface, Point3, RationalPatch};
+    use catallax_numbers::with_operation_budget;
+
+    fn q(n: i64, d: i64) -> Rational {
+        Rational::from_ratio(n, d).unwrap()
+    }
+
+    #[test]
+    fn weighted_bending_chart_keeps_translated_geometry_and_nonunit_parameters() {
+        let (result, work) = with_operation_budget(20_000_000, || -> Result<(), Refusal> {
+            let mut dec = Decider::default();
+            let mut points = Vec::new();
+            let mut weights = Vec::new();
+            for u in 0..3 {
+                for v in 0..3 {
+                    let z: i64 = 300 + [0, 1, 0][u] + if v == 2 { 1 } else { 0 };
+                    points.push(Point3::new(
+                        (100 + u as i64).into(),
+                        Real::from(q(-400 + v as i64, 2)),
+                        z.into(),
+                    ));
+                    weights.push(Real::from(if u == 1 { q(1, 2) } else { q(1, 1) }));
+                }
+            }
+            let carrier = BSplineSurface::new(
+                [2, 2],
+                [
+                    [2, 2, 2, 6, 6, 6].map(Rational::from_i64).to_vec(),
+                    [-3, -3, -3, 5, 5, 5].map(Rational::from_i64).to_vec(),
+                ],
+                [3, 3],
+                points,
+                weights,
+                &mut dec,
+            )?;
+            let patch = RationalPatch::new(carrier, &mut dec)?;
+            let point = patch.point_at(&[Real::from(3), Real::from(3)], &mut dec)?;
+            assert_eq!(point.x.as_rational(), Some(q(1305, 13)));
+            assert_eq!(point.y.as_rational(), Some(q(-797, 4)));
+            assert_eq!(point.z.as_rational(), Some(q(62565, 208)));
+            assert_eq!(patch.embedding_lower_bound().sign(), Sign::Positive);
+            Ok(())
+        });
+        assert!(!work.exhausted);
+        result.unwrap();
+    }
+
+    #[test]
+    fn homogeneous_projection_normalization_keeps_a_valid_geometric_margin() {
+        let (result, work) = with_operation_budget(20_000_000, || -> Result<(), Refusal> {
+            let mut dec = Decider::default();
+            let points = (0..3)
+                .flat_map(|u| {
+                    (0..3).map(move |v| {
+                        Point3::new(
+                            q(3 * u, 2).into(),
+                            q(5 * v, 2).into(),
+                            (&q(if u == 1 { -1 } else { 1 }, 4)
+                                + &q(if v == 1 { -1 } else { 1 }, 4))
+                                .into(),
+                        )
+                    })
+                })
+                .collect();
+            let knots = [0, 0, 0, 1, 1, 1].map(Rational::from_i64).to_vec();
+            let carrier = BSplineSurface::new(
+                [2, 2],
+                [knots.clone(), knots],
+                [3, 3],
+                points,
+                vec![Real::one(); 9],
+                &mut dec,
+            )?;
+            let patch = RationalPatch::new(carrier, &mut dec)?;
+            // X=3u,Y=5v,Z=(u-1/2)^2+(v-1/2)^2. Its centre-dual
+            // projection is (X/3,Y/5), whose Jacobian is exactly I.
+            assert_eq!(patch.embedding_lower_bound().sign(), Sign::Positive);
+            assert!(patch.embedding_lower_bound() <= &Rational::one());
+            Ok(())
+        });
+        assert!(!work.exhausted);
+        result.unwrap();
+    }
+
+    #[test]
+    fn a_balanced_projection_keeps_a_wide_bending_chart_invertible() {
+        let (result, work) = with_operation_budget(20_000_000, || -> Result<(), Refusal> {
+            let mut dec = Decider::default();
+            // X=u+2v²,Y=10v,Z=0 on [-1,1]². The centre-dual
+            // symmetric Jacobian is indefinite near the ends, despite the
+            // chart being injective; positive metric balancing proves it.
+            let points = [-1, 1]
+                .into_iter()
+                .flat_map(|u| {
+                    [2, -2, 2]
+                        .into_iter()
+                        .zip([-10, 0, 10])
+                        .map(move |(bend, y)| {
+                            Point3::new((u + bend).into(), y.into(), Real::zero())
+                        })
+                })
+                .collect();
+            let carrier = BSplineSurface::new(
+                [1, 2],
+                [
+                    [-1, -1, 1, 1].map(Rational::from_i64).to_vec(),
+                    [-1, -1, -1, 1, 1, 1].map(Rational::from_i64).to_vec(),
+                ],
+                [2, 3],
+                points,
+                vec![Real::one(); 6],
+                &mut dec,
+            )?;
+            let patch = RationalPatch::new(carrier, &mut dec)?;
+            let at = patch
+                .parameters_at(&Point3::new(1.into(), 5.into(), Real::zero()), &mut dec)?
+                .expect("the genuine finite point has an inverse");
+            for coordinate in at {
+                assert_eq!(
+                    exact_sign(&(&coordinate - &Real::from(q(1, 2))), &mut dec)?,
+                    Sign::Zero
+                );
+            }
+            assert!(
+                patch
+                    .parameters_at(&Point3::new(4.into(), 5.into(), Real::zero()), &mut dec)?
+                    .is_none()
+            );
+            Ok(())
+        });
+        assert!(!work.exhausted);
+        result.unwrap();
+    }
+
+    #[test]
+    fn metric_balance_does_not_replace_a_valid_centre_dual_projection() {
+        let (result, work) = with_operation_budget(20_000_000, || -> Result<(), Refusal> {
+            let mut dec = Decider::default();
+            // A stretched conformal quadratic: after the centre-dual
+            // projection its symmetric Jacobian is (1+9u/10) I > 0.
+            // Blind row balancing would make it indefinite near u=-1.
+            let linear = [-1, 0, 1];
+            let square = [1, -1, 1];
+            let mut points = Vec::new();
+            for u in 0..3 {
+                for v in 0..3 {
+                    let x = &q(10, 1)
+                        * &(&q(linear[u], 1) + &(&q(9, 20) * &q(square[u] - square[v], 1)));
+                    let y = &q(linear[v], 1) * &(&q(1, 1) + &q(9 * linear[u], 10));
+                    points.push(Point3::new(x.into(), y.into(), Real::zero()));
+                }
+            }
+            let knots = [-1, -1, -1, 1, 1, 1].map(Rational::from_i64).to_vec();
+            let carrier = BSplineSurface::new(
+                [2, 2],
+                [knots.clone(), knots],
+                [3, 3],
+                points,
+                vec![Real::one(); 9],
+                &mut dec,
+            )?;
+            let patch = RationalPatch::new(carrier, &mut dec)?;
+            let at = patch
+                .parameters_at(
+                    &Point3::new(5.into(), q(29, 40).into(), Real::zero()),
+                    &mut dec,
+                )?
+                .expect("the existing finite point remains invertible");
+            for coordinate in at {
+                assert_eq!(
+                    exact_sign(&(&coordinate - &Real::from(q(1, 2))), &mut dec)?,
+                    Sign::Zero
+                );
+            }
+            Ok(())
+        });
+        assert!(!work.exhausted);
+        result.unwrap();
+    }
+
+    #[test]
+    fn a_positive_centre_frame_does_not_admit_an_interior_fold() {
+        let (result, work) = with_operation_budget(20_000_000, || {
+            let mut dec = Decider::default();
+            let points = [q(1, 4), q(1, 12), q(11, 12), q(3, 4)]
+                .into_iter()
+                .flat_map(|x| {
+                    [0, 1].map(move |v| Point3::new(Real::from(x.clone()), v.into(), Real::zero()))
+                })
+                .collect();
+            // X = u - 2(u-1/2)^3, Y = v. X_u(1/2)=1, but X_u(0)=-1/2.
+            let carrier = BSplineSurface::new(
+                [3, 1],
+                [
+                    [0, 0, 0, 0, 1, 1, 1, 1].map(Rational::from_i64).to_vec(),
+                    [0, 0, 1, 1].map(Rational::from_i64).to_vec(),
+                ],
+                [4, 2],
+                points,
+                vec![Real::one(); 8],
+                &mut dec,
+            )?;
+            RationalPatch::new(carrier, &mut dec)
+        });
+        assert!(!work.exhausted);
+        assert_eq!(result.unwrap_err().code, "shapes.rational-patch-unproven");
+    }
+
+    #[test]
+    fn a_balanced_projection_can_require_the_existing_finite_cover() {
+        let (result, work) = with_operation_budget(20_000_000, || -> Result<(), Refusal> {
+            let mut dec = Decider::default();
+            // X=u+99u²/200,Y=v(1-99u/100)/10. The original
+            // projection is indefinite at corners. The balanced pointwise
+            // Jacobian is positive, but independent whole-cell diagonal
+            // minima still need a finite parameter restriction to prove it.
+            let mut points = Vec::new();
+            for (x, height) in [(-101, 199), (-99, 100), (299, 1)] {
+                for v in [-1, 1] {
+                    points.push(Point3::new(
+                        q(x, 200).into(),
+                        q(v * height, 1000).into(),
+                        Real::zero(),
+                    ));
+                }
+            }
+            let carrier = BSplineSurface::new(
+                [2, 1],
+                [
+                    [-1, -1, -1, 1, 1, 1].map(Rational::from_i64).to_vec(),
+                    [-1, -1, 1, 1].map(Rational::from_i64).to_vec(),
+                ],
+                [3, 2],
+                points,
+                vec![Real::one(); 6],
+                &mut dec,
+            )?;
+            let patch = RationalPatch::new(carrier, &mut dec)?;
+            let at = patch
+                .parameters_at(
+                    &Point3::new(Real::zero(), q(1, 20).into(), Real::zero()),
+                    &mut dec,
+                )?
+                .expect("the genuine finite point remains invertible");
+            for (coordinate, expected) in at.into_iter().zip([q(0, 1), q(1, 2)]) {
+                assert_eq!(
+                    exact_sign(&(&coordinate - &Real::from(expected)), &mut dec)?,
+                    Sign::Zero
+                );
+            }
+            Ok(())
+        });
+        assert!(!work.exhausted);
+        result.unwrap();
+    }
+}

@@ -165,6 +165,8 @@ Why this phase is second: these are whole lines of the count with nothing built.
 | 2.4 | General sweeps | Extrude with taper. Sweep with a guide, with twist and along a helix. Extrude up to a curved face. | Lane 3, after 2.2. Two "not started" lines. It depends on neither 2.2 nor 2.3. | Springs, threads, tapered and twisted shapes. P8, the spring and threaded boss. | P8 builds. |
 | 2.5 | Direct edits | Delete a face, a fillet or a hole and heal the solid. Move, offset or replace a face. | Lane 3, after 2.3, while lane 1 keeps 2.1. Needs 2.2 and 2.3. It pays only once imports work (1.2). | Editing bought-in parts that have no feature tree. | Each edit works on an imported solid. |
 
+**2.4 partial delivery:** taper, guide/twist sweeps, a quarter helix and curved-face termination have build/edit/save/reopen and unhealed STEP evidence. General-motion fits are explicitly numerical. P8 still reports `numbers.operation-budget` in the threaded union at 100M; the milestone remains open. Its [stage record](docs/RECIPE.md#work-recorded-for-phase-5) is retained for Phase 5.
+
 **App, alongside:** import health report, reverse-engineering workspace, direct-edit commands, reference axis and point, slot, draft check, exact sketch solver.
 
 **Checkpoint 2.** Scoreboard and census rerun, and the coverage recount. Order of phase 3.
@@ -211,6 +213,7 @@ Why last: the owner's ruling of 11 Nov. Clock targets were stalling capability w
 - The GPU and every core carry what they can. [Booleans gain nothing from extra cores today](docs/research/run-ahead.md).
 - Simplify. Routes that the measurements show are not needed are removed.
 - Slow steps recorded at the 0.5.0 cut: loft 35 s, fillet on a loft edge 26 s, spline sweep 13 s, P5 fillet edit 4 to 6 s, field mass 3.5 to 7.7 s.
+- Later: the 2.4 P8 thread sweep exceeds 20M; its [per-stage record](docs/RECIPE.md#work-recorded-for-phase-5) distinguishes the completed fit from the refused whole-part Boolean. The 100M application allowance is unchanged.
 - Windows packages and signed downloads.
 
 **Final checkpoint.**

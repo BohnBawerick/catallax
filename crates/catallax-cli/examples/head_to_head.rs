@@ -5,6 +5,8 @@ use catallax_numbers::{Decider, with_operation_budget, with_operation_log};
 use catallax_recipe::Recipe;
 use serde_json::{Value, json};
 use std::{env, fs, io, path::Path, time::Instant};
+#[path = "head_to_head/general_sweeps.rs"]
+mod general_sweeps;
 
 fn enclosure(value: &Enclosure) -> Value {
     json!([value.lo.to_string(), value.hi.to_string()])
@@ -239,6 +241,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .collect();
     let root = Path::new(&args[1]);
     fs::create_dir_all(root)?;
+    if catallax_features::general_sweep::requires_numerical(&original)
+        || catallax_features::general_sweep::requires_numerical(&edited)
+    {
+        return general_sweeps::run(&original, &edited, &input, root, limit);
+    }
     let mut report = json!({"format":"catallax-head-to-head-phases/1","variants":{},
         "edit_mode":"complete recipe rebuild, no incremental reuse","measurement_accuracy":{"relative":"1e-12","absolute":"1e-30"}});
     let mut builds = Vec::new();

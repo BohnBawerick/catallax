@@ -221,6 +221,12 @@ impl Path {
                         })),
                     )
                 }
+                PathSegment::Helix { .. } => {
+                    return Err(Refusal::new(
+                        "sweep.requires-numerical-evaluation",
+                        "a nonalgebraic helix requires the numerical sweep evaluator and a stated tolerance",
+                    ));
+                }
                 PathSegment::Spline { control_points, .. } => {
                     let controls: Vec<_> = control_points.iter().map(point).collect();
                     let first = controls

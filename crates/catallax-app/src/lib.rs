@@ -40,6 +40,8 @@ pub use catallax_topology::numerical::{
     NumericalBody, NumericalDefinition, NumericalEdge, NumericalFace, NumericalOptions,
     NumericalTrim, NumericalVertex, build as build_numerical,
 };
+/// Numerical helical sweep builds, display and properties of their retained fits.
+pub mod numerical_sweeps;
 /// Saved feature-pattern editing with explicit per-instance bindings.
 pub mod pattern;
 /// Unproved preview meshes and selection names from retained B-rep definitions.

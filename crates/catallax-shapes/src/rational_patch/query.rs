@@ -357,6 +357,7 @@ pub(super) fn linear_roots(
     Ok(Some(found))
 }
 
+#[cfg_attr(feature = "work-span", track_caller)]
 pub(super) fn roots(
     equations: &[RealPoly; 2],
     domain: &Domain,
@@ -452,6 +453,7 @@ fn projected(span: &Span, point: &Point3, projection: &[Vector3; 2]) -> [RealPol
 }
 
 impl RationalPatch {
+    #[cfg_attr(feature = "work-span", track_caller)]
     fn projected_parameter(
         &self,
         point: &Point3,
@@ -480,6 +482,7 @@ impl RationalPatch {
 
     /// The unique exact finite preimage, or proven absence. Projection roots are
     /// checked against all three world coordinates, never accepted by distance.
+    #[cfg_attr(feature = "work-span", track_caller)]
     pub fn parameters_at(
         &self,
         point: &Point3,
@@ -499,6 +502,7 @@ impl RationalPatch {
 
     /// Natural chart normal at a genuine finite point. At a crease, incompatible
     /// one-sided normals refuse rather than choosing an arbitrary knot branch.
+    #[cfg_attr(feature = "work-span", track_caller)]
     pub fn normal_at(&self, point: &Point3, dec: &mut Decider) -> Result<Vector3, Refusal> {
         let at = self
             .parameters_at(point, dec)?
@@ -527,6 +531,7 @@ impl RationalPatch {
 
     /// Oriented side only over the checked finite projection image. An outside
     /// projection has no side and returns a domain refusal, not a global sign.
+    #[cfg_attr(feature = "work-span", track_caller)]
     pub fn side_at(&self, point: &Point3, dec: &mut Decider) -> Result<Sign, Refusal> {
         let at = self.projected_parameter(point, dec)?.ok_or_else(|| {
             domain_error("the side point lies outside the finite projection image")

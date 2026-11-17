@@ -222,6 +222,22 @@ fn geometry(op: &mut Operation, recipe: &Recipe, map: &Isometry) -> Result<(), R
                             axial(axis)?;
                         }
                     }
+                    catallax_recipe::PathSegment::Helix {
+                        centre,
+                        axis,
+                        angle,
+                        corner_axis,
+                        ..
+                    } => {
+                        p(centre)?;
+                        v(axis)?;
+                        if map.reversing() {
+                            *angle = (-angle.value()).into();
+                        }
+                        if let Some(axis) = corner_axis {
+                            axial(axis)?;
+                        }
+                    }
                     catallax_recipe::PathSegment::Spline {
                         control_points,
                         corner_axis,
@@ -263,13 +279,24 @@ fn geometry(op: &mut Operation, recipe: &Recipe, map: &Isometry) -> Result<(), R
                 }
             }
         }
+        ExtrudeTapered { distance, .. } => {
+            if map.reversing() {
+                *distance = (-distance.value()).into();
+            }
+        }
+        Sweep { twist, .. } => {
+            if map.reversing()
+                && let Some(twist) = twist
+            {
+                *twist = (-twist.value()).into();
+            }
+        }
         Boolean { .. }
         | Fillet { .. }
         | Chamfer { .. }
         | Shell { .. }
         | Offset { .. }
         | Thicken { .. }
-        | Sweep { .. }
         | Loft { .. } => (),
         _ => {
             return Err(bad(format!(
@@ -316,7 +343,7 @@ fn rewrite(
                     || input_object
                         && matches!(
                             key.as_str(),
-                            "body" | "target" | "tool" | "profile" | "path" | "region"
+                            "body" | "target" | "tool" | "profile" | "path" | "guide" | "region"
                         )
                         && value.is_string()
                 {

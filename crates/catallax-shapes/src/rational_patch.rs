@@ -11,12 +11,12 @@ use crate::{BSplineCurve, BSplineSurface, Isometry, Point3, Pose, SplineBoundary
 mod grid;
 pub use grid::{RationalGridEmbedding, RationalPatchGrid};
 mod pair;
-pub(crate) use pair::PolynomialBounds;
 pub(crate) use pair::curve_hulls_disjoint;
 pub use pair::{
     OffsetPatch, PairArc, PairCertificate, PairPoint, PairTracePiece, PatchPairBranch,
     PatchPairCurve, PatchPairIntersection, PatchPairSearch,
 };
+pub(crate) use pair::{PolynomialBounds, ProjectedJacobian};
 mod differential;
 mod query;
 pub(crate) use query::{SplineParameterHits, spline_parameters, spline_points};
@@ -231,8 +231,9 @@ fn projection_margin(
 
 impl RationalPatch {
     /// Proves the complete chart using a centre-tangent projection or rational
-    /// Bernstein bounds for a ruled chart. Controls stay unchanged; no sample
-    /// supplies the proof.
+    /// Bernstein bounds for a ruled chart. Single rational bicubic spans couple
+    /// the projected Jacobian before bounding it; other spans use interval jets.
+    /// Controls stay unchanged and no sample supplies the embedding proof.
     /// Patches without a proved global projection retain a typed refusal.
     pub fn new(carrier: BSplineSurface, dec: &mut Decider) -> Result<Self, Refusal> {
         Self::certified(carrier, MAX_PROOF_DEPTH, MAX_PROOF_CELLS, None, dec)
@@ -313,20 +314,56 @@ impl RationalPatch {
                 "no arithmetic precision is available for the embedding proof",
             ));
         }
-        let frame: [[Ball; 3]; 2] = [
-            math::budgeted_vector(&projection[0], bits, dec)?,
-            math::budgeted_vector(&projection[1], bits, dec)?,
-        ];
-        let scales = widths
-            .each_ref()
-            .map(|width| Ball::from_rational(width, bits));
+        let projected = if max_depth > 0
+            && polynomial.is_none()
+            && spans.len() == 1
+            && carrier.degrees().iter().all(|degree| *degree <= 3)
+        {
+            let [x, y, z, w] = span.coordinates.each_ref().map(RealPoly::as_rational);
+            match (x, y, z, w) {
+                (Some(x), Some(y), Some(z), Some(w)) => {
+                    let aa = aa.as_rational().expect("rational centre tangent");
+                    let bb = bb.as_rational().expect("rational centre tangent");
+                    dec.reserve_exact_arithmetic(&aa, &bb, true)?;
+                    let exponent = bb.numerator().bit_length() as i64
+                        + aa.denominator().bit_length() as i64
+                        - bb.denominator().bit_length() as i64
+                        - aa.numerator().bit_length() as i64;
+                    let balance = Rational::one().mul_pow2(exponent);
+                    Some(ProjectedJacobian::new(
+                        &[x, y, z, w],
+                        &mut projection,
+                        domain.clone(),
+                        &balance,
+                        dec,
+                    )?)
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
+        let interval_frame = if projected.is_none() {
+            Some((
+                [
+                    math::budgeted_vector(&projection[0], bits, dec)?,
+                    math::budgeted_vector(&projection[1], bits, dec)?,
+                ],
+                widths
+                    .each_ref()
+                    .map(|width| Ball::from_rational(width, bits)),
+            ))
+        } else {
+            None
+        };
         let mut cover = Vec::new();
         let mut pending: Vec<_> = spans
             .iter()
             .rev()
             .map(|span| (span.indices, span.domain.clone(), 0u32))
             .collect();
-        let mut workspace = polynomial.is_none().then(|| carrier.span_workspace());
+        let mut workspace =
+            (polynomial.is_none() && projected.is_none()).then(|| carrier.span_workspace());
         let mut visited = 0usize;
         let mut lower: Option<Rational> = None;
         while let Some((indices, cell, depth)) = pending.pop() {
@@ -337,17 +374,22 @@ impl RationalPatch {
                     "the embedding proof exceeded its finite cell allowance",
                 ));
             }
-            let derivatives = match polynomial {
-                Some(bounds) => bounds.derivatives(&cell, bits, dec)?,
-                None => carrier.derivatives_on_span(
-                    indices,
-                    &cell,
-                    bits,
-                    dec,
-                    workspace.as_mut().expect("legacy span workspace"),
-                )?,
+            let margin = if let Some(bounds) = &projected {
+                bounds.margin(&cell, dec)?
+            } else {
+                let derivatives = match polynomial {
+                    Some(bounds) => bounds.derivatives(&cell, bits, dec)?,
+                    None => carrier.derivatives_on_span(
+                        indices,
+                        &cell,
+                        bits,
+                        dec,
+                        workspace.as_mut().expect("interval span workspace"),
+                    )?,
+                };
+                let (frame, scales) = interval_frame.as_ref().expect("interval projection");
+                projection_margin(&derivatives, frame, scales, bits)
             };
-            let margin = projection_margin(&derivatives, &frame, &scales, bits);
             if margin > Rational::zero() {
                 lower = Some(lower.map_or_else(|| margin.clone(), |old| old.min(margin.clone())));
                 cover.push(ProjectionCell {

@@ -7,7 +7,7 @@ use catallax_numbers::{
 use catallax_recipe::{LoftParameterization, LoftSection, LoftShape, Operation, Recipe, StepId};
 use catallax_topology::{BodyId, Model};
 
-mod charts;
+pub(crate) mod charts;
 mod math;
 mod proof;
 pub(crate) mod topology;

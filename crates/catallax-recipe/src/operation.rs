@@ -137,6 +137,16 @@ pub enum Operation {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         direction: Option<Vector3>,
     },
+    /// A normal extrusion with every side drafted about the starting sketch plane.
+    ExtrudeTapered {
+        /// The sketch step.
+        profile: StepId,
+        /// Nonzero signed normal distance.
+        distance: Number,
+        /// Draft angle in degrees, strictly between -90 and 90.
+        /// Positive angles narrow the material along the extrusion direction.
+        angle: Number,
+    },
     /// Sweeps local profile coordinates from an exact supporting face plane.
     ExtrudeOnFace {
         /// An XY profile; its placement must be the identity.
@@ -313,6 +323,12 @@ pub enum Operation {
         path: StepId,
         /// How the profile turns along the path.
         orientation: SweepOrientation,
+        /// Auxiliary path defining section rotation at equal normalized native parameters.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        guide: Option<StepId>,
+        /// Additional signed rotation in degrees, linear in normalized native path parameter.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        twist: Option<Number>,
     },
     /// A solid through a sequence of profiles.
     Loft {
@@ -433,6 +449,7 @@ impl Operation {
             Operation::Sketch { .. } => "sketch",
             Operation::Path { .. } => "path",
             Operation::Extrude { .. } => "extrude",
+            Operation::ExtrudeTapered { .. } => "extrude_tapered",
             Operation::ExtrudeOnFace { .. } => "extrude_on_face",
             Operation::ExtrudeThrough { .. } => "extrude_through",
             Operation::ExtrudeTo { .. } => "extrude_to",
@@ -487,7 +504,9 @@ impl Operation {
             | Operation::ImportIges { .. }
             | Operation::ImportMesh { .. }
             | Operation::ScanImport { .. } => vec![],
-            Operation::Extrude { profile, .. } | Operation::Revolve { profile, .. } => {
+            Operation::Extrude { profile, .. }
+            | Operation::ExtrudeTapered { profile, .. }
+            | Operation::Revolve { profile, .. } => {
                 vec![(profile, Profile)]
             }
             Operation::ExtrudeOnFace { body, profile, .. } => {
@@ -516,7 +535,20 @@ impl Operation {
             | Operation::Draft { body, .. }
             | Operation::Pattern { body, .. }
             | Operation::Mirror { body, .. } => vec![(body, Body)],
-            Operation::Sweep { profile, path, .. } => vec![(profile, Profile), (path, Path)],
+            Operation::Sweep {
+                profile,
+                path,
+                guide,
+                ..
+            } => {
+                let mut inputs = Vec::with_capacity(2 + usize::from(guide.is_some()));
+                inputs.push((profile, Profile));
+                inputs.push((path, Path));
+                if let Some(guide) = guide {
+                    inputs.push((guide, Path));
+                }
+                inputs
+            }
             Operation::Loft { sections, .. } => {
                 sections.iter().map(|s| (&s.profile, Profile)).collect()
             }
@@ -706,6 +738,22 @@ pub enum PathSegment {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         corner_axis: Option<Vector3>,
     },
+    /// Rotation about an axis with simultaneous axial translation.
+    Helix {
+        /// Stable authored path segment identity.
+        id: ElementId,
+        /// Axis point in the plane of the preceding endpoint.
+        centre: Point3,
+        /// Nonzero axis direction.
+        axis: Vector3,
+        /// Nonzero signed rotation in degrees.
+        angle: Number,
+        /// Signed translation along the unit axis.
+        rise: Number,
+        /// Half-turn axis at a reversing join.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        corner_axis: Option<Vector3>,
+    },
     /// A clamped rational B-spline in model space, in versions 4 and 5.
     Spline {
         /// The authored segment id, retained across internal knot spans.
@@ -728,7 +776,10 @@ impl PathSegment {
     /// The segment's id.
     pub fn id(&self) -> &ElementId {
         match self {
-            Self::Line { id, .. } | Self::Arc { id, .. } | Self::Spline { id, .. } => id,
+            Self::Line { id, .. }
+            | Self::Arc { id, .. }
+            | Self::Helix { id, .. }
+            | Self::Spline { id, .. } => id,
         }
     }
 }
@@ -739,6 +790,7 @@ impl PathSegment {
         match self {
             Self::Line { corner_axis, .. }
             | Self::Arc { corner_axis, .. }
+            | Self::Helix { corner_axis, .. }
             | Self::Spline { corner_axis, .. } => corner_axis.as_ref(),
         }
     }

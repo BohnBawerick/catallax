@@ -358,13 +358,23 @@ impl Plan {
                         profile,
                         path,
                         orientation,
-                    } => plan.sweep(
-                        &profiles[profile],
-                        &recipe.step(path).expect("checked path").op,
-                        *orientation,
-                        &step.id,
-                        dec,
-                    )?,
+                        guide,
+                        twist,
+                    } => {
+                        if guide.is_some() || twist.as_ref().is_some_and(|n| !n.value().is_zero()) {
+                            return Err(Refusal::new(
+                                "field.unfinished-operation",
+                                "guided and twisted sweeps are numerical B-reps; their field definitions remain in phase 4",
+                            ));
+                        }
+                        plan.sweep(
+                            &profiles[profile],
+                            &recipe.step(path).expect("checked path").op,
+                            *orientation,
+                            &step.id,
+                            dec,
+                        )?
+                    }
                     Operation::Loft { sections, shape } => {
                         plan.loft(recipe, sections, *shape, &profiles, &step.id, dec)?
                     }

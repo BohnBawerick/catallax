@@ -13,7 +13,7 @@ use catallax_numbers::{Decider, Rational, Refusal};
 use spade::Triangulation;
 
 use super::imported::{
-    Cdt, Node, SourceChart, SurfaceSamples, finish_face, insert, push, seed_rectangles,
+    Cdt, FaceOutput, Node, SourceChart, SurfaceSamples, finish_face, insert, push, seed_rectangles,
 };
 use crate::{PreviewEdge, PreviewMesh, PreviewOptions};
 
@@ -110,7 +110,7 @@ fn edge_samples(
         if distance(actual, linear) <= target * 0.5 {
             output.push((b, indices[1]));
         } else {
-            if depth == 24 || mid == a || mid == b {
+            if depth == 24 || mid <= a || mid >= b {
                 return Err(failure("edge subdivision reached its sampling limit"));
             }
             let index = push(mesh, actual, options)?;
@@ -166,7 +166,10 @@ fn domain_loop(
                     mesh: push(mesh, start, options)?,
                 });
             } else {
-                if depth == 24 || mid == a || mid == b {
+                if depth == 24
+                    || mid.map(f64::to_bits) == a.map(f64::to_bits)
+                    || mid.map(f64::to_bits) == b.map(f64::to_bits)
+                {
                     return Err(failure(
                         "natural seam subdivision reached its sampling limit",
                     ));
@@ -237,7 +240,7 @@ fn cut_band(
         let uv = std::array::from_fn(|i| a.uv[i] + fraction * (b.uv[i] - a.uv[i]));
         let cut_node = if fraction == 0.0 {
             a
-        } else if fraction == 1.0 {
+        } else if fraction.to_bits() == 1.0_f64.to_bits() {
             b
         } else {
             Node {
@@ -511,9 +514,11 @@ pub fn preview_tolerant_body(
             dec,
         )?;
         finish_face(
-            &face.name,
-            face.same_sense,
-            natural.is_some(),
+            FaceOutput {
+                name: &face.name,
+                same_sense: face.same_sense,
+                skip_collapsed: natural.is_some(),
+            },
             &carrier,
             cdt,
             &loops,

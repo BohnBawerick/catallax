@@ -698,9 +698,11 @@ fn face_mesh(
     }
     seed_rectangles(&chart, bounds, &loops, &mut cdt, mesh, options, dec)?;
     finish_face(
-        &face.name,
-        face.same_sense,
-        false,
+        FaceOutput {
+            name: &face.name,
+            same_sense: face.same_sense,
+            skip_collapsed: false,
+        },
         &chart,
         cdt,
         &loops,
@@ -710,10 +712,14 @@ fn face_mesh(
     )
 }
 
+pub(super) struct FaceOutput<'a> {
+    pub name: &'a str,
+    pub same_sense: bool,
+    pub skip_collapsed: bool,
+}
+
 pub(super) fn finish_face(
-    name: &str,
-    same_sense: bool,
-    skip_collapsed: bool,
+    output: FaceOutput<'_>,
     chart: &impl SurfaceSamples,
     mut cdt: Cdt,
     loops: &[Vec<Node>],
@@ -721,6 +727,11 @@ pub(super) fn finish_face(
     options: &PreviewOptions,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
+    let FaceOutput {
+        name,
+        same_sense,
+        skip_collapsed,
+    } = output;
     let start = mesh.triangles.len();
     for _ in 0..32 {
         let mut pending = BTreeMap::new();
@@ -729,7 +740,7 @@ pub(super) fn finish_face(
             dec.check_deadline()?;
             let nodes = triangle.vertices().map(|v| *v.data());
             let center = std::array::from_fn(|i| nodes.iter().map(|n| n.uv[i] / 3.0).sum());
-            if !inside(center, &loops) {
+            if !inside(center, loops) {
                 continue;
             }
             let p = nodes.map(|n| mesh.positions[n.mesh]);

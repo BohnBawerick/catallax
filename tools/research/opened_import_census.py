@@ -500,19 +500,86 @@ def observe(binary, source, baseline, folder, retain, max_rss_mb=6144):
     return row
 
 
-def comparison_outcomes(by_id, expected_full, expected_valid):
+def recorded_tiers(row):
+    """Read an actual per-file tier inventory, never infer it from 'full'."""
+    try:
+        total = int(row["observed_body_count"])
+        tiers = {
+            "valid_solid": int(row["valid_solid_body_count"]),
+            "repaired_solid": int(row["repaired_solid_body_count"]),
+            "tolerant_solid": int(row.get("tolerant_solid_body_count") or 0),
+            "surface_body": int(row["surface_body_count"]),
+        }
+    except (KeyError, TypeError, ValueError):
+        return None
+    return tiers if min(tiers.values()) >= 0 and sum(tiers.values()) == total else None
+
+
+def comparison_outcomes(by_id, expected_full, expected_valid, prior_rows):
     unknown = {"timeout", "out_of_memory", "process_error"}
     opening_unknown = {key for key, row in by_id.items() if row["outcome"] in unknown}
     export_unknown = opening_unknown | {
         key for key, row in by_id.items() if row.get("export_validity") in unknown
     }
+    transitions = {}
+    downgrades, demotions = [], []
+    demoted_bodies = 0
+    for key, row in by_id.items():
+        before = recorded_tiers(prior_rows.get(key, {}))
+        after = recorded_tiers(row)
+        if before is None:
+            transition = "unknown_prior_tiers"
+        elif after is None or key in opening_unknown:
+            transition = "unknown_current_tiers"
+        elif sum(before.values()) != sum(after.values()):
+            transition = "unknown_body_inventory"
+        else:
+            checked_before = before["valid_solid"] + before["repaired_solid"]
+            checked_after = after["valid_solid"] + after["repaired_solid"]
+            checked_drop = checked_before - checked_after
+            native_gain = after["tolerant_solid"] - before["tolerant_solid"]
+            lowered = (
+                before["valid_solid"] > after["valid_solid"]
+                or checked_drop > 0
+                or checked_before + before["tolerant_solid"]
+                   > checked_after + after["tolerant_solid"]
+            )
+            if lowered:
+                downgrades.append(key)
+            if checked_drop > 0 and native_gain > 0:
+                transition = "checked_to_tolerant"
+                demotions.append(key)
+                demoted_bodies += min(checked_drop, native_gain)
+            else:
+                transition = (
+                    "downgraded" if lowered else
+                    "same_recorded_tier_totals" if before == after else "changed"
+                )
+        transitions[key] = dict(
+            prior_body_tiers=before, current_body_tiers=after, tier_transition=transition
+        )
+    coverage_losses = {
+        key for key, count in expected_full.items()
+        if key not in opening_unknown
+        and (by_id[key]["outcome"] != "full"
+             or by_id[key].get("observed_body_count") != count)
+    }
+    unknown_tiers = sorted(
+        key for key, value in transitions.items()
+        if value["tier_transition"].startswith("unknown_")
+    )
     return dict(
-        tier_losses=sorted(
-            key for key, count in expected_full.items()
-            if key not in opening_unknown
-            and (by_id[key]["outcome"] != "full"
-                 or by_id[key].get("observed_body_count") != count)
-        ),
+        solid_coverage_losses=sorted(coverage_losses),
+        tier_losses=sorted(coverage_losses | set(downgrades)),
+        recorded_tier_downgrades=sorted(downgrades),
+        checked_to_tolerant_demotions=sorted(demotions),
+        checked_to_tolerant_demotion_files=len(demotions),
+        checked_to_tolerant_body_demotions_lower_bound=demoted_bodies,
+        tier_comparison_unknown=unknown_tiers,
+        tier_comparison_unknown_count=len(unknown_tiers),
+        tier_transition_counts=dict(Counter(v["tier_transition"] for v in transitions.values())),
+        tier_comparison_basis="recorded per-file tier totals; historical body identities are not inferred",
+        per_file_tier_transitions=transitions,
         frozen_valid_export_losses=sorted(
             key for key in expected_valid
             if key not in export_unknown and not by_id[key].get("all_solids_export_valid")
@@ -562,6 +629,12 @@ def collect(args):
     assert all(
         baseline[k]["source_sha256"] == hashes[k] == validity[k]["source_sha256"] for k in hashes
     )
+    tier_baseline = baseline
+    if args.tier_baseline is not None:
+        with args.tier_baseline.open(newline="") as stream:
+            tier_baseline = {row["model_id"]: row for row in csv.DictReader(stream)}
+        assert tier_baseline.keys() == hashes.keys()
+        assert all(tier_baseline[key]["source_sha256"] == hashes[key] for key in hashes)
     retained = {r["model_id"] for r in json.loads(RETAINED.read_text())["rows"]}
     cone_reference = json.loads(CONE_REFERENCE.read_text())
     assert cone_reference["source_revision"] == "88bb7851a00f0a8531fd85618a2cf083fcda510c"
@@ -600,6 +673,7 @@ def collect(args):
         per_import_workers=1,
         max_rss_mb_per_observer=args.max_rss_mb,
         ocp_version="8.0.1.1",
+        tier_baseline_csv_sha256=digest(args.tier_baseline or BASELINE),
         unhealed_validity_established=False,
         complete_source_body_bound_established=False,
     )
@@ -656,6 +730,26 @@ def collect(args):
         and digest(binary) == record["binary_sha256"]
     )
     observations.sort(key=lambda r: r["model_id"])
+    by_id = {r["model_id"]: r for r in observations}
+    expected_full = {k: int(r["bodies"]) for k, r in baseline.items() if r["outcome"] == "full"}
+    expected_full.update(
+        {r["model_id"]: r["expected_body_count"] for r in cone_reference["results"]}
+    )
+    expected_valid = {k for k, r in validity.items() if r["validity_outcome"] == "raw_valid"}
+    expected_valid.update(r["model_id"] for r in cone_reference["results"])
+    assert len(expected_full) == 405 and len(expected_valid) == 374
+    expected_full.update({
+        key: int(row["observed_body_count"])
+        for key, row in tier_baseline.items()
+        if row.get("outcome") == "full" and row.get("observed_body_count")
+    })
+    expected_valid.update(
+        key for key, row in tier_baseline.items()
+        if row.get("all_solids_export_valid") in (True, "True")
+    )
+    comparison = comparison_outcomes(by_id, expected_full, expected_valid, tier_baseline)
+    for key, transition in comparison.pop("per_file_tier_transitions").items():
+        by_id[key].update(transition)
     table = args.out / "results.csv"
     fields = sorted(set().union(*(r.keys() for r in observations)))
     with table.open("w", newline="") as stream:
@@ -668,15 +762,6 @@ def collect(args):
             }
             for r in observations
         )
-    by_id = {r["model_id"]: r for r in observations}
-    expected_full = {k: int(r["bodies"]) for k, r in baseline.items() if r["outcome"] == "full"}
-    expected_full.update(
-        {r["model_id"]: r["expected_body_count"] for r in cone_reference["results"]}
-    )
-    expected_valid = {k for k, r in validity.items() if r["validity_outcome"] == "raw_valid"}
-    expected_valid.update(r["model_id"] for r in cone_reference["results"])
-    assert len(expected_full) == 405 and len(expected_valid) == 374
-    comparison = comparison_outcomes(by_id, expected_full, expected_valid)
     outcomes = Counter(r["outcome"] for r in observations)
     exports = Counter(r.get("export_validity", "not_reached") for r in observations)
     opened = sum(r["opened"] for r in observations)
@@ -706,8 +791,8 @@ def collect(args):
             for name in ["valid_solid", "repaired_solid", "tolerant_solid", "surface"]
         },
         **comparison,
-        baseline_full_solid_files=405,
-        baseline_valid_export_files=374,
+        baseline_full_solid_files=len(expected_full),
+        baseline_valid_export_files=len(expected_valid),
         integrated_00009338_preserved=preserved_9338,
         acceptance_passed=not comparison["tier_losses"]
         and not comparison["frozen_valid_export_losses"]
@@ -738,6 +823,8 @@ def collect(args):
                     "tier_losses",
                     "frozen_valid_export_losses",
                     "acceptance_passed",
+                    "checked_to_tolerant_demotion_files",
+                    "tier_comparison_unknown_count",
                 ]
             }
         ),
@@ -757,6 +844,7 @@ def main():
     command = commands.add_parser("collect")
     for field in ["build-record", "sources", "selection", "source-hashes", "out"]:
         command.add_argument("--" + field, type=Path, required=True)
+    command.add_argument("--tier-baseline", type=Path)
     command.add_argument("--workers", type=int, default=2)
     command.add_argument("--max-rss-mb", type=int, default=6144)
     command.add_argument("--resume", action="store_true")

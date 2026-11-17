@@ -81,19 +81,29 @@ impl<'a> Context<'a> {
         self.surfaces.insert(entity, Arc::clone(&surface));
         Ok(surface)
     }
-    fn pcurve(&mut self, entity: u64, dec: &mut Decider) -> Result<Arc<NativeUvCurve>, Error> {
+    fn pcurve(
+        &mut self,
+        entity: u64,
+        dec: &mut Decider,
+    ) -> Result<Option<Arc<NativeUvCurve>>, Error> {
         if let Some(curve) = self.pcurves.get(&entity) {
-            return Ok(Arc::clone(curve));
+            return Ok(Some(Arc::clone(curve)));
         }
-        let curve = Arc::new(NativeUvCurve::from_source(
+        let curve = match NativeUvCurve::from_source(
             self.parsed,
             entity,
             self.scale,
             self.angles.clone(),
             dec,
-        )?);
+        ) {
+            Ok(curve) => Arc::new(curve),
+            Err(error) if crate::tolerant::native::control(&error) => return Err(error),
+            // This carrier is only an optional hint. Required 3D curve and
+            // surface compilation above still propagates its own refusals.
+            Err(_) => return Ok(None),
+        };
         self.pcurves.insert(entity, Arc::clone(&curve));
-        Ok(curve)
+        Ok(Some(curve))
     }
 }
 
@@ -584,6 +594,27 @@ fn pcurves(
     ))
 }
 
+fn pcurve_seed(
+    surface: &NativeSurface,
+    pcurve: Option<&NativeUvCurve>,
+    parameter: f64,
+    previous: Option<NativeLocation>,
+    dec: &mut Decider,
+) -> Result<Option<NativeLocation>, Error> {
+    let Some(uv) = pcurve
+        .map(|curve| curve.hint(parameter, dec))
+        .transpose()?
+        .flatten()
+    else {
+        return Ok(previous);
+    };
+    let uv = surface.align_parameters(uv, previous.map(|location| location.parameters));
+    Ok(surface.location(uv).ok().or(previous))
+}
+
+#[cfg(test)]
+mod tests;
+
 fn manifold(body: &TolerantBody, dec: &mut Decider) -> Result<TolerantCounts, Error> {
     let mut active_edges = vec![false; body.edges.len()];
     let mut active_vertices = vec![false; body.vertices.len()];
@@ -794,7 +825,8 @@ pub(super) fn check_body(
                     *occurrence += 1;
                     let pcurve = source_pcurve
                         .map(|entity| context.pcurve(entity, dec))
-                        .transpose()?;
+                        .transpose()?
+                        .flatten();
                     let mut samples = Vec::with_capacity(STATIONS + 1);
                     for station in 0..=STATIONS {
                         dec.charge_work(1)?;
@@ -810,36 +842,15 @@ pub(super) fn check_body(
                             _ => None,
                         };
                         let fit_target = vertex.map_or(target, |vertex| vertices[vertex]);
-                        let seed = if station == 0 {
-                            match &pcurve {
-                                Some(curve) => {
-                                    let (uv, _) = curve.sample(
-                                        NativeLocation {
-                                            chart: 0,
-                                            parameters: [curve_location.parameters[0], 0.0],
-                                        },
-                                        dec,
-                                    )?;
-                                    Some(NativeLocation {
-                                        chart: previous
-                                            .map_or(0, |value: NativeLocation| value.chart),
-                                        parameters: uv,
-                                    })
-                                }
-                                None => previous,
-                            }
-                        } else {
-                            previous
-                        };
-                        let seed = match (&surface, seed) {
-                            (Some(surface), Some(seed)) => {
-                                let parameters = surface.align_parameters(
-                                    seed.parameters,
-                                    previous.map(|location: NativeLocation| location.parameters),
-                                );
-                                Some(surface.location(parameters)?)
-                            }
-                            _ => seed,
+                        let seed = match &surface {
+                            Some(surface) => pcurve_seed(
+                                surface,
+                                pcurve.as_deref(),
+                                curve_location.parameters[0],
+                                previous,
+                                dec,
+                            )?,
+                            None => previous,
                         };
                         let mut projection = match &surface {
                             Some(surface) => surface.project(fit_target.point_mm, seed, dec)?,

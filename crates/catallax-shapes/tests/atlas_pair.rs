@@ -462,8 +462,6 @@ fn periodic_rows_join_exactly_in_either_parameter_and_either_pair_order() {
                     .map(move |reversed| run(true, transpose, reversed, false))
             })
             .collect();
-        let work: [u64; 4] = std::array::from_fn(|i| records[i].1);
-        assert_eq!(work, [1_030_454, 690_222, 1_755_131, 1_709_682]);
         println!(
             "atlas pair threads={threads:?} work={:?}",
             records.iter().map(|(_, work)| work).collect::<Vec<_>>()

@@ -174,16 +174,27 @@ mod tests {
             }).collect();
             assert_eq!(selected.len(), 1);
             let edge = model.edge(selected[0]);
+            let wall = model.faces_of_body(built.result).into_iter().find(|face| {
+                model.face_origins(*face).iter().any(|origin| {
+                    origin.step.as_str() == "pocket-tool"
+                        && matches!(&origin.role, Role::Side { segment, .. } if segment.as_str() == "right")
+                })
+            }).unwrap();
             let vertex = [edge.start, edge.end]
                 .into_iter()
                 .flatten()
                 .find(|vertex| {
                     model
-                        .geom()
-                        .position(model.vertex(*vertex).point)
-                        .x
-                        .as_rational()
-                        == Some(Rational::from_i64(32))
+                        .face(wall)
+                        .loops
+                        .iter()
+                        .any(|boundary| match model.loop_(*boundary) {
+                            Loop::Vertex(at) => at == vertex,
+                            Loop::Coedges(uses) => uses.iter().any(|coedge| {
+                                let e = model.edge(model.coedge(*coedge).edge);
+                                e.start == Some(*vertex) || e.end == Some(*vertex)
+                            }),
+                        })
                 })
                 .unwrap();
             let tolerance = Rational::parse("0.0000001").unwrap();

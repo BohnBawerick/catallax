@@ -7,8 +7,9 @@ use catallax_numbers::{
 use catallax_recipe::StepId;
 use catallax_topology::{BodyId, BodyKind, Model, numerical as n};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
-use super::{Error, ToleranceOptions, TolerantBody, TolerantFile, healing};
+use super::{Error, ToleranceOptions, TolerantBody, TolerantFile, admission, healing};
 use crate::{
     ImportRefusal,
     numerical::{self, StepImport},
@@ -22,6 +23,9 @@ pub enum Tier {
     ValidSolid,
     /// An admitted solid with a recorded derivative or numerical interpretation.
     RepairedSolid,
+    /// Closed native topology with sampled fits and measured local tolerances.
+    /// This is not a certified construction or an exact-model conversion.
+    TolerantSolid,
     /// Retained surfaces; closed material is not asserted.
     SurfaceBody,
 }
@@ -32,6 +36,7 @@ enum Storage {
     File(usize),
     Certified { model: Box<Model>, body: BodyId },
     Numerical(Box<StepImport>),
+    Tolerant(usize),
 }
 
 /// One source body; all identities remain scoped to the file's immutable hash.
@@ -78,6 +83,13 @@ pub enum BodyView<'a> {
     },
     /// Separately checked approximate B-rep with its recorded evidence.
     Numerical(&'a n::NumericalBody),
+    /// Native B-rep. Its file owns the source carriers, trims and fit evidence.
+    Tolerant {
+        /// Whole source document, including original occurrence placement.
+        import: &'a admission::TolerantImport,
+        /// Source body's index in that document.
+        body: usize,
+    },
     /// Readable finite source declarations with unresolved boundary checks.
     Surfaces {
         /// Original supported surfaces, trims and shared source identities.
@@ -90,17 +102,24 @@ pub enum BodyView<'a> {
 /// All readable bodies, including siblings of a solid which could not close.
 #[derive(Debug)]
 pub struct OpenedStep {
-    source: TolerantFile,
+    source: Arc<TolerantFile>,
+    source_graph: Option<Arc<crate::geometry_source::ParsedStep>>,
     bodies: Vec<BodyOutcome>,
     admission: Option<StepImport>,
+    native_admission: Option<Arc<admission::TolerantImport>>,
     first_refusal: Option<Error>,
     read_work_used: u64,
     file_admission_work_used: u64,
 }
 impl OpenedStep {
-    /// Immutable supported source graph, including every original entity.
+    /// Immutable original body definitions, before any repair.
     pub fn source(&self) -> &TolerantFile {
         &self.source
+    }
+    /// Original geometry, units and occurrence graph. Default opening retains
+    /// this even when native fitting fails; checked-only opening may omit it.
+    pub fn parsed_source(&self) -> Option<&crate::geometry_source::ParsedStep> {
+        self.source_graph.as_deref()
     }
     /// Source solids followed by surface models, in original reader order.
     pub fn bodies(&self) -> &[BodyOutcome] {
@@ -117,6 +136,11 @@ impl OpenedStep {
     /// Work spent on the unchanged whole-file admission path.
     pub fn file_admission_work_used(&self) -> u64 {
         self.file_admission_work_used
+    }
+    /// Native admission for the complete source document, when present.
+    /// Export this once, not once per body: it preserves assembly occurrences.
+    pub fn tolerant_admission(&self) -> Option<&admission::TolerantImport> {
+        self.native_admission.as_deref()
     }
     /// Existing source interpretation/repair evidence for an admitted body.
     pub fn admission(&self, index: usize) -> Option<&StepImport> {
@@ -138,6 +162,10 @@ impl OpenedStep {
             Storage::File(body) => admission_view(self.admission.as_ref()?, *body),
             Storage::Certified { model, body } => BodyView::Certified { model, body: *body },
             Storage::Numerical(admitted) => admission_view(admitted, 0),
+            Storage::Tolerant(body) => BodyView::Tolerant {
+                import: self.native_admission.as_deref()?,
+                body: *body,
+            },
             Storage::Source => BodyView::Surfaces {
                 source: &self.source.bodies[index],
                 candidate: outcome.healed.as_ref().map(|h| &h.bodies()[0]),
@@ -224,11 +252,100 @@ fn strict_retry(
     }
 }
 
-/// Read first, retain every supported body, then try solid admission. The old
-/// certified/numerical file path stays first; later attempts are private.
-/// A late admission budget refusal leaves the prepaid surface representation.
-/// Only recognition/configuration failures return no readable source graph.
+/// Default opening policy: retain the source, attempt the checked upgrade under
+/// the caller's shared allowance, then fit native carriers with measured local
+/// tolerances. There is no separate checked sub-cap or repeated retention pass.
+///
+/// Exhausted optional work retains the prepaid source representation.
+/// No implicit work cap is installed for native admission.
 pub fn open_step(
+    bytes: &[u8],
+    expected_sha256: &str,
+    step: &StepId,
+    options: ToleranceOptions,
+    dec: &mut Decider,
+) -> Result<OpenedStep, Error> {
+    let before = current_operation_work().used;
+    let (parsed, source, angles) = admission::prepare(bytes, expected_sha256, options, dec)?;
+    let read_work_used = current_operation_work().used.saturating_sub(before);
+    open_prepared(bytes, step, parsed, source, angles, read_work_used, dec)
+}
+
+fn open_prepared(
+    bytes: &[u8],
+    step: &StepId,
+    parsed: Arc<crate::geometry_source::ParsedStep>,
+    source: Arc<TolerantFile>,
+    angles: crate::geometry_source::AngleUnit,
+    read_work_used: u64,
+    dec: &mut Decider,
+) -> Result<OpenedStep, Error> {
+    dec.charge_work(source.bodies.len() as u64 + 1)?;
+    let mut result = OpenedStep {
+        bodies: source
+            .bodies
+            .iter()
+            .map(|_| BodyOutcome {
+                tier: Tier::SurfaceBody,
+                approximate: true,
+                storage: Storage::Source,
+                healed: None,
+                refusal: None,
+                healing_failure: None,
+            })
+            .collect(),
+        source,
+        source_graph: Some(Arc::clone(&parsed)),
+        admission: None,
+        native_admission: None,
+        first_refusal: None,
+        read_work_used,
+        file_admission_work_used: 0,
+    };
+    // Reuse the prepaid source and the caller's ordinary work allowance.
+    // Reserving a separate 1M upgrade both discarded existing admissions and
+    // charged unused reservation units before the native fit could begin.
+    if operation_budget_active() {
+        checked_admit(bytes, step, &mut result, dec);
+    } else {
+        let reservation = catallax_numbers::OperationAllowance::reserve(n::DEFAULT_WORK)?;
+        reservation.run(|| checked_admit(bytes, step, &mut result, dec));
+    }
+    if result
+        .bodies
+        .iter()
+        .all(|body| body.tier != Tier::SurfaceBody)
+    {
+        return Ok(result);
+    }
+    match admission::admit(parsed, Arc::clone(&result.source), angles, dec) {
+        Ok(native) => {
+            for (index, outcome) in result.bodies.iter_mut().enumerate() {
+                if outcome.tier == Tier::SurfaceBody {
+                    outcome.storage = Storage::Tolerant(index);
+                    outcome.tier = Tier::TolerantSolid;
+                    outcome.approximate = true;
+                    outcome.refusal = None;
+                    outcome.healed = None;
+                    outcome.healing_failure = None;
+                }
+            }
+            result.native_admission = Some(Arc::new(native));
+        }
+        Err(error) => {
+            for outcome in &mut result.bodies {
+                if outcome.tier == Tier::SurfaceBody {
+                    outcome.refusal = Some(error.clone());
+                }
+            }
+        }
+    }
+    Ok(result)
+}
+
+/// Explicit checked policy. Global proof and fixed-tolerance admission failures
+/// remain refusals here; they are not native-tolerance defaults.
+pub fn open_checked_step(
     bytes: &[u8],
     expected_sha256: &str,
     step: &StepId,
@@ -237,7 +354,7 @@ pub fn open_step(
 ) -> Result<OpenedStep, Error> {
     if !operation_budget_active() {
         return with_operation_budget(n::DEFAULT_WORK, || {
-            open_step(bytes, expected_sha256, step, options, dec)
+            open_checked_step(bytes, expected_sha256, step, options, dec)
         })
         .0;
     }
@@ -258,16 +375,24 @@ pub fn open_step(
             healing_failure: None,
         })
         .collect();
-    let numerical_options = n::NumericalOptions {
-        tolerance_mm: source.options.maximum_mm.clone(),
-    };
     let mut result = OpenedStep {
-        source,
+        source: Arc::new(source),
+        source_graph: None,
         bodies,
         admission: None,
+        native_admission: None,
         first_refusal: None,
         read_work_used,
         file_admission_work_used: 0,
+    };
+    checked_admit(bytes, step, &mut result, dec);
+    Ok(result)
+}
+
+fn checked_admit(bytes: &[u8], step: &StepId, result: &mut OpenedStep, dec: &mut Decider) {
+    let expected_sha256 = result.source.source_sha256.as_str();
+    let numerical_options = n::NumericalOptions {
+        tolerance_mm: result.source.options.maximum_mm.clone(),
     };
     let before = current_operation_work().used;
     let admission = numerical::import_step(bytes, expected_sha256, step, &numerical_options, dec);
@@ -285,14 +410,14 @@ pub fn open_step(
                 }
                 result.admission = Some(admitted);
                 match dec.check_deadline() {
-                    Ok(()) => return Ok(result),
+                    Ok(()) => return,
                     Err(error) => {
                         result.admission = None;
                         for body in &mut result.bodies {
                             retain_surface(body, error.clone().into());
                         }
                         result.first_refusal = Some(error.into());
-                        return Ok(result);
+                        return;
                     }
                 }
             }
@@ -307,7 +432,7 @@ pub fn open_step(
         Err(error) => result.first_refusal = Some(error),
     }
     if result.first_refusal.as_ref().is_some_and(control_refusal) {
-        return Ok(result);
+        return;
     }
     for index in 0..result.bodies.len() {
         if current_operation_work().exhausted {
@@ -406,7 +531,6 @@ pub fn open_step(
             break;
         }
     }
-    Ok(result)
 }
 
 /// Reverify the immutable source and saved controls, then replay the ordinary
@@ -417,29 +541,46 @@ pub fn reopen(
     step: &StepId,
     dec: &mut Decider,
 ) -> Result<OpenedStep, Error> {
-    if !operation_budget_active() {
-        return with_operation_budget(n::DEFAULT_WORK, || reopen(bytes, controls, step, dec)).0;
+    let before = current_operation_work().used;
+    super::charge_record(controls, dec)?;
+    if controls.format != "catallax-import-tolerances/1" {
+        return Err(super::invalid("unsupported tolerance record format"));
     }
-    let verified = super::reopen(bytes, controls, dec)?;
-    dec.charge_work(verified.bodies.len() as u64)?;
-    if verified
-        .bodies
-        .iter()
-        .any(TolerantBody::has_tolerance_repairs)
-    {
+    if controls.bodies.iter().any(|body| !body.changes.is_empty()) {
         return Err(catallax_numbers::Refusal::new(
             "import.opened-controls",
             "saved source controls must precede healing",
         )
         .into());
     }
-    open_step(
-        bytes,
-        &controls.source_sha256,
-        step,
-        verified.options.clone(),
-        dec,
-    )
+    let parse = |text: &str| {
+        let value = catallax_numbers::Rational::parse(text)
+            .map_err(|_| super::invalid("invalid rational millimetre value"))?;
+        if value.to_string() != text {
+            return Err(super::invalid("noncanonical rational millimetre value"));
+        }
+        Ok(value)
+    };
+    let options = ToleranceOptions {
+        initial_mm: parse(&controls.initial_mm)?,
+        maximum_mm: parse(&controls.maximum_mm)?,
+    };
+    let (parsed, source, angles) =
+        admission::prepare(bytes, &controls.source_sha256, options, dec)?;
+    if source.bodies.len() != controls.bodies.len()
+        || source
+            .bodies
+            .iter()
+            .zip(&controls.bodies)
+            .any(|(body, saved)| body.name != saved.name)
+        || !super::matches_record(&source, controls, dec)?
+    {
+        return Err(super::invalid(
+            "saved source controls differ from the immutable source inventory",
+        ));
+    }
+    let read_work_used = current_operation_work().used.saturating_sub(before);
+    open_prepared(bytes, step, parsed, source, angles, read_work_used, dec)
 }
 
 #[cfg(test)]

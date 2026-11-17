@@ -58,16 +58,8 @@ fn a_good_sibling_remains_solid_while_an_open_body_retains_all_five_faces() {
 fn admission_exhaustion_keeps_the_complete_prepaid_surface_representation() {
     let source = box_step(BoxFixture::new(["2", "3", "4"]));
     let hash = sha256_hex(source.as_bytes());
-    let (graph, read) = with_operation_budget(20_000_000, || {
-        tolerant::read_step(
-            source.as_bytes(),
-            &hash,
-            Default::default(),
-            &mut Decider::default(),
-        )
-    });
-    let graph = graph.unwrap();
-    let (result, work) = with_operation_budget(read.used + 128, || {
+    let (baseline, _) = with_operation_budget(20_000_000, || open(&source));
+    let (result, work) = with_operation_budget(baseline.read_work_used() + 128, || {
         opened::open_step(
             source.as_bytes(),
             &hash,
@@ -78,7 +70,7 @@ fn admission_exhaustion_keeps_the_complete_prepaid_surface_representation() {
     });
     let opened = result.unwrap();
     assert!(work.exhausted);
-    assert_eq!(opened.source(), &graph);
+    assert_eq!(opened.source(), baseline.source());
     assert_eq!(opened.bodies()[0].tier(), Tier::SurfaceBody);
     assert!(opened.first_refusal().is_some());
     assert!(matches!(
@@ -197,5 +189,42 @@ fn retained_surface_sewing_requires_closure_within_the_callers_cap() {
             )
             .unwrap();
         }
+    }
+}
+
+#[test]
+fn default_opening_preserves_checked_material_in_a_multi_body_document() {
+    let fixtures = (0..24)
+        .map(|index| {
+            let mut fixture = BoxFixture::new(["2", "3", "4"]);
+            fixture.origin[0] = r(&(index * 5).to_string());
+            fixture
+        })
+        .collect::<Vec<_>>();
+    let source = boxes_step(&fixtures);
+    let hash = sha256_hex(source.as_bytes());
+    let (checked, checked_work) = with_operation_budget(20_000_000, || {
+        opened::open_checked_step(
+            source.as_bytes(),
+            &hash,
+            &StepId::new("source").unwrap(),
+            Default::default(),
+            &mut Decider::default(),
+        )
+        .unwrap()
+    });
+    assert!(!checked_work.exhausted);
+    let (default, default_work) = with_operation_budget(20_000_000, || open(&source));
+    assert!(!default_work.exhausted);
+    for index in 0..fixtures.len() {
+        assert_eq!(checked.bodies()[index].tier(), Tier::ValidSolid);
+        assert_eq!(
+            default.bodies()[index].tier(),
+            checked.bodies()[index].tier()
+        );
+        let Some(BodyView::Certified { model, body }) = default.body(index) else {
+            panic!("default opening downgraded previously checked material");
+        };
+        assert_eq!(model.body(body).kind, catallax_topology::BodyKind::Solid);
     }
 }

@@ -96,12 +96,12 @@ fn normalized(p: &Placement) -> Result<[P; 3], Refusal> {
 // Spline charts use normalized parameters, transformed back to exact source
 // knots before evaluation. Non-binary decimal endpoints therefore stay inside
 // their exact finite domains even when their binary64 rounding points outward.
-enum SourceChart {
+pub(super) enum SourceChart {
     Analytic(Box<chart::Chart>),
     Spline(BSplineSurface),
 }
 impl SourceChart {
-    fn new(surface: &Surface, dec: &mut Decider) -> Result<Self, Refusal> {
+    pub(super) fn new(surface: &Surface, dec: &mut Decider) -> Result<Self, Refusal> {
         let geometry = match surface {
             Surface::Retained(_) => {
                 return Err(failure(
@@ -395,7 +395,7 @@ impl EdgeCurve {
     }
 }
 
-fn push(
+pub(super) fn push(
     mesh: &mut PreviewMesh<String, String>,
     p: P,
     options: &PreviewOptions,
@@ -474,9 +474,9 @@ fn edge_segment(
 }
 
 #[derive(Clone, Copy)]
-struct Node {
-    uv: Uv,
-    mesh: usize,
+pub(super) struct Node {
+    pub(super) uv: Uv,
+    pub(super) mesh: usize,
 }
 impl HasPosition for Node {
     type Scalar = f64;
@@ -484,9 +484,9 @@ impl HasPosition for Node {
         Point2::new(self.uv[0], self.uv[1])
     }
 }
-type Cdt = ConstrainedDelaunayTriangulation<Node>;
+pub(super) type Cdt = ConstrainedDelaunayTriangulation<Node>;
 
-fn inside(uv: Uv, loops: &[Vec<Node>]) -> bool {
+pub(super) fn inside(uv: Uv, loops: &[Vec<Node>]) -> bool {
     let mut inside = false;
     for lp in loops {
         for i in 0..lp.len() {
@@ -500,7 +500,10 @@ fn inside(uv: Uv, loops: &[Vec<Node>]) -> bool {
     }
     inside
 }
-fn insert(cdt: &mut Cdt, node: Node) -> Result<spade::handles::FixedVertexHandle, Refusal> {
+pub(super) fn insert(
+    cdt: &mut Cdt,
+    node: Node,
+) -> Result<spade::handles::FixedVertexHandle, Refusal> {
     match cdt.locate(node.position()) {
         PositionInTriangulation::OnVertex(handle) => {
             return if cdt.vertex(handle).data().mesh == node.mesh {
@@ -544,16 +547,29 @@ fn seed(
         .map_err(|e| failure(format!("source chart triangulation: {e}")))
 }
 
+pub(super) trait SurfaceSamples {
+    fn position(&self, uv: Uv, dec: &mut Decider) -> Result<P, Refusal>;
+    fn normal(&self, uv: Uv, dec: &mut Decider) -> Result<P, Refusal>;
+}
+impl SurfaceSamples for SourceChart {
+    fn position(&self, uv: Uv, dec: &mut Decider) -> Result<P, Refusal> {
+        SourceChart::position(self, uv, dec)
+    }
+    fn normal(&self, uv: Uv, dec: &mut Decider) -> Result<P, Refusal> {
+        SourceChart::normal(self, uv, dec)
+    }
+}
+
 // Donor rectangle stack and midpoint bisection, without mutable knot rescaling
 // or legacy status/sentinel arrays. Flatness samples are preview heuristics.
-fn seed_rectangles(
-    chart: &SourceChart,
+pub(super) fn seed_rectangles(
+    chart: &impl SurfaceSamples,
     bounds: [Uv; 2],
     loops: &[Vec<Node>],
     cdt: &mut Cdt,
     mesh: &mut PreviewMesh<String, String>,
     options: &PreviewOptions,
-    dec: &Decider,
+    dec: &mut Decider,
 ) -> Result<(), Refusal> {
     let mut stack = vec![(bounds, 0u32)];
     while let Some(([lo, hi], depth)) = stack.pop() {
@@ -681,6 +697,41 @@ fn face_mesh(
         }
     }
     seed_rectangles(&chart, bounds, &loops, &mut cdt, mesh, options, dec)?;
+    finish_face(
+        FaceOutput {
+            name: &face.name,
+            same_sense: face.same_sense,
+            skip_collapsed: false,
+        },
+        &chart,
+        cdt,
+        &loops,
+        mesh,
+        options,
+        dec,
+    )
+}
+
+pub(super) struct FaceOutput<'a> {
+    pub name: &'a str,
+    pub same_sense: bool,
+    pub skip_collapsed: bool,
+}
+
+pub(super) fn finish_face(
+    output: FaceOutput<'_>,
+    chart: &impl SurfaceSamples,
+    mut cdt: Cdt,
+    loops: &[Vec<Node>],
+    mesh: &mut PreviewMesh<String, String>,
+    options: &PreviewOptions,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    let FaceOutput {
+        name,
+        same_sense,
+        skip_collapsed,
+    } = output;
     let start = mesh.triangles.len();
     for _ in 0..32 {
         let mut pending = BTreeMap::new();
@@ -689,12 +740,15 @@ fn face_mesh(
             dec.check_deadline()?;
             let nodes = triangle.vertices().map(|v| *v.data());
             let center = std::array::from_fn(|i| nodes.iter().map(|n| n.uv[i] / 3.0).sum());
-            if !inside(center, &loops) {
+            if !inside(center, loops) {
                 continue;
             }
             let p = nodes.map(|n| mesh.positions[n.mesh]);
             let normal = cross(sub(p[1], p[0]), sub(p[2], p[0]));
             if norm(normal) == 0.0 {
+                if skip_collapsed {
+                    continue;
+                }
                 return Err(failure(
                     "source preview triangle collapsed in spatial coordinates",
                 ));
@@ -722,14 +776,14 @@ fn face_mesh(
                 continue;
             }
             let mut vertices = nodes.map(|n| n.mesh);
-            if !face.same_sense {
+            if !same_sense {
                 vertices.swap(1, 2);
             }
             let first = (0..3).min_by_key(|&i| vertices[i]).unwrap();
             vertices.rotate_left(first);
             triangles.push(Triangle {
                 vertices,
-                face: face.name.clone(),
+                face: name.into(),
             });
         }
         if pending.is_empty() {
@@ -739,7 +793,7 @@ fn face_mesh(
             triangles.sort_unstable_by_key(|t| t.vertices);
             mesh.triangles.extend(triangles);
             mesh.faces.push(PreviewFace {
-                face: face.name.clone(),
+                face: name.into(),
                 triangles: start..mesh.triangles.len(),
             });
             return Ok(());

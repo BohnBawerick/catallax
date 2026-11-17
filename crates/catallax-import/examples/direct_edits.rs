@@ -164,6 +164,15 @@ fn main() {
                     file.check_written(file.bytes(), &mut dec)?;
                     file.bytes().to_vec()
                 }
+                tolerant::opened::BodyView::Tolerant { import, body } => import
+                    .export_body(body, &mut dec)
+                    .map_err(|error| match error {
+                        tolerant::Error::Numerical(error) => error,
+                        other => catallax_numbers::Refusal::new(
+                            "direct.native-export",
+                            format!("{other:?}"),
+                        ),
+                    })?,
                 _ => unreachable!("the editor retains only admitted material"),
             };
             std::fs::write(out.join(name), &bytes).unwrap();

@@ -30,6 +30,18 @@ impl ParsedStep {
         &self,
         dec: &mut Decider,
     ) -> Result<Definition, ImportRefusal> {
+        self.definition(dec, false)
+    }
+
+    pub(crate) fn native_definition(&self, dec: &mut Decider) -> Result<Definition, ImportRefusal> {
+        self.definition(dec, true)
+    }
+
+    fn definition(
+        &self,
+        dec: &mut Decider,
+        preserve_occurrences: bool,
+    ) -> Result<Definition, ImportRefusal> {
         let scale = crate::recognize::source_length_scale(&self.graph, dec)?;
         // A prototype is not an occurrence. Do not publish unplaced duplicates.
         for id in self.entities() {
@@ -37,7 +49,7 @@ impl ParsedStep {
             dec.charge_work(1)
                 .map_err(|_| ImportRefusal::ResourceLimit)?;
             if e.parts.iter().any(|(kind, _)| {
-                kind == "NEXT_ASSEMBLY_USAGE_OCCURRENCE"
+                (!preserve_occurrences && kind == "NEXT_ASSEMBLY_USAGE_OCCURRENCE")
                     || (crate::recognize::unsupported_solid_model(kind)
                         && !matches!(kind.as_str(), "BREP_WITH_VOIDS" | "FACETED_BREP"))
             }) {
@@ -47,15 +59,17 @@ impl ParsedStep {
                     ),
                 });
             }
-            if e.parts.iter().any(|(kind, _)| {
-                matches!(
-                    kind.as_str(),
-                    "MAPPED_ITEM"
-                        | "REPRESENTATION_MAP"
-                        | "REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION"
-                        | "ITEM_DEFINED_TRANSFORMATION"
-                )
-            }) {
+            if !preserve_occurrences
+                && e.parts.iter().any(|(kind, _)| {
+                    matches!(
+                        kind.as_str(),
+                        "MAPPED_ITEM"
+                            | "REPRESENTATION_MAP"
+                            | "REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION"
+                            | "ITEM_DEFINED_TRANSFORMATION"
+                    )
+                })
+            {
                 return Err(ImportRefusal::NotSolid {
                     detail: format!(
                         "#{id}: occurrence placement must be resolved before body admission"

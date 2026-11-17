@@ -166,8 +166,8 @@ fn data_sections(bytes: &[u8]) -> DataSections {
 
 fn census(bytes: &[u8]) -> Value {
     let sections = data_sections(bytes);
-    let graph = match part21::parse(bytes) {
-        Ok(graph) => graph,
+    let document = match part21::parse_document(bytes) {
+        Ok(document) => document,
         Err(_) => {
             return json!({"stage": "faces", "source_parse": "malformed",
                 "coverage_complete": false, "face_kinds": {},
@@ -176,6 +176,7 @@ fn census(bytes: &[u8]) -> Value {
                 "data_section_scan_complete": sections.scan_complete});
         }
     };
+    let graph = document.graph;
     let mut pending: Vec<_> = graph
         .iter()
         .filter(|(_, entity)| root(entity))
@@ -276,6 +277,7 @@ fn census(bytes: &[u8]) -> Value {
         .map(|(_, count)| count)
         .sum::<usize>();
     json!({"stage": "faces", "source_parse": "parsed", "coverage_complete": complete,
+        "file_schemas": document.schemas, "schema_error": document.schema_error,
         "data_sections": sections.count, "unsupported_data_sections": sections.unsupported,
         "data_section_scan_complete": sections.scan_complete,
         "referenced_faces": faces, "face_kinds": kinds, "unreferenced_faces": unreferenced,

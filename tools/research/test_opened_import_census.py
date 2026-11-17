@@ -20,7 +20,7 @@ class StageComparisonTests(unittest.TestCase):
         }
         expected_full = {key: 1 for key in rows}
         expected_full["missing_body"] = 2
-        result = comparison_outcomes(rows, expected_full, {"export_oom", "surface"})
+        result = comparison_outcomes(rows, expected_full, {"export_oom", "surface"}, {})
         self.assertEqual(result["tier_losses"], ["missing_body", "surface"])
         self.assertEqual(result["frozen_valid_export_losses"], ["surface"])
         self.assertEqual(result["baseline_not_measured"], ["export_oom", "open_oom"])
@@ -53,10 +53,53 @@ class StageComparisonTests(unittest.TestCase):
             self.assertEqual(row["outcome"], "full")
             self.assertEqual(row["observed_body_count"], 1)
             self.assertEqual(row["export_validity"], "process_error")
-            comparison = comparison_outcomes({"source": row}, {"source": 1}, {"source"})
+            comparison = comparison_outcomes({"source": row}, {"source": 1}, {"source"}, {})
             self.assertEqual(comparison["tier_losses"], [])
             self.assertEqual(comparison["frozen_valid_export_losses"], [])
             self.assertEqual(comparison["baseline_not_measured"], ["source"])
+
+    def test_checked_loss_and_tolerant_gain_are_aggregate_observations(self):
+        current = {
+            key: dict(
+                outcome="full", observed_body_count=1, all_solids_export_valid=True,
+                valid_solid_body_count=0, repaired_solid_body_count=0,
+                tolerant_solid_body_count=1, surface_body_count=0,
+            ) for key in ["demoted", "improved", "unknown"]
+        }
+        prior = {
+            "demoted": dict(
+                observed_body_count="1", valid_solid_body_count="0",
+                repaired_solid_body_count="1", surface_body_count="0",
+            ),
+            "improved": dict(
+                observed_body_count="1", valid_solid_body_count="0",
+                repaired_solid_body_count="0", surface_body_count="1",
+            ),
+            "unknown": dict(outcome="full", bodies="1"),
+        }
+        current["swapped"] = dict(
+            outcome="full", observed_body_count=2, valid_solid_body_count=0,
+            repaired_solid_body_count=0, tolerant_solid_body_count=1, surface_body_count=1,
+        )
+        prior["swapped"] = dict(
+            observed_body_count=2, valid_solid_body_count=0,
+            repaired_solid_body_count=1, surface_body_count=1,
+        )
+        result = comparison_outcomes(current, {key: row["observed_body_count"] for key, row in current.items()}, set(), prior)
+        self.assertEqual(result["solid_coverage_losses"], [])
+        self.assertEqual(result["tier_losses"], ["demoted", "swapped"])
+        self.assertEqual(result["checked_loss_tolerant_gain_files"], 2)
+        self.assertEqual(result["checked_loss_tolerant_gain"]["swapped"],
+                         dict(checked_loss=1, tolerant_gain=1))
+        self.assertEqual(
+            result["per_file_tier_transitions"]["swapped"]["tier_transition"],
+            "checked_loss_with_tolerant_gain",
+        )
+        self.assertEqual(result["tier_comparison_unknown"], ["unknown"])
+        self.assertEqual(
+            result["per_file_tier_transitions"]["unknown"]["tier_transition"],
+            "unknown_prior_tiers",
+        )
 
 
 

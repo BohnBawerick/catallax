@@ -52,6 +52,7 @@ fn max_x(solid: &DirectSolid) -> String {
                 .bytes()
                 .to_vec()
         }
+        opened::BodyView::Tolerant { import, body } => import.export_body(body, &mut dec).unwrap(),
         _ => panic!("material required"),
     };
     let file = catallax_import::read_step_with_decider(&bytes, &dec).unwrap();

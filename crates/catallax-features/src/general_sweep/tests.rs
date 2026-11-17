@@ -303,7 +303,7 @@ fn authored_line_difference_preserves_the_section_heading() {
         normal_offset: 0.0,
         twist: 0.0,
         end_scale: 1.0,
-        orientation: catallax_recipe::SweepOrientation::RotationMinimizing,
+        orientation: recipe.orientation,
     }
     .at(0.5, &mut dec)
     .unwrap();

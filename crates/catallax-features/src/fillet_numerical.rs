@@ -22,6 +22,8 @@ use catallax_topology::{
 
 #[path = "fillet_rolling.rs"]
 pub(crate) mod rolling;
+#[path = "fillet_numerical_vertex.rs"]
+pub(crate) mod vertex;
 
 fn bad(detail: impl Into<String>) -> Refusal {
     Refusal::new("fillet.numerical-body", detail)

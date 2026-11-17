@@ -87,7 +87,7 @@ impl SectionPlane {
             let delta = &Ball::from_rational(&centre[i], 128) - &self.point[i];
             sum + (&delta * &self.tangent[i])
         });
-        let residual = residual * &self.inverse_length;
+        let residual = &residual * &self.inverse_length;
         Ok(residual.lo().abs().max(residual.hi().abs()))
     }
 }

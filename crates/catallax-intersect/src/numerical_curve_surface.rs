@@ -33,7 +33,7 @@ pub struct NumericalCurveSurfaceHit {
     pub uv: [Rational; 2],
     /// Original trace position enclosure, not an exact meeting definition.
     pub position: [Ball; 3],
-    /// Strict source-piece tangent/target-normal enclosure used for admission.
+    /// Pointwise original tangent/target-normal enclosure at the reported parameters.
     pub normal_dot: Ball,
 }
 
@@ -139,7 +139,7 @@ fn source_curve(
     piece: &TracePiece,
     tolerance: &Rational,
     dec: &mut Decider,
-) -> Result<(BSplineCurve, [Ball; 3]), Refusal> {
+) -> Result<BSplineCurve, Refusal> {
     let start = rounded_point(piece, 0.0, dec)?;
     let end = rounded_point(piece, 1.0, dec)?;
     let mut controls = vec![ControlPoint {
@@ -152,14 +152,13 @@ fn source_curve(
         start,
         end,
     }];
-    let mut derivative: Option<[Ball; 3]> = None;
     while let Some(segment) = pending.pop() {
         dec.charge_work(1)?;
         let lo = exact(segment.lo)?;
         let hi = exact(segment.hi)?;
         let interval = Ball::from_rational(&lo, BITS).hull(&Ball::from_rational(&hi, BITS));
         let failed_enclosure = match piece.taylor(&interval, 2, dec) {
-            Ok(mut jets) => {
+            Ok(jets) => {
                 let curvature = jets[2]
                     .iter()
                     .fold(Rational::zero(), |sum, value| sum + upper(value));
@@ -169,13 +168,6 @@ fn source_curve(
                 let error = curvature * (&width * &width).mul_pow2(-2)
                     + segment.start.error.clone().max(segment.end.error.clone());
                 if error <= *tolerance {
-                    let tangent = jets.swap_remove(1);
-                    derivative = Some(match derivative.take() {
-                        Some(previous) => {
-                            std::array::from_fn(|axis| previous[axis].hull(&tangent[axis]))
-                        }
-                        None => tangent,
-                    });
                     controls.push(ControlPoint {
                         coordinates: segment.end.coordinates,
                     });
@@ -217,12 +209,8 @@ fn source_curve(
         });
     }
     knots.push(1.0);
-    let curve = BSplineCurve::new(1, knots, controls)
-        .map_err(|error| bad(format!("finite trace adaptation failed: {error:?}")))?;
-    Ok((
-        curve,
-        derivative.expect("accepted trace intervals carry derivative enclosures"),
-    ))
+    BSplineCurve::new(1, knots, controls)
+        .map_err(|error| bad(format!("finite trace adaptation failed: {error:?}")))
 }
 
 fn pay(units: u64, deadline: Option<std::time::Instant>) -> bool {
@@ -246,10 +234,11 @@ fn add_report(total: &mut WorkReport, report: WorkReport) {
 /// Searches finite pieces using SMLib's global subdivision and guarded local solver.
 /// Curve proposals have derivative-bounded chord error below tolerance/8; every
 /// reported incidence is checked on the original definitions at 128 bits.
-/// Each report requires a strict source-piece tangent/target-normal enclosure.
+/// Each report requires a strict original-point tangent/target-normal enclosure.
 /// Unresolved contacts, overlap, incomplete search or excessive residual refuse.
 /// Requires one caller-owned work allowance; no tolerance or cap is escalated.
 /// Neither an empty result nor its reports create exact geometry or incidence.
+/// Normal checks are pointwise, not a complete transversality or hit-count proof.
 pub fn patch_meetings(
     trace: &CurveTrace,
     patch: &RationalPatch,
@@ -278,7 +267,7 @@ pub fn patch_meetings(
     let mut samples = Vec::new();
     let mut search_work = WorkReport::default();
     for (index, piece) in trace.pieces().iter().enumerate() {
-        let (curve, derivative) = source_curve(piece, &tolerance_mm.mul_pow2(-3), dec)?;
+        let curve = source_curve(piece, &tolerance_mm.mul_pow2(-3), dec)?;
         let (solutions, work) = global_curve_intersect_with_work(
             &surface,
             float_domain,
@@ -321,7 +310,9 @@ pub fn patch_meetings(
             {
                 return Err(bad("a numerical meeting leaves its finite source domains"));
             }
-            let position = piece.evaluate(&Ball::from_rational(&parameter, BITS), dec)?;
+            let mut jets = piece.taylor(&Ball::from_rational(&parameter, BITS), 1, dec)?;
+            let derivative = jets.pop().expect("first derivative requested");
+            let position = jets.pop().expect("position requested");
             let at = uv.clone().map(Real::from);
             let point = patch.point_at(&at, dec)?;
             let target = [
@@ -350,7 +341,7 @@ pub fn patch_meetings(
             if normal_dot.contains_zero() {
                 return Err(Refusal::new(
                     "intersect.numerical-nontransverse",
-                    "the original source-piece crossing is unresolved, tangent or overlapping",
+                    "the original sampled contact has an unresolved normal sign",
                 ));
             }
             samples.push(NumericalSample {
@@ -372,8 +363,8 @@ pub fn patch_meetings(
     }];
     if !samples.is_empty() {
         checks.push(NumericalCheck::Passed {
-            name: "curve-surface.strict-oriented-crossing-enclosure".into(),
-            scope: "every-retained-source-piece-at-the-reported-target-normal".into(),
+            name: "curve-surface.original-sample-normal-sign".into(),
+            scope: "every-reported-original-parameter-pair".into(),
         });
         checks.push(NumericalCheck::Samples {
             name: "curve-surface.original-source-incidence".into(),

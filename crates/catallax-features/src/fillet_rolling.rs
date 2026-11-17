@@ -100,7 +100,7 @@ pub(crate) fn construct(
     }
     let mut output = Vec::new();
     let grouped = chains::group(model, body, selected, radius, tolerance, dec)?;
-    crate::fillet_limit::check_rolling_contacts(
+    crate::fillet_build::fillet_limit::check_rolling_contacts(
         model,
         body,
         grouped.iter().flat_map(|chain| chain.edges.iter()),

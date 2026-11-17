@@ -261,8 +261,11 @@ fn generator_limit(
     {
         return Ok(None);
     }
-    let start = model.geom().position(model.vertex(edge.start).point);
-    let end = model.geom().position(model.vertex(edge.end).point);
+    let (Some(start), Some(end)) = (edge.start, edge.end) else {
+        return Ok(None);
+    };
+    let start = model.geom().position(model.vertex(start).point);
+    let end = model.geom().position(model.vertex(end).point);
     let same = source
         .faces
         .map(|face| model.face(face).sense == Sense::Same);
@@ -316,7 +319,7 @@ fn generator_limit(
         .origin
         .minus(&axis_foot(cylinder, &line.origin))
         .dot(&normal)
-        - &(&k * &limit);
+        - (&k * &limit);
     let contact = if sign(&remaining, dec)? == Sign::Positive {
         let direction = sign(&across, dec)?;
         if direction == Sign::Zero {
@@ -360,8 +363,11 @@ fn reached_faces(
             if !matches!(model.geom().curve(edge.curve), Curve::Line(_)) {
                 continue;
             }
-            let start = model.geom().position(model.vertex(edge.start).point);
-            let end = model.geom().position(model.vertex(edge.end).point);
+            let (Some(start), Some(end)) = (edge.start, edge.end) else {
+                continue;
+            };
+            let start = model.geom().position(model.vertex(start).point);
+            let end = model.geom().position(model.vertex(end).point);
             let direction = end.minus(&start);
             let square = direction.norm_squared();
             if sign(&square, dec)? != Sign::Positive {

@@ -39,7 +39,7 @@ mod fillet_equal_crossing;
 #[path = "fillet_inscribed.rs"]
 mod fillet_inscribed;
 #[path = "fillet_limit.rs"]
-mod fillet_limit;
+pub(crate) mod fillet_limit;
 #[path = "fillet_mixed.rs"]
 mod fillet_mixed;
 #[path = "fillet_ring_end.rs"]

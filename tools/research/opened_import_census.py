@@ -163,11 +163,17 @@ def raw_native_document(path, entry):
             assert Interface_Static.SetIVal_s(key, value), key
         assert reader.ReadFile(str(path)) == IFSelect_RetDone
         model = reader.StepModel()
+        # This writer emits one DATA instance per line, in entity order.
+        # OCP 8.0.1.1 leaves IdentLabel unset (zero), so bind the actual P21
+        # instance numbers to reader record ordinals, not to optional labels.
+        import re
+        identifiers = [int(value) for value in re.findall(rb"^#([0-9]+)=", path.read_bytes(), re.M)]
+        assert len(identifiers) == model.NbEntities() and len(set(identifiers)) == len(identifiers)
         labelled = {}
-        for index in range(1, model.NbEntities() + 1):
+        for index, identifier in enumerate(identifiers, 1):
             entity = model.Value(index)
             if isinstance(entity, StepShape_ManifoldSolidBrep):
-                labelled[model.IdentLabel(entity)] = entity
+                labelled[identifier] = entity
         roots = []
         for root in entry["source_roots"]:
             entities = [labelled[entity] for entity in root["entities"]]

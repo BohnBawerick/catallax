@@ -400,3 +400,30 @@ These observations show aggregate request cost, not a demonstrated
 stagnating station. No allowance, tolerance, regularity guard or density
 limit changed. Fitting remains with its owner; no fitter-interface change
 is proposed from these measurements.
+
+## Finite native rim-end contact
+
+At `f63f7f35e570e9b6bf93484ae638bd5e9be0a137`, the five-edge owner
+selection omitting the thin-wall edge reaches its strict R8 end-contact
+bound before fitting:
+
+| Request scope | Work | Result |
+|---|---:|---|
+| Whole source, selection and R8 constructor | 518,811 | Passing regression; exact 8 mm hint and original x=32 end wall |
+| Ordinary application source/checkpoint and five-edge R8 call | 1,256,975 | Unexhausted typed refusal, actual input face #64, terminal 8 mm hint |
+
+The constructor control takes 0.07s. Both scopes remain below 20M.
+The complete compile/control/ordinary-probe chain takes 178.81s,
+including 1m43s library compilation and 1m07s standalone compilation.
+
+The initial endpoint-derived distance left a rational bound inside an
+unsimplified algebraic expression and produced a conservative 7.999 mm
+legacy floor. The unchanged exact-8 assertion caught it. Computing distance
+from the native line removes unrelated trim roots; finite endpoint bounds
+still prove that the critical foot belongs to the actual original coedge.
+The accessor, tolerance and assertion were not weakened.
+
+This is loss of a strict regular termination at the actual end neighbour,
+not absence of all support-offset centres or a global impossibility claim.
+The refusal states that continuation needs different topology. Successful
+five-edge R5 construction, full-rim junctions and body admission remain open.

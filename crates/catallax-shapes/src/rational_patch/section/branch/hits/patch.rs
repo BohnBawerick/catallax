@@ -1,4 +1,4 @@
-//! Exact clipping through disjoint hulls or a shared, jointly embedded boundary.
+//! Exact clipping through hulls, retained cuts, or a jointly embedded boundary.
 
 use super::*;
 use crate::SplineBoundary;
@@ -16,6 +16,23 @@ fn hull(patch: &RationalPatch, dec: &mut Decider) -> Result<[Interval; 3], Refus
         }
     }
     Ok(bounds)
+}
+
+fn cut_misses(
+    surface: &SectionSurface,
+    patch: &RationalPatch,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    for (_, controls) in patch.bezier_spans(dec)? {
+        if !surface.retains_span(controls, dec)? {
+            continue;
+        }
+        let (values, _) = surface.net(controls, patch.carrier().degrees(), dec)?;
+        if uniform(&values, dec)?.is_none() {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 fn bezier(patch: &RationalPatch) -> bool {
@@ -206,24 +223,30 @@ impl PatchSectionBranch {
     /// A complete exact finite meeting with a native patch when cheap certificates apply.
     ///
     /// Positive spline weights make disjoint Cartesian control hull boxes an
-    /// exclusion proof. Opposite Bezier sides with equal rational controls and
-    /// weights identify the same boundary in normalized parameters. If one
-    /// common projected Jacobian proves their joined support injective, the
-    /// patches can meet only on that boundary; its scalar cut roots retain the
-    /// section solver's original exact representation. No numerical meeting
-    /// becomes an incidence fact. `None` means neither certificate applied.
+    /// exclusion proof. A strictly signed Bernstein net for the retained cut
+    /// also excludes a target patch. Opposite Bezier sides with equal rational
+    /// controls and weights identify the same normalized boundary. A common
+    /// strictly monotone projection proves the supports meet only there; its
+    /// scalar cut roots retain the section solver's exact representation.
+    /// Finite side contacts need not be transverse. No numerical meeting
+    /// becomes an incidence fact. `None` means no exact certificate applied.
     pub fn patch_hits(
         &self,
         other: &RationalPatch,
         dec: &mut Decider,
     ) -> Result<Option<SectionHits>, Refusal> {
+        if let [source] = self.charts.as_ref() {
+            let (a, b) = (hull(source, dec)?, hull(other, dec)?);
+            if (0..3).any(|axis| a[axis].hi() < b[axis].lo() || b[axis].hi() < a[axis].lo()) {
+                return Ok(Some(SectionHits::Points(Vec::new())));
+            }
+        }
+        if cut_misses(&self.surface, other, dec)? {
+            return Ok(Some(SectionHits::Points(Vec::new())));
+        }
         let [source] = self.charts.as_ref() else {
             return Ok(None);
         };
-        let (a, b) = (hull(source, dec)?, hull(other, dec)?);
-        if (0..3).any(|axis| a[axis].hi() < b[axis].lo() || b[axis].hi() < a[axis].lo()) {
-            return Ok(Some(SectionHits::Points(Vec::new())));
-        }
         if !bezier(source) || !bezier(other) {
             return Ok(None);
         }

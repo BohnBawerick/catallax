@@ -27,6 +27,11 @@ fn captured_native_shared_boundary_preserves_exact_endpoint() {
             }
             other => panic!("the original exact endpoint changed: {other:?}"),
         }
+        let diagonal = fixture::diagonal_target(&mut dec);
+        let Some(SectionHits::Points(points)) = branch.patch_hits(&diagonal, &mut dec).unwrap() else {
+            panic!("the captured diagonal patch strictly misses the retained cylinder");
+        };
+        assert!(points.is_empty());
         assert!(branch.patch_hits(&source, &mut dec).unwrap().is_none());
     });
     assert!(!work.exhausted, "{work:?}");

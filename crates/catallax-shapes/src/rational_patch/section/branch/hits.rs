@@ -31,7 +31,7 @@ struct Hit {
 pub enum SectionHits {
     /// The branch lies on the surface.
     Contained,
-    /// Transverse crossings, in traversal order.
+    /// Finite meetings, in traversal order; each solver specifies contact guarantees.
     Points(Vec<Point3>),
 }
 

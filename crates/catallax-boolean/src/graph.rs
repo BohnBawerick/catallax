@@ -288,28 +288,6 @@ fn carrier_hits(
                     complete.insert(surface, Vec::new());
                     continue;
                 }
-                if let (
-                    catallax_shapes::Curve::PatchSection(branch),
-                    catallax_shapes::Surface::BSpline(
-                        catallax_shapes::SplineSupport::RationalPatch(target),
-                    ),
-                ) = (model.geom().curve(curve), model.geom().surface(surface))
-                {
-                    eprintln!(
-                        "P8_UNRESOLVED_NATIVE_PAIR source_domain={:?} source={:?} cut={:?} target_domain={:?} target={:?}",
-                        branch.charts()[0].domain(),
-                        branch.charts()[0].carrier(),
-                        branch.surface(),
-                        target.domain(),
-                        target.carrier()
-                    );
-                } else {
-                    eprintln!(
-                        "P8_UNRESOLVED_OTHER_PAIR curve={:?} surface={:?}",
-                        model.geom().curve(curve),
-                        model.geom().surface(surface)
-                    );
-                }
                 return Err(named_curve(model, curve, surface, refusal));
             }
         };

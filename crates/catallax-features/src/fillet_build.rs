@@ -1083,7 +1083,7 @@ fn hull(
 ) -> Result<Option<Vec<Point3>>, Refusal> {
     let e = model.edge(run.edge);
     if e.start == e.end
-        && let Some(points) = fillet_clearance::ring_hull(&run.definition, dec)?
+        && let Some(points) = run.definition.ring_hull(dec)?
     {
         return Ok(Some(points));
     }
@@ -2201,7 +2201,7 @@ fn corner_guard(
     incident: &BTreeSet<FaceId>,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
-    let hull = fillet_clearance::corner_hull(&corner.sector);
+    let hull = corner.sector.hull();
     surface_guard(
         model,
         body,

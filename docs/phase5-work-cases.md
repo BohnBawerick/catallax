@@ -174,3 +174,24 @@ The same run builds the cone rim at 13,724,976 work and checks the
 three-plane common ball and singular-contact refusal at 5,746. Successful
 cone continuation retains 259 checked stations. No budget or tolerance was
 widened. Further walker work follows the ordered trimmed-clearance repairs.
+
+## Four-contact fan material queries, 17 November
+
+The R5 concurrent four-plane apex builds in 230,473 work and writes STEP in
+1,607,549. Its four B-rep containment requests exceed the 20M target but stay
+within the unchanged 100M application allowance:
+
+| Point, mm | Material | B-rep query work |
+|---|---|---:|
+| (0, 0, 7.9) | Inside | 28,360,368 |
+| (0, 0, 8) | Outside | 27,267,790 |
+| (2, 0, 7) | Inside | 53,190,147 |
+| (2, 0, 7.8) | Outside | 35,775,093 |
+
+Field compilation uses 14,474 work; each corresponding field query uses
+257,785. An earlier test incorrectly shared one allowance across compilation
+and all eight independent queries. All four controls now pass with a separate
+unchanged 100M allowance per public request; none was dropped or weakened.
+Raw OCP 8.0.1.1 independently agrees with all four controls at 1e-7 mm and
+checks a valid closed single solid and a material-removing edit, with healing,
+SameParameter and TransferRoots off. Query cost remains a phase-5 case.

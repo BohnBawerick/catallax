@@ -88,14 +88,8 @@ pub(super) fn build(
         )?);
         return Ok(None);
     }
-    let sum = directions
-        .iter()
-        .fold(Vector3::zero(), |sum, n| sum.plus(n));
-    for n in &directions {
-        if sign(&sum.dot(n), dec)? != Sign::Positive {
-            return Err(bad("corner contact normals need one open hemisphere"));
-        }
-    }
+    let hull =
+        crate::fillet_corner::SphereSector::contact_hull(&centre, &radius, &directions, dec)?;
     let mut pairs = Vec::with_capacity(active.len());
     let mut degree = vec![0; faces.len()];
     for i in active {
@@ -174,7 +168,6 @@ pub(super) fn build(
         reference,
         dec,
     )?);
-    let hull = fillet_clearance::fan_hull(&centre, &radius, &directions, &sum);
     surface_guard(model, body, &surface, Some(&hull), incident, dec)?;
     let feet: Vec<_> = directions
         .iter()

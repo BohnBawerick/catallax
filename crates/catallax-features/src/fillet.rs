@@ -550,6 +550,67 @@ impl FilletDefinition {
         Ok(Some(points))
     }
 
+    /// Encloses the complete circular sweep of the meridian triangle from
+    /// [`Self::arc_hull`]. Only plane, cylinder and cone meridians are straight;
+    /// other support families return `None` rather than an unproved bound.
+    pub fn ring_hull(&self, dec: &mut Decider) -> Result<Option<Vec<Point3>>, Refusal> {
+        let (Curve::Circle(edge), [Curve::Circle(a), Curve::Circle(b)]) =
+            (&self.edge, &self.contacts)
+        else {
+            return Ok(None);
+        };
+        if self.supports.iter().any(|surface| {
+            !matches!(
+                surface,
+                Surface::Plane(_) | Surface::Cylinder(_) | Surface::Cone(_)
+            )
+        }) {
+            return Ok(None);
+        }
+        let mut low = [Real::zero(), Real::zero(), Real::zero()];
+        let mut high = low.clone();
+        for (index, circle) in [edge, a, b].into_iter().enumerate() {
+            let squared = circle.normal.norm_squared();
+            for axis in 0..3 {
+                let normal = [&circle.normal.x, &circle.normal.y, &circle.normal.z][axis];
+                let centre = [&circle.center.x, &circle.center.y, &circle.center.z][axis];
+                let extent =
+                    (&circle.radius_sq * &(Real::one() - &normal.square() / &squared)).sqrt();
+                let lo = centre - &extent;
+                let hi = centre + &extent;
+                if index == 0 || sign(&(&lo - &low[axis]), dec)? == Sign::Negative {
+                    low[axis] = lo;
+                }
+                if index == 0 || sign(&(&hi - &high[axis]), dec)? == Sign::Positive {
+                    high[axis] = hi;
+                }
+            }
+        }
+        Ok(Some(
+            (0..8)
+                .map(|mask| {
+                    Point3::new(
+                        if mask & 1 == 0 {
+                            low[0].clone()
+                        } else {
+                            high[0].clone()
+                        },
+                        if mask & 2 == 0 {
+                            low[1].clone()
+                        } else {
+                            high[1].clone()
+                        },
+                        if mask & 4 == 0 {
+                            low[2].clone()
+                        } else {
+                            high[2].clone()
+                        },
+                    )
+                })
+                .collect(),
+        ))
+    }
+
     /// Whether this strip and another consume overlapping bands of one shared
     /// support, given each strip's support index for it. Rails that pass each
     /// other can leave both feet in the open face. Plane-plane pairs are left

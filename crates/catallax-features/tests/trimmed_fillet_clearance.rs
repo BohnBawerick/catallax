@@ -1,11 +1,11 @@
 //! Finite fillet regions may be clear when their infinite carriers intersect.
 
 use catallax_boolean::Containment;
-use catallax_features::{evaluate, Built};
-use catallax_numbers::{with_operation_budget, Decider, Outcome, Rational};
+use catallax_features::{Built, evaluate};
+use catallax_numbers::{Decider, Outcome, Rational, with_operation_budget};
 use catallax_recipe::Recipe;
 use catallax_shapes::RPoint3;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::f64::consts::PI;
 
 fn pose(x: &str, y: &str, z: &str) -> Value {
@@ -113,6 +113,30 @@ fn trimmed_boss_base_rings_stop_at_the_contact_radius_not_the_full_torus() {
                 ring_selection("joined", "boss", radius),
             ],
         );
+        if radius == "6" {
+            let (answer, work) = with_operation_budget(100_000_000, || {
+                catallax_field::Plan::compile_checked(built.recipe(), &mut Decider::default())
+            });
+            println!("boss-base-r6 field compilation {work:?}");
+            assert!(!work.exhausted, "{work:?}");
+            let plan = answer.unwrap();
+            let mut storage = catallax_field::Workspace::default();
+            for (x, z, expected) in [
+                ("27/2", "43/2", catallax_field::Location::Inside),
+                ("15", "23", catallax_field::Location::Outside),
+            ] {
+                let point = RPoint3::new(
+                    Rational::parse(x).unwrap(),
+                    Rational::zero(),
+                    Rational::parse(z).unwrap(),
+                );
+                let (answer, work) = with_operation_budget(100_000_000, || {
+                    plan.proven_checked(&point, &mut storage, &mut Decider::default())
+                });
+                assert!(!work.exhausted, "{work:?}");
+                assert_eq!(answer.unwrap().location, expected, "{point:?}");
+            }
+        }
         let radius: f64 = radius.parse().unwrap();
         check_volume(
             &built,

@@ -5,7 +5,7 @@ use catallax_numbers::{Ball, Decider, NumericalRepair};
 use catallax_shapes::Surface;
 
 mod numerical_cases;
-use numerical_cases::{from_model, q};
+use numerical_cases::q;
 
 #[test]
 fn application_outcome_retains_repair_evidence_and_export_provenance() {
@@ -33,13 +33,35 @@ fn application_outcome_retains_repair_evidence_and_export_provenance() {
             .unwrap(),
         );
         let built = catallax_features::evaluate(&recipe, &mut Decider::default()).unwrap();
-        let mut definition = from_model(&built.model, built.result, "0");
-        let origins = built
-            .model
-            .faces_of_body(built.result)
-            .into_iter()
-            .zip(&definition.faces)
-            .map(|(face, numerical)| {
+        let mut definition = numerical_cases::fixture("0");
+        let source_faces = built.model.faces_of_body(built.result);
+        let roof_normal = catallax_shapes::Vector3::new(0.into(), 0.into(), 1.into());
+        let origins = definition
+            .faces
+            .iter()
+            .map(|numerical| {
+                let normal = match &numerical.surface {
+                    Surface::Plane(plane) => &plane.normal,
+                    Surface::BSpline(_) if numerical.key == "roof" => &roof_normal,
+                    _ => panic!("the retained fixture is a cube"),
+                };
+                let face = source_faces
+                    .iter()
+                    .copied()
+                    .find(|face| {
+                        let source = built.model.face(*face);
+                        let Surface::Plane(plane) = built.model.geom().surface(source.surface)
+                        else {
+                            panic!("the authored cube has planar faces");
+                        };
+                        let sign = normal.dot(&plane.normal).as_rational().unwrap().sign();
+                        sign == if source.sense == numerical.sense {
+                            catallax_numbers::Sign::Positive
+                        } else {
+                            catallax_numbers::Sign::Negative
+                        }
+                    })
+                    .unwrap();
                 (
                     numerical.key.clone(),
                     built.model.face_origins(face).to_vec(),

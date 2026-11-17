@@ -17,6 +17,8 @@ pub mod correspondence;
 mod curved;
 mod cylinder_radius;
 mod deviation;
+/// Transactional direct edits with retained imported source and numerical results.
+pub mod direct;
 mod exact;
 mod gap;
 /// Retained STEP geometry declarations for tolerant import.

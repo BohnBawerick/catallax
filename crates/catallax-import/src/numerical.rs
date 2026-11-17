@@ -15,6 +15,7 @@ use crate::{ImportRefusal, RepairRecord, Solid, Vec3};
 mod analytic;
 mod cones;
 
+pub(crate) use analytic::constructed::sew_with_reconstruction;
 pub use analytic::constructed::{SewnSurfaceBody, sew_constructed_surfaces};
 
 /// Numerical reconstruction of finite parameter trims, retaining the immutable

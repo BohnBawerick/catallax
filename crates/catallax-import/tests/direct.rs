@@ -1,0 +1,393 @@
+//! Material endpoints, source units and transactional refusal at a crossed face.
+mod common;
+use catallax_import::{
+    Surface,
+    direct::{DirectSolid, Edit},
+    numerical::ImportError,
+    sha256_hex,
+    tolerant::opened,
+};
+use catallax_numbers::{Decider, with_operation_budget};
+use catallax_recipe::StepId;
+use common::{BoxFixture, Unit, box_step, r};
+
+fn source() -> DirectSolid {
+    let mut fixture = BoxFixture::new(["0.002", "0.003", "0.004"]);
+    fixture.unit = Unit::Metre;
+    let text = box_step(fixture);
+    let opened = opened::open_step(
+        text.as_bytes(),
+        &sha256_hex(text.as_bytes()),
+        &StepId::new("direct-source").unwrap(),
+        Default::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    DirectSolid::from_opened(std::sync::Arc::new(opened), 0, &mut Decider::default()).unwrap()
+}
+fn positive_x(solid: &DirectSolid) -> String {
+    solid
+        .faces()
+        .iter()
+        .find(|f| {
+            matches!(&f.surface,
+        Surface::Plane(p) if p.origin[0] == r("2") && !p.axis[0].is_zero())
+        })
+        .unwrap()
+        .name
+        .clone()
+}
+fn max_x(solid: &DirectSolid) -> String {
+    let mut dec = Decider::default();
+    let bytes = match solid.body() {
+        opened::BodyView::Certified { model, body } => {
+            let mut bytes = Vec::new();
+            catallax_step::write_step(model, &[body], &Default::default(), &mut dec, &mut bytes)
+                .unwrap();
+            bytes
+        }
+        opened::BodyView::Numerical(body) => {
+            catallax_step::numerical::build(body, &Default::default(), &mut dec)
+                .unwrap()
+                .bytes()
+                .to_vec()
+        }
+        _ => panic!("material required"),
+    };
+    let file = catallax_import::read_step_with_decider(&bytes, &dec).unwrap();
+    file.solids[0]
+        .faces
+        .iter()
+        .flat_map(|f| &f.loops)
+        .flat_map(|b| &b.edges)
+        .flat_map(|e| [&e.start.point[0], &e.end.point[0]])
+        .max()
+        .unwrap()
+        .to_string()
+}
+
+#[test]
+fn imported_metre_units_do_not_scale_a_millimetre_edit() {
+    let ((), work) = with_operation_budget(100_000_000, || {
+        let before = source();
+        let after = before
+            .apply(
+                Edit::OffsetFace {
+                    face: positive_x(&before),
+                    distance_mm: r("1"),
+                },
+                Default::default(),
+                Default::default(),
+                &mut Decider::default(),
+            )
+            .unwrap();
+        assert_eq!(max_x(&before), "2");
+        assert_eq!(max_x(&after), "3");
+        assert_eq!(after.source_faces(), before.faces());
+        assert_eq!(after.source_sha256(), before.source_sha256());
+        assert!(before.history().is_empty());
+    });
+    assert!(!work.exhausted);
+}
+
+#[test]
+fn crossing_the_opposite_support_refuses_without_corrupting_the_input() {
+    let ((), work) = with_operation_budget(100_000_000, || {
+        let before = source();
+        let key = positive_x(&before);
+        let refusal = before
+            .apply(
+                Edit::OffsetFace {
+                    face: key.clone(),
+                    distance_mm: r("-3"),
+                },
+                Default::default(),
+                Default::default(),
+                &mut Decider::default(),
+            )
+            .unwrap_err();
+        assert!(matches!(refusal, ImportError::Numerical(r) if r.code == "direct.topology-change"));
+        let after = before
+            .apply(
+                Edit::MoveFace {
+                    face: key,
+                    translation_mm: [r("1"), r("0"), r("0")],
+                },
+                Default::default(),
+                Default::default(),
+                &mut Decider::default(),
+            )
+            .unwrap();
+        assert_eq!(max_x(&before), "2");
+        assert_eq!(max_x(&after), "3");
+        assert_eq!(before.faces(), before.source_faces());
+    });
+    assert!(!work.exhausted);
+}
+
+#[test]
+fn inherited_line_gap_is_bounded_and_reconstructed_before_step_export() {
+    let ((), work) = with_operation_budget(100_000_000, || {
+        let mut text = box_step(BoxFixture::new(["2", "3", "4"]));
+        let line = text
+            .lines()
+            .find(|line| line.contains("=LINE("))
+            .unwrap()
+            .to_owned();
+        let (key, args) = line.split_once("=LINE(").unwrap();
+        let args: Vec<_> = args.strip_suffix(");").unwrap().split(',').collect();
+        let origin_key = args[1].trim();
+        let origin = text
+            .lines()
+            .find(|line| line.starts_with(&format!("{origin_key}=")))
+            .unwrap();
+        let coordinates = origin
+            .split_once(",(")
+            .unwrap()
+            .1
+            .strip_suffix("));")
+            .unwrap();
+        let coordinates: Vec<_> = coordinates.split(',').map(r).collect();
+        let next = 1 + text
+            .lines()
+            .filter_map(|line| {
+                line.strip_prefix('#')?
+                    .split_once('=')?
+                    .0
+                    .parse::<u64>()
+                    .ok()
+            })
+            .max()
+            .unwrap();
+        let noise = [r("0.000001"), r("0.000002"), r("0.000003")];
+        let point = format!(
+            "#{next}=CARTESIAN_POINT('',({},{},{}));",
+            common::dec(&(&coordinates[0] + &noise[0])),
+            common::dec(&(&coordinates[1] + &noise[1])),
+            common::dec(&(&coordinates[2] + &noise[2]))
+        );
+        text = text.replace(
+            &line,
+            &format!("{key}=LINE({},#{next},{});", args[0], args[2]),
+        );
+        text = text.replace(
+            "ENDSEC;\nEND-ISO-10303-21;",
+            &format!("{point}\nENDSEC;\nEND-ISO-10303-21;"),
+        );
+        let vertex_line = text
+            .lines()
+            .find(|line| line.contains("=CARTESIAN_POINT(") && line.ends_with(",0.0));"))
+            .unwrap()
+            .to_owned();
+        let (prefix, coordinates) = vertex_line.split_once(",(").unwrap();
+        let coordinates: Vec<_> = coordinates
+            .strip_suffix("));")
+            .unwrap()
+            .split(',')
+            .map(r)
+            .collect();
+        let replacement = format!(
+            "{prefix},({},{},{}));",
+            common::dec(&(&coordinates[0] + &noise[0])),
+            common::dec(&(&coordinates[1] + &noise[1])),
+            common::dec(&(&coordinates[2] + &noise[2]))
+        );
+        text = text.replace(&vertex_line, &replacement);
+        let opened = opened::open_step(
+            text.as_bytes(),
+            &sha256_hex(text.as_bytes()),
+            &StepId::new("line-gap").unwrap(),
+            Default::default(),
+            &mut Decider::default(),
+        )
+        .unwrap();
+        let before =
+            DirectSolid::from_opened(std::sync::Arc::new(opened), 0, &mut Decider::default())
+                .unwrap();
+        // The first source line lies on x=0; edit x=2 so its noisy carrier
+        // remains untouched by the requested support reconstruction.
+        let cap = positive_x(&before);
+        let after = before
+            .apply(
+                Edit::OffsetFace {
+                    face: cap,
+                    distance_mm: r("1"),
+                },
+                Default::default(),
+                Default::default(),
+                &mut Decider::default(),
+            )
+            .unwrap();
+        let repairs = &after.history()[0].line_repairs;
+        assert!(
+            repairs
+                .iter()
+                .any(|repair| !repair.error_upper_mm.is_zero())
+        );
+        assert!(
+            repairs
+                .iter()
+                .all(|repair| repair.error_upper_mm <= r("0.01"))
+        );
+        let vertices = &after.history()[0].vertex_repairs;
+        assert!(!vertices.is_empty());
+        assert!(
+            vertices
+                .iter()
+                .all(|repair| repair.error_upper_mm <= r("0.01"))
+        );
+        let opened::BodyView::Numerical(body) = after.body() else {
+            panic!("numerical edit required")
+        };
+        let file =
+            catallax_step::numerical::build(body, &Default::default(), &mut Decider::default())
+                .unwrap();
+        file.check_written(file.bytes(), &mut Decider::default())
+            .unwrap();
+        let emitted =
+            catallax_import::read_step_with_decider(file.bytes(), &Decider::default()).unwrap();
+        let highest = emitted.solids[0]
+            .faces
+            .iter()
+            .flat_map(|f| &f.loops)
+            .flat_map(|b| &b.edges)
+            .flat_map(|e| [&e.start.point[0], &e.end.point[0]])
+            .max()
+            .unwrap();
+        assert_eq!(highest, &r("3"));
+        for edge in emitted.solids[0]
+            .faces
+            .iter()
+            .flat_map(|f| &f.loops)
+            .flat_map(|b| &b.edges)
+        {
+            let catallax_import::Curve::Line(origin, direction) = &edge.curve else {
+                panic!("line box")
+            };
+            for vertex in [&edge.start, &edge.end] {
+                let delta: [_; 3] = std::array::from_fn(|i| &vertex.point[i] - &origin[i]);
+                for i in 0..3 {
+                    let j = (i + 1) % 3;
+                    assert_eq!(&delta[i] * &direction[j], &delta[j] * &direction[i]);
+                }
+            }
+        }
+        assert_eq!(before.source_faces(), after.source_faces());
+    });
+    assert!(!work.exhausted);
+}
+
+fn imported(text: &str) -> DirectSolid {
+    let opened = opened::open_step(
+        text.as_bytes(),
+        &sha256_hex(text.as_bytes()),
+        &StepId::new("review-control").unwrap(),
+        Default::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    DirectSolid::from_opened(std::sync::Arc::new(opened), 0, &mut Decider::default()).unwrap()
+}
+
+fn shift_vertex_points(text: &str, delta: [catallax_numbers::Rational; 3]) -> String {
+    let points: std::collections::BTreeSet<_> = text
+        .lines()
+        .filter(|line| line.contains("=VERTEX_POINT("))
+        .map(|line| line.rsplit_once('#').unwrap().1.split(')').next().unwrap())
+        .collect();
+    text.lines()
+        .map(|line| {
+            let Some((id, _)) = line.strip_prefix('#').and_then(|line| line.split_once('=')) else {
+                return line.to_owned();
+            };
+            if !points.contains(id) {
+                return line.to_owned();
+            }
+            let (prefix, coords) = line.split_once(",(").unwrap();
+            let coords: Vec<_> = coords
+                .strip_suffix("));")
+                .unwrap()
+                .split(',')
+                .map(r)
+                .collect();
+            format!(
+                "{prefix},({},{},{}));",
+                common::dec(&(&coords[0] + &delta[0])),
+                common::dec(&(&coords[1] + &delta[1])),
+                common::dec(&(&coords[2] + &delta[2]))
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[test]
+fn cylinder_resize_recomputes_noisy_radial_and_axial_endpoints() {
+    use catallax_import::direct::Construction;
+    let ((), work) = with_operation_budget(100_000_000, || {
+        for tangent in ["0", "0.0003"] {
+            let mut soup = common::Soup::new();
+            soup.cylinder(["0", "0", "0"], 2, "4", "1", common::Caps::Both);
+            let noisy = shift_vertex_points(&soup.finish(), [r("0.001"), r(tangent), r("0.0005")]);
+            let before = imported(&noisy);
+            assert!(matches!(before.body(), opened::BodyView::Numerical(_)));
+            let wall = before
+                .faces()
+                .iter()
+                .find(|face| matches!(face.surface, Surface::Cylinder(..)))
+                .unwrap();
+            let old_vertex = &wall.loops[0].edges[0].start.point;
+            assert_ne!(
+                &old_vertex[0] * &old_vertex[0] + &old_vertex[1] * &old_vertex[1],
+                r("1")
+            );
+            let Surface::Cylinder(frame, _) = &wall.surface else {
+                unreachable!()
+            };
+            let key = wall.name.clone();
+            let after = before
+                .apply(
+                    Edit::ReplaceFace {
+                        face: key.clone(),
+                        surface: Box::new(Surface::Cylinder(frame.clone(), r("2"))),
+                    },
+                    Default::default(),
+                    Default::default(),
+                    &mut Decider::default(),
+                )
+                .unwrap();
+            let wall = after.faces().iter().find(|face| face.name == key).unwrap();
+            for edge in wall.loops.iter().flat_map(|bound| &bound.edges) {
+                for vertex in [&edge.start, &edge.end] {
+                    assert!(vertex.point[2].is_zero() || vertex.point[2] == r("4"));
+                    let squared =
+                        &vertex.point[0] * &vertex.point[0] + &vertex.point[1] * &vertex.point[1];
+                    if tangent == "0" {
+                        assert_eq!(squared, r("4"));
+                    } else {
+                        assert!((squared - r("4")).abs() < r("0.000000001"));
+                    }
+                }
+            }
+            if tangent == "0" {
+                assert_eq!(after.history()[0].construction, Construction::Rational);
+            } else {
+                assert!(matches!(&after.history()[0].construction,
+                    Construction::Numerical { offset_error_upper_mm, intersection_error_upper_mm }
+                    if offset_error_upper_mm.is_zero() && intersection_error_upper_mm>&r("0")
+                        && intersection_error_upper_mm<=&r("0.000000001")));
+            }
+            let opened::BodyView::Numerical(body) = after.body() else {
+                panic!("numerical edit required")
+            };
+            let output =
+                catallax_step::numerical::build(body, &Default::default(), &mut Decider::default())
+                    .unwrap();
+            output
+                .check_written(output.bytes(), &mut Decider::default())
+                .unwrap();
+            assert_eq!(before.source_faces(), after.source_faces());
+        }
+    });
+    assert!(!work.exhausted);
+}

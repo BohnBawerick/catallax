@@ -99,4 +99,11 @@ fn a_subperiod_repeated_edge_refuses_before_a_complete_torus_seam_is_written() {
     );
     file.check_written(file.bytes(), &mut Decider::default())
         .unwrap();
+    if let Ok(path) = std::env::var("CATALLAX_ANALYTIC_EVIDENCE") {
+        std::fs::write(
+            std::path::Path::new(&path).join("paired-torus-band.step"),
+            file.bytes(),
+        )
+        .unwrap();
+    }
 }

@@ -17,6 +17,23 @@ pub fn period() -> Rational {
     Ball::pi(128).mid() * Rational::from_i64(2)
 }
 
+fn sin_cos(angle: &Rational) -> (f64, f64) {
+    // Cartesian quadrant points are exact; their stored angles remain numerical.
+    let quarter = period() / Rational::from_i64(4);
+    for (index, pair) in [
+        (0, (0.0, 1.0)),
+        (1, (1.0, 0.0)),
+        (2, (0.0, -1.0)),
+        (3, (-1.0, 0.0)),
+        (4, (0.0, 1.0)),
+    ] {
+        if angle == &(&quarter * &Rational::from_i64(index)) {
+            return pair;
+        }
+    }
+    angle.to_f64_nearest().sin_cos()
+}
+
 fn patch(corners: Vec<[Rational; 2]>, seam: Option<[usize; 2]>) -> n::NumericalDefinition {
     let mut result = n::NumericalDefinition {
         name: "torus-sheet".into(),
@@ -35,9 +52,8 @@ fn patch(corners: Vec<[Rational; 2]>, seam: Option<[usize; 2]>) -> n::NumericalD
         .iter()
         .map(|&corner| {
             *indices.entry(corner).or_insert_with(|| {
-                let [u, v] = corners[corner].each_ref().map(Rational::to_f64_nearest);
-                let (s, c) = u.sin_cos();
-                let (sv, cv) = v.sin_cos();
+                let (s, c) = sin_cos(&corners[corner][0]);
+                let (sv, cv) = sin_cos(&corners[corner][1]);
                 let index = result.vertices.len();
                 result.vertices.push(n::NumericalVertex {
                     key: format!("v{index}"),
@@ -65,16 +81,11 @@ fn patch(corners: Vec<[Rational; 2]>, seam: Option<[usize; 2]>) -> n::NumericalD
             continue;
         }
         let axis = usize::from(uv[0][0] == uv[1][0]);
-        let fixed = uv[0][1 - axis].to_f64_nearest();
+        let fixed = &uv[0][1 - axis];
+        let (s, c) = sin_cos(fixed);
         let (center, normal, reference, radius) = if axis == 0 {
-            (
-                [0.0, 0.0, fixed.sin()],
-                [0.0, 0.0, 1.0],
-                [1.0, 0.0, 0.0],
-                3.0 + fixed.cos(),
-            )
+            ([0.0, 0.0, s], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0], 3.0 + c)
         } else {
-            let (s, c) = fixed.sin_cos();
             ([3.0 * c, 3.0 * s, 0.0], [s, -c, 0.0], [c, s, 0.0], 1.0)
         };
         let forward = uv[0][axis] < uv[1][axis];
@@ -84,13 +95,14 @@ fn patch(corners: Vec<[Rational; 2]>, seam: Option<[usize; 2]>) -> n::NumericalD
             [(i + 1) % count, i]
         };
         let edge = result.edges.len();
+        let radius = q(radius);
         result.edges.push(n::NumericalEdge {
             key: format!("e{edge}"),
             curve: Curve::Circle(Circle {
                 center: point(center),
                 normal: vector(normal),
                 ref_dir: vector(reference),
-                radius_sq: q(radius * radius).into(),
+                radius_sq: (&radius * &radius).into(),
             }),
             parameters: ends.map(|end| corners[end][axis].clone()),
             vertices: ends.map(|end| vertices[end]),
@@ -148,6 +160,7 @@ pub fn band() -> n::NumericalDefinition {
 pub fn unpaired_wrapped_contact() -> n::NumericalDefinition {
     let t = period();
     let inset = &t - &q(1.0);
+    let half = &t / &Rational::from_i64(2);
     patch(
         vec![
             [q(0.0), q(0.0)],
@@ -157,12 +170,13 @@ pub fn unpaired_wrapped_contact() -> n::NumericalDefinition {
             [inset, q(2.0)],
             [t.clone(), q(2.0)],
             [t, q(3.0)],
+            [half, q(3.0)],
             [q(0.0), q(3.0)],
             [q(0.0), q(2.0)],
             [q(1.0), q(2.0)],
             [q(1.0), q(1.0)],
             [q(0.0), q(1.0)],
         ],
-        Some([1, 11]),
+        Some([1, 12]),
     )
 }

@@ -92,9 +92,88 @@ fn face_edges(model: &Model, face: FaceId) -> Vec<CurveId> {
     result
 }
 
+// Single embedded charts make an open component's endpoint set intrinsic.
+// These are non-identity proofs only, never curve-disjointness proofs.
+#[derive(Clone)]
+struct SectionEnds {
+    boxes: BTreeMap<CurveId, Option<std::sync::Arc<[[Ball; 3]; 2]>>>,
+    #[cfg(feature = "work-span")]
+    span: catallax_numbers::work_span::Instance,
+}
+
+impl SectionEnds {
+    fn new() -> Self {
+        Self {
+            boxes: BTreeMap::new(),
+            #[cfg(feature = "work-span")]
+            span: catallax_numbers::work_span::Instance::new(),
+        }
+    }
+
+    fn differ(&mut self, model: &Model, a: CurveId, b: CurveId, dec: &mut Decider) -> bool {
+        let (Curve::PatchSection(x), Curve::PatchSection(y)) =
+            (model.geom().curve(a), model.geom().curve(b))
+        else {
+            return false;
+        };
+        if x.is_closed()
+            || y.is_closed()
+            || x.charts().len() != 1
+            || y.charts().len() != 1
+            || model.geom().curve(a).same_definition(model.geom().curve(b))
+        {
+            return false;
+        }
+        let bits = dec.policy().max_precision_bits.min(128);
+        if bits == 0 {
+            return false;
+        }
+        for (curve, branch) in [(a, x), (b, y)] {
+            #[cfg(feature = "work-span")]
+            catallax_numbers::work_span::read_at(
+                "section endpoint bounds cache",
+                self.span.id(),
+                u64::from(curve.index()),
+            );
+            if let std::collections::btree_map::Entry::Vacant(entry) = self.boxes.entry(curve) {
+                let enclose = |dec: &mut Decider| -> Result<_, Refusal> {
+                    let ends = branch.endpoints();
+                    let mut point = |p: &catallax_shapes::Point3| -> Result<[Ball; 3], Refusal> {
+                        Ok([
+                            dec.enclose_budgeted_at(&p.x, bits)?,
+                            dec.enclose_budgeted_at(&p.y, bits)?,
+                            dec.enclose_budgeted_at(&p.z, bits)?,
+                        ])
+                    };
+                    Ok([point(&ends[0])?, point(&ends[1])?])
+                };
+                // An unavailable optional bound keeps the ordinary exact query.
+                entry.insert(enclose(dec).ok().map(std::sync::Arc::new));
+                #[cfg(feature = "work-span")]
+                catallax_numbers::work_span::write_at(
+                    "section endpoint bounds cache",
+                    self.span.id(),
+                    u64::from(curve.index()),
+                );
+            }
+        }
+        let (Some(a), Some(b)) = (&self.boxes[&a], &self.boxes[&b]) else {
+            return false;
+        };
+        (0..3).any(|axis| {
+            a.iter().any(|point| {
+                b.iter().all(|other| {
+                    point[axis].hi() < other[axis].lo() || point[axis].lo() > other[axis].hi()
+                })
+            })
+        })
+    }
+}
+
 fn add_curve(
     model: &mut Model,
     pool: &mut Vec<CurveId>,
+    ends: &mut SectionEnds,
     curve: CurveId,
     dec: &mut Decider,
 ) -> Result<usize, Refusal> {
@@ -109,6 +188,9 @@ fn add_curve(
     for (index, &other) in pool.iter().enumerate() {
         #[cfg(feature = "work-span")]
         let _span_task = span_tasks.task();
+        if ends.differ(model, curve, other, dec) {
+            continue;
+        }
         ahead.at(index, || {
             let (model, pool) = (model.clone(), pool.clone());
             move |index: usize, dec: &mut Decider| {
@@ -761,6 +843,7 @@ fn section_inputs(
         #[cfg(feature = "work-span")]
         pairs_span: catallax_numbers::work_span::Instance::new(),
         pool: Vec::new(),
+        section_ends: SectionEnds::new(),
         has_native_spline: false,
         points: Vec::new(),
         mandatory: BTreeSet::new(),
@@ -1198,6 +1281,7 @@ struct PairPass {
     pairs_span: catallax_numbers::work_span::Instance,
     // Every canonical carrier in insertion order.
     pool: Vec<CurveId>,
+    section_ends: SectionEnds,
     has_native_spline: bool,
     points: Vec<PointId>,
     mandatory: BTreeSet<PointId>,
@@ -1298,6 +1382,7 @@ fn face_pair(
         finite_bounds,
         pruning_model,
         pool,
+        section_ends,
         has_native_spline,
         points,
         mandatory,
@@ -1324,7 +1409,7 @@ fn face_pair(
                 let surface = model.face(face).surface;
                 for curve in face_edges(model, face) {
                     let relevant = relevant(dec);
-                    let index = add_curve(model, pool, curve, dec)?;
+                    let index = add_curve(model, pool, section_ends, curve, dec)?;
                     *has_native_spline |=
                         matches!(model.geom().curve(pool[index]), Curve::BSpline(_));
                     active.resize(pool.len(), false);
@@ -1346,7 +1431,7 @@ fn face_pair(
                         ..
                     } => {
                         let relevant = relevant(dec);
-                        let index = add_curve(model, pool, curve, dec)?;
+                        let index = add_curve(model, pool, section_ends, curve, dec)?;
                         *has_native_spline |=
                             matches!(model.geom().curve(pool[index]), Curve::BSpline(_));
                         active.resize(pool.len(), false);
@@ -1540,4 +1625,98 @@ fn on_section(
         }
     }
     Ok(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use catallax_numbers::{Rational, Real, with_operation_budget};
+    use catallax_shapes::{
+        BSplineSurface, Cylinder, Point3, RationalAtlas, SectionSurface, Vector3,
+    };
+
+    #[test]
+    fn open_section_carriers_keep_a_shared_endpoint_without_merging() {
+        let ((), work) = with_operation_budget(20_000_000, || {
+            let mut dec = Decider::default();
+            let mut model = Model::new();
+            let mut section = |low: i64, high: i64| {
+                let knots = [0, 0, 1, 1].map(Rational::from_i64).to_vec();
+                let carrier = BSplineSurface::new(
+                    [1, 1],
+                    [knots.clone(), knots],
+                    [2, 2],
+                    [[0, low, 0], [0, high, 0], [2, low, 0], [2, high, 0]]
+                        .map(|[x, y, z]| Point3::new(x.into(), y.into(), z.into()))
+                        .to_vec(),
+                    vec![Real::one(); 4],
+                    &mut dec,
+                )
+                .unwrap();
+                let atlas = RationalAtlas::partition(carrier, [false, false], &mut dec)
+                    .unwrap()
+                    .remove(0);
+                let cylinder = SectionSurface::Cylinder(Cylinder {
+                    origin: Point3::new(Real::zero(), Real::zero(), Real::zero()),
+                    axis: Vector3::new(Real::zero(), Real::zero(), Real::one()),
+                    radius_sq: Real::from_i64(2),
+                    ref_dir: Vector3::new(Real::one(), Real::zero(), Real::zero()),
+                });
+                let cut = atlas.sections(&cylinder, &mut dec).unwrap();
+                let [branch] = cut.branches() else {
+                    panic!("one regular open circle arc");
+                };
+                model
+                    .geom_mut()
+                    .add_curve(Curve::PatchSection(branch.clone()))
+            };
+            let first = section(0, 1);
+            let second = section(1, 2);
+            let root = Real::from_i64(2).sqrt();
+            let first_end = model.geom_mut().add_point(PointDef::Explicit(Point3::new(
+                root.clone(),
+                Real::zero(),
+                Real::zero(),
+            )));
+            let second_end = model.geom_mut().add_point(PointDef::Explicit(Point3::new(
+                Real::zero(),
+                root,
+                Real::zero(),
+            )));
+            let shared = model.geom_mut().add_point(PointDef::Explicit(Point3::new(
+                Real::one(),
+                Real::one(),
+                Real::zero(),
+            )));
+            for (a, b, far_a, far_b) in [
+                (first, second, first_end, second_end),
+                (second, first, second_end, first_end),
+            ] {
+                let mut pool = Vec::new();
+                let mut ends = SectionEnds::new();
+                let a = add_curve(&mut model, &mut pool, &mut ends, a, &mut dec).unwrap();
+                let b = add_curve(&mut model, &mut pool, &mut ends, b, &mut dec).unwrap();
+                assert!(on_curve(model.geom(), pool[a], far_a, &mut dec).is_coincident());
+                assert!(on_curve(model.geom(), pool[b], far_b, &mut dec).is_coincident());
+                assert!(matches!(
+                    on_curve(model.geom(), pool[a], far_b, &mut dec),
+                    Outcome::Proven(_)
+                ));
+                assert!(matches!(
+                    on_curve(model.geom(), pool[b], far_a, &mut dec),
+                    Outcome::Proven(_)
+                ));
+                assert!(on_curve(model.geom(), pool[a], shared, &mut dec).is_coincident());
+                assert!(on_curve(model.geom(), pool[b], shared, &mut dec).is_coincident());
+                let Curve::PatchSection(branch) = model.geom().curve(pool[a]) else {
+                    unreachable!();
+                };
+                let reversed = branch.reversed();
+                let reversed = model.geom_mut().add_curve(Curve::PatchSection(reversed));
+                let kept = add_curve(&mut model, &mut pool, &mut ends, reversed, &mut dec).unwrap();
+                assert_eq!(pool[kept], pool[a]);
+            }
+        });
+        assert!(!work.exhausted);
+    }
 }

@@ -40,7 +40,6 @@ mod spline_fillet;
 mod stages;
 mod torus_region;
 mod trim_bounds;
-mod validation;
 
 #[cfg(test)]
 mod tests;
@@ -56,7 +55,6 @@ use catallax_shapes::{Point3, RPoint3};
 use catallax_topology::{Body, BodyId, BodyKind, FaceId, Model};
 
 pub use face_queries::PreparedFaceQueries;
-pub use validation::check_body;
 
 /// A boolean operation.
 #[non_exhaustive]

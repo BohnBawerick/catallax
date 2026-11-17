@@ -772,7 +772,7 @@ pub(crate) fn search_cover(
                 if chart == contact.chart {
                     // A certified regular cell contains every cut zero in its
                     // box. This contact already has its exact native binding.
-                    for cell in &branch.cells {
+                    for cell in branch.cells.iter() {
                         if cell.chart == chart && contains(&cell.domain, &contact.parameters, dec)?
                         {
                             covered = true;
@@ -783,7 +783,7 @@ pub(crate) fn search_cover(
                 }
                 // A different atlas chart need not use the same parameters.
                 // Retain its original exact endpoint and preimage checks.
-                for cell in &branch.cells {
+                for cell in branch.cells.iter() {
                     if cell.chart == chart {
                         for end in &cell.ends {
                             if exact_sign(
@@ -804,7 +804,7 @@ pub(crate) fn search_cover(
                 let Some(at) = patch.parameters_at(&contact.point, dec)? else {
                     continue;
                 };
-                for cell in &branch.cells {
+                for cell in branch.cells.iter() {
                     if cell.chart == chart && contains(&cell.domain, &at, dec)? {
                         covered = true;
                         break 'branches;

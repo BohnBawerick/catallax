@@ -216,7 +216,7 @@ The separate native rolling-ball continuation implementation follows
 [OCCT `BRepBlend_Walking`](https://occt3d.com/dev/doc/refman/html/class_b_rep_blend___walking.html)
 and [SMLib's constant-radius contact and section-plane equations](https://github.com/NVIDIA-Omniverse/usd-brep/blob/main/source/SMLib/src/SmFilletSolver.cpp#L2665-L2715).
 Accepted contacts and guide sections receive interval residual checks at
-the declared 100 nm tolerance. It is not yet the application's fallback.
+the declared 1e-7 mm tolerance, or 0.1 nm. It is not yet the application's fallback.
 The cone rim and three-support ball checks pass; the cylinder rim still
 exhausts 100M inside continuation. Further continuation work follows the
 ordered clearance, intersection and arc-end repairs.

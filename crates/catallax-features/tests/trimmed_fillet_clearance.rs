@@ -1,11 +1,11 @@
 //! Finite fillet regions may be clear when their infinite carriers intersect.
 
 use catallax_boolean::Containment;
-use catallax_features::{Built, evaluate};
-use catallax_numbers::{Decider, Outcome, Rational, with_operation_budget};
+use catallax_features::{evaluate, Built};
+use catallax_numbers::{with_operation_budget, Decider, Outcome, Rational};
 use catallax_recipe::Recipe;
 use catallax_shapes::RPoint3;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::f64::consts::PI;
 
 fn pose(x: &str, y: &str, z: &str) -> Value {
@@ -183,47 +183,53 @@ fn trimmed_four_contact_cone_stays_clear_of_the_base_when_its_ball_does_not() {
         }
     }
     let mut built = build("four-contact-r5", steps);
-    let ((), work) = with_operation_budget(100_000_000, || {
-        let mut dec = Decider::default();
-        let plan = catallax_field::Plan::compile_checked(built.recipe(), &mut dec).unwrap();
-        let mut storage = catallax_field::Workspace::default();
-        // The common centre is at z=10-5*sqrt(2). Its retained cap ends at
-        // z=15-5*sqrt(2), between 7.9 and 8, while the complete ball crosses z=0.
-        for (coordinates, inside) in [
-            (["0", "0", "79/10"], true),
-            (["0", "0", "8"], false),
-            (["2", "0", "7"], true),
-            (["2", "0", "39/5"], false),
-        ] {
-            let [x, y, z] = coordinates.map(|value| Rational::parse(value).unwrap());
-            let point = RPoint3::new(x, y, z);
-            let expected = if inside {
-                Containment::Inside
-            } else {
-                Containment::Outside
-            };
-            let answer = catallax_boolean::classify_point(
-                &mut built.model, built.result, &point, &mut dec,
-            );
-            println!("four-contact B-rep {point:?}: {answer:?}; {:?}", catallax_numbers::current_operation_work());
-            assert!(
-                matches!(&answer, Outcome::Proven(actual) if *actual == expected),
-                "B-rep at {point:?}: {answer:?}"
-            );
-            let expected = if inside {
-                catallax_field::Location::Inside
-            } else {
-                catallax_field::Location::Outside
-            };
-            assert_eq!(
-                plan.proven_checked(&point, &mut storage, &mut dec)
-                    .unwrap()
-                    .location,
-                expected,
-                "field at {point:?}"
-            );
-        }
+    let (answer, work) = with_operation_budget(100_000_000, || {
+        catallax_field::Plan::compile_checked(built.recipe(), &mut Decider::default())
     });
     assert!(!work.exhausted, "{work:?}");
-    println!("four-contact field and material {work:?}");
+    println!("four-contact field compilation {work:?}");
+    let plan = answer.unwrap();
+    let mut storage = catallax_field::Workspace::default();
+    // Each public query has the same 100M allowance as an application request.
+    // The common centre is at z=10-5*sqrt(2). Its retained cap ends at
+    // z=15-5*sqrt(2), between 7.9 and 8, while the complete ball crosses z=0.
+    for (coordinates, inside) in [
+        (["0", "0", "79/10"], true),
+        (["0", "0", "8"], false),
+        (["2", "0", "7"], true),
+        (["2", "0", "39/5"], false),
+    ] {
+        let [x, y, z] = coordinates.map(|value| Rational::parse(value).unwrap());
+        let point = RPoint3::new(x, y, z);
+        let expected = if inside {
+            Containment::Inside
+        } else {
+            Containment::Outside
+        };
+        let (answer, work) = with_operation_budget(100_000_000, || {
+            catallax_boolean::classify_point(
+                &mut built.model,
+                built.result,
+                &point,
+                &mut Decider::default(),
+            )
+        });
+        println!("four-contact B-rep {point:?}: {answer:?}; {work:?}");
+        assert!(!work.exhausted, "{work:?}");
+        assert!(
+            matches!(&answer, Outcome::Proven(actual) if *actual == expected),
+            "B-rep at {point:?}: {answer:?}"
+        );
+        let expected = if inside {
+            catallax_field::Location::Inside
+        } else {
+            catallax_field::Location::Outside
+        };
+        let (answer, work) = with_operation_budget(100_000_000, || {
+            plan.proven_checked(&point, &mut storage, &mut Decider::default())
+        });
+        println!("four-contact field {point:?}: {work:?}");
+        assert!(!work.exhausted, "{work:?}");
+        assert_eq!(answer.unwrap().location, expected, "field at {point:?}");
+    }
 }

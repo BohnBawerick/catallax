@@ -163,7 +163,7 @@ strict radius edit is inferred from the passing bounded-refusal contract.
 ## Native rolling-ball continuation, 17 November
 
 The new standalone native cylinder-rim continuation exhausts an unchanged
-100M request at 100 nm, both before and after separating binary64 analytic
+100M request at 1e-7 mm, or 0.1 nm, both before and after separating binary64 analytic
 proposals from interval acceptance. The refusal is
 `numbers.operation-budget` inside `NumericalFilletSpine::walk`, before its
 independent geometry controls. The failing request's exact final work count

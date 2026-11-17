@@ -613,7 +613,13 @@ fn default_opening_exports_a_rebuilt_trace_instead_of_an_inconsistent_authored_t
         body,
     }) = opened.body(0)
     else {
-        panic!("default opening must repair the native trace");
+        panic!(
+            "default opening must repair the native trace: tier {:?}, refusal {:?}, first {:?}, exhausted {}",
+            opened.bodies()[0].tier(),
+            opened.bodies()[0].refusal(),
+            opened.first_refusal(),
+            work.exhausted
+        );
     };
     assert!(!work.exhausted);
     let trace = native

@@ -423,8 +423,7 @@ fn fit_arc_centre(start: &Point2, centre: Point2, target: &Point2, step: &str) -
     }
     // The nearest centre on the chord's perpendicular bisector keeps both shared
     // vertices exact, so a neighbouring line cannot tilt out of its authored plane.
-    let chord: [Rational; 2] =
-        std::array::from_fn(|i| target.0[i].value() - start.0[i].value());
+    let chord: [Rational; 2] = std::array::from_fn(|i| target.0[i].value() - start.0[i].value());
     let scale = (target_radius - start_radius)
         / (Rational::from_i64(2) * (&chord[0] * &chord[0] + &chord[1] * &chord[1]));
     let fitted = Point2(std::array::from_fn(|i| {
@@ -439,7 +438,12 @@ fn fit_arc_centre(start: &Point2, centre: Point2, target: &Point2, step: &str) -
     Ok(fitted)
 }
 
-fn project_circle_point(start: &Point2, centre: &Point2, target: &Point2, step: &str) -> Result<Point2> {
+fn project_circle_point(
+    start: &Point2,
+    centre: &Point2,
+    target: &Point2,
+    step: &str,
+) -> Result<Point2> {
     let s: [Rational; 2] = std::array::from_fn(|i| start.0[i].value() - centre.0[i].value());
     let t: [Rational; 2] = std::array::from_fn(|i| target.0[i].value() - centre.0[i].value());
     let r = &s[0] * &s[0] + &s[1] * &s[1];

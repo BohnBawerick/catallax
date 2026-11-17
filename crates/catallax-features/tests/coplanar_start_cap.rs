@@ -24,13 +24,20 @@ fn tangent_top_pocket_opens_the_flat_face_without_a_downward_start_cap() {
             relative: Rational::zero(),
             absolute: Rational::parse("0.000001").unwrap(),
         };
-        let area = face_area(&built.model, flat[0], &accuracy, &mut dec).unwrap().value;
-        assert!(area.contains(&Rational::parse("1894.61").unwrap()), "{area:?}");
+        let area = face_area(&built.model, flat[0], &accuracy, &mut dec)
+            .unwrap()
+            .value;
+        assert!(
+            area.contains(&Rational::parse("1894.61").unwrap()),
+            "{area:?}"
+        );
         assert!(area.width() <= accuracy.absolute);
         assert!(!faces.iter().any(|&face| {
-            built.model.face_origins(face).iter().any(|origin| {
-                origin.step.as_str() == "pocket" && origin.role == Role::Start
-            })
+            built
+                .model
+                .face_origins(face)
+                .iter()
+                .any(|origin| origin.step.as_str() == "pocket" && origin.role == Role::Start)
         }));
         let mouth = RPoint3::new(0.into(), (-38).into(), 60.into());
         assert!(matches!(

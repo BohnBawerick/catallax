@@ -440,12 +440,13 @@ pub fn build_incremental_without_display(
 }
 
 fn check_result(built: &Built, decider: &mut Decider) -> Result<(), Error> {
-    let faults = catallax_boolean::check_body(&built.model, built.result, decider).map_err(
-        |refusal| Error::Build(BuildError::Geometry {
-            step: built.recipe().result.clone(),
-            refusal,
-        }),
-    )?;
+    let faults =
+        catallax_boolean::check_body(&built.model, built.result, decider).map_err(|refusal| {
+            Error::Build(BuildError::Geometry {
+                step: built.recipe().result.clone(),
+                refusal,
+            })
+        })?;
     if faults.is_empty() {
         Ok(())
     } else {

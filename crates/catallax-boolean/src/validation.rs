@@ -32,9 +32,15 @@ pub fn check_body(
             }
             // Distinct parametric definitions need a separate equality solver;
             // do not mistake equal bounding boxes for equal finite carriers.
-            match (model.geom().surface(a.surface), model.geom().surface(b.surface)) {
+            match (
+                model.geom().surface(a.surface),
+                model.geom().surface(b.surface),
+            ) {
                 (Surface::BSpline(a), Surface::BSpline(b))
-                    if !a.carrier().same_definition(b.carrier()) => continue,
+                    if !a.carrier().same_definition(b.carrier()) =>
+                {
+                    continue;
+                }
                 (Surface::BSpline(_), Surface::BSpline(_)) => {}
                 (Surface::BSpline(_), _) | (_, Surface::BSpline(_)) => continue,
                 _ => {}
@@ -42,7 +48,8 @@ pub fn check_body(
             if !crate::geometry::coincident(
                 model.geom().same_surface(a.surface, b.surface, dec),
                 "boolean.body-check-ambiguous",
-            )? || !opposite(model, first, second, &mut scratch, dec)? {
+            )? || !opposite(model, first, second, &mut scratch, dec)?
+            {
                 continue;
             }
             let work = scratch.get_or_insert_with(|| model.clone());
@@ -67,7 +74,9 @@ pub fn check_body(
                 if overlaps {
                     faults.push(TopologyFault {
                         code: "topology.coincident-opposite-faces",
-                        detail: format!("faces {first:?} and {second:?} have opposite overlapping interiors"),
+                        detail: format!(
+                            "faces {first:?} and {second:?} have opposite overlapping interiors"
+                        ),
                     });
                     break;
                 }
@@ -85,7 +94,8 @@ fn agreement(outcome: Outcome<StrictSign>) -> Result<bool, Refusal> {
         other => Err(crate::geometry::refusal(
             "boolean.body-check-ambiguous",
             "coincident face normals could not be ordered",
-        ).keeping_undecided(other)),
+        )
+        .keeping_undecided(other)),
     }
 }
 
@@ -100,9 +110,10 @@ fn opposite(
     let b = model.face(second);
     let agrees = if a.surface == b.surface {
         true
-    } else if let (Surface::Plane(a), Surface::Plane(b)) =
-        (model.geom().surface(a.surface), model.geom().surface(b.surface))
-    {
+    } else if let (Surface::Plane(a), Surface::Plane(b)) = (
+        model.geom().surface(a.surface),
+        model.geom().surface(b.surface),
+    ) {
         agreement(dec.sign(&a.normal.dot(&b.normal)))?
     } else {
         let work = scratch.get_or_insert_with(|| model.clone());

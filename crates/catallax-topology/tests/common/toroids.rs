@@ -134,7 +134,7 @@ pub fn quarter() -> n::NumericalDefinition {
 }
 pub fn band() -> n::NumericalDefinition {
     let t = period();
-    let h = &t / Rational::from_i64(4);
+    let h = &t / &Rational::from_i64(4);
     patch(
         vec![
             [q(0.0), q(0.0)],
@@ -147,7 +147,7 @@ pub fn band() -> n::NumericalDefinition {
 }
 pub fn unpaired_wrapped_contact() -> n::NumericalDefinition {
     let t = period();
-    let inset = &t - q(1.0);
+    let inset = &t - &q(1.0);
     patch(
         vec![
             [q(0.0), q(0.0)],

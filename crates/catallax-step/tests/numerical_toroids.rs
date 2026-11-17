@@ -67,7 +67,7 @@ fn a_subperiod_repeated_edge_refuses_before_a_complete_torus_seam_is_written() {
     for trim in &mut partial.faces[0].loops[0] {
         for uv in &mut trim.uv {
             if uv[0] == period {
-                uv[0] = &period / catallax_numbers::Rational::from_i64(4);
+                uv[0] = &period / &catallax_numbers::Rational::from_i64(4);
             }
         }
     }

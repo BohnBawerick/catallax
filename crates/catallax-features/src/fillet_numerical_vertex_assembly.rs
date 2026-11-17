@@ -1,7 +1,7 @@
 //! Vertex-local boundary assembly. Restriction uses homogeneous de Boor
 //! coefficients; native/world agreement remains sampled numerical evidence.
 
-use catallax_numbers::{Ball, Decider, NumericalCheck, NumericalSample, Rational, Refusal};
+use catallax_numbers::{Ball, Decider, NumericalCheck, NumericalSample, Rational, Real, Refusal};
 use catallax_shapes::{BSplineCurve, Point3};
 use catallax_topology::{Model, Sense, VertexId};
 
@@ -234,7 +234,16 @@ pub(super) fn check_boundaries(
                 let world = boundary.curve.evaluate_box([&t, &t], BITS, dec)?;
                 let mut error = Rational::zero();
                 for side in &boundary.sides {
-                    let uv = side.parameters.evaluate_box([&t, &t], BITS, dec)?;
+                    // Evaluate the native definition at the exact sample first.
+                    // An interval evaluation can round a boundary value such as
+                    // V=1 outside the finite chart even though it is exactly 1.
+                    let native = side
+                        .parameters
+                        .point_at(&Real::from_rational(t.clone()), dec)?;
+                    let uv = [
+                        dec.enclose_budgeted_at(&native.x, BITS)?,
+                        dec.enclose_budgeted_at(&native.y, BITS)?,
+                    ];
                     let composed = match side.face {
                         JunctionFace::Strip(end) => strip(model, chains, junction.source, end)?
                             .fillet
@@ -553,18 +562,31 @@ mod tests {
             )
             .unwrap();
             assert_eq!(chains.len(), 3);
-            let ends: [StripEnd; 3] = std::array::from_fn(|chain| {
-                let edge = model.edge(chains[chain].strips[0].source.edge);
-                StripEnd {
-                    chain,
-                    strip: 0,
-                    source_end: usize::from(edge.start != Some(vertex)),
+            let junctions =
+                super::super::construct(&model, body, &chains, &radius, &tolerance, &mut dec)
+                    .unwrap();
+            for chain in 0..chains.len() {
+                for source_end in 0..2 {
+                    let expected = StripEnd {
+                        chain,
+                        strip: 0,
+                        source_end,
+                    };
+                    assert_eq!(
+                        junctions
+                            .iter()
+                            .flat_map(|junction| &junction.terminations)
+                            .filter(|termination| same_end(termination.strip, expected))
+                            .count(),
+                        1,
+                        "every real selected end needs one termination"
+                    );
                 }
-            });
-            let junction = ball(
-                &model, &chains, vertex, &ends, &radius, &tolerance, &mut dec,
-            )
-            .unwrap();
+            }
+            let junction = junctions
+                .iter()
+                .find(|junction| junction.source == vertex)
+                .unwrap();
             let patch = &junction.patches[0];
             let Surface::Sphere(sphere) = &patch.surface else {
                 panic!("three convex strips need their checked ball surface")
@@ -605,7 +627,14 @@ mod tests {
                             <= tolerance
                     );
                     for side in &boundary.sides {
-                        let uv = side.parameters.evaluate_box([&t, &t], BITS, &dec).unwrap();
+                        let native = side
+                            .parameters
+                            .point_at(&Real::from_rational(t.clone()), &mut dec)
+                            .unwrap();
+                        let uv = [
+                            dec.enclose_budgeted_at(&native.x, BITS).unwrap(),
+                            dec.enclose_budgeted_at(&native.y, BITS).unwrap(),
+                        ];
                         let composed = match side.face {
                             JunctionFace::Strip(end) => chains[end.chain].strips[end.strip]
                                 .fillet

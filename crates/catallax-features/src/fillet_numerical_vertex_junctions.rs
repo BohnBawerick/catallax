@@ -525,3 +525,94 @@ mod tests {
         );
     }
 }
+
+fn tangent_neighbors(chains: &[RolledChain], a: StripEnd, b: StripEnd) -> bool {
+    if a.chain != b.chain || a.strip == b.strip {
+        return false;
+    }
+    let chain = &chains[a.chain];
+    let entry =
+        |end: StripEnd| usize::from(chain.strips[end.strip].source.sense == Sense::Reversed);
+    let follows = |from: StripEnd, to: StripEnd| {
+        (from.strip + 1 == to.strip
+            || chain.closed && from.strip + 1 == chain.strips.len() && to.strip == 0)
+            && from.source_end == 1 - entry(from)
+            && to.source_end == entry(to)
+    };
+    follows(a, b) || follows(b, a)
+}
+
+/// Construct candidates at finite original vertices. Closed one-edge contours
+/// have no vertex fan here; their retained seam belongs to contour construction.
+pub(crate) fn construct(
+    model: &Model,
+    body: catallax_topology::BodyId,
+    chains: &[RolledChain],
+    radius: &Rational,
+    tolerance: &Rational,
+    dec: &mut Decider,
+) -> Result<Vec<VertexJunction>, Refusal> {
+    if radius.sign() != Sign::Positive || tolerance.sign() != Sign::Positive {
+        return Err(bad("vertex radius and tolerance must be positive"));
+    }
+    let count: usize = chains.iter().map(|chain| chain.strips.len()).sum();
+    let mut ends = Vec::with_capacity(count.saturating_mul(2));
+    for (chain, group) in chains.iter().enumerate() {
+        for (index, source) in group.strips.iter().enumerate() {
+            let edge = model.edge(source.source.edge);
+            if edge.start == edge.end {
+                continue;
+            }
+            for (source_end, vertex) in [edge.start, edge.end].into_iter().enumerate() {
+                if let Some(vertex) = vertex {
+                    ends.push((
+                        vertex,
+                        StripEnd {
+                            chain,
+                            strip: index,
+                            source_end,
+                        },
+                    ));
+                }
+            }
+        }
+    }
+    ends.sort_unstable_by_key(|&(vertex, end)| (vertex, end.chain, end.strip, end.source_end));
+    let groups = ends.chunk_by(|a, b| a.0 == b.0).count();
+    let mut result = Vec::with_capacity(groups);
+    for group in ends.chunk_by(|a, b| a.0 == b.0) {
+        dec.charge_work(1)?;
+        let vertex = group[0].0;
+        let candidate = match group {
+            [(_, end)] => ends::face_end(model, body, chains, vertex, *end, tolerance, dec)?,
+            [(_, first), (_, second)] => {
+                let pair = [*first, *second];
+                if tangent_neighbors(chains, pair[0], pair[1]) {
+                    tangent_pair(model, chains, vertex, pair, radius, tolerance, dec)?
+                } else {
+                    let tau = cliff::common_contact(model, chains, vertex, pair, tolerance, dec)?;
+                    let section = cliff::shared_section(
+                        model, body, chains, vertex, pair, tau, tolerance, dec,
+                    )?;
+                    assembly::cliff(model, chains, vertex, section, tolerance, dec)?
+                }
+            }
+            [(_, first), (_, second), (_, third)] => assembly::ball(
+                model,
+                chains,
+                vertex,
+                &[*first, *second, *third],
+                radius,
+                tolerance,
+                dec,
+            )?,
+            _ => {
+                return Err(bad(
+                    "this vertex producer needs one, two or three incident selected strip ends",
+                ));
+            }
+        };
+        result.push(candidate);
+    }
+    Ok(result)
+}

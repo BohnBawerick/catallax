@@ -152,9 +152,9 @@ Why this phase is second: these are whole lines of the count with nothing built.
 **How phase 2 runs.** The owner chose three kernel lanes from the start at Checkpoint 1, so the longest chain, 2.2 then the rest of 2.3 then 2.5, starts on the first day. Lanes run side by side because no lane's result changes another lane's current job.
 
 - **First, the measures.** A short job before any lane needs them. The census-part hole is placed so it removes material in the reference kernels, P8, P9 and the curved-housing chain join the scoreboard as targets, and the definitions then stay fixed to Checkpoint 2.
-- **Lane 1, spline.** Finish 1.3's three loft top cuts at the 100M application default, then 2.1, then 2.5 once 2.2 and 2.3 have landed.
+- **Lane 1, spline.** Finish 1.3's three loft top cuts at the 100M application default, then 2.1.
 - **Lane 2, import.** First rank the measured failure causes by files gained: export gaps (files that import but do not export valid) against first-step import refusals, from the Checkpoint 1 census data. Then stitch imported surface bodies into checked solids, which is 2.3's "faces sew into a solid" moved to the front. Then work the causes in ranked order, and take 2.3's trim, extend and thicken once 2.2 lands.
-- **Lane 3, new tools.** 2.2, then 2.4.
+- **Lane 3, new tools.** 2.2, the remaining 2.3 surface tools, then 2.5. General sweeps (2.4) remain on this lane.
 - **App, alongside, on Claude Opus.** The Cancel fix first, then surface bodies shown and clearly marked, then the import health report, then each kernel item as it lands.
 
 | # | Milestone | What we are doing | Why here | Unlocks | Done when |
@@ -163,7 +163,7 @@ Why this phase is second: these are whole lines of the count with nothing built.
 | 2.2 | NURBS toolkit | Freeform surface construction: Coons patch, surface through a grid of points, Gordon surface, guided skin, N-sided fill. SMLib's surface-construction code may be adapted, with attribution, under the 16 Nov widening of the port rule. | Lane 3, from the first day. Three "not started" lines sit here. Surface bodies and direct edits need its tools. | Freeform surfacing. Lofts with guide curves. | Each surface builds and exports. Knot insertion, degree raise, split and join are public. |
 | 2.3 | Surface bodies | Open surfaces and wires as bodies. Sew, trim, extend, thicken into a solid. | Lane 2. Sewing comes first, as stitching imported surface bodies into checked solids; trim, extend and thicken follow 2.2. Direct edits (2.5) need its trim, extend and sew. | Surface modelling. Imported files that are not closed solids. | A surface trims, extends and thickens into a solid. Faces sew into a solid outside import. |
 | 2.4 | General sweeps | Extrude with taper. Sweep with a guide, with twist and along a helix. Extrude up to a curved face. | Lane 3, after 2.2. Two "not started" lines. It depends on neither 2.2 nor 2.3. | Springs, threads, tapered and twisted shapes. P8, the spring and threaded boss. | P8 builds. |
-| 2.5 | Direct edits | Delete a face, a fillet or a hole and heal the solid. Move, offset or replace a face. | Lane 1, after 2.1. Needs 2.2 and 2.3. It pays only once imports work (1.2). | Editing bought-in parts that have no feature tree. | Each edit works on an imported solid. |
+| 2.5 | Direct edits | Delete a face, a fillet or a hole and heal the solid. Move, offset or replace a face. | Lane 3, after 2.3, while lane 1 keeps 2.1. Needs 2.2 and 2.3. It pays only once imports work (1.2). | Editing bought-in parts that have no feature tree. | Each edit works on an imported solid. |
 
 **2.4 partial delivery:** taper, guide/twist sweeps, a quarter helix and curved-face termination have build/edit/save/reopen and unhealed STEP evidence. General-motion fits are explicitly numerical. P8 still reports `numbers.operation-budget` in the threaded union at 100M; the milestone remains open. Its [stage record](docs/RECIPE.md#work-recorded-for-phase-5) is retained for Phase 5.
 

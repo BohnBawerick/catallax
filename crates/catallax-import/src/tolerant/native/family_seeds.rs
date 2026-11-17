@@ -28,7 +28,7 @@ enum Kind {
 #[derive(Clone, Debug)]
 pub(crate) struct FamilySeeds {
     kind: Kind,
-    radians_per_unit: Real,
+    angle_unit: AngleUnit,
     offset: bool,
 }
 
@@ -85,16 +85,17 @@ impl FamilySeeds {
                         .scaled(&Real::from(length_mm * &Rational::from_i64(sign)));
                     match source.geometry(profile, dec)? {
                         Geometry::Curve(Curve::Circle(placement, radius)) => {
+                            let radius_mm = &radius * length_mm;
                             break Kind::ConicExtrusion {
                                 frame: source.axis_placement(placement, length_mm, dec)?,
-                                radii_mm: [&radius * length_mm, radius * length_mm],
+                                radii_mm: [radius_mm.clone(), radius_mm],
                                 sweep_mm,
                             };
                         }
                         Geometry::Curve(Curve::Ellipse(placement, a, b)) => {
                             break Kind::ConicExtrusion {
                                 frame: source.axis_placement(placement, length_mm, dec)?,
-                                radii_mm: [a * length_mm, b * length_mm],
+                                radii_mm: [&a * length_mm, &b * length_mm],
                                 sweep_mm,
                             };
                         }
@@ -116,14 +117,9 @@ impl FamilySeeds {
                 _ => return Ok(None),
             }
         };
-        let radians_per_unit = match angle_unit {
-            AngleUnit::Radians => Real::one(),
-            AngleUnit::Degrees => Real::pi() / Real::from_i64(180),
-            AngleUnit::ScaledRadians(scale) => Real::from(scale.clone()),
-        };
         Ok(Some(Self {
             kind,
-            radians_per_unit,
+            angle_unit: angle_unit.clone(),
             offset,
         }))
     }
@@ -138,13 +134,22 @@ impl FamilySeeds {
             return Ok(Vec::new());
         }
         dec.charge_work(32)?;
-        let angular_scale = dec.enclose_budgeted_at(&self.radians_per_unit, bits)?;
+        let pi = Ball::pi(bits);
+        let angular_scale = match &self.angle_unit {
+            AngleUnit::Radians => Ball::from_rational(&Rational::one(), bits),
+            AngleUnit::Degrees => {
+                &pi * &Ball::from_rational(
+                    &Rational::from_ratio(1, 180).expect("nonzero denominator"),
+                    bits,
+                )
+            }
+            AngleUnit::ScaledRadians(scale) => Ball::from_rational(scale, bits),
+        };
         let Some(inverse_angle) =
             Ball::from_rational(&Rational::one(), bits).checked_div(&angular_scale)
         else {
             return Ok(Vec::new());
         };
-        let pi = Ball::pi(bits);
         let mut result = Vec::with_capacity(4);
         let offset_axis = match &self.kind {
             Kind::Torus {
@@ -163,11 +168,15 @@ impl FamilySeeds {
                 if let Some(v) = angle(&(&radial - &major), &local[2], bits) {
                     result.push([(&u * &inverse_angle).mid(), (&v * &inverse_angle).mid()]);
                 }
-                if *spindle && let Some(v) = angle(&(-&radial - &major), &local[2], bits) {
-                    result.push([
-                        ((&u + &pi) * &inverse_angle).mid(),
-                        (&v * &inverse_angle).mid(),
-                    ]);
+                if *spindle {
+                    let inner_radial = -&radial;
+                    if let Some(v) = angle(&(&inner_radial - &major), &local[2], bits) {
+                        let inner_u = &u + &pi;
+                        result.push([
+                            (&inner_u * &inverse_angle).mid(),
+                            (&v * &inverse_angle).mid(),
+                        ]);
+                    }
                 }
                 Some(1)
             }
@@ -258,7 +267,8 @@ fn relative(
         dec.enclose_budgeted_at(&origin.z, bits)?,
     ];
     Ok(std::array::from_fn(|i| {
-        Ball::from_rational(&p[i], bits) - &origin[i]
+        let coordinate = Ball::from_rational(&p[i], bits);
+        &coordinate - &origin[i]
     }))
 }
 
@@ -340,7 +350,7 @@ ENDSEC;",
                     let error = sampled.iter().zip(&point).fold(
                         Rational::zero(),
                         |sum, (value, expected)| {
-                            let difference = value - Ball::from_rational(expected, 128);
+                            let difference = value - &Ball::from_rational(expected, 128);
                             sum + difference.lo().abs().max(difference.hi().abs())
                         },
                     );

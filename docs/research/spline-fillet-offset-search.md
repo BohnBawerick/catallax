@@ -390,3 +390,22 @@ that a contact bound does not prove a fitting radius precede that hint.
 The existing one-third-bound test also checks the SDK's terminal parser
 without losing the exact proof or the rounded legacy accessor.
 Request scopes and costs are in the [phase-5 ledger](../phase5-work-cases.md#owner-radius-overflow-eligibility).
+
+For an open selection on a cylinder and an axis-normal plane, the
+shrinking native offset circle has radius R-r. Its plane-contact rail
+must cross the actual sharp line border terminating the selected arc.
+The strict crossing disappears at R-d, where d is the in-plane distance
+from the cylinder axis to that line. The critical foot must lie on the
+finite original coedge; a smoothly continuing neighbour, another selected
+edge at the endpoint, a periodic edge, or an expanding offset does not
+qualify for this proof.
+
+This uses the circular-rim branch of the same OCCT construction
+(its inner offset radius `cylrad - Radius`) and SMLib's signed offset
+orientation. It is a necessary regular end-contact constraint, not a
+claim that the two support offsets have no centres, nor a global largest
+fitting radius. The typed refusal states that continuing past this contact
+needs different topology. Naming the reached face uses the actual
+original plane border and its input neighbour, not an untrimmed carrier.
+On the five-edge owner selection the geometry gives 25-17=8 mm; none of
+these dimensions or recipe roles enter the algorithm.

@@ -103,6 +103,7 @@ pub(crate) fn construct(
     crate::fillet_build::fillet_limit::check_rolling_contacts(
         model,
         body,
+        selected,
         grouped.iter().flat_map(|chain| chain.edges.iter()),
         radius,
         dec,
@@ -550,6 +551,86 @@ mod tests {
         );
         assert!(
             refusal.detail.ends_with("; radius limit 4 mm"),
+            "{refusal:?}"
+        );
+    }
+
+    #[test]
+    fn five_edge_owner_rim_at_r8_names_the_actual_end_wall() {
+        let ((refusal, reached), work) = with_operation_budget(100_000_000, || {
+            let mut dec = Decider::new(BudgetPolicy {
+                max_work: 100_000_000,
+                ..Default::default()
+            });
+            let recipe = catallax_recipe::Recipe::parse(include_str!(
+                "../tests/fixtures/owner-curved-pocket.json"
+            ))
+            .unwrap();
+            let source = crate::evaluate(&recipe, &mut dec).unwrap();
+            let selection: catallax_recipe::EdgeSelection = serde_json::from_str(
+                r#"[
+                    {"between":[{"step":"blank","role":{"side":{"segment":"top"}}},{"step":"pocket-tool","role":{"side":{"segment":"near"}}}]},
+                    {"between":[{"step":"blank","role":{"side":{"segment":"right-round"}}},{"step":"pocket-tool","role":{"side":{"segment":"near"}}}]},
+                    {"between":[{"step":"blank","role":{"side":{"segment":"top"}}},{"step":"pocket-tool","role":{"side":{"segment":"far"}}}]},
+                    {"between":[{"step":"blank","role":{"side":{"segment":"right-round"}}},{"step":"pocket-tool","role":{"side":{"segment":"far"}}}]},
+                    {"between":[{"step":"blank","role":{"side":{"segment":"top"}}},{"step":"pocket-tool","role":{"side":{"segment":"left"}}}]}
+                ]"#,
+            ).unwrap();
+            let selected = crate::fillet_build::select(
+                &source.model,
+                source.result,
+                &selection,
+                true,
+                &[],
+                &mut dec,
+            )
+            .unwrap();
+            let reached = source
+                .model
+                .faces_of_body(source.result)
+                .into_iter()
+                .find(|face| {
+                    let Surface::Plane(plane) = source
+                        .model
+                        .geom()
+                        .surface(source.model.face(*face).surface)
+                    else {
+                        return false;
+                    };
+                    plane.origin.x.as_rational() == Some(Rational::from_i64(32))
+                        && plane.normal.y.as_rational() == Some(Rational::zero())
+                        && plane.normal.z.as_rational() == Some(Rational::zero())
+                })
+                .expect("the original input x=32 pocket end wall");
+            let refusal = construct(
+                &source.model,
+                source.result,
+                &selected,
+                &Rational::from_i64(8),
+                &Rational::parse("0.0000001").unwrap(),
+                &mut dec,
+            )
+            .err()
+            .expect("the R8 contact has no strict original end-rail crossing");
+            (refusal, reached)
+        });
+        println!("owner five-edge R8 source/strip request work={}", work.used);
+        assert!(!work.exhausted, "{work:?}");
+        assert_eq!(refusal.code, crate::fillet::RADIUS_TOO_LARGE, "{refusal:?}");
+        assert_eq!(
+            crate::fillet::radius_limit(&refusal),
+            Some(Rational::from_i64(8))
+        );
+        assert!(refusal.detail.contains("plane-contact rail"), "{refusal:?}");
+        assert!(refusal.detail.contains("different topology"), "{refusal:?}");
+        assert!(
+            refusal
+                .detail
+                .contains(&format!("; reaches face {reached:?}")),
+            "{refusal:?}"
+        );
+        assert!(
+            refusal.detail.ends_with("; radius limit 8 mm"),
             "{refusal:?}"
         );
     }

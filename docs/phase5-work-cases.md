@@ -362,3 +362,41 @@ The fit component remains above 20M and is assigned to its owner; the
 walk and actual split-cylinder walk refusal remain separate correctness
 investigations. These are request work snapshots, not a CPU profile.
 No production geometry, accounting, guard, tolerance or allowance changed.
+
+The strict boundary and its valid side were also exercised:
+
+| Request scope | Work | Result |
+|---|---:|---|
+| Ordinary six-edge application at R4, `065fe281808a132fe2277e0650735e0f48dae66f` | 670,393 | Unexhausted typed refusal; exact R4 bound, input face #57 and terminal 4 mm hint |
+| Actual thin-wall Intersection strip at R3.99, `23b51f266f5f22b22fcc18151695e40091bd918b` | 1,423,458 | Centre x=35.99, z=35+sqrt(21/25), and section radius controls pass |
+
+The positive strip is right-round/right-wall, not the more expensive
+right-round/near-wall curved control above. Its walk spends 50,509 work
+(9 stations, 33 checks); its fit spends 836,329 work. Runtime is 5.47s.
+Both remain below 20M. These prove the strict local limit, not construction
+of the full rim, its junctions or an admitted body.
+
+## Split-cylinder rolling request after guide-clock repair
+
+At `065fe281808a132fe2277e0650735e0f48dae66f`, the R10 split-cylinder
+R1 request no longer fails the internal guide-join plane guard. It instead
+exhausts the unchanged 100M allowance during the second half's walk.
+
+| First-half component | Work | Retained stations | Completed station checks |
+|---|---:|---:|---:|
+| Offset-centre walk | 41,280,980 | 356 | 7,605 |
+| Carrier and rail fit | 38,837,305 | 356 | 8,670 cumulative |
+
+Together these consume 80,118,285 work before the second half, excluding
+setup. The second-half refusal retains `numbers.operation-budget` and
+identifies edge #3, supports #3/#5, adaptive round 7, 333 stations and
+3,110 completed checks. Its attempted tau is approximately 0.8952148443;
+the smallest existing station span is approximately
+[-0.004687500723, -0.003450521554], width 0.001236979168.
+Runtime is 45.85s. Independent radius controls were not reached.
+
+Both first-half components exceed 20M and remain phase-5 work cases.
+These observations show aggregate request cost, not a demonstrated
+stagnating station. No allowance, tolerance, regularity guard or density
+limit changed. Fitting remains with its owner; no fitter-interface change
+is proposed from these measurements.

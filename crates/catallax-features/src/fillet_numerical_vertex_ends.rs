@@ -1,7 +1,11 @@
 //! Actual neighboring-face cuts, following OCCT's one-stripe end case and
 //! SMLib's Nx1 end-rib construction. Face-domain publication is separate.
 
+#[path = "fillet_numerical_vertex_plane_end.rs"]
+mod plane;
+
 use catallax_numbers::{Ball, Decider, NumericalCheck, NumericalSample, Rational, Refusal, Sign};
+use catallax_shapes::{BSplineCurve, Surface};
 use catallax_topology::{BodyId, Loop, Model, Sense, VertexId};
 
 use super::super::super::rolling::RolledChain;
@@ -9,6 +13,13 @@ use super::{
     BITS, BoundarySide, JunctionBoundary, JunctionFace, StripEnd, StripTermination, VertexContact,
     VertexJunction, bad, strip, upper_distance,
 };
+
+struct EndCurves {
+    curve: BSplineCurve,
+    parameters: [BSplineCurve; 2],
+    tau: [Rational; 2],
+    check: NumericalCheck,
+}
 
 pub(crate) fn face_end(
     model: &Model,
@@ -46,26 +57,42 @@ pub(crate) fn face_end(
     }
     let neighbor = neighbor.ok_or_else(|| bad("an end section has no neighboring source face"))?;
     let surface = model.geom().surface(model.face(neighbor).surface);
-    let point = model.geom().position(model.vertex(vertex).point);
-    let seed = crate::numerical_embedding::surface_parameters(surface, &point, tolerance, dec)?;
-    let cut = source.fillet.surface_cut(
-        surface.clone(),
-        [
+    let cut = if matches!(surface, Surface::Plane(_)) {
+        plane::construct(
+            source.fillet.surface().source(),
+            surface,
             Rational::from_i64(end.source_end as i64),
-            seed[0].clone(),
-            seed[1].clone(),
-        ],
-        dec,
-    )?;
+            tolerance,
+            dec,
+        )?
+    } else {
+        let point = model.geom().position(model.vertex(vertex).point);
+        let seed = crate::numerical_embedding::surface_parameters(surface, &point, tolerance, dec)?;
+        let cut = source.fillet.surface_cut(
+            surface.clone(),
+            [
+                Rational::from_i64(end.source_end as i64),
+                seed[0].clone(),
+                seed[1].clone(),
+            ],
+            dec,
+        )?;
+        EndCurves {
+            curve: cut.curve().clone(),
+            parameters: cut.parameters().clone(),
+            tau: cut.tau_ends().clone(),
+            check: cut.check().clone(),
+        }
+    };
     let mut contacts = Vec::with_capacity(2);
     let mut samples = Vec::with_capacity(2);
     for side in 0..2 {
         let s = Rational::from_i64(side as i64);
         let position = cut
-            .curve()
+            .curve
             .evaluate_box([&s, &s], BITS, dec)?
             .map(|value| value.mid());
-        let tau = &cut.tau_ends()[side];
+        let tau = &cut.tau[side];
         let rail = source
             .fillet
             .rail(side)
@@ -88,7 +115,7 @@ pub(crate) fn face_end(
                 .evaluate(&uv[0], &uv[1], dec)?,
             &position,
         ));
-        let native = cut.parameters()[1].evaluate_box([&s, &s], BITS, dec)?;
+        let native = cut.parameters[1].evaluate_box([&s, &s], BITS, dec)?;
         let neighbor_uv = [native[0].mid(), native[1].mid()];
         let uv = neighbor_uv
             .each_ref()
@@ -111,33 +138,39 @@ pub(crate) fn face_end(
             distance_upper_mm: error,
         });
     }
+    let EndCurves {
+        curve,
+        parameters: [first, second],
+        tau,
+        check,
+    } = cut;
     Ok(VertexJunction {
         source: vertex,
         contacts,
         boundaries: vec![JunctionBoundary {
-            curve: cut.curve().clone(),
+            curve,
             contacts: [0, 1],
             sides: [
                 BoundarySide {
                     face: JunctionFace::Strip(end),
-                    parameters: cut.parameters()[0].clone(),
+                    parameters: first,
                 },
                 BoundarySide {
                     face: JunctionFace::Source(neighbor),
-                    parameters: cut.parameters()[1].clone(),
+                    parameters: second,
                 },
             ],
         }],
         terminations: vec![StripTermination {
             strip: end,
-            tau: cut.tau_ends().clone(),
+            tau,
             contacts: [0, 1],
             support_parameters: [0, 0],
             boundaries: vec![(0, Sense::Same)],
         }],
         patches: Vec::new(),
         checks: vec![
-            cut.check().clone(),
+            check,
             NumericalCheck::Samples {
                 name: "fillet.vertex.face-end-contacts".into(),
                 scope: "two canonical rail contacts on their actual supports and neighbor".into(),

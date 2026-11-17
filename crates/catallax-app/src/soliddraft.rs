@@ -428,7 +428,7 @@ fn fit_arc_centre(start: &Point2, centre: Point2, target: &Point2, step: &str) -
     let scale = (target_radius - start_radius)
         / (Rational::from_i64(2) * (&chord[0] * &chord[0] + &chord[1] * &chord[1]));
     let fitted = Point2(std::array::from_fn(|i| {
-        Number::new(centre.0[i].value() + &scale * &chord[i])
+        Number::new(centre.0[i].value() + &(&scale * &chord[i]))
     }));
     if !close(&fitted, &centre) {
         return Err(invalid(

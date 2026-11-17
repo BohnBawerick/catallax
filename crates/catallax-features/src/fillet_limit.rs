@@ -26,10 +26,13 @@ const NO_CONTACT: &str = "the ball of this radius cannot touch one face of the e
 pub(crate) fn named_contact(mut refusal: Refusal, model: &Model, faces: [FaceId; 2]) -> Refusal {
     if refusal.code == RADIUS_TOO_LARGE {
         let names = faces.map(|face| model.face_origins(face));
-        refusal.detail.push_str(&format!(
-            "; limiting contact supports {}",
-            serde_json::to_string(&names).expect("face origins serialize")
-        ));
+        crate::fillet::append_radius_context(
+            &mut refusal,
+            &format!(
+                "; limiting contact supports {}",
+                serde_json::to_string(&names).expect("face origins serialize")
+            ),
+        );
     }
     refusal
 }

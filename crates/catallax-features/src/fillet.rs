@@ -88,6 +88,17 @@ pub fn radius_limit(refusal: &Refusal) -> Option<Rational> {
     Rational::parse(tail.split_once(LIMIT_SUFFIX)?.0).ok()
 }
 
+/// Appends context without moving a terminal legacy radius hint.
+pub(crate) fn append_radius_context(refusal: &mut Refusal, context: &str) {
+    let position = if refusal.detail.ends_with(LIMIT_SUFFIX) {
+        refusal.detail.rfind(LIMIT_PREFIX)
+    } else {
+        None
+    };
+    let position = position.unwrap_or(refusal.detail.len());
+    refusal.detail.insert_str(position, context);
+}
+
 /// A [`RADIUS_TOO_LARGE`] refusal. A limit is shown rounded down to three
 /// decimal places, and dropped when that leaves nothing positive.
 pub(crate) fn too_large(reason: &str, limit: Option<&Real>, dec: &mut Decider) -> Refusal {
@@ -99,19 +110,19 @@ pub(crate) fn too_large(reason: &str, limit: Option<&Real>, dec: &mut Decider) -
             .then(|| shown.to_decimal_exact())
             .flatten()
     });
-    let mut refusal = Refusal::new(
-        RADIUS_TOO_LARGE,
-        match shown {
-            Some(shown) => format!("{reason}{LIMIT_PREFIX}{shown}{LIMIT_SUFFIX}"),
-            None => reason.to_string(),
-        },
-    );
+    let mut refusal = Refusal::new(RADIUS_TOO_LARGE, reason);
     if let Some((proof, _)) = bound {
         refusal.detail.push_str(&format!(
             "; contact upper bound {proof}; the bound does not prove a fitting radius or continuation at equality"
         ));
     }
-    crate::refusal_limit::unknown(refusal)
+    let mut refusal = crate::refusal_limit::unknown(refusal);
+    if let Some(shown) = shown {
+        refusal
+            .detail
+            .push_str(&format!("{LIMIT_PREFIX}{shown}{LIMIT_SUFFIX}"));
+    }
+    refusal
 }
 
 fn bad(detail: &str) -> Refusal {

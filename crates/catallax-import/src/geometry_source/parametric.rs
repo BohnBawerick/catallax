@@ -268,6 +268,25 @@ impl Compiler<'_> {
     fn length(&self, v: &Rational) -> Expr {
         Expr::rational(v * &self.length_mm)
     }
+    fn torus_coordinates(
+        &self,
+        placement: EntityId,
+        major: &Expr,
+        minor: &Expr,
+        angles: [&Expr; 2],
+        dec: &mut Decider,
+    ) -> Result<Triple, MappingError> {
+        let [a, b] = angles;
+        let radial = major.add(&minor.mul(&b.cos()));
+        Ok(frame_point(
+            &self.frame(placement, dec)?,
+            &[
+                radial.mul(&a.cos()),
+                radial.mul(&a.sin()),
+                minor.mul(&b.sin()),
+            ],
+        ))
+    }
     fn curve(
         &mut self,
         id: EntityId,
@@ -504,22 +523,17 @@ impl Compiler<'_> {
                     ),
                 )]
             }
-            Surface::Torus(p, major, minor) => {
-                let minor = self.length(&minor.abs());
-                let radial = self.length(&major.abs()).add(&minor.mul(&b.cos()));
-                vec![chart(
-                    id,
-                    2,
-                    frame_point(
-                        &self.frame(p, dec)?,
-                        &[
-                            radial.mul(&a.cos()),
-                            radial.mul(&a.sin()),
-                            minor.mul(&b.sin()),
-                        ],
-                    ),
-                )]
-            }
+            Surface::Torus(p, major, minor) => vec![chart(
+                id,
+                2,
+                self.torus_coordinates(
+                    p,
+                    &self.length(&major.abs()),
+                    &self.length(&minor.abs()),
+                    [&a, &b],
+                    dec,
+                )?,
+            )],
             Surface::BSpline(_) => {
                 let native = self
                     .source
@@ -614,16 +628,41 @@ impl Compiler<'_> {
                 charts
             }
             Surface::Offset(parent, distance, _) => {
-                let mut charts = self.surface(parent, dec)?;
-                for c in &mut charts {
-                    let du = ex::derivative(&c.coordinates, 0, dec)?;
-                    let dv = ex::derivative(&c.coordinates, 1, dec)?;
-                    c.coordinates = ex::add(
-                        &c.coordinates,
-                        &ex::scale(&ex::unit(&ex::cross(&du, &dv)), &self.length(&distance)),
-                    );
+                let ring = match self.source.geometry(parent, dec)? {
+                    Geometry::Surface(Surface::Torus(p, major, minor)) => {
+                        let major = major.abs();
+                        let minor = minor.abs();
+                        (major > minor && !minor.is_zero()).then_some((p, major, minor))
+                    }
+                    _ => None,
+                };
+                if let Some((p, major, minor)) = ring {
+                    // The regular basis normal is cos(v)*radial + sin(v)*axis.
+                    // Keep signed r+d and the original UV even across a collapse;
+                    // no equivalent checked torus or embedding is asserted.
+                    vec![chart(
+                        parent,
+                        2,
+                        self.torus_coordinates(
+                            p,
+                            &self.length(&major),
+                            &self.length(&(&minor + &distance)),
+                            [&a, &b],
+                            dec,
+                        )?,
+                    )]
+                } else {
+                    let mut charts = self.surface(parent, dec)?;
+                    for c in &mut charts {
+                        let du = ex::derivative(&c.coordinates, 0, dec)?;
+                        let dv = ex::derivative(&c.coordinates, 1, dec)?;
+                        c.coordinates = ex::add(
+                            &c.coordinates,
+                            &ex::scale(&ex::unit(&ex::cross(&du, &dv)), &self.length(&distance)),
+                        );
+                    }
+                    charts
                 }
-                charts
             }
             Surface::RectangularComposite(rows) => {
                 let mut charts = Vec::new();

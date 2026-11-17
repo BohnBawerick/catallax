@@ -323,6 +323,7 @@ mod tests {
 #8=SURFACE_OF_LINEAR_EXTRUSION('',#5,#7);
 #9=OFFSET_SURFACE('',#8,1.,.F.);
 #10=OFFSET_SURFACE('',#3,-3.,.F.);
+#11=OFFSET_SURFACE('',#4,0.5,.F.);
 ENDSEC;",
                 &mut dec,
             )
@@ -334,6 +335,7 @@ ENDSEC;",
                 (8, "10", AngleUnit::Degrees, ["30", "10", "30"]),
                 (9, "10", AngleUnit::Degrees, ["30", "20", "30"]),
                 (10, "1", AngleUnit::Radians, ["2", "0", "0"]),
+                (11, "1", AngleUnit::Radians, ["-0.5", "0", "0"]),
             ] {
                 let scale = q(scale);
                 let point = point.map(q);

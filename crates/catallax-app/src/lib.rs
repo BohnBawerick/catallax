@@ -16,6 +16,7 @@ pub mod handover;
 /// Revision-bound preview delivery and caller-scheduled proof.
 pub mod lifecycle;
 pub mod loops;
+mod outcome;
 /// Separate numerical admission and continuation, with finite trims and actual checks.
 /// Numerical results never enter the exact evaluation checkpoint. Export is separate.
 /// These producers never label their output exact or bounded. The shared generic

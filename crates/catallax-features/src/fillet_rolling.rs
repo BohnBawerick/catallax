@@ -245,7 +245,156 @@ pub(crate) fn construct(
 mod tests {
     use super::*;
     use catallax_numbers::{BudgetPolicy, with_operation_budget};
+    use catallax_numbers::{Fact, FactKind, FactOrigin};
     use catallax_shapes::Point3;
+    use catallax_shapes::{GeomKey, PointDef, Pose};
+    use catallax_topology::{Coedge, Edge, Loop, Lump, Shell, Vertex};
+
+    fn split_cylinder_rims(model: &mut Model) -> (BodyId, Vec<([EdgeId; 2], Rational)>) {
+        let original = catallax_topology::cylinder(
+            model,
+            Rational::from_i64(10),
+            Rational::from_i64(20),
+            &Pose::identity(),
+        )
+        .unwrap();
+        let mut replacements = BTreeMap::new();
+        let mut dec = Decider::default();
+        for edge in model.edges_of_body(original) {
+            let source = model.edge(edge).clone();
+            let Curve::Circle(circle) = model.geom().curve(source.curve).clone() else {
+                panic!("cylinder rim is circular")
+            };
+            let offset = circle
+                .ref_dir
+                .scaled(&(&circle.radius_sq / &circle.ref_dir.norm_squared()).sqrt());
+            let points = [
+                circle.center.plus(&offset),
+                circle.center.plus(&offset.scaled(&Real::from_i64(-1))),
+            ];
+            let vertices = points.map(|position| {
+                let point = model.geom_mut().add_point(PointDef::Explicit(position));
+                model.geom_mut().record_fact(Fact {
+                    kind: FactKind::Incident,
+                    a: GeomKey::Point(point),
+                    b: GeomKey::Curve(source.curve),
+                    at: None,
+                    origin: FactOrigin::Construction("split-cylinder diameter endpoints"),
+                });
+                model.add_vertex(Vertex { point })
+            });
+            let pair = [Sense::Same, Sense::Reversed].map(|sense| {
+                model.add_edge(Edge {
+                    curve: source.curve,
+                    sense,
+                    start: Some(vertices[0]),
+                    end: Some(vertices[1]),
+                })
+            });
+            let z = dec
+                .enclose_budgeted_at(&circle.center.z, 128)
+                .unwrap()
+                .mid();
+            let centre_z = if z.is_zero() {
+                Rational::one()
+            } else {
+                z - Rational::one()
+            };
+            replacements.insert(edge, (pair, centre_z));
+        }
+        let mut faces = Vec::new();
+        for old in model.faces_of_body(original) {
+            let mut face = model.face(old).clone();
+            let mut loops = Vec::new();
+            for lp in &face.loops {
+                let Loop::Coedges(old) = model.loop_(*lp).clone() else {
+                    panic!("cylinder fixture has coedge boundaries")
+                };
+                let mut coedges = Vec::new();
+                for old in old {
+                    let old = model.coedge(old).clone();
+                    if let Some(([a, b], _)) = replacements.get(&old.edge) {
+                        let directed = if old.sense == Sense::Same {
+                            [(*a, Sense::Same), (*b, Sense::Reversed)]
+                        } else {
+                            [(*b, Sense::Same), (*a, Sense::Reversed)]
+                        };
+                        coedges.extend(
+                            directed.map(|(edge, sense)| model.add_coedge(Coedge { edge, sense })),
+                        );
+                    } else {
+                        coedges.push(model.add_coedge(old));
+                    }
+                }
+                loops.push(model.add_loop(Loop::Coedges(coedges)));
+            }
+            face.loops = loops;
+            faces.push(model.add_face(face));
+        }
+        let shell = model.add_shell(Shell { faces });
+        let lump = model.add_lump(Lump {
+            shells: vec![shell],
+        });
+        let mut body = model.body(original).clone();
+        body.lumps = vec![lump];
+        let body = model.add_body(body);
+        assert!(model.check(body).is_empty());
+        (body, replacements.into_values().collect())
+    }
+
+    #[test]
+    fn split_cylinder_stations_keep_the_native_circle_and_fillet_radius() {
+        let mut model = Model::default();
+        let (body, rims) = split_cylinder_rims(&mut model);
+        let tolerance = Rational::parse("0.0000001").unwrap();
+        for (pair, centre_z) in rims {
+            let (chains, work) = with_operation_budget(100_000_000, || {
+                let mut dec = Decider::new(BudgetPolicy {
+                    max_work: 100_000_000,
+                    ..Default::default()
+                });
+                construct(&model, body, &pair, &Rational::one(), &tolerance, &mut dec).unwrap()
+            });
+            println!(
+                "split native cylinder two-half rolling request work={}",
+                work.used
+            );
+            assert!(!work.exhausted, "{work:?}");
+            let dec = Decider::default();
+            let check_tolerance = tolerance.mul_pow2(1);
+            for strip in chains.iter().flat_map(|chain| &chain.strips) {
+                for i in 0..=3 {
+                    let tau = Rational::from_ratio(i, 3).unwrap();
+                    let centre = strip
+                        .fillet
+                        .spine()
+                        .centre_curve()
+                        .evaluate_box([&tau, &tau], 128, &dec)
+                        .unwrap();
+                    within(&centre[2], &centre_z, &check_tolerance);
+                    within(
+                        &(centre[0].square() + centre[1].square()).sqrt().unwrap(),
+                        &Rational::from_i64(9),
+                        &check_tolerance,
+                    );
+                    for j in 0..=3 {
+                        let v = Rational::from_ratio(j, 3).unwrap();
+                        let point = strip
+                            .fillet
+                            .surface()
+                            .source()
+                            .evaluate_box([&tau, &tau], [&v, &v], 128, &dec)
+                            .unwrap();
+                        let square = (0..3)
+                            .fold(Ball::from_rational(&Rational::zero(), 128), |sum, axis| {
+                                &sum + &(&point[axis] - &centre[axis]).square()
+                            });
+                        within(&square.sqrt().unwrap(), &Rational::one(), &check_tolerance);
+                    }
+                }
+            }
+        }
+    }
 
     fn signed_plane_distance(
         model: &Model,

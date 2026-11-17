@@ -397,10 +397,16 @@ impl Carrier {
             });
             // Finite limits already determine the scan ranges. Origin samples
             // and derivatives contribute only to an unbounded search envelope.
-            let (base, derivatives) = if data.domain().iter().take(self.dimension)
+            let (base, derivatives) = if data
+                .domain()
+                .iter()
+                .take(self.dimension)
                 .any(|bounds| bounds.iter().any(Option::is_none))
             {
-                let origin = NativeLocation { chart, parameters: center };
+                let origin = NativeLocation {
+                    chart,
+                    parameters: center,
+                };
                 (self.try_sample(origin, dec)?, self.jacobian(origin, dec)?)
             } else {
                 (None, None)

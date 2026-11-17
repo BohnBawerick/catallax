@@ -4,6 +4,9 @@
 //! imprint, classify, keep, sew. Plus exact containment of rational points
 //! and rational points inside faces.
 //!
+//! [`check_body`] explicitly checks structure and opposite-sheet overlaps on
+//! matching carriers, with conservative spatial pruning before exact proofs.
+//!
 //! The contract is `docs/pieces/05-boolean-engine.md`.
 //!
 //! Face imprints are oriented halfedge arrangements. Equal tangents are
@@ -19,6 +22,7 @@
 
 mod arrangement;
 mod bounds;
+mod broad_phase;
 mod carrier_bounds;
 mod containment;
 mod curve_pair;
@@ -40,6 +44,7 @@ mod spline_fillet;
 mod stages;
 mod torus_region;
 mod trim_bounds;
+mod validation;
 
 #[cfg(test)]
 mod tests;
@@ -55,6 +60,7 @@ use catallax_shapes::{Point3, RPoint3};
 use catallax_topology::{Body, BodyId, BodyKind, FaceId, Model};
 
 pub use face_queries::PreparedFaceQueries;
+pub use validation::check_body;
 
 /// A boolean operation.
 #[non_exhaustive]

@@ -148,12 +148,61 @@ fn normal_gap_replays_from_saved_source_controls_with_approximate_history() {
 
 #[test]
 fn import_cap_proofs_stay_conservative_while_explicit_checked_bounds_stay_tight() {
-    let mut fixture = BoxFixture::new(["2", "3", "4"]);
-    fixture.shift = Some((0, [r("0.001"), r("0"), r("0")]));
+    use catallax_import::geometry_source::{Curve, Geometry, ParsedStep};
+    use catallax_import::tolerant::ToleranceEntity;
+    use std::fmt::Write;
+    let fixture = BoxFixture::new(["2", "3", "4"]);
     let mut sheet = BoxFixture::new(["2", "3", "4"]);
     sheet.origin = [r("5"), r("0"), r("0")];
     sheet.omit = Some(0);
     let source = boxes_step(&[fixture, sheet]);
+    let mut dec = Decider::default();
+    let parsed = ParsedStep::read(source.as_bytes(), &mut dec).unwrap();
+    let (line, vector) = parsed
+        .entities()
+        .find_map(|entity| {
+            let Geometry::Curve(Curve::Line(origin, vector)) =
+                parsed.geometry(entity, &mut dec).ok()?
+            else {
+                return None;
+            };
+            let Geometry::Point(point) = parsed.geometry(origin, &mut dec).ok()? else {
+                return None;
+            };
+            let Geometry::Vector(direction, _) = parsed.geometry(vector, &mut dec).ok()? else {
+                return None;
+            };
+            let Geometry::Direction(direction) = parsed.geometry(direction, &mut dec).ok()? else {
+                return None;
+            };
+            (point.len() == 3
+                && point.iter().all(|coordinate| coordinate.is_zero())
+                && direction.len() == 3
+                && !direction[0].is_zero()
+                && direction[1].is_zero()
+                && direction[2].is_zero())
+            .then_some((entity, vector))
+        })
+        .expect("the box has an X-directed edge through its origin");
+    let new_origin = parsed.entities().max().unwrap() + 1;
+    let prefix = format!("#{line}=");
+    let mut changed = String::with_capacity(source.len() + 128);
+    let mut data = false;
+    for row in source.lines() {
+        if row == "DATA;" {
+            data = true;
+        }
+        if data && row == "ENDSEC;" {
+            writeln!(changed, "#{new_origin}=CARTESIAN_POINT('',(0.,0.001,0.));").unwrap();
+            data = false;
+        }
+        if row.starts_with(&prefix) {
+            writeln!(changed, "#{line}=LINE('',#{new_origin},#{vector});").unwrap();
+        } else {
+            writeln!(changed, "{row}").unwrap();
+        }
+    }
+    let source = changed;
     let hash = sha256_hex(source.as_bytes());
     let step = StepId::new("bounded-incidence").unwrap();
     let cap = r("0.005");
@@ -183,7 +232,8 @@ fn import_cap_proofs_stay_conservative_while_explicit_checked_bounds_stay_tight(
         assert_eq!(checked_artifact(file).0, (6, 12, 8));
         assert_eq!(file.bodies()[1].tier(), Tier::SurfaceBody);
     }
-    let import_report = imported.bodies()[0].healing().unwrap().report();
+    let healed = imported.bodies()[0].healing().unwrap();
+    let import_report = healed.report();
     let mut saw_conservative_cap = false;
     for measurement in import_report.measurements.iter().filter(|measurement| {
         measurement
@@ -195,6 +245,70 @@ fn import_cap_proofs_stay_conservative_while_explicit_checked_bounds_stay_tight(
         saw_conservative_cap |= bound == cap;
     }
     assert!(saw_conservative_cap);
+    assert!(import_report.measurements.iter().any(|measurement| {
+        measurement
+            .check
+            .ends_with(".exact-squared-cap-upper-bound")
+            && r(&measurement.distance_upper_mm).is_zero()
+    }));
+    let body = &healed.bodies()[0];
+    let ledger = healed.tolerances();
+    let record = ledger
+        .bodies
+        .iter()
+        .find(|record| record.name == body.name())
+        .unwrap();
+    let edge_change = record
+        .changes
+        .iter()
+        .find(|change| {
+            matches!(change.entity, ToleranceEntity::Edge(_))
+                && change.cause.starts_with("healing.cap-certified-")
+        })
+        .expect("a positive line-plane gap must grow an applied edge tolerance");
+    assert_eq!(r(&edge_change.after_mm), cap);
+    let ToleranceEntity::Edge(edge_name) = &edge_change.entity else {
+        unreachable!()
+    };
+    let edge = body
+        .edges()
+        .iter()
+        .find(|edge| &edge.name == edge_name)
+        .unwrap();
+    assert_eq!(edge.tolerance_mm(), &cap);
+    assert!(
+        record
+            .edges
+            .iter()
+            .any(|(name, value)| name == edge_name && r(value) == cap)
+    );
+    for index in edge.vertices {
+        let vertex = &body.vertices()[index];
+        assert_eq!(vertex.tolerance_mm(), &cap);
+        assert!(
+            record
+                .vertices
+                .iter()
+                .any(|(name, value)| { name == &vertex.source.name && r(value) == cap })
+        );
+        let propagation = record.changes.iter().find(|change| {
+            matches!(&change.entity, ToleranceEntity::Vertex(name) if name == &vertex.source.name)
+                && change.propagated_from_edge.as_ref() == Some(edge_name)
+        }).expect("the applied edge cap must propagate to both endpoints");
+        assert_eq!(r(&propagation.after_mm), cap);
+        assert!(propagation.cause.starts_with("healing.cap-certified-"));
+    }
+    let initial = r(&ledger.initial_mm);
+    assert!(
+        body.edges()
+            .iter()
+            .any(|edge| edge.tolerance_mm() == &initial)
+    );
+    assert!(
+        body.vertices()
+            .iter()
+            .any(|vertex| vertex.tolerance_mm() == &initial)
+    );
     let strict_report = checked.bodies()[0].healing().unwrap().report();
     assert!(!strict_report.measurements.iter().any(|measurement| {
         measurement

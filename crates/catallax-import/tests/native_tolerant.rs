@@ -592,8 +592,7 @@ fn missing_sphere_pole_edges_are_reconstructed_from_measured_collapse() {
 
 #[test]
 fn default_opening_exports_a_rebuilt_trace_instead_of_an_inconsistent_authored_trace() {
-    use catallax_import::geometry_source::{AngleUnit, Curve, Geometry};
-    use catallax_import::tolerant::native::{NativeLocation, NativeUvCurve};
+    use catallax_import::geometry_source::{Curve, Geometry};
     let source = common::elliptical_extrusion::SOURCE
         .replace(
             "#20=EDGE_CURVE('lower ellipse edge',#18,#18,#12,.F.);",
@@ -710,20 +709,37 @@ fn default_opening_exports_a_rebuilt_trace_instead_of_an_inconsistent_authored_t
         direction.map(|coordinate| coordinate / length)
     });
     let scale = transform.scales[0].as_ref().unwrap().to_f64_nearest();
-    let emitted =
-        NativeUvCurve::from_source(&parsed, conic, &r("1"), AngleUnit::Radians, &mut dec).unwrap();
+    let Geometry::Curve(Curve::Ellipse(placement, major, minor)) =
+        parsed.geometry(conic, &mut dec).unwrap()
+    else {
+        panic!("exported trace must retain the analytic ellipse");
+    };
+    let Geometry::Axis2Placement2d(centre, Some(x_axis)) =
+        parsed.geometry(placement, &mut dec).unwrap()
+    else {
+        unreachable!()
+    };
+    let Geometry::Point(centre) = parsed.geometry(centre, &mut dec).unwrap() else {
+        unreachable!()
+    };
+    let Geometry::Direction(x_axis) = parsed.geometry(x_axis, &mut dec).unwrap() else {
+        unreachable!()
+    };
+    let x_axis = [x_axis[0].to_f64_nearest(), x_axis[1].to_f64_nearest()];
+    let length = x_axis[0].hypot(x_axis[1]);
+    let x_axis = x_axis.map(|coordinate| coordinate / length);
+    let y_axis = [-x_axis[1], x_axis[0]];
+    let radii = [major.to_f64_nearest(), minor.to_f64_nearest()];
+    let centre = [centre[0].to_f64_nearest(), centre[1].to_f64_nearest()];
+    let origin = [origin[0].to_f64_nearest(), origin[1].to_f64_nearest()];
     for sample in &trace.samples {
-        let (uv, _) = emitted
-            .sample(
-                NativeLocation {
-                    chart: 0,
-                    parameters: sample.curve.parameters,
-                },
-                &mut dec,
-            )
-            .unwrap();
+        let angle = sample.curve.parameters[0];
+        let x = radii[0] * angle.cos();
+        let y = radii[1] * angle.sin();
+        let uv: [f64; 2] =
+            std::array::from_fn(|axis| centre[axis] + x_axis[axis] * x + y_axis[axis] * y);
         let uv = std::array::from_fn(|axis| {
-            origin[axis].to_f64_nearest() + scale * (axes[0][axis] * uv[0] + axes[1][axis] * uv[1])
+            origin[axis] + scale * (axes[0][axis] * uv[0] + axes[1][axis] * uv[1])
         });
         let actual = surface
             .sample(surface.location(uv).unwrap(), &mut dec)

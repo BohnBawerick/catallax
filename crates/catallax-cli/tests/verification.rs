@@ -638,8 +638,11 @@ fn planar_drafts_export_checked_step_at_the_application_allowance() {
         // The manifest has no origins. Each one must name the right support.
         let recipe = Recipe::parse(fixture).unwrap();
         let mut dec = Decider::default();
-        let built =
-            catallax_app::build_incremental_without_display(&recipe, None, &mut dec).unwrap();
+        let catallax_app::EvaluatedApplicationOutcome::Exact(built) =
+            catallax_app::build_incremental_without_display(&recipe, None, &mut dec).unwrap()
+        else {
+            panic!("the analytic draft fixture remains exact");
+        };
         let t = angle.to_radians().tan();
         let expected = [
             (Role::Start, [0.0, 0.0, 0.0]),

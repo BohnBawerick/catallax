@@ -1,5 +1,7 @@
 //! Certified display is requested separately from exact suffix rebuilding.
-use catallax_app::{build_incremental, build_incremental_without_display};
+use catallax_app::{
+    EvaluatedApplicationOutcome, build_incremental, build_incremental_without_display,
+};
 use catallax_mesh::{MeshOptions, mesh_body};
 use catallax_numbers::{Decider, with_operation_budget};
 use catallax_recipe::Recipe;
@@ -38,8 +40,12 @@ fn bracket_suffix_builds_do_not_spend_unrequested_display_work() {
                 .filter(|(prior, _)| recipe.steps.starts_with(&prior.steps))
                 .max_by_key(|(prior, _)| prior.steps.len())
                 .map(|(_, checkpoint)| checkpoint.clone());
-            let body = build_incremental_without_display(&recipe, prefix, &mut Decider::default())
-                .unwrap();
+            let EvaluatedApplicationOutcome::Exact(body) =
+                build_incremental_without_display(&recipe, prefix, &mut Decider::default())
+                    .unwrap()
+            else {
+                panic!("the bracket suffix remains exact");
+            };
             done.push((recipe, body.checkpoint.clone()));
             final_body = Some(body);
         }
@@ -112,8 +118,11 @@ fn deferred_display_and_names_match_eager_fixture_bodies() {
         };
         let options = MeshOptions::default();
         let eager = build_incremental(&recipe, None, &options, &mut Decider::default()).unwrap();
-        let deferred =
-            build_incremental_without_display(&recipe, None, &mut Decider::default()).unwrap();
+        let EvaluatedApplicationOutcome::Exact(deferred) =
+            build_incremental_without_display(&recipe, None, &mut Decider::default()).unwrap()
+        else {
+            panic!("the eager exact fixture must retain its authority");
+        };
         assert_eq!(deferred.names, eager.names);
         let display = deferred.display(&options, &mut Decider::default()).unwrap();
         assert_eq!(display.value, eager.display.value);
@@ -140,8 +149,11 @@ fn deferred_display_preserves_refusal_codes_and_caller_allowances() {
     };
     let eager = build_incremental(&recipe, None, &options, &mut Decider::default()).unwrap_err();
     assert!(eager.code().starts_with("mesh."), "{eager:?}");
-    let deferred =
-        build_incremental_without_display(&recipe, None, &mut Decider::default()).unwrap();
+    let EvaluatedApplicationOutcome::Exact(deferred) =
+        build_incremental_without_display(&recipe, None, &mut Decider::default()).unwrap()
+    else {
+        panic!("a cylinder remains exact");
+    };
     assert_eq!(
         deferred
             .display(&options, &mut Decider::default())
@@ -173,8 +185,11 @@ fn deferred_display_keeps_the_default_application_guard() {
     let options = MeshOptions::default();
     let eager = build_incremental(&recipe, None, &options, &mut Decider::default()).unwrap_err();
     assert_eq!(eager.code(), "application.work-limit");
-    let deferred =
-        build_incremental_without_display(&recipe, None, &mut Decider::default()).unwrap();
+    let EvaluatedApplicationOutcome::Exact(deferred) =
+        build_incremental_without_display(&recipe, None, &mut Decider::default()).unwrap()
+    else {
+        panic!("a cylinder remains exact");
+    };
     assert_eq!(
         deferred
             .display(&options, &mut Decider::default())
@@ -195,8 +210,11 @@ fn large_display_above_target_completes_and_reports_stage_work() {
     let recipe = cylinder(500_000);
     let options = MeshOptions::default();
     let eager = build_incremental(&recipe, None, &options, &mut Decider::default()).unwrap();
-    let deferred =
-        build_incremental_without_display(&recipe, None, &mut Decider::default()).unwrap();
+    let EvaluatedApplicationOutcome::Exact(deferred) =
+        build_incremental_without_display(&recipe, None, &mut Decider::default()).unwrap()
+    else {
+        panic!("a cylinder remains exact");
+    };
     let (display, work) = with_operation_budget(DEFAULT_BUILD_WORK, || {
         deferred.display(&options, &mut Decider::default())
     });
@@ -214,4 +232,117 @@ fn large_display_above_target_completes_and_reports_stage_work() {
         proof: Some(work),
     };
     assert!(report.over_target());
+}
+
+#[test]
+fn approximate_loft_fillet_reaches_the_ordinary_application_result() {
+    let polygon = |prefix: &str, points: [[&str; 2]; 4]| {
+        points
+            .into_iter()
+            .enumerate()
+            .map(|(i, point)| json!({"kind":"line","id":format!("{prefix}_{i}"),"to":point}))
+            .collect::<Vec<_>>()
+    };
+    let section = |id: &str, z: &str, lines: Vec<Value>| {
+        json!({"id":id,"op":"sketch","plane":{"rotation":["1","0","0","0"],
+            "translation":["0","0",z]},"loops":[lines]})
+    };
+    let mut value = json!({"format":"catallax-recipe/5","name":"application spline fillet",
+        "steps":[
+            section("bottom","0",polygon("a",[["1","-1"],["1","1"],["-1","1"],["-1","-1"]])),
+            section("middle","1",polygon("m",[["5/4","-1/2"],["1/2","3/2"],["-3/2","1/2"],["-1/2","-1"]])),
+            section("top","2",polygon("b",[["1","0"],["0","2"],["-2","0"],["0","-1"]])),
+            {"id":"loft","op":"loft","shape":"smooth","sections":[
+                {"profile":"bottom","start":["a_0"]},{"profile":"middle","start":["m_0"]},
+                {"profile":"top","start":["b_0"]}]}
+        ],"result":"loft"});
+    let prefix = Recipe::parse(&value.to_string()).unwrap();
+    value["steps"].as_array_mut().unwrap().push(json!({
+        "id":"round","op":"fillet","body":"loft","radius":"1/10",
+        "edges":[{"between":[
+            {"step":"loft","role":{"side":{"segment":"a_0"}}},
+            {"step":"loft","role":{"side":{"segment":"a_1"}}}
+        ]}]
+    }));
+    value["result"] = json!("round");
+    let recipe = Recipe::parse(&value.to_string()).unwrap();
+    let (answer, work) = with_operation_budget(100_000_000, || {
+        let mut dec = Decider::default();
+        let EvaluatedApplicationOutcome::Exact(prefix) =
+            build_incremental_without_display(&prefix, None, &mut dec).unwrap()
+        else {
+            panic!("the unrounded loft retains an exact checkpoint");
+        };
+        build_incremental_without_display(&recipe, Some(prefix.checkpoint), &mut dec)
+    });
+    println!("ordinary numerical fillet request {work:?}");
+    assert!(!work.exhausted, "{work:?}");
+    let EvaluatedApplicationOutcome::Numerical(result) = answer.unwrap() else {
+        panic!("finite numerical checks must not be promoted to an exact checkpoint");
+    };
+    let body = result.body();
+    assert_eq!(body.kind(), catallax_topology::BodyKind::Solid);
+    let band = body
+        .definition()
+        .faces
+        .iter()
+        .find(|face| {
+            result.face_origins()[&face.key].iter().any(|origin| {
+                origin.step.as_str() == "round"
+                    && matches!(origin.role, catallax_recipe::Role::Blend { .. })
+            })
+        })
+        .unwrap();
+    assert!(body.definition().faces.iter().all(|face| {
+        result
+            .face_origins()
+            .get(&face.key)
+            .is_some_and(|origins| !origins.is_empty())
+    }));
+    let catallax_shapes::Surface::BSpline(catallax_shapes::SplineSupport::RationalAtlas(atlas)) =
+        &band.surface
+    else {
+        panic!("the numerical blend retains its fitted carrier");
+    };
+    let (nearest_squared, control_work) = with_operation_budget(100_000_000, || {
+        let mut dec = Decider::default();
+        let carrier = atlas.source();
+        let domain = carrier.domain();
+        let u = (domain[0][0] + domain[0][1]).mul_pow2(-1);
+        let v = (domain[1][0] + domain[1][1]).mul_pow2(-1);
+        let p = carrier
+            .jet_box([&u, &u], [&v, &v], 128, &mut dec)
+            .unwrap()
+            .value
+            .map(|coordinate| coordinate.mid().to_f64_nearest());
+        let mut nearest = f64::INFINITY;
+        for edge in &body.source_definition().edges {
+            for i in 0..=32 {
+                let t = &edge.parameters[0]
+                    + &((&edge.parameters[1] - &edge.parameters[0])
+                        * catallax_numbers::Rational::from_ratio(i, 32).unwrap());
+                let q = match &edge.curve {
+                    catallax_shapes::Curve::Line(line) => {
+                        let q = line.origin.plus(&line.dir.scaled(&t.into()));
+                        [&q.x, &q.y, &q.z]
+                            .map(|coordinate| dec.enclose_at(coordinate, 128).unwrap())
+                    }
+                    catallax_shapes::Curve::BSpline(curve) => {
+                        curve.evaluate_box([&t, &t], 128, &mut dec).unwrap()
+                    }
+                    _ => panic!("the source loft has line and spline boundaries"),
+                };
+                let distance = (0..3)
+                    .map(|axis| (p[axis] - q[axis].mid().to_f64_nearest()).powi(2))
+                    .sum::<f64>();
+                nearest = nearest.min(distance);
+            }
+        }
+        nearest
+    });
+    assert!(!control_work.exhausted, "{control_work:?}");
+    assert!(
+        nearest_squared.is_finite() && nearest_squared > 0.01_f64.powi(2),
+        "the blend interior must move away from the original sharp boundaries: {nearest_squared}"
+    );
 }

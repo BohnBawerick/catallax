@@ -1,7 +1,9 @@
 //! SolidDraft's on-face slot cut through the bracket flange, with no start offset.
 //! Each call rebuilds only the slot from its target's checkpoint, as the application
 //! does, and must stay within the application allowance.
-use catallax_app::{DEFAULT_BUILD_WORK, build_incremental_without_display};
+use catallax_app::{
+    DEFAULT_BUILD_WORK, EvaluatedApplicationOutcome, build_incremental_without_display,
+};
 use catallax_measure::{Accuracy, volume};
 use catallax_mesh::MeshOptions;
 use catallax_numbers::{Decider, Rational, with_operation_budget};
@@ -22,7 +24,9 @@ fn slot_cut(source: &str, faces: usize, expected_volume: &str) {
         build_incremental_without_display(&prefix, None, &mut Decider::default())
     });
     assert!(!work.exhausted);
-    let target = target.unwrap();
+    let EvaluatedApplicationOutcome::Exact(target) = target.unwrap() else {
+        panic!("the bracket target remains exact");
+    };
 
     let (body, work) = with_operation_budget(DEFAULT_BUILD_WORK, || {
         build_incremental_without_display(&recipe, Some(target.checkpoint), &mut Decider::default())
@@ -32,7 +36,9 @@ fn slot_cut(source: &str, faces: usize, expected_volume: &str) {
         !work.exhausted,
         "slot subtract over the allowance: {work:?}"
     );
-    let body = body.unwrap();
+    let EvaluatedApplicationOutcome::Exact(body) = body.unwrap() else {
+        panic!("the on-face slot remains exact");
+    };
     let (display, work) = with_operation_budget(DEFAULT_BUILD_WORK, || {
         body.display(&MeshOptions::default(), &mut Decider::default())
     });

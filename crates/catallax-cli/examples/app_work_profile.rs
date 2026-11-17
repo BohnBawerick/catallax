@@ -83,9 +83,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let mut decider = Decider::default();
                 if exact_only {
                     catallax_app::build_incremental_without_display(&recipe, None, &mut decider)
-                        .map(|body| {
-                            let built = body.checkpoint.built();
-                            json!({"faces":built.model.faces_of_body(built.result).len()})
+                        .map(|body| match body {
+                            catallax_app::EvaluatedApplicationOutcome::Exact(body) => {
+                                let built = body.checkpoint.built();
+                                json!({"faces":built.model.faces_of_body(built.result).len()})
+                            }
+                            catallax_app::EvaluatedApplicationOutcome::Numerical(body) => {
+                                json!({"faces":body.body().counts().faces})
+                            }
                         })
                 } else {
                     catallax_app::build(&recipe, &options, &mut decider).map(|body| {

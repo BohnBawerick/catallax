@@ -275,12 +275,16 @@ fn natural_three_square_loft_builds_inside_the_default_allowance() {
     );
     let app = build(&value);
     picking_is_physical(&app);
-    let retained = catallax_app::build_incremental_without_display(
-        &recipe(&value),
-        None,
-        &mut Decider::default(),
-    )
-    .unwrap();
+    let catallax_app::EvaluatedApplicationOutcome::Exact(retained) =
+        catallax_app::build_incremental_without_display(
+            &recipe(&value),
+            None,
+            &mut Decider::default(),
+        )
+        .unwrap()
+    else {
+        panic!("the unfilleted loft remains exact");
+    };
     let (display, work) = catallax_numbers::with_operation_budget(20_000_000, || {
         retained.display(&options(), &mut Decider::default())
     });
@@ -691,9 +695,12 @@ fn three_section_smooth_rendering_keeps_the_definition_and_shared_allowance() {
 #[test]
 fn rendering_preserves_a_proved_circle_loft_and_its_full_allowance() {
     let definition = recipe(&circles(&["1", "2", "1"], &["0", "1", "4"]));
-    let app =
+    let catallax_app::EvaluatedApplicationOutcome::Exact(app) =
         catallax_app::build_incremental_without_display(&definition, None, &mut Decider::default())
-            .unwrap();
+            .unwrap()
+    else {
+        panic!("the proved circle loft remains exact");
+    };
     let (old, old_work) = catallax_numbers::with_operation_budget(20_000_000, || {
         app.display(&options(), &mut Decider::default())
     });

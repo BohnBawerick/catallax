@@ -15,7 +15,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         with_operation_log(|| -> Result<Value, Box<dyn std::error::Error>> {
             let mut dec = Decider::default();
             let start = Instant::now();
-            let body = catallax_app::build_incremental_without_display(&recipe, None, &mut dec)?;
+            let catallax_app::EvaluatedApplicationOutcome::Exact(body) =
+                catallax_app::build_incremental_without_display(&recipe, None, &mut dec)?
+            else {
+                return Err("the hosted exact-answer comparison requires an exact result".into());
+            };
             let build_ms = start.elapsed().as_secs_f64() * 1000.0;
             let start = Instant::now();
             let mesh = body.display(&Default::default(), &mut dec)?;

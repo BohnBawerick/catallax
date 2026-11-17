@@ -17,9 +17,12 @@ fn main() {
         ..StepOptions::default()
     };
     let ((answer, report), work) = with_operation_budget(20_000_000, || {
-        let body =
+        let catallax_app::EvaluatedApplicationOutcome::Exact(body) =
             catallax_app::build_incremental_without_display(&recipe, None, &mut Decider::default())
-                .unwrap();
+                .unwrap()
+        else {
+            panic!("the analytic rounded-boss measurement requires an exact result");
+        };
         let built = body.checkpoint.built();
         let mut bytes = Vec::new();
         eprintln!("starting rounded STEP writer");

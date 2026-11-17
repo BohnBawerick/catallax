@@ -2470,7 +2470,7 @@ pub(crate) fn build(
 
 /// The input edges a selection rounds: every sharp edge for `"all"`, less
 /// the mitres an earlier roll-over already swallowed, or the named edges.
-fn select(
+pub(crate) fn select(
     model: &Model,
     body: BodyId,
     selection: &EdgeSelection,

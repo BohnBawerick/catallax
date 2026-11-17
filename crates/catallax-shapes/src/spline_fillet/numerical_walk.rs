@@ -23,7 +23,7 @@ impl SectionPlane {
         } else {
             tau
         };
-        let (point, tangent) = if anchor == tau {
+        let [point, tangent] = if anchor == tau {
             guide.first_box_reusing([anchor, anchor], 128, dec, &mut Vec::new())?
         } else {
             let jet = guide.jet_box([anchor, anchor], 128, dec)?;
@@ -35,7 +35,7 @@ impl SectionPlane {
                 &linear + &(&jet.second[i] * &quadratic)
             });
             let tangent = std::array::from_fn(|i| &jet.first[i] + &(&jet.second[i] * &offset));
-            (point, tangent)
+            [point, tangent]
         };
         dec.charge_work(16)?;
         let square = &(&tangent[0].square() + &tangent[1].square()) + &tangent[2].square();
@@ -177,12 +177,15 @@ impl Problem {
         let centre = std::array::from_fn(|i| (&a[i].mid() + &b[i].mid()).mul_pow2(-1));
         let offset = offset_error(&centre, [&a, &b]);
         let section = plane.checked_error(&centre, dec)?;
-        if offset.to_f64_nearest() > self.tolerance / 8.0
-            || section.to_f64_nearest() > self.tolerance / 8.0
-        {
-            return Err(bad(
-                "rolling-ball station exceeds its numerical offset or guide-plane tolerance",
-            ));
+        let offset_upper = offset.to_f64_nearest();
+        let section_upper = section.to_f64_nearest();
+        let limit = self.tolerance / 8.0;
+        if offset_upper > limit || section_upper > limit {
+            return Err(bad(format!(
+                "rolling-ball station at tau {tau}: offset residual upper {offset_upper:.9e} mm (exceeds limit: {}); guide-plane residual upper {section_upper:.9e} mm (exceeds limit: {}); limit {limit:.9e} mm",
+                offset_upper > limit,
+                section_upper > limit,
+            )));
         }
         Ok(NumericalSpineNode {
             tau: tau.clone(),

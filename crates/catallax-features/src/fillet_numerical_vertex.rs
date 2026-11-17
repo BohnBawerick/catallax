@@ -59,7 +59,7 @@ fn cross(a: &[Ball; 3], b: &[Ball; 3]) -> [Ball; 3] {
 
 fn dot(a: &[Ball; 3], b: &[Ball; 3]) -> Ball {
     (0..3).fold(Ball::from_rational(&Rational::zero(), BITS), |sum, i| {
-        sum + &(&a[i] * &b[i])
+        &sum + &(&a[i] * &b[i])
     })
 }
 
@@ -72,7 +72,7 @@ fn unit(a: [Ball; 3]) -> Result<[Ball; 3], Refusal> {
         .sqrt()
         .and_then(|length| length.recip())
         .ok_or_else(|| bad("vertex contact direction cannot be normalized"))?;
-    Ok(a.map(|value| value * &inverse))
+    Ok(a.map(|value| &value * &inverse))
 }
 
 fn upper_distance(a: &[Ball; 3], b: &[Rational; 3]) -> Rational {
@@ -114,7 +114,7 @@ fn face_seed(
     let point = surface.evaluate(&at[0], &at[1], dec)?;
     let [du, dv] = surface.derivatives(&at[0], &at[1], dec)?;
     let normal = unit(cross(&du, &dv))?;
-    let delta = std::array::from_fn(|i| Ball::from_rational(&station.centre[i], BITS) - &point[i]);
+    let delta = std::array::from_fn(|i| &Ball::from_rational(&station.centre[i], BITS) - &point[i]);
     let distance = dot(&delta, &normal);
     let offset = if distance.lo().sign() == Sign::Positive {
         radius.clone()
@@ -158,7 +158,9 @@ fn section_tau(
     for _ in 0..32 {
         dec.charge_work(1)?;
         let tau = Rational::from_f64_exact(parameter)
-            .ok_or_else(|| bad("vertex section parameter is not finite"))?;
+            .ok_or_else(|| bad("vertex section parameter is not finite"))?
+            .max(domain[0].clone())
+            .min(domain[1].clone());
         let jet = curve.jet_box([&tau, &tau], BITS, dec)?;
         if upper_distance(&jet.value, centre) <= limit {
             return Ok(tau);
@@ -267,10 +269,10 @@ fn check_section(
             Ball::from_rational(&Rational::zero(), BITS),
             |sum, value| sum + value.square(),
         );
-        let angular_mm = gap_square
+        let angular_gap = gap_square
             .sqrt()
-            .ok_or_else(|| bad("vertex tangent gap cannot be enclosed"))?
-            * &radius;
+            .ok_or_else(|| bad("vertex tangent gap cannot be enclosed"))?;
+        let angular_mm = &angular_gap * &radius;
         error = error.max(angular_mm.hi());
         if index == 0 || index == 8 {
             error = error.max(upper_distance(
@@ -528,7 +530,7 @@ mod tests {
                             &size[axis] - &radius
                         };
                         assert!(
-                            (&vertex.ball.centre()[axis] - expected).abs() <= tolerance,
+                            (&vertex.ball.centre()[axis] - &expected).abs() <= tolerance,
                             "radius={requested}, vertex={:?}, axis={axis}",
                             vertex.source
                         );

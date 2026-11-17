@@ -1,7 +1,7 @@
 //! Reconstruct the actual decimal carriers before numerical admission.
 
 use super::*;
-use catallax_numbers::Ball;
+use catallax_numbers::{Ball, NumericalCheck};
 use catallax_shapes::{
     BSplineCurve, BSplineSurface, Line, Plane, RationalAtlas, RationalPatch, SplineSupport,
 };

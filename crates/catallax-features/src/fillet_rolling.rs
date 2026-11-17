@@ -554,6 +554,98 @@ mod tests {
         );
     }
 
+    #[test]
+    fn thin_wall_owner_strip_below_r4_keeps_the_requested_radius() {
+        let radius = Rational::parse("3.99").unwrap();
+        let tolerance = Rational::parse("0.0000001").unwrap();
+        let (fillet, work) = with_operation_budget(100_000_000, || {
+            let mut dec = Decider::new(BudgetPolicy {
+                max_work: 100_000_000,
+                ..Default::default()
+            });
+            let recipe = catallax_recipe::Recipe::parse(include_str!(
+                "../tests/fixtures/owner-curved-pocket.json"
+            ))
+            .unwrap();
+            let source = crate::evaluate(&recipe, &mut dec).unwrap();
+            let selection: catallax_recipe::EdgeSelection = serde_json::from_str(
+                r#"[{"between":[
+                    {"step":"blank","role":{"side":{"segment":"right-round"}}},
+                    {"step":"pocket-tool","role":{"side":{"segment":"right"}}}
+                ]}]"#,
+            )
+            .unwrap();
+            let selected = crate::fillet_build::select(
+                &source.model,
+                source.result,
+                &selection,
+                true,
+                &[],
+                &mut dec,
+            )
+            .unwrap();
+            construct(
+                &source.model,
+                source.result,
+                &selected,
+                &radius,
+                &tolerance,
+                &mut dec,
+            )
+            .unwrap()
+            .into_iter()
+            .flat_map(|chain| chain.strips)
+            .find(|strip| strip.source.edge == selected[0])
+            .unwrap()
+            .fillet
+        });
+        println!(
+            "owner thin-wall R3.99 source/strip request work={}",
+            work.used
+        );
+        assert!(!work.exhausted, "{work:?}");
+        let dec = Decider::new(BudgetPolicy {
+            max_work: 100_000_000,
+            ..Default::default()
+        });
+        let expected_x = Rational::parse("35.99").unwrap();
+        let expected_z = &Ball::from_rational(&Rational::from_i64(35), 128)
+            + &Ball::from_rational(&Rational::from_ratio(21, 25).unwrap(), 128)
+                .sqrt()
+                .unwrap();
+        let check_tolerance = tolerance.mul_pow2(1);
+        let domain = fillet.spine().centre_curve().domain();
+        let width = domain[1] - domain[0];
+        for i in 0..=5 {
+            let share = Rational::from_ratio(i, 5).unwrap();
+            let tau = domain[0] + &(&width * &share);
+            let centre = fillet
+                .spine()
+                .centre_curve()
+                .evaluate_box([&tau, &tau], 128, &dec)
+                .unwrap();
+            within(&centre[0], &expected_x, &check_tolerance);
+            within(
+                &(&centre[2] - &expected_z),
+                &Rational::zero(),
+                &check_tolerance,
+            );
+            for j in 0..=7 {
+                let v = Rational::from_ratio(j, 7).unwrap();
+                let point = fillet
+                    .surface()
+                    .source()
+                    .evaluate_box([&tau, &tau], [&v, &v], 128, &dec)
+                    .unwrap();
+                let square = (0..3)
+                    .fold(Ball::from_rational(&Rational::zero(), 128), |sum, axis| {
+                        &sum + &(&point[axis] - &centre[axis]).square()
+                    });
+                within(&square.sqrt().unwrap(), &radius, &check_tolerance);
+            }
+        }
+    }
+
     fn check_curved_owner_strip(radius: &str) {
         let tolerance = Rational::parse("0.0000001").unwrap();
         let fillet_radius = Rational::parse(radius).unwrap();

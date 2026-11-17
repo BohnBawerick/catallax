@@ -15,8 +15,8 @@ use crate::{Curve, Placement, StepFile, Surface, Vec3};
 
 mod checks;
 pub(crate) mod constructed;
-mod sewing;
 mod native_sewing;
+mod sewing;
 mod wire;
 
 /// A completed healing stage, with deterministic work charged to this request.
@@ -290,10 +290,19 @@ pub(crate) fn repair_native_topology(
     angles: &crate::geometry_source::AngleUnit,
     dec: &mut Decider,
 ) -> Result<NativeTopologyRepair, Error> {
-    let count = source.bodies.iter().map(|body| {
-        body.vertices.len() + body.edges.len()
-            + body.shells.iter().map(|shell| shell.faces.len()).sum::<usize>()
-    }).sum::<usize>();
+    let count = source
+        .bodies
+        .iter()
+        .map(|body| {
+            body.vertices.len()
+                + body.edges.len()
+                + body
+                    .shells
+                    .iter()
+                    .map(|shell| shell.faces.len())
+                    .sum::<usize>()
+        })
+        .sum::<usize>();
     dec.charge_work(count as u64 + 1)?;
     let mut candidate = source.clone();
     let mut plan = Plan::default();
@@ -303,7 +312,10 @@ pub(crate) fn repair_native_topology(
         // not an assigned tolerance. Actual local growth remains measured.
         let mut span = Rational::zero();
         for axis in 0..3 {
-            let mut values = body.vertices.iter().map(|vertex| &vertex.source.point[axis]);
+            let mut values = body
+                .vertices
+                .iter()
+                .map(|vertex| &vertex.source.point[axis]);
             if let Some(first) = values.next() {
                 let (mut low, mut high) = (first, first);
                 for value in values {
@@ -313,13 +325,24 @@ pub(crate) fn repair_native_topology(
                 span = &span + &(high - low);
             }
         }
-        body.options.maximum_mm = (&span + &body.options.initial_mm)
-            .max(body.options.maximum_mm.clone());
+        body.options.maximum_mm =
+            (&span + &body.options.initial_mm).max(body.options.maximum_mm.clone());
         wire::fix(index, &source.bodies[index], body, &mut plan, dec)?;
         // Free-edge sewing has no declared source connection. Unlike repairing
         // a broken source walk, it must respect the caller's stated sew width.
         body.options.maximum_mm = source.bodies[index].options.maximum_mm.clone();
-        native_sewing::sew(index, body, parsed, &source.mm_per_unit, angles, &mut curves, &mut plan, dec)?;
+        native_sewing::sew(
+            index,
+            body,
+            native_sewing::Source {
+                parsed,
+                scale: &source.mm_per_unit,
+                angles,
+            },
+            &mut curves,
+            &mut plan,
+            dec,
+        )?;
         checks::shells(body, &mut plan, dec)?;
     }
     for need in &plan.growth {

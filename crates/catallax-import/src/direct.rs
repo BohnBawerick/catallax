@@ -149,13 +149,20 @@ fn source_solid(mut file: crate::StepFile) -> Result<crate::Solid, ImportError> 
     if file.solids.len() == 1 && file.surface_models.is_empty() {
         return Ok(file.solids.pop().expect("one source solid"));
     }
-    if file.solids.is_empty() && file.surface_models.len() == 1
+    if file.solids.is_empty()
+        && file.surface_models.len() == 1
         && file.surface_models[0].shells.len() == 1
     {
         let mut source = file.surface_models.pop().expect("one source surface body");
-        return Ok(crate::Solid { name: source.name, faces: source.shells.pop().expect("one source shell").faces });
+        return Ok(crate::Solid {
+            name: source.name,
+            faces: source.shells.pop().expect("one source shell").faces,
+        });
     }
-    Err(bad("direct.body-kind", "direct edits require one source body with one shell"))
+    Err(bad(
+        "direct.body-kind",
+        "direct edits require one source body with one shell",
+    ))
 }
 
 impl DirectSolid {

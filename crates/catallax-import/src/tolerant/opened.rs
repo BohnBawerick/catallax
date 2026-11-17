@@ -252,11 +252,11 @@ fn strict_retry(
     }
 }
 
-/// Default opening policy: retain the source, attempt a bounded higher-tier
-/// upgrade, then fit native carriers with measured per-entity tolerances.
+/// Default opening policy: retain the source, attempt the checked upgrade under
+/// the caller's shared allowance, then fit native carriers with measured local
+/// tolerances. There is no separate checked sub-cap or repeated retention pass.
 ///
-/// The optional checked attempt cannot consume the native admission's whole
-/// work allowance. A failed fit leaves the original surface representation.
+/// Exhausted optional work retains the prepaid source representation.
 /// No implicit work cap is installed for native admission.
 pub fn open_step(
     bytes: &[u8],
@@ -281,14 +281,18 @@ fn open_prepared(
 ) -> Result<OpenedStep, Error> {
     dec.charge_work(source.bodies.len() as u64 + 1)?;
     let mut result = OpenedStep {
-        bodies: source.bodies.iter().map(|_| BodyOutcome {
-            tier: Tier::SurfaceBody,
-            approximate: true,
-            storage: Storage::Source,
-            healed: None,
-            refusal: None,
-            healing_failure: None,
-        }).collect(),
+        bodies: source
+            .bodies
+            .iter()
+            .map(|_| BodyOutcome {
+                tier: Tier::SurfaceBody,
+                approximate: true,
+                storage: Storage::Source,
+                healed: None,
+                refusal: None,
+                healing_failure: None,
+            })
+            .collect(),
         source,
         source_graph: Some(Arc::clone(&parsed)),
         admission: None,
@@ -297,34 +301,21 @@ fn open_prepared(
         read_work_used,
         file_admission_work_used: 0,
     };
-    let allowance = catallax_numbers::remaining_operation_work()
-        .map_or(1_000_000, |remaining| (remaining / 8).min(1_000_000));
-    if allowance != 0 {
-        let before = current_operation_work().used;
-        let reservation = catallax_numbers::OperationAllowance::reserve(allowance)?;
-        let (upgrade, _) = reservation.run(|| {
-            open_checked_step(bytes, &result.source.source_sha256, step, result.source.options.clone(), dec)
-        });
-        result.file_admission_work_used = current_operation_work().used.saturating_sub(before);
-        match upgrade {
-            Ok(checked) if checked.source.bodies.len() == result.source.bodies.len()
-                && checked.source.bodies.iter().zip(&result.source.bodies)
-                    .all(|(a, b)| a.name() == b.name()) => {
-                result.bodies = checked.bodies;
-                result.admission = checked.admission;
-                result.first_refusal = checked.first_refusal;
-                if result.bodies.iter().all(|body| body.tier != Tier::SurfaceBody) {
-                    return Ok(result);
-                }
-            }
-            Ok(_) => {
-                result.first_refusal = Some(catallax_numbers::Refusal::new(
-                    "import.opened-body-inventory",
-                    "checked upgrade did not preserve the native source body inventory",
-                ).into());
-            }
-            Err(error) => result.first_refusal = Some(error),
-        }
+    // Reuse the prepaid source and the caller's ordinary work allowance.
+    // Reserving a separate 1M upgrade both discarded existing admissions and
+    // charged unused reservation units before the native fit could begin.
+    if operation_budget_active() {
+        checked_admit(bytes, step, &mut result, dec);
+    } else {
+        let reservation = catallax_numbers::OperationAllowance::reserve(n::DEFAULT_WORK)?;
+        reservation.run(|| checked_admit(bytes, step, &mut result, dec));
+    }
+    if result
+        .bodies
+        .iter()
+        .all(|body| body.tier != Tier::SurfaceBody)
+    {
+        return Ok(result);
     }
     match admission::admit(parsed, Arc::clone(&result.source), dec) {
         Ok(native) => {
@@ -383,9 +374,6 @@ pub fn open_checked_step(
             healing_failure: None,
         })
         .collect();
-    let numerical_options = n::NumericalOptions {
-        tolerance_mm: source.options.maximum_mm.clone(),
-    };
     let mut result = OpenedStep {
         source: Arc::new(source),
         source_graph: None,
@@ -395,6 +383,15 @@ pub fn open_checked_step(
         first_refusal: None,
         read_work_used,
         file_admission_work_used: 0,
+    };
+    checked_admit(bytes, step, &mut result, dec);
+    Ok(result)
+}
+
+fn checked_admit(bytes: &[u8], step: &StepId, result: &mut OpenedStep, dec: &mut Decider) {
+    let expected_sha256 = result.source.source_sha256.as_str();
+    let numerical_options = n::NumericalOptions {
+        tolerance_mm: result.source.options.maximum_mm.clone(),
     };
     let before = current_operation_work().used;
     let admission = numerical::import_step(bytes, expected_sha256, step, &numerical_options, dec);
@@ -412,14 +409,14 @@ pub fn open_checked_step(
                 }
                 result.admission = Some(admitted);
                 match dec.check_deadline() {
-                    Ok(()) => return Ok(result),
+                    Ok(()) => return,
                     Err(error) => {
                         result.admission = None;
                         for body in &mut result.bodies {
                             retain_surface(body, error.clone().into());
                         }
                         result.first_refusal = Some(error.into());
-                        return Ok(result);
+                        return;
                     }
                 }
             }
@@ -434,7 +431,7 @@ pub fn open_checked_step(
         Err(error) => result.first_refusal = Some(error),
     }
     if result.first_refusal.as_ref().is_some_and(control_refusal) {
-        return Ok(result);
+        return;
     }
     for index in 0..result.bodies.len() {
         if current_operation_work().exhausted {
@@ -533,7 +530,6 @@ pub fn open_checked_step(
             break;
         }
     }
-    Ok(result)
 }
 
 /// Reverify the immutable source and saved controls, then replay the ordinary
@@ -551,8 +547,10 @@ pub fn reopen(
     }
     if controls.bodies.iter().any(|body| !body.changes.is_empty()) {
         return Err(catallax_numbers::Refusal::new(
-            "import.opened-controls", "saved source controls must precede healing",
-        ).into());
+            "import.opened-controls",
+            "saved source controls must precede healing",
+        )
+        .into());
     }
     let parse = |text: &str| {
         let value = catallax_numbers::Rational::parse(text)
@@ -568,10 +566,16 @@ pub fn reopen(
     };
     let (parsed, source) = admission::prepare(bytes, &controls.source_sha256, options, dec)?;
     if source.bodies.len() != controls.bodies.len()
-        || source.bodies.iter().zip(&controls.bodies).any(|(body, saved)| body.name != saved.name)
+        || source
+            .bodies
+            .iter()
+            .zip(&controls.bodies)
+            .any(|(body, saved)| body.name != saved.name)
         || !super::matches_record(&source, controls, dec)?
     {
-        return Err(super::invalid("saved source controls differ from the immutable source inventory"));
+        return Err(super::invalid(
+            "saved source controls differ from the immutable source inventory",
+        ));
     }
     let read_work_used = current_operation_work().used.saturating_sub(before);
     open_prepared(bytes, step, parsed, source, read_work_used, dec)

@@ -31,7 +31,10 @@ impl ParsedStep {
         };
         let mut output = String::with_capacity(evidence_json.len() + ids.len() * 80);
         output.push_str("ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION((");
-        quoted(&mut output, "CATALLAX TOLERANT: sampled native B-rep, not certified; per-entity millimetre tolerances and repair/check record: CATALLAX_REPORT_JSON comments");
+        quoted(
+            &mut output,
+            "CATALLAX TOLERANT: sampled native B-rep, not certified; per-entity millimetre tolerances and repair/check record: CATALLAX_REPORT_JSON comments",
+        );
         output.push_str("),'2;1');\nFILE_NAME('catallax-tolerant.step','',(''),(''),'Catallax','Catallax','');\nFILE_SCHEMA((");
         if schemas.is_empty() {
             quoted(&mut output, "AUTOMOTIVE_DESIGN");
@@ -50,10 +53,14 @@ impl ParsedStep {
         while !remaining.is_empty() {
             dec.check_deadline()?;
             let mut end = remaining.len().min(2048);
-            while !remaining.is_char_boundary(end) { end -= 1; }
+            while !remaining.is_char_boundary(end) {
+                end -= 1;
+            }
             output.push_str("/* CATALLAX_REPORT_JSON ");
             for character in remaining[..end].chars() {
-                if character == '/' { output.push('\\'); }
+                if character == '/' {
+                    output.push('\\');
+                }
                 output.push(character);
             }
             output.push_str(" */\n");
@@ -63,7 +70,10 @@ impl ParsedStep {
         for id in ids {
             dec.check_deadline()?;
             dec.charge_work(1)?;
-            let entity = changes.get(&id).or_else(|| self.graph.get(&id)).expect("union key");
+            let entity = changes
+                .get(&id)
+                .or_else(|| self.graph.get(&id))
+                .expect("union key");
             validate(entity, &self.graph, changes, dec)?;
             write!(&mut output, "#{id}=").expect("string formatting");
             if entity.parts.len() == 1 {
@@ -86,13 +96,20 @@ impl ParsedStep {
     }
 }
 
-fn reachable(source: &Graph, changes: &Graph, roots: &[u64], dec: &mut Decider) -> Result<BTreeSet<u64>, Refusal> {
+fn reachable(
+    source: &Graph,
+    changes: &Graph,
+    roots: &[u64],
+    dec: &mut Decider,
+) -> Result<BTreeSet<u64>, Refusal> {
     fn references(value: &Param, pending: &mut Vec<u64>, dec: &mut Decider) -> Result<(), Refusal> {
         dec.charge_work(1)?;
         match value {
             Param::Ref(id) => pending.push(*id),
             Param::List(values) | Param::Typed(_, values) => {
-                for value in values { references(value, pending, dec)?; }
+                for value in values {
+                    references(value, pending, dec)?;
+                }
             }
             _ => {}
         }
@@ -101,24 +118,47 @@ fn reachable(source: &Graph, changes: &Graph, roots: &[u64], dec: &mut Decider) 
     let mut pending = roots.to_vec();
     let mut seen = BTreeSet::new();
     while let Some(id) = pending.pop() {
-        if !seen.insert(id) { continue; }
-        let entity = changes.get(&id).or_else(|| source.get(&id))
-            .ok_or_else(|| Refusal::new("import.tolerant-broken-reference", format!("absent entity #{id}")))?;
+        if !seen.insert(id) {
+            continue;
+        }
+        let entity = changes
+            .get(&id)
+            .or_else(|| source.get(&id))
+            .ok_or_else(|| {
+                Refusal::new(
+                    "import.tolerant-broken-reference",
+                    format!("absent entity #{id}"),
+                )
+            })?;
         for (_, parameters) in &entity.parts {
-            for value in parameters { references(value, &mut pending, dec)?; }
+            for value in parameters {
+                references(value, &mut pending, dec)?;
+            }
         }
     }
     Ok(seen)
 }
 
-fn validate(entity: &Entity, source: &Graph, changes: &Graph, dec: &mut Decider) -> Result<(), Refusal> {
-    fn visit(value: &Param, source: &Graph, changes: &Graph, dec: &mut Decider) -> Result<(), Refusal> {
+fn validate(
+    entity: &Entity,
+    source: &Graph,
+    changes: &Graph,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    fn visit(
+        value: &Param,
+        source: &Graph,
+        changes: &Graph,
+        dec: &mut Decider,
+    ) -> Result<(), Refusal> {
         dec.charge_work(1)?;
         match value {
-            Param::Ref(id) if !source.contains_key(id) && !changes.contains_key(id) => Err(Refusal::new(
-                "import.tolerant-broken-reference",
-                format!("repaired STEP references absent entity #{id}"),
-            )),
+            Param::Ref(id) if !source.contains_key(id) && !changes.contains_key(id) => {
+                Err(Refusal::new(
+                    "import.tolerant-broken-reference",
+                    format!("repaired STEP references absent entity #{id}"),
+                ))
+            }
             Param::List(values) | Param::Typed(_, values) => {
                 for value in values {
                     visit(value, source, changes, dec)?;

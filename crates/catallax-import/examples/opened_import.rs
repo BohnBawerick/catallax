@@ -102,8 +102,10 @@ fn export(
             file.check_written(file.bytes(), dec)?;
             Ok(Some((file.bytes().to_vec(), "solid")))
         }
-        BodyView::Tolerant { import, body } => import.export_body(body, dec)
-            .map(|bytes| Some((bytes, "solid"))).map_err(native_error),
+        BodyView::Tolerant { import, body } => import
+            .export_body(body, dec)
+            .map(|bytes| Some((bytes, "solid")))
+            .map_err(native_error),
         // No exact/numerical B-rep was admitted, so there is no checked STEP
         // authority. Retained input bytes are separate from a body export.
         BodyView::Surfaces { .. } => Ok(None),
@@ -119,9 +121,16 @@ fn native_error(error: tolerant::Error) -> Refusal {
 
 fn save_export(out: &Path, name: &str, bytes: &[u8], mut record: Value) -> Result<Value, Refusal> {
     let path = out.join(name);
-    std::fs::write(&path, bytes).map_err(|error| Refusal::new("observer.write", error.to_string()))?;
-    let saved = std::fs::read(path).map_err(|error| Refusal::new("observer.reread", error.to_string()))?;
-    if saved != bytes { return Err(Refusal::new("observer.byte-identity", "written bytes changed")); }
+    std::fs::write(&path, bytes)
+        .map_err(|error| Refusal::new("observer.write", error.to_string()))?;
+    let saved =
+        std::fs::read(path).map_err(|error| Refusal::new("observer.reread", error.to_string()))?;
+    if saved != bytes {
+        return Err(Refusal::new(
+            "observer.byte-identity",
+            "written bytes changed",
+        ));
+    }
     record["file"] = json!(name);
     record["bytes"] = json!(saved.len());
     record["sha256"] = json!(sha256_hex(&saved));
@@ -202,7 +211,12 @@ fn run(
             dec.charge_work(1)?;
             if let Some((bytes, kind)) = export(&opened, index, &mut dec)? {
                 let file = format!("body-{index}.step");
-                files.push(save_export(out, &file, &bytes, json!({"bodies":[index],"kind":kind}))?);
+                files.push(save_export(
+                    out,
+                    &file,
+                    &bytes,
+                    json!({"bodies":[index],"kind":kind}),
+                )?);
             }
         }
         failed_body = None;

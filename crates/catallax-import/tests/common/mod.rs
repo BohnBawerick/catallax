@@ -5,8 +5,8 @@ use catallax_numbers::Rational;
 
 #[allow(unused_imports)]
 pub use soup::{Caps, Hole, Soup};
-mod soup;
 pub mod elliptical_extrusion;
+mod soup;
 
 pub fn r(s: &str) -> Rational {
     Rational::parse(s).unwrap()

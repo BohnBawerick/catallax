@@ -80,7 +80,8 @@ pub(crate) fn parse_document(bytes: &[u8]) -> Result<Document, ImportRefusal> {
                                 if let Param::Str(name) = name {
                                     schemas.push(name);
                                 } else {
-                                    schema_error = Some("FILE_SCHEMA contains a non-string name".into());
+                                    schema_error =
+                                        Some("FILE_SCHEMA contains a non-string name".into());
                                 }
                             }
                         } else {
@@ -145,7 +146,11 @@ pub(crate) fn parse_document(bytes: &[u8]) -> Result<Document, ImportRefusal> {
     if !seen_data {
         return Err(malformed("no DATA section"));
     }
-    Ok(Document { graph, schemas, schema_error })
+    Ok(Document {
+        graph,
+        schemas,
+        schema_error,
+    })
 }
 
 fn strip_comments(text: &str) -> Result<String, ImportRefusal> {

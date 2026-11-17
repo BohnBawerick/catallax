@@ -11,8 +11,8 @@ pub(crate) mod edges;
 mod imported;
 mod spline;
 mod tolerant;
-pub use tolerant::preview_tolerant_body;
 pub use imported::{StepPreview, preview_step};
+pub use tolerant::preview_tolerant_body;
 pub(crate) mod strips;
 
 /// Visual sampling targets, not promised deviation bounds.

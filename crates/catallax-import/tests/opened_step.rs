@@ -191,3 +191,43 @@ fn retained_surface_sewing_requires_closure_within_the_callers_cap() {
         }
     }
 }
+
+#[test]
+fn default_opening_preserves_checked_material_in_a_multi_body_document() {
+    let fixtures = (0..24)
+        .map(|index| {
+            let mut fixture = BoxFixture::new(["2", "3", "4"]);
+            fixture.origin[0] = r(&(index * 5).to_string());
+            fixture
+        })
+        .collect::<Vec<_>>();
+    let source = boxes_step(&fixtures);
+    let hash = sha256_hex(source.as_bytes());
+    let (checked, checked_work) = with_operation_budget(20_000_000, || {
+        opened::open_checked_step(
+            source.as_bytes(),
+            &hash,
+            &StepId::new("source").unwrap(),
+            Default::default(),
+            &mut Decider::default(),
+        )
+        .unwrap()
+    });
+    assert!(!checked_work.exhausted);
+    let (default, default_work) = with_operation_budget(20_000_000, || open(&source));
+    assert!(!default_work.exhausted);
+    for index in 0..fixtures.len() {
+        assert_eq!(checked.bodies()[index].tier(), Tier::ValidSolid);
+        assert_eq!(
+            default.bodies()[index].tier(),
+            checked.bodies()[index].tier()
+        );
+        let Some(BodyView::Certified { model, body }) = default.body(index) else {
+            panic!("default opening downgraded previously checked material");
+        };
+        assert_eq!(
+            model.bodies.get(body).kind,
+            catallax_topology::BodyKind::Solid
+        );
+    }
+}

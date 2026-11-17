@@ -1,17 +1,32 @@
 //! Native admission must not inherit proof gates or invent material closure.
 mod common;
 
-use catallax_import::{geometry_source::{ParsedStep, Topology}, sha256_hex, tolerant::{self, opened::{self, BodyView, Tier}}};
+use catallax_import::{
+    geometry_source::{ParsedStep, Topology},
+    sha256_hex,
+    tolerant::{
+        self,
+        opened::{self, BodyView, Tier},
+    },
+};
 use catallax_numbers::{Decider, with_operation_budget};
 use catallax_recipe::StepId;
 use common::{BoxFixture, box_step, r};
 
 fn open(source: &str) -> opened::OpenedStep {
-    let (result, work) = with_operation_budget(20_000_000, || opened::open_step(
-        source.as_bytes(), &sha256_hex(source.as_bytes()), &StepId::new("native-case").unwrap(),
-        Default::default(), &mut Decider::default(),
-    ));
-    assert!(!work.exhausted, "the regression must exercise geometry, not a resource cutoff");
+    let (result, work) = with_operation_budget(20_000_000, || {
+        opened::open_step(
+            source.as_bytes(),
+            &sha256_hex(source.as_bytes()),
+            &StepId::new("native-case").unwrap(),
+            Default::default(),
+            &mut Decider::default(),
+        )
+    });
+    assert!(
+        !work.exhausted,
+        "the regression must exercise geometry, not a resource cutoff"
+    );
     result.unwrap()
 }
 
@@ -20,25 +35,68 @@ fn native_entity_tolerances_absorb_shared_vertex_error_beyond_the_checked_cap() 
     let original = box_step(BoxFixture::new(["2", "3", "4"]));
     let mut dec = Decider::default();
     let parsed = ParsedStep::read(original.as_bytes(), &mut dec).unwrap();
-    let vertex = parsed.entities().find(|&entity| parsed.entity_types(entity).unwrap().contains(&"VERTEX_POINT")).unwrap();
-    let Topology::Vertex(point) = parsed.topology(vertex, &mut dec).unwrap() else { unreachable!() };
+    let vertex = parsed
+        .entities()
+        .find(|&entity| {
+            parsed
+                .entity_types(entity)
+                .unwrap()
+                .contains(&"VERTEX_POINT")
+        })
+        .unwrap();
+    let Topology::Vertex(point) = parsed.topology(vertex, &mut dec).unwrap() else {
+        unreachable!()
+    };
     let prefix = format!("#{point}=");
-    let source = original.lines().map(|line| {
-        if line.starts_with(&prefix) { format!("#{point}=CARTESIAN_POINT('',(0.1,0.,0.));") } else { line.to_owned() }
-    }).collect::<Vec<_>>().join("\n");
+    let source = original
+        .lines()
+        .map(|line| {
+            if line.starts_with(&prefix) {
+                format!("#{point}=CARTESIAN_POINT('',(0.1,0.,0.));")
+            } else {
+                line.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
     let opened = open(&source);
     assert_eq!(opened.bodies()[0].tier(), Tier::TolerantSolid);
-    let BodyView::Tolerant { import, body } = opened.body(0).unwrap() else { panic!("measured native geometry required") };
+    let BodyView::Tolerant { import, body } = opened.body(0).unwrap() else {
+        panic!("measured native geometry required")
+    };
     let solid = &import.bodies()[body];
     let counts = solid.counts();
     assert_eq!((counts.faces, counts.edges, counts.vertices), (6, 12, 8));
-    assert!(solid.definition().vertices().iter().any(|vertex| vertex.tolerance_mm() > &r("0.01")));
-    assert!(import.evidence().sampled_checks.iter().any(|check| check.maximum_residual_mm > 0.09));
+    assert!(
+        solid
+            .definition()
+            .vertices()
+            .iter()
+            .any(|vertex| vertex.tolerance_mm() > &r("0.01"))
+    );
+    assert!(
+        import
+            .evidence()
+            .sampled_checks
+            .iter()
+            .any(|check| check.maximum_residual_mm > 0.09)
+    );
     let controls = opened.saved_controls();
-    let replayed = opened::reopen(source.as_bytes(), &controls, &StepId::new("native-case").unwrap(), &mut Decider::default()).unwrap();
+    let replayed = opened::reopen(
+        source.as_bytes(),
+        &controls,
+        &StepId::new("native-case").unwrap(),
+        &mut Decider::default(),
+    )
+    .unwrap();
     assert_eq!(replayed.bodies()[0].tier(), Tier::TolerantSolid);
-    let BodyView::Tolerant { import: replay, .. } = replayed.body(0).unwrap() else { unreachable!() };
-    assert_eq!(serde_json::to_value(import.evidence()).unwrap(), serde_json::to_value(replay.evidence()).unwrap());
+    let BodyView::Tolerant { import: replay, .. } = replayed.body(0).unwrap() else {
+        unreachable!()
+    };
+    assert_eq!(
+        serde_json::to_value(import.evidence()).unwrap(),
+        serde_json::to_value(replay.evidence()).unwrap()
+    );
 }
 
 const TUBE: &str = "ISO-10303-21;\nHEADER;FILE_SCHEMA(('AUTOMOTIVE_DESIGN'));ENDSEC;DATA;\n\
@@ -53,12 +111,21 @@ const TUBE: &str = "ISO-10303-21;\nHEADER;FILE_SCHEMA(('AUTOMOTIVE_DESIGN'));END
 ENDSEC;END-ISO-10303-21;";
 
 #[test]
-fn one_closed_spline_direction_does_not_cap_an_edgeless_tube() {
-    let opened = open(TUBE);
-    assert_eq!(opened.bodies()[0].tier(), Tier::SurfaceBody);
-    let BodyView::Surfaces { source, .. } = opened.body(0).unwrap() else { panic!("open tube must remain retained geometry") };
-    assert_eq!(source.shells()[0].faces.len(), 1);
-    assert!(matches!(opened.bodies()[0].refusal(), Some(tolerant::Error::Numerical(error)) if error.code == "import.tolerant-broken-topology"));
+fn declared_closed_spline_directions_do_not_cap_an_edgeless_open_tube() {
+    for source in [
+        TUBE.to_owned(),
+        TUBE.replace(".UNSPECIFIED.,.T.,.F.,.F.,", ".UNSPECIFIED.,.T.,.T.,.F.,"),
+    ] {
+        let opened = open(&source);
+        assert_eq!(opened.bodies()[0].tier(), Tier::SurfaceBody);
+        let BodyView::Surfaces { source, .. } = opened.body(0).unwrap() else {
+            panic!("open tube must remain retained geometry")
+        };
+        assert_eq!(source.shells()[0].faces.len(), 1);
+        assert!(
+            matches!(opened.bodies()[0].refusal(), Some(tolerant::Error::Numerical(error)) if error.code == "import.tolerant-broken-topology")
+        );
+    }
 }
 
 #[test]
@@ -82,7 +149,9 @@ fn sewing_does_not_match_bowed_spline_edges_by_endpoints_alone() {
 #91=(GEOMETRIC_REPRESENTATION_CONTEXT(3)GLOBAL_UNIT_ASSIGNED_CONTEXT((#90))REPRESENTATION_CONTEXT('',''));ENDSEC;END-ISO-10303-21;";
     let opened = open(source);
     assert_eq!(opened.bodies()[0].tier(), Tier::SurfaceBody);
-    let BodyView::Surfaces { source, .. } = opened.body(0).unwrap() else { panic!("different finite spline images must not become a closed solid") };
+    let BodyView::Surfaces { source, .. } = opened.body(0).unwrap() else {
+        panic!("different finite spline images must not become a closed solid")
+    };
     assert_eq!(source.shells()[0].faces.len(), 2);
     assert_eq!(source.edges().len(), 4);
 }
@@ -95,49 +164,182 @@ fn exported_ellipse_extrusion_has_a_continuous_side_uv_wire() {
 
     let opened = open(common::elliptical_extrusion::SOURCE);
     let BodyView::Tolerant { import, body } = opened.body(0).unwrap() else {
-        panic!("elliptical extrusion must reach native admission: {:?}", opened.bodies()[0].refusal());
+        panic!(
+            "elliptical extrusion must reach native admission: {:?}",
+            opened.bodies()[0].refusal()
+        );
     };
     let mut dec = Decider::default();
     let bytes = import.export_body(body, &mut dec).unwrap();
     let parsed = ParsedStep::read(&bytes, &mut dec).unwrap();
-    let side = parsed.entities().find(|&id| matches!(
-        parsed.geometry(id, &mut dec),
-        Ok(Geometry::Surface(Surface::Extrusion(..)))
-    )).unwrap();
-    let bounds = parsed.entities().find_map(|id| match parsed.topology(id, &mut dec) {
-        Ok(Topology::Face { surface: Some(surface), bounds, .. }) if surface == side => Some(bounds),
-        _ => None,
-    }).unwrap();
-    let Topology::FaceBound { loop_id, .. } = parsed.topology(bounds[0], &mut dec).unwrap() else { unreachable!() };
-    let Topology::EdgeLoop(uses) = parsed.topology(loop_id, &mut dec).unwrap() else { unreachable!() };
+    let side = parsed
+        .entities()
+        .find(|&id| {
+            matches!(
+                parsed.geometry(id, &mut dec),
+                Ok(Geometry::Surface(Surface::Extrusion(..)))
+            )
+        })
+        .unwrap();
+    let bounds = parsed
+        .entities()
+        .find_map(|id| match parsed.topology(id, &mut dec) {
+            Ok(Topology::Face {
+                surface: Some(surface),
+                bounds,
+                ..
+            }) if surface == side => Some(bounds),
+            _ => None,
+        })
+        .unwrap();
+    let Topology::FaceBound { loop_id, .. } = parsed.topology(bounds[0], &mut dec).unwrap() else {
+        unreachable!()
+    };
+    let Topology::EdgeLoop(uses) = parsed.topology(loop_id, &mut dec).unwrap() else {
+        unreachable!()
+    };
     let mut occurrences = BTreeMap::<u64, usize>::new();
     let mut segments = Vec::new();
     for edge_use in uses {
-        let Topology::OrientedEdge(edge, forward) = parsed.topology(edge_use, &mut dec).unwrap() else { unreachable!() };
-        let Topology::Edge { curve: Some(curve), same_sense: Some(sense), .. } = parsed.topology(edge, &mut dec).unwrap() else { unreachable!() };
-        let Geometry::Curve(Curve::SurfaceCurve(_, associated, _, _)) = parsed.geometry(curve, &mut dec).unwrap() else {
+        let Topology::OrientedEdge(edge, forward) = parsed.topology(edge_use, &mut dec).unwrap()
+        else {
+            unreachable!()
+        };
+        let Topology::Edge {
+            curve: Some(curve),
+            same_sense: Some(sense),
+            ..
+        } = parsed.topology(edge, &mut dec).unwrap()
+        else {
+            unreachable!()
+        };
+        let Geometry::Curve(Curve::SurfaceCurve(_, associated, _, _)) =
+            parsed.geometry(curve, &mut dec).unwrap()
+        else {
             panic!("export must supply the side's curve-on-surface geometry");
         };
-        let pcurves = associated.into_iter().filter(|&id| matches!(
-            parsed.geometry(id, &mut dec),
-            Ok(Geometry::Curve(Curve::Pcurve(surface, _))) if surface == side
-        )).collect::<Vec<_>>();
+        let pcurves = associated
+            .into_iter()
+            .filter(|&id| {
+                matches!(
+                    parsed.geometry(id, &mut dec),
+                    Ok(Geometry::Curve(Curve::Pcurve(surface, _))) if surface == side
+                )
+            })
+            .collect::<Vec<_>>();
         let occurrence = occurrences.entry(edge).or_default();
         let pcurve = pcurves[*occurrence];
         *occurrence += 1;
-        let charts = parsed.curve_charts(pcurve, &r("1"), AngleUnit::Radians, &mut dec).unwrap();
+        let charts = parsed
+            .curve_charts(pcurve, &r("1"), AngleUnit::Radians, &mut dec)
+            .unwrap();
         let limits = &charts[0].domain()[0];
-        let carrier = NativeUvCurve::from_source(&parsed, pcurve, &r("1"), AngleUnit::Radians, &mut dec).unwrap();
-        let mut endpoints = [limits[0].as_ref().unwrap(), limits[1].as_ref().unwrap()].map(|limit| {
-            carrier.sample(NativeLocation { chart: 0, parameters: [limit.to_f64_nearest(), 0.0] }, &mut dec).unwrap().0
-        });
-        if forward != sense { endpoints.reverse(); }
+        let carrier =
+            NativeUvCurve::from_source(&parsed, pcurve, &r("1"), AngleUnit::Radians, &mut dec)
+                .unwrap();
+        let mut endpoints =
+            [limits[0].as_ref().unwrap(), limits[1].as_ref().unwrap()].map(|limit| {
+                carrier
+                    .sample(
+                        NativeLocation {
+                            chart: 0,
+                            parameters: [limit.to_f64_nearest(), 0.0],
+                        },
+                        &mut dec,
+                    )
+                    .unwrap()
+                    .0
+            });
+        if forward != sense {
+            endpoints.reverse();
+        }
         segments.push(endpoints);
     }
     for index in 0..segments.len() {
         let end = segments[index][1];
         let next = segments[(index + 1) % segments.len()][0];
-        assert!((end[0] - next[0]).hypot(end[1] - next[1]) < 1e-5,
-            "UV wire jumps sheets: {end:?} -> {next:?}");
+        assert!(
+            (end[0] - next[0]).hypot(end[1] - next[1]) < 1e-5,
+            "UV wire jumps sheets: {end:?} -> {next:?}"
+        );
+    }
+}
+
+#[test]
+fn selected_body_step_report_does_not_disclose_sibling_geometry_or_repairs() {
+    let mut first = BoxFixture::new(["2", "3", "4"]);
+    first.shift = Some((0, [r("0.001"), r("0"), r("0")]));
+    let mut second = first;
+    second.origin = [r("20"), r("0"), r("0")];
+    let source = common::boxes_step(&[first, second]);
+    let mut dec = Decider::default();
+    let native = tolerant::admission::import_step(
+        source.as_bytes(),
+        &sha256_hex(source.as_bytes()),
+        Default::default(),
+        &mut dec,
+    )
+    .unwrap();
+    let selected = native.bodies()[0].name();
+    let sibling = native.bodies()[1].name();
+    assert!(
+        native
+            .evidence()
+            .native_trims
+            .iter()
+            .any(|trim| trim.body == sibling)
+    );
+    assert!(
+        serde_json::to_value(&native.evidence().repairs)
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|repair| repair["body"] == sibling)
+    );
+    let bytes = native.export_body(0, &mut dec).unwrap();
+    let text = std::str::from_utf8(&bytes).unwrap();
+    let json = text
+        .split("/* CATALLAX_REPORT_JSON ")
+        .skip(1)
+        .map(|part| part.split_once(" */").unwrap().0)
+        .collect::<String>();
+    let report: serde_json::Value = serde_json::from_str(&json).unwrap();
+    let evidence = &report["source_document_evidence"];
+    for field in [
+        "tolerances",
+        "sampled_checks",
+        "repairs",
+        "topology_checks",
+        "topology_measurements",
+        "warnings",
+        "native_trims",
+        "native_domains",
+    ] {
+        for record in evidence[field].as_array().unwrap() {
+            if !record["body"].is_null() {
+                assert_eq!(
+                    record["body"], selected,
+                    "sibling record escaped through {field}"
+                );
+            }
+        }
+    }
+    assert!(
+        evidence["native_trims"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|trim| trim["body"] == selected)
+    );
+    assert!(
+        evidence["repairs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|repair| repair["body"] == selected)
+    );
+    for check in report["export_checks"].as_array().unwrap() {
+        assert_eq!(check["body"], selected);
     }
 }

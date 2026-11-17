@@ -95,7 +95,12 @@ pub(super) fn sew_with(
     dec: &mut Decider,
     allow_same_face: bool,
     allow_cross_shells: bool,
-    mut correspondence: impl FnMut(&TolerantBody, usize, usize, &mut Decider) -> Result<Option<Match>, Error>,
+    mut correspondence: impl FnMut(
+        &TolerantBody,
+        usize,
+        usize,
+        &mut Decider,
+    ) -> Result<Option<Match>, Error>,
 ) -> Result<(), Error> {
     let before = usage(body, dec)?;
     let free: Vec<_> = before
@@ -113,7 +118,8 @@ pub(super) fn sew_with(
         for &b in &free[index + 1..] {
             dec.charge_work(1)?;
             if (!allow_cross_shells && before[a][0].shell != before[b][0].shell)
-                || (!allow_same_face && before[a][0].shell == before[b][0].shell
+                || (!allow_same_face
+                    && before[a][0].shell == before[b][0].shell
                     && before[a][0].face == before[b][0].face)
             {
                 continue;

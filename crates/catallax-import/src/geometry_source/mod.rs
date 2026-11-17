@@ -10,9 +10,9 @@ mod expression;
 mod fitting;
 mod mapping;
 mod parametric;
+mod tolerant_step;
 mod topology;
 mod units;
-mod tolerant_step;
 pub use definitions::*;
 pub use fitting::{FitOptions, FittedCurve, FittedSurface};
 pub use mapping::{Frame, MappingError};
@@ -59,7 +59,9 @@ impl ParsedStep {
 
     pub(crate) fn schemas(&self) -> Result<&[String], ImportRefusal> {
         match &self.schema_error {
-            Some(detail) => Err(ImportRefusal::Malformed { detail: detail.clone() }),
+            Some(detail) => Err(ImportRefusal::Malformed {
+                detail: detail.clone(),
+            }),
             None => Ok(&self.schemas),
         }
     }

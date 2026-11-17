@@ -33,10 +33,7 @@ impl ParsedStep {
         self.definition(dec, false)
     }
 
-    pub(crate) fn native_definition(
-        &self,
-        dec: &mut Decider,
-    ) -> Result<Definition, ImportRefusal> {
+    pub(crate) fn native_definition(&self, dec: &mut Decider) -> Result<Definition, ImportRefusal> {
         self.definition(dec, true)
     }
 
@@ -62,15 +59,17 @@ impl ParsedStep {
                     ),
                 });
             }
-            if !preserve_occurrences && e.parts.iter().any(|(kind, _)| {
-                matches!(
-                    kind.as_str(),
-                    "MAPPED_ITEM"
-                        | "REPRESENTATION_MAP"
-                        | "REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION"
-                        | "ITEM_DEFINED_TRANSFORMATION"
-                )
-            }) {
+            if !preserve_occurrences
+                && e.parts.iter().any(|(kind, _)| {
+                    matches!(
+                        kind.as_str(),
+                        "MAPPED_ITEM"
+                            | "REPRESENTATION_MAP"
+                            | "REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION"
+                            | "ITEM_DEFINED_TRANSFORMATION"
+                    )
+                })
+            {
                 return Err(ImportRefusal::NotSolid {
                     detail: format!(
                         "#{id}: occurrence placement must be resolved before body admission"

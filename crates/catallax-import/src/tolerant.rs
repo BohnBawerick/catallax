@@ -14,10 +14,10 @@ use serde::{Deserialize, Serialize};
 
 pub use crate::numerical::ImportError as Error;
 
-/// Measured, transactional repair of source topology.
-pub mod healing;
 /// Default sampled native B-reps, with measured per-entity tolerances and repairs.
 pub mod admission;
+/// Measured, transactional repair of source topology.
+pub mod healing;
 /// Native source carriers and sampled UV fits, without certified-model authority.
 pub mod native;
 /// Per-body admission with retained surface representations on solid refusal.

@@ -500,7 +500,10 @@ pub(super) fn inside(uv: Uv, loops: &[Vec<Node>]) -> bool {
     }
     inside
 }
-pub(super) fn insert(cdt: &mut Cdt, node: Node) -> Result<spade::handles::FixedVertexHandle, Refusal> {
+pub(super) fn insert(
+    cdt: &mut Cdt,
+    node: Node,
+) -> Result<spade::handles::FixedVertexHandle, Refusal> {
     match cdt.locate(node.position()) {
         PositionInTriangulation::OnVertex(handle) => {
             return if cdt.vertex(handle).data().mesh == node.mesh {
@@ -694,7 +697,17 @@ fn face_mesh(
         }
     }
     seed_rectangles(&chart, bounds, &loops, &mut cdt, mesh, options, dec)?;
-    finish_face(&face.name, face.same_sense, false, &chart, cdt, &loops, mesh, options, dec)
+    finish_face(
+        &face.name,
+        face.same_sense,
+        false,
+        &chart,
+        cdt,
+        &loops,
+        mesh,
+        options,
+        dec,
+    )
 }
 
 pub(super) fn finish_face(

@@ -6,11 +6,12 @@ use std::sync::Arc;
 use catallax_numbers::{Decider, Rational, Refusal};
 use serde::Serialize;
 
-use crate::geometry_source::{AngleUnit, ParsedStep};
 use crate::ImportRefusal;
+use crate::geometry_source::{AngleUnit, ParsedStep};
 
 use super::{Error, ToleranceOptions, TolerantBody, TolerantFile, healing};
 
+mod evidence;
 mod fit;
 mod step;
 
@@ -96,6 +97,8 @@ pub struct NativeDomain {
 /// A numerical warning retained on the result rather than promoted to a theorem.
 #[derive(Clone, Debug, Serialize)]
 pub struct NativeWarning {
+    /// Owning source body; absent only for document-wide authority limitations.
+    pub body: Option<String>,
     /// Source scope.
     pub scope: String,
     /// Stable diagnostic code.
@@ -152,11 +155,17 @@ pub struct TolerantSolid {
 }
 impl TolerantSolid {
     /// Source identity of this body's definition.
-    pub fn name(&self) -> &str { self.body.name() }
+    pub fn name(&self) -> &str {
+        self.body.name()
+    }
     /// Discrete topology counts, not an embedding certificate.
-    pub fn counts(&self) -> TolerantCounts { self.counts }
+    pub fn counts(&self) -> TolerantCounts {
+        self.counts
+    }
     /// Native numerical source topology for display and downstream tolerant work.
-    pub fn definition(&self) -> &TolerantBody { &self.body }
+    pub fn definition(&self) -> &TolerantBody {
+        &self.body
+    }
 }
 
 /// Rebuilt native STEP bytes and their exact source-body root bindings.
@@ -169,13 +178,21 @@ pub struct NativeStepFile {
 }
 impl NativeStepFile {
     /// Actual serialized bytes.
-    pub fn bytes(&self) -> &[u8] { &self.bytes }
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
     /// STEP instance IDs of every material root per source body, in input order.
-    pub fn source_body_roots(&self) -> &[Vec<u64>] { &self.body_roots }
+    pub fn source_body_roots(&self) -> &[Vec<u64>] {
+        &self.body_roots
+    }
     /// Export-time native UV correspondence measurements.
-    pub fn checks(&self) -> &[SampledCheck] { &self.checks }
+    pub fn checks(&self) -> &[SampledCheck] {
+        &self.checks
+    }
     /// Consume the file without copying its bytes.
-    pub fn into_bytes(self) -> Vec<u8> { self.bytes }
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.bytes
+    }
 }
 
 #[derive(Serialize)]
@@ -183,7 +200,7 @@ struct ExportEvidence<'a> {
     export_scope: &'static str,
     source_bodies: Option<&'a [usize]>,
     source_body_roots: &'a [Vec<u64>],
-    source_document_evidence: &'a TolerantEvidence,
+    source_document_evidence: evidence::Scope<'a>,
     export_checks: &'a [SampledCheck],
 }
 
@@ -198,20 +215,35 @@ pub struct TolerantImport {
 }
 impl TolerantImport {
     /// Immutable supported source definitions. Occurrence links remain in the document.
-    pub fn source(&self) -> &TolerantFile { &self.source }
+    pub fn source(&self) -> &TolerantFile {
+        &self.source
+    }
     /// Tolerant body definitions, in source-model order.
-    pub fn bodies(&self) -> &[TolerantSolid] { &self.bodies }
+    pub fn bodies(&self) -> &[TolerantSolid] {
+        &self.bodies
+    }
     /// Reconstruct one admitted native candidate as source geometry, without
     /// converting it into a certified kernel model.
-    pub fn body_definition(&self, index: usize, dec: &mut Decider) -> Result<crate::StepFile, Error> {
-        let body = self.bodies.get(index)
+    pub fn body_definition(
+        &self,
+        index: usize,
+        dec: &mut Decider,
+    ) -> Result<crate::StepFile, Error> {
+        let body = self
+            .bodies
+            .get(index)
             .ok_or_else(|| invalid("import.tolerant-body-index", "body index is out of range"))?;
-        self.source.definition_of(std::slice::from_ref(&body.body), dec)
+        self.source
+            .definition_of(std::slice::from_ref(&body.body), dec)
     }
     /// All measured tolerances, samples, repairs and limitations.
-    pub fn evidence(&self) -> &TolerantEvidence { &self.evidence }
+    pub fn evidence(&self) -> &TolerantEvidence {
+        &self.evidence
+    }
     /// Actual immutable source identity.
-    pub fn source_sha256(&self) -> &str { &self.evidence.source_sha256 }
+    pub fn source_sha256(&self) -> &str {
+        &self.evidence.source_sha256
+    }
     /// Rebuild the source document's B-reps and preserve occurrence placement.
     /// The file explicitly carries the tolerant label and per-entity evidence.
     pub fn export_step(&self, dec: &mut Decider) -> Result<NativeStepFile, Error> {
@@ -220,27 +252,53 @@ impl TolerantImport {
             export_scope: "source_document",
             source_bodies: None,
             source_body_roots: &built.body_roots,
-            source_document_evidence: &self.evidence,
+            source_document_evidence: evidence::Scope::new(&self.evidence, None),
             export_checks: &built.checks,
-        }).map_err(|error| Refusal::new("import.tolerant-evidence", error.to_string()))?;
-        let bytes = self.parsed.write_tolerant_step(&built.changes, self.parsed.schemas()?, &metadata, None, dec)?;
-        Ok(NativeStepFile { bytes, body_roots: built.body_roots, checks: built.checks })
+        })
+        .map_err(|error| Refusal::new("import.tolerant-evidence", error.to_string()))?;
+        let bytes = self.parsed.write_tolerant_step(
+            &built.changes,
+            self.parsed.schemas()?,
+            &metadata,
+            None,
+            dec,
+        )?;
+        Ok(NativeStepFile {
+            bytes,
+            body_roots: built.body_roots,
+            checks: built.checks,
+        })
     }
     /// Export selected body-local geometry. Product occurrences and unrelated
     /// bodies are excluded; use `export_step` to preserve the source document.
     pub fn export_body(&self, index: usize, dec: &mut Decider) -> Result<Vec<u8>, Error> {
-        let body = self.bodies.get(index)
+        let body = self
+            .bodies
+            .get(index)
             .ok_or_else(|| invalid("import.tolerant-body-index", "body index is out of range"))?;
         let mut built = step::rebuild(self, std::slice::from_ref(body), dec)?;
-        let root = step::standalone_frame(&self.parsed, &mut built.changes, body.name(), &built.body_roots[0], dec)?;
+        let root = step::standalone_frame(
+            &self.parsed,
+            &mut built.changes,
+            body.name(),
+            &built.body_roots[0],
+            dec,
+        )?;
         let metadata = serde_json::to_string(&ExportEvidence {
             export_scope: "body_local_geometry",
             source_bodies: Some(&[index]),
             source_body_roots: &built.body_roots,
-            source_document_evidence: &self.evidence,
+            source_document_evidence: evidence::Scope::new(&self.evidence, Some(body.name())),
             export_checks: &built.checks,
-        }).map_err(|error| Refusal::new("import.tolerant-evidence", error.to_string()))?;
-        Ok(self.parsed.write_tolerant_step(&built.changes, self.parsed.schemas()?, &metadata, Some(&[root]), dec)?)
+        })
+        .map_err(|error| Refusal::new("import.tolerant-evidence", error.to_string()))?;
+        Ok(self.parsed.write_tolerant_step(
+            &built.changes,
+            self.parsed.schemas()?,
+            &metadata,
+            Some(&[root]),
+            dec,
+        )?)
     }
     /// Source-to-OCCT dimensional factors for independent native export checks.
     /// These describe source units, not an adjustment made by a repair.
@@ -253,7 +311,9 @@ impl TolerantImport {
         [self.source.mm_per_unit.to_f64_nearest(), angle, 1.0]
     }
     /// Original parsed geometry and occurrence declarations for native display.
-    pub fn parsed_source(&self) -> &ParsedStep { &self.parsed }
+    pub fn parsed_source(&self) -> &ParsedStep {
+        &self.parsed
+    }
     /// Already compiled physical source surface, in its original native UV.
     pub fn native_surface(&self, entity: u64) -> Option<&super::native::NativeSurface> {
         self.carriers.surfaces.get(&entity).map(Arc::as_ref)
@@ -268,9 +328,16 @@ fn invalid(code: &'static str, detail: impl Into<String>) -> Error {
     Refusal::new(code, detail).into()
 }
 
-fn source_angles(parsed: &ParsedStep, scale: &Rational, dec: &mut Decider) -> Result<AngleUnit, Error> {
+fn source_angles(
+    parsed: &ParsedStep,
+    scale: &Rational,
+    dec: &mut Decider,
+) -> Result<AngleUnit, Error> {
     for entity in parsed.entities() {
-        if parsed.entity_types(entity)?.contains(&"GLOBAL_UNIT_ASSIGNED_CONTEXT") {
+        if parsed
+            .entity_types(entity)?
+            .contains(&"GLOBAL_UNIT_ASSIGNED_CONTEXT")
+        {
             let context = parsed.representation_context(entity)?;
             if context.dimension == Some(3) {
                 let units = parsed.context_units(entity, dec)?;
@@ -307,14 +374,18 @@ pub(crate) fn prepare(
         || options.maximum_mm <= Rational::zero()
         || options.initial_mm > options.maximum_mm
     {
-        return Err(invalid("import.invalid-tolerances", "invalid source tolerance controls"));
+        return Err(invalid(
+            "import.invalid-tolerances",
+            "invalid source tolerance controls",
+        ));
     }
     let parsed = Arc::new(ParsedStep::read(bytes, dec)?);
     if parsed.source_sha256() != expected_sha256 {
         return Err(ImportRefusal::HashMismatch {
             expected: expected_sha256.into(),
             actual: parsed.source_sha256().into(),
-        }.into());
+        }
+        .into());
     }
     parsed.schemas()?;
     let definition = parsed.native_definition(dec)?;
@@ -355,10 +426,17 @@ pub(crate) fn admit(
         native_domains: Vec::new(),
     };
     for issue in repaired.issues {
-        if issue.code.starts_with("shell.") || issue.code.starts_with("wire.open") || issue.code == "wire.empty-boundary" {
-            return Err(invalid("import.tolerant-non-manifold", format!("{} {}: {}", issue.body, issue.scope, issue.code)));
+        if issue.code.starts_with("shell.")
+            || issue.code.starts_with("wire.open")
+            || issue.code == "wire.empty-boundary"
+        {
+            return Err(invalid(
+                "import.tolerant-non-manifold",
+                format!("{} {}: {}", issue.body, issue.scope, issue.code),
+            ));
         }
         evidence.warnings.push(NativeWarning {
+            body: Some(issue.body),
             scope: issue.scope,
             code: "topology-repair-limitation",
             detail: issue.code,
@@ -371,13 +449,23 @@ pub(crate) fn admit(
         bodies.push(TolerantSolid { body, counts });
     }
     if bodies.is_empty() {
-        return Err(invalid("import.tolerant-broken-topology", "source document contains no finite B-rep body"));
+        return Err(invalid(
+            "import.tolerant-broken-topology",
+            "source document contains no finite B-rep body",
+        ));
     }
     evidence.warnings.push(NativeWarning {
+        body: None,
         scope: "document".into(),
         code: "sampled-authority",
         detail: "Native edge/surface fits are sampled. Global embedding, unsampled self-intersection and a complete source-to-result deviation bound are not claimed.".into(),
     });
     let carriers = fits.into_carriers();
-    Ok(TolerantImport { parsed, source, bodies, evidence, carriers })
+    Ok(TolerantImport {
+        parsed,
+        source,
+        bodies,
+        evidence,
+        carriers,
+    })
 }

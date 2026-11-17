@@ -39,8 +39,7 @@ mod operation;
 mod outcome;
 pub use operation::{
     OperationAllowance, OperationTask, OperationWork, RecordedWork, current_operation_work,
-    operation_budget_active, prefer_reduced_angle_series, remaining_operation_work,
-    reuse_operation_enclosures,
+    operation_budget_active, prefer_reduced_angle_series, reuse_operation_enclosures,
     with_operation_budget,
 };
 mod poly;

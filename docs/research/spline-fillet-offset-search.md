@@ -330,3 +330,15 @@ complete branch census or a proof against the neighbouring face's trim domain.
 An independent cylinder/quadratic-height test checks both UV mappings at
 1e-7 mm; its request cost is recorded in the phase-5 work record. Real-domain
 clipping and closed-body publication remain the next construction stage.
+
+The capped-strip publication primitive uses those two-surface cuts against
+the actual end neighbours, not an end-plane recipe. It shortens retained
+border edges, replaces the picked support occurrences in their actual loops,
+and inserts the cut with both fillet and neighbour parameter curves. Its
+topology order follows [SMLib's trim-original-surfaces stage](https://github.com/NVIDIA-Omniverse/usd-brep/blob/3fd5b9548d19aa8c12c29bc9637a96d42a06f8a5/source/SMLib/src/SmFilletExecutive.cpp#L3381-L3400):
+intersect, trim the retained faces, assemble shared boundaries, then admit
+the complete body. It retains holes and nonzero boundary indices. Numerical
+endpoint constraints remain subject to the unchanged physical admission
+tolerance; they are not incidence certificates. The one-edge regression
+checks all six original planar face domains, including the rounded cap's
+area. Network/junction publication and owner acceptance remain separate gates.

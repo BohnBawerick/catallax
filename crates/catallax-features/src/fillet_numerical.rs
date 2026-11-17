@@ -20,6 +20,8 @@ use catallax_topology::{
     },
 };
 
+#[path = "fillet_rolling_body.rs"]
+pub(crate) mod body;
 #[path = "fillet_rolling.rs"]
 pub(crate) mod rolling;
 #[path = "fillet_numerical_vertex.rs"]
@@ -421,7 +423,7 @@ fn constrained_rail(
     curve: &BSplineCurve,
     interval: &[Rational; 2],
     endpoints: &[[Rational; 2]; 2],
-    bounds: &[[Rational; 2]; 2],
+    bounds: Option<&[[Rational; 2]; 2]>,
     dec: &mut Decider,
 ) -> Result<(BSplineCurve, usize), Refusal> {
     let forward = interval[0] < interval[1];
@@ -455,13 +457,15 @@ fn constrained_rail(
                 scalar(&(&h[0] / &h[3]), dec)?,
                 scalar(&(&h[1] / &h[3]), dec)?,
             ];
-            for axis in 0..2 {
-                let next = uv[axis]
-                    .clone()
-                    .max(bounds[axis][0].clone())
-                    .min(bounds[axis][1].clone());
-                changed += usize::from(next != uv[axis]);
-                uv[axis] = next;
+            if let Some(bounds) = bounds {
+                for axis in 0..2 {
+                    let next = uv[axis]
+                        .clone()
+                        .max(bounds[axis][0].clone())
+                        .min(bounds[axis][1].clone());
+                    changed += usize::from(next != uv[axis]);
+                    uv[axis] = next;
+                }
             }
             controls.push(Point3::new(
                 uv[0].clone().into(),
@@ -791,7 +795,7 @@ fn build_impl(
                 .ok_or_else(|| bad("support pcurve is missing"))?,
             &interval,
             &rail_uv[side],
-            &domain(&physical[side]),
+            Some(&domain(&physical[side])),
             dec,
         )?;
         constrained_parameter_controls += changed;

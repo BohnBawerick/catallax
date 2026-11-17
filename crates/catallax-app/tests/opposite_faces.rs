@@ -1,8 +1,9 @@
 //! Explicit geometric validation distinguishes opposite sheets from boundary contacts.
 use catallax_app::soliddraft::convert;
 use catallax_boolean::check_body;
-use catallax_numbers::{Decider, with_operation_budget};
-use catallax_topology::{BodyId, Model};
+use catallax_numbers::{Decider, Rational, with_operation_budget};
+use catallax_shapes::{Pose, RVector3, Rotation};
+use catallax_topology::{BodyId, Model, block};
 use serde_json::json;
 
 fn two_boxes(offset: [i32; 3]) -> (Model, BodyId) {
@@ -98,23 +99,29 @@ fn body_check_handles_curved_carrier_trims_and_their_boundary_contacts() {
 #[test]
 fn thousands_of_separated_lumps_validate_within_the_default_fixed_allowance() {
     const LUMPS: usize = 2_358;
-    let mut steps = Vec::with_capacity(2 * LUMPS);
-    for index in 0..LUMPS {
-        let profile = format!("p{index}");
-        steps.push(json!({"id":profile,"op":"profile",
-            "plane":{"origin":[0,0,10 * index],"normal":[0,0,1],"x_dir":[1,0,0]},
-            "rectangle":{"center":[0,0],"width":4,"height":4}}));
-        steps.push(json!({"id":format!("b{index}"),"op":"extrude","profile":profile,"distance":1}));
-    }
-    let source = json!({"format":"soliddraft-recipe/1","name":"separated lumps","steps":steps,"result":"b0"});
-    let converted = convert(&source.to_string()).unwrap();
-    let built = catallax_features::evaluate(&converted.recipe, &mut Decider::default()).unwrap();
-    let mut model = built.model;
-    let mut combined = model.body(built.result).clone();
-    combined.lumps.clear();
-    combined.lumps.reserve(LUMPS);
-    for index in 0..LUMPS {
-        let body = built.bodies[&converted.steps[&format!("b{index}")]];
+    let mut model = Model::new();
+    let first = block(
+        &mut model,
+        [4.into(), 4.into(), 1.into()],
+        &Pose::identity(),
+    )
+    .unwrap();
+    let mut combined = model.body(first).clone();
+    combined.lumps.reserve(LUMPS - 1);
+    let mut dec = Decider::default();
+    for index in 1..LUMPS {
+        let pose = Pose::new(
+            Rotation::identity(),
+            RVector3::new(
+                Rational::zero(),
+                Rational::zero(),
+                Rational::from_i64(10 * index as i64),
+            )
+            .into(),
+            &mut dec,
+        )
+        .unwrap();
+        let body = block(&mut model, [4.into(), 4.into(), 1.into()], &pose).unwrap();
         combined.lumps.extend_from_slice(&model.body(body).lumps);
     }
     let body = model.add_body(combined);

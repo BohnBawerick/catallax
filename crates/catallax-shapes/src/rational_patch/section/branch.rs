@@ -140,9 +140,37 @@ impl PatchSectionBranch {
         if exact_sign(&self.surface.value_at(point), dec)? != Sign::Zero {
             return Ok(None);
         }
+        let bits = dec.policy().max_precision_bits.min(128);
+        let point_box = if bits == 0 {
+            None
+        } else {
+            Some([
+                dec.enclose_budgeted_at(&point.x, bits)?,
+                dec.enclose_budgeted_at(&point.y, bits)?,
+                dec.enclose_budgeted_at(&point.z, bits)?,
+            ])
+        };
         for (chart, patch) in self.charts.iter().enumerate() {
             if self.cells.iter().all(|cell| cell.chart != chart) {
                 continue;
+            }
+            if let Some(point_box) = &point_box {
+                let Some(parameters) = patch.parameters_of_box(point_box, dec)? else {
+                    continue;
+                };
+                if self
+                    .cells
+                    .iter()
+                    .filter(|cell| cell.chart == chart)
+                    .all(|cell| {
+                        (0..2).any(|axis| {
+                            parameters[axis].hi() < cell.domain[axis][0]
+                                || parameters[axis].lo() > cell.domain[axis][1]
+                        })
+                    })
+                {
+                    continue;
+                }
             }
             let Some(at) = patch.parameters_at(point, dec)? else {
                 continue;
@@ -996,6 +1024,7 @@ mod tests {
                     &Point3::new(q(1, 4).into(), q(1, 4).into(), Real::zero()),
                     &mut dec,
                 )?);
+                assert!(!branch.contains(point, &mut dec)?);
                 Ok(())
             });
         assert!(!work.exhausted);

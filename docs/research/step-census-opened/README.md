@@ -201,3 +201,19 @@ The candidate passes six periodic STEP tests and ten actual period-gauge/signed-
 All three real-part bodies now validate, with unchanged written 3D entity tables.
 Only the existing four-sided cylindrical seam-cell chart is translated; 3D geometry, source data, tolerance and the existing numerical checks remain unchanged.
 Builder processing can occur internally, and no complete source-fidelity or unhealed-validity claim is made.
+
+## Rational support projection qualification
+
+Kernel producer `7e7ca60efc48830ceb3b540b1a89fd909355418b` was measured once on the same 3,000 source hashes, with two workers, 6,144 MiB caps, unchanged 20M allowances and the 60-second file bound.
+
+| File measure | Period-chart capture | Determinant/trace candidate |
+| --- | ---: | ---: |
+| Complete-source solids | 550 | 550 |
+| Every solid exported and valid after OCCT builder processing | 516 | 516 |
+| Any invalid written body, full and partial | 37 | 37 |
+
+There are no measured admission/body-inventory losses, export-valid losses or unmeasured previous passes. The same two opening timeouts, one export timeout and `00002204` export work refusal remain run facts; no memory termination or process error occurs. The candidate receives no additional solid or valid-export credit.
+
+The candidate preserves positive Gershgorin margins and otherwise attempts a positive-definite symmetric projected-Jacobian determinant/trace bound. Thirteen focused tests pass, including a non-ruled cubic sheet without diagonal dominance, indefinite and negative-diagonal refusal controls, and the existing ruled-chart controls. Controls, knots, weights, complete-domain coverage, join checks, tolerances and proof limits stay unchanged. No shared import helper changes.
+
+Six initial refusals change without completing a solid file: `00003966` advances from the support bound to an existing spline endpoint incidence gap; `00005482`, `00006039` and `00007760` advance from that support refusal to a resource limit; `00001166` and `00001707` change from a resource limit to incidence gaps. Resource limits are run facts, not geometric refusals. Five screened real files still retain surface bodies; passing a support proof alone does not admit a solid.

@@ -144,3 +144,18 @@ Only k12 builds, and its separate STEP request writes in 260,103 work,
 SHA-256 `203ae123b49186c571eb47fb5f0b8b5859c3e95f8bbc2214f27e073154d6c891`.
 A disjoint subtraction adds no intersecting-cut coverage. All stages over
 20M remain phase-5 cases; no work limit or tolerance was widened.
+
+Independent OCP 8.0.1.1 checks read both the actual imported source and the
+emitted k12 STEP through raw `StepToTopoDS_Builder`, with healing,
+SameParameter and TransferRoots off. Both are valid closed single solids
+and take a valid, material-removing reference cut:
+
+| File | Faces | Volume before, mm³ | Volume after, mm³ |
+|---|---:|---:|---:|
+| Unfilleted source STEP | 10 | 8.057291666666668 | 6.516691814464737 |
+| k12 far-disjoint STEP | 22 | 12558.682045617654 | 11544.082343087084 |
+
+The restored permanent loft regression passes with the original bisection:
+96,732,996 work for body admission, 626,466 for independent geometry, and a
+typed radius-edit refusal at 99,999,999 in its separate request. No successful
+strict radius edit is inferred from the passing bounded-refusal contract.

@@ -22,6 +22,7 @@ use catallax_topology::{BodyId, EdgeId, Loop, Model, Sense, VertexId};
 use std::collections::{BTreeMap, BTreeSet};
 
 mod charts;
+mod guides;
 mod nurbs;
 mod planar;
 mod rings;
@@ -430,14 +431,14 @@ struct Tolerances {
     projection: Rational,
 }
 
-fn rational_curve<const D: usize>(
+fn rational_curve_definition<const D: usize>(
     knots: &[f64],
     controls: &[[f64; D]],
     domain: [&Rational; 2],
     ends: [[Rational; 3]; 2],
     face: Option<&SplineFace>,
     dec: &mut Decider,
-) -> Result<BSplineCurve, Refusal> {
+) -> Result<(usize, Vec<Rational>, Vec<Point3>), Refusal> {
     dec.charge_work((knots.len() + D * controls.len()) as u64)?;
     let degree = knots.len() - controls.len() - 1;
     let mut exact_knots = Vec::with_capacity(knots.len());
@@ -478,8 +479,21 @@ fn rational_curve<const D: usize>(
         let [x, y, z] = xyz;
         points.push(Point3::new(x.into(), y.into(), z.into()));
     }
+    Ok((degree, exact_knots, points))
+}
+
+fn rational_curve<const D: usize>(
+    knots: &[f64],
+    controls: &[[f64; D]],
+    domain: [&Rational; 2],
+    ends: [[Rational; 3]; 2],
+    face: Option<&SplineFace>,
+    dec: &mut Decider,
+) -> Result<BSplineCurve, Refusal> {
+    let (degree, knots, points) =
+        rational_curve_definition(knots, controls, domain, ends, face, dec)?;
     let weights = vec![Real::one(); points.len()];
-    BSplineCurve::new(degree, exact_knots, points, weights, dec)
+    BSplineCurve::new(degree, knots, points, weights, dec)
 }
 
 fn uv_end(uv: &Uv) -> [Rational; 3] {
@@ -1318,9 +1332,7 @@ pub(crate) fn fillet_guide(
             for j in 0..density {
                 for share in CHECK_SHARES {
                     let local = exact((j as f64 + share) / density as f64)?;
-                    let parameter = (&Rational::from_i64(index as i64) + &local)
-                        / Rational::from_i64(pieces.len() as i64);
-                    samples.push((index, local, parameter));
+                    samples.push((index, local));
                 }
             }
         }
@@ -1333,21 +1345,15 @@ pub(crate) fn fillet_guide(
             "a fillet guide cannot fit its retained trace within the declared tolerance and span allowance",
         ));
     }
-    let (knots, controls) = concatenate(fits);
     let coordinates = |p: &Point3| -> Result<[Rational; 3], Refusal> {
         Ok([scalar(&p.x, dec)?, scalar(&p.y, dec)?, scalar(&p.z, dec)?])
     };
-    let curve = rational_curve(
-        &knots,
-        &controls,
-        [&Rational::zero(), &Rational::one()],
-        [coordinates(&first)?, coordinates(&last)?],
-        None,
-        dec,
-    )?;
+    let (curve, clock) = guides::join(fits, [coordinates(&first)?, coordinates(&last)?], dec)?;
     let mut checked = Vec::with_capacity(samples.len());
-    for (index, local, parameter) in samples {
+    for (index, local) in samples {
         dec.charge_work(1)?;
+        let width = &clock[index + 1] - &clock[index];
+        let parameter = &clock[index] + &(&width * &local);
         let native = if reversed {
             &Rational::one() - &local
         } else {

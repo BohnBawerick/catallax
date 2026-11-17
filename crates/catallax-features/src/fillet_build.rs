@@ -25,6 +25,9 @@ use crate::{
     profile::sign,
 };
 
+#[path = "fillet_clearance.rs"]
+mod fillet_clearance;
+
 #[path = "fillet_collapse.rs"]
 mod fillet_collapse;
 #[path = "fillet_consume.rs"]
@@ -1079,6 +1082,11 @@ fn hull(
     dec: &mut Decider,
 ) -> Result<Option<Vec<Point3>>, Refusal> {
     let e = model.edge(run.edge);
+    if e.start == e.end
+        && let Some(points) = fillet_clearance::ring_hull(&run.definition, dec)?
+    {
+        return Ok(Some(points));
+    }
     if let (Curve::Circle(_), Some(start), Some(end)) =
         (model.geom().curve(e.curve), e.start, e.end)
     {
@@ -2061,6 +2069,7 @@ fn guard(
         })
         .flat_map(|(_, incident)| incident.iter().map(|(f, _)| *f))
         .collect();
+    let mut finite_hull = None;
     for face in model.faces_of_body(body) {
         if run.faces.contains(&face) || neighbours.contains(&face) || cut.contains(&face) {
             continue;
@@ -2076,6 +2085,17 @@ fn guard(
             if let Some(corners) = polygon(model, face)
                 && hulls_apart(hull, &corners, dec)?
             {
+                continue;
+            }
+            if finite_hull.is_none() {
+                finite_hull = Some(fillet_clearance::hull_box(hull, dec)?);
+            }
+            if fillet_clearance::outside_face(
+                model,
+                face,
+                finite_hull.as_ref().expect("retained hull"),
+                dec,
+            )? {
                 continue;
             }
         }
@@ -2181,17 +2201,27 @@ fn corner_guard(
     incident: &BTreeSet<FaceId>,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
-    surface_guard(model, body, &corner.sector.surface, incident, dec)
+    let hull = fillet_clearance::corner_hull(&corner.sector);
+    surface_guard(
+        model,
+        body,
+        &corner.sector.surface,
+        Some(&hull),
+        incident,
+        dec,
+    )
 }
 
-/// Proves every face but the incident ones clear of a corner's support.
+/// Proves non-incident trimmed faces clear of the retained corner region.
 fn surface_guard(
     model: &mut Model,
     body: BodyId,
     surface: &Surface,
+    hull: Option<&[Point3]>,
     incident: &BTreeSet<FaceId>,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
+    let mut finite_hull = None;
     for face in model.faces_of_body(body) {
         if incident.contains(&face) {
             continue;
@@ -2199,6 +2229,22 @@ fn surface_guard(
         let other = model.geom().surface(model.face(face).surface).clone();
         if separated(surface, &other, dec)? {
             continue;
+        }
+        if let Some(hull) = hull {
+            if hull_clear(hull, &other, dec)? {
+                continue;
+            }
+            if finite_hull.is_none() {
+                finite_hull = Some(fillet_clearance::hull_box(hull, dec)?);
+            }
+            if fillet_clearance::outside_face(
+                model,
+                face,
+                finite_hull.as_ref().expect("retained hull"),
+                dec,
+            )? {
+                continue;
+            }
         }
         let a = model.geom_mut().add_surface(surface.clone());
         let b = model.geom_mut().add_surface(other);
@@ -2983,7 +3029,7 @@ fn build_strips(
                     .flat_map(|adjacent| adjacent.iter().map(|(f, _)| *f)),
             );
             let surface = Surface::BSpline(SplineSupport::RollingMitre(r.band.clone()));
-            surface_guard(model, body, &surface, &near, dec)?;
+            surface_guard(model, body, &surface, None, &near, dec)?;
             rolled.push((old, i, arcs));
             continue;
         }

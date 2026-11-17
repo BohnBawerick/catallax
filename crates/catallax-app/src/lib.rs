@@ -139,19 +139,6 @@ pub struct EvaluatedApplicationBody {
     pub names: Names,
 }
 
-/// Numerical geometry, authored controls and stable-keyed face origins.
-/// No exact checkpoint or model conversion is provided.
-pub use catallax_features::NumericalFilletEvaluation as NumericalApplicationBody;
-
-/// The ordinary build's exact or explicitly numerical geometry authority.
-#[derive(Clone, Debug)]
-pub enum EvaluatedApplicationOutcome {
-    /// An exact checkpoint and its picking names.
-    Exact(EvaluatedApplicationBody),
-    /// An admitted approximate body and scoped numerical checks.
-    Numerical(Arc<NumericalApplicationBody>),
-}
-
 impl EvaluatedApplicationBody {
     /// Requests the certified mesh of this checkpoint, retaining its marks.
     ///
@@ -470,7 +457,10 @@ pub fn build_incremental_with_files_without_display(
                 ))
             }
             catallax_features::EvaluationOutcome::Numerical(body) => {
-                Ok(EvaluatedApplicationOutcome::Numerical(body))
+                let (body, recipe, origins) = Arc::unwrap_or_clone(body).into_parts();
+                Ok(EvaluatedApplicationOutcome::Numerical(Arc::new(
+                    NumericalApplicationBody::new(body, recipe, origins),
+                )))
             }
         }
     })

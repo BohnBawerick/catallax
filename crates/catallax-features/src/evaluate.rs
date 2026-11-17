@@ -477,13 +477,19 @@ pub fn evaluate_with_numerical_hole(
     hole_request(recipe, || {
         match numerical_hole_impl(recipe, None, options, dec)? {
             HoleAttempt::Numerical(built) => Ok(HoleEvaluation::Numerical(built)),
-            HoleAttempt::Standard { state, start } => {
-                evaluate_impl(recipe, &ImportFiles::new(), None, None, *state, start, None, dec).map(
-                    |state| {
-                        HoleEvaluation::Standard(Box::new(state.finish(Arc::new(recipe.clone()))))
-                    },
-                )
-            }
+            HoleAttempt::Standard { state, start } => evaluate_impl(
+                recipe,
+                &ImportFiles::new(),
+                None,
+                None,
+                *state,
+                start,
+                None,
+                dec,
+            )
+            .map(|state| {
+                HoleEvaluation::Standard(Box::new(state.finish(Arc::new(recipe.clone()))))
+            }),
         }
     })
 }

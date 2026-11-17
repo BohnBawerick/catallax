@@ -33,6 +33,10 @@ impl NumericalFilletEvaluation {
     pub fn face_origins(&self) -> &BTreeMap<String, Vec<Origin>> {
         &self.origins
     }
+    /// Consumes the result into its admitted geometry, authored controls and origins.
+    pub fn into_parts(self) -> (NumericalBody, Arc<Recipe>, BTreeMap<String, Vec<Origin>>) {
+        (self.fillet.into_body(), self.recipe, self.origins)
+    }
 }
 
 #[derive(Default)]
@@ -201,7 +205,16 @@ pub fn evaluate_incremental_outcome(
 ) -> Result<EvaluationOutcome, BuildError> {
     let (state, start) = resume_state(recipe, prefix, dec);
     let mut context = Context::default();
-    let state = evaluate_impl(recipe, files, None, None, state, start, Some(&mut context), dec)?;
+    let state = evaluate_impl(
+        recipe,
+        files,
+        None,
+        None,
+        state,
+        start,
+        Some(&mut context),
+        dec,
+    )?;
     if let Some(result) = context.bodies.remove(&recipe.result) {
         return Ok(EvaluationOutcome::Numerical(result));
     }

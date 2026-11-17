@@ -322,6 +322,9 @@ impl NumericalFilletBuilt {
     pub fn body(&self) -> &NumericalBody {
         &self.body
     }
+    pub(crate) fn into_body(self) -> NumericalBody {
+        self.body
+    }
     /// Numerical carrier and its separate sampled rolling-ball checks.
     pub fn fillet(&self) -> &NumericalSplineFillet {
         &self.fillet

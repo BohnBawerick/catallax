@@ -280,6 +280,11 @@ fitted blend is geometrically displaced from the old sharp edge. This does
 not prove native-chain fallback, later edits, imported-part fillets, or the
 owner's pocket.
 
+The outcome and numerical holder are application-owned types. The producer
+moves admitted geometry, the authored recipe and origins into that holder;
+it does not export a feature-owned alias, rebuild the body, or convert it
+to an exact checkpoint.
+
 ## General rolling-ball construction, 17 November
 
 Steering 025 replaces pair/end-recipe construction gates with one numerical
@@ -307,3 +312,14 @@ over-20M cases are recorded in [the phase-5 work record](../phase5-work-cases.md
 This proves only untrimmed candidate strips and rails. The common constructor
 is not yet an ordinary application producer; actual face-domain trimming,
 corner assembly, successful owner bodies and raw STEP acceptance remain open.
+
+The generic neighbour-cut stage follows [OCCT's two-surface walking](https://occt3d.com/dev/doc/refman/html/class_int_walk___p_walking.html)
+and [SMLib's traced-curve fitting](https://github.com/NVIDIA-Omniverse/usd-brep/blob/3fd5b9548d19aa8c12c29bc9637a96d42a06f8a5/source/SMLib/src/SmSurfaceIntersector.cpp#L4900-L5085).
+It traces the fitted strip against a regular neighbouring carrier with zero
+offsets, retaining one world curve and both parameter curves. Refinement
+checks their physical agreement with 128-bit surface evaluations at retained
+stations and eighth-span samples. These are sampled numerical checks, not a
+complete branch census or a proof against the neighbouring face's trim domain.
+An independent cylinder/quadratic-height test checks both UV mappings at
+1e-7 mm; its request cost is recorded in the phase-5 work record. Real-domain
+clipping and closed-body publication remain the next construction stage.

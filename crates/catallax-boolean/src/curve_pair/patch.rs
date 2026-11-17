@@ -39,47 +39,6 @@ pub(crate) fn finite_surface_points(
     surface: SurfaceId,
     dec: &mut Decider,
 ) -> Result<Option<FiniteSurfacePoints>, Refusal> {
-    if matches!(
-        model.geom().curve(curve),
-        Curve::Circle(_) | Curve::Ellipse(_)
-    ) && let Surface::BSpline(support) = model.geom().surface(surface)
-    {
-        let equations: [RealPoly; 2] = model
-            .geom()
-            .curve(curve)
-            .equations(model.geom())
-            .expect("a conic has two world equations")
-            .try_into()
-            .expect("a conic has two world equations");
-        let mut points: Vec<Point3> = Vec::new();
-        let mut append = |patch: &catallax_shapes::RationalPatch| -> Result<(), Refusal> {
-            'candidate: for at in patch.quadric_parameters(&equations, dec)? {
-                let point = patch.point_at(&at, dec)?;
-                for previous in &points {
-                    if sign(
-                        &point.minus(previous).norm_squared(),
-                        dec,
-                        "boolean.patch-section-meetings",
-                    )? == Sign::Zero
-                    {
-                        continue 'candidate;
-                    }
-                }
-                points.push(point);
-            }
-            Ok(())
-        };
-        match support {
-            SplineSupport::RationalPatch(patch) => append(patch)?,
-            SplineSupport::RationalAtlas(atlas) => {
-                for chart in atlas.charts() {
-                    append(chart.patch())?;
-                }
-            }
-            _ => return Ok(None),
-        }
-        return Ok(Some(FiniteSurfacePoints::Points(points)));
-    }
     if let (Curve::BSpline(spline), Surface::BSpline(support)) =
         (model.geom().curve(curve), model.geom().surface(surface))
     {
@@ -406,79 +365,6 @@ mod tests {
                 cubic,
             );
             assert!(!exact_incidence(&mut model, curve, &off, &mut dec)?);
-            Ok(())
-        });
-        result.unwrap();
-        assert!(!work.exhausted);
-    }
-
-    #[test]
-    fn ellipse_clipping_keeps_both_saddle_hits_and_excludes_the_finite_outside() {
-        let (result, work) = with_operation_budget(20_000_000, || -> Result<(), Refusal> {
-            let mut dec = Decider::default();
-            let half = Real::from(Rational::from_ratio(1, 2).unwrap());
-            let mut model = Model::new();
-            let definition = catallax_shapes::Ellipse::new(
-                Point3::new(Real::zero(), Real::zero(), half.clone()),
-                Vector3::new(Real::zero(), Real::zero(), Real::one()),
-                Vector3::new(Real::one(), Real::zero(), Real::zero()),
-                Real::from_i64(4),
-                Real::one(),
-                &mut dec,
-            )?;
-            let ellipse = model.geom_mut().add_curve(Curve::Ellipse(definition));
-            for (low, expected) in [
-                (Rational::zero(), 2),
-                (Rational::from_ratio(3, 4).unwrap(), 1),
-            ] {
-                let knots = [0, 0, 1, 1].map(Rational::from_i64).to_vec();
-                let controls = [low, Rational::from_i64(2)]
-                    .into_iter()
-                    .flat_map(|x| {
-                        [Rational::zero(), Rational::from_i64(2)].map(|y| {
-                            Point3::new(x.clone().into(), y.clone().into(), (&x * &y).into())
-                        })
-                    })
-                    .collect();
-                let carrier = catallax_shapes::BSplineSurface::new(
-                    [1, 1],
-                    [knots.clone(), knots],
-                    [2, 2],
-                    controls,
-                    vec![Real::one(); 4],
-                    &mut dec,
-                )?;
-                let patch = catallax_shapes::RationalPatch::new(carrier, &mut dec)?;
-                let surface = model
-                    .geom_mut()
-                    .add_surface(Surface::BSpline(SplineSupport::RationalPatch(patch)));
-                let Some(FiniteSurfacePoints::Points(points)) =
-                    finite_surface_points(&model, ellipse, surface, &mut dec)?
-                else {
-                    panic!("isolated finite ellipse/saddle points");
-                };
-                assert_eq!(points.len(), expected);
-                let mut below_one = 0;
-                for point in points {
-                    for residual in [
-                        &point.z - &half,
-                        &point.x * &point.y - half.clone(),
-                        point.x.square() / Real::from_i64(4) + point.y.square() - Real::one(),
-                    ] {
-                        assert_eq!(
-                            sign(&residual, &mut dec, "test.ellipse-saddle")?,
-                            Sign::Zero
-                        );
-                    }
-                    let x = dec.enclose_budgeted_at(&point.x, 64)?;
-                    if x.hi() < Rational::one() {
-                        below_one += 1;
-                    } else {
-                        assert!(x.lo() > Rational::one());
-                    }
-                }
-                assert_eq!(below_one, expected - 1);
-            }
             Ok(())
         });
         result.unwrap();

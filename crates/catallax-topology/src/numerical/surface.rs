@@ -310,9 +310,12 @@ impl SplineSurfaceBody {
             if thickness.is_zero() {
                 return Err(failure("thickness must be nonzero"));
             }
-            let carrier = self.source.to_surface(dec)?;
-            let (offset, checks) =
-                normal_offset_surface(&carrier, &thickness, &self.body.options.tolerance_mm, dec)?;
+            let (offset, checks) = fit_normal_offset(
+                &self.source,
+                &thickness,
+                &self.body.options.tolerance_mm,
+                dec,
+            )?;
             let front = thickness.sign() == Sign::Positive;
             let (lower, upper) = if front {
                 (&self.source, &offset)
@@ -437,7 +440,7 @@ struct OffsetInterval {
 }
 
 fn offset_intervals(
-    source: &BSplineSurface,
+    source: &RationalSplineSurface,
     axis: usize,
     divisions: usize,
     dec: &mut Decider,
@@ -500,22 +503,14 @@ fn offset_nodes(knots: &[Rational], dec: &mut Decider) -> Result<Vec<Rational>, 
     Ok(nodes)
 }
 
-/// Interpolate a normal offset at a fixed numerical tolerance. Returned checks
-/// cover the sampled source-span grids, not complete between-sample deviation.
-/// The caller must separately admit the candidate and its finite trims.
-pub fn normal_offset_surface(
-    source: &BSplineSurface,
+fn fit_normal_offset(
+    source: &RationalSplineSurface,
     thickness: &Rational,
     tolerance: &Rational,
     dec: &mut Decider,
 ) -> Result<(RationalSplineSurface, Vec<NumericalCheck>), Refusal> {
-    if !operation_budget_active() {
-        return guarded(|| normal_offset_surface(source, thickness, tolerance, dec));
-    }
-    if tolerance.sign() != Sign::Positive {
-        return Err(failure("normal-offset tolerance must be positive"));
-    }
-    let mut workspace = source.span_workspace();
+    let carrier = source.to_surface(dec)?;
+    let mut workspace = carrier.span_workspace();
     let mut divisions = source.degrees().map(|degree| degree.div_ceil(3).max(1));
     loop {
         let intervals = [
@@ -532,7 +527,7 @@ pub fn normal_offset_surface(
         let mut samples = reserve(size, dec)?;
         for u in &parameters[0] {
             for v in &parameters[1] {
-                let value = jet(source, &[u.clone(), v.clone()], &mut workspace, dec)?;
+                let value = jet(&carrier, &[u.clone(), v.clone()], &mut workspace, dec)?;
                 samples.push(
                     offset_point(&value, thickness, dec)?
                         .each_ref()
@@ -561,7 +556,7 @@ pub fn normal_offset_surface(
                             parameter(&v.bounds[0], &v.bounds[1], j, 6),
                         ];
                         dec.charge_work(1)?;
-                        let original = source.jet_on_span(
+                        let original = carrier.jet_on_span(
                             [u.source_span, v.source_span],
                             &uv.clone().map(|q| [q.clone(), q]),
                             BITS,

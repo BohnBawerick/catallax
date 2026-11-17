@@ -1,3 +1,4 @@
+//! Temporary source fixtures for the analytic-family consumer proof.
 #[path = "../tests/common/mod.rs"]
 mod common;
 use common::Soup;

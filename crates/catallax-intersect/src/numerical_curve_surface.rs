@@ -152,36 +152,55 @@ fn source_curve(
         start,
         end,
     }];
-    let mut derivative = None;
+    let mut derivative: Option<[Ball; 3]> = None;
     while let Some(segment) = pending.pop() {
         dec.charge_work(1)?;
         let lo = exact(segment.lo)?;
         let hi = exact(segment.hi)?;
         let interval = Ball::from_rational(&lo, BITS).hull(&Ball::from_rational(&hi, BITS));
-        let mut jets = piece.taylor(&interval, 2, dec)?;
-        let curvature = jets[2]
-            .iter()
-            .fold(Rational::zero(), |sum, value| sum + upper(value));
-        if derivative.is_none() {
-            derivative = Some(jets.swap_remove(1));
-        }
-        let width = &hi - &lo;
-        // Taylor coefficient two is C''/2. Linear interpolation error is
-        // bounded by sup|C''| h²/8, plus the rounded endpoints' displacement.
-        let error = curvature * (&width * &width).mul_pow2(-2)
-            + segment.start.error.clone().max(segment.end.error.clone());
-        if error <= *tolerance {
-            controls.push(ControlPoint {
-                coordinates: segment.end.coordinates,
-            });
-            knots.push(segment.hi);
-            continue;
-        }
+        let failed_enclosure = match piece.taylor(&interval, 2, dec) {
+            Ok(mut jets) => {
+                let curvature = jets[2]
+                    .iter()
+                    .fold(Rational::zero(), |sum, value| sum + upper(value));
+                let width = &hi - &lo;
+                // Taylor coefficient two is C''/2. Linear interpolation error is
+                // bounded by sup|C''| h²/8, plus endpoint displacement.
+                let error = curvature * (&width * &width).mul_pow2(-2)
+                    + segment.start.error.clone().max(segment.end.error.clone());
+                if error <= *tolerance {
+                    let tangent = jets.swap_remove(1);
+                    derivative = Some(match derivative.take() {
+                        Some(previous) => {
+                            std::array::from_fn(|axis| previous[axis].hull(&tangent[axis]))
+                        }
+                        None => tangent,
+                    });
+                    controls.push(ControlPoint {
+                        coordinates: segment.end.coordinates,
+                    });
+                    knots.push(segment.hi);
+                    continue;
+                }
+                None
+            }
+            Err(error)
+                if error.code.starts_with("numbers.")
+                    || error.code == "intersect.fillet-cut-derivative" =>
+            {
+                return Err(error);
+            }
+            Err(error) => {
+                dec.charge_work(0)?;
+                dec.check_deadline()?;
+                Some(error)
+            }
+        };
         let middle = segment.lo + (segment.hi - segment.lo) * 0.5;
         if middle <= segment.lo || middle >= segment.hi {
-            return Err(bad(
-                "the curve proposal cannot meet the preset tolerance at binary64 resolution",
-            ));
+            return Err(failed_enclosure.unwrap_or_else(|| {
+                bad("the curve proposal cannot meet the preset tolerance at binary64 resolution")
+            }));
         }
         let point = rounded_point(piece, middle, dec)?;
         pending.push(Segment {
@@ -202,7 +221,7 @@ fn source_curve(
         .map_err(|error| bad(format!("finite trace adaptation failed: {error:?}")))?;
     Ok((
         curve,
-        derivative.expect("the initial trace interval was enclosed"),
+        derivative.expect("accepted trace intervals carry derivative enclosures"),
     ))
 }
 

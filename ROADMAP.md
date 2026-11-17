@@ -131,6 +131,8 @@ Why this phase is second: these are whole lines of the count with nothing built.
 | 2.4 | General sweeps | Extrude with taper. Sweep with a guide, with twist and along a helix. Extrude up to a curved face. | Two "not started" lines. It does not depend on 2.2 or 2.3, so it runs beside them. | Springs, threads, tapered and twisted shapes. P8, the spring and threaded boss. | P8 builds. |
 | 2.5 | Direct edits | Delete a face, a fillet or a hole and heal the solid. Move, offset or replace a face. | Needs 2.2 and 2.3. It pays only once imports work (1.2). | Editing bought-in parts that have no feature tree. | Each edit works on an imported solid. |
 
+**2.4 partial delivery:** taper, guide/twist sweeps, a quarter helix and curved-face termination have build/edit/save/reopen and unhealed STEP evidence. General-motion fits are explicitly numerical. P8 still reports `numbers.operation-budget` in the threaded union at 100M; the milestone remains open. Its [stage record](docs/RECIPE.md#work-recorded-for-phase-5) is retained for Phase 5.
+
 **App, alongside:** import health report, reverse-engineering workspace, direct-edit commands, reference axis and point, slot, draft check, exact sketch solver.
 
 **Checkpoint 2.** Scoreboard and census rerun. Order of phase 3.

@@ -961,9 +961,9 @@ An integer number of helix turns does not generally return a rotation-minimising
 
 For single rational bicubic charts the kernel couples the projected Jacobian numerators before taking exact Bernstein hulls, following the homogeneous control-hull principle used in [SMLib's Bezier bounds](https://github.com/NVIDIA-Omniverse/usd-brep/blob/main/source/SMLib/src/SmBSplineCurve.cpp). Positive diagonal lower bounds and a strict determinant bound prove the same positive symmetric Jacobian and global embedding as the existing interval criterion. [OCCT's B-spline constructor checks](https://occt3d.com/dev/doc/refman/html/class_geom___b_spline_surface.html) validate the representation, not this whole-chart embedding claim. The existing finite cell, depth and caller work allowances are unchanged. Analytic stock remains analytic through the recipe's prefix Booleans.
 
-The coupled proof clears the six projection coefficients' denominators by one positive common factor before polynomial arithmetic. It divides that factor out of the final margin, leaving the stored projection, geometry and strong-monotonicity bound unchanged. This is exact homogeneous normalization, not a reduced precision, tolerance or arithmetic charge.
+The coupled proof clears the six centre-dual projection coefficients' denominators by one positive common factor before polynomial arithmetic. It divides that factor out of the final margin, leaving the selected projection, geometry and strong-monotonicity bound unchanged by this normalization. This is exact homogeneous normalization, not a reduced precision, tolerance or arithmetic charge.
 
-For a single rational bicubic span, the original centre-dual whole-chart certificate is tried first. If its hull is inconclusive, a positive dyadic metric balance is formed from the same exact derivative numerators, without evaluating world-coordinate corner jets. A complete balanced certificate can be selected directly. If neither hull suffices, the original projection retains its bounded cover attempt unless exact corner coefficients prove it cannot be positive; then the balanced projection uses that same finite cover allowance. Corner positivity never admits geometry. This extends the existing ruled-chart row-scaling approach, not the representation-only [OCCT](https://occt3d.com/dev/doc/refman/html/class_geom___b_spline_surface.html) or [SMLib](https://github.com/NVIDIA-Omniverse/usd-brep/blob/main/source/SMLib/src/SmBSplineSurface.cpp) constructor checks.
+For a single rational bicubic span, shared exact derivative numerators first preserve a complete original centre-dual certificate. Otherwise a positive dyadic metric-balanced projection may supply a complete certificate. If neither hull suffices, the original projection retains its bounded cover attempt unless exact corner coefficients prove it cannot be positive; then the balanced projection uses that same finite cover allowance. Corner positivity never admits geometry. This extends the existing ruled-chart row-scaling approach, not the representation-only [OCCT](https://occt3d.com/dev/doc/refman/html/class_geom___b_spline_surface.html) or [SMLib](https://github.com/NVIDIA-Omniverse/usd-brep/blob/main/source/SMLib/src/SmBSplineSurface.cpp) constructor checks.
 
 Finite cut contacts reuse the existing exact one-sided Bernstein corner certificate for every admitted analytic cutter, not only planes. A nonzero same-sign coefficient makes the cell interior strict; every edge must also have a nonzero coefficient, excluding contact intervals. Cone nappe admission still precedes this reduction. Isolated points remain distinct from arcs, following [OCCT's single-point versus intersection-line results](https://occt3d.com/dev/doc/refman/html/class_int_patch___intersection.html); [SMLib's advanced intersector](https://github.com/NVIDIA-Omniverse/usd-brep/blob/main/source/SMLib/src/SmSurface.cpp) instead includes touching points as degenerate curve records. No proximity snap or normal-parallel claim is used for a finite boundary point.
 
@@ -987,16 +987,16 @@ A native spline also cannot equal a retained section if a complete span leaves t
 
 ##### Work recorded for Phase 5
 
-The unchanged P8 original and spring-rise edit reach the same prefix below. The witness-separation checkpoint clears the earlier component-equivalence refusal. Common-denominator normalization, residual-driven helix fitting and shared-net projection selection retain the declared source checks and the 100M application allowance. The latest verified thread uses 59 sections and 236 charts, rather than the earlier fixed-floor 128 sections and 512 charts. The complete request still exhausts its allowance in `threaded`; neither complete part nor P8 STEP is claimed. Nested per-chart charges belong to the sweep row, not a second total.
+The unchanged P8 original and spring-rise edit reach the same prefix below. Both report the typed `numbers.operation-budget` refusal at `threaded = base ∪ thread` under the explicit 100M application allowance. The witness-separation checkpoint clears the earlier component-equivalence refusal. Common-denominator normalization, residual-driven helix fitting and shared-net projection selection retain the declared source checks. The latest verified thread uses 59 sections and 236 charts, rather than the earlier fixed-floor 128 sections and 512 charts. The spring and final union are not reached; neither completed original/edit body nor P8 STEP is claimed. Nested per-chart charges belong to the sweep row, not a second total.
 
-| Stage | Witness-separation checkpoint | Shared-net fitting checkpoint | Latest outcome |
+| Stage | Witness-separation checkpoint | Latest finite-preimage checkpoint | Latest outcome |
 |---|---:|---:|---|
 | Plate and boss stock | 0 | 0 | Built |
 | Base union | 11,050 | 11,050 | Built |
 | Thread sketch | 1 | 1 | Built |
 | Thread sweep | 96,979,475 | 33,680,247 | Fitted carrier built; source motion numerical |
-| Threaded union | 3,007,286 | 66,308,685 | Request allowance exhausted |
-| Complete request | 99,997,812 | 99,999,983 | Refused |
+| Threaded union | 3,007,286 | 66,308,683 | Request allowance exhausted |
+| Complete request | 99,997,812 | 99,999,981 | `numbers.operation-budget` |
 
 Later: thread fitting still exceeds the 20M target; retain this phase record for Phase 5 without enlarging the 100M application allowance.
 

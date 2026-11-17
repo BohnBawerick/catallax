@@ -4,17 +4,18 @@
 //! contact conditions, or shows that a contact lies wholly outside its face.
 //! A singular contact can still have centres and need topology continuation.
 //! Each proof gives the radius at which its contact condition first fails.
-//! Proofs only relabel a refusal the construction already returned, so they
-//! never change what builds.
+//! Native offset constraints can refuse an impossible radius before walking.
+//! Other proofs relabel failed constructions without changing what builds.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use catallax_numbers::{Decider, Real, Refusal, Sign};
+use catallax_numbers::{Decider, Rational, Real, Refusal, Sign};
 use catallax_shapes::{Curve, Cylinder, Line, Plane, Point3, Surface, Vector3};
-use catallax_topology::{EdgeId, FaceId, Loop, Model, Sense};
+use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense};
 
 use crate::{
     fillet::{FilletDefinition, RADIUS_TOO_LARGE, too_large},
+    fillet_build::chains::ChainEdge,
     profile::sign,
 };
 
@@ -227,6 +228,210 @@ fn contact_limit(
             .collect(),
     };
     first_failure(&conditions, dec)
+}
+
+struct RollingContactLimit {
+    radius: Real,
+    supports: [FaceId; 2],
+    cylinder: FaceId,
+    contact: Option<Point3>,
+}
+
+fn generator_limit(
+    model: &Model,
+    source: &ChainEdge,
+    requested: &Real,
+    dec: &mut Decider,
+) -> Result<Option<RollingContactLimit>, Refusal> {
+    dec.charge_work(1)?;
+    let edge = model.edge(source.edge);
+    let Curve::Line(line) = model.geom().curve(edge.curve) else {
+        return Ok(None);
+    };
+    let surfaces = source
+        .faces
+        .map(|face| model.geom().surface(model.face(face).surface));
+    let (plane, cylinder, plane_side) = match surfaces {
+        [Surface::Plane(plane), Surface::Cylinder(cylinder)] => (plane, cylinder, 0),
+        [Surface::Cylinder(cylinder), Surface::Plane(plane)] => (plane, cylinder, 1),
+        _ => return Ok(None),
+    };
+    if sign(&plane.normal.dot(&cylinder.axis), dec)? != Sign::Zero
+        || sign(&line.dir.cross(&cylinder.axis).norm_squared(), dec)? != Sign::Zero
+    {
+        return Ok(None);
+    }
+    let start = model.geom().position(model.vertex(edge.start).point);
+    let end = model.geom().position(model.vertex(edge.end).point);
+    let same = source
+        .faces
+        .map(|face| model.face(face).sense == Sense::Same);
+    let outward = |side: usize, dec: &mut Decider| -> Result<Vector3, Refusal> {
+        Ok(surfaces[side]
+            .normal_at(&start, dec)?
+            .scaled(&toward(same[side])))
+    };
+    let turn = sign(
+        &outward(0, dec)?
+            .cross(&outward(1, dec)?)
+            .dot(&end.minus(&start)),
+        dec,
+    )?;
+    if turn == Sign::Zero {
+        return Ok(None);
+    }
+    let use_sense = model
+        .face(source.faces[0])
+        .loops
+        .iter()
+        .find_map(|boundary| {
+            let Loop::Coedges(uses) = model.loop_(*boundary) else {
+                return None;
+            };
+            uses.iter().find_map(|use_id| {
+                let coedge = model.coedge(*use_id);
+                (coedge.edge == source.edge).then_some(coedge.sense)
+            })
+        });
+    let use_sense = use_sense.ok_or_else(|| {
+        Refusal::new(
+            "fillet.numerical-contact",
+            "the selected edge has no first-support occurrence",
+        )
+    })?;
+    let k = toward((turn == Sign::Positive) == (use_sense == Sense::Same));
+    let cylinder_side = 1 - plane_side;
+    let ordered = [same[plane_side], same[cylinder_side]];
+    let Some(limit) = first_failure(&plane_cylinder(plane, cylinder, line, ordered, &k), dec)?
+    else {
+        return Ok(None);
+    };
+    if sign(&(requested - &limit), dec)? == Sign::Negative {
+        return Ok(None);
+    }
+    let radius = cylinder.radius();
+    let remaining = &radius - &(&(&k * &toward(ordered[1])) * &limit);
+    let normal = unit(&plane.normal).scaled(&toward(ordered[0]));
+    let across = line
+        .origin
+        .minus(&axis_foot(cylinder, &line.origin))
+        .dot(&normal)
+        - &(&k * &limit);
+    let contact = if sign(&remaining, dec)? == Sign::Positive {
+        let direction = sign(&across, dec)?;
+        if direction == Sign::Zero {
+            None
+        } else {
+            let middle = start.plus(
+                &end.minus(&start)
+                    .scaled(&Real::from(Rational::from_ratio(1, 2).unwrap())),
+            );
+            let radial = normal.scaled(&(&toward(direction == Sign::Positive) * &radius));
+            Some(axis_foot(cylinder, &middle).plus(&radial))
+        }
+    } else {
+        None
+    };
+    Ok(Some(RollingContactLimit {
+        radius: limit,
+        supports: source.faces,
+        cylinder: source.faces[cylinder_side],
+        contact,
+    }))
+}
+
+fn reached_faces(
+    model: &Model,
+    body: BodyId,
+    cylinder: FaceId,
+    point: &Point3,
+    dec: &mut Decider,
+) -> Result<BTreeSet<FaceId>, Refusal> {
+    let body_faces = model.faces_of_body(body);
+    let mut reached = BTreeSet::new();
+    for boundary in &model.face(cylinder).loops {
+        let Loop::Coedges(uses) = model.loop_(*boundary) else {
+            continue;
+        };
+        for use_id in uses {
+            dec.charge_work(1)?;
+            let edge_id = model.coedge(*use_id).edge;
+            let edge = model.edge(edge_id);
+            if !matches!(model.geom().curve(edge.curve), Curve::Line(_)) {
+                continue;
+            }
+            let start = model.geom().position(model.vertex(edge.start).point);
+            let end = model.geom().position(model.vertex(edge.end).point);
+            let direction = end.minus(&start);
+            let square = direction.norm_squared();
+            if sign(&square, dec)? != Sign::Positive {
+                continue;
+            }
+            let delta = point.minus(&start);
+            if sign(&delta.cross(&direction).norm_squared(), dec)? != Sign::Zero {
+                continue;
+            }
+            let along = delta.dot(&direction);
+            if sign(&along, dec)? == Sign::Negative
+                || sign(&(&along - &square), dec)? == Sign::Positive
+            {
+                continue;
+            }
+            for &face in &body_faces {
+                dec.charge_work(1)?;
+                if face != cylinder
+                    && model.face(face).loops.iter().any(|boundary| {
+                        let Loop::Coedges(uses) = model.loop_(*boundary) else {
+                            return false;
+                        };
+                        uses.iter()
+                            .any(|use_id| model.coedge(*use_id).edge == edge_id)
+                    })
+                {
+                    reached.insert(face);
+                }
+            }
+        }
+    }
+    Ok(reached)
+}
+
+/// Checks cheap necessary offset conditions before fitting any selected strip.
+/// A satisfied or unavailable proof never bypasses the general constructor.
+pub(crate) fn check_rolling_contacts<'a>(
+    model: &Model,
+    body: BodyId,
+    sources: impl Iterator<Item = &'a ChainEdge>,
+    radius: &Rational,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    let requested = Real::from(radius.clone());
+    let mut first: Option<RollingContactLimit> = None;
+    for source in sources {
+        if let Some(candidate) = generator_limit(model, source, &requested, dec)? {
+            let earlier = match &first {
+                Some(old) => sign(&(&candidate.radius - &old.radius), dec)? == Sign::Negative,
+                None => true,
+            };
+            if earlier {
+                first = Some(candidate);
+            }
+        }
+    }
+    let Some(first) = first else {
+        return Ok(());
+    };
+    let mut refusal = too_large(
+        "no ball of this radius rolls along the edge against both faces; proof: a strict signed native offset-contact condition is nonpositive",
+        Some(&first.radius),
+        dec,
+    );
+    if let Some(point) = &first.contact {
+        for face in reached_faces(model, body, first.cylinder, point, dec)? {
+            crate::fillet::append_radius_context(&mut refusal, &format!("; reaches face {face:?}"));
+        }
+    }
+    Err(named_contact(refusal, model, first.supports))
 }
 
 /// Relabels a failed strip at or beyond its first strict contact limit.

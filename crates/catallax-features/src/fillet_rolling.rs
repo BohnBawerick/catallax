@@ -99,7 +99,15 @@ pub(crate) fn construct(
         ));
     }
     let mut output = Vec::new();
-    for chain in chains::group(model, body, selected, radius, tolerance, dec)? {
+    let grouped = chains::group(model, body, selected, radius, tolerance, dec)?;
+    crate::fillet_limit::check_rolling_contacts(
+        model,
+        body,
+        grouped.iter().flat_map(|chain| chain.edges.iter()),
+        radius,
+        dec,
+    )?;
+    for chain in grouped {
         let mut result = RolledChain {
             strips: Vec::with_capacity(chain.edges.len()),
             closed: chain.closed,
@@ -218,7 +226,16 @@ pub(crate) fn construct(
                 tolerance.clone(),
                 dec,
             )
-            .map_err(|error| super::at_stage("general rolling-ball contact walk", error))?;
+            .map_err(|error| {
+                super::at_stage(
+                    &format!(
+                        "general rolling-ball contact walk for edge {:?}, supports {:?}, name {:?}, guide margin {:.6e}",
+                        source.edge, source.faces, model.edge_name(body, source.edge),
+                        margin.to_f64_nearest(),
+                    ),
+                    error,
+                )
+            })?;
             let fillet = NumericalSplineFillet::fit(spine, dec).map_err(|error| {
                 super::at_stage(
                     &format!(
@@ -424,8 +441,91 @@ mod tests {
     }
 
     #[test]
-    fn curved_owner_strip_keeps_its_radius_across_both_guide_extensions() {
+    fn owner_r5_refuses_at_the_actual_r4_side_face_before_fitting_the_rim() {
+        let ((refusal, reached), work) = with_operation_budget(100_000_000, || {
+            let mut dec = Decider::new(BudgetPolicy {
+                max_work: 100_000_000,
+                ..Default::default()
+            });
+            let recipe = catallax_recipe::Recipe::parse(include_str!(
+                "../tests/fixtures/owner-curved-pocket.json"
+            ))
+            .unwrap();
+            let source = crate::evaluate(&recipe, &mut dec).unwrap();
+            let selection: catallax_recipe::EdgeSelection = serde_json::from_str(
+                r#"[
+                    {"between":[{"step":"blank","role":{"side":{"segment":"top"}}},{"step":"pocket-tool","role":{"side":{"segment":"near"}}}]},
+                    {"between":[{"step":"blank","role":{"side":{"segment":"right-round"}}},{"step":"pocket-tool","role":{"side":{"segment":"near"}}}]},
+                    {"between":[{"step":"blank","role":{"side":{"segment":"top"}}},{"step":"pocket-tool","role":{"side":{"segment":"far"}}}]},
+                    {"between":[{"step":"blank","role":{"side":{"segment":"right-round"}}},{"step":"pocket-tool","role":{"side":{"segment":"far"}}}]},
+                    {"between":[{"step":"blank","role":{"side":{"segment":"top"}}},{"step":"pocket-tool","role":{"side":{"segment":"left"}}}]},
+                    {"between":[{"step":"blank","role":{"side":{"segment":"right-round"}}},{"step":"pocket-tool","role":{"side":{"segment":"right"}}}]}
+                ]"#,
+            )
+            .unwrap();
+            let selected = crate::fillet_build::select(
+                &source.model,
+                source.result,
+                &selection,
+                true,
+                &[],
+                &mut dec,
+            )
+            .unwrap();
+            let reached = source
+                .model
+                .faces_of_body(source.result)
+                .into_iter()
+                .find(|face| {
+                    let Surface::Plane(plane) = source
+                        .model
+                        .geom()
+                        .surface(source.model.face(*face).surface)
+                    else {
+                        return false;
+                    };
+                    plane.origin.x.as_rational() == Some(Rational::from_i64(40))
+                        && plane.normal.y.as_rational() == Some(Rational::zero())
+                        && plane.normal.z.as_rational() == Some(Rational::zero())
+                })
+                .expect("the input body's outer x=40 side plane");
+            let error = construct(
+                &source.model,
+                source.result,
+                &selected,
+                &Rational::from_i64(5),
+                &Rational::parse("0.0000001").unwrap(),
+                &mut dec,
+            )
+            .err()
+            .expect("R5 must not pass the actual R4 contact limit");
+            (error, reached)
+        });
+        println!(
+            "owner all-six R5 source/selection/early-contact request work={}",
+            work.used
+        );
+        assert!(!work.exhausted, "{work:?}");
+        assert_eq!(refusal.code, crate::fillet::RADIUS_TOO_LARGE, "{refusal:?}");
+        assert_eq!(
+            crate::fillet::radius_limit(&refusal),
+            Some(Rational::from_i64(4))
+        );
+        assert!(
+            refusal
+                .detail
+                .contains(&format!("; reaches face {reached:?}")),
+            "{refusal:?}"
+        );
+        assert!(
+            refusal.detail.ends_with("; radius limit 4 mm"),
+            "{refusal:?}"
+        );
+    }
+
+    fn check_curved_owner_strip(radius: &str) {
         let tolerance = Rational::parse("0.0000001").unwrap();
+        let fillet_radius = Rational::parse(radius).unwrap();
         let (fillet, work) = with_operation_budget(100_000_000, || {
             let mut dec = Decider::new(BudgetPolicy {
                 max_work: 100_000_000,
@@ -458,7 +558,7 @@ mod tests {
                 &source.model,
                 source.result,
                 &selected,
-                &Rational::one(),
+                &fillet_radius,
                 &tolerance,
                 &mut dec,
             )
@@ -470,7 +570,7 @@ mod tests {
             .fillet
         });
         println!(
-            "curved owner source and one regular rolling strip work={}",
+            "curved owner source and one regular rolling strip at radius {fillet_radius} mm work={}",
             work.used
         );
         assert!(!work.exhausted, "{work:?}");
@@ -484,8 +584,8 @@ mod tests {
         let width = domain[1] - domain[0];
         let x = Ball::from_rational(&Rational::from_i64(15), 128);
         let z = Ball::from_rational(&Rational::from_i64(35), 128);
-        let centre_y = Rational::parse("-50.335").unwrap();
-        let radius = Rational::from_i64(24);
+        let centre_y = Rational::parse("-49.335").unwrap() - &fillet_radius;
+        let radius = Rational::from_i64(25) - &fillet_radius;
         let check_tolerance = tolerance.mul_pow2(1);
         for i in 0..=17 {
             let share = Rational::from_ratio(i, 17).unwrap();
@@ -512,9 +612,19 @@ mod tests {
                     .fold(Ball::from_rational(&Rational::zero(), 128), |sum, axis| {
                         &sum + &(&point[axis] - &centre[axis]).square()
                     });
-                within(&square.sqrt().unwrap(), &Rational::one(), &check_tolerance);
+                within(&square.sqrt().unwrap(), &fillet_radius, &check_tolerance);
             }
         }
+    }
+
+    #[test]
+    fn curved_owner_strip_keeps_its_radius_across_both_guide_extensions() {
+        check_curved_owner_strip("1");
+    }
+
+    #[test]
+    fn curved_owner_strip_at_3_99_keeps_the_requested_radius() {
+        check_curved_owner_strip("3.99");
     }
 
     #[test]

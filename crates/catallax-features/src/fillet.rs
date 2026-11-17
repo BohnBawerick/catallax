@@ -100,7 +100,8 @@ pub(crate) fn append_radius_context(refusal: &mut Refusal, context: &str) {
 }
 
 /// A [`RADIUS_TOO_LARGE`] refusal. A limit is shown rounded down to three
-/// decimal places, and dropped when that leaves nothing positive.
+/// decimal places, and dropped when that leaves nothing positive. Proof and
+/// source context precede the terminal hint read by SDK consumers.
 pub(crate) fn too_large(reason: &str, limit: Option<&Real>, dec: &mut Decider) -> Refusal {
     let bound = limit.and_then(|limit| crate::refusal_limit::bound(limit, dec));
     let shown = bound.as_ref().and_then(|(_, low)| {

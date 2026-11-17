@@ -59,21 +59,21 @@ fn scalar(value: &Real, dec: &Decider) -> Result<Rational, Refusal> {
 // Callers recheck its physical point before retaining a trim.
 fn inverse_seed(
     surface: &Surface,
-    mut point: [Ball; 3],
+    point: &mut [Ball; 3],
     tolerance: &Rational,
     dec: &mut Decider,
-) -> Result<[Rational; 2], Refusal> {
-    if let Some(uv) = surface.parameters_of(&point, dec)? {
-        return Ok(uv.each_ref().map(Ball::mid));
+) -> Result<([Rational; 2], bool), Refusal> {
+    if let Some(uv) = surface.parameters_of(point, dec)? {
+        return Ok((uv.each_ref().map(Ball::mid), false));
     }
     let displacement = Ball::from_rational(&tolerance.mul_pow2(-6), BITS);
     for axis in 0..3 {
         let shifted = &point[axis] + &displacement;
         let original = std::mem::replace(&mut point[axis], shifted);
-        let proposal = surface.parameters_of(&point, dec)?;
+        let proposal = surface.parameters_of(point, dec)?;
         point[axis] = original;
         if let Some(uv) = proposal {
-            return Ok(uv.each_ref().map(Ball::mid));
+            return Ok((uv.each_ref().map(Ball::mid), true));
         }
     }
     Err(fit_failure(
@@ -89,7 +89,7 @@ pub(crate) fn surface_parameters(
 ) -> Result<[Rational; 2], Refusal> {
     inverse_seed(
         surface,
-        [
+        &mut [
             dec.enclose_budgeted_at(&point.x, BITS)?,
             dec.enclose_budgeted_at(&point.y, BITS)?,
             dec.enclose_budgeted_at(&point.z, BITS)?,
@@ -97,6 +97,7 @@ pub(crate) fn surface_parameters(
         tolerance,
         dec,
     )
+    .map(|(uv, _)| uv)
 }
 
 /// Structural precheck for one shell with finite coedges and no seam repeats.
@@ -280,12 +281,11 @@ impl<'a> ParametricFace<'a> {
         match self {
             Self::Spline(face) => face.surface.invert(point, face.region, previous, dec),
             Self::Native(surface) => {
-                let p = [exact(point[0])?, exact(point[1])?, exact(point[2])?]
+                let mut p = [exact(point[0])?, exact(point[1])?, exact(point[2])?]
                     .each_ref()
                     .map(|q| Ball::from_rational(q, BITS));
-                let mut uv = inverse_seed(surface, p, &tolerances.projection, dec)?
-                    .each_ref()
-                    .map(Rational::to_f64_nearest);
+                let (seed, displaced) = inverse_seed(surface, &mut p, &tolerances.projection, dec)?;
+                let mut uv = seed.each_ref().map(Rational::to_f64_nearest);
                 if let Some(previous) = previous {
                     for axis in 0..2 {
                         if surface.domain()[axis] == catallax_shapes::ParamKind::Periodic {
@@ -300,7 +300,56 @@ impl<'a> ParametricFace<'a> {
                         "a native inverse parameter is outside binary64 range",
                     ));
                 }
-                Ok(uv)
+                if !displaced {
+                    return Ok(uv);
+                }
+                // A displaced seam seed is only a chart proposal. Refine against
+                // the original point with the regular tangent-plane system.
+                for _ in 0..12 {
+                    dec.charge_work(1)?;
+                    let at = [exact(uv[0])?, exact(uv[1])?]
+                        .each_ref()
+                        .map(|q| Ball::from_rational(q, BITS));
+                    let position = surface.evaluate(&at[0], &at[1], dec)?;
+                    let error: [f64; 3] =
+                        std::array::from_fn(|i| (&position[i] - &p[i]).mid().to_f64_nearest());
+                    let residual = dot(error, error).sqrt();
+                    if residual <= tolerances.sample / 8.0 {
+                        return Ok(uv);
+                    }
+                    let [du, dv] = surface
+                        .derivatives(&at[0], &at[1], dec)?
+                        .map(|d| d.each_ref().map(|q| q.mid().to_f64_nearest()));
+                    let a = dot(du, du);
+                    let b = dot(du, dv);
+                    let c = dot(dv, dv);
+                    let d = dot(du, error);
+                    let e = dot(dv, error);
+                    let determinant = a * c - b * b;
+                    if determinant <= 0.0
+                        || ![determinant, a, b, c, d, e].iter().all(|v| v.is_finite())
+                    {
+                        return Err(fit_failure(
+                            "the native inverse tangent system is not numerically regular",
+                        ));
+                    }
+                    let next = [
+                        uv[0] - (c * d - b * e) / determinant,
+                        uv[1] - (a * e - b * d) / determinant,
+                    ];
+                    if next == uv {
+                        if residual <= tolerances.sample {
+                            return Ok(uv);
+                        }
+                        return Err(fit_failure(format!(
+                            "native inverse stalled at a physical residual of {residual:e} mm"
+                        )));
+                    }
+                    uv = next;
+                }
+                Err(fit_failure(
+                    "native inverse did not refine the original point within tolerance",
+                ))
             }
         }
     }
@@ -449,6 +498,7 @@ fn native_uv(
     dec: &mut Decider,
 ) -> Result<BSplineCurve, Refusal> {
     let range = interval.map(Rational::to_f64_nearest);
+    let mut failure = None;
     for density in DENSITIES {
         let parameters: Vec<f64> = (0..=density)
             .map(|j| lerp(range, j as f64 / density as f64))
@@ -459,7 +509,9 @@ fn native_uv(
         for t in &parameters[1..density] {
             let point = edge.point(*t);
             let uv = face.invert(point, uvs.last().copied(), tolerances, dec)?;
-            if distance(face.point(uv, dec)?, point) > tolerances.sample {
+            let error = distance(face.point(uv, dec)?, point);
+            if error > tolerances.sample {
+                failure = Some(("inverse", density, *t, error, tolerances.sample));
                 sampled = false;
                 break;
             }
@@ -476,7 +528,9 @@ fn native_uv(
                 dec.charge_work(1)?;
                 let t = lerp([pair[0], pair[1]], share);
                 let uv = nurbs::evaluate(&knots, &controls, t);
-                if distance(face.point(uv, dec)?, edge.point(t)) > tolerances.fit {
+                let error = distance(face.point(uv, dec)?, edge.point(t));
+                if error > tolerances.fit {
+                    failure = Some(("fit", density, t, error, tolerances.fit));
                     fits = false;
                     break 'spans;
                 }
@@ -493,9 +547,10 @@ fn native_uv(
             );
         }
     }
-    Err(fit_failure(
-        "a native edge has no fitted UV curve within the tolerance",
-    ))
+    let (stage, density, parameter, error, limit) = failure.expect("all densities failed");
+    Err(fit_failure(format!(
+        "native UV {stage} residual {error:e} mm exceeds {limit:e} mm at parameter {parameter:e} with density {density}"
+    )))
 }
 
 // Interpolates each piece between consecutive `breaks` and joins them.
@@ -744,10 +799,11 @@ fn coordinate_samples(
 }
 
 /// Generates numerical input and native UV trims from a retained exact body.
-/// Vertices and native parameters are 128-bit midpoints, carriers are the
-/// original planes and rational splines, and traced intersection edges are
-/// fitted cubics. Fits aim at a quarter of `tolerance_mm`; admission by
-/// [`catallax_topology::numerical::build_with_native_trims`] is still required.
+/// Vertices are 128-bit midpoints. Native carriers and curves are retained;
+/// angular ranges and fitted UV curves are numerical proposals, and other
+/// traced intersection edges become fitted cubics. Fits aim at a quarter of
+/// `tolerance_mm`; [`catallax_topology::numerical::build_with_native_trims`]
+/// must still admit the resulting body.
 pub fn definition_from_exact_model(
     model: &Model,
     body: BodyId,
@@ -936,7 +992,18 @@ pub fn definition_from_exact_model(
                     let ends = if ascending { [a, b] } else { [b, a] };
                     uv_curves.insert(
                         (*face, index),
-                        native_uv(parametric, &native, interval, ends, &tolerances, dec)?,
+                        native_uv(parametric, &native, interval, ends, &tolerances, dec).map_err(
+                            |mut refusal| {
+                                refusal.detail = format!(
+                                    "native trim of {id:?} on {:?}, parameter range {:?}, UV ends {:?}: {}",
+                                    face_ids[*face],
+                                    interval.map(Rational::to_f64_nearest),
+                                    ends.map(|uv| uv.approx),
+                                    refusal.detail
+                                );
+                                refusal
+                            },
+                        )?,
                     );
                 }
                 edges.push(NumericalEdge {

@@ -1,3 +1,5 @@
+//! Owner pocket geometry retained through numerical source embedding.
+
 use catallax_numbers::{BudgetPolicy, Decider, Rational, with_operation_budget};
 use catallax_recipe::Recipe;
 use catallax_shapes::Surface;

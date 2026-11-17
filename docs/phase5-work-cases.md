@@ -212,6 +212,12 @@ The comparable release application regression passes in 169.69 seconds
 work cap was changed to obtain this result. Future remote proofs retain
 launch PIDs, logs and a wall deadline covering the entire offload group.
 
+After the main rebase and app-owned outcome cutover, the same whole
+prefix-plus-fillet request passes at 96,731,167 work in 143.72 seconds,
+still above 20M under the unchanged 100M allowance and 1e-7 mm tolerance.
+This is not a simple native fillet or an internal stage profile. The
+separate repaired-body/export-provenance consumer also passes.
+
 ## General rolling-ball contact stage, 17 November
 
 The new material-side/radius regression constructs all 12 untrimmed contact

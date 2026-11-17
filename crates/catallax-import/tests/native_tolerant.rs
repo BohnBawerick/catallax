@@ -495,7 +495,14 @@ fn a_bad_first_body_cannot_refuse_a_usable_later_sibling() {
         Some(tolerant::admission::NativeStage::BodyBuild)
     );
     assert_eq!(opened.bodies()[1].tier(), Tier::ValidSolid);
-    let native = opened.tolerant_admission().unwrap();
+    assert!(matches!(opened.body(1), Some(BodyView::Certified { .. })));
+    let native = tolerant::admission::import_step(
+        source.as_bytes(),
+        &sha256_hex(source.as_bytes()),
+        Default::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
     assert_eq!(native.bodies().len(), 1);
     assert_eq!(native.bodies()[0].source_index(), 1);
     let name = native.bodies()[0].name();

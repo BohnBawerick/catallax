@@ -262,3 +262,26 @@ collected. The independent six-plane area controls run after that request.
 The release test takes 27.54 seconds (100.91 with compilation). This proves
 one closed capped-strip body, not network/corner publication, STEP exchange
 or the owner part. No cap, tolerance or admission guard was changed.
+
+## Shared rolling-strip and corner network, 18 November
+
+The corner owner's boundary-helper proof includes all 24 paired section
+curves, rotated sphere charts and independent controls. These whole requests
+are not component profiles or admitted bodies:
+
+| Radius, mm | Request work |
+|---|---:|
+| 0.5 | 80,909,382 |
+| 1 | 63,408,116 |
+| 2 | 57,956,045 |
+| 5 | 56,609,707 |
+
+The integrated R1 request separately publishes all 12 strips and eight
+corners of a 20×30×40 box as one admitted numerical solid. It spends
+72,340,370 work, including the source, contacts, paired boundaries and full
+body admission. Independent area controls check all six original plane
+domains after that request. The release test takes 159.83 seconds, or
+240.21 seconds with compilation. These costs remain above the 20M target
+under the unchanged 100M allowance and 1e-7 mm tolerance. No stage profile
+or optimisation was added. Owner, application and STEP acceptance are not
+included in this body proof.

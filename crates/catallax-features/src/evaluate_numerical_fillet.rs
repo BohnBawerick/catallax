@@ -17,13 +17,13 @@ pub enum EvaluationOutcome {
 #[derive(Clone, Debug)]
 pub struct NumericalFilletEvaluation {
     recipe: Arc<Recipe>,
-    fillet: crate::fillet::numerical::NumericalFilletBuilt,
+    body: NumericalBody,
     origins: BTreeMap<String, Vec<Origin>>,
 }
 impl NumericalFilletEvaluation {
     /// Numerical geometry, native trims, declared tolerance and edit history.
     pub fn body(&self) -> &NumericalBody {
-        self.fillet.body()
+        &self.body
     }
     /// Authored controls retained for replay and parameter edits.
     pub fn recipe(&self) -> &Recipe {
@@ -35,7 +35,7 @@ impl NumericalFilletEvaluation {
     }
     /// Consumes the result into its admitted geometry, authored controls and origins.
     pub fn into_parts(self) -> (NumericalBody, Arc<Recipe>, BTreeMap<String, Vec<Origin>>) {
-        (self.fillet.into_body(), self.recipe, self.origins)
+        (self.body, self.recipe, self.origins)
     }
 }
 
@@ -100,21 +100,12 @@ impl Context {
                 earlier,
                 dec,
             )?;
-            let [edge] = selected.as_slice() else {
+            if selected.is_empty() {
                 return Err(Refusal::new(
-                    "features.numerical-fillet-network",
-                    format!(
-                        "the retained spline assembly needs one outer-boundary edge, but the selection resolves to {} edges",
-                        selected.len()
-                    ),
+                    "features.numerical-fillet-selection",
+                    "the selection contains no edges to round",
                 ));
-            };
-            let name = model.edge_name(target.body, *edge).ok_or_else(|| {
-                Refusal::new(
-                    "features.numerical-fillet-name",
-                    "the selected edge has no canonical recipe name",
-                )
-            })?;
+            }
             let faults = model.check(target.body);
             if !faults.is_empty() {
                 return Err(Refusal::new(
@@ -138,29 +129,95 @@ impl Context {
                 },
                 dec,
             )?;
-            let edge_key = format!("{edge:?}");
-            let fillet = crate::fillet::numerical::build(
-                source,
-                &edge_key,
-                step.as_str(),
-                radius.clone(),
-                tolerance,
-                dec,
-            )?;
             let mut source_origins: BTreeMap<_, _> = model
                 .faces_of_body(target.body)
                 .into_iter()
                 .map(|face| (format!("{face:?}"), model.face_origins(face).to_vec()))
                 .collect();
-            source_origins.insert(
-                format!("{step}/blend/{edge_key}"),
-                vec![Origin {
-                    step: step.clone(),
-                    role: Role::Blend { edge: name },
-                }],
-            );
-            let origins = fillet
-                .body()
+            let body = if let [edge] = selected.as_slice() {
+                let name = model.edge_name(target.body, *edge).ok_or_else(|| {
+                    Refusal::new(
+                        "features.numerical-fillet-name",
+                        format!("selected edge {edge:?} has no canonical recipe name"),
+                    )
+                })?;
+                let edge_key = format!("{edge:?}");
+                source_origins.insert(
+                    format!("{step}/blend/{edge_key}"),
+                    vec![Origin {
+                        step: step.clone(),
+                        role: Role::Blend { edge: name },
+                    }],
+                );
+                crate::fillet::numerical::build(
+                    source,
+                    &edge_key,
+                    step.as_str(),
+                    radius.clone(),
+                    tolerance,
+                    dec,
+                )?
+                .into_body()
+            } else {
+                let chains = crate::fillet::numerical::rolling::construct(
+                    model,
+                    target.body,
+                    &selected,
+                    radius,
+                    &tolerance,
+                    dec,
+                )?;
+                let corners = crate::fillet::numerical::vertex::construct(
+                    model, &chains, radius, &tolerance, dec,
+                )?;
+                for strip in chains.iter().flat_map(|chain| &chain.strips) {
+                    let edge = strip.source.edge;
+                    let name = model.edge_name(target.body, edge).ok_or_else(|| {
+                        Refusal::new(
+                            "features.numerical-fillet-name",
+                            format!("rolled edge {edge:?} has no canonical recipe name"),
+                        )
+                    })?;
+                    source_origins.insert(
+                        format!("{step}/blend/{edge:?}"),
+                        vec![Origin {
+                            step: step.clone(),
+                            role: Role::Blend { edge: name },
+                        }],
+                    );
+                }
+                for corner in &corners {
+                    let vertex =
+                        model
+                            .vertex_name(target.body, corner.source)
+                            .ok_or_else(|| {
+                                Refusal::new(
+                                    "features.numerical-fillet-name",
+                                    format!(
+                                        "corner {:?} has no canonical recipe name",
+                                        corner.source
+                                    ),
+                                )
+                            })?;
+                    source_origins.insert(
+                        format!("{step}/corner/{:?}", corner.source),
+                        vec![Origin {
+                            step: step.clone(),
+                            role: Role::Corner { vertex },
+                        }],
+                    );
+                }
+                crate::fillet::numerical::vertex_body::build(
+                    &source,
+                    model,
+                    &chains,
+                    &corners,
+                    step.as_str(),
+                    &tolerance,
+                    dec,
+                )?
+            };
+            let origins = body
                 .definition()
                 .faces
                 .iter()
@@ -178,7 +235,7 @@ impl Context {
                 .collect::<Result<_, _>>()?;
             Ok(NumericalFilletEvaluation {
                 recipe: Arc::new(recipe.clone()),
-                fillet,
+                body,
                 origins,
             })
         };

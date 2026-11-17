@@ -349,3 +349,19 @@ edge shared by a strip and its sphere, with the paired native parameter
 curves and recorded orientation kept together. Source loop occurrences are
 replaced before the complete network enters numerical solid admission.
 This topology stage adds no exactness claim to the fitted geometry.
+
+The R1 regression now admits all 12 strips and eight corners of a
+20×30×40 box as one numerical solid. Independent area controls check the
+six retained original plane domains. Its whole-request cost is recorded
+in the [phase-5 ledger](../phase5-work-cases.md#shared-rolling-strip-and-corner-network-18-november).
+This is not yet owner-rim, ordinary application or STEP acceptance.
+
+Retargeting only the end pole of a clipped UV rail can reverse a tiny
+retained knot span. The constructor now applies one orientation-preserving
+affine map to the complete UV curve, preserving its knots, degree and
+rational weights. We follow [OCCT's whole-curve `GeomLib::GTransform`](https://occt3d.com/dev/doc/refman/html/class_geom_lib.html#a9ee76c30e846d5a3ab60198485738bd0);
+[SMLib likewise supports nonuniform transforms of base B-spline geometry](https://github.com/tangency-labs/smlib/blob/main/.agents/operations/transforms.md).
+Coincident ends with incompatible targets and a reversed target chord
+return typed causes. The affine arithmetic is rational; physical
+same-parameter checks and the constructed fillet remain numerical at
+1e-7 mm. No loop or physical admission guard was relaxed.

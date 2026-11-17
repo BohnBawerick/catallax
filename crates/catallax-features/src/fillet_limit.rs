@@ -117,15 +117,14 @@ fn axis_foot(cylinder: &Cylinder, at: &Point3) -> Point3 {
 fn plane_cylinder(
     plane: &Plane,
     cylinder: &Cylinder,
-    edge: &Line,
     same: [bool; 2],
     k: &Real,
 ) -> Vec<Affine> {
     let inside = k * &toward(same[1]);
     let outward = unit(&plane.normal).scaled(&toward(same[0]));
-    let height = edge
+    let height = plane
         .origin
-        .minus(&axis_foot(cylinder, &edge.origin))
+        .minus(&axis_foot(cylinder, &plane.origin))
         .dot(&outward);
     let radius = cylinder.radius();
     vec![
@@ -245,9 +244,6 @@ fn generator_limit(
 ) -> Result<Option<RollingContactLimit>, Refusal> {
     dec.charge_work(1)?;
     let edge = model.edge(source.edge);
-    let Curve::Line(line) = model.geom().curve(edge.curve) else {
-        return Ok(None);
-    };
     let surfaces = source
         .faces
         .map(|face| model.geom().surface(model.face(face).surface));
@@ -256,9 +252,7 @@ fn generator_limit(
         [Surface::Cylinder(cylinder), Surface::Plane(plane)] => (plane, cylinder, 1),
         _ => return Ok(None),
     };
-    if sign(&plane.normal.dot(&cylinder.axis), dec)? != Sign::Zero
-        || sign(&line.dir.cross(&cylinder.axis).norm_squared(), dec)? != Sign::Zero
-    {
+    if sign(&plane.normal.dot(&cylinder.axis), dec)? != Sign::Zero {
         return Ok(None);
     }
     let (Some(start), Some(end)) = (edge.start, edge.end) else {
@@ -305,8 +299,7 @@ fn generator_limit(
     let k = toward((turn == Sign::Positive) == (use_sense == Sense::Same));
     let cylinder_side = 1 - plane_side;
     let ordered = [same[plane_side], same[cylinder_side]];
-    let Some(limit) = first_failure(&plane_cylinder(plane, cylinder, line, ordered, &k), dec)?
-    else {
+    let Some(limit) = first_failure(&plane_cylinder(plane, cylinder, ordered, &k), dec)? else {
         return Ok(None);
     };
     if sign(&(requested - &limit), dec)? == Sign::Negative {
@@ -315,9 +308,9 @@ fn generator_limit(
     let radius = cylinder.radius();
     let remaining = &radius - &(&(&k * &toward(ordered[1])) * &limit);
     let normal = unit(&plane.normal).scaled(&toward(ordered[0]));
-    let across = line
+    let across = plane
         .origin
-        .minus(&axis_foot(cylinder, &line.origin))
+        .minus(&axis_foot(cylinder, &plane.origin))
         .dot(&normal)
         - (&k * &limit);
     let contact = if sign(&remaining, dec)? == Sign::Positive {

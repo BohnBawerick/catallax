@@ -109,6 +109,27 @@ records the one polyline used by both incident faces, including its proven
 curve-to-polyline error. Face IDs belong to the
 input model, not to rebuild-stable recipe names.
 
+`catallax_mesh::mesh_body_reusing(model, body, options, previous_model,
+previous_options, previous_mesh, decider)` accepts the previous build's unmodified
+`Mesh` and its retained model and controls. It matches exact surface definitions,
+ordered trims, shared-edge sample coordinates and bounds, and the face-local
+diagonal constraints from earlier faces. It remaps reused triangles and their
+picking IDs to the current model. A changed shared row invalidates both incident
+faces, including structured junction faces. Fresh edge sampling and the usual
+whole-mesh closure check still run. Changed controls disable reuse; coupled
+whole-body meshing routes still build their common grid. No external cache,
+new topology, export behavior or relaxed tolerance is involved.
+Only eligible routes index the previous mesh. Index visits, candidate matches,
+boundary/chord scans and copied records debit the caller's operation allowance
+and check its deadline. Vertex-sized array initialization and triangle copying
+reserve their charges before allocation.
+
+The development example `cargo run --release -p catallax-app --example
+mesh_reuse_profile -- 3 0.01` compares full and reused display triangulation on
+the captured GUI bracket's `op_33` extrusion-depth edit from 10 to 14 mm. It
+warms both paths, alternates order and reports wall time and deterministic work
+outside geometry construction, with unchanged-output and closed-mesh checks.
+
 Planes, circular and elliptic cylinders, cones, spheres and tori use their exact
 definitions. Intersection edges, including finite parabola and hyperbola arcs,
 use piece 4's certified traces. Surface bounds use Taylor's theorem and analytic

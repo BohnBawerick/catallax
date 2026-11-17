@@ -41,12 +41,13 @@ pub use preview::{
     preview_step,
 };
 mod rational_atlas;
+mod reuse;
 mod ruled;
 mod spline_prism;
 mod triangulate;
 
 /// Display meshing controls. Lengths use the model's millimetres.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MeshOptions {
     /// Maximum surface-to-chord distance, including coordinate rounding.
     pub chord_tolerance: Rational,
@@ -178,6 +179,40 @@ pub fn mesh_body(
     options: &MeshOptions,
     dec: &mut Decider,
 ) -> Answered<Mesh> {
+    mesh_body_impl(model, body, options, None, dec)
+}
+
+/// Reuses display triangles from an unmodified previous [`mesh_body`] result.
+///
+/// Retain the previous model and its meshing options alongside the mesh. Handles
+/// may change across edits: faces match by exact definitions and ordered trims,
+/// not by handle values. Shared edges are sampled anew before matching, so a
+/// changed neighbour's sampling invalidates both incident face meshes.
+///
+/// Different controls disable reuse. Coupled whole-body spline-prism, drafted
+/// cylinder and rational-atlas routes retain their full-build behavior. The
+/// previous mesh must belong to `previous_model` and `previous_options`, and
+/// must not have been modified. No geometry, topology or tolerance is changed.
+pub fn mesh_body_reusing(
+    model: &Model,
+    body: BodyId,
+    options: &MeshOptions,
+    previous_model: &Model,
+    previous_options: &MeshOptions,
+    previous: &Mesh,
+    dec: &mut Decider,
+) -> Answered<Mesh> {
+    let previous = (options == previous_options).then_some((previous_model, previous));
+    mesh_body_impl(model, body, options, previous, dec)
+}
+
+fn mesh_body_impl(
+    model: &Model,
+    body: BodyId,
+    options: &MeshOptions,
+    previous: Option<(&Model, &Mesh)>,
+    dec: &mut Decider,
+) -> Answered<Mesh> {
     if let Some(expansion) = model
         .chart_expansion(body)
         .filter(|cover| cover.needs_cells())
@@ -208,7 +243,7 @@ pub fn mesh_body(
             "chord tolerance must be positive and max_vertices at least four",
         ));
     }
-    triangulate::build(model, body, options, dec)
+    triangulate::build(model, body, options, previous, dec)
 }
 
 fn failure(detail: impl Into<String>) -> Refusal {

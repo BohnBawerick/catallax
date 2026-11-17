@@ -117,6 +117,7 @@ pub(crate) fn preview(
             max_edge_length: None,
             max_aspect_ratio: None,
         },
+        None,
         dec,
     )?
     .value;

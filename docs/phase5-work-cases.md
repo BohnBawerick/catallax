@@ -285,3 +285,10 @@ domains after that request. The release test takes 159.83 seconds, or
 under the unchanged 100M allowance and 1e-7 mm tolerance. No stage profile
 or optimisation was added. Owner, application and STEP acceptance are not
 included in this body proof.
+
+The first ordinary six-edge R25 owner-rim request at R1 reaches general
+rolling construction and refuses `shapes.rational-atlas-unproven` while
+admitting the fitted strip's regular chart cover. Whole prefix-plus-fillet
+work is 75,128,530, not exhausted. The command takes 175.49 seconds including
+compilation. This is a failed owner request, not a passing fillet or an
+isolated chart-proof cost.

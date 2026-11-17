@@ -316,9 +316,9 @@ The release regression independently checks material side, support contact
 and circular-section radius on all 12 edge orientations of a box at
 R0.5/R1/R2/R5. The unchanged tolerance is 1e-7 mm. Request work and the
 over-20M cases are recorded in [the phase-5 work record](../phase5-work-cases.md#general-rolling-ball-contact-stage-17-november).
-This proves only untrimmed candidate strips and rails. The common constructor
-is not yet an ordinary application producer; actual face-domain trimming,
-corner assembly, successful owner bodies and raw STEP acceptance remain open.
+That regression proves untrimmed candidate strips and rails. Ordinary
+multi-edge numerical continuation now calls the common constructor.
+Real-domain G1/two-strip joins, owner bodies and raw STEP acceptance remain open.
 
 The generic neighbour-cut stage follows [OCCT's two-surface walking](https://occt3d.com/dev/doc/refman/html/class_int_walk___p_walking.html)
 and [SMLib's traced-curve fitting](https://github.com/NVIDIA-Omniverse/usd-brep/blob/3fd5b9548d19aa8c12c29bc9637a96d42a06f8a5/source/SMLib/src/SmSurfaceIntersector.cpp#L4900-L5085).

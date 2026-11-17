@@ -219,8 +219,16 @@ pub(crate) fn construct(
                 dec,
             )
             .map_err(|error| super::at_stage("general rolling-ball contact walk", error))?;
-            let fillet = NumericalSplineFillet::fit(spine, dec)
-                .map_err(|error| super::at_stage("general strip and contact rails", error))?;
+            let fillet = NumericalSplineFillet::fit(spine, dec).map_err(|error| {
+                super::at_stage(
+                    &format!(
+                        "general strip and contact rails for edge {:?}, supports {:?}, name {:?}, guide margin {:.6e}",
+                        source.edge, source.faces, model.edge_name(body, source.edge),
+                        margin.to_f64_nearest(),
+                    ),
+                    error,
+                )
+            })?;
             result.checks.push(guide.check);
             result.strips.push(RolledStrip {
                 source,

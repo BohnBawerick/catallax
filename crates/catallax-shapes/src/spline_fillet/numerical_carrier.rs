@@ -307,11 +307,20 @@ impl NumericalSplineFillet {
                 upper = upper.max(span_upper);
             }
             if inserted.is_empty() {
-                let [surface] = <[_; 1]>::try_from(RationalAtlas::partition(
-                    fitted.surface,
-                    [false, false],
-                    dec,
-                )?)
+                let [surface] = <[_; 1]>::try_from(
+                    RationalAtlas::partition(fitted.surface, [false, false], dec)
+                        .map_err(|mut error| {
+                            let smallest = spine.nodes.windows(2)
+                                .map(|pair| &pair[1].tau - &pair[0].tau)
+                                .min().expect("a fitted strip has longitudinal spans");
+                            error.detail = format!(
+                                "fitted rolling strip ({} stations, minimum parameter span {:.6e}, maximum sampled residual {:.6e} mm): {}",
+                                spine.nodes.len(), smallest.to_f64_nearest(),
+                                upper.to_f64_nearest(), error.detail,
+                            );
+                            error
+                        })?,
+                )
                 .map_err(|_| {
                     bad("numerical fillet carrier does not form one regular G1 logical face")
                 })?;

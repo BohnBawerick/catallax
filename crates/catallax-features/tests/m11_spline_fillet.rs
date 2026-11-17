@@ -775,8 +775,8 @@ fn numerical_fillet_builds_on_the_smooth_loft_across_its_station_seam() {
             assert!(work.exhausted, "{refusal:?}: {work:?}");
             assert_eq!(refusal.code, "numbers.operation-budget");
             println!(
-                "numerical smooth-loft radius edit refuses at its work ceiling: {} work",
-                work.used
+                "numerical smooth-loft radius edit refuses at its work ceiling: {} work; {refusal:?}",
+                work.used,
             );
         }
     }

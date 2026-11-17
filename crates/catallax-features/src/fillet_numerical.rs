@@ -760,14 +760,6 @@ fn build_impl(
             let uv = side_uv.ok_or_else(|| bad("edited border has no support occurrence"))?;
             rail_uv[side][end] = uv.clone();
             parameters.insert((sides[side], vertex), uv);
-            parameters.insert(
-                (caps[end], vertex),
-                plane_uv(
-                    &original.faces[caps[end]].surface,
-                    &d.vertices[vertex].position,
-                    dec,
-                )?,
-            );
         }
     }
     let mut rails = [0; 2];
@@ -819,6 +811,7 @@ fn build_impl(
             let first = boundary
                 .first()
                 .ok_or_else(|| bad("end-plane boundary is empty"))?;
+            let first_uv = first.uv[0].clone();
             let first = walked(&d.edges[first.edge], first.sense)[0];
             let mut replacement = Vec::with_capacity(boundary.len() + 1);
             let mut replacement_native = Vec::with_capacity(boundary.len() + 1);
@@ -845,8 +838,9 @@ fn build_impl(
                         cut_edges[end],
                         sense,
                         [
-                            parameters[&(face, a)].clone(),
-                            parameters[&(face, b)].clone(),
+                            replacement.last().unwrap().uv[1].clone(),
+                            uses.peek()
+                                .map_or_else(|| first_uv.clone(), |(next, _)| next.uv[0].clone()),
                         ],
                     ));
                     replacement_native.push(None);

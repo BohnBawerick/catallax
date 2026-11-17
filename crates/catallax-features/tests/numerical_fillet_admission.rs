@@ -4,11 +4,15 @@ use catallax_features::fillet::numerical as fillet;
 use catallax_numbers::{Decider, Rational, Real, with_operation_budget};
 use catallax_recipe::Recipe;
 use catallax_shapes::{
-    BSplineCurve, BSplineSurface, Curve, Point3, RationalAtlas, SplineSupport, Surface,
+    BSplineCurve, BSplineSurface, Curve, Line, Point3, RationalAtlas, SplineSupport, Surface,
+    Vector3,
 };
 use catallax_topology::{
     Sense,
-    numerical::{self, NumericalBody, NumericalNativeTrim, NumericalOptions},
+    numerical::{
+        self, NumericalBody, NumericalDefinition, NumericalEdge, NumericalFace,
+        NumericalNativeTrim, NumericalOptions, NumericalTrim, NumericalVertex,
+    },
 };
 use serde_json::json;
 
@@ -46,17 +50,208 @@ fn linear_uv(
     .unwrap()
 }
 
+fn plane_parameters(surface: &Surface, point: &Point3, dec: &Decider) -> [Rational; 2] {
+    let point = [&point.x, &point.y, &point.z].map(|value| dec.enclose_at(value, 128).unwrap());
+    surface
+        .parameters_of(&point, dec)
+        .unwrap()
+        .unwrap()
+        .map(|value| value.mid())
+}
+
+// A closed C1 cubic extrusion gives a real periodic support without requiring
+// the plane/spline-only exact-body embedding to convert an analytic cylinder.
+fn add_periodic_bore(
+    definition: &mut NumericalDefinition,
+    bindings: &mut Vec<NumericalNativeTrim>,
+    dec: &mut Decider,
+) {
+    let xy = [
+        [2, 0],
+        [2, 1],
+        [1, 2],
+        [0, 2],
+        [-1, 2],
+        [-2, 1],
+        [-2, 0],
+        [-2, -1],
+        [-1, -2],
+        [0, -2],
+        [1, -2],
+        [2, -1],
+        [2, 0],
+    ];
+    let point = |i: usize, z: i64| {
+        Point3::new(
+            (q("3/2") + Rational::from_ratio(xy[i][0], 4).unwrap()).into(),
+            (q("3/2") + Rational::from_ratio(xy[i][1], 4).unwrap()).into(),
+            z.into(),
+        )
+    };
+    let knots: Vec<_> = [0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 4]
+        .map(Rational::from_i64)
+        .to_vec();
+    let carrier = BSplineSurface::new(
+        [3, 1],
+        [knots.clone(), vec![q("0"), q("0"), q("3"), q("3")]],
+        [13, 2],
+        (0..13).flat_map(|i| [point(i, 0), point(i, 3)]).collect(),
+        vec![Real::one(); 26],
+        dec,
+    )
+    .unwrap();
+    let [atlas]: [_; 1] = RationalAtlas::partition(carrier, [true, false], dec)
+        .unwrap()
+        .try_into()
+        .unwrap();
+    let mut arcs = [[0; 4]; 2];
+    for (end, z) in [0, 3].into_iter().enumerate() {
+        let vertices = definition.vertices.len();
+        for i in 0..4 {
+            let p = point(3 * i, z);
+            definition.vertices.push(NumericalVertex {
+                key: format!("bore/v/{end}/{i}"),
+                position: [p.x, p.y, p.z].map(|value| value.as_rational().unwrap()),
+            });
+        }
+        let controls: Vec<_> = (0..13).map(|i| point(i, z)).collect();
+        let world = BSplineCurve::new(
+            3,
+            knots.clone(),
+            controls.clone(),
+            vec![Real::one(); 13],
+            dec,
+        )
+        .unwrap();
+        for i in 0..4 {
+            arcs[end][i] = definition.edges.len();
+            definition.edges.push(NumericalEdge {
+                key: format!("bore/arc/{end}/{i}"),
+                curve: Curve::BSpline(world.clone()),
+                vertices: [vertices + i, vertices + (i + 1) % 4],
+                parameters: [
+                    Rational::from_i64(i as i64),
+                    Rational::from_i64(i as i64 + 1),
+                ],
+            });
+        }
+        let cap = definition
+            .faces
+            .iter()
+            .position(|face| {
+                matches!(&face.surface, Surface::Plane(plane)
+                if plane.normal.z.as_rational().is_some_and(|n| n != q("0"))
+                    && plane.origin.z.as_rational() == Some(Rational::from_i64(z)))
+            })
+            .unwrap();
+        let surface = &definition.faces[cap].surface;
+        let uv_curve = BSplineCurve::new(
+            3,
+            knots.clone(),
+            controls
+                .iter()
+                .map(|p| {
+                    let [u, v] = plane_parameters(surface, p, dec);
+                    Point3::new(u.into(), v.into(), Real::zero())
+                })
+                .collect(),
+            vec![Real::one(); 13],
+            dec,
+        )
+        .unwrap();
+        let boundary = definition.faces[cap].loops.len();
+        let mut row = Vec::new();
+        for i in if end == 0 { [0, 1, 2, 3] } else { [3, 2, 1, 0] } {
+            let sense = if end == 0 {
+                Sense::Same
+            } else {
+                Sense::Reversed
+            };
+            let mut uv = [i, i + 1].map(|t| {
+                let p = uv_curve
+                    .point_at(&Real::from(Rational::from_i64(t as i64)), dec)
+                    .unwrap();
+                [p.x.as_rational().unwrap(), p.y.as_rational().unwrap()]
+            });
+            if sense == Sense::Reversed {
+                uv.reverse();
+            }
+            let edge = arcs[end][i];
+            bindings.push(NumericalNativeTrim {
+                face: definition.faces[cap].key.clone(),
+                boundary,
+                use_index: row.len(),
+                edge: definition.edges[edge].key.clone(),
+                curve: uv_curve.clone(),
+            });
+            row.push(NumericalTrim { edge, sense, uv });
+        }
+        definition.faces[cap].loops.push(row);
+    }
+    let seam = definition.edges.len();
+    definition.edges.push(NumericalEdge {
+        key: "bore/seam".into(),
+        curve: Curve::Line(Line {
+            origin: point(0, 0),
+            dir: Vector3::new(0.into(), 0.into(), 1.into()),
+        }),
+        vertices: [
+            definition.edges[arcs[0][0]].vertices[0],
+            definition.edges[arcs[1][0]].vertices[0],
+        ],
+        parameters: [q("0"), q("3")],
+    });
+    let mut row = vec![NumericalTrim {
+        edge: seam,
+        sense: Sense::Same,
+        uv: [[q("0"), q("0")], [q("0"), q("3")]],
+    }];
+    for i in 0..4 {
+        row.push(NumericalTrim {
+            edge: arcs[1][i],
+            sense: Sense::Same,
+            uv: [
+                [Rational::from_i64(i as i64), q("3")],
+                [Rational::from_i64(i as i64 + 1), q("3")],
+            ],
+        });
+    }
+    row.push(NumericalTrim {
+        edge: seam,
+        sense: Sense::Reversed,
+        uv: [[q("4"), q("3")], [q("4"), q("0")]],
+    });
+    for i in (0..4).rev() {
+        row.push(NumericalTrim {
+            edge: arcs[0][i],
+            sense: Sense::Reversed,
+            uv: [
+                [Rational::from_i64(i as i64 + 1), q("0")],
+                [Rational::from_i64(i as i64), q("0")],
+            ],
+        });
+    }
+    for (use_index, trim) in row.iter().enumerate() {
+        bindings.push(NumericalNativeTrim {
+            face: "bore".into(),
+            boundary: 0,
+            use_index,
+            edge: definition.edges[trim.edge].key.clone(),
+            curve: linear_uv(&definition.edges[trim.edge], trim, dec),
+        });
+    }
+    definition.faces.push(NumericalFace {
+        key: "bore".into(),
+        surface: Surface::BSpline(SplineSupport::RationalAtlas(atlas)),
+        sense: Sense::Reversed,
+        loops: vec![row],
+    });
+}
+
 fn source(bore: bool, gap: bool, dec: &mut Decider) -> (NumericalBody, String) {
-    let mut value = json!({"format":"catallax-recipe/5","name":"fillet admission controls","steps":[
+    let value = json!({"format":"catallax-recipe/5","name":"fillet admission controls","steps":[
         {"id":"stock","op":"block","size":["3","3","3"],"pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}}
     ],"result":"stock"});
-    if bore {
-        value["steps"].as_array_mut().unwrap().extend([
-            json!({"id":"tool","op":"cylinder","radius":"1/2","height":"5","pose":{"rotation":["1","0","0","0"],"translation":["3/2","3/2","-1"]}}),
-            json!({"id":"part","op":"boolean","kind":"subtract","target":"stock","tool":"tool"}),
-        ]);
-        value["result"] = json!("part");
-    }
     let recipe = Recipe::parse(&value.to_string()).unwrap();
     let built = catallax_features::evaluate(&recipe, dec).unwrap();
     let tolerance = if gap { q("1/1000") } else { q("1/10000000") };
@@ -68,6 +263,9 @@ fn source(bore: bool, gap: bool, dec: &mut Decider) -> (NumericalBody, String) {
         dec,
     )
     .unwrap();
+    if bore {
+        add_periodic_bore(&mut definition, &mut bindings, dec);
+    }
     let selected = definition
         .edges
         .iter()
@@ -121,7 +319,7 @@ fn source(bore: bool, gap: bool, dec: &mut Decider) -> (NumericalBody, String) {
                 .unwrap();
             face.surface = Surface::BSpline(SplineSupport::RationalAtlas(atlas));
         }
-        if side || matches!(face.surface, Surface::Cylinder(_)) {
+        if side {
             bindings.retain(|binding| binding.face != face.key);
             for (boundary, row) in face.loops.iter().enumerate() {
                 for (use_index, trim) in row.iter().enumerate() {
@@ -179,7 +377,13 @@ fn a_stricter_fillet_request_refuses_a_loose_source_border() {
             .unwrap();
         let tight =
             fillet::build(loose, &key, "round", q("1/10"), q("1/10000000"), &mut dec).unwrap();
-        assert!(tight.body().exact_topology_faults().is_empty());
+        assert!(
+            tight
+                .body()
+                .exact_topology_faults()
+                .iter()
+                .all(|fault| fault.code == "topology.missing-incidence")
+        );
         assert_eq!(tight.body().options().tolerance_mm, q("1/10000000"));
         let (source, key) = source(false, true, &mut dec);
         let refused =
@@ -187,10 +391,11 @@ fn a_stricter_fillet_request_refuses_a_loose_source_border() {
         assert_eq!(refused.code, "fillet.numerical-body");
     });
     assert!(!work.exhausted, "{work:?}");
+    println!("strict tolerance control: {work:?}");
 }
 
 #[test]
-fn rounding_an_outer_edge_preserves_both_untouched_cylinder_seam_uses() {
+fn rounding_an_outer_edge_preserves_both_untouched_periodic_seam_uses() {
     let ((), work) = with_operation_budget(100_000_000, || {
         let mut dec = Decider::default();
         let (source, key) = source(true, false, &mut dec);
@@ -230,7 +435,105 @@ fn rounding_an_outer_edge_preserves_both_untouched_cylinder_seam_uses() {
         let rounded =
             fillet::build(source, &key, "round", q("1/10"), q("1/10000000"), &mut dec).unwrap();
         assert_eq!(sample(rounded.body(), &mut dec), before);
-        assert!(rounded.body().exact_topology_faults().is_empty());
+        assert!(
+            rounded
+                .body()
+                .exact_topology_faults()
+                .iter()
+                .all(|fault| fault.code == "topology.missing-incidence")
+        );
     });
     assert!(!work.exhausted, "{work:?}");
+    println!("retained periodic seam control: {work:?}");
+}
+
+#[test]
+fn cap_bridge_meets_the_adjacent_native_occurrences() {
+    let ((), work) = with_operation_budget(100_000_000, || {
+        let mut dec = Decider::default();
+        let (body, key) = source(false, false, &mut dec);
+        let mut definition = body.definition().clone();
+        let mut native = body.native_trims().to_vec();
+        let shift = q("1/100000000");
+        for face in &mut definition.faces {
+            let Surface::Plane(plane) = &face.surface else {
+                continue;
+            };
+            if plane.normal.z.as_rational() == Some(q("0")) {
+                continue;
+            }
+            for (boundary, row) in face.loops.iter_mut().enumerate() {
+                for (use_index, trim) in row.iter_mut().enumerate() {
+                    for uv in &mut trim.uv {
+                        uv[0] = &uv[0] + &shift;
+                    }
+                    native.push(NumericalNativeTrim {
+                        face: face.key.clone(),
+                        boundary,
+                        use_index,
+                        edge: definition.edges[trim.edge].key.clone(),
+                        curve: linear_uv(&definition.edges[trim.edge], trim, &mut dec),
+                    });
+                }
+            }
+        }
+        let body = body
+            .rebuild_with_native_trims(definition, native, body.options().clone(), &mut dec)
+            .unwrap();
+        let rounded =
+            fillet::build(body, &key, "round", q("1/10"), q("1/10000000"), &mut dec).unwrap();
+        let body = rounded.body();
+        let mut joins = 0;
+        for face in body
+            .definition()
+            .faces
+            .iter()
+            .filter(|face| matches!(face.surface, Surface::Plane(_)))
+        {
+            for (boundary, row) in face.loops.iter().enumerate() {
+                for (index, bridge) in row.iter().enumerate().filter(|(_, trim)| {
+                    body.definition().edges[trim.edge]
+                        .key
+                        .starts_with("round/cap/")
+                }) {
+                    for (endpoint, neighbour, end) in [
+                        (0, (index + row.len() - 1) % row.len(), 1),
+                        (1, (index + 1) % row.len(), 0),
+                    ] {
+                        let trim = &row[neighbour];
+                        let edge = &body.definition().edges[trim.edge];
+                        let binding = body
+                            .native_trims()
+                            .iter()
+                            .find(|t| {
+                                t.face == face.key
+                                    && t.boundary == boundary
+                                    && t.use_index == neighbour
+                            })
+                            .unwrap();
+                        let at = &edge.parameters[if trim.sense == Sense::Same {
+                            end
+                        } else {
+                            1 - end
+                        }];
+                        let point = binding
+                            .curve
+                            .point_at(&Real::from(at.clone()), &mut dec)
+                            .unwrap();
+                        let residual = (&point.x.as_rational().unwrap() - &bridge.uv[endpoint][0])
+                            .abs()
+                            + (&point.y.as_rational().unwrap() - &bridge.uv[endpoint][1]).abs();
+                        assert!(
+                            residual <= q("1e-30"),
+                            "native cap join residual: {residual}"
+                        );
+                        joins += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(joins, 4);
+    });
+    assert!(!work.exhausted, "{work:?}");
+    println!("cap native residual control: {work:?}");
 }

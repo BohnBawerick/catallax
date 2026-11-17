@@ -137,6 +137,9 @@ whole output at that stricter tolerance.
 Native bindings are carried by face/boundary/use occurrence. Only replaced
 rails, shortened border endpoints and inserted cap uses change; untouched
 UV branches are retained, including two uses of a periodic seam edge.
+Inserted cap bridges take their endpoint UVs from the two adjacent edited
+occurrences, which were evaluated at their retained native edge parameters;
+a separate projection of the new world vertex cannot replace those UVs.
 Current-main surface kinds, continuous planar-circle clearance and
 certified handover migration are preserved.
 

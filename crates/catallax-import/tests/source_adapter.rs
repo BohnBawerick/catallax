@@ -75,6 +75,7 @@ fn spindle_torus_is_retained_complete_and_never_replaced_by_its_outer_sheet() {
     let Some(BodyView::Surfaces { source, .. }) = opened.body(0) else {
         panic!("invalid trims must remain source surfaces")
     };
+    let source = source.materialize(&mut Decider::default()).unwrap();
     let catallax_import::Surface::Retained(carrier) = &source.shells()[0].faces[0].surface else {
         panic!("whole source torus required")
     };
@@ -98,8 +99,11 @@ fn oriented_inner_shells_are_retained_and_not_silently_discarded() {
     );
     let opened = open(&source);
     assert_eq!(opened.bodies().len(), 1);
-    assert_eq!(opened.source().bodies()[0].shells().len(), 2);
-    let shells = opened.source().bodies()[0].shells();
+    let source_body = opened.source().bodies()[0]
+        .materialize(&mut Decider::default())
+        .unwrap();
+    assert_eq!(source_body.shells().len(), 2);
+    let shells = source_body.shells();
     assert_ne!(shells[0].faces[0].same_sense, shells[1].faces[0].same_sense);
     assert!(matches!(
         opened.source().definition(&mut Decider::default()),

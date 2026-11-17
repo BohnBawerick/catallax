@@ -61,18 +61,7 @@ impl Serialize for Scope<'_> {
             &Selected {
                 records: &evidence.repairs,
                 body,
-                belongs: |record, selected| {
-                    let body = match record {
-                        HealingChange::EdgesSewn { body, .. }
-                        | HealingChange::VerticesJoined { body, .. }
-                        | HealingChange::WireReordered { body, .. }
-                        | HealingChange::BoundaryReversed { body, .. }
-                        | HealingChange::FaceReversed { body, .. }
-                        | HealingChange::SmallLineRemoved { body, .. }
-                        | HealingChange::ShellsSewn { body, .. } => body,
-                    };
-                    body == selected
-                },
+                belongs: |record: &HealingChange, selected| record.body() == selected,
             },
         )?;
         result.serialize_field(

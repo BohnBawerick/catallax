@@ -69,6 +69,10 @@ pub struct TolerantEdge {
     /// Start and end indices in this body's shared vertex table.
     pub vertices: [usize; 2],
     tolerance_mm: Rational,
+    /// Derived finite trim in the original curve's parameter units.
+    pub source_range: Option<[Rational; 2]>,
+    /// Measured collapsed surface boundary, with a constant 3D carrier.
+    pub degenerate: bool,
 }
 impl TolerantEdge {
     /// Current curve/representation tolerance, in millimetres.
@@ -163,6 +167,7 @@ pub struct TolerantBody {
     options: ToleranceOptions,
     maximum_attained_mm: Rational,
     changes: Vec<ToleranceChange>,
+    deferred_source: Option<crate::geometry_source::RetainedGeometry>,
 }
 
 impl TolerantBody {
@@ -170,19 +175,24 @@ impl TolerantBody {
     pub fn name(&self) -> &str {
         &self.name
     }
+    /// Complete immutable declaration when this body's topology is still deferred.
+    /// Decoded shell/vertex/edge tables are not populated until materialization.
+    pub fn declaration(&self) -> Option<&crate::geometry_source::RetainedGeometry> {
+        self.deferred_source.as_ref()
+    }
     /// Whether the source declares a solid; this is not a validity check.
     pub fn declared_solid(&self) -> bool {
         self.declared_solid
     }
-    /// Source shells, in source order.
+    /// Decoded source shells, in source order. Materialize a deferred declaration first.
     pub fn shells(&self) -> &[TolerantShell] {
         &self.shells
     }
-    /// Shared vertices, in first-use source order.
+    /// Decoded shared vertices, in first-use source order.
     pub fn vertices(&self) -> &[TolerantVertex] {
         &self.vertices
     }
-    /// Shared edges, in first-use source order.
+    /// Decoded shared edges, in first-use source order.
     pub fn edges(&self) -> &[TolerantEdge] {
         &self.edges
     }
@@ -355,6 +365,8 @@ impl TolerantBody {
             curve_same_sense: source.curve_same_sense,
             vertices,
             tolerance_mm: self.options.initial_mm.clone(),
+            source_range: None,
+            degenerate: false,
         });
         Ok(index)
     }
@@ -419,6 +431,36 @@ impl TolerantBody {
         Ok(())
     }
 
+    fn retained(
+        name: &str,
+        declared_solid: bool,
+        source: crate::geometry_source::RetainedGeometry,
+        options: &ToleranceOptions,
+    ) -> Self {
+        let mut body = Self::new(name, declared_solid, options);
+        body.deferred_source = Some(source);
+        body
+    }
+
+    /// Decode this retained body under the caller's work allowance.
+    /// The immutable declaration remains unchanged if decoding fails.
+    pub fn materialize(&self, dec: &mut Decider) -> Result<std::borrow::Cow<'_, Self>, Error> {
+        let Some(source) = &self.deferred_source else {
+            return Ok(std::borrow::Cow::Borrowed(self));
+        };
+        let definition = source.source().native_body_definition(
+            source.entity(),
+            self.declared_solid,
+            source.length_mm(),
+            dec,
+        )?;
+        let mut body = Self::new(&self.name, self.declared_solid, &self.options);
+        for shell in definition.shells {
+            body.shell(&shell.name, shell.closed, &shell.faces, dec)?;
+        }
+        Ok(std::borrow::Cow::Owned(body))
+    }
+
     fn new(name: &str, declared_solid: bool, options: &ToleranceOptions) -> Self {
         Self {
             name: name.into(),
@@ -431,6 +473,7 @@ impl TolerantBody {
             edge_indices: BTreeMap::new(),
             maximum_attained_mm: Rational::zero(),
             changes: Vec::new(),
+            deferred_source: None,
         }
     }
 }
@@ -486,7 +529,9 @@ impl TolerantFile {
             solids: Vec::new(),
             surface_models: Vec::new(),
         };
-        for body in bodies {
+        for original in bodies {
+            let materialized = original.materialize(dec)?;
+            let body = materialized.as_ref();
             let mut shells = Vec::new();
             for shell in &body.shells {
                 let mut faces = Vec::new();

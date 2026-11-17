@@ -61,6 +61,191 @@ impl<'a> Writer<'a> {
         self.checks
     }
 
+    fn spline(
+        &mut self,
+        builder: &mut Builder<'_>,
+        surface_id: u64,
+        points: impl ExactSizeIterator<Item = ([f64; 2], f64)>,
+    ) -> Result<u64, Error> {
+        let count = points.len();
+        let mut controls = Vec::with_capacity(count);
+        let mut knots = Vec::with_capacity(count);
+        let mut multiplicities = Vec::with_capacity(count);
+        let mut previous = None;
+        for (index, (uv, parameter)) in points.enumerate() {
+            if !parameter.is_finite() || previous.is_some_and(|value| parameter <= value) {
+                return Err(invalid(
+                    "import.native-trace-parameter-order",
+                    "reconstructed trace knots must increase",
+                ));
+            }
+            previous = Some(parameter);
+            let coordinates = uv.into_iter().map(number).collect::<Result<Vec<_>, _>>()?;
+            controls
+                .push(builder.add("CARTESIAN_POINT", vec![text(""), Param::List(coordinates)])?);
+            knots.push(number(parameter)?);
+            multiplicities.push(Param::Number(
+                if index == 0 || index + 1 == count {
+                    "2"
+                } else {
+                    "1"
+                }
+                .into(),
+            ));
+        }
+        let spline = builder.add(
+            "B_SPLINE_CURVE_WITH_KNOTS",
+            vec![
+                text(""),
+                Param::Number("1".into()),
+                references(controls),
+                Param::Enum("UNSPECIFIED".into()),
+                Param::Enum("U".into()),
+                Param::Enum("U".into()),
+                Param::List(multiplicities),
+                Param::List(knots),
+                Param::Enum("UNSPECIFIED".into()),
+            ],
+        )?;
+        self.wrap(builder, surface_id, spline)
+    }
+
+    fn wrap(
+        &mut self,
+        builder: &mut Builder<'_>,
+        surface_id: u64,
+        spline: u64,
+    ) -> Result<u64, Error> {
+        let context = match self.context {
+            Some(context) => context,
+            None => {
+                let context = builder.complex(vec![
+                    (
+                        "GEOMETRIC_REPRESENTATION_CONTEXT".into(),
+                        vec![Param::Number("2".into())],
+                    ),
+                    ("PARAMETRIC_REPRESENTATION_CONTEXT".into(), vec![]),
+                    ("REPRESENTATION_CONTEXT".into(), vec![text(""), text("")]),
+                ])?;
+                self.context = Some(context);
+                context
+            }
+        };
+        let representation = builder.add(
+            "DEFINITIONAL_REPRESENTATION",
+            vec![text(""), references([spline]), reference_to(context)],
+        )?;
+        builder.add(
+            "PCURVE",
+            vec![
+                text("reconstructed native trace"),
+                reference_to(surface_id),
+                reference_to(representation),
+            ],
+        )
+    }
+
+    fn projected(
+        &mut self,
+        builder: &mut Builder<'_>,
+        surface: u64,
+        trace: &super::super::ProjectedTrace,
+    ) -> Result<u64, Error> {
+        let mut controls = Vec::with_capacity(trace.controls.len());
+        for control in &trace.controls {
+            controls.push(builder.add(
+                "CARTESIAN_POINT",
+                vec![text(""),
+                Param::List(control.iter().map(|value| number(*value)).collect::<Result<_, _>>()?)],
+            )?);
+        }
+        let mut entity = builder.parsed.entity(trace.source_curve)?.clone();
+        let complex = entity.parts.len() > 1;
+        let mut replaced = 0;
+        for (kind, parameters) in &mut entity.parts {
+            for parameter in parameters.iter_mut() {
+                if let Param::List(values) = parameter
+                    && values.len() == controls.len()
+                    && values.iter().all(|value| matches!(value, Param::Ref(_)))
+                {
+                    *values = controls.iter().copied().map(reference_to).collect();
+                    replaced += 1;
+                }
+            }
+            if kind == "B_SPLINE_CURVE" {
+                let count = parameters.len();
+                parameters[count - 2] = Param::Enum("U".into());
+                parameters[count - 1] = Param::Enum("U".into());
+            } else if !complex && kind == "B_SPLINE_CURVE_WITH_KNOTS" {
+                parameters[4] = Param::Enum("U".into());
+                parameters[5] = Param::Enum("U".into());
+            }
+        }
+        if replaced != 1 {
+            return Err(invalid(
+                "import.native-projected-controls",
+                "one source B-spline control array is required",
+            ));
+        }
+        let curve = builder.complex(entity.parts)?;
+        self.wrap(builder, surface, curve)
+    }
+
+    fn reconstructed(
+        &mut self,
+        builder: &mut Builder<'_>,
+        original: u64,
+        surface_id: u64,
+        trim: &NativeTrim,
+        dec: &mut Decider,
+    ) -> Result<u64, Error> {
+        let first = trim.samples.first().expect("finite trace");
+        let last = trim.samples.last().expect("finite trace");
+        let width = last.curve.parameters[0] - first.curve.parameters[0];
+        let kind = if builder.changes.contains_key(&original) {
+            Some(2)
+        } else {
+            parameter_kind(builder, original, dec)?
+        };
+        let scale = match kind {
+            Some(0) => {
+                let curve = self.import.native_curve(original).ok_or_else(|| {
+                    invalid(
+                        "import.native-trace-parameter-map",
+                        "native line carrier is missing",
+                    )
+                })?;
+                let a = curve.sample(first.curve, dec)?;
+                let b = curve.sample(last.curve, dec)?;
+                distance(&a.point_mm, &b.point_mm) / width.abs()
+            }
+            Some(1) => self.import.source_unit_factors()[1],
+            Some(2) => 1.0,
+            _ => {
+                return Err(invalid(
+                    "import.native-trace-parameter-map",
+                    "source composite parameter conversion is not established",
+                ));
+            }
+        };
+        let reverse = width < 0.0;
+        self.spline(
+            builder,
+            surface_id,
+            (0..trim.samples.len()).map(|index| {
+                let sample = &trim.samples[if reverse {
+                    trim.samples.len() - 1 - index
+                } else {
+                    index
+                }];
+                (
+                    sample.surface.parameters,
+                    sample.curve.parameters[0] * scale,
+                )
+            }),
+        )
+    }
+
     fn basis_curve(
         &mut self,
         builder: &mut Builder<'_>,
@@ -216,62 +401,15 @@ impl<'a> Writer<'a> {
         } else {
             [last, first]
         };
-        let mut controls = Vec::with_capacity(2);
-        for sample in endpoints {
-            let coordinates = sample
-                .surface
-                .parameters
-                .into_iter()
-                .map(number)
-                .collect::<Result<_, _>>()?;
-            let point = builder.add("CARTESIAN_POINT", vec![text(""), Param::List(coordinates)])?;
-            controls.push(point);
-        }
-        let knots = if t0 < t1 {
-            [t0 * scale, t1 * scale]
-        } else {
-            [t1 * scale, t0 * scale]
-        };
-        let spline = builder.add(
-            "B_SPLINE_CURVE_WITH_KNOTS",
-            vec![
-                text(""),
-                Param::Number("1".into()),
-                references(controls),
-                Param::Enum("UNSPECIFIED".into()),
-                boolean(false),
-                boolean(false),
-                Param::List(vec![Param::Number("2".into()), Param::Number("2".into())]),
-                Param::List(knots.into_iter().map(number).collect::<Result<_, _>>()?),
-                Param::Enum("UNSPECIFIED".into()),
-            ],
-        )?;
-        let context = match self.context {
-            Some(context) => context,
-            None => {
-                let created = builder.complex(vec![
-                    (
-                        "GEOMETRIC_REPRESENTATION_CONTEXT".into(),
-                        vec![Param::Number("2".into())],
-                    ),
-                    ("PARAMETRIC_REPRESENTATION_CONTEXT".into(), vec![]),
-                    ("REPRESENTATION_CONTEXT".into(), vec![text(""), text("")]),
-                ])?;
-                self.context = Some(created);
-                created
-            }
-        };
-        let representation = builder.add(
-            "DEFINITIONAL_REPRESENTATION",
-            vec![text(""), references([spline]), reference_to(context)],
-        )?;
-        let pcurve = builder.add(
-            "PCURVE",
-            vec![
-                text(""),
-                reference_to(surface_id),
-                reference_to(representation),
-            ],
+        let pcurve = self.spline(
+            builder,
+            surface_id,
+            endpoints.into_iter().map(|sample| {
+                (
+                    sample.surface.parameters,
+                    sample.curve.parameters[0] * scale,
+                )
+            }),
         )?;
         self.checks.push(SampledCheck {
             body: trim.body.clone(),
@@ -307,7 +445,13 @@ impl<'a> Writer<'a> {
                 continue;
             };
             surfaces.push(surface);
-            let curve = self.affine(builder, edge, original, surface, trim, dec)?;
+            let curve = if let Some(projected) = &trim.projected {
+                Some(self.projected(builder, surface, projected)?)
+            } else if trim.reconstructed {
+                Some(self.reconstructed(builder, original, surface, trim, dec)?)
+            } else {
+                self.affine(builder, edge, original, surface, trim, dec)?
+            };
             associated.push(match curve {
                 Some(curve) => curve,
                 None => match trim.source_pcurve {

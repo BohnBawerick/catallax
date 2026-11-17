@@ -176,44 +176,58 @@ def raw_native_document(path, entry):
                 labelled[identifier] = entity
         roots = []
         for root in entry["source_roots"]:
-            entities = [labelled[entity] for entity in root["entities"]]
-            assert len(entities) == root["parts"], (root["name"], len(entities), root["parts"])
-            tolerance = root["tolerance_mm"]
-            assert math.isfinite(tolerance) and tolerance > 0
-            factors = StepData_Factors()
-            factors.InitializeFactors(*factors_values)
-            process = Transfer_TransientProcess()
-            process.SetModel(model)
-            compound = TopoDS_Compound()
-            aggregate = BRep_Builder()
-            aggregate.MakeCompound(compound)
-            for entity in entities:
-                builder = StepToTopoDS_Builder()
-                builder.SetPrecision(min(tolerance, 1e-7))
-                builder.SetMaxTol(tolerance)
-                builder.Init(entity, process, factors)
-                assert builder.IsDone(), root["name"]
-                shape = builder.Value()
-                assert topology(shape)["solids"] == 1
-                if not BRepCheck_Analyzer(shape).IsValid():
-                    raise NativeInvalid(f"{root['name']}: raw native solid invalid")
-                aggregate.Add(compound, shape)
-            counts = topology(compound)
-            for key, expected in root["counts"].items():
-                if counts[key] != expected:
-                    raise NativeInvalid(f"{root['name']}: {key} coverage {counts[key]} != {expected}")
+            counts, valid_solids, outcome, detail = None, 0, "reader_refused", ""
+            try:
+                entities = [labelled[entity] for entity in root["entities"]]
+                assert len(entities) == root["parts"], (root["name"], len(entities), root["parts"])
+                tolerance = root["tolerance_mm"]
+                assert math.isfinite(tolerance) and tolerance > 0
+                factors = StepData_Factors()
+                factors.InitializeFactors(*factors_values)
+                process = Transfer_TransientProcess()
+                process.SetModel(model)
+                compound = TopoDS_Compound()
+                aggregate = BRep_Builder()
+                aggregate.MakeCompound(compound)
+                valid = True
+                for entity in entities:
+                    builder = StepToTopoDS_Builder()
+                    builder.SetPrecision(min(tolerance, 1e-7))
+                    builder.SetMaxTol(tolerance)
+                    builder.Init(entity, process, factors)
+                    assert builder.IsDone(), root["name"]
+                    shape = builder.Value()
+                    assert topology(shape)["solids"] == 1
+                    part_valid = BRepCheck_Analyzer(shape).IsValid()
+                    valid_solids += int(part_valid)
+                    valid &= part_valid
+                    aggregate.Add(compound, shape)
+                counts = topology(compound)
+                coverage = all(counts[key] == expected for key, expected in root["counts"].items())
+                outcome = "valid_after_builder" if valid and coverage else "invalid_after_builder"
+                if not coverage:
+                    detail = "native topology counts differ from the emitted body"
+            except Exception as error:
+                detail = f"{type(error).__name__}: {error}"
             roots.append(dict(body=root["body"], source_root=root["name"], topology=counts,
-                              builder_precision_mm=min(tolerance, 1e-7), builder_max_tolerance_mm=tolerance))
+                              outcome=outcome, valid_solid_count=valid_solids, detail=detail))
     finally:
         for key, value in previous.items():
             Interface_Static.SetIVal_s(key, value)
-    expected_roots = reader.NbRootsForTransfer()
-    assert expected_roots > 0 and reader.TransferRoots() == expected_roots
-    shape = reader.OneShape()
-    assert not shape.IsNull() and topology(shape)["solids"] > 0
-    if not BRepCheck_Analyzer(shape).IsValid():
-        raise NativeInvalid("default occurrence transfer invalid")
-    return topology(shape), roots
+    occurrence_outcome, counts = "reader_refused", None
+    try:
+        expected_roots = reader.NbRootsForTransfer()
+        assert expected_roots > 0 and reader.TransferRoots() == expected_roots
+        shape = reader.OneShape()
+        assert not shape.IsNull() and topology(shape)["solids"] > 0
+        counts = topology(shape)
+        occurrence_outcome = "valid_after_builder" if BRepCheck_Analyzer(shape).IsValid() else "invalid_after_builder"
+    except Exception as error:
+        print(type(error).__name__, str(error), file=sys.stderr)
+    valid = occurrence_outcome == "valid_after_builder" and all(
+        root["outcome"] == "valid_after_builder" for root in roots
+    )
+    return counts, roots, occurrence_outcome, valid
 
 
 def raw(args):
@@ -231,16 +245,18 @@ def raw(args):
     for entry in response["files"]:
         bodies = entry["bodies"]
         assert bodies and len(set(bodies)) == len(bodies)
-        native = entry["kind"] == "native_document"
-        assert entry["file"] == ("document.step" if native else f"body-{bodies[0]}.step")
+        native = entry["kind"] in ("native_document", "native_body")
+        assert entry["file"] == ("document.step" if entry["kind"] == "native_document" else f"body-{bodies[0]}.step")
         path = args.capture / entry["file"]
         assert digest(path) == entry["sha256"] and path.stat().st_size == entry["bytes"]
         before = path.read_bytes()
+        valid_solids, native_roots, occurrence_outcome = 0, [], None
         try:
             if native:
-                counts, native_roots = raw_native_document(path, entry)
+                counts, native_roots, occurrence_outcome, valid = raw_native_document(path, entry)
                 assert sorted(root["body"] for root in native_roots) == sorted(bodies)
-                outcome = "valid_after_builder"
+                valid_solids = sum(root["valid_solid_count"] for root in native_roots)
+                outcome = "valid_after_builder" if valid else "invalid_after_builder"
             else:
                 assert len(bodies) == 1
                 assert b"SI_UNIT(.MILLI.,.METRE.)" in b"".join(before.split())
@@ -252,6 +268,7 @@ def raw(args):
                     if BRepCheck_Analyzer(shape).IsValid()
                     else "invalid_after_builder"
                 )
+                valid_solids = int(entry["kind"] == "solid" and outcome == "valid_after_builder")
         except NativeInvalid as error:
             outcome, counts = "invalid_after_builder", None
             print(type(error).__name__, str(error), file=sys.stderr)
@@ -266,6 +283,9 @@ def raw(args):
                 sha256=entry["sha256"],
                 outcome=outcome,
                 topology=counts,
+                valid_solid_count=valid_solids,
+                raw_source_roots=native_roots,
+                occurrence_outcome=occurrence_outcome,
                 validation_method=(
                     "raw_source_roots_at_stated_tolerance_then_default_occurrence_transfer"
                     if native else "raw_identity_unit_builder_at_fixed_precision"
@@ -315,9 +335,18 @@ def opening(row, checkpoint):
         open_work_exhausted=checkpoint["work_exhausted"],
         read_work_used=checkpoint["read_work_used"],
         file_admission_work_used=checkpoint["file_admission_work_used"],
+        native_admission_work_used=checkpoint.get("native_admission_work_used"),
+        checked_upgrade_work_used=checkpoint.get("checked_upgrade_work_used"),
         first_refusal=cause(checkpoint["first_refusal"]),
     )
     row["proofs"] = dict(Counter(b["proof"] for b in bodies))
+    row["body_first_blockers"] = [
+        dict(body=body["body"], source_body=body["source_body"],
+             stage=blocker["stage"], refusal=cause(blocker["refusal"]),
+             resource_limited=blocker["resource_limited"], work_used=blocker["work_used"])
+        for body in bodies
+        if (blocker := body.get("first_blocker"))
+    ]
     if not bodies:
         row["first_refusal"] = "no_supported_bodies"
     after = []
@@ -418,6 +447,8 @@ def observe(binary, source, baseline, folder, retain, max_rss_mb=6144):
             open_work_used=response["work_used"],
             open_work_exhausted=response["work_exhausted"],
             export_validity="not_opened",
+            has_valid_exported_solid=False,
+            any_valid_exported_solid_count=0,
         )
     opening(row, response["open"])
     row.update(
@@ -428,6 +459,7 @@ def observe(binary, source, baseline, folder, retain, max_rss_mb=6144):
     if response["outcome"] == "refused":
         row["export_refusal"] = cause(response["refusal"]) or "resource_limit"
     if not response["files"]:
+        row.update(has_valid_exported_solid=False, any_valid_exported_solid_count=0)
         row["export_validity"] = (
             "source_surfaces_without_checked_brep"
             if not row.get("export_refusal")
@@ -465,18 +497,7 @@ def observe(binary, source, baseline, folder, retain, max_rss_mb=6144):
     checked = json.loads((folder / "raw.json").read_text())
     assert checked["source_sha256"] == expected and checked["ocp_version"] == "8.0.1.1"
     assert [f["sha256"] for f in checked["files"]] == row["exported_step_hashes"]
-    counts = Counter(
-        (entry["kind"], entry["outcome"])
-        for entry in checked["files"] for _ in entry["bodies"]
-    )
-    row.update(
-        valid_exported_solid_count=counts["solid", "valid_after_builder"] + counts["native_document", "valid_after_builder"],
-        valid_exported_surface_count=counts["surface", "valid_after_builder"],
-        invalid_exported_body_count=sum(
-            v for (k, o), v in counts.items() if o == "invalid_after_builder"
-        ),
-        reader_refused_body_count=sum(v for (k, o), v in counts.items() if o == "reader_refused"),
-    )
+    row.update(export_inventory(checked["files"]))
     row["all_solids_export_valid"] = (
         row["outcome"] == "full" and row["valid_exported_solid_count"] == row["observed_body_count"]
     )
@@ -498,6 +519,24 @@ def observe(binary, source, baseline, folder, retain, max_rss_mb=6144):
         )
     )
     return row
+
+
+def export_inventory(files):
+    counts = Counter((entry["kind"], entry["outcome"])
+                     for entry in files for _ in entry["bodies"])
+    solid = sum(counts[kind, "valid_after_builder"]
+                for kind in ("solid", "native_document", "native_body"))
+    any_solid = sum(entry["valid_solid_count"] for entry in files)
+    return dict(
+        valid_exported_solid_count=solid,
+        valid_exported_surface_count=counts["surface", "valid_after_builder"],
+        invalid_exported_body_count=sum(v for (_, outcome), v in counts.items()
+                                        if outcome == "invalid_after_builder"),
+        reader_refused_body_count=sum(v for (_, outcome), v in counts.items()
+                                      if outcome == "reader_refused"),
+        any_valid_exported_solid_count=any_solid,
+        has_valid_exported_solid=any_solid > 0,
+    )
 
 
 def recorded_tiers(row):
@@ -772,6 +811,13 @@ def collect(args):
         captures = list((args.out / "parts" / key).glob("attempt-*/capture/source.step"))
         assert captures and digest(captures[-1]) == hashes[key]
         assert (captures[-1].parent / "controls.json").is_file()
+    blockers = {}
+    for row in observations:
+        for blocker in row.get("body_first_blockers", []):
+            key = blocker["stage"], blocker["refusal"], blocker["resource_limited"]
+            count, files = blockers.setdefault(key, [0, set()])
+            blockers[key][0] = count + 1
+            files.add(row["model_id"])
     summary = identity | dict(
         complete=True,
         evaluated=3000,
@@ -781,6 +827,14 @@ def collect(args):
         opened_share_percent=f"{opened/30:.2f}",
         full_solid_files=outcomes["full"],
         full_solid_share_percent=f"{outcomes['full']/30:.2f}",
+        files_with_any_valid_exported_solid=sum(r.get("has_valid_exported_solid") is True for r in observations),
+        any_valid_export_unmeasured_files=[r["model_id"] for r in observations if "has_valid_exported_solid" not in r],
+        valid_solid_count_basis="individual raw-builder-valid exported solids; full source coverage and occurrence transfer remain separate predicates",
+        body_first_blockers=[
+            dict(stage=stage, refusal=refusal, resource_limited=resource, bodies=count, files=len(files))
+            for (stage, refusal, resource), (count, files) in sorted(blockers.items())
+        ],
+        body_first_blockers_unmeasured_files=[r["model_id"] for r in observations if "body_first_blockers" not in r],
         all_solids_export_valid_files=qualified,
         all_solids_export_valid_share_percent=f"{qualified/30:.2f}",
         body_tiers={

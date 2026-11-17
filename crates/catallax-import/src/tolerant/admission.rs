@@ -73,6 +73,8 @@ pub struct NativeTrim {
     pub face: String,
     /// Source boundary index.
     pub boundary: usize,
+    /// Position in the repaired boundary, including inserted pole edges.
+    pub use_index: usize,
     /// Original shared edge name.
     pub edge: String,
     /// Traversal against the source EDGE_CURVE.
@@ -81,6 +83,19 @@ pub struct NativeTrim {
     pub source_pcurve: Option<u64>,
     /// Actual native correspondence samples.
     pub samples: Vec<UvSample>,
+    /// Rebuilt boundary trace, rather than a retained source PCURVE.
+    pub reconstructed: bool,
+    /// Plane projection keeps the source spline's exact knots and weights.
+    pub projected: Option<ProjectedTrace>,
+}
+
+/// A source spline's controls projected into a plane's original UV units.
+#[derive(Clone, Debug, Serialize)]
+pub struct ProjectedTrace {
+    /// Source 3D B-spline basis; knots and weights remain unchanged.
+    pub source_curve: u64,
+    /// Measured native plane coordinates of its control points.
+    pub controls: Vec<[f64; 2]>,
 }
 
 /// Sampled natural closure of an edgeless native face.
@@ -134,6 +149,31 @@ pub struct TolerantEvidence {
     pub native_domains: Vec<NativeDomain>,
 }
 
+impl TolerantEvidence {
+    fn checkpoint(&self) -> [usize; 8] {
+        [
+            self.tolerances.len(),
+            self.sampled_checks.len(),
+            self.repairs.len(),
+            self.topology_checks.len(),
+            self.topology_measurements.len(),
+            self.warnings.len(),
+            self.native_trims.len(),
+            self.native_domains.len(),
+        ]
+    }
+    fn rollback(&mut self, lengths: [usize; 8]) {
+        self.tolerances.truncate(lengths[0]);
+        self.sampled_checks.truncate(lengths[1]);
+        self.repairs.truncate(lengths[2]);
+        self.topology_checks.truncate(lengths[3]);
+        self.topology_measurements.truncate(lengths[4]);
+        self.warnings.truncate(lengths[5]);
+        self.native_trims.truncate(lengths[6]);
+        self.native_domains.truncate(lengths[7]);
+    }
+}
+
 /// Counts of a closed, oriented source-topology candidate.
 #[derive(Clone, Copy, Debug, Serialize)]
 pub struct TolerantCounts {
@@ -152,6 +192,7 @@ pub struct TolerantCounts {
 pub struct TolerantSolid {
     pub(crate) body: TolerantBody,
     counts: TolerantCounts,
+    source_index: usize,
 }
 impl TolerantSolid {
     /// Source identity of this body's definition.
@@ -165,6 +206,10 @@ impl TolerantSolid {
     /// Native numerical source topology for display and downstream tolerant work.
     pub fn definition(&self) -> &TolerantBody {
         &self.body
+    }
+    /// Position in the immutable source inventory, independent of refused siblings.
+    pub fn source_index(&self) -> usize {
+        self.source_index
     }
 }
 
@@ -204,6 +249,53 @@ struct ExportEvidence<'a> {
     export_checks: &'a [SampledCheck],
 }
 
+/// The first native construction stage that prevents a body from being used.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NativeStage {
+    /// The shared request allowance expired before this body could start.
+    RequestLimit,
+    /// Decode this body's retained source topology and carriers.
+    BodyBuild,
+    /// Order and reconnect its source wires.
+    WireConnection,
+    /// Sew mutually matching free boundaries within the sewing cap.
+    Sewing,
+    /// Check connected shell incidence and orientation.
+    ShellIncidence,
+    /// Check the body's closed manifold incidence.
+    ManifoldIncidence,
+    /// Fit finite 3D edges and their endpoints.
+    CurveFit,
+    /// Cut a measured wire crossing.
+    CrossingCut,
+    /// Fit face coordinates to the source carriers.
+    SurfaceFit,
+    /// Reconstruct a missing or inconsistent face trace.
+    TraceRebuild,
+    /// Insert a measured collapsed pole boundary.
+    PoleBoundary,
+    /// Commit measured local entity tolerances.
+    ToleranceGrowth,
+}
+
+/// A body-local first blocker. Resource refusals remain resource observations.
+#[derive(Clone, Debug)]
+pub struct NativeBodyFailure {
+    /// Actual repair or check active at the first refusal.
+    pub stage: NativeStage,
+    /// Original typed failure, not inferred from a file-level outcome.
+    pub error: Error,
+    /// Work spent on this body before the refusal.
+    pub work_used: u64,
+}
+impl NativeBodyFailure {
+    /// A work, deadline or numerical-resolution limit, not a geometry verdict.
+    pub fn resource_limited(&self) -> bool {
+        super::native::control(&self.error)
+    }
+}
+
 /// A tolerant source document, including its original occurrence graph.
 #[derive(Debug)]
 pub struct TolerantImport {
@@ -212,6 +304,7 @@ pub struct TolerantImport {
     bodies: Vec<TolerantSolid>,
     evidence: TolerantEvidence,
     carriers: fit::Carriers,
+    body_errors: Vec<Option<NativeBodyFailure>>,
 }
 impl TolerantImport {
     /// Immutable supported source definitions. Occurrence links remain in the document.
@@ -221,6 +314,92 @@ impl TolerantImport {
     /// Tolerant body definitions, in source-model order.
     pub fn bodies(&self) -> &[TolerantSolid] {
         &self.bodies
+    }
+    /// Typed body-local failures. Successful siblings remain usable.
+    pub fn body_failures(&self) -> impl Iterator<Item = (usize, &NativeBodyFailure)> {
+        self.body_errors
+            .iter()
+            .enumerate()
+            .filter_map(|(index, error)| error.as_ref().map(|error| (index, error)))
+    }
+    /// First blocker for one source-model slot, without renumbering siblings.
+    pub fn body_failure(&self, source_index: usize) -> Option<&NativeBodyFailure> {
+        self.body_errors.get(source_index).and_then(Option::as_ref)
+    }
+
+    pub(crate) fn checked_definition(
+        &self,
+        index: usize,
+        dec: &mut Decider,
+    ) -> Result<crate::StepFile, Error> {
+        if self.carriers.angles != AngleUnit::Radians {
+            return Err(invalid(
+                "import.checked-angular-context",
+                "checked carrier conversion requires radians",
+            ));
+        }
+        let mut file = Self::recognize_definition(self.body_definition(index, dec)?, dec)?;
+        for model in file.surface_models.drain(..) {
+            if model.shells.len() != 1 {
+                return Err(invalid(
+                    "import.checked-body-shells",
+                    "checked upgrade requires one closed material shell",
+                ));
+            }
+            file.solids.push(crate::Solid {
+                name: model.name,
+                faces: model.shells.into_iter().next().expect("one shell").faces,
+            });
+        }
+        Ok(file)
+    }
+    pub(crate) fn checked_source_definition(
+        &self,
+        index: usize,
+        dec: &mut Decider,
+    ) -> Result<crate::StepFile, Error> {
+        if self.carriers.angles != AngleUnit::Radians {
+            return Err(invalid(
+                "import.checked-angular-context",
+                "checked carrier conversion requires radians",
+            ));
+        }
+        Self::recognize_definition(
+            self.source
+                .definition_of(&self.source.bodies[index..=index], dec)?,
+            dec,
+        )
+    }
+
+    fn recognize_definition(
+        mut file: crate::StepFile,
+        dec: &mut Decider,
+    ) -> Result<crate::StepFile, Error> {
+        for face in file
+            .solids
+            .iter_mut()
+            .flat_map(|body| &mut body.faces)
+            .chain(
+                file.surface_models
+                    .iter_mut()
+                    .flat_map(|body| &mut body.shells)
+                    .flat_map(|shell| &mut shell.faces),
+            )
+        {
+            for edge in face
+                .loops
+                .iter_mut()
+                .flat_map(|boundary| &mut boundary.edges)
+            {
+                if let crate::Curve::Retained(source) = &edge.curve {
+                    edge.curve = source.recognized_curve(dec)?;
+                }
+            }
+            if let crate::Surface::Retained(source) = &face.surface {
+                face.surface = source.recognized_surface(&face.loops, dec)?;
+            }
+        }
+        Ok(file)
     }
     /// Reconstruct one admitted native candidate as source geometry, without
     /// converting it into a certified kernel model.
@@ -247,6 +426,12 @@ impl TolerantImport {
     /// Rebuild the source document's B-reps and preserve occurrence placement.
     /// The file explicitly carries the tolerant label and per-entity evidence.
     pub fn export_step(&self, dec: &mut Decider) -> Result<NativeStepFile, Error> {
+        if self.bodies.len() != self.source.bodies.len() {
+            return Err(invalid(
+                "import.tolerant-incomplete-document",
+                "export usable bodies separately while siblings remain source surfaces",
+            ));
+        }
         let built = step::rebuild(self, &self.bodies, dec)?;
         let metadata = serde_json::to_string(&ExportEvidence {
             export_scope: "source_document",
@@ -271,7 +456,7 @@ impl TolerantImport {
     }
     /// Export selected body-local geometry. Product occurrences and unrelated
     /// bodies are excluded; use `export_step` to preserve the source document.
-    pub fn export_body(&self, index: usize, dec: &mut Decider) -> Result<Vec<u8>, Error> {
+    pub fn export_body(&self, index: usize, dec: &mut Decider) -> Result<NativeStepFile, Error> {
         let body = self
             .bodies
             .get(index)
@@ -286,19 +471,24 @@ impl TolerantImport {
         )?;
         let metadata = serde_json::to_string(&ExportEvidence {
             export_scope: "body_local_geometry",
-            source_bodies: Some(&[index]),
+            source_bodies: Some(&[body.source_index]),
             source_body_roots: &built.body_roots,
             source_document_evidence: evidence::Scope::new(&self.evidence, Some(body.name())),
             export_checks: &built.checks,
         })
         .map_err(|error| Refusal::new("import.tolerant-evidence", error.to_string()))?;
-        Ok(self.parsed.write_tolerant_step(
+        let bytes = self.parsed.write_tolerant_step(
             &built.changes,
             self.parsed.schemas()?,
             &metadata,
             Some(&[root]),
             dec,
-        )?)
+        )?;
+        Ok(NativeStepFile {
+            bytes,
+            body_roots: built.body_roots,
+            checks: built.checks,
+        })
     }
     /// Source-to-OCCT dimensional factors for independent native export checks.
     /// These describe source units, not an adjustment made by a repair.
@@ -362,7 +552,22 @@ pub fn import_step(
     dec: &mut Decider,
 ) -> Result<TolerantImport, Error> {
     let (parsed, source, angles) = prepare(bytes, expected_sha256, options, dec)?;
-    admit(parsed, source, angles, dec)
+    let imported = admit(parsed, source, angles, dec)?;
+    if imported.bodies.is_empty() {
+        return Err(imported
+            .body_errors
+            .into_iter()
+            .flatten()
+            .next()
+            .map(|failure| failure.error)
+            .unwrap_or_else(|| {
+                invalid(
+                    "import.tolerant-broken-topology",
+                    "source contains no usable body",
+                )
+            }));
+    }
+    Ok(imported)
 }
 
 pub(crate) fn prepare(
@@ -390,19 +595,20 @@ pub(crate) fn prepare(
     }
     parsed.schemas()?;
     let angles = source_angles(&parsed, dec)?;
-    let definition = parsed.native_definition(dec)?;
+    let (scale, declarations) = parsed.native_inventory(dec)?;
     let mut source = TolerantFile {
         source_sha256: expected_sha256.into(),
-        mm_per_unit: definition.scale,
+        mm_per_unit: scale,
         options: options.clone(),
-        bodies: Vec::with_capacity(definition.bodies.len()),
+        bodies: Vec::with_capacity(declarations.len()),
     };
-    for definition in definition.bodies {
-        let mut body = TolerantBody::new(&definition.name, definition.solid, &options);
-        for shell in definition.shells {
-            body.shell(&shell.name, shell.closed, &shell.faces, dec)?;
-        }
-        source.bodies.push(body);
+    for declaration in declarations {
+        source.bodies.push(TolerantBody::retained(
+            &format!("#{}", declaration.entity),
+            declaration.kind == crate::geometry_source::ModelDeclarationKind::Solid,
+            parsed.retained_body(declaration.entity, &source.mm_per_unit),
+            &options,
+        ));
     }
     Ok((parsed, Arc::new(source), angles))
 }
@@ -413,48 +619,95 @@ pub(crate) fn admit(
     angles: AngleUnit,
     dec: &mut Decider,
 ) -> Result<TolerantImport, Error> {
-    let repaired = healing::repair_native_topology(&source, &parsed, &angles, dec)?;
+    let mut fits = fit::Context::new(
+        &parsed,
+        &source.mm_per_unit,
+        angles.clone(),
+        Default::default(),
+        source.options.maximum_mm.to_f64_nearest(),
+    );
     let mut evidence = TolerantEvidence {
         method: "catallax-tolerant-native-v1",
         source_sha256: source.source_sha256.clone(),
         authority: "tolerant: discrete topology and sampled native fits; no whole-domain certificate",
         tolerances: Vec::new(),
         sampled_checks: Vec::new(),
-        repairs: repaired.changes,
-        topology_checks: repaired.checks,
-        topology_measurements: repaired.measurements,
+        repairs: Vec::new(),
+        topology_checks: Vec::new(),
+        topology_measurements: Vec::new(),
         warnings: Vec::new(),
         native_trims: Vec::new(),
         native_domains: Vec::new(),
     };
-    for issue in repaired.issues {
-        if issue.code.starts_with("shell.")
-            || issue.code.starts_with("wire.open")
-            || issue.code == "wire.empty-boundary"
-        {
-            return Err(invalid(
-                "import.tolerant-non-manifold",
-                format!("{} {}: {}", issue.body, issue.scope, issue.code),
-            ));
+    let mut bodies = Vec::with_capacity(source.bodies.len());
+    let mut body_errors = vec![None; source.bodies.len()];
+    for (source_index, original) in source.bodies.iter().enumerate() {
+        let checkpoint = evidence.checkpoint();
+        let before = catallax_numbers::current_operation_work().used;
+        fits.stage = NativeStage::BodyBuild;
+        if catallax_numbers::current_operation_work().exhausted {
+            body_errors[source_index] = Some(NativeBodyFailure {
+                stage: NativeStage::RequestLimit,
+                error: ImportRefusal::ResourceLimit.into(),
+                work_used: 0,
+            });
+            continue;
         }
-        evidence.warnings.push(NativeWarning {
-            body: Some(issue.body),
-            scope: issue.scope,
-            code: "topology-repair-limitation",
-            detail: issue.code,
-        });
-    }
-    let mut bodies = Vec::with_capacity(repaired.candidate.bodies.len());
-    let mut fits = fit::Context::new(&parsed, &source.mm_per_unit, angles, repaired.curves);
-    for mut body in repaired.candidate.bodies {
-        let counts = fit::check_body(&mut fits, &mut body, &mut evidence, dec)?;
-        bodies.push(TolerantSolid { body, counts });
-    }
-    if bodies.is_empty() {
-        return Err(invalid(
-            "import.tolerant-broken-topology",
-            "source document contains no finite B-rep body",
-        ));
+        let candidate = (|| {
+            let repaired = healing::repair_native_topology(
+                original,
+                &parsed,
+                &source.mm_per_unit,
+                &angles,
+                &mut fits.curves,
+                &mut fits.stage,
+                dec,
+            )?;
+            evidence.repairs.extend(repaired.changes);
+            evidence.topology_checks.extend(repaired.checks);
+            evidence.topology_measurements.extend(repaired.measurements);
+            for issue in repaired.issues {
+                if issue.code.starts_with("shell.")
+                    || issue.code.starts_with("wire.open")
+                    || issue.code == "wire.empty-boundary"
+                {
+                    return Err(invalid(
+                        "import.tolerant-non-manifold",
+                        format!("{} {}: {}", issue.body, issue.scope, issue.code),
+                    ));
+                }
+                evidence.warnings.push(NativeWarning {
+                    body: Some(issue.body),
+                    scope: issue.scope,
+                    code: "topology-repair-limitation",
+                    detail: issue.code,
+                });
+            }
+            let mut body = repaired.candidate;
+            let counts = fit::check_body(&mut fits, &mut body, &mut evidence, dec)?;
+            dec.check_deadline()?;
+            if catallax_numbers::current_operation_work().exhausted {
+                return Err(ImportRefusal::ResourceLimit.into());
+            }
+            Ok(TolerantSolid {
+                body,
+                counts,
+                source_index,
+            })
+        })();
+        match candidate {
+            Ok(body) => bodies.push(body),
+            Err(error) => {
+                evidence.rollback(checkpoint);
+                body_errors[source_index] = Some(NativeBodyFailure {
+                    stage: fits.stage,
+                    error,
+                    work_used: catallax_numbers::current_operation_work()
+                        .used
+                        .saturating_sub(before),
+                });
+            }
+        }
     }
     evidence.warnings.push(NativeWarning {
         body: None,
@@ -469,5 +722,6 @@ pub(crate) fn admit(
         bodies,
         evidence,
         carriers,
+        body_errors,
     })
 }

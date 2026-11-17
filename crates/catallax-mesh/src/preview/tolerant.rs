@@ -122,15 +122,20 @@ fn edge_samples(
 }
 
 fn trim_seed(trim: &NativeTrim, fraction: f64) -> NativeLocation {
-    let scaled = fraction * (trim.samples.len() - 1) as f64;
-    let first = (scaled.floor() as usize).min(trim.samples.len() - 1);
-    let next = (first + 1).min(trim.samples.len() - 1);
+    let next = trim
+        .samples
+        .partition_point(|sample| sample.fraction < fraction)
+        .min(trim.samples.len() - 1)
+        .max(1);
+    let first = next - 1;
+    let width = trim.samples[next].fraction - trim.samples[first].fraction;
+    let weight = ((fraction - trim.samples[first].fraction) / width).clamp(0.0, 1.0);
     let a = trim.samples[first].surface;
     let b = trim.samples[next].surface;
     NativeLocation {
         chart: a.chart,
         parameters: std::array::from_fn(|axis| {
-            a.parameters[axis] + (scaled - first as f64) * (b.parameters[axis] - a.parameters[axis])
+            a.parameters[axis] + weight * (b.parameters[axis] - a.parameters[axis])
         }),
     }
 }
@@ -306,6 +311,9 @@ pub fn preview_tolerant_body(
             .or_default()
             .push(*trim);
     }
+    for trims in face_trims.values_mut() {
+        trims.sort_by_key(|trim| trim.use_index);
+    }
     let mut mesh = PreviewMesh::default();
     let vertices = body
         .vertices()
@@ -343,7 +351,7 @@ pub fn preview_tolerant_body(
                     [last, first]
                 },
             )
-        } else if matches!(edge.curve, Curve::Line(..)) {
+        } else if edge.degenerate || matches!(edge.curve, Curve::Line(..)) {
             EdgeCarrier::Line(ends.map(|index| mesh.positions[index]))
         } else {
             return Err(failure("active edge has no retained native carrier"));

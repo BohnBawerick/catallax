@@ -119,6 +119,9 @@ impl ParsedStep {
             let kind = if e.part("MANIFOLD_SOLID_BREP").is_some()
                 || e.part("FACETED_BREP").is_some()
                 || e.part("BREP_WITH_VOIDS").is_some()
+                || e.parts
+                    .iter()
+                    .any(|(kind, _)| crate::recognize::unsupported_solid_model(kind))
             {
                 Some(ModelDeclarationKind::Solid)
             } else if e.part("SHELL_BASED_SURFACE_MODEL").is_some() {
@@ -249,6 +252,74 @@ impl RetainedGeometry {
     /// Millimetres per written Cartesian length unit.
     pub fn length_mm(&self) -> &catallax_numbers::Rational {
         &self.length_mm
+    }
+    pub(crate) fn recognized_curve(&self, dec: &Decider) -> Result<crate::Curve, ImportRefusal> {
+        crate::recognize::source_curve(&self.source.graph, self.entity, &self.length_mm, dec)
+    }
+
+    pub(crate) fn recognized_surface(
+        &self,
+        loops: &[crate::FaceLoop],
+        dec: &Decider,
+    ) -> Result<crate::Surface, ImportRefusal> {
+        crate::recognize::source_surface(
+            &self.source.graph,
+            self.entity,
+            loops,
+            &self.length_mm,
+            dec,
+        )
+    }
+    pub(crate) fn recognized_line(
+        &self,
+        dec: &mut Decider,
+    ) -> Result<Option<crate::Curve>, ImportRefusal> {
+        let mut entity = self.entity;
+        for _ in 0..128 {
+            dec.charge_work(1)
+                .map_err(|_| ImportRefusal::ResourceLimit)?;
+            let node = self.source.entity(entity)?;
+            if node.parts.iter().any(|(kind, _)| kind == "LINE") {
+                return crate::recognize::source_curve(
+                    &self.source.graph,
+                    entity,
+                    &self.length_mm,
+                    dec,
+                )
+                .map(Some);
+            }
+            if !node
+                .parts
+                .iter()
+                .any(|(kind, _)| matches!(kind.as_str(), "SURFACE_CURVE" | "SEAM_CURVE"))
+            {
+                return Ok(None);
+            }
+            let Geometry::Curve(Curve::SurfaceCurve(parent, ..)) =
+                self.source.geometry(entity, dec)?
+            else {
+                return Ok(None);
+            };
+            entity = parent;
+        }
+        Err(malformed(self.entity, "cyclic source line wrappers"))
+    }
+
+    pub(crate) fn recognized_plane(
+        &self,
+        dec: &Decider,
+    ) -> Result<Option<crate::Surface>, ImportRefusal> {
+        if self
+            .source
+            .entity(self.entity)?
+            .parts
+            .iter()
+            .any(|(kind, _)| kind == "PLANE")
+        {
+            self.recognized_surface(&[], dec).map(Some)
+        } else {
+            Ok(None)
+        }
     }
     pub(crate) fn admission_refusal(&self) -> ImportRefusal {
         ImportRefusal::NotSolid {

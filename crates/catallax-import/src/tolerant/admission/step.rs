@@ -275,6 +275,26 @@ pub(super) fn rebuild(
                             vec![text(""), reference_to(origin), reference_to(vector)],
                         )?
                     }
+                    Curve::BSpline(spline) if edge.degenerate => {
+                        let point = builder.point(&spline.geometry.controls()[0], scale)?;
+                        builder.add(
+                            "B_SPLINE_CURVE_WITH_KNOTS",
+                            vec![
+                                builder.name(&edge.name),
+                                Param::Number("1".into()),
+                                references([point, point]),
+                                Param::Enum("UNSPECIFIED".into()),
+                                boolean(true),
+                                Param::Enum("U".into()),
+                                Param::List(vec![Param::Number("2".into()); 2]),
+                                Param::List(vec![
+                                    Param::Number("0.".into()),
+                                    Param::Number("1.".into()),
+                                ]),
+                                Param::Enum("UNSPECIFIED".into()),
+                            ],
+                        )?
+                    }
                     _ => {
                         return Err(invalid(
                             "import.tolerant-broken-reference",

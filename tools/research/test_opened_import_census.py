@@ -6,7 +6,7 @@ import sys
 import tempfile
 import unittest
 
-from opened_import_census import comparison_outcomes, observe
+from opened_import_census import comparison_outcomes, observe, export_inventory
 
 
 class StageComparisonTests(unittest.TestCase):
@@ -101,6 +101,21 @@ class StageComparisonTests(unittest.TestCase):
             "unknown_prior_tiers",
         )
 
+    def test_a_valid_native_sibling_counts_without_claiming_complete_coverage(self):
+        files = [
+            dict(kind="native_document", bodies=[0, 1], outcome="invalid_after_builder", valid_solid_count=1),
+            dict(kind="surface", bodies=[2], outcome="valid_after_builder", valid_solid_count=0),
+        ]
+        inventory = export_inventory(files)
+        self.assertTrue(inventory["has_valid_exported_solid"])
+        self.assertEqual(inventory["any_valid_exported_solid_count"], 1)
+        self.assertEqual(inventory["valid_exported_solid_count"], 0)
+        self.assertEqual(inventory["invalid_exported_body_count"], 2)
+
+        files[0].update(outcome="valid_after_builder", valid_solid_count=3)
+        inventory = export_inventory(files)
+        self.assertEqual(inventory["any_valid_exported_solid_count"], 3)
+        self.assertEqual(inventory["valid_exported_solid_count"], 2)
 
 
 if __name__ == "__main__":

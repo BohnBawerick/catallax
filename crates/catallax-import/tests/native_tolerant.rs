@@ -123,6 +123,7 @@ fn declared_closed_spline_directions_do_not_cap_an_edgeless_open_tube() {
         let BodyView::Surfaces { source, .. } = opened.body(0).unwrap() else {
             panic!("open tube must remain retained geometry")
         };
+        let source = source.materialize(&mut Decider::default()).unwrap();
         assert_eq!(source.shells()[0].faces.len(), 1);
         assert!(
             matches!(opened.bodies()[0].refusal(), Some(tolerant::Error::Numerical(error)) if error.code == "import.tolerant-broken-topology")
@@ -154,6 +155,7 @@ fn sewing_does_not_match_bowed_spline_edges_by_endpoints_alone() {
     let BodyView::Surfaces { source, .. } = opened.body(0).unwrap() else {
         panic!("different finite spline images must not become a closed solid")
     };
+    let source = source.materialize(&mut Decider::default()).unwrap();
     assert_eq!(source.shells()[0].faces.len(), 2);
     assert_eq!(source.edges().len(), 4);
 }
@@ -172,7 +174,7 @@ fn exported_ellipse_extrusion_has_a_continuous_side_uv_wire() {
         );
     };
     let mut dec = Decider::default();
-    let bytes = import.export_body(body, &mut dec).unwrap();
+    let bytes = import.export_body(body, &mut dec).unwrap().into_bytes();
     let parsed = ParsedStep::read(&bytes, &mut dec).unwrap();
     let side = parsed
         .entities()
@@ -300,7 +302,7 @@ fn selected_body_step_report_does_not_disclose_sibling_geometry_or_repairs() {
             .iter()
             .any(|repair| repair["body"] == sibling)
     );
-    let bytes = native.export_body(0, &mut dec).unwrap();
+    let bytes = native.export_body(0, &mut dec).unwrap().into_bytes();
     let parsed = ParsedStep::read(&bytes, &mut dec).unwrap();
     let roots = parsed
         .entities()
@@ -413,7 +415,7 @@ fn shared_curve_pcurves_stay_with_each_exported_body() {
         &mut dec,
     )
     .unwrap();
-    let selected = native.export_body(1, &mut dec).unwrap();
+    let selected = native.export_body(1, &mut dec).unwrap().into_bytes();
     let parsed = ParsedStep::read(&selected, &mut dec).unwrap();
     for surface in fixture.first_surfaces {
         assert!(
@@ -450,5 +452,102 @@ fn shared_curve_pcurves_stay_with_each_exported_body() {
                 "the writer reused another body's pcurve associations"
             );
         }
+    }
+}
+
+#[test]
+fn a_bad_first_body_cannot_refuse_a_usable_later_sibling() {
+    let mut later = BoxFixture::new(["2", "3", "4"]);
+    later.origin[0] = r("20");
+    let source = common::boxes_step(&[BoxFixture::new(["2", "3", "4"]), later]).replacen(
+        "MANIFOLD_SOLID_BREP",
+        "CSG_SOLID",
+        1,
+    );
+    let opened = open(&source);
+    assert_eq!(opened.bodies()[0].tier(), Tier::SurfaceBody);
+    assert_eq!(
+        opened.bodies()[0].first_blocker(),
+        Some(tolerant::admission::NativeStage::BodyBuild)
+    );
+    assert_eq!(opened.bodies()[1].tier(), Tier::ValidSolid);
+    let native = opened.tolerant_admission().unwrap();
+    assert_eq!(native.bodies().len(), 1);
+    assert_eq!(native.bodies()[0].source_index(), 1);
+    let name = native.bodies()[0].name();
+    assert!(
+        native
+            .evidence()
+            .tolerances
+            .iter()
+            .all(|row| row.body == name)
+    );
+    assert!(native.export_step(&mut Decider::default()).is_err());
+    let file = native.export_body(0, &mut Decider::default()).unwrap();
+    let parsed = ParsedStep::read(file.bytes(), &mut Decider::default()).unwrap();
+    let declarations = parsed.model_declarations(&mut Decider::default()).unwrap();
+    assert_eq!(declarations.len(), 1);
+    assert_eq!(format!("#{}", declarations[0].entity), name);
+}
+
+#[test]
+fn checked_upgrade_exhaustion_keeps_the_already_built_native_body() {
+    let source = box_step(BoxFixture::new(["2", "3", "4"]));
+    let baseline = open(&source);
+    let allowance = baseline.read_work_used() + baseline.native_admission_work_used() + 10;
+    let (opened, work) = with_operation_budget(allowance, || {
+        opened::open_step(
+            source.as_bytes(),
+            &sha256_hex(source.as_bytes()),
+            &StepId::new("upgrade").unwrap(),
+            Default::default(),
+            &mut Decider::default(),
+        )
+    });
+    let opened = opened.unwrap();
+    assert!(work.exhausted);
+    assert_eq!(opened.bodies()[0].tier(), Tier::TolerantSolid);
+    assert!(opened.bodies()[0].upgrade_refusal().is_some());
+    assert!(opened.bodies()[0].first_blocker().is_none());
+    let BodyView::Tolerant { import, body } = opened.body(0).unwrap() else {
+        panic!("optional proof must not discard the native body")
+    };
+    assert_eq!(import.bodies()[body].counts().faces, 6);
+    import.export_body(body, &mut Decider::default()).unwrap();
+}
+
+#[test]
+fn missing_sphere_pole_edges_are_reconstructed_from_measured_collapse() {
+    let source = include_str!("fixtures/half-sphere-missing-poles.step");
+    let (native, work) = with_operation_budget(20_000_000, || {
+        tolerant::admission::import_step(
+            source.as_bytes(),
+            &sha256_hex(source.as_bytes()),
+            Default::default(),
+            &mut Decider::default(),
+        )
+    });
+    let native = native.unwrap();
+    assert!(!work.exhausted);
+    let inserted = native
+        .evidence()
+        .repairs
+        .iter()
+        .filter(|change| {
+            matches!(
+                change,
+                tolerant::healing::HealingChange::DegenerateEdgeInserted { .. }
+            )
+        })
+        .count();
+    assert_eq!(inserted, 2);
+    assert_eq!(native.bodies()[0].counts().edges, 5);
+    let file = native.export_body(0, &mut Decider::default()).unwrap();
+    if let Ok(folder) = std::env::var("CATALLAX_HEALING_EVIDENCE") {
+        std::fs::write(
+            std::path::Path::new(&folder).join("native-poles.step"),
+            file.bytes(),
+        )
+        .unwrap();
     }
 }

@@ -14,15 +14,21 @@ use super::{
     TolerantEvidence, UvSample, invalid,
 };
 
+mod crossing;
+mod poles;
+mod trace;
+
 const STATIONS: usize = 16;
 
 pub(super) struct Context<'a> {
     parsed: &'a ParsedStep,
     scale: &'a Rational,
     angles: AngleUnit,
-    curves: BTreeMap<u64, Arc<NativeCurve>>,
+    pub(super) curves: BTreeMap<u64, Arc<NativeCurve>>,
     surfaces: BTreeMap<u64, Arc<NativeSurface>>,
     pcurves: BTreeMap<u64, Arc<NativeUvCurve>>,
+    repair_cap: f64,
+    pub(super) stage: super::NativeStage,
 }
 #[derive(Debug)]
 pub(super) struct Carriers {
@@ -36,6 +42,7 @@ impl<'a> Context<'a> {
         scale: &'a Rational,
         angles: AngleUnit,
         curves: BTreeMap<u64, Arc<NativeCurve>>,
+        repair_cap: f64,
     ) -> Self {
         Self {
             parsed,
@@ -44,6 +51,8 @@ impl<'a> Context<'a> {
             curves,
             surfaces: BTreeMap::new(),
             pcurves: BTreeMap::new(),
+            repair_cap,
+            stage: super::NativeStage::BodyBuild,
         }
     }
     pub fn into_carriers(self) -> Carriers {
@@ -178,9 +187,16 @@ struct PlaneFrame {
     origin: [f64; 3],
     x: [f64; 3],
     y: [f64; 3],
+    parameter_mm: f64,
 }
 impl PlaneFrame {
-    fn new(placement: &Placement) -> Result<Self, Error> {
+    fn new(placement: &Placement, parameter_mm: f64) -> Result<Self, Error> {
+        if !parameter_mm.is_finite() || parameter_mm <= 0.0 {
+            return Err(invalid(
+                "import.tolerant-broken-geometry",
+                "invalid plane parameter scale",
+            ));
+        }
         let z = unit(point(&placement.axis)?.point_mm)?;
         let reference = point(&placement.ref_dir)?.point_mm;
         let projection = dot(reference, z);
@@ -194,6 +210,7 @@ impl PlaneFrame {
             origin: point(&placement.origin)?.point_mm,
             x,
             y,
+            parameter_mm,
         })
     }
     fn project(&self, target: NativeSample) -> NativeProjection {
@@ -205,7 +222,7 @@ impl PlaneFrame {
         NativeProjection {
             location: NativeLocation {
                 chart: 0,
-                parameters,
+                parameters: parameters.map(|value| value / self.parameter_mm),
             },
             sample: NativeSample {
                 point_mm: position,
@@ -226,10 +243,54 @@ enum PhysicalCurve {
         origin: [f64; 3],
         direction: [f64; 3],
     },
+    Point([f64; 3]),
+}
+impl PhysicalCurve {
+    fn sample_at(
+        &self,
+        parameter: f64,
+        preferred: usize,
+        dec: &mut Decider,
+    ) -> Result<(NativeLocation, NativeSample), Error> {
+        match self {
+            Self::Native(curve) => {
+                let location = NativeLocation {
+                    chart: chart_at(curve, parameter, preferred),
+                    parameters: [parameter, 0.0],
+                };
+                Ok((location, curve.sample(location, dec)?))
+            }
+            Self::Point(point) => Ok((
+                NativeLocation {
+                    chart: 0,
+                    parameters: [parameter, 0.0],
+                },
+                NativeSample {
+                    point_mm: *point,
+                    uncertainty_mm: 8.0 * f64::EPSILON * norm(*point),
+                },
+            )),
+            Self::Line { origin, direction } => {
+                let position =
+                    std::array::from_fn(|axis| origin[axis] + parameter * direction[axis]);
+                Ok((
+                    NativeLocation {
+                        chart: 0,
+                        parameters: [parameter, 0.0],
+                    },
+                    NativeSample {
+                        point_mm: position,
+                        uncertainty_mm: 8.0 * f64::EPSILON * norm(position),
+                    },
+                ))
+            }
+        }
+    }
 }
 struct EdgeSamples {
     points: Vec<(NativeLocation, NativeSample)>,
     source_curve: Option<u64>,
+    carrier: PhysicalCurve,
 }
 fn chart_at(curve: &NativeCurve, parameter: f64, preferred: usize) -> usize {
     let contains = |index| {
@@ -261,33 +322,49 @@ fn finite_edge(
 ) -> Result<(EdgeSamples, Accumulator), Error> {
     let edge = &body.edges[edge_index];
     let mut edge_tolerance = Accumulator::new(edge.tolerance_mm().to_f64_nearest());
-    let source_curve = match id(&edge.name) {
+    let source_curve = match id(&edge.name).filter(|_| !edge.degenerate) {
         Some(entity) => match context.parsed.topology(entity, dec)? {
             Topology::Edge { curve, .. } => curve,
             _ => None,
         },
         None => None,
     };
-    let carrier = match source_curve {
-        Some(entity) => PhysicalCurve::Native(context.curve(entity, dec)?),
-        None => match &edge.curve {
-            Curve::Line(origin, direction) => PhysicalCurve::Line {
-                origin: point(origin)?.point_mm,
-                direction: point(direction)?.point_mm,
-            },
-            _ => {
-                return Err(invalid(
-                    "import.tolerant-broken-reference",
-                    format!("{} has no source curve declaration", edge.name),
-                ));
-            }
-        },
+    let carrier = if edge.degenerate {
+        PhysicalCurve::Point(vertices[edge.vertices[0]].point_mm)
+    } else if let Curve::Line(origin, direction) = &edge.curve {
+        if let Some(entity) = source_curve {
+            context.curve(entity, dec)?;
+        }
+        PhysicalCurve::Line {
+            origin: point(origin)?.point_mm,
+            direction: point(direction)?.point_mm,
+        }
+    } else if let Some(entity) = source_curve {
+        PhysicalCurve::Native(context.curve(entity, dec)?)
+    } else {
+        return Err(invalid(
+            "import.tolerant-broken-reference",
+            format!("{} has no source curve declaration", edge.name),
+        ));
     };
     let mut endpoint_fits = Vec::with_capacity(2);
-    for &vertex in &edge.vertices {
+    for (endpoint, &vertex) in edge.vertices.iter().enumerate() {
         let target = vertices[vertex];
         let fit = match &carrier {
             PhysicalCurve::Native(curve) => curve.project(target.point_mm, None, dec)?,
+            PhysicalCurve::Point(point) => NativeProjection {
+                location: NativeLocation {
+                    chart: 0,
+                    parameters: [endpoint as f64, 0.0],
+                },
+                sample: NativeSample {
+                    point_mm: *point,
+                    uncertainty_mm: 8.0 * f64::EPSILON * norm(*point),
+                },
+                residual_mm: norm(subtract(*point, target.point_mm)),
+                iterations: 0,
+                converged: true,
+            },
             PhysicalCurve::Line { origin, direction } => {
                 let length = dot(*direction, *direction);
                 if length <= 0.0 || !length.is_finite() {
@@ -339,34 +416,16 @@ fn finite_edge(
             edge.vertices[0] == edge.vertices[1],
         )?;
     }
+    if let Some(range) = &edge.source_range {
+        parameters = range.each_ref().map(Rational::to_f64_nearest);
+    }
     let mut points = Vec::with_capacity(STATIONS + 1);
     let mut preferred = endpoint_fits[0].location.chart;
     for station in 0..=STATIONS {
         dec.charge_work(1)?;
         let t = parameters[0] + (parameters[1] - parameters[0]) * station as f64 / STATIONS as f64;
-        let (location, sample) = match &carrier {
-            PhysicalCurve::Native(curve) => {
-                preferred = chart_at(curve, t, preferred);
-                let location = NativeLocation {
-                    chart: preferred,
-                    parameters: [t, 0.0],
-                };
-                (location, curve.sample(location, dec)?)
-            }
-            PhysicalCurve::Line { origin, direction } => {
-                let position = std::array::from_fn(|i| origin[i] + t * direction[i]);
-                (
-                    NativeLocation {
-                        chart: 0,
-                        parameters: [t, 0.0],
-                    },
-                    NativeSample {
-                        point_mm: position,
-                        uncertainty_mm: 8.0 * f64::EPSILON * norm(position),
-                    },
-                )
-            }
-        };
+        let (location, sample) = carrier.sample_at(t, preferred, dec)?;
+        preferred = location.chart;
         edge_tolerance.measure(sample.uncertainty_mm)?;
         points.push((location, sample));
         if station == 0 || station == STATIONS {
@@ -416,6 +475,7 @@ fn finite_edge(
         EdgeSamples {
             points,
             source_curve,
+            carrier,
         },
         edge_tolerance,
     ))
@@ -688,8 +748,10 @@ pub(super) fn check_body(
     evidence: &mut TolerantEvidence,
     dec: &mut Decider,
 ) -> Result<TolerantCounts, Error> {
-    let counts = manifold(body, dec)?;
-    let vertices = body
+    context.stage = super::NativeStage::ManifoldIncidence;
+    let mut counts = manifold(body, dec)?;
+    context.stage = super::NativeStage::CurveFit;
+    let mut vertices = body
         .vertices
         .iter()
         .map(|vertex| point(&vertex.source.point))
@@ -735,8 +797,22 @@ pub(super) fn check_body(
             None
         });
     }
+    context.stage = super::NativeStage::CrossingCut;
+    crossing::cut(
+        context,
+        body,
+        crossing::State {
+            vertices: &mut vertices,
+            edges: &mut edges,
+            vertex_tolerances: &mut vertex_tolerances,
+            edge_tolerances: &mut edge_tolerances,
+        },
+        evidence,
+        dec,
+    )?;
     for shell in &body.shells {
         for face in &shell.faces {
+            context.stage = super::NativeStage::SurfaceFit;
             dec.check_deadline()?;
             let surface_entity = match id(&face.name) {
                 Some(entity) => match context.parsed.topology(entity, dec)? {
@@ -748,18 +824,22 @@ pub(super) fn check_body(
             let surface = surface_entity
                 .map(|entity| context.surface(entity, dec))
                 .transpose()?;
-            let plane = if surface.is_none() {
-                match &face.surface {
-                    Surface::Plane(placement) => Some(PlaneFrame::new(placement)?),
-                    _ => {
-                        return Err(invalid(
-                            "import.tolerant-broken-reference",
-                            "face has no retained surface declaration",
-                        ));
-                    }
+            let plane = match &face.surface {
+                Surface::Plane(placement) => Some(PlaneFrame::new(
+                    placement,
+                    if surface.is_some() {
+                        context.scale.to_f64_nearest()
+                    } else {
+                        1.0
+                    },
+                )?),
+                _ if surface.is_none() => {
+                    return Err(invalid(
+                        "import.tolerant-broken-reference",
+                        "face has no retained surface declaration",
+                    ));
                 }
-            } else {
-                None
+                _ => None,
             };
             let mut tolerance = Accumulator::new(body.options.initial_mm.to_f64_nearest());
             let mut sample_count = 0;
@@ -770,9 +850,14 @@ pub(super) fn check_body(
                 let mut previous = None;
                 if let Some(vertex) = boundary.vertex {
                     let target = vertices[vertex];
-                    let projection = match &surface {
-                        Some(surface) => surface.project(target.point_mm, None, dec)?,
-                        None => plane.as_ref().expect("inferred plane").project(target),
+                    let projection = if let Some(plane) = &plane {
+                        plane.project(target)
+                    } else {
+                        surface.as_ref().expect("native surface").project(
+                            target.point_mm,
+                            None,
+                            dec,
+                        )?
                     };
                     let residual = projection.residual_mm + target.uncertainty_mm;
                     vertex_tolerances[vertex].measure(residual)?;
@@ -781,10 +866,17 @@ pub(super) fn check_body(
                     sample_count += 1;
                     converged_count += usize::from(projection.converged);
                 }
-                for usage in &boundary.edges {
+                for (use_index, usage) in boundary.edges.iter().enumerate() {
                     let edge = edges[usage.edge].as_ref().expect("active source edge");
                     let associated = match (edge.source_curve, surface_entity) {
-                        (Some(curve), Some(surface)) => pcurves(context, curve, surface, dec)?,
+                        (Some(curve), Some(surface)) => match pcurves(context, curve, surface, dec)
+                        {
+                            Ok(curves) => curves,
+                            Err(error) if super::super::native::control(&error) => {
+                                return Err(error);
+                            }
+                            Err(_) => Vec::new(),
+                        },
                         _ => Vec::new(),
                     };
                     let occurrence = repeated.entry(usage.edge).or_default();
@@ -792,9 +884,15 @@ pub(super) fn check_body(
                         .get(*occurrence % associated.len().max(1))
                         .copied();
                     *occurrence += 1;
-                    let pcurve = source_pcurve
+                    let pcurve = match source_pcurve
                         .map(|entity| context.pcurve(entity, dec))
-                        .transpose()?;
+                        .transpose()
+                    {
+                        Ok(curve) => curve,
+                        Err(error) if super::super::native::control(&error) => return Err(error),
+                        Err(_) => None,
+                    };
+                    let mut preserve_pcurve = pcurve.is_some();
                     let mut samples = Vec::with_capacity(STATIONS + 1);
                     for station in 0..=STATIONS {
                         dec.charge_work(1)?;
@@ -813,13 +911,25 @@ pub(super) fn check_body(
                         let seed = if station == 0 {
                             match &pcurve {
                                 Some(curve) => {
-                                    let (uv, _) = curve.sample(
+                                    let sampled = curve.sample(
                                         NativeLocation {
                                             chart: 0,
                                             parameters: [curve_location.parameters[0], 0.0],
                                         },
                                         dec,
-                                    )?;
+                                    );
+                                    let uv = match sampled {
+                                        Ok((uv, _)) => uv,
+                                        Err(error) if super::super::native::control(&error) => {
+                                            return Err(error);
+                                        }
+                                        Err(_) => {
+                                            preserve_pcurve = false;
+                                            previous.map_or([0.0; 2], |value: NativeLocation| {
+                                                value.parameters
+                                            })
+                                        }
+                                    };
                                     Some(NativeLocation {
                                         chart: previous
                                             .map_or(0, |value: NativeLocation| value.chart),
@@ -831,34 +941,110 @@ pub(super) fn check_body(
                         } else {
                             previous
                         };
+                        let mut pole_seed = false;
                         let seed = match (&surface, seed) {
                             (Some(surface), Some(seed)) => {
-                                let parameters = surface.align_parameters(
-                                    seed.parameters,
-                                    previous.map(|location: NativeLocation| location.parameters),
-                                );
-                                Some(surface.location(parameters)?)
+                                pole_seed = station == 0
+                                    && previous.is_some()
+                                    && poles::collapsed(
+                                        surface,
+                                        [
+                                            previous.expect("previous trace").parameters,
+                                            seed.parameters,
+                                        ],
+                                        fit_target,
+                                        body.options.initial_mm.to_f64_nearest(),
+                                        dec,
+                                    )?
+                                    .is_some();
+                                let parameters = if pole_seed {
+                                    seed.parameters
+                                } else {
+                                    surface.align_parameters(
+                                        seed.parameters,
+                                        previous.map(|value| value.parameters),
+                                    )
+                                };
+                                Some(match surface.location(parameters) {
+                                    Ok(location) => location,
+                                    Err(error) if super::super::native::control(&error) => {
+                                        return Err(error);
+                                    }
+                                    Err(_) => surface.location(
+                                        surface.align_parameters(seed.parameters, None),
+                                    )?,
+                                })
                             }
                             _ => seed,
                         };
-                        let mut projection = match &surface {
-                            Some(surface) => surface.project(fit_target.point_mm, seed, dec)?,
-                            None => plane.as_ref().expect("inferred plane").project(fit_target),
+                        let mut projection = match (&surface, seed) {
+                            (Some(surface), Some(seed)) if pole_seed => {
+                                let sample = surface.sample(seed, dec)?;
+                                NativeProjection {
+                                    location: seed,
+                                    sample,
+                                    residual_mm: norm(subtract(
+                                        sample.point_mm,
+                                        fit_target.point_mm,
+                                    )),
+                                    iterations: 0,
+                                    converged: true,
+                                }
+                            }
+                            _ if plane.is_some() => {
+                                plane.as_ref().expect("plane").project(fit_target)
+                            }
+                            (Some(surface), _) => {
+                                surface.project(fit_target.point_mm, seed, dec)?
+                            }
+                            _ => unreachable!("face carrier established"),
                         };
-                        if let Some(surface) = &surface {
+                        if let Some(surface) = &surface
+                            && !pole_seed
+                        {
                             let parameters = surface.align_parameters(
                                 projection.location.parameters,
-                                previous.map(|location: NativeLocation| location.parameters),
+                                previous.map(|value: NativeLocation| value.parameters),
                             );
-                            if parameters.map(f64::to_bits)
-                                != projection.location.parameters.map(f64::to_bits)
-                            {
-                                projection.location = surface.location(parameters)?;
-                                projection.sample = surface.sample(projection.location, dec)?;
+                            if let Ok(location) = surface.location(parameters) {
+                                projection.location = location;
+                                projection.sample = surface.sample(location, dec)?;
                                 projection.residual_mm =
                                     norm(subtract(projection.sample.point_mm, fit_target.point_mm))
                                         + projection.sample.uncertainty_mm;
                             }
+                        }
+                        if preserve_pcurve {
+                            let retained =
+                                (|| {
+                                    let (uv, _) = pcurve.as_ref().expect("retained trace").sample(
+                                        NativeLocation {
+                                            chart: 0,
+                                            parameters: [curve_location.parameters[0], 0.0],
+                                        },
+                                        dec,
+                                    )?;
+                                    let surface = surface.as_ref().expect("source pcurve surface");
+                                    let aligned = surface
+                                        .align_parameters(uv, Some(projection.location.parameters));
+                                    if aligned != uv {
+                                        return Ok::<_, Error>(false);
+                                    }
+                                    let point = surface.sample(surface.location(uv)?, dec)?;
+                                    Ok(norm(subtract(point.point_mm, projection.sample.point_mm))
+                                        + point.uncertainty_mm
+                                        + projection.sample.uncertainty_mm
+                                        <= body.options.initial_mm.to_f64_nearest().max(
+                                            64.0 * f64::EPSILON * norm(point.point_mm).max(1.0),
+                                        ))
+                                })();
+                            preserve_pcurve = match retained {
+                                Ok(valid) => valid,
+                                Err(error) if super::super::native::control(&error) => {
+                                    return Err(error);
+                                }
+                                Err(_) => false,
+                            };
                         }
                         let residual = norm(subtract(projection.sample.point_mm, target.point_mm))
                             + projection.sample.uncertainty_mm
@@ -883,14 +1069,88 @@ pub(super) fn check_body(
                             converged: projection.converged,
                         });
                     }
+                    if let Some(surface) = &surface {
+                        let endpoints = body.edges[usage.edge].vertices;
+                        let endpoints = if usage.forward {
+                            endpoints
+                        } else {
+                            [endpoints[1], endpoints[0]]
+                        };
+                        if poles::align_endpoints(
+                            surface,
+                            &mut samples,
+                            endpoints.map(|vertex| vertices[vertex]),
+                            body.options.initial_mm.to_f64_nearest(),
+                            dec,
+                        )? {
+                            preserve_pcurve = false;
+                        }
+                    }
+                    let reconstructed = !preserve_pcurve && surface.is_some();
+                    let projected = if reconstructed {
+                        context.stage = super::NativeStage::TraceRebuild;
+                        trace::planar::project(
+                            context,
+                            surface.as_ref().expect("native surface"),
+                            edge,
+                            &samples,
+                            body.options.initial_mm.to_f64_nearest(),
+                            dec,
+                        )?
+                    } else {
+                        None
+                    };
+                    if reconstructed {
+                        let (trace_samples, maximum_residual, trace_converged) = if projected
+                            .is_some()
+                            || (plane.is_some()
+                                && matches!(edge.carrier, PhysicalCurve::Line { .. }))
+                        {
+                            (
+                                samples.len(),
+                                samples
+                                    .iter()
+                                    .map(|sample| sample.residual_mm)
+                                    .fold(0.0, f64::max),
+                                samples.len(),
+                            )
+                        } else {
+                            let mut fit = trace::Fit {
+                                curve: &edge.carrier,
+                                surface: surface.as_ref().expect("native trace surface"),
+                                precision: body.options.initial_mm.to_f64_nearest(),
+                                maximum_residual: 0.0,
+                                samples: 0,
+                                converged: 0,
+                            };
+                            fit.rebuild(&mut samples, dec)?;
+                            (fit.samples, fit.maximum_residual, fit.converged)
+                        };
+                        edge_tolerances[usage.edge].measure(maximum_residual)?;
+                        sample_count += trace_samples;
+                        converged_count += trace_converged;
+                        evidence
+                            .repairs
+                            .push(super::super::healing::HealingChange::TraceRebuilt {
+                                body: body.name.clone(),
+                                face: face.name.clone(),
+                                edge: body.edges[usage.edge].name.clone(),
+                                source_pcurve,
+                                samples: trace_samples,
+                                maximum_residual_mm: format!("{maximum_residual:.17e}"),
+                            });
+                    }
                     evidence.native_trims.push(NativeTrim {
                         body: body.name.clone(),
                         face: face.name.clone(),
                         boundary: boundary_index,
+                        use_index,
                         edge: body.edges[usage.edge].name.clone(),
                         forward: usage.forward,
-                        source_pcurve,
+                        source_pcurve: source_pcurve.filter(|_| preserve_pcurve),
                         samples,
+                        reconstructed,
+                        projected,
                     });
                 }
             }
@@ -939,6 +1199,7 @@ pub(super) fn check_body(
             }
         }
     }
+    context.stage = super::NativeStage::ToleranceGrowth;
     for (index, accumulator) in edge_tolerances.iter().enumerate() {
         if !active[index] {
             continue;
@@ -978,6 +1239,8 @@ pub(super) fn check_body(
             )
         })?;
     }
+    context.stage = super::NativeStage::PoleBoundary;
+    counts.edges += poles::insert(context, body, evidence, dec)?;
     let attained = evidence
         .tolerances
         .iter()

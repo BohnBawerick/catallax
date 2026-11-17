@@ -25,6 +25,9 @@ fn open(source: &str) -> opened::OpenedStep {
 }
 
 fn history(file: &opened::OpenedStep) -> serde_json::Value {
+    if let Some(native) = file.tolerant_admission() {
+        return serde_json::to_value(native.evidence()).unwrap();
+    }
     if let Some(healed) = file.bodies()[0].healing() {
         return serde_json::json!({"healing":healed.report(),"tolerances":healed.tolerances()});
     }
@@ -50,6 +53,7 @@ fn a_good_sibling_remains_solid_while_an_open_body_retains_all_five_faces() {
     let Some(BodyView::Surfaces { source, .. }) = opened.body(1) else {
         panic!("source surface representation required")
     };
+    let source = source.materialize(&mut Decider::default()).unwrap();
     assert_eq!(source.shells()[0].faces.len(), 5);
     assert_ne!(opened.source().bodies()[0].name(), source.name());
 }
@@ -155,7 +159,15 @@ fn retained_surface_sewing_requires_closure_within_the_callers_cap() {
         .unwrap();
         assert_eq!(opened.bodies()[0].tier(), expected);
         assert!(!opened.source().bodies()[0].declared_solid());
-        assert_eq!(opened.source().bodies()[0].shells()[0].faces.len(), 6);
+        assert_eq!(
+            opened.source().bodies()[0]
+                .materialize(&mut Decider::default())
+                .unwrap()
+                .shells()[0]
+                .faces
+                .len(),
+            6
+        );
         assert!(opened.source().bodies()[0].tolerance_changes().is_empty());
         if expected == Tier::SurfaceBody {
             assert!(matches!(opened.body(0), Some(BodyView::Surfaces { .. })));

@@ -21,26 +21,55 @@ struct Adapter<'a> {
     scale: Rational,
     dec: &'a mut Decider,
     active: BTreeSet<EntityId>,
+    native: bool,
 }
 fn invalid(id: EntityId, detail: &str) -> ImportRefusal {
     malformed(id, detail)
 }
 impl ParsedStep {
+    pub(crate) fn native_inventory(
+        &self,
+        dec: &mut Decider,
+    ) -> Result<(Rational, Vec<ModelDeclaration>), ImportRefusal> {
+        let scale = crate::recognize::source_length_scale(&self.graph, dec)?;
+        let mut declarations = self.model_declarations(dec)?;
+        declarations.sort_unstable_by_key(|model| {
+            (model.kind != ModelDeclarationKind::Solid, model.entity)
+        });
+        if declarations.is_empty() {
+            return Err(invalid(0, "no source body declaration"));
+        }
+        Ok((scale, declarations))
+    }
+
+    pub(crate) fn retained_body(&self, entity: EntityId, scale: &Rational) -> RetainedGeometry {
+        RetainedGeometry {
+            source: self.clone(),
+            entity,
+            length_mm: scale.clone(),
+        }
+    }
+
+    pub(crate) fn native_body_definition(
+        &self,
+        entity: EntityId,
+        solid: bool,
+        scale: &Rational,
+        dec: &mut Decider,
+    ) -> Result<BodyDefinition, ImportRefusal> {
+        Adapter {
+            source: self,
+            scale: scale.clone(),
+            dec,
+            active: BTreeSet::new(),
+            native: true,
+        }
+        .model(entity, solid)
+    }
+
     pub(crate) fn retained_definition(
         &self,
         dec: &mut Decider,
-    ) -> Result<Definition, ImportRefusal> {
-        self.definition(dec, false)
-    }
-
-    pub(crate) fn native_definition(&self, dec: &mut Decider) -> Result<Definition, ImportRefusal> {
-        self.definition(dec, true)
-    }
-
-    fn definition(
-        &self,
-        dec: &mut Decider,
-        preserve_occurrences: bool,
     ) -> Result<Definition, ImportRefusal> {
         let scale = crate::recognize::source_length_scale(&self.graph, dec)?;
         // A prototype is not an occurrence. Do not publish unplaced duplicates.
@@ -49,7 +78,7 @@ impl ParsedStep {
             dec.charge_work(1)
                 .map_err(|_| ImportRefusal::ResourceLimit)?;
             if e.parts.iter().any(|(kind, _)| {
-                (!preserve_occurrences && kind == "NEXT_ASSEMBLY_USAGE_OCCURRENCE")
+                kind == "NEXT_ASSEMBLY_USAGE_OCCURRENCE"
                     || (crate::recognize::unsupported_solid_model(kind)
                         && !matches!(kind.as_str(), "BREP_WITH_VOIDS" | "FACETED_BREP"))
             }) {
@@ -59,17 +88,15 @@ impl ParsedStep {
                     ),
                 });
             }
-            if !preserve_occurrences
-                && e.parts.iter().any(|(kind, _)| {
-                    matches!(
-                        kind.as_str(),
-                        "MAPPED_ITEM"
-                            | "REPRESENTATION_MAP"
-                            | "REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION"
-                            | "ITEM_DEFINED_TRANSFORMATION"
-                    )
-                })
-            {
+            if e.parts.iter().any(|(kind, _)| {
+                matches!(
+                    kind.as_str(),
+                    "MAPPED_ITEM"
+                        | "REPRESENTATION_MAP"
+                        | "REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION"
+                        | "ITEM_DEFINED_TRANSFORMATION"
+                )
+            }) {
                 return Err(ImportRefusal::NotSolid {
                     detail: format!(
                         "#{id}: occurrence placement must be resolved before body admission"
@@ -83,6 +110,7 @@ impl ParsedStep {
             scale: scale.clone(),
             dec,
             active: BTreeSet::new(),
+            native: false,
         };
         let mut bodies = Vec::new();
         // Keep the established solid-then-surface inventory ordering.
@@ -91,36 +119,7 @@ impl ParsedStep {
                 if (model.kind == ModelDeclarationKind::Solid) != solid {
                     continue;
                 }
-                let shells = match adapter.source.topology(model.entity, adapter.dec)? {
-                    Topology::Solid { outer, voids } => {
-                        let mut shells = vec![adapter.shell(outer)?];
-                        for inner in voids {
-                            shells.push(adapter.shell(inner)?);
-                        }
-                        shells
-                    }
-                    Topology::SurfaceModel(shells) | Topology::FaceModel(shells) => shells
-                        .into_iter()
-                        .map(|id| adapter.shell(id))
-                        .collect::<Result<_, _>>()?,
-                    Topology::GeometricSet { .. } => {
-                        return Err(ImportRefusal::NotSolid {
-                            detail: format!(
-                                "#{}: geometric set has no finite face topology",
-                                model.entity
-                            ),
-                        });
-                    }
-                    _ => return Err(invalid(model.entity, "expected a body declaration")),
-                };
-                if shells.is_empty() {
-                    return Err(invalid(model.entity, "body has no shells"));
-                }
-                bodies.push(BodyDefinition {
-                    name: format!("#{}", model.entity),
-                    solid,
-                    shells,
-                });
+                bodies.push(adapter.model(model.entity, solid)?);
             }
         }
         if bodies.is_empty() {
@@ -130,6 +129,35 @@ impl ParsedStep {
     }
 }
 impl Adapter<'_> {
+    fn model(&mut self, entity: EntityId, solid: bool) -> Result<BodyDefinition, ImportRefusal> {
+        let shells = match self.source.topology(entity, self.dec)? {
+            Topology::Solid { outer, voids } => {
+                let mut shells = vec![self.shell(outer)?];
+                for inner in voids {
+                    shells.push(self.shell(inner)?);
+                }
+                shells
+            }
+            Topology::SurfaceModel(shells) | Topology::FaceModel(shells) => shells
+                .into_iter()
+                .map(|id| self.shell(id))
+                .collect::<Result<_, _>>()?,
+            Topology::GeometricSet { .. } => {
+                return Err(ImportRefusal::NotSolid {
+                    detail: format!("#{entity}: geometric set has no finite face topology"),
+                });
+            }
+            _ => return Err(invalid(entity, "expected a body declaration")),
+        };
+        if shells.is_empty() {
+            return Err(invalid(entity, "body has no shells"));
+        }
+        Ok(BodyDefinition {
+            name: format!("#{entity}"),
+            solid,
+            shells,
+        })
+    }
     fn enter(&mut self, id: EntityId) -> Result<(), ImportRefusal> {
         self.dec
             .charge_work(1)
@@ -314,6 +342,10 @@ impl Adapter<'_> {
         }
     }
     fn curve(&mut self, id: EntityId) -> Result<C, ImportRefusal> {
+        if self.native {
+            self.source.entity(id)?;
+            return Ok(C::Retained(self.retained(id)));
+        }
         self.enter(id)?;
         let result = match self.source.geometry(id, self.dec)? {
             Geometry::Curve(Curve::SurfaceCurve(parent, _, _, _)) => self.curve(parent),
@@ -339,6 +371,10 @@ impl Adapter<'_> {
         result
     }
     fn surface(&mut self, id: EntityId, loops: &[FaceLoop]) -> Result<S, ImportRefusal> {
+        if self.native {
+            self.source.entity(id)?;
+            return Ok(S::Retained(self.retained(id)));
+        }
         self.enter(id)?;
         let result = match self.source.geometry(id, self.dec)? {
             Geometry::Surface(Surface::Torus(_, major, minor)) if minor >= major => {

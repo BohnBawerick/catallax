@@ -553,15 +553,13 @@ fn sewing_keeps_independent_source_bodies_and_their_bindings_separate() {
     assert_eq!(definition.solids.len(), 2);
     assert_eq!(definition.solids[1], original.solids[1]);
     let unchanged = input.bodies()[1].name();
-    assert!(!result.report().changes.iter().any(|c| match c {
-        HealingChange::EdgesSewn { body, .. }
-        | HealingChange::VerticesJoined { body, .. }
-        | HealingChange::WireReordered { body, .. }
-        | HealingChange::BoundaryReversed { body, .. }
-        | HealingChange::FaceReversed { body, .. }
-        | HealingChange::ShellsSewn { body, .. }
-        | HealingChange::SmallLineRemoved { body, .. } => body == unchanged,
-    }));
+    assert!(
+        !result
+            .report()
+            .changes
+            .iter()
+            .any(|change| change.body() == unchanged)
+    );
 }
 
 #[test]

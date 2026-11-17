@@ -197,10 +197,27 @@ fn add_curve(
                 let _ = same_curve(model.geom(), curve, pool[index], dec);
             }
         });
-        if coincident(
-            same_curve(model.geom(), curve, other, dec),
-            "boolean.imprint-ambiguous",
-        )? {
+        #[cfg(feature = "work-span")]
+        let comparison_start = dec.stats().work;
+        let equality = same_curve(model.geom(), curve, other, dec);
+        #[cfg(feature = "work-span")]
+        if dec.stats().work - comparison_start > 1_000_000 {
+            eprintln!(
+                "P8 carrier diagnostic: curve={} {:?}, other={} {:?}, work={}, outcome={}",
+                curve.index(),
+                model.geom().curve(curve).kind(),
+                other.index(),
+                model.geom().curve(other).kind(),
+                dec.stats().work - comparison_start,
+                match &equality {
+                    catallax_numbers::Outcome::Proven(_) => "apart",
+                    catallax_numbers::Outcome::ProvenCoincident(_) => "coincident",
+                    catallax_numbers::Outcome::NotExact(_) => "not-exact",
+                    catallax_numbers::Outcome::Refused(_) => "refused",
+                },
+            );
+        }
+        if coincident(equality, "boolean.imprint-ambiguous")? {
             model.geom_mut().record_fact(Fact {
                 kind: FactKind::Coincident,
                 a: GeomKey::Curve(curve),

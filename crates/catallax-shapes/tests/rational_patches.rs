@@ -280,6 +280,66 @@ fn folded_and_creased_definitions_cannot_acquire_an_embedding_certificate() {
     );
 }
 
+fn cubic_sheet(cubic: [[&str; 2]; 2], dec: &mut Decider) -> BSplineSurface {
+    let cubic = cubic.map(|row| row.map(r));
+    let linear = ["-1", "-1/3", "1/3", "1"].map(r);
+    let cube = ["-1", "1", "-1", "1"].map(r);
+    let square = ["1", "-1/3", "-1/3", "1"].map(r);
+    let mut points = Vec::with_capacity(16);
+    for u in 0..4 {
+        for v in 0..4 {
+            let x = &cubic[0][0] * &cube[u] + &cubic[0][1] * &cube[v];
+            let y = &cubic[1][0] * &cube[u] + &cubic[1][1] * &cube[v];
+            points.push(Point3::new(
+                (&linear[u] + &x).into(),
+                (&linear[v] + &y).into(),
+                (&square[u] * &square[v] * r("1/10")).into(),
+            ));
+        }
+    }
+    BSplineSurface::new(
+        [3, 3],
+        std::array::from_fn(|_| ["0", "0", "0", "0", "1", "1", "1", "1"].map(r).to_vec()),
+        [4, 4],
+        points,
+        vec![Real::one(); 16],
+        dec,
+    )
+    .unwrap()
+}
+
+#[test]
+fn a_positive_projected_jacobian_need_not_be_diagonally_dominant() {
+    let mut dec = Decider::default();
+    // In coordinates u,v in [-1,1], the projection is
+    // (u + 2v^3, v + 16v^3/3). Its symmetric Jacobian has determinant
+    // 1 + 16v^2 - 9v^4 >= 1, but Gershgorin fails near |v| = 1.
+    // The nonzero u^2 v^2 height prevents the ruled-chart special case.
+    let patch =
+        RationalPatch::new(cubic_sheet([["0", "2"], ["0", "16/3"]], &mut dec), &mut dec).unwrap();
+    assert!(patch.embedding_lower_bound() > &Rational::zero());
+    let point = patch
+        .point_at(&[r("3/4").into(), r("3/4").into()], &mut dec)
+        .unwrap();
+    assert_eq!(
+        point.rational_components().unwrap().map(Clone::clone),
+        [r("3/4"), r("7/6"), r("1/160")]
+    );
+}
+
+#[test]
+fn indefinite_or_negative_projected_diagonals_do_not_certify_a_chart() {
+    for cubic in [[["0", "2"], ["2", "16/3"]], [["-1", "0"], ["0", "-1"]]] {
+        let mut dec = Decider::default();
+        assert_eq!(
+            RationalPatch::new(cubic_sheet(cubic, &mut dec), &mut dec)
+                .unwrap_err()
+                .code,
+            "shapes.rational-patch-unproven"
+        );
+    }
+}
+
 #[test]
 fn huge_translated_non_dyadic_knots_do_not_lose_the_chart() {
     let mut dec = Decider::default();

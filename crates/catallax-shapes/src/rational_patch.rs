@@ -218,7 +218,8 @@ fn projection_margin(
     frame: &[[Ball; 3]; 2],
     scales: &[Ball; 2],
     bits: u32,
-) -> Rational {
+    dec: &mut Decider,
+) -> Result<Rational, Refusal> {
     let diagonal = [
         &dot(&frame[0], &derivatives[0]) * &scales[0],
         &dot(&frame[1], &derivatives[1]) * &scales[1],
@@ -226,7 +227,21 @@ fn projection_margin(
     let off = (&(&dot(&frame[0], &derivatives[1]) * &scales[1])
         + &(&dot(&frame[1], &derivatives[0]) * &scales[0]))
         * Ball::from_rational(&Rational::from_ratio(1, 2).expect("nonzero"), bits);
-    diagonal[0].lo().min(diagonal[1].lo()) - magnitude(&off)
+    let [a, d] = diagonal.each_ref().map(Ball::lo);
+    let off = magnitude(&off);
+    let margin = std::cmp::min(&a, &d) - &off;
+    if margin.sign() == Sign::Positive || a.sign() != Sign::Positive || d.sign() != Sign::Positive {
+        return Ok(margin);
+    }
+    dec.charge_work(8)?;
+    let determinant = &a * &d - &off * &off;
+    if determinant.sign() != Sign::Positive {
+        return Ok(margin);
+    }
+    // For the symmetric projected Jacobian, det/trace <= lambda_min.
+    // Positive diagonal and determinant enclosures prove the same uniform
+    // strong monotonicity as the Gershgorin bound, without diagonal dominance.
+    Ok(determinant / (diagonal[0].hi() + diagonal[1].hi()))
 }
 
 impl RationalPatch {
@@ -347,7 +362,7 @@ impl RationalPatch {
                     workspace.as_mut().expect("legacy span workspace"),
                 )?,
             };
-            let margin = projection_margin(&derivatives, &frame, &scales, bits);
+            let margin = projection_margin(&derivatives, &frame, &scales, bits, dec)?;
             if margin > Rational::zero() {
                 lower = Some(lower.map_or_else(|| margin.clone(), |old| old.min(margin.clone())));
                 cover.push(ProjectionCell {

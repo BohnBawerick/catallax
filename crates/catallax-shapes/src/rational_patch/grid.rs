@@ -327,7 +327,7 @@ impl RationalPatch {
                     let margin = if shared_jet.is_some() {
                         self.data.lower.clone()
                     } else {
-                        projection_margin(&jet.first, &frame, &scales, bits)
+                        projection_margin(&jet.first, &frame, &scales, bits, dec)?
                     };
                     if chord > half_tolerance || margin <= Rational::zero() {
                         refine_axis = Some(if margin <= Rational::zero() {

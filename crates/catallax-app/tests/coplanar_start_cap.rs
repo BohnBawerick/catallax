@@ -51,4 +51,3 @@ fn released_application_sketch_opens_the_coplanar_top_without_a_lid() {
     });
     assert!(!work.exhausted, "{work:?}");
 }
-

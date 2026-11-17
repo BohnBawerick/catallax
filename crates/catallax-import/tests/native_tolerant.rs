@@ -594,10 +594,26 @@ fn missing_sphere_pole_edges_are_reconstructed_from_measured_collapse() {
 fn default_opening_exports_a_rebuilt_trace_instead_of_an_inconsistent_authored_trace() {
     use catallax_import::geometry_source::{AngleUnit, Curve, Geometry};
     use catallax_import::tolerant::native::{NativeLocation, NativeUvCurve};
-    let source = include_str!("fixtures/half-sphere-missing-poles.step").replace(
-        "#40 = CARTESIAN_POINT('',(0.,-6.28318530718));",
-        "#40 = CARTESIAN_POINT('',(0.,100.));",
-    );
+    let source = common::elliptical_extrusion::SOURCE
+        .replace(
+            "#20=EDGE_CURVE('lower ellipse edge',#18,#18,#12,.F.);",
+            "#20=EDGE_CURVE('lower ellipse edge',#18,#18,#100,.F.);",
+        )
+        .replace(
+            "ENDSEC;\nEND-ISO-10303-21;",
+            concat!(
+                "#100=SURFACE_CURVE('',#12,(#101,#15),.PCURVE_S1.);\n",
+                "#101=PCURVE('',#16,#102);\n",
+                "#102=DEFINITIONAL_REPRESENTATION('',(#103),#107);\n",
+                "#103=LINE('',#104,#105);\n",
+                "#104=CARTESIAN_POINT('',(100.,100.));\n",
+                "#105=VECTOR('',#106,1.);\n",
+                "#106=DIRECTION('',(1.,0.));\n",
+                "#107=(GEOMETRIC_REPRESENTATION_CONTEXT(2)",
+                "PARAMETRIC_REPRESENTATION_CONTEXT()REPRESENTATION_CONTEXT('',''));\n",
+                "ENDSEC;\nEND-ISO-10303-21;",
+            ),
+        );
     let (opened, work) = with_operation_budget(20_000_000, || {
         opened::open_step(
             source.as_bytes(),
@@ -626,7 +642,7 @@ fn default_opening_exports_a_rebuilt_trace_instead_of_an_inconsistent_authored_t
         .evidence()
         .native_trims
         .iter()
-        .find(|trace| trace.face == "#17" && trace.edge == "#21")
+        .find(|trace| trace.face == "#37" && trace.edge == "#20")
         .unwrap();
     assert!(trace.reconstructed);
     assert!(trace.source_pcurve.is_none());
@@ -634,13 +650,12 @@ fn default_opening_exports_a_rebuilt_trace_instead_of_an_inconsistent_authored_t
         .definition()
         .edges()
         .iter()
-        .find(|edge| edge.name == "#21")
+        .find(|edge| edge.name == "#20")
         .unwrap()
         .tolerance_mm()
         .to_f64_nearest();
-    let surface = native.native_surface(33).unwrap();
-    assert!(surface.location([0.0, 100.0]).is_err());
-    let curve = native.native_curve(26).unwrap();
+    let surface = native.native_surface(16).unwrap();
+    let curve = native.native_curve(100).unwrap();
     let file = native.export_body(body, &mut Decider::default()).unwrap();
     let mut dec = Decider::default();
     let parsed = ParsedStep::read(file.bytes(), &mut dec).unwrap();
@@ -653,7 +668,7 @@ fn default_opening_exports_a_rebuilt_trace_instead_of_an_inconsistent_authored_t
             else {
                 return None;
             };
-            let Geometry::Curve(Curve::SurfaceCurve(27, associated, _, _)) =
+            let Geometry::Curve(Curve::SurfaceCurve(12, associated, _, _)) =
                 parsed.geometry(curve, &mut dec).ok()?
             else {
                 return None;
@@ -661,11 +676,11 @@ fn default_opening_exports_a_rebuilt_trace_instead_of_an_inconsistent_authored_t
             associated.into_iter().find(|&pcurve| {
                 matches!(
                     parsed.geometry(pcurve, &mut dec),
-                    Ok(Geometry::Curve(Curve::Pcurve(33, _)))
+                    Ok(Geometry::Curve(Curve::Pcurve(16, _)))
                 )
             })
         })
-        .expect("exported curved edge needs its sphere pcurve");
+        .expect("exported curved edge needs its cap pcurve");
     let emitted = NativeUvCurve::from_source(
         &parsed,
         emitted_pcurve,
@@ -697,6 +712,65 @@ fn default_opening_exports_a_rebuilt_trace_instead_of_an_inconsistent_authored_t
             "emitted pcurve leaves the 3D edge by {residual}"
         );
     }
+    if let Ok(folder) = std::env::var("CATALLAX_HEALING_EVIDENCE") {
+        std::fs::write(
+            std::path::Path::new(&folder).join("default-rebuilt-ellipse-trace.step"),
+            file.bytes(),
+        )
+        .unwrap();
+    }
+}
+
+#[test]
+fn an_out_of_domain_source_trace_is_rebuilt_from_the_actual_curve() {
+    let source = include_str!("fixtures/half-sphere-missing-poles.step").replace(
+        "#40 = CARTESIAN_POINT('',(0.,-6.28318530718));",
+        "#40 = CARTESIAN_POINT('',(0.,100.));",
+    );
+    let (native, work) = with_operation_budget(20_000_000, || {
+        tolerant::admission::import_step(
+            source.as_bytes(),
+            &sha256_hex(source.as_bytes()),
+            Default::default(),
+            &mut Decider::default(),
+        )
+    });
+    let native = native.unwrap();
+    assert!(!work.exhausted);
+    let trace = native
+        .evidence()
+        .native_trims
+        .iter()
+        .find(|trace| trace.face == "#17" && trace.edge == "#21")
+        .unwrap();
+    assert!(trace.reconstructed);
+    assert!(trace.source_pcurve.is_none());
+    let tolerance = native.bodies()[0]
+        .definition()
+        .edges()
+        .iter()
+        .find(|edge| edge.name == "#21")
+        .unwrap()
+        .tolerance_mm()
+        .to_f64_nearest();
+    let surface = native.native_surface(33).unwrap();
+    assert!(surface.location([0.0, 100.0]).is_err());
+    let curve = native.native_curve(26).unwrap();
+    for sample in &trace.samples {
+        let actual = surface
+            .sample(sample.surface, &mut Decider::default())
+            .unwrap();
+        let expected = curve.sample(sample.curve, &mut Decider::default()).unwrap();
+        let residual = (0..3).fold(0.0_f64, |distance, axis| {
+            distance.hypot(actual.point_mm[axis] - expected.point_mm[axis])
+        }) + actual.uncertainty_mm
+            + expected.uncertainty_mm;
+        assert!(
+            residual <= tolerance,
+            "rebuilt trace residual {residual} exceeds {tolerance}"
+        );
+    }
+    let file = native.export_body(0, &mut Decider::default()).unwrap();
     if let Ok(folder) = std::env::var("CATALLAX_HEALING_EVIDENCE") {
         std::fs::write(
             std::path::Path::new(&folder).join("native-rebuilt-trace.step"),

@@ -159,7 +159,17 @@ impl<'a> Writer<'a> {
                 Param::List(control.iter().map(|value| number(*value)).collect::<Result<_, _>>()?)],
             )?);
         }
-        let mut entity = builder.parsed.entity(trace.source_curve)?.clone();
+        let mut entity = builder
+            .parsed
+            .source_graph()
+            .get(&trace.source_curve)
+            .ok_or_else(|| {
+                invalid(
+                    "import.tolerant-broken-reference",
+                    "projected spline source is missing",
+                )
+            })?
+            .clone();
         let complex = entity.parts.len() > 1;
         let mut replaced = 0;
         for (kind, parameters) in &mut entity.parts {
@@ -168,7 +178,11 @@ impl<'a> Writer<'a> {
                     && values.len() == controls.len()
                     && values.iter().all(|value| matches!(value, Param::Ref(_)))
                 {
-                    *values = controls.iter().copied().map(reference_to).collect();
+                    *values = controls
+                        .iter()
+                        .copied()
+                        .map(reference_to)
+                        .collect::<Vec<_>>();
                     replaced += 1;
                 }
             }

@@ -41,7 +41,7 @@ impl Spline<'_> {
     }
 }
 
-pub(super) fn project(
+pub(in super::super) fn project(
     context: &Context<'_>,
     surface: &NativeSurface,
     edge: &EdgeSamples,

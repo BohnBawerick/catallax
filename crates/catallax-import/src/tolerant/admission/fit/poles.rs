@@ -145,7 +145,7 @@ pub(super) fn insert(
                     let edge_name = format!("{name}/boundary/{boundary}/pole/{usage}");
                     let index = body.edges.len();
                     let controls = vec![body.vertices[vertex].source.point.clone(); 2];
-                    let geometry = catallax_shapes::RationalSplineCurve::new(
+                    let geometry = catallax_shapes::spline_tools::RationalSplineCurve::new(
                         1,
                         vec![
                             Rational::zero(),

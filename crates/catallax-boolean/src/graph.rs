@@ -298,6 +298,24 @@ fn carrier_hits(
                     complete.insert(surface, Vec::new());
                     continue;
                 }
+                if let (
+                    catallax_shapes::Curve::PatchSection(branch),
+                    catallax_shapes::Surface::BSpline(
+                        catallax_shapes::SplineSupport::RationalPatch(target),
+                    ),
+                ) = (model.geom().curve(curve), model.geom().surface(surface))
+                {
+                    eprintln!("P8_CLIP_META curve={curve:?} surface={surface:?} exclusions={exclusions} component_bounds={native_enclosure:?}");
+                    for (label, patch) in [("SOURCE", &branch.charts()[0]), ("TARGET", target)] {
+                        eprintln!("P8_{label}_META degrees={:?} count={:?} knots={:?}", patch.carrier().degrees(), patch.carrier().control_count(), patch.carrier().knots());
+                        for p in patch.carrier().controls() {
+                            eprintln!("P8_{label}_CONTROL {:?} {:?} {:?}", p.x.rational_ref(), p.y.rational_ref(), p.z.rational_ref());
+                        }
+                        for w in patch.carrier().weights() {
+                            eprintln!("P8_{label}_WEIGHT {:?}", w.rational_ref());
+                        }
+                    }
+                }
                 return Err(named_curve(model, curve, surface, refusal));
             }
         };

@@ -197,27 +197,10 @@ fn add_curve(
                 let _ = same_curve(model.geom(), curve, pool[index], dec);
             }
         });
-        #[cfg(feature = "work-span")]
-        let comparison_start = dec.stats().work;
-        let equality = same_curve(model.geom(), curve, other, dec);
-        #[cfg(feature = "work-span")]
-        if dec.stats().work - comparison_start > 1_000_000 {
-            eprintln!(
-                "P8 carrier diagnostic: curve={} {:?}, other={} {:?}, work={}, outcome={}",
-                curve.index(),
-                model.geom().curve(curve).kind(),
-                other.index(),
-                model.geom().curve(other).kind(),
-                dec.stats().work - comparison_start,
-                match &equality {
-                    catallax_numbers::Outcome::Proven(_) => "apart",
-                    catallax_numbers::Outcome::ProvenCoincident(_) => "coincident",
-                    catallax_numbers::Outcome::NotExact(_) => "not-exact",
-                    catallax_numbers::Outcome::Refused(_) => "refused",
-                },
-            );
-        }
-        if coincident(equality, "boolean.imprint-ambiguous")? {
+        if coincident(
+            same_curve(model.geom(), curve, other, dec),
+            "boolean.imprint-ambiguous",
+        )? {
             model.geom_mut().record_fact(Fact {
                 kind: FactKind::Coincident,
                 a: GeomKey::Curve(curve),
@@ -1705,6 +1688,44 @@ mod tests {
                 Real::one(),
                 Real::zero(),
             )));
+            let center = Point3::new(Real::zero(), Real::zero(), Real::zero());
+            let normal = Vector3::new(Real::zero(), Real::zero(), Real::one());
+            let direction = Vector3::new(Real::one(), Real::zero(), Real::zero());
+            let closed = [
+                Curve::Circle(
+                    catallax_shapes::Circle::new(
+                        center.clone(),
+                        normal.clone(),
+                        Real::from_i64(2),
+                        direction.clone(),
+                        &mut dec,
+                    )
+                    .unwrap(),
+                ),
+                Curve::Ellipse(
+                    catallax_shapes::Ellipse::new(
+                        center,
+                        normal,
+                        direction,
+                        Real::from_i64(3),
+                        Rational::from_ratio(3, 2).unwrap().into(),
+                        &mut dec,
+                    )
+                    .unwrap(),
+                ),
+            ];
+            for closed in closed {
+                let closed = model.geom_mut().add_curve(closed);
+                assert!(on_curve(model.geom(), closed, shared, &mut dec).is_coincident());
+                for arc in [first, second] {
+                    for (a, b) in [(arc, closed), (closed, arc)] {
+                        assert!(matches!(
+                            same_curve(model.geom(), a, b, &mut dec),
+                            Outcome::Proven(_)
+                        ));
+                    }
+                }
+            }
             for (a, b, far_a, far_b) in [
                 (first, second, first_end, second_end),
                 (second, first, second_end, first_end),

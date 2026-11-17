@@ -550,6 +550,15 @@ pub(super) fn same(geom: &GeomStore, a: CurveId, b: CurveId, dec: &mut Decider) 
                 if matches!(other, Curve::Line(_)) {
                     return Outcome::Proven(Apart);
                 }
+                // A single embedded chart gives an open component distinct
+                // endpoints. Its point set cannot be a whole closed conic,
+                // even when the conic contains every section witness.
+                if !branch.is_closed()
+                    && branch.charts().len() == 1
+                    && matches!(other, Curve::Circle(_) | Curve::Ellipse(_))
+                {
+                    return Outcome::Proven(Apart);
+                }
                 witness_separation(
                     geom,
                     other,

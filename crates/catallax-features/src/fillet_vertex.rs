@@ -174,18 +174,8 @@ pub(super) fn build(
         reference,
         dec,
     )?);
-    for face in model.faces_of_body(body) {
-        if incident.contains(&face) {
-            continue;
-        }
-        let other = model.geom().surface(model.face(face).surface).clone();
-        if !separated(&surface, &other, dec)? {
-            return Err(Refusal::new(
-                "fillet.unsupported-overflow",
-                "a non-incident face is not proved clear of the corner sphere",
-            ));
-        }
-    }
+    let hull = fillet_clearance::fan_hull(&centre, &radius, &directions, &sum);
+    surface_guard(model, body, &surface, Some(&hull), incident, dec)?;
     let feet: Vec<_> = directions
         .iter()
         .map(|n| vertex(model, centre.plus(&n.scaled(&radius))))

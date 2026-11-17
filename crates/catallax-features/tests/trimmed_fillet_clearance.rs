@@ -165,3 +165,63 @@ fn trimmed_cone_ring_does_not_touch_the_cylinder_below_its_chamfer() {
         );
     }
 }
+
+#[test]
+fn trimmed_four_contact_cone_stays_clear_of_the_base_when_its_ball_does_not() {
+    let row: Value = include_str!("../../../parts/fillets/cases.jsonl")
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .find(|row| row["id"] == "vertex-4-all-unequal-slopes")
+        .unwrap();
+    let mut steps = row["recipe"]["steps"].as_array().unwrap().clone();
+    for step in &mut steps {
+        if step["id"] == "bs" {
+            step["loops"][0][0]["to"][0] = json!("-10");
+        }
+        if step["op"] == "fillet" {
+            step["radius"] = json!("5");
+        }
+    }
+    let mut built = build("four-contact-r5", steps);
+    let ((), work) = with_operation_budget(100_000_000, || {
+        let mut dec = Decider::default();
+        let plan = catallax_field::Plan::compile_checked(built.recipe(), &mut dec).unwrap();
+        let mut storage = catallax_field::Workspace::default();
+        // The common centre is at z=10-5*sqrt(2). Its retained cap ends at
+        // z=15-5*sqrt(2), between 7.9 and 8, while the complete ball crosses z=0.
+        for (coordinates, inside) in [
+            (["0", "0", "79/10"], true),
+            (["0", "0", "8"], false),
+            (["2", "0", "7"], true),
+            (["2", "0", "39/5"], false),
+        ] {
+            let [x, y, z] = coordinates.map(|value| Rational::parse(value).unwrap());
+            let point = RPoint3::new(x, y, z);
+            let expected = if inside {
+                Containment::Inside
+            } else {
+                Containment::Outside
+            };
+            assert!(
+                matches!(catallax_boolean::classify_point(
+                &mut built.model, built.result, &point, &mut dec,
+            ), Outcome::Proven(actual) if actual == expected),
+                "B-rep at {point:?}"
+            );
+            let expected = if inside {
+                catallax_field::Location::Inside
+            } else {
+                catallax_field::Location::Outside
+            };
+            assert_eq!(
+                plan.proven_checked(&point, &mut storage, &mut dec)
+                    .unwrap()
+                    .location,
+                expected,
+                "field at {point:?}"
+            );
+        }
+    });
+    assert!(!work.exhausted, "{work:?}");
+    println!("four-contact field and material {work:?}");
+}

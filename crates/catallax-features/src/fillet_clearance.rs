@@ -85,6 +85,27 @@ pub(super) fn corner_hull(sector: &SphereSector) -> [Point3; 4] {
     ]
 }
 
+/// A spherical polygon in the cone of unit `directions`. The caller has
+/// proved `hemisphere . direction > 0` for every ray. Their intersections
+/// with the tangent plane normal to `hemisphere`, together with the centre,
+/// enclose the retained sphere patch.
+pub(super) fn fan_hull(
+    centre: &Point3,
+    radius: &Real,
+    directions: &[Vector3],
+    hemisphere: &Vector3,
+) -> Vec<Point3> {
+    let scale = radius * &hemisphere.norm_squared().sqrt();
+    let mut points = Vec::with_capacity(directions.len() + 1);
+    points.push(centre.clone());
+    points.extend(
+        directions.iter().map(|direction| {
+            centre.plus(&direction.scaled(&(&scale / &hemisphere.dot(direction))))
+        }),
+    );
+    points
+}
+
 pub(super) fn hull_box(points: &[Point3], dec: &Decider) -> Result<BoundingBox, Refusal> {
     let first = points.first().ok_or_else(|| {
         Refusal::new(

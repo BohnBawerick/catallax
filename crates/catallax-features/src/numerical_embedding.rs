@@ -42,8 +42,12 @@ fn fit_failure(detail: impl Into<String>) -> Refusal {
     Refusal::new("features.numerical-embedding-fit", detail)
 }
 
-fn f64_point(p: &Point3) -> [f64; 3] {
-    [p.x.to_f64(), p.y.to_f64(), p.z.to_f64()]
+fn f64_point(p: &Point3, dec: &Decider) -> Result<[f64; 3], Refusal> {
+    Ok([
+        scalar(&p.x, dec)?.to_f64_nearest(),
+        scalar(&p.y, dec)?.to_f64_nearest(),
+        scalar(&p.z, dec)?.to_f64_nearest(),
+    ])
 }
 
 fn exact(value: f64) -> Result<Rational, Refusal> {
@@ -59,21 +63,21 @@ fn scalar(value: &Real, dec: &Decider) -> Result<Rational, Refusal> {
 // Callers recheck its physical point before retaining a trim.
 fn inverse_seed(
     surface: &Surface,
-    point: &mut [Ball; 3],
+    mut point: [Ball; 3],
     tolerance: &Rational,
     dec: &mut Decider,
-) -> Result<([Rational; 2], bool), Refusal> {
-    if let Some(uv) = surface.parameters_of(point, dec)? {
-        return Ok((uv.each_ref().map(Ball::mid), false));
+) -> Result<[Rational; 2], Refusal> {
+    if let Some(uv) = surface.parameters_of(&point, dec)? {
+        return Ok(uv.each_ref().map(Ball::mid));
     }
     let displacement = Ball::from_rational(&tolerance.mul_pow2(-6), BITS);
     for axis in 0..3 {
         let shifted = &point[axis] + &displacement;
         let original = std::mem::replace(&mut point[axis], shifted);
-        let proposal = surface.parameters_of(point, dec)?;
+        let proposal = surface.parameters_of(&point, dec)?;
         point[axis] = original;
         if let Some(uv) = proposal {
-            return Ok((uv.each_ref().map(Ball::mid), true));
+            return Ok(uv.each_ref().map(Ball::mid));
         }
     }
     Err(fit_failure(
@@ -89,7 +93,7 @@ pub(crate) fn surface_parameters(
 ) -> Result<[Rational; 2], Refusal> {
     inverse_seed(
         surface,
-        &mut [
+        [
             dec.enclose_budgeted_at(&point.x, BITS)?,
             dec.enclose_budgeted_at(&point.y, BITS)?,
             dec.enclose_budgeted_at(&point.z, BITS)?,
@@ -97,7 +101,6 @@ pub(crate) fn surface_parameters(
         tolerance,
         dec,
     )
-    .map(|(uv, _)| uv)
 }
 
 /// Structural precheck for one shell with finite coedges and no seam repeats.
@@ -204,14 +207,14 @@ fn carrier<'a>(surface: &'a Surface, dec: &mut Decider) -> Result<Carrier<'a>, R
     };
     Ok(match surface {
         Surface::Plane(Plane { origin, normal, .. }) => {
-            let n = f64_point(&Point3::new(
-                normal.x.clone(),
-                normal.y.clone(),
-                normal.z.clone(),
-            ));
+            let n = [
+                scalar(&normal.x, dec)?.to_f64_nearest(),
+                scalar(&normal.y, dec)?.to_f64_nearest(),
+                scalar(&normal.z, dec)?.to_f64_nearest(),
+            ];
             let length = dot(n, n).sqrt();
             Carrier::Plane {
-                origin: f64_point(origin),
+                origin: f64_point(origin, dec)?,
                 normal: n.map(|c| c / length),
             }
         }
@@ -281,11 +284,12 @@ impl<'a> ParametricFace<'a> {
         match self {
             Self::Spline(face) => face.surface.invert(point, face.region, previous, dec),
             Self::Native(surface) => {
-                let mut p = [exact(point[0])?, exact(point[1])?, exact(point[2])?]
+                let p = [exact(point[0])?, exact(point[1])?, exact(point[2])?]
                     .each_ref()
                     .map(|q| Ball::from_rational(q, BITS));
-                let (seed, displaced) = inverse_seed(surface, &mut p, &tolerances.projection, dec)?;
-                let mut uv = seed.each_ref().map(Rational::to_f64_nearest);
+                let mut uv = inverse_seed(surface, p, &tolerances.projection, dec)?
+                    .each_ref()
+                    .map(Rational::to_f64_nearest);
                 if let Some(previous) = previous {
                     for axis in 0..2 {
                         if surface.domain()[axis] == catallax_shapes::ParamKind::Periodic {
@@ -300,56 +304,7 @@ impl<'a> ParametricFace<'a> {
                         "a native inverse parameter is outside binary64 range",
                     ));
                 }
-                if !displaced {
-                    return Ok(uv);
-                }
-                // A displaced seam seed is only a chart proposal. Refine against
-                // the original point with the regular tangent-plane system.
-                for _ in 0..12 {
-                    dec.charge_work(1)?;
-                    let at = [exact(uv[0])?, exact(uv[1])?]
-                        .each_ref()
-                        .map(|q| Ball::from_rational(q, BITS));
-                    let position = surface.evaluate(&at[0], &at[1], dec)?;
-                    let error: [f64; 3] =
-                        std::array::from_fn(|i| (&position[i] - &p[i]).mid().to_f64_nearest());
-                    let residual = dot(error, error).sqrt();
-                    if residual <= tolerances.sample / 8.0 {
-                        return Ok(uv);
-                    }
-                    let [du, dv] = surface
-                        .derivatives(&at[0], &at[1], dec)?
-                        .map(|d| d.each_ref().map(|q| q.mid().to_f64_nearest()));
-                    let a = dot(du, du);
-                    let b = dot(du, dv);
-                    let c = dot(dv, dv);
-                    let d = dot(du, error);
-                    let e = dot(dv, error);
-                    let determinant = a * c - b * b;
-                    if determinant <= 0.0
-                        || ![determinant, a, b, c, d, e].iter().all(|v| v.is_finite())
-                    {
-                        return Err(fit_failure(
-                            "the native inverse tangent system is not numerically regular",
-                        ));
-                    }
-                    let next = [
-                        uv[0] - (c * d - b * e) / determinant,
-                        uv[1] - (a * e - b * d) / determinant,
-                    ];
-                    if next == uv {
-                        if residual <= tolerances.sample {
-                            return Ok(uv);
-                        }
-                        return Err(fit_failure(format!(
-                            "native inverse stalled at a physical residual of {residual:e} mm"
-                        )));
-                    }
-                    uv = next;
-                }
-                Err(fit_failure(
-                    "native inverse did not refine the original point within tolerance",
-                ))
+                Ok(uv)
             }
         }
     }
@@ -378,7 +333,7 @@ impl Circle64 {
         let zero = Ball::from_rational(&Rational::zero(), BITS);
         let [x, y] = plane.derivatives(&zero, &zero, dec)?;
         let result = Self {
-            center: f64_point(&circle.center),
+            center: f64_point(&circle.center, dec)?,
             x: x.each_ref().map(|v| v.mid().to_f64_nearest()),
             y: y.each_ref().map(|v| v.mid().to_f64_nearest()),
             radius: scalar(&circle.radius_sq.sqrt(), dec)?.to_f64_nearest(),
@@ -930,11 +885,11 @@ pub fn definition_from_exact_model(
             Curve::Line(_) | Curve::Circle(_) | Curve::BSpline(_) => {
                 let native = match curve {
                     Curve::Line(line) => Native::Line {
-                        origin: f64_point(&line.origin),
+                        origin: f64_point(&line.origin, dec)?,
                         dir: [
-                            line.dir.x.to_f64(),
-                            line.dir.y.to_f64(),
-                            line.dir.z.to_f64(),
+                            scalar(&line.dir.x, dec)?.to_f64_nearest(),
+                            scalar(&line.dir.y, dec)?.to_f64_nearest(),
+                            scalar(&line.dir.z, dec)?.to_f64_nearest(),
                         ],
                     },
                     Curve::Circle(circle) => Native::Circle(Circle64::new(circle, dec)?),
@@ -954,7 +909,7 @@ pub fn definition_from_exact_model(
                             let Native::Circle(circle) = &native else {
                                 unreachable!("retained circle proposal")
                             };
-                            exact(circle.phase(f64_point(&p)))?
+                            exact(circle.phase(approx[vertex]))?
                         }
                         Curve::BSpline(spline) => {
                             let at = spline.unique_parameter_of(&p, dec)?.ok_or_else(|| {

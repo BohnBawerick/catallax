@@ -269,14 +269,12 @@ circles with fitted pcurves retain a typed full-period knot-domain refusal.
 The shared analytic codec's rational native frame/radius requirement also
 remains explicit; numerical inputs are not labelled exact.
 
-Native embedding treats a displaced seam inverse as a chart proposal,
-not the target point. It refines against the original point with a regular
-tangent-plane system, following [OCCT's previous-UV refinement](https://occt3d.com/dev/doc/refman/html/class_shape_analysis___surface.html)
-and [SMLib's first-derivative plane step](https://github.com/NVIDIA-Omniverse/usd-brep/blob/3fd5b9548d19aa8c12c29bc9637a96d42a06f8a5/source/SMLib/src/SmSurfacePointSolve.cpp#L5136-L5162).
-This is local numerical refinement, not a global closest-point search.
-Non-regular or unconverged systems return a typed cause. Physical fit checks
-and numerical body admission retain the requested tolerance; retained UV
-fit failures identify their source edge, face, parameter range and residual.
+Native source-fit coordinates come from 128-bit enclosures, not the cached
+display-only `Real::to_f64` estimate. Circle endpoint phases use the same
+qualified vertex coordinates as the face UV endpoints. A coarse display
+estimate can otherwise make those two descriptions disagree before fitting.
+Native UV fit refusals retain the source edge, face, range and residual;
+the requested tolerance and full-body admission remain unchanged.
 
 The ordinary `build_incremental_without_display` application API now
 returns `EvaluatedApplicationOutcome`: either its exact application body

@@ -9,6 +9,7 @@ use catallax_topology::numerical::{self as n, NumericalDefinition};
 const BITS: u32 = 128;
 
 mod cones;
+mod toroids;
 
 pub(super) fn applies(body: &NumericalBody) -> bool {
     let d = body.definition();
@@ -19,16 +20,19 @@ pub(super) fn applies(body: &NumericalBody) -> bool {
         && d.faces.iter().all(|face| {
             matches!(
                 face.surface,
-                Surface::Plane(_) | Surface::Cylinder(_) | Surface::Cone(_)
+                Surface::Plane(_) | Surface::Cylinder(_) | Surface::Cone(_) | Surface::Torus(_)
             )
         })
         && (d
             .edges
             .iter()
             .any(|edge| matches!(edge.curve, Curve::Circle(_)))
-            || d.faces
-                .iter()
-                .any(|face| matches!(face.surface, Surface::Cylinder(_) | Surface::Cone(_))))
+            || d.faces.iter().any(|face| {
+                matches!(
+                    face.surface,
+                    Surface::Cylinder(_) | Surface::Cone(_) | Surface::Torus(_)
+                )
+            }))
 }
 
 fn round3(p: &[Rational; 3], options: &NumericalStepOptions) -> Result<[Rational; 3], Refusal> {
@@ -147,9 +151,10 @@ fn uv(
             Ok([angle(&x, &y, &old[0], dec)?, z.mid()])
         }
         Surface::Cone(cone) => cones::uv(cone, p, old, dec),
+        Surface::Torus(torus) => toroids::uv(torus, p, old, dec),
         _ => Err(bad(
             "unsupported",
-            "analytic writer requires planes, cylinders or cones",
+            "analytic writer requires planes, cylinders, cones or ring tori",
         )),
     }
 }
@@ -213,6 +218,7 @@ fn rounded_surfaces(
                 cone_parameters = Some(parameters);
                 (id, surface)
             }
+            Surface::Torus(torus) => toroids::rounded(w, &face.key, torus)?,
             _ => {
                 return Err(bad(
                     "unsupported",

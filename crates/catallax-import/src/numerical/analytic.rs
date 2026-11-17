@@ -4,6 +4,7 @@ use super::*;
 use catallax_numbers::Ball;
 use catallax_shapes::{Circle, Cylinder};
 pub(super) mod constructed;
+mod toroids;
 
 const BITS: u32 = 128;
 const OPTIONAL_EXACT_WORK: u64 = 1_000_000;
@@ -113,9 +114,19 @@ fn surface(face: &crate::Face) -> Result<(Surface, &crate::Placement), ImportErr
             frame,
         ),
         crate::Surface::Cone(frame, ..) => (cones::surface(face)?, frame),
+        crate::Surface::Torus(frame, major, minor) => (
+            Surface::Torus(catallax_shapes::Torus {
+                center: point(&frame.origin),
+                axis: vector(&frame.axis),
+                major: major.clone().into(),
+                minor: minor.clone().into(),
+                ref_dir: vector(&frame.ref_dir),
+            }),
+            frame,
+        ),
         _ => {
             return Err(unsupported(
-                "the retained analytic source family requires planes, cylinders or fitted cones",
+                "the retained analytic source family requires planes, cylinders, fitted cones or ring tori",
             ));
         }
     })
@@ -126,6 +137,9 @@ fn parameters(
     face: &crate::Face,
     dec: &mut Decider,
 ) -> Result<[Rational; 2], ImportError> {
+    if let crate::Surface::Torus(frame, major, _) = &face.surface {
+        return toroids::parameters(p, frame, major, dec);
+    }
     if matches!(face.surface, crate::Surface::Cone(..)) {
         return cones::parameters(p, face, dec);
     }
@@ -236,6 +250,9 @@ fn definition(
     let mut source_curves = BTreeMap::new();
     for face in &solid.faces {
         dec.charge_work(1)?;
+        if let crate::Surface::Retained(source) = &face.surface {
+            toroids::retained_refusal(source, dec)?;
+        }
         let (carrier, _) = surface(face)?;
         let mut loops = Vec::new();
         let mut bounds: Vec<_> = face.loops.iter().collect();
@@ -284,7 +301,22 @@ fn definition(
                     };
                     let mut start = parameters(a, face, dec)?;
                     let mut end = parameters(b, face, dec)?;
-                    if matches!(
+                    if matches!(face.surface, crate::Surface::Torus(..)) {
+                        if let Some(previous) = trims.last() {
+                            for axis in 0..2 {
+                                start[axis] =
+                                    near(start[axis].clone(), &previous.uv[1][axis], dec)?;
+                            }
+                        }
+                        end = toroids::unwrap_end(
+                            &result.edges[index],
+                            face,
+                            forward,
+                            &start,
+                            end,
+                            dec,
+                        )?;
+                    } else if matches!(
                         face.surface,
                         crate::Surface::Cylinder(..) | crate::Surface::Cone(..)
                     ) {
@@ -325,6 +357,9 @@ fn definition(
             crate::Surface::Cylinder(..) | crate::Surface::Cone(..)
         ) {
             join_rims(&mut result, &mut loops, solid, face, repairs, dec)?;
+        }
+        if matches!(face.surface, crate::Surface::Torus(..)) {
+            toroids::join_rims(&mut result, &mut loops, solid, face, repairs, dec)?;
         }
         result.faces.push(n::NumericalFace {
             key: face.name.clone(),
@@ -787,7 +822,9 @@ pub(super) fn admit_definition(
             .any(|face| {
                 matches!(
                     face.surface,
-                    crate::Surface::Cylinder(..) | crate::Surface::Cone(..)
+                    crate::Surface::Cylinder(..)
+                        | crate::Surface::Cone(..)
+                        | crate::Surface::Torus(..)
                 ) || face
                     .loops
                     .iter()

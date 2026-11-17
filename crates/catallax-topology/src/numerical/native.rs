@@ -83,6 +83,12 @@ impl<'a> Index<'a> {
                     "native cone trims require complete positive-height and periodic-domain checks",
                 ));
             }
+            if matches!(definition.faces[face].surface, Surface::Torus(_)) {
+                return Err(Refusal::new(
+                    "numerical.native-torus-domain-unverified",
+                    "native torus trims require complete two-axis periodic-domain checks",
+                ));
+            }
             let [lo, hi] = binding.curve.domain();
             if edge.parameters.iter().any(|t| t < lo || t > hi) {
                 return Err(bad(

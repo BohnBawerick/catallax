@@ -23,7 +23,7 @@ fn projection_range<'a>(
     Ok(range)
 }
 
-fn curve_range(
+pub(crate) fn curve_range(
     edge: &OrientedEdge,
     direction: &Vec3,
     dec: &mut Decider,

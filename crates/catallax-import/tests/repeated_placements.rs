@@ -1,22 +1,26 @@
+//! Preserve shared prototype identity and distinct placements through STEP export.
+
 mod common;
 
 use catallax_import::{
     geometry_source::{Geometry, ParsedStep, PlacementLink},
     sha256_hex,
-    tolerant::{admission, opened},
+    tolerant::opened,
 };
 use catallax_numbers::{Decider, with_operation_budget};
 use catallax_recipe::StepId;
 use common::{BoxFixture, box_step, r};
 
-pub struct RepeatedFixture {
-    pub source: String,
-    pub prototype: u64,
-    pub base: u64,
+struct RepeatedFixture {
+    source: String,
+    prototype: u64,
+    base: u64,
 }
 
-pub fn repeated_fixture() -> RepeatedFixture {
-    let mut source = box_step(BoxFixture::new(["2", "3", "4"]));
+fn repeated_fixture(unit: common::Unit) -> RepeatedFixture {
+    let mut prototype_box = BoxFixture::new(["2", "3", "4"]);
+    prototype_box.unit = unit;
+    let mut source = box_step(prototype_box);
     let mut dec = Decider::default();
     let parsed = ParsedStep::read(source.as_bytes(), &mut dec).unwrap();
     let prototype = parsed.model_declarations(&mut dec).unwrap()[0].entity;
@@ -93,7 +97,7 @@ pub fn repeated_fixture() -> RepeatedFixture {
     }
 }
 
-pub fn assert_inventory(parsed: &ParsedStep, fixture: &RepeatedFixture) {
+fn assert_inventory(parsed: &ParsedStep, fixture: &RepeatedFixture, geometry_root: u64) {
     let mut dec = Decider::default();
     let id = |offset| fixture.base + offset;
     let prototypes = parsed.model_declarations(&mut dec).unwrap();
@@ -102,8 +106,36 @@ pub fn assert_inventory(parsed: &ParsedStep, fixture: &RepeatedFixture) {
             .iter()
             .map(|model| model.entity)
             .collect::<Vec<_>>(),
-        [fixture.prototype]
+        [geometry_root]
     );
+    if geometry_root != fixture.prototype {
+        let PlacementLink::MappedItem(map, transform) =
+            parsed.placement_link(fixture.prototype, &mut dec).unwrap()
+        else {
+            panic!("selected prototype mapping missing")
+        };
+        let PlacementLink::RepresentationMap(_, representation) =
+            parsed.placement_link(map, &mut dec).unwrap()
+        else {
+            panic!("selected prototype representation missing")
+        };
+        assert!(
+            parsed
+                .representation(representation)
+                .unwrap()
+                .items
+                .contains(&geometry_root)
+        );
+        let Geometry::Transformation(mapping) = parsed.geometry(transform, &mut dec).unwrap()
+        else {
+            panic!("selected prototype unit mapping missing")
+        };
+        assert_eq!(mapping.scales[0], Some(r("1")));
+        assert_eq!(
+            parsed.geometry(mapping.origin, &mut dec).unwrap(),
+            Geometry::Point(vec![r("0"); 3])
+        );
+    }
     assert_eq!(
         parsed.representation(id(5)).unwrap().items,
         [fixture.prototype, id(4)]
@@ -171,40 +203,73 @@ pub fn assert_inventory(parsed: &ParsedStep, fixture: &RepeatedFixture) {
 
 #[test]
 fn whole_document_roundtrip_preserves_shared_prototype_and_distinct_instances() {
-    let fixture = repeated_fixture();
-    let bytes = fixture.source.as_bytes();
-    let hash = sha256_hex(bytes);
+    for unit in [common::Unit::Millimetre, common::Unit::Metre] {
+        let fixture = repeated_fixture(unit);
+        let bytes = fixture.source.as_bytes();
+        let hash = sha256_hex(bytes);
+        let (result, work) = with_operation_budget(20_000_000, || {
+            opened::open_step(
+                bytes,
+                &hash,
+                &StepId::new("repeated-placement").unwrap(),
+                Default::default(),
+                &mut Decider::default(),
+            )
+        });
+        assert!(!work.exhausted);
+        let opened = result.unwrap();
+        assert_eq!(opened.source().bodies().len(), 1);
+        assert!(!matches!(
+            opened.body(0),
+            Some(opened::BodyView::Surfaces { .. }) | None
+        ));
+        assert_eq!(
+            opened.source().bodies()[0].name(),
+            format!("#{}", fixture.prototype)
+        );
+        assert_inventory(opened.parsed_source().unwrap(), &fixture, fixture.prototype);
+        let (result, work) = with_operation_budget(20_000_000, || {
+            opened.export_step_document(&mut Decider::default())
+        });
+        assert!(!work.exhausted);
+        let exported = result.unwrap();
+        assert_eq!(exported.bodies().len(), 1);
+        let binding = &exported.bodies()[0];
+        assert_eq!(binding.source_entity, fixture.prototype);
+        assert_eq!(binding.source_index, 0);
+        assert_eq!(binding.roots.len(), 1);
+        let parsed = ParsedStep::read(exported.bytes(), &mut Decider::default()).unwrap();
+        assert_inventory(&parsed, &fixture, binding.roots[0]);
+    }
+}
+
+#[test]
+fn incomplete_source_document_refuses_without_exporting_a_sibling() {
+    let complete = BoxFixture::new(["2", "3", "4"]);
+    let mut incomplete = BoxFixture::new(["2", "3", "4"]);
+    incomplete.omit = Some(5);
+    let source = common::boxes_step(&[complete, incomplete]);
     let (result, work) = with_operation_budget(20_000_000, || {
         opened::open_step(
-            bytes,
-            &hash,
-            &StepId::new("repeated-placement").unwrap(),
+            source.as_bytes(),
+            &sha256_hex(source.as_bytes()),
+            &StepId::new("incomplete-document").unwrap(),
             Default::default(),
             &mut Decider::default(),
         )
     });
     assert!(!work.exhausted);
     let opened = result.unwrap();
-    assert_eq!(opened.source().bodies().len(), 1);
     assert!(!matches!(
         opened.body(0),
         Some(opened::BodyView::Surfaces { .. }) | None
     ));
-    assert_eq!(
-        opened.source().bodies()[0].name(),
-        format!("#{}", fixture.prototype)
-    );
-    assert_inventory(opened.parsed_source().unwrap(), &fixture);
-    let (result, work) = with_operation_budget(20_000_000, || {
-        let mut dec = Decider::default();
-        let native = admission::import_step(bytes, &hash, Default::default(), &mut dec)?;
-        assert_eq!(native.bodies().len(), 1);
-        assert_eq!(native.bodies()[0].name(), format!("#{}", fixture.prototype));
-        native.export_step(&mut dec)
-    });
-    assert!(!work.exhausted);
-    let exported = result.unwrap();
-    assert_eq!(exported.source_body_roots(), [vec![fixture.prototype]]);
-    let parsed = ParsedStep::read(exported.bytes(), &mut Decider::default()).unwrap();
-    assert_inventory(&parsed, &fixture);
+    assert!(matches!(
+        opened.body(1),
+        Some(opened::BodyView::Surfaces { .. })
+    ));
+    let refusal = opened
+        .export_step_document(&mut Decider::default())
+        .unwrap_err();
+    assert_eq!(refusal.code, "import.selected-document");
 }

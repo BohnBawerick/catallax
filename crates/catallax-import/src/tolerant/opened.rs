@@ -15,6 +15,9 @@ use crate::{
     numerical::{self, StepImport},
 };
 
+mod selected_step;
+pub use selected_step::{SelectedStepBody, SelectedStepFile};
+
 /// Material/topology result, independent of exact versus numerical evidence.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

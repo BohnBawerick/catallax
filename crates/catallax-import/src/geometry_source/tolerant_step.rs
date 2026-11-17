@@ -1,5 +1,5 @@
-//! Rebuild a tolerant STEP document from its parsed entity model and repairs.
-//! This is serialization of a lower-tier B-rep, not checked-Model export.
+//! Serialize labelled body graphs with their retained source context.
+//! Geometry authority remains separate for native and selected-body artifacts.
 
 use std::collections::BTreeSet;
 use std::fmt::Write;
@@ -9,6 +9,11 @@ use catallax_numbers::{Decider, Refusal};
 use super::ParsedStep;
 use crate::part21::{Entity, Graph, Param};
 
+pub(crate) enum StepGraphKind {
+    Native,
+    Selected,
+}
+
 impl ParsedStep {
     /// Immutable declarations for the native tolerant topology mapper.
     pub(crate) fn source_graph(&self) -> &Graph {
@@ -17,25 +22,35 @@ impl ParsedStep {
 
     /// Serialize actual parsed geometry and repaired topology, not input bytes.
     /// The evidence travels in ignored report comments; no exact authority is inferred.
-    pub(crate) fn write_tolerant_step(
+    pub(crate) fn write_step_graph(
         &self,
         changes: &Graph,
         schemas: &[String],
         evidence_json: &str,
         roots: Option<&[u64]>,
+        kind: StepGraphKind,
         dec: &mut Decider,
     ) -> Result<Vec<u8>, Refusal> {
         let ids = match roots {
-            Some(roots) => reachable(&self.graph, changes, roots, dec)?,
+            Some(roots) => step_reachable(&self.graph, changes, roots, dec)?,
             None => self.graph.keys().chain(changes.keys()).copied().collect(),
         };
         let mut output = String::with_capacity(evidence_json.len() + ids.len() * 80);
         output.push_str("ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION((");
-        quoted(
-            &mut output,
-            "CATALLAX TOLERANT: sampled native B-rep, not certified; per-entity millimetre tolerances and repair/check record: CATALLAX_REPORT_JSON comments",
-        );
-        output.push_str("),'2;1');\nFILE_NAME('catallax-tolerant.step','',(''),(''),'Catallax','Catallax','');\nFILE_SCHEMA((");
+        let (description, file_name) = match kind {
+            StepGraphKind::Native => (
+                "CATALLAX TOLERANT: sampled native B-rep, not certified; per-entity millimetre tolerances and repair/check record: CATALLAX_REPORT_JSON comments",
+                "catallax-tolerant.step",
+            ),
+            StepGraphKind::Selected => (
+                "CATALLAX SELECTED BODY DOCUMENT: retained source occurrences and separately labelled selected body exports; CATALLAX_REPORT_JSON comments",
+                "catallax-selected.step",
+            ),
+        };
+        quoted(&mut output, description);
+        output.push_str("),'2;1');\nFILE_NAME(");
+        quoted(&mut output, file_name);
+        output.push_str(",'',(''),(''),'Catallax','Catallax','');\nFILE_SCHEMA((");
         if schemas.is_empty() {
             quoted(&mut output, "AUTOMOTIVE_DESIGN");
         } else {
@@ -96,7 +111,7 @@ impl ParsedStep {
     }
 }
 
-fn reachable(
+pub(crate) fn step_reachable(
     source: &Graph,
     changes: &Graph,
     roots: &[u64],

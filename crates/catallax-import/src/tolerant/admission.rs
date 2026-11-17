@@ -457,11 +457,12 @@ impl TolerantImport {
             export_checks: &built.checks,
         })
         .map_err(|error| Refusal::new("import.tolerant-evidence", error.to_string()))?;
-        let bytes = self.parsed.write_tolerant_step(
+        let bytes = self.parsed.write_step_graph(
             &built.changes,
             self.parsed.schemas()?,
             &metadata,
             None,
+            crate::geometry_source::StepGraphKind::Native,
             dec,
         )?;
         Ok(NativeStepFile {
@@ -493,11 +494,12 @@ impl TolerantImport {
             export_checks: &built.checks,
         })
         .map_err(|error| Refusal::new("import.tolerant-evidence", error.to_string()))?;
-        let bytes = self.parsed.write_tolerant_step(
+        let bytes = self.parsed.write_step_graph(
             &built.changes,
             self.parsed.schemas()?,
             &metadata,
             Some(&[root]),
+            crate::geometry_source::StepGraphKind::Native,
             dec,
         )?;
         Ok(NativeStepFile {

@@ -149,8 +149,6 @@ def raw_native_document(path, entry):
     from OCP.Transfer import Transfer_TransientProcess
     from check_numerical_step import topology
 
-    factors_values = entry["unit_factors"]
-    assert len(factors_values) == 3 and all(math.isfinite(v) and v > 0 for v in factors_values)
     reader = STEPControl_Reader()
     settings = {"read.stdsameparameter.mode": 0, "read.maxprecision.mode": 0}
     previous = {key: Interface_Static.IVal_s(key) for key in settings}
@@ -172,6 +170,8 @@ def raw_native_document(path, entry):
                 labelled[identifier] = entity
         roots = []
         for root in entry["source_roots"]:
+            factors_values = root.get("unit_factors", entry.get("unit_factors"))
+            assert len(factors_values) == 3 and all(math.isfinite(v) and v > 0 for v in factors_values)
             counts, valid_solids, outcome, detail = None, 0, "reader_refused", ""
             inspected_parts = 0
             try:
@@ -245,8 +245,8 @@ def raw(args):
     for entry in response["files"]:
         bodies = entry["bodies"]
         assert bodies and len(set(bodies)) == len(bodies)
-        native = entry["kind"] in ("native_document", "native_body")
-        assert entry["file"] == ("document.step" if entry["kind"] == "native_document" else f"body-{bodies[0]}.step")
+        native = entry["kind"] in ("native_document", "native_body", "selected_document")
+        assert entry["file"] == ("document.step" if entry["kind"] in ("native_document", "selected_document") else f"body-{bodies[0]}.step")
         path = args.capture / entry["file"]
         assert digest(path) == entry["sha256"] and path.stat().st_size == entry["bytes"]
         before = path.read_bytes()
@@ -542,9 +542,9 @@ def export_inventory(files, body_count, all_bodies_solid, observation_complete):
     counts = Counter((entry["kind"], entry["outcome"])
                      for entry in files for _ in entry["bodies"])
     solid = sum(counts[kind, "valid_after_builder"]
-                for kind in ("solid", "native_document", "native_body"))
+                for kind in ("solid", "native_document", "native_body", "selected_document"))
     any_solid = sum(entry["valid_solid_count"] for entry in files)
-    document = any(entry["kind"] == "native_document" for entry in files)
+    document = any(entry["kind"] in ("native_document", "selected_document") for entry in files)
     prototypes_valid = all_bodies_solid and solid == body_count
     return dict(
         valid_exported_solid_count=solid,

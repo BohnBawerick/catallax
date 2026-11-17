@@ -244,6 +244,10 @@ Finite self-loop curves must have measured endpoint incidence and close within t
 
 Native files have a short approximate `FILE_DESCRIPTION`. Concatenate the payloads of the ordered `CATALLAX_REPORT_JSON` comments and decode JSON to recover the repair/check record; JSON slash escapes prevent source strings from terminating those ignored STEP comments. Body-local exports include only the selected body's geometry, tolerances, repairs and checks, plus source-wide authority limitations.
 
+`OpenedStep::export_step_document` writes the default selector's actual certified, numerical or native body views, without another admission. The selected body artifacts keep their own dimensional contexts and are referenced through representation maps from the original prototype bindings. Source occurrence links and placement transforms remain attached to those bindings. The result records original prototype identities, emitted geometry roots and per-body authority separately; it does not promote an approximate body to certified authority.
+
+Whole-source selected export requires a retained parsed graph and representation bindings for every source prototype. Any surface-only sibling refuses the document atomically. Body writers, source-graph composition and serialization use the caller's existing export allowance. The public `repeated_placements` control covers one shared part at three distinct transforms in millimetre and metre source contexts.
+
 Default controls remain 0.0000001 mm initial entity tolerance and a 0.01 mm sewing displacement cap. Native measured entity tolerances may grow beyond that cap and are reported individually; this is not the fixed-cap checked policy. The library introduces no implicit native work allowance. The existing census observer still applies a shared 20M opening allowance and records exhausted work separately from geometry refusals.
 Output slots are reserved before optional admission work.
 A body-local budget/deadline refusal discards that private candidate and leaves its immutable source declaration. Completed siblings and native bodies awaiting optional proof remain usable.

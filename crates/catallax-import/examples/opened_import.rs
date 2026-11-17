@@ -104,6 +104,19 @@ fn native_record(
         "unit_factors":native.source_unit_factors(),"authority":"native_sampled","export_checks":file.checks()})
 }
 
+fn selected_record(file: &opened::SelectedStepFile) -> Value {
+    let roots: Vec<_> = file.bodies().iter().map(|body| json!({
+        "body":body.source_index,"name":format!("#{}",body.source_entity),
+        "parts":body.roots.len(),"entities":body.roots,
+        "counts":{"faces":body.counts[0],"edges":body.counts[1],"vertices":body.counts[2]},
+        "tolerance_mm":catallax_numbers::Rational::parse(&body.tolerance_mm).unwrap().to_f64_nearest(),
+        "unit_factors":body.unit_factors,
+    })).collect();
+    json!({"bodies":file.bodies().iter().map(|body|body.source_index).collect::<Vec<_>>(),
+        "kind":"selected_document","source_roots":roots,"authority":"selected_bodies",
+        "selected_body_evidence":file.bodies()})
+}
+
 fn export(
     opened: &OpenedStep,
     index: usize,
@@ -212,12 +225,13 @@ fn run(
     let mut failed_body = None;
     let (exported, export_work) = with_operation_budget(DEFAULT_WORK, || {
         let mut dec = Decider::default();
-        if let Some(native) = opened
-            .tolerant_admission()
-            .filter(|native| native.bodies().len() == opened.source().bodies().len())
+        if opened
+            .bodies()
+            .iter()
+            .all(|body| body.tier() != opened::Tier::SurfaceBody)
         {
-            let file = native.export_step(&mut dec).map_err(native_error)?;
-            let record = native_record(native, &file, 0..native.bodies().len(), "native_document");
+            let file = opened.export_step_document(&mut dec)?;
+            let record = selected_record(&file);
             files.push(save_export(out, "document.step", file.bytes(), record)?);
             return Ok::<_, Refusal>(());
         }

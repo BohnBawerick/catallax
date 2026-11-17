@@ -92,6 +92,10 @@ fn difference(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
     std::array::from_fn(|axis| a[axis] - b[axis])
 }
 
+fn same_location(a: &NativeLocation, b: &NativeLocation) -> bool {
+    a.chart == b.chart && a.parameters.map(f64::to_bits) == b.parameters.map(f64::to_bits)
+}
+
 impl Carrier {
     fn new(
         source: EntityId,
@@ -315,6 +319,12 @@ impl Carrier {
                     location.parameters[axis] += scale * delta[axis];
                 }
                 location = self.clamp(location);
+                // The retained best sample already evaluates these exact bits;
+                // evaluating it again cannot satisfy the strict improvement test.
+                if same_location(&location, &best.location) {
+                    dec.check_deadline()?;
+                    continue;
+                }
                 if let Some(sample) = self.try_sample(location, dec)? {
                     let residual_mm = distance(sample.point_mm, target) + sample.uncertainty_mm;
                     if residual_mm < best.residual_mm {

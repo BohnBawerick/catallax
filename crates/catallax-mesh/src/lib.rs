@@ -202,16 +202,15 @@ pub fn mesh_body_reusing(
     previous: &Mesh,
     dec: &mut Decider,
 ) -> Answered<Mesh> {
-    let previous =
-        (options == previous_options).then(|| reuse::Previous::new(previous_model, previous));
-    mesh_body_impl(model, body, options, previous.as_ref(), dec)
+    let previous = (options == previous_options).then_some((previous_model, previous));
+    mesh_body_impl(model, body, options, previous, dec)
 }
 
 fn mesh_body_impl(
     model: &Model,
     body: BodyId,
     options: &MeshOptions,
-    previous: Option<&reuse::Previous<'_>>,
+    previous: Option<(&Model, &Mesh)>,
     dec: &mut Decider,
 ) -> Answered<Mesh> {
     if let Some(expansion) = model

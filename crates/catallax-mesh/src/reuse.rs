@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use catallax_numbers::Refusal;
+use catallax_numbers::{Decider, Refusal};
 use catallax_shapes::{Curve, Point3, Surface};
 use catallax_topology::{EdgeId, FaceId, Loop, Model, VertexId};
 
@@ -56,16 +56,28 @@ fn same_curve(a: &Model, ae: EdgeId, b: &Model, be: EdgeId) -> bool {
 }
 
 impl<'a> Previous<'a> {
-    pub(crate) fn new(model: &'a Model, mesh: &'a Mesh) -> Self {
+    pub(crate) fn new(
+        model: &'a Model,
+        mesh: &'a Mesh,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        // Reserve both vertex-sized initializations before allocating. Each
+        // remaining record visit is charged before its scan or copy.
+        dec.charge_work((mesh.positions.len() as u64).saturating_mul(2))?;
         let mut boundary = vec![false; mesh.positions.len()];
         for edge in &mesh.edges {
+            dec.charge_work(1)?;
             for &vertex in &edge.vertices {
+                dec.charge_work(1)?;
                 boundary[vertex] = true;
             }
         }
+        dec.check_deadline()?;
         let mut owner = vec![usize::MAX; mesh.positions.len()];
         for (index, face) in mesh.faces.iter().enumerate() {
+            dec.charge_work(1)?;
             for triangle in &mesh.triangles[face.triangles.clone()] {
+                dec.charge_work(3)?;
                 for vertex in triangle.vertices {
                     if owner[vertex] != usize::MAX && owner[vertex] != index {
                         boundary[vertex] = true;
@@ -76,8 +88,10 @@ impl<'a> Previous<'a> {
         }
         let mut chords = BTreeMap::new();
         for (index, face) in mesh.faces.iter().enumerate() {
+            dec.charge_work(1)?;
             let mut once = Chords::new();
             for triangle in &mesh.triangles[face.triangles.clone()] {
+                dec.charge_work(3)?;
                 for i in 0..3 {
                     let (a, b) = (triangle.vertices[i], triangle.vertices[(i + 1) % 3]);
                     if boundary[a] && boundary[b] {
@@ -89,12 +103,17 @@ impl<'a> Previous<'a> {
                 }
             }
         }
-        Self {
+        let mut edges = BTreeMap::new();
+        for edge in &mesh.edges {
+            dec.charge_work(1)?;
+            edges.insert(edge.edge, edge);
+        }
+        Ok(Self {
             model,
             chords,
             mesh,
-            edges: mesh.edges.iter().map(|edge| (edge.edge, edge)).collect(),
-        }
+            edges,
+        })
     }
 
     fn boundary_map(
@@ -103,7 +122,8 @@ impl<'a> Previous<'a> {
         model: &Model,
         face: FaceId,
         boundaries: &Boundaries,
-    ) -> Option<BTreeMap<usize, usize>> {
+        dec: &mut Decider,
+    ) -> Result<Option<BTreeMap<usize, usize>>, Refusal> {
         let before = self.model.face(old.face);
         let after = model.face(face);
         if before.sense != after.sense
@@ -113,32 +133,37 @@ impl<'a> Previous<'a> {
                 model.geom().surface(after.surface),
             )
         {
-            return None;
+            return Ok(None);
         }
         let mut remap = BTreeMap::new();
         let mut reverse = BTreeMap::new();
-        let mut bind = |old: usize, new: usize| -> Option<()> {
-            if self
-                .mesh
-                .positions
-                .get(old)?
+        let mut bind = |old: usize, new: usize, dec: &mut Decider| -> Result<bool, Refusal> {
+            dec.charge_work(1)?;
+            let (Some(before), Some(after)) = (
+                self.mesh.positions.get(old),
+                boundaries.mesh.positions.get(new),
+            ) else {
+                return Ok(false);
+            };
+            if before
                 .iter()
-                .zip(boundaries.mesh.positions.get(new)?)
+                .zip(after)
                 .any(|(a, b)| a.to_bits() != b.to_bits())
                 || remap.get(&old).is_some_and(|&value| value != new)
                 || reverse.get(&new).is_some_and(|&value| value != old)
             {
-                return None;
+                return Ok(false);
             }
             remap.insert(old, new);
             reverse.insert(new, old);
-            Some(())
+            Ok(true)
         };
         for (&old_loop, &new_loop) in before.loops.iter().zip(&after.loops) {
+            dec.charge_work(1)?;
             match (self.model.loop_(old_loop), model.loop_(new_loop)) {
                 (Loop::Vertex(a), Loop::Vertex(b)) => {
                     if !same_vertex(self.model, Some(*a), model, Some(*b)) {
-                        return None;
+                        return Ok(None);
                     }
                     // Singleton trims bound the chart. Their poles are emitted
                     // as face-local samples, not the unused topological point
@@ -146,6 +171,7 @@ impl<'a> Previous<'a> {
                 }
                 (Loop::Coedges(a), Loop::Coedges(b)) if a.len() == b.len() => {
                     for (&a, &b) in a.iter().zip(b) {
+                        dec.charge_work(1)?;
                         let a = self.model.coedge(a);
                         let b = model.coedge(b);
                         let ae = self.model.edge(a.edge);
@@ -156,24 +182,28 @@ impl<'a> Previous<'a> {
                             || !same_vertex(self.model, ae.start, model, be.start)
                             || !same_vertex(self.model, ae.end, model, be.end)
                         {
-                            return None;
+                            return Ok(None);
                         }
-                        let old = self.edges.get(&a.edge)?;
+                        let Some(old) = self.edges.get(&a.edge) else {
+                            return Ok(None);
+                        };
                         let new = &boundaries.mesh.edges[boundaries.edges[&b.edge]];
                         if old.vertices.len() != new.vertices.len()
                             || old.max_chord_error != new.max_chord_error
                         {
-                            return None;
+                            return Ok(None);
                         }
                         for (&old, &new) in old.vertices.iter().zip(&new.vertices) {
-                            bind(old, new)?;
+                            if !bind(old, new, dec)? {
+                                return Ok(None);
+                            }
                         }
                     }
                 }
-                _ => return None,
+                _ => return Ok(None),
             }
         }
-        Some(remap)
+        Ok(Some(remap))
     }
 
     fn prior_matches(
@@ -181,21 +211,29 @@ impl<'a> Previous<'a> {
         face_index: usize,
         remap: &BTreeMap<usize, usize>,
         prior: &Chords,
-    ) -> bool {
-        let old_prior: Chords = self
-            .chords
-            .iter()
-            .filter(|&(_, &first_face)| first_face < face_index)
-            .filter_map(|(&(a, b), _)| {
-                let (&a, &b) = (remap.get(&a)?, remap.get(&b)?);
-                Some((a.min(b), a.max(b)))
-            })
-            .collect();
-        let vertices: BTreeSet<_> = remap.values().copied().collect();
-        old_prior.iter().copied().eq(prior
-            .iter()
-            .copied()
-            .filter(|(a, b)| vertices.contains(a) && vertices.contains(b)))
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        let mut old_prior = Chords::new();
+        for (&(a, b), &first_face) in &self.chords {
+            dec.charge_work(1)?;
+            if first_face < face_index
+                && let (Some(&a), Some(&b)) = (remap.get(&a), remap.get(&b))
+            {
+                old_prior.insert((a.min(b), a.max(b)));
+            }
+        }
+        let mut vertices = BTreeSet::new();
+        for &vertex in remap.values() {
+            dec.charge_work(1)?;
+            vertices.insert(vertex);
+        }
+        for &(a, b) in prior {
+            dec.charge_work(1)?;
+            if vertices.contains(&a) && vertices.contains(&b) && !old_prior.remove(&(a, b)) {
+                return Ok(false);
+            }
+        }
+        Ok(old_prior.is_empty())
     }
 
     pub(crate) fn append(
@@ -205,20 +243,26 @@ impl<'a> Previous<'a> {
         boundaries: &mut Boundaries,
         prior: &Chords,
         options: &MeshOptions,
+        dec: &mut Decider,
     ) -> Result<bool, Refusal> {
         for (index, old) in self.mesh.faces.iter().enumerate() {
-            let Some(mut remap) = self.boundary_map(old, model, face, boundaries) else {
+            dec.charge_work(1)?;
+            let Some(mut remap) = self.boundary_map(old, model, face, boundaries, dec)? else {
                 continue;
             };
-            if !self.prior_matches(index, &remap, prior) {
+            if !self.prior_matches(index, &remap, prior, dec)? {
                 continue;
             }
             let triangles = &self.mesh.triangles[old.triangles.clone()];
-            let interior: BTreeSet<_> = triangles
-                .iter()
-                .flat_map(|triangle| triangle.vertices)
-                .filter(|vertex| !remap.contains_key(vertex))
-                .collect();
+            let mut interior = BTreeSet::new();
+            for triangle in triangles {
+                dec.charge_work(3)?;
+                for vertex in triangle.vertices {
+                    if !remap.contains_key(&vertex) {
+                        interior.insert(vertex);
+                    }
+                }
+            }
             if interior.len()
                 > options
                     .max_vertices
@@ -229,35 +273,53 @@ impl<'a> Previous<'a> {
             // Preserve the original position order, including periodic chart
             // copies that survived compaction. Only boundary indices are shared.
             for vertex in interior {
+                dec.charge_work(1)?;
                 let next = boundaries.mesh.positions.len();
                 boundaries.mesh.positions.push(self.mesh.positions[vertex]);
                 remap.insert(vertex, next);
             }
             let start = boundaries.mesh.triangles.len();
-            boundaries
-                .mesh
-                .triangles
-                .extend(triangles.iter().map(|triangle| Triangle {
+            dec.charge_work((triangles.len() as u64).saturating_mul(3))?;
+            boundaries.mesh.triangles.reserve(triangles.len());
+            for triangle in triangles {
+                dec.check_deadline()?;
+                boundaries.mesh.triangles.push(Triangle {
                     vertices: triangle.vertices.map(|vertex| remap[&vertex]),
                     face,
-                }));
+                });
+            }
+            dec.charge_work(1)?;
             let mut report = old.clone();
             report.face = face;
             report.triangles = start..boundaries.mesh.triangles.len();
             boundaries.mesh.faces.push(report);
-            boundaries.mesh.unavailable_controls.extend(
-                self.mesh
-                    .unavailable_controls
-                    .iter()
-                    .filter(|control| control.face == old.face)
-                    .map(|control| {
-                        let mut control = control.clone();
-                        control.face = face;
-                        control
-                    }),
-            );
+            for control in &self.mesh.unavailable_controls {
+                dec.charge_work(1)?;
+                if control.face == old.face {
+                    let mut control = control.clone();
+                    control.face = face;
+                    boundaries.mesh.unavailable_controls.push(control);
+                }
+            }
             return Ok(true);
         }
         Ok(false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn expired_deadline_refuses_prior_mesh_indexing() {
+        let model = Model::new();
+        let mesh = Mesh::default();
+        let mut dec = Decider::default();
+        dec.set_deadline(Some(
+            std::time::Instant::now() - std::time::Duration::from_secs(1),
+        ));
+        let refusal = Previous::new(&model, &mesh, &mut dec).err().unwrap();
+        assert_eq!(refusal.code, "numbers.deadline");
     }
 }

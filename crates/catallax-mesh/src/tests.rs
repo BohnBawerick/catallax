@@ -368,6 +368,72 @@ fn changed_mesh_controls_cannot_reuse_a_coarser_face_proof() {
     assert_closed(&reused.value);
 }
 
+#[test]
+fn reuse_nonmatching_faces_cannot_bypass_the_operation_allowance() {
+    fn blocks(model: &mut Model, z: i64) -> BodyId {
+        let mut lumps = Vec::new();
+        for x in 0..8 {
+            let block = topology::block(model, [2.into(), 3.into(), 4.into()], &pose(x * 10, 0, z))
+                .unwrap();
+            lumps.extend_from_slice(&model.body(block).lumps);
+        }
+        model.add_body(Body {
+            kind: BodyKind::Solid,
+            lumps,
+            wires: vec![],
+            marks: MarkLog::default(),
+        })
+    }
+    let mut model = Model::new();
+    let old_body = blocks(&mut model, 0);
+    let previous = mesh(&model, old_body);
+    let body = blocks(&mut model, 1);
+    let options = options();
+    let (fresh, full_work) = catallax_numbers::with_operation_budget(1_000_000, || {
+        mesh_body(&model, body, &options, &mut Decider::default())
+    });
+    assert_closed(&fresh.unwrap().value);
+    let (answer, work) = catallax_numbers::with_operation_budget(full_work.used, || {
+        crate::mesh_body_reusing(
+            &model,
+            body,
+            &options,
+            &model,
+            &options,
+            &previous,
+            &mut Decider::default(),
+        )
+    });
+    assert_eq!(answer.unwrap_err().code, "numbers.operation-budget");
+    assert!(work.exhausted);
+}
+
+#[test]
+fn reused_mesh_charges_its_copied_triangle_corners() {
+    let mut model = Model::new();
+    let body = topology::sphere(&mut model, 2.into(), &Pose::identity()).unwrap();
+    let previous = mesh(&model, body);
+    let options = options();
+    let triangle_copy_work = previous.triangles.len() as u64 * 3;
+    let run = || {
+        crate::mesh_body_reusing(
+            &model,
+            body,
+            &options,
+            &model,
+            &options,
+            &previous,
+            &mut Decider::default(),
+        )
+    };
+    let (answer, work) = catallax_numbers::with_operation_budget(1_000_000, run);
+    assert_eq!(answer.unwrap().value, previous);
+    assert!(work.used >= triangle_copy_work);
+    let (answer, work) = catallax_numbers::with_operation_budget(triangle_copy_work - 1, run);
+    assert_eq!(answer.unwrap_err().code, "numbers.operation-budget");
+    assert!(work.exhausted);
+}
+
 fn lens(op: BoolOp) -> (Model, BodyId) {
     let mut model = Model::new();
     let a = topology::sphere(&mut model, 2.into(), &Pose::identity()).unwrap();

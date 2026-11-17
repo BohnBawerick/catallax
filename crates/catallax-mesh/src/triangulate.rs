@@ -1529,7 +1529,7 @@ pub(crate) fn build(
     model: &Model,
     body: BodyId,
     options: &MeshOptions,
-    previous: Option<&crate::reuse::Previous<'_>>,
+    previous: Option<(&Model, &Mesh)>,
     dec: &mut Decider,
 ) -> Answered<Mesh> {
     if catallax_topology::DraftedCylinder::of_body(model, body, dec)?.is_some() {
@@ -1547,7 +1547,19 @@ pub(crate) fn build(
     {
         return crate::spline_prism::build(model, body, &faces, options, dec);
     }
-    let (value, marks) = build_junction(model, body, options, junction, false, previous, dec)?;
+    let previous = previous
+        .filter(|_| !faces.is_empty())
+        .map(|(model, mesh)| crate::reuse::Previous::new(model, mesh, dec))
+        .transpose()?;
+    let (value, marks) = build_junction(
+        model,
+        body,
+        options,
+        junction,
+        false,
+        previous.as_ref(),
+        dec,
+    )?;
     Ok(Answer { value, marks })
 }
 
@@ -1592,7 +1604,9 @@ fn build_junction(
     for face in faces {
         let start = boundaries.mesh.triangles.len();
         let reused = previous
-            .map(|previous| previous.append(model, face, &mut boundaries, &prior_chords, options))
+            .map(|previous| {
+                previous.append(model, face, &mut boundaries, &prior_chords, options, dec)
+            })
             .transpose()?
             .unwrap_or(false);
         if !reused {

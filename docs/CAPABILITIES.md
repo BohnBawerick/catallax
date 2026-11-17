@@ -119,6 +119,10 @@ faces, including structured junction faces. Fresh edge sampling and the usual
 whole-mesh closure check still run. Changed controls disable reuse; coupled
 whole-body meshing routes still build their common grid. No external cache,
 new topology, export behavior or relaxed tolerance is involved.
+Only eligible routes index the previous mesh. Index visits, candidate matches,
+boundary/chord scans and copied records debit the caller's operation allowance
+and check its deadline. Vertex-sized array initialization and triangle copying
+reserve their charges before allocation.
 
 The development example `cargo run --release -p catallax-app --example
 mesh_reuse_profile -- 3 0.01` compares full and reused display triangulation on

@@ -326,21 +326,24 @@ pub fn preview_tolerant_body(
             continue;
         };
         let ends = edge.vertices.map(|vertex| vertices[vertex]);
-        let source_id = edge
-            .name
-            .strip_prefix('#')
-            .and_then(|name| name.parse().ok());
-        let curve = match source_id
-            .map(|entity| import.parsed_source().topology(entity, dec))
-            .transpose()
-            .map_err(|error| failure(format!("{error:?}")))?
-        {
-            Some(Topology::Edge {
-                curve: Some(curve), ..
-            }) => import.native_curve(curve),
-            _ => None,
-        };
-        let carrier = if let Some(curve) = curve {
+        let carrier = if edge.degenerate || matches!(edge.curve, Curve::Line(..)) {
+            EdgeCarrier::Line(ends.map(|index| mesh.positions[index]))
+        } else {
+            let source_id = edge
+                .name
+                .strip_prefix('#')
+                .and_then(|name| name.parse().ok());
+            let curve = match source_id
+                .map(|entity| import.parsed_source().topology(entity, dec))
+                .transpose()
+                .map_err(|error| failure(format!("{error:?}")))?
+            {
+                Some(Topology::Edge {
+                    curve: Some(curve), ..
+                }) => import.native_curve(curve),
+                _ => None,
+            }
+            .ok_or_else(|| failure("active edge has no retained native carrier"))?;
             let first = trim.samples.first().unwrap().curve.parameters[0];
             let last = trim.samples.last().unwrap().curve.parameters[0];
             EdgeCarrier::Native(
@@ -351,10 +354,6 @@ pub fn preview_tolerant_body(
                     [last, first]
                 },
             )
-        } else if edge.degenerate || matches!(edge.curve, Curve::Line(..)) {
-            EdgeCarrier::Line(ends.map(|index| mesh.positions[index]))
-        } else {
-            return Err(failure("active edge has no retained native carrier"));
         };
         let samples = edge_samples(
             &carrier,

@@ -185,7 +185,9 @@ pub(super) fn cut(
                                 ));
                             }
                             if let Some(previous) = crossing
-                                && norm(subtract(previous.1.point_mm, found.1.point_mm)) > precision
+                                && (previous.0 != found.0
+                                    || norm(subtract(previous.1.point_mm, found.1.point_mm))
+                                        > precision)
                             {
                                 return Err(invalid(
                                     "import.tolerant-ambiguous-crossing",
@@ -275,9 +277,18 @@ mod tests {
 #29=OPEN_SHELL('',(#28));#30=SHELL_BASED_SURFACE_MODEL('',(#29));
 ENDSEC;END-ISO-10303-21;";
         let mut dec = Decider::default();
-        let parsed = ParsedStep::read(source, &mut dec).unwrap();
+        let retracing = std::str::from_utf8(source).unwrap()
+            .replace("#2=CARTESIAN_POINT('',(0.01,-0.01,0.));",
+                "#2=CARTESIAN_POINT('',(-1.,0.,0.));")
+            .replace("#12=LINE('',#1,#9);",
+                "#12=B_SPLINE_CURVE_WITH_KNOTS('',1,(#1,#31,#1),.UNSPECIFIED.,.F.,.U.,(2,1,2),(0.,1.,2.),.UNSPECIFIED.);#31=CARTESIAN_POINT('',(1.,0.,0.));");
         let scale = Rational::one();
-        for cap in [0.02, 0.005] {
+        for (source, cap, retraces) in [
+            (source.as_slice(), 0.02, false),
+            (source.as_slice(), 0.005, false),
+            (retracing.as_bytes(), 2.0, true),
+        ] {
+            let parsed = ParsedStep::read(source, &mut dec).unwrap();
             let retained = TolerantBody::retained(
                 "#30",
                 false,
@@ -289,7 +300,12 @@ ENDSEC;END-ISO-10303-21;";
                 let Curve::Retained(geometry) = &edge.curve else {
                     unreachable!()
                 };
-                edge.curve = geometry.recognized_line(&mut dec).unwrap().unwrap();
+                if let Some(line) = geometry.recognized_line(&mut dec).unwrap() {
+                    edge.curve = line;
+                }
+            }
+            if retraces {
+                body.edges[0].source_range = Some([Rational::zero(), Rational::one().mul_pow2(1)]);
             }
             let original = body.clone();
             let mut context =
@@ -341,7 +357,11 @@ ENDSEC;END-ISO-10303-21;";
                 &mut evidence,
                 &mut dec,
             );
-            if cap < 0.01 {
+            if retraces {
+                assert!(matches!(result, Err(Error::Numerical(error))
+                    if error.code == "import.tolerant-ambiguous-crossing"));
+                assert_eq!(body, original);
+            } else if cap < 0.01 {
                 assert!(
                     matches!(result, Err(Error::Numerical(error)) if error.code == "import.tolerant-crossing-cap")
                 );

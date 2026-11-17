@@ -106,17 +106,39 @@ class StageComparisonTests(unittest.TestCase):
             dict(kind="native_document", bodies=[0, 1], outcome="invalid_after_builder", valid_solid_count=1),
             dict(kind="surface", bodies=[2], outcome="valid_after_builder", valid_solid_count=0),
         ]
-        inventory = export_inventory(files)
+        inventory = export_inventory(files, 3, False, True)
         self.assertTrue(inventory["has_valid_exported_solid"])
         self.assertEqual(inventory["any_valid_exported_solid_count"], 1)
         self.assertEqual(inventory["valid_exported_solid_count"], 0)
         self.assertEqual(inventory["invalid_exported_body_count"], 2)
 
         files[0].update(outcome="valid_after_builder", valid_solid_count=3)
-        inventory = export_inventory(files)
+        inventory = export_inventory(files, 3, False, True)
         self.assertEqual(inventory["any_valid_exported_solid_count"], 3)
         self.assertEqual(inventory["valid_exported_solid_count"], 2)
 
+
+    def test_valid_prototypes_do_not_establish_source_occurrence_coverage(self):
+        files = [dict(kind="solid", bodies=[0], outcome="valid_after_builder", valid_solid_count=1)]
+        inventory = export_inventory(files, 1, True, True)
+        self.assertTrue(inventory["prototype_solids_export_valid"])
+        self.assertFalse(inventory["all_solids_export_valid"])
+        self.assertFalse(inventory["source_document_exported"])
+        row = dict(inventory, outcome="full", observed_body_count=1)
+        comparison = comparison_outcomes({"source": row}, {"source": 1}, {"source"}, {})
+        self.assertEqual(comparison["frozen_valid_export_losses"], [])
+        files[0]["kind"] = "native_document"
+        self.assertTrue(export_inventory(files, 1, True, True)["all_solids_export_valid"])
+
+    def test_stopped_sibling_export_is_an_observed_lower_bound(self):
+        files = [dict(kind="native_body", bodies=[0], outcome="invalid_after_builder", valid_solid_count=0)]
+        inventory = export_inventory(files, 2, True, False)
+        self.assertIsNone(inventory["has_valid_exported_solid"])
+        self.assertEqual(inventory["any_valid_exported_solid_count"], 0)
+        self.assertTrue(inventory["any_valid_exported_solid_count_is_lower_bound"])
+        self.assertFalse(inventory["export_observation_complete"])
+        files[0].update(outcome="valid_after_builder", valid_solid_count=1)
+        self.assertTrue(export_inventory(files, 2, True, False)["has_valid_exported_solid"])
 
 if __name__ == "__main__":
     unittest.main()

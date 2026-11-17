@@ -58,8 +58,11 @@ pub struct UvSample {
     pub curve: super::native::NativeLocation,
     /// Native surface chart and UV.
     pub surface: super::native::NativeLocation,
-    /// Measured physical fit residual in millimetres.
+    /// Final physical curve correspondence residual in millimetres.
     pub residual_mm: f64,
+    /// Final topology-vertex incidence at a boundary endpoint, in millimetres.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vertex_residual_mm: Option<f64>,
     /// Numerical convergence status, not a proof of a nearest point.
     pub converged: bool,
 }

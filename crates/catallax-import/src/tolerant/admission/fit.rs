@@ -1118,14 +1118,15 @@ pub(super) fn check_body(
                             + target.uncertainty_mm;
                         tolerance.measure(projection.sample.uncertainty_mm)?;
                         edge_tolerances[usage.edge].measure(residual + tolerance.tolerance)?;
-                        if let Some(vertex) = vertex {
-                            vertex_tolerances[vertex].measure(
-                                norm(subtract(
-                                    projection.sample.point_mm,
-                                    vertices[vertex].point_mm,
-                                )) + projection.sample.uncertainty_mm
-                                    + vertices[vertex].uncertainty_mm,
-                            )?;
+                        let vertex_residual = vertex.map(|vertex| {
+                            norm(subtract(
+                                projection.sample.point_mm,
+                                vertices[vertex].point_mm,
+                            )) + projection.sample.uncertainty_mm
+                                + vertices[vertex].uncertainty_mm
+                        });
+                        if let Some((vertex, residual)) = vertex.zip(vertex_residual) {
+                            vertex_tolerances[vertex].measure(residual)?;
                         }
                         fit_residual = fit_residual
                             .max(residual)
@@ -1138,6 +1139,7 @@ pub(super) fn check_body(
                             curve: curve_location,
                             surface: projection.location,
                             residual_mm: residual,
+                            vertex_residual_mm: vertex_residual,
                             converged: projection.converged,
                         });
                     }
@@ -1148,14 +1150,48 @@ pub(super) fn check_body(
                         } else {
                             [endpoints[1], endpoints[0]]
                         };
-                        if poles::align_endpoints(
+                        let aligned = poles::align_endpoints(
                             surface,
                             &mut samples,
                             endpoints.map(|vertex| vertices[vertex]),
                             body.options.initial_mm.to_f64_nearest(),
                             dec,
-                        )? {
+                        )?;
+                        if aligned[0] || aligned[1] {
                             preserve_pcurve = false;
+                        }
+                        let last = samples.len() - 1;
+                        for (endpoint, (vertex, moved)) in
+                            endpoints.into_iter().zip(aligned).enumerate()
+                        {
+                            if !moved {
+                                continue;
+                            }
+                            let index = [0, last][endpoint];
+                            let sample = &mut samples[index];
+                            let final_point = surface.sample(sample.surface, dec)?;
+                            let curve_index = if (endpoint == 0) == usage.forward {
+                                0
+                            } else {
+                                STATIONS
+                            };
+                            let curve_point = &edge.points[curve_index].1;
+                            let curve_residual =
+                                norm(subtract(final_point.point_mm, curve_point.point_mm))
+                                    + final_point.uncertainty_mm
+                                    + curve_point.uncertainty_mm;
+                            let vertex_residual =
+                                norm(subtract(final_point.point_mm, vertices[vertex].point_mm))
+                                    + final_point.uncertainty_mm
+                                    + vertices[vertex].uncertainty_mm;
+                            sample.residual_mm = curve_residual;
+                            sample.vertex_residual_mm = Some(vertex_residual);
+                            tolerance.measure(final_point.uncertainty_mm)?;
+                            edge_tolerances[usage.edge]
+                                .measure(curve_residual + tolerance.tolerance)?;
+                            vertex_tolerances[vertex].measure(vertex_residual)?;
+                            fit_residual = fit_residual.max(curve_residual).max(vertex_residual);
+                            sample_count += 1;
                         }
                     }
                     let reconstructed = !preserve_pcurve && surface.is_some();
@@ -1199,6 +1235,9 @@ pub(super) fn check_body(
                             fit.rebuild(&mut samples, dec)?;
                             (fit.samples, fit.maximum_residual, fit.converged)
                         };
+                        let maximum_residual = maximum_residual
+                            .max(samples[0].residual_mm)
+                            .max(samples.last().expect("finite trace").residual_mm);
                         edge_tolerances[usage.edge].measure(maximum_residual)?;
                         sample_count += trace_samples;
                         converged_count += trace_converged;

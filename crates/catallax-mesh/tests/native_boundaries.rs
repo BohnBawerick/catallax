@@ -1,4 +1,7 @@
-//! A reconstructed pole boundary must still display the actual half-sphere.
+//! Native previews keep repaired boundaries in physical millimetres.
+#[path = "../../catallax-import/tests/common/mod.rs"]
+mod step_fixtures;
+
 use catallax_import::{sha256_hex, tolerant};
 use catallax_mesh::{PreviewOptions, preview_tolerant_body};
 use catallax_numbers::{Decider, Rational, with_operation_budget};
@@ -73,5 +76,79 @@ fn reconstructed_pole_edges_preserve_the_half_sphere_display() {
             ));
         }
         std::fs::write(std::path::Path::new(&folder).join("native-poles.obj"), obj).unwrap();
+    }
+}
+
+#[test]
+fn repaired_line_previews_ignore_vector_scale_and_source_length_units() {
+    use step_fixtures::{BoxFixture, Unit, box_step};
+    for (unit, size) in [
+        (Unit::Millimetre, ["10", "6", "4"]),
+        (Unit::Metre, ["0.01", "0.006", "0.004"]),
+    ] {
+        let mut fixture = BoxFixture::new(size);
+        fixture.unit = unit;
+        let source = box_step(fixture)
+            .lines()
+            .map(|line| {
+                if line.contains("=VECTOR(") {
+                    let (prefix, _) = line.rsplit_once(',').unwrap();
+                    format!("{prefix},2.);")
+                } else {
+                    line.to_owned()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let (import, work) = with_operation_budget(20_000_000, || {
+            tolerant::admission::import_step(
+                source.as_bytes(),
+                &sha256_hex(source.as_bytes()),
+                Default::default(),
+                &mut Decider::default(),
+            )
+        });
+        let import = import.unwrap();
+        assert!(!work.exhausted);
+        let preview = preview_tolerant_body(
+            &import,
+            0,
+            &PreviewOptions {
+                chord_tolerance: Rational::parse("0.02").unwrap(),
+                angular_deviation: None,
+                max_vertices: 2_000,
+            },
+            &mut Decider::default(),
+        )
+        .unwrap();
+        for (axis, extent) in [10.0, 6.0, 4.0].into_iter().enumerate() {
+            let low = preview
+                .positions
+                .iter()
+                .map(|point| point[axis])
+                .fold(f64::INFINITY, f64::min);
+            let high = preview
+                .positions
+                .iter()
+                .map(|point| point[axis])
+                .fold(f64::NEG_INFINITY, f64::max);
+            assert!(low.abs() < 1e-9 && (high - extent).abs() < 1e-9);
+        }
+        let area = preview
+            .triangles
+            .iter()
+            .map(|triangle| {
+                let points = triangle.vertices.map(|index| preview.positions[index]);
+                let a: [f64; 3] = std::array::from_fn(|axis| points[1][axis] - points[0][axis]);
+                let b: [f64; 3] = std::array::from_fn(|axis| points[2][axis] - points[0][axis]);
+                let cross = [
+                    a[1] * b[2] - a[2] * b[1],
+                    a[2] * b[0] - a[0] * b[2],
+                    a[0] * b[1] - a[1] * b[0],
+                ];
+                cross[0].hypot(cross[1]).hypot(cross[2]) * 0.5
+            })
+            .sum::<f64>();
+        assert!((area - 248.0).abs() < 1e-6, "physical box area {area}");
     }
 }

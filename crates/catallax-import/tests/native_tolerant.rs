@@ -634,3 +634,66 @@ fn an_out_of_domain_source_trace_is_rebuilt_from_the_actual_curve() {
         .unwrap();
     }
 }
+
+#[test]
+fn pole_aligned_endpoints_report_their_final_curve_and_vertex_incidence() {
+    let source = include_str!("fixtures/half-sphere-missing-poles.step").replace(
+        "#40 = CARTESIAN_POINT('',(0.,-6.28318530718));",
+        "#40 = CARTESIAN_POINT('',(3.14159265359,-6.28318530718));",
+    );
+    let (native, work) = with_operation_budget(20_000_000, || {
+        tolerant::admission::import_step(
+            source.as_bytes(),
+            &sha256_hex(source.as_bytes()),
+            Default::default(),
+            &mut Decider::default(),
+        )
+    });
+    let native = native.unwrap();
+    assert!(!work.exhausted);
+    let trace = native
+        .evidence()
+        .native_trims
+        .iter()
+        .find(|trace| trace.face == "#17" && trace.edge == "#21")
+        .unwrap();
+    let body = native.bodies()[0].definition();
+    let edge = body.edges().iter().find(|edge| edge.name == "#21").unwrap();
+    let surface = native.native_surface(33).unwrap();
+    let curve = native.native_curve(26).unwrap();
+    for (endpoint, sample) in [
+        trace.samples.first().unwrap(),
+        trace.samples.last().unwrap(),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        assert!(sample.surface.parameters[0].abs() < 1e-6);
+        let actual = surface
+            .sample(sample.surface, &mut Decider::default())
+            .unwrap();
+        let expected = curve.sample(sample.curve, &mut Decider::default()).unwrap();
+        let curve_residual = (0..3).fold(0.0_f64, |distance, axis| {
+            distance.hypot(actual.point_mm[axis] - expected.point_mm[axis])
+        }) + actual.uncertainty_mm
+            + expected.uncertainty_mm;
+        assert!((sample.residual_mm - curve_residual).abs() < 1e-12);
+        assert!(edge.tolerance_mm().to_f64_nearest() >= sample.residual_mm);
+        let vertex = &body.vertices()[edge.vertices[if trace.forward {
+            endpoint
+        } else {
+            1 - endpoint
+        }]];
+        let point = vertex
+            .source
+            .point
+            .each_ref()
+            .map(|value| value.to_f64_nearest());
+        let vertex_residual = (0..3).fold(0.0_f64, |distance, axis| {
+            distance.hypot(actual.point_mm[axis] - point[axis])
+        }) + actual.uncertainty_mm;
+        let recorded = sample.vertex_residual_mm.unwrap();
+        assert!((recorded - vertex_residual).abs() < 1e-12);
+        assert!(vertex.tolerance_mm().to_f64_nearest() >= recorded);
+    }
+}

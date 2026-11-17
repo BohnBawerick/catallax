@@ -211,13 +211,10 @@ fn run(
     let mut failed_body = None;
     let (exported, export_work) = with_operation_budget(DEFAULT_WORK, || {
         let mut dec = Decider::default();
-        if let Some(native) = opened.tolerant_admission().filter(|native| {
-            native.bodies().len() == opened.source().bodies().len()
-                && opened
-                    .bodies()
-                    .iter()
-                    .any(|body| body.tier() == opened::Tier::TolerantSolid)
-        }) {
+        if let Some(native) = opened
+            .tolerant_admission()
+            .filter(|native| native.bodies().len() == opened.source().bodies().len())
+        {
             let file = native.export_step(&mut dec).map_err(native_error)?;
             let record = native_record(native, &file, 0..native.bodies().len(), "native_document");
             files.push(save_export(out, "document.step", file.bytes(), record)?);

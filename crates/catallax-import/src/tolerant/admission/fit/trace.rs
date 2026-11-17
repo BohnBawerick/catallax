@@ -77,6 +77,7 @@ impl Fit<'_> {
             curve: location,
             surface: surface_location,
             residual_mm: projection.residual_mm,
+            vertex_residual_mm: None,
             converged: projection.converged,
         };
         self.interval(left, &middle, depth + 1, output, dec)?;

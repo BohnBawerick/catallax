@@ -59,8 +59,8 @@ pub(super) fn align_endpoints(
     targets: [NativeSample; 2],
     precision: f64,
     dec: &mut Decider,
-) -> Result<bool, Error> {
-    let mut changed = false;
+) -> Result<[bool; 2], Error> {
+    let mut changed = [false; 2];
     for (endpoint, (index, neighbor)) in [(0, 1), (samples.len() - 1, samples.len() - 2)]
         .into_iter()
         .enumerate()
@@ -71,7 +71,7 @@ pub(super) fn align_endpoints(
             after[axis] = samples[neighbor].surface.parameters[axis];
             if collapsed(surface, [before, after], targets[endpoint], precision, dec)?.is_some() {
                 samples[index].surface = surface.location(after)?;
-                changed = true;
+                changed[endpoint] = true;
             }
         }
     }
@@ -192,6 +192,7 @@ pub(super) fn insert(
                                 },
                                 surface,
                                 residual_mm: maximum,
+                                vertex_residual_mm: Some(maximum),
                                 converged: true,
                             })
                             .collect(),

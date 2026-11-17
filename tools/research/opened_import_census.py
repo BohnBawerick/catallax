@@ -442,6 +442,9 @@ def observe(binary, source, baseline, folder, retain, max_rss_mb=6144):
             export_validity="not_opened",
             has_valid_exported_solid=False,
             any_valid_exported_solid_count=0,
+            any_valid_exported_solid_count_is_lower_bound=False,
+            export_observation_complete=True,
+            source_document_exported=False,
         )
     opening(row, response["open"])
     row.update(
@@ -452,7 +455,9 @@ def observe(binary, source, baseline, folder, retain, max_rss_mb=6144):
     if response["outcome"] == "refused":
         row["export_refusal"] = cause(response["refusal"]) or "resource_limit"
     if not response["files"]:
-        row.update(has_valid_exported_solid=False, any_valid_exported_solid_count=0)
+        row.update(export_inventory(
+            [], row["observed_body_count"], row["outcome"] == "full",
+            response["outcome"] == "complete"))
         row["export_validity"] = (
             "source_surfaces_without_checked_brep"
             if not row.get("export_refusal")
@@ -490,10 +495,9 @@ def observe(binary, source, baseline, folder, retain, max_rss_mb=6144):
     checked = json.loads((folder / "raw.json").read_text())
     assert checked["source_sha256"] == expected and checked["ocp_version"] == "8.0.1.1"
     assert [f["sha256"] for f in checked["files"]] == row["exported_step_hashes"]
-    row.update(export_inventory(checked["files"]))
-    row["all_solids_export_valid"] = (
-        row["outcome"] == "full" and row["valid_exported_solid_count"] == row["observed_body_count"]
-    )
+    row.update(export_inventory(
+        checked["files"], row["observed_body_count"], row["outcome"] == "full",
+        response["outcome"] == "complete"))
     row["export_validity"] = (
         "export_refused"
         if row.get("export_refusal")
@@ -514,12 +518,14 @@ def observe(binary, source, baseline, folder, retain, max_rss_mb=6144):
     return row
 
 
-def export_inventory(files):
+def export_inventory(files, body_count, all_bodies_solid, observation_complete):
     counts = Counter((entry["kind"], entry["outcome"])
                      for entry in files for _ in entry["bodies"])
     solid = sum(counts[kind, "valid_after_builder"]
                 for kind in ("solid", "native_document", "native_body"))
     any_solid = sum(entry["valid_solid_count"] for entry in files)
+    document = any(entry["kind"] == "native_document" for entry in files)
+    prototypes_valid = all_bodies_solid and solid == body_count
     return dict(
         valid_exported_solid_count=solid,
         valid_exported_surface_count=counts["surface", "valid_after_builder"],
@@ -528,7 +534,14 @@ def export_inventory(files):
         reader_refused_body_count=sum(v for (_, outcome), v in counts.items()
                                       if outcome == "reader_refused"),
         any_valid_exported_solid_count=any_solid,
-        has_valid_exported_solid=any_solid > 0,
+        has_valid_exported_solid=(
+            any_solid > 0 if observation_complete or any_solid > 0 else None),
+        any_valid_exported_solid_count_is_lower_bound=not observation_complete,
+        export_observation_complete=observation_complete,
+        source_document_exported=document,
+        prototype_solids_export_valid=prototypes_valid,
+        all_solids_export_valid=(
+            prototypes_valid and observation_complete and document),
     )
 
 
@@ -611,7 +624,7 @@ def comparison_outcomes(by_id, expected_full, expected_valid, prior_rows):
         per_file_tier_transitions=transitions,
         frozen_valid_export_losses=sorted(
             key for key in expected_valid
-            if key not in export_unknown and not by_id[key].get("all_solids_export_valid")
+            if key not in export_unknown and not by_id[key].get("prototype_solids_export_valid")
         ),
         not_measured=sorted(export_unknown),
         baseline_not_measured=sorted(
@@ -821,8 +834,12 @@ def collect(args):
         full_solid_files=outcomes["full"],
         full_solid_share_percent=f"{outcomes['full']/30:.2f}",
         files_with_any_valid_exported_solid=sum(r.get("has_valid_exported_solid") is True for r in observations),
-        any_valid_export_unmeasured_files=[r["model_id"] for r in observations if "has_valid_exported_solid" not in r],
-        valid_solid_count_basis="individual raw-builder-valid exported solids; full source coverage and occurrence transfer remain separate predicates",
+        any_valid_export_unmeasured_files=[r["model_id"] for r in observations if r.get("has_valid_exported_solid") is None],
+        any_valid_export_lower_bound_files=[r["model_id"] for r in observations if r.get("any_valid_exported_solid_count_is_lower_bound")],
+        valid_solid_count_basis="individual observed raw-builder-valid exported solids; incomplete export observation is a lower bound, not a negative verdict on skipped siblings",
+        prototype_solids_export_valid_files=sum(bool(r.get("prototype_solids_export_valid")) for r in observations),
+        source_document_exported_files=sum(bool(r.get("source_document_exported")) for r in observations),
+        strict_source_export_basis="complete source-body solid coverage, occurrence-preserving document export and all exported solids valid; isolated prototype exports are excluded",
         body_first_blockers=[
             dict(stage=stage, refusal=refusal, resource_limited=resource, bodies=count, files=len(files))
             for (stage, refusal, resource), (count, files) in sorted(blockers.items())

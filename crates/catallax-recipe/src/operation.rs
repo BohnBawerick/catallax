@@ -504,7 +504,8 @@ impl Operation {
             | Operation::ImportIges { .. }
             | Operation::ImportMesh { .. }
             | Operation::ScanImport { .. } => vec![],
-            Operation::Extrude { profile, .. } | Operation::ExtrudeTapered {profile,..}
+            Operation::Extrude { profile, .. }
+            | Operation::ExtrudeTapered { profile, .. }
             | Operation::Revolve { profile, .. } => {
                 vec![(profile, Profile)]
             }
@@ -534,11 +535,18 @@ impl Operation {
             | Operation::Draft { body, .. }
             | Operation::Pattern { body, .. }
             | Operation::Mirror { body, .. } => vec![(body, Body)],
-            Operation::Sweep { profile, path, guide, .. } => {
-                let mut inputs=Vec::with_capacity(2+usize::from(guide.is_some()));
-                inputs.push((profile,Profile));
-                inputs.push((path,Path));
-                if let Some(guide)=guide {inputs.push((guide,Path));}
+            Operation::Sweep {
+                profile,
+                path,
+                guide,
+                ..
+            } => {
+                let mut inputs = Vec::with_capacity(2 + usize::from(guide.is_some()));
+                inputs.push((profile, Profile));
+                inputs.push((path, Path));
+                if let Some(guide) = guide {
+                    inputs.push((guide, Path));
+                }
                 inputs
             }
             Operation::Loft { sections, .. } => {
@@ -768,7 +776,9 @@ impl PathSegment {
     /// The segment's id.
     pub fn id(&self) -> &ElementId {
         match self {
-            Self::Line { id, .. } | Self::Arc { id, .. } | Self::Helix { id, .. }
+            Self::Line { id, .. }
+            | Self::Arc { id, .. }
+            | Self::Helix { id, .. }
             | Self::Spline { id, .. } => id,
         }
     }

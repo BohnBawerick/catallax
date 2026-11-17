@@ -51,54 +51,53 @@ pub(crate) fn evaluate(value: &Value, source: &str, out: &Path) -> io::Result<Va
         _ => return invalid("tolerance_mm must be a positive rational string".into()),
     };
     let mut dec = Decider::default();
-    let (admitted, result) =
-        if problem.recipe["format"] == "catallax-general-sweep/1" {
-            let definition: catallax_features::general_sweep::SweepRecipe =
-                match serde_json::from_value(problem.recipe["definition"].clone()) {
-                    Ok(definition) => definition,
-                    Err(error) => return invalid(error.to_string()),
-                };
-            if definition.tolerance_mm.value() != &tolerance {
-                return invalid("sweep and export must declare the same tolerance_mm".into());
-            }
-            let swept = match catallax_features::general_sweep::build(&definition, &mut dec) {
-                Ok(swept) => swept,
-                Err(error) => return Ok(refused(error.code, error.detail)),
+    let (admitted, result) = if problem.recipe["format"] == "catallax-general-sweep/1" {
+        let definition: catallax_features::general_sweep::SweepRecipe =
+            match serde_json::from_value(problem.recipe["definition"].clone()) {
+                Ok(definition) => definition,
+                Err(error) => return invalid(error.to_string()),
             };
-            let checks = serde_json::to_value(swept.checks()).expect("finite sweep checks");
-            (
-                Admitted {
-                    body: swept.into_body(),
-                    recipe_work: current_operation_work().used,
-                    sweep_checks: checks,
-                },
-                definition.name,
-            )
-        } else {
-            let imported = match crate::import_recipe::parse(&problem.recipe) {
-                Ok(imported) => imported,
-                Err(error) => return Ok(refused(error.code, error.detail)),
-            };
-            let empty_files = catallax_features::ImportFiles::new();
-            let (input, files) = imported
-                .as_ref()
-                .map_or((&problem.recipe, &empty_files), |(recipe, files)| {
-                    (*recipe, files)
-                });
-            let recipe = match catallax_recipe::Recipe::parse(&input.to_string()) {
-                Ok(recipe) => recipe,
-                Err(error) => {
-                    let mut manifest = refused("cli.invalid-recipe", error);
-                    manifest["status"] = json!("invalid-question");
-                    return Ok(manifest);
-                }
-            };
-            let admitted = match admit(&recipe, files, &tolerance, &mut dec) {
-                Ok(admitted) => admitted,
-                Err(manifest) => return Ok(manifest),
-            };
-            (admitted, recipe.result.to_string())
+        if definition.tolerance_mm.value() != &tolerance {
+            return invalid("sweep and export must declare the same tolerance_mm".into());
+        }
+        let swept = match catallax_features::general_sweep::build(&definition, &mut dec) {
+            Ok(swept) => swept,
+            Err(error) => return Ok(refused(error.code, error.detail)),
         };
+        let checks = serde_json::to_value(swept.checks()).expect("finite sweep checks");
+        (
+            Admitted {
+                body: swept.into_body(),
+                recipe_work: current_operation_work().used,
+                sweep_checks: checks,
+            },
+            definition.name,
+        )
+    } else {
+        let imported = match crate::import_recipe::parse(&problem.recipe) {
+            Ok(imported) => imported,
+            Err(error) => return Ok(refused(error.code, error.detail)),
+        };
+        let empty_files = catallax_features::ImportFiles::new();
+        let (input, files) = imported
+            .as_ref()
+            .map_or((&problem.recipe, &empty_files), |(recipe, files)| {
+                (*recipe, files)
+            });
+        let recipe = match catallax_recipe::Recipe::parse(&input.to_string()) {
+            Ok(recipe) => recipe,
+            Err(error) => {
+                let mut manifest = refused("cli.invalid-recipe", error);
+                manifest["status"] = json!("invalid-question");
+                return Ok(manifest);
+            }
+        };
+        let admitted = match admit(&recipe, files, &tolerance, &mut dec) {
+            Ok(admitted) => admitted,
+            Err(manifest) => return Ok(manifest),
+        };
+        (admitted, recipe.result.to_string())
+    };
     let body = admitted.body;
     let recipe_work = admitted.recipe_work;
     let sweep_checks = admitted.sweep_checks;
@@ -257,17 +256,42 @@ fn admit(
     dec: &mut Decider,
 ) -> Result<Admitted, Value> {
     if catallax_features::general_sweep::requires_numerical(recipe) && files.is_empty() {
-        let candidate=catallax_features::general_sweep::prepare_recipe(recipe,
-            NumericalOptions {tolerance_mm:tolerance.clone()},dec).map_err(build_refusal)?;
-        let recipe_work=current_operation_work().used;
-        let built=candidate.admit(|model,body,options,dec| {
-            let (definition,trims)=step::definition_from_exact_model(
-                &model,body,recipe.name.clone(),&options.tolerance_mm,dec)?;
-            let body=numerical::build_with_native_trims(definition,trims,options.clone(),dec)?;
-            Ok((body,()))
-        },dec).map_err(|error|refused(error.code,error.detail))?.0;
-        return Ok(Admitted {body:built.body,recipe_work,
-            sweep_checks:serde_json::to_value(built.checks).expect("finite sweep checks")});
+        let candidate = catallax_features::general_sweep::prepare_recipe(
+            recipe,
+            NumericalOptions {
+                tolerance_mm: tolerance.clone(),
+            },
+            dec,
+        )
+        .map_err(build_refusal)?;
+        let recipe_work = current_operation_work().used;
+        let built = candidate
+            .admit(
+                |model, body, options, dec| {
+                    let (definition, trims) = step::definition_from_exact_model(
+                        &model,
+                        body,
+                        recipe.name.clone(),
+                        &options.tolerance_mm,
+                        dec,
+                    )?;
+                    let body = numerical::build_with_native_trims(
+                        definition,
+                        trims,
+                        options.clone(),
+                        dec,
+                    )?;
+                    Ok((body, ()))
+                },
+                dec,
+            )
+            .map_err(|error| refused(error.code, error.detail))?
+            .0;
+        return Ok(Admitted {
+            body: built.body,
+            recipe_work,
+            sweep_checks: serde_json::to_value(built.checks).expect("finite sweep checks"),
+        });
     }
     let built = if files.is_empty() {
         match catallax_features::evaluate_with_numerical_hole(
@@ -317,7 +341,11 @@ fn admit(
         Ok(body) => body,
         Err(error) => return Err(refused(error.code, error.detail)),
     };
-    Ok(Admitted { body, recipe_work, sweep_checks: Value::Null })
+    Ok(Admitted {
+        body,
+        recipe_work,
+        sweep_checks: Value::Null,
+    })
 }
 
 fn build_refusal(error: catallax_features::BuildError) -> Value {

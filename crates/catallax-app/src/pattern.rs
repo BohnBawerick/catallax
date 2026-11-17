@@ -223,7 +223,11 @@ fn geometry(op: &mut Operation, recipe: &Recipe, map: &Isometry) -> Result<(), R
                         }
                     }
                     catallax_recipe::PathSegment::Helix {
-                        centre, axis, angle, corner_axis, ..
+                        centre,
+                        axis,
+                        angle,
+                        corner_axis,
+                        ..
                     } => {
                         p(centre)?;
                         v(axis)?;
@@ -275,12 +279,16 @@ fn geometry(op: &mut Operation, recipe: &Recipe, map: &Isometry) -> Result<(), R
                 }
             }
         }
-        ExtrudeTapered {distance,..} => {
-            if map.reversing() {*distance=(-distance.value()).into();}
-        }
-        Sweep {twist,..} => {
+        ExtrudeTapered { distance, .. } => {
             if map.reversing() {
-                if let Some(twist)=twist {*twist=(-twist.value()).into();}
+                *distance = (-distance.value()).into();
+            }
+        }
+        Sweep { twist, .. } => {
+            if map.reversing() {
+                if let Some(twist) = twist {
+                    *twist = (-twist.value()).into();
+                }
             }
         }
         Boolean { .. }

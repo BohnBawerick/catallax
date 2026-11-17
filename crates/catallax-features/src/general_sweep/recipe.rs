@@ -1,9 +1,7 @@
 //! Fitted recipe construction. Only the numerical admission callback publishes a body.
 
 use super::*;
-use catallax_recipe::{
-    ElementId, Operation, Origin, PathSegment, Recipe, Role, StepId, SweepOrientation,
-};
+use catallax_recipe::{ElementId, Operation, Origin, PathSegment, Recipe, Role, Step, StepId};
 use catallax_shapes::PointDef;
 use catallax_topology::{Body, BodyId, BodyKind, Edge, Lump, Model, Shell, Vertex};
 
@@ -82,11 +80,25 @@ pub(crate) fn path_needs_numerical(recipe: &Recipe, path: &StepId) -> bool {
     }) {
         return true;
     }
-    recipe.steps.iter().any(|step| {
-        matches!(&step.op,Operation::Sweep {path:spine,guide,twist,..}
-        if (guide.is_some() || twist.as_ref().is_some_and(|n|!n.value().is_zero()))
-            && (spine==path || guide.as_ref()==Some(path)))
-    })
+    let mut numerical = false;
+    for step in &recipe.steps {
+        if let Operation::Sweep {
+            path: spine,
+            guide,
+            twist,
+            ..
+        } = &step.op
+        {
+            if spine == path {
+                if guide.is_none() && twist.as_ref().is_none_or(|n| n.value().is_zero()) {
+                    return false;
+                }
+                numerical = true;
+            }
+            numerical |= guide.as_ref() == Some(path);
+        }
+    }
+    numerical
 }
 
 /// Constructs the fitted recipe privately. The caller must supply the numerical
@@ -119,14 +131,19 @@ impl Context {
         &mut self,
         model: &mut Model,
         recipe: &Recipe,
-        profile: &StepId,
-        path: &StepId,
-        step: &StepId,
-        orientation: SweepOrientation,
-        guide: Option<&StepId>,
-        twist: Option<&Number>,
+        step: &Step,
         dec: &mut Decider,
     ) -> Result<(BodyId, Rational), Refusal> {
+        let Operation::Sweep {
+            profile,
+            path,
+            orientation,
+            guide,
+            twist,
+        } = &step.op
+        else {
+            return Err(bad("the numerical sweep context needs a sweep step"));
+        };
         let sketch = recipe
             .steps
             .iter()
@@ -137,23 +154,24 @@ impl Context {
         };
         let (id, motion) = recipe_path(recipe, path)?;
         let guide = guide
+            .as_ref()
             .map(|id| recipe_path(recipe, id).map(|(_, motion)| motion))
             .transpose()?;
         let definition = SweepRecipe {
-            name: step.to_string(),
+            name: step.id.to_string(),
             loops: loops.clone(),
             plane: Some(plane.clone()),
             path: motion,
-            orientation,
+            orientation: *orientation,
             guide,
             reference: [1, 0, 0].map(Into::into),
-            twist_degrees: twist.cloned().unwrap_or_else(|| 0.into()),
+            twist_degrees: twist.clone().unwrap_or_else(|| 0.into()),
             end_scale: 1.into(),
             tolerance_mm: self.tolerance.clone().into(),
             max_sections: 4096,
         };
-        let (body, radius, checks) = append(model, &definition, step, Some(&id), dec)?;
-        self.checks.insert(step.clone(), checks);
+        let (body, radius, checks) = append(model, &definition, &step.id, Some(&id), dec)?;
+        self.checks.insert(step.id.clone(), checks);
         Ok((body, radius))
     }
 }
@@ -236,6 +254,7 @@ fn append(
     let body = model.add_body(Body {
         kind: BodyKind::Solid,
         lumps: vec![lump],
+        wires: Vec::new(),
         marks: Default::default(),
     });
     Ok((body, radius, checks))
@@ -334,4 +353,54 @@ fn recipe_path(recipe: &Recipe, path: &StepId) -> Result<(ElementId, SweepPath),
         }
     };
     Ok((segment.id().clone(), motion))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_plain_sweep_can_share_the_numerical_sweeps_path() {
+        let mut input: serde_json::Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/straight-sweep.json")).unwrap();
+        input["steps"][1]["start"] = serde_json::json!(["7", "-3", "11"]);
+        input["steps"][1]["segments"][0]["to"] = serde_json::json!(["7", "-3", "14"]);
+        let mut twisted = input["steps"][2].clone();
+        twisted["id"] = "twisted".into();
+        twisted["twist"] = "90".into();
+        input["steps"].as_array_mut().unwrap().insert(2, twisted);
+        let recipe: Recipe = serde_json::from_value(input).unwrap();
+        let (result, work) = catallax_numbers::with_operation_budget(100_000_000, || {
+            let mut dec = Decider::default();
+            let candidate = prepare_recipe(
+                &recipe,
+                NumericalOptions {
+                    tolerance_mm: Rational::from_ratio(1, 100).unwrap(),
+                },
+                &mut dec,
+            )
+            .unwrap();
+            assert_eq!(candidate.model.body(candidate.body).kind, BodyKind::Solid);
+            let mut caps = Vec::new();
+            for face in candidate.model.faces_of_body(candidate.body) {
+                let Surface::Plane(plane) = candidate
+                    .model
+                    .geom()
+                    .surface(candidate.model.face(face).surface)
+                else {
+                    panic!("the ordinary consumer must still produce a planar prism");
+                };
+                if dec.sign(&plane.normal.x).is_coincident()
+                    && dec.sign(&plane.normal.y).is_coincident()
+                {
+                    caps.push(plane.origin.z.as_rational().unwrap());
+                }
+            }
+            caps.sort();
+            assert_eq!(caps, vec![q(11), q(14)]);
+            Ok::<_, Refusal>(())
+        });
+        assert!(!work.exhausted);
+        result.unwrap();
+    }
 }

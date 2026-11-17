@@ -65,6 +65,8 @@ pub mod fillet;
 mod fillet_build;
 /// Exact spherical corners where three perpendicular convex strips meet.
 pub mod fillet_corner;
+/// Editable numerical sweeps with guides, twist and helical paths.
+pub mod general_sweep;
 /// Definition-based hole meridians, shared with independent field compilation.
 pub mod hole;
 /// Explicit transactional STEP replacement and bounded multiple-solid admission.
@@ -77,8 +79,6 @@ mod loft;
 mod mesh_import;
 /// Separate checked numerical edit definitions and replay.
 pub mod numerical;
-/// Editable numerical sweeps with guides, twist and helical paths.
-pub mod general_sweep;
 mod offset_fit;
 mod placement;
 mod planar_distance;
@@ -115,7 +115,6 @@ pub use evaluate::{
     replay_numerical,
 };
 pub use extrude::extrude;
-pub use tapered_extrude::extrude_tapered;
 pub use offset_fit::{EllipticOffsetFit, OffsetSpanBound, fit_elliptic_offset};
 pub use placement::{
     check_face_profile, copy_origin, face_placement, mirror_placement, pattern_placement,
@@ -123,3 +122,4 @@ pub use placement::{
 pub use profile::Profile;
 pub use revolve::revolve;
 pub use stock::evaluate_canonical_stock;
+pub use tapered_extrude::extrude_tapered;

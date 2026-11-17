@@ -131,18 +131,35 @@ impl Swept {
 
     /// Rebuilds transactionally. Previous admission evidence remains historical.
     pub fn edit(&self, recipe: SweepRecipe, dec: &mut Decider) -> Result<Self, Refusal> {
-        let (definition, checks, _) = definition(&recipe, dec)?;
-        let body = self.body.rebuild(definition, options(&recipe), dec)?;
-        Ok(Self {
-            recipe,
-            body,
-            checks,
+        guarded(|| {
+            let (definition, checks, _) = definition(&recipe, dec)?;
+            let body = self.body.rebuild(definition, options(&recipe), dec)?;
+            Ok(Self {
+                recipe,
+                body,
+                checks,
+            })
         })
     }
 }
 
 fn bad(detail: impl Into<String>) -> Refusal {
     Refusal::new("sweep.numerical-definition", detail)
+}
+
+fn guarded<T>(run: impl FnOnce() -> Result<T, Refusal>) -> Result<T, Refusal> {
+    if catallax_numbers::operation_budget_active() {
+        return run();
+    }
+    let (result, work) = catallax_numbers::with_operation_budget(numerical::DEFAULT_WORK, run);
+    if work.exhausted {
+        Err(Refusal::new(
+            "numbers.operation-budget",
+            "numerical sweep exhausted its fitting/admission work allowance",
+        ))
+    } else {
+        result
+    }
 }
 fn q(x: i64) -> Rational {
     Rational::from_i64(x)
@@ -347,19 +364,28 @@ struct Frame {
     y: V,
     scale: f64,
 }
-impl Frame {
-    fn at(
-        path: &Path,
-        guide: Option<&Path>,
-        reference: V,
-        initial: Option<[V; 2]>,
-        normal_offset: f64,
-        twist: f64,
-        end_scale: f64,
-        t: f64,
-        orientation: catallax_recipe::SweepOrientation,
-        dec: &mut Decider,
-    ) -> Result<Self, Refusal> {
+struct FrameLaw<'a> {
+    path: &'a Path,
+    guide: Option<&'a Path>,
+    reference: V,
+    initial: Option<[V; 2]>,
+    normal_offset: f64,
+    twist: f64,
+    end_scale: f64,
+    orientation: catallax_recipe::SweepOrientation,
+}
+impl FrameLaw<'_> {
+    fn at(&self, t: f64, dec: &mut Decider) -> Result<Frame, Refusal> {
+        let Self {
+            path,
+            guide,
+            reference,
+            initial,
+            normal_offset,
+            twist,
+            end_scale,
+            orientation,
+        } = *self;
         if matches!(path, Path::Spline(_))
             && guide.is_none()
             && orientation == catallax_recipe::SweepOrientation::RotationMinimising
@@ -372,25 +398,24 @@ impl Frame {
         let base = |t: f64, dec: &mut Decider| -> Result<[V; 3], Refusal> {
             let (origin, tangent) = path.at(t, dec)?;
             let tangent = unit(tangent)?;
-            if guide.is_none() {
-                if let Path::Helix {
+            if guide.is_none()
+                && let Path::Helix {
                     radius,
                     pitch,
                     turns,
                     axes,
                     ..
                 } = path
-                {
-                    let omega = std::f64::consts::TAU * turns;
-                    let (s, c) = libm::sincos(omega * t);
-                    let radial = add(mul(axes[0], c), mul(axes[1], s));
-                    let binormal = unit(cross(tangent, radial))?;
-                    let rise = pitch * turns;
-                    let speed = libm::sqrt(radius * radius * omega * omega + rise * rise);
-                    let (spin_s, spin_c) = libm::sincos(-omega * rise / speed * t);
-                    let x = add(mul(radial, spin_c), mul(binormal, spin_s));
-                    return Ok([x, cross(tangent, x), tangent]);
-                }
+            {
+                let omega = std::f64::consts::TAU * turns;
+                let (s, c) = libm::sincos(omega * t);
+                let radial = add(mul(axes[0], c), mul(axes[1], s));
+                let binormal = unit(cross(tangent, radial))?;
+                let rise = pitch * turns;
+                let speed = libm::sqrt(radius * radius * omega * omega + rise * rise);
+                let (spin_s, spin_c) = libm::sincos(-omega * rise / speed * t);
+                let x = add(mul(radial, spin_c), mul(binormal, spin_s));
+                return Ok([x, cross(tangent, x), tangent]);
             }
             let direction = if let Some(guide) = guide {
                 sub(guide.at(t, dec)?.0, origin)
@@ -402,7 +427,14 @@ impl Frame {
         };
         let first = base(0.0, dec)?;
         let current = base(t, dec)?;
-        let initial = initial.unwrap_or([first[0], first[1]]);
+        let initial = if let Some(axes) = initial {
+            axes
+        } else if guide.is_none() {
+            let x = unit(sub(reference, mul(first[2], dot(reference, first[2]))))?;
+            [x, unit(cross(first[2], x))?]
+        } else {
+            [first[0], first[1]]
+        };
         let carry = |v: V| {
             if orientation == catallax_recipe::SweepOrientation::Fixed && guide.is_none() {
                 return v;
@@ -430,13 +462,15 @@ impl Frame {
             path.at(t, dec)?.0,
             mul(unit(cross(x, y))?, normal_offset * scale),
         );
-        Ok(Self {
+        Ok(Frame {
             origin,
             x,
             y,
             scale,
         })
     }
+}
+impl Frame {
     fn apply(&self, p: V) -> V {
         add(
             self.origin,
@@ -480,12 +514,14 @@ fn cubic(p: &[V; 4], t: f64) -> V {
 
 /// Builds an editable result without promoting fitted geometry into exact answers.
 pub fn build(recipe: &SweepRecipe, dec: &mut Decider) -> Result<Swept, Refusal> {
-    let (definition, checks, _) = definition(recipe, dec)?;
-    let body = numerical::build(definition, options(recipe), dec)?;
-    Ok(Swept {
-        recipe: recipe.clone(),
-        body,
-        checks,
+    guarded(|| {
+        let (definition, checks, _) = definition(recipe, dec)?;
+        let body = numerical::build(definition, options(recipe), dec)?;
+        Ok(Swept {
+            recipe: recipe.clone(),
+            body,
+            checks,
+        })
     })
 }
 
@@ -548,20 +584,30 @@ fn definition(
     let reference = initial
         .map(|axes| axes[0])
         .unwrap_or_else(|| recipe.reference.each_ref().map(number));
-    let frame = |t, dec: &mut Decider| {
-        Frame::at(
-            &path,
-            guide.as_ref(),
-            reference,
-            initial,
-            normal_offset,
-            twist,
-            end_scale,
-            t,
-            recipe.orientation,
-            dec,
+    let frame = FrameLaw {
+        path: &path,
+        guide: guide.as_ref(),
+        reference,
+        initial,
+        normal_offset,
+        twist,
+        end_scale,
+        orientation: recipe.orientation,
+    };
+    let first_frame = frame.at(0.0, dec)?;
+    let origin = point(first_frame.origin)?;
+    let scale = real(first_frame.scale)?;
+    let x = vector(first_frame.x)?.scaled(&scale);
+    let y = vector(first_frame.y)?.scaled(&scale);
+    let emitted_world = |p: &Point3| {
+        Point3::new(
+            &origin.x + &(&x.x * &p.x + &y.x * &p.y),
+            &origin.y + &(&x.y * &p.x + &y.y * &p.y),
+            &origin.z + &(&x.z * &p.x + &y.z * &p.y),
         )
     };
+    let profile_scale = Real::from(recipe.end_scale.value().clone().max(q(1)));
+    let mut profile_squared = q(0);
     let mut charts = Vec::new();
     let mut sample_controls = Vec::new();
     let mut profile_error = 0.0_f64;
@@ -609,16 +655,33 @@ fn definition(
                 let t = &part.bounds[0]
                     + &((&part.bounds[1] - &part.bounds[0])
                         * Rational::from_ratio(i, 8).expect("fixed samples"));
-                let source = part
-                    .curve
-                    .evaluate_box([&t, &t], 128, dec)?
-                    .map(|b| b.mid().to_f64_nearest());
-                let emitted = local
-                    .evaluate_box([&t, &t], 128, dec)?
-                    .map(|b| b.mid().to_f64_nearest());
-                let delta = sub(to_section(source), emitted);
-                profile_error =
-                    profile_error.max(libm::sqrt(dot(delta, delta)) * end_scale.max(1.0));
+                let at = Real::from(t);
+                let source = part.curve.point_at(&at, dec)?;
+                let emitted = local.point_at(&at, dec)?;
+                let delta = if recipe.plane.is_some() {
+                    source.minus(&emitted_world(&emitted))
+                } else {
+                    // The common world origin cancels before enclosure.
+                    let delta = source.minus(&emitted);
+                    Vector3::new(
+                        &x.x * &delta.x + &y.x * &delta.y,
+                        &x.y * &delta.x + &y.y * &delta.y,
+                        &x.z * &delta.x + &y.z * &delta.y,
+                    )
+                };
+                let squared = delta.scaled(&profile_scale).norm_squared();
+                let upper = dec.enclose_budgeted_at(&squared, 128)?.hi();
+                let error = if upper.is_zero() {
+                    0.0
+                } else {
+                    libm::sqrt(upper.to_f64_nearest()).next_up().next_up()
+                };
+                let rounded_error = rational(error)?;
+                if !error.is_finite() || &rounded_error * &rounded_error < upper {
+                    return Err(bad("profile sample residual exceeds the working precision"));
+                }
+                profile_error = profile_error.max(error);
+                profile_squared = profile_squared.max(upper);
                 profile_samples += 1;
             }
             sample_controls.extend(coordinates.iter().copied());
@@ -653,7 +716,8 @@ fn definition(
         n = n.max(g.minimum_sections());
     }
     let tolerance = number(&recipe.tolerance_mm);
-    if !profile_error.is_finite() || profile_error > tolerance / 4.0 {
+    let profile_allowance = recipe.tolerance_mm.value() / &q(4);
+    if profile_squared > &profile_allowance * &profile_allowance {
         return Err(bad(
             "the numerical profile proposal does not meet the stated sample tolerance",
         ));
@@ -665,7 +729,17 @@ fn definition(
             ));
         }
         dec.charge_work(n as u64)?;
-        let mut sections = Vec::with_capacity(n);
+        // Four frames retain ten binary64 scalars each. Charge their fixed
+        // payload before reserving capacity, independent of host layout.
+        let capacity = u64::try_from(n)
+            .ok()
+            .and_then(|n| n.checked_mul(4 * 10 * 8))
+            .ok_or_else(|| bad("section capacity overflow"))?;
+        dec.charge_work(capacity)?;
+        let mut sections = Vec::new();
+        sections
+            .try_reserve_exact(n)
+            .map_err(|_| bad("section capacity cannot be reserved"))?;
         let mut checks = SweepChecks {
             sections: n,
             checked_points: profile_samples,
@@ -675,16 +749,16 @@ fn definition(
         for i in 0..n {
             let t = |j| (i as f64 + j as f64 / 3.0) / n as f64;
             let frames = [
-                frame(t(0), dec)?,
-                frame(t(1), dec)?,
-                frame(t(2), dec)?,
-                frame(t(3), dec)?,
+                frame.at(t(0), dec)?,
+                frame.at(t(1), dec)?,
+                frame.at(t(2), dec)?,
+                frame.at(t(3), dec)?,
             ];
             for p in &sample_controls {
                 let fit = controls(frames.map(|f| f.apply(*p)));
                 for j in 1..8 {
                     let local = j as f64 / 8.0;
-                    let target = frame((i as f64 + local) / n as f64, dec)?.apply(*p);
+                    let target = frame.at((i as f64 + local) / n as f64, dec)?.apply(*p);
                     let delta = sub(cubic(&fit, local), target);
                     let error = libm::sqrt(dot(delta, delta));
                     if !error.is_finite() {
@@ -719,7 +793,6 @@ fn definition(
                 .ok_or_else(|| bad("section count overflow"))?,
         };
     };
-    let first_frame = frame(0.0, dec)?;
     let orientation = dot(cross(first_frame.x, first_frame.y), path.at(0.0, dec)?.1);
     if orientation == 0.0 {
         return Err(bad("the initial sweep direction lies in the profile plane"));
@@ -763,20 +836,10 @@ fn definition(
             let patch = RationalPatch::new(carrier, dec);
             span.finish(dec, patch.as_ref().err(), None);
             let patch = patch?;
-            assembly.side(
-                lp,
-                &segment,
-                station,
-                &patch,
-                forward,
-                station == 0,
-                station + 1 == sections.len(),
-                &section.frames[0],
-                &section.frames[3],
-            )?;
+            assembly.side(lp, &segment, station, &patch, forward, section)?;
         }
     }
-    assembly.caps(frame(0.0, dec)?, frame(1.0, dec)?, dec)?;
+    assembly.caps(frame.at(0.0, dec)?, frame.at(1.0, dec)?, dec)?;
     Ok((assembly.definition, checks, assembly.roles))
 }
 
@@ -868,11 +931,10 @@ impl Assembly {
         station: usize,
         patch: &RationalPatch,
         forward: bool,
-        first: bool,
-        last: bool,
-        start: &Frame,
-        end: &Frame,
+        section: &Section,
     ) -> Result<(), Refusal> {
+        let first = section.t[0].is_zero();
+        let last = section.t[1] == q(1);
         let forward = forward == self.positive;
         let b = patch.domain();
         let carrier = patch.carrier();
@@ -945,7 +1007,7 @@ impl Assembly {
             };
             if (first && side == SplineBoundary::VMin) || (last && side == SplineBoundary::VMax) {
                 let cap = usize::from(side == SplineBoundary::VMax);
-                let frame = if cap == 0 { start } else { end };
+                let frame = &section.frames[cap * 3];
                 let mut ends = ends;
                 ends.reverse();
                 let positions = ends.map(|i| {

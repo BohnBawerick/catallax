@@ -471,9 +471,11 @@ pub fn evaluate_with_numerical_hole(
         match numerical_hole_impl(recipe, None, options, dec)? {
             HoleAttempt::Numerical(built) => Ok(HoleEvaluation::Numerical(built)),
             HoleAttempt::Standard { state, start } => {
-                evaluate_impl(recipe, &ImportFiles::new(), None, None, *state, start, dec).map(|state| {
-                    HoleEvaluation::Standard(Box::new(state.finish(Arc::new(recipe.clone()))))
-                })
+                evaluate_impl(recipe, &ImportFiles::new(), None, None, *state, start, dec).map(
+                    |state| {
+                        HoleEvaluation::Standard(Box::new(state.finish(Arc::new(recipe.clone()))))
+                    },
+                )
             }
         }
     })
@@ -657,8 +659,16 @@ pub fn evaluate_with_files(
     files: &ImportFiles<'_>,
     dec: &mut Decider,
 ) -> Result<Built, BuildError> {
-    evaluate_impl(recipe, files, None, None, EvaluationState::default(), 0, dec)
-        .map(|state| state.finish(Arc::new(recipe.clone())))
+    evaluate_impl(
+        recipe,
+        files,
+        None,
+        None,
+        EvaluationState::default(),
+        0,
+        dec,
+    )
+    .map(|state| state.finish(Arc::new(recipe.clone())))
 }
 
 /// Evaluates only the suffix after a matching checkpoint.
@@ -975,10 +985,20 @@ fn evaluate_impl(
                         radius: profile_radius(profile) + distance.value().abs(),
                     }
                 }
-                Operation::ExtrudeTapered {profile,distance,angle} => {
-                    let (body,radius)=crate::tapered_extrude::with_radius(
-                        model,&profiles[profile],&step.id,distance.value(),angle.value(),dec)?;
-                    BodyValue {body,radius}
+                Operation::ExtrudeTapered {
+                    profile,
+                    distance,
+                    angle,
+                } => {
+                    let (body, radius) = crate::tapered_extrude::with_radius(
+                        model,
+                        &profiles[profile],
+                        &step.id,
+                        distance.value(),
+                        angle.value(),
+                        dec,
+                    )?;
+                    BodyValue { body, radius }
                 }
                 Operation::ExtrudeOnFace {
                     profile,
@@ -1063,12 +1083,15 @@ fn evaluate_impl(
                     let helical = recipe.steps.iter().find(|s| &s.id == path)
                         .is_some_and(|s| matches!(&s.op,Operation::Path {segments,..}
                             if segments.iter().any(|s|matches!(s,catallax_recipe::PathSegment::Helix {..}))));
-                    if helical || guide.is_some() || twist.as_ref().is_some_and(|n|!n.value().is_zero()) {
+                    if helical
+                        || guide.is_some()
+                        || twist.as_ref().is_some_and(|n| !n.value().is_zero())
+                    {
                         let context=numerical_sweep.as_deref_mut().ok_or_else(||Refusal::new(
                             "sweep.requires-numerical-evaluation",
                             "helical sweeps require numerical admission under a stated tolerance"))?;
-                        let (body,radius)=context.sweep(model,recipe,profile,path,&step.id,*orientation,guide.as_ref(),twist.as_ref(),dec)?;
-                        BodyValue {body,radius}
+                        let (body, radius) = context.sweep(model, recipe, step, dec)?;
+                        BodyValue { body, radius }
                     } else {
                         let profile = &profiles[profile];
                         let path = &paths[path];
@@ -1767,7 +1790,8 @@ fn evaluate_impl(
             })
         } else if let Operation::Path { start, segments } = &step.op {
             if numerical_sweep.is_some()
-                && crate::general_sweep::path_needs_numerical(recipe,&step.id) {
+                && crate::general_sweep::path_needs_numerical(recipe, &step.id)
+            {
                 Ok(None)
             } else {
                 crate::sweep::Path::new(start, segments).map(|path| {
@@ -1866,11 +1890,18 @@ pub(crate) fn numerical_sweep_impl(
     recipe: &Recipe,
     context: &mut crate::general_sweep::Context,
     dec: &mut Decider,
-) -> Result<(Model,BodyId),BuildError> {
-    let state=evaluate_impl(recipe,&ImportFiles::new(),None,Some(context),
-        EvaluationState::default(),0,dec)?;
-    let body=state.bodies[&recipe.result].body;
-    Ok((state.model,body))
+) -> Result<(Model, BodyId), BuildError> {
+    let state = evaluate_impl(
+        recipe,
+        &ImportFiles::new(),
+        None,
+        Some(context),
+        EvaluationState::default(),
+        0,
+        dec,
+    )?;
+    let body = state.bodies[&recipe.result].body;
+    Ok((state.model, body))
 }
 
 /// Evaluate the opt-in numerical source and its edits atomically. Every stage shares

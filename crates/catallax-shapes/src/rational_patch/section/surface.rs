@@ -283,12 +283,14 @@ impl SectionSurface {
                     sum + (&coordinates[i] - &coordinates[3].scale(point[i])).scale(normal[i])
                 })
             }
-            Self::Cylinder(_) | Self::Sphere(_) | Self::Cone(_) => quadratic.iter().fold(
-                RealPoly::zero(variables),
-                |sum, (indices, coefficient)| {
-                    sum + (&coordinates[indices[0]] * &coordinates[indices[1]]).scale(coefficient)
-                },
-            ),
+            Self::Cylinder(_) | Self::Sphere(_) | Self::Cone(_) => {
+                quadratic
+                    .iter()
+                    .fold(RealPoly::zero(variables), |sum, (indices, coefficient)| {
+                        sum + (&coordinates[indices[0]] * &coordinates[indices[1]])
+                            .scale(coefficient)
+                    })
+            }
             Self::Torus(torus) => {
                 let d: [RealPoly; 3] = std::array::from_fn(|i| {
                     &coordinates[i]

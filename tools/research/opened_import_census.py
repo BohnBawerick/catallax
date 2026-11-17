@@ -129,6 +129,53 @@ def raw_surface(path):
             Interface_Static.SetIVal_s(key, value)
 
 
+def product_reachable_entities(model):
+    """Traverse actual STEP product-bound shape representations, not free shapes."""
+    from OCP.Interface import Interface_Graph
+    from OCP.StepShape import StepShape_ShapeDefinitionRepresentation
+
+    def product_bound(property_definition):
+        pending, seen = [property_definition], set()
+        while pending:
+            value = pending.pop()
+            if value is None:
+                continue
+            index = model.Number(value)
+            if index in seen:
+                continue
+            seen.add(index)
+            definition = value.Definition()
+            if (definition.ProductDefinition() is not None
+                    or definition.ProductDefinitionRelationship() is not None):
+                return True
+            nested = definition.ProductDefinitionShape()
+            if nested is not None:
+                pending.append(nested)
+        return False
+
+    pending = []
+    for index in range(1, model.NbEntities() + 1):
+        entity = model.Value(index)
+        if isinstance(entity, StepShape_ShapeDefinitionRepresentation):
+            definition = entity.Definition().PropertyDefinition()
+            if definition is not None and product_bound(definition):
+                pending.append(entity.UsedRepresentation())
+    graph, reached = Interface_Graph(model), set()
+    while pending:
+        entity = pending.pop()
+        if entity is None:
+            continue
+        index = model.Number(entity)
+        if index in reached:
+            continue
+        reached.add(index)
+        shared = graph.Shareds(entity)
+        while shared.More():
+            pending.append(shared.Value())
+            shared.Next()
+    return reached
+
+
 def raw_native_document(path, entry):
     """Check every named native root before default occurrence transfer.
 
@@ -163,6 +210,8 @@ def raw_native_document(path, entry):
         import re
         identifiers = [int(value) for value in re.findall(rb"^#([0-9]+)=", path.read_bytes(), re.M)]
         assert len(identifiers) == model.NbEntities() and len(set(identifiers)) == len(identifiers)
+        product_reached = product_reachable_entities(model)
+        reached_identifiers = {identifiers[index - 1] for index in product_reached}
         labelled = {}
         for index, identifier in enumerate(identifiers, 1):
             entity = model.Value(index)
@@ -209,6 +258,7 @@ def raw_native_document(path, entry):
                 detail = f"{type(error).__name__}: {error}"
             roots.append(dict(body=root["body"], source_root=root["name"], topology=counts,
                               outcome=outcome, valid_solid_count=valid_solids, detail=detail,
+                              occurrence_reachable=all(entity in reached_identifiers for entity in root["entities"]),
                               parts_expected=root["parts"], parts_inspected=inspected_parts,
                               observation_complete=inspected_parts == root["parts"]))
     finally:
@@ -283,6 +333,7 @@ def raw(args):
                 valid_solid_count=valid_solids,
                 raw_source_roots=native_roots,
                 occurrence_outcome=occurrence_outcome,
+                occurrence_graph_complete=bool(native_roots) and all(root["occurrence_reachable"] for root in native_roots),
                 observation_complete=(
                     outcome != "reader_refused"
                     and (not native or bool(native_roots)
@@ -544,7 +595,8 @@ def export_inventory(files, body_count, all_bodies_solid, observation_complete):
     solid = sum(counts[kind, "valid_after_builder"]
                 for kind in ("solid", "native_document", "native_body", "selected_document"))
     any_solid = sum(entry["valid_solid_count"] for entry in files)
-    document = any(entry["kind"] in ("native_document", "selected_document") for entry in files)
+    document = any(entry["kind"] in ("native_document", "selected_document")
+                   and entry.get("occurrence_graph_complete") is True for entry in files)
     prototypes_valid = all_bodies_solid and solid == body_count
     return dict(
         valid_exported_solid_count=solid,

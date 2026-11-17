@@ -17,7 +17,7 @@ pub use definitions::*;
 pub use fitting::{FitOptions, FittedCurve, FittedSurface};
 pub use mapping::{Frame, MappingError};
 pub use parametric::{AngleUnit, CoordinateSpace, ParameterChart};
-pub(crate) use tolerant_step::{StepGraphKind, step_reachable};
+pub(crate) use tolerant_step::{StepGraphKind, product_representations, step_reachable};
 pub use units::ContextUnits;
 
 use crate::ImportRefusal;

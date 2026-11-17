@@ -130,7 +130,18 @@ class StageComparisonTests(unittest.TestCase):
         comparison = comparison_outcomes({"source": row}, {"source": 1}, {"source"}, {})
         self.assertEqual(comparison["frozen_valid_export_losses"], [])
         files[0]["kind"] = "native_document"
+        self.assertFalse(export_inventory(files, 1, True, True)["all_solids_export_valid"])
+        files[0]["occurrence_graph_complete"] = True
         self.assertTrue(export_inventory(files, 1, True, True)["all_solids_export_valid"])
+
+    def test_a_detached_valid_body_is_not_complete_source_coverage(self):
+        files = [dict(kind="selected_document", bodies=[0, 1], outcome="valid_after_builder",
+                      valid_solid_count=2, occurrence_graph_complete=False)]
+        inventory = export_inventory(files, 2, True, True)
+        self.assertTrue(inventory["prototype_solids_export_valid"])
+        self.assertTrue(inventory["has_valid_exported_solid"])
+        self.assertFalse(inventory["all_solids_export_valid"])
+        self.assertFalse(inventory["source_document_exported"])
 
     def test_stopped_sibling_export_is_an_observed_lower_bound(self):
         files = [dict(kind="native_body", bodies=[0], outcome="invalid_after_builder", valid_solid_count=0)]

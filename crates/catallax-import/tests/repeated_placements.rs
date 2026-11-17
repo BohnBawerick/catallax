@@ -9,7 +9,7 @@ use catallax_import::{
 };
 use catallax_numbers::{Decider, with_operation_budget};
 use catallax_recipe::StepId;
-use common::{BoxFixture, box_step, r};
+use common::{BoxFixture, r};
 
 struct RepeatedFixture {
     source: String,
@@ -17,13 +17,21 @@ struct RepeatedFixture {
     base: u64,
 }
 
-fn repeated_fixture(unit: common::Unit) -> RepeatedFixture {
+fn repeated_fixture(unit: common::Unit, with_orphan: bool) -> RepeatedFixture {
     let mut prototype_box = BoxFixture::new(["2", "3", "4"]);
     prototype_box.unit = unit;
-    let mut source = box_step(prototype_box);
+    let mut boxes = vec![prototype_box];
+    if with_orphan {
+        let mut orphan = BoxFixture::new(["2", "3", "4"]);
+        orphan.unit = unit;
+        orphan.origin = [r("20"), r("0"), r("0")];
+        boxes.push(orphan);
+    }
+    let mut source = common::boxes_step(&boxes);
     let mut dec = Decider::default();
     let parsed = ParsedStep::read(source.as_bytes(), &mut dec).unwrap();
-    let prototype = parsed.model_declarations(&mut dec).unwrap()[0].entity;
+    let models = parsed.model_declarations(&mut dec).unwrap();
+    let prototype = models[0].entity;
     let context = parsed
         .entities()
         .find(|&id| {
@@ -47,9 +55,9 @@ fn repeated_fixture(unit: common::Unit) -> RepeatedFixture {
 #{translated}=CARTESIAN_POINT('translated',(10.,0.,0.));
 #{turned}=CARTESIAN_POINT('turned',(0.,20.,0.));
 #{negative_x}=DIRECTION('negative x',(-1.,0.,0.));
-#{identity}=CARTESIAN_TRANSFORMATION_OPERATOR_3D('identity',#{x},#{y},#{origin},1.,#{z});
-#{translation}=CARTESIAN_TRANSFORMATION_OPERATOR_3D('translation',#{x},#{y},#{translated},1.,#{z});
-#{rotation}=CARTESIAN_TRANSFORMATION_OPERATOR_3D('quarter turn',#{y},#{negative_x},#{turned},1.,#{z});
+#{identity}=CARTESIAN_TRANSFORMATION_OPERATOR_3D('','','identity',#{x},#{y},#{origin},1.,#{z});
+#{translation}=CARTESIAN_TRANSFORMATION_OPERATOR_3D('','','translation',#{x},#{y},#{translated},1.,#{z});
+#{rotation}=CARTESIAN_TRANSFORMATION_OPERATOR_3D('','','quarter turn',#{y},#{negative_x},#{turned},1.,#{z});
 #{first}=MAPPED_ITEM('at origin',#{map},#{identity});
 #{second}=MAPPED_ITEM('translated',#{map},#{translation});
 #{third}=MAPPED_ITEM('turned',#{map},#{rotation});
@@ -90,6 +98,14 @@ fn repeated_fixture(unit: common::Unit) -> RepeatedFixture {
         binding = id(24)
     );
     source.insert_str(source.rfind("ENDSEC;").unwrap(), &extra);
+    if with_orphan {
+        let orphan = format!(
+            "#{}=ADVANCED_BREP_SHAPE_REPRESENTATION('detached',(#{}),#{context});\n",
+            id(25),
+            models[1].entity
+        );
+        source.insert_str(source.rfind("ENDSEC;").unwrap(), &orphan);
+    }
     RepeatedFixture {
         source,
         prototype,
@@ -204,7 +220,7 @@ fn assert_inventory(parsed: &ParsedStep, fixture: &RepeatedFixture, geometry_roo
 #[test]
 fn whole_document_roundtrip_preserves_shared_prototype_and_distinct_instances() {
     for unit in [common::Unit::Millimetre, common::Unit::Metre] {
-        let fixture = repeated_fixture(unit);
+        let fixture = repeated_fixture(unit, false);
         let bytes = fixture.source.as_bytes();
         let hash = sha256_hex(bytes);
         let (result, work) = with_operation_budget(20_000_000, || {
@@ -268,6 +284,33 @@ fn incomplete_source_document_refuses_without_exporting_a_sibling() {
         opened.body(1),
         Some(opened::BodyView::Surfaces { .. })
     ));
+    let refusal = opened
+        .export_step_document(&mut Decider::default())
+        .unwrap_err();
+    assert_eq!(refusal.code, "import.selected-document");
+}
+
+#[test]
+fn an_orphan_representation_does_not_establish_source_document_coverage() {
+    let fixture = repeated_fixture(common::Unit::Millimetre, true);
+    let (result, work) = with_operation_budget(20_000_000, || {
+        opened::open_step(
+            fixture.source.as_bytes(),
+            &sha256_hex(fixture.source.as_bytes()),
+            &StepId::new("orphan-document").unwrap(),
+            Default::default(),
+            &mut Decider::default(),
+        )
+    });
+    assert!(!work.exhausted);
+    let opened = result.unwrap();
+    assert_eq!(opened.bodies().len(), 2);
+    for index in 0..2 {
+        assert!(!matches!(
+            opened.body(index),
+            Some(opened::BodyView::Surfaces { .. }) | None
+        ));
+    }
     let refusal = opened
         .export_step_document(&mut Decider::default())
         .unwrap_err();

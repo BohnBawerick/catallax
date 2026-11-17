@@ -6,7 +6,7 @@ use catallax_numbers::{Decider, Refusal};
 use serde::Serialize;
 
 use super::{BodyView, OpenedStep, Tier};
-use crate::geometry_source::{ParsedStep, StepGraphKind, step_reachable};
+use crate::geometry_source::{ParsedStep, StepGraphKind, product_representations, step_reachable};
 use crate::part21::{Entity, Graph, Param};
 
 /// Binding between one source prototype and its actual selected STEP geometry.
@@ -203,6 +203,8 @@ fn insert_prototype(
         "CARTESIAN_TRANSFORMATION_OPERATOR_3D",
         vec![
             Param::Str(String::new()),
+            Param::Str(String::new()),
+            Param::Str(String::new()),
             Param::Unset,
             Param::Unset,
             Param::Ref(origin),
@@ -262,16 +264,12 @@ impl OpenedStep {
             })
             .collect::<Result<_, _>>()?;
         let source_roots: BTreeSet<_> = source_entities.iter().copied().collect();
-        let mut represented = BTreeSet::new();
-        for id in source.entities() {
-            dec.charge_work(1)?;
-            if let Ok(representation) = source.representation(id) {
-                represented.extend(representation.items);
-            }
-        }
+        let product_roots = product_representations(source.source_graph(), dec)?;
+        let represented =
+            step_reachable(source.source_graph(), &Graph::new(), &product_roots, dec)?;
         if !source_roots.is_subset(&represented) {
             return Err(bad(
-                "source prototype has no representation binding; export body-local geometry separately",
+                "source prototype is unreachable from every product or occurrence root",
             ));
         }
         let mut next = source

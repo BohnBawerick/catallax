@@ -154,6 +154,59 @@ pub(crate) fn step_reachable(
     Ok(seen)
 }
 
+pub(crate) fn product_representations(
+    graph: &Graph,
+    dec: &mut Decider,
+) -> Result<Vec<u64>, Refusal> {
+    fn product_bound(graph: &Graph, root: u64, dec: &mut Decider) -> Result<bool, Refusal> {
+        let mut pending = vec![root];
+        let mut seen = BTreeSet::new();
+        while let Some(id) = pending.pop() {
+            dec.charge_work(1)?;
+            if !seen.insert(id) {
+                continue;
+            }
+            let Some(entity) = graph.get(&id) else {
+                continue;
+            };
+            if entity.parts.iter().any(|(kind, _)| {
+                kind == "PRODUCT_DEFINITION"
+                    || kind == "PRODUCT_DEFINITION_RELATIONSHIP"
+                    || kind.ends_with("USAGE_OCCURRENCE")
+            }) {
+                return Ok(true);
+            }
+            for (kind, parameters) in &entity.parts {
+                if matches!(
+                    kind.as_str(),
+                    "PRODUCT_DEFINITION_SHAPE" | "PROPERTY_DEFINITION" | "SHAPE_ASPECT"
+                ) && let Some(Param::Ref(target)) = parameters.get(2)
+                {
+                    pending.push(*target);
+                }
+            }
+        }
+        Ok(false)
+    }
+    let mut roots = Vec::new();
+    for entity in graph.values() {
+        dec.charge_work(1)?;
+        if entity.part("SHAPE_DEFINITION_REPRESENTATION").is_none() {
+            continue;
+        }
+        let parameters = entity
+            .part("SHAPE_DEFINITION_REPRESENTATION")
+            .filter(|parameters| parameters.len() >= 2)
+            .or_else(|| entity.part("PROPERTY_DEFINITION_REPRESENTATION"));
+        if let Some([Param::Ref(definition), Param::Ref(representation), ..]) = parameters
+            && product_bound(graph, *definition, dec)?
+        {
+            roots.push(*representation);
+        }
+    }
+    Ok(roots)
+}
+
 fn validate(
     entity: &Entity,
     source: &Graph,

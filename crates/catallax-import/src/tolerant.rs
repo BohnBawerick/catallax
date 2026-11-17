@@ -463,12 +463,26 @@ impl TolerantFile {
     /// Reconstruct the retained source definition for geometry consumers.
     /// Local tolerance changes do not move or replace any source geometry.
     pub fn definition(&self, dec: &mut Decider) -> Result<StepFile, Error> {
+        self.definition_of(&self.bodies, dec)
+    }
+
+    /// Reconstruct one retained source body without copying its siblings.
+    /// This preserves declarations and source units; it grants no solid validity.
+    pub fn body_definition(&self, index: usize, dec: &mut Decider) -> Result<StepFile, Error> {
+        let body = self
+            .bodies
+            .get(index)
+            .ok_or_else(|| invalid("source body index is out of range"))?;
+        self.definition_of(std::slice::from_ref(body), dec)
+    }
+
+    fn definition_of(&self, bodies: &[TolerantBody], dec: &mut Decider) -> Result<StepFile, Error> {
         let mut file = StepFile {
             mm_per_unit: self.mm_per_unit.clone(),
             solids: Vec::new(),
             surface_models: Vec::new(),
         };
-        for body in &self.bodies {
+        for body in bodies {
             let mut shells = Vec::new();
             for shell in &body.shells {
                 let mut faces = Vec::new();

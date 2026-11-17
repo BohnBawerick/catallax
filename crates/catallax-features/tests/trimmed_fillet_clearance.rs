@@ -202,11 +202,13 @@ fn trimmed_four_contact_cone_stays_clear_of_the_base_when_its_ball_does_not() {
             } else {
                 Containment::Outside
             };
-            assert!(
-                matches!(catallax_boolean::classify_point(
+            let answer = catallax_boolean::classify_point(
                 &mut built.model, built.result, &point, &mut dec,
-            ), Outcome::Proven(actual) if actual == expected),
-                "B-rep at {point:?}"
+            );
+            println!("four-contact B-rep {point:?}: {answer:?}; {:?}", catallax_numbers::current_operation_work());
+            assert!(
+                matches!(&answer, Outcome::Proven(actual) if *actual == expected),
+                "B-rep at {point:?}: {answer:?}"
             );
             let expected = if inside {
                 catallax_field::Location::Inside

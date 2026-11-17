@@ -361,12 +361,17 @@ impl Carrier {
             if let [Some(x), Some(y), Some(z)] = point {
                 for parameters in family.seeds(&[x, y, z], dec).map_err(mapped)? {
                     let parameters = parameters.each_ref().map(Rational::to_f64_nearest);
-                    let Ok(location) = self.location(parameters) else { continue };
+                    let Ok(location) = self.location(parameters) else {
+                        continue;
+                    };
                     if let Some(candidate) = self.refine(target, location, dec)? {
                         if candidate.converged {
                             return Ok(candidate);
                         }
-                        if best.as_ref().is_none_or(|old| candidate.residual_mm < old.residual_mm) {
+                        if best
+                            .as_ref()
+                            .is_none_or(|old| candidate.residual_mm < old.residual_mm)
+                        {
                             best = Some(candidate);
                         }
                     }
@@ -454,7 +459,8 @@ impl NativeSurface {
         let carrier = Carrier::new(entity, charts, 2, CoordinateSpace::Millimetres, &angles)?;
         let periodic = surface_periodic_axes(source, entity, dec)?;
         let periods = periodic.map(|periodic| periodic.then_some(carrier.period));
-        let family = FamilySeeds::from_source(source, entity, length_mm, &angles, dec).map_err(mapped)?;
+        let family =
+            FamilySeeds::from_source(source, entity, length_mm, &angles, dec).map_err(mapped)?;
         Ok(Self(carrier, periods, family))
     }
     /// Original source surface identity.
@@ -744,5 +750,19 @@ impl NativeUvCurve {
     ) -> Result<([f64; 2], f64), Error> {
         let value = self.0.sample(location, dec)?;
         Ok(([value.point_mm[0], value.point_mm[1]], value.uncertainty_mm))
+    }
+
+    pub(crate) fn hint(
+        &self,
+        parameter: f64,
+        dec: &mut Decider,
+    ) -> Result<Option<[f64; 2]>, Error> {
+        let Ok(location) = self.0.location([parameter, 0.0]) else {
+            return Ok(None);
+        };
+        Ok(self
+            .0
+            .try_sample(location, dec)?
+            .map(|sample| [sample.point_mm[0], sample.point_mm[1]]))
     }
 }

@@ -755,7 +755,12 @@ pub(super) fn build(
     // Validate the actual rounded chart before classifying a repeated edge as
     // a seam. Admission requires a complete periodic cell for such an edge;
     // use count alone is not a geometric seam condition.
-    let admitted = n::build(d, body.options().clone(), w.dec)?;
+    let recheck = if body.kind() == catallax_topology::BodyKind::Surface {
+        n::build_surface
+    } else {
+        n::build
+    };
+    let admitted = recheck(d, body.options().clone(), w.dec)?;
     let d = admitted.definition();
     let mut parameter = ParameterRounding {
         error: Rational::zero(),
@@ -909,10 +914,15 @@ pub(super) fn build(
         parameter.error
     );
     let has_cones = cone_parameters.iter().any(Option::is_some);
-    let has_cylinders = d
-        .faces
-        .iter()
-        .any(|face| matches!(face.surface, Surface::Cylinder(_)));
+    let mut has_cylinders = false;
+    let mut has_tori = false;
+    for face in &d.faces {
+        match face.surface {
+            Surface::Cylinder(_) => has_cylinders = true,
+            Surface::Torus(_) => has_tori = true,
+            _ => {}
+        }
+    }
     let angle_error = cone_parameters
         .iter()
         .flatten()
@@ -927,12 +937,6 @@ pub(super) fn build(
     let mut file_checks = vec![
         "source.retained-shared-analytic-boundaries".into(),
         "file.decimal-analytic-carriers-and-pcurves-numerical-admission".into(),
-        if has_cones && !has_cylinders {
-            "file.explicit-conical-pcurves"
-        } else {
-            "file.explicit-cylindrical-pcurves"
-        }
-        .into(),
         "file.canonical-byte-identity".into(),
         "file.approximate-category-no-global-bound".into(),
         format!(
@@ -940,10 +944,14 @@ pub(super) fn build(
             parameter.error
         ),
     ];
+    if has_cylinders {
+        file_checks.push("file.explicit-cylindrical-pcurves".into());
+    }
+    if has_tori {
+        file_checks.push("file.explicit-toroidal-pcurves".into());
+    }
     if has_cones {
-        if has_cylinders {
-            file_checks.push("file.explicit-conical-pcurves".into());
-        }
+        file_checks.push("file.explicit-conical-pcurves".into());
         file_checks.push("file.cone-step-v-axial-height".into());
         file_checks.push(format!(
             "file.cone-semi-angle-rounding-max-rad={angle_error}"

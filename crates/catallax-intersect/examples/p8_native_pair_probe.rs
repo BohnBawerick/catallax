@@ -47,6 +47,37 @@ fn main() {
             }
             let mut geom = GeomStore::new();
             let curve = geom.add_curve(Curve::PatchSection(branch.clone()));
+            let [a, b] = branch.endpoints();
+            let from = geom.add_point(catallax_shapes::PointDef::Explicit(a));
+            let to = geom.add_point(catallax_shapes::PointDef::Explicit(b));
+            let traced =
+                catallax_intersect::trace(&geom, curve, Some(from), Some(to), &mut dec).unwrap();
+            let end = catallax_numbers::Ball::from_rational(&Rational::one(), 128);
+            let tangent = traced.value.pieces().last().unwrap().derivative(&end, &dec).unwrap();
+            for (name, variant) in fixture::variants(&source, branch, &mut dec) {
+                let uv = if name == "overlap" {
+                    ends[1].clone()
+                } else {
+                    [Rational::parse("1/2").unwrap().into(), Rational::parse("1/2").unwrap().into()]
+                };
+                let [du, dv] = variant.derivatives_at(&uv, &mut dec).unwrap();
+                let normal = du.cross(&dv);
+                let normal = [
+                    dec.enclose_budgeted_at(&normal.x, 128).unwrap(),
+                    dec.enclose_budgeted_at(&normal.y, 128).unwrap(),
+                    dec.enclose_budgeted_at(&normal.z, 128).unwrap(),
+                ];
+                let mut dot = catallax_numbers::Ball::from_rational(&Rational::zero(), 128);
+                for axis in 0..3 {
+                    dot = dot + &normal[axis] * &tangent[axis];
+                }
+                if name == "transverse-boundary" {
+                    assert!(dot.sign().is_some(), "{name}: {dot:?}");
+                } else {
+                    assert!(dot.contains_zero(), "{name}: {dot:?}");
+                }
+                println!("variant={name} normal-dot={:?}", dot.to_interval());
+            }
             let plane = geom.add_surface(Surface::Plane(supporting.clone()));
             let before = dec.stats().work;
             match intersect_curve_surface(&mut geom, curve, plane, &mut dec) {

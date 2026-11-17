@@ -168,3 +168,72 @@ pub fn patches(dec: &mut Decider) -> (RationalPatch, SectionSurface, RationalPat
         patch(&TARGET, ["1/59", "2/59"], dec),
     )
 }
+
+fn unit_axis(axis: Vector3, dec: &mut Decider) -> Vector3 {
+    let mut bound = q("0");
+    for value in [&axis.x, &axis.y, &axis.z] {
+        dec.charge_work(1).unwrap();
+        let enclosure = dec.enclose_budgeted_at(value, 128).unwrap();
+        bound = bound + enclosure.lo().abs().max(enclosure.hi().abs());
+    }
+    assert!(bound > q("0"));
+    axis.scaled(&Real::from(q("1") / bound))
+}
+
+fn plane_patch(point: &Point3, a: Vector3, b: Vector3, dec: &mut Decider) -> RationalPatch {
+    let a = unit_axis(a, dec);
+    let b = unit_axis(b, dec);
+    let mut controls = Vec::new();
+    for i in [-1, 1] {
+        for j in [-1, 1] {
+            controls.push(
+                point
+                    .plus(&a.scaled(&Real::from_i64(i)))
+                    .plus(&b.scaled(&Real::from_i64(j))),
+            );
+        }
+    }
+    let knots = ["0", "0", "1", "1"].map(q).to_vec();
+    RationalPatch::new(
+        BSplineSurface::new(
+            [1, 1],
+            [knots.clone(), knots],
+            [2, 2],
+            controls,
+            vec![Real::one(); 4],
+            dec,
+        )
+        .unwrap(),
+        dec,
+    )
+    .unwrap()
+}
+
+/// Transverse contact and tangency at the captured finite endpoint, plus overlap.
+/// The transverse plane spans the two source normals, so its normal is parallel
+/// to the native intersection tangent. The tangent plane retains the source
+/// patch's two derivative directions. Neither variant changes the source curve.
+pub fn variants(
+    source: &RationalPatch,
+    branch: &catallax_shapes::PatchSectionBranch,
+    dec: &mut Decider,
+) -> [(&'static str, RationalPatch); 3] {
+    let seam = q("1/59");
+    let uv = branch
+        .parameter_endpoints()
+        .into_iter()
+        .find(|uv| uv[1].rational_ref() == Some(&seam))
+        .unwrap();
+    let point = source.point_at(&uv, dec).unwrap();
+    let [du, dv] = source.derivatives_at(&uv, dec).unwrap();
+    let normal = du.cross(&dv);
+    let radial = Vector3::new(point.x.clone(), point.y.clone(), Real::zero());
+    [
+        (
+            "transverse-boundary",
+            plane_patch(&point, normal, radial, dec),
+        ),
+        ("tangent-boundary", plane_patch(&point, du, dv, dec)),
+        ("overlap", source.clone()),
+    ]
+}

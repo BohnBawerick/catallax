@@ -48,6 +48,7 @@ const TUBE: &str = "ISO-10303-21;\nHEADER;FILE_SCHEMA(('AUTOMOTIVE_DESIGN'));END
 #7=CARTESIAN_POINT('',(0.,0.,0.));#8=CARTESIAN_POINT('',(0.,0.,1.));\n\
 #9=B_SPLINE_SURFACE_WITH_KNOTS('',1,1,((#1,#2),(#3,#4),(#5,#6),(#7,#8)),.UNSPECIFIED.,.T.,.F.,.F.,(2,1,1,2),(2,2),(0.,1.,2.,3.),(0.,1.),.UNSPECIFIED.);\n\
 #10=ADVANCED_FACE('',(),#9,.T.);#11=CLOSED_SHELL('',(#10));#12=MANIFOLD_SOLID_BREP('',#11);\n\
+#90=(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT(.MILLI.,.METRE.));\n\
 ENDSEC;END-ISO-10303-21;";
 
 #[test]
@@ -75,10 +76,66 @@ fn sewing_does_not_match_bowed_spline_edges_by_endpoints_alone() {
 #24=ORIENTED_EDGE('',*,*,#20,.T.);#25=ORIENTED_EDGE('',*,*,#21,.T.);\n\
 #26=EDGE_LOOP('',(#22,#23));#27=EDGE_LOOP('',(#24,#25));#28=FACE_OUTER_BOUND('',#26,.T.);#29=FACE_OUTER_BOUND('',#27,.T.);\n\
 #30=ADVANCED_FACE('',(#28),#11,.T.);#31=ADVANCED_FACE('',(#29),#11,.F.);\n\
-#32=CLOSED_SHELL('',(#30,#31));#33=MANIFOLD_SOLID_BREP('',#32);ENDSEC;END-ISO-10303-21;";
+#32=CLOSED_SHELL('',(#30,#31));#33=MANIFOLD_SOLID_BREP('',#32);\n\
+#90=(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT(.MILLI.,.METRE.));ENDSEC;END-ISO-10303-21;";
     let opened = open(source);
     assert_eq!(opened.bodies()[0].tier(), Tier::SurfaceBody);
     let BodyView::Surfaces { source, .. } = opened.body(0).unwrap() else { panic!("different finite spline images must not become a closed solid") };
     assert_eq!(source.shells()[0].faces.len(), 2);
     assert_eq!(source.edges().len(), 4);
+}
+
+#[test]
+fn exported_ellipse_extrusion_has_a_continuous_side_uv_wire() {
+    use catallax_import::geometry_source::{AngleUnit, Curve, Geometry, Surface};
+    use catallax_import::tolerant::native::{NativeLocation, NativeUvCurve};
+    use std::collections::BTreeMap;
+
+    let opened = open(common::elliptical_extrusion::SOURCE);
+    let BodyView::Tolerant { import, body } = opened.body(0).unwrap() else {
+        panic!("elliptical extrusion must reach native admission: {:?}", opened.bodies()[0].refusal());
+    };
+    let mut dec = Decider::default();
+    let bytes = import.export_body(body, &mut dec).unwrap();
+    let parsed = ParsedStep::read(&bytes, &mut dec).unwrap();
+    let side = parsed.entities().find(|&id| matches!(
+        parsed.geometry(id, &mut dec),
+        Ok(Geometry::Surface(Surface::Extrusion(..)))
+    )).unwrap();
+    let bounds = parsed.entities().find_map(|id| match parsed.topology(id, &mut dec) {
+        Ok(Topology::Face { surface: Some(surface), bounds, .. }) if surface == side => Some(bounds),
+        _ => None,
+    }).unwrap();
+    let Topology::FaceBound { loop_id, .. } = parsed.topology(bounds[0], &mut dec).unwrap() else { unreachable!() };
+    let Topology::EdgeLoop(uses) = parsed.topology(loop_id, &mut dec).unwrap() else { unreachable!() };
+    let mut occurrences = BTreeMap::<u64, usize>::new();
+    let mut segments = Vec::new();
+    for edge_use in uses {
+        let Topology::OrientedEdge(edge, forward) = parsed.topology(edge_use, &mut dec).unwrap() else { unreachable!() };
+        let Topology::Edge { curve: Some(curve), same_sense: Some(sense), .. } = parsed.topology(edge, &mut dec).unwrap() else { unreachable!() };
+        let Geometry::Curve(Curve::SurfaceCurve(_, associated, _, _)) = parsed.geometry(curve, &mut dec).unwrap() else {
+            panic!("export must supply the side's curve-on-surface geometry");
+        };
+        let pcurves = associated.into_iter().filter(|&id| matches!(
+            parsed.geometry(id, &mut dec),
+            Ok(Geometry::Curve(Curve::Pcurve(surface, _))) if surface == side
+        )).collect::<Vec<_>>();
+        let occurrence = occurrences.entry(edge).or_default();
+        let pcurve = pcurves[*occurrence];
+        *occurrence += 1;
+        let charts = parsed.curve_charts(pcurve, &r("1"), AngleUnit::Radians, &mut dec).unwrap();
+        let limits = &charts[0].domain()[0];
+        let carrier = NativeUvCurve::from_source(&parsed, pcurve, &r("1"), AngleUnit::Radians, &mut dec).unwrap();
+        let mut endpoints = [limits[0].as_ref().unwrap(), limits[1].as_ref().unwrap()].map(|limit| {
+            carrier.sample(NativeLocation { chart: 0, parameters: [limit.to_f64_nearest(), 0.0] }, &mut dec).unwrap().0
+        });
+        if forward != sense { endpoints.reverse(); }
+        segments.push(endpoints);
+    }
+    for index in 0..segments.len() {
+        let end = segments[index][1];
+        let next = segments[(index + 1) % segments.len()][0];
+        assert!((end[0] - next[0]).hypot(end[1] - next[1]) < 1e-5,
+            "UV wire jumps sheets: {end:?} -> {next:?}");
+    }
 }

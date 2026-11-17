@@ -165,12 +165,15 @@ impl TolerantSolid {
 pub struct NativeStepFile {
     bytes: Vec<u8>,
     body_roots: Vec<Vec<u64>>,
+    checks: Vec<SampledCheck>,
 }
 impl NativeStepFile {
     /// Actual serialized bytes.
     pub fn bytes(&self) -> &[u8] { &self.bytes }
     /// STEP instance IDs of every material root per source body, in input order.
     pub fn source_body_roots(&self) -> &[Vec<u64>] { &self.body_roots }
+    /// Export-time native UV correspondence measurements.
+    pub fn checks(&self) -> &[SampledCheck] { &self.checks }
     /// Consume the file without copying its bytes.
     pub fn into_bytes(self) -> Vec<u8> { self.bytes }
 }
@@ -181,6 +184,7 @@ struct ExportEvidence<'a> {
     source_bodies: Option<&'a [usize]>,
     source_body_roots: &'a [Vec<u64>],
     source_document_evidence: &'a TolerantEvidence,
+    export_checks: &'a [SampledCheck],
 }
 
 /// A tolerant source document, including its original occurrence graph.
@@ -211,28 +215,30 @@ impl TolerantImport {
     /// Rebuild the source document's B-reps and preserve occurrence placement.
     /// The file explicitly carries the tolerant label and per-entity evidence.
     pub fn export_step(&self, dec: &mut Decider) -> Result<NativeStepFile, Error> {
-        let built = step::rebuild(&self.parsed, &self.bodies, &self.source.mm_per_unit, dec)?;
+        let built = step::rebuild(self, &self.bodies, dec)?;
         let metadata = serde_json::to_string(&ExportEvidence {
             export_scope: "source_document",
             source_bodies: None,
             source_body_roots: &built.body_roots,
             source_document_evidence: &self.evidence,
+            export_checks: &built.checks,
         }).map_err(|error| Refusal::new("import.tolerant-evidence", error.to_string()))?;
         let bytes = self.parsed.write_tolerant_step(&built.changes, self.parsed.schemas()?, &metadata, None, dec)?;
-        Ok(NativeStepFile { bytes, body_roots: built.body_roots })
+        Ok(NativeStepFile { bytes, body_roots: built.body_roots, checks: built.checks })
     }
     /// Export selected body-local geometry. Product occurrences and unrelated
     /// bodies are excluded; use `export_step` to preserve the source document.
     pub fn export_body(&self, index: usize, dec: &mut Decider) -> Result<Vec<u8>, Error> {
         let body = self.bodies.get(index)
             .ok_or_else(|| invalid("import.tolerant-body-index", "body index is out of range"))?;
-        let mut built = step::rebuild(&self.parsed, std::slice::from_ref(body), &self.source.mm_per_unit, dec)?;
+        let mut built = step::rebuild(self, std::slice::from_ref(body), dec)?;
         let root = step::standalone_frame(&self.parsed, &mut built.changes, body.name(), dec)?;
         let metadata = serde_json::to_string(&ExportEvidence {
             export_scope: "body_local_geometry",
             source_bodies: Some(&[index]),
             source_body_roots: &built.body_roots,
             source_document_evidence: &self.evidence,
+            export_checks: &built.checks,
         }).map_err(|error| Refusal::new("import.tolerant-evidence", error.to_string()))?;
         Ok(self.parsed.write_tolerant_step(&built.changes, self.parsed.schemas()?, &metadata, Some(&[root]), dec)?)
     }

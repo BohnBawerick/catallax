@@ -193,6 +193,7 @@ fn run(
                 "bodies":(0..native.bodies().len()).collect::<Vec<_>>(), "kind":"native_document",
                 "source_roots":roots,"unit_factors":native.source_unit_factors(),
                 "authority":"native_sampled",
+                "export_checks":file.checks(),
             }))?);
             return Ok::<_, Refusal>(());
         }

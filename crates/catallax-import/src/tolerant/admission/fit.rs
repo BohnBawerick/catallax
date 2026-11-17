@@ -424,10 +424,25 @@ pub(super) fn check_body(
                                 None => previous,
                             }
                         } else { previous };
-                        let projection = match &surface {
+                        let seed = match (&surface, seed) {
+                            (Some(surface), Some(seed)) => {
+                                let parameters = surface.align_parameters(seed.parameters, previous.map(|location: NativeLocation| location.parameters));
+                                Some(surface.location(parameters)?)
+                            }
+                            _ => seed,
+                        };
+                        let mut projection = match &surface {
                             Some(surface) => surface.project(fit_target.point_mm, seed, dec)?,
                             None => plane.as_ref().expect("inferred plane").project(fit_target),
                         };
+                        if let Some(surface) = &surface {
+                            let parameters = surface.align_parameters(projection.location.parameters, previous.map(|location: NativeLocation| location.parameters));
+                            if parameters != projection.location.parameters {
+                                projection.location = surface.location(parameters)?;
+                                projection.sample = surface.sample(projection.location, dec)?;
+                                projection.residual_mm = norm(subtract(projection.sample.point_mm, fit_target.point_mm)) + projection.sample.uncertainty_mm;
+                            }
+                        }
                         let residual = norm(subtract(projection.sample.point_mm, target.point_mm))
                             + projection.sample.uncertainty_mm + target.uncertainty_mm;
                         tolerance.measure(projection.sample.uncertainty_mm)?;

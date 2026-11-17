@@ -64,7 +64,7 @@ fn mapped(error: MappingError) -> Error {
     }
 }
 
-fn control(error: &Error) -> bool {
+pub(super) fn control(error: &Error) -> bool {
     match error {
         Error::Source(crate::ImportRefusal::ResourceLimit) => true,
         Error::Numerical(error) => {
@@ -393,12 +393,15 @@ impl Carrier {
 
 /// A physical source surface with sampled UV fitting, not an embedding proof.
 #[derive(Debug)]
-pub struct NativeSurface(Carrier);
+pub struct NativeSurface(Carrier, [Option<f64>; 2]);
 impl NativeSurface {
     /// Compile source charts without any whole-domain topology admission.
     pub fn from_source(source: &ParsedStep, entity: EntityId, length_mm: &Rational, angles: AngleUnit, dec: &mut Decider) -> Result<Self, Error> {
         let charts = source.surface_charts(entity, length_mm, angles.clone(), dec).map_err(mapped)?;
-        Ok(Self(Carrier::new(entity, charts, 2, CoordinateSpace::Millimetres, &angles)?))
+        let carrier = Carrier::new(entity, charts, 2, CoordinateSpace::Millimetres, &angles)?;
+        let periodic = surface_periodic_axes(source, entity, dec)?;
+        let periods = periodic.map(|periodic| periodic.then_some(carrier.period));
+        Ok(Self(carrier, periods))
     }
     /// Original source surface identity.
     pub fn source(&self) -> EntityId { self.0.source }
@@ -408,6 +411,22 @@ impl NativeSurface {
     pub fn domain(&self, chart: usize) -> &[[Option<Rational>; 2]; 2] { self.0.charts[chart].domain() }
     /// Angular period in the source's plane-angle unit.
     pub fn angular_period(&self) -> f64 { self.0.period }
+    /// Known angular periods in original source UV units. A closed spline
+    /// declaration alone does not authorize a periodic parameter extension.
+    pub fn periods(&self) -> [Option<f64>; 2] { self.1 }
+    /// Keep equivalent periodic UV on one sheet. The first location uses the
+    /// native carrier's nonnegative angular branch.
+    pub fn align_parameters(&self, mut parameters: [f64; 2], reference: Option<[f64; 2]>) -> [f64; 2] {
+        for axis in 0..2 {
+            if let Some(period) = self.1[axis] {
+                parameters[axis] = match reference {
+                    Some(reference) => parameters[axis] + ((reference[axis] - parameters[axis]) / period).round() * period,
+                    None => parameters[axis].rem_euclid(period),
+                };
+            }
+        }
+        parameters
+    }
     /// Resolve original source UV to its native knot span.
     pub fn location(&self, parameters: [f64; 2]) -> Result<NativeLocation, Error> { self.0.location(parameters) }
     /// One physical sample in original source UV.
@@ -451,6 +470,9 @@ impl NativeCurve {
     /// parameters. Closed analytic curves use the source angular period;
     /// closed splines use their declared finite native domain.
     pub fn finite_range(&self, mut endpoints: [f64; 2], same_sense: bool, closed: bool) -> Result<[f64; 2], Error> {
+        if self.1 {
+            endpoints = endpoints.map(|parameter| parameter.rem_euclid(self.0.period));
+        }
         if closed {
             let mut domain: Option<[f64; 2]> = None;
             for chart in &self.0.charts {
@@ -462,7 +484,11 @@ impl NativeCurve {
             return if let Some([low, high]) = domain {
                 Ok(if same_sense { [low, high] } else { [high, low] })
             } else if self.1 {
-                Ok([endpoints[0], endpoints[0] + if same_sense { self.0.period } else { -self.0.period }])
+                Ok(if same_sense {
+                    [endpoints[0], endpoints[0] + self.0.period]
+                } else {
+                    [endpoints[0] + self.0.period, endpoints[0]]
+                })
             } else {
                 Err(broken("closed edge has no finite or periodic source curve domain"))
             };
@@ -475,6 +501,10 @@ impl NativeCurve {
             } else {
                 endpoints[1] -= ((endpoints[1] - endpoints[0]) / period).floor().max(0.0) * period;
                 if endpoints[1] >= endpoints[0] { endpoints[1] -= period; }
+                if endpoints[1] < 0.0 {
+                    endpoints[0] += period;
+                    endpoints[1] += period;
+                }
             }
         }
         Ok(endpoints)
@@ -483,6 +513,21 @@ impl NativeCurve {
     pub fn sample(&self, location: NativeLocation, dec: &mut Decider) -> Result<NativeSample, Error> { self.0.sample(location, dec) }
     /// Fit a source parameter and retain the observed residual.
     pub fn project(&self, point_mm: [f64; 3], seed: Option<NativeLocation>, dec: &mut Decider) -> Result<NativeProjection, Error> { self.0.project(point_mm, seed, dec) }
+}
+
+fn surface_periodic_axes(source: &ParsedStep, mut entity: EntityId, dec: &mut Decider) -> Result<[bool; 2], Error> {
+    use crate::geometry_source::{Geometry, Surface};
+    for _ in 0..32 {
+        match source.geometry(entity, dec)? {
+            Geometry::Surface(Surface::Cylinder(..) | Surface::Cone(..) | Surface::Sphere(..)) => return Ok([true, false]),
+            Geometry::Surface(Surface::Torus(..)) => return Ok([true; 2]),
+            Geometry::Surface(Surface::Extrusion(curve, _)) => return Ok([angular_curve(source, curve, dec)?, false]),
+            Geometry::Surface(Surface::Revolution(curve, _)) => return Ok([true, angular_curve(source, curve, dec)?]),
+            Geometry::Surface(Surface::Replica(parent, _) | Surface::Offset(parent, ..) | Surface::CurveBounded(parent, ..)) => entity = parent,
+            _ => return Ok([false; 2]),
+        }
+    }
+    Err(broken("cyclic or excessive surface wrappers"))
 }
 
 fn angular_curve(source: &ParsedStep, mut entity: EntityId, dec: &mut Decider) -> Result<bool, Error> {

@@ -7,6 +7,7 @@ use crate::part21::{Entity, Graph, Param};
 use crate::{Curve, Placement, Surface, Vec3};
 
 use super::{Error, TolerantSolid, invalid};
+mod uv;
 
 struct Builder<'a> {
     parsed: &'a ParsedStep,
@@ -91,25 +92,33 @@ fn decimal(value: &Rational) -> Result<Param, Error> {
 pub(super) struct Rebuilt {
     pub changes: Graph,
     pub body_roots: Vec<Vec<u64>>,
+    pub checks: Vec<super::SampledCheck>,
 }
 
 pub(super) fn rebuild(
-    parsed: &ParsedStep,
+    import: &super::TolerantImport,
     bodies: &[TolerantSolid],
-    scale: &Rational,
     dec: &mut Decider,
 ) -> Result<Rebuilt, Error> {
+    let parsed = import.parsed.as_ref();
+    let scale = &import.source.mm_per_unit;
     let next = parsed.entities().last().unwrap_or(0).checked_add(1)
         .ok_or_else(|| invalid("import.tolerant-broken-reference", "STEP entity index overflow"))?;
     let mut builder = Builder { parsed, changes: Graph::new(), next };
     let mut expanded_roots = BTreeMap::<u64, usize>::new();
     let mut body_roots = Vec::with_capacity(bodies.len());
+    let mut checks = Vec::new();
+    let mut uv_context = None;
     let mut written_vertices = BTreeMap::<&str, (&Vec3, u64)>::new();
     let mut written_edges = BTreeMap::<&str, ([u64; 2], &Curve, bool, u64)>::new();
     let mut written_faces = BTreeMap::<&str, (&super::TolerantBody, &super::super::TolerantFace, u64)>::new();
     let mut reversed_faces = BTreeMap::<u64, u64>::new();
     for solid in bodies {
         let body = &solid.body;
+        let mut trims = BTreeMap::<&str, Vec<&super::NativeTrim>>::new();
+        for trim in import.evidence.native_trims.iter().filter(|trim| trim.body == body.name) {
+            trims.entry(&trim.edge).or_default().push(trim);
+        }
         let root: u64 = body.name.strip_prefix('#').and_then(|value| value.parse().ok())
             .ok_or_else(|| invalid("import.tolerant-broken-reference", "native body lacks a source root"))?;
         if !matches!(parsed.topology(root, dec)?, Topology::Solid { .. } | Topology::SurfaceModel(_) | Topology::FaceModel(_)) {
@@ -167,6 +176,9 @@ pub(super) fn rebuild(
                     _ => return Err(invalid("import.tolerant-broken-reference", "native edge has no exportable source carrier")),
                 },
             };
+            let curve = uv::edge_geometry(&mut builder, import, body, edge, curve,
+                trims.get(edge.name.as_str()).map_or(&[], Vec::as_slice),
+                &mut uv_context, &mut checks, dec)?;
             let parameters = vec![builder.name(&edge.name), reference_to(endpoints[0]), reference_to(endpoints[1]), reference_to(curve), boolean(edge.curve_same_sense)];
             let entity = match builder.existing(&edge.name, "EDGE_CURVE") {
                 Some(entity) => { builder.set(entity, "EDGE_CURVE", parameters)?; entity }
@@ -278,7 +290,7 @@ pub(super) fn rebuild(
             }
         }
     }
-    Ok(Rebuilt { changes: builder.changes, body_roots })
+    Ok(Rebuilt { changes: builder.changes, body_roots, checks })
 }
 
 pub(super) fn standalone_frame(parsed: &ParsedStep, changes: &mut Graph, name: &str, dec: &mut Decider) -> Result<u64, Error> {

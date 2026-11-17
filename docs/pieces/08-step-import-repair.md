@@ -51,6 +51,12 @@ Retained native B-spline trims on cones refuse with `numerical.native-cone-domai
 Retained ring tori use their original angular surface definition. Finite charts must stay within one turn in each coordinate; an exactly complete period requires the paired opposite seam uses on the same outer boundary. Circular rim pairs with matching retained phase anchors can acquire a recorded `paired_torus_iso_circle/1` seam, without moving the source vertices or curves. The writer rotates only the closed walk to preserve OCCT's two seam-chart selections.
 Horn and spindle sources retain `import.toroidal-sheet-unverified` on this higher-authority path; selecting only an outer sheet would discard original geometry. Arbitrary native trims retain `numerical.native-torus-domain-unverified`. These are certificate limits, not diagnoses that the source surfaces are invalid.
 
+The separate tolerant native projector retains the source surface and original parameter units. Authored PCURVEs seed each sampled station; cached torus and conic-extrusion guesses initialize projection when needed, including spindle inner-sheet and signed-offset alternatives. Admission still uses the actual evaluated sample, uncertainty, residual and convergence record, not the guess or a closest-distance claim.
+
+For an offset of a regular ring-torus basis, the native source equation keeps the signed minor coefficient `r + d` in the original UV. It does not construct an equivalent checked torus, fit a replacement surface, reverse the chart or acquire an embedding certificate. Horn/spindle bases retain their oriented derivative-normal expression. These equations do not change tolerance limits or the existing RationalPatch proof.
+
+Tolerant STEP evidence uses `CATALLAX_EVIDENCE_JSON_PARTS/1` in `FILE_DESCRIPTION`. Concatenating the subsequent description strings in order reconstructs the complete JSON payload; bounded UTF-8 chunks avoid OCCT scanner overflow without dropping repair or tolerance records.
+
 ### Multiple numerical face bounds
 
 The retained analytic admission path accepts multiple interior face boundaries

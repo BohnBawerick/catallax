@@ -217,3 +217,18 @@ There are no measured admission/body-inventory losses, export-valid losses or un
 The candidate preserves positive Gershgorin margins and otherwise attempts a positive-definite symmetric projected-Jacobian determinant/trace bound. Thirteen focused tests pass, including a non-ruled cubic sheet without diagonal dominance, indefinite and negative-diagonal refusal controls, and the existing ruled-chart controls. Controls, knots, weights, complete-domain coverage, join checks, tolerances and proof limits stay unchanged. No shared import helper changes.
 
 Six initial refusals change without completing a solid file: `00003966` advances from the support bound to an existing spline endpoint incidence gap; `00005482`, `00006039` and `00007760` advance from that support refusal to a resource limit; `00001166` and `00001707` change from a resource limit to incidence gaps. Resource limits are run facts, not geometric refusals. Five screened real files still retain surface bodies; passing a support proof alone does not admit a solid.
+
+## Capped analytic-family probe (17 Nov 2026)
+
+A separate 12-file probe selects the first four sorted remaining explicit IDs for each of `TOROIDAL_SURFACE`, `OFFSET_SURFACE` and `SURFACE_OF_LINEAR_EXTRUSION`. Its main-fork baseline is `db18482fd9b6d9cb8802cd4f9c633ae05815ca04`; the combined native-tier/family candidate is `1be2ad4028fc803de3572b9f7ce4bb4ecb5fb651`. Identical source hashes, two workers, separate unchanged 20M opening/export allowances, 60-second file bounds and 6,144 MiB process caps are used.
+
+| Capped file measure | Baseline | Candidate |
+| --- | ---: | ---: |
+| Complete-source solids | 0 | 0 |
+| Every solid exported and valid | 0 | 0 |
+
+There are no lost or unmeasured baseline passes. All 12 candidate files retain source surfaces with operation-budget causes. Changed refusals receive no solid or valid-export credit. This probe neither replaces the 3,000-file qualification nor attributes a family-only gain to the new default native tier.
+
+At that candidate, seven focused original-source projection cases pass, including scaled units, a spindle inner sheet and its offset, oblique ellipse extrusion and a signed negative torus offset. A generated normal-offset half-torus reaches the sampled tolerant-solid tier and writes STEP that the direct OCCT 8.0.1.1.0 builder reads valid at 1e-7 mm, without an explicit ShapeFix call. Its native `Geom_OffsetSurface` definition and parameters remain present; volume is 197.39208802180022 mm³ versus 197.39208802178717 expected.
+
+At producer `778bd0ead5c57af305b6654aa1a0ce0f1f0d164c`, the oblique half-ellipse extrusion reaches the same sampled tier and writes an artifact, but its raw-reader UV-period closure is unresolved and receives no export-valid credit. Keeping master-curve flags or rotating the closed walk does not resolve that case. Dropping PCURVE associations also fails raw validity and changes the observed volume, so it is not an accepted workaround. No complete-source body-deviation or unhealed-validity claim is made.

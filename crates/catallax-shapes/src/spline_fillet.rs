@@ -62,7 +62,7 @@ pub use cut_trace::FilletCutTrace;
 use jets::{Exact, Jet, Support};
 pub use numerical::{
     NumericalFilletCorner, NumericalFilletCut, NumericalFilletSpine, NumericalFilletSupport,
-    NumericalSpineNode, NumericalSplineFillet,
+    NumericalSpineNode, NumericalSplineFillet, NumericalSurfaceCut,
 };
 
 /// The fitted face's target two-sided deviation, in nanometres.

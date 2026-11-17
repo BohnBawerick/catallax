@@ -27,6 +27,10 @@ pub use support::NumericalFilletSupport;
 mod walk;
 pub use cut::NumericalFilletCut;
 
+#[path = "numerical_surface_cut.rs"]
+mod surface_cut;
+pub use surface_cut::NumericalSurfaceCut;
+
 const MAX_DEPTH: u32 = 24;
 const MAX_NODES: usize = 16_385;
 

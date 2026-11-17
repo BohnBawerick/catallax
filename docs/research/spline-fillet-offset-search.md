@@ -279,3 +279,31 @@ ordinary route at 96,733,000 work with one unchanged 100M allowance; its
 fitted blend is geometrically displaced from the old sharp edge. This does
 not prove native-chain fallback, later edits, imported-part fillets, or the
 owner's pocket.
+
+## General rolling-ball construction, 17 November
+
+Steering 025 replaces pair/end-recipe construction gates with one numerical
+rolling-ball path. The contact stage now groups selected edges into unique
+tangent chains using 128-bit enclosures of endpoint tangent and support-normal
+gaps, scaled by radius and limited to one eighth of the requested tolerance.
+Sharp vertices remain strip ends. An ambiguous tangent continuation returns
+`fillet.numerical-chain`, not an arbitrarily chosen branch.
+
+The construction follows [OCCT BRepBlend_Walking's guide-normal sections](https://occt3d.com/dev/doc/refman/html/class_b_rep_blend___walking.html)
+and [SMLib's constant-radius four-UV equations](https://github.com/NVIDIA-Omniverse/usd-brep/blob/3fd5b9548d19aa8c12c29bc9637a96d42a06f8a5/source/SMLib/src/SmFilletSolver.cpp#L2665-L2745):
+three offset-equality equations plus one section-plane equation. It uses the
+same regular-surface adapters for native and spline supports, rather than
+selecting a surface-pair recipe. Convex/concave material side and alignment
+between parameter normals and source-face normals determine signed offsets.
+Retained curve traces supply sampled, fitted guides even when Boolean
+intersection carriers have lost explicit line/circle identity. Endpoint
+tangent lines continue the section guide outside its retained interval;
+they do not assert an extension of the actual trimmed support faces.
+
+The release regression independently checks material side, support contact
+and circular-section radius on all 12 edge orientations of a box at
+R0.5/R1/R2/R5. The unchanged tolerance is 1e-7 mm. Request work and the
+over-20M cases are recorded in [the phase-5 work record](../phase5-work-cases.md#general-rolling-ball-contact-stage-17-november).
+This proves only untrimmed candidate strips and rails. The common constructor
+is not yet an ordinary application producer; actual face-domain trimming,
+corner assembly, successful owner bodies and raw STEP acceptance remain open.

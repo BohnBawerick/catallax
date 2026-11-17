@@ -370,4 +370,134 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn nonplanar_neighbour_cut_retains_both_native_curves() {
+        let ((), work) = with_operation_budget(100_000_000, || {
+            let mut dec = Decider::new(BudgetPolicy {
+                max_work: 100_000_000,
+                ..Default::default()
+            });
+            let radius = Rational::one();
+            let tolerance = Rational::parse("0.0000001").unwrap();
+            let mut model = Model::default();
+            let body = catallax_topology::block(
+                &mut model,
+                [20, 30, 40].map(Rational::from_i64),
+                &catallax_shapes::Pose::identity(),
+            )
+            .unwrap();
+            let edge = model
+                .edges_of_body(body)
+                .into_iter()
+                .find(|edge| {
+                    let edge = model.edge(*edge);
+                    [edge.start, edge.end].into_iter().all(|vertex| {
+                        let point = model.geom().position(model.vertex(vertex.unwrap()).point);
+                        point.x.as_rational().is_some_and(|q| q.is_zero())
+                            && point.y.as_rational().is_some_and(|q| q.is_zero())
+                    })
+                })
+                .unwrap();
+            let ends = [model.edge(edge).start, model.edge(edge).end].map(|vertex| {
+                model
+                    .geom()
+                    .position(model.vertex(vertex.unwrap()).point)
+                    .z
+                    .as_rational()
+                    .unwrap()
+            });
+            let mut chains =
+                construct(&model, body, &[edge], &radius, &tolerance, &mut dec).unwrap();
+            let strip = chains.remove(0).strips.remove(0);
+
+            // Quadratic tensor patch: x,y in [-1,10], z=10+x²/100+y²/50.
+            // The independent oracle below uses that equation, not the patch.
+            let xy = [
+                Rational::from_i64(-1),
+                Rational::from_ratio(9, 2).unwrap(),
+                Rational::from_i64(10),
+            ];
+            let squared = [1, -10, 100].map(Rational::from_i64);
+            let a = Rational::from_ratio(1, 100).unwrap();
+            let b = Rational::from_ratio(1, 50).unwrap();
+            let mut controls = Vec::with_capacity(9);
+            for i in 0..3 {
+                for j in 0..3 {
+                    let height = Rational::from_i64(10) + &a * &squared[i] + &b * &squared[j];
+                    controls.push(Point3::new(
+                        xy[i].clone().into(),
+                        xy[j].clone().into(),
+                        height.into(),
+                    ));
+                }
+            }
+            let surface = catallax_shapes::BSplineSurface::new(
+                [2, 2],
+                std::array::from_fn(|_| [0, 0, 0, 1, 1, 1].map(Rational::from_i64).to_vec()),
+                [3, 3],
+                controls,
+                vec![catallax_numbers::Real::one(); 9],
+                &mut dec,
+            )
+            .unwrap();
+            let [atlas] = <[_; 1]>::try_from(
+                catallax_shapes::RationalAtlas::partition(surface, [false, false], &mut dec)
+                    .unwrap(),
+            )
+            .unwrap();
+            let guess = (&Rational::from_i64(10) - &ends[0]) / (&ends[1] - &ends[0]);
+            let foot = strip
+                .fillet
+                .rail(0)
+                .unwrap()
+                .evaluate_box([&guess, &guess], 128, &dec)
+                .unwrap();
+            let eleven = Rational::from_i64(11);
+            let seed = [
+                guess,
+                &(&foot[0].mid() + &Rational::one()) / &eleven,
+                &(&foot[1].mid() + &Rational::one()) / &eleven,
+            ];
+            let cut = strip
+                .fillet
+                .surface_cut(
+                    Surface::BSpline(SplineSupport::RationalAtlas(atlas)),
+                    seed,
+                    &mut dec,
+                )
+                .unwrap();
+            let one = Ball::from_rational(&Rational::one(), 128);
+            let ten = Ball::from_rational(&Rational::from_i64(10), 128);
+            let eleven = Ball::from_rational(&eleven, 128);
+            let a = Ball::from_rational(&a, 128);
+            let b = Ball::from_rational(&b, 128);
+            let start = Ball::from_rational(&ends[0], 128);
+            let length = Ball::from_rational(&(&ends[1] - &ends[0]), 128);
+            for j in 0..=32 {
+                let t = Rational::from_ratio(j, 32).unwrap();
+                let point = cut.curve().evaluate_box([&t, &t], 128, &dec).unwrap();
+                let uv = cut
+                    .parameters()
+                    .each_ref()
+                    .map(|curve| curve.evaluate_box([&t, &t], 128, &dec).unwrap());
+                let dx = &point[0] - &one;
+                let dy = &point[1] - &one;
+                within(
+                    &(dx.square() + dy.square()).sqrt().unwrap(),
+                    &radius,
+                    &tolerance,
+                );
+                let height = &(&ten + &(&a * &point[0].square())) + &(&b * &point[1].square());
+                within(&(&point[2] - &height), &Rational::zero(), &tolerance);
+                let z = &start + &(&length * &uv[0][0]);
+                within(&(&point[2] - &z), &Rational::zero(), &tolerance);
+                for axis in 0..2 {
+                    let coordinate = &(&eleven * &uv[1][axis]) - &one;
+                    within(&(&point[axis] - &coordinate), &Rational::zero(), &tolerance);
+                }
+            }
+        });
+        println!("general nonplanar neighbour cut work={}", work.used);
+    }
 }

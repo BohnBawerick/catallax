@@ -211,3 +211,25 @@ The comparable release application regression passes in 169.69 seconds
 (305.90 seconds including compilation). No kernel algorithm, tolerance or
 work cap was changed to obtain this result. Future remote proofs retain
 launch PIDs, logs and a wall deadline covering the entire offload group.
+
+## General rolling-ball contact stage, 17 November
+
+The new material-side/radius regression constructs all 12 untrimmed contact
+strips of a 20 × 30 × 40 mm box. Each row is one complete request with an
+unchanged 100M allowance and 1e-7 mm tolerance, including guides, contact
+walks, fitted strips/rails and independent geometric controls:
+
+| Radius, mm | Request work |
+|---|---:|
+| 0.5 | 52,541,470 |
+| 1 | 26,868,969 |
+| 2 | 15,604,461 |
+| 5 | 9,139,129 |
+
+R0.5 and R1 exceed the 20M target and remain phase-5 cases. These are not
+closed-body fillets: neighbour-domain trimming, corner assembly, ordinary
+application wiring and owner acceptance are not included. No internal
+stage profile was collected, so the radius-dependent cost has no attributed
+cause. The release test passed in 59.09 seconds; its bounded command,
+revision, process-group/PID records, full log and exit are retained in
+`proof-general-contact-box-2/` in the task evidence directory.

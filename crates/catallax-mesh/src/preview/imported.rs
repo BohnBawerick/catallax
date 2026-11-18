@@ -21,7 +21,7 @@ use catallax_shapes::{
 use spade::{
     ConstrainedDelaunayTriangulation, HasPosition, Point2, PositionInTriangulation, Triangulation,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, btree_map::Entry};
 
 type P = [f64; 3];
 type Uv = [f64; 2];
@@ -725,6 +725,7 @@ fn face_mesh(
             name: &face.name,
             same_sense: face.same_sense,
             skip_collapsed: false,
+            off_carrier_nodes: false,
         },
         &chart,
         cdt,
@@ -769,6 +770,14 @@ pub(super) struct FaceOutput<'a> {
     pub name: &'a str,
     pub same_sense: bool,
     pub skip_collapsed: bool,
+    /// The nodes may lie off the carrier, by the tolerance their vertex or
+    /// edge was admitted with. The chord and angle targets are then measured
+    /// on the triangle of the carrier's own points at the nodes' parameters:
+    /// they ask how well the triangulation samples the carrier. A node's own
+    /// offset is the body's recorded tolerance, which no refinement removes,
+    /// and against the drawn corners a triangle at such a node would miss the
+    /// carrier however small it became.
+    pub off_carrier_nodes: bool,
 }
 
 pub(super) fn finish_face(
@@ -784,8 +793,11 @@ pub(super) fn finish_face(
         name,
         same_sense,
         skip_collapsed,
+        off_carrier_nodes,
     } = output;
     let start = mesh.triangles.len();
+    // The carrier's point at each node, by the node's parameters.
+    let mut carried = BTreeMap::new();
     for _ in 0..32 {
         let mut pending = BTreeMap::new();
         let mut triangles = Vec::new();
@@ -796,9 +808,21 @@ pub(super) fn finish_face(
             if !inside(center, loops) {
                 continue;
             }
-            let p = nodes.map(|n| mesh.positions[n.mesh]);
+            let drawn = nodes.map(|n| mesh.positions[n.mesh]);
+            let mut p = drawn;
+            if off_carrier_nodes {
+                for (point, node) in p.iter_mut().zip(&nodes) {
+                    *point = match carried.entry(chart::key(node.uv)) {
+                        Entry::Occupied(entry) => *entry.get(),
+                        Entry::Vacant(entry) => *entry.insert(chart.position(node.uv, dec)?),
+                    };
+                }
+            }
             let normal = cross(sub(p[1], p[0]), sub(p[2], p[0]));
-            if norm(normal) == 0.0 {
+            // What is drawn must have an area, and so must what is measured.
+            if norm(normal) == 0.0
+                || norm(cross(sub(drawn[1], drawn[0]), sub(drawn[2], drawn[0]))) == 0.0
+            {
                 if skip_collapsed {
                     continue;
                 }

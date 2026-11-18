@@ -144,6 +144,15 @@ impl ParameterChart {
         self.evaluate_expressions(&parameters, axes, precision, dec)
     }
 
+    /// Compile the chart for binary64 sampling. The work is charged once,
+    /// here, by the size of the chart's expressions.
+    pub fn binary64(&self, dec: &mut Decider) -> Result<Binary64Chart, MappingError> {
+        Ok(Binary64Chart {
+            program: ex::Program::compile(&self.coordinates, dec)?,
+            dimension: self.dimension,
+        })
+    }
+
     fn evaluate_expressions(
         &self,
         parameters: &[Ball],
@@ -162,6 +171,50 @@ impl ParameterChart {
         ])
     }
 }
+/// A [`ParameterChart`] compiled for binary64 evaluation.
+///
+/// It evaluates the same expressions as [`ParameterChart::evaluate_box`] at
+/// the middle of a parameter box, rounded, with a running bound on the
+/// rounding error and on the box's own width in place of an enclosure. Display sampling takes thousands of points per face and claims
+/// no bound on any of them; an interval evaluation of each costs a body's
+/// whole work allowance. Nothing that admits, fits or certifies geometry may
+/// use it.
+#[derive(Clone, Debug)]
+pub struct Binary64Chart {
+    program: ex::Program,
+    dimension: usize,
+}
+impl Binary64Chart {
+    /// The chart's coordinates at `parameters`, which the caller keeps inside
+    /// the chart's domain, and the bound on the point's distance. `radii`
+    /// says how far each parameter is known: a parameter reduced modulo a
+    /// period is known to the rounding of that reduction, and the bound
+    /// carries what that moves the point by, with the rounding of every step.
+    /// The bound is not finite at a singular point. Where it is too large for
+    /// the caller's purpose, binary64 cannot answer and the caller needs
+    /// [`ParameterChart::evaluate_box`].
+    pub fn evaluate(&self, parameters: &[f64], radii: &[f64]) -> ([f64; 3], f64) {
+        let known: Vec<(f64, f64)> = parameters
+            .iter()
+            .take(self.dimension)
+            .enumerate()
+            .map(|(axis, parameter)| (*parameter, radii.get(axis).copied().unwrap_or(0.0)))
+            .collect();
+        let values = self.program.evaluate(&known);
+        (
+            values.map(|(value, _)| value),
+            values
+                .iter()
+                .fold(0.0f64, |bound, (_, each)| bound.hypot(*each)),
+        )
+    }
+    /// Work one evaluation is charged: a sixty-fourth of a unit for each
+    /// binary64 step, where an enclosing evaluation charges a unit per node.
+    pub fn work(&self) -> u64 {
+        self.program.len().div_ceil(64) as u64
+    }
+}
+
 fn error(detail: &str) -> MappingError {
     Refusal::new("import.geometry-parameter-mapping", detail).into()
 }

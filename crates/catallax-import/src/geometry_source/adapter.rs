@@ -30,8 +30,7 @@ impl ParsedStep {
     pub(crate) fn native_inventory(
         &self,
         dec: &mut Decider,
-    ) -> Result<(Rational, Vec<ModelDeclaration>), ImportRefusal> {
-        let scale = crate::recognize::source_length_scale(&self.graph, dec)?;
+    ) -> Result<(Rational, Vec<ModelDeclaration>, Vec<ContextUnits>), ImportRefusal> {
         let mut declarations = self.model_declarations(dec)?;
         declarations.sort_unstable_by_key(|model| {
             (model.kind != ModelDeclarationKind::Solid, model.entity)
@@ -39,7 +38,45 @@ impl ParsedStep {
         if declarations.is_empty() {
             return Err(invalid(0, "no source body declaration"));
         }
-        Ok((scale, declarations))
+        let mut units = Vec::new();
+        let scale = if let Some(contexts) = self.model_unit_contexts(&declarations, dec)? {
+            let mut selected = None;
+            for context in contexts {
+                let context = self.context_units(context, dec)?;
+                let scale =
+                    context
+                        .length_mm
+                        .as_ref()
+                        .ok_or_else(|| ImportRefusal::UnknownUnit {
+                            found: "prototype context has no length unit".into(),
+                        })?;
+                if selected.as_ref().is_some_and(|prior| prior != scale) {
+                    return Err(ImportRefusal::UnknownUnit {
+                        found: "conflicting length units".into(),
+                    });
+                }
+                if selected.is_none() {
+                    selected = Some(scale.clone());
+                }
+                units.push(context);
+            }
+            selected.ok_or_else(|| ImportRefusal::UnknownUnit {
+                found: "length unit".into(),
+            })?
+        } else {
+            let scale = crate::recognize::source_length_scale(&self.graph, dec)?;
+            for entity in self.entities() {
+                if self
+                    .entity_types(entity)?
+                    .contains(&"GLOBAL_UNIT_ASSIGNED_CONTEXT")
+                    && self.representation_context(entity)?.dimension == Some(3)
+                {
+                    units.push(self.context_units(entity, dec)?);
+                }
+            }
+            scale
+        };
+        Ok((scale, declarations, units))
     }
 
     pub(crate) fn retained_body(&self, entity: EntityId, scale: &Rational) -> RetainedGeometry {

@@ -490,12 +490,13 @@ pub(super) fn rebuild(
 }
 
 pub(super) fn standalone_frame(
-    parsed: &ParsedStep,
+    import: &super::TolerantImport,
     changes: &mut Graph,
     name: &str,
     roots: &[u64],
     dec: &mut Decider,
 ) -> Result<u64, Error> {
+    let parsed = &import.parsed;
     if roots.is_empty() {
         return Err(invalid(
             "import.tolerant-broken-topology",
@@ -527,8 +528,13 @@ pub(super) fn standalone_frame(
         if kinds.contains(&"GEOMETRIC_REPRESENTATION_CONTEXT") {
             let candidate = parsed.representation_context(entity)?;
             if candidate.dimension == Some(3) && !candidate.units.is_empty() {
-                context = Some(entity);
-                break;
+                let units = parsed.context_units(entity, dec)?;
+                if units.length_mm.as_ref() == Some(&import.source.mm_per_unit)
+                    && super::source_angles(std::slice::from_ref(&units))? == import.carriers.angles
+                {
+                    context = Some(entity);
+                    break;
+                }
             }
         }
         if kinds.iter().any(|kind| {

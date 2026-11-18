@@ -248,12 +248,14 @@ Native files have a short approximate `FILE_DESCRIPTION`. Concatenate the payloa
 
 Whole-source selected export requires a retained parsed graph and every source prototype reachable from a product-bound shape representation. A free representation does not establish product or occurrence coverage. Any unreachable prototype or surface-only sibling refuses the document atomically. Body writers, source-graph composition and serialization use the caller's existing export allowance. The public `repeated_placements` control covers one shared part at three distinct transforms in millimetre and metre source contexts, plus a valid but detached prototype that must refuse whole-document export.
 
+Normal default reopening resolves prototype geometry units from the representations that directly contain those prototypes. Assembly placement contexts can use different units without reinterpreting body coordinates. All bound prototype contexts must still agree on length and plane-angle units; conflicting contexts for the same prototype refuse. Any unbound prototype retains the globally unambiguous-unit requirement. Native body-local export selects a context matching its compiled geometry units rather than the first source context. This does not add admission of prototypes with different geometry units.
+
 Default controls remain 0.0000001 mm initial entity tolerance and a 0.01 mm sewing displacement cap. Native measured entity tolerances may grow beyond that cap and are reported individually; this is not the fixed-cap checked policy. The library introduces no implicit native work allowance. The existing census observer still applies a shared 20M opening allowance and records exhausted work separately from geometry refusals.
 Output slots are reserved before optional admission work.
 A body-local budget/deadline refusal discards that private candidate and leaves its immutable source declaration. Completed siblings and native bodies awaiting optional proof remain usable.
 An `Ok` result can therefore contain only retained surfaces even when optional work exhausted the outer allowance.
 Callers must handle body views explicitly instead of interpreting success as solid admission.
-Source hash mismatch, unreadable document/schema data and ambiguous global units remain document-level typed failures. A readable body declaration can remain retained when its own topology or geometry construction refuses.
+Source hash mismatch, unreadable document/schema data and ambiguous geometry units remain document-level typed failures. A readable body declaration can remain retained when its own topology or geometry construction refuses.
 Existing recipe construction and proposal/approval entries retain their explicit checked contracts; this default changes the opened-import consumer, not certified model construction.
 
 `OpenedStep::saved_controls` saves the original `catallax-import-tolerances/1` source record.

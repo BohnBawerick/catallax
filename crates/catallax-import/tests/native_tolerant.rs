@@ -411,7 +411,7 @@ fn a_finite_open_spline_cannot_become_closed_by_repeating_its_vertex() {
 fn mixed_angular_contexts_refuse_before_the_default_checked_upgrade() {
     let source = common::in_degrees(common::elliptical_extrusion::SOURCE).replace(
         "ENDSEC;\nEND-ISO-10303-21;",
-        "#99994=(GEOMETRIC_REPRESENTATION_CONTEXT(3)GLOBAL_UNIT_ASSIGNED_CONTEXT((#42,#99990,#44))REPRESENTATION_CONTEXT('',''));\nENDSEC;\nEND-ISO-10303-21;",
+        "#99994=(GEOMETRIC_REPRESENTATION_CONTEXT(3)GLOBAL_UNIT_ASSIGNED_CONTEXT((#42,#99990,#44))REPRESENTATION_CONTEXT('',''));\n#99995=ADVANCED_BREP_SHAPE_REPRESENTATION('conflicting prototype units',(#41),#99994);\nENDSEC;\nEND-ISO-10303-21;",
     );
     let (result, work) = with_operation_budget(20_000_000, || {
         opened::open_step(

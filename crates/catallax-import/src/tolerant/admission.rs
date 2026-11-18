@@ -480,7 +480,7 @@ impl TolerantImport {
             .ok_or_else(|| invalid("import.tolerant-body-index", "body index is out of range"))?;
         let mut built = step::rebuild(self, std::slice::from_ref(body), dec)?;
         let root = step::standalone_frame(
-            &self.parsed,
+            self,
             &mut built.changes,
             body.name(),
             &built.body_roots[0],
@@ -536,27 +536,20 @@ fn invalid(code: &'static str, detail: impl Into<String>) -> Error {
     Refusal::new(code, detail).into()
 }
 
-fn source_angles(parsed: &ParsedStep, dec: &mut Decider) -> Result<AngleUnit, Error> {
+fn source_angles(contexts: &[crate::geometry_source::ContextUnits]) -> Result<AngleUnit, Error> {
     let mut selected = None;
-    for entity in parsed.entities() {
-        if parsed
-            .entity_types(entity)?
-            .contains(&"GLOBAL_UNIT_ASSIGNED_CONTEXT")
-            && parsed.representation_context(entity)?.dimension == Some(3)
-        {
-            let units = parsed.context_units(entity, dec)?;
-            let angles = match units.plane_angle.unwrap_or(AngleUnit::Radians) {
-                AngleUnit::ScaledRadians(scale) if scale == Rational::one() => AngleUnit::Radians,
-                angles => angles,
-            };
-            if selected.as_ref().is_some_and(|prior| prior != &angles) {
-                return Err(invalid(
-                    "import.tolerant-ambiguous-units",
-                    "3D representation contexts assign different plane-angle units",
-                ));
-            }
-            selected = Some(angles);
+    for units in contexts {
+        let angles = match units.plane_angle.clone().unwrap_or(AngleUnit::Radians) {
+            AngleUnit::ScaledRadians(scale) if scale == Rational::one() => AngleUnit::Radians,
+            angles => angles,
+        };
+        if selected.as_ref().is_some_and(|prior| prior != &angles) {
+            return Err(invalid(
+                "import.tolerant-ambiguous-units",
+                "3D representation contexts assign different plane-angle units",
+            ));
         }
+        selected = Some(angles);
     }
     Ok(selected.unwrap_or(AngleUnit::Radians))
 }
@@ -612,8 +605,8 @@ pub(crate) fn prepare(
         .into());
     }
     parsed.schemas()?;
-    let angles = source_angles(&parsed, dec)?;
-    let (scale, declarations) = parsed.native_inventory(dec)?;
+    let (scale, declarations, contexts) = parsed.native_inventory(dec)?;
+    let angles = source_angles(&contexts)?;
     let mut source = TolerantFile {
         source_sha256: expected_sha256.into(),
         mm_per_unit: scale,

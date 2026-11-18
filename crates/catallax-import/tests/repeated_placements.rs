@@ -272,7 +272,18 @@ fn whole_document_roundtrip_preserves_shared_prototype_and_distinct_instances() 
             reopened.body(0),
             Some(opened::BodyView::Surfaces { .. }) | None
         ));
-        assert_inventory(reopened.parsed_source().unwrap(), &fixture, binding.roots[0]);
+        assert_inventory(
+            reopened.parsed_source().unwrap(),
+            &fixture,
+            binding.roots[0],
+        );
+        let (result, work) = with_operation_budget(20_000_000, || {
+            reopened.export_step_document(&mut Decider::default())
+        });
+        assert!(!work.exhausted);
+        let roundtrip = result.unwrap();
+        assert_eq!(roundtrip.bodies().len(), 1);
+        assert_eq!(roundtrip.bodies()[0].counts, [6, 12, 8]);
     }
 }
 
@@ -332,4 +343,43 @@ fn an_orphan_representation_does_not_establish_source_document_coverage() {
         .export_step_document(&mut Decider::default())
         .unwrap_err();
     assert_eq!(refusal.code, "import.selected-document");
+}
+
+#[test]
+fn a_prototype_bound_to_conflicting_length_contexts_still_refuses() {
+    let fixture = repeated_fixture(common::Unit::Millimetre, false);
+    let id = |offset| fixture.base + offset;
+    let extra = format!(
+        "#{}=(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT($,.METRE.));\n\
+         #{}=(GEOMETRIC_REPRESENTATION_CONTEXT(3)GLOBAL_UNIT_ASSIGNED_CONTEXT((#{}))REPRESENTATION_CONTEXT('',''));\n\
+         #{}=ADVANCED_BREP_SHAPE_REPRESENTATION('conflicting units',(#{}),#{});\n\
+         #{}=SHAPE_DEFINITION_REPRESENTATION(#{},#{});\n",
+        id(25),
+        id(26),
+        id(25),
+        id(27),
+        fixture.prototype,
+        id(26),
+        id(28),
+        id(23),
+        id(27),
+    );
+    let mut source = fixture.source;
+    source.insert_str(source.rfind("ENDSEC;").unwrap(), &extra);
+    let (result, work) = with_operation_budget(20_000_000, || {
+        opened::open_step(
+            source.as_bytes(),
+            &sha256_hex(source.as_bytes()),
+            &StepId::new("conflicting-length-contexts").unwrap(),
+            Default::default(),
+            &mut Decider::default(),
+        )
+    });
+    assert!(!work.exhausted);
+    assert!(matches!(
+        result,
+        Err(catallax_import::tolerant::Error::Source(
+            catallax_import::ImportRefusal::UnknownUnit { .. }
+        ))
+    ));
 }

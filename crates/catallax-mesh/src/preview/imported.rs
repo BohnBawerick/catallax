@@ -571,8 +571,9 @@ pub(super) fn seed_rectangles(
     options: &PreviewOptions,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
-    let mut stack = vec![(bounds, 0u32)];
-    while let Some(([lo, hi], depth)) = stack.pop() {
+    // The last field says a cell lies in one that had to be halved for bending.
+    let mut stack = vec![(bounds, 0u32, false)];
+    while let Some(([lo, hi], depth, curved)) = stack.pop() {
         dec.check_deadline()?;
         let mid: Uv = std::array::from_fn(|i| (lo[i] + hi[i]) * 0.5);
         let corners = [lo, [hi[0], lo[1]], hi, [lo[0], hi[1]]].map(|uv| chart.position(uv, dec));
@@ -581,31 +582,53 @@ pub(super) fn seed_rectangles(
         let actual = chart.position(mid, dec)?;
         let linear = std::array::from_fn(|i| corners.iter().map(|p| p[i] * 0.25).sum());
         let mut error = norm(sub(actual, linear));
-        for (uv, ends) in [
-            ([mid[0], lo[1]], [0, 1]),
-            ([hi[0], mid[1]], [1, 2]),
-            ([mid[0], hi[1]], [3, 2]),
-            ([lo[0], mid[1]], [0, 3]),
+        // How far each pair of opposite sides bows, by the axis they run along.
+        let mut bow = [0.0f64; 2];
+        for (uv, ends, along) in [
+            ([mid[0], lo[1]], [0, 1], 0),
+            ([hi[0], mid[1]], [1, 2], 1),
+            ([mid[0], hi[1]], [3, 2], 0),
+            ([lo[0], mid[1]], [0, 3], 1),
         ] {
             let linear = std::array::from_fn(|i| (corners[ends[0]][i] + corners[ends[1]][i]) * 0.5);
-            error = error.max(norm(sub(chart.position(uv, dec)?, linear)));
+            let side = norm(sub(chart.position(uv, dec)?, linear));
+            bow[along] = bow[along].max(side);
+            error = error.max(side);
         }
         if inside(mid, loops) {
             seed(cdt, mid, actual, mesh, options)?;
         }
-        if error <= options.chord_tolerance.to_f64_nearest() * 0.5 {
+        let bent = error > options.chord_tolerance.to_f64_nearest() * 0.5;
+        // Sides along each axis, in space. Parameter extents cannot compare
+        // the axes: on a cylinder one is in radians, the other in millimetres.
+        let length = |a: usize, b: usize| norm(sub(corners[a], corners[b]));
+        let sides = [
+            length(0, 1).max(length(3, 2)),
+            length(0, 3).max(length(1, 2)),
+        ];
+        // A bent cell is halved along the axis it bends along, since halving
+        // its length never straightens an arc; one that only twists, along its
+        // longer side. A flat cell of a curved surface is halved while it is
+        // far longer than wide, so the seeds do not all fall on one line and
+        // leave the triangulation to fill a long face from its boundary.
+        let axis = if bent && bow[0] > bow[1] {
+            0
+        } else if bent && bow[1] > bow[0] {
+            1
+        } else if bent || (curved && sides[0].max(sides[1]) > 8.0 * sides[0].min(sides[1])) {
+            usize::from(sides[1] > sides[0])
+        } else {
             continue;
-        }
+        };
         if depth >= 24 || !(lo[0] < mid[0] && mid[0] < hi[0] && lo[1] < mid[1] && mid[1] < hi[1]) {
             return Err(failure("surface preview subdivision limit reached"));
         }
-        let axis = usize::from((hi[1] - lo[1]) > (hi[0] - lo[0]));
         let mut a = hi;
         let mut b = lo;
         a[axis] = mid[axis];
         b[axis] = mid[axis];
-        stack.push(([b, hi], depth + 1));
-        stack.push(([lo, a], depth + 1));
+        stack.push(([b, hi], depth + 1, curved || bent));
+        stack.push(([lo, a], depth + 1, curved || bent));
     }
     Ok(())
 }
@@ -753,6 +776,15 @@ pub(super) fn finish_face(
                     "source preview triangle collapsed in spatial coordinates",
                 ));
             }
+            // A triangle thinner than the chord target has no normal worth
+            // comparing: its own depends on the last digits of its corners,
+            // and inside that width nothing it does can show. Such slivers
+            // line every curved trim, and no interior point ever cures them.
+            let chord = options.chord_tolerance.to_f64_nearest();
+            let longest = (0..3)
+                .map(|i| norm(sub(p[(i + 1) % 3], p[i])))
+                .fold(0.0, f64::max);
+            let thin = norm(normal) <= chord * longest;
             let mut refine = false;
             for weights in [
                 [0.5, 0.5, 0.0],
@@ -762,16 +794,18 @@ pub(super) fn finish_face(
             ] {
                 let uv = std::array::from_fn(|i| (0..3).map(|j| weights[j] * nodes[j].uv[i]).sum());
                 let linear = std::array::from_fn(|i| (0..3).map(|j| weights[j] * p[j][i]).sum());
-                refine |= norm(sub(chart.position(uv, dec)?, linear))
-                    > options.chord_tolerance.to_f64_nearest();
-                if let Some(angle) = &options.angular_deviation {
+                refine |= norm(sub(chart.position(uv, dec)?, linear)) > chord;
+                if let Some(angle) = &options.angular_deviation
+                    && !thin
+                {
                     let actual = chart.normal(uv, dec)?;
                     let cosine = dot(normal, actual) / (norm(normal) * norm(actual));
                     refine |= !cosine.is_finite()
                         || cosine.clamp(-1.0, 1.0).acos() > angle.to_f64_nearest();
                 }
             }
-            if refine {
+            // Nor is anything finer than the chord target asked for.
+            if refine && longest > chord {
                 pending.insert(chart::key(center), center);
                 continue;
             }
@@ -890,7 +924,10 @@ pub fn preview_step(
     names.clear();
     for face in source.solids.iter().flat_map(|s| &s.faces) {
         if names.insert(&face.name) {
-            face_mesh(face, &shared, &mut mesh, options, dec)?;
+            face_mesh(face, &shared, &mut mesh, options, dec).map_err(|mut refusal| {
+                refusal.detail = format!("face {}: {}", face.name, refusal.detail);
+                refusal
+            })?;
         }
     }
     dec.check_deadline()?;

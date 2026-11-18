@@ -72,7 +72,9 @@ fn support(
                     continue;
                 }
                 let width = &domain[axis][1] - &domain[axis][0];
-                let fraction = &(margin * &delta) / &width;
+                // The guide section is inside this extension: its offset
+                // contacts still need room for a numerical correction.
+                let fraction = &(margin * &delta).mul_pow2(1) / &width;
                 atlas = NumericalFilletSpine::extended_support(&atlas, axis, &fraction, dec)?;
             }
             Surface::BSpline(SplineSupport::RationalAtlas(atlas))
@@ -218,23 +220,28 @@ pub(crate) fn construct(
                 support(first, first_offset, &seeds[0].endpoints, &margin, dec)?,
                 support(second, second_offset, &seeds[1].endpoints, &margin, dec)?,
             ];
-            let [[first_seed, _], [second_seed, _]] = seeds.map(|seed| seed.endpoints);
+            let initial = seeds.map(|seed| {
+                std::array::from_fn(|axis| {
+                    &seed.endpoints[0][axis]
+                        - &(&margin * &(&seed.endpoints[1][axis] - &seed.endpoints[0][axis]))
+                })
+            });
             #[cfg(test)]
             let walk_before = catallax_numbers::current_operation_work().used;
             let spine = NumericalFilletSpine::walk(
                 supports,
                 guide.curve,
                 [-&margin, &Rational::one() + &margin],
-                [first_seed, second_seed],
+                initial,
                 tolerance.clone(),
                 dec,
             )
             .map_err(|error| {
                 super::at_stage(
                     &format!(
-                        "general rolling-ball contact walk for edge {:?}, supports {:?}, name {:?}, guide margin {:.6e}",
+                        "general rolling-ball contact walk for edge {:?}, supports {:?}, name {:?}, guide margin {:.6e}, convex {}",
                         source.edge, source.faces, model.edge_name(body, source.edge),
-                        margin.to_f64_nearest(),
+                        margin.to_f64_nearest(), convex,
                     ),
                     error,
                 )

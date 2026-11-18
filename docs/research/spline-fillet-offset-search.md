@@ -427,3 +427,19 @@ The exact-only evaluation API remains separate. The construction request does
 not schedule it, spend work on it or replace a retained numerical result with
 its output. The current numerical body/outcome authority still forbids labelling
 sampled geometry exact or converting it to an exact continuation checkpoint.
+
+The general walk's first proposal extrapolates both native UV seeds to the
+actual first guide parameter, rather than passing the source-edge start to
+an already extended section. Spline-support parameter padding is twice the
+guide padding, leaving correction room at that section; equal limits put
+the Newton solve on the edge of its retained cover. These are numerical
+initialisation/extension estimates, not physical radius or completeness bounds.
+Accepted stations retain their interval offset and guide-plane checks, and
+the existing extension rechecks support regularity and G1 agreement.
+
+This follows [OCCT's boundary-seeded walking](https://github.com/Open-Cascade-SAS/OCCT/blob/V7_9_0/src/BRepBlend/BRepBlend_Walking.cxx#L214-L275),
+which sets the first guide parameter before solving the surface coordinates.
+[SMLib's corner extension](https://github.com/NVIDIA-Omniverse/usd-brep/blob/3fd5b9548d19aa8c12c29bc9637a96d42a06f8a5/source/SMLib/src/SmFilletCorner.cpp#L658-L667)
+also uses an extension estimate. Its implementation multiplies the radius
+by 7.5, despite the earlier comment saying 10. Catallax does not copy that
+factor or relax regularity when an extension cannot be admitted.

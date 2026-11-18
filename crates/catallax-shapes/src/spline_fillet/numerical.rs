@@ -360,13 +360,28 @@ impl NumericalFilletSpine {
         tolerance_mm: Rational,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
-        let first = problem.solve(&range[0], seed, dec)?;
+        let first = problem.solve(&range[0], seed, dec).map_err(|mut refusal| {
+            refusal.detail.push_str(&format!(
+                "; initial offset station tau approx {:.9e}, seed {:?}, signed offsets approx [{:.9e},{:.9e}]",
+                range[0].to_f64_nearest(), seed,
+                problem.supports[0].distance.to_f64_nearest(),
+                problem.supports[1].distance.to_f64_nearest(),
+            ));
+            refusal
+        })?;
         let mut nodes = vec![first];
         for i in 1..=8 {
             let tau = &range[0] + &((&range[1] - &range[0]) * Rational::from_ratio(i, 8).unwrap());
             let previous = nodes.last().expect("first station");
             let guess = problem.guess(previous, previous, 0.0);
-            nodes.push(problem.solve(&tau, guess, dec)?);
+            nodes.push(problem.solve(&tau, guess, dec).map_err(|mut refusal| {
+                refusal.detail.push_str(&format!(
+                    "; coarse offset station {i}/8, tau approx {:.9e}, seed {:?}",
+                    tau.to_f64_nearest(),
+                    guess,
+                ));
+                refusal
+            })?);
         }
         let centre_curve = centre_fit(&nodes, dec)?;
         let mut spine = Self {

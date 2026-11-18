@@ -137,6 +137,7 @@ pub(super) fn newton<const N: usize>(
         let step = inverse(jacobian, value)
             .ok_or_else(|| bad("singular numerical rolling-ball Jacobian"))?;
         let mut accepted = None;
+        let mut trial_failure = None;
         for power in 0..16 {
             let share = 2.0f64.powi(-power);
             let next = std::array::from_fn(|i| x[i] - share * step[i]);
@@ -146,11 +147,19 @@ pub(super) fn newton<const N: usize>(
                     break;
                 }
                 Ok(_) => {}
-                Err(e) if e.code == "fillet.numerical-spine" => {}
+                Err(e) if e.code == "fillet.numerical-spine" => trial_failure = Some(e),
                 Err(e) => return Err(e),
             }
         }
-        x = accepted.ok_or_else(|| bad("rolling-ball Newton step did not reduce the residual"))?;
+        x = accepted.ok_or_else(|| {
+            let mut refusal = bad(format!(
+                "rolling-ball Newton step did not reduce the residual; residual approx {error:.9e} mm, iterate {x:?}, full step {step:?}",
+            ));
+            if let Some(failed) = trial_failure {
+                refusal.detail.push_str(&format!("; rejected trial: {}", failed.detail));
+            }
+            refusal
+        })?;
     }
     Err(bad("rolling-ball Newton iteration limit reached"))
 }

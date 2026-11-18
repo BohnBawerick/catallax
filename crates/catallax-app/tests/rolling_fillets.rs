@@ -300,3 +300,42 @@ fn a_near_point_picks_between_two_arcs_of_one_circle() {
     // Eighteen faces of the sample part and the one strip.
     assert_eq!(result.body().definition().faces.len(), 19);
 }
+
+#[test]
+fn a_near_point_picks_between_two_straight_edges_of_one_cylinder() {
+    // The sample part's boss leaves the end of the flange along two straight
+    // edges, at x = -sqrt(44) and x = +sqrt(44): the same cylinder against the
+    // same plane, ending on the same faces. The kernel stores each as a branch
+    // of the surface pair, not as a line, and the pick names one by a sampled
+    // point on it.
+    let fixture = include_str!("fixtures/soliddraft-demo-boss-side.json");
+    for (sign, side) in [("-", -1.0), ("", 1.0)] {
+        let mut value: Value = serde_json::from_str(fixture).unwrap();
+        let fillet = value["steps"].as_array_mut().unwrap().last_mut().unwrap();
+        let near = fillet["edges"][0]["near"][0].as_str().unwrap().to_owned();
+        fillet["edges"][0]["near"][0] = json!(format!("{sign}{}", near.trim_start_matches('-')));
+        let recipe = Recipe::parse(&value.to_string()).unwrap();
+        let (outcome, work) = build(&recipe);
+        println!("boss side at x = {sign}sqrt(44), R1: {work:?}");
+        assert!(!work.exhausted, "{work:?}");
+        let EvaluatedApplicationOutcome::Numerical(result) = outcome.unwrap() else {
+            panic!("the exact builders refuse a strip ending on the flange and the boss top");
+        };
+        let body = result.body().definition();
+        // Eighteen faces of the sample part and the one strip.
+        assert_eq!(body.faces.len(), 19);
+        // The part is symmetric in x, so its two sharp edges ended on four
+        // vertices at (-sqrt(44), 10) and (+sqrt(44), 10). The strip replaces
+        // the two of the edge that was picked and leaves the other two.
+        let sharp = |at: f64| {
+            body.vertices
+                .iter()
+                .filter(|vertex| {
+                    let [x, y, _] = vertex.position.each_ref().map(Rational::to_f64_nearest);
+                    (x - at * 44.0f64.sqrt()).abs() < 1e-6 && (y - 10.0).abs() < 1e-6
+                })
+                .count()
+        };
+        assert_eq!([sharp(side), sharp(-side)], [0, 2], "x = {sign}sqrt(44)");
+    }
+}

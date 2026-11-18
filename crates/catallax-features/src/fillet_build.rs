@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use catallax_intersect::{Component, CurveSurface, Cyclic, SurfacePair};
+use catallax_intersect::{Component, CurveForm, CurveSurface, Cyclic, SurfacePair};
 use catallax_numbers::{
     BoundKind, Decider, Fact, FactKind, FactOrigin, Mark, Outcome, Rational, Real, Refusal, Sign,
 };
@@ -146,10 +146,106 @@ fn arc_distance_sq(
     })
 }
 
+/// The squared distance from `point` to the straight segment from `a` to `b`.
+fn segment_distance_sq(
+    [a, b]: [Point3; 2],
+    point: &Point3,
+    dec: &mut Decider,
+) -> Result<Real, Refusal> {
+    let along = b.minus(&a);
+    let offset = point.minus(&a);
+    let foot = offset.dot(&along);
+    let length_sq = along.norm_squared();
+    Ok(if sign(&foot, dec)? != Sign::Positive {
+        offset.norm_squared()
+    } else if sign(&(&foot - &length_sq), dec)? != Sign::Negative {
+        point.minus(&b).norm_squared()
+    } else {
+        offset.norm_squared() - foot.square() / length_sq
+    })
+}
+
+const NO_EDGE_DISTANCE: &str =
+    "nearest-edge selection among curved edges needs an exact trimmed-edge distance query";
+
+/// The squared distance from `point` to an edge whose curve is stored as a
+/// branch of a surface pair or another derived curve, where that branch is a
+/// straight line or a circle. A cylinder meets a plane along its axis in two
+/// lines, and the kernel keeps each as a branch of the pair.
+///
+/// A line is open, so the edge is the segment between its two vertices. On a
+/// circle the edge is one of the two arcs between them, and the branch's own
+/// tangent at the start vertex says which way it runs.
+fn branch_distance_sq(
+    model: &Model,
+    edge: EdgeId,
+    ends: [VertexId; 2],
+    point: &Point3,
+    dec: &mut Decider,
+) -> Result<Real, Refusal> {
+    let e = model.edge(edge);
+    let geom = model.geom();
+    let [a, b] = ends.map(|v| geom.position(model.vertex(v).point));
+    let form = match catallax_intersect::curve_form(geom, e.curve, dec) {
+        Ok(form) => form,
+        // An allowance or precision limit is the caller's to see.
+        Err(refusal) if refusal.code.starts_with("numbers.") => return Err(refusal),
+        Err(_) => return Err(bad(NO_EDGE_DISTANCE)),
+    };
+    match form {
+        CurveForm::Line { origin, dir } => {
+            // Both vertices on the branch's line: the edge is this segment.
+            for end in [&a, &b] {
+                if sign(&end.minus(&origin).cross(&dir).norm_squared(), dec)? != Sign::Zero {
+                    return Err(bad(NO_EDGE_DISTANCE));
+                }
+            }
+            segment_distance_sq([a, b], point, dec)
+        }
+        CurveForm::Circle {
+            center,
+            normal,
+            radius_sq,
+            ref_dir,
+        } => {
+            // Both vertices on the branch's circle: the edge is an arc of it.
+            for end in [&a, &b] {
+                let from = end.minus(&center);
+                if sign(&from.dot(&normal), dec)? != Sign::Zero
+                    || sign(&(&from.norm_squared() - &radius_sq), dec)? != Sign::Zero
+                {
+                    return Err(bad(NO_EDGE_DISTANCE));
+                }
+            }
+            let [_, leaving] =
+                catallax_intersect::tangent_at(geom, e.curve, model.vertex(ends[0]).point, dec)?;
+            // The normal about which the branch's own direction turns
+            // counter-clockwise, as a stored circle's does.
+            let normal = match sign(&normal.cross(&a.minus(&center)).dot(&leaving), dec)? {
+                Sign::Positive => normal,
+                Sign::Negative => normal.scaled(&Real::from_i64(-1)),
+                Sign::Zero => return Err(bad(NO_EDGE_DISTANCE)),
+            };
+            let circle = Circle {
+                center,
+                normal,
+                radius_sq,
+                ref_dir,
+            };
+            arc_distance_sq(&circle, e.sense == Sense::Same, [a, b], point, dec)
+        }
+        // No exact distance here: an ellipse arc needs the root of a quartic,
+        // and the other branches have no closed form.
+        _ => Err(bad(NO_EDGE_DISTANCE)),
+    }
+}
+
 /// Chooses the edge at strictly the smallest distance from a stored `near`
 /// point, measured to its closed trimmed set. A straight segment and a
-/// circular arc have that exact distance here; other curved candidates keep
-/// the refusal.
+/// circular arc have that exact distance here, whether the edge's curve is
+/// stored as a line or circle or as a branch of a surface pair that is one.
+/// Other curved candidates keep the refusal. Equal smallest distances refuse
+/// `recipe.ambiguous-reference`.
 fn nearest(
     model: &Model,
     edges: &[EdgeId],
@@ -168,19 +264,7 @@ fn nearest(
         };
         let [a, b] = [start, end].map(|v| model.geom().position(model.vertex(v).point));
         match model.geom().curve(e.curve) {
-            Curve::Line(_) => {
-                let along = b.minus(&a);
-                let offset = point.minus(&a);
-                let foot = offset.dot(&along);
-                let length_sq = along.norm_squared();
-                distances.push(if sign(&foot, dec)? != Sign::Positive {
-                    offset.norm_squared()
-                } else if sign(&(&foot - &length_sq), dec)? != Sign::Negative {
-                    point.minus(&b).norm_squared()
-                } else {
-                    offset.norm_squared() - foot.square() / length_sq
-                });
-            }
+            Curve::Line(_) => distances.push(segment_distance_sq([a, b], &point, dec)?),
             Curve::Circle(circle) => distances.push(arc_distance_sq(
                 circle,
                 e.sense == Sense::Same,
@@ -188,11 +272,7 @@ fn nearest(
                 &point,
                 dec,
             )?),
-            _ => {
-                return Err(bad(
-                    "nearest-edge selection among curved edges needs an exact trimmed-edge distance query",
-                ));
-            }
+            _ => distances.push(branch_distance_sq(model, *edge, [start, end], &point, dec)?),
         }
     }
     Ok(edges[crate::draft::near::unique_nearest(&distances, dec)?])
@@ -3960,6 +4040,191 @@ mod tests {
 
     fn q(text: &str) -> Real {
         Real::from(Rational::parse(text).unwrap())
+    }
+
+    fn at(x: Real, y: &str, z: &str) -> Point3 {
+        Point3::new(x, q(y), q(z))
+    }
+
+    fn picked(text: [&str; 3]) -> catallax_recipe::Point3 {
+        catallax_recipe::Point3(
+            text.map(|value| catallax_recipe::Number::new(Rational::parse(value).unwrap())),
+        )
+    }
+
+    /// An edge from `ends[0]` to `ends[1]` on the branch of two surfaces
+    /// through `ends[0]`, stored as the kernel stores a meeting it has not
+    /// reduced to a line or circle.
+    fn branch_edge(
+        model: &mut Model,
+        surfaces: [catallax_shapes::SurfaceId; 2],
+        ends: [Point3; 2],
+        sense: Sense,
+    ) -> EdgeId {
+        let witness = model
+            .geom_mut()
+            .add_point(PointDef::Explicit(ends[0].clone()));
+        let curve =
+            model
+                .geom_mut()
+                .add_curve(Curve::Intersection(catallax_shapes::IntersectionCurve {
+                    surfaces,
+                    witness,
+                }));
+        let [start, end] = ends.map(|end| vertex(model, end));
+        model.add_edge(Edge {
+            curve,
+            sense,
+            start: Some(start),
+            end: Some(end),
+        })
+    }
+
+    // The sample part's boss against the end of its flange: a cylinder of
+    // radius 12 about z and the plane y = 10 meet in the two lines
+    // x = -sqrt(44) and x = +sqrt(44), each a branch of the pair.
+    #[test]
+    fn a_near_point_picks_between_two_straight_branches_of_one_surface_pair() {
+        let mut dec = Decider::new(BudgetPolicy::default());
+        let mut model = Model::default();
+        let unit = |x: i64, y: i64, z: i64| {
+            catallax_shapes::Vector3::new(Real::from_i64(x), Real::from_i64(y), Real::from_i64(z))
+        };
+        let plane = catallax_shapes::Plane::new(
+            at(q("0"), "10", "0"),
+            unit(0, 1, 0),
+            unit(1, 0, 0),
+            &mut dec,
+        )
+        .unwrap();
+        let cylinder = catallax_shapes::Cylinder::new(
+            at(q("0"), "0", "0"),
+            unit(0, 0, 1),
+            q("12"),
+            unit(1, 0, 0),
+            &mut dec,
+        )
+        .unwrap();
+        let surfaces = [
+            model.geom_mut().add_surface(Surface::Cylinder(cylinder)),
+            model.geom_mut().add_surface(Surface::Plane(plane)),
+        ];
+        let root = q("44").sqrt();
+        let left = branch_edge(
+            &mut model,
+            surfaces,
+            [at(-&root, "10", "10"), at(-&root, "10", "24")],
+            Sense::Same,
+        );
+        let right = branch_edge(
+            &mut model,
+            surfaces,
+            [at(root.clone(), "10", "24"), at(root, "10", "10")],
+            Sense::Reversed,
+        );
+        let edges = [left, right];
+        for (near, expected) in [
+            // The binary64 sample of the left edge's lower end, as SolidDraft sends it.
+            (
+                [
+                    "-6.633249580710799619964745943434536457061767578125",
+                    "10",
+                    "10",
+                ],
+                left,
+            ),
+            (["1", "10", "17"], right),
+            // Off the plane and past the upper ends.
+            (["-1/2", "3", "40"], left),
+            (["7", "11", "-5"], right),
+        ] {
+            let chosen = nearest(&model, &edges, &picked(near), &mut dec).unwrap();
+            assert_eq!(chosen, expected, "{near:?}");
+        }
+        // Midway between the two there is no nearest edge.
+        for near in [["0", "10", "17"], ["0", "0", "50"]] {
+            let tie = nearest(&model, &edges, &picked(near), &mut dec).unwrap_err();
+            assert_eq!(tie.code, "recipe.ambiguous-reference", "{near:?}");
+        }
+    }
+
+    // A sphere of radius 5 and the plane z = 3 meet in a circle of radius 4,
+    // one branch. Two vertices cut it into the arc on the +y side and the arc
+    // on the -y side, and each edge is one of them by its sense.
+    #[test]
+    fn a_near_point_picks_between_two_arcs_of_one_circular_branch() {
+        let mut dec = Decider::new(BudgetPolicy::default());
+        let mut model = Model::default();
+        let unit = |x: i64, y: i64, z: i64| {
+            catallax_shapes::Vector3::new(Real::from_i64(x), Real::from_i64(y), Real::from_i64(z))
+        };
+        let sphere = catallax_shapes::Sphere::new(
+            at(q("0"), "0", "0"),
+            q("5"),
+            unit(0, 0, 1),
+            unit(1, 0, 0),
+            &mut dec,
+        )
+        .unwrap();
+        let plane = catallax_shapes::Plane::new(
+            at(q("0"), "0", "3"),
+            unit(0, 0, 1),
+            unit(1, 0, 0),
+            &mut dec,
+        )
+        .unwrap();
+        let surfaces = [
+            model.geom_mut().add_surface(Surface::Sphere(sphere)),
+            model.geom_mut().add_surface(Surface::Plane(plane)),
+        ];
+        let (east, west) = (at(q("4"), "0", "3"), at(q("-4"), "0", "3"));
+        let out = branch_edge(
+            &mut model,
+            surfaces,
+            [east.clone(), west.clone()],
+            Sense::Same,
+        );
+        let back = branch_edge(
+            &mut model,
+            surfaces,
+            [west.clone(), east.clone()],
+            Sense::Same,
+        );
+        let against = branch_edge(&mut model, surfaces, [east, west], Sense::Reversed);
+        // Which way the branch itself runs at the east vertex says which arc
+        // an edge running with it from east to west is.
+        let start = model.edge(out).start.unwrap();
+        let [_, leaving] = catallax_intersect::tangent_at(
+            model.geom(),
+            model.edge(out).curve,
+            model.vertex(start).point,
+            &mut dec,
+        )
+        .unwrap();
+        let north_first = sign(&leaving.y, &mut dec).unwrap() == Sign::Positive;
+        for (north, south) in [(out, back), (back, out), (out, against), (against, out)] {
+            // `out` is the north arc exactly when the branch leaves east northwards.
+            if (north == out) != north_first {
+                continue;
+            }
+            let edges = [north, south];
+            for (near, expected) in [
+                (["0", "4", "3"], north),
+                (["0", "-4", "3"], south),
+                // Above the plane, and outside the circle near the east vertex.
+                (["1", "2", "9"], north),
+                (["5", "-1/10", "3"], south),
+            ] {
+                let chosen = nearest(&model, &edges, &picked(near), &mut dec).unwrap();
+                assert_eq!(chosen, expected, "{near:?}");
+            }
+            // On the axis every point of the circle is equally near, and at
+            // a vertex both arcs are touched.
+            for near in [["0", "0", "10"], ["4", "0", "3"], ["9", "0", "3"]] {
+                let tie = nearest(&model, &edges, &picked(near), &mut dec).unwrap_err();
+                assert_eq!(tie.code, "recipe.ambiguous-reference", "{near:?}");
+            }
+        }
     }
 
     /// A straight strip hull from x = -1 to x = 1 whose cross-section has its

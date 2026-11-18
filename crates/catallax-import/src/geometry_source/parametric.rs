@@ -144,6 +144,15 @@ impl ParameterChart {
         self.evaluate_expressions(&parameters, axes, precision, dec)
     }
 
+    /// Compile the chart for binary64 sampling. The work is charged once,
+    /// here, by the size of the chart's expressions.
+    pub fn binary64(&self, dec: &mut Decider) -> Result<Binary64Chart, MappingError> {
+        Ok(Binary64Chart {
+            program: ex::Program::compile(&self.coordinates, dec)?,
+            dimension: self.dimension,
+        })
+    }
+
     fn evaluate_expressions(
         &self,
         parameters: &[Ball],
@@ -162,6 +171,41 @@ impl ParameterChart {
         ])
     }
 }
+/// A [`ParameterChart`] compiled for binary64 evaluation.
+///
+/// It evaluates the same expressions as [`ParameterChart::evaluate_box`] at a
+/// point, rounded, with a running bound on the rounding error in place of an
+/// enclosure. Display sampling takes thousands of points per face and claims
+/// no bound on any of them; an interval evaluation of each costs a body's
+/// whole work allowance. Nothing that admits, fits or certifies geometry may
+/// use it.
+#[derive(Clone, Debug)]
+pub struct Binary64Chart {
+    program: ex::Program,
+    dimension: usize,
+}
+impl Binary64Chart {
+    /// The chart's coordinates at `parameters`, which the caller keeps inside
+    /// the chart's domain, and the largest rounding bound among them. The
+    /// bound is not finite at a singular point. Where it is too large for the
+    /// caller's purpose, binary64 has lost the value and the caller needs
+    /// [`ParameterChart::evaluate_box`].
+    pub fn evaluate(&self, parameters: &[f64]) -> ([f64; 3], f64) {
+        let values = self
+            .program
+            .evaluate(&parameters[..self.dimension.min(parameters.len())]);
+        (
+            values.map(|(value, _)| value),
+            values.iter().fold(0.0, |bound, (_, each)| bound.max(*each)),
+        )
+    }
+    /// Work one evaluation is charged: a sixty-fourth of a unit for each
+    /// binary64 step, where an enclosing evaluation charges a unit per node.
+    pub fn work(&self) -> u64 {
+        self.program.len().div_ceil(64) as u64
+    }
+}
+
 fn error(detail: &str) -> MappingError {
     Refusal::new("import.geometry-parameter-mapping", detail).into()
 }

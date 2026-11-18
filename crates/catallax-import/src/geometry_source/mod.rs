@@ -16,7 +16,7 @@ mod units;
 pub use definitions::*;
 pub use fitting::{FitOptions, FittedCurve, FittedSurface};
 pub use mapping::{Frame, MappingError};
-pub use parametric::{AngleUnit, CoordinateSpace, ParameterChart};
+pub use parametric::{AngleUnit, Binary64Chart, CoordinateSpace, ParameterChart};
 pub(crate) use tolerant_step::{StepGraphKind, product_representations, step_reachable};
 pub use units::ContextUnits;
 

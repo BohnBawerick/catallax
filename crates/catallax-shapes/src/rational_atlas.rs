@@ -39,6 +39,7 @@ struct Data {
     source: BSplineSurface,
     charts: Vec<AtlasChart>,
     periodic: [bool; 2],
+    polynomial_bounds: bool,
 }
 
 /// One connected G1 logical face, covered by regular exact rational charts.
@@ -201,7 +202,7 @@ impl RationalAtlas {
         dec: &mut Decider,
     ) -> Result<Vec<Self>, Refusal> {
         let cover = cover(&source, None, dec)?;
-        Self::joined(source, periodic, cover, dec)
+        Self::joined(source, periodic, false, cover, dec)
     }
 
     /// Opt-in admission from exact rational homogeneous span coefficients.
@@ -218,12 +219,28 @@ impl RationalAtlas {
             bounds.insert(indices, PolynomialBounds::from_span(&source, indices, dec)?);
         }
         let cover = cover(&source, Some(&bounds), dec)?;
-        Self::joined(source, periodic, cover, dec)
+        Self::joined(source, periodic, true, cover, dec)
+    }
+
+    /// Re-admit a rewritten source with this atlas's finite-cover method and
+    /// periodicity. The caller must still check the resulting component and
+    /// chart domains; this does not preserve or accept topology by itself.
+    pub fn repartition(
+        &self,
+        source: BSplineSurface,
+        dec: &mut Decider,
+    ) -> Result<Vec<Self>, Refusal> {
+        if self.data.polynomial_bounds {
+            Self::partition_with_polynomial_bounds(source, self.data.periodic, dec)
+        } else {
+            Self::partition(source, self.data.periodic, dec)
+        }
     }
 
     fn joined(
         source: BSplineSurface,
         periodic: [bool; 2],
+        polynomial_bounds: bool,
         (u, v, patches): CertifiedCover,
         dec: &mut Decider,
     ) -> Result<Vec<Self>, Refusal> {
@@ -308,6 +325,7 @@ impl RationalAtlas {
                     source: source.clone(),
                     charts,
                     periodic,
+                    polynomial_bounds,
                 }),
             });
         }

@@ -164,12 +164,24 @@ pub(super) fn build(
             points: std::cell::OnceCell::new(),
         },
     };
+    let mut finite_hull = None;
     for face in model.faces_of_body(body) {
         if faces.contains(&face) {
             continue;
         }
         let support = model.geom().surface(model.face(face).surface);
-        if !hull_clear(continuation.region_hull(), support, dec)? {
+        if hull_clear(continuation.region_hull(), support, dec)? {
+            continue;
+        }
+        if finite_hull.is_none() {
+            finite_hull = Some(fillet_clearance::hull_box(continuation.region_hull(), dec)?);
+        }
+        if !fillet_clearance::outside_face(
+            model,
+            face,
+            finite_hull.as_ref().expect("contact network hull"),
+            dec,
+        )? {
             return Err(Refusal::new(
                 "fillet.unsupported-overflow",
                 "a non-incident face is not proved clear of the contact network",

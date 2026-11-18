@@ -88,8 +88,20 @@ pub fn radius_limit(refusal: &Refusal) -> Option<Rational> {
     Rational::parse(tail.split_once(LIMIT_SUFFIX)?.0).ok()
 }
 
+/// Appends context without moving a terminal legacy radius hint.
+pub(crate) fn append_radius_context(refusal: &mut Refusal, context: &str) {
+    let position = if refusal.detail.ends_with(LIMIT_SUFFIX) {
+        refusal.detail.rfind(LIMIT_PREFIX)
+    } else {
+        None
+    };
+    let position = position.unwrap_or(refusal.detail.len());
+    refusal.detail.insert_str(position, context);
+}
+
 /// A [`RADIUS_TOO_LARGE`] refusal. A limit is shown rounded down to three
-/// decimal places, and dropped when that leaves nothing positive.
+/// decimal places, and dropped when that leaves nothing positive. Proof and
+/// source context precede the terminal hint read by SDK consumers.
 pub(crate) fn too_large(reason: &str, limit: Option<&Real>, dec: &mut Decider) -> Refusal {
     let bound = limit.and_then(|limit| crate::refusal_limit::bound(limit, dec));
     let shown = bound.as_ref().and_then(|(_, low)| {
@@ -99,19 +111,19 @@ pub(crate) fn too_large(reason: &str, limit: Option<&Real>, dec: &mut Decider) -
             .then(|| shown.to_decimal_exact())
             .flatten()
     });
-    let mut refusal = Refusal::new(
-        RADIUS_TOO_LARGE,
-        match shown {
-            Some(shown) => format!("{reason}{LIMIT_PREFIX}{shown}{LIMIT_SUFFIX}"),
-            None => reason.to_string(),
-        },
-    );
+    let mut refusal = Refusal::new(RADIUS_TOO_LARGE, reason);
     if let Some((proof, _)) = bound {
         refusal.detail.push_str(&format!(
             "; contact upper bound {proof}; the bound does not prove a fitting radius or continuation at equality"
         ));
     }
-    crate::refusal_limit::unknown(refusal)
+    let mut refusal = crate::refusal_limit::unknown(refusal);
+    if let Some(shown) = shown {
+        refusal
+            .detail
+            .push_str(&format!("{LIMIT_PREFIX}{shown}{LIMIT_SUFFIX}"));
+    }
+    refusal
 }
 
 fn bad(detail: &str) -> Refusal {
@@ -548,6 +560,67 @@ impl FilletDefinition {
             points.push(circle.center.plus(&u.plus(&w).scaled(&(&radius / &lift))));
         }
         Ok(Some(points))
+    }
+
+    /// Encloses the complete circular sweep of the meridian triangle from
+    /// [`Self::arc_hull`]. Only plane, cylinder and cone meridians are straight;
+    /// other support families return `None` rather than an unproved bound.
+    pub fn ring_hull(&self, dec: &mut Decider) -> Result<Option<Vec<Point3>>, Refusal> {
+        let (Curve::Circle(edge), [Curve::Circle(a), Curve::Circle(b)]) =
+            (&self.edge, &self.contacts)
+        else {
+            return Ok(None);
+        };
+        if self.supports.iter().any(|surface| {
+            !matches!(
+                surface,
+                Surface::Plane(_) | Surface::Cylinder(_) | Surface::Cone(_)
+            )
+        }) {
+            return Ok(None);
+        }
+        let mut low = [Real::zero(), Real::zero(), Real::zero()];
+        let mut high = low.clone();
+        for (index, circle) in [edge, a, b].into_iter().enumerate() {
+            let squared = circle.normal.norm_squared();
+            for axis in 0..3 {
+                let normal = [&circle.normal.x, &circle.normal.y, &circle.normal.z][axis];
+                let centre = [&circle.center.x, &circle.center.y, &circle.center.z][axis];
+                let extent =
+                    (&circle.radius_sq * &(Real::one() - &normal.square() / &squared)).sqrt();
+                let lo = centre - &extent;
+                let hi = centre + &extent;
+                if index == 0 || sign(&(&lo - &low[axis]), dec)? == Sign::Negative {
+                    low[axis] = lo;
+                }
+                if index == 0 || sign(&(&hi - &high[axis]), dec)? == Sign::Positive {
+                    high[axis] = hi;
+                }
+            }
+        }
+        Ok(Some(
+            (0..8)
+                .map(|mask| {
+                    Point3::new(
+                        if mask & 1 == 0 {
+                            low[0].clone()
+                        } else {
+                            high[0].clone()
+                        },
+                        if mask & 2 == 0 {
+                            low[1].clone()
+                        } else {
+                            high[1].clone()
+                        },
+                        if mask & 4 == 0 {
+                            low[2].clone()
+                        } else {
+                            high[2].clone()
+                        },
+                    )
+                })
+                .collect(),
+        ))
     }
 
     /// Whether this strip and another consume overlapping bands of one shared

@@ -181,6 +181,7 @@ impl RationalAtlas {
                     })
                     .collect(),
                 periodic: [self.periodic_u(), self.periodic_v()],
+                polynomial_bounds: self.data.polynomial_bounds,
             }),
         }
     }

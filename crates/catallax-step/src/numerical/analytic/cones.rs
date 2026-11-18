@@ -3,7 +3,7 @@
 use super::*;
 use catallax_shapes::Cone;
 
-pub(super) struct Parameters {
+pub(in crate::numerical) struct Parameters {
     sine: Ball,
     cosine: Ball,
     pub angle_rounding_error: Rational,

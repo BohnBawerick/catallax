@@ -208,14 +208,15 @@ fn projected_vertices_cannot_reverse_the_written_finite_line() {
     )
     .unwrap();
     let options = NumericalOptions::default();
-    let (mut definition, native) = numerical::definition_from_exact_model(
-        &model,
-        body,
-        "short edges".into(),
-        &options.tolerance_mm,
-        &mut Decider::default(),
-    )
-    .unwrap();
+    let (mut definition, native) =
+        catallax_features::numerical_embedding::definition_from_exact_model(
+            &model,
+            body,
+            "short edges".into(),
+            &options.tolerance_mm,
+            &mut Decider::default(),
+        )
+        .unwrap();
     definition.edges[0].parameters.swap(0, 1);
     let body =
         source::build_with_native_trims(definition, native, options, &mut Decider::default())

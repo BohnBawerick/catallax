@@ -9,6 +9,7 @@ use catallax_topology::numerical::{self as n, NumericalDefinition};
 const BITS: u32 = 128;
 
 mod cones;
+mod spheres;
 mod toroids;
 
 pub(super) fn applies(body: &NumericalBody) -> bool {
@@ -20,7 +21,11 @@ pub(super) fn applies(body: &NumericalBody) -> bool {
         && d.faces.iter().all(|face| {
             matches!(
                 face.surface,
-                Surface::Plane(_) | Surface::Cylinder(_) | Surface::Cone(_) | Surface::Torus(_)
+                Surface::Plane(_)
+                    | Surface::Cylinder(_)
+                    | Surface::Cone(_)
+                    | Surface::Sphere(_)
+                    | Surface::Torus(_)
             )
         })
         && (d
@@ -30,7 +35,10 @@ pub(super) fn applies(body: &NumericalBody) -> bool {
             || d.faces.iter().any(|face| {
                 matches!(
                     face.surface,
-                    Surface::Cylinder(_) | Surface::Cone(_) | Surface::Torus(_)
+                    Surface::Cylinder(_)
+                        | Surface::Cone(_)
+                        | Surface::Sphere(_)
+                        | Surface::Torus(_)
                 )
             }))
 }
@@ -135,7 +143,7 @@ fn local(
     )?
     .point(p, BITS))
 }
-fn uv(
+pub(super) fn uv(
     surface: &Surface,
     p: &[Rational; 3],
     old: &[Rational; 2],
@@ -151,10 +159,11 @@ fn uv(
             Ok([angle(&x, &y, &old[0], dec)?, z.mid()])
         }
         Surface::Cone(cone) => cones::uv(cone, p, old, dec),
+        Surface::Sphere(sphere) => spheres::uv(sphere, p, old, dec),
         Surface::Torus(torus) => toroids::uv(torus, p, old, dec),
         _ => Err(bad(
             "unsupported",
-            "analytic writer requires planes, cylinders, cones or ring tori",
+            "analytic writer requires planes, cylinders, cones, spheres or ring tori",
         )),
     }
 }
@@ -186,43 +195,18 @@ fn rounded_surfaces(
                     }),
                 )
             }
-            Surface::Cylinder(cylinder) => {
-                let WrittenFrame {
-                    entity: frame,
-                    origin: o,
-                    normal: n,
-                    reference: x,
-                } = placement(w, &cylinder.origin, &cylinder.axis, &cylinder.ref_dir)?;
-                let radius = crate::number::sqrt_real(&cylinder.radius_sq)
-                    .as_rational()
-                    .ok_or_else(|| {
-                        bad("unsupported", "analytic writer requires a rational radius")
-                    })?;
-                let value = w.scalar(&radius)?;
-                let radius = written(&radius, w.options)?;
-                (
-                    w.graph.add(
-                        "CYLINDRICAL_SURFACE",
-                        vec![text(string(&face.key)), frame.into(), value],
-                    ),
-                    Surface::Cylinder(Cylinder {
-                        origin: point_from(&o),
-                        axis: vector_from(&n),
-                        radius_sq: Real::from(&radius * &radius),
-                        ref_dir: vector_from(&x),
-                    }),
-                )
+            Surface::Cylinder(_) | Surface::Sphere(_) | Surface::Torus(_) => {
+                rounded_native_surface(w, &face.key, &face.surface)?
             }
             Surface::Cone(cone) => {
                 let (id, surface, parameters) = cones::rounded(w, &face.key, cone)?;
                 cone_parameters = Some(parameters);
                 (id, surface)
             }
-            Surface::Torus(torus) => toroids::rounded(w, &face.key, torus)?,
             _ => {
                 return Err(bad(
                     "unsupported",
-                    "analytic writer requires planes or cylinders",
+                    "analytic writer requires planes, cylinders, cones, spheres or ring tori",
                 ));
             }
         };
@@ -231,6 +215,46 @@ fn rounded_surfaces(
         cones.push(cone_parameters);
     }
     Ok(result)
+}
+
+pub(super) fn rounded_native_surface(
+    w: &mut Writer<'_>,
+    key: &str,
+    source: &Surface,
+) -> Result<(Id, Surface), Refusal> {
+    match source {
+        Surface::Cylinder(cylinder) => {
+            let WrittenFrame {
+                entity: frame,
+                origin: o,
+                normal: n,
+                reference: x,
+            } = placement(w, &cylinder.origin, &cylinder.axis, &cylinder.ref_dir)?;
+            let radius = crate::number::sqrt_real(&cylinder.radius_sq)
+                .as_rational()
+                .ok_or_else(|| bad("unsupported", "analytic writer requires a rational radius"))?;
+            let value = w.scalar(&radius)?;
+            let radius = written(&radius, w.options)?;
+            Ok((
+                w.graph.add(
+                    "CYLINDRICAL_SURFACE",
+                    vec![text(string(key)), frame.into(), value],
+                ),
+                Surface::Cylinder(Cylinder {
+                    origin: point_from(&o),
+                    axis: vector_from(&n),
+                    radius_sq: Real::from(&radius * &radius),
+                    ref_dir: vector_from(&x),
+                }),
+            ))
+        }
+        Surface::Sphere(sphere) => spheres::rounded(w, key, sphere),
+        Surface::Torus(torus) => toroids::rounded(w, key, torus),
+        _ => Err(bad(
+            "unsupported",
+            "native curved STEP needs a cylinder, sphere or ring torus",
+        )),
+    }
 }
 
 fn rounded_curves(
@@ -278,89 +302,13 @@ fn rounded_curves(
                 )
             }
             Curve::Circle(circle) => {
-                // EDGE_CURVE omits its range. Anchor the natural lower end at
-                // zero so neither a finite arc nor its pcurves cross the 3D
-                // carrier's periodic origin when a reader projects vertices.
-                // Only the reference phase changes: retain center, axis, radius,
-                // endpoint identities, finite walk and every face's UV chart.
-                let closed = edge.vertices[0] == edge.vertices[1];
-                let anchor = usize::from(!closed && edge.parameters[1] < edge.parameters[0]);
-                // Keep the existing bounded source-chart policy, even though
-                // the emitted frame no longer depends on its absolute phase.
-                if !closed {
-                    let _ = near(Rational::zero(), &edge.parameters[anchor], w.dec)?;
-                }
-                let center = round3(&rational_point(&circle.center)?, w.options)?;
-                let reference = vector_from(&difference(
-                    &d.vertices[edge.vertices[anchor]].position,
-                    &center,
-                    w.dec,
-                )?);
-                let WrittenFrame {
-                    entity: frame,
-                    origin: o,
-                    normal: n,
-                    reference: x,
-                } = placement(w, &circle.center, &circle.normal, &reference)?;
-                let radius = crate::number::sqrt_real(&circle.radius_sq)
-                    .as_rational()
-                    .ok_or_else(|| {
-                        bad("unsupported", "analytic writer requires a rational radius")
-                    })?;
-                let value = w.scalar(&radius)?;
-                let radius = written(&radius, w.options)?;
-                let id = w
-                    .graph
-                    .add("CIRCLE", vec![text(string(&edge.key)), frame.into(), value]);
-                let circle = Circle {
-                    center: point_from(&o),
-                    normal: vector_from(&n),
-                    radius_sq: Real::from(&radius * &radius),
-                    ref_dir: vector_from(&x),
-                };
-                phase_checks.push(circle_phase(
-                    &circle,
-                    &radius,
-                    &d.vertices[edge.vertices[anchor]].position,
-                    &edge.key,
-                    closed,
-                    w,
-                )?);
-                let mut ts = Vec::new();
-                for (i, index) in edge.vertices.into_iter().enumerate() {
-                    let [a, b, _] = local(
-                        &circle.center,
-                        &circle.normal,
-                        &circle.ref_dir,
-                        &d.vertices[index].position,
-                    )?;
-                    let reference = if closed {
-                        edge.parameters[i].clone()
-                    } else {
-                        arithmetic(&edge.parameters[i], &edge.parameters[anchor], '-', w.dec)?
-                    };
-                    ts.push(angle(&a, &b, &reference, w.dec)?);
-                }
-                // Keep the edge's actual oriented finite arc, including a seam
-                // crossing; changing a periodic branch does not change geometry.
-                let period = Ball::pi(BITS).mid() * Rational::from_i64(2);
-                if edge.parameters[0] < edge.parameters[1] && ts[1] <= ts[0] {
-                    ts[1] = &ts[1] + &period;
-                }
-                if edge.parameters[0] > edge.parameters[1] && ts[1] >= ts[0] {
-                    ts[1] = &ts[1] - &period;
-                }
-                if !closed {
-                    ts[anchor] = Rational::zero();
-                    let extent = &ts[1 - anchor];
-                    if extent.sign() != Sign::Positive || extent >= &period {
-                        return Err(bad(
-                            "rounding-topology",
-                            "written distinct endpoints do not select a positive arc below one turn",
-                        ));
-                    }
-                }
-                (id, Curve::Circle(circle), ts.try_into().unwrap())
+                let written = rounded_circle(w, circle, edge, &d.vertices)?;
+                phase_checks.push(written.phase);
+                (
+                    written.entity,
+                    Curve::Circle(written.circle),
+                    written.parameters,
+                )
             }
             _ => {
                 return Err(bad(
@@ -374,6 +322,100 @@ fn rounded_curves(
         result.push(id);
     }
     Ok((result, phase_checks))
+}
+
+pub(super) struct WrittenCircle {
+    pub(super) entity: Id,
+    pub(super) circle: Circle,
+    pub(super) parameters: [Rational; 2],
+    pub(super) phase: NumericalCheck,
+}
+
+pub(super) fn rounded_circle(
+    w: &mut Writer<'_>,
+    source: &Circle,
+    edge: &n::NumericalEdge,
+    vertices: &[n::NumericalVertex],
+) -> Result<WrittenCircle, Refusal> {
+    // EDGE_CURVE omits its range. Keep the natural lower end at zero so
+    // neither the finite arc nor its pcurves cross the carrier's origin.
+    let closed = edge.vertices[0] == edge.vertices[1];
+    let anchor = usize::from(!closed && edge.parameters[1] < edge.parameters[0]);
+    if !closed {
+        let _ = near(Rational::zero(), &edge.parameters[anchor], w.dec)?;
+    }
+    let center = round3(&rational_point(&source.center)?, w.options)?;
+    let reference = vector_from(&difference(
+        &vertices[edge.vertices[anchor]].position,
+        &center,
+        w.dec,
+    )?);
+    let WrittenFrame {
+        entity: frame,
+        origin: o,
+        normal: n,
+        reference: x,
+    } = placement(w, &source.center, &source.normal, &reference)?;
+    let radius = crate::number::sqrt_real(&source.radius_sq)
+        .as_rational()
+        .ok_or_else(|| bad("unsupported", "analytic writer requires a rational radius"))?;
+    let value = w.scalar(&radius)?;
+    let radius = written(&radius, w.options)?;
+    let entity = w
+        .graph
+        .add("CIRCLE", vec![text(string(&edge.key)), frame.into(), value]);
+    let circle = Circle {
+        center: point_from(&o),
+        normal: vector_from(&n),
+        radius_sq: Real::from(&radius * &radius),
+        ref_dir: vector_from(&x),
+    };
+    let phase = circle_phase(
+        &circle,
+        &radius,
+        &vertices[edge.vertices[anchor]].position,
+        &edge.key,
+        closed,
+        w,
+    )?;
+    let mut parameters = [Rational::zero(), Rational::zero()];
+    for (i, parameter) in parameters.iter_mut().enumerate() {
+        let [a, b, _] = local(
+            &circle.center,
+            &circle.normal,
+            &circle.ref_dir,
+            &vertices[edge.vertices[i]].position,
+        )?;
+        let reference = if closed {
+            edge.parameters[i].clone()
+        } else {
+            arithmetic(&edge.parameters[i], &edge.parameters[anchor], '-', w.dec)?
+        };
+        *parameter = angle(&a, &b, &reference, w.dec)?;
+    }
+    let period = Ball::pi(BITS).mid() * Rational::from_i64(2);
+    if edge.parameters[0] < edge.parameters[1] && parameters[1] <= parameters[0] {
+        parameters[1] = &parameters[1] + &period;
+    }
+    if edge.parameters[0] > edge.parameters[1] && parameters[1] >= parameters[0] {
+        parameters[1] = &parameters[1] - &period;
+    }
+    if !closed {
+        parameters[anchor] = Rational::zero();
+        let extent = &parameters[1 - anchor];
+        if extent.sign() != Sign::Positive || extent >= &period {
+            return Err(bad(
+                "rounding-topology",
+                "written distinct endpoints do not select a positive arc below one turn",
+            ));
+        }
+    }
+    Ok(WrittenCircle {
+        entity,
+        circle,
+        parameters,
+        phase,
+    })
 }
 
 fn circle_phase(
@@ -427,14 +469,14 @@ fn circle_phase(
     })
 }
 
-struct ParameterRounding {
+pub(super) struct ParameterRounding {
     // Lexical selector error across parameter coefficients with different units.
     // It is no common-unit geometric bound; actual 3D distance samples, rather
     // than this diagnostic maximum, enforce the source tolerance.
-    error: Rational,
+    pub(super) error: Rational,
 }
 
-fn closed_circle_parameters(
+pub(super) fn closed_circle_parameters(
     definition: &mut NumericalDefinition,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
@@ -484,7 +526,7 @@ impl ParameterRounding {
     }
 }
 
-fn pcurve(
+pub(super) fn pcurve(
     w: &mut Writer<'_>,
     rounding: &mut ParameterRounding,
     surface: Id,
@@ -575,7 +617,7 @@ fn pcurve(
     Ok((id, actual))
 }
 
-fn pcurve_checks(
+pub(super) fn pcurve_checks(
     edge: &n::NumericalEdge,
     face: &n::NumericalFace,
     actual: &[[Ball; 2]; 2],
@@ -617,7 +659,10 @@ fn pcurve_checks(
     })
 }
 
-fn normalize_cylinder_cell(face: &mut n::NumericalFace, dec: &mut Decider) -> Result<(), Refusal> {
+pub(super) fn normalize_cylinder_cell(
+    face: &mut n::NumericalFace,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
     if !matches!(face.surface, Surface::Cylinder(_)) {
         return Ok(());
     }
@@ -648,7 +693,7 @@ fn normalize_cylinder_cell(face: &mut n::NumericalFace, dec: &mut Decider) -> Re
     Ok(())
 }
 
-fn seam_loop_start(
+pub(super) fn seam_loop_start(
     boundary: &[n::NumericalTrim],
     edges: &[n::NumericalEdge],
     face_sense: Sense,
@@ -863,7 +908,7 @@ pub(super) fn build(
             let mut uses = Vec::new();
             let start = if matches!(
                 face.surface,
-                Surface::Cylinder(_) | Surface::Cone(_) | Surface::Torus(_)
+                Surface::Cylinder(_) | Surface::Cone(_) | Surface::Sphere(_) | Surface::Torus(_)
             ) {
                 seam_loop_start(boundary, &d.edges, face.sense, w.dec)?
             } else {

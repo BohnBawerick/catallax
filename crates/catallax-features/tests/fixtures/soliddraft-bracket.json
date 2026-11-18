@@ -1,0 +1,43 @@
+{
+  "format": "catallax-recipe/4",
+  "name": "SolidDraft 0.6.0 bracket scenario source",
+  "description": "The first eighteen geometry commands of ci/scenarios/bracket.json at v0.6.0, before parameter edits: 120 by 90 by 10 plate, 10 by 90 by 60 flange, diameter 24 boss to z30, diameter 12 bore, four diameter 9 bolt holes, and a 40 by 12 flange window.",
+  "steps": [
+    { "id": "plate-profile", "op": "sketch", "plane": { "rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "0"] }, "loops": [[
+      { "kind": "line", "id": "a", "to": ["120", "0"] }, { "kind": "line", "id": "b", "to": ["120", "90"] },
+      { "kind": "line", "id": "c", "to": ["0", "90"] }, { "kind": "line", "id": "d", "to": ["0", "0"] }
+    ]] },
+    { "id": "plate", "op": "extrude", "profile": "plate-profile", "distance": "10" },
+    { "id": "flange-profile", "op": "sketch", "plane": { "rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "0"] }, "loops": [[
+      { "kind": "line", "id": "a", "to": ["10", "0"] }, { "kind": "line", "id": "b", "to": ["10", "90"] },
+      { "kind": "line", "id": "c", "to": ["0", "90"] }, { "kind": "line", "id": "d", "to": ["0", "0"] }
+    ]] },
+    { "id": "flange", "op": "extrude", "profile": "flange-profile", "distance": "60" },
+    { "id": "base", "op": "boolean", "kind": "union", "target": "plate", "tool": "flange" },
+    { "id": "boss-profile", "op": "sketch", "plane": { "rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "0"] }, "loops": [[{ "kind": "circle", "id": "circle", "centre": ["70", "45"], "radius": "12" }]] },
+    { "id": "boss", "op": "extrude", "profile": "boss-profile", "distance": "30" },
+    { "id": "blank", "op": "boolean", "kind": "union", "target": "base", "tool": "boss" },
+    { "id": "bore-profile", "op": "sketch", "plane": { "rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "0"] }, "loops": [[{ "kind": "circle", "id": "circle", "centre": ["70", "45"], "radius": "6" }]] },
+    { "id": "bore-tool", "op": "extrude", "profile": "bore-profile", "distance": "40" },
+    { "id": "bored", "op": "boolean", "kind": "subtract", "target": "blank", "tool": "bore-tool" },
+    { "id": "bolt1-profile", "op": "sketch", "plane": { "rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "0"] }, "loops": [[{ "kind": "circle", "id": "circle", "centre": ["25", "23"], "radius": "4.5" }]] },
+    { "id": "bolt1-tool", "op": "extrude", "profile": "bolt1-profile", "distance": "12" },
+    { "id": "bolt1", "op": "boolean", "kind": "subtract", "target": "bored", "tool": "bolt1-tool" },
+    { "id": "bolt2-profile", "op": "sketch", "plane": { "rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "0"] }, "loops": [[{ "kind": "circle", "id": "circle", "centre": ["25", "67"], "radius": "4.5" }]] },
+    { "id": "bolt2-tool", "op": "extrude", "profile": "bolt2-profile", "distance": "12" },
+    { "id": "bolt2", "op": "boolean", "kind": "subtract", "target": "bolt1", "tool": "bolt2-tool" },
+    { "id": "bolt3-profile", "op": "sketch", "plane": { "rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "0"] }, "loops": [[{ "kind": "circle", "id": "circle", "centre": ["115", "23"], "radius": "4.5" }]] },
+    { "id": "bolt3-tool", "op": "extrude", "profile": "bolt3-profile", "distance": "12" },
+    { "id": "bolt3", "op": "boolean", "kind": "subtract", "target": "bolt2", "tool": "bolt3-tool" },
+    { "id": "bolt4-profile", "op": "sketch", "plane": { "rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "0"] }, "loops": [[{ "kind": "circle", "id": "circle", "centre": ["115", "67"], "radius": "4.5" }]] },
+    { "id": "bolt4-tool", "op": "extrude", "profile": "bolt4-profile", "distance": "12" },
+    { "id": "bolt4", "op": "boolean", "kind": "subtract", "target": "bolt3", "tool": "bolt4-tool" },
+    { "id": "window-profile", "op": "sketch", "plane": { "rotation": ["1", "1", "1", "1"], "translation": ["0", "0", "0"] }, "loops": [[
+      { "kind": "line", "id": "a", "to": ["65", "25"] }, { "kind": "line", "id": "b", "to": ["65", "37"] },
+      { "kind": "line", "id": "c", "to": ["25", "37"] }, { "kind": "line", "id": "d", "to": ["25", "25"] }
+    ]] },
+    { "id": "window-tool", "op": "extrude", "profile": "window-profile", "distance": "12" },
+    { "id": "bracket", "op": "boolean", "kind": "subtract", "target": "bolt4", "tool": "window-tool" }
+  ],
+  "result": "bracket"
+}

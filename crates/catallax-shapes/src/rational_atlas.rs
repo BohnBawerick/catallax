@@ -39,6 +39,7 @@ struct Data {
     source: BSplineSurface,
     charts: Vec<AtlasChart>,
     periodic: [bool; 2],
+    polynomial_bounds: bool,
 }
 
 /// One connected G1 logical face, covered by regular exact rational charts.
@@ -201,45 +202,45 @@ impl RationalAtlas {
         dec: &mut Decider,
     ) -> Result<Vec<Self>, Refusal> {
         let cover = cover(&source, None, dec)?;
-        Self::joined(source, periodic, cover, dec)
+        Self::joined(source, periodic, false, cover, dec)
     }
 
     /// Opt-in admission from exact rational homogeneous span coefficients.
-    /// Derivative numerators are cancelled before Bernstein enclosure; the
-    /// projection, complete cover and exact C0/G1 joins are unchanged.
-    /// Non-rational coefficients refuse rather than using an approximation.
+    /// Unit Bezier controls avoid a global-to-local polynomial round trip.
+    /// Derivative cancellation, projection, complete cover and exact C0/G1
+    /// joins are unchanged. Non-rational coefficients refuse, never approximate.
     pub fn partition_with_polynomial_bounds(
         source: BSplineSurface,
         periodic: [bool; 2],
         dec: &mut Decider,
     ) -> Result<Vec<Self>, Refusal> {
         let mut bounds = BTreeMap::new();
-        let knots = source.knots();
         for indices in source.span_indices() {
-            let coordinates = source.span_polynomials(indices, dec)?;
-            let [Some(x), Some(y), Some(z), Some(w)] =
-                coordinates.each_ref().map(|p| p.as_rational())
-            else {
-                return Err(Refusal::new(
-                    "shapes.rational-atlas-polynomial-coefficients",
-                    "polynomial-bound admission needs exact rational homogeneous span coefficients",
-                ));
-            };
-            let domain = std::array::from_fn(|axis| {
-                [
-                    knots[axis][indices[axis]].clone(),
-                    knots[axis][indices[axis] + 1].clone(),
-                ]
-            });
-            bounds.insert(indices, PolynomialBounds::new(&[x, y, z, w], domain, dec)?);
+            bounds.insert(indices, PolynomialBounds::from_span(&source, indices, dec)?);
         }
         let cover = cover(&source, Some(&bounds), dec)?;
-        Self::joined(source, periodic, cover, dec)
+        Self::joined(source, periodic, true, cover, dec)
+    }
+
+    /// Re-admit a rewritten source with this atlas's finite-cover method and
+    /// periodicity. The caller must still check the resulting component and
+    /// chart domains; this does not preserve or accept topology by itself.
+    pub fn repartition(
+        &self,
+        source: BSplineSurface,
+        dec: &mut Decider,
+    ) -> Result<Vec<Self>, Refusal> {
+        if self.data.polynomial_bounds {
+            Self::partition_with_polynomial_bounds(source, self.data.periodic, dec)
+        } else {
+            Self::partition(source, self.data.periodic, dec)
+        }
     }
 
     fn joined(
         source: BSplineSurface,
         periodic: [bool; 2],
+        polynomial_bounds: bool,
         (u, v, patches): CertifiedCover,
         dec: &mut Decider,
     ) -> Result<Vec<Self>, Refusal> {
@@ -324,6 +325,7 @@ impl RationalAtlas {
                     source: source.clone(),
                     charts,
                     periodic,
+                    polynomial_bounds,
                 }),
             });
         }

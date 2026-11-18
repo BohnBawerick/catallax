@@ -25,6 +25,9 @@ use crate::{
     profile::sign,
 };
 
+#[path = "fillet_clearance.rs"]
+mod fillet_clearance;
+
 #[path = "fillet_collapse.rs"]
 mod fillet_collapse;
 #[path = "fillet_consume.rs"]
@@ -36,7 +39,7 @@ mod fillet_equal_crossing;
 #[path = "fillet_inscribed.rs"]
 mod fillet_inscribed;
 #[path = "fillet_limit.rs"]
-mod fillet_limit;
+pub(crate) mod fillet_limit;
 #[path = "fillet_mixed.rs"]
 mod fillet_mixed;
 #[path = "fillet_ring_end.rs"]
@@ -60,6 +63,9 @@ mod sector;
 
 #[path = "fillet_variable.rs"]
 mod variable;
+
+#[path = "fillet_chains.rs"]
+pub(crate) mod chains;
 
 pub(crate) use variable::build as build_variable;
 
@@ -94,9 +100,56 @@ fn uses(model: &Model, body: BodyId) -> Uses {
 fn matching(model: &Model, face: FaceId, pattern: &catallax_recipe::OriginPattern) -> bool {
     model.face_origins(face).iter().any(|o| pattern.matches(o))
 }
+/// The squared distance from `point` to the arc of `circle` an edge runs
+/// along from `start` to `end`. The nearest point of the whole circle lies in
+/// the plane through the point and the circle's axis; where the arc does not
+/// reach that far round, one of its ends is nearest.
+fn arc_distance_sq(
+    circle: &Circle,
+    same_sense: bool,
+    [start, end]: [Point3; 2],
+    point: &Point3,
+    dec: &mut Decider,
+) -> Result<Real, Refusal> {
+    let offset = point.minus(&circle.center);
+    let normal_sq = circle.normal.norm_squared();
+    let height = offset.dot(&circle.normal);
+    let radial = offset.minus(&circle.normal.scaled(&(&height / &normal_sq)));
+    let radial_sq = radial.norm_squared();
+    // The arc runs counter-clockwise about the normal from `from` to `to`.
+    let (from, to) = if same_sense {
+        (start.minus(&circle.center), end.minus(&circle.center))
+    } else {
+        (end.minus(&circle.center), start.minus(&circle.center))
+    };
+    let on_axis = sign(&radial_sq, dec)? == Sign::Zero;
+    let mut turn = |a: &Vector3, b: &Vector3| sign(&a.cross(b).dot(&circle.normal), dec);
+    let facing = if on_axis {
+        // On the axis every point of the circle is as near as any other.
+        true
+    } else if turn(&from, &to)? != Sign::Negative {
+        turn(&from, &radial)? != Sign::Negative && turn(&radial, &to)? != Sign::Negative
+    } else {
+        // More than half a turn: everything but the short way back.
+        !(turn(&to, &radial)? == Sign::Positive && turn(&radial, &from)? == Sign::Positive)
+    };
+    if facing {
+        let across = &(&radial_sq + &circle.radius_sq)
+            - &(&(&radial_sq * &circle.radius_sq).sqrt() * &Real::from_i64(2));
+        return Ok(&(&height.square() / &normal_sq) + &across);
+    }
+    let [to_start, to_end] = [start, end].map(|end| point.minus(&end).norm_squared());
+    Ok(if sign(&(&to_start - &to_end), dec)? == Sign::Positive {
+        to_end
+    } else {
+        to_start
+    })
+}
+
 /// Chooses the edge at strictly the smallest distance from a stored `near`
-/// point, measured to its closed trimmed set. Only a straight segment has that
-/// exact distance here, so curved candidates keep the refusal.
+/// point, measured to its closed trimmed set. A straight segment and a
+/// circular arc have that exact distance here; other curved candidates keep
+/// the refusal.
 fn nearest(
     model: &Model,
     edges: &[EdgeId],
@@ -108,25 +161,39 @@ fn nearest(
     let mut distances = Vec::with_capacity(edges.len());
     for edge in edges {
         let e = model.edge(*edge);
-        let (Curve::Line(_), Some(start), Some(end)) =
-            (model.geom().curve(e.curve), e.start, e.end)
-        else {
+        let (Some(start), Some(end)) = (e.start, e.end) else {
             return Err(bad(
-                "nearest-edge selection among curved edges needs an exact trimmed-edge distance query",
+                "nearest-edge selection among closed edges needs an exact trimmed-edge distance query",
             ));
         };
         let [a, b] = [start, end].map(|v| model.geom().position(model.vertex(v).point));
-        let along = b.minus(&a);
-        let offset = point.minus(&a);
-        let foot = offset.dot(&along);
-        let length_sq = along.norm_squared();
-        distances.push(if sign(&foot, dec)? != Sign::Positive {
-            offset.norm_squared()
-        } else if sign(&(&foot - &length_sq), dec)? != Sign::Negative {
-            point.minus(&b).norm_squared()
-        } else {
-            offset.norm_squared() - foot.square() / length_sq
-        });
+        match model.geom().curve(e.curve) {
+            Curve::Line(_) => {
+                let along = b.minus(&a);
+                let offset = point.minus(&a);
+                let foot = offset.dot(&along);
+                let length_sq = along.norm_squared();
+                distances.push(if sign(&foot, dec)? != Sign::Positive {
+                    offset.norm_squared()
+                } else if sign(&(&foot - &length_sq), dec)? != Sign::Negative {
+                    point.minus(&b).norm_squared()
+                } else {
+                    offset.norm_squared() - foot.square() / length_sq
+                });
+            }
+            Curve::Circle(circle) => distances.push(arc_distance_sq(
+                circle,
+                e.sense == Sense::Same,
+                [a, b],
+                &point,
+                dec,
+            )?),
+            _ => {
+                return Err(bad(
+                    "nearest-edge selection among curved edges needs an exact trimmed-edge distance query",
+                ));
+            }
+        }
     }
     Ok(edges[crate::draft::near::unique_nearest(&distances, dec)?])
 }
@@ -2040,6 +2107,78 @@ fn close(model: &Model, mut arcs: Vec<(EdgeId, Sense)>) -> Result<Vec<(EdgeId, S
     Ok(path)
 }
 
+/// The finite region a strip occupies, bounded only when a face is asked
+/// about: the strip's hull, and for a closed ring the hull of its whole
+/// sweep, each with its box.
+///
+/// A strip's carrier runs on past the strip. A torus round a boss foot comes
+/// back on the far side of its axis, and a wall there meets the carrier
+/// without coming near the fillet.
+struct FiniteRegion<'a> {
+    run: &'a Run,
+    hull: Option<&'a [Point3]>,
+    hull_box: Option<catallax_measure::BoundingBox>,
+    ring: Option<Option<(Vec<Point3>, catallax_measure::BoundingBox)>>,
+}
+
+impl<'a> FiniteRegion<'a> {
+    fn new(run: &'a Run, hull: Option<&'a [Point3]>) -> Self {
+        Self {
+            run,
+            hull,
+            hull_box: None,
+            ring: None,
+        }
+    }
+
+    /// Whether the trimmed `face`, on surface `other`, is proved off the
+    /// strip's finite region.
+    fn clears(
+        &mut self,
+        model: &Model,
+        face: FaceId,
+        other: &Surface,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        if let Some(hull) = self.hull {
+            if self.hull_box.is_none() {
+                self.hull_box = Some(fillet_clearance::hull_box(hull, dec)?);
+            }
+            let region = self.hull_box.as_ref().expect("retained hull box");
+            if fillet_clearance::outside_face(model, face, region, dec)? {
+                return Ok(true);
+            }
+        }
+        if self.ring.is_none() {
+            let edge = model.edge(self.run.edge);
+            let ring = if edge.start == edge.end {
+                self.run.definition.ring_hull(dec)?
+            } else {
+                None
+            };
+            self.ring = Some(match ring {
+                Some(points) => {
+                    let region = fillet_clearance::hull_box(&points, dec)?;
+                    Some((points, region))
+                }
+                None => None,
+            });
+        }
+        let Some(Some((points, region))) = &self.ring else {
+            return Ok(false);
+        };
+        if hull_clear(points, other, dec)? {
+            return Ok(true);
+        }
+        if let Some(corners) = polygon(model, face)
+            && hulls_apart(points, &corners, dec)?
+        {
+            return Ok(true);
+        }
+        fillet_clearance::outside_face(model, face, region, dec)
+    }
+}
+
 fn guard(
     model: &mut Model,
     body: BodyId,
@@ -2061,6 +2200,10 @@ fn guard(
         })
         .flat_map(|(_, incident)| incident.iter().map(|(f, _)| *f))
         .collect();
+    // The finite region of the strip, for the faces its whole carrier
+    // reaches. These bounds are only asked for where the carrier tests below
+    // would refuse, so a fillet they already pass costs what it did.
+    let mut finite = FiniteRegion::new(run, hull);
     for face in model.faces_of_body(body) {
         if run.faces.contains(&face) || neighbours.contains(&face) || cut.contains(&face) {
             continue;
@@ -2123,6 +2266,9 @@ fn guard(
             match clear {
                 Some(true) => continue,
                 Some(false) => {
+                    if finite.clears(model, face, &other, dec)? {
+                        continue;
+                    }
                     return Err(Refusal::new(
                         "fillet.unsupported-overflow",
                         "a face reaches the hull of the blend band and needs trimmed continuation",
@@ -2132,16 +2278,21 @@ fn guard(
             }
         }
         let a = model.geom_mut().add_surface(run.definition.surface.clone());
-        let b = model.geom_mut().add_surface(other);
-        if !matches!(
-            catallax_intersect::intersect_surfaces(model.geom_mut(), a, b, dec)?.value,
-            SurfacePair::Disjoint
-        ) {
-            return Err(Refusal::new(
-                "fillet.unsupported-overflow",
-                "a non-end neighbour intersects the blend carrier; its trimmed contact continuation must be resolved before publishing",
-            ));
+        let b = model.geom_mut().add_surface(other.clone());
+        // A pair the intersection has no answer for is no proof either way,
+        // and the finite region may still settle it.
+        let met = catallax_intersect::intersect_surfaces(model.geom_mut(), a, b, dec);
+        if matches!(&met, Ok(pair) if matches!(pair.value, SurfacePair::Disjoint)) {
+            continue;
         }
+        if finite.clears(model, face, &other, dec)? {
+            continue;
+        }
+        met?;
+        return Err(Refusal::new(
+            "fillet.unsupported-overflow",
+            "a non-end neighbour intersects the blend carrier; its trimmed contact continuation must be resolved before publishing",
+        ));
     }
     Ok(())
 }
@@ -2181,17 +2332,29 @@ fn corner_guard(
     incident: &BTreeSet<FaceId>,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
-    surface_guard(model, body, &corner.sector.surface, incident, dec)
+    let hull = corner.sector.hull();
+    surface_guard(
+        model,
+        body,
+        &corner.sector.surface,
+        Some(&hull),
+        incident,
+        dec,
+    )
 }
 
-/// Proves every face but the incident ones clear of a corner's support.
+/// Proves non-incident trimmed faces clear of the retained corner region.
 fn surface_guard(
     model: &mut Model,
     body: BodyId,
     surface: &Surface,
+    hull: Option<&[Point3]>,
     incident: &BTreeSet<FaceId>,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
+    // As in `guard`, the corner's finite region is only bounded where its
+    // whole carrier would refuse.
+    let mut finite_hull = None;
     for face in model.faces_of_body(body) {
         if incident.contains(&face) {
             continue;
@@ -2201,16 +2364,32 @@ fn surface_guard(
             continue;
         }
         let a = model.geom_mut().add_surface(surface.clone());
-        let b = model.geom_mut().add_surface(other);
-        if !matches!(
-            catallax_intersect::intersect_surfaces(model.geom_mut(), a, b, dec)?.value,
-            SurfacePair::Disjoint
-        ) {
-            return Err(Refusal::new(
-                "fillet.unsupported-overflow",
-                "a non-incident face meets the corner's support; its trimmed continuation must be resolved before publishing",
-            ));
+        let b = model.geom_mut().add_surface(other.clone());
+        let met = catallax_intersect::intersect_surfaces(model.geom_mut(), a, b, dec);
+        if matches!(&met, Ok(pair) if matches!(pair.value, SurfacePair::Disjoint)) {
+            continue;
         }
+        if let Some(hull) = hull {
+            if hull_clear(hull, &other, dec)? {
+                continue;
+            }
+            if finite_hull.is_none() {
+                finite_hull = Some(fillet_clearance::hull_box(hull, dec)?);
+            }
+            if fillet_clearance::outside_face(
+                model,
+                face,
+                finite_hull.as_ref().expect("retained hull"),
+                dec,
+            )? {
+                continue;
+            }
+        }
+        met?;
+        return Err(Refusal::new(
+            "fillet.unsupported-overflow",
+            "a non-incident face meets the corner's support; its trimmed continuation must be resolved before publishing",
+        ));
     }
     Ok(())
 }
@@ -2424,7 +2603,7 @@ pub(crate) fn build(
 
 /// The input edges a selection rounds: every sharp edge for `"all"`, less
 /// the mitres an earlier roll-over already swallowed, or the named edges.
-fn select(
+pub(crate) fn select(
     model: &Model,
     body: BodyId,
     selection: &EdgeSelection,
@@ -2983,7 +3162,7 @@ fn build_strips(
                     .flat_map(|adjacent| adjacent.iter().map(|(f, _)| *f)),
             );
             let surface = Surface::BSpline(SplineSupport::RollingMitre(r.band.clone()));
-            surface_guard(model, body, &surface, &near, dec)?;
+            surface_guard(model, body, &surface, None, &near, dec)?;
             rolled.push((old, i, arcs));
             continue;
         }

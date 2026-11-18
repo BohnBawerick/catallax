@@ -52,21 +52,16 @@ fn an_analytic_body_with_native_uv_uses_the_retaining_writer() {
         )
         .unwrap();
         assert_eq!(body.native_trims().len(), 1);
-        // The retaining writer currently requires rational patch/plane faces.
-        // Refuse this cylinder instead of routing it through an empty-sidecar path.
-        let refusal = match output::build(
+        // The writer keeps the parameter curve the body retained on its
+        // cylinder: a file that dropped it would describe another trim.
+        let file = output::build(
             &body,
             &NumericalStepOptions::default(),
             &mut Decider::default(),
-        ) {
-            Ok(file) => panic!(
-                "analytic writer discarded native trims: source={}, emitted={}",
-                file.report().source_native_trims.len(),
-                file.report().emitted_native_trims.len()
-            ),
-            Err(refusal) => refusal,
-        };
-        assert_eq!(refusal.code, "step.numerical-unsupported");
+        )
+        .unwrap();
+        assert_eq!(file.report().source_native_trims.len(), 1);
+        assert_eq!(file.report().emitted_native_trims.len(), 1);
     });
     assert!(!work.exhausted, "{work:?}");
 }

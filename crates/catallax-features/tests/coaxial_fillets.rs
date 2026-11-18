@@ -956,15 +956,6 @@ fn unsupported_curved_rounds_refuse_with_their_own_codes() {
         found.detail.contains("contact reaches the axis"),
         "{found:?}"
     );
-    // A round wide enough that its complete torus reaches the cylinder below
-    // the chamfer: the guard checks the carrier, not yet the band.
-    let found = refusal(
-        &chamfered(),
-        "bevel",
-        "2",
-        [face("c", "end"), json!({"step": "bevel"})],
-    );
-    assert_eq!(found.code, "fillet.unsupported-overflow");
     // A plane tilted through a cone meets it in an ellipse, which now rounds
     // into an exact band; `oblique_cone_fillets` covers it.
     // A plane through a torus meets it on irrational circles kept as

@@ -1,5 +1,11 @@
 use super::*;
-use std::borrow::Cow;
+use std::{borrow::Cow, cell::RefCell};
+
+mod cache;
+mod unit;
+
+#[cfg(test)]
+mod unit_tests;
 
 /// Derivative numerators in the original span's unit parameters. The atlas
 /// cover uses these only for exact Bezier restrictions of that same span.
@@ -8,6 +14,7 @@ pub(crate) struct PolynomialBounds {
     widths: [Rational; 2],
     weight: Grid,
     tangents: [[Grid; 3]; 2],
+    cache: RefCell<cache::RestrictionCache>,
 }
 
 pub(super) fn quotient(a: &Rational, b: &Rational, dec: &mut Decider) -> Result<Rational, Refusal> {
@@ -62,11 +69,11 @@ pub(super) fn restriction(
     Ok(cuts)
 }
 
-pub(super) fn restricted_range(
-    grid: &Grid,
+pub(super) fn restricted_net<'a>(
+    grid: &'a Grid,
     cuts: &[[Rational; 2]; 2],
     dec: &mut Decider,
-) -> Result<[Rational; 2], Refusal> {
+) -> Result<Cow<'a, Grid>, Refusal> {
     let mut grid = Cow::Borrowed(grid);
     for (axis, [low, high]) in cuts.iter().enumerate() {
         if *high != Rational::one() {
@@ -78,10 +85,36 @@ pub(super) fn restricted_range(
             grid = Cow::Owned(next);
         }
     }
-    grid.range(dec)
+    Ok(grid)
+}
+
+pub(super) fn restricted_range(
+    grid: &Grid,
+    cuts: &[[Rational; 2]; 2],
+    dec: &mut Decider,
+) -> Result<[Rational; 2], Refusal> {
+    restricted_net(grid, cuts, dec)?.range(dec)
 }
 
 impl PolynomialBounds {
+    /// Cancels derivative numerators from the defining span's exact unit net.
+    pub(crate) fn from_span(
+        source: &crate::BSplineSurface,
+        span: [usize; 2],
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        let local = unit::polynomials(source, span, dec)?;
+        let knots = source.knots();
+        let domain = std::array::from_fn(|axis| {
+            [
+                knots[axis][span[axis]].clone(),
+                knots[axis][span[axis] + 1].clone(),
+            ]
+        });
+        Self::from_local(local, domain, dec)
+    }
+
+    #[cfg(test)]
     pub(crate) fn new(
         homogeneous: &[MPoly; 4],
         domain: Domain,
@@ -93,6 +126,10 @@ impl PolynomialBounds {
             Dense::local(&homogeneous[2], &domain, dec)?,
             Dense::local(&homogeneous[3], &domain, dec)?,
         ];
+        Self::from_local(local, domain, dec)
+    }
+
+    fn from_local(local: [Dense; 4], domain: Domain, dec: &mut Decider) -> Result<Self, Refusal> {
         let weight = bernstein(&local[3], dec)?;
         if !weight.all_positive() {
             return Err(Refusal::new(
@@ -124,6 +161,7 @@ impl PolynomialBounds {
             widths,
             weight,
             tangents,
+            cache: RefCell::default(),
         })
     }
 
@@ -134,11 +172,14 @@ impl PolynomialBounds {
         dec: &mut Decider,
     ) -> Result<[[Ball; 3]; 2], Refusal> {
         let cuts = restriction(&self.domain, &self.widths, cell, dec)?;
-        let range = |grid: &Grid, dec: &mut Decider| -> Result<Ball, Refusal> {
-            let [lo, hi] = restricted_range(grid, &cuts, dec)?;
-            Ok(Ball::from_rational(&lo, bits).hull(&Ball::from_rational(&hi, bits)))
-        };
-        let weight = range(&self.weight, dec)?;
+        let mut cache = self.cache.borrow_mut();
+        let prepared = cache.prepare(&self.domain, cell, cuts, dec)?;
+        let mut range =
+            |grid: &Grid, component: usize, dec: &mut Decider| -> Result<Ball, Refusal> {
+                let [lo, hi] = cache.range(grid, component, &prepared, dec)?;
+                Ok(Ball::from_rational(&lo, bits).hull(&Ball::from_rational(&hi, bits)))
+            };
+        let weight = range(&self.weight, 0, dec)?;
         if weight.lo() <= Rational::zero() {
             return Err(Refusal::new(
                 "shapes.rational-atlas-polynomial-weights",
@@ -148,21 +189,21 @@ impl PolynomialBounds {
         let squared = weight.square();
         let mut derivative = |axis: usize| -> Result<[Ball; 3], Refusal> {
             let denominator = &squared * &Ball::from_rational(&self.widths[axis], bits);
-            let mut component = |numerator: &Grid| {
-                range(numerator, dec)?
-                    .checked_div(&denominator)
-                    .ok_or_else(|| {
-                        Refusal::new(
-                            "shapes.rational-atlas-polynomial-weights",
-                            "the derivative denominator has no strictly positive enclosure",
-                        )
-                    })
+            let mut component = |coordinate: usize| {
+                range(
+                    &self.tangents[axis][coordinate],
+                    1 + axis * 3 + coordinate,
+                    dec,
+                )?
+                .checked_div(&denominator)
+                .ok_or_else(|| {
+                    Refusal::new(
+                        "shapes.rational-atlas-polynomial-weights",
+                        "the derivative denominator has no strictly positive enclosure",
+                    )
+                })
             };
-            Ok([
-                component(&self.tangents[axis][0])?,
-                component(&self.tangents[axis][1])?,
-                component(&self.tangents[axis][2])?,
-            ])
+            Ok([component(0)?, component(1)?, component(2)?])
         };
         Ok([derivative(0)?, derivative(1)?])
     }

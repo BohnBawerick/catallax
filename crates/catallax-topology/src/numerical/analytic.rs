@@ -2,7 +2,9 @@
 
 use super::*;
 
-mod toroids;
+mod periodic;
+#[cfg(test)]
+mod tests;
 
 pub(super) fn validate_circle(
     circle: &catallax_shapes::Circle,
@@ -40,8 +42,9 @@ pub(super) fn supports(surface: &Surface) -> bool {
         Surface::Plane(_)
             | Surface::Cylinder(_)
             | Surface::Cone(_)
+            | Surface::Sphere(_)
             | Surface::Torus(_)
-            | Surface::BSpline(SplineSupport::RationalPatch(_) | SplineSupport::RationalAtlas(_))
+            | Surface::BSpline(_)
     )
 }
 
@@ -61,6 +64,15 @@ pub(super) fn validate_surface(surface: &Surface, dec: &mut Decider) -> Result<(
             cylinder.axis.clone(),
             cylinder.radius_sq.clone(),
             cylinder.ref_dir.clone(),
+            dec,
+        )?;
+    }
+    if let Surface::Sphere(sphere) = surface {
+        catallax_shapes::Sphere::new(
+            sphere.center.clone(),
+            sphere.radius.clone(),
+            sphere.axis.clone(),
+            sphere.ref_dir.clone(),
             dec,
         )?;
     }
@@ -98,8 +110,8 @@ pub(super) fn check_loops(
     tolerance: &Rational,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
-    if matches!(face.surface, Surface::Torus(_)) {
-        toroids::check_loops(face, edges, dec)?;
+    if matches!(face.surface, Surface::Sphere(_) | Surface::Torus(_)) {
+        check_periodic_domain(face, edges, dec)?;
         return super::check_loops(face, None, dec);
     }
     if matches!(face.surface, Surface::Cone(_)) {
@@ -116,7 +128,7 @@ pub(super) fn check_loops(
     if matches!(face.surface, Surface::Cylinder(_) | Surface::Cone(_)) {
         // Ordinary contractible charts remain below one turn. A full band
         // must instead provide one shared seam with two translated UV uses.
-        if !periodic_cell(face, edges, dec)? {
+        if periodic_cell(face, edges, dec)?.is_none() {
             let mut seen = BTreeSet::new();
             for trim in face.loops.iter().flatten() {
                 dec.charge_work(1)?;
@@ -220,61 +232,14 @@ fn period() -> Rational {
     Ball::pi(BITS).mid() * Rational::from_i64(2)
 }
 
-/// Recognize a fundamental parameter cell, rather than admitting an arbitrary
-/// wide polygon. The two seam branches may slope after decimal frame rounding,
-/// but must be exact translations by one canonical period at both endpoints.
-fn periodic_cell(
+/// A single-period fundamental cell with opposite translated seam uses.
+/// Its rims may contain several retained arcs and need not have constant height.
+pub(super) fn periodic_cell(
     face: &NumericalFace,
     edges: &[NumericalEdge],
     dec: &mut Decider,
-) -> Result<bool, Refusal> {
-    let [boundary] = face.loops.as_slice() else {
-        return Ok(false);
-    };
-    if boundary.len() != 4 {
-        return Ok(false);
-    }
-    for offset in 0..2 {
-        dec.charge_work(1)?;
-        let [a, b, c, d] = std::array::from_fn::<_, 4, _>(|i| &boundary[(i + offset) % 4]);
-        let Some(first) = edges.get(a.edge) else {
-            return Ok(false);
-        };
-        let Some(second) = edges.get(c.edge) else {
-            return Ok(false);
-        };
-        let Some(seam) = edges.get(b.edge) else {
-            return Ok(false);
-        };
-        if a.edge == c.edge
-            || b.edge != d.edge
-            || b.sense == d.sense
-            || !matches!(first.curve, Curve::Circle(_))
-            || !matches!(second.curve, Curve::Circle(_))
-            || first.vertices[0] != first.vertices[1]
-            || second.vertices[0] != second.vertices[1]
-            || !matches!(seam.curve, Curve::Line(_))
-            || seam.vertices[0] == seam.vertices[1]
-        {
-            continue;
-        }
-        let p = period();
-        if [&a.uv, &c.uv]
-            .iter()
-            .any(|uv| uv[0][1] != uv[1][1] || (&uv[1][0] - &uv[0][0]).abs() != p)
-        {
-            continue;
-        }
-        let translation = &b.uv[0][0] - &d.uv[1][0];
-        if translation.abs() == p
-            && &b.uv[1][0] - &d.uv[0][0] == translation
-            && b.uv[0][1] == d.uv[1][1]
-            && b.uv[1][1] == d.uv[0][1]
-        {
-            return Ok(true);
-        }
-    }
-    Ok(false)
+) -> Result<Option<periodic::Cell>, Refusal> {
+    periodic::paired_seam(face, edges, 0, dec)
 }
 
 /// A complete finite circular boundary, independently of its material role.
@@ -419,18 +384,53 @@ fn circle_clearance(
                     distance.lo() > &circle.enclosing_radius + &other.enclosing_radius
                 };
                 if !clear {
-                    return Err(bad("trim", "circular boundaries lack continuous clearance"));
+                    return Err(bad(
+                        "trim",
+                        format!(
+                            "face {} circular boundaries {i}/{j} lack continuous clearance: center distance {}, enclosing radii {}/{}, first interior radius {:?}",
+                            face.key,
+                            distance.mid().to_f64_nearest(),
+                            circle.enclosing_radius.to_f64_nearest(),
+                            other.enclosing_radius.to_f64_nearest(),
+                            circle
+                                .interior_radius
+                                .as_ref()
+                                .map(Rational::to_f64_nearest),
+                        ),
+                    ));
                 }
                 continue;
             }
             for trim in boundary {
-                if !edges
+                let edge = edges
                     .get(trim.edge)
-                    .is_some_and(|edge| matches!(edge.curve, Curve::Line(_)))
-                {
+                    .ok_or_else(|| bad("trim", "trim names an unknown edge"))?;
+                if let Curve::Circle(arc) = &edge.curve {
+                    // The complete projected ellipse bounds every retained arc.
+                    // Its enclosing and inscribed disks certify both nesting
+                    // directions without trusting the arc's endpoint chords.
+                    let other = projected_circle(face, arc, true, tolerance, dec)?;
+                    let distance = ((&circle.center[0] - &other.center[0]).square()
+                        + (&circle.center[1] - &other.center[1]).square())
+                    .sqrt()
+                    .ok_or_else(|| bad("trim", "circle/arc separation is unresolved"))?;
+                    let clear = if let Some(radius) = &circle.interior_radius {
+                        &distance.hi() + &other.enclosing_radius < *radius
+                    } else {
+                        distance.lo() > &circle.enclosing_radius + &other.enclosing_radius
+                            || other.interior_radius.as_ref().is_some_and(|radius| {
+                                &distance.hi() + &circle.enclosing_radius < *radius
+                            })
+                    };
+                    if !clear {
+                        return Err(bad("trim", "circular arc lacks continuous rim clearance"));
+                    }
+                    continue;
+                }
+                if !matches!(edge.curve, Curve::Line(_)) {
                     return Err(bad(
                         "trim",
-                        "complete circular boundaries need finite-line or complete-circle neighbours",
+                        "complete circular boundaries need finite-line, circular-arc or complete-circle neighbours",
                     ));
                 }
                 if let Some(radius) = &circle.interior_radius {
@@ -455,4 +455,72 @@ fn circle_clearance(
         }
     }
     Ok(())
+}
+
+// A regular longitude/latitude chart excludes both poles. SMLib's analytic
+// sphere and OCCT's spherical surface use the same latitude convention
+// (degrees in SMLib, radians here and in STEP).
+fn latitude_domain(lo: &Rational, hi: &Rational) -> Result<(), Refusal> {
+    let half_pi = Ball::pi(BITS).lo().mul_pow2(-1);
+    if lo <= &(-&half_pi) || hi >= &half_pi {
+        return Err(Refusal::new(
+            "numerical.sphere-pole-domain-unverified",
+            "a regular sphere chart must stay strictly between both latitude poles",
+        ));
+    }
+    Ok(())
+}
+
+/// Complete control-hull bounds for a native parameter curve, not samples.
+/// Wrapped native seams retain their separate refusal until certified.
+pub(super) fn check_native_domain(
+    surface: &Surface,
+    bounds: &[[Rational; 2]; 2],
+) -> Result<(), Refusal> {
+    let (axes, code) = match surface {
+        Surface::Sphere(_) => (1, "numerical.native-sphere-domain-unverified"),
+        Surface::Torus(_) => (2, "numerical.native-torus-domain-unverified"),
+        _ => {
+            return Err(bad(
+                "unsupported",
+                "native angular bounds require a sphere or ring torus",
+            ));
+        }
+    };
+    let turn = Ball::pi(BITS).lo() * Rational::from_i64(2);
+    for range in &bounds[..axes] {
+        if &range[1] - &range[0] >= turn {
+            return Err(Refusal::new(
+                code,
+                "the complete native-curve hull needs a single regular angular chart; a wrapped native seam has no complete certificate",
+            ));
+        }
+    }
+    if matches!(surface, Surface::Sphere(_)) {
+        latitude_domain(&bounds[1][0], &bounds[1][1])?;
+    }
+    Ok(())
+}
+
+pub(super) fn check_periodic_domain(
+    face: &NumericalFace,
+    edges: &[NumericalEdge],
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    if matches!(face.surface, Surface::Sphere(_)) {
+        let mut values = face
+            .loops
+            .iter()
+            .flatten()
+            .flat_map(|trim| &trim.uv)
+            .map(|uv| &uv[1]);
+        let first = values
+            .next()
+            .ok_or_else(|| bad("trim", "a sphere needs a finite chart boundary"))?;
+        let (lo, hi) = values.fold((first, first), |(lo, hi), value| {
+            (lo.min(value), hi.max(value))
+        });
+        latitude_domain(lo, hi)?;
+    }
+    periodic::check_loops(face, edges, dec)
 }

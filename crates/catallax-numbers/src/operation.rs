@@ -190,6 +190,50 @@ pub fn with_operation_budget<T>(limit: u64, run: impl FnOnce() -> T) -> (T, Oper
     budget_scope(limit, false, run)
 }
 
+/// Runs an optional attempt whose refusal must not spend the caller's allowance.
+///
+/// A success keeps every charge, exactly as if the attempt had run inline, so
+/// a request that the attempt completes costs what it always did. A refusal
+/// returns the attempt's charges and clears an exhaustion the attempt latched:
+/// the construction that follows starts with the allowance the attempt found.
+/// Request-local proof caches stay warm. An exhaustion that predates the
+/// attempt, and an aborted task, stay exhausted. Outside a request allowance
+/// this only runs the attempt.
+///
+/// Use it for a cheaper construction tried ahead of the one the request is
+/// funded for. The arithmetic of a refused attempt is real machine time, so the
+/// caller bounds how often it makes one.
+pub fn refund_on_refusal<T, E>(run: impl FnOnce() -> Result<T, E>) -> Result<T, E> {
+    let before = ACTIVE.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .map(|state| (state.request, state.used, state.exhausted))
+    });
+    let recorded = RESERVATIONS.with(|slot| slot.borrow().as_ref().map(Vec::len));
+    // A tape of one decision cannot describe charges that are later returned.
+    crate::ahead::unrecordable();
+    let result = run();
+    if result.is_err()
+        && let Some((request, used, exhausted)) = before
+    {
+        ACTIVE.with(|slot| {
+            if let Some(state) = slot.borrow_mut().as_mut()
+                && state.request == request
+                && !state.aborted.load(AtomicOrdering::Acquire)
+            {
+                state.used = used;
+                state.exhausted = exhausted;
+            }
+        });
+        RESERVATIONS.with(|slot| {
+            if let (Some(reservations), Some(length)) = (slot.borrow_mut().as_mut(), recorded) {
+                reservations.truncate(length);
+            }
+        });
+    }
+    result
+}
+
 // `worker` says whose scope this is: a thread running ahead of a writer stays
 // one inside an allowance it runs, so it still leaves the shared caches alone.
 fn budget_scope<T>(limit: u64, worker: bool, run: impl FnOnce() -> T) -> (T, OperationWork) {
@@ -1022,5 +1066,58 @@ mod allowance_tests {
         assert_eq!(parent.used, 10);
         assert!(!parent.exhausted);
         assert!(!operation_budget_active());
+    }
+
+    #[test]
+    fn a_refused_attempt_returns_its_charges_and_a_success_keeps_them() {
+        let (_, work) = with_operation_budget(10, || {
+            assert!(!charge(2));
+            // Exhausting the allowance inside a refused attempt leaves it whole.
+            let refused: Result<(), ()> = refund_on_refusal(|| {
+                assert!(!charge(5));
+                assert!(charge(9));
+                Err(())
+            });
+            assert!(refused.is_err());
+            assert_eq!(current_operation_work().used, 2);
+            assert!(!current_operation_work().exhausted);
+            let kept: Result<(), ()> = refund_on_refusal(|| {
+                assert!(!charge(3));
+                Ok(())
+            });
+            assert!(kept.is_ok());
+            assert_eq!(current_operation_work().used, 5);
+            assert!(!charge(5));
+        });
+        assert_eq!(work.used, 10);
+        assert!(!work.exhausted);
+    }
+
+    #[test]
+    fn a_refused_attempt_cannot_revive_an_exhausted_request() {
+        let (_, work) = with_operation_budget(3, || {
+            assert!(charge(4));
+            let refused: Result<(), ()> = refund_on_refusal(|| Err(()));
+            assert!(refused.is_err());
+        });
+        assert!(work.exhausted);
+    }
+
+    #[test]
+    fn a_refused_attempt_leaves_no_reservation_to_replay() {
+        let (_, parent) = with_operation_budget(10, || {
+            let recorded = OperationTask::capture().run(|| {
+                assert!(!charge(1));
+                let refused: Result<(), ()> = refund_on_refusal(|| {
+                    assert!(!charge(6));
+                    Err(())
+                });
+                assert!(refused.is_err());
+                assert!(!charge(2));
+            });
+            recorded.commit().unwrap();
+        });
+        assert_eq!(parent.used, 3);
+        assert!(!parent.exhausted);
     }
 }

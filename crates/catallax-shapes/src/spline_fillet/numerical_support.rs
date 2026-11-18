@@ -1,7 +1,8 @@
 //! Signed offsets used by numerical rolling-ball continuation.
 
 use super::*;
-use crate::{SplineSupport, Surface};
+use crate::spline_fillet::{SUPPORT_SPANS, definition};
+use crate::{RationalPatch, SplineSupport, Surface};
 use std::sync::OnceLock;
 
 #[derive(Debug)]
@@ -264,4 +265,117 @@ fn native_contact(
         .and_then(|length| length.recip())
         .ok_or_else(|| bad("rolling-ball contact normal cannot be normalized"))?;
     Ok((point, cross.map(|value| &value * &inverse_length)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::BSplineSurface;
+    use catallax_numbers::{BudgetPolicy, with_operation_budget};
+
+    #[test]
+    fn lazy_atlas_preserves_eager_points_normals_and_seam_choice() {
+        let ((), work) = with_operation_budget(100_000_000, || {
+            let mut dec = Decider::new(BudgetPolicy {
+                max_work: 100_000_000,
+                ..Default::default()
+            });
+            let half = Rational::from_ratio(1, 2).unwrap();
+            let mut controls = Vec::new();
+            for u in [Rational::zero(), half.clone(), Rational::one()] {
+                for v in [Rational::zero(), Rational::one()] {
+                    controls.push(Point3::new(
+                        u.clone().into(),
+                        v.clone().into(),
+                        (&u * &v).into(),
+                    ));
+                }
+            }
+            let source = BSplineSurface::new(
+                [1, 1],
+                [
+                    vec![
+                        Rational::zero(),
+                        Rational::zero(),
+                        half,
+                        Rational::one(),
+                        Rational::one(),
+                    ],
+                    [0, 0, 1, 1].map(Rational::from_i64).to_vec(),
+                ],
+                [3, 2],
+                controls,
+                vec![Real::one(); 6],
+                &mut dec,
+            )
+            .unwrap();
+            let [atlas] = <[_; 1]>::try_from(
+                RationalAtlas::partition(source, [false, false], &mut dec).unwrap(),
+            )
+            .unwrap();
+            for distance in [-1, 0, 1] {
+                let side = if distance < 0 {
+                    Sign::Negative
+                } else {
+                    Sign::Positive
+                };
+                let eager = atlas
+                    .charts()
+                    .iter()
+                    .map(|chart| Support::new(chart.patch(), side, &mut dec).unwrap())
+                    .collect::<Vec<_>>();
+                let lazy = NumericalFilletSupport::from_atlas(
+                    &atlas,
+                    Rational::from_i64(distance),
+                    &mut dec,
+                )
+                .unwrap();
+                for numerator in [0, 1, 2, 3, 4] {
+                    let at = [
+                        Rational::from_ratio(numerator, 4).unwrap(),
+                        Rational::from_ratio(1, 3).unwrap(),
+                    ];
+                    let proposed = at.each_ref().map(Rational::to_f64_nearest);
+                    let (index, expected) = eager
+                        .iter()
+                        .enumerate()
+                        .find(|(_, chart)| {
+                            (0..2).all(|i| {
+                                proposed[i] >= chart.domain[i][0].to_f64_nearest()
+                                    && proposed[i] <= chart.domain[i][1].to_f64_nearest()
+                            })
+                        })
+                        .unwrap();
+                    assert_eq!(
+                        lazy.contact_f64(proposed, &mut dec).unwrap(),
+                        expected.contact_f64(proposed)
+                    );
+                    let actual = lazy.contact(&at, &mut dec).unwrap();
+                    assert_eq!(actual.chart, index);
+                    let mut meter = Meter::default();
+                    let expected = expected
+                        .contact(
+                            &at.each_ref().map(|value| Jet::constant(ball(value), 0)),
+                            &mut meter,
+                        )
+                        .unwrap();
+                    meter.charge(&mut dec).unwrap();
+                    for axis in 0..3 {
+                        assert_eq!(
+                            (actual.point[axis].lo(), actual.point[axis].hi()),
+                            (
+                                expected.point[axis].0[0].lo(),
+                                expected.point[axis].0[0].hi()
+                            ),
+                        );
+                        assert_eq!(
+                            (actual.normal[axis].lo(), actual.normal[axis].hi()),
+                            (expected.unit[axis].0[0].lo(), expected.unit[axis].0[0].hi()),
+                        );
+                    }
+                }
+            }
+        });
+        assert!(!work.exhausted);
+    }
 }

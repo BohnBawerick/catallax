@@ -151,13 +151,33 @@ fn an_open_rim_end_is_cut_by_the_wall_it_runs_into() {
         .into_iter()
         .filter(|edge| *edge != ("right-round", "right"))
         .collect();
-    let (outcome, work) = build(&rim("5", &five));
-    println!("five-edge rim R5: {work:?}");
-    assert!(!work.exhausted, "{work:?}");
-    let EvaluatedApplicationOutcome::Numerical(result) = outcome.unwrap() else {
-        panic!("the exact builders refuse an arc strip ending on a wall");
-    };
-    assert_eq!(result.body().definition().faces.len(), 18);
+    // An ordinary radius, and one a tenth of a millimetre under the 8 mm at
+    // which the arcs no longer end on the wall. There the cut runs almost
+    // along the strip and tapers it to a sliver.
+    for radius in ["5", "7.9"] {
+        let (outcome, work) = build(&rim(radius, &five));
+        println!("five-edge rim R{radius}: {work:?}");
+        assert!(!work.exhausted, "R{radius}: {work:?}");
+        let EvaluatedApplicationOutcome::Numerical(result) = outcome.unwrap() else {
+            panic!("the exact builders refuse an arc strip ending on a wall");
+        };
+        assert_eq!(result.body().definition().faces.len(), 18, "R{radius}");
+        let (step, export) = with_operation_budget(100_000_000, || {
+            catallax_step::numerical::build(
+                result.body(),
+                &Default::default(),
+                &mut Decider::default(),
+            )
+        });
+        let step = step.unwrap();
+        assert!(!export.exhausted, "R{radius}: {export:?}");
+        let (shown, preview) = with_operation_budget(100_000_000, || {
+            preview_step(step.bytes(), &display(), &mut Decider::default())
+        });
+        println!("five-edge rim R{radius}: export {export:?}, display {preview:?}");
+        assert_eq!(shown.unwrap().mesh.faces.len(), 18, "R{radius}");
+        assert!(!preview.exhausted, "R{radius}: {preview:?}");
+    }
 }
 
 fn boxed(steps: Vec<Value>, result: &str) -> Recipe {

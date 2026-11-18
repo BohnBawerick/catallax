@@ -471,7 +471,10 @@ walking. Every vertex in scope has three edges.
   rounded side are of this kind, its two on the flat top are of equal reach.
 - **Open end.** A strip that ends alone is cut by the face its two border
   edges share. The borders are shortened or run on along their own curves to
-  the rail ends, as in OCCT's `PerformOneCorner`.
+  the rail ends, as in OCCT's `PerformOneCorner`. The cut is found section by
+  section but fitted by its share of arc length: close to the largest radius
+  that fits it runs almost along the strip, through most of its length in a
+  sliver of section angle, and a fit uniform in that angle would miss it.
 
 A support that is neither a plane nor such a cylinder, a vertex of another
 valence, a convex third edge under two strips, or three strips at one vertex

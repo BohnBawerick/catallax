@@ -800,6 +800,79 @@ fn sampled(f: impl Fn(f64) -> Option<(V, V)>) -> Option<Samples> {
     }
 }
 
+/// The same curve over 0..1 by its share of arc length.
+///
+/// A cut that runs almost along the strip passes through most of its length
+/// in a sliver of the section angle that parametrises it. By length it moves
+/// at one speed, so uniform spans of the fitted curve, and the uniform
+/// samples the embedding takes of it, land where the curve is.
+fn by_length(f: impl Fn(f64) -> Option<(V, V)>) -> Option<impl Fn(f64) -> Option<(V, V)>> {
+    // Three-point Gauss-Legendre length of the piece from `a` to `b`.
+    fn piece(f: &impl Fn(f64) -> Option<(V, V)>, a: f64, b: f64) -> Option<f64> {
+        let (middle, half) = (0.5 * (a + b), 0.5 * (b - a));
+        let offset = half * 0.6f64.sqrt();
+        let speed = |s: f64| f(s).map(|(_, slope)| norm(slope));
+        Some(
+            half * (5.0 * (speed(middle - offset)? + speed(middle + offset)?)
+                + 8.0 * speed(middle)?)
+                / 9.0,
+        )
+    }
+    // Pieces are halved until halving no longer changes their length.
+    const PANELS: usize = 16;
+    const DEPTH: usize = 40;
+    let mut pending: Vec<(f64, f64, f64, usize)> = Vec::new();
+    for i in (0..PANELS).rev() {
+        let (a, b) = (i as f64 / PANELS as f64, (i + 1) as f64 / PANELS as f64);
+        pending.push((a, b, piece(&f, a, b)?, 0));
+    }
+    // The start of each piece and the length before it, with the end last.
+    let mut table = vec![(0.0, 0.0)];
+    let mut total = 0.0;
+    while let Some((a, b, whole, depth)) = pending.pop() {
+        let middle = 0.5 * (a + b);
+        let (left, right) = (piece(&f, a, middle)?, piece(&f, middle, b)?);
+        if !(left + right).is_finite() {
+            return None;
+        }
+        if (left + right - whole).abs() <= 1e-13 * (left + right) || depth >= DEPTH {
+            total += left + right;
+            table.push((b, total));
+        } else {
+            pending.push((middle, b, right, depth + 1));
+            pending.push((a, middle, left, depth + 1));
+        }
+    }
+    if total.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
+        return None;
+    }
+    Some(move |share: f64| -> Option<(V, V)> {
+        let scaled = |s: f64| f(s).map(|(point, slope)| (point, mul(slope, total / norm(slope))));
+        if share <= 0.0 {
+            return scaled(0.0);
+        }
+        if share >= 1.0 {
+            return scaled(1.0);
+        }
+        let target = share * total;
+        let after = table
+            .partition_point(|(_, before)| *before <= target)
+            .clamp(1, table.len() - 1);
+        let ((a, before), (b, _)) = (table[after - 1], table[after]);
+        // Newton on the length from the piece's start, kept inside the piece.
+        let mut s = 0.5 * (a + b);
+        for _ in 0..12 {
+            let speed = norm(f(s)?.1);
+            let step = (piece(&f, a, s)? - (target - before)) / speed;
+            s = (s - step).clamp(a, b);
+            if step.abs() <= 1e-15 {
+                break;
+            }
+        }
+        scaled(s)
+    })
+}
+
 /// The C2 quintic through the samples over uniform spans of 0..1, its ends
 /// exactly the first and last point.
 fn quintic((points, slopes, bends): &Samples, dec: &mut Decider) -> Result<BSplineCurve, Refusal> {
@@ -1257,7 +1330,7 @@ fn open_end(
         let slope = strip.sliding(t, angle, wall.normal(point)?)?;
         Some((point, mul(slope, across)))
     };
-    Ok(sampled(cut).map(|cut| OpenEnd {
+    Ok(by_length(cut).and_then(sampled).map(|cut| OpenEnd {
         vertex,
         end,
         borders: [first, second],

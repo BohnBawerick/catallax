@@ -473,12 +473,16 @@ why the radius no longer moves the cost.
 | Owner rim, six edges, R2 | 6,242,846 | Admitted, 19 faces |
 | Owner rim, six edges, R3.99 | 6,393,642 | Admitted, 19 faces |
 | Owner rim, six edges, R5 | 645,764 | `fillet.radius-too-large`, limit 4 mm, reached face named |
-| Owner rim without the thin-wall edge, R5 | 12,667,227 | Admitted, 18 faces |
+| Owner rim without the thin-wall edge, R5 | 4,798,579 | Admitted, 18 faces |
+| Owner rim without the thin-wall edge, R7.9 | 20,445,051 | Admitted, 18 faces |
+| Owner rim without the thin-wall edge, R7.99 | 20,450,691 | Admitted, 18 faces |
 | Owner rim without the thin-wall edge, R8 | 629,116 | `fillet.radius-too-large`, limit 8 mm |
 | Sample part, each of the 12 edges the exact builders refuse, R1 | 631,192 to 5,628,105 | Admitted, 19 faces |
 | Smooth loft, one edge between two spline faces, R0.1 | 19,532,087 | Admitted, 7 faces |
 
-The numerical STEP of an admitted rim costs 21.9M to 22.6M in its own request
-and the display preview 3.9M to 8.0M. All are under the 20M target except the
-STEP export, which re-admits the rounded decimals of every face. A box with
+The numerical STEP of an admitted whole rim costs 21.9M to 22.6M in its own
+request and the display preview 3.3M to 6.9M. Within a tenth of a millimetre
+of its 8 mm limit the five-edge rim's export costs 41.8M and its preview 9.9M.
+Constructions are under the 20M target except those last two rows; the STEP
+export, which re-admits the rounded decimals of every face, is over it. A box with
 all twelve edges rounded stays exact at 8,968 to 12,696 work.

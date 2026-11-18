@@ -1,7 +1,7 @@
 //! Reconstruct the actual decimal carriers before numerical admission.
 
 use super::*;
-use catallax_numbers::Ball;
+use catallax_numbers::{Ball, NumericalCheck};
 use catallax_shapes::{
     BSplineCurve, BSplineSurface, Line, Plane, RationalAtlas, RationalPatch, SplineSupport,
 };
@@ -20,6 +20,22 @@ pub(super) struct PlaneValues {
     pub reference: [Rational; 3],
 }
 
+// One value per edge or face of one body, built once and read once: boxing
+// the common variant would only add an allocation each.
+#[allow(clippy::large_enum_variant)]
+pub(super) enum CurveValues {
+    Line(LineValues),
+    Native(Id),
+    Spline,
+}
+
+#[allow(clippy::large_enum_variant)]
+pub(super) enum SurfaceValues {
+    Plane(PlaneValues),
+    Native(Id),
+    Spline,
+}
+
 #[derive(Default)]
 struct Errors {
     scalar: Rational,
@@ -29,11 +45,12 @@ struct Errors {
 
 pub(super) struct Payload {
     pub body: NumericalBody,
-    pub lines: Vec<Option<LineValues>>,
-    pub planes: Vec<Option<PlaneValues>>,
+    pub curves: Vec<CurveValues>,
+    pub surfaces: Vec<SurfaceValues>,
     pub scalar_error: Rational,
     pub direction_error: Rational,
     pub spline_rounding: NumericalSplineRounding,
+    pub phase_checks: Vec<NumericalCheck>,
 }
 
 fn rounded(
@@ -118,41 +135,48 @@ fn parameter(
     )
 }
 
-pub(super) fn build(
-    body: &NumericalBody,
-    options: &NumericalStepOptions,
-    dec: &mut Decider,
-) -> Result<Payload, Refusal> {
+pub(super) fn build(body: &NumericalBody, w: &mut Writer<'_>) -> Result<Payload, Refusal> {
+    let options = w.options;
     let mut definition = body.definition().clone();
     definition.name.push_str(" STEP decimal payload");
     let mut errors = Errors::default();
     for vertex in &mut definition.vertices {
-        vertex.position = point(&point_from(&vertex.position), &mut errors, options, dec)?;
+        vertex.position = point(&point_from(&vertex.position), &mut errors, options, w.dec)?;
     }
-    let mut lines = Vec::new();
+    let mut curves = Vec::with_capacity(definition.edges.len());
+    let mut phase_checks = Vec::new();
     for edge in &mut definition.edges {
+        if let Curve::Circle(source) = &edge.curve {
+            let written =
+                super::super::analytic::rounded_circle(w, source, edge, &definition.vertices)?;
+            edge.parameters = written.parameters;
+            if edge.vertices[0] != edge.vertices[1] {
+                for value in &mut edge.parameters {
+                    *value = parameter(value, &mut errors, options, w.dec)?;
+                }
+            }
+            edge.curve = Curve::Circle(written.circle);
+            phase_checks.push(written.phase);
+            curves.push(CurveValues::Native(written.entity));
+            continue;
+        }
         let original_parameters = edge.parameters.clone();
-        edge.parameters = edge
-            .parameters
-            .each_ref()
-            .map(|value| parameter(value, &mut errors, options, dec))
-            .into_iter()
-            .collect::<Result<Vec<_>, _>>()?
-            .try_into()
-            .expect("fixed coordinate count");
+        for value in &mut edge.parameters {
+            *value = parameter(value, &mut errors, options, w.dec)?;
+        }
         if edge.parameters[0] == edge.parameters[1] {
             return Err(bad("rounding-topology", "finite edge parameters collapsed"));
         }
         match &edge.curve {
             Curve::Line(source) => {
-                let origin = point(&source.origin, &mut errors, options, dec)?;
-                let (direction, actual) = direction(&source.dir, &mut errors, options, dec)?;
+                let origin = point(&source.origin, &mut errors, options, w.dec)?;
+                let (direction, actual) = direction(&source.dir, &mut errors, options, w.dec)?;
                 let magnitude = rounded(
                     &source.dir.norm_squared().sqrt(),
                     &mut errors.scalar,
                     options,
                     true,
-                    dec,
+                    w.dec,
                 )?;
                 if magnitude.sign() != Sign::Positive {
                     return Err(bad("rounding-topology", "line magnitude vanished"));
@@ -161,7 +185,7 @@ pub(super) fn build(
                     origin: point_from(&origin),
                     dir: actual.scaled(&Real::from(magnitude.clone())),
                 });
-                lines.push(Some(LineValues {
+                curves.push(CurveValues::Line(LineValues {
                     origin,
                     direction,
                     magnitude,
@@ -173,26 +197,27 @@ pub(super) fn build(
                     &original_parameters,
                     &mut errors,
                     options,
-                    dec,
+                    w.dec,
                 )?);
-                lines.push(None);
+                curves.push(CurveValues::Spline);
             }
             _ => {
                 return Err(bad(
                     "unsupported",
-                    "numerical curved STEP needs retained line or native spline edges",
+                    "numerical curved STEP needs retained lines, circles or native spline edges",
                 ));
             }
         }
     }
-    let bits = 128.min(dec.policy().max_precision_bits);
-    let mut planes = Vec::new();
+    super::super::analytic::closed_circle_parameters(&mut definition, w.dec)?;
+    let bits = 128.min(w.dec.policy().max_precision_bits);
+    let mut surfaces = Vec::with_capacity(definition.faces.len());
     for face in &mut definition.faces {
         match &face.surface {
             Surface::Plane(source) => {
-                let origin = point(&source.origin, &mut errors, options, dec)?;
-                let (normal, n) = direction(&source.normal, &mut errors, options, dec)?;
-                let (reference, r) = direction(&source.ref_dir, &mut errors, options, dec)?;
+                let origin = point(&source.origin, &mut errors, options, w.dec)?;
+                let (normal, n) = direction(&source.normal, &mut errors, options, w.dec)?;
+                let (reference, r) = direction(&source.ref_dir, &mut errors, options, w.dec)?;
                 let x = unit(&n.cross(&r).cross(&n));
                 face.surface = Surface::Plane(Plane {
                     origin: point_from(&origin),
@@ -211,49 +236,72 @@ pub(super) fn build(
                             .position
                             .each_ref()
                             .map(|q| Ball::from_rational(q, bits));
-                        let uv = face.surface.parameters_of(&world, dec)?.ok_or_else(|| {
+                        let uv = face.surface.parameters_of(&world, w.dec)?.ok_or_else(|| {
                             bad("rounding-topology", "written plane inverse is unresolved")
                         })?;
                         trim.uv[slot] = uv.each_ref().map(Ball::mid);
                     }
                 }
-                planes.push(Some(PlaneValues {
+                surfaces.push(SurfaceValues::Plane(PlaneValues {
                     origin,
                     normal,
                     reference,
                 }));
             }
+            Surface::Cylinder(_) | Surface::Sphere(_) | Surface::Torus(_) => {
+                let (entity, surface) =
+                    super::super::analytic::rounded_native_surface(w, &face.key, &face.surface)?;
+                face.surface = surface;
+                for trim in face.loops.iter_mut().flatten() {
+                    let edge = &definition.edges[trim.edge];
+                    let vertices = if trim.sense == Sense::Same {
+                        edge.vertices
+                    } else {
+                        [edge.vertices[1], edge.vertices[0]]
+                    };
+                    for (slot, vertex) in vertices.into_iter().enumerate() {
+                        trim.uv[slot] = super::super::analytic::uv(
+                            &face.surface,
+                            &definition.vertices[vertex].position,
+                            &trim.uv[slot],
+                            w.dec,
+                        )?;
+                    }
+                }
+                super::super::analytic::normalize_cylinder_cell(face, w.dec)?;
+                surfaces.push(SurfaceValues::Native(entity));
+            }
             Surface::BSpline(SplineSupport::RationalPatch(source)) => {
-                let carrier = spline::surface(source.carrier(), &mut errors, options, dec)?;
-                face.surface = Surface::BSpline(RationalPatch::new(carrier, dec)?.into());
+                let carrier = spline::surface(source.carrier(), &mut errors, options, w.dec)?;
+                face.surface = Surface::BSpline(RationalPatch::new(carrier, w.dec)?.into());
                 for trim in face.loops.iter_mut().flatten() {
                     for uv in &mut trim.uv {
                         for value in uv {
-                            *value = parameter(value, &mut errors, options, dec)?;
+                            *value = parameter(value, &mut errors, options, w.dec)?;
                         }
                     }
                 }
-                planes.push(None);
+                surfaces.push(SurfaceValues::Spline);
             }
             Surface::BSpline(SplineSupport::RationalAtlas(source)) => {
                 let written =
-                    spline::atlas(source, &mut errors, options, dec).map_err(|error| {
+                    spline::atlas(source, &mut errors, options, w.dec).map_err(|error| {
                         Refusal::new(error.code, format!("face {:?}: {}", face.key, error.detail))
                     })?;
                 face.surface = Surface::BSpline(written.into());
                 for trim in face.loops.iter_mut().flatten() {
                     for uv in &mut trim.uv {
                         for value in uv {
-                            *value = parameter(value, &mut errors, options, dec)?;
+                            *value = parameter(value, &mut errors, options, w.dec)?;
                         }
                     }
                 }
-                planes.push(None);
+                surfaces.push(SurfaceValues::Spline);
             }
             _ => {
                 return Err(bad(
                     "unsupported",
-                    "numerical curved STEP needs planes or retained rational patches",
+                    "numerical curved STEP needs planes, cylinders, spheres, ring tori or retained rational patches",
                 ));
             }
         }
@@ -261,15 +309,28 @@ pub(super) fn build(
     let mut native_trims = body.native_trims().to_vec();
     if !native_trims.is_empty() {
         let mut intervals = std::collections::BTreeMap::new();
-        for edge in &body.definition().edges {
-            dec.charge_work(1)?;
-            intervals.insert(edge.key.as_str(), &edge.parameters);
+        for (source, edge) in body.definition().edges.iter().zip(&definition.edges) {
+            w.dec.charge_work(1)?;
+            intervals.insert(source.key.as_str(), (&source.parameters, edge));
         }
         for trim in &mut native_trims {
-            let parameters = intervals
+            let (parameters, edge) = intervals
                 .get(trim.edge.as_str())
                 .ok_or_else(|| bad("rounding-topology", "native trim lost its stable edge"))?;
-            trim.curve = spline::uv_curve(&trim.curve, parameters, &mut errors, options, dec)?;
+            if matches!(edge.curve, Curve::Circle(_)) && edge.vertices[0] == edge.vertices[1] {
+                return Err(bad(
+                    "unsupported",
+                    "a closed circle with a fitted pcurve needs a jointly representable full-period knot domain",
+                ));
+            }
+            trim.curve = spline::uv_curve(
+                &trim.curve,
+                parameters,
+                &edge.parameters,
+                &mut errors,
+                options,
+                w.dec,
+            )?;
         }
     }
     let build = if body.kind() == BodyKind::Surface {
@@ -282,14 +343,15 @@ pub(super) fn build(
         native_trims,
         body.sampled_carriers().clone(),
         body.options().clone(),
-        dec,
+        w.dec,
     )?;
     Ok(Payload {
         body: emitted,
-        lines,
-        planes,
+        curves,
+        surfaces,
         scalar_error: errors.scalar,
         direction_error: errors.direction,
         spline_rounding: errors.spline,
+        phase_checks,
     })
 }

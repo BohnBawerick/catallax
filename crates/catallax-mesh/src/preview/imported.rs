@@ -571,8 +571,9 @@ pub(super) fn seed_rectangles(
     options: &PreviewOptions,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
-    let mut stack = vec![(bounds, 0u32)];
-    while let Some(([lo, hi], depth)) = stack.pop() {
+    // The last field says a cell lies in one that had to be halved for bending.
+    let mut stack = vec![(bounds, 0u32, false)];
+    while let Some(([lo, hi], depth, curved)) = stack.pop() {
         dec.check_deadline()?;
         let mid: Uv = std::array::from_fn(|i| (lo[i] + hi[i]) * 0.5);
         let corners = [lo, [hi[0], lo[1]], hi, [lo[0], hi[1]]].map(|uv| chart.position(uv, dec));
@@ -581,31 +582,53 @@ pub(super) fn seed_rectangles(
         let actual = chart.position(mid, dec)?;
         let linear = std::array::from_fn(|i| corners.iter().map(|p| p[i] * 0.25).sum());
         let mut error = norm(sub(actual, linear));
-        for (uv, ends) in [
-            ([mid[0], lo[1]], [0, 1]),
-            ([hi[0], mid[1]], [1, 2]),
-            ([mid[0], hi[1]], [3, 2]),
-            ([lo[0], mid[1]], [0, 3]),
+        // How far each pair of opposite sides bows, by the axis they run along.
+        let mut bow = [0.0f64; 2];
+        for (uv, ends, along) in [
+            ([mid[0], lo[1]], [0, 1], 0),
+            ([hi[0], mid[1]], [1, 2], 1),
+            ([mid[0], hi[1]], [3, 2], 0),
+            ([lo[0], mid[1]], [0, 3], 1),
         ] {
             let linear = std::array::from_fn(|i| (corners[ends[0]][i] + corners[ends[1]][i]) * 0.5);
-            error = error.max(norm(sub(chart.position(uv, dec)?, linear)));
+            let side = norm(sub(chart.position(uv, dec)?, linear));
+            bow[along] = bow[along].max(side);
+            error = error.max(side);
         }
         if inside(mid, loops) {
             seed(cdt, mid, actual, mesh, options)?;
         }
-        if error <= options.chord_tolerance.to_f64_nearest() * 0.5 {
+        let bent = error > options.chord_tolerance.to_f64_nearest() * 0.5;
+        // Sides along each axis, in space. Parameter extents cannot compare
+        // the axes: on a cylinder one is in radians, the other in millimetres.
+        let length = |a: usize, b: usize| norm(sub(corners[a], corners[b]));
+        let sides = [
+            length(0, 1).max(length(3, 2)),
+            length(0, 3).max(length(1, 2)),
+        ];
+        // A bent cell is halved along the axis it bends along, since halving
+        // its length never straightens an arc; one that only twists, along its
+        // longer side. A flat cell of a curved surface is halved while it is
+        // far longer than wide, so the seeds do not all fall on one line and
+        // leave the triangulation to fill a long face from its boundary.
+        let axis = if bent && bow[0] > bow[1] {
+            0
+        } else if bent && bow[1] > bow[0] {
+            1
+        } else if bent || (curved && sides[0].max(sides[1]) > 8.0 * sides[0].min(sides[1])) {
+            usize::from(sides[1] > sides[0])
+        } else {
             continue;
-        }
+        };
         if depth >= 24 || !(lo[0] < mid[0] && mid[0] < hi[0] && lo[1] < mid[1] && mid[1] < hi[1]) {
             return Err(failure("surface preview subdivision limit reached"));
         }
-        let axis = usize::from((hi[1] - lo[1]) > (hi[0] - lo[0]));
         let mut a = hi;
         let mut b = lo;
         a[axis] = mid[axis];
         b[axis] = mid[axis];
-        stack.push(([b, hi], depth + 1));
-        stack.push(([lo, a], depth + 1));
+        stack.push(([b, hi], depth + 1, curved || bent));
+        stack.push(([lo, a], depth + 1, curved || bent));
     }
     Ok(())
 }
@@ -712,6 +735,36 @@ fn face_mesh(
     )
 }
 
+/// Whether a triangle's own normal is too poorly known to compare with the
+/// carrier's.
+///
+/// Its corners are placed within the chord target. A triangle so low over its
+/// longest side that moving a corner by that much tilts it past the angular
+/// bound has no normal worth comparing, and inside that height nothing it
+/// does can show. Such slivers line every curved trim and fill the taper
+/// where two trims meet at a shallow angle, and no interior point cures them.
+/// A bound of 45 degrees or more allows no triangle higher than the chord
+/// target to count as one. `doubled_area` is the length of the cross product
+/// of two sides.
+fn sliver(doubled_area: f64, longest: f64, chord: f64, angle: Option<f64>) -> bool {
+    let tilt = match angle {
+        Some(angle) if angle > 0.0 && angle < std::f64::consts::FRAC_PI_4 => angle.tan(),
+        _ => 1.0,
+    };
+    doubled_area * tilt <= chord * longest
+}
+
+/// Whether a triangle needs another point inside it.
+///
+/// A sample off the carrier by more than the chord target is a miss whatever
+/// the triangle's size: short sides do not bound how far the carrier bulges
+/// between them, so the triangle is refined until the miss is gone, or the
+/// face is refused when the refinement limit comes first. A normal turned
+/// past the angular bound asks for nothing finer than the chord target.
+fn needs_point(off_carrier: bool, turned: bool, longest: f64, chord: f64) -> bool {
+    off_carrier || (turned && longest > chord)
+}
+
 pub(super) struct FaceOutput<'a> {
     pub name: &'a str,
     pub same_sense: bool,
@@ -753,25 +806,50 @@ pub(super) fn finish_face(
                     "source preview triangle collapsed in spatial coordinates",
                 ));
             }
-            let mut refine = false;
-            for weights in [
+            let chord = options.chord_tolerance.to_f64_nearest();
+            let longest = (0..3)
+                .map(|i| norm(sub(p[(i + 1) % 3], p[i])))
+                .fold(0.0, f64::max);
+            let angle = options
+                .angular_deviation
+                .as_ref()
+                .map(Rational::to_f64_nearest);
+            let thin = sliver(norm(normal), longest, chord, angle);
+            // A side on a trim is a chord of the trim's own polyline, placed
+            // by the edge sampler within an eighth of the chord target and
+            // shared with the face across the edge. The carrier at the middle
+            // of that side's parameters is not on the trim, and where the
+            // trim bends in the parameter plane it is not on the face either,
+            // so it measures nothing the triangle shows.
+            let on_trim = triangle
+                .adjacent_edges()
+                .map(|side| side.is_constraint_edge());
+            let mut off_carrier = false;
+            let mut turned = false;
+            for (sample, weights) in [
                 [0.5, 0.5, 0.0],
                 [0.0, 0.5, 0.5],
                 [0.5, 0.0, 0.5],
                 [1.0 / 3.0; 3],
-            ] {
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                if on_trim.get(sample).copied().unwrap_or(false) {
+                    continue;
+                }
                 let uv = std::array::from_fn(|i| (0..3).map(|j| weights[j] * nodes[j].uv[i]).sum());
                 let linear = std::array::from_fn(|i| (0..3).map(|j| weights[j] * p[j][i]).sum());
-                refine |= norm(sub(chart.position(uv, dec)?, linear))
-                    > options.chord_tolerance.to_f64_nearest();
-                if let Some(angle) = &options.angular_deviation {
+                off_carrier |= norm(sub(chart.position(uv, dec)?, linear)) > chord;
+                if let Some(angle) = angle
+                    && !thin
+                {
                     let actual = chart.normal(uv, dec)?;
                     let cosine = dot(normal, actual) / (norm(normal) * norm(actual));
-                    refine |= !cosine.is_finite()
-                        || cosine.clamp(-1.0, 1.0).acos() > angle.to_f64_nearest();
+                    turned |= !cosine.is_finite() || cosine.clamp(-1.0, 1.0).acos() > angle;
                 }
             }
-            if refine {
+            if needs_point(off_carrier, turned, longest, chord) {
                 pending.insert(chart::key(center), center);
                 continue;
             }
@@ -890,7 +968,10 @@ pub fn preview_step(
     names.clear();
     for face in source.solids.iter().flat_map(|s| &s.faces) {
         if names.insert(&face.name) {
-            face_mesh(face, &shared, &mut mesh, options, dec)?;
+            face_mesh(face, &shared, &mut mesh, options, dec).map_err(|mut refusal| {
+                refusal.detail = format!("face {}: {}", face.name, refusal.detail);
+                refusal
+            })?;
         }
     }
     dec.check_deadline()?;
@@ -899,4 +980,46 @@ pub fn preview_step(
         source,
         mesh,
     })
+}
+
+#[cfg(test)]
+mod refinement_tests {
+    use super::{needs_point, sliver};
+
+    #[test]
+    fn a_sample_off_the_carrier_is_refined_however_short_the_sides() {
+        // Sides of 5 um under a 10 um chord target, with the carrier 20 um off.
+        assert!(needs_point(true, false, 0.005, 0.01));
+        assert!(needs_point(true, true, 0.005, 0.01));
+        // A turned normal alone asks for nothing finer than the chord target.
+        assert!(!needs_point(false, true, 0.005, 0.01));
+        assert!(needs_point(false, true, 0.02, 0.01));
+        assert!(!needs_point(false, false, 5.0, 0.01));
+    }
+
+    #[test]
+    fn only_a_triangle_the_chord_target_can_tilt_past_the_bound_is_a_sliver() {
+        let chord = 0.01;
+        // A triangle 1 mm long and `height` high has doubled area `height`.
+        let fifteen = Some(15f64.to_radians());
+        assert!(sliver(0.03, 1.0, chord, fifteen));
+        assert!(!sliver(0.04, 1.0, chord, fifteen));
+        // From 45 degrees on, and without a bound, only one no higher than
+        // the chord target. A bound just past a right angle must not make
+        // every triangle a sliver and so mute the normal test.
+        for angle in [
+            Some(std::f64::consts::FRAC_PI_4),
+            Some(1.0),
+            Some(1.6),
+            Some(3.0),
+            None,
+        ] {
+            assert!(sliver(0.01, 1.0, chord, angle), "{angle:?}");
+            assert!(!sliver(0.011, 1.0, chord, angle), "{angle:?}");
+            assert!(!sliver(1.0, 1.0, chord, angle), "{angle:?}");
+        }
+        // A bound that is no angle at all gives no sliver either.
+        assert!(!sliver(0.5, 1.0, chord, Some(0.0)));
+        assert!(!sliver(0.5, 1.0, chord, Some(f64::NAN)));
+    }
 }

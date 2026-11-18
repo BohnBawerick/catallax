@@ -51,10 +51,19 @@ fn offset_spine_crosses_both_atlas_seams_without_fragmenting() {
         let second = split_vertical_plane(false, &mut dec);
         let tolerance = Rational::parse("0.0000001").unwrap();
         let spine = catallax_shapes::NumericalFilletSpine::trace(
-            &[first, second],
             [
-                Rational::from_ratio(1, 10).unwrap(),
-                Rational::from_ratio(1, 5).unwrap(),
+                catallax_shapes::NumericalFilletSupport::new(
+                    catallax_shapes::Surface::BSpline(first.into()),
+                    Rational::from_ratio(1, 10).unwrap(),
+                    &mut dec,
+                )
+                .unwrap(),
+                catallax_shapes::NumericalFilletSupport::new(
+                    catallax_shapes::Surface::BSpline(second.into()),
+                    Rational::from_ratio(1, 5).unwrap(),
+                    &mut dec,
+                )
+                .unwrap(),
             ],
             1,
             [Rational::zero(), Rational::from_i64(2)],
@@ -108,9 +117,16 @@ fn numerical_fillet_crosses_chart_seams_with_circular_sections() {
         });
         let radius = Rational::from_ratio(1, 10).unwrap();
         let tolerance = Rational::parse("0.0000001").unwrap();
+        let supports = supports.map(|support| {
+            catallax_shapes::NumericalFilletSupport::new(
+                catallax_shapes::Surface::BSpline(support.into()),
+                radius.clone(),
+                &mut dec,
+            )
+            .unwrap()
+        });
         let spine = catallax_shapes::NumericalFilletSpine::trace(
-            &supports,
-            [radius.clone(), radius.clone()],
+            supports,
             1,
             [
                 Rational::from_ratio(-1, 2).unwrap(),

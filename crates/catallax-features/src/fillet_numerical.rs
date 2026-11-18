@@ -20,6 +20,17 @@ use catallax_topology::{
     },
 };
 
+#[path = "fillet_rolling_body.rs"]
+pub(crate) mod body;
+#[path = "fillet_native.rs"]
+pub(crate) mod native;
+#[path = "fillet_rolling.rs"]
+pub(crate) mod rolling;
+#[path = "fillet_numerical_vertex.rs"]
+pub(crate) mod vertex;
+#[path = "fillet_rolling_vertex_body.rs"]
+pub(crate) mod vertex_body;
+
 fn bad(detail: impl Into<String>) -> Refusal {
     Refusal::new("fillet.numerical-body", detail)
 }
@@ -413,7 +424,7 @@ fn constrained_rail(
     curve: &BSplineCurve,
     interval: &[Rational; 2],
     endpoints: &[[Rational; 2]; 2],
-    bounds: &[[Rational; 2]; 2],
+    bounds: Option<&[[Rational; 2]; 2]>,
     dec: &mut Decider,
 ) -> Result<(BSplineCurve, usize), Refusal> {
     let forward = interval[0] < interval[1];
@@ -447,13 +458,15 @@ fn constrained_rail(
                 scalar(&(&h[0] / &h[3]), dec)?,
                 scalar(&(&h[1] / &h[3]), dec)?,
             ];
-            for axis in 0..2 {
-                let next = uv[axis]
-                    .clone()
-                    .max(bounds[axis][0].clone())
-                    .min(bounds[axis][1].clone());
-                changed += usize::from(next != uv[axis]);
-                uv[axis] = next;
+            if let Some(bounds) = bounds {
+                for axis in 0..2 {
+                    let next = uv[axis]
+                        .clone()
+                        .max(bounds[axis][0].clone())
+                        .min(bounds[axis][1].clone());
+                    changed += usize::from(next != uv[axis]);
+                    uv[axis] = next;
+                }
             }
             controls.push(Point3::new(
                 uv[0].clone().into(),
@@ -470,13 +483,56 @@ fn constrained_rail(
         return Err(bad("a finite support pcurve has no clipped span"));
     }
     let last = controls.len() - 1;
-    for (index, uv) in [(0, &ends[0]), (last, &ends[1])] {
-        let next = Point3::new(uv[0].clone().into(), uv[1].clone().into(), Real::zero());
-        changed += usize::from(
-            controls[index].x.as_rational() != Some(uv[0].clone())
-                || controls[index].y.as_rational() != Some(uv[1].clone()),
-        );
-        controls[index] = next;
+    let original = [
+        [scalar(&controls[0].x, dec)?, scalar(&controls[0].y, dec)?],
+        [
+            scalar(&controls[last].x, dec)?,
+            scalar(&controls[last].y, dec)?,
+        ],
+    ];
+    if original != ends {
+        // One affine UV map preserves the curve's knot spans and weights.
+        // Moving only its end pole can reverse a tiny clipped first/last span.
+        let direction: [Rational; 2] =
+            std::array::from_fn(|axis| &original[1][axis] - &original[0][axis]);
+        let norm = &direction[0] * &direction[0] + &direction[1] * &direction[1];
+        let shifts: [[Rational; 2]; 2] = std::array::from_fn(|end| {
+            std::array::from_fn(|axis| &ends[end][axis] - &original[end][axis])
+        });
+        if norm.sign() == Sign::Zero {
+            if shifts[0] != shifts[1] {
+                return Err(bad(
+                    "coincident pcurve ends require different canonical positions",
+                ));
+            }
+        } else {
+            let orientation = (0..2).fold(Rational::zero(), |sum, axis| {
+                sum + &direction[axis] * &(&ends[1][axis] - &ends[0][axis])
+            });
+            if orientation.sign() != Sign::Positive {
+                return Err(bad(
+                    "canonical pcurve contacts reverse the retained UV chord",
+                ));
+            }
+        }
+        let change: [Rational; 2] = std::array::from_fn(|axis| &shifts[1][axis] - &shifts[0][axis]);
+        for point in &mut controls {
+            dec.charge_work(1)?;
+            let old = [scalar(&point.x, dec)?, scalar(&point.y, dec)?];
+            let share = if norm.sign() == Sign::Zero {
+                Rational::zero()
+            } else {
+                let along = (0..2).fold(Rational::zero(), |sum, axis| {
+                    sum + &(&old[axis] - &original[0][axis]) * &direction[axis]
+                });
+                &along / &norm
+            };
+            let uv: [Rational; 2] = std::array::from_fn(|axis| {
+                &old[axis] + &shifts[0][axis] + (&share * &change[axis])
+            });
+            changed += usize::from(uv != old);
+            *point = Point3::new(uv[0].clone().into(), uv[1].clone().into(), Real::zero());
+        }
     }
     knots.extend(std::iter::repeat_n(range[1].clone(), degree + 1));
     Ok((
@@ -664,16 +720,23 @@ fn build_impl(
             radius.clone()
         }
     });
-    let spine = NumericalFilletSpine::trace(
-        &extended,
-        distances,
-        axes[0],
-        range,
-        seed,
-        tolerance_mm.clone(),
-        dec,
-    )
-    .map_err(|error| at_stage("centre reconstruction", error))?;
+    let [first, second] = extended;
+    let [first_distance, second_distance] = distances;
+    let supports = [
+        catallax_shapes::NumericalFilletSupport::new(
+            Surface::BSpline(first.into()),
+            first_distance,
+            dec,
+        )?,
+        catallax_shapes::NumericalFilletSupport::new(
+            Surface::BSpline(second.into()),
+            second_distance,
+            dec,
+        )?,
+    ];
+    let spine =
+        NumericalFilletSpine::trace(supports, axes[0], range, seed, tolerance_mm.clone(), dec)
+            .map_err(|error| at_stage("centre reconstruction", error))?;
     let fillet = NumericalSplineFillet::fit(spine, dec)
         .map_err(|error| at_stage("carrier reconstruction", error))?;
     let caps = [
@@ -776,7 +839,7 @@ fn build_impl(
                 .ok_or_else(|| bad("support pcurve is missing"))?,
             &interval,
             &rail_uv[side],
-            &domain(&physical[side]),
+            Some(&domain(&physical[side])),
             dec,
         )?;
         constrained_parameter_controls += changed;

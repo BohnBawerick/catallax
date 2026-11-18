@@ -110,12 +110,36 @@ fn finite_curve(
 pub(super) fn uv_curve(
     source: &BSplineCurve,
     parameters: &[Rational; 2],
+    target_parameters: &[Rational; 2],
     errors: &mut Errors,
     options: &NumericalStepOptions,
     dec: &mut Decider,
 ) -> Result<BSplineCurve, Refusal> {
     let source = finite_curve(source, parameters, true, dec)?;
-    let knots = knots(source.knots(), errors, options, dec)?;
+    let knots = if parameters == target_parameters {
+        knots(source.knots(), errors, options, dec)?
+    } else {
+        let scale =
+            (&target_parameters[1] - &target_parameters[0]) / (&parameters[1] - &parameters[0]);
+        if scale.sign() != Sign::Positive {
+            return Err(bad(
+                "rounding-topology",
+                "a fitted pcurve cannot reverse or collapse its native parameter domain",
+            ));
+        }
+        let mut knots = Vec::with_capacity(source.knots().len());
+        for knot in source.knots() {
+            let mapped = &target_parameters[0] + &(&scale * &(knot - &parameters[0]));
+            knots.push(rounded(
+                &Real::from(mapped),
+                &mut errors.spline.max_parameter_error,
+                options,
+                false,
+                dec,
+            )?);
+        }
+        knots
+    };
     let controls = source
         .controls()
         .map(|p| {
@@ -291,8 +315,8 @@ fn continuity_basis<'a>(
     Ok(carrier)
 }
 
-/// The written atlas face: the rounded source, partitioned again, keeping
-/// the component whose charts have the original domains after rounding.
+/// The rounded source, re-admitted with its original finite-cover method.
+/// Keep only the component whose chart domains survive decimal rounding.
 pub(super) fn atlas(
     source: &RationalAtlas,
     errors: &mut Errors,
@@ -310,8 +334,7 @@ pub(super) fn atlas(
         }
         wanted.push(domain);
     }
-    let periodic = [source.periodic_u(), source.periodic_v()];
-    for candidate in RationalAtlas::partition(carrier, periodic, dec)? {
+    for candidate in source.repartition(carrier, dec)? {
         dec.charge_work(1)?;
         if candidate
             .charts()
@@ -387,6 +410,72 @@ mod tests {
                         let error = &a[k] - &b[k];
                         assert!(error.lo().abs() <= tolerance);
                         assert!(error.hi().abs() <= tolerance);
+                    }
+                }
+            }
+        });
+        assert!(!work.exhausted, "{work:?}");
+    }
+
+    #[test]
+    fn a_polynomial_atlas_exports_without_changing_exact_decimal_geometry() {
+        let ((), work) = with_operation_budget(20_000_000, || {
+            let mut dec = Decider::default();
+            let carrier = BSplineSurface::new(
+                [1, 1],
+                std::array::from_fn(|_| [0, 0, 1, 1].map(Rational::from_i64).to_vec()),
+                [2, 2],
+                [
+                    Point3::new(10.into(), 0.into(), 0.into()),
+                    Point3::new(10.into(), 20.into(), 0.into()),
+                    Point3::new(
+                        Rational::from_ratio(21, 2).unwrap().into(),
+                        0.into(),
+                        0.into(),
+                    ),
+                    Point3::new(
+                        Rational::from_ratio(21, 2).unwrap().into(),
+                        20.into(),
+                        0.into(),
+                    ),
+                ]
+                .to_vec(),
+                [1, 1, 2, 2].map(Real::from).to_vec(),
+                &mut dec,
+            )
+            .unwrap();
+            let [source]: [_; 1] =
+                RationalAtlas::partition_with_polynomial_bounds(carrier, [false; 2], &mut dec)
+                    .unwrap()
+                    .try_into()
+                    .unwrap();
+            let mut errors = Errors::default();
+            let written = atlas(
+                &source,
+                &mut errors,
+                &NumericalStepOptions::default(),
+                &mut dec,
+            )
+            .unwrap();
+            assert_eq!(errors.scalar, Rational::zero());
+            assert_eq!(errors.spline.max_parameter_error, Rational::zero());
+            assert_eq!(errors.spline.max_weight_error, Rational::zero());
+            for i in 0..=4 {
+                let u = Rational::from_ratio(i, 4).unwrap();
+                for j in 0..=4 {
+                    let v = Rational::from_ratio(j, 4).unwrap();
+                    let point = written
+                        .source()
+                        .evaluate_box([&u, &u], [&v, &v], 128, &dec)
+                        .unwrap();
+                    let expected = [
+                        &Rational::from_i64(10) + &(&u / &(&Rational::one() + &u)),
+                        &Rational::from_i64(20) * &v,
+                        Rational::zero(),
+                    ];
+                    for axis in 0..3 {
+                        assert!(point[axis].lo() <= expected[axis]);
+                        assert!(expected[axis] <= point[axis].hi());
                     }
                 }
             }

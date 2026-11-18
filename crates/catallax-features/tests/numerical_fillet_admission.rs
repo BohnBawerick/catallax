@@ -255,14 +255,15 @@ fn source(bore: bool, gap: bool, dec: &mut Decider) -> (NumericalBody, String) {
     let recipe = Recipe::parse(&value.to_string()).unwrap();
     let built = catallax_features::evaluate(&recipe, dec).unwrap();
     let tolerance = if gap { q("1/1000") } else { q("1/10000000") };
-    let (mut definition, mut bindings) = catallax_step::numerical::definition_from_exact_model(
-        &built.model,
-        built.result,
-        recipe.name.clone(),
-        &tolerance,
-        dec,
-    )
-    .unwrap();
+    let (mut definition, mut bindings) =
+        catallax_features::numerical_embedding::definition_from_exact_model(
+            &built.model,
+            built.result,
+            recipe.name.clone(),
+            &tolerance,
+            dec,
+        )
+        .unwrap();
     if bore {
         add_periodic_bore(&mut definition, &mut bindings, dec);
     }

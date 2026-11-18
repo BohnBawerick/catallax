@@ -11,6 +11,10 @@ use std::sync::Arc;
 
 mod construction;
 
+#[cfg(test)]
+#[path = "curve/jet_tests.rs"]
+mod jet_tests;
+
 /// One clamped boundary of a tensor-product surface. A view shares its controls.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, catallax_numbers::Transfer)]
 pub enum SplineBoundary {
@@ -366,13 +370,13 @@ impl BSplineCurve {
             None => Ok(bounds(&raw.lo().max(lower.clone()), &raw.hi(), precision)),
         }
     }
-    fn homogeneous<const N: usize>(
+    fn cartesian_jet<const N: usize>(
         &self,
         parameter: [&Rational; 2],
         precision: u32,
         dec: &Decider,
         row: &mut Vec<[Ball; 4]>,
-    ) -> Result<[[Ball; 4]; N], Refusal> {
+    ) -> Result<[[Ball; 3]; N], Refusal> {
         dec.check_deadline()?;
         if precision == 0 || precision > dec.policy().max_precision_bits {
             return Err(Refusal::new(
@@ -387,22 +391,80 @@ impl BSplineCurve {
                 "curve box leaves the finite knot domain",
             ));
         }
-        let mut values: [Option<[Ball; 4]>; N] = [const { None }; N];
-        for (order, value) in values.iter_mut().enumerate() {
-            *value = Some(match self.net(order) {
-                Some(net) => enclose_row(
-                    net,
-                    self.axis(),
-                    self.fixed(net),
-                    parameter,
-                    precision,
-                    dec,
-                    row,
-                )?,
-                None => std::array::from_fn(|_| zero(precision)),
-            });
+        let mut result: Option<[[Ball; 3]; N]> = None;
+        for (span, interval) in self.spans() {
+            let lo = parameter[0].clone().max(interval[0].clone());
+            let hi = parameter[1].clone().min(interval[1].clone());
+            if lo > hi {
+                continue;
+            }
+            let mut raw: [Option<[Ball; 4]>; N] = [const { None }; N];
+            for (order, value) in raw.iter_mut().enumerate() {
+                *value = Some(match self.net(order) {
+                    Some(net) => enclose_row(
+                        net,
+                        self.axis(),
+                        self.fixed(net),
+                        span - order,
+                        [&lo, &hi],
+                        precision,
+                        dec,
+                        row,
+                    )?,
+                    None => std::array::from_fn(|_| zero(precision)),
+                });
+            }
+            let raw = raw.map(|value| value.expect("every homogeneous derivative was assigned"));
+            let denominator = self.denominator(&raw[0][3], precision, dec)?;
+            let mut next: [Option<[Ball; 3]>; N] = [const { None }; N];
+            next[0] = Some(cartesian(&raw[0], &denominator)?);
+            if self.weight_bound().1.is_some() {
+                for order in 1..N {
+                    next[order] = Some(cartesian(&raw[order], &denominator)?);
+                }
+            } else {
+                if N > 1 {
+                    let value = next[0].as_ref().expect("position was assigned");
+                    let derivative = |i: usize| {
+                        let correction = &value[i] * &raw[1][3];
+                        (&raw[1][i] - &correction)
+                            .checked_div(&denominator)
+                            .ok_or_else(|| invalid("unresolved positive curve denominator"))
+                    };
+                    next[1] = Some([derivative(0)?, derivative(1)?, derivative(2)?]);
+                }
+                if N > 2 {
+                    let value = next[0].as_ref().expect("position was assigned");
+                    let first = next[1].as_ref().expect("first derivative was assigned");
+                    let twice = Ball::from_rational(&Rational::from_i64(2), precision);
+                    let derivative = |i: usize| {
+                        let first_term = &(&first[i] * &raw[1][3]) * &twice;
+                        let second_term = &value[i] * &raw[2][3];
+                        let correction = &first_term + &second_term;
+                        (&raw[2][i] - &correction)
+                            .checked_div(&denominator)
+                            .ok_or_else(|| invalid("unresolved positive curve denominator"))
+                    };
+                    next[2] = Some([derivative(0)?, derivative(1)?, derivative(2)?]);
+                }
+            }
+            let next = next.map(|value| value.expect("every Cartesian derivative was assigned"));
+            // Weight derivatives can jump at a knot while Cartesian tangents
+            // agree. Dehomogenize each side before hulling correlated jumps.
+            match &mut result {
+                None => result = Some(next),
+                Some(previous) => {
+                    for (old, new) in previous
+                        .iter_mut()
+                        .flatten()
+                        .zip(next.into_iter().flatten())
+                    {
+                        *old = old.hull(&new);
+                    }
+                }
+            }
         }
-        Ok(values.map(|value| value.expect("every requested derivative was assigned")))
+        result.ok_or_else(|| invalid("curve box meets no nonzero knot span"))
     }
     /// Certified position enclosure at the supplied binary-box precision.
     pub fn evaluate(&self, parameter: &Ball, dec: &Decider) -> Result<[Ball; 3], Refusal> {
@@ -417,8 +479,8 @@ impl BSplineCurve {
         dec: &Decider,
     ) -> Result<[Ball; 3], Refusal> {
         let mut row = Vec::with_capacity(self.degree() + 1);
-        let [value] = self.homogeneous(parameter, precision, dec, &mut row)?;
-        cartesian(&value, &self.denominator(&value[3], precision, dec)?)
+        let [value] = self.cartesian_jet(parameter, precision, dec, &mut row)?;
+        Ok(value)
     }
     /// Position and first/second derivatives over a finite exact parameter interval.
     pub fn jet_box(
@@ -428,26 +490,7 @@ impl BSplineCurve {
         dec: &Decider,
     ) -> Result<BSplineCurveJet, Refusal> {
         let mut row = Vec::with_capacity(self.degree() + 1);
-        let [p, d, dd] = self.homogeneous(parameter, precision, dec, &mut row)?;
-        let denominator = self.denominator(&p[3], precision, dec)?;
-        let value = cartesian(&p, &denominator)?;
-        let derivative = |i: usize| {
-            let correction = &value[i] * &d[3];
-            (&d[i] - &correction)
-                .checked_div(&denominator)
-                .ok_or_else(|| invalid("unresolved positive curve denominator"))
-        };
-        let first = [derivative(0)?, derivative(1)?, derivative(2)?];
-        let twice = Ball::from_rational(&Rational::from_i64(2), precision);
-        let derivative = |i: usize| {
-            let first_term = &(&first[i] * &d[3]) * &twice;
-            let second_term = &value[i] * &dd[3];
-            let correction = &first_term + &second_term;
-            (&dd[i] - &correction)
-                .checked_div(&denominator)
-                .ok_or_else(|| invalid("unresolved positive curve denominator"))
-        };
-        let second = [derivative(0)?, derivative(1)?, derivative(2)?];
+        let [value, first, second] = self.cartesian_jet(parameter, precision, dec, &mut row)?;
         Ok(BSplineCurveJet {
             value,
             first,
@@ -462,21 +505,7 @@ impl BSplineCurve {
         dec: &Decider,
         row: &mut Vec<[Ball; 4]>,
     ) -> Result<[[Ball; 3]; 2], Refusal> {
-        let [p, d] = self.homogeneous(parameter, precision, dec, row)?;
-        let denominator = self.denominator(&p[3], precision, dec)?;
-        let value = cartesian(&p, &denominator)?;
-        let first = if self.weight_bound().1.is_some() {
-            cartesian(&d, &denominator)?
-        } else {
-            let derivative = |i: usize| {
-                let correction = &value[i] * &d[3];
-                (&d[i] - &correction)
-                    .checked_div(&denominator)
-                    .ok_or_else(|| invalid("unresolved positive curve denominator"))
-            };
-            [derivative(0)?, derivative(1)?, derivative(2)?]
-        };
-        Ok([value, first])
+        self.cartesian_jet(parameter, precision, dec, row)
     }
     /// Exact rigid transport, retaining the source frame for inverse queries.
     /// Repeated motions compose against the original controls, not the last fit.
@@ -559,56 +588,34 @@ fn cartesian(value: &[Ball; 4], denominator: &Ball) -> Result<[Ball; 3], Refusal
     };
     Ok([divide(0)?, divide(1)?, divide(2)?])
 }
+#[allow(clippy::too_many_arguments)]
 fn enclose_row(
     net: &Net,
     axis: usize,
     fixed: usize,
+    span: usize,
     parameter: [&Rational; 2],
     precision: u32,
     dec: &Decider,
     row: &mut Vec<[Ball; 4]>,
 ) -> Result<[Ball; 4], Refusal> {
-    let mut result: Option<[Ball; 4]> = None;
-    for span in net.spans(axis) {
-        let lo = parameter[0].clone().max(net.knots[axis][span].clone());
-        let hi = parameter[1].clone().min(net.knots[axis][span + 1].clone());
-        if lo > hi {
-            continue;
-        }
-        row.clear();
-        for i in span - net.degrees[axis]..=span {
-            dec.check_deadline()?;
-            let index = if axis == 0 {
-                i * net.count[1] + fixed
-            } else {
-                fixed * net.count[1] + i
-            };
-            let p = &net.controls[index];
-            row.push([
-                dec.enclose_at(&p[0], precision)?,
-                dec.enclose_at(&p[1], precision)?,
-                dec.enclose_at(&p[2], precision)?,
-                dec.enclose_at(&p[3], precision)?,
-            ]);
-        }
-        let next = de_boor(
-            row,
-            &net.knots[axis],
-            span,
-            &bounds(&lo, &hi, precision),
-            precision,
-            dec,
-        )?;
-        match &mut result {
-            None => result = Some(next),
-            Some(old) => {
-                for (a, b) in old.iter_mut().zip(next) {
-                    *a = a.hull(&b);
-                }
-            }
-        }
+    row.clear();
+    for i in span - net.degrees[axis]..=span {
+        dec.check_deadline()?;
+        let index = if axis == 0 {
+            i * net.count[1] + fixed
+        } else {
+            fixed * net.count[1] + i
+        };
+        let p = &net.controls[index];
+        row.push([
+            dec.enclose_at(&p[0], precision)?,
+            dec.enclose_at(&p[1], precision)?,
+            dec.enclose_at(&p[2], precision)?,
+            dec.enclose_at(&p[3], precision)?,
+        ]);
     }
-    result.ok_or_else(|| invalid("curve box meets no nonzero knot span"))
+    de_boor(row, &net.knots[axis], span, parameter, precision, dec)
 }
 
 /// One exact preimage of a point, bound to its immutable curve and knot span.

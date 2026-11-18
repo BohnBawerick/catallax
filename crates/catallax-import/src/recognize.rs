@@ -608,6 +608,34 @@ impl<'a> Reader<'a> {
         Ok(match ty.as_str() {
             // The 3D curve decides; the parameter-space curves are not read.
             "SURFACE_CURVE" | "SEAM_CURVE" => self.curve(reference(a, 1)?)?,
+            // A curve trimmed by parameter to exactly the domain of its
+            // B-spline basis is that basis. The numerical writer bounds every
+            // native spline edge this way. Any other trim stays unread.
+            "TRIMMED_CURVE" => {
+                let basis = reference(a, 1)?;
+                let Some(spline) = self.spline_curve(basis, self.entity(basis)?)? else {
+                    return Err(unsupported(id, e));
+                };
+                let bound = |i: usize| -> Result<Option<Rational>, ImportRefusal> {
+                    let Some(Param::List(items)) = a.get(i) else {
+                        return Ok(None);
+                    };
+                    match items.as_slice() {
+                        [Param::Typed(name, value)] if name == "PARAMETER_VALUE" => {
+                            value.first().map(number).transpose()
+                        }
+                        _ => Ok(None),
+                    }
+                };
+                let domain = spline.geometry.domain();
+                let whole = boolean(a, 4)?
+                    && bound(2)?.as_ref() == Some(domain[0])
+                    && bound(3)?.as_ref() == Some(domain[1]);
+                if !whole {
+                    return Err(unsupported(id, e));
+                }
+                Curve::BSpline(spline)
+            }
             "LINE" => {
                 let origin = self.point(reference(a, 1)?)?;
                 let v = self.args(reference(a, 2)?, "VECTOR")?;
@@ -938,5 +966,41 @@ ENDSEC;",
             panic!("plane")
         };
         assert_eq!(placement.origin, origin);
+    }
+
+    #[test]
+    fn a_spline_trimmed_to_its_whole_domain_reads_as_the_spline() {
+        let graph = parse(
+            b"DATA;
+#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=CARTESIAN_POINT('',(1.,1.,0.));
+#3=CARTESIAN_POINT('',(2.,0.,0.));
+#4=B_SPLINE_CURVE_WITH_KNOTS('',2,(#1,#2,#3),.UNSPECIFIED.,.U.,.U.,(3,3),(0.,1.),.UNSPECIFIED.);
+#5=TRIMMED_CURVE('',#4,(PARAMETER_VALUE(0.)),(PARAMETER_VALUE(1.)),.T.,.PARAMETER.);
+#6=TRIMMED_CURVE('',#4,(PARAMETER_VALUE(0.)),(PARAMETER_VALUE(0.5)),.T.,.PARAMETER.);
+#7=TRIMMED_CURVE('',#4,(PARAMETER_VALUE(0.)),(PARAMETER_VALUE(1.)),.F.,.PARAMETER.);
+#8=TRIMMED_CURVE('',#4,(#1),(#3),.T.,.CARTESIAN.);
+ENDSEC;",
+        )
+        .unwrap();
+        let dec = Decider::default();
+        let scale = Rational::one();
+        // The numerical writer bounds every native spline edge by its whole
+        // domain, and the reader has to take its own files back.
+        assert!(matches!(
+            source_curve(&graph, 5, &scale, &dec),
+            Ok(Curve::BSpline(_))
+        ));
+        // A real trim, a reversed one and one by points select part of the
+        // basis or its other direction; dropping them would change the edge.
+        for other in [6, 7, 8] {
+            assert!(
+                matches!(
+                    source_curve(&graph, other, &scale, &dec),
+                    Err(ImportRefusal::Unsupported { .. })
+                ),
+                "#{other}"
+            );
+        }
     }
 }

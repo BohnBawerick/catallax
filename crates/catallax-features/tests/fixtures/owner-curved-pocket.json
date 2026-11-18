@@ -1,0 +1,35 @@
+{
+  "format": "catallax-recipe/4",
+  "name": "Owner rounded-profile pocket",
+  "description": "80 by 60 profile, R25 top corners, 76 extrusion; 34 by 22.67 pocket centred on the tangent line, ending at z25. The tool starts at z60.5 to avoid the separately owned coincident-cap cut defect.",
+  "steps": [
+    {
+      "id": "profile",
+      "op": "sketch",
+      "plane": { "rotation": ["1", "1", "0", "0"], "translation": ["0", "0", "0"] },
+      "loops": [[
+        { "kind": "line", "id": "bottom", "to": ["40", "0"] },
+        { "kind": "line", "id": "right", "to": ["40", "35"] },
+        { "kind": "arc", "id": "right-round", "centre": ["15", "35"], "to": ["15", "60"], "turn": "ccw" },
+        { "kind": "line", "id": "top", "to": ["-15", "60"] },
+        { "kind": "arc", "id": "left-round", "centre": ["-15", "35"], "to": ["-40", "35"], "turn": "ccw" },
+        { "kind": "line", "id": "left", "to": ["-40", "0"] }
+      ]]
+    },
+    { "id": "blank", "op": "extrude", "profile": "profile", "distance": "76" },
+    {
+      "id": "mouth",
+      "op": "sketch",
+      "plane": { "rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "60.5"] },
+      "loops": [[
+        { "kind": "line", "id": "near", "to": ["32", "-49.335"] },
+        { "kind": "line", "id": "right", "to": ["32", "-26.665"] },
+        { "kind": "line", "id": "far", "to": ["-2", "-26.665"] },
+        { "kind": "line", "id": "left", "to": ["-2", "-49.335"] }
+      ]]
+    },
+    { "id": "pocket-tool", "op": "extrude", "profile": "mouth", "distance": "-35.5" },
+    { "id": "pocket", "op": "boolean", "kind": "subtract", "target": "blank", "tool": "pocket-tool" }
+  ],
+  "result": "pocket"
+}

@@ -4,8 +4,11 @@
 use catallax_numbers::{Decider, Real, Refusal};
 use catallax_shapes::{BSplineCurve, BSplineSurface};
 
-fn real(value: &Real) -> f64 {
-    value.to_f64()
+fn real(value: &Real, dec: &Decider) -> Result<f64, Refusal> {
+    if let Some(value) = value.rational_ref() {
+        return Ok(value.to_f64_nearest());
+    }
+    Ok(super::scalar(value, dec)?.to_f64_nearest())
 }
 
 fn span(knots: &[f64], degree: usize, count: usize, t: f64) -> usize {
@@ -89,8 +92,13 @@ impl Surface64 {
                 dec.check_deadline()?;
             }
             for (p, w) in points.iter().zip(weights) {
-                let w = real(w);
-                controls.push([real(&p.x) * w, real(&p.y) * w, real(&p.z) * w, w]);
+                let w = real(w, dec)?;
+                controls.push([
+                    real(&p.x, dec)? * w,
+                    real(&p.y, dec)? * w,
+                    real(&p.z, dec)? * w,
+                    w,
+                ]);
             }
         }
         Ok(Self {
@@ -99,6 +107,9 @@ impl Surface64 {
             count: source.control_count(),
             controls,
         })
+    }
+    pub fn internal_knots(&self, axis: usize) -> &[f64] {
+        &self.knots[axis][self.degrees[axis] + 1..self.count[axis]]
     }
 
     /// Position and first partial derivatives at a clamped location.
@@ -225,14 +236,22 @@ impl Curve64 {
             if i % 64 == 0 {
                 dec.check_deadline()?;
             }
-            let w = real(w);
-            controls.push([real(&p.x) * w, real(&p.y) * w, real(&p.z) * w, w]);
+            let w = real(w, dec)?;
+            controls.push([
+                real(&p.x, dec)? * w,
+                real(&p.y, dec)? * w,
+                real(&p.z, dec)? * w,
+                w,
+            ]);
         }
         Ok(Self {
             degree: source.degree(),
             knots: source.knots().iter().map(|q| q.to_f64_nearest()).collect(),
             controls,
         })
+    }
+    pub fn internal_knots(&self) -> &[f64] {
+        &self.knots[self.degree + 1..self.controls.len()]
     }
 
     pub fn point(&self, t: f64) -> [f64; 3] {
@@ -280,18 +299,35 @@ pub(super) fn interpolate<const D: usize>(
     values: &[[f64; D]],
     dec: &mut Decider,
 ) -> Result<(Vec<f64>, Vec<[f64; D]>), Refusal> {
+    interpolate_degree::<D, 3, 7>(parameters, values, dec)
+}
+
+pub(super) fn interpolate_quintic<const D: usize>(
+    parameters: &[f64],
+    values: &[[f64; D]],
+    dec: &mut Decider,
+) -> Result<(Vec<f64>, Vec<[f64; D]>), Refusal> {
+    interpolate_degree::<D, 5, 11>(parameters, values, dec)
+}
+
+fn interpolate_degree<const D: usize, const P: usize, const W: usize>(
+    parameters: &[f64],
+    values: &[[f64; D]],
+    dec: &mut Decider,
+) -> Result<(Vec<f64>, Vec<[f64; D]>), Refusal> {
     let n = parameters.len();
-    assert!(n >= 4 && values.len() == n);
-    let mut knots = vec![parameters[0]; 4];
-    knots.extend_from_slice(&parameters[2..n - 2]);
-    knots.extend(std::iter::repeat_n(parameters[n - 1], 4));
+    assert!(n > P && values.len() == n);
+    let skip = P.div_ceil(2);
+    let mut knots = vec![parameters[0]; P + 1];
+    knots.extend_from_slice(&parameters[skip..n - skip]);
+    knots.extend(std::iter::repeat_n(parameters[n - 1], P + 1));
     let width = parameters[n - 1] - parameters[0];
     let chord = |t: f64| -> [f64; D] {
         let share = (t - parameters[0]) / width;
         std::array::from_fn(|c| values[0][c] + share * (values[n - 1][c] - values[0][c]))
     };
-    // Band storage: column j of row i lives at slot j + 3 - i.
-    let mut band = vec![[0.0f64; 7]; n];
+    // Band storage: column j of row i lives at slot j + P - i.
+    let mut band = vec![[0.0f64; W]; n];
     let mut rhs: Vec<[f64; D]> = parameters
         .iter()
         .zip(values)
@@ -302,27 +338,27 @@ pub(super) fn interpolate<const D: usize>(
         .collect();
     for (i, t) in parameters.iter().enumerate() {
         dec.charge_work(1)?;
-        let index = span(&knots, 3, n, *t);
-        let (basis, _) = basis(&knots, 3, index, *t);
+        let index = span(&knots, P, n, *t);
+        let (basis, _) = basis(&knots, P, index, *t);
         for (k, value) in basis.into_iter().enumerate() {
-            let column = index - 3 + k;
-            let slot = column + 3 - i;
+            let column = index - P + k;
+            let slot = column + P - i;
             band[i][slot] = value;
         }
     }
     for k in 0..n {
         dec.charge_work(1)?;
-        let pivot = band[k][3];
+        let pivot = band[k][P];
         if pivot.is_nan() || pivot.abs() <= 1e-300 {
             return Err(Refusal::new(
                 "step.numerical-fit",
                 "interpolation matrix lost a pivot",
             ));
         }
-        for i in k + 1..(k + 4).min(n) {
-            let factor = band[i][k + 3 - i] / pivot;
-            for j in k..(k + 4).min(n) {
-                band[i][j + 3 - i] -= factor * band[k][j + 3 - k];
+        for i in k + 1..(k + P + 1).min(n) {
+            let factor = band[i][k + P - i] / pivot;
+            for j in k..(k + P + 1).min(n) {
+                band[i][j + P - i] -= factor * band[k][j + P - k];
             }
             for c in 0..D {
                 rhs[i][c] -= factor * rhs[k][c];
@@ -332,17 +368,17 @@ pub(super) fn interpolate<const D: usize>(
     let mut controls = vec![[0.0; D]; n];
     for k in (0..n).rev() {
         let mut value = rhs[k];
-        for j in k + 1..(k + 4).min(n) {
+        for j in k + 1..(k + P + 1).min(n) {
             for c in 0..D {
-                value[c] -= band[k][j + 3 - k] * controls[j][c];
+                value[c] -= band[k][j + P - k] * controls[j][c];
             }
         }
         for c in 0..D {
-            controls[k][c] = value[c] / band[k][3];
+            controls[k][c] = value[c] / band[k][P];
         }
     }
     for (i, control) in controls.iter_mut().enumerate() {
-        let line = chord((knots[i + 1] + knots[i + 2] + knots[i + 3]) / 3.0);
+        let line = chord(knots[i + 1..=i + P].iter().sum::<f64>() / P as f64);
         for c in 0..D {
             control[c] += line[c];
         }
@@ -352,8 +388,72 @@ pub(super) fn interpolate<const D: usize>(
     Ok((knots, controls))
 }
 
-/// Joins clamped cubic pieces, each starting where the previous one ends, into
-/// one curve that is C0 at the joins (knot multiplicity three).
+/// A quartic Bezier interpolant through five parameter locations.
+pub(super) fn interpolate_quartic<const D: usize>(
+    parameters: &[f64; 5],
+    values: &[[f64; D]; 5],
+    dec: &mut Decider,
+) -> Result<(Vec<f64>, Vec<[f64; D]>), Refusal> {
+    let width = parameters[4] - parameters[0];
+    let chord = |share: f64| -> [f64; D] {
+        std::array::from_fn(|axis| values[0][axis] + share * (values[4][axis] - values[0][axis]))
+    };
+    let mut matrix = [[0.0; 3]; 3];
+    let mut rhs = [[0.0; D]; 3];
+    for i in 0..3 {
+        dec.charge_work(1)?;
+        let t = (parameters[i + 1] - parameters[0]) / width;
+        let s = 1.0 - t;
+        matrix[i] = [
+            4.0 * t * s * s * s,
+            6.0 * t * t * s * s,
+            4.0 * t * t * t * s,
+        ];
+        let line = chord(t);
+        rhs[i] = std::array::from_fn(|axis| values[i + 1][axis] - line[axis]);
+    }
+    for k in 0..3 {
+        dec.charge_work(1)?;
+        let pivot = matrix[k][k];
+        if !pivot.is_finite() || pivot.abs() <= 1e-300 {
+            return Err(super::fit_failure(
+                "quartic interpolation lost a separated pivot",
+            ));
+        }
+        for i in k + 1..3 {
+            let factor = matrix[i][k] / pivot;
+            for j in k..3 {
+                matrix[i][j] -= factor * matrix[k][j];
+            }
+            for axis in 0..D {
+                rhs[i][axis] -= factor * rhs[k][axis];
+            }
+        }
+    }
+    let mut controls = [[0.0; D]; 5];
+    for k in (0..3).rev() {
+        for axis in 0..D {
+            let mut value = rhs[k][axis];
+            for j in k + 1..3 {
+                value -= matrix[k][j] * controls[j + 1][axis];
+            }
+            controls[k + 1][axis] = value / matrix[k][k];
+        }
+    }
+    for (i, control) in controls.iter_mut().enumerate() {
+        let line = chord(i as f64 / 4.0);
+        for axis in 0..D {
+            control[axis] += line[axis];
+        }
+    }
+    controls[0] = values[0];
+    controls[4] = values[4];
+    let mut knots = vec![parameters[0]; 5];
+    knots.extend(std::iter::repeat_n(parameters[4], 5));
+    Ok((knots, controls.to_vec()))
+}
+
+/// Joins equal-degree clamped pieces with C0 continuity at their shared ends.
 pub(super) fn concatenate<const D: usize>(
     pieces: Vec<(Vec<f64>, Vec<[f64; D]>)>,
 ) -> (Vec<f64>, Vec<[f64; D]>) {
@@ -361,7 +461,8 @@ pub(super) fn concatenate<const D: usize>(
     let mut knots = Vec::new();
     let mut controls = Vec::new();
     for (index, (piece_knots, piece_controls)) in pieces.into_iter().enumerate() {
-        let first = if index == 0 { 0 } else { 4 };
+        let degree = piece_knots.len() - piece_controls.len() - 1;
+        let first = if index == 0 { 0 } else { degree + 1 };
         let last = if index + 1 == count {
             piece_knots.len()
         } else {
@@ -376,13 +477,14 @@ pub(super) fn concatenate<const D: usize>(
 /// Binary64 evaluation of an [`interpolate`] result.
 pub(super) fn evaluate<const D: usize>(knots: &[f64], controls: &[[f64; D]], t: f64) -> [f64; D] {
     let n = controls.len();
-    let t = t.clamp(knots[3], knots[n]);
-    let index = span(knots, 3, n, t);
-    let (basis, _) = basis(knots, 3, index, t);
+    let degree = knots.len() - n - 1;
+    let t = t.clamp(knots[degree], knots[n]);
+    let index = span(knots, degree, n, t);
+    let (basis, _) = basis(knots, degree, index, t);
     let mut result = [0.0; D];
     for (k, value) in basis.into_iter().enumerate() {
         for c in 0..D {
-            result[c] += value * controls[index - 3 + k][c];
+            result[c] += value * controls[index - degree + k][c];
         }
     }
     result
@@ -418,6 +520,72 @@ mod tests {
             &mut Decider::default(),
         )
         .unwrap()
+    }
+    #[test]
+    fn retained_curve_and_surface_proposals_refine_algebraic_controls_and_weights() {
+        let offset = Real::from(Rational::parse("1000000000000333333333333").unwrap()).sqrt()
+            - Real::from_i64(1_000_000_000_000);
+        let point = |x, y| {
+            Point3::new(
+                &offset + &Real::from_i64(x),
+                Real::from_i64(y),
+                Real::zero(),
+            )
+        };
+        let mut dec = Decider::default();
+        let source = BSplineSurface::new(
+            [1, 1],
+            std::array::from_fn(|_| {
+                vec![
+                    Rational::zero(),
+                    Rational::zero(),
+                    Rational::one(),
+                    Rational::one(),
+                ]
+            }),
+            [2, 2],
+            vec![point(0, 0), point(0, 1), point(1, 0), point(1, 1)],
+            (0..4)
+                .map(|i| Real::one() + &offset * &Real::from_i64(i))
+                .collect(),
+            &mut dec,
+        )
+        .unwrap();
+        let surface = Surface64::new(&source, &mut dec).unwrap();
+        let boundary = BSplineCurve::boundary(&source, SplineBoundary::UMin);
+        let curve = Curve64::new(&boundary, &mut dec).unwrap();
+        let mut error = 0.0_f64;
+        for [u, v] in [[1, 2], [4, 6], [7, 5]] {
+            let u = Rational::from_ratio(u, 8).unwrap();
+            let v = Rational::from_ratio(v, 8).unwrap();
+            let expected = source
+                .evaluate_box([&u, &u], [&v, &v], 128, &dec)
+                .unwrap()
+                .each_ref()
+                .map(|value| value.mid().to_f64_nearest());
+            error = error.max(distance(
+                surface.point([u.to_f64_nearest(), v.to_f64_nearest()]),
+                expected,
+            ));
+            let expected = boundary
+                .evaluate_box([&v, &v], 128, &dec)
+                .unwrap()
+                .each_ref()
+                .map(|value| value.mid().to_f64_nearest());
+            error = error.max(distance(curve.point(v.to_f64_nearest()), expected));
+        }
+        assert!(
+            error <= 2.5e-8,
+            "retained geometry proposal error={error:e} mm"
+        );
+        println!(
+            "refined proposal error={error:e} mm; coarse offset error={:e} mm",
+            (offset.to_f64()
+                - super::super::scalar(&offset, &dec)
+                    .unwrap()
+                    .to_f64_nearest())
+            .abs()
+        );
     }
 
     #[test]

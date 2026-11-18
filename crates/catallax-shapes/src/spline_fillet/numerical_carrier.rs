@@ -10,6 +10,13 @@ use crate::BSplineSurface;
 const ROWS: usize = 16;
 type Packed = [Rational; ROWS];
 
+#[cfg(test)]
+#[path = "numerical_carrier/tests.rs"]
+mod tests;
+
+#[path = "numerical_carrier/validation.rs"]
+mod validation;
+
 /// A numerical rolling-ball carrier and its checked native parameter rails.
 #[derive(Clone, Debug)]
 pub struct NumericalSplineFillet {
@@ -34,9 +41,7 @@ fn packed(
         let at = node.parameters[side]
             .each_ref()
             .map(Rational::to_f64_nearest);
-        let (_, chart) = support.chart(at)?;
-        dec.charge_work(chart.evaluation_work())?;
-        let (point, normal) = chart.contact_f64(at);
+        let (point, normal) = support.contact_f64(at, dec)?;
         points[side] = point;
         let sign = if support.distance.sign() == Sign::Negative {
             1.0
@@ -75,31 +80,44 @@ fn packed(
     Ok(result)
 }
 
-/// Derivatives of the local three-station interpolating quadratic. In
-/// particular, end derivatives are not first-order secants.
+/// Derivatives of the local interpolant through up to five stations. Quartic
+/// endpoint jets avoid the third-order position error of quadratic slopes.
 pub(super) fn station_slopes<'a, const N: usize>(
     count: usize,
     parameter: impl Fn(usize) -> &'a Rational,
     values: impl Fn(usize) -> &'a [Rational; N],
 ) -> Vec<[Rational; N]> {
+    assert!(count >= 3);
+    let width = count.min(5);
     let mut slopes = Vec::with_capacity(count);
     for i in 0..count {
-        let a = i.saturating_sub(1).min(count - 3);
-        let h0 = parameter(a + 1) - parameter(a);
-        let h1 = parameter(a + 2) - parameter(a + 1);
-        let width = &h0 + &h1;
-        slopes.push(std::array::from_fn(|j| {
-            let d0 = (&values(a + 1)[j] - &values(a)[j]) / h0.clone();
-            let d1 = (&values(a + 2)[j] - &values(a + 1)[j]) / h1.clone();
-            let numerator = if i == 0 {
-                &(&(&h0 + &width) * &d0) - &(&h0 * &d1)
-            } else if i + 1 == count {
-                &(&(&h1 + &width) * &d1) - &(&h1 * &d0)
-            } else {
-                &(&h1 * &d0) + &(&h0 * &d1)
-            };
-            numerator / width.clone()
-        }));
+        let first = i.saturating_sub(width / 2).min(count - width);
+        let at = parameter(i);
+        let base = values(i);
+        let mut derivative = std::array::from_fn(|_| Rational::zero());
+        for j in first..first + width {
+            if j == i {
+                continue;
+            }
+            let x = parameter(j);
+            let mut numerator = Rational::one();
+            let mut denominator = x - at;
+            for k in first..first + width {
+                if k == i || k == j {
+                    continue;
+                }
+                let other = parameter(k);
+                numerator = numerator * (at - other);
+                denominator = denominator * (x - other);
+            }
+            let weight = numerator / denominator;
+            let sample = values(j);
+            for coordinate in 0..N {
+                derivative[coordinate] = &derivative[coordinate]
+                    + &(&weight * &(&sample[coordinate] - &base[coordinate]));
+            }
+        }
+        slopes.push(derivative);
     }
     slopes
 }
@@ -136,6 +154,7 @@ struct Candidate {
     surface: BSplineSurface,
     rails: [BSplineCurve; 2],
     parameters: [BSplineCurve; 2],
+    data: Vec<Packed>,
 }
 fn candidate(
     nodes: &[NumericalSpineNode],
@@ -143,13 +162,28 @@ fn candidate(
     dec: &mut Decider,
 ) -> Result<Candidate, Refusal> {
     dec.charge_work((nodes.len() as u64) * 128)?;
-    let (knots, data) = hermite(nodes, |i| &values[i]);
-    let mut controls = Vec::with_capacity(3 * data.len());
-    let mut weights = Vec::with_capacity(3 * data.len());
-    let mut rail_points: [Vec<Point3>; 2] = std::array::from_fn(|_| Vec::with_capacity(data.len()));
-    let mut rail_weights: [Vec<Real>; 2] = std::array::from_fn(|_| Vec::with_capacity(data.len()));
-    let mut parameters: [Vec<Point3>; 2] = std::array::from_fn(|_| Vec::with_capacity(data.len()));
-    for entry in &data {
+    let (mut knots, data) = hermite(nodes, |i| &values[i]);
+    // The two handles at an interior station share the exact homogeneous jet.
+    // Inserting a third knot recovers P = (h_right * left + h_left * right)
+    // / (h_left + h_right). Remove that redundant endpoint and knot instead:
+    // the same surface is then C1 by its spline basis, not a proved C0 seam.
+    let last_clamp = knots.len() - 4;
+    let mut position = 0;
+    knots.retain(|_| {
+        let keep = position < 4 || position >= last_clamp || (position - 4) % 3 < 2;
+        position += 1;
+        keep
+    });
+    let count = 2 * nodes.len();
+    let mut controls = Vec::with_capacity(3 * count);
+    let mut weights = Vec::with_capacity(3 * count);
+    let mut rail_points: [Vec<Point3>; 2] = std::array::from_fn(|_| Vec::with_capacity(count));
+    let mut rail_weights: [Vec<Real>; 2] = std::array::from_fn(|_| Vec::with_capacity(count));
+    let mut parameters: [Vec<Point3>; 2] = std::array::from_fn(|_| Vec::with_capacity(count));
+    for (index, entry) in data.iter().enumerate() {
+        if index != 0 && index + 1 != data.len() && index % 3 == 0 {
+            continue;
+        }
         for row in 0..3 {
             let weight = &entry[4 * row + 3];
             if weight.sign() != Sign::Positive {
@@ -178,7 +212,6 @@ fn candidate(
             ));
         }
     }
-    let count = data.len();
     let surface = BSplineSurface::new(
         [3, 2],
         [
@@ -205,6 +238,7 @@ fn candidate(
         surface,
         rails,
         parameters,
+        data,
     })
 }
 fn section(row: &Packed, parameter: &Rational) -> [Rational; 3] {
@@ -228,26 +262,16 @@ fn distance(point: &[Ball; 3], target: &[Rational; 3]) -> Rational {
 }
 fn rail_error(
     problem: &Problem,
-    candidate: &Candidate,
-    tau: &Rational,
+    point: &[Ball; 3],
+    at: &[Rational; 2],
     side: usize,
     dec: &mut Decider,
 ) -> Result<Rational, Refusal> {
-    let uv = candidate.parameters[side].evaluate_box([tau, tau], 128, dec)?;
-    let at = [uv[0].mid(), uv[1].mid()];
-    let support = &problem.supports[side];
-    let (_, chart) = support.chart(at.each_ref().map(Rational::to_f64_nearest))?;
-    let mut meter = Meter::default();
-    let contact = chart.contact(
-        &at.each_ref().map(|p| Jet::constant(ball(p), 0)),
-        &mut meter,
-    )?;
-    meter.charge(dec)?;
-    let point = candidate.rails[side].evaluate_box([tau, tau], 128, dec)?;
+    let contact = problem.supports[side].contact(at, dec)?;
     Ok((0..3).fold(Rational::zero(), |sum, i| {
-        sum + (&point[i].lo() - &contact.point[i].0[0].hi())
+        sum + (&point[i].lo() - &contact.point[i].hi())
             .abs()
-            .max((&point[i].hi() - &contact.point[i].0[0].lo()).abs())
+            .max((&point[i].hi() - &contact.point[i].lo()).abs())
     }))
 }
 
@@ -264,6 +288,7 @@ impl NumericalSplineFillet {
             ));
         }
         let mut samples = 0;
+        let basis = validation::Basis::new();
         for round in 0..=MAX_DEPTH {
             let values = spine
                 .nodes
@@ -275,37 +300,42 @@ impl NumericalSplineFillet {
             let mut upper = Rational::zero();
             let mut centre_upper = Rational::zero();
             for (index, pair) in spine.nodes.windows(2).enumerate() {
+                let span = validation::Span::new(
+                    fitted.data[3 * index..3 * index + 4]
+                        .try_into()
+                        .expect("one cubic span has four control rows"),
+                );
                 let mut span_upper = Rational::zero();
                 let mut middle = None;
-                for i in 1..4 {
-                    let share = Rational::from_ratio(i, 4).unwrap();
-                    let tau = &pair[0].tau + &(&(&pair[1].tau - &pair[0].tau) * &share);
+                for (quarter, share) in basis.shares.iter().enumerate() {
+                    let tau = &pair[0].tau + &(&(&pair[1].tau - &pair[0].tau) * share);
                     let node = spine.problem.solve(
                         &tau,
-                        spine.problem.guess(&pair[0], &pair[1], i as f64 / 4.0),
+                        spine
+                            .problem
+                            .guess(&pair[0], &pair[1], (quarter + 1) as f64 / 4.0),
                         dec,
                     )?;
                     let centre_error = spine.centre_error(&node, dec)?;
                     span_upper = span_upper.max(centre_error.clone());
                     centre_upper = centre_upper.max(centre_error);
                     let truth = packed(&spine.problem, &node, dec)?;
-                    for j in 0..=4 {
-                        let section_at = Rational::from_ratio(j, 4).unwrap();
-                        let actual = fitted.surface.evaluate_box(
-                            [&tau, &tau],
-                            [&section_at, &section_at],
-                            128,
-                            dec,
-                        )?;
-                        let error = distance(&actual, &section(&truth, &section_at));
+                    let actual = span.at(quarter, &basis)?;
+                    for (j, section_at) in basis.section_shares.iter().enumerate() {
+                        let error = distance(&actual.points[j], &section(&truth, section_at));
                         span_upper = span_upper.max(error);
                         samples += 1;
                     }
                     for side in 0..2 {
-                        span_upper =
-                            span_upper.max(rail_error(&spine.problem, &fitted, &tau, side, dec)?);
+                        span_upper = span_upper.max(rail_error(
+                            &spine.problem,
+                            &actual.points[side * 4],
+                            &actual.parameters[side],
+                            side,
+                            dec,
+                        )?);
                     }
-                    if i == 2 {
+                    if quarter == 1 {
                         middle = Some(node);
                     }
                 }
@@ -315,11 +345,23 @@ impl NumericalSplineFillet {
                 upper = upper.max(span_upper);
             }
             if inserted.is_empty() {
-                let [surface] = <[_; 1]>::try_from(RationalAtlas::partition(
-                    fitted.surface,
-                    [false, false],
-                    dec,
-                )?)
+                // These homogeneous coefficients are exact rationals. Cancel
+                // derivative numerators before enclosure: raw quotient jets
+                // lose the position/weight correlation on thin curved strips.
+                let [surface] = <[_; 1]>::try_from(
+                    RationalAtlas::partition_with_polynomial_bounds(fitted.surface, [false, false], dec)
+                        .map_err(|mut error| {
+                            let smallest = spine.nodes.windows(2)
+                                .map(|pair| &pair[1].tau - &pair[0].tau)
+                                .min().expect("a fitted strip has longitudinal spans");
+                            error.detail = format!(
+                                "fitted rolling strip ({} stations, minimum parameter span {:.6e}, maximum sampled residual {:.6e} mm): {}",
+                                spine.nodes.len(), smallest.to_f64_nearest(),
+                                upper.to_f64_nearest(), error.detail,
+                            );
+                            error
+                        })?,
+                )
                 .map_err(|_| {
                     bad("numerical fillet carrier does not form one regular G1 logical face")
                 })?;

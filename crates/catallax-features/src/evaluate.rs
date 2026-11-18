@@ -14,6 +14,12 @@ use std::{
     sync::Arc,
 };
 
+#[path = "evaluate_numerical_fillet.rs"]
+mod numerical_fillet;
+pub use numerical_fillet::{
+    EvaluationOutcome, NumericalFilletEvaluation, evaluate_incremental_outcome,
+};
+
 /// Immutable STEP, IGES and mesh source bytes, keyed by the SHA-256 saved in the recipe.
 /// File names are labels, not paths the evaluator opens.
 pub type ImportFiles<'a> = BTreeMap<String, &'a [u8]>;
@@ -394,6 +400,7 @@ pub fn evaluate(recipe: &Recipe, dec: &mut Decider) -> Result<Built, BuildError>
         None,
         EvaluationState::default(),
         0,
+        None,
         dec,
     )
     .map(|state| state.finish(Arc::new(recipe.clone())))
@@ -470,13 +477,19 @@ pub fn evaluate_with_numerical_hole(
     hole_request(recipe, || {
         match numerical_hole_impl(recipe, None, options, dec)? {
             HoleAttempt::Numerical(built) => Ok(HoleEvaluation::Numerical(built)),
-            HoleAttempt::Standard { state, start } => {
-                evaluate_impl(recipe, &ImportFiles::new(), None, None, *state, start, dec).map(
-                    |state| {
-                        HoleEvaluation::Standard(Box::new(state.finish(Arc::new(recipe.clone()))))
-                    },
-                )
-            }
+            HoleAttempt::Standard { state, start } => evaluate_impl(
+                recipe,
+                &ImportFiles::new(),
+                None,
+                None,
+                *state,
+                start,
+                None,
+                dec,
+            )
+            .map(|state| {
+                HoleEvaluation::Standard(Box::new(state.finish(Arc::new(recipe.clone()))))
+            }),
         }
     })
 }
@@ -573,6 +586,7 @@ fn numerical_hole_impl(
         None,
         EvaluationState::default(),
         0,
+        None,
         dec,
     )?;
     let after_prefix = catallax_numbers::current_operation_work().used;
@@ -666,6 +680,7 @@ pub fn evaluate_with_files(
         None,
         EvaluationState::default(),
         0,
+        None,
         dec,
     )
     .map(|state| state.finish(Arc::new(recipe.clone())))
@@ -696,7 +711,17 @@ pub fn evaluate_incremental_with_files(
     files: &ImportFiles<'_>,
     dec: &mut Decider,
 ) -> Result<EvaluationCheckpoint, BuildError> {
-    let (state, start) = match prefix {
+    let (state, start) = resume_state(recipe, prefix, dec);
+    let state = evaluate_impl(recipe, files, None, None, state, start, None, dec)?;
+    Ok(checkpoint(state, recipe, dec))
+}
+
+fn resume_state(
+    recipe: &Recipe,
+    prefix: Option<EvaluationCheckpoint>,
+    dec: &Decider,
+) -> (EvaluationState, usize) {
+    match prefix {
         Some(prefix)
             if prefix.policy == *dec.policy()
                 && prefix.built.recipe().format == recipe.format
@@ -706,18 +731,20 @@ pub fn evaluate_incremental_with_files(
             (prefix.into_state(), start)
         }
         _ => (EvaluationState::default(), 0),
-    };
-    let mut state = evaluate_impl(recipe, files, None, None, state, start, dec)?;
+    }
+}
+
+fn checkpoint(mut state: EvaluationState, recipe: &Recipe, dec: &Decider) -> EvaluationCheckpoint {
     let profiles = std::mem::take(&mut state.profiles);
     let paths = std::mem::take(&mut state.paths);
     let bodies = state.bodies.clone();
-    Ok(EvaluationCheckpoint {
+    EvaluationCheckpoint {
         built: Arc::new(state.finish(Arc::new(recipe.clone()))),
         profiles,
         paths,
         bodies,
         policy: *dec.policy(),
-    })
+    }
 }
 
 /// Opts into the recorded 1 nm modelling policy and the first complete bounded
@@ -734,6 +761,7 @@ pub fn evaluate_certified(
         None,
         EvaluationState::default(),
         0,
+        None,
         dec,
     )?;
     let built = state.finish(
@@ -749,6 +777,7 @@ pub fn evaluate_certified(
         })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn evaluate_impl(
     recipe: &Recipe,
     files: &ImportFiles<'_>,
@@ -756,6 +785,7 @@ fn evaluate_impl(
     mut numerical_sweep: Option<&mut crate::general_sweep::Context>,
     state: EvaluationState,
     start: usize,
+    mut numerical: Option<&mut numerical_fillet::Context>,
     dec: &mut Decider,
 ) -> Result<EvaluationState, BuildError> {
     recipe.check().map_err(BuildError::Recipe)?;
@@ -857,6 +887,9 @@ fn evaluate_impl(
         let mut build = |model: &mut Model,
                          dec: &mut Decider|
          -> Result<Option<BodyValue>, Refusal> {
+            if let Some(context) = numerical.as_deref() {
+                context.exact_inputs(step)?;
+            }
             if let Some((body, radius)) = crate::stock::build(model, &step.op, &step.id, dec)? {
                 return Ok(Some(BodyValue { body, radius }));
             }
@@ -1426,7 +1459,7 @@ fn evaluate_impl(
                     corner,
                 } => {
                     let target = &bodies[body];
-                    let (body, definitions) =
+                    let mut exact = |model: &mut Model, dec: &mut Decider| {
                         if let Some(catallax_recipe::FilletOverflow::KeepNeighbours(limits)) =
                             overflow
                         {
@@ -1438,7 +1471,7 @@ fn evaluate_impl(
                                 limits,
                                 &step.id,
                                 dec,
-                            )?
+                            )
                         } else {
                             crate::fillet_build::build(
                                 model,
@@ -1451,8 +1484,39 @@ fn evaluate_impl(
                                 &fillets,
                                 &mut consumed,
                                 dec,
-                            )?
-                        };
+                            )
+                        }
+                    };
+                    let (body, definitions) = match numerical.as_deref_mut() {
+                        None => exact(model, dec)?,
+                        // The exact builders are an optional proof of the
+                        // same fillet: a body they finish is the exact result,
+                        // charged as it always was. A refusal of theirs is no
+                        // verdict on the fillet and returns what it charged,
+                        // so the rolling-ball construction keeps the whole
+                        // allowance it found.
+                        Some(context) => {
+                            match catallax_numbers::refund_on_refusal(|| exact(model, dec)) {
+                                Ok(result) => result,
+                                Err(refusal) => {
+                                    context.fillet(
+                                        model,
+                                        target,
+                                        edges,
+                                        radius.value(),
+                                        overflow.as_ref(),
+                                        *corner,
+                                        &fillets,
+                                        &step.id,
+                                        recipe,
+                                        refusal,
+                                        dec,
+                                    )?;
+                                    return Ok(None);
+                                }
+                            }
+                        }
+                    };
                     fillets.extend(definitions);
                     BodyValue {
                         body,
@@ -1805,10 +1869,11 @@ fn evaluate_impl(
             Ok(None)
         } else {
             build(&mut model, dec).map(|body| {
-                let body = body.expect("body-producing operation");
-                let id = body.body;
-                bodies.insert(step.id.clone(), body);
-                Some(id)
+                body.map(|body| {
+                    let id = body.body;
+                    bodies.insert(step.id.clone(), body);
+                    id
+                })
             })
         };
         span.finish(
@@ -1898,6 +1963,7 @@ pub(crate) fn numerical_sweep_impl(
         Some(context),
         EvaluationState::default(),
         0,
+        None,
         dec,
     )?;
     let body = state.bodies[&recipe.result].body;

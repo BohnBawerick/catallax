@@ -296,6 +296,9 @@ pub fn annulus(outer_radius: &str) -> NumericalDefinition {
     for edge in &mut d.edges {
         edge.vertices = edge.vertices.map(|vertex| vertex - 8);
     }
+    for face in d.faces.iter_mut().take(2) {
+        face.loops[0].clear();
+    }
     for face in &mut d.faces {
         for trim in face.loops.iter_mut().flatten() {
             trim.edge -= 12;

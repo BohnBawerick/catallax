@@ -1,0 +1,219 @@
+{
+  "format": "catallax-recipe/5",
+  "name": "SolidDraft demo part, boss foot arc",
+  "result": "op_144",
+  "steps": [
+    {
+      "id": "op_1",
+      "loops": [
+        [
+          {
+            "id": "l0s0",
+            "kind": "line",
+            "to": [
+              "60",
+              "-45"
+            ]
+          },
+          {
+            "id": "l0s1",
+            "kind": "line",
+            "to": [
+              "60",
+              "45"
+            ]
+          },
+          {
+            "id": "l0s2",
+            "kind": "line",
+            "to": [
+              "-60",
+              "45"
+            ]
+          },
+          {
+            "id": "l0s3",
+            "kind": "line",
+            "to": [
+              "-60",
+              "-45"
+            ]
+          }
+        ]
+      ],
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "-1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "direction": [
+        "0",
+        "0",
+        "1"
+      ],
+      "distance": "10",
+      "id": "op_3",
+      "op": "extrude",
+      "profile": "op_1"
+    },
+    {
+      "id": "op_31",
+      "loops": [
+        [
+          {
+            "id": "l0s0",
+            "kind": "line",
+            "to": [
+              "60",
+              "-30"
+            ]
+          },
+          {
+            "id": "l0s1",
+            "kind": "line",
+            "to": [
+              "60",
+              "30"
+            ]
+          },
+          {
+            "id": "l0s2",
+            "kind": "line",
+            "to": [
+              "-60",
+              "30"
+            ]
+          },
+          {
+            "id": "l0s3",
+            "kind": "line",
+            "to": [
+              "-60",
+              "-30"
+            ]
+          }
+        ]
+      ],
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "-1",
+          "-1",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "direction": [
+        "0",
+        "1",
+        "0"
+      ],
+      "distance": "10",
+      "id": "op_33",
+      "op": "extrude",
+      "profile": "op_31"
+    },
+    {
+      "id": "op_61",
+      "kind": "union",
+      "op": "boolean",
+      "target": "op_3",
+      "tool": "op_33"
+    },
+    {
+      "id": "op_101",
+      "loops": [
+        [
+          {
+            "centre": [
+              "0",
+              "0"
+            ],
+            "id": "l0s0",
+            "kind": "circle",
+            "radius": "12"
+          }
+        ]
+      ],
+      "op": "sketch",
+      "plane": {
+        "rotation": [
+          "-1",
+          "0",
+          "0",
+          "0"
+        ],
+        "translation": [
+          "0",
+          "0",
+          "0"
+        ]
+      }
+    },
+    {
+      "direction": [
+        "0",
+        "0",
+        "1"
+      ],
+      "distance": "24",
+      "id": "op_103",
+      "op": "extrude",
+      "profile": "op_101"
+    },
+    {
+      "id": "op_110",
+      "kind": "union",
+      "op": "boolean",
+      "target": "op_61",
+      "tool": "op_103"
+    },
+    {
+      "body": "op_110",
+      "edges": [
+        {
+          "between": [
+            {
+              "role": {
+                "side": {
+                  "segment": "l0s0"
+                }
+              },
+              "step": "op_103"
+            },
+            {
+              "role": "end",
+              "step": "op_3"
+            }
+          ],
+          "near": [
+            "0",
+            "12",
+            "10"
+          ]
+        }
+      ],
+      "id": "op_144",
+      "op": "fillet",
+      "radius": "1"
+    }
+  ]
+}

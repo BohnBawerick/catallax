@@ -159,6 +159,29 @@ pub(crate) fn evaluate(value: &Value, source: &str, out: &Path) -> io::Result<Va
     )
 }
 
+/// Whether the numerical STEP writers have a form for every surface of
+/// `body`: planes, cylinders, cones, spheres, ring tori and retained rational
+/// patches or atlases. The embedding itself takes more, a polynomial spline
+/// among them, so that a fillet can read its source body; a body it takes
+/// that no writer can emit keeps its exact refusal rather than paying for an
+/// embedding and reporting the writer's.
+fn written(model: &catallax_topology::Model, body: catallax_topology::BodyId) -> bool {
+    use catallax_shapes::{SplineSupport, Surface};
+    model.faces_of_body(body).into_iter().all(|face| {
+        matches!(
+            model.geom().surface(model.face(face).surface),
+            Surface::Plane(_)
+                | Surface::Cylinder(_)
+                | Surface::Cone(_)
+                | Surface::Sphere(_)
+                | Surface::Torus(_)
+                | Surface::BSpline(
+                    SplineSupport::RationalPatch(_) | SplineSupport::RationalAtlas(_)
+                )
+        )
+    })
+}
+
 /// Numerical-first STEP for an exact recipe body whose geometry has no exact
 /// STEP form (ROADMAP "Numerical first"). The tolerance is the exact writer's
 /// requested curve tolerance, fixed before any embedding work. `None` keeps
@@ -171,7 +194,7 @@ pub(crate) fn embedded_exact(
     out: &Path,
     dec: &mut Decider,
 ) -> io::Result<Option<Result<Value, catallax_numbers::Refusal>>> {
-    if !catallax_features::numerical_embedding::embeds(model, body) {
+    if !catallax_features::numerical_embedding::embeds(model, body) || !written(model, body) {
         return Ok(None);
     }
     let tolerance = catallax_step::StepOptions::default().curve_tolerance;

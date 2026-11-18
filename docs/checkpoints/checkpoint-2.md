@@ -1,6 +1,6 @@
 # Checkpoint 2
 
-Status: reconciliation in progress. Numbers are draft until the cut run after the SolidDraft catch-up lands. This report gathers results; the owner chooses the next order. It does not close milestones whose acceptance still refuses.
+Status: final. The cut measures [Catallax v0.4.0](https://github.com/BohnBawerick/catallax/releases/tag/v0.4.0), commit `6aac740b4e8cf70c2ada3749fda5cc3f0f8d1062`, once for the scoreboard and once for the default-tier census. Dry-run measurements remain separately labelled. This report gathers results; the owner chooses the next order. It does not close milestones whose acceptance still refuses.
 
 ## How to rerun
 
@@ -15,6 +15,8 @@ The scoreboard retains the phase-2 definitions fixed in [the measures PR](https:
 
 The census command now calls the existing `opened_import_census.py` build and collector. It measures the default per-body importer, including tolerant bodies and selected whole-source export, rather than rerunning the legacy all-or-nothing import entry. Two workers, 20M opening work, aggregate 20M export work, a 60-second observation cap and 6,144 MiB per observer remain unchanged. The collector binds the same 3,000 source hashes and selection. Each command writes its Markdown table and raw receipts outside the checkout.
 
+The final cut used the exact clean v0.4.0 checkout, not the newer main branch. Since the tag predates this wrapper change, the committed wrapper from this PR was loaded into the pinned OCP interpreter with `__file__` pointing at that checkout's checkpoint script. The collector, geometry sources, build receipts and reported revision all came from v0.4.0. No file in the measured checkout was changed.
+
 ## Coverage count
 
 The last capability count remains 55% of 61 lines, from 14 Nov. This report does not turn merged APIs into a new percentage without the line-by-line recount. The scoreboard and census measure completed parts and files, not the capability percentage.
@@ -25,9 +27,9 @@ One definition of done, unchanged from Checkpoint 1: the original and edited tar
 
 Catallax gets 100M work per phase. Each engine gets 120 seconds, with one warmup and one measured sample. The curved housing also reports the raw healing-off read separately; that extra read does not change the fixed scoreboard gate.
 
-### Dry run, draft numbers
+### Cut run, v0.4.0
 
-Main `403081f8`, 18 Nov 2026. The unchanged scoreboard completed end to end in 898.91 seconds, 15.0 minutes, including its build. These are not final cut numbers.
+The exact v0.4.0 scoreboard completed end to end in 903.46 seconds, 15.1 minutes, including its build. One warmup and one measured sample per engine, with the allowances above.
 
 | Target | Catallax | OpenCASCADE | SMLib | Catallax work, build / edit | Names |
 | --- | --- | --- | --- | ---: | --- |
@@ -66,6 +68,10 @@ Main `403081f8`, 18 Nov 2026. The unchanged scoreboard completed end to end in 8
 
 The three corrected drill locations explain the census-chain gain from Checkpoint 1's 6/10 to 9/10 in Catallax; this is a repaired measure, not three newly implemented kernel families. P0 to P5 remain 10/13. Both reference kernels complete the three new targets, but their curved-housing exports fail the separately reported healing-off read at 1e-7 mm.
 
+### Dry run, retained for comparison
+
+Main `403081f8`, 18 Nov 2026. The unchanged scoreboard completed in 898.91 seconds, 15.0 minutes, including its build. Every target verdict, Catallax work count, names result and reference-kernel verdict is identical to the cut table above. These were draft numbers before the cut; they are not a second final measurement.
+
 ## STEP census
 
 The headline is complete-source, occurrence-preserving, all-solids-valid export. An isolated valid prototype is not a whole-file pass. The report also keeps any observed valid solid, prototype-only validity and incomplete observation separate.
@@ -78,9 +84,11 @@ Certified bodies, checked numerical bodies and sampled-native tolerant bodies ar
 
 The phase-2 import evidence needs particular care. [The per-body repair PR](https://github.com/BohnBawerick/catallax/pull/697) rejected its earlier native-first ordering after it lost former checked admissions. Its corrected targeted observations and 114-file selected-document checks are evidence at their recorded producers, not a full census of the final merged main. The new checkpoint run, not a sum of those cohorts, supplies the current headline.
 
-### Default-tier dry run, draft numbers
+### Cut run, v0.4.0
 
-Main kernel `403081f8` with checkpoint tooling `75b9bc2a`, 18 Nov 2026. The one-command run completed in 2,014.26 seconds, 33.6 minutes, including its build. The collector evaluated all 3,000 sources. Its `acceptance_passed` is true, with zero tier losses, zero frozen valid-export losses and zero unmeasured baseline items against its frozen 405-full-admission / 374-valid-prototype baseline. That historical baseline has no per-body tier inventories: all 3,000 tier comparisons are unknown. Acceptance therefore does not prove same-body tier preservation against later phase-2 producers.
+The exact v0.4.0 default-tier census completed in 2,040.71 seconds, 34.0 minutes, including its build. All 3,000 rows were collected. Its `acceptance_passed` is true, with zero tier losses, zero frozen valid-export losses and zero unmeasured baseline items against its frozen 405-full-admission / 374-valid-prototype baseline. That historical baseline has no per-body tier inventories: all 3,000 tier comparisons are unknown. Acceptance therefore does not prove same-body tier preservation against later phase-2 producers.
+
+The final census observer binary has SHA-256 `033aa7630ce8ea84ea42a9179253acf77d45c3bc4f5bda98f7dbc066db8286e5`.
 
 | Measure | Files | Share of 3,000 |
 | --- | ---: | ---: |
@@ -137,6 +145,10 @@ The eight export-refused rows comprise three work-budget refusals and five `impo
 
 These are first blockers per body, not additive file causes or predicted gains from a fix. Body-stage inventories are unavailable for 43 files. Work exhaustion is a resource outcome, not proof of bad geometry.
 
+### Default-tier dry run, retained for comparison
+
+Main kernel `403081f8` with checkpoint tooling `75b9bc2a`, 18 Nov 2026. The one-command run completed in 2,014.26 seconds, 33.6 minutes, including its build. Its opening and export outcomes, proof-group totals, body blockers, unknown-verdict IDs and baseline acceptance fields are identical to the cut run above.
+
 ### Legacy dry run, historical protocol
 
 The unchanged legacy command also completed end to end on main `403081f8`, 18 Nov 2026, in 1,003.88 seconds, 16.7 minutes. It records 647 full admissions, five partials, 2,346 refusals and two import timeouts. Of the full admissions, 601 export valid after builder processing, 40 export invalid, five refuse at the export work limit and one times out. The 652 admitted files are labelled 190 certified and 462 numerical approximate by that old entry.
@@ -162,11 +174,17 @@ No previously valid file is measured lost against the old 369-file reference. Im
 | 2.5 direct edits | [Delete a face, fillet or hole; move, offset or replace a face](https://github.com/BohnBawerick/catallax/pull/687), retaining the original admitted source and publishing reconstructed candidates atomically. | Kernel/library API, not a recipe or SolidDraft command. Six real-import artifact pairs were qualified before review corrections; current focused controls are separate. Do not claim that historical six-pair run was repeated on final main. |
 | Import resolve lane | [Multiple holes and complete circular rims](https://github.com/BohnBawerick/catallax/pull/680), [numerical export checks](https://github.com/BohnBawerick/catallax/pull/682), [cylindrical period charts](https://github.com/BohnBawerick/catallax/pull/684), [default native tolerant solids](https://github.com/BohnBawerick/catallax/pull/691), [torus, offset and extrusion families](https://github.com/BohnBawerick/catallax/pull/692), then [checked-first per-body repair and selected-document export](https://github.com/BohnBawerick/catallax/pull/697). | Checked, numerical, sampled-native and retained surfaces remain different authorities. Cap-certified incidence records conservative upper bounds, not measured residuals. Mixed geometry units across prototypes still refuse. |
 | Display and edit fixes | [Reuse unchanged face triangulations](https://github.com/BohnBawerick/catallax/pull/689), [preserve authored legacy sketch endpoints](https://github.com/BohnBawerick/catallax/pull/690) and [correct analytic triangulation metrics](https://github.com/BohnBawerick/catallax/pull/696). | No general click-latency qualification follows. Mesh bounds and refused display results remain explicit. |
-| App alongside | [Surface import display and import health](https://github.com/ZIGRAWBOHNBAWERICK/soliddraft/pull/329), [immediate Cancel and import-message corrections](https://github.com/ZIGRAWBOHNBAWERICK/soliddraft/pull/335), [numerical bodies retained as approximate](https://github.com/ZIGRAWBOHNBAWERICK/soliddraft/pull/336), and the display repin. | The final [fillet acceptance and repin](https://github.com/ZIGRAWBOHNBAWERICK/soliddraft/pull/339) is catch-up work at the start of reconciliation. Its merge status is checked at the cut. The two kernel commands do not prove app build/edit/Undo/save/reopen behavior. |
+| App alongside | [Surface import display and import health](https://github.com/ZIGRAWBOHNBAWERICK/soliddraft/pull/329), [immediate Cancel and import-message corrections](https://github.com/ZIGRAWBOHNBAWERICK/soliddraft/pull/335), [numerical bodies retained as approximate](https://github.com/ZIGRAWBOHNBAWERICK/soliddraft/pull/336), the display repin, and [fillet acceptance and repin](https://github.com/ZIGRAWBOHNBAWERICK/soliddraft/pull/339), merged 18 Nov. | The catch-up proves the rim's display, Undo, save/reopen, radius edit, refused edit and export at its recorded pin. The two kernel commands do not independently rerun those app actions. |
+
+## App
+
+[The merged fillet catch-up](https://github.com/ZIGRAWBOHNBAWERICK/soliddraft/pull/339) pins Catallax `403081f8`. Its recorded acceptance runs the actual Fillet command on the six-edge rim at R0.5, R1, R2 and R3.99, then displays, undoes and exports each result. The session case saves and reopens R2 with its six round names and approximate label, edits to R3.99, refuses R5 with the limiting face and radius, and keeps and exports the last good solid. All five emitted STEP files pass the recorded raw OCP reader as one closed valid solid with 19 faces. This is app evidence from that PR, not an app rerun by the checkpoint.
+
+The same acceptance records exact box fillets, 34 exact sample-part edges and 12 newly working approximate edges. Two sample arcs still cannot be named before the kernel is called. The PR also records an existing exact-loft edit whose mass/topology query exhausts and leaves no display, and an app Import STEP path that rejects approximate exports. These remain app gaps, not successful round trips inferred from valid exported files.
 
 ## Known gaps and what still refuses
 
-The dry scoreboard pins the current failures more precisely:
+The cut scoreboard pins the current failures more precisely:
 
 - P0 general cone and torus still need `intersect.traced-pair-required` branch tracing.
 - P3 has one wrong construction membership value; its STEP validity is not enough to pass the fixed rule.
@@ -176,7 +194,7 @@ The dry scoreboard pins the current failures more precisely:
 - The curved housing stops at `intersect.unsupported-pair` between its rational atlas and Bezier extrusion, before the fillet.
 - ABC 00000173 still stops at `boolean.no-rational-point` on the drill.
 
-- P8 spring and threaded boss is accepted as unfinished. The latest hand-off reports the threaded union stopping at 99,879,180 of 100M work. This is consumed work before refusal, not a completed union. The earlier merged carrier-repair receipt stopped at `intersect.parametric-surface` after 55,626,285 work. The fresh scoreboard must retain whichever result its pinned producer actually gives; these observations are not interchangeable.
+- P8 spring and threaded boss is accepted as unfinished. The phase-2 hand-off reports a separate threaded-union attempt stopping at 99,879,180 of 100M work. The canonical v0.4.0 scoreboard instead refuses at `intersect.parametric-surface` after 55,626,285 work in both variants, before the spring. Both are refused work, not completed unions; the hand-off and frozen scoreboard are not interchangeable measurements.
 - Assemblies whose prototypes use different length units still refuse on purpose. Distinct placement contexts for a common prototype are supported; conflicting prototype geometry units are not silently rescaled.
 - Numerical fillets do not establish whole-body approximation bounds, global branch completeness or exact rolling-ball authority. `keep_neighbours` and smooth-corner constructions can still refuse. A radius limit is a geometric answer, not a timeout.
 - The multi-patch radius edit, imported fillet acceptance and full housing chain remain separate from the working plane/cylinder rim acceptance. The [partial 2.1 receipt](https://github.com/BohnBawerick/catallax/pull/686) records those remaining gates.
@@ -201,7 +219,7 @@ The P8 thread sweep and refused threaded union remain in the [phase-5 work cases
 
 ## Release order
 
-After the cut: Catallax first, then SolidDraft pinned to that latest Catallax, then the kernel site update. Release execution is outside this reconciliation. Do not publish draft numbers as final release measurements.
+The release order is Catallax first, SolidDraft pinned to it, then the kernel site update. [Catallax v0.4.0](https://github.com/BohnBawerick/catallax/releases/tag/v0.4.0) is published at the measured commit. [SolidDraft v0.7.0](https://github.com/ZIGRAWBOHNBAWERICK/soliddraft/releases/tag/v0.7.0) is also published; its release records Catallax `6aac740b4e8cf70c2ada3749fda5cc3f0f8d1062` as its dependency and lockfile pin. Release execution and site deployment are outside this reconciliation.
 
 ## Draft order of phase 3
 

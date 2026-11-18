@@ -48,7 +48,7 @@ impl ParsedStep {
             models.iter().map(|model| model.entity).collect();
         let mut covered = std::collections::BTreeSet::new();
         let mut contexts = std::collections::BTreeSet::new();
-        for (&id, entity) in &self.graph {
+        for (&id, entity) in self.graph.iter() {
             dec.charge_work(1)
                 .map_err(|_| ImportRefusal::ResourceLimit)?;
             if !entity

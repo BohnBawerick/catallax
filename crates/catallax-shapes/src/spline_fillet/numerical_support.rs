@@ -2,14 +2,54 @@
 
 use super::*;
 use crate::{SplineSupport, Surface};
+use std::sync::OnceLock;
 
 #[derive(Debug)]
 enum Geometry {
-    Atlas(Vec<Support>),
+    Atlas(Vec<AtlasSupport>),
     Native {
         surface: Surface,
         proposal: Option<super::analytic::Analytic64>,
     },
+}
+
+#[derive(Debug)]
+struct AtlasSupport {
+    patch: RationalPatch,
+    domain: [[Rational; 2]; 2],
+    side: Sign,
+    expanded: OnceLock<Support>,
+}
+
+impl AtlasSupport {
+    fn new(patch: &RationalPatch, side: Sign) -> Result<Self, Refusal> {
+        // Keep the eager adapter's admission checks for every chart. Only
+        // the exact tangent/normal expansion waits for a chart to be visited.
+        let spans = patch.rational_span_polynomials().ok_or_else(|| {
+            definition("a spline fillet needs supports with rational coefficients")
+        })?;
+        let [(domain, _)] = <[_; 1]>::try_from(spans).map_err(|_| {
+            Refusal::new(
+                SUPPORT_SPANS,
+                "a spline fillet on a support of more than one knot span is not covered yet",
+            )
+        })?;
+        Ok(Self {
+            patch: patch.clone(),
+            domain,
+            side,
+            expanded: OnceLock::new(),
+        })
+    }
+
+    fn get(&self, dec: &mut Decider) -> Result<&Support, Refusal> {
+        if let Some(support) = self.expanded.get() {
+            return Ok(support);
+        }
+        let support = Support::new(&self.patch, self.side, dec)?;
+        let _ = self.expanded.set(support);
+        Ok(self.expanded.get().expect("initialized support"))
+    }
 }
 
 /// A support's native parameterization and signed rolling-ball distance.
@@ -65,7 +105,10 @@ impl NumericalFilletSupport {
         let charts = atlas
             .charts()
             .iter()
-            .map(|chart| Support::new(chart.patch(), side, dec))
+            .map(|chart| {
+                dec.check_deadline()?;
+                AtlasSupport::new(chart.patch(), side)
+            })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             geometry: Geometry::Atlas(charts),
@@ -74,8 +117,12 @@ impl NumericalFilletSupport {
         })
     }
 
-    fn chart(charts: &[Support], at: [f64; 2]) -> Result<(usize, &Support), Refusal> {
-        charts
+    fn chart<'a>(
+        charts: &'a [AtlasSupport],
+        at: [f64; 2],
+        dec: &mut Decider,
+    ) -> Result<(usize, &'a Support), Refusal> {
+        let (index, chart) = charts
             .iter()
             .enumerate()
             .find(|(_, chart)| {
@@ -84,7 +131,8 @@ impl NumericalFilletSupport {
                         && at[i] <= chart.domain[i][1].to_f64_nearest()
                 })
             })
-            .ok_or_else(|| bad("contact parameters leave the retained atlas cover"))
+            .ok_or_else(|| bad("contact parameters leave the retained atlas cover"))?;
+        Ok((index, chart.get(dec)?))
     }
 
     pub(super) fn contact_f64(
@@ -94,7 +142,7 @@ impl NumericalFilletSupport {
     ) -> Result<([f64; 3], [f64; 3]), Refusal> {
         match &self.geometry {
             Geometry::Atlas(charts) => {
-                let (_, chart) = Self::chart(charts, at)?;
+                let (_, chart) = Self::chart(charts, at, dec)?;
                 dec.charge_work(chart.evaluation_work())?;
                 Ok(chart.contact_f64(at))
             }
@@ -138,7 +186,7 @@ impl NumericalFilletSupport {
         match &self.geometry {
             Geometry::Atlas(charts) => {
                 let (index, chart) =
-                    Self::chart(charts, at.each_ref().map(Rational::to_f64_nearest))?;
+                    Self::chart(charts, at.each_ref().map(Rational::to_f64_nearest), dec)?;
                 if !(0..2).all(|i| at[i] >= chart.domain[i][0] && at[i] <= chart.domain[i][1]) {
                     return Err(bad("rounded contact leaves its selected chart"));
                 }

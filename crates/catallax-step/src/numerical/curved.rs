@@ -82,15 +82,17 @@ pub(super) fn build(
     options: &NumericalStepOptions,
     dec: &mut Decider,
 ) -> Result<NumericalStep, Refusal> {
-    let payload = payload::build(body, options, dec)?;
-    let definition = payload.body.definition();
     let mut w = Writer {
         graph: Graph::default(),
         options,
         dec,
-        error: payload.scalar_error,
-        direction_error: payload.direction_error,
+        error: Rational::zero(),
+        direction_error: Rational::zero(),
     };
+    let payload = payload::build(body, &mut w)?;
+    let definition = payload.body.definition();
+    w.error = w.error.max(payload.scalar_error);
+    w.direction_error = w.direction_error.max(payload.direction_error);
     let mut vertices = Vec::new();
     for vertex in &definition.vertices {
         let point = w.point(&vertex.position)?;
@@ -101,19 +103,18 @@ pub(super) fn build(
     }
     let mut surfaces = Vec::new();
     for (index, face) in definition.faces.iter().enumerate() {
-        surfaces.push(match &face.surface {
-            Surface::Plane(_) => plane(
-                &mut w,
-                payload.planes[index].as_ref().expect("prepared plane"),
-                &face.key,
-            )?,
-            Surface::BSpline(SplineSupport::RationalPatch(patch)) => {
-                native::surface(&mut w, patch.carrier())?
-            }
-            Surface::BSpline(SplineSupport::RationalAtlas(atlas)) => {
-                native::surface(&mut w, atlas.source())?
-            }
-            _ => return Err(bad("unsupported", "unprepared numerical STEP surface")),
+        surfaces.push(match &payload.surfaces[index] {
+            payload::SurfaceValues::Plane(values) => plane(&mut w, values, &face.key)?,
+            payload::SurfaceValues::Native(entity) => *entity,
+            payload::SurfaceValues::Spline => match &face.surface {
+                Surface::BSpline(SplineSupport::RationalPatch(patch)) => {
+                    native::surface(&mut w, patch.carrier())?
+                }
+                Surface::BSpline(SplineSupport::RationalAtlas(atlas)) => {
+                    native::surface(&mut w, atlas.source())?
+                }
+                _ => return Err(bad("unsupported", "unprepared numerical STEP surface")),
+            },
         });
     }
     let context = w.graph.add(
@@ -127,15 +128,18 @@ pub(super) fn build(
         w.dec,
     )?;
     let mut edges = Vec::new();
+    let mut parameter = super::analytic::ParameterRounding {
+        error: Rational::zero(),
+    };
+    let mut parameter_checks = Vec::new();
     for (index, edge) in definition.edges.iter().enumerate() {
-        let curve = match &edge.curve {
-            Curve::Line(_) => line(
-                &mut w,
-                payload.lines[index].as_ref().expect("prepared line"),
-                &edge.key,
-            )?,
-            Curve::BSpline(spline) => native::finite_curve(&mut w, spline, &edge.parameters)?,
-            _ => return Err(bad("unsupported", "unprepared numerical STEP edge")),
+        let curve = match &payload.curves[index] {
+            payload::CurveValues::Line(values) => line(&mut w, values, &edge.key)?,
+            payload::CurveValues::Native(entity) => *entity,
+            payload::CurveValues::Spline => match &edge.curve {
+                Curve::BSpline(spline) => native::finite_curve(&mut w, spline, &edge.parameters)?,
+                _ => return Err(bad("unsupported", "unprepared numerical STEP edge")),
+            },
         };
         let mut pcurves = Vec::new();
         for (face_index, trim, native_curve) in &uses[index] {
@@ -154,19 +158,44 @@ pub(super) fn build(
             if trim.sense == Sense::Reversed {
                 uv.reverse()
             }
-            pcurves.push(native::pcurve(
-                &mut w,
-                surfaces[*face_index],
-                context,
-                &edge.parameters,
-                uv,
-            )?);
+            if matches!(
+                definition.faces[*face_index].surface,
+                Surface::Cylinder(_) | Surface::Sphere(_) | Surface::Torus(_)
+            ) {
+                let (curve, actual) = super::analytic::pcurve(
+                    &mut w,
+                    &mut parameter,
+                    surfaces[*face_index],
+                    &edge.parameters,
+                    &uv,
+                )?;
+                parameter_checks.push(super::analytic::pcurve_checks(
+                    edge,
+                    &definition.faces[*face_index],
+                    &actual,
+                    None,
+                    w.dec,
+                )?);
+                pcurves.push(curve);
+            } else {
+                pcurves.push(native::pcurve(
+                    &mut w,
+                    surfaces[*face_index],
+                    context,
+                    &edge.parameters,
+                    uv,
+                )?);
+            }
         }
         let geometry = if pcurves.is_empty() {
             curve
         } else {
             w.graph.add(
-                "SURFACE_CURVE",
+                if uses[index].len() == 2 && uses[index][0].0 == uses[index][1].0 {
+                    "SEAM_CURVE"
+                } else {
+                    "SURFACE_CURVE"
+                },
                 vec![text("''"), curve.into(), refs(pcurves), text(".CURVE_3D.")],
             )
         };
@@ -185,8 +214,19 @@ pub(super) fn build(
     for (index, face) in definition.faces.iter().enumerate() {
         let mut bounds = Vec::new();
         for (number, boundary) in face.loops.iter().enumerate() {
+            let start = if matches!(
+                face.surface,
+                Surface::Cylinder(_) | Surface::Sphere(_) | Surface::Torus(_)
+            ) {
+                super::analytic::seam_loop_start(boundary, &definition.edges, face.sense, w.dec)?
+            } else {
+                0
+            };
             let uses = boundary
                 .iter()
+                .cycle()
+                .skip(start)
+                .take(boundary.len())
                 .map(|trim| {
                     w.graph.add(
                         "ORIENTED_EDGE",
@@ -222,11 +262,17 @@ pub(super) fn build(
     }
     let solid = w.representation(faces, body)?;
     let emitted_native_trims = payload.body.native_trims().to_vec();
+    let mut checks = payload.body.evidence().checks().to_vec();
+    checks.extend(payload.phase_checks);
+    checks.extend(parameter_checks);
+    let emitted = NumericalEvidence::new(body.options().tolerance_mm.clone(), checks, Vec::new())?;
+    let mut spline_rounding = payload.spline_rounding;
+    spline_rounding.max_parameter_error = spline_rounding.max_parameter_error.max(parameter.error);
     let mut artifact = w.finish(
         solid,
         body,
-        payload.body.evidence().clone(),
-        Some(payload.spline_rounding),
+        emitted,
+        Some(spline_rounding),
         vec![
             "source.retained-native-carriers-and-physical-loops".into(),
             "file.decimal-model-numerical-admission".into(),

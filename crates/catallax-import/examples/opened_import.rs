@@ -54,7 +54,12 @@ fn bodies(opened: &OpenedStep) -> Vec<Value> {
         json!({"body":index,"source_body":source.name(),"declared_solid":source.declared_solid(),
             "tier":outcome.tier(),"approximate":outcome.approximate(),"proof":proof,
             "checked_brep_counts":counts,"exportable":exportable,
-            "source_entity_inventory":{"faces":source.shells().iter().map(|s|s.faces.len()).sum::<usize>(),"edges":source.edges().len(),"vertices":source.vertices().len()},
+            "source_entity_inventory":if source.declaration().is_some() {Value::Null} else {json!({"faces":source.shells().iter().map(|s|s.faces.len()).sum::<usize>(),"edges":source.edges().len(),"vertices":source.vertices().len()})},
+            "first_blocker":opened.tolerant_admission().and_then(|native| native.body_failure(index))
+                .map(|failure|json!({"stage":failure.stage,"refusal":error(&failure.error),
+                    "resource_limited":failure.resource_limited(),"work_used":failure.work_used})),
+            "upgrade_refusal":outcome.upgrade_refusal().map(error),
+            "checked_refusal":outcome.checked_refusal().map(error),
             "refusal":outcome.refusal().map(error),
             "healing_refusal":outcome.healing_failure().map(|f|json!({"refusal":error(&f.error),"stage":f.failed_stage,"body":f.body,
                 "stages":f.stages,"preparation_work_used":f.preparation_work_used,"publication_work_used":f.publication_work_used})),
@@ -75,11 +80,48 @@ fn diagnostics(opened: &OpenedStep) -> Vec<Value> {
     }).collect()
 }
 
+fn native_record(
+    native: &tolerant::admission::TolerantImport,
+    file: &tolerant::admission::NativeStepFile,
+    indices: impl ExactSizeIterator<Item = usize>,
+    kind: &str,
+) -> Value {
+    let mut bodies = Vec::with_capacity(indices.len());
+    let mut roots = Vec::with_capacity(indices.len());
+    for (written, index) in indices.enumerate() {
+        let solid = &native.bodies()[index];
+        let counts = solid.counts();
+        bodies.push(solid.source_index());
+        roots.push(json!({
+            "body":solid.source_index(), "name":solid.name(),
+            "parts":if solid.definition().declared_solid() {1} else {counts.shells},
+            "counts":{"faces":counts.faces,"edges":counts.edges,"vertices":counts.vertices},
+            "tolerance_mm":solid.definition().maximum_tolerance_mm().to_f64_nearest(),
+            "entities":file.source_body_roots()[written],
+        }));
+    }
+    json!({"bodies":bodies,"kind":kind,"source_roots":roots,
+        "unit_factors":native.source_unit_factors(),"authority":"native_sampled","export_checks":file.checks()})
+}
+
+fn selected_record(file: &opened::SelectedStepFile) -> Value {
+    let roots: Vec<_> = file.bodies().iter().map(|body| json!({
+        "body":body.source_index,"name":format!("#{}",body.source_entity),
+        "parts":body.roots.len(),"entities":body.roots,
+        "counts":{"faces":body.counts[0],"edges":body.counts[1],"vertices":body.counts[2]},
+        "tolerance_mm":catallax_numbers::Rational::parse(&body.tolerance_mm).unwrap().to_f64_nearest(),
+        "unit_factors":body.unit_factors,
+    })).collect();
+    json!({"bodies":file.bodies().iter().map(|body|body.source_index).collect::<Vec<_>>(),
+        "kind":"selected_document","source_roots":roots,"authority":"selected_bodies",
+        "selected_body_evidence":file.bodies()})
+}
+
 fn export(
     opened: &OpenedStep,
     index: usize,
     dec: &mut Decider,
-) -> Result<Option<(Vec<u8>, &'static str)>, Refusal> {
+) -> Result<Option<(Vec<u8>, Value)>, Refusal> {
     match opened.body(index).unwrap() {
         BodyView::Certified { model, body } => {
             let mut bytes = Vec::new();
@@ -90,22 +132,23 @@ fn export(
             catallax_step::write_step(model, &[body], &options, dec, &mut bytes)?;
             Ok(Some((
                 bytes,
-                if model.body(body).kind == BodyKind::Solid {
-                    "solid"
-                } else {
-                    "surface"
-                },
+                json!({"bodies":[index], "kind":
+                if model.body(body).kind == BodyKind::Solid { "solid" } else { "surface" }}),
             )))
         }
         BodyView::Numerical(body) => {
             let file = catallax_step::numerical::build(body, &Default::default(), dec)?;
             file.check_written(file.bytes(), dec)?;
-            Ok(Some((file.bytes().to_vec(), "solid")))
+            Ok(Some((
+                file.bytes().to_vec(),
+                json!({"bodies":[index],"kind":"solid"}),
+            )))
         }
-        BodyView::Tolerant { import, body } => import
-            .export_body(body, dec)
-            .map(|bytes| Some((bytes, "solid")))
-            .map_err(native_error),
+        BodyView::Tolerant { import, body } => {
+            let file = import.export_body(body, dec).map_err(native_error)?;
+            let record = native_record(import, &file, std::iter::once(body), "native_body");
+            Ok(Some((file.into_bytes(), record)))
+        }
         // No exact/numerical B-rep was admitted, so there is no checked STEP
         // authority. Retained input bytes are separate from a body export.
         BodyView::Surfaces { .. } => Ok(None),
@@ -166,6 +209,8 @@ fn run(
     let checkpoint = json!({"stage":"open","outcome":"opened","source_sha256":actual,
         "bodies":body_info,"work_used":work.used,"work_exhausted":work.exhausted,"work_limit":DEFAULT_WORK,
         "read_work_used":opened.read_work_used(),"file_admission_work_used":opened.file_admission_work_used(),
+        "native_admission_work_used":opened.native_admission_work_used(),
+        "checked_upgrade_work_used":opened.checked_upgrade_work_used(),
         "first_refusal":opened.first_refusal().map(error)});
     emit(&checkpoint);
     std::fs::write(out.join("opened.json"), serde_json::to_vec(&checkpoint)?)?;
@@ -180,43 +225,22 @@ fn run(
     let mut failed_body = None;
     let (exported, export_work) = with_operation_budget(DEFAULT_WORK, || {
         let mut dec = Decider::default();
-        if let Some(native) = opened.tolerant_admission() {
-            let file = native.export_step(&mut dec).map_err(native_error)?;
-            let bytes = file.bytes();
-            let mut maxima = std::collections::BTreeMap::<&str, f64>::new();
-            for tolerance in &native.evidence().tolerances {
-                let maximum = maxima.entry(&tolerance.body).or_default();
-                *maximum = maximum.max(tolerance.tolerance_mm);
-            }
-            let roots: Vec<_> = native.bodies().iter().enumerate().map(|(body, solid)| {
-                let counts = solid.counts();
-                json!({
-                    "body":body, "name":solid.name(),
-                    "parts":if solid.definition().declared_solid() {1} else {counts.shells},
-                    "counts":{"faces":counts.faces,"edges":counts.edges,"vertices":counts.vertices},
-                    "tolerance_mm":maxima[solid.name()],
-                    "entities":file.source_body_roots()[body],
-                })
-            }).collect();
-            files.push(save_export(out, "document.step", bytes, json!({
-                "bodies":(0..native.bodies().len()).collect::<Vec<_>>(), "kind":"native_document",
-                "source_roots":roots,"unit_factors":native.source_unit_factors(),
-                "authority":"native_sampled",
-                "export_checks":file.checks(),
-            }))?);
+        if opened
+            .bodies()
+            .iter()
+            .all(|body| body.tier() != opened::Tier::SurfaceBody)
+        {
+            let file = opened.export_step_document(&mut dec)?;
+            let record = selected_record(&file);
+            files.push(save_export(out, "document.step", file.bytes(), record)?);
             return Ok::<_, Refusal>(());
         }
         for index in 0..opened.bodies().len() {
             failed_body = Some(index);
             dec.charge_work(1)?;
-            if let Some((bytes, kind)) = export(&opened, index, &mut dec)? {
+            if let Some((bytes, record)) = export(&opened, index, &mut dec)? {
                 let file = format!("body-{index}.step");
-                files.push(save_export(
-                    out,
-                    &file,
-                    &bytes,
-                    json!({"bodies":[index],"kind":kind}),
-                )?);
+                files.push(save_export(out, &file, &bytes, record)?);
             }
         }
         failed_body = None;

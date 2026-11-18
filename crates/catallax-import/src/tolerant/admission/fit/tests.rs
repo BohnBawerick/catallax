@@ -64,7 +64,7 @@ fn optional_pcurve_compilation_preserves_fitting_and_control_refusals() {
     let mut dec = Decider::default();
     let parsed = ParsedStep::read(SOURCE, &mut dec).unwrap();
     let scale = Rational::one();
-    let mut context = Context::new(&parsed, &scale, AngleUnit::Radians, BTreeMap::new());
+    let mut context = Context::new(&parsed, &scale, AngleUnit::Radians, BTreeMap::new(), 0.01);
     let surface = context.surface(14, &mut dec).unwrap();
     let continuation = surface.location([0.75, 0.0]).unwrap();
     let hint = context.pcurve(43, &mut dec).unwrap();

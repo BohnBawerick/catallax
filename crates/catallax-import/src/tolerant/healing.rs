@@ -111,6 +111,69 @@ pub enum HealingChange {
         /// Shell name retained by the rebuilt candidate.
         retained_shell: String,
     },
+    /// A face trace was reconstructed from its finite 3D curve and surface.
+    TraceRebuilt {
+        /// Source body.
+        body: String,
+        /// Source face.
+        face: String,
+        /// Source edge.
+        edge: String,
+        /// Replaced trace, or no original trace.
+        source_pcurve: Option<u64>,
+        /// Evaluated reconstruction stations.
+        samples: usize,
+        /// Largest measured 3D correspondence residual in millimetres.
+        maximum_residual_mm: String,
+    },
+    /// Adjacent boundary curves were cut at their measured crossing.
+    WireCrossingCut {
+        /// Source body.
+        body: String,
+        /// Source face.
+        face: String,
+        /// Source boundary.
+        boundary: usize,
+        /// The two affected source edges.
+        edges: [String; 2],
+        /// New common point, in millimetres.
+        point_mm: [String; 3],
+        /// Natural curve parameters at the cut.
+        parameters: [String; 2],
+    },
+    /// A collapsed surface boundary received a missing degenerate edge.
+    DegenerateEdgeInserted {
+        /// Source body.
+        body: String,
+        /// Source face.
+        face: String,
+        /// Source boundary.
+        boundary: usize,
+        /// New edge identity.
+        edge: String,
+        /// Existing physical pole vertex.
+        vertex: String,
+        /// Largest measured pole-collapse residual in millimetres.
+        maximum_residual_mm: String,
+    },
+}
+
+impl HealingChange {
+    /// Source body owning this repair, including derived boundary entities.
+    pub fn body(&self) -> &str {
+        match self {
+            Self::EdgesSewn { body, .. }
+            | Self::VerticesJoined { body, .. }
+            | Self::WireReordered { body, .. }
+            | Self::BoundaryReversed { body, .. }
+            | Self::FaceReversed { body, .. }
+            | Self::SmallLineRemoved { body, .. }
+            | Self::ShellsSewn { body, .. }
+            | Self::TraceRebuilt { body, .. }
+            | Self::WireCrossingCut { body, .. }
+            | Self::DegenerateEdgeInserted { body, .. } => body,
+        }
+    }
 }
 
 /// A discrete check actually completed by the healer.
@@ -142,9 +205,9 @@ pub struct HealingMeasurement {
     pub body: String,
     /// Source entity or incidence, including endpoint index where relevant.
     pub scope: String,
-    /// The measured geometric quantity and its domain.
+    /// Geometric quantity, domain and bound-proving method.
     pub check: String,
-    /// Actual attained upper distance, in millimetres.
+    /// Proven upper distance in millimetres, not necessarily a measured residual.
     pub distance_upper_mm: String,
 }
 
@@ -157,7 +220,7 @@ pub struct HealingReport {
     pub changes: Vec<HealingChange>,
     /// Every completed discrete check.
     pub checks: Vec<HealingCheck>,
-    /// Geometry measurements behind requested local tolerances.
+    /// Source correspondence bounds behind requested local tolerances.
     pub measurements: Vec<HealingMeasurement>,
     /// Conditions which remain unresolved; these never grant solid validity.
     pub issues: Vec<HealingIssue>,
@@ -274,86 +337,103 @@ fn failure(code: &'static str, detail: &str) -> Error {
 }
 
 pub(crate) struct NativeTopologyRepair {
-    pub candidate: TolerantFile,
+    pub candidate: TolerantBody,
     pub changes: Vec<HealingChange>,
     pub checks: Vec<HealingCheck>,
     pub measurements: Vec<HealingMeasurement>,
     pub issues: Vec<HealingIssue>,
-    pub curves: BTreeMap<u64, std::sync::Arc<super::native::NativeCurve>>,
 }
 
 /// Repair source walks and shell orientations without asking for a global
 /// geometry or solid certificate. The native sampled tier performs its own fits.
 pub(crate) fn repair_native_topology(
-    source: &TolerantFile,
+    source: &TolerantBody,
     parsed: &crate::geometry_source::ParsedStep,
+    scale: &Rational,
     angles: &crate::geometry_source::AngleUnit,
+    curves: &mut BTreeMap<u64, std::sync::Arc<super::native::NativeCurve>>,
+    stage: &mut super::admission::NativeStage,
     dec: &mut Decider,
 ) -> Result<NativeTopologyRepair, Error> {
-    let count = source
-        .bodies
-        .iter()
-        .map(|body| {
-            body.vertices.len()
-                + body.edges.len()
-                + body
-                    .shells
-                    .iter()
-                    .map(|shell| shell.faces.len())
-                    .sum::<usize>()
-        })
-        .sum::<usize>();
+    *stage = super::admission::NativeStage::BodyBuild;
+    let mut decoded = source.materialize(dec)?;
+    let source = decoded.to_mut();
+    for edge in &mut source.edges {
+        if let Curve::Retained(geometry) = &edge.curve
+            && let Some(curve) = geometry.recognized_line(dec)?
+        {
+            edge.curve = curve;
+        }
+    }
+    for face in source.shells.iter_mut().flat_map(|shell| &mut shell.faces) {
+        if let Surface::Retained(geometry) = &face.surface
+            && let Some(surface) = geometry.recognized_plane(dec)?
+        {
+            face.surface = surface;
+        }
+    }
+    let count = source.vertices.len()
+        + source.edges.len()
+        + source
+            .shells
+            .iter()
+            .map(|shell| shell.faces.len())
+            .sum::<usize>();
     dec.charge_work(count as u64 + 1)?;
     let mut candidate = source.clone();
     let mut plan = Plan::default();
-    let mut curves = BTreeMap::new();
-    for (index, body) in candidate.bodies.iter_mut().enumerate() {
-        // This is only a search envelope for source-declared wire connections,
-        // not an assigned tolerance. Actual local growth remains measured.
-        let mut span = Rational::zero();
-        for axis in 0..3 {
-            let mut values = body
-                .vertices
-                .iter()
-                .map(|vertex| &vertex.source.point[axis]);
-            if let Some(first) = values.next() {
-                let (mut low, mut high) = (first, first);
-                for value in values {
-                    low = low.min(value);
-                    high = high.max(value);
-                }
-                span = &span + &(high - low);
-            }
-        }
-        body.options.maximum_mm =
-            (&span + &body.options.initial_mm).max(body.options.maximum_mm.clone());
-        wire::fix(index, &source.bodies[index], body, &mut plan, dec)?;
-        // Free-edge sewing has no declared source connection. Unlike repairing
-        // a broken source walk, it must respect the caller's stated sew width.
-        body.options.maximum_mm = source.bodies[index].options.maximum_mm.clone();
-        native_sewing::sew(
-            index,
-            body,
-            native_sewing::Source {
-                parsed,
-                scale: &source.mm_per_unit,
-                angles,
-            },
-            &mut curves,
-            &mut plan,
-            dec,
-        )?;
-        checks::shells(body, &mut plan, dec)?;
+    *stage = super::admission::NativeStage::WireConnection;
+    wire::fix(0, source, &mut candidate, &mut plan, dec)?;
+    if let Some(issue) = plan
+        .issues
+        .iter()
+        .find(|issue| issue.code.starts_with("wire.open") || issue.code == "wire.empty-boundary")
+    {
+        return Err(Refusal::new(
+            "import.tolerant-non-manifold",
+            format!("{}: {}", issue.scope, issue.code),
+        )
+        .into());
     }
+    *stage = super::admission::NativeStage::Sewing;
+    native_sewing::sew(
+        0,
+        &mut candidate,
+        native_sewing::Source {
+            parsed,
+            scale,
+            angles,
+        },
+        curves,
+        &mut plan,
+        dec,
+    )?;
+    *stage = super::admission::NativeStage::ShellIncidence;
+    checks::shells(&mut candidate, &mut plan, dec)?;
+    if let Some(issue) = plan
+        .issues
+        .iter()
+        .find(|issue| issue.code.starts_with("shell."))
+    {
+        return Err(Refusal::new(
+            "import.tolerant-non-manifold",
+            format!("{}: {}", issue.scope, issue.code),
+        )
+        .into());
+    }
+    *stage = super::admission::NativeStage::ToleranceGrowth;
     for need in &plan.growth {
-        let body = &mut candidate.bodies[need.body];
-        body.options.maximum_mm = body.options.maximum_mm.clone().max(need.required.clone());
+        candidate.options.maximum_mm = candidate
+            .options
+            .maximum_mm
+            .clone()
+            .max(need.required.clone());
         match &need.entity {
             ToleranceEntity::Vertex(name) => {
-                body.grow_vertex_tolerance(name, need.required.clone(), &need.cause, dec)?;
+                candidate.grow_vertex_tolerance(name, need.required.clone(), &need.cause, dec)?;
             }
             ToleranceEntity::Edge(name) => {
-                body.grow_edge_tolerance(name, need.required.clone(), &need.cause, dec)?;
+                candidate.grow_edge_tolerance(name, need.required.clone(), &need.cause, dec)?;
             }
         }
     }
@@ -363,7 +443,6 @@ pub(crate) fn repair_native_topology(
         checks: plan.checks,
         measurements: plan.measurements,
         issues: plan.issues,
-        curves,
     })
 }
 
@@ -374,15 +453,50 @@ pub fn heal(source: &TolerantFile, dec: &mut Decider) -> Result<HealedFile, Erro
     attempt(source, dec).map_err(|failure| failure.error)
 }
 
+#[derive(Clone, Copy)]
+pub(super) enum IncidenceBounds {
+    Tight,
+    CapCertified,
+}
+
+impl IncidenceBounds {
+    fn upper(
+        self,
+        squared: &Rational,
+        cap: &Rational,
+        dec: &mut Decider,
+    ) -> Result<Rational, Error> {
+        match self {
+            Self::Tight => distance_upper(squared, cap, dec),
+            Self::CapCertified => {
+                require_distance_cap(squared, cap, dec)?;
+                Ok(if squared.is_zero() {
+                    Rational::zero()
+                } else {
+                    cap.clone()
+                })
+            }
+        }
+    }
+}
+
 /// As [`heal`], retaining stage measurements even on cap or work refusal.
 /// Failure diagnostics never contain a partially repaired candidate.
 pub fn attempt(
     source: &TolerantFile,
     dec: &mut Decider,
 ) -> Result<HealedFile, Box<HealingFailure>> {
+    attempt_with_bounds(source, IncidenceBounds::Tight, dec)
+}
+
+pub(super) fn attempt_with_bounds(
+    source: &TolerantFile,
+    bounds: IncidenceBounds,
+    dec: &mut Decider,
+) -> Result<HealedFile, Box<HealingFailure>> {
     if !operation_budget_active() {
         return with_operation_budget(catallax_topology::numerical::DEFAULT_WORK, || {
-            attempt(source, dec)
+            attempt_with_bounds(source, bounds, dec)
         })
         .0;
     }
@@ -408,7 +522,7 @@ pub fn attempt(
                 let stage_result = match stage {
                     "sewing" => sewing::sew(index, body, &mut plan, dec),
                     "wire" => wire::fix(index, &source.bodies[index], body, &mut plan, dec),
-                    "face" => checks::faces(index, body, &mut plan, dec),
+                    "face" => checks::faces(index, body, &mut plan, bounds, dec),
                     "shell" => checks::shells(body, &mut plan, dec),
                     "solid" => checks::solid(body, &mut plan, dec),
                     _ => unreachable!(),
@@ -426,7 +540,7 @@ pub fn attempt(
         failed_stage = "publication";
         failed_body = None;
         for (index, body) in candidate.bodies.iter().enumerate() {
-            checks::source_geometry(index, &source.bodies[index], body, &mut plan, dec)?;
+            checks::source_geometry(index, &source.bodies[index], body, &mut plan, bounds, dec)?;
         }
         // Gather maxima and endpoint propagation before making any ledger
         // change. Even a late refusal discards this whole private candidate.
@@ -575,11 +689,11 @@ fn distance_squared(a: &Vec3, b: &Vec3, dec: &mut Decider) -> Result<Rational, E
     dot(&d, &d, dec)
 }
 
-fn distance_upper(
+fn require_distance_cap(
     squared: &Rational,
     cap: &Rational,
     dec: &mut Decider,
-) -> Result<Rational, Error> {
+) -> Result<(), Error> {
     let squared_cap = arithmetic(cap, cap, '*', dec)?;
     if compare(squared, &squared_cap, dec)?.is_gt() {
         return Err(failure(
@@ -587,6 +701,15 @@ fn distance_upper(
             "measured source correspondence exceeds the healing cap",
         ));
     }
+    Ok(())
+}
+
+fn distance_upper(
+    squared: &Rational,
+    cap: &Rational,
+    dec: &mut Decider,
+) -> Result<Rational, Error> {
+    require_distance_cap(squared, cap, dec)?;
     charge_value(squared, dec)?;
     let bits = squared
         .numerator()

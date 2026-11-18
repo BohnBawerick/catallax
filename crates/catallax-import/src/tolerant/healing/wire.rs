@@ -200,20 +200,24 @@ pub(super) fn fix(
                         reversed: false,
                     })
                     .collect();
-                let joins = if let Some(joins) = connection_plan(body, &original, dec)? {
-                    joins
-                } else {
-                    let Some(reordered) = reorder(body, &original, dec)? else {
-                        plan.unresolved(body, &name, "wire.open-or-ambiguous-order");
-                        continue;
-                    };
-                    let uses: Vec<_> = reordered.iter().map(|item| item.coedge.clone()).collect();
-                    let Some(joins) = connection_plan(body, &uses, dec)? else {
-                        plan.unresolved(body, &name, "wire.open-or-over-cap-connection");
-                        continue;
-                    };
+                let connected = original.iter().enumerate().all(|(index, usage)| {
+                    endpoints(body, usage)[1]
+                        == endpoints(body, &original[(index + 1) % original.len()])[0]
+                });
+                let reordered_uses;
+                let uses = if !connected && let Some(reordered) = reorder(body, &original, dec)? {
                     ordered = reordered;
-                    joins
+                    reordered_uses = ordered
+                        .iter()
+                        .map(|item| item.coedge.clone())
+                        .collect::<Vec<_>>();
+                    &reordered_uses
+                } else {
+                    &original
+                };
+                let Some(joins) = connection_plan(body, uses, dec)? else {
+                    plan.unresolved(body, &name, "wire.open-or-over-cap-connection");
+                    continue;
                 };
                 // All connections and final closure have been planned before the first
                 // write. Whole-body source/cap/topology checks still precede publication.

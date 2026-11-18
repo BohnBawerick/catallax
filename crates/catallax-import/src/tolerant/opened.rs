@@ -15,6 +15,9 @@ use crate::{
     numerical::{self, StepImport},
 };
 
+mod selected_step;
+pub use selected_step::{SelectedStepBody, SelectedStepFile};
+
 /// Material/topology result, independent of exact versus numerical evidence.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -47,7 +50,10 @@ pub struct BodyOutcome {
     storage: Storage,
     healed: Option<Box<healing::HealedFile>>,
     refusal: Option<Error>,
+    checked_refusal: Option<Error>,
     healing_failure: Option<Box<healing::HealingFailure>>,
+    upgrade_refusal: Option<Error>,
+    first_blocker: Option<admission::NativeStage>,
 }
 impl BodyOutcome {
     /// Actual outcome, never inferred from declared source closure.
@@ -62,6 +68,10 @@ impl BodyOutcome {
     pub fn refusal(&self) -> Option<&Error> {
         self.refusal.as_ref()
     }
+    /// Earlier checked-tier refusal retained after successful native fallback.
+    pub fn checked_refusal(&self) -> Option<&Error> {
+        self.checked_refusal.as_ref()
+    }
     /// Successful candidate checks and complete repair history, when attempted.
     pub fn healing(&self) -> Option<&healing::HealedFile> {
         self.healed.as_deref()
@@ -69,6 +79,14 @@ impl BodyOutcome {
     /// Typed failure and stage work; original source remains available.
     pub fn healing_failure(&self) -> Option<&healing::HealingFailure> {
         self.healing_failure.as_deref()
+    }
+    /// Optional stricter proof failure; an already usable native body is retained.
+    pub fn upgrade_refusal(&self) -> Option<&Error> {
+        self.upgrade_refusal.as_ref()
+    }
+    /// First native repair/check that prevents this body from being usable.
+    pub fn first_blocker(&self) -> Option<admission::NativeStage> {
+        self.first_blocker
     }
 }
 
@@ -110,6 +128,8 @@ pub struct OpenedStep {
     first_refusal: Option<Error>,
     read_work_used: u64,
     file_admission_work_used: u64,
+    native_admission_work_used: u64,
+    checked_upgrade_work_used: u64,
 }
 impl OpenedStep {
     /// Immutable original body definitions, before any repair.
@@ -137,8 +157,15 @@ impl OpenedStep {
     pub fn file_admission_work_used(&self) -> u64 {
         self.file_admission_work_used
     }
-    /// Native admission for the complete source document, when present.
-    /// Export this once, not once per body: it preserves assembly occurrences.
+    /// Work for body-local native construction, boundary repair and fit checks.
+    pub fn native_admission_work_used(&self) -> u64 {
+        self.native_admission_work_used
+    }
+    /// Optional checked proofs of already-built native bodies.
+    pub fn checked_upgrade_work_used(&self) -> u64 {
+        self.checked_upgrade_work_used
+    }
+    /// Native evidence for every attempted body, including body-local refusals.
     pub fn tolerant_admission(&self) -> Option<&admission::TolerantImport> {
         self.native_admission.as_deref()
     }
@@ -252,9 +279,9 @@ fn strict_retry(
     }
 }
 
-/// Default opening policy: retain the source, attempt the checked upgrade under
-/// the caller's shared allowance, then fit native carriers with measured local
-/// tolerances. There is no separate checked sub-cap or repeated retention pass.
+/// Default opening policy: preserve the existing main admission first, then
+/// build and heal only its refused or incomplete bodies from the shared source.
+/// A failed candidate cannot discard already usable siblings.
 ///
 /// Exhausted optional work retains the prepaid source representation.
 /// No implicit work cap is installed for native admission.
@@ -291,7 +318,10 @@ fn open_prepared(
                 storage: Storage::Source,
                 healed: None,
                 refusal: None,
+                checked_refusal: None,
                 healing_failure: None,
+                upgrade_refusal: None,
+                first_blocker: None,
             })
             .collect(),
         source,
@@ -301,46 +331,147 @@ fn open_prepared(
         first_refusal: None,
         read_work_used,
         file_admission_work_used: 0,
+        native_admission_work_used: 0,
+        checked_upgrade_work_used: 0,
     };
-    // Reuse the prepaid source and the caller's ordinary work allowance.
-    // Reserving a separate 1M upgrade both discarded existing admissions and
-    // charged unused reservation units before the native fit could begin.
+    let before = current_operation_work().used;
     if operation_budget_active() {
-        checked_admit(bytes, step, &mut result, dec);
+        checked_admit(
+            bytes,
+            step,
+            &mut result,
+            healing::IncidenceBounds::CapCertified,
+            dec,
+        );
     } else {
         let reservation = catallax_numbers::OperationAllowance::reserve(n::DEFAULT_WORK)?;
-        reservation.run(|| checked_admit(bytes, step, &mut result, dec));
+        reservation.run(|| {
+            checked_admit(
+                bytes,
+                step,
+                &mut result,
+                healing::IncidenceBounds::CapCertified,
+                dec,
+            )
+        });
     }
-    if result
+    result.checked_upgrade_work_used = current_operation_work().used.saturating_sub(before);
+    let incomplete: Vec<_> = result
         .bodies
         .iter()
-        .all(|body| body.tier != Tier::SurfaceBody)
-    {
+        .map(|body| body.tier == Tier::SurfaceBody)
+        .collect();
+    if incomplete.iter().all(|needed| !needed) {
         return Ok(result);
     }
-    match admission::admit(parsed, Arc::clone(&result.source), angles, dec) {
-        Ok(native) => {
-            for (index, outcome) in result.bodies.iter_mut().enumerate() {
-                if outcome.tier == Tier::SurfaceBody {
-                    outcome.storage = Storage::Tolerant(index);
-                    outcome.tier = Tier::TolerantSolid;
-                    outcome.approximate = true;
-                    outcome.refusal = None;
-                    outcome.healed = None;
-                    outcome.healing_failure = None;
-                }
-            }
-            result.native_admission = Some(Arc::new(native));
+    let before = current_operation_work().used;
+    let native = Arc::new(admission::admit(
+        parsed,
+        Arc::clone(&result.source),
+        angles,
+        admission::AdmissionPolicy::MainFirst(&incomplete),
+        dec,
+    )?);
+    result.native_admission_work_used = current_operation_work().used.saturating_sub(before);
+    for (source_index, failure) in native.body_failures() {
+        result.bodies[source_index].refusal = Some(failure.error.clone());
+        result.bodies[source_index].first_blocker = Some(failure.stage);
+        if result.first_refusal.is_none() {
+            result.first_refusal = Some(failure.error.clone());
         }
-        Err(error) => {
-            for outcome in &mut result.bodies {
-                if outcome.tier == Tier::SurfaceBody {
-                    outcome.refusal = Some(error.clone());
+    }
+    for (index, body) in native.bodies().iter().enumerate() {
+        let outcome = &mut result.bodies[body.source_index()];
+        outcome.checked_refusal = outcome.refusal.take();
+        outcome.storage = Storage::Tolerant(index);
+        outcome.tier = Tier::TolerantSolid;
+        outcome.approximate = true;
+    }
+    result.native_admission = Some(native);
+    if !current_operation_work().exhausted {
+        let before = current_operation_work().used;
+        if operation_budget_active() {
+            upgrade_native(&mut result, step, dec);
+        } else {
+            let reservation = catallax_numbers::OperationAllowance::reserve(n::DEFAULT_WORK)?;
+            reservation.run(|| upgrade_native(&mut result, step, dec));
+        }
+        result.checked_upgrade_work_used += current_operation_work().used.saturating_sub(before);
+    }
+    Ok(result)
+}
+
+fn upgrade_native(result: &mut OpenedStep, step: &StepId, dec: &mut Decider) {
+    let native = result.native_admission.as_ref().expect("native outcomes");
+    let options = n::NumericalOptions {
+        tolerance_mm: result.source.options.maximum_mm.clone(),
+    };
+    for (index, body) in native.bodies().iter().enumerate() {
+        let outcome = &mut result.bodies[body.source_index()];
+        let attempt = (|| {
+            let definition = native.checked_definition(index, dec)?;
+            let strict_refusal = match strict_retry(outcome, &definition, step, dec)? {
+                None => {
+                    if !result.source.bodies[body.source_index()].declared_solid
+                        || native.evidence().repairs.iter().any(|repair| {
+                            repair.body() == body.name()
+                                && !matches!(repair, healing::HealingChange::TraceRebuilt { .. })
+                        })
+                    {
+                        outcome.tier = Tier::RepairedSolid;
+                        outcome.approximate = true;
+                    }
+                    return Ok(());
                 }
+                Some(error) => error,
+            };
+            if current_operation_work().exhausted {
+                return Err(ImportRefusal::ResourceLimit.into());
+            }
+            let admitted = numerical::admit_retained_definition(
+                &definition,
+                result.source.source_sha256(),
+                strict_refusal,
+                &options,
+                dec,
+            )?;
+            outcome.tier = Tier::RepairedSolid;
+            outcome.approximate = true;
+            outcome.storage = Storage::Numerical(Box::new(admitted));
+            Ok::<_, Error>(())
+        })();
+        if let Err(error) = attempt {
+            let stop = control_refusal(&error);
+            outcome.upgrade_refusal = Some(error);
+            if stop {
+                break;
             }
         }
     }
-    Ok(result)
+    // A refused stitch must not take away a previously usable source surface.
+    // This optional proof checks the original surface, never the refused candidate.
+    for (index, source) in result.source.bodies.iter().enumerate() {
+        if current_operation_work().exhausted {
+            break;
+        }
+        if source.declared_solid || !matches!(result.bodies[index].storage, Storage::Source) {
+            continue;
+        }
+        let attempt = native
+            .checked_source_definition(index, dec)
+            .and_then(|definition| {
+                strict_retry(&mut result.bodies[index], &definition, step, dec)
+                    .map_err(Error::from)?
+                    .map_or(Ok(()), |error| Err(error.into()))
+            });
+        if let Err(error) = attempt {
+            let stop = control_refusal(&error);
+            result.bodies[index].upgrade_refusal = Some(error);
+            if stop {
+                break;
+            }
+        }
+    }
 }
 
 /// Explicit checked policy. Global proof and fixed-tolerance admission failures
@@ -372,7 +503,10 @@ pub fn open_checked_step(
             storage: Storage::Source,
             healed: None,
             refusal: None,
+            checked_refusal: None,
             healing_failure: None,
+            upgrade_refusal: None,
+            first_blocker: None,
         })
         .collect();
     let mut result = OpenedStep {
@@ -384,12 +518,26 @@ pub fn open_checked_step(
         first_refusal: None,
         read_work_used,
         file_admission_work_used: 0,
+        native_admission_work_used: 0,
+        checked_upgrade_work_used: 0,
     };
-    checked_admit(bytes, step, &mut result, dec);
+    checked_admit(
+        bytes,
+        step,
+        &mut result,
+        healing::IncidenceBounds::Tight,
+        dec,
+    );
     Ok(result)
 }
 
-fn checked_admit(bytes: &[u8], step: &StepId, result: &mut OpenedStep, dec: &mut Decider) {
+fn checked_admit(
+    bytes: &[u8],
+    step: &StepId,
+    result: &mut OpenedStep,
+    bounds: healing::IncidenceBounds,
+    dec: &mut Decider,
+) {
     let expected_sha256 = result.source.source_sha256.as_str();
     let numerical_options = n::NumericalOptions {
         tolerance_mm: result.source.options.maximum_mm.clone(),
@@ -473,7 +621,7 @@ fn checked_admit(bytes: &[u8], step: &StepId, result: &mut OpenedStep, dec: &mut
         if current_operation_work().exhausted {
             break;
         }
-        let healed = match healing::attempt(&single, dec) {
+        let healed = match healing::attempt_with_bounds(&single, bounds, dec) {
             Ok(healed) => Box::new(healed),
             Err(failure) => {
                 let stop = control_refusal(&failure.error);
@@ -599,7 +747,10 @@ mod tests {
             storage: Storage::Source,
             healed: None,
             refusal: None,
+            checked_refusal: None,
             healing_failure: None,
+            upgrade_refusal: None,
+            first_blocker: None,
         };
         let (_, complete) = with_operation_budget(n::DEFAULT_WORK, || {
             strict_retry(

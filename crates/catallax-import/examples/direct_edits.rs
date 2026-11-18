@@ -166,6 +166,7 @@ fn main() {
                 }
                 tolerant::opened::BodyView::Tolerant { import, body } => import
                     .export_body(body, &mut dec)
+                    .map(|file| file.into_bytes())
                     .map_err(|error| match error {
                         tolerant::Error::Numerical(error) => error,
                         other => catallax_numbers::Refusal::new(

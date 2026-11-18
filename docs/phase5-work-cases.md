@@ -427,3 +427,33 @@ This is loss of a strict regular termination at the actual end neighbour,
 not absence of all support-offset centres or a global impossibility claim.
 The refusal states that continuation needs different topology. Successful
 five-edge R5 construction, full-rim junctions and body admission remain open.
+
+## Numerical-first ordinary evaluator
+
+At `5293562242d1dba8fc4e099a028be1f3a22f6d53`, the ordinary application
+uses the approved 1456fdfe fitter and enters rolling construction without
+an exact fillet attempt. The matching source prefix still belongs to each
+whole-request measurement:
+
+| Ordinary owner request | Work | Result |
+|---|---:|---|
+| Six-edge R4 | 535,464 | Typed exact-4 contact refusal; original face #57, terminal hint |
+| Five-edge R8 | 518,811 | Typed exact-8 regular-end refusal; original face #64, terminal hint |
+| Six-edge R1 | 20,944,012 | Unexhausted; old three-support vertex refusal at #59 |
+| Six-edge R3.99 | 99,999,994 | Exhausted in edge #90 fitted-strip geometric admission |
+
+R1 is above the 20M target but remains below the unchanged 100M allowance.
+It is not an admitted rim. R3.99 retains 324 stations, minimum parameter
+span approximately 4.733456e-4 and maximum sampled residual approximately
+2.957188e-8 mm before geometric proof arithmetic exhausts the request.
+This is not a passing fillet, nor evidence that exact-first evaluation was
+the only remaining cost: no exact producer runs in this request. The app
+facade calls the typed evaluator directly, without another outer exact pass.
+Further fitter/admission work stays with its owner.
+
+The existing ordinary single-loft regression exposes a separate correctness
+failure after its legacy producer route is removed: general-walk Newton
+non-reduction at 387,922 work, 0.05s. No legacy fallback or relaxed residual
+check is accepted as a fix. The full compile/four-request/regression chain
+takes 435.54s, including 2m16s library, 2m17s standalone and 12.14s test
+compilation. These are observed failed scopes, not later correction results.

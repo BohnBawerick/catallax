@@ -425,8 +425,10 @@ pub fn build_incremental_with_files(
 
 /// Resumes an unchanged prefix and checks the result without meshing it.
 ///
-/// Exact evaluation stays first. Numerical fillets retain their own geometry,
-/// tolerance, origins and history, never an exact continuation checkpoint.
+/// Matching exact prefixes are reused; fillets construct numerically first.
+/// Their geometry, tolerance, origins and history stay numerical, never an
+/// exact continuation checkpoint. No speculative exact fillet consumes this
+/// construction allowance.
 /// Build and separately requested display honor the active caller allowance.
 pub fn build_incremental_without_display(
     recipe: &Recipe,

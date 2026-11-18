@@ -76,10 +76,12 @@ impl NumericalSplineFillet {
     ) -> Result<NumericalSurfaceCut, Refusal> {
         let fillet = Surface::BSpline(SplineSupport::RationalAtlas(self.surface().clone()));
         let surfaces = [fillet, neighbour];
+        eprintln!("cut attribution start work={}", catallax_numbers::current_operation_work().used);
         let supports = [
             NumericalFilletSupport::new(surfaces[0].clone(), Rational::zero(), dec)?,
             NumericalFilletSupport::new(surfaces[1].clone(), Rational::zero(), dec)?,
         ];
+        eprintln!("cut attribution supports work={}", catallax_numbers::current_operation_work().used);
         let limit = self.spine().tolerance_mm().mul_pow2(-2);
         let mut spine = NumericalFilletSpine::trace(
             supports,
@@ -89,11 +91,13 @@ impl NumericalSplineFillet {
             self.spine().tolerance_mm().mul_pow2(-1),
             dec,
         )?;
+        eprintln!("cut attribution trace work={} nodes={}", catallax_numbers::current_operation_work().used, spine.nodes.len());
         for depth in 0..=MAX_DEPTH {
             let parameters = [
                 native_curve(&spine.nodes, 0, dec)?,
                 native_curve(&spine.nodes, 1, dec)?,
             ];
+            eprintln!("cut attribution depth={depth} native curves work={} nodes={}", catallax_numbers::current_operation_work().used, spine.nodes.len());
             let mut upper = Rational::zero();
             let mut samples = Vec::with_capacity((spine.nodes.len() - 1) * 8 + 1);
             let mut refine = Vec::new();
@@ -126,6 +130,7 @@ impl NumericalSplineFillet {
                     refine.push(index);
                 }
             }
+            eprintln!("cut attribution depth={depth} samples work={} refine={}", catallax_numbers::current_operation_work().used, refine.len());
             if upper <= limit {
                 return Ok(NumericalSurfaceCut {
                     tau_ends: [

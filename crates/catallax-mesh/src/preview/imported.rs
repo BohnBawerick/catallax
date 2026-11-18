@@ -776,22 +776,40 @@ pub(super) fn finish_face(
                     "source preview triangle collapsed in spatial coordinates",
                 ));
             }
-            // A triangle thinner than the chord target has no normal worth
-            // comparing: its own depends on the last digits of its corners,
-            // and inside that width nothing it does can show. Such slivers
-            // line every curved trim, and no interior point ever cures them.
+            // A triangle so thin that moving a corner by the chord target
+            // tilts it past the angular bound has no normal worth comparing:
+            // its corners are only that well placed, and inside that width
+            // nothing it does can show. Such slivers line every curved trim
+            // and fill the taper where two trims meet at a shallow angle, and
+            // no interior point ever cures them.
             let chord = options.chord_tolerance.to_f64_nearest();
             let longest = (0..3)
                 .map(|i| norm(sub(p[(i + 1) % 3], p[i])))
                 .fold(0.0, f64::max);
-            let thin = norm(normal) <= chord * longest;
+            let tilt = options
+                .angular_deviation
+                .as_ref()
+                .map_or(1.0, |angle| angle.to_f64_nearest().tan().clamp(0.0, 1.0));
+            let thin = norm(normal) * tilt <= chord * longest;
+            // The middle of a side on a trim is where the trim's own polyline
+            // put it, shared with the face across the edge. No point added
+            // inside this face moves it, so it is not this loop's to test.
+            let on_trim = triangle
+                .adjacent_edges()
+                .map(|side| side.is_constraint_edge());
             let mut refine = false;
-            for weights in [
+            for (sample, weights) in [
                 [0.5, 0.5, 0.0],
                 [0.0, 0.5, 0.5],
                 [0.5, 0.0, 0.5],
                 [1.0 / 3.0; 3],
-            ] {
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                if on_trim.get(sample).copied().unwrap_or(false) {
+                    continue;
+                }
                 let uv = std::array::from_fn(|i| (0..3).map(|j| weights[j] * nodes[j].uv[i]).sum());
                 let linear = std::array::from_fn(|i| (0..3).map(|j| weights[j] * p[j][i]).sum());
                 refine |= norm(sub(chart.position(uv, dec)?, linear)) > chord;

@@ -85,10 +85,10 @@ impl Context {
             return Err(exact_refusal);
         }
         let result = (|| {
-            if overflow.is_some() || corner.is_some_and(|value| value != FilletCorner::Cliff) {
+            if !rolls(overflow, corner) {
                 return Err(Refusal::new(
                     "features.numerical-fillet-closure",
-                    "the numerical spline assembly cannot honour explicit neighbour limits or a non-cliff corner closure",
+                    "the rolling-ball construction cannot honour explicit neighbour limits or a non-cliff corner closure",
                 ));
             }
             let selected = crate::fillet_build::select(
@@ -354,6 +354,17 @@ fn spline_faces(model: &Model, body: BodyId, edge: catallax_topology::EdgeId) ->
     faces == 2
 }
 
+/// Whether the rolling ball builds what these options ask for.
+///
+/// Rolling over neighbours and a cliff corner are what it does, and what the
+/// exact builders do when the options are left out, so naming either changes
+/// nothing. Explicit station limits on the neighbours and a smooth corner are
+/// constructions it does not have.
+fn rolls(overflow: Option<&FilletOverflow>, corner: Option<FilletCorner>) -> bool {
+    !matches!(overflow, Some(FilletOverflow::KeepNeighbours(_)))
+        && !matches!(corner, Some(FilletCorner::Smooth))
+}
+
 /// Reports a fillet neither construction built.
 ///
 /// The rolling-ball construction is the general one, so its code is the one
@@ -424,4 +435,24 @@ pub fn evaluate_incremental_outcome(
         });
     }
     Ok(EvaluationOutcome::Exact(checkpoint(state, recipe, dec)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn naming_the_default_overflow_or_corner_changes_nothing() {
+        let roll = FilletOverflow::RollOver;
+        let keep = FilletOverflow::KeepNeighbours(Vec::new());
+        for overflow in [None, Some(&roll)] {
+            for corner in [None, Some(FilletCorner::Cliff)] {
+                assert!(rolls(overflow, corner), "{overflow:?} {corner:?}");
+            }
+            assert!(!rolls(overflow, Some(FilletCorner::Smooth)), "{overflow:?}");
+        }
+        for corner in [None, Some(FilletCorner::Cliff), Some(FilletCorner::Smooth)] {
+            assert!(!rolls(Some(&keep), corner), "{corner:?}");
+        }
+    }
 }

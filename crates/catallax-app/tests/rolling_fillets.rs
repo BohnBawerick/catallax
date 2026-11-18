@@ -39,6 +39,16 @@ fn rim(radius: &str, edges: &[(&str, &str)]) -> Recipe {
     Recipe::parse(&value.to_string()).unwrap()
 }
 
+/// [`rim`] with the fillet's `overflow` and `corner` options written out.
+fn rim_with(radius: &str, edges: &[(&str, &str)], options: Value) -> Recipe {
+    let mut value: Value = serde_json::from_str(&rim(radius, edges).to_text()).unwrap();
+    let fillet = value["steps"].as_array_mut().unwrap().last_mut().unwrap();
+    for (name, option) in options.as_object().unwrap() {
+        fillet[name] = option.clone();
+    }
+    Recipe::parse(&value.to_string()).unwrap()
+}
+
 fn build(
     recipe: &Recipe,
 ) -> (
@@ -178,6 +188,43 @@ fn an_open_rim_end_is_cut_by_the_wall_it_runs_into() {
         assert_eq!(shown.unwrap().mesh.faces.len(), 18, "R{radius}");
         assert!(!preview.exhausted, "R{radius}: {preview:?}");
     }
+}
+
+#[test]
+fn naming_the_default_overflow_and_corner_builds_the_same_rim() {
+    let (plain, plain_work) = build(&rim("1", &WHOLE_RIM));
+    let EvaluatedApplicationOutcome::Numerical(plain) = plain.unwrap() else {
+        panic!("the exact builders refuse this rim");
+    };
+    for options in [
+        json!({"overflow": "roll_over"}),
+        json!({"corner": "cliff"}),
+        json!({"overflow": "roll_over", "corner": "cliff"}),
+    ] {
+        let (named, work) = build(&rim_with("1", &WHOLE_RIM, options.clone()));
+        let EvaluatedApplicationOutcome::Numerical(named) = named.unwrap() else {
+            panic!("{options}: the exact builders refuse this rim");
+        };
+        assert_eq!(
+            named.body().definition().faces.len(),
+            plain.body().definition().faces.len(),
+            "{options}"
+        );
+        assert_eq!(work.used, plain_work.used, "{options}");
+    }
+    // A smooth corner is a construction the rolling ball does not have, and
+    // it says so rather than building a cliff.
+    let (smooth, _) = build(&rim_with("1", &WHOLE_RIM, json!({"corner": "smooth"})));
+    let catallax_app::Error::Build(catallax_features::BuildError::Geometry { refusal, .. }) =
+        smooth.unwrap_err()
+    else {
+        panic!("a corner the construction lacks is a geometric refusal");
+    };
+    assert!(
+        refusal.code == "features.numerical-fillet-closure"
+            || refusal.detail.contains("features.numerical-fillet-closure"),
+        "{refusal:?}"
+    );
 }
 
 fn boxed(steps: Vec<Value>, result: &str) -> Recipe {

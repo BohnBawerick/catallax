@@ -12,13 +12,12 @@ The scoreboard runs P0 to P5, the phase-2 targets in `phase2/` (P8, P9 and the
 curved-housing chain) and ten real census parts through Catallax,
 OpenCASCADE (CadQuery) and SMLib (smlibpy) with the existing head-to-head
 driver, then reports one definition of done for all three kernels. The census
-reruns import admission on all 3,000 files, then exports every full admission
-and checks it in OCCT, and reports post-builder validity beside OCCT's own
-healed-valid count.
+uses the existing default per-body tier observer and selected-document export,
+then reports certified, numerical and sampled-native admissions separately
+beside occurrence-preserving export validity and OCCT's published reference.
 """
 import argparse
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import csv
 import hashlib
 import json
@@ -33,7 +32,6 @@ SCRIPTS = ROOT / '.claude/skills/verify-catallax/scripts'
 RESEARCH = ROOT / 'tools/research'
 CONTROLS = ROOT / 'docs/research/step-census/retained-controls.json'
 HASHES = ROOT / 'docs/research/step-census/source-hashes.json'
-PREVIOUS = ROOT / 'docs/research/step-census-circular-pcurves/results.csv'
 PHASE2 = ROOT / 'tools/checkpoint/phase2'
 ENGINES = ['catallax', 'cadquery', 'smlibpy']
 KERNEL_NAMES = {'catallax': 'Catallax', 'cadquery': 'OpenCASCADE (CadQuery 2.6.1)',
@@ -274,89 +272,49 @@ def scoreboard(args):
 
 def census(args):
     try:
-        import OCP  # noqa: F401  The export check needs OCP in this interpreter.
+        import OCP  # noqa: F401  The tier collector needs OCP in this interpreter.
     except ImportError:
         checker = json.loads(runtime(args.tools).read_text())['checker']
         os.execv(checker, [checker, '-B', str(Path(__file__).resolve()), *sys.argv[1:]])
     assert not git('status', '--porcelain'), 'the census binds a clean checkout'
     out = fresh(args.out)
-    revision = git('rev-parse', 'HEAD')
-    clock = {}
+    collector = RESEARCH / 'opened_import_census.py'
+    record = out / 'opened-build.json'
     started = time.monotonic()
-    subprocess.run([sys.executable, '-B', str(RESEARCH / 'build_import_observer.py'),
-                    '--record', str(out / 'import-build.json')], check=True)
-    importer = json.loads((out / 'import-build.json').read_text())['artifact_path']
-    clock['import_build'] = time.monotonic() - started
+    subprocess.run([sys.executable, '-B', str(collector), 'build',
+                    '--record', str(record)], check=True)
+    build_seconds = time.monotonic() - started
     started = time.monotonic()
-    subprocess.run([sys.executable, '-B', str(RESEARCH / 'import_census.py'), '--binary', importer,
-                    '--build-record', str(out / 'import-build.json'), '--sources', str(args.sources),
+    subprocess.run([sys.executable, '-B', str(collector), 'collect',
+                    '--build-record', str(record), '--sources', str(args.sources),
                     '--selection', str(args.selection), '--source-hashes', str(HASHES),
-                    '--out', str(out / 'import'), '--workers', str(args.import_workers),
-                    '--max-rss-mb', str(args.max_rss_mb)], check=False)
-    clock['import_census'] = time.monotonic() - started
-    admission = json.loads((out / 'import/summary.json').read_text())
-    rows = {row['model_id']: row for row in json.loads((out / 'import/ordered-rows.json').read_text())}
-    started = time.monotonic()
-    subprocess.run([sys.executable, '-B', str(RESEARCH / 'export_validity_census.py'), 'build',
-                    '--record', str(out / 'export-build.json'), '--kernel-revision', revision], check=True)
-    exporter = Path(json.loads((out / 'export-build.json').read_text())['artifact_path'])
-    clock['export_build'] = time.monotonic() - started
-    sys.path.insert(0, str(RESEARCH))
-    import export_validity_census as validity
-    paths = selected_sources(args.sources, args.selection)
-    admitted = sorted(key for key, row in rows.items() if row['outcome'] == 'full')
-    (out / 'export/rows').mkdir(parents=True)
-    (out / 'export/parts').mkdir()
-    observed = {}
-    started = time.monotonic()
-    with ThreadPoolExecutor(max_workers=args.export_workers) as pool:
-        jobs = {pool.submit(validity.observe, exporter, paths[key],
-                            {'model_id': key, 'source_sha256': rows[key]['source_sha256'],
-                             'bodies': rows[key]['bodies']},
-                            out / 'export/parts' / key, 60, args.max_rss_mb): key for key in admitted}
-        for job in as_completed(jobs):
-            row = job.result()
-            observed[row['model_id']] = row
-            save(out / 'export/rows' / f'{row["model_id"]}.json', row)
-            if len(observed) % 50 == 0:
-                print(json.dumps({'exported': len(observed), 'of': len(admitted)}), flush=True)
-    clock['export_census'] = time.monotonic() - started
-    with PREVIOUS.open(newline='') as stream:
+                    '--out', str(out / 'opened'), '--workers', '2',
+                    '--max-rss-mb', str(args.max_rss_mb)], check=True)
+    collect_seconds = time.monotonic() - started
+    report = json.loads((out / 'opened/results.json').read_text())
+    proofs = Counter()
+    full_files = Counter()
+    valid_files = Counter()
+    with (out / 'opened/results.csv').open(newline='') as stream:
         csv.field_size_limit(64 * 1024 * 1024)
-        before = {r['model_id'] for r in csv.DictReader(stream) if r['validity_outcome'] == 'raw_valid'}
-    valid = {key for key, row in observed.items() if row['outcome'] == 'raw_valid'}
-    # Runs with no verdict: aborted for memory or time, or a process error. A
-    # previous pass among them was not measured, so it is neither kept nor lost.
-    unmeasured = {'timeout': 'timed out', 'out_of_memory': 'out of memory',
-                  'process_error': 'process error', 'missing_result': 'process error, no result'}
-    not_covered = [{'model_id': k, 'stage': stage, 'kind': unmeasured[row['outcome']],
-                    'detail': row.get('cause') or row.get('timeout_stage') or ''}
-                   for stage, table in (('import', rows), ('export', observed))
-                   for k, row in sorted(table.items()) if row['outcome'] in unmeasured]
-    aborted = {entry['model_id'] for entry in not_covered}
-    report = {
-        'format': 'catallax-checkpoint-census/1', 'source_revision': revision,
-        'import_binary_sha256': admission['binary_sha256'], 'export_binary_sha256': digest(exporter),
-        'denominator': DENOMINATOR, 'complete': admission['complete'] and len(observed) == len(admitted)
-        and 'process_error' not in Counter(r['outcome'] for r in observed.values()),
-        'valid_after_builder': len(valid), 'valid_share_percent': f'{100 * len(valid) / DENOMINATOR:.2f}',
-        'occt_healed_valid': OCCT_HEALED_VALID,
-        'occt_healed_valid_share_percent': f'{100 * OCCT_HEALED_VALID / DENOMINATOR:.2f}',
-        'previous_valid_after_builder': len(before),
-        'gained_since_previous': sorted(valid - before),
-        'lost_since_previous': sorted(before - valid - aborted),
-        'previous_not_measured': sorted((before - valid) & aborted),
-        'admission_outcomes': admission['outcomes'], 'import_categories': admission['import_categories'],
-        'refusal_causes': admission['after_fix_causes'],
-        'not_covered': not_covered,
-        'max_rss_mb_per_observer': args.max_rss_mb,
-        'export_outcomes': dict(Counter(r['outcome'] for r in observed.values())),
-        'export_refusal_causes': dict(Counter(r.get('cause') for r in observed.values()
-                                              if r['outcome'] == 'export_refused')),
-        'wall_seconds': clock, 'import_workers': args.import_workers,
-        'export_workers': args.export_workers, 'per_file_timeout_seconds': 60,
-        'scope': 'a file counts when every imported body exports and passes BRepCheck after '
-                 'OCCT builder construction, which can heal pcurves internally'}
+        for row in csv.DictReader(stream):
+            inventory = json.loads(row.get('proofs') or '{}')
+            proofs.update(inventory)
+            if row['outcome'] != 'full':
+                continue
+            # File groups are disjoint, labelled by their least-checked body.
+            category = next((name for name in ('native_sampled', 'numerical', 'certified')
+                             if inventory.get(name)), 'unknown')
+            full_files[category] += 1
+            if row.get('all_solids_export_valid') == 'True':
+                valid_files[category] += 1
+    report.update(
+        format='catallax-checkpoint-census/2',
+        body_proofs=dict(proofs), full_file_proofs=dict(full_files),
+        valid_file_proofs=dict(valid_files),
+        wall_seconds={'build': build_seconds, 'collect': collect_seconds},
+        occt_healed_valid=OCCT_HEALED_VALID,
+        checkpoint_1_legacy_valid=374)
     save(out / 'census.json', report)
     (out / 'census.md').write_text(census_markdown(report))
     print((out / 'census.md').read_text())
@@ -365,32 +323,55 @@ def census(args):
 def census_markdown(r):
     total = sum(r['wall_seconds'].values())
     lines = ['# Census rerun', '',
-             f'Source `{r["source_revision"]}`. Complete: {r["complete"]}. Wall time {total / 60:.1f} min '
-             f'({", ".join(f"{k} {v / 60:.1f}" for k, v in r["wall_seconds"].items())}).', '',
-             '| Measure | Files | Share of 3,000 |', '| --- | ---: | ---: |',
-             f'| Catallax, valid after OCCT builder construction | {r["valid_after_builder"]} | {r["valid_share_percent"]}% |',
-             f'| OpenCASCADE, healed-valid (published reference) | {r["occt_healed_valid"]} | {r["occt_healed_valid_share_percent"]}% |',
-             f'| Catallax, previous capture | {r["previous_valid_after_builder"]} | {100 * r["previous_valid_after_builder"] / 3000:.2f}% |',
-             '', f'Gained since the previous capture: {len(r["gained_since_previous"])}. '
-             f'Lost, measured and no longer valid: {len(r["lost_since_previous"])} {r["lost_since_previous"]}. '
-             f'Previously valid but without a verdict this run (see Not covered): '
-             f'{len(r["previous_not_measured"])} {r["previous_not_measured"]}.', '',
-             '| Admission | Files |', '| --- | ---: |']
-    lines += [f'| {k} | {v} |' for k, v in sorted(r['admission_outcomes'].items())]
-    lines += ['', '| Import category | Files |', '| --- | ---: |']
-    lines += [f'| {k} | {v} |' for k, v in sorted(r['import_categories'].items())]
-    lines += ['', '| First refusal cause | Files |', '| --- | ---: |']
-    lines += [f'| `{k}` | {v} |' for k, v in sorted(r['refusal_causes'].items(), key=lambda kv: -kv[1])]
-    lines += ['', '| Export outcome of full admissions | Files |', '| --- | ---: |']
+             f'Source `{r["source_revision"]}`. Collected: {r["complete"]}. '
+             f'Evaluated: {r["evaluated"]}/{r["denominator"]}. '
+             f'Wall time {total / 60:.1f} min, including build.', '',
+             f'Acceptance passed: {r["acceptance_passed"]}. '
+             'Collected means all source rows were gathered, not that the baseline was preserved.', '',
+             '| Baseline comparison | Files |', '| --- | ---: |',
+             f'| Tier losses | {len(r["tier_losses"])} |',
+             f'| Frozen valid-export losses | {len(r["frozen_valid_export_losses"])} |',
+             f'| Baseline not measured | {len(r["baseline_not_measured"])} |', '',
+             '| Measure | Files | Share of 3,000 |', '| --- | ---: | ---: |']
+    for label, count in [
+        ('Catallax, complete-source occurrence-preserving valid solid export',
+         r['all_solids_export_valid_files']),
+        ('Catallax, at least one observed valid exported solid',
+         r['files_with_any_valid_exported_solid']),
+        ('Catallax, all isolated prototype exports valid',
+         r['prototype_solids_export_valid_files']),
+        ('OpenCASCADE, healed-valid, published reference', r['occt_healed_valid']),
+        ('Checkpoint 1 legacy import/export, historical', r['checkpoint_1_legacy_valid']),
+    ]:
+        lines.append(f'| {label} | {count} | {100 * count / DENOMINATOR:.2f}% |')
+    lines += ['', 'File groups below use the least-checked body in each full admission. '
+              'Numerical and sampled-native bodies are approximate, not certified. '
+              'Valid export requires the complete occurrence-preserving document, '
+              'not just isolated prototypes.', '',
+              '| Proof group | Full solid admissions | Complete-source valid exports | Bodies, including partial files |',
+              '| --- | ---: | ---: | ---: |']
+    for proof in ('certified', 'numerical', 'native_sampled', 'unknown'):
+        lines.append(f'| {proof} | {r["full_file_proofs"].get(proof, 0)} | '
+                     f'{r["valid_file_proofs"].get(proof, 0)} | '
+                     f'{r["body_proofs"].get(proof, 0)} |')
+    lines += ['', '| Opening outcome | Files |', '| --- | ---: |']
+    lines += [f'| {k} | {v} |' for k, v in sorted(r['outcomes'].items())]
+    lines += ['', f'Retained source-surface bodies: {r["body_proofs"].get("retained_source_surfaces", 0)}.',
+              '', '| Export outcome | Files |', '| --- | ---: |']
     lines += [f'| {k} | {v} |' for k, v in sorted(r['export_outcomes'].items())]
-    lines += ['', '## Not covered', '',
-              'Runs with no verdict: aborted for memory or time, or ended by a process error. They are '
-              'not passes, not losses and not refusals of geometry. The memory cap is sampled per '
-              f'observer ({r["max_rss_mb_per_observer"]} MiB), not a host-wide bound.', '']
-    lines += [f'- {e["model_id"]}: {e["stage"]} {e["kind"]}' + (f' ({e["detail"]})' if e['detail'] else '')
-              for e in r['not_covered']] or ['- None.']
-    if r['export_refusal_causes']:
-        lines += ['', 'Export refusals: ' + ', '.join(f'`{k}` {v}' for k, v in r['export_refusal_causes'].items()) + '.']
+    lines += ['', '| First body blocker | Refusal | Resource-limited | Bodies | Files, overlapping |',
+              '| --- | --- | --- | ---: | ---: |']
+    lines += [f'| {b["stage"]} | `{b["refusal"]}` | {b["resource_limited"]} | '
+              f'{b["bodies"]} | {b["files"]} |' for b in r['body_first_blockers']]
+    lines += ['', '## Observation limits', '',
+              f'Any-valid verdict unknown: {len(r["any_valid_export_unmeasured_files"])} files. '
+              f'Valid-solid counts are lower bounds in {len(r["any_valid_export_lower_bound_files"])} files. '
+              'Unobserved siblings are not invalid solids. Time, memory and work limits '
+              'are not geometric refusals.', '',
+              'Unknown any-valid file IDs: ' + ', '.join(r['any_valid_export_unmeasured_files']) + '.',
+              '', f'No common-tolerance source-fidelity or unhealed-validity claim. '
+              f'Observer memory cap: {r["max_rss_mb_per_observer"]} MiB. '
+              'The raw collector receipts and per-file rows are in `opened/`.']
     return '\n'.join(lines) + '\n'
 
 
@@ -415,10 +396,8 @@ def main():
     census_command = commands.choices['census']
     # Two workers and a per-observer cap keep one huge source (00005642 peaks at
     # 4.6 GB) from exhausting the shared 20 GB work PC.
-    census_command.add_argument('--import-workers', type=int, default=2)
     census_command.add_argument('--max-rss-mb', type=int, default=6144,
                                 help='kill one observer above this resident memory and record it as out of memory')
-    census_command.add_argument('--export-workers', type=int, default=2)
     args = parser.parse_args()
     {'scoreboard': scoreboard, 'census': census}[args.command](args)
 

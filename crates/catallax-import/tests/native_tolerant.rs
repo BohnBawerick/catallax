@@ -63,6 +63,8 @@ fn native_entity_tolerances_absorb_shared_vertex_error_beyond_the_checked_cap() 
         .join("\n");
     let opened = open(&source);
     assert_eq!(opened.bodies()[0].tier(), Tier::TolerantSolid);
+    assert!(opened.bodies()[0].checked_refusal().is_some());
+    assert!(opened.bodies()[0].refusal().is_none());
     let BodyView::Tolerant { import, body } = opened.body(0).unwrap() else {
         panic!("measured native geometry required")
     };
@@ -123,6 +125,7 @@ fn declared_closed_spline_directions_do_not_cap_an_edgeless_open_tube() {
         let BodyView::Surfaces { source, .. } = opened.body(0).unwrap() else {
             panic!("open tube must remain retained geometry")
         };
+        let source = source.materialize(&mut Decider::default()).unwrap();
         assert_eq!(source.shells()[0].faces.len(), 1);
         assert!(
             matches!(opened.bodies()[0].refusal(), Some(tolerant::Error::Numerical(error)) if error.code == "import.tolerant-broken-topology")
@@ -154,6 +157,7 @@ fn sewing_does_not_match_bowed_spline_edges_by_endpoints_alone() {
     let BodyView::Surfaces { source, .. } = opened.body(0).unwrap() else {
         panic!("different finite spline images must not become a closed solid")
     };
+    let source = source.materialize(&mut Decider::default()).unwrap();
     assert_eq!(source.shells()[0].faces.len(), 2);
     assert_eq!(source.edges().len(), 4);
 }
@@ -171,8 +175,26 @@ fn exported_ellipse_extrusion_has_a_continuous_side_uv_wire() {
             opened.bodies()[0].refusal()
         );
     };
+    for tolerance in import
+        .evidence()
+        .tolerances
+        .iter()
+        .filter(|row| row.kind == "vertex")
+    {
+        assert!(
+            tolerance.maximum_sample_residual_mm < 1e-6,
+            "a closed conic must start at its fitted source vertex: {tolerance:?}"
+        );
+    }
     let mut dec = Decider::default();
-    let bytes = import.export_body(body, &mut dec).unwrap();
+    let bytes = import.export_body(body, &mut dec).unwrap().into_bytes();
+    if let Ok(folder) = std::env::var("CATALLAX_HEALING_EVIDENCE") {
+        std::fs::write(
+            std::path::Path::new(&folder).join("native-ellipse.step"),
+            &bytes,
+        )
+        .unwrap();
+    }
     let parsed = ParsedStep::read(&bytes, &mut dec).unwrap();
     let side = parsed
         .entities()
@@ -235,23 +257,29 @@ fn exported_ellipse_extrusion_has_a_continuous_side_uv_wire() {
         let charts = parsed
             .curve_charts(pcurve, &r("1"), AngleUnit::Radians, &mut dec)
             .unwrap();
-        let limits = &charts[0].domain()[0];
+        let limits = charts
+            .iter()
+            .fold([f64::INFINITY, f64::NEG_INFINITY], |limits, chart| {
+                [
+                    limits[0].min(chart.domain()[0][0].as_ref().unwrap().to_f64_nearest()),
+                    limits[1].max(chart.domain()[0][1].as_ref().unwrap().to_f64_nearest()),
+                ]
+            });
         let carrier =
             NativeUvCurve::from_source(&parsed, pcurve, &r("1"), AngleUnit::Radians, &mut dec)
                 .unwrap();
-        let mut endpoints =
-            [limits[0].as_ref().unwrap(), limits[1].as_ref().unwrap()].map(|limit| {
-                carrier
-                    .sample(
-                        NativeLocation {
-                            chart: 0,
-                            parameters: [limit.to_f64_nearest(), 0.0],
-                        },
-                        &mut dec,
-                    )
-                    .unwrap()
-                    .0
-            });
+        let mut endpoints = limits.map(|limit| {
+            carrier
+                .sample(
+                    NativeLocation {
+                        chart: 0,
+                        parameters: [limit, 0.0],
+                    },
+                    &mut dec,
+                )
+                .unwrap()
+                .0
+        });
         if forward != sense {
             endpoints.reverse();
         }
@@ -300,7 +328,7 @@ fn selected_body_step_report_does_not_disclose_sibling_geometry_or_repairs() {
             .iter()
             .any(|repair| repair["body"] == sibling)
     );
-    let bytes = native.export_body(0, &mut dec).unwrap();
+    let bytes = native.export_body(0, &mut dec).unwrap().into_bytes();
     let parsed = ParsedStep::read(&bytes, &mut dec).unwrap();
     let roots = parsed
         .entities()
@@ -383,7 +411,7 @@ fn a_finite_open_spline_cannot_become_closed_by_repeating_its_vertex() {
 fn mixed_angular_contexts_refuse_before_the_default_checked_upgrade() {
     let source = common::in_degrees(common::elliptical_extrusion::SOURCE).replace(
         "ENDSEC;\nEND-ISO-10303-21;",
-        "#99994=(GEOMETRIC_REPRESENTATION_CONTEXT(3)GLOBAL_UNIT_ASSIGNED_CONTEXT((#42,#99990,#44))REPRESENTATION_CONTEXT('',''));\nENDSEC;\nEND-ISO-10303-21;",
+        "#99994=(GEOMETRIC_REPRESENTATION_CONTEXT(3)GLOBAL_UNIT_ASSIGNED_CONTEXT((#42,#99990,#44))REPRESENTATION_CONTEXT('',''));\n#99995=ADVANCED_BREP_SHAPE_REPRESENTATION('conflicting prototype units',(#41),#99994);\nENDSEC;\nEND-ISO-10303-21;",
     );
     let (result, work) = with_operation_budget(20_000_000, || {
         opened::open_step(
@@ -413,7 +441,7 @@ fn shared_curve_pcurves_stay_with_each_exported_body() {
         &mut dec,
     )
     .unwrap();
-    let selected = native.export_body(1, &mut dec).unwrap();
+    let selected = native.export_body(1, &mut dec).unwrap().into_bytes();
     let parsed = ParsedStep::read(&selected, &mut dec).unwrap();
     for surface in fixture.first_surfaces {
         assert!(
@@ -450,5 +478,409 @@ fn shared_curve_pcurves_stay_with_each_exported_body() {
                 "the writer reused another body's pcurve associations"
             );
         }
+    }
+}
+
+#[test]
+fn a_bad_first_body_cannot_refuse_a_usable_later_sibling() {
+    let mut later = BoxFixture::new(["2", "3", "4"]);
+    later.origin[0] = r("20");
+    let source = common::boxes_step(&[BoxFixture::new(["2", "3", "4"]), later]).replacen(
+        "MANIFOLD_SOLID_BREP",
+        "CSG_SOLID",
+        1,
+    );
+    let opened = open(&source);
+    assert_eq!(opened.bodies()[0].tier(), Tier::SurfaceBody);
+    assert_eq!(
+        opened.bodies()[0].first_blocker(),
+        Some(tolerant::admission::NativeStage::BodyBuild)
+    );
+    assert_eq!(opened.bodies()[1].tier(), Tier::ValidSolid);
+    assert!(matches!(opened.body(1), Some(BodyView::Certified { .. })));
+    let native = tolerant::admission::import_step(
+        source.as_bytes(),
+        &sha256_hex(source.as_bytes()),
+        Default::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    assert_eq!(native.bodies().len(), 1);
+    assert_eq!(native.bodies()[0].source_index(), 1);
+    let name = native.bodies()[0].name();
+    assert!(
+        native
+            .evidence()
+            .tolerances
+            .iter()
+            .all(|row| row.body == name)
+    );
+    assert!(native.export_step(&mut Decider::default()).is_err());
+    let file = native.export_body(0, &mut Decider::default()).unwrap();
+    let parsed = ParsedStep::read(file.bytes(), &mut Decider::default()).unwrap();
+    let declarations = parsed.model_declarations(&mut Decider::default()).unwrap();
+    assert_eq!(declarations.len(), 1);
+    assert_eq!(format!("#{}", declarations[0].entity), name);
+}
+
+#[test]
+fn main_admission_keeps_a_complete_checked_file_before_optional_boundary_work() {
+    let boxes: Vec<_> = (0..20)
+        .map(|index| {
+            let mut fixture = BoxFixture::new(["2", "3", "4"]);
+            fixture.origin[0] = r(&(index * 20).to_string());
+            fixture
+        })
+        .collect();
+    let source = common::boxes_step(&boxes);
+    let (opened, work) = with_operation_budget(20_000_000, || {
+        opened::open_step(
+            source.as_bytes(),
+            &sha256_hex(source.as_bytes()),
+            &StepId::new("main-first").unwrap(),
+            Default::default(),
+            &mut Decider::default(),
+        )
+    });
+    let opened = opened.unwrap();
+    assert!(!work.exhausted);
+    assert_eq!(opened.bodies().len(), boxes.len());
+    for index in 0..boxes.len() {
+        assert_eq!(opened.bodies()[index].tier(), Tier::ValidSolid);
+        let BodyView::Certified { model, body } = opened.body(index).unwrap() else {
+            panic!("the existing checked result must survive optional boundary work");
+        };
+        assert_eq!(model.body(body).kind, catallax_topology::BodyKind::Solid);
+    }
+}
+
+#[test]
+fn missing_sphere_pole_edges_are_reconstructed_from_measured_collapse() {
+    let source = include_str!("fixtures/half-sphere-missing-poles.step");
+    let (native, work) = with_operation_budget(20_000_000, || {
+        tolerant::admission::import_step(
+            source.as_bytes(),
+            &sha256_hex(source.as_bytes()),
+            Default::default(),
+            &mut Decider::default(),
+        )
+    });
+    let native = native.unwrap();
+    assert!(!work.exhausted);
+    let inserted = native
+        .evidence()
+        .repairs
+        .iter()
+        .filter(|change| {
+            matches!(
+                change,
+                tolerant::healing::HealingChange::DegenerateEdgeInserted { .. }
+            )
+        })
+        .count();
+    assert_eq!(inserted, 2);
+    assert_eq!(native.bodies()[0].counts().edges, 5);
+    let file = native.export_body(0, &mut Decider::default()).unwrap();
+    if let Ok(folder) = std::env::var("CATALLAX_HEALING_EVIDENCE") {
+        std::fs::write(
+            std::path::Path::new(&folder).join("native-poles.step"),
+            file.bytes(),
+        )
+        .unwrap();
+    }
+}
+
+#[test]
+fn default_opening_exports_a_rebuilt_trace_instead_of_an_inconsistent_authored_trace() {
+    use catallax_import::geometry_source::{Curve, Geometry};
+    let source = common::elliptical_extrusion::SOURCE
+        .replace(
+            "#20=EDGE_CURVE('lower ellipse edge',#18,#18,#12,.F.);",
+            "#20=EDGE_CURVE('lower ellipse edge',#18,#18,#100,.F.);",
+        )
+        .replace(
+            "ENDSEC;\nEND-ISO-10303-21;",
+            concat!(
+                "#100=SURFACE_CURVE('',#12,(#101,#15),.PCURVE_S1.);\n",
+                "#101=PCURVE('',#16,#102);\n",
+                "#102=DEFINITIONAL_REPRESENTATION('',(#103),#107);\n",
+                "#103=LINE('',#104,#105);\n",
+                "#104=CARTESIAN_POINT('',(100.,100.));\n",
+                "#105=VECTOR('',#106,1.);\n",
+                "#106=DIRECTION('',(1.,0.));\n",
+                "#107=(GEOMETRIC_REPRESENTATION_CONTEXT(2)",
+                "PARAMETRIC_REPRESENTATION_CONTEXT()REPRESENTATION_CONTEXT('',''));\n",
+                "ENDSEC;\nEND-ISO-10303-21;",
+            ),
+        );
+    let (opened, work) = with_operation_budget(20_000_000, || {
+        opened::open_step(
+            source.as_bytes(),
+            &sha256_hex(source.as_bytes()),
+            &StepId::new("bad-authored-trace").unwrap(),
+            Default::default(),
+            &mut Decider::default(),
+        )
+    });
+    let opened = opened.unwrap();
+    let Some(BodyView::Tolerant {
+        import: native,
+        body,
+    }) = opened.body(0)
+    else {
+        panic!(
+            "default opening must repair the native trace: tier {:?}, refusal {:?}, first {:?}, exhausted {}",
+            opened.bodies()[0].tier(),
+            opened.bodies()[0].refusal(),
+            opened.first_refusal(),
+            work.exhausted
+        );
+    };
+    assert!(!work.exhausted);
+    let trace = native
+        .evidence()
+        .native_trims
+        .iter()
+        .find(|trace| trace.face == "#37" && trace.edge == "#20")
+        .unwrap();
+    assert!(trace.reconstructed);
+    assert!(trace.source_pcurve.is_none());
+    let tolerance = native.bodies()[body]
+        .definition()
+        .edges()
+        .iter()
+        .find(|edge| edge.name == "#20")
+        .unwrap()
+        .tolerance_mm()
+        .to_f64_nearest();
+    let surface = native.native_surface(16).unwrap();
+    let curve = native.native_curve(100).unwrap();
+    let file = native.export_body(body, &mut Decider::default()).unwrap();
+    let mut dec = Decider::default();
+    let parsed = ParsedStep::read(file.bytes(), &mut dec).unwrap();
+    let emitted_pcurve = parsed
+        .entities()
+        .find_map(|entity| {
+            let Topology::Edge {
+                curve: Some(curve), ..
+            } = parsed.topology(entity, &mut dec).ok()?
+            else {
+                return None;
+            };
+            let Geometry::Curve(Curve::SurfaceCurve(12, associated, _, _)) =
+                parsed.geometry(curve, &mut dec).ok()?
+            else {
+                return None;
+            };
+            associated.into_iter().find(|&pcurve| {
+                matches!(
+                    parsed.geometry(pcurve, &mut dec),
+                    Ok(Geometry::Curve(Curve::Pcurve(16, _)))
+                )
+            })
+        })
+        .expect("exported curved edge needs its cap pcurve");
+    let Geometry::Curve(Curve::Pcurve(_, representation)) =
+        parsed.geometry(emitted_pcurve, &mut dec).unwrap()
+    else {
+        unreachable!()
+    };
+    let representation = parsed.representation(representation).unwrap();
+    let Geometry::Curve(Curve::Replica(conic, transform)) =
+        parsed.geometry(representation.items[0], &mut dec).unwrap()
+    else {
+        panic!("projected conic needs its emitted UV frame");
+    };
+    let Geometry::Transformation(transform) = parsed.geometry(transform, &mut dec).unwrap() else {
+        unreachable!()
+    };
+    let Geometry::Point(origin) = parsed.geometry(transform.origin, &mut dec).unwrap() else {
+        unreachable!()
+    };
+    let axes: [[f64; 2]; 2] = std::array::from_fn(|axis| {
+        let Geometry::Direction(direction) = parsed
+            .geometry(transform.axes[axis].unwrap(), &mut dec)
+            .unwrap()
+        else {
+            unreachable!()
+        };
+        let direction = [direction[0].to_f64_nearest(), direction[1].to_f64_nearest()];
+        let length = direction[0].hypot(direction[1]);
+        direction.map(|coordinate| coordinate / length)
+    });
+    let scale = transform.scales[0].as_ref().unwrap().to_f64_nearest();
+    let Geometry::Curve(Curve::Ellipse(placement, major, minor)) =
+        parsed.geometry(conic, &mut dec).unwrap()
+    else {
+        panic!("exported trace must retain the analytic ellipse");
+    };
+    let Geometry::Axis2Placement2d(centre, Some(x_axis)) =
+        parsed.geometry(placement, &mut dec).unwrap()
+    else {
+        unreachable!()
+    };
+    let Geometry::Point(centre) = parsed.geometry(centre, &mut dec).unwrap() else {
+        unreachable!()
+    };
+    let Geometry::Direction(x_axis) = parsed.geometry(x_axis, &mut dec).unwrap() else {
+        unreachable!()
+    };
+    let x_axis = [x_axis[0].to_f64_nearest(), x_axis[1].to_f64_nearest()];
+    let length = x_axis[0].hypot(x_axis[1]);
+    let x_axis = x_axis.map(|coordinate| coordinate / length);
+    let y_axis = [-x_axis[1], x_axis[0]];
+    let radii = [major.to_f64_nearest(), minor.to_f64_nearest()];
+    let centre = [centre[0].to_f64_nearest(), centre[1].to_f64_nearest()];
+    let origin = [origin[0].to_f64_nearest(), origin[1].to_f64_nearest()];
+    for sample in &trace.samples {
+        let angle = sample.curve.parameters[0];
+        let x = radii[0] * angle.cos();
+        let y = radii[1] * angle.sin();
+        let uv: [f64; 2] =
+            std::array::from_fn(|axis| centre[axis] + x_axis[axis] * x + y_axis[axis] * y);
+        let uv = std::array::from_fn(|axis| {
+            origin[axis] + scale * (axes[0][axis] * uv[0] + axes[1][axis] * uv[1])
+        });
+        let actual = surface
+            .sample(surface.location(uv).unwrap(), &mut dec)
+            .unwrap();
+        let expected = curve.sample(sample.curve, &mut dec).unwrap();
+        let residual = (0..3).fold(0.0_f64, |distance, axis| {
+            distance.hypot(actual.point_mm[axis] - expected.point_mm[axis])
+        }) + actual.uncertainty_mm
+            + expected.uncertainty_mm;
+        assert!(
+            residual <= tolerance,
+            "emitted pcurve leaves the 3D edge by {residual}"
+        );
+    }
+    if let Ok(folder) = std::env::var("CATALLAX_HEALING_EVIDENCE") {
+        std::fs::write(
+            std::path::Path::new(&folder).join("default-rebuilt-ellipse-trace.step"),
+            file.bytes(),
+        )
+        .unwrap();
+    }
+}
+
+#[test]
+fn an_out_of_domain_source_trace_is_rebuilt_from_the_actual_curve() {
+    let source = include_str!("fixtures/half-sphere-missing-poles.step").replace(
+        "#40 = CARTESIAN_POINT('',(0.,-6.28318530718));",
+        "#40 = CARTESIAN_POINT('',(0.,100.));",
+    );
+    let (native, work) = with_operation_budget(20_000_000, || {
+        tolerant::admission::import_step(
+            source.as_bytes(),
+            &sha256_hex(source.as_bytes()),
+            Default::default(),
+            &mut Decider::default(),
+        )
+    });
+    let native = native.unwrap();
+    assert!(!work.exhausted);
+    let trace = native
+        .evidence()
+        .native_trims
+        .iter()
+        .find(|trace| trace.face == "#17" && trace.edge == "#21")
+        .unwrap();
+    assert!(trace.reconstructed);
+    assert!(trace.source_pcurve.is_none());
+    let tolerance = native.bodies()[0]
+        .definition()
+        .edges()
+        .iter()
+        .find(|edge| edge.name == "#21")
+        .unwrap()
+        .tolerance_mm()
+        .to_f64_nearest();
+    let surface = native.native_surface(33).unwrap();
+    assert!(surface.location([0.0, 100.0]).is_err());
+    let curve = native.native_curve(26).unwrap();
+    for sample in &trace.samples {
+        let actual = surface
+            .sample(sample.surface, &mut Decider::default())
+            .unwrap();
+        let expected = curve.sample(sample.curve, &mut Decider::default()).unwrap();
+        let residual = (0..3).fold(0.0_f64, |distance, axis| {
+            distance.hypot(actual.point_mm[axis] - expected.point_mm[axis])
+        }) + actual.uncertainty_mm
+            + expected.uncertainty_mm;
+        assert!(
+            residual <= tolerance,
+            "rebuilt trace residual {residual} exceeds {tolerance}"
+        );
+    }
+    let file = native.export_body(0, &mut Decider::default()).unwrap();
+    if let Ok(folder) = std::env::var("CATALLAX_HEALING_EVIDENCE") {
+        std::fs::write(
+            std::path::Path::new(&folder).join("native-rebuilt-trace.step"),
+            file.bytes(),
+        )
+        .unwrap();
+    }
+}
+
+#[test]
+fn pole_aligned_endpoints_report_their_final_curve_and_vertex_incidence() {
+    let source = include_str!("fixtures/half-sphere-missing-poles.step").replace(
+        "#40 = CARTESIAN_POINT('',(0.,-6.28318530718));",
+        "#40 = CARTESIAN_POINT('',(3.14159265359,-6.28318530718));",
+    );
+    let (native, work) = with_operation_budget(20_000_000, || {
+        tolerant::admission::import_step(
+            source.as_bytes(),
+            &sha256_hex(source.as_bytes()),
+            Default::default(),
+            &mut Decider::default(),
+        )
+    });
+    let native = native.unwrap();
+    assert!(!work.exhausted);
+    let trace = native
+        .evidence()
+        .native_trims
+        .iter()
+        .find(|trace| trace.face == "#17" && trace.edge == "#21")
+        .unwrap();
+    let body = native.bodies()[0].definition();
+    let edge = body.edges().iter().find(|edge| edge.name == "#21").unwrap();
+    let surface = native.native_surface(33).unwrap();
+    let curve = native.native_curve(26).unwrap();
+    for (endpoint, sample) in [
+        trace.samples.first().unwrap(),
+        trace.samples.last().unwrap(),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        assert!(sample.surface.parameters[0].cos() > 1.0 - 1e-10);
+        let actual = surface
+            .sample(sample.surface, &mut Decider::default())
+            .unwrap();
+        let expected = curve.sample(sample.curve, &mut Decider::default()).unwrap();
+        let curve_residual = (0..3).fold(0.0_f64, |distance, axis| {
+            distance.hypot(actual.point_mm[axis] - expected.point_mm[axis])
+        }) + actual.uncertainty_mm
+            + expected.uncertainty_mm;
+        assert!((sample.residual_mm - curve_residual).abs() < 1e-12);
+        assert!(edge.tolerance_mm().to_f64_nearest() >= sample.residual_mm);
+        let vertex = &body.vertices()[edge.vertices[if trace.forward {
+            endpoint
+        } else {
+            1 - endpoint
+        }]];
+        let point = vertex
+            .source
+            .point
+            .each_ref()
+            .map(|value| value.to_f64_nearest());
+        let vertex_residual = (0..3).fold(0.0_f64, |distance, axis| {
+            distance.hypot(actual.point_mm[axis] - point[axis])
+        }) + actual.uncertainty_mm;
+        let recorded = sample.vertex_residual_mm.unwrap();
+        assert!((recorded - vertex_residual).abs() < 1e-12);
+        assert!(vertex.tolerance_mm().to_f64_nearest() >= recorded);
     }
 }

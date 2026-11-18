@@ -145,7 +145,43 @@ pub struct DirectSolid {
 
 // Source definitions are data, not an admission. A single promoted surface
 // shell can therefore retain its original face bindings without a Model cast.
-fn source_solid(mut file: crate::StepFile) -> Result<crate::Solid, ImportError> {
+fn source_solid(mut file: crate::StepFile, dec: &mut Decider) -> Result<crate::Solid, ImportError> {
+    for face in file
+        .solids
+        .iter_mut()
+        .flat_map(|body| &mut body.faces)
+        .chain(
+            file.surface_models
+                .iter_mut()
+                .flat_map(|body| &mut body.shells)
+                .flat_map(|shell| &mut shell.faces),
+        )
+    {
+        for edge in face
+            .loops
+            .iter_mut()
+            .flat_map(|boundary| &mut boundary.edges)
+        {
+            if let Curve::Retained(source) = &edge.curve {
+                match source.recognized_curve(dec) {
+                    Ok(curve) => edge.curve = curve,
+                    Err(crate::ImportRefusal::ResourceLimit) => {
+                        return Err(crate::ImportRefusal::ResourceLimit.into());
+                    }
+                    Err(_) => {}
+                }
+            }
+        }
+        if let Surface::Retained(source) = &face.surface {
+            match source.recognized_surface(&face.loops, dec) {
+                Ok(surface) => face.surface = surface,
+                Err(crate::ImportRefusal::ResourceLimit) => {
+                    return Err(crate::ImportRefusal::ResourceLimit.into());
+                }
+                Err(_) => {}
+            }
+        }
+    }
     if file.solids.len() == 1 && file.surface_models.is_empty() {
         return Ok(file.solids.pop().expect("one source solid"));
     }
@@ -193,10 +229,17 @@ impl DirectSolid {
                 ));
             }
         }
-        let solid = source_solid(opened.source().body_definition(index, dec)?)?;
+        let solid = source_solid(opened.source().body_definition(index, dec)?, dec)?;
         let faces: Arc<[Face]> = solid.faces.into();
-        let current_faces = if let Some(BodyView::Tolerant { import, body }) = opened.body(index) {
-            Arc::<[Face]>::from(source_solid(import.body_definition(body, dec)?)?.faces)
+        let current_faces = if let Some((import, body)) =
+            opened.tolerant_admission().and_then(|import| {
+                import
+                    .bodies()
+                    .binary_search_by_key(&index, |body| body.source_index())
+                    .ok()
+                    .map(|body| (import, body))
+            }) {
+            Arc::<[Face]>::from(source_solid(import.body_definition(body, dec)?, dec)?.faces)
         } else if let Some(healed) = opened.bodies()[index].healing() {
             let mut definition = healed.definition(dec)?;
             if definition.solids.len() != 1 || !definition.surface_models.is_empty() {

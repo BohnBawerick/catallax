@@ -38,6 +38,54 @@ impl ParsedStep {
         }
         Ok(out)
     }
+
+    pub(crate) fn model_unit_contexts(
+        &self,
+        models: &[ModelDeclaration],
+        dec: &mut Decider,
+    ) -> Result<Option<Vec<EntityId>>, ImportRefusal> {
+        let roots: std::collections::BTreeSet<_> =
+            models.iter().map(|model| model.entity).collect();
+        let mut covered = std::collections::BTreeSet::new();
+        let mut contexts = std::collections::BTreeSet::new();
+        for (&id, entity) in self.graph.iter() {
+            dec.charge_work(1)
+                .map_err(|_| ImportRefusal::ResourceLimit)?;
+            if !entity
+                .parts
+                .iter()
+                .any(|(kind, _)| kind.ends_with("REPRESENTATION"))
+            {
+                continue;
+            }
+            let Ok(representation) = self.representation(id) else {
+                continue;
+            };
+            let mut used = false;
+            for item in representation.items {
+                if roots.contains(&item) {
+                    covered.insert(item);
+                    used = true;
+                }
+            }
+            if used {
+                if self
+                    .representation_context(representation.context)?
+                    .dimension
+                    != Some(3)
+                {
+                    return Err(malformed(id, "body prototype requires a 3D unit context"));
+                }
+                contexts.insert(representation.context);
+            }
+        }
+        // Unbound prototypes still require the former globally unambiguous
+        // units; a representation-local choice cannot assign their geometry.
+        if covered != roots {
+            return Ok(None);
+        }
+        Ok(Some(contexts.into_iter().collect()))
+    }
 }
 fn assign<T: Eq>(slot: &mut Option<T>, value: T, id: EntityId) -> Result<(), ImportRefusal> {
     if slot.as_ref().is_some_and(|old| *old != value) {

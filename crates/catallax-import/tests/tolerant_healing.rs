@@ -27,6 +27,20 @@ fn read(text: &str) -> tolerant::TolerantFile {
     .unwrap()
 }
 
+fn native_open(text: &str) -> tolerant::opened::OpenedStep {
+    let (result, work) = with_operation_budget(20_000_000, || {
+        tolerant::opened::open_step(
+            text.as_bytes(),
+            &sha256_hex(text.as_bytes()),
+            &catallax_recipe::StepId::new("wire-control").unwrap(),
+            Default::default(),
+            &mut Decider::default(),
+        )
+    });
+    assert!(!work.exhausted);
+    result.unwrap()
+}
+
 #[test]
 fn coincident_circle_endpoints_sew_only_the_same_finite_arc() {
     for sense in [false, true] {
@@ -456,6 +470,39 @@ fn an_existing_wire_is_reordered_without_losing_any_edge_use() {
         ),
         (6, 12, 8)
     );
+    let opened = native_open(&text);
+    assert_ne!(
+        opened.bodies()[0].tier(),
+        tolerant::opened::Tier::SurfaceBody
+    );
+    let repairs = match opened.body(0).unwrap() {
+        tolerant::opened::BodyView::Tolerant { import, .. } => &import.evidence().repairs,
+        _ => {
+            &opened.bodies()[0]
+                .healing()
+                .expect("the checked admission must retain its wire-repair history")
+                .report()
+                .changes
+        }
+    };
+    assert!(
+        repairs
+            .iter()
+            .any(|change| matches!(change, HealingChange::WireReordered { .. }))
+    );
+    match opened.body(0).unwrap() {
+        tolerant::opened::BodyView::Numerical(body) => {
+            assert_eq!((body.counts().faces, body.counts().edges), (6, 12));
+        }
+        tolerant::opened::BodyView::Tolerant { import, body } => {
+            let counts = import.bodies()[body].counts();
+            assert_eq!((counts.faces, counts.edges), (6, 12));
+        }
+        tolerant::opened::BodyView::Certified { model, body } => {
+            assert_eq!(model.body(body).kind, catallax_topology::BodyKind::Solid);
+        }
+        tolerant::opened::BodyView::Surfaces { .. } => panic!("wire repair must retain a solid"),
+    }
 }
 
 fn reverse_last_flag(line: &str) -> String {
@@ -553,15 +600,13 @@ fn sewing_keeps_independent_source_bodies_and_their_bindings_separate() {
     assert_eq!(definition.solids.len(), 2);
     assert_eq!(definition.solids[1], original.solids[1]);
     let unchanged = input.bodies()[1].name();
-    assert!(!result.report().changes.iter().any(|c| match c {
-        HealingChange::EdgesSewn { body, .. }
-        | HealingChange::VerticesJoined { body, .. }
-        | HealingChange::WireReordered { body, .. }
-        | HealingChange::BoundaryReversed { body, .. }
-        | HealingChange::FaceReversed { body, .. }
-        | HealingChange::ShellsSewn { body, .. }
-        | HealingChange::SmallLineRemoved { body, .. } => body == unchanged,
-    }));
+    assert!(
+        !result
+            .report()
+            .changes
+            .iter()
+            .any(|change| change.body() == unchanged)
+    );
 }
 
 #[test]
@@ -708,6 +753,11 @@ fn an_ordered_wire_gap_is_joined_from_measured_endpoints_without_exact_incidence
             .any(|i| i.code == "shell.open-or-nonmanifold")
     );
     assert!(!healed.tolerances().bodies[0].changes.is_empty());
+    let opened = native_open(&split_wire_endpoint("0.000001"));
+    assert_eq!(
+        opened.bodies()[0].first_blocker(),
+        Some(tolerant::admission::NativeStage::ShellIncidence)
+    );
 }
 
 #[test]
@@ -730,6 +780,19 @@ fn an_over_cap_wire_gap_stays_unresolved_and_does_not_grow_tolerances() {
             .changes
             .iter()
             .any(|c| matches!(c, HealingChange::VerticesJoined { .. }))
+    );
+    let opened = native_open(&split_wire_endpoint("0.02"));
+    assert_eq!(
+        opened.bodies()[0].first_blocker(),
+        Some(tolerant::admission::NativeStage::WireConnection)
+    );
+    assert!(
+        opened
+            .tolerant_admission()
+            .unwrap()
+            .evidence()
+            .repairs
+            .is_empty()
     );
 }
 

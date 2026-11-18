@@ -122,15 +122,20 @@ fn edge_samples(
 }
 
 fn trim_seed(trim: &NativeTrim, fraction: f64) -> NativeLocation {
-    let scaled = fraction * (trim.samples.len() - 1) as f64;
-    let first = (scaled.floor() as usize).min(trim.samples.len() - 1);
-    let next = (first + 1).min(trim.samples.len() - 1);
+    let next = trim
+        .samples
+        .partition_point(|sample| sample.fraction < fraction)
+        .min(trim.samples.len() - 1)
+        .max(1);
+    let first = next - 1;
+    let width = trim.samples[next].fraction - trim.samples[first].fraction;
+    let weight = ((fraction - trim.samples[first].fraction) / width).clamp(0.0, 1.0);
     let a = trim.samples[first].surface;
     let b = trim.samples[next].surface;
     NativeLocation {
         chart: a.chart,
         parameters: std::array::from_fn(|axis| {
-            a.parameters[axis] + (scaled - first as f64) * (b.parameters[axis] - a.parameters[axis])
+            a.parameters[axis] + weight * (b.parameters[axis] - a.parameters[axis])
         }),
     }
 }
@@ -306,6 +311,9 @@ pub fn preview_tolerant_body(
             .or_default()
             .push(*trim);
     }
+    for trims in face_trims.values_mut() {
+        trims.sort_by_key(|trim| trim.use_index);
+    }
     let mut mesh = PreviewMesh::default();
     let vertices = body
         .vertices()
@@ -318,21 +326,24 @@ pub fn preview_tolerant_body(
             continue;
         };
         let ends = edge.vertices.map(|vertex| vertices[vertex]);
-        let source_id = edge
-            .name
-            .strip_prefix('#')
-            .and_then(|name| name.parse().ok());
-        let curve = match source_id
-            .map(|entity| import.parsed_source().topology(entity, dec))
-            .transpose()
-            .map_err(|error| failure(format!("{error:?}")))?
-        {
-            Some(Topology::Edge {
-                curve: Some(curve), ..
-            }) => import.native_curve(curve),
-            _ => None,
-        };
-        let carrier = if let Some(curve) = curve {
+        let carrier = if edge.degenerate || matches!(edge.curve, Curve::Line(..)) {
+            EdgeCarrier::Line(ends.map(|index| mesh.positions[index]))
+        } else {
+            let source_id = edge
+                .name
+                .strip_prefix('#')
+                .and_then(|name| name.parse().ok());
+            let curve = match source_id
+                .map(|entity| import.parsed_source().topology(entity, dec))
+                .transpose()
+                .map_err(|error| failure(format!("{error:?}")))?
+            {
+                Some(Topology::Edge {
+                    curve: Some(curve), ..
+                }) => import.native_curve(curve),
+                _ => None,
+            }
+            .ok_or_else(|| failure("active edge has no retained native carrier"))?;
             let first = trim.samples.first().unwrap().curve.parameters[0];
             let last = trim.samples.last().unwrap().curve.parameters[0];
             EdgeCarrier::Native(
@@ -343,10 +354,6 @@ pub fn preview_tolerant_body(
                     [last, first]
                 },
             )
-        } else if matches!(edge.curve, Curve::Line(..)) {
-            EdgeCarrier::Line(ends.map(|index| mesh.positions[index]))
-        } else {
-            return Err(failure("active edge has no retained native carrier"));
         };
         let samples = edge_samples(
             &carrier,
@@ -366,6 +373,14 @@ pub fn preview_tolerant_body(
         edges.insert(edge.name.as_str(), samples);
     }
     for face in body.shells().iter().flat_map(|shell| &shell.faces) {
+        let collapsed_vertices = face
+            .loops
+            .iter()
+            .flat_map(|boundary| &boundary.edges)
+            .map(|usage| &body.edges()[usage.edge])
+            .filter(|edge| edge.degenerate)
+            .flat_map(|edge| edge.vertices.map(|vertex| vertices[vertex]))
+            .collect::<std::collections::BTreeSet<_>>();
         let source_id = face
             .name
             .strip_prefix('#')
@@ -420,7 +435,8 @@ pub fn preview_tolerant_body(
                     } else {
                         row.len() - 1 - offset
                     }];
-                    if nodes.last().is_some_and(|node| node.mesh == index) {
+                    let collapsed = collapsed_vertices.contains(&index);
+                    if !collapsed && nodes.last().is_some_and(|node| node.mesh == index) {
                         continue;
                     }
                     let seed = trim_seed(
@@ -451,15 +467,58 @@ pub fn preview_tolerant_body(
                             .parameters
                         }
                     };
+                    if nodes.last().is_some_and(|node| {
+                        node.mesh == index && (node.uv[0] - uv[0]).hypot(node.uv[1] - uv[1]) <= 1e-8
+                    }) {
+                        continue;
+                    }
                     nodes.push(Node { uv, mesh: index });
                 }
             }
             if nodes.len() < 4 || nodes[0].mesh != nodes.last().unwrap().mesh {
                 return Err(failure("native trim loop is not closed"));
             }
-            let gap = (nodes[0].uv[0] - nodes.last().unwrap().uv[0])
-                .hypot(nodes[0].uv[1] - nodes.last().unwrap().uv[1]);
-            if gap > 1e-8 {
+            let first = nodes[0];
+            let last = *nodes.last().unwrap();
+            let first_usage = &boundary.edges[if boundary.orientation {
+                0
+            } else {
+                boundary.edges.len() - 1
+            }];
+            let vertex = body.edges()[first_usage.edge].vertices
+                [usize::from(first_usage.forward != boundary.orientation)];
+            let tolerance = body.vertices()[vertex].tolerance_mm().to_f64_nearest();
+            for endpoint in [first, last] {
+                if distance(
+                    carrier.position(endpoint.uv, dec)?,
+                    mesh.positions[first.mesh],
+                ) > tolerance
+                {
+                    return Err(failure(
+                        "native UV closure exceeds its measured vertex tolerance",
+                    ));
+                }
+            }
+            let periodic = match &carrier {
+                Carrier::Native(surface) => {
+                    surface
+                        .periods()
+                        .into_iter()
+                        .enumerate()
+                        .any(|(axis, period)| {
+                            period.is_some_and(|period| {
+                                let delta = last.uv[axis] - first.uv[axis];
+                                let turns = (delta / period).round();
+                                turns.abs() >= 1.0
+                                    && (delta - turns * period).abs() <= period * 1e-6
+                            })
+                        })
+                }
+                Carrier::Inferred(_) => {
+                    (first.uv[0] - last.uv[0]).hypot(first.uv[1] - last.uv[1]) > 1e-8
+                }
+            };
+            if periodic {
                 winding.push(nodes);
             } else {
                 nodes.pop();
@@ -517,7 +576,12 @@ pub fn preview_tolerant_body(
             FaceOutput {
                 name: &face.name,
                 same_sense: face.same_sense,
-                skip_collapsed: natural.is_some(),
+                skip_collapsed: natural.is_some()
+                    || face
+                        .loops
+                        .iter()
+                        .flat_map(|boundary| &boundary.edges)
+                        .any(|usage| body.edges()[usage.edge].degenerate),
             },
             &carrier,
             cdt,

@@ -510,7 +510,12 @@ impl Compiler<'_> {
             }
             Surface::Sphere(p, r) => {
                 let radial = self.length(&r).mul(&b.cos());
-                vec![chart(
+                let latitude = Expr::pi()
+                    .div(&Expr::integer(2))
+                    .div(&self.angles.factor())
+                    .evaluate(&[], 96, dec)?;
+                let limit = latitude.lo().abs().max(latitude.hi().abs());
+                let mut sphere = chart(
                     id,
                     2,
                     frame_point(
@@ -521,7 +526,9 @@ impl Compiler<'_> {
                             self.length(&r).mul(&b.sin()),
                         ],
                     ),
-                )]
+                );
+                sphere.domain[1] = [Some(-&limit), Some(limit)];
+                vec![sphere]
             }
             Surface::Torus(p, major, minor) => vec![chart(
                 id,

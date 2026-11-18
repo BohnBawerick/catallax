@@ -1022,6 +1022,8 @@ At the carrier-repair checkpoint, the unchanged P8 original and spring-rise edit
 
 The native-clipping continuation passes two Boolean exclusion regressions and two captured native-curve tests, including shared-side ownership, adjacent-turn exclusion, transverse numerical contacts and refusal of tangent/overlap intervals. The exact fixture consumes 14,907,954 work. Original P8 now exhausts the unchanged 100M allowance at 99,879,180 during the threaded union (65,991,844 for that union); the thread sweep remains 33,876,285. The spring, edited P8, persistence and raw STEP remain unproved. The preceding bounded-exclusion candidate also exhausted the allowance. This is a repeated resource barrier, not completed P8.
 
+Checkpoint 2 decision: stop P8 here and retain this as a known gap. The continuation is pushed WIP on `fm/cx-p8-numerical`, not a completed milestone or a ready continuation PR. The allowance, tolerance and work prices are unchanged.
+
 Later: thread fitting still exceeds the 20M target; retain this phase record for Phase 5 without enlarging the 100M application allowance.
 Later: reuse per-cut/native-patch bound certificates within one Boolean operation, preserving the existing resource-price convention.
 

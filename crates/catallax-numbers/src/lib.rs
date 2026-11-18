@@ -39,8 +39,8 @@ mod operation;
 mod outcome;
 pub use operation::{
     OperationAllowance, OperationTask, OperationWork, RecordedWork, current_operation_work,
-    operation_budget_active, prefer_reduced_angle_series, reuse_operation_enclosures,
-    with_operation_budget,
+    operation_budget_active, prefer_reduced_angle_series, refund_on_refusal,
+    reuse_operation_enclosures, with_operation_budget,
 };
 mod poly;
 #[cfg(feature = "work-profile")]

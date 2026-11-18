@@ -117,7 +117,7 @@ pub fn build(
             .admit(
                 |model, id, options, dec| {
                     let (definition, trims) =
-                        catallax_step::numerical::definition_from_exact_model(
+                        catallax_features::numerical_embedding::definition_from_exact_model(
                             &model,
                             id,
                             recipe.name.clone(),

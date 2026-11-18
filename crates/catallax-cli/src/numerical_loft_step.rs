@@ -105,7 +105,7 @@ pub(crate) fn evaluate(
     let body = selected.admit_with(dec, |model, collection, admission, dec| {
         let (definition, native_trims) =
             measured("numerical-step-definition", recipe, dec, |dec| {
-                step::definition_from_exact_model(
+                catallax_features::numerical_embedding::definition_from_exact_model(
                     model,
                     collection,
                     recipe.name.clone(),

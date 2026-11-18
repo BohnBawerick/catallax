@@ -430,14 +430,16 @@ fn lower_precision_cap_is_respected_without_reinterpreting_the_tolerance() {
 
 #[test]
 fn unsupported_support_is_a_refusal_instead_of_unchecked_acceptance() {
-    use catallax_shapes::{Sphere, Vector3};
+    use catallax_shapes::{EllipticCylinder, Vector3};
     let mut definition = fixture("0");
-    definition.faces[0].surface = Surface::Sphere(
-        Sphere::new(
+    // Spheres are admitted carriers now; an elliptic cylinder is not.
+    definition.faces[0].surface = Surface::EllipticCylinder(
+        EllipticCylinder::new(
             Point3::new(q("0").into(), q("0").into(), q("0").into()),
-            q("1").into(),
             Vector3::new(q("0").into(), q("0").into(), q("1").into()),
             Vector3::new(q("1").into(), q("0").into(), q("0").into()),
+            q("4").into(),
+            q("1").into(),
             &mut Decider::default(),
         )
         .unwrap(),

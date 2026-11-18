@@ -223,12 +223,21 @@ impl Plan {
             }
             _ => None,
         };
+        let ring_hull = if hull.is_none() {
+            definition.ring_hull(dec)?
+        } else {
+            None
+        };
+        let hull = hull
+            .as_ref()
+            .map(|points| points.as_slice())
+            .or(ring_hull.as_deref());
         for i in others {
             let face = &self.faces[i];
             if definition.avoids_support(&face.surface, dec)? {
                 continue;
             }
-            if let Some(hull) = &hull
+            if let Some(hull) = hull
                 && catallax_features::fillet::hull_clear(hull, &face.surface, dec)?
             {
                 continue;

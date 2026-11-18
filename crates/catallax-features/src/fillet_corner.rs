@@ -98,6 +98,50 @@ impl SphereSector {
         [b.cross(c), c.cross(a), a.cross(b)].map(|v| v.scaled(&volume))
     }
 
+    /// A pyramid enclosing the retained spherical sector. Its three rays meet
+    /// the plane `dual_sum . (p-centre) = radius*|dual_sum|`; Cauchy-Schwarz
+    /// places every sector point inside that pyramid without sampling.
+    pub fn hull(&self) -> [Point3; 4] {
+        let [a, b, c] = self.dual_basis();
+        let dual_sum = a.plus(&b).plus(&c);
+        let reach = &self.radius * &dual_sum.norm_squared().sqrt();
+        [
+            self.centre.clone(),
+            self.centre.plus(&self.directions[0].scaled(&reach)),
+            self.centre.plus(&self.directions[1].scaled(&reach)),
+            self.centre.plus(&self.directions[2].scaled(&reach)),
+        ]
+    }
+
+    /// Encloses a spherical polygon's positive contact cone by a pyramid.
+    /// The summed directions must define an open hemisphere; otherwise no
+    /// finite bound is returned. The directions need not be normalised.
+    pub fn contact_hull(
+        centre: &Point3,
+        radius: &Real,
+        directions: &[Vector3],
+        dec: &mut Decider,
+    ) -> Result<Vec<Point3>, Refusal> {
+        if directions.is_empty() || sign(radius, dec)? != Sign::Positive {
+            return Err(bad("a contact-cone hull needs rays and a positive radius"));
+        }
+        let hemisphere = directions
+            .iter()
+            .fold(Vector3::zero(), |sum, n| sum.plus(n));
+        for direction in directions {
+            if sign(&hemisphere.dot(direction), dec)? != Sign::Positive {
+                return Err(bad("corner contact normals need one open hemisphere"));
+            }
+        }
+        let scale = radius * &hemisphere.norm_squared().sqrt();
+        let mut points = Vec::with_capacity(directions.len() + 1);
+        points.push(centre.clone());
+        points.extend(directions.iter().map(|direction| {
+            centre.plus(&direction.scaled(&(&scale / &hemisphere.dot(direction))))
+        }));
+        Ok(points)
+    }
+
     /// Whether a point's direction from the centre lies in the closed sector.
     pub fn in_sector(&self, p: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
         let d = p.minus(&self.centre);

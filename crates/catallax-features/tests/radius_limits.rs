@@ -379,6 +379,12 @@ fn a_rational_contact_bound_is_exact_even_when_the_legacy_hint_is_rounded() {
     };
     assert_eq!(refusal.code, RADIUS_TOO_LARGE);
     assert_eq!(radius_limit(&refusal), Some(q("333/1000")));
+    let terminal_hint = refusal
+        .detail
+        .strip_suffix(" mm")
+        .and_then(|detail| detail.rsplit_once("; radius limit "))
+        .and_then(|(_, value)| Rational::parse(value).ok());
+    assert_eq!(terminal_hint, Some(q("333/1000")), "{refusal:?}");
     assert!(
         refusal
             .detail

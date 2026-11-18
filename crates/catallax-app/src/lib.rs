@@ -57,7 +57,7 @@ pub mod soliddraft;
 pub use certified::{CertifiedApplicationBody, build_certified, certify_built};
 pub use outcome::{EvaluatedApplicationOutcome, NumericalApplicationBody};
 
-use std::{collections::BTreeMap, fmt};
+use std::{collections::BTreeMap, fmt, sync::Arc};
 
 use catallax_features::{
     BuildError, Built, EvaluationCheckpoint, ImportFiles, evaluate, evaluate_incremental,
@@ -68,8 +68,8 @@ use catallax_numbers::{Answer, Decider, Refusal, operation_budget_active, with_o
 use catallax_recipe::{EdgeName, Origin, Recipe, VertexName};
 use catallax_topology::{BodyId, EdgeId, FaceId, Model, VertexId};
 
-/// Default arithmetic allowance for an eager build with display, an exact-only
-/// build, or a separate display request. A caller-owned allowance takes precedence.
+/// Default arithmetic allowance for a build with or without display, or a
+/// separate display request. A caller-owned allowance takes precedence.
 pub const DEFAULT_BUILD_WORK: u64 = 100_000_000;
 
 /// Speed-phase target for a complete build or query. Exceeding it does not refuse work.
@@ -428,7 +428,9 @@ pub fn build_incremental_with_files(
 /// Names and continuation semantics match [`build_incremental`]. Request display
 /// separately through [`EvaluatedApplicationBody::display`] only when needed.
 /// Build and display each honor the active caller allowance, or the default
-/// application guard when called without one.
+/// application guard when called without one. A fillet only the rolling-ball
+/// construction builds is refused here; ask
+/// [`build_incremental_with_files_without_display`] for it.
 pub fn build_incremental_without_display(
     recipe: &Recipe,
     prefix: Option<EvaluationCheckpoint>,
@@ -440,6 +442,41 @@ pub fn build_incremental_without_display(
         check_result(built)?;
         let names = result_names(&built.model, built.result);
         Ok(EvaluatedApplicationBody { checkpoint, names })
+    })
+}
+
+/// The ordinary no-display build, with immutable STEP, IGES and mesh sources.
+///
+/// A fillet the exact builders finish stays exact. A fillet only the
+/// rolling-ball construction builds returns numerical geometry with its own
+/// tolerance, origins and history, never an exact continuation checkpoint.
+/// Source bytes are verified even when the matching exact prefix is reused.
+/// Build and separately requested display honor the active caller allowance.
+pub fn build_incremental_with_files_without_display(
+    recipe: &Recipe,
+    prefix: Option<EvaluationCheckpoint>,
+    files: &ImportFiles<'_>,
+    decider: &mut Decider,
+) -> Result<EvaluatedApplicationOutcome, Error> {
+    bounded_build(|| {
+        match catallax_features::evaluate_incremental_outcome(recipe, prefix, files, decider)
+            .map_err(Error::Build)?
+        {
+            catallax_features::EvaluationOutcome::Exact(checkpoint) => {
+                let built = checkpoint.built();
+                check_result(built)?;
+                let names = result_names(&built.model, built.result);
+                Ok(EvaluatedApplicationOutcome::Exact(
+                    EvaluatedApplicationBody { checkpoint, names },
+                ))
+            }
+            catallax_features::EvaluationOutcome::Numerical(body) => {
+                let (body, recipe, origins) = Arc::unwrap_or_clone(body).into_parts();
+                Ok(EvaluatedApplicationOutcome::Numerical(Arc::new(
+                    NumericalApplicationBody::new(body, recipe, origins),
+                )))
+            }
+        }
     })
 }
 

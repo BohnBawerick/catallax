@@ -171,7 +171,7 @@ pub(crate) fn embedded_exact(
     out: &Path,
     dec: &mut Decider,
 ) -> io::Result<Option<Result<Value, catallax_numbers::Refusal>>> {
-    if !step::embeds(model, body) {
+    if !catallax_features::numerical_embedding::embeds(model, body) {
         return Ok(None);
     }
     let tolerance = catallax_step::StepOptions::default().curve_tolerance;
@@ -182,19 +182,33 @@ pub(crate) fn embedded_exact(
         ..Default::default()
     };
     let span = OperationSpan::begin("brep", &recipe.result, "numerical-step", dec);
-    let built = step::build_from_exact_model(
-        model,
-        body,
-        recipe.name.clone(),
-        NumericalOptions {
-            tolerance_mm: tolerance.clone(),
-        },
-        &options,
-        dec,
-    );
+    let assemble = || {
+        let (definition, native_trims) =
+            catallax_features::numerical_embedding::definition_from_exact_model(
+                model,
+                body,
+                recipe.name.clone(),
+                &tolerance,
+                dec,
+            )?;
+        let body = numerical::build_with_native_trims(
+            definition,
+            native_trims,
+            NumericalOptions {
+                tolerance_mm: tolerance,
+            },
+            dec,
+        )?;
+        step::build(&body, &options, dec)
+    };
+    let built = if catallax_numbers::operation_budget_active() {
+        assemble()
+    } else {
+        catallax_numbers::with_operation_budget(numerical::DEFAULT_WORK, assemble).0
+    };
     span.finish(dec, built.as_ref().err(), None);
     let artifact = match built {
-        Ok((_, artifact)) => artifact,
+        Ok(artifact) => artifact,
         Err(error) => return Ok(Some(Err(error))),
     };
     publish_embedded(&artifact, recipe, out, dec).map(Some)
@@ -268,13 +282,14 @@ fn admit(
         let built = candidate
             .admit(
                 |model, body, options, dec| {
-                    let (definition, trims) = step::definition_from_exact_model(
-                        &model,
-                        body,
-                        recipe.name.clone(),
-                        &options.tolerance_mm,
-                        dec,
-                    )?;
+                    let (definition, trims) =
+                        catallax_features::numerical_embedding::definition_from_exact_model(
+                            &model,
+                            body,
+                            recipe.name.clone(),
+                            &options.tolerance_mm,
+                            dec,
+                        )?;
                     let body = numerical::build_with_native_trims(
                         definition,
                         trims,

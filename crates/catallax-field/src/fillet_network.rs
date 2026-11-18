@@ -78,8 +78,27 @@ fn certify_cells(
             }
             Sign::Negative => {}
         }
+        // A cell retains only directions in the contact cone. A wall whose
+        // normal is nonpositive on every generating ray cannot meet that
+        // cone when its apex is strictly behind the wall. The diametral ball
+        // below can extend beyond the wall even when this retained cell does not.
+        let mut cone_points_away = true;
+        for normal in normals {
+            if geometry::sign(&normal.dot(&plane.normal), dec)? == Sign::Positive {
+                cone_points_away = false;
+                break;
+            }
+        }
         let norm_squared = plane.normal.norm_squared();
-        for (midpoint, radius_squared) in balls.iter().flatten() {
+        for (centre, (midpoint, radius_squared)) in
+            centres.iter().flatten().zip(balls.iter().flatten())
+        {
+            if cone_points_away
+                && geometry::sign(&plane.origin.minus(centre).dot(&plane.normal), dec)?
+                    == Sign::Positive
+            {
+                continue;
+            }
             let clearance = plane.origin.minus(midpoint).dot(&plane.normal);
             if geometry::sign(&clearance, dec)? != Sign::Positive
                 || geometry::sign(

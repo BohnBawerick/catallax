@@ -1146,11 +1146,6 @@ fn hull(
     dec: &mut Decider,
 ) -> Result<Option<Vec<Point3>>, Refusal> {
     let e = model.edge(run.edge);
-    if e.start == e.end
-        && let Some(points) = run.definition.ring_hull(dec)?
-    {
-        return Ok(Some(points));
-    }
     if let (Curve::Circle(_), Some(start), Some(end)) =
         (model.geom().curve(e.curve), e.start, e.end)
     {
@@ -2112,6 +2107,78 @@ fn close(model: &Model, mut arcs: Vec<(EdgeId, Sense)>) -> Result<Vec<(EdgeId, S
     Ok(path)
 }
 
+/// The finite region a strip occupies, bounded only when a face is asked
+/// about: the strip's hull, and for a closed ring the hull of its whole
+/// sweep, each with its box.
+///
+/// A strip's carrier runs on past the strip. A torus round a boss foot comes
+/// back on the far side of its axis, and a wall there meets the carrier
+/// without coming near the fillet.
+struct FiniteRegion<'a> {
+    run: &'a Run,
+    hull: Option<&'a [Point3]>,
+    hull_box: Option<catallax_measure::BoundingBox>,
+    ring: Option<Option<(Vec<Point3>, catallax_measure::BoundingBox)>>,
+}
+
+impl<'a> FiniteRegion<'a> {
+    fn new(run: &'a Run, hull: Option<&'a [Point3]>) -> Self {
+        Self {
+            run,
+            hull,
+            hull_box: None,
+            ring: None,
+        }
+    }
+
+    /// Whether the trimmed `face`, on surface `other`, is proved off the
+    /// strip's finite region.
+    fn clears(
+        &mut self,
+        model: &Model,
+        face: FaceId,
+        other: &Surface,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        if let Some(hull) = self.hull {
+            if self.hull_box.is_none() {
+                self.hull_box = Some(fillet_clearance::hull_box(hull, dec)?);
+            }
+            let region = self.hull_box.as_ref().expect("retained hull box");
+            if fillet_clearance::outside_face(model, face, region, dec)? {
+                return Ok(true);
+            }
+        }
+        if self.ring.is_none() {
+            let edge = model.edge(self.run.edge);
+            let ring = if edge.start == edge.end {
+                self.run.definition.ring_hull(dec)?
+            } else {
+                None
+            };
+            self.ring = Some(match ring {
+                Some(points) => {
+                    let region = fillet_clearance::hull_box(&points, dec)?;
+                    Some((points, region))
+                }
+                None => None,
+            });
+        }
+        let Some(Some((points, region))) = &self.ring else {
+            return Ok(false);
+        };
+        if hull_clear(points, other, dec)? {
+            return Ok(true);
+        }
+        if let Some(corners) = polygon(model, face)
+            && hulls_apart(points, &corners, dec)?
+        {
+            return Ok(true);
+        }
+        fillet_clearance::outside_face(model, face, region, dec)
+    }
+}
+
 fn guard(
     model: &mut Model,
     body: BodyId,
@@ -2133,7 +2200,10 @@ fn guard(
         })
         .flat_map(|(_, incident)| incident.iter().map(|(f, _)| *f))
         .collect();
-    let mut finite_hull = None;
+    // The finite region of the strip, for the faces its whole carrier
+    // reaches. These bounds are only asked for where the carrier tests below
+    // would refuse, so a fillet they already pass costs what it did.
+    let mut finite = FiniteRegion::new(run, hull);
     for face in model.faces_of_body(body) {
         if run.faces.contains(&face) || neighbours.contains(&face) || cut.contains(&face) {
             continue;
@@ -2149,17 +2219,6 @@ fn guard(
             if let Some(corners) = polygon(model, face)
                 && hulls_apart(hull, &corners, dec)?
             {
-                continue;
-            }
-            if finite_hull.is_none() {
-                finite_hull = Some(fillet_clearance::hull_box(hull, dec)?);
-            }
-            if fillet_clearance::outside_face(
-                model,
-                face,
-                finite_hull.as_ref().expect("retained hull"),
-                dec,
-            )? {
                 continue;
             }
         }
@@ -2207,6 +2266,9 @@ fn guard(
             match clear {
                 Some(true) => continue,
                 Some(false) => {
+                    if finite.clears(model, face, &other, dec)? {
+                        continue;
+                    }
                     return Err(Refusal::new(
                         "fillet.unsupported-overflow",
                         "a face reaches the hull of the blend band and needs trimmed continuation",
@@ -2216,16 +2278,21 @@ fn guard(
             }
         }
         let a = model.geom_mut().add_surface(run.definition.surface.clone());
-        let b = model.geom_mut().add_surface(other);
-        if !matches!(
-            catallax_intersect::intersect_surfaces(model.geom_mut(), a, b, dec)?.value,
-            SurfacePair::Disjoint
-        ) {
-            return Err(Refusal::new(
-                "fillet.unsupported-overflow",
-                "a non-end neighbour intersects the blend carrier; its trimmed contact continuation must be resolved before publishing",
-            ));
+        let b = model.geom_mut().add_surface(other.clone());
+        // A pair the intersection has no answer for is no proof either way,
+        // and the finite region may still settle it.
+        let met = catallax_intersect::intersect_surfaces(model.geom_mut(), a, b, dec);
+        if matches!(&met, Ok(pair) if matches!(pair.value, SurfacePair::Disjoint)) {
+            continue;
         }
+        if finite.clears(model, face, &other, dec)? {
+            continue;
+        }
+        met?;
+        return Err(Refusal::new(
+            "fillet.unsupported-overflow",
+            "a non-end neighbour intersects the blend carrier; its trimmed contact continuation must be resolved before publishing",
+        ));
     }
     Ok(())
 }
@@ -2285,6 +2352,8 @@ fn surface_guard(
     incident: &BTreeSet<FaceId>,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
+    // As in `guard`, the corner's finite region is only bounded where its
+    // whole carrier would refuse.
     let mut finite_hull = None;
     for face in model.faces_of_body(body) {
         if incident.contains(&face) {
@@ -2292,6 +2361,12 @@ fn surface_guard(
         }
         let other = model.geom().surface(model.face(face).surface).clone();
         if separated(surface, &other, dec)? {
+            continue;
+        }
+        let a = model.geom_mut().add_surface(surface.clone());
+        let b = model.geom_mut().add_surface(other.clone());
+        let met = catallax_intersect::intersect_surfaces(model.geom_mut(), a, b, dec);
+        if matches!(&met, Ok(pair) if matches!(pair.value, SurfacePair::Disjoint)) {
             continue;
         }
         if let Some(hull) = hull {
@@ -2310,17 +2385,11 @@ fn surface_guard(
                 continue;
             }
         }
-        let a = model.geom_mut().add_surface(surface.clone());
-        let b = model.geom_mut().add_surface(other);
-        if !matches!(
-            catallax_intersect::intersect_surfaces(model.geom_mut(), a, b, dec)?.value,
-            SurfacePair::Disjoint
-        ) {
-            return Err(Refusal::new(
-                "fillet.unsupported-overflow",
-                "a non-incident face meets the corner's support; its trimmed continuation must be resolved before publishing",
-            ));
-        }
+        met?;
+        return Err(Refusal::new(
+            "fillet.unsupported-overflow",
+            "a non-incident face meets the corner's support; its trimmed continuation must be resolved before publishing",
+        ));
     }
     Ok(())
 }

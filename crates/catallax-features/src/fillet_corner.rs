@@ -115,15 +115,17 @@ impl SphereSector {
 
     /// Encloses a spherical polygon's positive contact cone by a pyramid.
     /// The summed directions must define an open hemisphere; otherwise no
-    /// finite bound is returned. The directions need not be normalised.
+    /// finite bound is returned. The directions need not be normalised. The
+    /// radius is the caller's positive fillet radius; it is not decided again
+    /// here, so the hemisphere test is all this charges.
     pub fn contact_hull(
         centre: &Point3,
         radius: &Real,
         directions: &[Vector3],
         dec: &mut Decider,
     ) -> Result<Vec<Point3>, Refusal> {
-        if directions.is_empty() || sign(radius, dec)? != Sign::Positive {
-            return Err(bad("a contact-cone hull needs rays and a positive radius"));
+        if directions.is_empty() {
+            return Err(bad("a contact-cone hull needs rays"));
         }
         let hemisphere = directions
             .iter()

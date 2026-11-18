@@ -800,12 +800,9 @@ fn sampled(f: impl Fn(f64) -> Option<(V, V)>) -> Option<Samples> {
     }
 }
 
-/// The same curve over 0..1 by its share of arc length.
-///
-/// A cut that runs almost along the strip passes through most of its length
-/// in a sliver of the section angle that parametrises it. By length it moves
-/// at one speed, so uniform spans of the fitted curve, and the uniform
-/// samples the embedding takes of it, land where the curve is.
+/// The same curve over 0..1 by its share of arc length, at one speed, so
+/// uniform spans of a fitted curve, and the uniform samples the embedding
+/// takes of it, land where the curve is however fast its own parameter runs.
 fn by_length(f: impl Fn(f64) -> Option<(V, V)>) -> Option<impl Fn(f64) -> Option<(V, V)>> {
     // Three-point Gauss-Legendre length of the piece from `a` to `b`.
     fn piece(f: &impl Fn(f64) -> Option<(V, V)>, a: f64, b: f64) -> Option<f64> {
@@ -1330,7 +1327,20 @@ fn open_end(
         let slope = strip.sliding(t, angle, wall.normal(point)?)?;
         Some((point, mul(slope, across)))
     };
-    Ok(by_length(cut).and_then(sampled).map(|cut| OpenEnd {
+    // The section angle is the cut's natural parameter and usually its
+    // smoothest. Close to the largest radius that fits, the cut runs almost
+    // along the strip and passes through most of its length in a sliver of
+    // that angle; there it is smoother by arc length. The fit takes whichever
+    // needs fewer spans, and the angle when they need the same.
+    let by_angle = sampled(cut);
+    let by_arc = by_length(cut).and_then(sampled);
+    let cut = match (by_angle, by_arc) {
+        (Some(angle), Some(arc)) if arc.0.len() < angle.0.len() => arc,
+        (Some(angle), _) => angle,
+        (None, Some(arc)) => arc,
+        (None, None) => return Ok(None),
+    };
+    Ok(Some(OpenEnd {
         vertex,
         end,
         borders: [first, second],

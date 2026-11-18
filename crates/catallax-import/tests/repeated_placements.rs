@@ -256,6 +256,23 @@ fn whole_document_roundtrip_preserves_shared_prototype_and_distinct_instances() 
         assert_eq!(binding.roots.len(), 1);
         let parsed = ParsedStep::read(exported.bytes(), &mut Decider::default()).unwrap();
         assert_inventory(&parsed, &fixture, binding.roots[0]);
+        let (result, work) = with_operation_budget(20_000_000, || {
+            opened::open_step(
+                exported.bytes(),
+                &sha256_hex(exported.bytes()),
+                &StepId::new("reopened-placement").unwrap(),
+                Default::default(),
+                &mut Decider::default(),
+            )
+        });
+        assert!(!work.exhausted);
+        let reopened = result.unwrap();
+        assert_eq!(reopened.bodies().len(), 1);
+        assert!(!matches!(
+            reopened.body(0),
+            Some(opened::BodyView::Surfaces { .. }) | None
+        ));
+        assert_inventory(reopened.parsed_source().unwrap(), &fixture, binding.roots[0]);
     }
 }
 

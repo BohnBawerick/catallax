@@ -156,9 +156,12 @@ enum Step {
 /// constant again at the requested precision. The program evaluates every
 /// node once, in binary64, with its constants rounded when it is compiled.
 ///
-/// Each value carries a running bound on its rounding error, to first order
-/// and with rounding to nearest. It tells the caller when binary64 has lost
-/// the value to cancellation. It is not an enclosure and proves nothing.
+/// Each value carries a running bound on its error: the rounding of every
+/// step, with rounding to nearest, and what a radius around each parameter
+/// can move the value by. It tells the caller when binary64 has lost the
+/// value to cancellation, and how far the value is known when its parameter
+/// is known only to a radius. The bound's own arithmetic is rounded, so it is
+/// not an enclosure and proves nothing.
 #[derive(Clone, Debug)]
 pub(super) struct Program {
     steps: Vec<Step>,
@@ -223,16 +226,16 @@ impl Program {
         self.steps.len()
     }
 
-    /// The three values at `parameters`, each with its rounding bound. A
-    /// missing parameter, a division by what may be zero or a root of what may
-    /// be negative gives a bound that is not finite.
-    pub(super) fn evaluate(&self, parameters: &[f64]) -> [(f64, f64); 3] {
+    /// The three values at `parameters`, each known to its radius, and each
+    /// value's bound. A missing parameter, a division by what may be zero or a
+    /// root of what may be negative gives a bound that is not finite.
+    pub(super) fn evaluate(&self, parameters: &[(f64, f64)]) -> [(f64, f64); 3] {
         const ROUNDING: f64 = f64::EPSILON;
         let mut values: Vec<(f64, f64)> = Vec::with_capacity(self.steps.len());
         for step in &self.steps {
             let (value, bound) = match *step {
                 Step::Constant(value, bound) => (value, bound),
-                Step::Parameter(axis) => (parameters.get(axis).copied().unwrap_or(f64::NAN), 0.0),
+                Step::Parameter(axis) => parameters.get(axis).copied().unwrap_or((f64::NAN, 0.0)),
                 Step::Add(a, b) => {
                     let ((a, ea), (b, eb)) = (values[a], values[b]);
                     let sum = a + b;
@@ -352,7 +355,7 @@ mod tests {
         for parameters in [[0.0, 0.0], [0.3, -1.25], [5.9, 2.0], [-17.0, 0.001]] {
             let balls = parameters
                 .map(|value| Ball::from_rational(&Rational::from_f64_exact(value).unwrap(), 96));
-            let rounded = compiled.evaluate(&parameters);
+            let rounded = compiled.evaluate(&parameters.map(|value| (value, 0.0)));
             for (coordinate, (value, bound)) in coordinates.iter().zip(rounded) {
                 let enclosure = coordinate.evaluate(&balls, 96, &mut dec).unwrap();
                 let miss = (value - enclosure.mid().to_f64_nearest()).abs();
@@ -366,7 +369,8 @@ mod tests {
     fn the_binary64_program_reports_what_cancellation_loses() {
         let large = Expr::rational(Rational::parse("100000000000000000").unwrap());
         let lost = Expr::parameter(0).add(&large).sub(&large);
-        let [(value, bound), ..] = program(&[lost.clone(), lost.clone(), lost]).evaluate(&[1.0]);
+        let [(value, bound), ..] =
+            program(&[lost.clone(), lost.clone(), lost]).evaluate(&[(1.0, 0.0)]);
         // The exact value is 1; binary64 cannot hold 1e17 + 1.
         assert!((value - 1.0).abs() <= bound, "{value} within {bound}");
         assert!(bound > 1.0);
@@ -377,7 +381,45 @@ mod tests {
         let one = Expr::integer(1);
         let pole = one.div(&Expr::parameter(0));
         let root = Expr::parameter(0).sub(&one).sqrt();
-        let outputs = program(&[pole.clone(), root, pole]).evaluate(&[0.0]);
+        let outputs = program(&[pole.clone(), root, pole]).evaluate(&[(0.0, 0.0)]);
         assert!(outputs.iter().all(|(_, bound)| !bound.is_finite()));
+    }
+
+    #[test]
+    fn a_parameter_radius_reaches_the_bound_of_every_value() {
+        let (u, v) = (Expr::parameter(0), Expr::parameter(1));
+        let thousand = Expr::integer(1000);
+        let coordinates = [
+            thousand.mul(&u.sin()).add(&v.pow(2)),
+            thousand.mul(&u.cos()).div(&v.add(&Expr::integer(3))),
+            u.mul(&v).add(&thousand).sqrt().mul(&v.exp()),
+        ];
+        let compiled = program(&coordinates);
+        let (centre, radius) = ([0.8, 1.5], [1e-6, 2e-7]);
+        let middle = compiled.evaluate(&[(centre[0], radius[0]), (centre[1], radius[1])]);
+        // Each value moves by more than a thousand rounding steps over the box.
+        assert!(
+            middle
+                .iter()
+                .all(|(_, bound)| *bound > 1e-7 && *bound < 1e-2)
+        );
+        for corner in [
+            [-1.0, -1.0],
+            [-1.0, 1.0],
+            [1.0, -1.0],
+            [1.0, 1.0],
+            [0.3, -0.7],
+        ] {
+            let at = compiled.evaluate(&[
+                (centre[0] + corner[0] * radius[0], 0.0),
+                (centre[1] + corner[1] * radius[1], 0.0),
+            ]);
+            for ((value, bound), (moved, _)) in middle.iter().zip(at) {
+                assert!(
+                    (value - moved).abs() <= *bound,
+                    "{corner:?}: {value} to {moved}"
+                );
+            }
+        }
     }
 }

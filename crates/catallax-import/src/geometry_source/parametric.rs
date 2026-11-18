@@ -173,9 +173,9 @@ impl ParameterChart {
 }
 /// A [`ParameterChart`] compiled for binary64 evaluation.
 ///
-/// It evaluates the same expressions as [`ParameterChart::evaluate_box`] at a
-/// point, rounded, with a running bound on the rounding error in place of an
-/// enclosure. Display sampling takes thousands of points per face and claims
+/// It evaluates the same expressions as [`ParameterChart::evaluate_box`] at
+/// the middle of a parameter box, rounded, with a running bound on the
+/// rounding error and on the box's own width in place of an enclosure. Display sampling takes thousands of points per face and claims
 /// no bound on any of them; an interval evaluation of each costs a body's
 /// whole work allowance. Nothing that admits, fits or certifies geometry may
 /// use it.
@@ -186,17 +186,26 @@ pub struct Binary64Chart {
 }
 impl Binary64Chart {
     /// The chart's coordinates at `parameters`, which the caller keeps inside
-    /// the chart's domain, and the largest rounding bound among them. The
-    /// bound is not finite at a singular point. Where it is too large for the
-    /// caller's purpose, binary64 has lost the value and the caller needs
+    /// the chart's domain, and the bound on the point's distance. `radii`
+    /// says how far each parameter is known: a parameter reduced modulo a
+    /// period is known to the rounding of that reduction, and the bound
+    /// carries what that moves the point by, with the rounding of every step.
+    /// The bound is not finite at a singular point. Where it is too large for
+    /// the caller's purpose, binary64 cannot answer and the caller needs
     /// [`ParameterChart::evaluate_box`].
-    pub fn evaluate(&self, parameters: &[f64]) -> ([f64; 3], f64) {
-        let values = self
-            .program
-            .evaluate(&parameters[..self.dimension.min(parameters.len())]);
+    pub fn evaluate(&self, parameters: &[f64], radii: &[f64]) -> ([f64; 3], f64) {
+        let known: Vec<(f64, f64)> = parameters
+            .iter()
+            .take(self.dimension)
+            .enumerate()
+            .map(|(axis, parameter)| (*parameter, radii.get(axis).copied().unwrap_or(0.0)))
+            .collect();
+        let values = self.program.evaluate(&known);
         (
             values.map(|(value, _)| value),
-            values.iter().fold(0.0, |bound, (_, each)| bound.max(*each)),
+            values
+                .iter()
+                .fold(0.0f64, |bound, (_, each)| bound.hypot(*each)),
         )
     }
     /// Work one evaluation is charged: a sixty-fourth of a unit for each

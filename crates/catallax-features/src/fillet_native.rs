@@ -1436,6 +1436,42 @@ impl Scratch<'_> {
     }
 }
 
+/// Whether an edge whose ends moved along it still runs from its start to
+/// its end the way it did, with something of it left.
+///
+/// A straight edge is judged by its chord. An arc is not: one of 300 degrees
+/// cut back to its last 100 has a chord that points against the old one and
+/// is still the same arc, shorter. `turning` is the centre of a circular
+/// edge and the axis it turns about in its own direction. The ends are then
+/// placed by angle from the old start: an end in the gap the arc leaves
+/// counts as before the start or past the end, whichever it is nearer.
+fn keeps_its_way(old: [V; 2], new: [V; 2], turning: Option<(V, V)>) -> bool {
+    use std::f64::consts::TAU;
+    let Some((centre, axis)) = turning else {
+        return dot(sub(new[1], new[0]), sub(old[1], old[0])) > 0.0;
+    };
+    let from_start = |to: V| {
+        let (a, b) = (sub(old[0], centre), sub(to, centre));
+        let angle = dot(cross(a, b), axis).atan2(dot(a, b));
+        if angle < 0.0 { angle + TAU } else { angle }
+    };
+    // A closed ring spans the whole turn.
+    let span = match from_start(old[1]) {
+        angle if angle > 1e-12 => angle,
+        _ => TAU,
+    };
+    let placed = |to: V| {
+        let angle = from_start(to);
+        if angle <= span || angle < 0.5 * (span + TAU) {
+            angle
+        } else {
+            angle - TAU
+        }
+    };
+    let left = placed(new[1]) - placed(new[0]);
+    left > 0.0 && left <= TAU
+}
+
 /// A walk along new edges from one vertex to another, in either direction.
 fn walk(
     model: &Model,
@@ -1727,11 +1763,26 @@ pub(crate) fn build(
                     .copied()
             })
         };
+        // A circle's edge turns about its normal, or against it when reversed.
+        let turning = match scratch.model.geom().curve(definition.curve) {
+            Curve::Circle(circle) => {
+                let axis = vector64(&circle.normal, dec)?;
+                Some((
+                    point64(&circle.center, dec)?,
+                    if definition.sense == Sense::Same {
+                        axis
+                    } else {
+                        mul(axis, -1.0)
+                    },
+                ))
+            }
+            _ => None,
+        };
         if let ([Some(old_start), Some(old_end)], Some(new_start), Some(new_end)) = (
             before.map(place),
             place(definition.start),
             place(definition.end),
-        ) && dot(sub(new_end, new_start), sub(old_end, old_start)) <= 0.0
+        ) && !keeps_its_way([old_start, old_end], [new_start, new_end], turning)
         {
             return Err(Refusal::new(
                 crate::fillet::RADIUS_TOO_LARGE,
@@ -1952,6 +2003,117 @@ mod tests {
 
     const TOP: &str = "top";
     const ROUND: &str = "right-round";
+
+    #[test]
+    fn a_long_arc_cut_back_keeps_its_way_and_one_used_up_does_not() {
+        let at = |degrees: f64| {
+            let angle = degrees.to_radians();
+            [10.0 * angle.cos(), 10.0 * angle.sin(), 3.0]
+        };
+        let turning = Some(([0.0, 0.0, 3.0], [0.0, 0.0, 1.0]));
+        let old = [at(0.0), at(300.0)];
+        // Cut back to its last 100 degrees: the chord turns against the old
+        // one, which a chord test would call reversed.
+        let cut = [at(200.0), at(300.0)];
+        assert!(dot(sub(cut[1], cut[0]), sub(old[1], old[0])) < 0.0);
+        assert!(keeps_its_way(old, cut, turning));
+        // Shortened at both ends, and run on a little past either end.
+        assert!(keeps_its_way(old, [at(40.0), at(250.0)], turning));
+        assert!(keeps_its_way(old, [at(350.0), at(300.0)], turning));
+        assert!(keeps_its_way(old, [at(0.0), at(320.0)], turning));
+        // The start moved past the end, or the end back past the start.
+        assert!(!keeps_its_way(old, [at(310.0), at(300.0)], turning));
+        assert!(!keeps_its_way(old, [at(0.0), at(350.0)], turning));
+        assert!(!keeps_its_way(old, [at(120.0), at(120.0)], turning));
+        // The same arc run the other way turns about the opposite axis.
+        let reversed = Some(([0.0, 0.0, 3.0], [0.0, 0.0, -1.0]));
+        assert!(keeps_its_way(
+            [at(300.0), at(0.0)],
+            [at(300.0), at(200.0)],
+            reversed
+        ));
+        assert!(!keeps_its_way(
+            [at(300.0), at(0.0)],
+            [at(300.0), at(310.0)],
+            reversed
+        ));
+        // A straight edge is its chord.
+        let line = [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]];
+        assert!(keeps_its_way(
+            line,
+            [[2.0, 0.0, 0.0], [9.0, 0.0, 0.0]],
+            None
+        ));
+        assert!(!keeps_its_way(
+            line,
+            [[9.5, 0.0, 0.0], [9.0, 0.0, 0.0]],
+            None
+        ));
+    }
+
+    #[test]
+    fn a_strip_shortens_a_long_border_arc_at_both_ends() {
+        // A disc of radius 10 with a flat 8 from its centre: the top's border
+        // is one arc of 286 degrees from one end of the flat's top edge round
+        // to the other. Rounding that edge cuts the arc back at both ends,
+        // further the larger the radius: at R12 to 132 degrees.
+        let recipe = |radius: &str| {
+            catallax_recipe::Recipe::parse(&format!(
+                r#"{{"format":"catallax-recipe/5","name":"flatted disc","steps":[
+                {{"id":"profile","op":"sketch","plane":{{"rotation":["1","0","0","0"],"translation":["0","0","0"]}},
+                  "loops":[[{{"kind":"line","id":"flat","to":["8","6"]}},
+                            {{"kind":"arc","id":"round","centre":["0","0"],"to":["8","-6"],"turn":"ccw"}}]]}},
+                {{"id":"disc","op":"extrude","profile":"profile","distance":"20"}},
+                {{"id":"round","op":"fillet","body":"disc","radius":"{radius}","edges":[
+                  {{"between":[{{"step":"disc","role":{{"side":{{"segment":"flat"}}}}}},{{"step":"disc","role":"end"}}]}}]}}],
+                "result":"round"}}"#
+            ))
+            .unwrap()
+        };
+        for radius in ["1", "6", "12"] {
+            let recipe = recipe(radius);
+            let prefix = catallax_recipe::Recipe::parse(
+                &serde_json::json!({
+                    "format": "catallax-recipe/5", "name": "flatted disc",
+                    "steps": &serde_json::to_value(&recipe).unwrap()["steps"].as_array().unwrap()[..2],
+                    "result": "disc"
+                })
+                .to_string(),
+            )
+            .unwrap();
+            let catallax_recipe::Operation::Fillet { edges, .. } = &recipe.steps[2].op else {
+                panic!("the last step is the fillet");
+            };
+            let (built, work) = with_operation_budget(100_000_000, || {
+                let mut dec = Decider::default();
+                let source = crate::evaluate(&prefix, &mut dec).unwrap();
+                let selected = crate::fillet_build::select(
+                    &source.model,
+                    source.result,
+                    edges,
+                    true,
+                    &[],
+                    &mut dec,
+                )
+                .unwrap();
+                build(
+                    &source.model,
+                    source.result,
+                    &selected,
+                    &Rational::parse(radius).unwrap(),
+                    &StepId::new("round").unwrap(),
+                    "flatted disc".into(),
+                    &Rational::parse("0.0000001").unwrap(),
+                    &mut dec,
+                )
+                .unwrap()
+            });
+            assert!(!work.exhausted, "R{radius}: {work:?}");
+            let (body, _) = built.unwrap_or_else(|| panic!("R{radius}: native strips apply"));
+            // Top, bottom, flat, round wall and the strip.
+            assert_eq!(body.definition().faces.len(), 5, "R{radius}");
+        }
+    }
 
     /// Rounds rim edges of the owner's pocket, each named by the outer face
     /// and the pocket wall it lies between.

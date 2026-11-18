@@ -70,6 +70,8 @@ The three corrected drill locations explain the census-chain gain from Checkpoin
 
 The headline is complete-source, occurrence-preserving, all-solids-valid export. An isolated valid prototype is not a whole-file pass. The report also keeps any observed valid solid, prototype-only validity and incomplete observation separate.
 
+Collection and acceptance are separate. The Markdown reports `acceptance_passed`, tier losses, frozen valid-export losses and unmeasured baseline items. Having all 3,000 rows does not establish baseline preservation when a prior passing file has no current verdict.
+
 The reference remains OpenCASCADE's 2,701 healed-valid files of 3,000, 90.03%, from normal transfer and default ShapeFix. Different readers and tolerances prevent a common-tolerance or source-fidelity claim. Checkpoint 1's legacy result, 374 valid exports, 12.47%, is historical. It must not be relabelled as a new strict occurrence-preserving measurement.
 
 Certified bodies, checked numerical bodies and sampled-native tolerant bodies are reported separately. A full file's group is its least-checked body: any sampled-native body places it in that group; otherwise any numerical body places it in numerical; only an entirely certified file is certified-only. These are disjoint file groups. Body counts include partial files and are not file counts. Retained source surfaces are not admitted solids.

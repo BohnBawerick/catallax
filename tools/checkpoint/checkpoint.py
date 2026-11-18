@@ -323,9 +323,15 @@ def census(args):
 def census_markdown(r):
     total = sum(r['wall_seconds'].values())
     lines = ['# Census rerun', '',
-             f'Source `{r["source_revision"]}`. Complete: {r["complete"]}. '
+             f'Source `{r["source_revision"]}`. Collected: {r["complete"]}. '
              f'Evaluated: {r["evaluated"]}/{r["denominator"]}. '
              f'Wall time {total / 60:.1f} min, including build.', '',
+             f'Acceptance passed: {r["acceptance_passed"]}. '
+             'Collected means all source rows were gathered, not that the baseline was preserved.', '',
+             '| Baseline comparison | Files |', '| --- | ---: |',
+             f'| Tier losses | {len(r["tier_losses"])} |',
+             f'| Frozen valid-export losses | {len(r["frozen_valid_export_losses"])} |',
+             f'| Baseline not measured | {len(r["baseline_not_measured"])} |', '',
              '| Measure | Files | Share of 3,000 |', '| --- | ---: | ---: |']
     for label, count in [
         ('Catallax, complete-source occurrence-preserving valid solid export',

@@ -430,4 +430,131 @@ mod tests {
             work.used
         );
     }
+    #[test]
+    fn owner_rim_vertex_junctions_at_half_one_and_two_mm() {
+        for radius in ["0.5", "1", "2"] {
+            let ((), work) = with_operation_budget(100_000_000, || {
+                let mut dec = Decider::new(BudgetPolicy {
+                    max_work: 100_000_000,
+                    ..Default::default()
+                });
+                let recipe =
+                    Recipe::parse(include_str!("../tests/fixtures/owner-curved-pocket.json"))
+                        .unwrap();
+                let built = crate::evaluate(&recipe, &mut dec).unwrap();
+                let model = &built.model;
+                let selected: Vec<_> = model
+                    .edges_of_body(built.result)
+                    .into_iter()
+                    .filter(|edge| {
+                        model.edge_name(built.result, *edge).is_some_and(|name| {
+                            name.between()
+                                .iter()
+                                .any(|origin| origin.step.as_str() == "blank")
+                                && name
+                                    .between()
+                                    .iter()
+                                    .any(|origin| origin.step.as_str() == "pocket-tool")
+                        })
+                    })
+                    .collect();
+                assert_eq!(selected.len(), 6, "the actual six-edge owner rim");
+                let radius = Rational::parse(radius).unwrap();
+                let tolerance = Rational::parse("0.0000001").unwrap();
+                let chains = super::super::super::super::rolling::construct(
+                    model,
+                    built.result,
+                    &selected,
+                    &radius,
+                    &tolerance,
+                    &mut dec,
+                )
+                .unwrap();
+                let junctions = super::super::construct(
+                    model,
+                    built.result,
+                    &chains,
+                    &radius,
+                    &tolerance,
+                    &mut dec,
+                )
+                .unwrap();
+                for (chain, value) in chains.iter().enumerate() {
+                    for strip in 0..value.strips.len() {
+                        for source_end in 0..2 {
+                            let count = junctions
+                                .iter()
+                                .flat_map(|junction| &junction.terminations)
+                                .filter(|end| {
+                                    end.strip.chain == chain
+                                        && end.strip.strip == strip
+                                        && end.strip.source_end == source_end
+                                })
+                                .count();
+                            assert_eq!(
+                                count, 1,
+                                "R{radius}: every actual strip end needs one geometric termination"
+                            );
+                        }
+                    }
+                }
+                for junction in &junctions {
+                    assert!(
+                        junction.patches.is_empty(),
+                        "the owner Cliff rim must not acquire a substitute sphere or Smooth patch"
+                    );
+                    for boundary in &junction.boundaries {
+                        for i in 1..7 {
+                            let t = Rational::from_ratio(i, 7).unwrap();
+                            let world = boundary.curve.evaluate_box([&t, &t], BITS, &dec).unwrap();
+                            for side in &boundary.sides {
+                                let native = side
+                                    .parameters
+                                    .point_at(
+                                        &catallax_numbers::Real::from_rational(t.clone()),
+                                        &mut dec,
+                                    )
+                                    .unwrap();
+                                let uv = [
+                                    dec.enclose_budgeted_at(&native.x, BITS).unwrap(),
+                                    dec.enclose_budgeted_at(&native.y, BITS).unwrap(),
+                                ];
+                                let composed = match side.face {
+                                    super::super::JunctionFace::Strip(end) => chains[end.chain]
+                                        .strips[end.strip]
+                                        .fillet
+                                        .surface()
+                                        .source()
+                                        .evaluate_box(
+                                            [&uv[0].lo(), &uv[0].hi()],
+                                            [&uv[1].lo(), &uv[1].hi()],
+                                            BITS,
+                                            &dec,
+                                        )
+                                        .unwrap(),
+                                    super::super::JunctionFace::Source(face) => model
+                                        .geom()
+                                        .surface(model.face(face).surface)
+                                        .evaluate(&uv[0], &uv[1], &mut dec)
+                                        .unwrap(),
+                                    super::super::JunctionFace::Patch(_) => {
+                                        panic!("unexpected owner-rim patch")
+                                    }
+                                };
+                                assert!(
+                                    gap(&world, &composed).unwrap() <= tolerance,
+                                    "R{radius}: retained world/native boundary mismatch"
+                                );
+                            }
+                        }
+                    }
+                }
+            });
+            assert!(!work.exhausted);
+            println!(
+                "owner six-edge rim R{radius} vertex geometry work={}; no body publication",
+                work.used
+            );
+        }
+    }
 }

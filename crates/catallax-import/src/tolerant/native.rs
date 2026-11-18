@@ -8,13 +8,17 @@ use catallax_numbers::{Decider, Rational, Refusal};
 use serde::Serialize;
 
 use crate::geometry_source::{
-    AngleUnit, CoordinateSpace, EntityId, MappingError, ParameterChart, ParsedStep,
+    AngleUnit, Binary64Chart, CoordinateSpace, EntityId, MappingError, ParameterChart, ParsedStep,
 };
 
 use super::Error;
 
 const SAMPLE_BITS: u32 = 96;
 const NEWTON_STEPS: usize = 24;
+/// The error a display sample may carry, from rounding and from a reduced
+/// periodic parameter together: a tenth of the width projection stops at. A
+/// sample binary64 cannot place this well is enclosed.
+const DISPLAY_ROUNDING_MM: f64 = 1e-8;
 
 /// A location in one retained native chart, in original source parameters.
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -49,12 +53,14 @@ pub struct NativeProjection {
     pub converged: bool,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct Carrier {
     source: EntityId,
     charts: Vec<ParameterChart>,
     dimension: usize,
     period: f64,
+    /// The charts compiled for binary64, in a carrier made for display.
+    display: Option<Vec<Binary64Chart>>,
 }
 
 fn broken(detail: &str) -> Error {
@@ -128,6 +134,21 @@ impl Carrier {
             charts,
             dimension,
             period,
+            display: None,
+        })
+    }
+
+    /// This carrier with its samples evaluated in binary64 where that
+    /// resolves them. Only [`DisplaySurface`] and [`DisplayCurve`] hold one.
+    fn for_display(&self, dec: &mut Decider) -> Result<Self, Error> {
+        let display = self
+            .charts
+            .iter()
+            .map(|chart| chart.binary64(dec).map_err(mapped))
+            .collect::<Result<_, _>>()?;
+        Ok(Self {
+            display: Some(display),
+            ..self.clone()
         })
     }
 
@@ -201,7 +222,7 @@ impl Carrier {
             };
         }
         let mut result: Option<NativeSample> = None;
-        for chart in &self.charts {
+        for (index, chart) in self.charts.iter().enumerate() {
             for x in -1..=1 {
                 if periods[0].is_none() && x != 0 {
                     continue;
@@ -235,7 +256,7 @@ impl Carrier {
                         continue;
                     }
                     dec.charge_work(1)?;
-                    let sample = self.sample_region(chart, &bounds[..self.dimension], dec)?;
+                    let sample = self.sample_region(index, &bounds[..self.dimension], dec)?;
                     match &mut result {
                         Some(total) => {
                             total.uncertainty_mm = total.uncertainty_mm.max(
@@ -273,15 +294,53 @@ impl Carrier {
             }
             *bound = [parameter.clone(), parameter];
         }
-        self.sample_region(chart, &bounds[..self.dimension], dec)
+        self.sample_region(location.chart, &bounds[..self.dimension], dec)
     }
 
     fn sample_region(
         &self,
-        chart: &ParameterChart,
+        chart: usize,
         bounds: &[[Rational; 2]],
         dec: &mut Decider,
     ) -> Result<NativeSample, Error> {
+        if let Some(display) = &self.display {
+            // The middle of the box, which the callers have already kept
+            // inside the chart's domain. A box wider than a point is a
+            // periodic parameter's reduction, known only to that width: its
+            // radius goes into the evaluation, so the bound says how far the
+            // reduction can move the point.
+            let mut parameters = [0.0; 2];
+            let mut radii = [0.0; 2];
+            for (axis, range) in bounds.iter().enumerate() {
+                let middle = (&range[0] + &range[1]).mul_pow2(-1);
+                let parameter = middle.to_f64_nearest();
+                let half = (&range[1] - &range[0]).mul_pow2(-1).to_f64_nearest();
+                let rounded = Rational::from_f64_exact(parameter) != Some(middle);
+                parameters[axis] = parameter;
+                radii[axis] = half * (1.0 + 4.0 * f64::EPSILON)
+                    + if rounded {
+                        f64::EPSILON * parameter.abs()
+                    } else {
+                        0.0
+                    };
+            }
+            dec.charge_work(display[chart].work())?;
+            let (point_mm, bound) = display[chart].evaluate(&parameters, &radii);
+            // Past this bound binary64 has lost the carrier to cancellation,
+            // or the reduction leaves the point too loosely known, or the
+            // point is singular: the enclosing evaluation below answers, at
+            // its price.
+            if bound <= DISPLAY_ROUNDING_MM {
+                let size = point_mm
+                    .iter()
+                    .fold(0.0f64, |size, value| size.max(value.abs()));
+                return Ok(NativeSample {
+                    point_mm,
+                    uncertainty_mm: bound + 8.0 * f64::EPSILON * size,
+                });
+            }
+        }
+        let chart = &self.charts[chart];
         let point = chart
             .evaluate_box(
                 bounds,
@@ -595,6 +654,14 @@ impl NativeSurface {
             FamilySeeds::from_source(source, entity, length_mm, &angles, dec).map_err(mapped)?;
         Ok(Self(carrier, periods, family))
     }
+    /// This surface for display. See [`DisplaySurface`].
+    pub fn for_display(&self, dec: &mut Decider) -> Result<DisplaySurface, Error> {
+        Ok(DisplaySurface(Self(
+            self.0.for_display(dec)?,
+            self.1,
+            self.2.clone(),
+        )))
+    }
     /// Original source surface identity.
     pub fn source(&self) -> EntityId {
         self.0.source
@@ -709,6 +776,72 @@ impl NativeSurface {
     }
 }
 
+/// A [`NativeSurface`] for display: the same charts, periods and seeds, with
+/// every sample, normal and projection evaluated in binary64.
+///
+/// A display takes thousands of samples per face and states no bound on any
+/// of them. An enclosing evaluation of each costs a body's whole work
+/// allowance, so these samples are rounded evaluations that carry a running
+/// rounding bound, and only a sample binary64 cannot place within 1e-8 mm is
+/// enclosed. It is a separate type so that nothing which fits, admits or
+/// certifies geometry can be handed one.
+#[derive(Debug)]
+pub struct DisplaySurface(NativeSurface);
+impl DisplaySurface {
+    /// Known angular periods in original source UV units.
+    pub fn periods(&self) -> [Option<f64>; 2] {
+        self.0.periods()
+    }
+    /// Resolve original source UV to its native knot span.
+    pub fn location(&self, parameters: [f64; 2]) -> Result<NativeLocation, Error> {
+        self.0.location(parameters)
+    }
+    /// One physical sample in original source UV.
+    pub fn sample(
+        &self,
+        location: NativeLocation,
+        dec: &mut Decider,
+    ) -> Result<NativeSample, Error> {
+        self.0.sample(location, dec)
+    }
+    /// Finite-difference normal direction at one sample, or `None` where the
+    /// sampled frame collapsed.
+    pub fn sampled_normal(
+        &self,
+        location: NativeLocation,
+        dec: &mut Decider,
+    ) -> Result<Option<[f64; 3]>, Error> {
+        self.0.sampled_normal(location, dec)
+    }
+    /// Fit source UV to a point and report the sampled residual.
+    pub fn project(
+        &self,
+        point_mm: [f64; 3],
+        seed: Option<NativeLocation>,
+        dec: &mut Decider,
+    ) -> Result<NativeProjection, Error> {
+        self.0.project(point_mm, seed, dec)
+    }
+}
+
+/// A [`NativeCurve`] for display, sampled as a [`DisplaySurface`] is.
+#[derive(Debug)]
+pub struct DisplayCurve(NativeCurve);
+impl DisplayCurve {
+    /// Resolve an original source parameter to its native knot span.
+    pub fn location(&self, parameter: f64) -> Result<NativeLocation, Error> {
+        self.0.location(parameter)
+    }
+    /// One physical curve sample.
+    pub fn sample(
+        &self,
+        location: NativeLocation,
+        dec: &mut Decider,
+    ) -> Result<NativeSample, Error> {
+        self.0.sample(location, dec)
+    }
+}
+
 /// A physical source curve, independent of any finite-edge certificate.
 #[derive(Debug)]
 pub struct NativeCurve(Carrier, bool);
@@ -729,6 +862,10 @@ impl NativeCurve {
             Carrier::new(entity, charts, 1, CoordinateSpace::Millimetres, &angles)?,
             angular,
         ))
+    }
+    /// This curve for display. See [`DisplayCurve`].
+    pub fn for_display(&self, dec: &mut Decider) -> Result<DisplayCurve, Error> {
+        Ok(DisplayCurve(Self(self.0.for_display(dec)?, self.1)))
     }
     /// Original curve identity.
     pub fn source(&self) -> EntityId {
@@ -937,5 +1074,125 @@ impl NativeUvCurve {
             .0
             .try_sample(location, dec)?
             .map(|sample| [sample.point_mm[0], sample.point_mm[1]]))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // An open cubic about a metre long on the knot span [0, 1]. Sampled with
+    // a period of 1 it is a carrier whose periodic axis has a finite domain,
+    // which is where a parameter outside the domain is reduced to a box.
+    fn carriers(closed: bool) -> (Carrier, Carrier) {
+        let last = if closed { "0.,0.,0." } else { "1000.,0.,0." };
+        let text = format!(
+            "ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('display'),'2;1');\nFILE_NAME('display.step','',(''),(''),'','','');\nFILE_SCHEMA(('AUTOMOTIVE_DESIGN'));\nENDSEC;\nDATA;\n#1=CARTESIAN_POINT('',(0.,0.,0.));\n#2=CARTESIAN_POINT('',(400.,300.,0.));\n#3=CARTESIAN_POINT('',(800.,-300.,50.));\n#4=CARTESIAN_POINT('',({last}));\n#5=B_SPLINE_CURVE_WITH_KNOTS('',3,(#1,#2,#3,#4),.UNSPECIFIED.,.F.,.F.,(4,4),(0.,1.),.UNSPECIFIED.);\nENDSEC;\nEND-ISO-10303-21;\n"
+        );
+        let mut dec = Decider::default();
+        let parsed = ParsedStep::read(text.as_bytes(), &mut dec).unwrap();
+        let charts = parsed
+            .curve_charts(
+                5,
+                &Rational::from_ratio(1, 1).unwrap(),
+                AngleUnit::Radians,
+                &mut dec,
+            )
+            .unwrap();
+        let enclosing = Carrier::new(
+            5,
+            charts,
+            1,
+            CoordinateSpace::Millimetres,
+            &AngleUnit::Radians,
+        )
+        .unwrap();
+        let display = enclosing.for_display(&mut dec).unwrap();
+        (enclosing, display)
+    }
+
+    fn wrapped(carrier: &Carrier, parameter: f64) -> NativeSample {
+        let periods = [Some(1.0), None];
+        let location = carrier
+            .periodic_location([parameter, 0.0], periods)
+            .unwrap();
+        carrier
+            .periodic_sample(location, periods, &mut Decider::default())
+            .unwrap()
+    }
+
+    // The reduction of a wrapped parameter is known to 16 units of rounding
+    // of the parameter and the period, and this curve never moves slower
+    // than 600 mm per unit of parameter: the display sample has to say so.
+    #[test]
+    fn a_wrapped_display_sample_carries_the_reduction_of_its_parameter() {
+        let (enclosing, display) = carriers(false);
+        for parameter in [1000.25, -640.5, 77.125] {
+            let enclosed = wrapped(&enclosing, parameter);
+            let shown = wrapped(&display, parameter);
+            let miss = distance(enclosed.point_mm, shown.point_mm);
+            assert!(miss <= shown.uncertainty_mm, "{parameter}: {miss}");
+            let reduction = 16.0 * f64::EPSILON * (parameter.abs() + 1.0);
+            assert!(
+                shown.uncertainty_mm >= 600.0 * reduction,
+                "{parameter}: {} under {}",
+                shown.uncertainty_mm,
+                600.0 * reduction
+            );
+            assert!(shown.uncertainty_mm <= 4.0 * enclosed.uncertainty_mm);
+        }
+    }
+
+    // A million periods out the reduction is known to 3.6e-9 of a parameter
+    // unit, micrometres on this curve and past what a display sample may
+    // carry, though binary64 rounds the point itself to 1e-12 mm.
+    #[test]
+    fn a_reduction_past_the_display_bound_is_enclosed() {
+        let (enclosing, display) = carriers(false);
+        for parameter in [1_000_000.25, -3_000_000.5] {
+            let enclosed = wrapped(&enclosing, parameter);
+            let shown = wrapped(&display, parameter);
+            assert!(enclosed.uncertainty_mm > DISPLAY_ROUNDING_MM);
+            assert_eq!(
+                enclosed.point_mm.map(f64::to_bits),
+                shown.point_mm.map(f64::to_bits)
+            );
+            assert_eq!(
+                enclosed.uncertainty_mm.to_bits(),
+                shown.uncertainty_mm.to_bits()
+            );
+        }
+    }
+
+    // A whole number of periods lands on the seam, where the reduced box is
+    // cut into one piece at each end of the domain and the sample spans both.
+    // On an open curve it is uncertain by the gap between the ends. On a
+    // closed one the two middles are 1,084 reductions apart, and the piece at
+    // the far end is 1,283 more wide: a sample that kept only the middles
+    // would stop at the first figure.
+    #[test]
+    fn a_display_sample_on_the_seam_spans_both_ends_like_the_enclosure() {
+        for closed in [true, false] {
+            let (enclosing, display) = carriers(closed);
+            for parameter in [512.0, -100.0, 4096.0] {
+                let enclosed = wrapped(&enclosing, parameter);
+                let shown = wrapped(&display, parameter);
+                let miss = distance(enclosed.point_mm, shown.point_mm);
+                assert!(miss <= shown.uncertainty_mm, "{parameter}: {miss}");
+                assert!(shown.uncertainty_mm <= 4.0 * enclosed.uncertainty_mm);
+                assert!(enclosed.uncertainty_mm <= 4.0 * shown.uncertainty_mm);
+                if closed {
+                    let reduction = 16.0 * f64::EPSILON * (parameter.abs() + 1.0);
+                    assert!(
+                        shown.uncertainty_mm >= 1700.0 * reduction,
+                        "{parameter}: {} under {}",
+                        shown.uncertainty_mm,
+                        1700.0 * reduction
+                    );
+                } else {
+                    assert!(shown.uncertainty_mm > 999.999, "{parameter}");
+                }
+            }
+        }
     }
 }

@@ -1,4 +1,8 @@
 //! Display sampling of admitted native carriers. No exact Model is fabricated.
+//!
+//! The carriers are sampled in binary64 through their display variants: the
+//! preview takes thousands of samples per face and claims no bound on any of
+//! them, and an enclosing evaluation of each costs a body's whole allowance.
 use std::collections::BTreeMap;
 
 use catallax_import::{
@@ -6,7 +10,7 @@ use catallax_import::{
     geometry_source::Topology,
     tolerant::{
         admission::{NativeTrim, TolerantImport},
-        native::{NativeCurve, NativeLocation, NativeSurface},
+        native::{DisplayCurve, DisplaySurface, NativeLocation},
     },
 };
 use catallax_numbers::{Decider, Rational, Refusal};
@@ -40,11 +44,12 @@ fn point(value: &[Rational; 3]) -> Result<P, Refusal> {
     }
 }
 
-enum Carrier<'a> {
-    Native(&'a NativeSurface),
+enum Carrier {
+    /// The retained native surface, made for display.
+    Native(Box<DisplaySurface>),
     Inferred(SourceChart),
 }
-impl SurfaceSamples for Carrier<'_> {
+impl SurfaceSamples for Carrier {
     fn position(&self, uv: Uv, dec: &mut Decider) -> Result<P, Refusal> {
         match self {
             Self::Native(surface) => surface
@@ -69,11 +74,12 @@ impl SurfaceSamples for Carrier<'_> {
     }
 }
 
-enum EdgeCarrier<'a> {
-    Native(&'a NativeCurve, [f64; 2]),
+enum EdgeCarrier {
+    /// The retained native curve, made for display, and its end parameters.
+    Native(Box<DisplayCurve>, [f64; 2]),
     Line([P; 2]),
 }
-impl EdgeCarrier<'_> {
+impl EdgeCarrier {
     fn sample(&self, fraction: f64, dec: &mut Decider) -> Result<P, Refusal> {
         match self {
             Self::Native(curve, range) => {
@@ -91,7 +97,7 @@ impl EdgeCarrier<'_> {
 }
 
 fn edge_samples(
-    carrier: &EdgeCarrier<'_>,
+    carrier: &EdgeCarrier,
     ends: [usize; 2],
     target: f64,
     mesh: &mut PreviewMesh<String, String>,
@@ -141,7 +147,7 @@ fn trim_seed(trim: &NativeTrim, fraction: f64) -> NativeLocation {
 }
 
 fn domain_loop(
-    carrier: &Carrier<'_>,
+    carrier: &Carrier,
     bounds: [[f64; 2]; 2],
     mesh: &mut PreviewMesh<String, String>,
     options: &PreviewOptions,
@@ -191,7 +197,7 @@ fn domain_loop(
 // additional cut nodes are display samples, not new pickable B-rep edges.
 fn cut_band(
     mut rims: Vec<Vec<Node>>,
-    carrier: &Carrier<'_>,
+    carrier: &Carrier,
     mesh: &mut PreviewMesh<String, String>,
     options: &PreviewOptions,
     dec: &mut Decider,
@@ -343,7 +349,10 @@ pub fn preview_tolerant_body(
                 }) => import.native_curve(curve),
                 _ => None,
             }
-            .ok_or_else(|| failure("active edge has no retained native carrier"))?;
+            .ok_or_else(|| failure("active edge has no retained native carrier"))?
+            .for_display(dec)
+            .map(Box::new)
+            .map_err(source_error)?;
             let first = trim.samples.first().unwrap().curve.parameters[0];
             let last = trim.samples.last().unwrap().curve.parameters[0];
             EdgeCarrier::Native(
@@ -397,7 +406,9 @@ pub fn preview_tolerant_body(
             _ => None,
         };
         let carrier = match surface {
-            Some(surface) => Carrier::Native(surface),
+            Some(surface) => {
+                Carrier::Native(Box::new(surface.for_display(dec).map_err(source_error)?))
+            }
             None => Carrier::Inferred(SourceChart::new(&face.surface, dec)?),
         };
         let mut face_options = options.clone();
@@ -429,6 +440,15 @@ pub fn preview_tolerant_body(
                 let trim = trim_rows[usage_index];
                 let edge = &body.edges()[usage.edge];
                 let row = &edges[edge.name.as_str()];
+                // What the body records for this edge and the vertices it
+                // was made to end at, on top of the face's own chord target.
+                let recorded = edge
+                    .vertices
+                    .iter()
+                    .map(|vertex| body.vertices()[*vertex].tolerance_mm())
+                    .fold(edge.tolerance_mm(), |most, each| most.max(each))
+                    .to_f64_nearest();
+                let reach = face_options.chord_tolerance.to_f64_nearest() + recorded;
                 for offset in 0..row.len() {
                     let (fraction, index) = row[if usage.forward == boundary.orientation {
                         offset
@@ -449,11 +469,19 @@ pub fn preview_tolerant_body(
                     );
                     let uv = match &carrier {
                         Carrier::Native(surface) => {
-                            surface
+                            let projection = surface
                                 .project(mesh.positions[index], Some(seed), dec)
-                                .map_err(source_error)?
-                                .location
-                                .parameters
+                                .map_err(source_error)?;
+                            // The face's triangles are measured on its carrier,
+                            // so a boundary sample's own miss is checked here,
+                            // once, against what the body admits for it.
+                            if projection.residual_mm > reach {
+                                return Err(failure(format!(
+                                    "a sample of edge {} is {:e} mm from face {}, past the {recorded:e} mm recorded for the edge",
+                                    edge.name, projection.residual_mm, face.name
+                                )));
+                            }
+                            projection.location.parameters
                         }
                         Carrier::Inferred(_) => {
                             trim_seed(
@@ -582,6 +610,12 @@ pub fn preview_tolerant_body(
                         .iter()
                         .flat_map(|boundary| &boundary.edges)
                         .any(|usage| body.edges()[usage.edge].degenerate),
+                // A vertex of a tolerant body is where its edges were made to
+                // meet, up to its tolerance away from each face's carrier.
+                // The projection above has bounded that miss. An inferred
+                // carrier takes its parameters from the trim evidence without
+                // a projection, and is measured as it was.
+                off_carrier_nodes: matches!(carrier, Carrier::Native(_)),
             },
             &carrier,
             cdt,

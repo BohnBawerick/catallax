@@ -367,34 +367,33 @@ fn rolls(overflow: Option<&FilletOverflow>, corner: Option<FilletCorner>) -> boo
 
 /// Reports a fillet neither construction built.
 ///
-/// The rolling-ball construction is the general one, so its code is the one
-/// reported, with both causes in the detail. Two refusals of the exact
-/// builders stand instead. A radius limit only they proved is the refusal the
-/// user can act on; its text goes last, so a terminal `; radius limit` stays
-/// terminal. And where the rolling ball could not embed the body it was
-/// given, it said nothing of the fillet; the exact text goes first, where its
-/// readers look for it.
+/// The exact builders' refusal is the one callers already read, so its code
+/// stays the outward one and its text comes first, with the rolling ball's
+/// cause after it. A radius limit is the exception, because it is the refusal
+/// the user can act on: one the rolling ball proved is reported as such, and
+/// one only the exact builders proved keeps its code, and either goes last so
+/// that a terminal `; radius limit` stays terminal.
 fn both_refusals(mut exact: Refusal, mut numerical: Refusal) -> Refusal {
     const TOO_LARGE: &str = "fillet.radius-too-large";
-    if exact.code == TOO_LARGE && numerical.code != TOO_LARGE {
-        exact.detail = format!(
+    if numerical.code == TOO_LARGE {
+        numerical.detail = format!(
+            "exact path refused {}: {}; numerical continuation refused {}: {}",
+            exact.code, exact.detail, numerical.code, numerical.detail
+        );
+        return numerical;
+    }
+    exact.detail = if exact.code == TOO_LARGE {
+        format!(
             "numerical continuation refused {}: {}; exact path refused {}: {}",
             numerical.code, numerical.detail, exact.code, exact.detail
-        );
-        return exact;
-    }
-    if numerical.code.starts_with("features.numerical-embedding") {
-        exact.detail = format!(
+        )
+    } else {
+        format!(
             "{}; numerical continuation refused {}: {}",
             exact.detail, numerical.code, numerical.detail
-        );
-        return exact;
-    }
-    numerical.detail = format!(
-        "exact path refused {}: {}; numerical continuation refused {}: {}",
-        exact.code, exact.detail, numerical.code, numerical.detail
-    );
-    numerical
+        )
+    };
+    exact
 }
 
 /// Evaluates the matching exact prefix, then each fillet.
@@ -440,6 +439,52 @@ pub fn evaluate_incremental_outcome(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_exact_refusal_stays_outward_unless_a_radius_limit_is_proved() {
+        let limit = "fillet.radius-too-large";
+        let refusal = |code: &'static str, detail: &str| Refusal::new(code, detail);
+        // Neither proved a limit: the exact code, its text first.
+        let both = both_refusals(
+            refusal("shapes.rolling-envelope", "no envelope"),
+            refusal("fillet.numerical-spine", "no walk"),
+        );
+        assert_eq!(both.code, "shapes.rolling-envelope");
+        assert_eq!(
+            both.detail,
+            "no envelope; numerical continuation refused fillet.numerical-spine: no walk"
+        );
+        // The rolling ball proved the limit: its code, the limit terminal.
+        let rolled = both_refusals(
+            refusal("fillet.unsupported-topology", "needs one closed ring"),
+            refusal(limit, "reaches face #57; radius limit 4 mm"),
+        );
+        assert_eq!(rolled.code, limit);
+        assert!(rolled.detail.starts_with(
+            "exact path refused fillet.unsupported-topology: needs one closed ring; numerical continuation refused"
+        ));
+        assert!(rolled.detail.ends_with("; radius limit 4 mm"));
+        // Only the exact builders proved one: their code, the limit terminal.
+        let exact = both_refusals(
+            refusal(limit, "contact; radius limit 5 mm"),
+            refusal("fillet.numerical-chain", "no chain"),
+        );
+        assert_eq!(exact.code, limit);
+        assert!(
+            exact
+                .detail
+                .starts_with("numerical continuation refused fillet.numerical-chain: no chain;")
+        );
+        assert!(exact.detail.ends_with("; radius limit 5 mm"));
+        assert_eq!(
+            crate::fillet::radius_limit(&exact),
+            Some(Rational::from_i64(5))
+        );
+        assert_eq!(
+            crate::fillet::radius_limit(&rolled),
+            Some(Rational::from_i64(4))
+        );
+    }
 
     #[test]
     fn naming_the_default_overflow_or_corner_changes_nothing() {

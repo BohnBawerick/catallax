@@ -78,6 +78,65 @@ Certified bodies, checked numerical bodies and sampled-native tolerant bodies ar
 
 The phase-2 import evidence needs particular care. [The per-body repair PR](https://github.com/BohnBawerick/catallax/pull/697) rejected its earlier native-first ordering after it lost former checked admissions. Its corrected targeted observations and 114-file selected-document checks are evidence at their recorded producers, not a full census of the final merged main. The new checkpoint run, not a sum of those cohorts, supplies the current headline.
 
+### Default-tier dry run, draft numbers
+
+Main kernel `403081f8` with checkpoint tooling `75b9bc2a`, 18 Nov 2026. The one-command run completed in 2,014.26 seconds, 33.6 minutes, including its build. The collector evaluated all 3,000 sources. Its `acceptance_passed` is true, with zero tier losses, zero frozen valid-export losses and zero unmeasured baseline items against its frozen 405-full-admission / 374-valid-prototype baseline. That historical baseline has no per-body tier inventories: all 3,000 tier comparisons are unknown. Acceptance therefore does not prove same-body tier preservation against later phase-2 producers.
+
+| Measure | Files | Share of 3,000 |
+| --- | ---: | ---: |
+| Catallax, complete-source occurrence-preserving valid solid export | 759 | 25.30% |
+| Catallax, at least one observed valid exported solid | 1,139 | 37.97% |
+| Catallax, all isolated prototype exports valid | 759 | 25.30% |
+| OpenCASCADE, healed-valid reference | 2,701 | 90.03% |
+| Checkpoint 1 legacy import/export, historical | 374 | 12.47% |
+
+| Least-checked body in a full file | Full solid admissions | Complete-source valid exports | Bodies, including partial files |
+| --- | ---: | ---: | ---: |
+| Certified only | 187 | 177 | 570 |
+| Checked numerical | 620 | 578 | 2,270 |
+| Sampled-native tolerant | 77 | 4 | 154 |
+
+The numerical and sampled-native groups are approximate, not certified. A further 13,719 retained source-surface bodies supply no solid authority. File-level groups and body totals have different denominators.
+
+| Opening outcome | Files |
+| --- | ---: |
+| Full solid admission | 884 |
+| Partial or mixed | 409 |
+| Source surfaces only | 1,664 |
+| Refused | 40 |
+| Timeout | 3 |
+
+| Export outcome | Files |
+| --- | ---: |
+| Complete-source all-solids-valid | 759 |
+| Valid exported subset | 323 |
+| Contains reader-invalid output | 202 |
+| Export refused | 8 |
+| Timeout, including opening timeouts | 4 |
+| Source surfaces without checked B-rep | 1,664 |
+| Not opened | 40 |
+
+Twelve any-valid verdicts are unknown and their solid counts are lower bounds, not measured invalidity: 00000187, 00002204, 00004777, 00005466, 00005469, 00006077, 00006301, 00006487, 00007518, 00008201, 00008595 and 00009757. Three files time out while opening, 00000187, 00008201 and 00009757; 00004777 times out during export. No observer reports out of memory or a process error.
+
+The eight export-refused rows comprise three work-budget refusals and five `import.selected-document` refusals. These whole-document failures precede complete sibling observation, so an unknown any-valid verdict must not be reported as no usable solid.
+
+| First body blocker | Cause | Bodies | Files, overlapping |
+| --- | --- | ---: | ---: |
+| Body build | `not_solid` | 74 | 11 |
+| Body build | `numbers.operation-budget` | 1 | 1 |
+| Body build | `resource_limit` | 5 | 5 |
+| Curve fit | `import.tolerant-broken-geometry` | 52 | 52 |
+| Curve fit | `numbers.operation-budget` | 609 | 609 |
+| Curve fit | `resource_limit` | 3 | 3 |
+| Curve fit | `shapes.spline-exchange-data` | 8 | 8 |
+| Request already exhausted | `resource_limit` | 11,429 | 918 |
+| Sewing | `import.tolerant-broken-geometry` | 1 | 1 |
+| Sewing | `numbers.operation-budget` | 4 | 4 |
+| Shell incidence | `import.tolerant-non-manifold` | 697 | 27 |
+| Surface fit | `numbers.operation-budget` | 836 | 836 |
+
+These are first blockers per body, not additive file causes or predicted gains from a fix. Body-stage inventories are unavailable for 43 files. Work exhaustion is a resource outcome, not proof of bad geometry.
+
 ### Legacy dry run, historical protocol
 
 The unchanged legacy command also completed end to end on main `403081f8`, 18 Nov 2026, in 1,003.88 seconds, 16.7 minutes. It records 647 full admissions, five partials, 2,346 refusals and two import timeouts. Of the full admissions, 601 export valid after builder processing, 40 export invalid, five refuse at the export work limit and one times out. The 652 admitted files are labelled 190 certified and 462 numerical approximate by that old entry.
@@ -88,7 +147,7 @@ The unchanged legacy command also completed end to end on main `403081f8`, 18 No
 | Legacy import/export, Checkpoint 1 cut | 374 | 12.47% |
 | OpenCASCADE healed-valid reference | 2,701 | 90.03% |
 
-No previously valid file is measured lost against the old 369-file reference. Import times out on 00000187 and 00008201; export times out on 00004777. None reached the observer memory cap. This diagnostic run is not the new tolerant-tier headline. The default-tier collector is running separately after the approved wrapper change; no current tier total is inferred from these legacy rows.
+No previously valid file is measured lost against the old 369-file reference. Import times out on 00000187 and 00008201; export times out on 00004777. None reached the observer memory cap. This diagnostic run is not the new tolerant-tier headline. The separate default-tier run above measures that headline; none of its totals is inferred from these legacy rows.
 
 ## What phase 2 delivered against ROADMAP.md
 

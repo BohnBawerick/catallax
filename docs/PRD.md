@@ -185,7 +185,7 @@ The 1 nm modelling tolerance, 100 nm approximation target, 1 µm kernel-made cap
 
 1. A recipe language with one mathematical definition per operation, and names given by the operation that made each face and edge.
 2. A B-rep version of every B-rep-native feature, with the necessity surfaces from section 3.1 held exactly by their definition.
-3. A field version of every feature, including imports, with the recipe's faces kept selectable.
+3. A field version of every recipe operation, including imports, with the recipe's faces kept selectable, remains the long-term goal. [Roadmap item 4.2a](../ROADMAP.md#phase-4-field-lattices-printing-and-scans) is the route for independent field fillets under [Checkpoint 2 decision Q15](checkpoints/checkpoint-2-decisions.md#46-item-42a-the-field-builds-every-fillet-on-its-own). Field parity never blocks a B-rep feature.
 4. Conversion in both directions on demand, only when it meets its contract. A field-only feature stays field-only if conversion cannot meet that contract. Field to B-rep conversion at a chosen accuracy and the section 7 stand-in are distinct outputs; a stand-in is not full conversion of the field geometry. B-rep to field follows the same scoped hand-off requirements.
 5. Meshes from both kernels at a chosen accuracy.
 6. The on-demand surface comparison and requested hand-off checks from section 3.5.

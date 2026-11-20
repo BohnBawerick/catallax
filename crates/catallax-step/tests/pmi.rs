@@ -189,8 +189,8 @@ fn bracket_pmi(part: &Bracket) -> (Pmi<FaceId>, BTreeMap<&'static str, &'static 
             }),
         )
     };
-    // The locating dimensions from the datums: basic where a position tolerance
-    // governs the feature, under the general tolerance otherwise.
+    // The locating dimensions of the features under a position tolerance: a basic
+    // distance from each datum plane their axes run along.
     let located = |name: &str, datum: &Feature<FaceId>, to: Anchor<FaceId>, limits| {
         item(
             name,
@@ -202,20 +202,9 @@ fn bracket_pmi(part: &Bracket) -> (Pmi<FaceId>, BTreeMap<&'static str, &'static 
             }),
         )
     };
-    let mut slot_middle = vec![slot_ends[0][0], slot_ends[1][0]];
-    slot_middle.sort();
     let mut locating = vec![
         located("Bore from B", &b, at_feature(&bore), Some(Limits::Basic)),
         located("Bore from C", &c, at_feature(&bore), Some(Limits::Basic)),
-        located(
-            "Slot from C",
-            &c,
-            Anchor {
-                feature: slot_middle,
-                at: At::Middle,
-            },
-            None,
-        ),
     ];
     for (index, hole) in holes.iter().enumerate() {
         for (letter, datum) in [("B", &b), ("C", &c)] {
@@ -386,7 +375,6 @@ fn bracket_pmi(part: &Bracket) -> (Pmi<FaceId>, BTreeMap<&'static str, &'static 
         ("Slot height", "18"),
         ("Bore from B", "25"),
         ("Bore from C", "30"),
-        ("Slot from C", "30"),
         ("Hole 1 from B", "12"),
         ("Hole 1 from C", "10"),
         ("Hole 2 from B", "32"),

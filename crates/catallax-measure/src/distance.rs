@@ -194,6 +194,33 @@ impl PreparedFace {
             dec,
         )
     }
+    /// Proves this face at least `ceiling` from a second prepared face in the
+    /// same model, or finds an admitted pair nearer than it; see
+    /// [`distance::face_distance_below`]. Trims are checked as in
+    /// [`Self::face_to_face`].
+    pub fn face_to_face_below(
+        &self,
+        other: &Self,
+        model: &mut Model,
+        ceiling: &Rational,
+        max_cells: usize,
+        dec: &mut Decider,
+    ) -> Result<Bounds, Refusal> {
+        let model = RefCell::new(model);
+        distance::face_distance_below(
+            &self.domain,
+            &other.domain,
+            ceiling,
+            max_cells,
+            &mut |p: &Point3, b: &[Ball; 3], d: &mut Decider| {
+                self.classify(&mut model.borrow_mut(), p, b, d)
+            },
+            &mut |p: &Point3, b: &[Ball; 3], d: &mut Decider| {
+                other.classify(&mut model.borrow_mut(), p, b, d)
+            },
+            dec,
+        )
+    }
     /// Bounds minimum distance to a second prepared face in the same model.
     pub fn face_to_face(
         &self,
@@ -237,6 +264,20 @@ impl PreparedFace {
         options: &Options,
         dec: &mut Decider,
     ) -> Result<Bounds, Refusal> {
+        match self.parallel_witness(other, model, options, dec)? {
+            Some(bounds) => Ok(bounds),
+            None => self.face_to_face(other, model, options, dec),
+        }
+    }
+    /// The planar witness search of [`Self::parallel_face_to_face`] alone:
+    /// `None` when no probe finds a witness pair, without the general search.
+    pub fn parallel_witness(
+        &self,
+        other: &Self,
+        model: &mut Model,
+        options: &Options,
+        dec: &mut Decider,
+    ) -> Result<Option<Bounds>, Refusal> {
         let (origin, normal) = plane(model, self.face)?;
         let (other_origin, other_normal) = plane(model, other.face)?;
         if !normal.cross(&other_normal).is_zero() {
@@ -262,7 +303,7 @@ impl PreparedFace {
             (lo <= hi).then_some((lo, hi))
         };
         let (Some((lo_i, hi_i)), Some((lo_j, hi_j))) = (range(i), range(j)) else {
-            return self.face_to_face(other, model, options, dec);
+            return Ok(None);
         };
         let mut probes = 0;
         for level in 0..=PLANAR_LEVELS {
@@ -285,18 +326,18 @@ impl PreparedFace {
                     if catallax_boolean::face_contains(model, self.face, &p, dec)?
                         && catallax_boolean::face_contains(model, other.face, &q, dec)?
                     {
-                        return Ok(Bounds {
+                        return Ok(Some(Bounds {
                             converged: gap.width() <= options.width,
                             lower: gap.lo,
                             upper: Some(gap.hi),
                             witnesses: Some([p.into(), q.into()]),
                             cells: probes,
-                        });
+                        }));
                     }
                 }
             }
         }
-        self.face_to_face(other, model, options, dec)
+        Ok(None)
     }
 }
 

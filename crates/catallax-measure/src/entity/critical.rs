@@ -529,6 +529,48 @@ fn ordered(x: &Core, y: &Core, out: &mut Out, dec: &mut Decider) -> Result<bool,
                         )?;
                     }
                 }
+            } else if zero(&dir.dot(normal), dec)? {
+                // The line is parallel to the circle's plane at height `h`. As
+                // in OpenCASCADE's `Extrema_ExtElC::PlanarLineCircleExtrema`,
+                // the stationary pairs are those of the line's projection into
+                // the plane, lifted back by `h` along the normal: the lift is
+                // perpendicular to both the line and every circle tangent.
+                let k = foot_on_line(centre, origin, dir);
+                let lift = normal.scaled(&k.minus(centre).dot(normal));
+                let planar = k.minus(centre).minus(&lift);
+                let h2 = planar.norm_squared();
+                let e = if zero(&h2, dec)? {
+                    normal.cross(dir)
+                } else {
+                    unit(&planar)
+                };
+                for s in [1, -1] {
+                    let x = centre.plus(&e.scaled(&(radius * &Real::from_i64(s))));
+                    let t = normal.cross(&e);
+                    out.pair(
+                        k.clone(),
+                        x,
+                        |_| Ok((Normals::Perp(dir.clone()), Normals::Perp(t))),
+                        dec,
+                    )?;
+                }
+                // Where the projection crosses the circle, the pair is apart by
+                // exactly `h`.
+                let m2 = radius.square() - h2;
+                if positive(&m2, dec)? {
+                    let m = root(&m2);
+                    for s in [1, -1] {
+                        let y = k.plus(&dir.scaled(&(&m * &Real::from_i64(s))));
+                        let x = y.plus(&lift.scaled(&Real::from_i64(-1)));
+                        let t = normal.cross(&x.minus(centre));
+                        out.pair(
+                            y,
+                            x,
+                            |_| Ok((Normals::Perp(dir.clone()), Normals::Perp(unit(&t)))),
+                            dec,
+                        )?;
+                    }
+                }
             } else {
                 return Ok(false);
             }

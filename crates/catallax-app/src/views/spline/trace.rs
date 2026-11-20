@@ -98,6 +98,10 @@ pub(super) struct Vertex {
 pub(super) struct Branch {
     pub vertices: Vec<Vertex>,
     pub closed: bool,
+    /// For an open branch, the domain sides its two ends lie on, as
+    /// `(axis, high)`: axis 0 for a side `u = const`, `high` for the upper
+    /// end of that parameter.
+    pub sides: Option<[(usize, bool); 2]>,
 }
 
 /// The binary64 resolution of each parameter axis: the unit roundoff of the
@@ -492,6 +496,7 @@ impl<'a> Tracer<'a> {
                         return Ok(Some(Branch {
                             vertices,
                             closed: true,
+                            sides: None,
                         }));
                     }
                     continue;
@@ -523,9 +528,11 @@ impl<'a> Tracer<'a> {
                         // from its boundary roots already.
                         return Ok(None);
                     }
+                    let side = |s: &Seed| (s.axis, s.line != 0);
                     return Ok(Some(Branch {
                         vertices,
                         closed: false,
+                        sides: Some([side(&self.seeds[start]), side(&self.seeds[seed])]),
                     }));
                 }
             }

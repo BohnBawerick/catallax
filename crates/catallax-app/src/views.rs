@@ -23,9 +23,13 @@
 //! the plane through the axis and the top and bottom circles; those are exact
 //! sections and take the quadric path. Every other view gives two closed
 //! branches of degree 8, which `torus.rs` fits and marks approximate
-//! (decision Q14), with exact trims. Spline faces and horn or spindle torus
-//! sheets refuse with `app.contour-surface` rather than returning a partial
-//! outline.
+//! (decision Q14), with exact trims.
+//!
+//! On an extruded Bezier profile the generators are exact rulings; on a
+//! complete rational patch, or a lofted face covered by such patches, they
+//! are traced and fitted (`spline.rs`). Other spline bands refuse with
+//! `app.contour-trim`, and horn or spindle torus sheets with
+//! `app.contour-surface`, rather than return a partial outline.
 
 use catallax_boolean::face_contains;
 use catallax_intersect::{
@@ -45,6 +49,8 @@ use crate::ApplicationBody;
 use crate::queries::{QueryRefusal, perpendicular, query, sign};
 
 mod fit;
+mod float;
+mod spline;
 mod torus;
 
 /// Code of the mark a [`Contours`] answer carries when any arc is fitted. Its
@@ -110,15 +116,27 @@ struct Section {
     carrier: Option<Curve>,
 }
 
+/// One face's work, in face order.
+enum Job {
+    Section(Section),
+    ObliqueTorus,
+    Spline,
+}
+
 /// Where one face's generators come from.
 enum Generators {
     /// Plane sections; none for a plane or a cylinder seen along its axis.
     Sections(Vec<Section>),
     /// A ring torus seen obliquely: two fitted closed branches.
     ObliqueTorus,
+    /// A spline face: exact rulings or traced generators.
+    Spline,
 }
 
 fn sections(surface: &Surface, d: &Vector3, dec: &mut Decider) -> Result<Generators, Refusal> {
+    if let Surface::BSpline(_) = surface {
+        return Ok(Generators::Spline);
+    }
     if let Surface::Torus(t) = surface {
         // Along the axis, N.d = cos v (a.d) vanishes on the equator circles
         // rho = R +- r, the section by the plane through the centre normal to
@@ -219,8 +237,8 @@ fn polar_plane(
         _ => {
             return Err(Refusal::new(
                 "app.contour-surface",
-                "contour generators of spline faces and horn or spindle torus sheets need a \
-                 traced curve; unfinished",
+                "contour generators of horn or spindle torus sheets need a traced curve; \
+                 unfinished",
             ));
         }
     })
@@ -613,15 +631,20 @@ fn on_edge_span(
 /// points where the face boundary crosses that plane. On a torus seen
 /// obliquely each arc is fitted: its ends are exact, its carrier is a cubic
 /// B-spline within [`ContourFit::deviation_mm`] of the true generator, and the
-/// answer carries a [`CONTOUR_FIT_MARK`] mark. Isolated generator points, such
-/// as a cone apex seen from inside the cone's angle, draw nothing and are left
-/// out.
+/// answer carries a [`CONTOUR_FIT_MARK`] mark. On an extruded Bezier profile
+/// each arc is an exact ruling. On a complete rational patch, or a lofted
+/// face, each arc is fitted the same way, and its ends are where the fitted
+/// carrier starts and ends, within its deviation of the face boundary; a
+/// generator crossing a chart seam of a lofted face is one arc per chart.
+/// Isolated generator points, such as a cone apex seen from inside the
+/// cone's angle, draw nothing and are left out.
 ///
 /// Arcs are not split where they cross in projection and carry no
-/// visibility; hiding is a separate step. A spline face or a horn or spindle
-/// torus sheet refuses the whole query with `app.contour-surface`; an oblique
-/// torus face bounded by anything other than its parallels and meridians
-/// refuses with `app.contour-trim`.
+/// visibility; hiding is a separate step. A horn or spindle torus sheet
+/// refuses the whole query with `app.contour-surface`; an oblique torus face
+/// bounded by anything other than its parallels and meridians, a rational
+/// patch face with further trims, and spline bands from fillets and drafts
+/// refuse with `app.contour-trim`.
 pub fn contour_generators(
     model: &Model,
     body: BodyId,
@@ -643,17 +666,18 @@ pub fn contour_generators(
             dec.check_deadline()?;
             match sections(model.geom().surface(model.face(face).surface), &d, dec)? {
                 Generators::Sections(sections) => {
-                    jobs.extend(sections.into_iter().map(|s| (face, Some(s))));
+                    jobs.extend(sections.into_iter().map(|s| (face, Job::Section(s))));
                 }
-                Generators::ObliqueTorus => jobs.push((face, None)),
+                Generators::ObliqueTorus => jobs.push((face, Job::ObliqueTorus)),
+                Generators::Spline => jobs.push((face, Job::Spline)),
             }
         }
         let mut scratch = model.clone();
         let mut marks = model.body(body).marks.clone();
         let mut arcs = Vec::new();
-        for (face, section) in jobs {
-            match section {
-                Some(section) => face_generators(
+        for (face, job) in jobs {
+            match job {
+                Job::Section(section) => face_generators(
                     &mut scratch,
                     &faces,
                     face,
@@ -662,7 +686,10 @@ pub fn contour_generators(
                     &mut marks,
                     dec,
                 )?,
-                None => {
+                Job::Spline => {
+                    spline::generators(&mut scratch, &faces, face, &d, &mut arcs, dec)?;
+                }
+                Job::ObliqueTorus => {
                     let Surface::Torus(t) = scratch.geom().surface(scratch.face(face).surface)
                     else {
                         unreachable!("only a ring torus is fitted");

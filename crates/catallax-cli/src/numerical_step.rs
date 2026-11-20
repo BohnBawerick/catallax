@@ -182,9 +182,31 @@ fn written(model: &catallax_topology::Model, body: catallax_topology::BodyId) ->
     })
 }
 
+/// Rule T1's floor in the frame of an exact body's vertices.
+pub(crate) fn exact_floor(
+    model: &catallax_topology::Model,
+    bodies: impl IntoIterator<Item = catallax_topology::BodyId>,
+    dec: &mut Decider,
+) -> Result<Rational, catallax_numbers::Refusal> {
+    let mut points = Vec::new();
+    for vertex in bodies
+        .into_iter()
+        .flat_map(|body| model.vertices_of_body(body))
+    {
+        dec.charge_work(1)?;
+        let p = model.geom().position(model.vertex(vertex).point);
+        points.push([
+            dec.enclose_budgeted_at(&p.x, 128)?.mid(),
+            dec.enclose_budgeted_at(&p.y, 128)?.mid(),
+            dec.enclose_budgeted_at(&p.z, 128)?.mid(),
+        ]);
+    }
+    Ok(numerical::tolerance::BodyFrame::of_points(&points).floor_mm())
+}
+
 /// Numerical-first STEP for an exact recipe body whose geometry has no exact
-/// STEP form (ROADMAP "Numerical first"). The tolerance is the exact writer's
-/// requested curve tolerance, fixed before any embedding work. `None` keeps
+/// STEP form (ROADMAP "Numerical first"). The fit target and body cap are
+/// set by tolerance rule T2. `None` keeps
 /// the exact refusal when this embedding has no form for a carrier of the
 /// body. A refusal leaves no STEP file.
 pub(crate) fn embedded_exact(
@@ -197,32 +219,46 @@ pub(crate) fn embedded_exact(
     if !catallax_features::numerical_embedding::embeds(model, body) || !written(model, body) {
         return Ok(None);
     }
-    let tolerance = catallax_step::StepOptions::default().curve_tolerance;
-    let options = NumericalStepOptions {
-        max_scalar_rounding_error_mm: tolerance
-            .clone()
-            .min(NumericalStepOptions::default().max_scalar_rounding_error_mm),
-        ..Default::default()
+    // Rule T2 for own fitted geometry: the embedding aims at the target and
+    // the body takes the cap as its class cap. The floor is rule T1's in the
+    // frame of the exact body's vertices.
+    let eps = match exact_floor(model, [body], dec) {
+        Ok(eps) => eps,
+        Err(error) => return Ok(Some(Err(error))),
     };
+    let fitted = numerical::tolerance::own_fitted(&eps, None);
+    let (tolerance, cap) = (fitted.target_mm, fitted.cap_mm);
     let span = OperationSpan::begin("brep", &recipe.result, "numerical-step", dec);
     let assemble = || {
-        let (definition, native_trims) =
+        let embed = |target: &Rational, dec: &mut Decider| {
             catallax_features::numerical_embedding::definition_from_exact_model(
                 model,
                 body,
                 recipe.name.clone(),
-                &tolerance,
+                target,
                 dec,
-            )?;
-        let body = numerical::build_with_native_trims(
+            )
+        };
+        let (mut definition, mut native_trims) = embed(&tolerance, dec)?;
+        let target = numerical::tolerance::fitted_target_for_definition(
+            &definition,
+            &native_trims,
+            &eps,
+            dec,
+        )?;
+        if target < tolerance {
+            (definition, native_trims) = embed(&target, dec)?;
+        }
+        let embedded = numerical::build_with_native_trims(
             definition,
             native_trims,
             NumericalOptions {
-                tolerance_mm: tolerance,
+                tolerance_mm: cap,
+                vertex_tolerance_mm: None,
             },
             dec,
         )?;
-        step::build(&body, &options, dec)
+        step::build(&embedded, &embedding_step_options(target), dec)
     };
     let built = if catallax_numbers::operation_budget_active() {
         assemble()
@@ -235,6 +271,14 @@ pub(crate) fn embedded_exact(
         Err(error) => return Ok(Some(Err(error))),
     };
     publish_embedded(&artifact, recipe, out, dec).map(Some)
+}
+
+pub(crate) fn embedding_step_options(target: Rational) -> NumericalStepOptions {
+    let defaults = NumericalStepOptions::default();
+    NumericalStepOptions {
+        max_scalar_rounding_error_mm: defaults.max_scalar_rounding_error_mm.min(target),
+        ..defaults
+    }
 }
 
 pub(crate) fn publish_embedded(
@@ -297,6 +341,7 @@ fn admit(
             recipe,
             NumericalOptions {
                 tolerance_mm: tolerance.clone(),
+                vertex_tolerance_mm: None,
             },
             dec,
         )
@@ -336,6 +381,7 @@ fn admit(
             recipe,
             NumericalOptions {
                 tolerance_mm: tolerance.clone(),
+                vertex_tolerance_mm: None,
             },
             dec,
         )
@@ -370,6 +416,7 @@ fn admit(
                     definition,
                     NumericalOptions {
                         tolerance_mm: tolerance.clone(),
+                        vertex_tolerance_mm: None,
                     },
                     dec,
                 )

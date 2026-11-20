@@ -28,6 +28,9 @@ mod source;
 pub use source::definition_from_model;
 /// Editable finite spline sheets with trim, extension and normal thickening.
 pub mod surface;
+/// Tolerance rules T0 to T8 (decision Q7, section 4.3).
+pub mod tolerance;
+pub use tolerance::{ToleranceReport, ToleranceWarning};
 
 #[cfg(test)]
 mod known_answers;
@@ -193,13 +196,29 @@ pub struct NumericalOptions {
     /// stores 1.1 times its measured gap (rule T4 of the tolerance rules).
     /// This is not a promised global deviation bound.
     pub tolerance_mm: Rational,
+    /// The largest distance from an edge end to its vertex, where the class
+    /// gives vertices their own cap: rule T3's 0.02 mm for imported vertices
+    /// ([`tolerance::import_options`]). `None`: vertices share
+    /// `tolerance_mm`. A stored body keeps it in its tolerance report.
+    #[transfer(skip)]
+    pub vertex_tolerance_mm: Option<Rational>,
 }
 
 impl Default for NumericalOptions {
     fn default() -> Self {
         Self {
             tolerance_mm: Rational::parse("0.01").expect("constant"),
+            vertex_tolerance_mm: None,
         }
+    }
+}
+
+impl NumericalOptions {
+    /// The cap of an edge end's distance to its vertex.
+    pub fn vertex_cap_mm(&self) -> &Rational {
+        self.vertex_tolerance_mm
+            .as_ref()
+            .unwrap_or(&self.tolerance_mm)
     }
 }
 
@@ -276,6 +295,7 @@ pub struct NumericalBody {
     model: Model,
     body: BodyId,
     evidence: NumericalEvidence,
+    tolerances: ToleranceReport,
 }
 
 /// A previous checked state. Its checks apply to this definition and tolerance only.
@@ -392,7 +412,191 @@ impl NumericalBody {
             }
         }
     }
-    fn inherit(&mut self, previous: &Self) {
+    /// Refits the face copy of every measured edge use whose stored
+    /// tolerance is over `above_mm`, aiming under it (rule T8: "refit edges
+    /// above the receiver tolerance"). A refit is kept only where the checker
+    /// reads a stored tolerance under `above_mm`; the body is then admitted
+    /// again as a continuation of this one. Returns the body and one row per
+    /// kept refit. A body with nothing to lower is returned as it is.
+    pub fn refit_face_copies(
+        &self,
+        above_mm: &Rational,
+        dec: &mut Decider,
+    ) -> Result<(Self, Vec<RefitRow>), Refusal> {
+        guarded(|| {
+            let records = tolerance::use_records(&self.evidence);
+            let mut chosen = Vec::new();
+            let mut index = 0;
+            for (face_index, face) in self.definition.faces.iter().enumerate() {
+                for (boundary, row) in face.loops.iter().enumerate() {
+                    for use_index in 0..row.len() {
+                        dec.charge_work(1)?;
+                        let (stored, derived) = &records[index];
+                        index += 1;
+                        if !derived && stored > above_mm {
+                            chosen.push(((face_index, boundary, use_index), stored.clone()));
+                        }
+                    }
+                }
+            }
+            let target = above_mm.to_f64_nearest();
+            match self.refit_uses(&chosen, target, dec)? {
+                None => Ok((self.clone(), Vec::new())),
+                Some((native_trims, rows)) => {
+                    let mut next = build_inner_kind(
+                        self.kind(),
+                        self.definition.clone(),
+                        native_trims,
+                        self.sampled_carriers.clone(),
+                        self.options.clone(),
+                        self.evidence.repairs().to_vec(),
+                        dec,
+                    )?;
+                    next.inherit(self, dec)?;
+                    Ok((next, rows))
+                }
+            }
+        })
+    }
+
+    /// Refits the chosen uses and returns the native curves with every refit
+    /// that brings its use's stored tolerance under `target_mm`, or `None`
+    /// when none does.
+    #[allow(clippy::type_complexity)]
+    fn refit_uses(
+        &self,
+        chosen: &[((usize, usize, usize), Rational)],
+        target_mm: f64,
+        dec: &mut Decider,
+    ) -> Result<Option<(Vec<NumericalNativeTrim>, Vec<RefitRow>)>, Refusal> {
+        if chosen.is_empty() {
+            return Ok(None);
+        }
+        let index = native::Index::new(
+            &self.definition,
+            &self.native_trims,
+            &self.sampled_carriers,
+            dec,
+        )?;
+        let mut native_trims = self.native_trims.clone();
+        let mut rows = Vec::new();
+        for ((face_index, boundary, use_index), before) in chosen {
+            let face = &self.definition.faces[*face_index];
+            let trim = &face.loops[*boundary][*use_index];
+            let edge = &self.definition.edges[trim.edge];
+            let native = index.get(*face_index, *boundary, *use_index);
+            let Some(found) = edge_gap::refit_use(face, trim, edge, native, target_mm, dec)? else {
+                continue;
+            };
+            let after = Rational::from_f64_exact(found.stored_mm)
+                .ok_or_else(|| bad("trim", "a refit gap is not a finite number"))?;
+            // A refit is kept where it reaches its target: a copy that
+            // only moves the reading in its last bits is no lower gap.
+            if after >= *before || after.to_f64_nearest() > target_mm {
+                continue;
+            }
+            native_trims.retain(|binding| {
+                !(binding.face == face.key
+                    && binding.boundary == *boundary
+                    && binding.use_index == *use_index)
+            });
+            native_trims.push(NumericalNativeTrim {
+                face: face.key.clone(),
+                boundary: *boundary,
+                use_index: *use_index,
+                edge: edge.key.clone(),
+                curve: found.curve,
+                tag: CopyTag::Independent,
+            });
+            rows.push(RefitRow {
+                face: face.key.clone(),
+                edge: edge.key.clone(),
+                boundary: *boundary,
+                use_index: *use_index,
+                before_mm: before.clone(),
+                after_mm: after,
+                spans: found.spans,
+            });
+        }
+        Ok((!rows.is_empty()).then_some((native_trims, rows)))
+    }
+
+    /// Rule T7 after a continuation: an edge the input already had whose
+    /// tolerance rose more than ten times above its own earlier value has the
+    /// face copies of its measured uses refitted, aiming under ten times that
+    /// value, and the body is admitted again where that lowers a stored
+    /// tolerance. What still rose stays a warning. A new edge was just fitted
+    /// by the operation that made it, so it is not fitted twice; its growth
+    /// over the input's largest tolerance is reported. Every use was measured
+    /// afresh by the continuation's own admission (rule T4, never stacked),
+    /// which is where a tolerance comes down when its gap does.
+    fn lower_growth(self, previous: &Self, dec: &mut Decider) -> Result<Self, Refusal> {
+        let grown: BTreeSet<&str> = self
+            .tolerances
+            .warnings
+            .iter()
+            .filter_map(|warning| match warning {
+                ToleranceWarning::Growth {
+                    kind: tolerance::EntityKind::Edge,
+                    key,
+                    same_entity: true,
+                    ..
+                } => Some(key.as_str()),
+                _ => None,
+            })
+            .collect();
+        if grown.is_empty() {
+            return Ok(self);
+        }
+        let records = tolerance::use_records(&self.evidence);
+        let earlier = tolerance::by_key(&previous.tolerances, dec)?;
+        let mut chosen = Vec::new();
+        let mut index = 0;
+        let mut target = f64::INFINITY;
+        for (face_index, face) in self.definition.faces.iter().enumerate() {
+            for (boundary, row) in face.loops.iter().enumerate() {
+                for (use_index, trim) in row.iter().enumerate() {
+                    dec.charge_work(1)?;
+                    let (stored, derived) = &records[index];
+                    index += 1;
+                    let key = self.definition.edges[trim.edge].key.as_str();
+                    if !derived && grown.contains(key) {
+                        chosen.push(((face_index, boundary, use_index), stored.clone()));
+                        dec.charge_work(1)?;
+                        let input = earlier
+                            .get(&(tolerance::EntityKind::Edge, key))
+                            .map(|value| (*value).clone())
+                            .unwrap_or_default();
+                        target = target.min(
+                            (input * Rational::from_i64(tolerance::GROWTH_FACTOR)).to_f64_nearest(),
+                        );
+                    }
+                }
+            }
+        }
+        let Some((native_trims, _)) = self.refit_uses(&chosen, target, dec)? else {
+            return Ok(self);
+        };
+        let mut next = build_inner_kind(
+            self.kind(),
+            self.definition.clone(),
+            native_trims,
+            self.sampled_carriers.clone(),
+            self.options.clone(),
+            self.evidence.repairs().to_vec(),
+            dec,
+        )?;
+        next.inherit(previous, dec)?;
+        Ok(next)
+    }
+
+    fn inherit(&mut self, previous: &Self, dec: &mut Decider) -> Result<(), Refusal> {
+        // Rule T7: this body was measured again by its own admission, with
+        // rule T4's margin on fresh measurements only, so no tolerance is
+        // carried over or stacked. What rose more than ten times above its
+        // input is reported with its absolute values.
+        let growth = tolerance::growth_warnings(&previous.tolerances, &self.tolerances, dec)?;
+        self.tolerances.warnings.extend(growth);
         self.source = previous.source.clone();
         self.source_native_trims = previous.source_native_trims.clone();
         self.source_sampled_carriers = previous.source_sampled_carriers.clone();
@@ -404,6 +608,7 @@ impl NumericalBody {
             options: previous.options.clone(),
             evidence: previous.evidence.clone(),
         });
+        Ok(())
     }
 
     /// Retained generating data, including the finite parameter trims.
@@ -417,6 +622,12 @@ impl NumericalBody {
     /// Actual checks and repair history, with no implicit complete bound.
     pub fn evidence(&self) -> &NumericalEvidence {
         &self.evidence
+    }
+    /// What the tolerance rules found at admission: every vertex and edge
+    /// tolerance, rule T1's floor and frame size, and the warnings of rules
+    /// T1, T5 and T7. See [`tolerance`].
+    pub fn tolerances(&self) -> &ToleranceReport {
+        &self.tolerances
     }
     /// Stored topological kind, without exposing the model to exact consumers.
     pub fn kind(&self) -> BodyKind {
@@ -507,10 +718,96 @@ impl NumericalBody {
                 repairs,
                 dec,
             )?;
-            next.inherit(self);
-            Ok(next)
+            next.inherit(self, dec)?;
+            next.lower_growth(self, dec)
         })
     }
+}
+
+/// One edge use whose face copy a refit replaced (rules T7 and T8).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RefitRow {
+    /// Key of the face of the use.
+    pub face: String,
+    /// Key of the edge.
+    pub edge: String,
+    /// Loop index on the face.
+    pub boundary: usize,
+    /// Use index in the loop.
+    pub use_index: usize,
+    /// Stored tolerance before, in millimetres.
+    pub before_mm: Rational,
+    /// Stored tolerance of the refit copy as the checker read it.
+    pub after_mm: Rational,
+    /// Spans of the refit copy.
+    pub spans: usize,
+}
+
+/// Admits an imported definition under rule T3. Every entity is measured;
+/// the caller's `options` hold the cap: the automatic 0.01 mm, or a value
+/// the user opted in to, at most 0.1 mm. Where a stored tolerance is over
+/// that cap, the face copies over it are refitted from their 3D curves first
+/// (rule T3: "above that, refit first"), on a probe admitted at the opt-in
+/// limit, and the definition is admitted again under the caller's cap with
+/// the refitted copies. Only what is still over the cap refuses, and the
+/// refusal says the user may opt in. A file's declared uncertainty plays no
+/// part here: rule T3 makes it a hint only.
+pub fn admit_import(
+    definition: NumericalDefinition,
+    native_trims: Vec<NumericalNativeTrim>,
+    options: NumericalOptions,
+    dec: &mut Decider,
+) -> Result<NumericalBody, Refusal> {
+    if options.tolerance_mm > tolerance::import_opt_in_limit_mm() {
+        return Err(Refusal::new(
+            "numerical.import-opt-in",
+            format!(
+                "an import cap of {} mm is over the {} mm a user may opt in to (rule T3)",
+                options.tolerance_mm,
+                tolerance::import_opt_in_limit_mm()
+            ),
+        ));
+    }
+    let options = tolerance::import_options(options.tolerance_mm);
+    match build_with_native_trims(
+        definition.clone(),
+        native_trims.clone(),
+        options.clone(),
+        dec,
+    ) {
+        Err(refusal) if refusal.code == "numbers.numerical-tolerance-exceeded" => {
+            let probe = build_with_native_trims(
+                definition.clone(),
+                native_trims,
+                tolerance::import_options(tolerance::import_opt_in_limit_mm()),
+                dec,
+            )
+            .map_err(|_| refusal.clone())?;
+            let (refitted, rows) = probe.refit_face_copies(&options.tolerance_mm, dec)?;
+            if rows.is_empty() {
+                return Err(opt_in_refusal(refusal));
+            }
+            build_with_native_trims(definition, refitted.native_trims, options, dec).map_err(
+                |again| {
+                    if again.code == "numbers.numerical-tolerance-exceeded" {
+                        opt_in_refusal(again)
+                    } else {
+                        again
+                    }
+                },
+            )
+        }
+        other => other,
+    }
+}
+
+fn opt_in_refusal(mut refusal: Refusal) -> Refusal {
+    refusal.detail = format!(
+        "{}; refitted first; the user may opt in to a cap of up to {} mm (rule T3)",
+        refusal.detail,
+        tolerance::import_opt_in_limit_mm()
+    );
+    refusal
 }
 
 /// Builds a numerical result under the caller's active work limit, or 20M work
@@ -1097,7 +1394,17 @@ fn build_inner_kind(
             });
         }
     }
-    let evidence = NumericalEvidence::new(options.tolerance_mm.clone(), checks, repairs)?;
+    // Rule T3 caps a vertex apart from its edges and faces. Every record of an
+    // edge end's distance to its vertex is held to the vertex cap with T4's
+    // margin, and every other record to the class cap.
+    let evidence_tolerance = if let Some(vertex) = &options.vertex_tolerance_mm {
+        tolerance::check_by_class(&checks, &options.tolerance_mm, vertex)?;
+        vertex.clone().max(options.tolerance_mm.clone())
+    } else {
+        options.tolerance_mm.clone()
+    };
+    let evidence = NumericalEvidence::new(evidence_tolerance, checks, repairs)?;
+    let tolerances = tolerance_report(&definition, &native, &evidence, &options, dec)?;
     dec.check_deadline()?;
     Ok(NumericalBody {
         source: definition.clone(),
@@ -1111,6 +1418,51 @@ fn build_inner_kind(
         model,
         body,
         evidence,
+        tolerances,
+    })
+}
+
+/// The tolerance rules on an admitted definition: every entity's tolerance
+/// over rule T1's floor, rule T1's size warning, and rule T5, which refuses a
+/// pair whose tolerances add up to more than half their distance. That is the
+/// local term the class cap (`options.tolerance_mm`) is compared with: the
+/// cap that applies is the smaller of the two.
+fn tolerance_report(
+    definition: &NumericalDefinition,
+    native: &native::Index<'_>,
+    evidence: &NumericalEvidence,
+    options: &NumericalOptions,
+    dec: &mut Decider,
+) -> Result<ToleranceReport, Refusal> {
+    let frame = tolerance::BodyFrame::of(definition, dec)?;
+    let floor_mm = frame.floor_mm();
+    dec.charge_work(
+        (definition.vertices.len() + definition.edges.len() + evidence.checks().len()) as u64,
+    )?;
+    let entities = tolerance::entity_tolerances(
+        definition,
+        evidence,
+        &floor_mm,
+        options.vertex_tolerance_mm.as_ref(),
+    )?;
+    let mut warnings = Vec::new();
+    if frame.extent_mm > tolerance::body_size_warning_mm() {
+        warnings.push(ToleranceWarning::LargeBody {
+            extent_mm: frame.extent_mm.clone(),
+        });
+    }
+    warnings.extend(
+        tolerance::pair_rule_check(definition, native, &entities, &frame.centre, dec)?
+            .into_iter()
+            .map(ToleranceWarning::Pair),
+    );
+    Ok(ToleranceReport {
+        coordinate_size_mm: frame.coordinate_size_mm,
+        floor_mm,
+        cap_mm: options.tolerance_mm.clone(),
+        vertex_cap_mm: options.vertex_tolerance_mm.clone(),
+        entities,
+        warnings,
     })
 }
 

@@ -150,6 +150,7 @@ fn record(name: &str, text: String) {
 fn options() -> NumericalOptions {
     NumericalOptions {
         tolerance_mm: q("0.01"),
+        vertex_tolerance_mm: None,
     }
 }
 

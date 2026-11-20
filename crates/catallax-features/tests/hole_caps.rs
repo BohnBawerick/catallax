@@ -137,6 +137,7 @@ fn floats(values: [Ball; 3]) -> [f64; 3] {
 fn native_cap_curves_match_independent_surface_section_evaluations() {
     let options = NumericalOptions {
         tolerance_mm: q("1e-7"),
+        vertex_tolerance_mm: None,
     };
     for moved in [false, true] {
         for skew in [false, true] {
@@ -222,6 +223,7 @@ fn wrong_carrier_or_interval_refuses_instead_of_publishing_a_cap_curve() {
     let source = quarter(&span, 0, &mut dec);
     let options = NumericalOptions {
         tolerance_mm: q("1e-7"),
+        vertex_tolerance_mm: None,
     };
     let plane = cap(false, true);
     let mut wrong = span.clone();
@@ -283,7 +285,8 @@ fn a_plane_parallel_to_the_axis_has_no_ellipse_template() {
             &source,
             &plane,
             &NumericalOptions {
-                tolerance_mm: q("1e-7")
+                tolerance_mm: q("1e-7"),
+                vertex_tolerance_mm: None,
             },
             &mut dec
         )
@@ -362,6 +365,7 @@ fn finite_v_excursion_between_seventeen_stations_is_rejected() {
         &plane,
         &NumericalOptions {
             tolerance_mm: q("1e-7"),
+            vertex_tolerance_mm: None,
         },
         &mut dec,
     );
@@ -392,6 +396,7 @@ fn finite_v_subdivision_accepts_a_safe_curve_with_an_inconclusive_initial_hull()
         &plane,
         &NumericalOptions {
             tolerance_mm: q("1e-7"),
+            vertex_tolerance_mm: None,
         },
         &mut dec,
     )

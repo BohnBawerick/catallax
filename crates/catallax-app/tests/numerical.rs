@@ -312,7 +312,8 @@ fn work_exhaustion_and_invalid_definitions_return_no_body() {
         build_numerical(
             fixture("0"),
             NumericalOptions {
-                tolerance_mm: q("-1")
+                tolerance_mm: q("-1"),
+                vertex_tolerance_mm: None,
             },
             &mut Decider::default()
         )

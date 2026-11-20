@@ -146,6 +146,7 @@ fn sloping_paired_cone_cells_bound_the_complete_native_hull_not_its_u_box() {
     let mut binding = native_seam(&definition);
     let options = n::NumericalOptions {
         tolerance_mm: Rational::parse("0.0000001").unwrap(),
+        vertex_tolerance_mm: None,
     };
     let body = n::build_with_native_trims(
         definition.clone(),

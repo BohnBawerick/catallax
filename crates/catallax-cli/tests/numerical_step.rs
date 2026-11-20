@@ -162,11 +162,12 @@ fn numerical_step_requests_keep_tolerance_evidence_and_refused_artifacts_separat
     assert_eq!(step["proof"], "numerical");
     assert_eq!(step["category"], "approximate");
     assert_eq!(step["approximate"], true);
-    assert_eq!(step["tolerance_mm"], "1/10000000");
+    // Rule T2's cap for own fitted geometry, the embedded body's class cap.
+    assert_eq!(step["tolerance_mm"], "1/100000");
     assert_eq!(step["complete_body_bound"], "unestablished");
     assert_eq!(step["seams"], "required");
     for scope in ["source", "emitted"] {
-        assert_eq!(step["numerical"][scope]["tolerance_mm"], "1/10000000");
+        assert_eq!(step["numerical"][scope]["tolerance_mm"], "1/100000");
         assert!(
             !step["numerical"][scope]["checks"]
                 .as_array()

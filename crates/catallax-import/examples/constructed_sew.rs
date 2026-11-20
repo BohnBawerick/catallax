@@ -87,6 +87,7 @@ fn main() {
         };
         let options = NumericalOptions {
             tolerance_mm: Rational::parse("0.000001").unwrap(),
+            vertex_tolerance_mm: None,
         };
         assert!(
             sew_constructed_surfaces(

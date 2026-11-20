@@ -276,6 +276,7 @@ fn rotation_minimising() -> catallax_recipe::SweepOrientation {
 fn options(recipe: &SweepRecipe) -> NumericalOptions {
     NumericalOptions {
         tolerance_mm: recipe.tolerance_mm.value().clone(),
+        vertex_tolerance_mm: None,
     }
 }
 

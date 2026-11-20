@@ -101,6 +101,7 @@ fn shared_ring_anchor_keeps_original_native_maps_after_diameter_edit() {
             assert_eq!(heights, [q("1"), q("11")]);
             let options = NumericalOptions {
                 tolerance_mm: q("1e-7"),
+                vertex_tolerance_mm: None,
             };
             let stock =
                 NumericalCylinderSource::new(stock, heights, options.clone(), &mut dec).unwrap();

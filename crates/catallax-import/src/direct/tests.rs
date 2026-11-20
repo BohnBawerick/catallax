@@ -113,6 +113,7 @@ fn nonzero_sew_is_canonical_for_a_tighter_second_edit() {
                 },
                 n::NumericalOptions {
                     tolerance_mm: r("0.000001"),
+                    vertex_tolerance_mm: None,
                 },
                 &mut Decider::default(),
             )

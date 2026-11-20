@@ -23,6 +23,7 @@ pub mod native;
 /// Per-body admission with retained surface representations on solid refusal.
 pub mod opened;
 use crate::{Curve, Face, FaceLoop, ImportRefusal, OrientedEdge, StepFile, Surface, Vertex};
+use catallax_topology::numerical::tolerance::{self, EntityKind};
 
 /// Initial numerical uncertainty and the maximum healing tolerance, in mm.
 /// These are topology controls, not a source-to-result deviation certificate.
@@ -222,7 +223,7 @@ impl TolerantBody {
         cause: &str,
         dec: &mut Decider,
     ) -> Result<bool, Error> {
-        self.validate_growth(name, &required_mm, cause, dec)?;
+        self.validate_growth(name, &required_mm, cause, EntityKind::Vertex, dec)?;
         let index = *self
             .vertex_indices
             .get(name)
@@ -243,7 +244,7 @@ impl TolerantBody {
         cause: &str,
         dec: &mut Decider,
     ) -> Result<bool, Error> {
-        self.validate_growth(name, &required_mm, cause, dec)?;
+        self.validate_growth(name, &required_mm, cause, EntityKind::Edge, dec)?;
         let index = *self
             .edge_indices
             .get(name)
@@ -273,11 +274,26 @@ impl TolerantBody {
         Ok(true)
     }
 
+    /// Rule T3's cap for one kind of entity (Checkpoint 2 decisions, section
+    /// 4.3). At the automatic 0.01 mm a vertex may grow to 0.02 mm. A larger
+    /// `maximum_mm` is the user's opt-in, up to 0.1 mm, and raises every kind
+    /// to it; a smaller one is the caller's and holds for every kind.
+    pub fn cap_mm(&self, kind: EntityKind) -> Rational {
+        let automatic = tolerance::import_cap_mm();
+        let maximum = &self.options.maximum_mm;
+        if *maximum < automatic {
+            return maximum.clone();
+        }
+        let opt_in = (*maximum > automatic).then_some(maximum);
+        tolerance::import_cap_for(kind, opt_in).unwrap_or_else(|_| maximum.clone())
+    }
+
     fn validate_growth(
         &self,
         name: &str,
         required: &Rational,
         cause: &str,
+        kind: EntityKind,
         dec: &mut Decider,
     ) -> Result<(), Error> {
         dec.charge_work(1 + name.len() as u64 + cause.len() as u64)?;
@@ -286,13 +302,11 @@ impl TolerantBody {
                 "growth needs an entity, named cause and nonnegative tolerance",
             ));
         }
-        if required > &self.options.maximum_mm {
+        let cap = self.cap_mm(kind);
+        if *required > cap {
             return Err(Refusal::new(
                 "import.tolerance-cap",
-                format!(
-                    "{name}: {required} mm exceeds {} mm",
-                    self.options.maximum_mm
-                ),
+                format!("{name}: {required} mm exceeds {cap} mm"),
             )
             .into());
         }

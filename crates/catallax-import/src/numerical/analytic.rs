@@ -863,8 +863,9 @@ pub(super) fn admit_definition(
     for solid in &file.solids {
         bodies.push((
             solid.name.clone(),
-            n::build(
+            n::admit_import(
                 definition(solid, &mut topology_repairs, dec)?,
+                Vec::new(),
                 continuation_options.clone(),
                 dec,
             )?,

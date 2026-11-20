@@ -66,6 +66,7 @@ fn checked(bytes: &[u8], tolerance: &str) -> Result<StepImport, numerical::Impor
         &StepId::new("analytic-source").unwrap(),
         &n::NumericalOptions {
             tolerance_mm: q(tolerance),
+            vertex_tolerance_mm: None,
         },
         &mut Decider::default(),
     )

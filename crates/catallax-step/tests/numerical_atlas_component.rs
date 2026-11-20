@@ -25,6 +25,7 @@ fn a_trim_on_another_component_of_the_atlas_source_refuses() {
         .unwrap();
         let options = NumericalOptions {
             tolerance_mm: tolerance,
+            vertex_tolerance_mm: None,
         };
         build_with_native_trims(
             definition.clone(),

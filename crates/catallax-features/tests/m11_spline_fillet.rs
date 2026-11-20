@@ -660,6 +660,7 @@ fn round_the_smooth_loft(
     let tolerance = q("1/10000000");
     let options = catallax_topology::numerical::NumericalOptions {
         tolerance_mm: tolerance.clone(),
+        vertex_tolerance_mm: None,
     };
     let (source, native) = catallax_features::numerical_embedding::definition_from_exact_model(
         &built.model,

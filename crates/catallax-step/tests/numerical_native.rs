@@ -48,6 +48,7 @@ fn an_analytic_body_with_native_uv_uses_the_retaining_writer() {
             vec![binding],
             n::NumericalOptions {
                 tolerance_mm: q("1e-7"),
+                vertex_tolerance_mm: None,
             },
             &mut Decider::default(),
         )
@@ -121,6 +122,7 @@ fn native_outer_edges_keep_continuous_circle_clearance() {
             vec![binding],
             n::NumericalOptions {
                 tolerance_mm: q("1/1000"),
+                vertex_tolerance_mm: None,
             },
             &mut Decider::default(),
         )

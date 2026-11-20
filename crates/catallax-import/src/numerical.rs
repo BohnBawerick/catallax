@@ -230,12 +230,14 @@ fn import_inner(
         }
         Err(error) => return Err(error.into()),
     };
+    // Rule T3: the automatic cap is 0.01 mm; a user may opt in up to 0.1 mm
+    // by stating a larger cap.
     if options.tolerance_mm.sign() != Sign::Positive
-        || options.tolerance_mm > crate::gap::auto_cap()
+        || options.tolerance_mm > n::tolerance::import_opt_in_limit_mm()
     {
         return Err(Refusal::new(
             "import.numerical-tolerance",
-            "source tolerance must be positive and at most 0.01 mm",
+            "source tolerance must be positive and at most the 0.1 mm a user may opt in to (rule T3)",
         )
         .into());
     }
@@ -291,7 +293,7 @@ fn import_inner(
         let definition = planar_definition(solid, dec)?;
         bodies.push((
             solid.name.clone(),
-            n::build(definition, options.clone(), dec)?,
+            n::admit_import(definition, Vec::new(), options.clone(), dec)?,
         ));
     }
     Ok(StepImport::Numerical(Box::new(NumericalImport {
@@ -311,10 +313,10 @@ pub(crate) fn admit_retained_definition(
     dec: &mut Decider,
 ) -> Result<StepImport, ImportError> {
     if options.tolerance_mm.sign() != Sign::Positive
-        || options.tolerance_mm > crate::gap::auto_cap()
+        || options.tolerance_mm > n::tolerance::import_opt_in_limit_mm()
     {
         return Err(unsupported(
-            "retained numerical tolerance is outside the import cap",
+            "retained numerical tolerance is outside the import cap (rule T3: at most the 0.1 mm a user may opt in to)",
         ));
     }
     analytic::admit_definition(file, verified_sha256, strict_refusal, options, true, dec)

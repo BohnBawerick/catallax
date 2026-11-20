@@ -103,8 +103,9 @@ pub(crate) fn sew_with_reconstruction(
     reconstruct(&mut file.solids[0].faces, dec)?;
     let source_checks = intersection_checks(&file, OPTIONAL_EXACT_WORK, dec)?;
     let mut topology_repairs = Vec::new();
-    let body = n::build(
+    let body = n::admit_import(
         definition(&file.solids[0], &mut topology_repairs, dec)?,
+        Vec::new(),
         options,
         dec,
     )?;

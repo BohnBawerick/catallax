@@ -261,6 +261,7 @@ impl NumericalLoftSelection {
             self.collection,
             NumericalOptions {
                 tolerance_mm: self.tolerance_mm.clone(),
+                vertex_tolerance_mm: None,
             },
             dec,
         )

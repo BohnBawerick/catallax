@@ -357,8 +357,18 @@ impl Emitter<'_> {
         let magnitude = self.length(&tolerance.value, item)?;
         let base = vec![quoted(item), text("''"), magnitude.into(), target.into()];
         let entity = tolerance.characteristic.entity();
+        // An entity with one leaf type is a plain instance: every form
+        // tolerance, and a characteristic that always has datums, whose
+        // entity is a subtype of the one that holds them. Several leaf
+        // types make a complex instance.
+        let datums_inherited = tolerance.characteristic.datum_use() == super::DatumUse::Required;
         let id = if tolerance.datums.is_empty() && tolerance.material.is_none() {
             self.root(entity, base)
+        } else if datums_inherited && tolerance.material.is_none() {
+            let system = self.system(&tolerance.datums, item)?;
+            let mut fields = base;
+            fields.push(refs([system]));
+            self.root(entity, fields)
         } else {
             let mut parts = vec![("GEOMETRIC_TOLERANCE", base), (entity, vec![])];
             if !tolerance.datums.is_empty() {

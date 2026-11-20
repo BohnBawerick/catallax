@@ -10,11 +10,12 @@
 //! round faces share one axis and radius, axes are parallel, a slot's flats
 //! are tangent to its ends.
 //!
-//! The rules read planes and circular cylinders. A round face is a cylinder
-//! face or several of one cylinder. It is a hole's wall when material lies
-//! outside it and a boss's when material lies inside it. A round that closes
-//! on itself has ends; an end is closed when the face it meets stays within
-//! the round's radius and open when that face reaches beyond it.
+//! The rules read planes and circular cylinders. A round is a cylinder face
+//! or several of one cylinder that meet along edges. It is a hole's wall
+//! when material lies outside it and a boss's when material lies inside it.
+//! A round that closes on itself has ends; an end is closed when the face it
+//! meets stays within the round's radius and open when that face reaches
+//! beyond it.
 //!
 //! - A hole is a closed round with material outside. With no closed end it
 //!   goes through.
@@ -220,7 +221,51 @@ fn rounds(model: &Model, faces: &[FaceId], dec: &mut Decider) -> Result<Vec<Roun
             rounds.push(round);
         }
     }
-    Ok(rounds)
+    // Faces of one cylinder are one wall only where they meet: two holes on
+    // one axis with material between them are two rounds.
+    Ok(rounds
+        .into_iter()
+        .flat_map(|round| connected(model, round))
+        .collect())
+}
+
+/// Splits a round into its edge-connected walls.
+fn connected(model: &Model, round: Round) -> Vec<Round> {
+    let edges: Vec<BTreeSet<EdgeId>> = round
+        .faces
+        .iter()
+        .map(|face| face_edges(model, *face).into_iter().collect())
+        .collect();
+    let mut component = vec![usize::MAX; round.faces.len()];
+    let mut count = 0;
+    for seed in 0..round.faces.len() {
+        if component[seed] != usize::MAX {
+            continue;
+        }
+        component[seed] = count;
+        let mut stack = vec![seed];
+        while let Some(at) = stack.pop() {
+            for next in 0..round.faces.len() {
+                if component[next] == usize::MAX && !edges[at].is_disjoint(&edges[next]) {
+                    component[next] = count;
+                    stack.push(next);
+                }
+            }
+        }
+        count += 1;
+    }
+    (0..count)
+        .map(|part| Round {
+            faces: round
+                .faces
+                .iter()
+                .zip(&component)
+                .filter(|(_, of)| **of == part)
+                .map(|(face, _)| *face)
+                .collect(),
+            ..round.clone()
+        })
+        .collect()
 }
 
 /// True when an edge is a straight line along the round's axis.

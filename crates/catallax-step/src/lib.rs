@@ -31,6 +31,8 @@ mod number;
 pub mod numerical;
 mod partial;
 mod pcurve;
+/// Manufacturing information written as AP242 semantic PMI.
+pub mod pmi;
 mod poles;
 mod rational_atlas;
 mod regularize;
@@ -191,6 +193,51 @@ pub fn write_step<W: Write>(
     Ok(with_definition_deviation(model, bodies, answer))
 }
 
+/// Writes one body as a STEP AP242 file with its manufacturing information
+/// as semantic PMI: datums, dimensions with limits, geometric tolerances and
+/// surface textures on the faces they apply to, and the part's notes.
+///
+/// Every dimension's nominal value is measured from the exact geometry, so
+/// [`pmi::Size::nominal`] and [`pmi::Location::nominal`] are not read. The
+/// geometry is the file [`write_step`] writes; the report is the same.
+///
+/// Refuses `step.pmi-invalid` for information that contradicts itself,
+/// `step.pmi-not-measurable` for a dimension that does not fit its faces,
+/// `step.pmi-face-not-written` when an item's face is not in the file, and
+/// `step.pmi-unsupported-body` for a body whose faces this writer cannot
+/// yet name: one with expanded charts or a drafted cylinder.
+pub fn write_step_with_pmi<W: Write>(
+    model: &Model,
+    body: BodyId,
+    options: &StepOptions,
+    pmi: &pmi::Pmi<catallax_topology::FaceId>,
+    dec: &mut Decider,
+    out: &mut W,
+) -> Answered<StepReport> {
+    pmi.validate()?;
+    if pmi.is_empty() {
+        return write_step(model, &[body], options, dec, out);
+    }
+    let bodies = [body];
+    let charts = model
+        .chart_expansion(body)
+        .is_some_and(catallax_topology::ChartExpansion::needs_cells);
+    if charts || catallax_topology::DraftedCylinder::of_body(model, body, dec)?.is_some() {
+        return Err(catallax_numbers::Refusal::new(
+            "step.pmi-unsupported-body",
+            "manufacturing information is not written for a body with expanded charts or a drafted cylinder",
+        ));
+    }
+    let mut file = Vec::new();
+    let answer = write_prepared(model, &bodies, options, dec, &mut file, true, Some(pmi))?;
+    if options.seams == Seams::Required {
+        check_seams(&file)?;
+    }
+    out.write_all(&file)
+        .map_err(|error| catallax_numbers::Refusal::new("step.io-error", error.to_string()))?;
+    Ok(with_definition_deviation(model, &bodies, answer))
+}
+
 // The file's bound against the exact definition: what the writer moved plus
 // the worst fitted carrier's measured distance to its definition.
 fn with_definition_deviation(
@@ -239,7 +286,7 @@ fn write_any<W: Write>(
         };
         return certified_spline::oblique::write(model, *body, &spline_options, dec, out);
     }
-    write_prepared(model, bodies, options, dec, out, false)
+    write_prepared(model, bodies, options, dec, out, false, None)
 }
 
 fn write_prepared<W: Write>(
@@ -249,6 +296,7 @@ fn write_prepared<W: Write>(
     dec: &mut Decider,
     out: &mut W,
     face_regions: bool,
+    pmi: Option<&pmi::Pmi<catallax_topology::FaceId>>,
 ) -> Answered<StepReport> {
     let prepared = observe("step.regularize", &"export", dec, |dec| {
         regularize::prepare(model, bodies, options, dec)
@@ -257,10 +305,12 @@ fn write_prepared<W: Write>(
         export::Exporter::new(&prepared.model, options, dec)
             .face_regions(face_regions)
             .regularizations(prepared.records, prepared.face_errors, prepared.edge_errors)
+            .pmi(pmi.cloned())
             .build(&prepared.bodies)?
     } else {
         export::Exporter::new(model, options, dec)
             .face_regions(face_regions)
+            .pmi(pmi.cloned())
             .build(bodies)?
     };
     let (file, report) = answer.value;

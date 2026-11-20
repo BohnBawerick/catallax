@@ -13,6 +13,8 @@ pub(crate) enum Field {
     List(Vec<Field>),
     /// One named partial entity of an external-mapping complex instance.
     Part(&'static str, Vec<Field>),
+    /// A typed parameter, such as `SET_REPRESENTATION_ITEM((#1,#2))`.
+    Typed(&'static str, Vec<Field>),
 }
 
 impl From<Id> for Field {
@@ -68,10 +70,21 @@ impl Graph {
     }
 
     pub(crate) fn write(&self, roots: &[Id], header: impl FnOnce(&[usize]) -> String) -> String {
+        self.write_with(roots, &[], header)
+    }
+
+    /// Writes the entities reachable from `roots` and then those reachable
+    /// only from `others`. The header receives the numbers of `roots`.
+    pub(crate) fn write_with(
+        &self,
+        roots: &[Id],
+        others: &[Id],
+        header: impl FnOnce(&[usize]) -> String,
+    ) -> String {
         let mut numbers = vec![0; self.entities.len()];
         let mut order = Vec::with_capacity(self.entities.len());
         // Iterative preorder avoids a call stack proportional to a spline's size.
-        let mut pending: Vec<_> = roots.iter().rev().copied().collect();
+        let mut pending: Vec<_> = roots.iter().chain(others).rev().copied().collect();
         while let Some(id) = pending.pop() {
             if numbers[id.0] != 0 {
                 continue;
@@ -98,7 +111,7 @@ impl Field {
     fn references_reversed(&self, children: &mut Vec<Id>) {
         match self {
             Self::Ref(id) => children.push(*id),
-            Self::List(fields) | Self::Part(_, fields) => {
+            Self::List(fields) | Self::Part(_, fields) | Self::Typed(_, fields) => {
                 for field in fields.iter().rev() {
                     field.references_reversed(children);
                 }
@@ -116,7 +129,7 @@ impl Field {
                 write_fields(fields, numbers, out);
                 out.push(')');
             }
-            Self::Part(name, fields) => {
+            Self::Part(name, fields) | Self::Typed(name, fields) => {
                 out.push_str(name);
                 out.push('(');
                 write_fields(fields, numbers, out);

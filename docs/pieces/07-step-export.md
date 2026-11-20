@@ -127,6 +127,60 @@ Cylinder and cone faces beside a junction end in chains of arcs and rows, so
 their seams start at a chain vertex and need no boundary split. Tori take the
 cylinder's cut, which keeps an arc's circle parameter equal on both faces.
 
+## Manufacturing information
+
+`write_step_with_pmi(model, body, &StepOptions, &pmi, dec, out)` writes one body
+as [`write_step`](#writing) does and adds its manufacturing information as AP242
+semantic PMI. A `pmi::Pmi<FaceId>` lists datums, sizes, distances, geometric
+tolerances and surface textures by the model faces they apply to, with the
+part's general tolerance, material and notes. An empty `Pmi` writes the bytes
+`write_step` writes. The entity forms follow the CAx-IF recommended practices
+for the representation of PMI in AP242, version 4.1.
+
+The writer measures every dimension. `pmi::nominals(model, &pmi, dec)` reads a
+diameter or radius off a cylinder and a distance between planes and cylinder
+axes, and decides exactly that the faces of a round feature share one axis and
+radius and that the two ends of a distance are parallel. The file states that
+value, so a size in the file is the size of the solid. `Size::nominal` and
+`Location::nominal` are not read on the way out. A reader fills them with what
+a file states.
+
+Every `ADVANCED_FACE` of a PMI file carries the name `face-<index>-<n>`, and
+`StepReport::face_map` lists each with its model face.
+
+| Item | Entities |
+| --- | --- |
+| a feature's faces | one `SHAPE_ASPECT` per feature, tied to its faces by a `GEOMETRIC_ITEM_SPECIFIC_USAGE`, or by an `ITEM_IDENTIFIED_REPRESENTATION_USAGE` when the file writes the feature as several faces; every item on the feature shares it |
+| a pattern | a `COMPOSITE_GROUP_SHAPE_ASPECT` described as `pattern of features`, related to each member's aspect |
+| a datum | the feature's aspect is a `DATUM_FEATURE`, related to a `DATUM` with the letter |
+| a size | `DIMENSIONAL_SIZE` named `diameter` or `radius` |
+| a distance | `DIMENSIONAL_LOCATION` named `linear distance`, with `inner`, `outer` and `centre` for the sides of round ends; the middle of two faces is a `CENTRE_OF_SYMMETRY` derived from their aspects |
+| a nominal value | a length measure named `nominal value` in a `SHAPE_DIMENSION_REPRESENTATION` |
+| limits | `PLUS_MINUS_TOLERANCE` over a `TOLERANCE_VALUE`, or over `LIMITS_AND_FITS` for an ISO 286 class |
+| a basic dimension | no limits; a `DESCRIPTIVE_REPRESENTATION_ITEM` named `dimensional note` and described `theoretical` beside the value (`Limits::Basic`) |
+| a through hole | a user defined attribute `hole depth` with the value `through` on the feature its diameter is on (`Size::through`). AP242 edition 1 has no hole entity, and the recommended practices give a compound feature as separate dimensions with no relation between them (section 5.1.9), so the depth is an attribute |
+| a geometric tolerance | the characteristic's entity. A characteristic that always has datums, such as perpendicularity, is a subtype of `GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE` and stays a plain instance; position or a profile with datums, and any tolerance with a material condition, is a complex instance with `GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE` and `GEOMETRIC_TOLERANCE_WITH_MODIFIERS`; one `DATUM_SYSTEM` per datum sequence; a diameter zone is a `TOLERANCE_ZONE` of form `cylindrical or circular` |
+| a surface texture | `SURFACE_TEXTURE_REPRESENTATION` with the parameter as a measure in micrometres, under a `surface_condition` property of the feature whose description is the process condition |
+| an item's name | `ID_ATTRIBUTE`, or the name of a geometric tolerance |
+| part notes | user defined attributes of the product definition named `general tolerance`, `material` and `note 1`, `note 2`, ... |
+
+A file with items also declares ISO 1101 as its dimensioning standard through an
+`APPLIED_DOCUMENT_REFERENCE`.
+
+The NIST STEP File Analyzer 5.54 reports no error on the P1 bracket file.
+OpenCASCADE 7.9 and 8.0 read its datums, dimensions and geometric tolerances and
+the part notes. They have no reader for `SURFACE_TEXTURE_REPRESENTATION`, so a
+surface texture does not reach an OpenCASCADE application. The recommended
+practices allow only `theoretical` and `auxiliary` as a dimension's note, so the
+texture is not repeated there.
+
+| Code | When |
+| --- | --- |
+| `step.pmi-invalid` | the information contradicts itself: a repeated name or datum letter, an empty feature, an undefined datum, a form tolerance with datums, limits the wrong way round, a value that is not a positive decimal |
+| `step.pmi-not-measurable` | a dimension does not fit its faces: a diameter on a plane, a distance between faces that are not parallel, a pattern whose features differ in size |
+| `step.pmi-face-not-written` | an item's face is not in the file, such as a face an export repair removed |
+| `step.pmi-unsupported-body` | the body has expanded charts or a drafted cylinder, whose writers do not name faces yet |
+
 ## What this piece is for
 
 Piece 7 writes bodies as STEP AP242 files (ISO 10303-21 text) that other kernels read as valid solids. It is the outbound half of conversion at the border (DESIGN.md): exact geometry becomes ordinary STEP entities, and the export proves and reports the largest distance between what it wrote and the exact model.

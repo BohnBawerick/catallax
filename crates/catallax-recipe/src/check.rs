@@ -57,6 +57,11 @@ pub(crate) fn check(recipe: &Recipe) -> Result<(), RecipeError> {
                 message: "mesh Booleans and decimation require catallax-recipe/5".into(),
             });
         }
+        if recipe.format != FORMAT_V5 && matches!(&step.op, Operation::FilletG2 { .. }) {
+            return Err(RecipeError::Parse {
+                message: "curvature-continuous fillets require catallax-recipe/5".into(),
+            });
+        }
         if recipe.format != FORMAT_V5 && face_refs(&step.op).iter().any(|r| r.face.is_none()) {
             return Err(RecipeError::Parse {
                 message: "face references without `face` require catallax-recipe/5".into(),
@@ -202,6 +207,10 @@ fn patterns(op: &Operation) -> Vec<&OriginPattern> {
             found
         }
         Operation::Chamfer {
+            edges: EdgeSelection::Refs(refs),
+            ..
+        }
+        | Operation::FilletG2 {
             edges: EdgeSelection::Refs(refs),
             ..
         } => refs.iter().flat_map(edge).collect(),
@@ -353,6 +362,30 @@ impl Ctx<'_> {
                             }
                         }
                     }
+                }
+                Ok(())
+            }
+            Operation::FilletG2 {
+                radius, fullness, ..
+            } => {
+                let invalid = |detail: &str| RecipeError::Parse {
+                    message: format!("step {}: {detail}", self.step),
+                };
+                if radius.value().sign() != Sign::Positive {
+                    return Err(invalid(
+                        "a curvature-continuous fillet radius must be positive",
+                    ));
+                }
+                // Past 5/4 the section's middle controls can pass the edge
+                // when the faces are nearly flat (RECIPE.md section 4.5.3).
+                if let Some(fullness) = fullness
+                    && (fullness.value().sign() != Sign::Positive
+                        || fullness.value()
+                            > &catallax_numbers::Rational::from_ratio(5, 4).unwrap())
+                {
+                    return Err(invalid(
+                        "a curvature-continuous fillet fullness must be positive and at most 5/4",
+                    ));
                 }
                 Ok(())
             }
@@ -625,6 +658,7 @@ impl Ctx<'_> {
             }
             (O::Fillet { .. }, Role::Blend { edge })
             | (O::FilletVariable { .. }, Role::Blend { edge })
+            | (O::FilletG2 { .. }, Role::Blend { edge })
             | (O::Chamfer { .. }, Role::Bevel { edge })
             | (O::Shell { .. } | O::Offset { .. }, Role::Round { edge })
             | (O::Thicken { .. }, Role::Rim { edge }) => self.edge(edge, i),

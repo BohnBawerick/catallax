@@ -26,16 +26,18 @@ struct Band {
 // A valid closed, outward-oriented polyhedral skin whose faces all support
 // every input vertex is its convex half-space intersection. Convex planar
 // loops exclude hidden holes and self-crossing face domains. No tessellation
-// or sampled material label supplies any part of this proof.
-fn convex_skin(
+// or sampled material label supplies any part of this proof. The
+// curvature-continuous constructor shares it with its own refusal code.
+pub(super) fn convex_skin(
     model: &Model,
     body: BodyId,
+    unsupported: fn(&str) -> Refusal,
     dec: &mut Decider,
 ) -> Result<Vec<(FaceId, Plane, Vector3)>, Refusal> {
     let input = model.body(body);
     let [lump] = input.lumps.as_slice() else {
         return Err(unsupported(
-            "variable planar fillets need one convex material lump",
+            "planar band fillets need one convex material lump",
         ));
     };
     if input.kind != BodyKind::Solid
@@ -43,7 +45,7 @@ fn convex_skin(
         || !model.check(body).is_empty()
     {
         return Err(unsupported(
-            "variable planar fillets need one valid closed convex shell",
+            "planar band fillets need one valid closed convex shell",
         ));
     }
     let vertices = model
@@ -56,9 +58,7 @@ fn convex_skin(
         dec.check_deadline()?;
         let f = model.face(face);
         let Surface::Plane(plane) = model.geom().surface(f.surface) else {
-            return Err(unsupported(
-                "this variable-radius constructor needs planar input faces",
-            ));
+            return Err(unsupported("planar band fillets need planar input faces"));
         };
         let [lp] = f.loops.as_slice() else {
             return Err(unsupported("convex input faces have one polygon loop"));
@@ -244,7 +244,7 @@ pub(crate) fn build(
             dec,
         );
     }
-    let planes = convex_skin(model, body, dec)?;
+    let planes = convex_skin(model, body, unsupported, dec)?;
     let mut bands = Vec::<Band>::with_capacity(inputs.len());
     for input in inputs {
         if !convex(model, input.edge, &uses[&input.edge], dec)? {

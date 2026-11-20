@@ -232,6 +232,7 @@ fn bracket_pmi(part: &Bracket) -> (Pmi<FaceId>, BTreeMap<&'static str, &'static 
                 }),
                 nominal: None,
                 through: false,
+                thread: None,
             }),
         ),
         item(
@@ -262,6 +263,7 @@ fn bracket_pmi(part: &Bracket) -> (Pmi<FaceId>, BTreeMap<&'static str, &'static 
                 limits: deviations("0.1", "-0.1"),
                 nominal: None,
                 through: false,
+                thread: None,
             }),
         ),
         item(
@@ -281,6 +283,7 @@ fn bracket_pmi(part: &Bracket) -> (Pmi<FaceId>, BTreeMap<&'static str, &'static 
                 limits: deviations("0.1", "0"),
                 nominal: None,
                 through: true,
+                thread: None,
             }),
         ),
         item(
@@ -326,6 +329,7 @@ fn bracket_pmi(part: &Bracket) -> (Pmi<FaceId>, BTreeMap<&'static str, &'static 
                 limits: None,
                 nominal: None,
                 through: false,
+                thread: None,
             }),
         ),
         item(
@@ -555,6 +559,7 @@ fn a_changed_bore_keeps_its_items_and_reads_its_new_size() {
                     }),
                     nominal: None,
                     through: false,
+                    thread: None,
                 }),
             ),
             item(
@@ -636,6 +641,7 @@ fn information_that_does_not_fit_the_part_is_refused() {
             limits: None,
             nominal: None,
             through: false,
+            thread: None,
         }))),
         "step.pmi-not-measurable"
     );
@@ -669,7 +675,76 @@ fn information_that_does_not_fit_the_part_is_refused() {
             limits: deviations("0", "0.1"),
             nominal: None,
             through: false,
+            thread: None,
         }))),
         "step.pmi-invalid"
     );
+}
+
+#[test]
+fn a_threaded_hole_reads_back_with_its_designation() {
+    let part = bracket();
+    let holes: Vec<Feature<FaceId>> = [["10", "12"], ["10", "32"], ["50", "12"], ["50", "32"]]
+        .into_iter()
+        .map(|at| part.round(2, "2", at))
+        .collect();
+    let pmi = Pmi {
+        items: vec![item(
+            "Tapped holes",
+            ItemKind::Size(Size {
+                kind: SizeKind::Diameter,
+                features: holes.clone(),
+                limits: None,
+                nominal: None,
+                through: true,
+                thread: Some("M5x0.8 - 6H".to_owned()),
+            }),
+        )],
+        part: PartNotes::default(),
+    };
+    let (file, _) = write(&part, &pmi);
+    assert!(
+        file.contains("'thread'") && file.contains("'M5x0.8 - 6H'"),
+        "the designation is in the file"
+    );
+    let read = read_step_pmi(file.as_bytes()).unwrap();
+    assert!(read.skipped.is_empty(), "{:?}", read.skipped);
+    let [
+        Item {
+            kind: ItemKind::Size(size),
+            ..
+        },
+    ] = read.pmi.items.as_slice()
+    else {
+        panic!("one size expected, found {:?}", read.pmi.items);
+    };
+    assert_eq!(size.thread.as_deref(), Some("M5x0.8 - 6H"));
+    assert!(size.through);
+    assert_eq!(size.features.len(), 4, "on the four holes");
+
+    // A radius is not threaded.
+    let radius = Pmi {
+        items: vec![item(
+            "Threaded radius",
+            ItemKind::Size(Size {
+                kind: SizeKind::Radius,
+                features: vec![holes[0].clone()],
+                limits: None,
+                nominal: None,
+                through: false,
+                thread: Some("M5".to_owned()),
+            }),
+        )],
+        part: PartNotes::default(),
+    };
+    let refusal = write_step_with_pmi(
+        &part.model,
+        part.body,
+        &StepOptions::default(),
+        &radius,
+        &mut Decider::default(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
+    assert_eq!(refusal.code, "step.pmi-invalid");
 }

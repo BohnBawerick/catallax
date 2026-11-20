@@ -321,6 +321,42 @@ fn a_rebuild_resets_a_retained_curve_with_its_use_and_a_stored_body_has_no_tags(
         assert!(same.native_trims().iter().all(|binding| binding.tag == tag));
         assert_eq!(stated(&same), bindings.len());
 
+        // The 3D curve edited and every tag left as it was: the rebuild
+        // cannot show the stated bound still holds, so the uses and their
+        // curves reset and are measured.
+        let mut moved = body.definition().clone();
+        let edge = &mut moved.edges[0];
+        let ends = edge.vertices.map(|i| moved.vertices[i].position.clone());
+        let controls_3d = [q("2"), q("-7/2") + q("1e-9"), q("9/2"), q("-1")]
+            .iter()
+            .map(|c| {
+                let p: [Rational; 3] =
+                    std::array::from_fn(|i| &ends[0][i] + &(c * &(&ends[1][i] - &ends[0][i])));
+                Point3::new(
+                    p[0].clone().into(),
+                    p[1].clone().into(),
+                    p[2].clone().into(),
+                )
+            })
+            .collect();
+        edge.curve = Curve::BSpline(curve(controls_3d, q("2")));
+        assert!(
+            moved
+                .faces
+                .iter()
+                .flat_map(|face| face.loops.iter().flatten())
+                .filter(|trim| trim.edge == 0)
+                .all(|trim| trim.tag == tag)
+        );
+        let remeasured = body.rebuild(moved, controls(), &mut dec).unwrap();
+        assert!(
+            remeasured
+                .native_trims()
+                .iter()
+                .all(|binding| binding.tag == CopyTag::Independent)
+        );
+        assert_eq!(stated(&remeasured), 0);
+
         // The uses reset: their curves follow and the uses are measured.
         let mut edited = body.definition().clone();
         edited.reset_copy_tags();

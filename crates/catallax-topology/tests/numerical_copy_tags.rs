@@ -238,3 +238,56 @@ fn replacing_a_surface_resets_the_tags_of_its_uses() {
             .any(|trim| trim.tag != CopyTag::Independent)
     );
 }
+
+/// An edit of one copy that leaves the tag as it was. The edited definition is
+/// a clone of a tagged body's, so every use still states its derived tag; only
+/// the 3D curve of the top circle changes. The rebuild cannot show that the
+/// stated bound still holds for that use, so it is measured again, and the
+/// untouched circle keeps its tag. Rebuilding the unedited definition keeps
+/// both.
+#[test]
+fn a_rebuild_measures_a_use_whose_3d_copy_changed_under_an_unchanged_tag() {
+    let mut source = quarter();
+    tag_circles(&mut source, WALL, &derived("0"));
+    let body = build(source).unwrap();
+    assert_eq!(circle_records(&body, WALL, BOUND).len(), 2);
+
+    let mut dec = Decider::default();
+    let same = body
+        .rebuild(body.definition().clone(), body.options().clone(), &mut dec)
+        .unwrap();
+    assert_eq!(circle_records(&same, WALL, BOUND).len(), 2);
+    assert!(circle_records(&same, WALL, MEASURED).is_empty());
+
+    // Widen the top circle (vertices 4 and 5) by 0.001 mm; the wall, the u/v
+    // ends and every tag stay as they were.
+    let mut edited = body.definition().clone();
+    for edge in &mut edited.edges {
+        let mut ends = edge.vertices;
+        ends.sort();
+        if let (Curve::Circle(circle), [4, 5]) = (&mut edge.curve, ends) {
+            circle.radius_sq = (&q("1.001") * &q("1.001")).into();
+        }
+    }
+    let rebuilt = body
+        .rebuild(edited, body.options().clone(), &mut dec)
+        .unwrap();
+    assert_eq!(circle_records(&rebuilt, WALL, BOUND).len(), 1);
+    let records = circle_records(&rebuilt, WALL, MEASURED);
+    assert_eq!(records.len(), 1);
+    // 1.1 times the 0.001 mm the circle moved, and its measurement error.
+    let excess = &records[0].distance_upper_mm - &q("0.0011");
+    assert!(
+        excess >= Rational::zero() && excess < q("1e-12"),
+        "{excess}"
+    );
+    let wall = &rebuilt.definition().faces[WALL];
+    assert_eq!(
+        wall.loops
+            .iter()
+            .flatten()
+            .filter(|trim| trim.tag != CopyTag::Independent)
+            .count(),
+        1
+    );
+}

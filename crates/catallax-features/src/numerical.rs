@@ -234,6 +234,9 @@ fn deform(
         p[axis] = next_lo + &(&delta * &scale);
     };
     let mut d = d.clone();
+    // The map scales distances along one axis, so a bound stated for a
+    // derived copy before it does not hold after it.
+    d.reset_copy_tags();
     for v in &mut d.vertices {
         dec.charge_work(1)?;
         map(&mut v.position);
@@ -492,6 +495,7 @@ impl NumericalRecipe {
                         return Err(bad("trim needs two endpoints"));
                     }
                     boundary.push(NumericalTrim {
+                        tag: catallax_topology::numerical::CopyTag::Independent,
                         edge: index(&t["edge"])?,
                         sense: sense(&t["sense"])?,
                         uv: [array(&uv[0])?, array(&uv[1])?],

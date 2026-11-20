@@ -62,6 +62,7 @@ fn input() -> (NumericalDefinition, Vec<NumericalNativeTrim>) {
                     })
                     .collect();
                 bindings.push(NumericalNativeTrim {
+                    tag: catallax_topology::numerical::CopyTag::Independent,
                     face: face.key.clone(),
                     boundary,
                     use_index,
@@ -171,6 +172,7 @@ fn exact_exact_distance_pair_keeps_its_knot_grid_in_a_mixed_body() {
                         target = Some((bindings.len(), ends.clone()));
                     }
                     bindings.push(NumericalNativeTrim {
+                        tag: catallax_topology::numerical::CopyTag::Independent,
                         face: face.key.clone(),
                         boundary,
                         use_index,
@@ -265,6 +267,145 @@ fn native_curves_survive_rebuild_vertex_repair_and_support_edit() {
         assert_eq!(
             catallax_numbers::transfer::encode(&restored, &mut dec).unwrap(),
             bytes
+        );
+    });
+    assert!(!work.exhausted, "{work:?}");
+}
+
+/// Copy tags across a rebuild and a stored body (decision Q8, section 4.4 of
+/// the Checkpoint 2 decisions). A rebuild takes the retained u/v curves from
+/// the body, so the edited definition decides their tags: a curve keeps a
+/// derived tag only while its use still states it. A stored body carries no
+/// tag and reads back with every copy independent.
+#[test]
+fn a_rebuild_resets_a_retained_curve_with_its_use_and_a_stored_body_has_no_tags() {
+    use catallax_topology::numerical::{CopyRule, CopySource, CopyTag};
+    let ((), work) = with_operation_budget(20_000_000, || {
+        let tag = CopyTag::Derived {
+            from: CopySource::Edge3d,
+            rule: CopyRule::ExactComposition,
+            bound: q("0"),
+        };
+        let (mut definition, mut bindings) = input();
+        for trim in definition
+            .faces
+            .iter_mut()
+            .flat_map(|face| face.loops.iter_mut().flatten())
+            .filter(|trim| trim.edge == 0)
+        {
+            trim.tag = tag.clone();
+        }
+        for binding in &mut bindings {
+            binding.tag = tag.clone();
+        }
+        let stated = |body: &numerical::NumericalBody| {
+            body.evidence()
+                .checks()
+                .iter()
+                .filter(|check| {
+                    matches!(check, NumericalCheck::Samples { name, .. }
+                        if name.ends_with("edge-surface-derived-bound"))
+                })
+                .count()
+        };
+        let mut dec = Decider::default();
+        let body =
+            numerical::build_with_native_trims(definition, bindings.clone(), controls(), &mut dec)
+                .unwrap();
+        assert_eq!(stated(&body), bindings.len());
+
+        // Nothing edited: every curve keeps its tag.
+        let same = body
+            .rebuild(body.definition().clone(), controls(), &mut dec)
+            .unwrap();
+        assert!(same.native_trims().iter().all(|binding| binding.tag == tag));
+        assert_eq!(stated(&same), bindings.len());
+
+        // The retained curves dropped and every tag left as it was: the face
+        // copy of each use is now its linear u/v ends, a different copy, so
+        // the uses reset and are measured.
+        let dropped = body.rebuild_with_native_trims(
+            body.definition().clone(),
+            Vec::new(),
+            controls(),
+            &mut dec,
+        );
+        let dropped = dropped.unwrap();
+        assert!(
+            dropped
+                .definition()
+                .faces
+                .iter()
+                .flat_map(|face| face.loops.iter().flatten())
+                .all(|trim| trim.tag == CopyTag::Independent)
+        );
+        assert_eq!(stated(&dropped), 0);
+
+        // The 3D curve edited and every tag left as it was: the rebuild
+        // cannot show the stated bound still holds, so the uses and their
+        // curves reset and are measured.
+        let mut moved = body.definition().clone();
+        let edge = &mut moved.edges[0];
+        let ends = edge.vertices.map(|i| moved.vertices[i].position.clone());
+        let controls_3d = [q("2"), q("-7/2") + q("1e-9"), q("9/2"), q("-1")]
+            .iter()
+            .map(|c| {
+                let p: [Rational; 3] =
+                    std::array::from_fn(|i| &ends[0][i] + &(c * &(&ends[1][i] - &ends[0][i])));
+                Point3::new(
+                    p[0].clone().into(),
+                    p[1].clone().into(),
+                    p[2].clone().into(),
+                )
+            })
+            .collect();
+        edge.curve = Curve::BSpline(curve(controls_3d, q("2")));
+        assert!(
+            moved
+                .faces
+                .iter()
+                .flat_map(|face| face.loops.iter().flatten())
+                .filter(|trim| trim.edge == 0)
+                .all(|trim| trim.tag == tag)
+        );
+        let remeasured = body.rebuild(moved, controls(), &mut dec).unwrap();
+        assert!(
+            remeasured
+                .native_trims()
+                .iter()
+                .all(|binding| binding.tag == CopyTag::Independent)
+        );
+        assert_eq!(stated(&remeasured), 0);
+
+        // The uses reset: their curves follow and the uses are measured.
+        let mut edited = body.definition().clone();
+        edited.reset_copy_tags();
+        let reset = body.rebuild(edited, controls(), &mut dec).unwrap();
+        assert!(
+            reset
+                .native_trims()
+                .iter()
+                .all(|binding| binding.tag == CopyTag::Independent)
+        );
+        assert_eq!(stated(&reset), 0);
+
+        // A stored body is read back without tags.
+        let bytes = catallax_numbers::transfer::encode(&body, &mut dec).unwrap();
+        let restored: numerical::NumericalBody =
+            catallax_numbers::transfer::decode(&bytes, &mut dec).unwrap();
+        assert!(
+            restored
+                .definition()
+                .faces
+                .iter()
+                .flat_map(|face| face.loops.iter().flatten())
+                .all(|trim| trim.tag == CopyTag::Independent)
+        );
+        assert!(
+            restored
+                .native_trims()
+                .iter()
+                .all(|binding| binding.tag == CopyTag::Independent)
         );
     });
     assert!(!work.exhausted, "{work:?}");

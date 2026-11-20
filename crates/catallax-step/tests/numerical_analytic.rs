@@ -437,3 +437,18 @@ fn a_written_forward_arc_that_collapses_refuses_without_panicking() {
 fn a_written_reverse_arc_that_collapses_refuses_without_panicking() {
     collapsed_arc_control(true);
 }
+
+#[path = "common/copy_tags.rs"]
+mod copy_tags;
+
+/// The writer of analytic curved faces.
+#[test]
+fn the_written_analytic_body_measures_every_use_whatever_its_tag() {
+    let body = n::build(
+        quarter(),
+        n::NumericalOptions::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    copy_tags::assert_the_written_body_is_measured(&body, "1/1000");
+}

@@ -108,6 +108,7 @@ pub fn run(out: &Path, control: &str) -> Result<serde_json::Value, String> {
         )
         .map_err(|e| format!("{e:?}"))?;
         bindings.push(n::NumericalNativeTrim {
+            tag: catallax_topology::numerical::CopyTag::Independent,
             face: face.key.clone(),
             boundary: 0,
             use_index,

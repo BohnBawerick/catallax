@@ -294,6 +294,7 @@ mod tests {
     #[test]
     fn pcurve_index_charges_skipped_planar_uses_once() {
         let trim = NumericalTrim {
+            tag: catallax_topology::numerical::CopyTag::Independent,
             edge: 0,
             sense: Sense::Same,
             uv: std::array::from_fn(|_| std::array::from_fn(|_| Rational::zero())),

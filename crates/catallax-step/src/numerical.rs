@@ -339,6 +339,9 @@ fn emitted_checks(
     dec: &mut Decider,
 ) -> Result<NumericalEvidence, Refusal> {
     let mut d = body.definition().clone();
+    // STEP carries no copy tag and both copies are rounded below, so the
+    // check of the written values measures every use.
+    d.reset_copy_tags();
     d.name.push_str(" STEP decimal payload");
     for vertex in &mut d.vertices {
         dec.charge_work(1)?;

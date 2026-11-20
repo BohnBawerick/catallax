@@ -216,6 +216,7 @@ pub(super) fn check_loops(
                     curved::parameters(&face.surface, &point, dec)?
                 };
                 polygon.push(NumericalTrim {
+                    tag: crate::numerical::CopyTag::Independent,
                     edge: trim.edge,
                     sense: trim.sense,
                     uv: [previous, uv.clone()],

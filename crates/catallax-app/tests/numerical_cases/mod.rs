@@ -154,6 +154,7 @@ pub fn from_model(
                         }
                     });
                     NumericalTrim {
+                        tag: catallax_topology::numerical::CopyTag::Independent,
                         edge: edge_map[&c.edge],
                         sense: c.sense,
                         uv,

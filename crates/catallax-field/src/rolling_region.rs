@@ -5,8 +5,10 @@
 //! is the P5 rim-contact piece; [`elementary`] holds the line and circle pieces
 //! of plane-plane and plane-cylinder fillets, derived from their supports.
 //! [`revolved`] holds a plane with a cylinder, cone or sphere in any pose and
-//! [`generator`] the straight paths between supports parallel to one line;
-//! [`piece`] compiles either as a field leaf (4.2a step 2).
+//! [`generator`] the straight paths between supports parallel to one line
+//! (4.2a step 2). [`coaxial`] holds two curved supports about one axis and
+//! [`saddle`] a cylinder with a second cylinder or a sphere off its axis
+//! (4.2a step 3). [`piece`] compiles any of them as a field leaf.
 //!
 //! Only [`piece`] admits recipe fillets; the other building blocks are not
 //! admissions. See `docs/M18-ROLLING-REGION.md` for the rim region's explicit set and its
@@ -17,11 +19,13 @@ use crate::geometry::{enclose, sign};
 use catallax_numbers::{Ball, Decider, OperationAllowance, Rational, Real, Refusal, Sign};
 use catallax_shapes::{Point3, RollingEnvelopeDefinition};
 
+pub mod coaxial;
 pub mod elementary;
 pub mod generator;
 pub mod path;
 pub mod piece;
 pub mod revolved;
+pub mod saddle;
 mod sectors;
 pub use path::{Answer, Range};
 pub use sectors::{Sector, Sectors, Transition};

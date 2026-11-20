@@ -1223,6 +1223,31 @@ impl Feature {
             dec,
         )
     }
+    /// [`Self::on_face`] at a point that may be algebraic. A fillet face's own
+    /// classifier takes rational points only, so it refuses there.
+    pub(crate) fn on_face_algebraic(
+        &self,
+        role: &Role,
+        p: &Point3,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        let mut base_role = role;
+        while let Role::Copy { of, .. } = base_role {
+            base_role = &of.role;
+        }
+        if self
+            .fillet
+            .as_ref()
+            .is_some_and(|definition| &definition.origin.role == base_role)
+            && self.fillet_query_classifier().is_some()
+        {
+            return Err(Refusal::new(
+                "field.fillet-contact",
+                "a fillet face's membership needs a rational point",
+            ));
+        }
+        self.on_face_point(role, p, dec)
+    }
     pub(crate) fn extrusion_cap_polarity(
         &self,
         role: &Role,

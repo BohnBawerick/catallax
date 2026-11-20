@@ -929,7 +929,7 @@ fn a_pattern_of_rounded_bodies_builds_with_a_box() {
 }
 
 #[test]
-fn face_measures_and_the_field_stay_refused() {
+fn face_measures_stay_refused_and_the_field_builds_the_ring() {
     let built = build(&boss("1"));
     let accuracy = Accuracy {
         relative: q("1/1000"),
@@ -957,8 +957,9 @@ fn face_measures_and_the_field_stay_refused() {
     let rail = catallax_topology::saddle_rows(&built.model, band).unwrap()[0].0;
     let length = edge_length(&built.model, rail, &accuracy, &mut decider());
     assert_eq!(length.unwrap_err().code, "measure.unsupported-surface");
-    let field = Plan::compile_checked(&boss("1"), &mut decider()).unwrap_err();
-    assert_eq!(field.code, "field.fillet-contact");
+    // The field derives the ring itself since 4.2a step 3.
+    let field = Plan::compile_checked(&boss("1"), &mut decider()).unwrap();
+    assert_eq!(field.rolling_pieces().count(), 1);
 }
 
 // A file's whole face, edge and vertex count, and its bound against the body.
@@ -1632,9 +1633,10 @@ fn a_loop_certifies_and_writes_each_cylinder_chart() {
     }
 }
 
-// Each of these reads more than the band's law gives.
+// Each of these reads more than the band's law gives. The field derives the
+// loop itself since 4.2a step 3.
 #[test]
-fn a_loops_mass_properties_and_face_measures_stay_refused() {
+fn a_loops_mass_properties_and_face_measures_stay_refused_and_the_field_builds_it() {
     let built = build(&over("union", ["wide", "wall"], "1"));
     let accuracy = Accuracy {
         relative: q("1/1000"),
@@ -1651,5 +1653,5 @@ fn a_loops_mass_properties_and_face_measures_stay_refused() {
     let found = edge_length(&built.model, rail, &accuracy, &mut decider());
     assert_eq!(found.unwrap_err().code, "measure.unsupported-surface");
     let field = Plan::compile_checked(&over("union", ["wide", "wall"], "1"), &mut decider());
-    assert_eq!(field.map(|_| ()).unwrap_err().code, "field.fillet-contact");
+    assert_eq!(field.unwrap().rolling_pieces().count(), 1);
 }

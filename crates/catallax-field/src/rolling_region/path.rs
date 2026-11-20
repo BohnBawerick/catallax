@@ -56,6 +56,17 @@ pub trait Cover {
         let c = self.centre(u)?;
         Ok(squared(p, &c).lo() > self.radius().square().hi())
     }
+    /// Whether every parameter of the panel has a station. A path with gaps,
+    /// such as a loop over part of its parameter circle, says no where it
+    /// cannot prove it; its enclosures then still hold every station the
+    /// panel has, but a midpoint frame is no face witness.
+    fn exists(&self, _u: &Ball) -> Result<bool, Refusal> {
+        Ok(true)
+    }
+    /// Whether the panel provably has no station at all.
+    fn empty(&self, _u: &Ball) -> Result<bool, Refusal> {
+        Ok(false)
+    }
 }
 
 /// A finite rolling-ball path piece with exact clip walls.
@@ -72,6 +83,12 @@ pub trait Path {
     /// region. Exact elementary walls are faces; looser clipping walls are not.
     fn walls_are_faces(&self) -> bool {
         false
+    }
+    /// Exact clips that are positive everywhere in the region, so a point
+    /// where one is zero or negative is outside it. They keep far zones of
+    /// the walls out and are never faces.
+    fn bands(&self, _local: &[Real; 3], _dec: &mut Decider) -> Result<Vec<Real>, Refusal> {
+        Ok(Vec::new())
     }
     /// Closed-form value whose sign is that of `min_u |x-c(u)|^2 - r^2`.
     fn separation(&self, _local: &[Real; 3]) -> Option<Real> {
@@ -101,6 +118,13 @@ pub trait Path {
     /// path, another station's arc can be much nearer.
     fn uniform(&self) -> bool {
         false
+    }
+    /// A parameter whose station's arc may lie near the point, from a
+    /// binary64 search. [`distance`] evaluates the exact face point there
+    /// first, so a good guess settles a query at once; a poor one only costs
+    /// that evaluation. It never enters a bound unless its exact witness does.
+    fn guess(&self, _local: &[Real; 3]) -> Option<Rational> {
+        None
     }
 }
 
@@ -210,6 +234,11 @@ fn arc_bounds(p: &[Ball; 3], frame: &Frame, r: &Ball) -> Result<(Rational, Ratio
 pub fn classify<P: Path>(path: &P, point: &Point3, dec: &mut Decider) -> Result<Relation, Refusal> {
     dec.charge_work(1)?;
     let local = path.local(point);
+    for c in path.bands(&local, dec)? {
+        if sign(&c, dec)? != Sign::Positive {
+            return Ok(Relation::Exterior);
+        }
+    }
     let mut wall = false;
     for c in path.walls(&local, dec)? {
         match sign(&c, dec)? {
@@ -247,11 +276,17 @@ pub fn classify<P: Path>(path: &P, point: &Point3, dec: &mut Decider) -> Result<
             return Err(gap("finite centre-curve cover did not separate the query"));
         }
         let mid = (&lo + &hi) / q(2);
-        // A whole-ball witness is a sound exclusion from the region.
-        if cover.excludes(&p, &interval(&mid, &mid))? {
+        let panel = interval(&lo, &hi);
+        if cover.empty(&panel)? {
+            continue;
+        }
+        // A whole-ball witness at a station that exists is a sound exclusion
+        // from the region.
+        let station = interval(&mid, &mid);
+        if cover.exists(&station)? && cover.excludes(&p, &station)? {
             return Ok(Relation::Exterior);
         }
-        if cover.below(&p, &interval(&lo, &hi))? {
+        if cover.below(&p, &panel)? {
             continue;
         }
         if depth == DEPTH {
@@ -307,12 +342,28 @@ pub fn distance<P: Path>(
     }
     let cover = path.frames(dec)?;
     let r = cover.radius().clone();
-    let lower_of = |lo: &Rational, hi: &Rational| -> Result<Rational, Refusal> {
-        Ok(arc_bounds(&p, &cover.frame(&interval(lo, hi))?, &r)?.0)
+    // A panel with no station holds no face point; it leaves the heap.
+    let lower_of = |lo: &Rational, hi: &Rational| -> Result<Option<Rational>, Refusal> {
+        let u = interval(lo, hi);
+        if cover.empty(&u)? {
+            return Ok(None);
+        }
+        Ok(Some(arc_bounds(&p, &cover.frame(&u)?, &r)?.0))
     };
     let mut upper: Option<Rational> = None;
+    if let Some(u) = path.guess(&local)
+        && u >= q(-1)
+        && u <= q(1)
+    {
+        let station = interval(&u, &u);
+        if cover.exists(&station)? {
+            upper = Some(arc_bounds(&p, &cover.frame(&station)?, &r)?.1);
+        }
+    }
     let mut heap = BinaryHeap::new();
-    heap.push(Reverse((lower_of(&q(-1), &q(1))?, q(-1), q(1), 0usize)));
+    if let Some(bound) = lower_of(&q(-1), &q(1))? {
+        heap.push(Reverse((bound, q(-1), q(1), 0usize)));
+    }
     let mut panels = 0;
     while let Some(Reverse((lower, lo, hi, depth))) = heap.pop() {
         dec.charge_work(1)?;
@@ -332,16 +383,21 @@ pub fn distance<P: Path>(
             });
         }
         let mid = (&lo + &hi) / q(2);
-        let (_, witness) = arc_bounds(&p, &cover.frame(&interval(&mid, &mid))?, &r)?;
-        if upper.as_ref().is_none_or(|u| witness < *u) {
-            upper = Some(witness);
+        let station = interval(&mid, &mid);
+        if cover.exists(&station)? {
+            let (_, witness) = arc_bounds(&p, &cover.frame(&station)?, &r)?;
+            if upper.as_ref().is_none_or(|u| witness < *u) {
+                upper = Some(witness);
+            }
         }
         for (a, b) in [(lo, mid.clone()), (mid, hi)] {
-            let bound = lower_of(&a, &b)?;
-            heap.push(Reverse((bound, a, b, depth + 1)));
+            if let Some(bound) = lower_of(&a, &b)? {
+                heap.push(Reverse((bound, a, b, depth + 1)));
+            }
         }
     }
-    unreachable!("the panel heap always holds the unrefined cover")
+    // Every panel was empty, or the last ones were: no face point is left.
+    Err(gap("the path has no station"))
 }
 
 /// Membership plus the guaranteed distance range of one point (Q23).

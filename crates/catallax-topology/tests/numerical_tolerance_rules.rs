@@ -286,3 +286,131 @@ fn an_import_is_refitted_before_the_user_is_asked_to_opt_in() {
         "numerical.import-opt-in"
     );
 }
+
+/// The quarter cylinder with every height scaled by `h`: the top face moves
+/// down to `z = h` and the bottom face stays where it is.
+fn squashed(mut d: n::NumericalDefinition, h: &Rational) -> n::NumericalDefinition {
+    let real = |r: &Rational| -> catallax_numbers::Real { r.clone().into() };
+    for vertex in &mut d.vertices {
+        vertex.position[2] = &vertex.position[2] * h;
+    }
+    for edge in &mut d.edges {
+        match &mut edge.curve {
+            catallax_shapes::Curve::Line(line) => {
+                line.origin.z = line.origin.z.clone() * real(h);
+                line.dir.z = line.dir.z.clone() * real(h);
+            }
+            catallax_shapes::Curve::Circle(circle) => {
+                circle.center.z = circle.center.z.clone() * real(h);
+            }
+            _ => unreachable!(),
+        }
+    }
+    for (index, face) in d.faces.iter_mut().enumerate() {
+        if let Surface::Plane(plane) = &mut face.surface {
+            plane.origin.z = plane.origin.z.clone() * real(h);
+        }
+        // The axis of each face's parameters that runs along z: v on the
+        // two side planes and the wall, u on the plane x = 0.
+        let along_z = match index {
+            0 | 1 => None,
+            3 => Some(0),
+            _ => Some(1),
+        };
+        for trim in face.loops.iter_mut().flatten() {
+            for uv in &mut trim.uv {
+                if let Some(axis) = along_z {
+                    uv[axis] = &uv[axis] * h;
+                }
+            }
+        }
+    }
+    d
+}
+
+/// Rule T5 after an edit (relayed reviewer note, inbox 004): an edit moves
+/// the top face down towards the bottom face, which it does not touch and
+/// which the edit leaves unchanged. The two faces share no topology, and the
+/// pair rule reads them through their edges: the top and bottom arcs of the
+/// wall, each carrying the wall's 0.0044 mm. Their pair is checked at every
+/// height: an error under half the distance, a warning under a fifth, and
+/// nothing just beyond five times the tolerances' sum. No threshold changes.
+#[test]
+fn an_edit_that_brings_an_unchanged_face_near_is_checked_by_the_pair_rule() {
+    let mut dec = Decider::default();
+    let body = n::build(with_radius("1.004"), options("0.01"), &mut dec).unwrap();
+    let edges_of = |face: usize| -> std::collections::BTreeSet<String> {
+        let d = body.definition();
+        d.faces[face].loops[0]
+            .iter()
+            .map(|trim| d.edges[trim.edge].key.clone())
+            .collect()
+    };
+    let (bottom, top) = (edges_of(0), edges_of(1));
+    assert!(bottom.is_disjoint(&top));
+    let arc = |keys: &std::collections::BTreeSet<String>| {
+        keys.iter()
+            .find(|key| {
+                let d = body.definition();
+                d.edges.iter().any(|edge| {
+                    &edge.key == *key && matches!(edge.curve, catallax_shapes::Curve::Circle(_))
+                })
+            })
+            .cloned()
+            .unwrap()
+    };
+    let (low_arc, high_arc) = (arc(&bottom), arc(&top));
+    let report = body.tolerances();
+    let sum = report.of(EntityKind::Edge, &low_arc).unwrap()
+        + report.of(EntityKind::Edge, &high_arc).unwrap();
+    println!(
+        "arcs {low_arc} and {high_arc}: tolerances add up to {} mm",
+        sum.to_f64_nearest()
+    );
+
+    let edit = |h: Rational, dec: &mut Decider| {
+        body.rebuild(
+            squashed(body.definition().clone(), &h),
+            options("0.01"),
+            dec,
+        )
+    };
+    let names_the_arcs = |pair: &n::tolerance::FeaturePair| {
+        let keys = [pair.a.1.as_str(), pair.b.1.as_str()];
+        keys.contains(&low_arc.as_str()) && keys.contains(&high_arc.as_str())
+    };
+    // Between d/5 and d/2: the arcs' pair is found and warned about.
+    let warned = edit(&sum * &q("3.5"), &mut dec).unwrap();
+    assert!(warned.tolerances().warnings.iter().any(|warning| matches!(
+        warning,
+        ToleranceWarning::Pair(pair) if names_the_arcs(pair)
+    )));
+    // Under d/2: the same pair refuses the edit.
+    let refused = edit(&sum * &q("1.5"), &mut dec).unwrap_err();
+    assert_eq!(refused.code, "numerical.tolerance-pair");
+    // The first pair over half its distance names an entity of each face:
+    // the two arcs, or a corner of each.
+    let named = |keys: &std::collections::BTreeSet<String>, vertices: [&str; 3]| {
+        keys.iter()
+            .any(|key| refused.detail.contains(&format!("{key:?}")))
+            || vertices
+                .iter()
+                .any(|key| refused.detail.contains(&format!("{key:?}")))
+    };
+    assert!(
+        named(&bottom, ["v0", "v1", "v2"]) && named(&top, ["v3", "v4", "v5"]),
+        "{}",
+        refused.detail
+    );
+    // Just beyond five times the sum: no pair warning at all.
+    let clear = edit(&sum * &q("5.05"), &mut dec).unwrap();
+    assert!(
+        !clear
+            .tolerances()
+            .warnings
+            .iter()
+            .any(|warning| matches!(warning, ToleranceWarning::Pair(_))),
+        "{:?}",
+        clear.tolerances().warnings
+    );
+}

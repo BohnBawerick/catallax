@@ -157,6 +157,8 @@ Every `ADVANCED_FACE` of a PMI file carries the name `face-<index>-<n>`, and
 | a distance | `DIMENSIONAL_LOCATION` named `linear distance`, with `inner`, `outer` and `centre` for the sides of round ends; the middle of two faces is a `CENTRE_OF_SYMMETRY` derived from their aspects |
 | a nominal value | a length measure named `nominal value` in a `SHAPE_DIMENSION_REPRESENTATION` |
 | limits | `PLUS_MINUS_TOLERANCE` over a `TOLERANCE_VALUE`, or over `LIMITS_AND_FITS` for an ISO 286 class |
+| a basic dimension | no limits; a `DESCRIPTIVE_REPRESENTATION_ITEM` named `dimensional note` and described `theoretical` beside the value (`Limits::Basic`) |
+| a through hole | a user defined attribute `hole depth` with the value `through` on the feature its diameter is on (`Size::through`). AP242 edition 1 has no hole entity, and the recommended practices give a compound feature as separate dimensions with no relation between them (section 5.1.9), so the depth is an attribute |
 | a geometric tolerance | the characteristic's entity. A characteristic that always has datums, such as perpendicularity, is a subtype of `GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE` and stays a plain instance; position or a profile with datums, and any tolerance with a material condition, is a complex instance with `GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE` and `GEOMETRIC_TOLERANCE_WITH_MODIFIERS`; one `DATUM_SYSTEM` per datum sequence; a diameter zone is a `TOLERANCE_ZONE` of form `cylindrical or circular` |
 | a surface texture | `SURFACE_TEXTURE_REPRESENTATION` with the parameter as a measure in micrometres, under a `surface_condition` property of the feature whose description is the process condition |
 | an item's name | `ID_ATTRIBUTE`, or the name of a geometric tolerance |

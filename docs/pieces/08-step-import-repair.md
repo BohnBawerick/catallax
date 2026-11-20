@@ -305,9 +305,13 @@ A dimension's nominal is the value the file states, in millimetres. The reader
 does not compare it with the geometry; the caller measures the imported body
 with `catallax_step::pmi::nominals` and decides.
 
+A dimension with the `theoretical` note reads as basic (`Limits::Basic`). A
+diameter on a feature that carries the attribute `hole depth` with the value
+`through` reads with `Size::through` set.
+
 Nothing is guessed. An item the reader cannot represent in full is left out
 and listed in `StepPmi::skipped` with its entity, type and reason: an angular
-dimension, a dimension along a path, a basic or reference dimension or one with
+dimension, a dimension along a path, a reference dimension or one with
 another modifier or note, a datum target or
 common datum, a tolerance with a modifier other than a material condition, a
 datum reference with a modifier, an item on geometry other than faces. A

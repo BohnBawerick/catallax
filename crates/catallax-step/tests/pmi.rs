@@ -369,6 +369,25 @@ fn written_faces(file: &str, report: &catallax_step::StepReport) -> BTreeMap<Str
     faces
 }
 
+/// The same information with the faces of every feature in one order.
+fn sorted(pmi: Pmi<FaceId>) -> Pmi<FaceId> {
+    let order = |feature: &mut Feature<FaceId>| feature.sort();
+    let mut pmi = pmi;
+    for item in &mut pmi.items {
+        match &mut item.kind {
+            ItemKind::Datum(datum) => order(&mut datum.feature),
+            ItemKind::Size(size) => size.features.iter_mut().for_each(order),
+            ItemKind::Location(location) => {
+                order(&mut location.from.feature);
+                order(&mut location.to.feature);
+            }
+            ItemKind::Tolerance(tolerance) => tolerance.features.iter_mut().for_each(order),
+            ItemKind::Texture(texture) => order(&mut texture.feature),
+        }
+    }
+    pmi
+}
+
 fn write(part: &Bracket, pmi: &Pmi<FaceId>) -> (String, catallax_step::StepReport) {
     let mut bytes = Vec::new();
     let answer = write_step_with_pmi(
@@ -426,7 +445,7 @@ fn the_bracket_pmi_reads_back_on_the_same_faces() {
             _ => {}
         }
     }
-    assert_eq!(back, expected);
+    assert_eq!(sorted(back), sorted(expected));
 
     // The geometry is the file the plain writer makes, with the faces named.
     let mut plain = Vec::new();

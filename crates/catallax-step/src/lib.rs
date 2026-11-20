@@ -305,12 +305,12 @@ fn write_prepared<W: Write>(
         export::Exporter::new(&prepared.model, options, dec)
             .face_regions(face_regions)
             .regularizations(prepared.records, prepared.face_errors, prepared.edge_errors)
-            .pmi(pmi)
+            .pmi(pmi.cloned())
             .build(&prepared.bodies)?
     } else {
         export::Exporter::new(model, options, dec)
             .face_regions(face_regions)
-            .pmi(pmi)
+            .pmi(pmi.cloned())
             .build(bodies)?
     };
     let (file, report) = answer.value;

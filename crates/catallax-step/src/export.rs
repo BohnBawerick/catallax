@@ -111,7 +111,7 @@ pub(crate) struct Exporter<'a> {
     trimmed_faces: std::collections::BTreeSet<FaceId>,
     /// The written `ADVANCED_FACE` entities of each model face.
     written_faces: BTreeMap<FaceId, Vec<Id>>,
-    pmi: Option<&'a crate::pmi::Pmi<FaceId>>,
+    pmi: Option<crate::pmi::Pmi<FaceId>>,
 }
 
 impl<'a> Exporter<'a> {
@@ -150,7 +150,7 @@ impl<'a> Exporter<'a> {
     }
 
     /// Writes this manufacturing information with the body.
-    pub(crate) fn pmi(mut self, pmi: Option<&'a crate::pmi::Pmi<FaceId>>) -> Self {
+    pub(crate) fn pmi(mut self, pmi: Option<crate::pmi::Pmi<FaceId>>) -> Self {
         self.pmi = pmi;
         self
     }
@@ -1834,7 +1834,13 @@ impl<'a> Exporter<'a> {
                             let (face_errors, edge_errors) =
                                 prepared.errors(self.face_errors.clone(), self.edge_errors.clone());
                             let envelope = envelope.map(|_| prepared.bodies[bodies.len()]);
+                            // Manufacturing information follows its faces into the
+                            // charted copy, and the report names the faces it was given.
+                            let pmi = self.pmi.as_ref().map(|pmi| prepared.pmi(pmi));
+                            let sources = prepared.source_faces();
                             Exporter::new(&prepared.model, self.options, self.dec)
+                                .face_regions(pmi.is_some())
+                                .pmi(pmi)
                                 .fillet_scope(self.fillet)
                                 .regularizations(
                                     self.report.regularizations.clone(),
@@ -1843,7 +1849,14 @@ impl<'a> Exporter<'a> {
                                 )
                                 .charts(prepared.plan)
                                 .build_parts(&prepared.bodies[..bodies.len()], envelope)
-                                .map(Some)
+                                .map(|mut answer| {
+                                    for region in &mut answer.value.1.face_map {
+                                        if let Some(source) = sources.get(&region.face) {
+                                            region.face = *source;
+                                        }
+                                    }
+                                    Some(answer)
+                                })
                         });
                     match charted {
                         Ok(Some(answer))
@@ -1976,8 +1989,8 @@ impl<'a> Exporter<'a> {
             .clone()
             .max(self.report.max_deviation.clone());
         let uncertainty = number::decimal(&uncertainty.to_decimal_bounds(self.digits()).1);
-        let annotations = match self.pmi {
-            Some(pmi) => self.annotations(pmi)?,
+        let annotations = match self.pmi.take() {
+            Some(pmi) => self.annotations(&pmi)?,
             None => Vec::new(),
         };
         let mut output = self.graph.write_with(&solids, &annotations, |numbers| {

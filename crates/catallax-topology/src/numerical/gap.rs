@@ -194,8 +194,13 @@ fn unsupported(detail: &str) -> Refusal {
     Refusal::new("numerical.gap-unsupported", detail)
 }
 
+/// The checker's refusal when an edge would spend more than its allowance.
+/// Source: decision Q6, section 4.2 step 8: a hard per-edge work cap refuses
+/// by name.
+const WORK_CAP: &str = "numerical.gap-work-cap";
+
 fn work_cap(detail: &str) -> Refusal {
-    Refusal::new("numerical.gap-work-cap", detail)
+    Refusal::new(WORK_CAP, detail)
 }
 
 /// Source: decision Q6, section 4.2 step 4, after Chebfun's seventeen-point
@@ -383,17 +388,21 @@ fn crossings(
                 .iter()
                 .fold(line.abs(), |sum, c| sum.max((c[axis] / c[2]).abs()));
             shares.clear();
-            let mut left = search.left();
-            let halvings = numeric::sign_changes(
+            let before = search.left();
+            let mut left = before;
+            let finished = numeric::sign_changes(
                 &coefficients,
                 numeric::UNIT_ROUNDOFF * numeric::roundings(piece.len() - 1) * size,
                 &mut shares,
                 &mut left,
-            )
-            .ok_or_else(|| {
-                work_cap("an edge spent its work allowance before its breaks were found")
-            })?;
-            search.reserve(halvings)?;
+            );
+            // The halvings are recorded whether or not the search finished.
+            search.reserve(before - left)?;
+            if finished.is_none() {
+                return Err(work_cap(
+                    "an edge spent its work allowance before its breaks were found",
+                ));
+            }
             out.extend(shares.iter().map(|share| from + share * (to - from)));
         }
     }
@@ -460,8 +469,11 @@ pub fn plan(
         other: 0,
         charged: 0,
     };
-    let breaks = breaks(&mut search, hints, dec)?;
-    Ok(planned(&lifted, &breaks))
+    let breaks = breaks(&mut search, hints, dec);
+    if breaks.is_err() {
+        search.settle(dec).ok();
+    }
+    Ok(planned(&lifted, &breaks?))
 }
 
 fn planned(lifted: &Lifted, breaks: &[f64]) -> Vec<PlannedPiece> {
@@ -623,8 +635,32 @@ pub fn measure(
         other: 0,
         charged: 0,
     };
+    let found = search_edge(&mut search, hints, dec);
+    if let Err(refusal) = &found {
+        // Work done before a refusal is still work: it is charged to the
+        // operation before the refusal is returned. If the operation's own
+        // allowance is gone as well, the edge's refusal is still the answer.
+        let (spent, limit) = (search.spent(), search.limit);
+        search.settle(dec).ok();
+        if refusal.code == WORK_CAP {
+            return Err(work_cap(&format!(
+                "{}; {spent} of {limit} units were spent",
+                refusal.detail
+            )));
+        }
+    }
+    found
+}
+
+/// The search of one lifted edge under its allowance.
+fn search_edge(
+    search: &mut Search<'_>,
+    hints: &Hints,
+    dec: &mut Decider,
+) -> Result<GapMeasure, Refusal> {
+    let lifted = search.lifted;
     let [first, last] = lifted.parameters;
-    if straight_residual(&lifted) {
+    if straight_residual(lifted) {
         let ends = [search.sample(first)?, search.sample(last)?];
         let best = if ends[1].squared > ends[0].squared {
             ends[1]
@@ -633,15 +669,15 @@ pub fn measure(
         };
         // Convexity makes the end values the maximum: nothing is unresolved.
         return finish(
-            &mut search,
+            search,
             best,
             (0.0, None, Method::StraightResidual),
             (Vec::new(), Vec::new()),
             dec,
         );
     }
-    let breaks = breaks(&mut search, hints, dec)?;
-    let plan = planned(&lifted, &breaks);
+    let breaks = breaks(search, hints, dec)?;
+    let plan = planned(lifted, &breaks);
     let [lo, hi] = lifted.range();
     // Refuse before the first sample when the plan alone is more than
     // planning left of the allowance: its samples, the first tail transform
@@ -684,7 +720,7 @@ pub fn measure(
     for (index, [mut grid, mut earlier]) in pieces.into_iter().enumerate() {
         let (from, to) = (ends[index].t, ends[index + 1].t);
         loop {
-            let left = unresolved(&mut search, &grid)?;
+            let left = unresolved(search, &grid)?;
             let fresh: Vec<f64> = numeric::chebyshev_shares(2 * grid.len())
                 .into_iter()
                 .map(|share| from + share * (to - from))
@@ -792,7 +828,7 @@ pub fn measure(
         }
     }
     finish(
-        &mut search,
+        search,
         best,
         (search_error, exit, Method::Sampled),
         (plan, refinements),

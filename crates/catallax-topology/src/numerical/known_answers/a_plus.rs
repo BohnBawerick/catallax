@@ -373,27 +373,58 @@ fn the_closing_probes_count_inside_the_cap() {
 
 /// Planning stops where the allowance runs out: on an edge whose face copy
 /// crosses surface knot lines, every allowance below what the edge needs
-/// refuses by name, down to none at all.
+/// refuses by name, down to none at all. The work done before each refusal
+/// is charged to the operation: its total is the lift's work plus at least
+/// the units the refusal says were spent, and it never falls as the
+/// allowance grows.
 #[test]
-fn every_smaller_allowance_refuses_by_name() {
+fn every_smaller_allowance_refuses_by_name_and_charges_its_work() {
     let case = fixed::cases()
         .into_iter()
         .find(|case| case.name == "02-surface-knot-peak")
         .expect("case");
     let capped = |work: u64| {
-        gap::measure(
-            &copies(&case.geometry),
-            &Hints::default(),
-            Limits { work },
-            &mut Decider::default(),
-        )
+        with_operation_budget(DEFAULT_WORK, || {
+            gap::measure(
+                &copies(&case.geometry),
+                &Hints::default(),
+                Limits { work },
+                &mut Decider::default(),
+            )
+        })
     };
-    let needed = capped(gap::EDGE_WORK).expect("default").work;
+    let needed = capped(gap::EDGE_WORK).0.expect("default").work;
+    // No allowance at all refuses before the search: the lift's work alone.
+    let lift = capped(0).1.used;
+    let mut previous = lift;
+    let mut most_spent = 0;
     for work in 0..needed {
-        let refusal = capped(work).expect_err("short");
+        let (found, charged) = capped(work);
+        let refusal = found.expect_err("short");
         assert_eq!(refusal.code, "numerical.gap-work-cap", "{work}");
+        // "...; N of M units were spent", once a search has started.
+        let spent = refusal
+            .detail
+            .rsplit("; ")
+            .next()
+            .filter(|tail| tail.ends_with("units were spent"))
+            .and_then(|tail| tail.split(' ').next())
+            .map(|units| units.parse::<u64>().expect("a count"));
+        assert_eq!(spent.is_some(), work >= 5, "{work}: {}", refusal.detail);
+        let spent = spent.unwrap_or(0);
+        assert!(spent <= work, "{work}: {spent}");
+        assert!(
+            charged.used >= lift + spent,
+            "{work}: {} of {spent}",
+            charged.used
+        );
+        assert!(charged.used >= previous, "{work}");
+        previous = charged.used;
+        most_spent = most_spent.max(spent);
     }
-    assert_eq!(capped(needed).expect("exact").work, needed);
+    // The longest failed search spent nearly all of what the edge needs.
+    assert!(2 * most_spent > needed, "{most_spent} of {needed}");
+    assert_eq!(capped(needed).0.expect("exact").work, needed);
 }
 
 /// A face copy that winds around a cylinder 1e29 times has that many seam

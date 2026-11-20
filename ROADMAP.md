@@ -17,14 +17,13 @@ Dates appear only on finished work. Nothing ahead has a date.
 - A milestone is done when its "done when" line is shown on real parts, through SolidDraft where the app has the feature.
 - Earlier plans named milestones M1 to M35. [The table at the end](#old-milestone-names) maps each old name to its number here, so old notes still resolve.
 - Jobs marked * need a machine to themselves. They are timing and GPU jobs.
-- **One owner per lane.** Phase 2 runs as three kernel lanes and one app lane, listed under phase 2. One strong worker owns each lane until the "done when" line of its current milestone is met, then takes the next milestone in its lane. The owner lands the work as several PRs, each one reviewable step with green checks. Phase 1 ran as four slices: 1.1 with 1.3, 1.2, 1.4, and the app.
+- **One owner per lane.** One strong worker owns each lane until its current milestone meets the done-when line, then takes its next milestone. Each PR is one reviewable step with green checks. The [Checkpoint 2 lane assignment](#checkpoint-2-lane-assignment) replaces the phase 2 setup, retained in history. Phase 1 ran as four slices: 1.1 with 1.3, 1.2, 1.4, and the app.
 - **Walk the done-when line first.** A milestone opens by walking its "done when" line end to end, through SolidDraft where the app has the feature, and listing every missing piece on the first day.
-- **Delivery until phase 5.** Large PRs that cover a whole step. Tests are the fewest that prove the change works. No speed work: a speed idea becomes a one-line note in the PR's Later section and joins the phase 5 list. Work off the "done when" line becomes such a note too. The owner's rule of 16 Nov, kept until phase 5 at Checkpoint 1.
-- **Numerical first.** An exact proof counts as unavailable when it is missing or too costly. Then build within a tolerance stated before the operation, as OpenCASCADE and SMLib do. Check the result separately at that tolerance, mark it and its STEP approximate, and record the tolerance and the checks passed. An exact proof is a later upgrade, made where it is cheap. A numerical result is never labelled exact. This holds for the spline fillets and the NURBS toolkit of phase 2. Import may need a different balance from parts built from scratch; the owner asked at Checkpoint 1 for that to be thought through, not assumed.
+- **Delivery until phase 5.** Large PRs that cover a whole step. Tests are the fewest that prove the change works. No speed work: a speed idea becomes a one-line note in the PR's Later section and joins the phase 5 list. Work off the "done when" line becomes such a note too. The owner's rule of 16 Nov, kept until phase 5 at Checkpoint 1. 3.0A and 3.0B are design work and are not blocked by the no-speed-work rule, Q18.
+- **Tolerance first.** Build fitted geometry in f64, measure the gap, store 1.1 x gap within the caps of T0 to T8, check once, and write STEP marked approximate. The predictor chooses the exact path where it is cheap. The proof button comes at 5.2. [Checkpoint 2 decisions](docs/checkpoints/checkpoint-2-decisions.md), Q1, Q13 and Q30, replace the numerical-first rule.
 - Before writing a new algorithm, check how OpenCASCADE and SMLib solve it, and say in the PR which approach you follow.
 - **The allowance until phase 5.** The application's default work allowance is 100M until phase 5, so slow parts still build in SolidDraft. 20M stays the target. Every edit over 20M records its measured work per stage and joins the [list of cases for phase 5](docs/phase5-work-cases.md). A request still refuses at the allowance in force, and a refused step is not a completed build.
 - A SolidDraft feedback list goes to one worker as one PR, or two when the kernel changes too.
-- Kernel lanes run on Codex models and the app lane on Claude Opus. Codex cloud reviews and advises. It does not author PRs. A review holds a merge only on new kernel algorithms, numerical admission or tolerance rules, and data-loss or release paths; everything else merges on green checks and is reviewed after.
 - When a lane's model quota runs short before a checkpoint, firstmate reports it and the owner decides what gives.
 
 **Lessons, 15 Nov.** From the first ten hours of phase 1:
@@ -91,7 +90,7 @@ These set the order of phase 1.
 
 A work unit counts exact arithmetic and is the same on every machine. The target per edit is 20 million units, about 2 to 4 seconds of proof work on one core. Until phase 5 the application allows 100 million.
 
-Twelve things neither reference kernel does are not in the count. They include a proof behind each result, exact numbers, the same answer on every machine, the field kernel, lattices and scan to part.
+Twelve things neither reference kernel does are not in the count. They include exact numbers for exact pieces, the same answer on every machine, the field kernel, lattices and scan to part.
 
 ## Plan
 
@@ -149,13 +148,7 @@ Twelve things neither reference kernel does are not in the count. They include a
 
 Why this phase is second: these are whole lines of the count with nothing built. They matter less than phase 1 because a user can work around a missing surface tool, but not around a file that will not open or an edge that will not round.
 
-**How phase 2 runs.** The owner chose three kernel lanes from the start at Checkpoint 1, so the longest chain, 2.2 then the rest of 2.3 then 2.5, starts on the first day. Lanes run side by side because no lane's result changes another lane's current job.
-
-- **First, the measures.** A short job before any lane needs them. The census-part hole is placed so it removes material in the reference kernels, P8, P9 and the curved-housing chain join the scoreboard as targets, and the definitions then stay fixed to Checkpoint 2.
-- **Lane 1, spline.** Finish 1.3's three loft top cuts at the 100M application default, then 2.1.
-- **Lane 2, import.** First rank the measured failure causes by files gained: export gaps (files that import but do not export valid) against first-step import refusals, from the Checkpoint 1 census data. Then stitch imported surface bodies into checked solids, which is 2.3's "faces sew into a solid" moved to the front. Then work the causes in ranked order, and take 2.3's trim, extend and thicken once 2.2 lands.
-- **Lane 3, new tools.** 2.2, the remaining 2.3 surface tools, then 2.5. General sweeps (2.4) remain on this lane.
-- **App, alongside, on Claude Opus.** The Cancel fix first, then surface bodies shown and clearly marked, then the import health report, then each kernel item as it lands.
+The phase 2 lane setup is retained in [history](#phase-2-lane-setup-superseded-at-checkpoint-2). The [Checkpoint 2 assignment](#checkpoint-2-lane-assignment) governs new work. Existing phase 2 open items remain open; P8 remains parked. Coverage extensions are listed after the existing milestones, without renumbering or dropping their current done-when lines.
 
 | # | Milestone | What we are doing | Why here | Unlocks | Done when |
 |---|---|---|---|---|---|
@@ -175,6 +168,108 @@ Why this phase is second: these are whole lines of the count with nothing built.
 
 Why this phase is third: it completes the count. Each item has a working stand-in today (mesh outlines in drawings, assemblies in the app), so parts get made without it.
 
+**3.0A Tolerance-first core**
+
+[Checkpoint 2 specification, section 4.1](docs/checkpoints/checkpoint-2-decisions.md#41-item-30a-tolerance-first-core), Q1, Q5 to Q11, Q18 and Q25. Starts before any other implementation, after owner approval of this roadmap PR. This is design work, not phase-5 speed work.
+
+Owner Fable; every PR reviewed by the dot. Starts now.
+
+Contents, in order:
+
+1. The 14-edge known-answer test set and its three guards (below). Built first, so the new checker is measured before it replaces the old one.
+2. The A+ checker ([decisions, section 4.2](docs/checkpoints/checkpoint-2-decisions.md#42-the-a-checker)).
+3. Copy tagging ([decisions, section 4.4](docs/checkpoints/checkpoint-2-decisions.md#44-copy-tagging)).
+4. Tolerance rules T0 to T8 ([decisions, section 4.3](docs/checkpoints/checkpoint-2-decisions.md#43-tolerance-rules-t0-to-t8)), including the export receiver profile.
+5. Check once. Export writes the numbers and adds the rounding error to the tolerance; it does not re-admit the body. Reopening trusts the tolerance recorded at export. Today export re-admits every face (21.9M to 42M work on measured cases) and reopening admits again (47 s to 7 min on the R2 rim). The kept test file for opening speed is `owner-pocket-rim-r2.step` (private acceptance fixture, not bundled here).
+6. The gap rule for imports (Q9).
+
+Done when:
+
+- The checker passes all 14 known-answer edges: on each, the reported gap is at least the true gap and at most 1.1 times it.
+- The three guards hold (below).
+- Export no longer re-admits; reopening the R2 rim file no longer re-checks; the work and time of both are recorded before and after.
+- Every existing exact answer is unchanged.
+
+The 14 edges, each with an exact known maximum gap:
+
+1. A narrow peak between the fitter's eighths, on an edge with 100 to 300 knots.
+2. A peak set only by the surface's knot lines.
+3. A narrow peak on a degree-25 surface.
+4. A rational end weight, and a rational rail against a cubic face-curve.
+5. Origin at 1e6 to 1e12.
+6. A peak exactly midway between two equal samples.
+7. Seam crossing, a one-period shift, and a full closed circle.
+8. A 1.0000057 parameter stretch.
+9. A face-curve outside the face domain.
+10. A traced section between faces meeting at under 5 degrees.
+11. A fit that passes at eighths but fails at sixteenths.
+12. A 256-span edge, for work cost.
+13. Zero-gap controls.
+14. A circle against its rational-spline copy with known sag.
+
+Each one copies a recorded failure in OpenCASCADE or SMLib (section 9.6).
+
+The three guards against tuning to the test:
+
+1. Fresh cases each run. Besides the 14 fixed edges, every run generates new random edges, each with a hidden bump of known size and position.
+2. The checker's point count depends only on the shape (knots, seams, poles, piece complexity), never on which edge it is. A reviewer can see this in the code.
+3. Every method in the checker names its source (paper or kernel). No unexplained constants.
+
+Coverage: infrastructure for existing lines; no line becomes full from this milestone alone.
+
+**3.0B One model and the predictor**
+
+[Checkpoint 2 specification, section 4.5](docs/checkpoints/checkpoint-2-decisions.md#45-item-30b-one-model-and-the-predictor), Q12 to Q14, Q18, Q25 and Q28. Follows 3.0A, before 3.1.
+
+Owner Fable, after 3.0A; the dot reviews every PR.
+
+One model (Q12):
+
+- One topology type. Vertex, edge and face gain an optional tolerance; none means exact. Geometry stays stored as it is (even fitted geometry is stored as exact rationals today), so this changes topology, not geometry.
+- Exact-exact decisions keep today's exact predicates. Any decision with a tolerant participant is "distance against the sum of tolerances" through a filtered predicate: f64, then interval, then exact (the CGAL and Shewchuk pattern; Catallax already uses it in mesh and field).
+- Tolerant entities never reach the exact intersector. Every slow case on record is exact arithmetic on fitted or near-tangent data.
+- An exact face never takes a tolerance. Only vertices and edges forced by a tolerant neighbour do (vertex >= edge >= face).
+- Re-tighten tolerant edges between exact surfaces after each operation, as Parasolid's `PK_EDGE_optimise` and ACIS tweak do.
+- The `features.numerical-continuation` refusal goes away: a hole after a numerical fillet works.
+- The numerical checker merges into `Model::check`. `NumericalBody` becomes a view or goes.
+
+Why not the pure CGAL route: on curved faces, exact decisions need exact roots (degree 4 for two cylinders, 324 for two bicubic splines), so the exact fallback is impractical on splines; exact decisions on rounded floats lose design intent (two coaxial cylinders are no longer coaxial); and planes and cylinders lose their exact formulas. The useful part of CGAL, filtered decisions, is inside the one-model design above.
+
+The predictor (Q13):
+
+1. First fix the work meter. Report refunded speculative work in its own counter instead of erasing it (`catallax-numbers/src/operation.rs:192-233`, called at `evaluate.rs:1499`). Charge work in `catallax-step/src/fit.rs` by limb product, as the decider does (`decider.rs:1659`). Today exact STEP export took 8.5 s on 807k counted work.
+2. A quick look reads degree product D, limb count L of the rationals, and proven bounding-box separation. It costs at most 1% of the operation.
+3. Two cap tiers by D x L^2: low-complexity inputs get the 20M target for the exact attempt; fitted splines stored as 53-bit fractions get about 2M.
+4. If exact finishes under the cap, the result is exact. If it hits the cap, the fitted path takes over.
+5. No cap where no fitted path exists yet; exact is then the only way to a result.
+6. The normal angle is used only to tune the fitted path and to demote spline pairs, never to demote analytic pairs (tangency is cheap in exact arithmetic).
+7. No memo per recipe step and no learned model.
+
+On the measured cases, a fixed rule by shape kind gets two results wrong that the predictor gets right: the far-disjoint loft cut (k12, builds exact at 9M) and the spline top cuts (26M to 27M, built exact). The predictor also saves 62M to 79M per doomed loft cut.
+
+Predictor done when, on a frozen corpus (all phase-5 rows, checkpoint-1 parts, the box fillet, and a held-out ABC subset chosen before tuning):
+
+- path choice and work are identical at 1, 2, 4 and 24 threads and on two machines;
+- the quick look costs at most 1% of each operation's work;
+- everything that builds exact under 20M today still does;
+- refunded work stays within its tier cap;
+- wall time per million work units stays within a 10x band across all rows;
+- thresholds are unchanged on the held-out set.
+
+The 2M and 20M tiers are judgement and need measuring.
+
+Open sub-question for 3.0B: whether exact entities use no tolerance or a floor like Parasolid's 5e-6 mm. T0 says none; the research suggested measuring the M8 loft cuts under both before the code fixes it.
+
+Done when, for one model: exact and tolerant entities coexist under the rules above; a hole after a numerical fillet works without `features.numerical-continuation`; the numerical checker is part of `Model::check`. The predictor's frozen-corpus done-when lines above also hold. Coverage: infrastructure and continuation within existing lines, not a full-line promotion.
+
+**Drawings and PMI, alongside and just behind 3.0B**
+
+- Doing: AP242 semantic PMI stored on the part, automatic drawings from it, feature recognition on bare imports and a rules-based interview. [Checkpoint 2 decisions, section 4.8](docs/checkpoints/checkpoint-2-decisions.md#48-drawings-and-pmi-the-p1-bracket-test) and the [P1 bracket specification with D1 to D6](docs/checkpoints/checkpoint-2-drawings-pmi.md) define the scope. One owner across kernel and app. Fable, moving to Claude Opus if Fable quota runs short; the dot reviews.
+- Why here: the owner adopted the P1 bracket test, Q3 and Q20. Runs mostly in parallel wherever it does not touch 3.0A or 3.0B code. Its roadmap place is just behind 3.0B, not a renumbering of 3.1.
+- Unlocks: manufacturing information travels in STEP and produces the drawing without hand layout. The PMI owner owns annotations within 3.2; the exchange lane owns structure, names and colours.
+- Done when: C1 round trip of all 14 items passes the NIST analyzer, OCCT reads all 14, and re-import, save and reopen keep their attachments; C2 bore edit 8 to 10 mm keeps its tolerance; C3 one button gives STEP plus PDF and DXF, every item once, no overlaps or hand moves, with title block; C4 no drawing information is absent from the file; C5 bare-import recognition finds bore, boss, four holes and slot, and the interview asks only for missing information. These are the specification's C1 to C5, not coverage IDs. Coverage: X8 annotations, partial until 3.2's structure, colours and names also round-trip.
+
+
 | # | Milestone | What we are doing | Why here | Unlocks | Done when |
 |---|---|---|---|---|---|
 | 3.1 | Drawing views from the kernel | Exact section curves, silhouettes on curved solids, hidden-line views. | Drawings work today from meshes. This makes them exact. | Drawings that match the model to the last digit. | SolidDraft drawings use them in place of mesh outlines. |
@@ -184,7 +279,7 @@ Why this phase is third: it completes the count. Each item has a working stand-i
 
 **App, alongside:** assemblies in the browser, assembly drawings, BOM and balloons, Pack and Go, the remaining mates, drawing annotations, URDF and USD export with joints, the refusal assistant.
 
-**Checkpoint 3.** Every one of the 61 lines has something built. We publish what still refuses and why. The owner decides what to resolve before moving on.
+**Checkpoint 3.** Coverage is judged against the new done-when lines in the [coverage follow-on](#coverage-follow-on-complete-the-61-lines) and [docs/COVERAGE.md](docs/COVERAGE.md), not merely "every line has something built". We publish what still refuses and why. A line with its bar still to be set cannot be claimed full. The owner decides what to resolve before moving on.
 
 ### Phase 4: field, lattices, printing and scans
 
@@ -192,11 +287,72 @@ Why this phase is fourth: this is what neither reference kernel has. It is our e
 
 | # | Milestone | What we are doing | Why here | Unlocks | Done when |
 |---|---|---|---|---|---|
-| 4.1 | Field preview and first display * | The app draws from whichever kernel is faster, with a proved, pending, bounded or refused light. | First in the phase: everything else in it is seen through this. | A feature shows at once. | A preview never stands in for an export. |
-| 4.2 | The field catches up | Field versions of fillets, sweeps and lofts. | The field must hold every part before it can print or analyse it. | Every part has both descriptions. | P5 builds in the field with no fillet refusal. |
+| 4.1 | Field preview and first display * | The app draws field previews only for field-only features, lattices and gyroids. The B-rep previews everything else. Remove proved and bounded lights; keep a refused message and a working indicator. | First in the phase: field-only features need a display. [Checkpoint 2 decisions](docs/checkpoints/checkpoint-2-decisions.md), Q31 and Q32. | A feature shows at once. | A preview never stands in for an export. |
+| 4.2 | The field catches up | Field versions of fillets, sweeps and lofts. The field may take over a B-rep step's result only when that is the only way to build the part, and only with no downstream problem, Q15. | The field must hold every part before it can print or analyse it. | Every part has both descriptions. | P5 builds in the field with no fillet refusal. 4.2a below defines the independent fillet route. |
 | 4.3 | Lattices and printing | Printable lattice parts. The missing piece is [a proof that a mesh keeps its cavities](docs/research/adaptive-printing.md). | Needs 4.2. | P6 and P7. Sheet gyroids. | P6 exports a printable mesh at its recorded accuracy. |
 | 4.4 | Imports and scans in both kernels | Imported spline parts in the field. [Scan fitting](docs/research/scan-fitting.md) grows past planes and cylinders. | Needs import (1.2) and the spline work (1.3, 2.1). | Bought-in parts and real scans in the field. | An imported spline part builds in the field. A real scan becomes a clean part. |
 | 4.5 | FEA groundwork, first result and P10 | [Parked by the owner on 13 Nov](docs/research/fea-first-beam.md). | Starts on the owner's word at a checkpoint. | Stress on the same part the B-rep exports. | |
+
+**4.2a The field builds every fillet on its own**
+
+[Checkpoint 2 specification, section 4.6](docs/checkpoints/checkpoint-2-decisions.md#46-item-42a-the-field-builds-every-fillet-on-its-own), Q15 to Q17, Q21 and Q23. A sub-milestone inside 4.2, not a change to any old number. Any extra building block field parity needs is added in the order it is needed.
+
+A numbered sub-milestone of 4.2, "the field catches up". Constant-radius rolling-ball fillets only; variable radius, setback vertex blends and conic or G2 sections keep their typed refusals.
+
+Rule: the field derives its own ball paths. It does not reuse the B-rep's `rolling_pipe`, `rolling_saddle`, `rolling_sphere` or `rolling_mitre`, because a shared bug would fool both kernels. The milestone document names any shared dependency (the M10 pair search is one).
+
+Field queries return inside or outside plus a guaranteed distance range near the surface (Q23). Note that `rolling_region` today answers inside or outside only; its own doc says it implies no exact distance. Steps 1 and 7 must extend it.
+
+Steps, easiest first:
+
+1. Turn `rolling_region` into one general routine for distance to a path piece. Today's plane-plane and plane-cylinder answers stay bit-identical.
+2. Plane with cylinder in any pose, cone or sphere: the oblique, oblique-cone and generator test files.
+3. Quadric pairs: saddle, coaxial, sphere-ring and equal-crossing files. Paths have closed forms (Dupont, Lazard, Lazard, Petitjean 2008).
+4. Fillet ends that touch an edge or vertex: P5 at radius 2, rim-contact, hole-ring and slot files.
+5. Fillet over fillet, using the nested path.
+6. Torus pairs.
+7. Spline faces (below).
+
+Done when, for steps 1 to 6:
+
+- P5 builds in the field at radius 2 with no fillet refusal (the existing 4.2 line);
+- for every constant-radius rolling-ball case in the fillet test files (list frozen at the start), catallax-compare finds every B-rep display vertex within the field's bound at the part's tolerance;
+- each remaining refusal is named with its reason.
+
+Step 7, spline faces. Viability study verdict: go, with conditions.
+
+Measured on this machine (release build, i7-9750H; logs in [docs/research/cp2-grill/viability-logs/](docs/research/cp2-grill/viability-logs/)):
+
+- M10 spine search 2,332,939 / 2,666,401 / 6,793,048 work on the three M11 edges, identical at 1, 2 and 4 workers, 0.14 s to 0.40 s per edge;
+- full B-rep fillet 5.25M / 6.97M / 16.43M work, within 78 / 5 / 80 nm of the exact fillet.
+
+The blocker comes first: the field cannot hold a spline face. `import_spline.rs` admits bilinear patches only. An implicit route does not scale (a bicubic patch has an implicit of degree up to 18). The model to copy is the closed-mesh leaf (`mesh.rs`): distance to the nearest face, sign by counting ray crossings. Estimate 1,500 to 3,000 lines for whole patches, about double with trimming.
+
+Step 7 sub-steps:
+
+- 7.0 The query contract is already set by Q23; no new decision is needed.
+- 7.1 Spike: certified point-to-patch distance on the M27 patch pair, in catallax-field, timed over 10^4 points. This retires the biggest risk.
+- 7.2 The spline-face building block for whole, untrimmed patches, with ray-crossing sign. Trimmed faces go to 4.4 with a typed refusal until then.
+- 7.3 The field's own spine proof: prove the two end points on the face borders, then a parametric Krawczyk proof span by span. Tube width eps <= min(100 nm, part tolerance / 2). A build that cannot reach it refuses and reports the eps reached.
+- 7.4 The swept-ball distance query on that tube.
+- 7.5 Near-tangent sweep on a synthetic edge: record the smallest face angle proved inside 20M, then decide the tail policy (deflation per Leykin et al. 2006, or a labelled bound).
+- 7.6 Spline-with-analytic pairs: M10 needs both sides as rational patches. Write the analytic offset (same family) as a rational patch with offset 0. Untested.
+- 7.7 Typed refusals, including a singular-contact control.
+
+Step 7 done when, on the three M11 edges plus one spline-plane edge:
+
+- the field proves its own eps <= min(100 nm, tolerance / 2) inside 20M work, identical at 1, 2 and 4 workers;
+- every B-rep display vertex of each fillet face lies inside the field range widened by the B-rep's reported bound;
+- a dense-sampling third check in tests agrees (catches a bug shared through M10);
+- median query time is recorded;
+- a near-tangent control refuses or returns a labelled bound.
+
+Why a proven tube and not an estimate: the field is the yardstick for B-rep bugs (Q16). An estimated path cannot tell whether the B-rep path is wrong. It runs in tests only, and it proves only down to the tolerance, never past it.
+
+Caveat: the three M11 test edges are single-span bilinear or biquadratic patches, so they say little about real imported parts.
+
+Coverage: independent field parity is outside the 61 reference-kernel lines. No extra coverage points.
+
 
 **App, alongside:** field-driven thickness, more grades, fields on imported bodies, infill that is denser near the skin or the load.
 
@@ -208,13 +364,62 @@ Why this phase is fourth: this is what neither reference kernel has. It is our e
 
 Why last: the owner's ruling of 11 Nov. Clock targets were stalling capability work, and speeding up a method that is about to be replaced is wasted.
 
-- P1 to P5 and their edits meet the click targets in SolidDraft: 100 ms for stock, 500 ms for a Boolean, 1,000 ms for a feature, 2,000 ms for proof.
-- Cheaper proofs, in the order [the P1 work](docs/research/cheaper-proof-p1.md) ranked them: proofs from construction facts, prepared bounds, reuse across edits, coarse proofs refined where they fail.
+- P1 to P5 and their edits meet the click targets in SolidDraft: 100 ms for stock, 500 ms for a Boolean, 1,000 ms for a feature.
 - The GPU and every core carry what they can. [Booleans gain nothing from extra cores today](docs/research/run-ahead.md).
 - Simplify. Routes that the measurements show are not needed are removed.
 - Slow steps recorded at the 0.5.0 cut: loft 35 s, fillet on a loft edge 26 s, spline sweep 13 s, P5 fillet edit 4 to 6 s, field mass 3.5 to 7.7 s.
 - Later: the 2.4 P8 thread sweep exceeds 20M; its [per-stage record](docs/RECIPE.md#work-recorded-for-phase-5) distinguishes the completed fit from the refused whole-part Boolean. The 100M application allowance is unchanged.
 - Windows packages and signed downloads.
+
+
+**5.2 The proof button**
+
+[Checkpoint 2 specification, section 4.7](docs/checkpoints/checkpoint-2-decisions.md#47-item-52-the-proof-button), Q10.
+
+A real whole-edge proof on demand for one part (Q10 B). Late and low priority. Built from parts Catallax already has: exact range arithmetic (`evaluate_box`, `jet_box`, Ball and Interval) and a one-dimensional branch and bound that splits wherever an upper bound beats the best sample. Nothing in Catallax computes a certified maximum of |C(t) - S(P(t))| today. Expect minutes per part and "could not prove" on blends and sweeps (solidcraft's experience: one edge took 153 s, some bounds came out 60x loose, blends were not provable). VISION.md's "no proof jobs or proof services" still holds: the button is one computation on request, with nothing stored and no service.
+
+- Done when: on request for one part, the button runs a real whole-edge proof, not sampled admission, and reports proof or "could not prove". It stores no proof job and runs no proof service. Coverage: this is outside the 61 reference-kernel lines.
+
+### Coverage follow-on: complete the 61 lines
+
+[Checkpoint 2 decisions, section 4.10](docs/checkpoints/checkpoint-2-decisions.md#410-coverage-the-12-changes-for-100), Q2. These additions follow the current milestones and do not reorder them. Existing demonstrations remain required, including the open 2.1 and 2.5 lines and 2.4 with P8 parked. The extensions below widen their final bars. Every coverage ID named below targets **full**, 1 point, not a first example; unresolved full bars remain "bar to be set" in [docs/COVERAGE.md](docs/COVERAGE.md), not invented acceptance criteria.
+
+Twelve changes: seven widen an existing done-when line and five add a new milestone line. Each widened done-when line moves from a named demonstration to a generated-recipe or census pass rate, with the line's Doing scope as the test. Underneath all of them: write `docs/COVERAGE.md` with the full bar for each of the 61 lines, and make every done-when line name the coverage lines it closes and at which level.
+
+#### Curves and surfaces
+
+1. **Widen 2.2 (C7, C8, C9, C10, F8).** Add least-squares fitting of curves and surfaces to points within a stated tolerance, G1 N-sided and Gordon fills, curve networks whose corners miss by up to the stated tolerance, and lofts with guide curves. Done when each builds on a generated set without refusing possible geometry. *A user can fit a smooth surface to a point cloud, fill an n-sided hole with a tangent patch, and loft through sections along guide rails.*
+2. **New line: offsets and projection (C6, C11, E6).** Offset any curve, surface or whole solid, spline faces included, within a stated tolerance. Project curves onto surfaces. *A user can offset a freeform part's skin by 2 mm or wrap a sketch onto a curved face.*
+3. **Widen 3.4 from "a first build" to general input (C12, E8, Q8).** *A user can bend or twist any body, blend faces with curvature continuity, and run Booleans and decimation on meshes.*
+
+#### Intersection
+
+4. **New line: intersections complete (I1, I3, I4, I5).** Every analytic pair, skew cone/torus and cylinder/torus included. Spline against spline, and curve against surface, with no refusal on the generated set. Tangent and near-tangent contact answered under the bounded-answer rule. *A user's cut or join never stops because two faces touch or meet at an awkward angle.*
+
+#### Solids and topology
+
+5. **Widen 1.3 and 2.1 (S3, E3).** Done when Booleans and fillets on spline-faced solids pass a generated set and the census parts, not 15 named requests. *A user can cut, join and round any freeform part, imported or modelled.*
+6. **Widen 2.3 (S6, S7, X7) and add split and imprint (S5, F10).** Sew any face set that closes. Non-manifold bodies. Sheets and wires export as sewn shells. Split a solid by a plane, sheet or body, keeping every piece. Imprint a curve on a face. *A user can sew a patchwork of imported faces into a solid, slice a part in two, and imprint a logo outline on a face.*
+
+#### Features
+
+7. **Widen 2.4 from "P8 builds" (F4, F5, F6, F7, F9, F11).** Taper, guide, twist, helix and up-to-face each build on line, arc, ellipse and spline profiles along any path. *A user can sweep any profile along any path, with a guide or twist, and extrude up to any curved face.*
+
+#### Edge and wall features
+
+8. **New line: edge and wall features in general (E1, E2, E4, E5, E7).** Constant and variable-radius fillets with any law on any edge. Chamfer roll-over and general corners. Shells and draft on any face, spline and oblique cylinder included. Done when the census parts take each feature without refusal of possible geometry. *A user can round, chamfer, shell or draft any edge or face of a bought-in part, as in OpenCASCADE.*
+9. **Widen 2.5 (E9).** Each direct edit works on any face type, through SolidDraft. *A user can delete a fillet or move a face on any imported part.*
+
+#### File exchange
+
+10. **New line: STEP import parity (X2, X4).** A census target set against OpenCASCADE's 90.03% healed-valid figure. *Most real STEP files a user is sent open as checked solids.*
+11. **Widen 3.2 (X8).** Done when colours, names and annotations round-trip, beside the assembly. *A user can send and receive a full product file with its structure, colours and annotations.*
+
+#### Meshes and queries
+
+12. **New line: geometry queries (Q4, Q5), and widen 3.3 (Q6).** Closest point on any curve or surface. Curvature and local surface analysis. 3.3 done when no pair answers "unresolved" outside the stated tolerance. *A user can check curvature on a freeform face and get a proved gap for every pair in an assembly.*
+
+With these twelve changes every line reaches 1 at its done-when line: 61 points, 100% of OpenCASCADE's 58 and SMLib's 52. The "or more" can only come from the twelve extras outside the count ("Twelve things neither reference kernel does"). They never raise the count itself above 100%.
 
 **Final checkpoint.**
 
@@ -225,15 +430,66 @@ Why last: the owner's ruling of 11 Nov. Clock targets were stalling capability w
 - Generated recipes with built-in checks run nightly and publish counts by outcome.
 - The SMLib port supplies the units this roadmap needs next.
 
+
+### Checkpoint 2 lane assignment
+
+[Checkpoint 2 decisions, section 8](docs/checkpoints/checkpoint-2-decisions.md#8-who-builds-what). The roadmap update PR needs owner approval before any implementation worker starts, Q29. Then 3.0A, 3.0B, drawings alongside where independent, 3.1 to 3.4, phase 4 with 4.2a inside 4.2, phase 5 and 5.2. The app lane runs alongside: R2 scenario selection, remove proved and bounded lights while keeping the refused message and a working indicator, narrow 4.1 preview, then mixed exact/tolerant bodies and continuation after fillets.
+
+| Work | Owner | Review |
+|---|---|---|
+| 3.0A and 3.0B (one owner, in order) | Fable | the dot (GPT Astra), every PR |
+| Drawings and PMI | Fable; moves to Claude Opus if Fable quota runs short | the dot |
+| App lane | Claude Opus, or GPT 6.1 or 6.2 if available | the dot |
+| ROADMAP.md update | firstmate | owner approval |
+
 ## Rules that stay fixed between checkpoints
 
 - The allowance target is 20M. Until phase 5 the application default is 100M.
-- Proven, bounded and refused answers stay separate.
+- Proven, bounded and refused answers stay separate inside the kernel. The user sees results as approximate until the proof button, Q14. The app removes proved and bounded lights, retaining the refused message and working indicator, Q31.
 - Kernel changes are general. No allowance or tolerance is loosened to make one case pass.
 - Clock time never fails a change before phase 5.
 - The app shows Coming soon only for scope written on this roadmap.
 
+[Checkpoint 2 working rules, section 4.9](docs/checkpoints/checkpoint-2-decisions.md#49-working-rules-r1-to-r5-with-the-r2-tuning), Q4 and Q24.
+
+- R1: one feature, one owner across kernel and app; parallel lanes only on different features.
+- R2: a kernel change to an app-used feature passes that app acceptance, with one later feature on top, before merge. Tuning (Q24): each SolidDraft scenario lists the kernel parts it uses; a Catallax pin bump runs only the scenarios whose kernel parts changed, plus the bracket scenario as a smoke test; the full set runs nightly and before every release; shared core changes or scenarios with no list run everything.
+- R3: a target that fails two different approaches is parked and brought to the owner.
+- R4: once a release is called, only wrong-result, crash and broken-feature fixes go in.
+- R5: scoreboard and census once per checkpoint, no dry runs; coverage counted from `docs/COVERAGE.md`.
+
+### Tolerance rules T0 to T8
+
+[Checkpoint 2 tolerance specification, section 4.3](docs/checkpoints/checkpoint-2-decisions.md#43-tolerance-rules-t0-to-t8), Q7.
+
+| Rule | Content |
+|---|---|
+| T0 | Exact entities store no tolerance and have no size limit |
+| T1 | Floor for f64 geometry: eps(R) = max(1e-7 mm, 1e-11 x R), R the coordinate size in the frame the operation runs in (about 1e-5 mm at 1 km). Warn when one body exceeds 1 km. Operations run in local frames reached by exact rational transforms |
+| T2 | Own fitted geometry: fit to max(1e-6 mm, 10 x eps), tightened to L/100 near small features; cap max(1e-5 mm, 100 x eps). Today it is 1e-7 mm |
+| T3 | Imports: measure every entity; the file's declared value is only a hint. Automatic cap 0.01 mm for edges and faces, 0.02 mm for vertices. Above that, refit first, then the user may opt in up to 0.1 mm |
+| T4 | Margin: 1.1 x (measured gap + measurement error), applied only to fresh measurements, never stacked. Where three or more surfaces meet, build the vertex first |
+| T5 | Pair rule: for two entities that share no topology, error if t_a + t_b > d/2, warn if t_a + t_b > d/5. Found with a bounding-box tree inflated by 5t, so a part with no small features needs no distance computation |
+| T6 | Short edges and slivers are invalid only through T5 |
+| T7 | After each operation: refit the 2D copy, measure again, lower where possible. Warn if a tolerance rises more than 10x above its inputs |
+| T8 | Export with a receiver profile (for example NX at 0.01 mm, CATIA at 0.001 mm): refit edges above the receiver tolerance, warn on features under 10x and 4x the receiver tolerance, write the largest entity tolerance as the file uncertainty, offer scaled export for micro parts |
+
+The cap that applies is always the smaller of the class cap and the local term. On a part with no small features, the class cap governs.
+
 ## History
+
+### Phase 2 lane setup, superseded at Checkpoint 2
+
+**How phase 2 runs.** The owner chose three kernel lanes from the start at Checkpoint 1, so the longest chain, 2.2 then the rest of 2.3 then 2.5, starts on the first day. Lanes run side by side because no lane's result changes another lane's current job.
+
+- **First, the measures.** A short job before any lane needs them. The census-part hole is placed so it removes material in the reference kernels, P8, P9 and the curved-housing chain join the scoreboard as targets, and the definitions then stay fixed to Checkpoint 2.
+- **Lane 1, spline.** Finish 1.3's three loft top cuts at the 100M application default, then 2.1.
+- **Lane 2, import.** First rank the measured failure causes by files gained: export gaps (files that import but do not export valid) against first-step import refusals, from the Checkpoint 1 census data. Then stitch imported surface bodies into checked solids, which is 2.3's "faces sew into a solid" moved to the front. Then work the causes in ranked order, and take 2.3's trim, extend and thicken once 2.2 lands.
+- **Lane 3, new tools.** 2.2, the remaining 2.3 surface tools, then 2.5. General sweeps (2.4) remain on this lane.
+- **App, alongside, on Claude Opus.** The Cancel fix first, then surface bodies shown and clearly marked, then the import health report, then each kernel item as it lands.
+
+Kernel lanes ran on Codex models and the app lane on Claude Opus. Codex cloud reviewed and advised, without authoring PRs. A review held a merge only on new kernel algorithms, numerical admission or tolerance rules, and data-loss or release paths; everything else merged on green checks and was reviewed after. Checkpoint 2 replaces this setup with the lane table above and the dot reviewing every 3.0A and 3.0B PR from code and research, not the author's summary.
+
 
 ### What was added
 
@@ -315,11 +571,10 @@ Each entry links to a short file: what we were trying to achieve, why it was pro
 
 ## Further reading
 
-Existing: `VISION.md` in both repositories, `docs/ARCHITECTURE.md` for dated decisions, `docs/CAPABILITIES.md` for what works today, `docs/TARGET-PARTS.md` for P0 to P10 and when a part counts as built, `docs/milestones/` for milestone notes and the STEP census, `docs/research/` for the files linked above, and `docs/archive/PLAN-2026-11.md` for the plan this file replaces.
+Existing: `VISION.md` in both repositories, `docs/ARCHITECTURE.md` for dated decisions, `docs/CAPABILITIES.md` for what works today, `docs/TARGET-PARTS.md` for P0 to P10 and when a part counts as built, `docs/milestones/` for milestone notes and the STEP census, `docs/research/` for the files linked above, and `docs/archive/PLAN-2026-11.md` for the plan this file replaces. [docs/COVERAGE.md](docs/COVERAGE.md) records the 61 lines and bars; [Checkpoint 2 decisions](docs/checkpoints/checkpoint-2-decisions.md) records the adopted direction and acceptance specifications.
 
 To be written, each short:
 
-- `docs/COVERAGE.md`: the 61 lines one by one, the scoring method and the state of each line.
 - `docs/LEFTOVERS-0.2.0.md`: everything the release sprint postponed, with its recommendation.
 
 ### Old milestone names

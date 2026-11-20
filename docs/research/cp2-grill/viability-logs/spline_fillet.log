@@ -1,0 +1,60 @@
+warning: crates/catallax-cli/Cargo.toml: file `crates/catallax-cli/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `catallax`
+  * `bin` target `exact-brep`
+warning: `catallax-cli` (manifest) generated 1 warning
+   Compiling catallax-shapes v0.4.0 (crates/catallax-shapes)
+    Finished `release` profile [optimized] target(s) in 3.69s
+     Running tests/spline_fillet.rs (viability-logs/target/release/deps/spline_fillet-88635f9a41ca0d8e)
+
+running 14 tests
+test a_moved_face_is_cut_in_the_callers_frame ... ok
+test a_plane_along_the_edge_is_refused ... ok
+test a_support_of_several_spans_refuses ... ok
+test an_exhausted_allowance_refuses ... ok
+test an_extension_charges_its_degree_first ... ok
+test an_extension_reserves_its_arithmetic_first ... ok
+test borders_and_extensions_are_checked ... ok
+test definitions_are_checked ... ok
+test m11_faces_between_the_caps ... M11 fillet workers=Some(1) m27-loft-edge: 8199428 units; 18 spans, bound 27 nm
+M11 fillet workers=Some(1) loft-next-edge: 9685010 units; 18 spans, bound 28 nm
+M11 fillet workers=Some(2) m27-loft-edge: 8199428 units; 18 spans, bound 27 nm
+M11 fillet workers=Some(2) loft-next-edge: 9685010 units; 18 spans, bound 28 nm
+M11 fillet workers=Some(4) m27-loft-edge: 8199428 units; 18 spans, bound 27 nm
+M11 fillet workers=Some(4) loft-next-edge: 9685010 units; 18 spans, bound 28 nm
+M11 fillet workers=None m27-loft-edge: 8199428 units; 18 spans, bound 27 nm
+M11 fillet workers=None loft-next-edge: 9685010 units; 18 spans, bound 28 nm
+M11 between the caps: borders [0.0, 1.0, 0.02007508466516126, 1.0246689704916916]
+M11 between the caps: borders [0.0, 1.0, 0.04074894646827039, 1.0366939102692787]
+ok
+test m11_fillet_faces ... M11 fillet workers=Some(1) m27-loft-edge: 5252648 units; 13 spans, bound 78 nm
+M11 fillet workers=Some(1) loft-next-edge: 6970934 units; 16 spans, bound 5 nm
+M11 fillet workers=Some(1) biquadratic-edge: 16433004 units; 22 spans, bound 80 nm
+M11 fillet workers=Some(2) m27-loft-edge: 5252648 units; 13 spans, bound 78 nm
+M11 fillet workers=Some(2) loft-next-edge: 6970934 units; 16 spans, bound 5 nm
+M11 fillet workers=Some(2) biquadratic-edge: 16433004 units; 22 spans, bound 80 nm
+M11 fillet workers=Some(4) m27-loft-edge: 5252648 units; 13 spans, bound 78 nm
+M11 fillet workers=Some(4) loft-next-edge: 6970934 units; 16 spans, bound 5 nm
+M11 fillet workers=Some(4) biquadratic-edge: 16433004 units; 22 spans, bound 80 nm
+M11 fillet workers=None m27-loft-edge: 5252648 units; 13 spans, bound 78 nm
+M11 fillet workers=None loft-next-edge: 6970934 units; 16 spans, bound 5 nm
+M11 fillet workers=None biquadratic-edge: 16433004 units; 22 spans, bound 80 nm
+ok
+test m27_cap_cuts_as_curves ... M27 cap at z = 0: 810 pieces of degree 8, 0.0375 nm bound, 1849120 units
+M27 cap at z = 2: 506 pieces of degree 8, 0.0375 nm bound, 1149251 units
+ok
+test m27_face_as_a_surface ... ok
+test m27_loft_edge_face_between_the_caps ... M11 fillet workers=Some(1) m27-loft-edge: 8199428 units; 18 spans, bound 27 nm
+M11 fillet workers=Some(2) m27-loft-edge: 8199428 units; 18 spans, bound 27 nm
+M11 fillet workers=Some(4) m27-loft-edge: 8199428 units; 18 spans, bound 27 nm
+M11 fillet workers=None m27-loft-edge: 8199428 units; 18 spans, bound 27 nm
+M27 between the caps: borders [0.0, 1.0, 0.02007508466516126, 1.0246689704916916], cuts [0, 2] and [14, 16], cut work 4808 and 4808
+ok
+test m27_loft_edge_fillet_face ... M11 fillet workers=Some(1) m27-loft-edge: 5252648 units; 13 spans, bound 78 nm
+M11 fillet workers=Some(2) m27-loft-edge: 5252648 units; 13 spans, bound 78 nm
+M11 fillet workers=Some(4) m27-loft-edge: 5252648 units; 13 spans, bound 78 nm
+M11 fillet workers=None m27-loft-edge: 5252648 units; 13 spans, bound 78 nm
+ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 26.03s
+
+spline_fillet wall 30s

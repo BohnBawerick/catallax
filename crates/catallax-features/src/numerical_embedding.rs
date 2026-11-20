@@ -23,7 +23,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 mod charts;
 mod guides;
-mod nurbs;
+pub(crate) mod nurbs;
 mod planar;
 mod rings;
 use nurbs::{Curve64, Surface64, concatenate, distance, dot, interpolate, lerp, sub};

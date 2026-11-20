@@ -37,9 +37,11 @@
 //! is kept there. The rule uses that reading and does not take it again;
 //! its geometric reading and its change of parameter draw on what admission
 //! left ([`read_use`]). The admission of the new copies uses the readings
-//! already taken. The cap's refusal, `numerical.gap-work-cap`, is returned
-//! under its own name wherever it comes from, and never answered with the
-//! body as imported ([`settled_body`]).
+//! already taken. Rule T3's refit, where a tolerance is still over the cap,
+//! draws on the same accounts, and its admissions use the kept readings
+//! too. The cap's refusal, `numerical.gap-work-cap`, is returned under its
+//! own name wherever it comes from, and never answered with the body as
+//! imported ([`settled_body`]).
 
 use super::edge_gap::UseAccount;
 use super::gap::{self, EdgeCopies, FaceCopyRef, GapSurface, Hints};
@@ -88,8 +90,9 @@ pub struct ImportGapRow {
     /// Spans of the reparametrised copy; zero where none was made.
     pub spans: usize,
     /// Work counted against the one allowance of the use in this admission:
-    /// admission's reading of the copy as imported, the geometric reading
-    /// and the change of parameter.
+    /// admission's reading of the copy as imported, the geometric reading,
+    /// the change of parameter and, where rule T3 refitted the use, that
+    /// refit.
     pub work: u64,
     /// What the rule did.
     pub outcome: ImportGapOutcome,
@@ -202,6 +205,18 @@ pub(super) fn read_use(
     }))
 }
 
+/// What the rule did with the uses of a definition.
+pub(super) struct Settled {
+    /// The retained u/v curves with the new copies in place, or `None` where
+    /// no copy changed.
+    pub native_trims: Option<Vec<NumericalNativeTrim>>,
+    /// One row per use that was read geometrically.
+    pub rows: Vec<ImportGapRow>,
+    /// The place of each row's use in definition order, where its account
+    /// is.
+    pub slots: Vec<usize>,
+}
+
 /// Reads every imported edge use the gap rule applies to and gives the uses
 /// whose copies run at different speeds a face copy in the parameter of
 /// their 3D curve.
@@ -224,17 +239,15 @@ pub(super) fn read_use(
 /// use that spends its allowance refuses the admission with
 /// `numerical.gap-work-cap`.
 ///
-/// Returns the retained u/v curves with the new copies in place, or `None`
-/// where no copy changed, and one row per use that was read geometrically.
-#[allow(clippy::type_complexity)]
 pub(super) fn settle(
     definition: &NumericalDefinition,
     native_trims: &[NumericalNativeTrim],
     accounts: &mut [UseAccount],
     dec: &mut Decider,
-) -> Result<(Option<Vec<NumericalNativeTrim>>, Vec<ImportGapRow>), Refusal> {
+) -> Result<Settled, Refusal> {
     let floor_mm = tolerance::floor_minimum_mm().to_f64_nearest();
     let mut rows = Vec::new();
+    let mut slots = Vec::new();
     let mut replaced: Vec<NumericalNativeTrim> = Vec::new();
     let mut index = 0;
     for face in &definition.faces {
@@ -295,11 +308,16 @@ pub(super) fn settle(
                     }
                 }
                 rows.push(found);
+                slots.push(slot);
             }
         }
     }
     if replaced.is_empty() {
-        return Ok((None, rows));
+        return Ok(Settled {
+            native_trims: None,
+            rows,
+            slots,
+        });
     }
     let mut next: Vec<NumericalNativeTrim> = native_trims
         .iter()
@@ -313,7 +331,11 @@ pub(super) fn settle(
         .cloned()
         .collect();
     next.extend(replaced);
-    Ok((Some(next), rows))
+    Ok(Settled {
+        native_trims: Some(next),
+        rows,
+        slots,
+    })
 }
 
 /// Whether a refusal says that work or time ran out: the operation's
@@ -368,7 +390,82 @@ mod fixture;
 mod tests {
     use super::*;
     use crate::numerical::gap::Limits;
-    use fixture::{q, quarter, stretched_copy};
+    use fixture::{bowed_copy, q, quarter, stretched_copy};
+
+    fn accounts(source: &NumericalDefinition, each_use: u64) -> Vec<UseAccount> {
+        UseAccount::for_uses(source, Limits { work: each_use })
+    }
+
+    /// The import admission of the quarter cylinder with one retained u/v
+    /// curve, at the automatic cap, on accounts of `each_use` units, and the
+    /// accounts it leaves.
+    fn admit(
+        source: &NumericalDefinition,
+        copy: &NumericalNativeTrim,
+        each_use: u64,
+    ) -> (Result<NumericalBody, Refusal>, Vec<UseAccount>) {
+        let mut accounts = accounts(source, each_use);
+        let admitted = admit_import_on(
+            source.clone(),
+            vec![copy.clone()],
+            NumericalOptions {
+                tolerance_mm: q("0.01"),
+                vertex_tolerance_mm: None,
+            },
+            &mut accounts,
+            &mut Decider::default(),
+        );
+        (admitted, accounts)
+    }
+
+    /// The body as imported alone, on accounts of `each_use` units.
+    fn as_imported(
+        source: &NumericalDefinition,
+        copy: &NumericalNativeTrim,
+        each_use: u64,
+    ) -> (Result<NumericalBody, Refusal>, Vec<UseAccount>) {
+        let mut accounts = accounts(source, each_use);
+        let admitted = admit_on(
+            source.clone(),
+            vec![copy.clone()],
+            tolerance::import_options(q("0.01")),
+            &mut accounts,
+            &mut Decider::default(),
+        );
+        (admitted, accounts)
+    }
+
+    /// The use a retained u/v curve belongs to: its place in definition
+    /// order and its two copies.
+    fn use_of<'a>(
+        source: &'a NumericalDefinition,
+        copy: &'a NumericalNativeTrim,
+    ) -> (usize, EdgeCopies<'a>) {
+        let wall = source
+            .faces
+            .iter()
+            .position(|face| face.key == copy.face)
+            .expect("the wall");
+        let face = &source.faces[wall];
+        let trim = &face.loops[copy.boundary][copy.use_index];
+        let used = &source.edges[trim.edge];
+        (
+            use_slot(source, wall, copy.boundary, copy.use_index),
+            EdgeCopies {
+                curve: &used.curve,
+                parameters: edge_gap::traversal(trim, used),
+                surface: GapSurface::Kernel(&face.surface),
+                face_copy: FaceCopyRef::Native(&copy.curve),
+            },
+        )
+    }
+
+    fn refuses_by_name(admitted: Result<NumericalBody, Refusal>, at: &str) {
+        match admitted {
+            Err(refusal) => assert_eq!(refusal.code, "numerical.gap-work-cap", "{at}"),
+            Ok(body) => panic!("{at}: admitted a body with {:?}", body.import_gaps()),
+        }
+    }
 
     /// The small-allowance control through the admission itself (section
     /// 4.2 step 8: "A hard per-edge work cap refuses by name").
@@ -396,57 +493,7 @@ mod tests {
     fn one_allowance_covers_admission_and_the_rule_and_no_body_stands_in() {
         let source = quarter();
         let (stretched, edge) = stretched_copy(&source, "0.001");
-        let accounts = |each_use: u64| UseAccount::for_uses(&source, Limits { work: each_use });
-        // The import admission, and the accounts it leaves.
-        let admit = |each_use: u64| {
-            let mut accounts = accounts(each_use);
-            let admitted = admit_import_on(
-                source.clone(),
-                vec![stretched.clone()],
-                NumericalOptions {
-                    tolerance_mm: q("0.01"),
-                    vertex_tolerance_mm: None,
-                },
-                &mut accounts,
-                &mut Decider::default(),
-            );
-            (admitted, accounts)
-        };
-        // The body as imported alone, on accounts of the same allowance.
-        let as_imported = |each_use: u64| {
-            let mut accounts = accounts(each_use);
-            let admitted = admit_on(
-                source.clone(),
-                vec![stretched.clone()],
-                tolerance::import_options(q("0.01")),
-                &mut accounts,
-                &mut Decider::default(),
-            );
-            (admitted, accounts)
-        };
-
-        // The use, its place in definition order and its two copies.
-        let wall = source
-            .faces
-            .iter()
-            .position(|face| face.key == stretched.face)
-            .expect("the wall");
-        let face = &source.faces[wall];
-        let before: usize = source.faces[..wall]
-            .iter()
-            .flat_map(|face| &face.loops)
-            .chain(&face.loops[..stretched.boundary])
-            .map(Vec::len)
-            .sum();
-        let slot = before + stretched.use_index;
-        let trim = &face.loops[stretched.boundary][stretched.use_index];
-        let used = &source.edges[trim.edge];
-        let copies = EdgeCopies {
-            curve: &used.curve,
-            parameters: edge_gap::traversal(trim, used),
-            surface: GapSurface::Kernel(&face.surface),
-            face_copy: FaceCopyRef::Native(&stretched.curve),
-        };
+        let (slot, copies) = use_of(&source, &stretched);
 
         // The three, counted apart from the admission.
         let floor_mm = tolerance::floor_minimum_mm().to_f64_nearest();
@@ -465,7 +512,7 @@ mod tests {
         let rule_alone = geometric.work + change;
         let total = first + rule_alone;
 
-        let (full, counted) = admit(gap::EDGE_WORK);
+        let (full, counted) = admit(&source, &stretched, gap::EDGE_WORK);
         let full = full.expect("the full cap");
         let [row] = full.import_gaps() else {
             panic!("{:?}", full.import_gaps())
@@ -474,7 +521,7 @@ mod tests {
         assert_eq!(row.outcome, ImportGapOutcome::Reparametrised);
         assert_eq!(row.work, total);
         assert_eq!(counted[slot].spent(), total);
-        let (imported, read_once) = as_imported(gap::EDGE_WORK);
+        let (imported, read_once) = as_imported(&source, &stretched, gap::EDGE_WORK);
         imported.expect("the body as imported is admitted");
         assert_eq!(read_once[slot].spent(), first);
         for (index, (after, once)) in counted.iter().zip(&read_once).enumerate() {
@@ -497,32 +544,216 @@ mod tests {
         // The boundary. With these allowances the body as imported is
         // admitted, and the admission refuses by name all the same.
         for each_use in [rule_alone, total - 1] {
-            as_imported(each_use)
+            as_imported(&source, &stretched, each_use)
                 .0
                 .expect("the body as imported is admitted under this allowance");
-            match admit(each_use).0 {
-                Err(refusal) => assert_eq!(
-                    refusal.code, "numerical.gap-work-cap",
-                    "{each_use} of {total} units"
-                ),
-                Ok(body) => panic!(
-                    "{each_use} of {total} units admitted a body with {:?}",
-                    body.import_gaps()
-                ),
-            }
+            refuses_by_name(
+                admit(&source, &stretched, each_use).0,
+                &format!("{each_use} of {total} units"),
+            );
         }
         // With less than admission's own reading needs, admission itself
         // refuses by name.
         for each_use in [0, first - 1] {
-            let refusal = admit(each_use).0.map(|_| ()).expect_err("capped");
-            assert_eq!(refusal.code, "numerical.gap-work-cap", "{each_use} units");
+            refuses_by_name(
+                admit(&source, &stretched, each_use).0,
+                &format!("{each_use} units"),
+            );
         }
-        let same = admit(total).0.expect("the sum is enough");
+        let same = admit(&source, &stretched, total)
+            .0
+            .expect("the sum is enough");
         assert_eq!(same.import_gaps(), full.import_gaps());
         assert_eq!(same.tolerances(), full.tolerances());
         println!(
             "quarter cylinder, one copy at another speed: admission's reading {first}, geometric reading {}, change of parameter {change}, least allowance {total}",
             geometric.work
+        );
+    }
+
+    /// The work boundary of rule T3's refit in an import (section 4.2 step
+    /// 8: "A hard per-edge work cap refuses by name").
+    ///
+    /// One circle use of the wall has a copy bowed off its circle: a gap in
+    /// the geometry of the copy, over the automatic cap. The rule reads it
+    /// and leaves it, the body as imported is over the cap, and rule T3
+    /// refits the copy from its 3D curve.
+    ///
+    /// The use's account covers all of it. Counted apart from the admission:
+    /// the checker's reading of the copy as imported, the geometric reading,
+    /// and the refit under the cap. The admission at the full cap counts
+    /// exactly their sum for the use and counts every other use once. So
+    /// the probe at the opt-in limit and the admissions after the refit
+    /// read nothing again, and the refit did not start a new cap.
+    ///
+    /// With the sum the import is admitted, and the body stores what a
+    /// fresh admission of the refitted copy stores. With one unit less it
+    /// refuses with `numerical.gap-work-cap`. With what admission and the
+    /// rule need and nothing for the refit it refuses by name as well: the
+    /// answer is neither a body nor the tolerance refusal with its opt-in.
+    #[test]
+    fn rule_t3s_refit_draws_on_the_account_of_its_use() {
+        let source = quarter();
+        let (bowed, edge) = bowed_copy(&source, "0.03");
+        let (slot, copies) = use_of(&source, &bowed);
+
+        // The three, counted apart from the admission.
+        let mut dec = Decider::default();
+        let first = gap::measure(&copies, &Hints::default(), Limits::default(), &mut dec)
+            .expect("the copy as imported")
+            .work;
+        let geometric =
+            gap::measure_geometric(&copies, &Hints::default(), Limits::default(), &mut dec)
+                .expect("the geometric gap")
+                .expect("a copy with its own u/v")
+                .work;
+        let cap_mm = q("0.01").to_f64_nearest();
+        let refit = gap::refit::refit_within(&copies, cap_mm, Limits::default(), &mut dec)
+            .expect("the refit of rule T3");
+        assert!(refit.copy.is_some());
+        let before_refit = first + geometric;
+        let total = before_refit + refit.work;
+
+        // The body as imported is over the cap, and admission reads every
+        // use once before it says so.
+        let (imported, read_once) = as_imported(&source, &bowed, gap::EDGE_WORK);
+        assert_eq!(imported.unwrap_err().code, TOLERANCE_EXCEEDED);
+        assert_eq!(read_once[slot].spent(), first);
+
+        let (full, counted) = admit(&source, &bowed, gap::EDGE_WORK);
+        let full = full.expect("the full cap");
+        let [row] = full.import_gaps() else {
+            panic!("{:?}", full.import_gaps())
+        };
+        assert_eq!(row.edge, edge);
+        assert_eq!(row.outcome, ImportGapOutcome::Geometric);
+        assert_eq!(row.work, total);
+        assert_eq!(counted[slot].spent(), total);
+        for (index, (after, once)) in counted.iter().zip(&read_once).enumerate() {
+            if index != slot {
+                assert_eq!(after.spent(), once.spent(), "use {index}");
+            }
+        }
+        assert!(full.tolerances().largest_mm() <= q("0.01"));
+        let fresh = build_with_native_trims(
+            source.clone(),
+            full.native_trims().to_vec(),
+            tolerance::import_options(q("0.01")),
+            &mut Decider::default(),
+        )
+        .expect("the refitted copy on its own");
+        assert_eq!(fresh.evidence().checks(), full.evidence().checks());
+        assert_eq!(fresh.tolerances(), full.tolerances());
+
+        // The boundary.
+        for each_use in [before_refit, total - 1] {
+            refuses_by_name(
+                admit(&source, &bowed, each_use).0,
+                &format!("{each_use} of {total} units"),
+            );
+        }
+        let same = admit(&source, &bowed, total).0.expect("the sum is enough");
+        assert_eq!(same.import_gaps(), full.import_gaps());
+        assert_eq!(same.tolerances(), full.tolerances());
+        println!(
+            "quarter cylinder, one bowed copy: admission's reading {first}, geometric reading {geometric}, refit of rule T3 {}, least allowance {total}",
+            refit.work
+        );
+    }
+
+    /// A new copy that is refused sends its use back to the copy as
+    /// imported, on the same account.
+    ///
+    /// The wall is 0.02 mm wider than its circles, over the automatic cap,
+    /// and one copy also runs up to 2% of the arc ahead. The rule gives that
+    /// copy the circle's parameter. The new copy still stores the 0.02 mm
+    /// that is in the geometry, rule T3's refit cannot lower that, and the
+    /// new copy is refused. Rule T3 then runs on the copies as imported and
+    /// refuses in turn, with the refusal of the body as imported and the
+    /// opt-in.
+    ///
+    /// The account of the use holds the reading of its copy as imported
+    /// again, and everything that was counted for the use on the way is
+    /// still counted: admission's reading, the geometric reading, the
+    /// change of parameter and both refits.
+    #[test]
+    fn a_refused_new_copy_sends_its_use_back_to_the_copy_as_imported() {
+        let mut source = quarter();
+        let Surface::Cylinder(cylinder) = &mut source.faces[4].surface else {
+            unreachable!()
+        };
+        cylinder.radius_sq = (&q("1.02") * &q("1.02")).into();
+        let (stretched, _) = stretched_copy(&source, "0.02");
+        let (slot, copies) = use_of(&source, &stretched);
+
+        let mut dec = Decider::default();
+        let floor_mm = tolerance::floor_minimum_mm().to_f64_nearest();
+        let first = gap::measure(&copies, &Hints::default(), Limits::default(), &mut dec)
+            .expect("the copy as imported");
+        let geometric =
+            gap::measure_geometric(&copies, &Hints::default(), Limits::default(), &mut dec)
+                .expect("the geometric gap")
+                .expect("a copy with its own u/v");
+        assert!(much_larger(first.reported_mm(), geometric.reported_mm()));
+        let target = (gap::MARGIN * gap::MARGIN * geometric.reported_mm()).max(floor_mm);
+        let change = gap::refit::reparametrise(&copies, target, Limits::default(), &mut dec)
+            .expect("the change of parameter");
+        let next = change.copy.as_ref().expect("a new copy");
+        assert!(much_larger(first.stored_mm(), next.stored_mm));
+        let cap_mm = q("0.01").to_f64_nearest();
+        assert!(next.stored_mm > cap_mm);
+        // Rule T3's refit of the new copy, then of the copy as imported.
+        let of_new = gap::refit::refit_within(
+            &EdgeCopies {
+                face_copy: FaceCopyRef::Native(&next.curve),
+                ..copies
+            },
+            cap_mm,
+            Limits::default(),
+            &mut dec,
+        )
+        .expect("the refit of the new copy");
+        let of_imported = gap::refit::refit_within(&copies, cap_mm, Limits::default(), &mut dec)
+            .expect("the refit of the copy as imported");
+        let total = first.work + geometric.work + change.work + of_new.work + of_imported.work;
+
+        let (imported, _) = as_imported(&source, &stretched, gap::EDGE_WORK);
+        let over_the_cap = imported.unwrap_err();
+        assert_eq!(over_the_cap.code, TOLERANCE_EXCEEDED);
+
+        let (admitted, counted) = admit(&source, &stretched, gap::EDGE_WORK);
+        let refusal = admitted.map(|_| ()).expect_err("over the cap");
+        assert_eq!(refusal.code, TOLERANCE_EXCEEDED);
+        assert_eq!(refusal.detail, opt_in_refusal(over_the_cap).detail);
+        let kept = counted[slot].reading().expect("a kept reading");
+        assert_eq!(kept.raw_mm.to_bits(), first.raw_mm.to_bits());
+        assert_eq!(kept.work, first.work);
+        assert_eq!(counted[slot].spent(), total);
+
+        // The other circle use of the wider wall is read and refitted too,
+        // so the boundary is taken on this use's account alone: the other
+        // uses keep the full cap. One unit less than all of it refuses by
+        // name, at the last refit, and exactly all of it gives the answer
+        // of the full cap.
+        let with = |allowance: u64| {
+            let mut accounts = accounts(&source, gap::EDGE_WORK);
+            accounts[slot] = UseAccount::new(Limits { work: allowance });
+            admit_import_on(
+                source.clone(),
+                vec![stretched.clone()],
+                NumericalOptions {
+                    tolerance_mm: q("0.01"),
+                    vertex_tolerance_mm: None,
+                },
+                &mut accounts,
+                &mut Decider::default(),
+            )
+        };
+        refuses_by_name(with(total - 1), &format!("{} of {total} units", total - 1));
+        assert_eq!(with(total).map(|_| ()).expect_err("over the cap"), refusal);
+        println!(
+            "wider wall, one copy at another speed: admission's reading {}, geometric reading {}, change of parameter {}, refit of the new copy {}, refit of the copy as imported {}, least allowance {total}",
+            first.work, geometric.work, change.work, of_new.work, of_imported.work
         );
     }
 

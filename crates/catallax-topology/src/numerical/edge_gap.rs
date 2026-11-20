@@ -98,6 +98,9 @@ fn largest_settled<'a, T: Copy>(
 /// is then admitted with the new copies. All of that takes its work from
 /// this one account, and each step is given what the steps before it left.
 ///
+/// Where a stored tolerance is over the cap, rule T3's refit and the
+/// admissions around it draw on the same account.
+///
 /// A reading that is kept here is not taken again. A later step of the same
 /// admission uses it as it stands, so no copy is read twice and no reading
 /// starts a new cap.
@@ -111,6 +114,9 @@ pub(super) struct UseAccount {
     /// and, for a projected copy, its two declared ends. `None` before the
     /// use is read, and for a derived copy, which is not measured.
     readings: Option<Vec<gap::GapMeasure>>,
+    /// The readings of the copy as imported, for an admission that goes
+    /// back to it after a new copy was tried.
+    imported: Option<Vec<gap::GapMeasure>>,
 }
 
 impl UseAccount {
@@ -121,6 +127,7 @@ impl UseAccount {
             limit: allowance.work,
             spent: 0,
             readings: None,
+            imported: None,
         }
     }
 
@@ -159,18 +166,27 @@ impl UseAccount {
         self.readings.as_ref().and_then(|kept| kept.first())
     }
 
-    /// Counts and keeps readings that were taken from [`Self::left`].
+    /// Counts and keeps readings of the copy as imported that were taken
+    /// from [`Self::left`].
     pub(super) fn keep(&mut self, readings: &[gap::GapMeasure]) {
         for reading in readings {
             self.spend(reading.work);
         }
         self.readings = Some(readings.to_vec());
+        self.imported = self.readings.clone();
     }
 
     /// Keeps `reading` as the reading of a new copy of the use, in place of
     /// the old copy's. Its work was counted when it was taken.
     pub(super) fn replace(&mut self, reading: gap::GapMeasure) {
         self.readings = Some(vec![reading]);
+    }
+
+    /// Goes back to the copy as imported: its readings are the kept ones
+    /// again. Only a use whose copy was replaced changes. What was counted
+    /// stays counted.
+    pub(super) fn back_to_imported(&mut self) {
+        self.readings = self.imported.clone();
     }
 }
 
@@ -251,15 +267,21 @@ fn take_readings(
     Ok(vec![found, ends])
 }
 
-/// Refits the face copy of one edge use from its 3D curve (rules T7 and T8)
-/// until rule T4's stored tolerance is at most `target_mm`. `None` for a
+/// Refits the face copy of one edge use from its 3D curve (rules T3, T7 and
+/// T8) until rule T4's stored tolerance is at most `target_mm`. `None` for a
 /// curve projected on a plane, which has no u/v copy of its own.
+///
+/// `account` is the use's account in an import admission (rule T3). The
+/// refit then draws on what the use has left of its one allowance, and its
+/// work is counted there with or without a new copy. The refit of an own
+/// build passes `None`.
 pub(super) fn refit_use(
     face: &NumericalFace,
     trim: &NumericalTrim,
     edge: &NumericalEdge,
     native: Option<&BSplineCurve>,
     target_mm: f64,
+    account: Option<&mut UseAccount>,
     dec: &mut Decider,
 ) -> Result<Option<gap::refit::Refit>, Refusal> {
     let copy = match native {
@@ -273,7 +295,14 @@ pub(super) fn refit_use(
         surface: GapSurface::Kernel(&face.surface),
         face_copy: copy,
     };
-    gap::refit::refit(&copies, target_mm, dec)
+    match account {
+        None => gap::refit::refit(&copies, target_mm, dec),
+        Some(account) => {
+            let fit = gap::refit::refit_within(&copies, target_mm, account.left(), dec)?;
+            account.spend(fit.work);
+            Ok(fit.copy)
+        }
+    }
 }
 
 /// One derived copy as the full check reads it.

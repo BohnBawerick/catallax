@@ -694,9 +694,25 @@ impl Surface64 {
         seed: [f64; 2],
         scratch: &mut Scratch,
     ) -> ([f64; 2], u64) {
+        let mut left = u64::MAX;
+        let uv = self
+            .foot_within(target, seed, scratch, &mut left)
+            .expect("an unlimited allowance");
+        (uv, u64::MAX - left)
+    }
+
+    /// [`Self::foot`] under an allowance: each evaluation of the surface is
+    /// taken from `left` before it is made. `None` when `left` runs out.
+    pub(super) fn foot_within(
+        &self,
+        target: &[f64; 3],
+        seed: [f64; 2],
+        scratch: &mut Scratch,
+        left: &mut u64,
+    ) -> Option<[f64; 2]> {
         let mut uv = seed;
-        let mut evaluations = 0;
         for _ in 0..FOOT_STEPS {
+            spend(left)?;
             let base = self.point(uv, scratch).value;
             let r: [f64; 3] = std::array::from_fn(|k| target[k] - base[k]);
             let mut partial = [[0.0; 3]; 2];
@@ -704,10 +720,10 @@ impl Surface64 {
                 let step = f64::EPSILON.sqrt() * uv[axis].abs().max(1.0);
                 let mut moved = uv;
                 moved[axis] += step;
+                spend(left)?;
                 let there = self.point(moved, scratch).value;
                 *column = std::array::from_fn(|k| (there[k] - base[k]) / step);
             }
-            evaluations += 3;
             let (a, b, c) = (
                 dot(&partial[0], &partial[0]),
                 dot(&partial[0], &partial[1]),
@@ -724,8 +740,14 @@ impl Surface64 {
                 break;
             }
         }
-        (uv, evaluations)
+        Some(uv)
     }
+}
+
+/// Takes one evaluation from what is left of an allowance.
+pub(super) fn spend(left: &mut u64) -> Option<()> {
+    *left = left.checked_sub(1)?;
+    Some(())
 }
 
 impl Curve64 {
@@ -879,12 +901,19 @@ impl Lifted {
     /// The foot on the surface of the 3D point at `t`, in the shifted
     /// parameters, from a seed: Gauss-Newton on the squared distance with
     /// forward-difference partials, as [`Lifted::allowance`] takes them
-    /// (Dennis and Schnabel 1983, sections 5.4 and 10.1). Returns the foot
-    /// and the evaluations it spent.
-    pub(super) fn foot(&self, t: f64, seed: [f64; 2], scratch: &mut Scratch) -> ([f64; 2], u64) {
+    /// (Dennis and Schnabel 1983, sections 5.4 and 10.1). The evaluation of
+    /// the 3D curve and each evaluation of the surface is taken from `left`
+    /// before it is made. `None` when `left` runs out.
+    pub(super) fn foot_within(
+        &self,
+        t: f64,
+        seed: [f64; 2],
+        scratch: &mut Scratch,
+        left: &mut u64,
+    ) -> Option<[f64; 2]> {
+        spend(left)?;
         let target = self.curve.point(t, scratch).value;
-        let (uv, evaluations) = self.surface.foot(&target, seed, scratch);
-        (uv, evaluations + 1)
+        self.surface.foot_within(&target, seed, scratch, left)
     }
 
     /// Whether the face copy is outside a spline surface's domain at `t`.

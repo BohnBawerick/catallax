@@ -35,7 +35,7 @@
 
 use catallax_numbers::{Decider, Refusal};
 
-use super::lift::{Bounded, Lifted, Scratch};
+use super::lift::{Bounded, Lifted, Scratch, spend};
 use super::{
     EdgeCopies, FaceCopyRef, Hints, Limits, Peak, PlannedPiece, Search, breaks, numeric, planned,
     polish, under_allowance, work_cap,
@@ -131,12 +131,6 @@ fn copy_point(lifted: &Lifted, on_face: bool, x: f64, scratch: &mut Scratch) -> 
         .face_at(x, scratch)
         .expect("a geometric reading is taken of a copy with its own u/v");
     lifted.surface.point(uv.value, scratch)
-}
-
-/// Takes one evaluation from what is left of an allowance.
-pub(super) fn spend(left: &mut u64) -> Option<()> {
-    *left = left.checked_sub(1)?;
-    Some(())
 }
 
 /// The two copies at the same parameter. `None` when `left` runs out.

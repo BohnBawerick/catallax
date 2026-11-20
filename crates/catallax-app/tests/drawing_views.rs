@@ -1,16 +1,21 @@
 //! Contour generators on release parts: the P1 bracket, the P3 filleted boss
-//! and an elliptic extrusion.
+//! and an elliptic extrusion; and on spline faces: an extruded Bezier arch,
+//! rational patch roofs and a lofted barrel.
 
 use std::num::NonZeroUsize;
 
 use catallax_app::DEFAULT_BUILD_WORK;
-use catallax_app::views::{CONTOUR_FIT_MARK, Contours, contour_generators};
+use catallax_app::views::{CONTOUR_FIT_MARK, ContourArc, Contours, contour_generators};
 use catallax_features::evaluate;
 use catallax_intersect::{CurveForm, curve_form};
-use catallax_numbers::{Decider, Real, set_threads, with_operation_budget};
+use catallax_numbers::{Decider, Rational, Real, set_threads, with_operation_budget};
 use catallax_recipe::Recipe;
-use catallax_shapes::{RVector3, Surface};
+use catallax_shapes::{Curve, PointId, RVector3, Surface};
 use catallax_topology::{BodyId, Model};
+
+#[allow(dead_code)]
+mod rational_patch_cases;
+use rational_patch_cases::{Roof, solid};
 
 const TARGET: u64 = 20_000_000;
 
@@ -223,8 +228,9 @@ fn p3_fillet_torus_generators_are_exact_along_and_across_its_axis_and_fitted_oth
     }
 }
 
-#[test]
-fn spline_faces_refuse_the_whole_query_with_counts() {
+/// The arch profile of a spline extrusion: a cubic Bezier from (0, 0) over
+/// (0, 4) and (4, 4) to (4, 0), closed by the floor, extruded 2 along z.
+fn arch() -> catallax_app::ApplicationBody {
     let source = serde_json::json!({"format":"soliddraft-recipe/1","name":"spline-profile","steps":[
         {"id":"profile","op":"profile","plane":"XY","loops":{"outer":[
             {"type":"bezier","from":[0,0],"controls":[[0,4],[4,4]],"to":[4,0]},
@@ -232,21 +238,210 @@ fn spline_faces_refuse_the_whole_query_with_counts() {
         ]}},
         {"id":"body","op":"extrude","profile":"profile","distance":2}
     ],"result":"body"});
-    let app = catallax_app::build_soliddraft(
+    catallax_app::build_soliddraft(
         &source.to_string(),
         &Default::default(),
         &mut Decider::default(),
     )
     .unwrap()
-    .body;
-    let refusal = contour_generators(
-        &app.built.model,
-        app.built.result,
-        &vector(0, 1, 1),
-        &mut Decider::default(),
-    )
-    .unwrap_err();
-    assert_eq!(refusal.refusal.code, "app.contour-surface");
-    assert_eq!(refusal.operands[0].faces, 4);
-    assert_eq!(refusal.operands[0].curved_faces, 1);
+    .body
+}
+
+#[test]
+fn extruded_bezier_profiles_give_exact_rulings() {
+    let app = arch();
+    let (model, body) = (&app.built.model, app.built.result);
+    // Seen along (1, 1, 0): one ruling where the arch's tangent is parallel
+    // to (1, 1), at u = 1 - sqrt(2) / 2 with x = 12 u^2 - 8 u^3 and
+    // y = 12 u (1 - u).
+    let answer =
+        contour_generators(model, body, &vector(1, 1, 0), &mut Decider::default()).unwrap();
+    assert!(answer.is_exact());
+    let c = &answer.value;
+    assert_eq!(c.arcs.len(), 1);
+    let arc = &c.arcs[0];
+    assert!(arc.fit.is_none());
+    assert_eq!(arc.on_faces, vec![arc.face]);
+    assert!(matches!(
+        curve_form(c.model.geom(), arc.curve, &mut Decider::default()).unwrap(),
+        CurveForm::Line { .. }
+    ));
+    let u = 1.0 - 0.5_f64.sqrt();
+    let (x, y) = (12.0 * u * u - 8.0 * u * u * u, 12.0 * u * (1.0 - u));
+    let mut heights = Vec::new();
+    for end in [arc.start.unwrap(), arc.end.unwrap()] {
+        let p = c.model.geom().position(end);
+        assert!((p.x.to_f64() - x).abs() < 1e-12 && (p.y.to_f64() - y).abs() < 1e-12);
+        heights.push(p.z.to_f64());
+    }
+    heights.sort_by(f64::total_cmp);
+    assert_eq!(heights, [0.0, 2.0]);
+    // Seen along (0, 1, 1): the rulings at both ends of the profile, where
+    // its tangent is vertical; each runs along the arch's edge with the floor.
+    let c = contour_generators(model, body, &vector(0, 1, 1), &mut Decider::default())
+        .unwrap()
+        .value;
+    assert_eq!(c.arcs.len(), 2);
+    for arc in &c.arcs {
+        assert!(arc.fit.is_none());
+        assert_eq!(arc.on_faces.len(), 2);
+    }
+}
+
+/// Points of a fitted arc at `count + 1` even parameters, in binary64.
+fn samples(c: &Contours, arc: &ContourArc, count: usize) -> Vec<[f64; 3]> {
+    let Curve::BSpline(curve) = c.model.geom().curve(arc.curve) else {
+        panic!("a fitted arc is a B-spline");
+    };
+    let [from, to] = curve.domain().map(Rational::to_f64_nearest);
+    let mut dec = Decider::default();
+    (0..=count)
+        .map(|k| {
+            let at = from + (to - from) * k as f64 / count as f64;
+            let at = Real::from(Rational::from_f64_exact(at).unwrap());
+            let p = curve.point_at(&at, &mut dec).unwrap();
+            [p.x.to_f64(), p.y.to_f64(), p.z.to_f64()]
+        })
+        .collect()
+}
+
+fn position(c: &Contours, point: Option<PointId>) -> [f64; 3] {
+    let p = c.model.geom().position(point.unwrap());
+    [p.x.to_f64(), p.y.to_f64(), p.z.to_f64()]
+}
+
+/// Contours at 1, 2 and 4 threads: the same arcs, fits and work each time.
+fn fitted_contours(model: &Model, body: BodyId, d: &RVector3) -> Contours {
+    let mut reference = None;
+    let mut first = None;
+    for threads in [1, 2, 4] {
+        set_threads(NonZeroUsize::new(threads));
+        let (answer, work) = with_operation_budget(DEFAULT_BUILD_WORK, || {
+            contour_generators(model, body, d, &mut Decider::default())
+        });
+        assert!(!work.exhausted);
+        let answer = answer.unwrap();
+        assert!(answer.marks.iter().any(|m| m.code == CONTOUR_FIT_MARK));
+        assert!(work.used < TARGET, "{} work units", work.used);
+        let fits: Vec<_> = answer.value.arcs.iter().map(|a| a.fit.clone()).collect();
+        for fit in &fits {
+            let fit = fit.as_ref().expect("every spline arc is fitted");
+            assert!(fit.deviation_mm <= fit.target_mm);
+        }
+        eprintln!(
+            "{} arcs at {threads} threads, {} work, fits {:?}",
+            fits.len(),
+            work.used,
+            fits.iter()
+                .flatten()
+                .map(|f| (f.spans, f.deviation_mm))
+                .collect::<Vec<_>>()
+        );
+        let record = (work.used, fits);
+        match &reference {
+            None => {
+                reference = Some(record);
+                first = Some(answer.value);
+            }
+            Some(r) => assert_eq!(*r, record, "at {threads} threads"),
+        }
+    }
+    set_threads(None);
+    first.unwrap()
+}
+
+#[test]
+fn rational_patch_roofs_give_fitted_generators_on_their_known_curves() {
+    // The roof z = 1 + x y over the unit square has normal (-y, -x, 1). Seen
+    // along (2, 2, 1) its generator is x + y = 1/2, a parabola from
+    // (1/2, 0, 1) to (0, 1/2, 1). The joined roofs meet at x = 1/2; seen
+    // along (4, 4, 3) the generator x + y = 3/4 crosses that joint at
+    // (1/2, 1/4), one arc on each roof.
+    for (kind, d, sum, arcs) in [
+        (Roof::Bilinear, vector(2, 2, 1), 0.5, 1),
+        (Roof::Rational, vector(2, 2, 1), 0.5, 1),
+        (Roof::JoinedDegreeElevated, vector(4, 4, 3), 0.75, 2),
+        (Roof::JoinedNonlinear, vector(4, 4, 3), 0.75, 2),
+    ] {
+        let fixture = solid(kind);
+        let c = fitted_contours(&fixture.model, fixture.body, &d);
+        assert_eq!(c.arcs.len(), arcs, "{kind:?}");
+        let mut ends = Vec::new();
+        for arc in &c.arcs {
+            assert!(fixture.roofs.contains(&arc.face));
+            assert_eq!(arc.on_faces, vec![arc.face]);
+            // Within the deviation of a true point, the sample is within
+            // sqrt(2) of it from the line and three of it from the roof.
+            let bound = 4.0 * arc.fit.as_ref().unwrap().deviation_mm;
+            for p in samples(&c, arc, 64) {
+                assert!((p[0] + p[1] - sum).abs() <= bound, "{kind:?} {p:?}");
+                assert!((p[2] - 1.0 - p[0] * p[1]).abs() <= bound, "{kind:?} {p:?}");
+                assert!(p[0] >= -bound && p[1] >= -bound, "{kind:?} {p:?}");
+            }
+            ends.push(position(&c, arc.start));
+            ends.push(position(&c, arc.end));
+        }
+        // The ends lie on the roof's boundary: y = 0, x = 0 or the joint.
+        let mut xs: Vec<f64> = ends.iter().map(|p| p[0]).collect();
+        xs.sort_by(f64::total_cmp);
+        let expected: &[f64] = if arcs == 1 {
+            &[0.0, 0.5]
+        } else {
+            &[0.0, 0.5, 0.5, 0.75]
+        };
+        for (x, e) in xs.iter().zip(expected) {
+            assert!((x - e).abs() < 1e-9, "{kind:?} ends {ends:?}");
+        }
+    }
+}
+
+#[test]
+fn a_parabolic_roof_gives_its_straight_ruling() {
+    // z = 1 + x (1 - x) with a nonuniform knot in x has normal
+    // (2 x - 1, 0, 1). Seen along (2, 0, 1) its generator is the line
+    // x = 1/4, z = 19/16 across the roof.
+    let fixture = solid(Roof::NonuniformBump);
+    let c = fitted_contours(&fixture.model, fixture.body, &vector(2, 0, 1));
+    assert_eq!(c.arcs.len(), 1);
+    let arc = &c.arcs[0];
+    let bound = 2.0 * arc.fit.as_ref().unwrap().deviation_mm;
+    for p in samples(&c, arc, 64) {
+        assert!((p[0] - 0.25).abs() <= bound && (p[2] - 19.0 / 16.0).abs() <= bound);
+    }
+    let mut ys = [position(&c, arc.start)[1], position(&c, arc.end)[1]];
+    ys.sort_by(f64::total_cmp);
+    assert!(ys[0].abs() < 1e-9 && (ys[1] - 1.0).abs() < 1e-9, "{ys:?}");
+}
+
+#[test]
+fn a_lofted_barrel_gives_fitted_generators_in_the_plane_through_its_axis() {
+    // Radii 1, 2, 1 at heights 0, 1, 2 about z: a solid of revolution, whose
+    // generators seen along (1, 2, 0) lie in the plane x + 2 y = 0.
+    let recipe = Recipe::parse(include_str!(
+        "../../catallax-features/tests/fixtures/loft-natural-circles.json"
+    ))
+    .unwrap();
+    let (built, _) = with_operation_budget(DEFAULT_BUILD_WORK, || {
+        evaluate(&recipe, &mut Decider::default())
+    });
+    let built = built.unwrap();
+    let c = fitted_contours(&built.model, built.result, &vector(1, 2, 0));
+    assert!(c.arcs.len() >= 2);
+    let mut heights = Vec::new();
+    for arc in &c.arcs {
+        let bound = 2.0 * arc.fit.as_ref().unwrap().deviation_mm;
+        for p in samples(&c, arc, 32) {
+            assert!((p[0] + 2.0 * p[1]).abs() / 5.0_f64.sqrt() <= bound, "{p:?}");
+        }
+        heights.push(position(&c, arc.start)[2]);
+        heights.push(position(&c, arc.end)[2]);
+    }
+    heights.sort_by(f64::total_cmp);
+    // Two generators, one on each side, each from the bottom to the top.
+    assert!(
+        heights[0].abs() < 1e-9 && heights[1].abs() < 1e-9,
+        "{heights:?}"
+    );
+    let n = heights.len();
+    assert!((heights[n - 1] - 2.0).abs() < 1e-9 && (heights[n - 2] - 2.0).abs() < 1e-9);
 }

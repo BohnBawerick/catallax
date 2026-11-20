@@ -536,3 +536,28 @@ fn a_generator_along_two_neighbouring_flat_faces_splits_where_its_neighbour_chan
         );
     }
 }
+
+#[test]
+fn tiny_view_directions_fit_the_torus_as_unit_sized_ones_do() {
+    // Both directions square to zero in binary64. The exact power-of-two
+    // rescale keeps 2^-700 (1, -1, 1) bit for bit the same as (1, -1, 1);
+    // 1e-200 is no power of two, so its rounded direction may differ in the
+    // last place, and its fit with it.
+    let (model, body) = ring();
+    let scaled = |factor: Rational| RVector3::new(factor.clone(), -factor.clone(), factor);
+    let plain = contours(&model, body, vector(1, -1, 1));
+    let binary = contours(&model, body, scaled(Rational::one().mul_pow2(-700)));
+    let decimal = contours(&model, body, scaled(Rational::parse("1e-200").unwrap()));
+    assert_eq!(plain.arcs.len(), 2);
+    for c in [&binary, &decimal] {
+        assert_eq!(c.arcs.len(), plain.arcs.len());
+    }
+    for ((a, b), c) in plain.arcs.iter().zip(&binary.arcs).zip(&decimal.arcs) {
+        let fit = a.fit.as_ref().unwrap();
+        assert_eq!(a.fit, b.fit);
+        let other = c.fit.as_ref().unwrap();
+        assert_eq!(other.spans, fit.spans);
+        assert!(other.deviation_mm <= other.target_mm);
+        assert!((other.deviation_mm - fit.deviation_mm).abs() <= 1e-6 * fit.deviation_mm);
+    }
+}

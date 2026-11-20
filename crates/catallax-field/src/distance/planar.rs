@@ -599,7 +599,8 @@ impl Plan {
             geometry::Leaf::Smooth(_)
             | geometry::Leaf::Lattice(_)
             | geometry::Leaf::Gyroid(_)
-            | geometry::Leaf::Mesh(_) => false,
+            | geometry::Leaf::Mesh(_)
+            | geometry::Leaf::Rolling(_) => false,
         }) {
             return Ok(None);
         }

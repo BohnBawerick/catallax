@@ -46,10 +46,10 @@ pub struct Round {
     pub outside: bool,
 }
 
-fn reach(detail: &str) -> Refusal {
+pub(super) fn reach(detail: &str) -> Refusal {
     Refusal::new("field.rolling-path-reach", detail)
 }
-fn length(v: &Vector3) -> Real {
+pub(super) fn length(v: &Vector3) -> Real {
     let squared = v.norm_squared();
     squared
         .as_rational()
@@ -57,29 +57,29 @@ fn length(v: &Vector3) -> Real {
         .map(Real::from)
         .unwrap_or_else(|| squared.sqrt())
 }
-fn position(p: &Point3) -> Vector3 {
+pub(super) fn position(p: &Point3) -> Vector3 {
     p.minus(&Point3::origin())
 }
-fn local(point: &Point3) -> [Real; 3] {
+pub(super) fn local(point: &Point3) -> [Real; 3] {
     [point.x.clone(), point.y.clone(), point.z.clone()]
 }
-fn vector([x, y, z]: &[Real; 3]) -> Vector3 {
+pub(super) fn vector([x, y, z]: &[Real; 3]) -> Vector3 {
     Vector3::new(x.clone(), y.clone(), z.clone())
 }
-fn balls(v: &Vector3, dec: &mut Decider) -> Result<[Ball; 3], Refusal> {
+pub(super) fn balls(v: &Vector3, dec: &mut Decider) -> Result<[Ball; 3], Refusal> {
     Ok([
         enclose(&v.x, BITS, dec)?,
         enclose(&v.y, BITS, dec)?,
         enclose(&v.z, BITS, dec)?,
     ])
 }
-fn point_balls(p: &Point3, dec: &mut Decider) -> Result<[Ball; 3], Refusal> {
+pub(super) fn point_balls(p: &Point3, dec: &mut Decider) -> Result<[Ball; 3], Refusal> {
     balls(&position(p), dec)
 }
-fn shift(a: &[Ball; 3], t: &Ball, d: &[Ball; 3]) -> [Ball; 3] {
+pub(super) fn shift(a: &[Ball; 3], t: &Ball, d: &[Ball; 3]) -> [Ball; 3] {
     std::array::from_fn(|i| &a[i] + &(t * &d[i]))
 }
-fn positive(value: &Real, dec: &mut Decider) -> Result<bool, Refusal> {
+pub(super) fn positive(value: &Real, dec: &mut Decider) -> Result<bool, Refusal> {
     Ok(sign(value, dec)? == Sign::Positive)
 }
 
@@ -198,20 +198,23 @@ impl Path for Strip {
     fn local(&self, point: &Point3) -> [Real; 3] {
         local(point)
     }
-    fn walls(&self, local: &[Real; 3]) -> Vec<Real> {
+    fn walls(&self, local: &[Real; 3], _: &mut Decider) -> Result<Vec<Real>, Refusal> {
         let x = vector(local);
         let along = self.direction.dot(&x.minus(&position(&self.centre)));
         let rail = |foot: &Point3| x.minus(&position(foot)).dot(&self.edge.minus(foot));
-        vec![
+        Ok(vec![
             &self.normals[0].dot(&x) - &self.levels[0],
             &self.normals[1].dot(&x) - &self.levels[1],
             rail(&self.feet[0]),
             rail(&self.feet[1]),
             &along - &(&Real::from(self.ends[0].clone()) * &self.squared),
             &(&Real::from(self.ends[1].clone()) * &self.squared) - &along,
-        ]
+        ])
     }
     fn walls_are_faces(&self) -> bool {
+        true
+    }
+    fn uniform(&self) -> bool {
         true
     }
     fn separation(&self, local: &[Real; 3]) -> Option<Real> {
@@ -408,7 +411,7 @@ impl Path for Ring {
     fn local(&self, point: &Point3) -> [Real; 3] {
         local(point)
     }
-    fn walls(&self, local: &[Real; 3]) -> Vec<Real> {
+    fn walls(&self, local: &[Real; 3], _: &mut Decider) -> Result<Vec<Real>, Refusal> {
         let x = vector(local);
         let (_, w) = self.radial(&x);
         let rho = w.norm_squared();
@@ -420,14 +423,17 @@ impl Path for Ring {
         } else {
             (&body - &rho, &rho - &major)
         };
-        vec![
+        Ok(vec![
             &level - &self.level,
             wall,
             rail,
             &(&self.level + &(&self.radius * &self.unit)) - &level,
-        ]
+        ])
     }
     fn walls_are_faces(&self) -> bool {
+        true
+    }
+    fn uniform(&self) -> bool {
         true
     }
     fn separation(&self, local: &[Real; 3]) -> Option<Real> {

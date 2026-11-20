@@ -10,7 +10,8 @@
 //! [`classify`] proves strict membership in that region, as the M18 rolling
 //! region always did. [`distance`] returns a guaranteed range for the
 //! Euclidean distance from a point to `F` (Q23 of the Checkpoint 2
-//! decisions). Paths with a closed-form nearest station (lines and circles)
+//! decisions). Uniform paths with a closed-form nearest station (a straight
+//! path with constant feet, a circle whose feet turn with its meridian)
 //! evaluate it there, as OpenCASCADE's `Extrema_ExtPElC` does for elementary
 //! curves. Other paths use a whole-interval panel cover of `[-1, 1]` with
 //! lower bounds per panel and exact witness points on `F` at panel midpoints,
@@ -63,8 +64,10 @@ pub trait Path {
     type Cover: Cover;
     /// Exact local coordinates of a world point.
     fn local(&self, point: &Point3) -> [Real; 3];
-    /// Exact clip values. The fan is where every value is non-negative.
-    fn walls(&self, local: &[Real; 3]) -> Vec<Real>;
+    /// Exact clip values. The fan is where every value is non-negative. A
+    /// path may decide an exact sign to choose its formula, so it takes the
+    /// caller's decider.
+    fn walls(&self, local: &[Real; 3], dec: &mut Decider) -> Result<Vec<Real>, Refusal>;
     /// Whether a zero wall value outside every ball lies on a face of the
     /// region. Exact elementary walls are faces; looser clipping walls are not.
     fn walls_are_faces(&self) -> bool {
@@ -84,6 +87,20 @@ pub trait Path {
     /// Closed-form frame at the station nearest the point, clamped to the piece.
     fn nearest(&self, _local: &[Real; 3], _dec: &mut Decider) -> Result<Option<Frame>, Refusal> {
         Ok(None)
+    }
+    /// Whether the face is uniform along the path: a straight path whose feet
+    /// keep their offsets from the centre, or a circle whose feet turn with
+    /// its meridian. Then the face point nearest any point lies on the arc of
+    /// the station [`Path::nearest`] returns: along a straight path the squared
+    /// distance to a station's arc is the same section distance plus the
+    /// squared axial gap, least at the clamped projection; on a circle the
+    /// face is a surface of revolution, whose nearest point lies in the
+    /// point's meridian half-plane. Only a uniform path's nearest station
+    /// bounds the distance to the whole face. Elsewhere the nearest centre
+    /// says nothing about the face: with feet that turn along a straight
+    /// path, another station's arc can be much nearer.
+    fn uniform(&self) -> bool {
+        false
     }
 }
 
@@ -194,7 +211,7 @@ pub fn classify<P: Path>(path: &P, point: &Point3, dec: &mut Decider) -> Result<
     dec.charge_work(1)?;
     let local = path.local(point);
     let mut wall = false;
-    for c in path.walls(&local) {
+    for c in path.walls(&local, dec)? {
         match sign(&c, dec)? {
             Sign::Negative => return Ok(Relation::Exterior),
             Sign::Zero => wall = true,
@@ -276,7 +293,9 @@ pub fn distance<P: Path>(
         enclose(&local[1], BITS, dec)?,
         enclose(&local[2], BITS, dec)?,
     ];
-    if let Some(frame) = path.nearest(&local, dec)? {
+    if path.uniform()
+        && let Some(frame) = path.nearest(&local, dec)?
+    {
         let cover = path.frames(dec)?;
         let (lower, upper) = arc_bounds(&p, &frame, cover.radius())?;
         let converged = &upper - &lower <= *width;

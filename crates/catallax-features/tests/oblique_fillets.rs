@@ -556,11 +556,31 @@ fn measuring_a_band_against_its_definition_is_exact() {
     assert_eq!(wrong.upper, q("1/4"));
 }
 
+/// 4.2a step 2: the field derives the ellipse of ball centres itself and
+/// agrees with the B-rep on both sides of the band.
 #[test]
-fn the_field_still_refuses_an_oblique_band() {
+fn the_field_builds_an_oblique_band() {
     let rounded = recipe(rim(), Some(("1", edge("start"))));
-    let field = Plan::compile_checked(&rounded, &mut decider()).unwrap_err();
-    assert_eq!(field.code, "fillet.lost-edge");
+    let field = Plan::compile_checked(&rounded, &mut decider()).unwrap();
+    let mut storage = catallax_field::Workspace::default();
+    for (points, want) in [
+        (
+            [["24/5", "0", "47/10"], ["-43/10", "0", "991/100"]],
+            catallax_field::Location::Inside,
+        ),
+        (
+            [["99/20", "0", "239/50"], ["-24/5", "0", "541/50"]],
+            catallax_field::Location::Outside,
+        ),
+    ] {
+        for p in points {
+            let [x, y, z] = p.map(q);
+            let query = field
+                .proven_checked(&RPoint3::new(x, y, z), &mut storage, &mut decider())
+                .unwrap();
+            assert_eq!(query.location, want, "{p:?}");
+        }
+    }
 }
 
 #[test]

@@ -126,8 +126,8 @@ impl<P: Path> Path for Panels<'_, P> {
     fn local(&self, point: &Point3) -> [Real; 3] {
         self.0.local(point)
     }
-    fn walls(&self, local: &[Real; 3]) -> Vec<Real> {
-        self.0.walls(local)
+    fn walls(&self, local: &[Real; 3], dec: &mut Decider) -> Result<Vec<Real>, Refusal> {
+        self.0.walls(local, dec)
     }
     fn walls_are_faces(&self) -> bool {
         self.0.walls_are_faces()
@@ -615,4 +615,90 @@ fn frame_bounds_are_used_through_the_public_cover() {
     let h = frame.feet[0][1].clone();
     assert!(h.lo() < q("1.7321") && h.hi() > q("1.7320"));
     assert!(frame.feet[1][1].contains(&Rational::zero()));
+}
+
+/// A unit-radius straight centre line `c(t) = (t, 0, 0)` whose feet turn: at
+/// station `t` the face arc spans 45 degrees either side of the angle
+/// `2 pi t - pi / 2` in the normal plane. It offers the naive nearest hook
+/// (the projection onto the line) but is not uniform.
+struct Turning;
+#[derive(Clone)]
+struct TurningCover(catallax_numbers::Ball);
+impl Cover for TurningCover {
+    fn radius(&self) -> &catallax_numbers::Ball {
+        &self.0
+    }
+    fn centre(&self, u: &catallax_numbers::Ball) -> Result<[catallax_numbers::Ball; 3], Refusal> {
+        let zero = catallax_numbers::Ball::from_rational(&Rational::zero(), 96);
+        Ok([u.clone(), zero.clone(), zero])
+    }
+    fn frame(&self, u: &catallax_numbers::Ball) -> Result<Frame, Refusal> {
+        use catallax_numbers::Ball;
+        let pi = Ball::pi(96);
+        let ball = |s: &str| Ball::from_rational(&q(s), 96);
+        let middle = &(&(&ball("2") * &pi) * u) - &(&pi * &ball("1/2"));
+        let quarter = &pi * &ball("1/4");
+        let foot = |angle: Ball| [u.clone(), angle.cos(), angle.sin()];
+        Ok(Frame {
+            centre: self.centre(u)?,
+            tangent: [ball("1"), ball("0"), ball("0")],
+            feet: [foot(&middle - &quarter), foot(&middle + &quarter)],
+        })
+    }
+}
+impl Path for Turning {
+    type Cover = TurningCover;
+    fn local(&self, point: &Point3) -> [Real; 3] {
+        [point.x.clone(), point.y.clone(), point.z.clone()]
+    }
+    fn walls(&self, _: &[Real; 3], _: &mut Decider) -> Result<Vec<Real>, Refusal> {
+        Ok(vec![])
+    }
+    fn cover(&self, _: &mut Decider) -> Result<TurningCover, Refusal> {
+        Ok(TurningCover(catallax_numbers::Ball::from_rational(
+            &Rational::one(),
+            96,
+        )))
+    }
+    fn nearest(&self, local: &[Real; 3], dec: &mut Decider) -> Result<Option<Frame>, Refusal> {
+        let x = dec.enclose_budgeted_at(&local[0], 96)?;
+        self.cover(dec)?.frame(&x).map(Some)
+    }
+}
+
+/// Post-merge review of step 1: the arc of the nearest centre bounds the
+/// distance to the whole face only on uniform paths. At `(0, 0, 1)` the
+/// projection's arc lies within 45 degrees of `-z`, at least
+/// `sqrt(2 + sqrt 2) > 1.8` away, while the arc at `t = 3/8` reaches `+z` at
+/// `(3/8, 0, 1)`. The true distance, about 0.3703, lies a little nearer still.
+#[test]
+fn a_nearest_centre_bounds_the_face_only_on_uniform_paths() {
+    let point = Point3::new(r("0"), r("0"), r("1"));
+    let mut dec = decider();
+    let range = path::distance(&Turning, &point, &q("1/1000000"), &mut dec).unwrap();
+    assert!(range.converged, "{range:?}");
+    assert!(range.upper.as_ref().unwrap() <= &q("3/8"), "{range:?}");
+    assert!(range.lower >= q("36/100"), "{range:?}");
+    // A dense independent sampling of the arcs agrees.
+    let mut best = f64::MAX;
+    for i in 0..=200_000 {
+        let t = -1.0 + 2.0 * f64::from(i) / 200_000.0;
+        let middle = 2.0 * std::f64::consts::PI * t - std::f64::consts::FRAC_PI_2;
+        let lo = middle - std::f64::consts::FRAC_PI_4;
+        let hi = middle + std::f64::consts::FRAC_PI_4;
+        let reach = if lo <= std::f64::consts::FRAC_PI_2 && std::f64::consts::FRAC_PI_2 <= hi {
+            1.0
+        } else {
+            lo.sin().max(hi.sin())
+        };
+        best = best.min((t * t + 2.0 - 2.0 * reach).sqrt());
+    }
+    assert!(
+        range.lower.to_f64_nearest() <= best + 1e-12,
+        "{range:?} {best}"
+    );
+    assert!(
+        range.upper.as_ref().unwrap().to_f64_nearest() >= best - 1e-6,
+        "{range:?} {best}"
+    );
 }

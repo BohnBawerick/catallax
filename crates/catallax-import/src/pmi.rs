@@ -15,8 +15,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use catallax_numbers::Rational;
 use catallax_step::pmi::{
-    Anchor, At, Characteristic, Datum, Feature, GeometricTolerance, Item, ItemKind, Limits,
-    Location, MaterialCondition, PartNotes, Pmi, Process, Size, SizeKind, SurfaceTexture,
+    Anchor, At, Characteristic, Datum, Feature, GeometricTolerance, HOLE_DEPTH, Item, ItemKind,
+    Limits, Location, MaterialCondition, PartNotes, Pmi, Process, Size, SizeKind, SurfaceTexture,
+    THROUGH,
 };
 
 use crate::ImportRefusal;

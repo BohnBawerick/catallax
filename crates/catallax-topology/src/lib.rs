@@ -6,6 +6,11 @@
 //!
 //! The contract is `docs/pieces/03-topology.md`.
 
+// The tests inside this crate share fixtures with the tests under `tests/`,
+// which name the crate from outside.
+#[cfg(test)]
+extern crate self as catallax_topology;
+
 mod bezier_extrusion;
 mod build;
 mod check;

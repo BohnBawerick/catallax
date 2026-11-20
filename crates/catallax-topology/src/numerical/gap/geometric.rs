@@ -134,7 +134,7 @@ fn copy_point(lifted: &Lifted, on_face: bool, x: f64, scratch: &mut Scratch) -> 
 }
 
 /// Takes one evaluation from what is left of an allowance.
-fn spend(left: &mut u64) -> Option<()> {
+pub(super) fn spend(left: &mut u64) -> Option<()> {
     *left = left.checked_sub(1)?;
     Some(())
 }

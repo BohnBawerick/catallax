@@ -778,11 +778,37 @@ const TOLERANCE_EXCEEDED: &str = "numbers.numerical-tolerance-exceeded";
 /// is still over the cap refuses, and the refusal says the user may opt in.
 ///
 /// A body that is admitted as imported and is not admitted with a
-/// reparametrised copy is returned as imported.
+/// reparametrised copy is returned as imported, unless the refusal says
+/// that work or time ran out.
+///
+/// Work: everything the gap rule does with one edge use draws on that use's
+/// one allowance, the checker's hard per-edge cap (section 4.2 step 8). A
+/// use that spends it refuses the admission with `numerical.gap-work-cap`.
+/// The same refusal from the admission of the new copies is returned by
+/// name too, and so are the operation's allowance and its deadline. The
+/// body as imported is not returned in their place.
 pub fn admit_import(
     definition: NumericalDefinition,
     native_trims: Vec<NumericalNativeTrim>,
     options: NumericalOptions,
+    dec: &mut Decider,
+) -> Result<NumericalBody, Refusal> {
+    admit_import_within(
+        definition,
+        native_trims,
+        options,
+        gap::Limits::default(),
+        dec,
+    )
+}
+
+/// [`admit_import`] with the work allowance the gap rule gives each edge
+/// use. It is the checker's cap; only the tests that spend it pass less.
+fn admit_import_within(
+    definition: NumericalDefinition,
+    native_trims: Vec<NumericalNativeTrim>,
+    options: NumericalOptions,
+    each_use: gap::Limits,
     dec: &mut Decider,
 ) -> Result<NumericalBody, Refusal> {
     if options.tolerance_mm > tolerance::import_opt_in_limit_mm() {
@@ -807,8 +833,9 @@ pub fn admit_import(
         Err(refusal) if refusal.code == TOLERANCE_EXCEEDED => None,
         Err(_) => return first,
     };
-    let (reparametrised, mut rows) =
-        guarded(|| import_gap::settle(&definition, &native_trims, known.as_deref(), dec))?;
+    let (reparametrised, mut rows) = guarded(|| {
+        import_gap::settle(&definition, &native_trims, known.as_deref(), each_use, dec)
+    })?;
     let with_new_copies = reparametrised.map(|native_trims| {
         admit_under_cap(definition.clone(), native_trims, options.clone(), dec)
     });
@@ -844,7 +871,9 @@ fn admit_under_cap(
 
 /// Rule T3 after `refusal` at the cap: refits the face copies over the cap
 /// on a probe admitted at the opt-in limit, and admits the definition again
-/// under the caller's cap with the refitted copies.
+/// under the caller's cap with the refitted copies. A probe that is refused
+/// leaves `refusal` as the answer, unless work or time ran out on it: that
+/// refusal, the work cap of an edge among them, keeps its own name.
 fn refit_under_cap(
     definition: NumericalDefinition,
     native_trims: Vec<NumericalNativeTrim>,
@@ -858,7 +887,13 @@ fn refit_under_cap(
         tolerance::import_options(tolerance::import_opt_in_limit_mm()),
         dec,
     )
-    .map_err(|_| refusal.clone())?;
+    .map_err(|probe| {
+        if import_gap::resource_limit(&probe) {
+            probe
+        } else {
+            refusal.clone()
+        }
+    })?;
     let (refitted, rows) = probe.refit_face_copies(&options.tolerance_mm, dec)?;
     if rows.is_empty() {
         return Err(opt_in_refusal(refusal));

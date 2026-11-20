@@ -5,6 +5,7 @@ use super::a_plus::copies;
 use super::exact::*;
 use super::*;
 use crate::numerical::gap::{self, GapMeasure, GeometricMeasure, Hints, Limits, refit};
+use crate::numerical::import_gap::{self, ImportGapOutcome, UseReading};
 
 fn read(geometry: &EdgeGeometry) -> (GapMeasure, GeometricMeasure) {
     let mut dec = Decider::default();
@@ -89,7 +90,7 @@ fn a_stretched_copy_has_no_geometric_gap_and_one_span_gives_it_the_edge_paramete
     assert!((parametric.raw_mm - 5.7e-5).abs() < 1e-12, "{parametric:?}");
     assert!(geometric.reported_mm() < 1e-12, "{geometric:?}");
     let mut dec = Decider::default();
-    let next = refit::reparametrise(&copies(&case.geometry), 1e-7, &mut dec)
+    let next = refit::reparametrise(&copies(&case.geometry), 1e-7, Limits::default(), &mut dec)
         .expect("reparametrise")
         .expect("a change of parameter");
     println!(
@@ -117,7 +118,7 @@ fn a_circle_against_its_rational_copy_is_a_difference_of_speed() {
     assert!(geometric.reported_mm() < 1e-12, "{geometric:?}");
     let mut dec = Decider::default();
     let floor = tolerance::floor_minimum_mm().to_f64_nearest();
-    let next = refit::reparametrise(&copies(&case.geometry), floor, &mut dec)
+    let next = refit::reparametrise(&copies(&case.geometry), floor, Limits::default(), &mut dec)
         .expect("reparametrise")
         .expect("a change of parameter");
     println!(
@@ -155,7 +156,7 @@ fn a_stretched_arc_on_a_wider_cylinder_keeps_its_radial_gap() {
 
     let mut dec = Decider::default();
     let target = gap::MARGIN * gap::MARGIN * geometric.reported_mm();
-    let next = refit::reparametrise(&copies(&geometry), target, &mut dec)
+    let next = refit::reparametrise(&copies(&geometry), target, Limits::default(), &mut dec)
         .expect("reparametrise")
         .expect("a change of parameter");
     println!(
@@ -271,6 +272,224 @@ fn the_geometric_reading_counts_its_work_and_refuses_at_the_cap() {
     assert_eq!(recharged.used, charged.used);
 }
 
+fn floor_mm() -> f64 {
+    tolerance::floor_minimum_mm().to_f64_nearest()
+}
+
+/// The gap rule for one edge use under an allowance of `work` units, and the
+/// work it charged to the operation.
+fn rule(geometry: &EdgeGeometry, work: u64) -> (Result<Option<UseReading>, Refusal>, u64) {
+    let (read, charged) = with_operation_budget(DEFAULT_WORK, || {
+        import_gap::read_use(
+            &copies(geometry),
+            Limits { work },
+            floor_mm(),
+            &mut Decider::default(),
+        )
+    });
+    (read, charged.used)
+}
+
+/// The three uses whose copies run at different speeds: the stretch of edge
+/// 8, the rational circle of edge 14, and the stretched arc on its wider
+/// cylinder.
+fn uses_at_different_speeds() -> [(&'static str, EdgeGeometry); 3] {
+    [
+        (
+            "08-parameter-stretch",
+            fixed_case("08-parameter-stretch").geometry,
+        ),
+        (
+            "14-circle-against-rational-copy",
+            fixed_case("14-circle-against-rational-copy").geometry,
+        ),
+        (
+            "stretched-arc-on-a-wider-cylinder",
+            arc_on_wider_cylinder("1e-4", "1e-4", "0"),
+        ),
+    ]
+}
+
+/// Section 4.2 step 8: "A hard per-edge work cap refuses by name." The rule
+/// does three things with a use: it reads the same-parameter gap, reads the
+/// geometric gap, and changes the parameter. This is the small-allowance
+/// control that the three draw on one allowance and that nothing stands in
+/// for the refusal.
+///
+/// Read alone, each of the three fits an allowance one unit short of their
+/// sum, so an allowance that started again for any of them would let the use
+/// through. Under that one allowance the rule refuses by name. It refuses by
+/// name under every smaller allowance tried as well: it never answers with
+/// the copy as imported, nor with a candidate it read before the allowance
+/// ran out. Every smaller allowance is tried for a use of under 1,024 units,
+/// and about 512 of them, evenly spread, for a larger one. Under exactly the
+/// sum the rule passes, with the answer and the work of the full cap: the
+/// last step is the checker on the last candidate, and a reading of the
+/// checker spends all it sets aside.
+#[test]
+fn everything_the_rule_does_with_a_use_draws_on_one_allowance() {
+    let mut text = String::new();
+    for (name, geometry) in &uses_at_different_speeds() {
+        let (full, charged) = rule(geometry, gap::EDGE_WORK);
+        let full = full.expect("the full cap").expect("a use the rule reads");
+        assert_eq!(full.outcome, ImportGapOutcome::Reparametrised, "{name}");
+        let next = full.reparametrised.as_ref().expect("a new copy");
+        let steps = [full.parametric.work, full.geometric.work, next.work];
+        let total: u64 = steps.iter().sum();
+        assert!(total < gap::EDGE_WORK);
+
+        // Alone, each step fits an allowance one unit short of the total.
+        let short = Limits { work: total - 1 };
+        let copies = copies(geometry);
+        let mut dec = Decider::default();
+        let parametric = gap::measure(&copies, &Hints::default(), short, &mut dec).expect("alone");
+        assert_eq!(parametric.work, steps[0]);
+        let geometric = gap::measure_geometric(&copies, &Hints::default(), short, &mut dec)
+            .expect("alone")
+            .expect("a copy with its own u/v");
+        assert_eq!(geometric.work, steps[1]);
+        let target = (gap::MARGIN * gap::MARGIN * geometric.reported_mm()).max(floor_mm());
+        let alone = refit::reparametrise(&copies, target, short, &mut dec)
+            .expect("alone")
+            .expect("a new copy");
+        assert_eq!(alone.work, steps[2]);
+
+        // Together they do not, and no smaller allowance gives any answer
+        // but the refusal: a spread of them, and the ones at which a step
+        // would just fit if the steps before it had cost nothing.
+        let spread = (0..total).step_by((total / 512).max(1) as usize);
+        let edges = [steps[0], steps[0] + steps[1], steps[2], total - 1];
+        for work in spread.chain(edges) {
+            let (refused, spent) = rule(geometry, work);
+            match refused {
+                Err(refusal) => assert_eq!(
+                    refusal.code, "numerical.gap-work-cap",
+                    "{name}: {work} of {total} units"
+                ),
+                Ok(answer) => panic!(
+                    "{name}: {work} of {total} units gave {:?}",
+                    answer.map(|answer| answer.outcome)
+                ),
+            }
+            // Work done before a refusal is charged, and it is less.
+            assert!(spent < charged, "{name}: {spent} against {charged}");
+        }
+
+        let (same, recharged) = rule(geometry, total);
+        let same = same
+            .expect("the sum of the steps is enough")
+            .expect("a use the rule reads");
+        let again = same.reparametrised.as_ref().expect("a new copy");
+        assert_eq!(same.outcome, full.outcome);
+        assert_eq!(again.stored_mm.to_bits(), next.stored_mm.to_bits());
+        assert_eq!(again.spans, next.spans);
+        assert!(again.curve.same_definition(&next.curve));
+        assert_eq!(again.work, next.work);
+        assert_eq!(recharged, charged);
+        text.push_str(&format!(
+            "use={name} same_parameter_work={} geometric_work={} change_of_parameter_work={} least_allowance={total} spans={} operation_work={charged}\n",
+            steps[0], steps[1], steps[2], next.spans
+        ));
+    }
+    print!("{text}");
+    publish("known-answers-import-allowance.txt", &text);
+}
+
+/// The change of parameter counts its projections and the checker's work on
+/// every candidate, and nothing starts again when the spans double.
+///
+/// The candidates of edge 14 are stepped through one at a time: a target no
+/// copy misses stops the fit at its first candidate, and each candidate's
+/// stored tolerance, lowered by one unit in the last place, stops it at the
+/// next. From one stop to the next the fit's count rises by more than the
+/// checker's own work on the new candidate, which is that work and the
+/// projections of the doubling. So the count at the last candidate holds the
+/// projections and the checker's work on every candidate before it.
+///
+/// The checker reads each candidate alone under an allowance of exactly its
+/// own work there. The largest of those allowances, which is all a cap that
+/// started again per candidate would ask for, is not enough for the fit: it
+/// refuses by name, and so it does one unit short of its count.
+#[test]
+fn a_change_of_parameter_counts_its_projections_and_every_candidate() {
+    let geometry = fixed_case("14-circle-against-rational-copy").geometry;
+    let copies = copies(&geometry);
+    let floor = floor_mm();
+    let fit = |target: f64, work: u64| {
+        with_operation_budget(DEFAULT_WORK, || {
+            refit::reparametrise(&copies, target, Limits { work }, &mut Decider::default())
+        })
+    };
+    let (full, charged) = fit(floor, gap::EDGE_WORK);
+    let full = full.expect("the full cap").expect("a new copy");
+
+    let mut target = f64::INFINITY;
+    let mut counted = 0;
+    let mut largest = 0;
+    let mut candidates = 0;
+    loop {
+        let stop = fit(target, gap::EDGE_WORK)
+            .0
+            .expect("the full cap")
+            .expect("a candidate");
+        let alone = gap::measure(
+            &gap::EdgeCopies {
+                face_copy: gap::FaceCopyRef::Native(&stop.curve),
+                ..copies
+            },
+            &Hints::default(),
+            Limits::default(),
+            &mut Decider::default(),
+        )
+        .expect("the checker on one candidate");
+        assert_eq!(alone.stored_mm().to_bits(), stop.stored_mm.to_bits());
+        gap::measure(
+            &gap::EdgeCopies {
+                face_copy: gap::FaceCopyRef::Native(&stop.curve),
+                ..copies
+            },
+            &Hints::default(),
+            Limits { work: alone.work },
+            &mut Decider::default(),
+        )
+        .expect("one candidate under its own work");
+        assert!(
+            stop.work > counted + alone.work,
+            "{} spans: {} after {counted} with {} for the candidate",
+            stop.spans,
+            stop.work,
+            alone.work
+        );
+        counted = stop.work;
+        largest = largest.max(alone.work);
+        candidates += 1;
+        if stop.spans == full.spans {
+            break;
+        }
+        target = stop.stored_mm.next_down();
+    }
+    assert!(candidates > 1, "edge 14 doubles its spans");
+    assert_eq!(counted, full.work);
+    // The operation is charged at least what the fit counted.
+    assert!(charged.used > full.work);
+
+    let (one_candidate, _) = fit(floor, largest);
+    assert_eq!(
+        one_candidate.expect_err("capped").code,
+        "numerical.gap-work-cap"
+    );
+    let (short, spent) = fit(floor, full.work - 1);
+    assert_eq!(short.expect_err("capped").code, "numerical.gap-work-cap");
+    assert!(spent.used < charged.used);
+    // Nothing at all refuses before the first projection.
+    let (none, _) = fit(floor, 0);
+    assert_eq!(none.expect_err("capped").code, "numerical.gap-work-cap");
+    println!(
+        "edge 14: {candidates} candidates, {} units counted, {largest} for the largest candidate alone, {} charged to the operation",
+        full.work, charged.used
+    );
+}
+
 /// A curve projected on a plane has no u/v of its own: there is nothing to
 /// read geometrically and nothing to reparametrise.
 #[test]
@@ -300,7 +519,7 @@ fn a_projected_copy_has_no_geometric_reading() {
             .is_none()
     );
     assert!(
-        refit::reparametrise(&copies, 1e-7, &mut dec)
+        refit::reparametrise(&copies, 1e-7, Limits::default(), &mut dec)
             .expect("read")
             .is_none()
     );

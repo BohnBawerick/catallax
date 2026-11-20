@@ -26,12 +26,18 @@
 //! tolerance under the target or the span limit is reached. Every candidate
 //! is measured by the A+ checker, so a copy is kept only on what the checker
 //! reads.
+//!
+//! The work of a change of parameter is held to the one allowance of its
+//! edge use (section 4.2 step 8: "A hard per-edge work cap refuses by
+//! name"). It comes after two readings of the same use, so it is handed what
+//! they left, and every projection, every reading of the old copy and the
+//! checker's work on every candidate is drawn from that remainder (`Drawn`).
 
 use catallax_numbers::{Decider, Rational, Real, Refusal};
 use catallax_shapes::{BSplineCurve, Curve, Point3};
 
 use super::geometric::{self, Way};
-use super::{EdgeCopies, FaceCopyRef, Hints, Limits, lift, measure};
+use super::{EdgeCopies, FaceCopyRef, Hints, Limits, lift, measure, work_cap};
 
 /// Source: the span limit of the fitter of `numerical_embedding.rs`
 /// (`MAX_SPANS`), which builds the same kind of copy.
@@ -52,6 +58,11 @@ pub struct Refit {
     pub stored_mm: f64,
     /// Spans of the new copy.
     pub spans: usize,
+    /// Work the fit counted: the evaluations of its feet and the checker's
+    /// work on every candidate, kept or not. A change of parameter also
+    /// counts each reading of the old copy, and all of it was drawn from the
+    /// allowance it was given.
+    pub work: u64,
 }
 
 fn exact(value: f64) -> Result<Rational, Refusal> {
@@ -64,12 +75,92 @@ fn exact(value: f64) -> Result<Rational, Refusal> {
 }
 
 /// Where the nodes of a new face copy are read.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, Debug)]
 enum Nodes {
     /// The foot of the 3D point on the surface.
     SurfaceFoot,
-    /// The old copy, where its lift is nearest the 3D point.
-    OldCopy,
+    /// The old copy, where its lift is nearest the 3D point. The limits are
+    /// what the edge use has left of its one work allowance.
+    OldCopy(Limits),
+}
+
+/// The work one fit has counted, and what it may still count.
+///
+/// A change of parameter (decision Q9) is the third reading of one edge use,
+/// after its same-parameter gap and its geometric gap, and section 4.2 step 8
+/// gives an edge one hard work cap. So the fit starts from what those two
+/// readings left. Every foot, every reading of the old copy and the
+/// checker's work on every candidate is taken from that one remainder, and
+/// where it runs out the use refuses by name. Nothing restarts between
+/// candidates.
+///
+/// A refit from the 3D curve (rules T3, T7 and T8) is not a later reading of
+/// a use: its feet are charged to the operation, and each candidate is
+/// another copy that the checker measures under its own cap. It only counts.
+struct Drawn {
+    /// Units counted so far.
+    spent: u64,
+    /// The most the fit may count: the remainder of the use's allowance, for
+    /// a change of parameter.
+    limit: Option<u64>,
+}
+
+impl Drawn {
+    fn new(nodes_from: Nodes) -> Self {
+        Self {
+            spent: 0,
+            limit: match nodes_from {
+                Nodes::SurfaceFoot => None,
+                Nodes::OldCopy(limits) => Some(limits.work),
+            },
+        }
+    }
+
+    /// What is left to count.
+    fn left(&self) -> u64 {
+        self.limit
+            .map_or(u64::MAX, |limit| limit.saturating_sub(self.spent))
+    }
+
+    /// The limits the checker measures the next candidate under: what is
+    /// left of the use's allowance, or the checker's own cap for a refit.
+    fn candidate(&self) -> Limits {
+        match self.limit {
+            Some(_) => Limits { work: self.left() },
+            None => Limits::default(),
+        }
+    }
+
+    /// Runs `work`, which takes each unit from what is left before it spends
+    /// it and gives `None` where that runs out. What it took is counted and
+    /// charged to the operation whether or not it finished. Where the
+    /// allowance ran out the named refusal is the answer, also when the
+    /// operation's own allowance is gone as well.
+    fn draw<T>(
+        &mut self,
+        dec: &mut Decider,
+        work: impl FnOnce(&mut u64) -> Option<T>,
+    ) -> Result<T, Refusal> {
+        let before = self.left();
+        let mut left = before;
+        let found = work(&mut left);
+        let taken = before - left;
+        self.spent += taken;
+        let charged = if taken == 0 {
+            Ok(())
+        } else {
+            dec.charge_work(taken)
+        };
+        let found = found.ok_or_else(|| {
+            work_cap(&format!(
+                "an edge spent its work allowance before its face copy had the edge's \
+                 parameter; {} units were spent on the change of parameter",
+                self.spent
+            ))
+        })?;
+        charged?;
+        Ok(found)
+    }
 }
 
 /// Refits the face copy of one edge use until rule T4's stored tolerance is
@@ -91,6 +182,14 @@ pub fn refit(
 /// until rule T4's stored tolerance is at most `target_mm`; the best
 /// candidate the checker read is returned.
 ///
+/// `limits` is what the edge use has left of its one work allowance after
+/// the readings that came first. One unit is counted per evaluation of
+/// either copy while a foot is found and per reading of the old copy, and
+/// the checker counts its own units on each candidate. All of them are taken
+/// from `limits` and charged to the operation. Where `limits` runs out the
+/// use refuses with `numerical.gap-work-cap`; no candidate read before that
+/// is returned in its place.
+///
 /// `None` for a copy that has no u/v of its own, and where the old copy has
 /// no valid change of parameter: the nearest points must ascend along it as
 /// the 3D curve is run through, which is the order OpenCASCADE's
@@ -98,9 +197,10 @@ pub fn refit(
 pub fn reparametrise(
     copies: &EdgeCopies<'_>,
     target_mm: f64,
+    limits: Limits,
     dec: &mut Decider,
 ) -> Result<Option<Refit>, Refusal> {
-    fit(copies, target_mm, Nodes::OldCopy, dec)
+    fit(copies, target_mm, Nodes::OldCopy(limits), dec)
 }
 
 /// Source: Dennis and Schnabel 1983, section 5.4: a forward difference takes
@@ -122,6 +222,7 @@ fn fit(
     }
     let lifted = lift::lift(copies, dec)?;
     let mut scratch = lift::Scratch::default();
+    let mut drawn = Drawn::new(nodes_from);
     let [lo, hi] = lifted.range();
     let mut breaks = vec![lo];
     if let Curve::BSpline(curve) = copies.curve {
@@ -133,7 +234,7 @@ fn fit(
         }
     }
     breaks.push(hi);
-    if let (Nodes::OldCopy, FaceCopyRef::Native(old)) = (nodes_from, copies.face_copy) {
+    if let (Nodes::OldCopy(_), FaceCopyRef::Native(old)) = (nodes_from, copies.face_copy) {
         // The old copy is smooth between its knots only, and so is the new
         // one between the places where those knots land on the 3D curve.
         let mut last = None;
@@ -143,10 +244,9 @@ fn fit(
                 continue;
             }
             last = Some(k);
-            let mut left = u64::MAX;
-            let landed = geometric::foot(&lifted, &mut scratch, Way::Backward, k, &mut left)
-                .expect("an unlimited allowance");
-            dec.charge_work(u64::MAX - left)?;
+            let landed = drawn.draw(dec, |left| {
+                geometric::foot(&lifted, &mut scratch, Way::Backward, k, left)
+            })?;
             if !breaks.iter().any(|b| same_node(*b, landed.foot, hi - lo)) {
                 breaks.push(landed.foot);
             }
@@ -183,17 +283,24 @@ fn fit(
                     Nodes::SurfaceFoot => {
                         let seed = old(t, &mut scratch);
                         let (uv, evaluations) = lifted.foot(t, seed, &mut scratch);
+                        drawn.spent += evaluations;
                         dec.charge_work(evaluations)?;
                         Ok((uv, t))
                     }
-                    // The two ends of the old copy stay the ends of the new.
-                    Nodes::OldCopy if t <= lo || t >= hi => Ok((old(t, &mut scratch), t)),
-                    Nodes::OldCopy => {
-                        let mut left = u64::MAX;
-                        let found =
-                            geometric::foot(&lifted, &mut scratch, Way::Forward, t, &mut left)
-                                .expect("an unlimited allowance");
-                        dec.charge_work(u64::MAX - left)?;
+                    // The two ends of the old copy stay the ends of the new:
+                    // one reading of the old copy.
+                    Nodes::OldCopy(_) if t <= lo || t >= hi => {
+                        drawn.draw(dec, geometric::spend)?;
+                        Ok((old(t, &mut scratch), t))
+                    }
+                    // The foot, then one reading of the old copy there.
+                    Nodes::OldCopy(_) => {
+                        let found = drawn.draw(dec, |left| {
+                            let found =
+                                geometric::foot(&lifted, &mut scratch, Way::Forward, t, left)?;
+                            geometric::spend(left)?;
+                            Some(found)
+                        })?;
                         Ok((old(found.foot, &mut scratch), found.foot))
                     }
                 }
@@ -255,9 +362,10 @@ fn fit(
                 ..*copies
             },
             &Hints::default(),
-            Limits::default(),
+            drawn.candidate(),
             dec,
         )?;
+        drawn.spent += found.work;
         // A copy that leaves a spline surface's domain is refused by
         // admission, so it is no candidate.
         let stored_mm = if found.domain_exit.is_some() {
@@ -271,6 +379,7 @@ fn fit(
                 curve,
                 stored_mm,
                 spans,
+                work: 0,
             });
         }
         if stored_mm <= target_mm || !better {
@@ -278,5 +387,8 @@ fn fit(
         }
         cuts *= 2;
     }
-    Ok(best)
+    Ok(best.map(|best| Refit {
+        work: drawn.spent,
+        ..best
+    }))
 }

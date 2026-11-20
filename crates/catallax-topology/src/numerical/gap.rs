@@ -39,7 +39,8 @@
 //! outside this search: `geometric.rs` reads the geometric gap of an edge use
 //! both ways, `refit.rs` gives a face copy the parameter of its 3D curve, and
 //! `numerical::admit_import` decides between them (decision Q9). The search
-//! above then measures the copy that is kept.
+//! above then measures the copy that is kept. All of that draws on the one
+//! work allowance of the edge use ([`Limits`]).
 //!
 //! All arithmetic is IEEE basic operations in one thread, so the result is
 //! the same bits on every machine and at any thread count.
@@ -358,6 +359,10 @@ pub struct Limits {
     /// evaluation, one sample and mode pair of a tail transform, or one
     /// domain probe: everything the measurement does that grows with the
     /// edge.
+    ///
+    /// An edge use has one allowance. Where a use is read more than once,
+    /// as the gap rule for imports reads it, each reading is given what the
+    /// readings before it left, so the cap holds for all of them together.
     pub work: u64,
 }
 
@@ -468,7 +473,7 @@ fn unsupported(detail: &str) -> Refusal {
 /// The checker's refusal when an edge would spend more than its allowance.
 /// Source: decision Q6, section 4.2 step 8: a hard per-edge work cap refuses
 /// by name.
-const WORK_CAP: &str = "numerical.gap-work-cap";
+pub(super) const WORK_CAP: &str = "numerical.gap-work-cap";
 
 fn work_cap(detail: &str) -> Refusal {
     Refusal::new(WORK_CAP, detail)

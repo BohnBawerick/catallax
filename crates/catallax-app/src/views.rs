@@ -31,8 +31,13 @@
 //! `app.contour-trim`, and horn or spindle torus sheets with
 //! `app.contour-surface`, rather than return a partial outline.
 //!
-//! [`hidden_line_view`] cuts the edges and generators where visibility can
+//! [`hidden_line_view`](crate::views::hidden_line_view) cuts the edges and generators where visibility can
 //! change and marks each piece visible or hidden (`hidden.rs`).
+//!
+//! [`drawing_curve`](crate::views::drawing_curve) and its companions turn edges, face loops, hidden-line
+//! strokes and section pieces into the binary64 lines, arcs, circles and
+//! NURBS a drawing takes (`drawing.rs`). Plane sections, cut face by face
+//! with the same trimming as the generators, are in `section.rs`.
 
 use catallax_boolean::face_contains;
 use catallax_intersect::{
@@ -51,12 +56,18 @@ use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense};
 use crate::ApplicationBody;
 use crate::queries::{QueryRefusal, perpendicular, query, sign};
 
+mod drawing;
 mod fit;
 mod float;
 mod hidden;
+pub(crate) mod section;
 mod spline;
 mod torus;
 
+pub use drawing::{
+    DRAWING_FIT_MARK, DrawingCurve, DrawnCurve, DrawnEdge, drawing_curve, edge_drawing,
+    face_drawing_loops, stroke_drawing,
+};
 pub use hidden::{
     HiddenLineView, StrokeSource, VIEW_RAY_MARK, VIEW_SPLIT_MARK, ViewStroke, hidden_line_view,
 };
@@ -66,8 +77,9 @@ pub use hidden::{
 /// proof.
 pub const CONTOUR_FIT_MARK: &str = "app.contour-fitted";
 
-/// How far a fitted arc may lie from the true contour generator. Decision
-/// Q14 marks such pieces approximate; exact arcs have none.
+/// How far a fitted arc may lie from the true contour generator, or a
+/// fitted drawing curve from the true curve. Decision Q14 marks such pieces
+/// approximate; exact arcs have none.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ContourFit {
     /// The largest distance found between the fitted carrier and the true
@@ -256,7 +268,12 @@ fn polar_plane(
     })
 }
 
-fn same_point(model: &Model, a: PointId, b: PointId, dec: &mut Decider) -> Result<bool, Refusal> {
+pub(crate) fn same_point(
+    model: &Model,
+    a: PointId,
+    b: PointId,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
     let (a, b) = (model.geom().position(a), model.geom().position(b));
     Ok(sign(&a.minus(&b).norm_squared(), dec)? == 0)
 }
@@ -430,9 +447,57 @@ fn face_generators(
     if carriers.is_empty() {
         return Ok(());
     }
-    // Every place a boundary carrier crosses the polar plane. Points off the
-    // edge's own span only split a carrier further; the membership test of
-    // each piece decides, and kept neighbours are merged again.
+    let boundary = boundary_cuts(scratch, face, plane, marks, dec)?;
+    for carrier in carriers {
+        dec.check_deadline()?;
+        let pieces = carrier_pieces(
+            scratch,
+            body_faces,
+            face,
+            carrier,
+            &boundary,
+            &[],
+            marks,
+            dec,
+        )?;
+        let keys = pieces
+            .labels
+            .iter()
+            .map(|l| l.as_ref().map(|along| along.faces.clone()))
+            .collect();
+        for (span, on_faces) in runs(&pieces.spans, keys, pieces.closed) {
+            arcs.push(ContourArc {
+                face,
+                curve: carrier,
+                start: span.0,
+                end: span.1,
+                on_faces,
+                fit: None,
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Where a face's boundary meets a plane.
+pub(crate) struct Boundary {
+    /// Every place a boundary carrier crosses the plane, and the ends of
+    /// boundary edges in it. Points off the edge's own span only split a
+    /// carrier further; the membership test of each piece decides, and kept
+    /// neighbours are merged again.
+    cuts: Vec<PointId>,
+    /// Boundary edges whose carriers lie in the plane.
+    pub(crate) in_plane: Vec<EdgeId>,
+}
+
+/// The boundary of `face` against `plane`.
+pub(crate) fn boundary_cuts(
+    scratch: &mut Model,
+    face: FaceId,
+    plane: SurfaceId,
+    marks: &mut MarkLog,
+    dec: &mut Decider,
+) -> Result<Boundary, Refusal> {
     let mut cuts: Vec<PointId> = Vec::new();
     let mut in_plane: Vec<EdgeId> = Vec::new();
     for lp in scratch.face(face).loops.clone() {
@@ -459,103 +524,149 @@ fn face_generators(
             }
         }
     }
-    for carrier in carriers {
-        dec.check_deadline()?;
-        let closed = curve_is_closed(scratch.geom(), carrier, dec)?;
-        let mut on: Vec<PointId> = Vec::new();
-        for &cut in &cuts {
-            if !lies_on(scratch, carrier, cut, dec)? {
-                continue;
-            }
-            let mut seen = false;
-            for &kept in &on {
-                if same_point(scratch, cut, kept, dec)? {
-                    seen = true;
-                    break;
-                }
-            }
-            if !seen {
-                on.push(cut);
-            }
-        }
-        sort_along(scratch, carrier, closed, &mut on, dec)?;
-        // Pieces between consecutive cuts. An open carrier is unbounded, so
-        // the face, being finite, holds none of its two outer pieces.
-        let pieces: Vec<(Option<PointId>, Option<PointId>)> = if closed && on.len() < 2 {
-            vec![(None, None)]
-        } else if closed {
-            (0..on.len())
-                .map(|i| (Some(on[i]), Some(on[(i + 1) % on.len()])))
-                .collect()
-        } else {
-            on.windows(2).map(|w| (Some(w[0]), Some(w[1]))).collect()
-        };
-        // Each piece kept by the face, with the faces it lies on. Every
-        // in-plane edge's ends are cuts, so a piece lies along an edge's span
-        // entirely or not at all, and one interior point decides both.
-        let mut labels: Vec<Option<Vec<FaceId>>> = Vec::with_capacity(pieces.len());
-        for &(start, end) in &pieces {
-            let interior = arc_point(scratch.geom(), carrier, start, end, dec)?;
-            marks.extend(&interior.marks);
-            labels.push(if face_contains(scratch, face, &interior.value, dec)? {
-                Some(lies_along(
-                    scratch,
-                    body_faces,
-                    face,
-                    &interior.value,
-                    &in_plane,
-                    dec,
-                )?)
-            } else {
-                None
-            });
-        }
-        // Merge runs of neighbouring kept pieces that lie on the same faces,
-        // so that `on_faces` holds along the whole arc. On a closed carrier a
-        // run may wrap round; a carrier kept everywhere on one set of faces
-        // is one whole closed arc.
-        let n = pieces.len();
-        let arc = |span: (Option<PointId>, Option<PointId>), on: &Option<Vec<FaceId>>| ContourArc {
-            face,
-            curve: carrier,
-            start: span.0,
-            end: span.1,
-            on_faces: on.clone().expect("a kept piece"),
-            fit: None,
-        };
-        if closed && labels[0].is_some() && labels.iter().all(|l| *l == labels[0]) {
-            arcs.push(arc((None, None), &labels[0]));
-            continue;
-        }
-        // Start a closed carrier where one run ends and another begins.
-        let first = if closed {
-            (0..n)
-                .find(|&i| labels[i] != labels[(i + n - 1) % n])
-                .unwrap_or(0)
-        } else {
-            0
-        };
-        let mut run: Option<(usize, usize)> = None;
-        for step in 0..n {
-            let i = (first + step) % n;
-            if let Some((s, e)) = run
-                && labels[i] != labels[s]
-            {
-                arcs.push(arc((pieces[s].0, pieces[e].1), &labels[s]));
-                run = None;
-            }
-            if labels[i].is_some() {
-                run = Some(run.map_or((i, i), |(s, _)| (s, i)));
-            }
-        }
-        if let Some((s, e)) = run {
-            arcs.push(arc((pieces[s].0, pieces[e].1), &labels[s]));
-        }
-    }
-    Ok(())
+    Ok(Boundary { cuts, in_plane })
 }
 
-/// The faces a kept piece lies on: its own face, and both faces of every
+/// What a kept piece lies on.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Along {
+    /// Its own face, and both faces of every in-plane boundary edge whose
+    /// span holds it, in `faces_of_body` order.
+    pub(crate) faces: Vec<FaceId>,
+    /// The first in-plane boundary edge whose span holds it.
+    pub(crate) edge: Option<EdgeId>,
+}
+
+/// The ends of a piece of a carrier: both `None` for the whole closed
+/// carrier.
+pub(crate) type Ends = (Option<PointId>, Option<PointId>);
+
+/// One carrier cut where the face boundary crosses it.
+pub(crate) struct Pieces {
+    /// Pieces between consecutive cuts, in order along the carrier.
+    pub(crate) spans: Vec<Ends>,
+    /// For each piece, what it lies on when the face holds it.
+    pub(crate) labels: Vec<Option<Along>>,
+    /// The carrier is closed.
+    pub(crate) closed: bool,
+}
+
+/// Cuts `carrier`, which lies in the plane of `boundary`, at the boundary's
+/// cuts and at `extra` points of its own, and labels the pieces `face`
+/// holds.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn carrier_pieces(
+    scratch: &mut Model,
+    body_faces: &[FaceId],
+    face: FaceId,
+    carrier: CurveId,
+    boundary: &Boundary,
+    extra: &[PointId],
+    marks: &mut MarkLog,
+    dec: &mut Decider,
+) -> Result<Pieces, Refusal> {
+    let closed = curve_is_closed(scratch.geom(), carrier, dec)?;
+    let mut on: Vec<PointId> = Vec::new();
+    for &cut in boundary.cuts.iter().chain(extra) {
+        if !lies_on(scratch, carrier, cut, dec)? {
+            continue;
+        }
+        let mut seen = false;
+        for &kept in &on {
+            if same_point(scratch, cut, kept, dec)? {
+                seen = true;
+                break;
+            }
+        }
+        if !seen {
+            on.push(cut);
+        }
+    }
+    sort_along(scratch, carrier, closed, &mut on, dec)?;
+    // Pieces between consecutive cuts. An open carrier is unbounded, so
+    // the face, being finite, holds none of its two outer pieces.
+    let spans: Vec<Ends> = if closed && on.len() < 2 {
+        vec![(None, None)]
+    } else if closed {
+        (0..on.len())
+            .map(|i| (Some(on[i]), Some(on[(i + 1) % on.len()])))
+            .collect()
+    } else {
+        on.windows(2).map(|w| (Some(w[0]), Some(w[1]))).collect()
+    };
+    // Each piece kept by the face, with what it lies on. Every in-plane
+    // edge's ends are cuts, so a piece lies along an edge's span entirely
+    // or not at all, and one interior point decides both.
+    let mut labels: Vec<Option<Along>> = Vec::with_capacity(spans.len());
+    for &(start, end) in &spans {
+        let interior = arc_point(scratch.geom(), carrier, start, end, dec)?;
+        marks.extend(&interior.marks);
+        labels.push(if face_contains(scratch, face, &interior.value, dec)? {
+            Some(lies_along(
+                scratch,
+                body_faces,
+                face,
+                &interior.value,
+                &boundary.in_plane,
+                dec,
+            )?)
+        } else {
+            None
+        });
+    }
+    Ok(Pieces {
+        spans,
+        labels,
+        closed,
+    })
+}
+
+/// Merges runs of neighbouring kept pieces with equal keys, so that a key
+/// holds along the whole of each run; a piece without a key is dropped. On
+/// a closed carrier a run may wrap round; a carrier kept everywhere with one
+/// key is one whole closed run.
+pub(crate) fn runs<K: Clone + PartialEq>(
+    spans: &[Ends],
+    keys: Vec<Option<K>>,
+    closed: bool,
+) -> Vec<(Ends, K)> {
+    let n = spans.len();
+    let mut out = Vec::new();
+    if n == 0 {
+        return out;
+    }
+    if closed && keys[0].is_some() && keys.iter().all(|k| *k == keys[0]) {
+        out.push(((None, None), keys[0].clone().expect("kept")));
+        return out;
+    }
+    // Start a closed carrier where one run ends and another begins.
+    let first = if closed {
+        (0..n)
+            .find(|&i| keys[i] != keys[(i + n - 1) % n])
+            .unwrap_or(0)
+    } else {
+        0
+    };
+    let mut run: Option<(usize, usize)> = None;
+    for step in 0..n {
+        let i = (first + step) % n;
+        if let Some((s, e)) = run
+            && keys[i] != keys[s]
+        {
+            out.push(((spans[s].0, spans[e].1), keys[s].clone().expect("kept")));
+            run = None;
+        }
+        if keys[i].is_some() {
+            run = Some(run.map_or((i, i), |(s, _)| (s, i)));
+        }
+    }
+    if let Some((s, e)) = run {
+        out.push(((spans[s].0, spans[e].1), keys[s].clone().expect("kept")));
+    }
+    out
+}
+
+/// What a kept piece lies on: its own face, and both faces of every
 /// in-plane boundary edge whose span holds the piece's interior point. The
 /// span decides, not the edge's carrier alone: two edges on one line can
 /// border different faces.
@@ -566,8 +677,9 @@ fn lies_along(
     interior: &Point3,
     in_plane: &[EdgeId],
     dec: &mut Decider,
-) -> Result<Vec<FaceId>, Refusal> {
+) -> Result<Along, Refusal> {
     let mut on = vec![face];
+    let mut along = None;
     if !in_plane.is_empty() {
         let probe = scratch
             .geom_mut()
@@ -576,6 +688,7 @@ fn lies_along(
             if !on_edge_span(scratch, edge, probe, dec)? {
                 continue;
             }
+            along.get_or_insert(edge);
             for coedge in scratch.coedges_of_edge(edge) {
                 if let Some((_, other)) = scratch.owner_of_coedge(coedge)
                     && !on.contains(&other)
@@ -587,7 +700,10 @@ fn lies_along(
         }
     }
     on.sort_by_key(|f| body_faces.iter().position(|g| g == f));
-    Ok(on)
+    Ok(Along {
+        faces: on,
+        edge: along,
+    })
 }
 
 /// Whether `point`, which is not a vertex, lies on the span of `edge`: on its
@@ -600,25 +716,43 @@ fn on_edge_span(
     dec: &mut Decider,
 ) -> Result<bool, Refusal> {
     let stored = scratch.edge(edge);
-    let curve = stored.curve;
+    // An edge without vertices is its whole closed carrier.
+    let ends = match (stored.start, stored.end) {
+        (Some(start), Some(end)) => {
+            let (start, end) = (scratch.vertex(start).point, scratch.vertex(end).point);
+            Some(match stored.sense {
+                Sense::Same => [start, end],
+                Sense::Reversed => [end, start],
+            })
+        }
+        _ => None,
+    };
+    on_span(scratch, stored.curve, ends, point, dec)
+}
+
+/// Whether `point`, which is neither end, lies on the arc of `curve` from
+/// `ends[0]` to `ends[1]` along the curve's natural direction: on the
+/// carrier, and on an open carrier between the ends, on a closed one on the
+/// arc between them. No ends, or two equal ends, mean the whole carrier.
+pub(crate) fn on_span(
+    scratch: &Model,
+    curve: CurveId,
+    ends: Option<[PointId; 2]>,
+    point: PointId,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
     if !lies_on(scratch, curve, point, dec)? {
         return Ok(false);
     }
-    let (Some(start), Some(end)) = (stored.start, stored.end) else {
-        // An edge without vertices is its whole closed carrier.
+    let Some([start, end]) = ends else {
         return Ok(true);
     };
-    let (start, end) = (scratch.vertex(start).point, scratch.vertex(end).point);
     let geom = scratch.geom();
     if curve_is_closed(geom, curve, dec)? {
         if same_point(scratch, start, end, dec)? {
             return Ok(true);
         }
-        let order = match stored.sense {
-            Sense::Same => [start, point, end],
-            Sense::Reversed => [end, point, start],
-        };
-        return match cyclic_order(geom, curve, order, dec) {
+        return match cyclic_order(geom, curve, [start, point, end], dec) {
             Outcome::Proven(order) => Ok(order == Cyclic::Forward),
             Outcome::ProvenCoincident(_) => Ok(false),
             Outcome::NotExact(n) => Err(Refusal::from(n)),

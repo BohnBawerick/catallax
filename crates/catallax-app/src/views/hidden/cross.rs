@@ -187,6 +187,73 @@ fn search(
     }
 }
 
+/// Whether the steps between consecutive control points of a piece on the
+/// sheet all lie in one open half-plane, so that the piece moves strictly
+/// forward along some sheet direction and cannot cross itself.
+///
+/// Source: the quotient rule on the rational Bezier form
+/// `C = sum w_i B_i P_i / W` gives
+/// `C' = sum_{i > j} w_i w_j (B_i' B_j - B_i B_j') (P_i - P_j) / W^2`, and
+/// `B_i' B_j - B_i B_j'` is nonnegative for `i > j` because `B_k' / B_k =
+/// k / t - (n - k) / (1 - t)` grows with `k` (Floater, "Derivatives of
+/// rational Bezier curves", CAGD 9, 1992, derives the same nonnegative
+/// form). So with positive weights the sheet derivative lies in the cone of
+/// the forward differences `P_i - P_j`, each a sum of consecutive steps.
+/// Sederberg and Meyers ("Loop detection in surface patch intersections",
+/// CAGD 5, 1988) rule out loops with the same cone test.
+fn monotone(ctrl: &[H2]) -> bool {
+    let mut angles: Vec<f64> = ctrl
+        .windows(2)
+        .filter_map(|w| {
+            let d = sub2(cartesian(&w[1]), cartesian(&w[0]));
+            above(dot2(d, d), 0.0).then(|| d[1].atan2(d[0]))
+        })
+        .collect();
+    if angles.is_empty() {
+        return true;
+    }
+    angles.sort_by(f64::total_cmp);
+    let n = angles.len();
+    // The steps lie in an open half-plane exactly when some gap between
+    // their directions, taken round the circle, exceeds a half turn.
+    let widest = (0..n)
+        .map(|i| {
+            if i + 1 < n {
+                angles[i + 1] - angles[i]
+            } else {
+                angles[0] + std::f64::consts::TAU - angles[n - 1]
+            }
+        })
+        .fold(0.0, f64::max);
+    above(widest, std::f64::consts::PI)
+}
+
+/// Crossings of one piece with itself on the sheet: a piece that is not
+/// [`monotone`] is halved, the halves searched against each other, and each
+/// half against itself. A crossing found where the halves meet is their
+/// shared joint, which the caller drops. A piece flat within `tol` holds no
+/// crossing the floor can resolve.
+fn self_search(a: &[H2], ra: [f64; 2], depth: usize, tol: f64, out: &mut Found, work: &mut u64) {
+    *work += 1;
+    if depth >= DEPTH || flat(a, tol) || monotone(a) {
+        return;
+    }
+    let (left, right) = split(a, 0.5);
+    let mid = (ra[0] + ra[1]) / 2.0;
+    search(
+        &left,
+        [ra[0], mid],
+        &right,
+        [mid, ra[1]],
+        depth + 1,
+        tol,
+        out,
+        work,
+    );
+    self_search(&left, [ra[0], mid], depth + 1, tol, out, work);
+    self_search(&right, [mid, ra[1]], depth + 1, tol, out, work);
+}
+
 /// The unit roundoff of a parameter range's largest end, doubled, as in
 /// `trace.rs`.
 fn resolution(range: [f64; 2]) -> f64 {
@@ -248,8 +315,9 @@ fn polish(
 }
 
 /// Crossings of `a` over `ra` with `b` over `rb` on the sheet, within twice
-/// rule T1's floor `tol`. For `same`, the stroke against itself: distinct
-/// pieces only, and both parameters are cuts. Where the two run together on
+/// rule T1's floor `tol`. For `same`, the stroke against itself: each pair
+/// of distinct pieces, and each piece against itself through
+/// [`self_search`], with both parameters cuts. Where the two run together on
 /// the sheet, only the ends of each common stretch count, with their own
 /// parameter as `u` too.
 #[allow(clippy::too_many_arguments)]
@@ -269,6 +337,16 @@ pub(super) fn crossings(
     let mut runs: Vec<[f64; 2]> = Vec::new();
     for (i, x) in pa.iter().enumerate() {
         let xa = project(sheet, &x.ctrl);
+        if same {
+            let mut local = Found::default();
+            self_search(&xa, [0.0, 1.0], 0, tol, &mut local, work);
+            starts.extend(
+                local
+                    .crossings
+                    .into_iter()
+                    .map(|(s, t)| (x.map.native(s), x.map.native(t))),
+            );
+        }
         for (j, y) in pb.iter().enumerate() {
             if same && j <= i {
                 continue;
@@ -317,9 +395,13 @@ pub(super) fn crossings(
         if within(start.0) {
             continue;
         }
-        let c = polish(sheet, a, ra, b, rb, start, work);
+        let mut c = polish(sheet, a, ra, b, rb, start, work);
         if c.residual > 2.0 * tol {
             continue;
+        }
+        // Against itself a crossing and its swap are one; keep `t <= u`.
+        if same && c.u < c.t {
+            (c.t, c.u) = (c.u, c.t);
         }
         // Against itself, neighbouring pieces share their joint: one point
         // in space, not a crossing of two points at different depths.
@@ -581,6 +663,68 @@ mod tests {
         for c in &found {
             assert!(c.residual < 1e-14);
         }
+    }
+
+    /// The reviewer's control for PR 726: `S(t) = (u^2, u^3 - u / 16, t)`
+    /// with `u = t - 1/2` is one cubic span. Seen down z, `t = 1/4` and
+    /// `t = 3/4` both land on `(1/16, 0)` at different depths, with
+    /// nonparallel sheet tangents: a crossing inside a single span.
+    #[test]
+    fn a_single_span_that_crosses_itself_is_cut_at_both_points() {
+        // Bernstein controls of a cubic `f` on `[0, 1]`: `f(0)`,
+        // `f(0) + f'(0) / 3`, `f(1) - f'(1) / 3`, `f(1)`.
+        let ctrl = vec![
+            [0.25, -3.0 / 32.0, 0.0, 1.0],
+            [-1.0 / 12.0, 13.0 / 96.0, 1.0 / 3.0, 1.0],
+            [-1.0 / 12.0, -13.0 / 96.0, 2.0 / 3.0, 1.0],
+            [0.25, 3.0 / 32.0, 1.0, 1.0],
+        ];
+        let geo = Geo::Spline {
+            spans: vec![super::super::geo::Span {
+                lo: 0.0,
+                hi: 1.0,
+                ctrl,
+            }],
+        };
+        let mut work = 0;
+        let found = crossings(
+            &sheet(),
+            &geo,
+            [0.0, 1.0],
+            &geo,
+            [0.0, 1.0],
+            true,
+            1e-7,
+            &mut work,
+        );
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert!((found[0].t - 0.25).abs() < 1e-12, "{found:?}");
+        assert!((found[0].u - 0.75).abs() < 1e-12, "{found:?}");
+        assert!(found[0].residual < 1e-14);
+        // A span that only bends does not cross itself.
+        let arc = Geo::Spline {
+            spans: vec![super::super::geo::Span {
+                lo: 0.0,
+                hi: 1.0,
+                ctrl: vec![
+                    [0.0, 0.0, 0.0, 1.0],
+                    [1.0, 2.0, 0.0, 1.0],
+                    [2.0, 2.0, 0.0, 1.0],
+                    [3.0, 0.0, 0.0, 1.0],
+                ],
+            }],
+        };
+        let found = crossings(
+            &sheet(),
+            &arc,
+            [0.0, 1.0],
+            &arc,
+            [0.0, 1.0],
+            true,
+            1e-7,
+            &mut work,
+        );
+        assert!(found.is_empty(), "{found:?}");
     }
 
     #[test]

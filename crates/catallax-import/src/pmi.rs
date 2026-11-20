@@ -129,8 +129,7 @@ fn decode(raw: &str) -> String {
             && let Some(end) = body.find("\\X0\\")
         {
             // UTF-16 code units, so a pair of surrogates is one character.
-            let units: Vec<u16> = body[..end]
-                .as_bytes()
+            let units: Vec<u16> = body.as_bytes()[..end]
                 .chunks(4)
                 .filter_map(|chunk| u16::from_str_radix(std::str::from_utf8(chunk).ok()?, 16).ok())
                 .collect();
@@ -382,8 +381,34 @@ impl<'a> Reader<'a> {
                 _ => return None,
             }
         };
-        let scale = unit_millimetres(self.g, reference(unit)?, 0).ok()?;
+        let scale = self.millimetres(reference(unit)?, 0)?;
         Some((name.unwrap_or_default(), &number(value)? * &scale))
+    }
+
+    /// Millimetres in one length unit. The importer's own conversion reads a
+    /// factor written as `LENGTH_MEASURE_WITH_UNIT`; files also write it as a
+    /// plain `MEASURE_WITH_UNIT` holding a length measure.
+    fn millimetres(&self, unit: u64, depth: u32) -> Option<Rational> {
+        if let Ok(scale) = unit_millimetres(self.g, unit, 0) {
+            return Some(scale);
+        }
+        if depth >= 8 {
+            return None;
+        }
+        let entity = self.entity(unit)?;
+        entity.part("LENGTH_UNIT")?;
+        let factor = reference(entity.part("CONVERSION_BASED_UNIT")?.get(1))?;
+        let factor = self.entity(factor)?;
+        if factor.parts.len() != 1 || factor.type_name() != "MEASURE_WITH_UNIT" {
+            return None;
+        }
+        let params = factor.parts[0].1.as_slice();
+        if !matches!(params.first(), Some(Param::Typed(kind, _)) if kind.contains("LENGTH_MEASURE"))
+        {
+            return None;
+        }
+        let value = number(params.first()).filter(|value| *value > Rational::zero())?;
+        Some(&value * &self.millimetres(reference(params.get(1))?, depth + 1)?)
     }
 
     fn datum_letter(&self, datum: u64) -> Option<String> {
@@ -416,7 +441,19 @@ impl<'a> Reader<'a> {
                 continue;
             }
             name = name.or_else(|| self.id_attribute(relating));
-            features.push(self.one_feature(relating)?);
+            // A datum feature is one feature however many faces it has. As a
+            // group it stands for each member on its own, which only one can.
+            let members = self.features(relating, 0)?;
+            if self.has(relating, "COMPOSITE_GROUP_SHAPE_ASPECT") && members.len() != 1 {
+                return Err("it is on each feature of a pattern".into());
+            }
+            let mut faces: Feature<String> = Vec::new();
+            for face in members.into_iter().flatten() {
+                if !faces.contains(&face) {
+                    faces.push(face);
+                }
+            }
+            features.push(faces);
         }
         let [feature] = <[Feature<String>; 1]>::try_from(features)
             .map_err(|_| "it does not have exactly one datum feature")?;
@@ -491,10 +528,21 @@ impl<'a> Reader<'a> {
                         upper: bound(1)?,
                     }
                 }
-                "LIMITS_AND_FITS" => Limits::Fit {
-                    deviation: string(fields.first()).unwrap_or_default(),
-                    grade: string(fields.get(2)).unwrap_or_default(),
-                },
+                "LIMITS_AND_FITS" => {
+                    // Written as `H` and `7`, or whole as `H7` in either field.
+                    let class = format!(
+                        "{}{}",
+                        string(fields.first()).unwrap_or_default().trim(),
+                        string(fields.get(2)).unwrap_or_default().trim()
+                    );
+                    let split = class
+                        .find(|c: char| c.is_ascii_digit())
+                        .unwrap_or(class.len());
+                    Limits::Fit {
+                        deviation: class[..split].to_owned(),
+                        grade: class[split..].to_owned(),
+                    }
+                }
                 other => return Err(format!("its limits are a {other}")),
             });
         }

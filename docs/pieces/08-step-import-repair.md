@@ -313,6 +313,9 @@ datum reference with a modifier, an item on geometry other than faces. A
 tolerance whose datum was skipped is skipped too. The only refusal is a file
 that is not readable Part 21 text.
 
+`cargo run -p catallax-import --example step_pmi -- part.step` prints what a
+file reads as and every item left out.
+
 ## Immutable source
 
 The file bytes are stored unchanged and addressed by `sha256`. The recipe step keeps `file` and `decisions`. A repaired derivative is a separate artifact derived from (source hash, approved change record); it is never written back over the source and can be rebuilt from the two inputs. A hash mismatch is a recipe error, not geometry.

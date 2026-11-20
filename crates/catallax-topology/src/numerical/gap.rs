@@ -318,18 +318,20 @@ fn cut_lines(
 
 /// Parameters in `(from, to)` where the face copy crosses a cut line of the
 /// surface. The face copy is one polynomial or rational piece on the interval.
-/// Returns the work spent.
+///
+/// Each cut line and each halving of its root search is one unit of the
+/// edge's allowance, taken before that work is done. The search stops with
+/// the named refusal where the allowance runs out.
 fn crossings(
-    lifted: &Lifted,
+    search: &mut Search<'_>,
     from: f64,
     to: f64,
-    most: u64,
     out: &mut Vec<f64>,
-) -> Result<u64, Refusal> {
-    let mut work = 0;
+) -> Result<(), Refusal> {
+    let lifted = search.lifted;
     // Homogeneous Bezier coefficients (u w, v w, w) of the face copy.
     let piece: Vec<[f64; 3]> = match &lifted.face {
-        Face64::Projected => return Ok(work),
+        Face64::Projected => return Ok(()),
         Face64::Linear { ends } => {
             let [a, b] = lifted.parameters;
             [from, to]
@@ -372,31 +374,39 @@ fn crossings(
             ));
         }
         lines.clear();
-        cut_lines(&lifted.surface, axis, [lo, hi], most, &mut lines)?;
+        cut_lines(&lifted.surface, axis, [lo, hi], search.left(), &mut lines)?;
         for line in &lines {
+            // The visit to this line, then its halvings one by one.
+            search.reserve(1)?;
             let coefficients: Vec<f64> = piece.iter().map(|c| c[axis] - line * c[2]).collect();
             let size = piece
                 .iter()
                 .fold(line.abs(), |sum, c| sum.max((c[axis] / c[2]).abs()));
             shares.clear();
+            let mut left = search.left();
             let halvings = numeric::sign_changes(
                 &coefficients,
                 numeric::UNIT_ROUNDOFF * numeric::roundings(piece.len() - 1) * size,
                 &mut shares,
-            );
-            work += 1 + halvings;
+                &mut left,
+            )
+            .ok_or_else(|| {
+                work_cap("an edge spent its work allowance before its breaks were found")
+            })?;
+            search.reserve(halvings)?;
             out.extend(shares.iter().map(|share| from + share * (to - from)));
         }
     }
-    Ok(work)
+    Ok(())
 }
 
 /// Every break of the edge in ascending order, both ends included.
 ///
-/// Planning draws on the same allowance as sampling. Each break is one unit
-/// and each crossing search costs its halvings; both are debited from the
-/// edge's allowance and charged as they are done, so the search that follows
-/// starts with what planning left.
+/// Planning draws on the same allowance as sampling. Each break is one unit,
+/// and so is each cut line a piece is tested against and each halving of
+/// that test. Every unit is taken from the edge's allowance before its work
+/// is done, so planning stops where the allowance runs out and the search
+/// that follows starts with what planning left.
 fn breaks(search: &mut Search<'_>, hints: &Hints, dec: &mut Decider) -> Result<Vec<f64>, Refusal> {
     let lifted = search.lifted;
     let [lo, hi] = lifted.range();
@@ -419,13 +429,8 @@ fn breaks(search: &mut Search<'_>, hints: &Hints, dec: &mut Decider) -> Result<V
     // Between these cuts the face copy is one polynomial or rational piece.
     let mut crossed = Vec::new();
     for pair in cuts.windows(2) {
-        // No more seams are listed than the allowance has units left.
-        let left = search.limit.saturating_sub(search.spent());
-        let work = crossings(lifted, pair[0], pair[1], left, &mut crossed)?;
-        if work > 0 {
-            search.reserve(work)?;
-            search.settle(dec)?;
-        }
+        crossings(search, pair[0], pair[1], &mut crossed)?;
+        search.settle(dec)?;
     }
     cuts.extend(crossed.into_iter().filter(inside));
     cuts.sort_by(f64::total_cmp);
@@ -496,6 +501,11 @@ impl Search<'_> {
         self.evaluations + self.other
     }
 
+    /// What is left of the edge's allowance.
+    fn left(&self) -> u64 {
+        self.limit.saturating_sub(self.spent())
+    }
+
     fn sample(&mut self, t: f64) -> Result<Sample, Refusal> {
         if self.spent() >= self.limit {
             return Err(work_cap(
@@ -515,7 +525,7 @@ impl Search<'_> {
     /// Counts work other than a residual evaluation against the cap, before
     /// that work is done.
     fn reserve(&mut self, units: u64) -> Result<(), Refusal> {
-        if units > self.limit.saturating_sub(self.spent()) {
+        if units > self.left() {
             return Err(work_cap(
                 "an edge spent its work allowance before its gap was resolved",
             ));
@@ -530,6 +540,9 @@ impl Search<'_> {
     /// often.
     fn settle(&mut self, dec: &mut Decider) -> Result<(), Refusal> {
         let due = self.spent() - self.charged;
+        if due == 0 {
+            return Ok(());
+        }
         self.charged = self.spent();
         dec.charge_work(due)
     }
@@ -637,7 +650,7 @@ pub fn measure(
     let planned_work = plan.iter().fold(1_u64, |sum, piece| {
         sum + piece.points as u64 + 1 + numeric::chebyshev_tail_pairs(piece.points) + probes
     });
-    if planned_work > limit.saturating_sub(search.spent()) {
+    if planned_work > search.left() {
         return Err(work_cap(
             "the first sample plan of an edge is larger than its work allowance",
         ));

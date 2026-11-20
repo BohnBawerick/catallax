@@ -180,14 +180,21 @@ const ROOT_DEPTH: u32 = 40;
 /// Source: Lane and Riesenfeld, "Bounds on a polynomial", BIT 21, 1981.
 /// `zero` is the magnitude below which a value counts as zero. A root at an
 /// end of the piece is the piece's own border and is not reported, and a
-/// polynomial that is zero throughout has no crossings. Returns the number
-/// of halvings.
-pub(super) fn sign_changes(coefficients: &[f64], zero: f64, roots: &mut Vec<f64>) -> u64 {
-    let mut work = 0;
+/// polynomial that is zero throughout has no crossings.
+///
+/// `allowance` is the number of halvings the caller can still pay for. One
+/// is taken from it before each halving. Returns the halvings done, or
+/// `None` when the allowance ran out first; the search stops there.
+pub(super) fn sign_changes(
+    coefficients: &[f64],
+    zero: f64,
+    roots: &mut Vec<f64>,
+    allowance: &mut u64,
+) -> Option<u64> {
+    let before = *allowance;
     // A polynomial of degree n has at most n roots.
     let most = roots.len() + coefficients.len() - 1;
-    halve(coefficients, zero, [0.0, 1.0], 0, most, roots, &mut work);
-    work
+    halve(coefficients, zero, [0.0, 1.0], 0, most, roots, allowance).then(|| before - *allowance)
 }
 
 fn halve(
@@ -197,8 +204,8 @@ fn halve(
     depth: u32,
     most: usize,
     roots: &mut Vec<f64>,
-    work: &mut u64,
-) {
+    allowance: &mut u64,
+) -> bool {
     // A zero at an end of the cell was reported by the caller, or is the
     // border of the whole piece. Divide it out: b(s) = s q(s) or (1 - s) q(s).
     let mut c = coefficients.to_vec();
@@ -213,17 +220,21 @@ fn halve(
             .collect();
     }
     if c.len() <= 1 || roots.len() >= most {
-        return;
+        return true;
     }
     if c.iter().all(|x| *x > zero) || c.iter().all(|x| *x < -zero) {
-        return;
+        return true;
     }
     let middle = cell[0] + (cell[1] - cell[0]) / 2.0;
     if depth == ROOT_DEPTH {
         roots.push(middle);
-        return;
+        return true;
     }
-    *work += 1;
+    // Paid for before it is done.
+    if *allowance == 0 {
+        return false;
+    }
+    *allowance -= 1;
     let n = c.len();
     let (mut left, mut right, mut row) = (c.clone(), c.clone(), c);
     for level in 1..n {
@@ -237,16 +248,23 @@ fn halve(
     if right[0].abs() <= zero {
         roots.push(middle);
     }
-    halve(&left, zero, [cell[0], middle], depth + 1, most, roots, work);
     halve(
+        &left,
+        zero,
+        [cell[0], middle],
+        depth + 1,
+        most,
+        roots,
+        allowance,
+    ) && halve(
         &right,
         zero,
         [middle, cell[1]],
         depth + 1,
         most,
         roots,
-        work,
-    );
+        allowance,
+    )
 }
 
 /// The `count` Chebyshev points of the first kind in `(0, 1)`, ascending:
@@ -487,17 +505,43 @@ mod tests {
             power[0] + power[1] + power[2],
         ];
         let mut roots = Vec::new();
-        sign_changes(&bernstein, 1e-15, &mut roots);
+        let mut allowance = u64::MAX;
+        let halvings = sign_changes(&bernstein, 1e-15, &mut roots, &mut allowance).expect("paid");
+        assert_eq!(u64::MAX - allowance, halvings);
         roots.sort_by(f64::total_cmp);
         assert_eq!(roots.len(), 2);
         assert!((roots[0] - 0.25).abs() < 1e-10 && (roots[1] - 0.6).abs() < 1e-10);
         let mut none = Vec::new();
-        assert_eq!(sign_changes(&[0.0, 0.0, 0.0], 1e-15, &mut none), 0);
+        let free = |coefficients: &[f64], roots: &mut Vec<f64>| {
+            sign_changes(coefficients, 1e-15, roots, &mut u64::MAX.clone())
+        };
+        assert_eq!(free(&[0.0, 0.0, 0.0], &mut none), Some(0));
         // A root at the piece's own end is not a crossing inside it.
-        assert_eq!(sign_changes(&[0.0, 1.05], 1e-15, &mut none), 0);
-        assert_eq!(sign_changes(&[-0.3, -0.1, 0.0], 1e-15, &mut none), 0);
-        sign_changes(&[1.0, 2.0, 0.5], 1e-15, &mut none);
+        assert_eq!(free(&[0.0, 1.05], &mut none), Some(0));
+        assert_eq!(free(&[-0.3, -0.1, 0.0], &mut none), Some(0));
+        free(&[1.0, 2.0, 0.5], &mut none);
         assert!(none.is_empty());
+        // The allowance is taken before each halving. With exactly enough
+        // the search finishes on its last unit; with one less it stops, and
+        // with none it does not halve at all.
+        let mut exact = halvings;
+        assert_eq!(
+            sign_changes(&bernstein, 1e-15, &mut Vec::new(), &mut exact),
+            Some(halvings)
+        );
+        assert_eq!(exact, 0);
+        let mut short = halvings - 1;
+        assert_eq!(
+            sign_changes(&bernstein, 1e-15, &mut Vec::new(), &mut short),
+            None
+        );
+        assert_eq!(short, 0);
+        let (mut empty, mut found) = (0, Vec::new());
+        assert_eq!(
+            sign_changes(&bernstein, 1e-15, &mut found, &mut empty),
+            None
+        );
+        assert!(found.is_empty());
     }
 
     #[test]

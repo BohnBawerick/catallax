@@ -371,6 +371,31 @@ fn the_closing_probes_count_inside_the_cap() {
     }
 }
 
+/// Planning stops where the allowance runs out: on an edge whose face copy
+/// crosses surface knot lines, every allowance below what the edge needs
+/// refuses by name, down to none at all.
+#[test]
+fn every_smaller_allowance_refuses_by_name() {
+    let case = fixed::cases()
+        .into_iter()
+        .find(|case| case.name == "02-surface-knot-peak")
+        .expect("case");
+    let capped = |work: u64| {
+        gap::measure(
+            &copies(&case.geometry),
+            &Hints::default(),
+            Limits { work },
+            &mut Decider::default(),
+        )
+    };
+    let needed = capped(gap::EDGE_WORK).expect("default").work;
+    for work in 0..needed {
+        let refusal = capped(work).expect_err("short");
+        assert_eq!(refusal.code, "numerical.gap-work-cap", "{work}");
+    }
+    assert_eq!(capped(needed).expect("exact").work, needed);
+}
+
 /// A face copy that winds around a cylinder 1e29 times has that many seam
 /// crossings. They are counted before any is listed, and the edge is refused
 /// by name after a handful of work units.

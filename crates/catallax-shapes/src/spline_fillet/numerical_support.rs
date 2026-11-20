@@ -137,11 +137,24 @@ impl NumericalFilletSupport {
     ) -> Result<Contact, Refusal> {
         match &self.geometry {
             Geometry::Atlas(charts) => {
+                // The binary64 search compares rounded chart bounds. A bound
+                // need not be dyadic, so a contact within rounding of a shared
+                // bound can lie exactly in the neighbouring chart; the exact
+                // comparison then picks that chart. Rounding to nearest is
+                // monotone, so the binary64 search finds some chart whenever
+                // one holds the exact contact.
+                let inside = |chart: &Support| {
+                    (0..2).all(|i| at[i] >= chart.domain[i][0] && at[i] <= chart.domain[i][1])
+                };
                 let (index, chart) =
-                    Self::chart(charts, at.each_ref().map(Rational::to_f64_nearest))?;
-                if !(0..2).all(|i| at[i] >= chart.domain[i][0] && at[i] <= chart.domain[i][1]) {
-                    return Err(bad("rounded contact leaves its selected chart"));
-                }
+                    match Self::chart(charts, at.each_ref().map(Rational::to_f64_nearest))? {
+                        found if inside(found.1) => found,
+                        _ => charts
+                            .iter()
+                            .enumerate()
+                            .find(|(_, chart)| inside(chart))
+                            .ok_or_else(|| bad("rounded contact leaves its selected chart"))?,
+                    };
                 let mut meter = Meter::default();
                 let contact = chart.contact(
                     &at.each_ref().map(|t| Jet::constant(ball(t), 0)),

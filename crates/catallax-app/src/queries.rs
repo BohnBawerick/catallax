@@ -165,7 +165,7 @@ pub(crate) fn query<T>(
     })
 }
 
-fn sign(value: &Real, dec: &mut Decider) -> Result<i8, Refusal> {
+pub(crate) fn sign(value: &Real, dec: &mut Decider) -> Result<i8, Refusal> {
     match dec.sign(value) {
         Outcome::Proven(StrictSign::Positive) => Ok(1),
         Outcome::Proven(StrictSign::Negative) => Ok(-1),
@@ -393,7 +393,7 @@ pub fn silhouette(
     })
 }
 
-fn perpendicular(normal: &Vector3, dec: &mut Decider) -> Result<Vector3, Refusal> {
+pub(crate) fn perpendicular(normal: &Vector3, dec: &mut Decider) -> Result<Vector3, Refusal> {
     for axis in [
         Vector3::new(Real::one(), Real::zero(), Real::zero()),
         Vector3::new(Real::zero(), Real::one(), Real::zero()),

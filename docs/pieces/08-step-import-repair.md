@@ -293,6 +293,26 @@ Files written from binary floating point put a seam vertex at `y = -7.3e-16` or 
 
 The movement is proven for the whole file. A changed length moves a face by at most its change; a changed ratio turns a direction whose squared norm is at least a quarter of the file's shortest by at most eight times the change over that quarter, across at most four times the largest magnitude read. The sum must be at most the 0.01 mm automatic cap and a tenth of the file's conservative feature size (the shortest edge chord or radius). Files with spline data are not cleaned. Every face is then listed in `face_tolerances` with that outward-rounded upper bound, a lower bound of zero and the automatic approval, and the cleaned file is the derivative, which `rebuild_source` reproduces. Otherwise the exact refusal stands. The exact reading always comes first, so a file that imports exactly is never cleaned.
 
+## Manufacturing information
+
+`read_step_pmi(bytes)` reads a file's AP242 semantic PMI into a
+`catallax_step::pmi::Pmi<String>`. Faces are named by the entity of their
+`ADVANCED_FACE`, such as `#17`: the face keys an import of the same bytes
+reports. It reads what [piece 7 writes](07-step-export.md#manufacturing-information)
+and the common forms of the CAx-IF recommended practices, in any length unit.
+
+A dimension's nominal is the value the file states, in millimetres. The reader
+does not compare it with the geometry; the caller measures the imported body
+with `catallax_step::pmi::nominals` and decides.
+
+Nothing is guessed. An item the reader cannot represent in full is left out
+and listed in `StepPmi::skipped` with its entity, type and reason: an angular
+dimension, a dimension along a path or with a modifier, a datum target or
+common datum, a tolerance with a modifier other than a material condition, a
+datum reference with a modifier, an item on geometry other than faces. A
+tolerance whose datum was skipped is skipped too. The only refusal is a file
+that is not readable Part 21 text.
+
 ## Immutable source
 
 The file bytes are stored unchanged and addressed by `sha256`. The recipe step keeps `file` and `decisions`. A repaired derivative is a separate artifact derived from (source hash, approved change record); it is never written back over the source and can be rebuilt from the two inputs. A hash mismatch is a recipe error, not geometry.

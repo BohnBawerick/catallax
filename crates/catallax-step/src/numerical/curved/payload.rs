@@ -138,6 +138,10 @@ fn parameter(
 pub(super) fn build(body: &NumericalBody, w: &mut Writer<'_>) -> Result<Payload, Refusal> {
     let options = w.options;
     let mut definition = body.definition().clone();
+    // STEP carries no copy tag and both copies are rounded below, so the
+    // check of the written values measures every use and every retained
+    // u/v curve.
+    definition.reset_copy_tags();
     definition.name.push_str(" STEP decimal payload");
     let mut errors = Errors::default();
     for vertex in &mut definition.vertices {
@@ -307,6 +311,9 @@ pub(super) fn build(body: &NumericalBody, w: &mut Writer<'_>) -> Result<Payload,
         }
     }
     let mut native_trims = body.native_trims().to_vec();
+    for trim in &mut native_trims {
+        trim.tag = catallax_topology::numerical::CopyTag::Independent;
+    }
     if !native_trims.is_empty() {
         let mut intervals = std::collections::BTreeMap::new();
         for (source, edge) in body.definition().edges.iter().zip(&definition.edges) {

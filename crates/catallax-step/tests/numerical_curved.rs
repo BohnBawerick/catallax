@@ -193,3 +193,21 @@ fn repeated_endpoint_carrier_keeps_the_admitted_finite_traversal() {
     }
     file.check_written(file.bytes(), &mut dec).unwrap();
 }
+
+#[path = "common/copy_tags.rs"]
+mod copy_tags;
+
+/// The writer of spline faces and retained u/v curves.
+#[test]
+fn the_written_spline_body_measures_every_use_whatever_its_tag() {
+    let ((), work) = with_operation_budget(20_000_000, || {
+        let body = cut_body(
+            "loft crossing",
+            ["10", "10", "1"],
+            ["-3", "1999999/1000000", "1"],
+            &mut Decider::default(),
+        );
+        copy_tags::assert_the_written_body_is_measured(&body, "1/10000000");
+    });
+    assert!(!work.exhausted, "{} work units", work.used);
+}

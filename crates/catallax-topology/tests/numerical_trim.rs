@@ -112,6 +112,7 @@ fn perforated(outer: [[i64; 2]; 4], holes: &[[[i64; 2]; 4]]) -> NumericalDefinit
                     index
                 });
                 boundary.push(NumericalTrim {
+                    tag: catallax_topology::numerical::CopyTag::Independent,
                     edge,
                     sense: if result.edges[edge].vertices == ids {
                         Sense::Same

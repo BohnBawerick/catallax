@@ -49,6 +49,7 @@ fn split_annulus(center: &str, split_outer: bool) -> (NumericalFace, Vec<Numeric
             if i != split {
                 let at = [&x + &radius, q("0")];
                 vec![NumericalTrim {
+                    tag: crate::numerical::CopyTag::Independent,
                     edge: i,
                     sense,
                     uv: [at.clone(), at],
@@ -58,11 +59,13 @@ fn split_annulus(center: &str, split_outer: bool) -> (NumericalFace, Vec<Numeric
                 let b = [x, -radius];
                 let mut trims = vec![
                     NumericalTrim {
+                        tag: crate::numerical::CopyTag::Independent,
                         edge: 2,
                         sense,
                         uv: [a.clone(), b.clone()],
                     },
                     NumericalTrim {
+                        tag: crate::numerical::CopyTag::Independent,
                         edge: 3,
                         sense,
                         uv: [b, a],

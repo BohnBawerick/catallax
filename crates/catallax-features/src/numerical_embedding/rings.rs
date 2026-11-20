@@ -289,11 +289,13 @@ pub(super) fn close_band(
         parameters,
     });
     let forward = NumericalTrim {
+        tag: catallax_topology::numerical::CopyTag::Independent,
         edge: seam,
         sense: Sense::Same,
         uv: [a.uv[1].clone(), first.uv[0].clone()],
     };
     let reverse = NumericalTrim {
+        tag: catallax_topology::numerical::CopyTag::Independent,
         edge: seam,
         sense: Sense::Reversed,
         uv: [last.uv[1].clone(), a.uv[0].clone()],

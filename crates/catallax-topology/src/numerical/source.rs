@@ -159,6 +159,7 @@ pub fn definition_from_model(
                     uv.push(at);
                 }
                 boundary.push(NumericalTrim {
+                    tag: crate::numerical::CopyTag::Independent,
                     edge: edge_map[&coedge.edge],
                     sense: coedge.sense,
                     uv: uv.try_into().unwrap(),

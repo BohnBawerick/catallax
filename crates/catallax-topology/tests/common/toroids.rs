@@ -70,6 +70,7 @@ fn patch(corners: Vec<[Rational; 2]>, seam: Option<[usize; 2]>) -> n::NumericalD
             && i == b
         {
             trims.push(n::NumericalTrim {
+                tag: catallax_topology::numerical::CopyTag::Independent,
                 edge: trims[a].edge,
                 sense: if trims[a].sense == Sense::Same {
                     Sense::Reversed
@@ -108,6 +109,7 @@ fn patch(corners: Vec<[Rational; 2]>, seam: Option<[usize; 2]>) -> n::NumericalD
             vertices: ends.map(|end| vertices[end]),
         });
         trims.push(n::NumericalTrim {
+            tag: catallax_topology::numerical::CopyTag::Independent,
             edge,
             sense: if forward {
                 Sense::Same

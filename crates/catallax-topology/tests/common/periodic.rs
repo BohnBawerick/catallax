@@ -109,6 +109,7 @@ pub fn bore() -> NumericalDefinition {
                 edge
             });
             trims.push(NumericalTrim {
+                tag: catallax_topology::numerical::CopyTag::Independent,
                 edge,
                 sense: if d.edges[edge].vertices == ends {
                     Sense::Same
@@ -144,6 +145,7 @@ pub fn bore() -> NumericalDefinition {
             parameters: [q("0"), period.clone()],
         });
         d.faces[height as usize].loops.push(vec![NumericalTrim {
+            tag: catallax_topology::numerical::CopyTag::Independent,
             edge: circles[height as usize],
             sense: if height == 0 {
                 Sense::Same
@@ -174,21 +176,25 @@ pub fn bore() -> NumericalDefinition {
         sense: Sense::Reversed,
         loops: vec![vec![
             NumericalTrim {
+                tag: catallax_topology::numerical::CopyTag::Independent,
                 edge: circles[0],
                 sense: Sense::Reversed,
                 uv: [[period.clone(), q("0")], [q("0"), q("0")]],
             },
             NumericalTrim {
+                tag: catallax_topology::numerical::CopyTag::Independent,
                 edge: seam,
                 sense: Sense::Same,
                 uv: [[q("0"), q("0")], [q("0"), q("1")]],
             },
             NumericalTrim {
+                tag: catallax_topology::numerical::CopyTag::Independent,
                 edge: circles[1],
                 sense: Sense::Same,
                 uv: [[q("0"), q("1")], [period.clone(), q("1")]],
             },
             NumericalTrim {
+                tag: catallax_topology::numerical::CopyTag::Independent,
                 edge: seam,
                 sense: Sense::Reversed,
                 uv: [[period.clone(), q("1")], [period, q("0")]],
@@ -326,6 +332,7 @@ pub fn annulus(outer_radius: &str) -> NumericalDefinition {
             parameters: [q("0"), period.clone()],
         });
         d.faces[height].loops[0] = vec![NumericalTrim {
+            tag: catallax_topology::numerical::CopyTag::Independent,
             edge: rims[height],
             sense: if height == 0 {
                 Sense::Reversed
@@ -356,21 +363,25 @@ pub fn annulus(outer_radius: &str) -> NumericalDefinition {
         sense: Sense::Same,
         loops: vec![vec![
             NumericalTrim {
+                tag: catallax_topology::numerical::CopyTag::Independent,
                 edge: rims[0],
                 sense: Sense::Same,
                 uv: [[q("0"), q("0")], [period.clone(), q("0")]],
             },
             NumericalTrim {
+                tag: catallax_topology::numerical::CopyTag::Independent,
                 edge: seam,
                 sense: Sense::Same,
                 uv: [[period.clone(), q("0")], [period.clone(), q("1")]],
             },
             NumericalTrim {
+                tag: catallax_topology::numerical::CopyTag::Independent,
                 edge: rims[1],
                 sense: Sense::Reversed,
                 uv: [[period.clone(), q("1")], [q("0"), q("1")]],
             },
             NumericalTrim {
+                tag: catallax_topology::numerical::CopyTag::Independent,
                 edge: seam,
                 sense: Sense::Reversed,
                 uv: [[q("0"), q("1")], [q("0"), q("0")]],

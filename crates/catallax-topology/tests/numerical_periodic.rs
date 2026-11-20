@@ -324,6 +324,7 @@ fn rational_patch_native_circles_retain_only_sampled_boundary_evidence() {
             })
             .collect();
         bindings.push(n::NumericalNativeTrim {
+            tag: catallax_topology::numerical::CopyTag::Independent,
             face: definition.faces[0].key.clone(),
             boundary,
             use_index: 0,

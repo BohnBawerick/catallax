@@ -181,17 +181,20 @@ mod tests {
             sense: Sense::Same,
             loops: vec![
                 vec![NumericalTrim {
+                    tag: catallax_topology::numerical::CopyTag::Independent,
                     edge: 0,
                     sense: Sense::Reversed,
                     uv: [point(1), point(1)],
                 }],
                 vec![
                     NumericalTrim {
+                        tag: catallax_topology::numerical::CopyTag::Independent,
                         edge: 1,
                         sense: Sense::Same,
                         uv: [point(3), point(-3)],
                     },
                     NumericalTrim {
+                        tag: catallax_topology::numerical::CopyTag::Independent,
                         edge: 2,
                         sense: Sense::Same,
                         uv: [point(-3), point(3)],

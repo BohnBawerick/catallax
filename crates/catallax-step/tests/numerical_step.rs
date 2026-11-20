@@ -386,3 +386,12 @@ fn n03_product_name_round_trips_header_replacement_text() {
         assert_eq!(representation.split('\'').nth(1).unwrap(), name);
     }
 }
+
+#[path = "common/copy_tags.rs"]
+mod copy_tags;
+
+/// The writer of planes and lines.
+#[test]
+fn the_written_planar_body_measures_every_use_whatever_its_tag() {
+    copy_tags::assert_the_written_body_is_measured(&control(false), "1/1000");
+}

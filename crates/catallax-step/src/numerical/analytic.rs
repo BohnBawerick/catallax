@@ -765,6 +765,9 @@ pub(super) fn build(
         direction_error: Rational::zero(),
     };
     let mut d = body.definition().clone();
+    // STEP carries no copy tag and both copies are rounded below, so the
+    // check of the written values measures every use.
+    d.reset_copy_tags();
     let mut vertices = Vec::new();
     for vertex in &mut d.vertices {
         let point = w.point(&vertex.position)?;

@@ -18,6 +18,7 @@ mod analytic;
 mod atlas;
 mod curved;
 mod edge_gap;
+pub use edge_gap::{DerivedCopyAudit, audit_derived_copies};
 /// The edge-gap checker: the largest distance between an edge's two copies.
 pub mod gap;
 mod handover;
@@ -60,6 +61,62 @@ pub struct NumericalEdge {
     pub parameters: [Rational; 2],
 }
 
+/// What the face copy of an edge use was made from (decision Q8, section 4.4
+/// of the Checkpoint 2 decisions).
+///
+/// Every edge use has two copies of its curve: the 3D curve and the face
+/// copy, which is the u/v endpoints of a [`NumericalTrim`] or the u/v curve of
+/// a [`NumericalNativeTrim`]. The tag says which one is authoritative.
+/// Admission measures the gap of an independent copy and records the bound of
+/// a derived one.
+///
+/// The tag is not written to a stored body. A body that is read back has
+/// every copy `Independent`, as an imported one has, and a rebuild from the
+/// recipe sets the tags again.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum CopyTag {
+    /// The two copies were made separately: fitted, traced, projected, read
+    /// from a file, or edited on one side.
+    #[default]
+    Independent,
+    /// One copy was made from the other by a rule whose gap has a known
+    /// bound.
+    Derived {
+        /// The copy the other one was made from.
+        from: CopySource,
+        /// The rule that made it.
+        rule: CopyRule,
+        /// The largest distance between the two copies that the rule allows,
+        /// in millimetres. Zero for a rule that is exact.
+        bound: Rational,
+    },
+}
+
+/// The authoritative copy of a derived edge use.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CopySource {
+    /// The 3D curve. The face copy was computed from it.
+    Edge3d,
+    /// The face's surface. The 3D curve is a curve of that surface, and the
+    /// face copy names it.
+    Carrier,
+}
+
+/// The rule that made a derived copy.
+///
+/// A line or a circle of an analytic surface, embedded by the surface's
+/// chart, has no rule here: its u/v ends are rounded, so it is
+/// [`CopyTag::Independent`] and admission measures it by closed form (owner
+/// ruling of 20 November 2026 on section 4.4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CopyRule {
+    /// The 3D curve is a row of the blend surface's control net, and the
+    /// face copy is that row's parameter line.
+    BlendRow,
+    /// A u/v curve composed exactly from another copy.
+    ExactComposition,
+}
+
 /// One edge use and its explicit finite trim on a face.
 #[derive(Clone, Debug, catallax_numbers::Transfer)]
 pub struct NumericalTrim {
@@ -71,6 +128,11 @@ pub struct NumericalTrim {
     /// this use has a retained [`NumericalNativeTrim`].
     /// A native spline on a plane retains its projected curve between them.
     pub uv: [[Rational; 2]; 2],
+    /// What these endpoints were made from. A retained
+    /// [`NumericalNativeTrim`] on the same use carries its own tag, and that
+    /// one is read.
+    #[transfer(skip)]
+    pub tag: CopyTag,
 }
 
 /// One oriented surface and its finite parameter boundaries.
@@ -102,6 +164,25 @@ pub struct NumericalDefinition {
     /// Faces of one connected shell. `build` requires closure; `build_surface`
     /// permits boundary edges without asserting enclosed material.
     pub faces: Vec<NumericalFace>,
+}
+
+impl NumericalDefinition {
+    /// Sets every edge use back to [`CopyTag::Independent`].
+    ///
+    /// A tag is a statement by the code that built both copies of a use. Code
+    /// that takes a definition over from a body and then changes a curve, a
+    /// surface, a parameter range or a u/v end calls this first, unless it
+    /// applies one exact operation to both copies and that operation keeps the
+    /// stated bound. Admission then measures the uses again.
+    pub fn reset_copy_tags(&mut self) {
+        for trim in self
+            .faces
+            .iter_mut()
+            .flat_map(|face| face.loops.iter_mut().flatten())
+        {
+            trim.tag = CopyTag::Independent;
+        }
+    }
 }
 
 /// Stated controls, fixed before a numerical build starts.
@@ -223,6 +304,10 @@ impl NumericalBody {
     }
     /// Rechecks an edited definition under explicitly stated current controls.
     /// Prior checks and repairs remain historical; no old sample certifies this body.
+    ///
+    /// The retained native curves come from this body, not from the caller.
+    /// Copy tags are kept only where both copies are unchanged; see
+    /// [`NumericalBody::rebuild_with_native_trims`].
     pub fn rebuild(
         &self,
         definition: NumericalDefinition,
@@ -230,6 +315,82 @@ impl NumericalBody {
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
         self.rebuild_with_native_trims(definition, self.native_trims.clone(), options, dec)
+    }
+
+    /// Sets back to [`CopyTag::Independent`] every derived tag of an edit that
+    /// this body cannot show still holds (decision Q8, section 4.4 of the
+    /// Checkpoint 2 decisions: any change to one copy resets it, unless the
+    /// same exact operation applies to both).
+    ///
+    /// The tags of an edited definition are the caller's, and a caller can
+    /// clone a tagged definition and change one copy without touching the
+    /// tag. So a use keeps a derived tag only when this body has a use at the
+    /// same face, loop and place with the same tag, the same face surface, the
+    /// same sense and u/v ends, an edge with the same curve and parameter
+    /// range, and the same face copy: the linear u/v ends on both sides, or
+    /// the same retained u/v curve on both sides, so dropping or replacing a
+    /// retained curve resets the use. A retained u/v curve keeps its tag only
+    /// when, in addition, this
+    /// body retains the same curve with the same tag for that use, and the
+    /// use still states that tag after the reset above, so resetting a use
+    /// resets its curve as well. Identity is [`Curve::same_definition`] and
+    /// [`Surface::same_definition`]: a false answer only costs a measurement.
+    fn keep_unchanged_copy_tags(
+        &self,
+        definition: &mut NumericalDefinition,
+        native_trims: &mut [NumericalNativeTrim],
+    ) {
+        let before = &self.definition;
+        let changed: Vec<(usize, usize, usize)> = definition
+            .faces
+            .iter()
+            .enumerate()
+            .flat_map(|(f, face)| {
+                face.loops.iter().enumerate().flat_map(move |(b, row)| {
+                    row.iter().enumerate().map(move |(u, trim)| (f, b, u, trim))
+                })
+            })
+            .filter(|(f, b, u, trim)| {
+                let key = definition.faces[*f].key.as_str();
+                trim.tag != CopyTag::Independent
+                    && (same_use(before, definition, *f, *b, *u)
+                        .is_none_or(|old| old.tag != trim.tag)
+                        || !same_face_copy(
+                            native_at(&self.native_trims, key, *b, *u),
+                            native_at(&*native_trims, key, *b, *u),
+                        ))
+            })
+            .map(|(f, b, u, _)| (f, b, u))
+            .collect();
+        for (f, b, u) in changed {
+            definition.faces[f].loops[b][u].tag = CopyTag::Independent;
+        }
+        for binding in native_trims {
+            if binding.tag == CopyTag::Independent {
+                continue;
+            }
+            let kept = definition
+                .faces
+                .iter()
+                .position(|face| face.key == binding.face)
+                .filter(|&f| {
+                    same_use(before, definition, f, binding.boundary, binding.use_index).is_some()
+                        && definition.faces[f].loops[binding.boundary][binding.use_index].tag
+                            == binding.tag
+                })
+                .is_some()
+                && self.native_trims.iter().any(|old| {
+                    old.face == binding.face
+                        && old.boundary == binding.boundary
+                        && old.use_index == binding.use_index
+                        && old.edge == binding.edge
+                        && old.tag == binding.tag
+                        && old.curve.same_definition(&binding.curve)
+                });
+            if !kept {
+                binding.tag = CopyTag::Independent;
+            }
+        }
     }
     fn inherit(&mut self, previous: &Self) {
         self.source = previous.source.clone();
@@ -289,7 +450,16 @@ impl NumericalBody {
                 .find(|f| f.key == face)
                 .ok_or_else(|| bad("unknown-face", format!("unknown face {face}")))?;
             selected.surface = surface;
-            self.rebuild(definition, self.options.clone(), dec)
+            // One copy of every edge use on this face changed and the other
+            // did not, so none of them is derived any more.
+            for trim in selected.loops.iter_mut().flatten() {
+                trim.tag = CopyTag::Independent;
+            }
+            let mut native_trims = self.native_trims.clone();
+            for binding in native_trims.iter_mut().filter(|b| b.face == face) {
+                binding.tag = CopyTag::Independent;
+            }
+            self.rebuild_with_native_trims(definition, native_trims, self.options.clone(), dec)
         })
     }
 
@@ -467,6 +637,56 @@ fn distance(a: &[Ball; 3], b: &[Ball; 3]) -> Rational {
         .sqrt()
         .expect("sum of squares")
         .hi()
+}
+/// The use of `before` at the same face key, loop and place as use `use_index`
+/// of loop `boundary` of face `face` of `after`, when both of its copies are
+/// the same definition there: the face surface, the sense and u/v ends, and
+/// the edge's curve and parameter range. Tags are not compared here.
+fn same_use<'a>(
+    before: &'a NumericalDefinition,
+    after: &NumericalDefinition,
+    face: usize,
+    boundary: usize,
+    use_index: usize,
+) -> Option<&'a NumericalTrim> {
+    let face = after.faces.get(face)?;
+    let trim = face.loops.get(boundary)?.get(use_index)?;
+    let edge = after.edges.get(trim.edge)?;
+    let face_before = before.faces.iter().find(|f| f.key == face.key)?;
+    let old = face_before.loops.get(boundary)?.get(use_index)?;
+    let edge_before = before.edges.get(old.edge)?;
+    (face_before.surface.same_definition(&face.surface)
+        && old.sense == trim.sense
+        && old.uv == trim.uv
+        && edge_before.curve.same_definition(&edge.curve)
+        && edge_before.parameters == edge.parameters)
+        .then_some(old)
+}
+/// The retained u/v curve bound to use `use_index` of loop `boundary` of face
+/// `face`, if any.
+fn native_at<'a>(
+    bindings: &'a [NumericalNativeTrim],
+    face: &str,
+    boundary: usize,
+    use_index: usize,
+) -> Option<&'a NumericalNativeTrim> {
+    bindings
+        .iter()
+        .find(|b| b.face == face && b.boundary == boundary && b.use_index == use_index)
+}
+/// Whether a use's face copy is represented the same way before and after an
+/// edit: by the linear u/v ends on both sides, or by the same retained u/v
+/// curve on both sides. Adding, removing or replacing a retained curve changes
+/// the face copy even when the u/v ends stay.
+fn same_face_copy(
+    before: Option<&NumericalNativeTrim>,
+    after: Option<&NumericalNativeTrim>,
+) -> bool {
+    match (before, after) {
+        (None, None) => true,
+        (Some(a), Some(b)) => a.edge == b.edge && a.curve.same_definition(&b.curve),
+        _ => false,
+    }
 }
 fn keys<'a>(values: impl Iterator<Item = &'a str>, dec: &mut Decider) -> Result<(), Refusal> {
     let mut seen = BTreeSet::new();
@@ -847,24 +1067,33 @@ fn build_inner_kind(
                     samples: native::endpoints(face, trim, edge, curve, dec)?,
                 });
             }
-            // One record per use: where the two copies are furthest apart,
-            // and the tolerance stored for that gap.
+            // One record per use. A measured use says where its two copies
+            // are furthest apart and the tolerance stored for that gap. A
+            // derived use says the bound its rule states, under its own name,
+            // so that a bound is never read as a measurement.
+            let (derived, sample) = edge_gap::stored_sample(
+                face,
+                trim,
+                edge,
+                curve,
+                // A retained native curve is the face copy of its use, so its
+                // tag is the one that counts.
+                native
+                    .tag(face_index, boundary_index, use_index)
+                    .unwrap_or(&trim.tag),
+                &options.tolerance_mm,
+                dec,
+            )?;
             checks.push(NumericalCheck::Samples {
-                name: if numerical_pair {
-                    "trim.numerical-pair-edge-surface-distance"
-                } else {
-                    "trim.edge-surface-distance"
+                name: match (numerical_pair, derived) {
+                    (false, false) => "trim.edge-surface-distance",
+                    (true, false) => "trim.numerical-pair-edge-surface-distance",
+                    (false, true) => "trim.edge-surface-derived-bound",
+                    (true, true) => "trim.numerical-pair-edge-surface-derived-bound",
                 }
                 .into(),
                 scope,
-                samples: vec![edge_gap::stored_sample(
-                    face,
-                    trim,
-                    edge,
-                    curve,
-                    &options.tolerance_mm,
-                    dec,
-                )?],
+                samples: vec![sample],
             });
         }
     }

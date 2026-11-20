@@ -1221,6 +1221,7 @@ pub fn definition_from_exact_model(
                     walked.reverse();
                 }
                 trims.push(NumericalTrim {
+                    tag: catallax_topology::numerical::CopyTag::Independent,
                     edge,
                     sense: coedge.sense,
                     uv: walked.map(|vertex| {
@@ -1246,6 +1247,7 @@ pub fn definition_from_exact_model(
             for (use_index, trim) in uses.iter().enumerate() {
                 if let Some(curve) = uv_curves.get(&(index, trim.edge)) {
                     native_trims.push(NumericalNativeTrim {
+                        tag: catallax_topology::numerical::CopyTag::Independent,
                         face: numerical_face.key.clone(),
                         boundary,
                         use_index,

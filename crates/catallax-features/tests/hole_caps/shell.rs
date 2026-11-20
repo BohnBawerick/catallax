@@ -67,11 +67,13 @@ fn face(
             [u, v]
         });
         trims.push(NumericalTrim {
+            tag: catallax_topology::numerical::CopyTag::Independent,
             edge: index,
             sense,
             uv,
         });
         bindings.push(NumericalNativeTrim {
+            tag: catallax_topology::numerical::CopyTag::Independent,
             face: key.clone(),
             boundary: 0,
             use_index,

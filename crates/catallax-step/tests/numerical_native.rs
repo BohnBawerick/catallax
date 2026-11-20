@@ -36,6 +36,7 @@ fn an_analytic_body_with_native_uv_uses_the_retaining_writer() {
         )
         .unwrap();
         let binding = n::NumericalNativeTrim {
+            tag: catallax_topology::numerical::CopyTag::Independent,
             face: face.key.clone(),
             boundary: 0,
             use_index: 0,
@@ -99,6 +100,7 @@ fn native_outer_edges_keep_continuous_circle_clearance() {
         )
         .unwrap();
         let binding = n::NumericalNativeTrim {
+            tag: catallax_topology::numerical::CopyTag::Independent,
             face: face.key.clone(),
             boundary: 0,
             use_index: 0,

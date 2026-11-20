@@ -40,6 +40,13 @@ pub(crate) fn check(recipe: &Recipe) -> Result<(), RecipeError> {
                 message: "variable-radius fillets require catallax-recipe/5".into(),
             });
         }
+        if recipe.format != FORMAT_V5
+            && matches!(&step.op, Operation::Twist { .. } | Operation::Bend { .. })
+        {
+            return Err(RecipeError::Parse {
+                message: "bend and twist require catallax-recipe/5".into(),
+            });
+        }
         if recipe.format != FORMAT_V5 && face_refs(&step.op).iter().any(|r| r.face.is_none()) {
             return Err(RecipeError::Parse {
                 message: "face references without `face` require catallax-recipe/5".into(),
@@ -200,7 +207,8 @@ fn patterns(op: &Operation) -> Vec<&OriginPattern> {
 }
 
 /// True when the operation makes faces of its own or carries faces of its inputs into
-/// faces it names. A boolean and a draft keep their inputs' names and make none.
+/// faces it names. A boolean, a draft, a bend and a twist keep their inputs'
+/// names and make none.
 fn makes_faces(op: &Operation) -> bool {
     !matches!(
         op,
@@ -208,6 +216,8 @@ fn makes_faces(op: &Operation) -> bool {
             | Operation::Path { .. }
             | Operation::Boolean { .. }
             | Operation::Draft { .. }
+            | Operation::Twist { .. }
+            | Operation::Bend { .. }
     )
 }
 

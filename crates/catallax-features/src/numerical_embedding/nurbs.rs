@@ -294,7 +294,7 @@ pub(super) fn distance(a: [f64; 3], b: [f64; 3]) -> f64 {
 /// Greville controls restored after it, so a constant coordinate, such as an
 /// iso-parameter trim, keeps exactly its value.
 /// Returns the expanded knots and one control row per data row.
-pub(super) fn interpolate<const D: usize>(
+pub(crate) fn interpolate<const D: usize>(
     parameters: &[f64],
     values: &[[f64; D]],
     dec: &mut Decider,
@@ -475,7 +475,7 @@ pub(super) fn concatenate<const D: usize>(
 }
 
 /// Binary64 evaluation of an [`interpolate`] result.
-pub(super) fn evaluate<const D: usize>(knots: &[f64], controls: &[[f64; D]], t: f64) -> [f64; D] {
+pub(crate) fn evaluate<const D: usize>(knots: &[f64], controls: &[[f64; D]], t: f64) -> [f64; D] {
     let n = controls.len();
     let degree = knots.len() - n - 1;
     let t = t.clamp(knots[degree], knots[n]);

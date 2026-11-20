@@ -372,6 +372,90 @@ impl Context {
         self.bodies.insert(step.clone(), Arc::new(result));
         Ok(())
     }
+
+    /// Bends or twists an exact body (RECIPE.md section 4.20). Both build
+    /// only as fitted geometry: the exact body is embedded, every face and
+    /// edge is refitted through the warp, and admission measures every gap.
+    /// The tolerances are the rolling ball's: rule T2's target for the fits
+    /// and its cap for admission, over rule T1's floor.
+    pub(super) fn deform(
+        &mut self,
+        model: &Model,
+        target: &BodyValue,
+        warp: &crate::deform::Warp,
+        step: &StepId,
+        recipe: &Recipe,
+        dec: &mut Decider,
+    ) -> Result<(), Refusal> {
+        let faults = model.check(target.body);
+        if !faults.is_empty() {
+            return Err(Refusal::new(
+                "deform.source",
+                format!("source topology is invalid: {faults:?}"),
+            ));
+        }
+        let eps = exact_floor(model, target.body, dec)?;
+        let fitted = tolerance::own_fitted(&eps, None);
+        let (source, trims) = crate::numerical_embedding::definition_from_exact_model(
+            model,
+            target.body,
+            recipe.name.clone(),
+            &fitted.target_mm,
+            dec,
+        )?;
+        let (definition, trims, sampled) = crate::deform::warp(
+            &source,
+            &trims,
+            warp,
+            fitted.target_mm.to_f64_nearest(),
+            dec,
+        )?;
+        // T1's floor is set by the frame the operation runs in; a warp moves
+        // the body, so the floor covers the warped vertices as well.
+        let moved: Vec<_> = definition
+            .vertices
+            .iter()
+            .map(|v| v.position.clone())
+            .collect();
+        let eps = eps.max(tolerance::BodyFrame::of_points(&moved).floor_mm());
+        let cap = NumericalOptions {
+            tolerance_mm: tolerance::own_fitted(&eps, None).cap_mm,
+            vertex_tolerance_mm: None,
+        };
+        let body = catallax_topology::numerical::build_with_sampled_carriers(
+            definition, trims, sampled, cap, dec,
+        )?;
+        let origins: BTreeMap<_, _> = model
+            .faces_of_body(target.body)
+            .into_iter()
+            .map(|face| (format!("{face:?}"), model.face_origins(face).to_vec()))
+            .collect();
+        let origins = body
+            .definition()
+            .faces
+            .iter()
+            .map(|face| {
+                origins
+                    .get(&face.key)
+                    .map(|origins| (face.key.clone(), origins.clone()))
+                    .ok_or_else(|| {
+                        Refusal::new(
+                            "deform.name",
+                            format!("output face {} lost its canonical origins", face.key),
+                        )
+                    })
+            })
+            .collect::<Result<_, _>>()?;
+        self.bodies.insert(
+            step.clone(),
+            Arc::new(NumericalFilletEvaluation {
+                recipe: Arc::new(recipe.clone()),
+                body,
+                origins,
+            }),
+        );
+        Ok(())
+    }
 }
 
 /// Whether both faces of an edge are retained rational spline atlases.

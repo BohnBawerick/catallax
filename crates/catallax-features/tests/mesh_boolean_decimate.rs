@@ -290,6 +290,59 @@ fn decimation_builds_saves_reopens_and_exports_and_chains_after_a_boolean() {
     assert_eq!(exact_volume(&whole), exact_volume(&a.unwrap()));
 }
 
+/// A torus about the z axis as ASCII STL, `n` by `m` quads each split in two.
+fn torus(big: f64, small: f64, n: usize, m: usize) -> Vec<u8> {
+    let mut points = Vec::new();
+    for i in 0..n {
+        let u = std::f64::consts::TAU * i as f64 / n as f64;
+        for j in 0..m {
+            let v = std::f64::consts::TAU * j as f64 / m as f64;
+            let r = big + small * v.cos();
+            points.push([r * u.cos(), r * u.sin(), small * v.sin()]);
+        }
+    }
+    let at = |i: usize, j: usize| (i % n) * m + j % m;
+    let mut triangles = Vec::new();
+    for i in 0..n {
+        for j in 0..m {
+            triangles.push([at(i, j), at(i + 1, j), at(i + 1, j + 1)]);
+            triangles.push([at(i, j), at(i + 1, j + 1), at(i, j + 1)]);
+        }
+    }
+    stl(&points, &triangles)
+}
+
+/// RECIPE.md 4.22: decimation stops when its queue is empty, which can be
+/// above the count while a collapse is still allowed. A second step starts a
+/// new queue.
+#[test]
+fn decimation_can_stop_above_its_count_and_a_second_step_collapses_more() {
+    let ring = torus(10.0, 1.0, 12, 6);
+    let files = ImportFiles::from([(sha256_hex(&ring), &ring[..])]);
+    let recipe = |result: &str| {
+        let steps = json!([
+            {"id": "ring", "op": "import_mesh", "file": {"name": "ring.stl", "sha256": sha256_hex(&ring)},
+                "pose": {"rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "0"]}, "scale": "1"},
+            {"id": "once", "op": "mesh_decimate", "body": "ring", "triangles": 1},
+            {"id": "twice", "op": "mesh_decimate", "body": "once", "triangles": 1},
+        ]);
+        Recipe::parse(
+            &json!({"format": "catallax-recipe/5", "name": "ring", "result": result, "steps": steps})
+                .to_string(),
+        )
+        .unwrap()
+    };
+    let (once, _, work) = built(&recipe("once"), &files);
+    assert!(work.used <= 20_000_000, "{work:?}");
+    let (twice, _, work) = built(&recipe("twice"), &files);
+    assert!(work.used <= 20_000_000, "{work:?}");
+    // 144 triangles asked for one: the first queue empties at 36 faces and
+    // a second step goes on to 32.
+    let faces = |built: &Built| built.model.faces_of_body(built.result).len();
+    assert_eq!(faces(&once), 36);
+    assert_eq!(faces(&twice), 32);
+}
+
 /// The exact volume and lump count of the union, difference and intersection
 /// of the box from 0 to 4 and the box from `tool_lo` to `tool_hi`.
 fn box_booleans(tool_lo: [f64; 3], tool_hi: [f64; 3]) -> [(Rational, usize); 3] {

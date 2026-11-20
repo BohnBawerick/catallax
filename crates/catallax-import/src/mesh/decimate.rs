@@ -19,6 +19,16 @@
 //!   triangle's exact normal keeps a positive dot product with its old normal,
 //!   the mesh-inversion guard Garland and Heckbert describe.
 //!
+//! The queue works as SMLib's does. Each edge enters it at one placement, its
+//! cheapest, as SMLib's `GetOrCreateQuadricEdgeAttr` gives each edge one point.
+//! A refused entry leaves the queue, as SMLib marks an edge whose `SqueezeEdge`
+//! fails as bad and skips it from then on. After a collapse every edge at the
+//! surviving vertex enters again with new costs, as SMLib costs its moved edges
+//! again; here that also brings back a refused edge once a collapse moves one
+//! of its ends, which SMLib does not. An empty queue therefore does not prove
+//! that no allowed collapse is left: a refused edge can be allowed at another
+//! placement, or after a collapse nearby that moves neither of its ends.
+//!
 //! The result is then proved closed, oriented and free of crossings, exactly,
 //! as an imported mesh is.
 
@@ -298,8 +308,9 @@ impl State<'_> {
     }
 }
 
-/// Collapses edges of `mesh` until at most `target` triangles remain or no
-/// allowed collapse is left. Work is charged to `dec`.
+/// Collapses edges of `mesh` until at most `target` triangles remain or the
+/// queue is empty. An empty queue can leave an allowed collapse untried; the
+/// module notes say when. Work is charged to `dec`.
 pub fn decimate(mesh: &ClosedMesh, target: usize, dec: &mut Decider) -> Result<Outcome, Refusal> {
     let exact: Vec<[Rational; 3]> = (0..mesh.vertex_count() as u32)
         .map(|v| mesh.vertex(v))
@@ -409,4 +420,99 @@ pub fn decimate(mesh: &ClosedMesh, target: usize, dec: &mut Decider) -> Result<O
             },
         )?;
     Ok(Outcome { mesh, sources })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A torus about the z axis, `n` by `m` quads each split in two, with
+    /// coordinates rounded to six decimals as an STL file holds them.
+    fn torus(big: f64, small: f64, n: usize, m: usize) -> ClosedMesh {
+        let mut points = Vec::new();
+        for i in 0..n {
+            let u = std::f64::consts::TAU * i as f64 / n as f64;
+            for j in 0..m {
+                let v = std::f64::consts::TAU * j as f64 / m as f64;
+                let r = big + small * v.cos();
+                points.push(
+                    [r * u.cos(), r * u.sin(), small * v.sin()]
+                        .map(|x| Rational::parse(&format!("{x:.6}")).expect("a decimal")),
+                );
+            }
+        }
+        let at = |i: usize, j: usize| ((i % n) * m + j % m) as u32;
+        let mut triangles = Vec::new();
+        for i in 0..n {
+            for j in 0..m {
+                triangles.push([at(i, j), at(i + 1, j), at(i + 1, j + 1)]);
+                triangles.push([at(i, j), at(i + 1, j + 1), at(i, j + 1)]);
+            }
+        }
+        ClosedMesh::from_parts(points, triangles, &mut Decider::default()).expect("a torus")
+    }
+
+    /// Every edge of `mesh`, lower vertex first, and placement at which
+    /// `allowed` accepts its collapse.
+    fn allowed_collapses(mesh: &ClosedMesh) -> Vec<(u32, u32, u8)> {
+        let mut dec = Decider::default();
+        let exact: Vec<[Rational; 3]> = (0..mesh.vertex_count() as u32)
+            .map(|v| mesh.vertex(v))
+            .collect();
+        let mut around = vec![Vec::new(); exact.len()];
+        for (t, tri) in mesh.triangles.iter().enumerate() {
+            for &v in tri {
+                around[v as usize].push(t as u32);
+            }
+        }
+        let mut state = State {
+            approx: exact
+                .iter()
+                .map(|p| p.each_ref().map(Rational::to_f64_nearest))
+                .collect(),
+            around,
+            quadrics: vec![Quadric::default(); exact.len()],
+            stamps: vec![0; exact.len()],
+            triangles: mesh.triangles.clone(),
+            alive: vec![true; mesh.triangles.len()],
+            exact,
+            meter: Meter::new(&mut dec),
+        };
+        let mut found = Vec::new();
+        for tri in &mesh.triangles {
+            for i in 0..3 {
+                let (u, v) = (tri[i], tri[(i + 1) % 3]);
+                if u < v {
+                    for place in 0..3 {
+                        let x = state.place(u, v, place);
+                        if state.allowed(u, v, &x).expect("no allowance is set") {
+                            found.push((u, v, place));
+                        }
+                    }
+                }
+            }
+        }
+        found
+    }
+
+    /// RECIPE.md 4.22: each edge is queued at one placement and a refused
+    /// entry leaves the queue, as in SMLib, so decimation can stop above its
+    /// count while a collapse is still allowed.
+    #[test]
+    fn an_empty_queue_can_leave_an_allowed_collapse() {
+        // A thin torus of 144 triangles asked for one triangle.
+        let ring = torus(10.0, 1.0, 12, 6);
+        let once = decimate(&ring, 1, &mut Decider::default()).expect("a decimation");
+        assert_eq!(once.mesh.triangles.len(), 40);
+        // Edge 0-1 of the result collapses at all three placements, so the
+        // queue last tested it before a collapse nearby that moved neither
+        // of its ends.
+        let left = allowed_collapses(&once.mesh);
+        for place in 0..3 {
+            assert!(left.contains(&(0, 1, place)), "{left:?}");
+        }
+        // A second decimation starts a new queue and collapses more.
+        let twice = decimate(&once.mesh, 1, &mut Decider::default()).expect("a decimation");
+        assert_eq!(twice.mesh.triangles.len(), 32);
+    }
 }

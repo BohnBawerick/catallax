@@ -438,6 +438,14 @@ pub fn overlap_volume(
 /// contact retain typed refusals. A gap whose lower bound is proven positive
 /// is clear; an enclosure wider than the caller's accuracy carries the
 /// `measure.accuracy-not-reached` mark, the bounded answer kind.
+///
+/// Where the overlap Boolean refuses or leaves the overlap unresolved, the
+/// pair is decided from boundary samples instead: a boundary point strictly
+/// inside the other solid proves a clash, boundaries proven apart with every
+/// shell outside the other solid prove a clear pair, and one solid wholly
+/// inside the other overlaps by its own volume. A clash proven from a sample
+/// encloses the overlap between an inscribed ball and the boxes' overlap,
+/// the bounded kind. A pair still undecided keeps the Boolean's refusal.
 pub fn body_relation(
     model: &Model,
     first: BodyId,
@@ -488,7 +496,20 @@ pub fn body_relation(
                 marks,
             )
         } else {
-            overlap_volume(model, first, second, accuracy, dec).map_err(|r| r.refusal)?
+            // Where the Boolean refuses, the arrangement search answers.
+            match overlap_volume(model, first, second, accuracy, dec) {
+                Ok(overlap) => overlap,
+                Err(refused) => {
+                    return arrangement::relation(
+                        model,
+                        first,
+                        second,
+                        accuracy,
+                        refused.refusal,
+                        dec,
+                    );
+                }
+            }
         };
         if overlap.value.lo > Rational::zero() {
             return Ok(Answer::with_marks(
@@ -499,56 +520,101 @@ pub fn body_relation(
             ));
         }
         if !overlap.value.hi.is_zero() {
-            return Err(Refusal::new(
+            let refused = Refusal::new(
                 "app.relation-overlap",
                 format!("overlap volume is unresolved in {:?} mm^3", overlap.value),
-            ));
+            );
+            return arrangement::relation(model, first, second, accuracy, refused, dec);
         }
-        let mut marks = overlap.marks;
-        let distance = catallax_measure::solid_gap(model, first, second, accuracy, dec)?;
-        marks.extend(&distance.marks);
-        let gap = distance.value;
-        if gap.hi.is_zero() {
-            return Err(Refusal::new(
-                "assembly.contact",
-                "proven minimum gap is 0 mm",
-            ));
-        }
-        if gap.lo <= Rational::zero() {
-            return Err(Refusal::new(
-                "app.relation-gap",
-                format!(
-                    "minimum gap is not proven positive: [{}, {}] mm",
-                    gap.lo.to_decimal_bounds(6).0,
-                    gap.hi.to_decimal_bounds(6).1
-                ),
-            ));
-        }
-        // A proven positive gap is a clear answer. An enclosure wider than
-        // requested is the bounded kind and carries the accuracy mark.
-        let allowed = accuracy.absolute.clone().max(&accuracy.relative * &gap.lo);
-        if gap.width() > allowed
-            && !marks
-                .iter()
-                .any(|mark| mark.code == "measure.accuracy-not-reached")
-        {
-            marks.push(catallax_numbers::Mark::new(
-                "measure.accuracy-not-reached",
-                catallax_numbers::BoundKind::Value,
-                gap.width(),
-                "minimum gap width exceeds the requested accuracy",
-            ));
-        }
-        Ok(Answer::with_marks(BodyRelation::Clear { gap }, marks))
+        gap_relation(model, first, second, overlap.marks, None, accuracy, dec)
     })
+}
+
+/// Clear by the minimum gap between two solids proven not to overlap, or a
+/// typed refusal for contact or a gap not proven positive. `floor` is a lower
+/// bound of the gap proven by another route, such as faces proven apart.
+fn gap_relation(
+    model: &Model,
+    first: BodyId,
+    second: BodyId,
+    mut marks: catallax_numbers::MarkLog,
+    floor: Option<&Rational>,
+    accuracy: &Accuracy,
+    dec: &mut Decider,
+) -> Answered<BodyRelation> {
+    let distance = catallax_measure::solid_gap(model, first, second, accuracy, dec)?;
+    marks.extend(&distance.marks);
+    let mut gap = distance.value;
+    if let Some(floor) = floor
+        && *floor > gap.lo
+    {
+        gap.lo = floor.clone().min(gap.hi.clone());
+    }
+    if gap.hi.is_zero() {
+        return Err(Refusal::new(
+            "assembly.contact",
+            "proven minimum gap is 0 mm",
+        ));
+    }
+    if gap.lo <= Rational::zero() {
+        return Err(Refusal::new(
+            "app.relation-gap",
+            format!(
+                "minimum gap is not proven positive: [{}, {}] mm",
+                gap.lo.to_decimal_bounds(6).0,
+                gap.hi.to_decimal_bounds(6).1
+            ),
+        ));
+    }
+    // A proven positive gap is a clear answer. An enclosure wider than
+    // requested is the bounded kind and carries the accuracy mark.
+    mark_width(
+        &mut marks,
+        &gap,
+        accuracy,
+        "minimum gap width exceeds the requested accuracy",
+    );
+    Ok(Answer::with_marks(BodyRelation::Clear { gap }, marks))
+}
+
+/// Adds the `measure.accuracy-not-reached` mark once when a positive
+/// enclosure is wider than the caller's accuracy allows at its lower end.
+fn mark_width(
+    marks: &mut catallax_numbers::MarkLog,
+    value: &Enclosure,
+    accuracy: &Accuracy,
+    detail: &str,
+) {
+    let allowed = accuracy
+        .absolute
+        .clone()
+        .max(&accuracy.relative * &value.lo);
+    if value.width() > allowed
+        && !marks
+            .iter()
+            .any(|mark| mark.code == "measure.accuracy-not-reached")
+    {
+        marks.push(catallax_numbers::Mark::new(
+            "measure.accuracy-not-reached",
+            catallax_numbers::BoundKind::Value,
+            value.width(),
+            detail,
+        ));
+    }
+}
+
+/// Accuracy of the proven boxes that relation queries compare: 1e-6 mm, the
+/// box accuracy of `catallax_measure::distance::PreparedFace`.
+fn box_accuracy() -> Accuracy {
+    Accuracy {
+        relative: Rational::zero(),
+        absolute: Rational::from_ratio(1, 1_000_000).unwrap(),
+    }
 }
 
 /// Whether two solids' proven boxes are strictly apart along some axis.
 fn boxes_apart(model: &Model, a: BodyId, b: BodyId, dec: &mut Decider) -> bool {
-    let accuracy = Accuracy {
-        relative: Rational::zero(),
-        absolute: Rational::from_ratio(1, 1_000_000).unwrap(),
-    };
+    let accuracy = box_accuracy();
     let [Some(x), Some(y)] = [a, b].map(|body| {
         catallax_measure::bounding_box(model, body, &accuracy, dec)
             .ok()
@@ -667,5 +733,6 @@ impl ApplicationBody {
     }
 }
 
+mod arrangement;
 #[cfg(test)]
 mod tests;

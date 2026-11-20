@@ -29,6 +29,11 @@ pub(crate) const MILLIMETRE: &str = "#10";
 pub(crate) const CONTEXT: &str = "#14";
 pub(crate) const REPRESENTATION: &str = "#16";
 
+/// The attribute of a hole feature that says how deep it goes.
+pub const HOLE_DEPTH: &str = "hole depth";
+/// The [`HOLE_DEPTH`] of a hole that goes through the part.
+pub const THROUGH: &str = "through";
+
 fn quoted(value: &str) -> Field {
     text(string(value))
 }
@@ -274,7 +279,13 @@ impl Emitter<'_> {
             ),
             ("REPRESENTATION_ITEM", vec![text("'nominal value'")]),
         ]);
-        let items = vec![value];
+        let mut items = vec![value];
+        if limits == Some(&Limits::Basic) {
+            items.push(self.graph.add(
+                "DESCRIPTIVE_REPRESENTATION_ITEM",
+                vec![text("'dimensional note'"), text("'theoretical'")],
+            ));
+        }
         let representation = self.graph.add(
             "SHAPE_DIMENSION_REPRESENTATION",
             vec![text("''"), refs(items), header(CONTEXT)],
@@ -284,7 +295,7 @@ impl Emitter<'_> {
             vec![dimension.into(), representation.into()],
         );
         match limits {
-            None => {}
+            None | Some(Limits::Basic) => {}
             Some(Limits::Deviations { upper, lower }) => {
                 let lower = self.length(lower, item)?;
                 let upper = self.length(upper, item)?;
@@ -469,13 +480,14 @@ impl Emitter<'_> {
 
     /// A note on the whole part, as a user defined attribute.
     fn note(&mut self, name: &str, value: &str) {
+        self.attribute(name, value, header(PRODUCT_DEFINITION));
+    }
+
+    /// A user defined attribute of the part or of one of its features.
+    fn attribute(&mut self, name: &str, value: &str, of: Field) {
         let property = self.graph.add(
             "PROPERTY_DEFINITION",
-            vec![
-                quoted(name),
-                text("'user defined attribute'"),
-                header(PRODUCT_DEFINITION),
-            ],
+            vec![quoted(name), text("'user defined attribute'"), of],
         );
         let item = self.graph.add(
             "DESCRIPTIVE_REPRESENTATION_ITEM",
@@ -600,6 +612,11 @@ pub(crate) fn emit(
                     .graph
                     .add("DIMENSIONAL_SIZE", vec![target.into(), text(name)]);
                 emitter.dimension(dimension, measured()?, size.limits.as_ref(), id)?;
+                if size.through {
+                    // AP242 edition 1 has no hole entity, so the hole's depth is an
+                    // attribute of the feature the diameter is on.
+                    emitter.attribute(HOLE_DEPTH, THROUGH, target.into());
+                }
             }
             ItemKind::Location(location) => {
                 let from = emitter.anchor(&location.from, id)?;

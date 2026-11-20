@@ -467,6 +467,7 @@ impl<'a> Reader<'a> {
     /// The nominal value and limits a dimension states.
     fn dimension_value(&self, id: u64) -> Result<(Option<Rational>, Option<Limits>), String> {
         let (mut nominal, mut upper, mut lower) = (None, None, None);
+        let mut basic = false;
         for (_, params) in self.sharing_at(id, "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION", 0) {
             let Some(representation) = reference(params.get(1)).and_then(|r| self.entity(r)) else {
                 continue;
@@ -497,11 +498,14 @@ impl<'a> Reader<'a> {
                 match entity.type_name() {
                     "DESCRIPTIVE_REPRESENTATION_ITEM" => {
                         let params = entity.parts[0].1.as_slice();
-                        // A basic or reference dimension, or any other note, changes
-                        // what the dimension means, and there is nowhere to keep it.
+                        // A reference dimension, or any other note, changes what the
+                        // dimension means, and there is nowhere to keep it.
                         let note = string(params.get(1)).unwrap_or_default();
+                        if note == "theoretical" {
+                            basic = true;
+                            continue;
+                        }
                         return Err(match note.as_str() {
-                            "theoretical" => "it is a basic (theoretical) dimension".into(),
                             "auxiliary" => "it is a reference (auxiliary) dimension".into(),
                             _ => format!("it carries the note `{note}`"),
                         });
@@ -558,7 +562,43 @@ impl<'a> Reader<'a> {
                 lower: lower - nominal,
             });
         }
+        if basic {
+            if limits.is_some() {
+                return Err("it is basic (theoretical) and has limits".into());
+            }
+            limits = Some(Limits::Basic);
+        }
         Ok((nominal, limits))
+    }
+
+    /// True when the feature carries the attribute of a hole that goes through.
+    fn through(&self, aspect: u64) -> bool {
+        self.sharing_at(aspect, "PROPERTY_DEFINITION", 2)
+            .into_iter()
+            .any(|(id, params)| {
+                string(params.first()).as_deref() == Some(HOLE_DEPTH)
+                    && string(params.get(1)).as_deref() == Some("user defined attribute")
+                    && self.attribute_text(id).as_deref() == Some(THROUGH)
+            })
+    }
+
+    /// The text of a user defined attribute.
+    fn attribute_text(&self, property: u64) -> Option<String> {
+        let mut text = None;
+        for (_, uses) in self.sharing_at(property, "PROPERTY_DEFINITION_REPRESENTATION", 0) {
+            let Some(representation) = reference(uses.get(1)).and_then(|r| self.entity(r)) else {
+                continue;
+            };
+            for item in references(representation.parts[0].1.get(1)) {
+                if let Some(item) = self
+                    .entity(item)
+                    .filter(|e| e.type_name() == "DESCRIPTIVE_REPRESENTATION_ITEM")
+                {
+                    text = text.or_else(|| string(item.parts[0].1.get(1)));
+                }
+            }
+        }
+        text
     }
 
     fn size(&self, id: u64, params: &[Param]) -> Result<Found, String> {
@@ -576,6 +616,7 @@ impl<'a> Reader<'a> {
                 kind,
                 features: self.features(aspect, 0)?,
                 limits,
+                through: kind == SizeKind::Diameter && self.through(aspect),
                 nominal,
             }),
         })
@@ -868,21 +909,7 @@ impl<'a> Reader<'a> {
             let Some(name) = string(params.first()).filter(|_| on_product) else {
                 continue;
             };
-            let mut text = None;
-            for (_, uses) in self.sharing_at(*id, "PROPERTY_DEFINITION_REPRESENTATION", 0) {
-                let Some(representation) = reference(uses.get(1)).and_then(|r| self.entity(r))
-                else {
-                    continue;
-                };
-                for item in references(representation.parts[0].1.get(1)) {
-                    if let Some(item) = self
-                        .entity(item)
-                        .filter(|e| e.type_name() == "DESCRIPTIVE_REPRESENTATION_ITEM")
-                    {
-                        text = text.or_else(|| string(item.parts[0].1.get(1)));
-                    }
-                }
-            }
+            let text = self.attribute_text(*id);
             let Some(text) = text.filter(|text| !text.trim().is_empty()) else {
                 continue;
             };

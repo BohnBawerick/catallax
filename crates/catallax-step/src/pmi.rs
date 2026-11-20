@@ -22,6 +22,7 @@ use catallax_numbers::{Rational, Refusal};
 
 pub use measure::nominals;
 pub(crate) use write::emit;
+pub use write::{HOLE_DEPTH, THROUGH};
 
 /// The faces of one feature: a bore's cylinder, or the two flats of a slot.
 pub type Feature<F> = Vec<F>;
@@ -74,6 +75,7 @@ impl<F> Pmi<F> {
                         .map(&mut feature)
                         .collect::<Result<_, _>>()?,
                     limits: size.limits.clone(),
+                    through: size.through,
                     nominal: size.nominal.clone(),
                 }),
                 ItemKind::Location(location) => {
@@ -178,6 +180,8 @@ pub struct Size<F> {
     pub features: Vec<Feature<F>>,
     /// The limits, or `None` for a size under the part's general tolerance.
     pub limits: Option<Limits>,
+    /// The size is a hole's diameter and the hole goes through the part.
+    pub through: bool,
     /// The nominal value in millimetres a file states. `None` on the way
     /// out: the writer measures it.
     pub nominal: Option<Rational>,
@@ -239,6 +243,10 @@ pub enum Limits {
         /// The lower deviation, below the upper one.
         lower: Rational,
     },
+    /// Theoretically exact (basic): the value places a tolerance zone and
+    /// takes no limits of its own. A geometric tolerance governs the
+    /// feature it locates.
+    Basic,
     /// An ISO 286 tolerance class, such as H7.
     Fit {
         /// The fundamental deviation: capital letters for a hole, small
@@ -516,6 +524,9 @@ impl<F: Ord + Clone> Pmi<F> {
                     if size.features.is_empty() {
                         return Err(refuse(id, "the size names no feature"));
                     }
+                    if size.through && size.kind != SizeKind::Diameter {
+                        return Err(refuse(id, "only a diameter goes through"));
+                    }
                     check_limits(id, size.limits.as_ref())?;
                 }
                 ItemKind::Location(location) => {
@@ -593,7 +604,7 @@ impl<F: Ord + Clone> Pmi<F> {
 
 fn check_limits(id: &str, limits: Option<&Limits>) -> Result<(), Refusal> {
     match limits {
-        None => Ok(()),
+        None | Some(Limits::Basic) => Ok(()),
         Some(Limits::Deviations { upper, lower }) => {
             if upper > lower {
                 Ok(())

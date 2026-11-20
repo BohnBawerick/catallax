@@ -144,8 +144,10 @@ fn at_feature(feature: &Feature<FaceId>) -> Anchor<FaceId> {
     }
 }
 
-/// The fourteen items of the P1 bracket test and its three part notes, with
-/// the nominal each dimension must measure.
+/// The fourteen items of the P1 bracket test as the entities a file holds, and
+/// its three part notes, with the nominal each dimension must measure. The slot
+/// item is three dimensions, the four holes go through, and the locating
+/// dimensions from the datums follow the items.
 fn bracket_pmi(part: &Bracket) -> (Pmi<FaceId>, BTreeMap<&'static str, &'static str>) {
     let a = part.planes(2, "0");
     let b = part.planes(1, "0");
@@ -187,8 +189,46 @@ fn bracket_pmi(part: &Bracket) -> (Pmi<FaceId>, BTreeMap<&'static str, &'static 
             }),
         )
     };
+    // The locating dimensions from the datums: basic where a position tolerance
+    // governs the feature, under the general tolerance otherwise.
+    let located = |name: &str, datum: &Feature<FaceId>, to: Anchor<FaceId>, limits| {
+        item(
+            name,
+            ItemKind::Location(Location {
+                from: at_feature(datum),
+                to,
+                limits,
+                nominal: None,
+            }),
+        )
+    };
+    let mut slot_middle = vec![slot_ends[0][0], slot_ends[1][0]];
+    slot_middle.sort();
+    let mut locating = vec![
+        located("Bore from B", &b, at_feature(&bore), Some(Limits::Basic)),
+        located("Bore from C", &c, at_feature(&bore), Some(Limits::Basic)),
+        located(
+            "Slot from C",
+            &c,
+            Anchor {
+                feature: slot_middle,
+                at: At::Middle,
+            },
+            None,
+        ),
+    ];
+    for (index, hole) in holes.iter().enumerate() {
+        for (letter, datum) in [("B", &b), ("C", &c)] {
+            locating.push(located(
+                &format!("Hole {} from {letter}", index + 1),
+                datum,
+                at_feature(hole),
+                Some(Limits::Basic),
+            ));
+        }
+    }
     let all = ["A", "B", "C"].map(str::to_owned).to_vec();
-    let items = vec![
+    let mut items = vec![
         datum("A", &a),
         datum("B", &b),
         datum("C", &c),
@@ -202,6 +242,7 @@ fn bracket_pmi(part: &Bracket) -> (Pmi<FaceId>, BTreeMap<&'static str, &'static 
                     grade: "7".into(),
                 }),
                 nominal: None,
+                through: false,
             }),
         ),
         item(
@@ -231,6 +272,7 @@ fn bracket_pmi(part: &Bracket) -> (Pmi<FaceId>, BTreeMap<&'static str, &'static 
                 features: vec![boss.clone()],
                 limits: deviations("0.1", "-0.1"),
                 nominal: None,
+                through: false,
             }),
         ),
         item(
@@ -249,6 +291,7 @@ fn bracket_pmi(part: &Bracket) -> (Pmi<FaceId>, BTreeMap<&'static str, &'static 
                 features: holes.clone(),
                 limits: deviations("0.1", "0"),
                 nominal: None,
+                through: true,
             }),
         ),
         item(
@@ -293,6 +336,7 @@ fn bracket_pmi(part: &Bracket) -> (Pmi<FaceId>, BTreeMap<&'static str, &'static 
                 features: slot_ends.to_vec(),
                 limits: None,
                 nominal: None,
+                through: false,
             }),
         ),
         item(
@@ -330,6 +374,7 @@ fn bracket_pmi(part: &Bracket) -> (Pmi<FaceId>, BTreeMap<&'static str, &'static 
             }),
         ),
     ];
+    items.extend(locating);
     let nominal = BTreeMap::from([
         ("Bore diameter", "8"),
         ("Boss diameter", "16"),
@@ -339,6 +384,17 @@ fn bracket_pmi(part: &Bracket) -> (Pmi<FaceId>, BTreeMap<&'static str, &'static 
         ("Slot length", "20"),
         ("Slot end radius", "3"),
         ("Slot height", "18"),
+        ("Bore from B", "25"),
+        ("Bore from C", "30"),
+        ("Slot from C", "30"),
+        ("Hole 1 from B", "12"),
+        ("Hole 1 from C", "10"),
+        ("Hole 2 from B", "32"),
+        ("Hole 2 from C", "10"),
+        ("Hole 3 from B", "12"),
+        ("Hole 3 from C", "50"),
+        ("Hole 4 from B", "32"),
+        ("Hole 4 from C", "50"),
     ]);
     let pmi = Pmi {
         items,
@@ -496,6 +552,7 @@ fn a_changed_bore_keeps_its_items_and_reads_its_new_size() {
                     grade: "7".into(),
                 }),
                 nominal: None,
+                through: false,
             }),
         )],
         part: PartNotes::default(),
@@ -542,6 +599,7 @@ fn information_that_does_not_fit_the_part_is_refused() {
             features: vec![a.clone()],
             limits: None,
             nominal: None,
+            through: false,
         }))),
         "step.pmi-not-measurable"
     );
@@ -574,6 +632,7 @@ fn information_that_does_not_fit_the_part_is_refused() {
             features: vec![part.round(2, "4", ["30", "25"])],
             limits: deviations("0", "0.1"),
             nominal: None,
+            through: false,
         }))),
         "step.pmi-invalid"
     );

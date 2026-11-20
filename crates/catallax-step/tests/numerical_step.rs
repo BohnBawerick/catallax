@@ -102,7 +102,9 @@ fn n03_numerical_two_loop_and_repaired_controls_are_reread() {
         assert!(!work.exhausted);
         assert_eq!(artifact.report().counts, [10, 24, 16]);
         assert_eq!(&artifact.report().source_evidence, body.evidence());
-        assert!(artifact.report().emitted_evidence.repairs().is_empty());
+        let written = numerical::audit_written(&body, &options, &mut Decider::default()).unwrap();
+        assert_eq!(written.file.bytes(), artifact.bytes());
+        assert!(written.evidence.repairs().is_empty());
         assert_eq!(
             artifact.report().source_evidence.repairs().len(),
             usize::from(gap)
@@ -133,7 +135,7 @@ fn n03_numerical_two_loop_and_repaired_controls_are_reread() {
                 format!("{:?}\n", artifact.report()),
             )
             .unwrap();
-            let report = serde_json::json!({"result":"numerical","exact":false,"complete_body_bound":null,"file":format!("{name}.step"),"source_name":artifact.report().source_name,"source_tolerance_mm":body.options().tolerance_mm.to_string(),"source_repairs":body.evidence().repairs().len(),"source_checks":body.evidence().checks().len(),"emitted_repairs":artifact.report().emitted_evidence.repairs().len(),"emitted_checks":artifact.report().emitted_evidence.checks().len(),"max_scalar_rounding_error_mm":artifact.report().max_scalar_rounding_error_mm.to_string(),"scalar_rounding_limit_mm":options.max_scalar_rounding_error_mm.to_string(),"bytes_reread_checked":true,"reference_check":"separate","counts":artifact.report().counts,"work":{"used":work.used,"limit":20_000_000,"exhausted":work.exhausted}});
+            let report = serde_json::json!({"result":"numerical","exact":false,"complete_body_bound":null,"file":format!("{name}.step"),"source_name":artifact.report().source_name,"source_tolerance_mm":body.options().tolerance_mm.to_string(),"source_repairs":body.evidence().repairs().len(),"source_checks":body.evidence().checks().len(),"audit_repairs":written.evidence.repairs().len(),"audit_checks":written.evidence.checks().len(),"rounding_error_mm":artifact.report().rounding.bound_mm.to_string(),"recorded_tolerance_mm":artifact.report().uncertainty_mm.to_string(),"max_scalar_rounding_error_mm":artifact.report().max_scalar_rounding_error_mm.to_string(),"scalar_rounding_limit_mm":options.max_scalar_rounding_error_mm.to_string(),"bytes_reread_checked":true,"reference_check":"separate","counts":artifact.report().counts,"work":{"used":work.used,"limit":20_000_000,"exhausted":work.exhausted}});
             std::fs::write(
                 directory.join(format!("{name}-report.json")),
                 serde_json::to_vec_pretty(&report).unwrap(),

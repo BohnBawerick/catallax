@@ -167,8 +167,15 @@ mod tests {
         fs::write(&output, "stale").unwrap();
         run(&input, &output).unwrap();
         assert_eq!(fs::read_to_string(&input).unwrap(), saved);
+        // The stored evidence was written before check once added two
+        // fields to the stamp (roadmap 3.0A step 5). Every entity under the
+        // stamp is the same byte for byte.
+        let written = fs::read_to_string(&output).unwrap();
+        let start = written.find(";rounding_error_mm=").unwrap();
+        let end = start + written[start..].find('\'').unwrap();
+        assert!(written[start..end].contains(";recorded_tolerance_mm="));
         assert_eq!(
-            fs::read(&output).unwrap(),
+            format!("{}{}", &written[..start], &written[end..]).as_bytes(),
             include_bytes!("../../../evidence/phase1/N04/edited.step")
         );
         assert_eq!(fs::read_dir(&dir).unwrap().count(), 2);

@@ -51,12 +51,22 @@ def main():
   assert [r["actual_step_join_gap_mm"] for r in rows]==["0","9/500","3/250"]
   assert all(r["exceeds_tolerance"] for r in rows[1:])
  else:
-  for name,stage in [("source-gap","source admission:"),("rounded-gap","decimal admission:")]:
-   response=json.loads((args.root/name/"response.json").read_text());answer=response["result"]
-   assert answer["status"]=="refused" and stage in answer["reason"] and "trim.native-join-position" in answer["reason"]
-   assert not response["work"]["exhausted"] and response["work"]["limit"]==20_000_000
-   assert not (args.root/name/"answer.step").exists()
-   rows.append({"control":name,"refused":True,"stage":stage,"no_stale_step":True})
+  name,stage="source-gap","source admission:"
+  response=json.loads((args.root/name/"response.json").read_text());answer=response["result"]
+  assert answer["status"]=="refused" and stage in answer["reason"] and "trim.native-join-position" in answer["reason"]
+  assert not response["work"]["exhausted"] and response["work"]["limit"]==20_000_000
+  assert not (args.root/name/"answer.step").exists()
+  rows.append({"control":name,"refused":True,"stage":stage,"no_stale_step":True})
+  # Check once: an export writes the numbers and records the body's tolerance
+  # plus their rounding error; it does not admit the written values again.
+  # One significant digit opens this join past the body's tolerance, and the
+  # file's own record holds it.
+  row=check(args.root,"rounded-gap");response=json.loads((args.root/"rounded-gap"/"response.json").read_text());answer=response["result"]
+  assert answer["status"]=="numerical" and row["actual_step_join_gap_mm"]=="3/250" and row["exceeds_tolerance"]
+  recorded=Q(answer["recorded_tolerance_mm"]);assert recorded>=Q(row["actual_step_join_gap_mm"])
+  assert re.search(r';recorded_tolerance_mm=([^;\']+)',(args.root/"rounded-gap"/"answer.step").read_text())[1]==answer["recorded_tolerance_text"]
+  assert not response["work"]["exhausted"] and response["work"]["limit"]==20_000_000
+  rows.append({**row,"recorded_tolerance_mm":str(recorded),"inside_recorded_tolerance":True})
  result={"method":"actual STEP numerals in the authored cube controls","cases":rows}
  if args.out:args.out.write_text(json.dumps(result,indent=2)+"\n")
  print(json.dumps(result,indent=2))

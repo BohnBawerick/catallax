@@ -243,8 +243,11 @@ fn run(out: &Path, case: &str, control: &str) -> Result<Value, String> {
     )
     .map_err(|e| format!("{e:?}"))?;
     let admitted_work = current_operation_work().used;
-    let file = step::build(&body, &NumericalStepOptions::default(), &mut dec)
+    // A regression control: the file as an export writes it, and an audit of
+    // the values it holds.
+    let audit = step::audit_written(&body, &NumericalStepOptions::default(), &mut dec)
         .map_err(|e| format!("{e:?}"))?;
+    let file = &audit.file;
     std::fs::write(out.join("answer.step"), file.bytes()).map_err(|e| e.to_string())?;
     let reread = std::fs::read(out.join("answer.step")).map_err(|e| e.to_string())?;
     file.check_written(&reread, &mut dec)
@@ -254,7 +257,8 @@ fn run(out: &Path, case: &str, control: &str) -> Result<Value, String> {
     Ok(json!({
         "status":"numerical","category":"approximate","exact":false,"case":case,"control":control,
         "counts":report.counts,"two_loop_faces":report.source_definition.faces.iter().filter(|face| face.loops.len()==2).count(),
-        "bytes":file.bytes().len(),"source_evidence":evidence(&report.source_evidence),"emitted_evidence":evidence(&report.emitted_evidence),
+        "bytes":file.bytes().len(),"source_evidence":evidence(&report.source_evidence),"written_audit":evidence(&audit.evidence),
+        "recorded_tolerance_mm":report.uncertainty_mm.to_string(),"rounding_error_mm":report.rounding.bound_mm.to_string(),
         "native_trims":{"original":native_summary(&report.original_native_trims),"source":native_summary(&report.source_native_trims),"emitted":native_summary(&report.emitted_native_trims)},
         "file_checks":report.checks,"max_scalar_rounding_error_mm":report.max_scalar_rounding_error_mm.to_string(),
         "max_direction_ratio_rounding_error":report.max_direction_ratio_rounding_error.to_string(),

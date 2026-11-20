@@ -11,7 +11,7 @@ use catallax_numbers::{
 };
 use catallax_recipe::StepId;
 use catallax_shapes::{Curve, Point3, Surface};
-use catallax_step::numerical::{NumericalStepOptions, build as export};
+use catallax_step::numerical::{NumericalStepOptions, audit_written as export};
 use catallax_topology::numerical as n;
 use serde_json::{Value, json};
 
@@ -69,16 +69,18 @@ fn pose_edit(body: &n::NumericalBody, dec: &mut Decider) -> Result<n::NumericalB
     body.rebuild(definition, body.options().clone(), dec)
 }
 fn file(body: &n::NumericalBody, path: &Path, dec: &mut Decider) -> Result<Value, Value> {
-    let file = export(body, &NumericalStepOptions::default(), dec).map_err(|e| error("step", e))?;
+    // The file as an export writes it, with an audit of the values it holds.
+    let audit =
+        export(body, &NumericalStepOptions::default(), dec).map_err(|e| error("step", e))?;
+    let file = &audit.file;
     std::fs::write(path, file.bytes())
         .map_err(|e| json!({"stage":"write","detail":e.to_string()}))?;
     let bytes =
         std::fs::read(path).map_err(|e| json!({"stage":"reread","detail":e.to_string()}))?;
     file.check_written(&bytes, dec)
         .map_err(|e| error("reread-check", e))?;
-    let phase_bounds = file
-        .report()
-        .emitted_evidence
+    let phase_bounds = audit
+        .evidence
         .checks()
         .iter()
         .filter_map(|check| match check {

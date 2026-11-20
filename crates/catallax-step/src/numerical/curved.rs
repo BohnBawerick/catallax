@@ -80,6 +80,7 @@ fn line(w: &mut Writer<'_>, values: &payload::LineValues, name: &str) -> Result<
 pub(super) fn build(
     body: &NumericalBody,
     options: &NumericalStepOptions,
+    audit: bool,
     dec: &mut Decider,
 ) -> Result<NumericalStep, Refusal> {
     let mut w = Writer {
@@ -88,11 +89,14 @@ pub(super) fn build(
         dec,
         error: Rational::zero(),
         direction_error: Rational::zero(),
+        magnitude_error: Rational::zero(),
+        audit,
     };
     let payload = payload::build(body, &mut w)?;
-    let definition = payload.body.definition();
+    let definition = &payload.definition;
     w.error = w.error.max(payload.scalar_error);
     w.direction_error = w.direction_error.max(payload.direction_error);
+    w.magnitude_error = w.magnitude_error.max(payload.magnitude_error);
     let mut vertices = Vec::new();
     for vertex in &definition.vertices {
         let point = w.point(&vertex.position)?;
@@ -123,7 +127,7 @@ pub(super) fn build(
     );
     let uses = pcurve_uses(
         &definition.faces,
-        payload.body.native_trims(),
+        &payload.native_trims,
         definition.edges.len(),
         w.dec,
     )?;
@@ -169,13 +173,16 @@ pub(super) fn build(
                     &edge.parameters,
                     &uv,
                 )?;
-                parameter_checks.push(super::analytic::pcurve_checks(
-                    edge,
-                    &definition.faces[*face_index],
-                    &actual,
-                    None,
-                    w.dec,
-                )?);
+                // An audit measures the u/v line as it was written.
+                if w.audit {
+                    parameter_checks.push(super::analytic::pcurve_checks(
+                        edge,
+                        &definition.faces[*face_index],
+                        &actual,
+                        None,
+                        w.dec,
+                    )?);
+                }
                 pcurves.push(curve);
             } else {
                 pcurves.push(native::pcurve(
@@ -261,21 +268,23 @@ pub(super) fn build(
         ));
     }
     let solid = w.representation(faces, body)?;
-    let emitted_native_trims = payload.body.native_trims().to_vec();
-    let mut checks = payload.body.evidence().checks().to_vec();
-    checks.extend(payload.phase_checks);
+    let emitted_native_trims = payload.native_trims.clone();
+    let mut checks = payload.phase_checks;
     checks.extend(parameter_checks);
-    let emitted = NumericalEvidence::new(body.options().tolerance_mm.clone(), checks, Vec::new())?;
     let mut spline_rounding = payload.spline_rounding;
     spline_rounding.max_parameter_error = spline_rounding.max_parameter_error.max(parameter.error);
     let mut artifact = w.finish(
         solid,
         body,
-        emitted,
+        Payload::Curved {
+            definition: payload.definition,
+            native_trims: payload.native_trims,
+            checks,
+        },
         Some(spline_rounding),
         vec![
             "source.retained-native-carriers-and-physical-loops".into(),
-            "file.decimal-model-numerical-admission".into(),
+            "file.rounding-error-added-to-tolerance".into(),
             "file.canonical-byte-identity".into(),
             "file.curved-seam-contract".into(),
             "file.approximate-category-no-global-bound".into(),

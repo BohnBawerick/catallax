@@ -10,6 +10,7 @@ use catallax_topology::{BodyId, BodyKind, Model};
 use serde_json::{Value, json};
 
 // Reuse the production syntax parser, without stopping at geometry recognition.
+#[allow(dead_code)]
 #[path = "../src/part21.rs"]
 mod part21;
 use part21::{Entity, Param};

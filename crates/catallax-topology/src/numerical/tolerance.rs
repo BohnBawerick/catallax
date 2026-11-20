@@ -331,7 +331,7 @@ pub(super) fn check_by_class(
         {
             for sample in samples {
                 let (stored, limit) = if is_vertex_record(name) {
-                    (vertex_allowance(&sample.distance_upper_mm), vertex_mm)
+                    (vertex_allowance(name, &sample.distance_upper_mm), vertex_mm)
                 } else {
                     (sample.distance_upper_mm.clone(), cap_mm)
                 };
@@ -586,6 +586,14 @@ fn margin() -> Rational {
     mm(11, 10)
 }
 
+/// The check name of an edge use whose record is the tolerance its file
+/// recorded at export, not a measurement (check once, roadmap item 3.0A
+/// step 5).
+pub const RECORDED_USE: &str = "trim.edge-surface-recorded-tolerance";
+/// The check name of an edge's two ends at their vertices, where the record
+/// is the tolerance the file recorded.
+pub const RECORDED_VERTEX: &str = "edge.vertex-recorded-tolerance";
+
 fn is_edge_surface_record(name: &str) -> bool {
     matches!(
         name,
@@ -593,18 +601,26 @@ fn is_edge_surface_record(name: &str) -> bool {
             | "trim.numerical-pair-edge-surface-distance"
             | "trim.edge-surface-derived-bound"
             | "trim.numerical-pair-edge-surface-derived-bound"
+            | RECORDED_USE
     )
 }
 
 fn is_vertex_record(name: &str) -> bool {
     matches!(
         name,
-        "edge.vertex-distance" | "edge.numerical-pair-vertex-distance"
+        "edge.vertex-distance" | "edge.numerical-pair-vertex-distance" | RECORDED_VERTEX
     )
 }
 
-fn vertex_allowance(distance_upper_mm: &Rational) -> Rational {
-    &margin() * distance_upper_mm
+/// The tolerance a vertex takes from one record of an edge end. Rule T4's
+/// margin belongs to a fresh measurement; a recorded tolerance has it
+/// already and takes none again.
+fn vertex_allowance(name: &str, distance_upper_mm: &Rational) -> Rational {
+    if name == RECORDED_VERTEX {
+        distance_upper_mm.clone()
+    } else {
+        &margin() * distance_upper_mm
+    }
 }
 
 /// The stored record of every edge use, in definition order (face, loop,
@@ -648,7 +664,7 @@ pub(super) fn entity_tolerances(
     for check in evidence.checks() {
         if let NumericalCheck::Samples { name, samples, .. } = check {
             if is_vertex_record(name) {
-                vertex_records.push(samples);
+                vertex_records.push((name, samples));
             } else if is_edge_surface_record(name) {
                 use_records.push(samples);
             }
@@ -677,8 +693,9 @@ pub(super) fn entity_tolerances(
         }
     }
     for (index, edge) in definition.edges.iter().enumerate() {
-        for (end, sample) in edge.vertices.iter().zip(vertex_records[index].iter()) {
-            let measured = vertex_allowance(&sample.distance_upper_mm);
+        let (name, samples) = vertex_records[index];
+        for (end, sample) in edge.vertices.iter().zip(samples.iter()) {
+            let measured = vertex_allowance(name, &sample.distance_upper_mm);
             vertices[*end] = vertices[*end]
                 .clone()
                 .max(measured)
@@ -714,18 +731,18 @@ pub(super) fn entity_tolerances(
     Ok(entities)
 }
 
-/// The largest entity tolerance a check records: the largest stored record
-/// of an edge use, and rule T4's margin on the largest distance from an edge
-/// end to its vertex. The same reading as [`ToleranceReport::largest_mm`],
-/// for a check with no body of its own, such as an export's check of its
-/// written values.
+/// The largest entity tolerance a set of checks records: the largest stored
+/// record of an edge use, and rule T4's margin on the largest distance from
+/// an edge end to its vertex. With rule T1's floor it is what
+/// [`ToleranceReport::largest_mm`] gives, for a body whose report was not
+/// stored with it: one read back from a handover written before the report.
 pub fn largest_recorded(evidence: &NumericalEvidence) -> Rational {
     let mut largest = Rational::zero();
     for check in evidence.checks() {
         if let NumericalCheck::Samples { name, samples, .. } = check {
             for sample in samples {
                 let value = if is_vertex_record(name) {
-                    vertex_allowance(&sample.distance_upper_mm)
+                    vertex_allowance(name, &sample.distance_upper_mm)
                 } else if is_edge_surface_record(name) {
                     sample.distance_upper_mm.clone()
                 } else {

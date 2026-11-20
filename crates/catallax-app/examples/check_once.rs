@@ -2,7 +2,9 @@
 //! STEP export of the owner's pocket rim at R2, and of reopening the written
 //! file. Export and reopening are measured apart.
 //!
-//! Usage: check_once [--runs N] [--write OUT.step] [REOPEN.step ...]
+//! Usage: check_once [--runs N] [--write OUT.step] [--reopen-only] [REOPEN.step ...]
+//!
+//! `--reopen-only` skips the build and the export and reopens the named files.
 //!
 //! One JSON line per measurement. Work is deterministic; the clock is not,
 //! so each measurement runs N times (3 by default) and prints every run with
@@ -63,7 +65,15 @@ fn reopen(label: &str, bytes: &[u8], run: usize, counted: bool) {
     let step = StepId::new("import").unwrap();
     let before = load();
     let start = Instant::now();
-    let open = || open_step(bytes, &sha, &step, Default::default(), &mut Decider::default());
+    let open = || {
+        open_step(
+            bytes,
+            &sha,
+            &step,
+            Default::default(),
+            &mut Decider::default(),
+        )
+    };
     let (opened, work) = if counted {
         let (opened, work) = with_operation_budget(COUNT_ALL, open);
         (opened, Some(work))
@@ -84,14 +94,39 @@ fn reopen(label: &str, bytes: &[u8], run: usize, counted: bool) {
     };
     let bodies: Vec<Value> = (0..opened.bodies().len())
         .map(|index| {
-            let view = match opened.body(index) {
-                Some(BodyView::Certified { .. }) => "certified",
-                Some(BodyView::Numerical(_)) => "numerical",
-                Some(BodyView::Tolerant { .. }) => "tolerant",
-                Some(BodyView::Surfaces { .. }) => "surfaces",
-                None => "none",
+            // The tolerance the file recorded, where the body was taken with
+            // it and nothing was measured.
+            let (view, recorded) = match opened.body(index) {
+                Some(BodyView::Certified { .. }) => ("certified", None),
+                Some(BodyView::Numerical(body)) => (
+                    "numerical",
+                    body.evidence()
+                        .checks()
+                        .iter()
+                        .any(|check| {
+                            matches!(check, catallax_numbers::NumericalCheck::Samples { name, .. }
+                                if name == catallax_topology::numerical::tolerance::RECORDED_USE)
+                        })
+                        .then(|| body.tolerances().largest_mm().to_string()),
+                ),
+                Some(BodyView::Tolerant { import, body }) => {
+                    for warning in &import.evidence().warnings {
+                        if warning.code.starts_with("recorded-tolerance") {
+                            eprintln!("{}: {}", warning.code, warning.detail);
+                        }
+                    }
+                    (
+                        "tolerant",
+                        import.bodies()[body]
+                            .recorded_tolerance_mm()
+                            .map(ToString::to_string),
+                    )
+                }
+                Some(BodyView::Surfaces { .. }) => ("surfaces", None),
+                None => ("none", None),
             };
             json!({"tier": opened.bodies()[index].tier(), "view": view,
+                "recorded_tolerance_mm": recorded,
                 "refusal": opened.bodies()[index].refusal().map(|e| format!("{e:?}")),
                 "upgrade_refusal": opened.bodies()[index].upgrade_refusal().map(|e| format!("{e:?}"))})
         })
@@ -111,6 +146,7 @@ fn reopen(label: &str, bytes: &[u8], run: usize, counted: bool) {
 
 fn main() {
     let mut runs = 3usize;
+    let mut reopen_only = false;
     let mut write = None;
     let mut files = Vec::new();
     let mut args = std::env::args().skip(1);
@@ -118,8 +154,21 @@ fn main() {
         match arg.as_str() {
             "--runs" => runs = args.next().and_then(|n| n.parse().ok()).expect("--runs N"),
             "--write" => write = Some(args.next().expect("--write OUT.step")),
+            "--reopen-only" => reopen_only = true,
             _ => files.push(arg),
         }
+    }
+    if reopen_only {
+        for path in files {
+            let bytes = std::fs::read(&path).unwrap();
+            for run in 0..runs {
+                reopen(&path, &bytes, run, true);
+            }
+            for run in 0..runs {
+                reopen(&path, &bytes, run, false);
+            }
+        }
+        return;
     }
     let recipe = rim("2");
     let start = Instant::now();
@@ -158,6 +207,8 @@ fn main() {
             json!({"measure":"export","part":"owner pocket rim R2","run":run,
                 "work":export.used,"exhausted":export.exhausted,"wall_ms":wall_ms,
                 "bytes":step.bytes().len(),"sha256":sha256_hex(step.bytes()),
+                "recorded_tolerance_mm":step.report().uncertainty_mm.to_string(),
+                "rounding_error_mm":step.report().rounding.bound_mm.to_f64_nearest(),
                 "load_before":before,"load_after":load()})
         );
         written = step.bytes().to_vec();

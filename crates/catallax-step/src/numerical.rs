@@ -1,15 +1,21 @@
 //! Separate approximate STEP artifacts for checked numerical bodies.
 //! No exact answer, complete bound, model extraction or healing is provided.
+//!
+//! Check once (roadmap item 3.0A, step 5): [`build`] writes the numbers and
+//! records the body's largest entity tolerance plus the rounding error of
+//! the written numbers. It does not admit the written values again.
+//! [`audit_written`] is that second admission, for tests and CI.
 use crate::graph::{Field, Graph, Id, boolean, refs, string, text};
 use catallax_numbers::{
-    Decider, NumericalEvidence, Rational, Real, Refusal, Sign, operation_budget_active,
-    with_operation_budget,
+    Decider, NumericalCheck, NumericalEvidence, Rational, Real, Refusal, Sign,
+    operation_budget_active, with_operation_budget,
 };
 use catallax_shapes::{Curve, Point3, Surface, Vector3};
 use catallax_topology::{
     BodyKind, Sense,
     numerical::{
-        DEFAULT_WORK, NumericalBody, RefitRow,
+        DEFAULT_WORK, NumericalBody, NumericalDefinition, NumericalNativeTrim, NumericalOptions,
+        RefitRow,
         tolerance::{self, EntityTolerance, FeatureBand, FeaturePair},
     },
 };
@@ -18,6 +24,8 @@ pub use catallax_topology::numerical::tolerance::ReceiverProfile;
 
 mod analytic;
 mod curved;
+mod rounding;
+pub use rounding::{RoundingError, RoundingErrors, RoundingLevers};
 
 /// Controls fixed before a numerical export. They do not change source tolerance.
 #[derive(Clone, Debug)]
@@ -158,9 +166,9 @@ pub struct NumericalStepReport {
     /// N01/N02 evidence, including tolerance, actual samples and repair history.
     /// Sample maxima are never promoted into a complete bound.
     pub source_evidence: NumericalEvidence,
-    /// N01/N02 checks on the emitted decimal-value model with retained topology.
-    /// This is separate from the source checks and external reference validation.
-    pub emitted_evidence: NumericalEvidence,
+    /// How far the rounding of the written numbers can move a point of the
+    /// written model, to first order. The written values are not measured.
+    pub rounding: RoundingError,
     /// Requested error limit on written length scalars only.
     pub scalar_rounding_limit_mm: Rational,
     /// Actual maximum rounding error among written length scalars only.
@@ -174,9 +182,11 @@ pub struct NumericalStepReport {
     pub spline_rounding: Option<NumericalSplineRounding>,
     /// Checks performed by this writer, distinct from external reference checks.
     pub checks: Vec<String>,
-    /// The largest entity tolerance of the source and of the emitted check,
-    /// in millimetres before any scale. Rule T8 writes it as the file's
-    /// uncertainty when the export has a receiver profile.
+    /// The tolerance the file records, in millimetres before any scale: the
+    /// largest entity tolerance of the body plus the rounding error, rounded
+    /// up to the written digits. The stamp carries it as
+    /// `recorded_tolerance_mm`, and reopening trusts it. Rule T8 also writes
+    /// it as the file's uncertainty when the export has a receiver profile.
     pub uncertainty_mm: Rational,
     /// Rule T8's report, when a receiver profile was given.
     pub receiver: Option<ReceiverReport>,
@@ -196,6 +206,22 @@ pub struct NumericalStepReport {
 pub struct NumericalStep {
     bytes: Vec<u8>,
     report: NumericalStepReport,
+    /// The full check of the written values, kept only by [`audit_written`].
+    written: Option<NumericalEvidence>,
+}
+
+/// The full check of the values a file holds, against the tolerance the
+/// file records. For tests and CI: an export does not run it.
+#[derive(Clone, Debug)]
+pub struct WrittenAudit {
+    /// The file, byte for byte what [`build`] writes for the same body.
+    pub file: NumericalStep,
+    /// Admission's checks of the written decimal values, with the checks of
+    /// the written u/v curves of an analytic face. Each stored record is
+    /// 1.1 times a gap measured on the written values (rule T4). None is
+    /// over 1.1 times the recorded tolerance, or the audit would have
+    /// refused: no measured gap is over what the file records.
+    pub evidence: NumericalEvidence,
 }
 impl NumericalStep {
     /// Approximate STEP bytes; the file itself states the numerical category.
@@ -434,11 +460,12 @@ fn inverse_uv(
 }
 // Same IDs/loops, and only values actually selected for serialization. The UVs
 // below are inverse coordinates on emitted planar frames, not inferred topology.
-fn emitted_checks(
+// An audit's work: an export does not admit the written values.
+fn planar_payload(
     body: &NumericalBody,
     options: &NumericalStepOptions,
     dec: &mut Decider,
-) -> Result<NumericalEvidence, Refusal> {
+) -> Result<NumericalDefinition, Refusal> {
     let mut d = body.definition().clone();
     // STEP carries no copy tag and both copies are rounded below, so the
     // check of the written values measures every use.
@@ -556,12 +583,118 @@ fn emitted_checks(
             }
         }
     }
-    let emitted = if body.kind() == BodyKind::Surface {
-        catallax_topology::numerical::build_surface(d, body.options().clone(), dec)?
+    Ok(d)
+}
+
+/// What an audit admits: the decimal values a writer wrote.
+enum Payload {
+    /// Lines and planes: the values are rebuilt from the body when asked.
+    Planar,
+    /// The definition and u/v curves a curved writer wrote from, with the
+    /// checks of what it wrote beside them.
+    Curved {
+        definition: NumericalDefinition,
+        native_trims: Vec<NumericalNativeTrim>,
+        checks: Vec<NumericalCheck>,
+    },
+}
+
+/// The tolerance a file records and the rounding error inside it.
+struct Recorded {
+    rounding: RoundingError,
+    /// The largest entity tolerance plus the rounding error, rounded up to
+    /// the written digits.
+    tolerance_mm: Rational,
+    /// Its decimal text, as the stamp holds it.
+    text: String,
+    /// The rounding error's decimal text, rounded up.
+    rounding_text: String,
+}
+
+/// Check once: the body's largest entity tolerance plus the rounding error
+/// of the written numbers. Rule T4's margin is in the entity tolerance
+/// already and is not applied again.
+fn recorded(
+    body: &NumericalBody,
+    written: (&NumericalDefinition, &[NumericalNativeTrim]),
+    errors: RoundingErrors,
+    options: &NumericalStepOptions,
+    dec: &mut Decider,
+) -> Result<Recorded, Refusal> {
+    let levers = RoundingLevers::of(written.0, written.1, dec)?;
+    let rounding = RoundingError::bound(errors, levers)?;
+    let exact = largest_entity_tolerance(body, dec)? + rounding.bound_mm.clone();
+    let text = exact.to_decimal_bounds(options.significant_digits).1;
+    let tolerance_mm = Rational::parse(&text)
+        .map_err(|_| bad("file-number", "recorded tolerance cannot be reread"))?;
+    let rounding_text = rounding
+        .bound_mm
+        .to_decimal_bounds(options.significant_digits)
+        .1;
+    Ok(Recorded {
+        rounding,
+        tolerance_mm,
+        text,
+        rounding_text,
+    })
+}
+
+/// The body's largest entity tolerance. A body read back from a handover
+/// written before the tolerance report has no report, so its largest is read
+/// from its checks and rule T1's floor, as the report would have read it.
+fn largest_entity_tolerance(body: &NumericalBody, dec: &mut Decider) -> Result<Rational, Refusal> {
+    let report = body.tolerances();
+    if !report.entities.is_empty() {
+        return Ok(report.largest_mm());
+    }
+    let floor = tolerance::BodyFrame::of(body.definition(), dec)?.floor_mm();
+    Ok(tolerance::largest_recorded(body.evidence()).max(floor))
+}
+
+/// The stamp's record of the tolerance.
+fn recorded_stamp(recorded: &Recorded) -> String {
+    format!(
+        ";rounding_error_mm={};recorded_tolerance_mm={}",
+        recorded.rounding_text, recorded.text
+    )
+}
+
+/// An audit's limit. A stored record is 1.1 times a measured gap (rule T4),
+/// so a record over 1.1 times the recorded tolerance is a gap over it.
+fn audit_limit(recorded_mm: &Rational) -> NumericalOptions {
+    // Source: rule T4 of the Checkpoint 2 decisions, section 4.3, as
+    // `catallax_topology::numerical::gap::MARGIN` holds it.
+    let margin = Rational::from_ratio(11, 10).expect("nonzero");
+    NumericalOptions {
+        tolerance_mm: margin * recorded_mm.clone(),
+        vertex_tolerance_mm: None,
+    }
+}
+
+/// An audit: admits the written decimal values under the audit's limit.
+fn admit_written(
+    body: &NumericalBody,
+    definition: NumericalDefinition,
+    native_trims: Vec<NumericalNativeTrim>,
+    extra: Vec<NumericalCheck>,
+    limit: &NumericalOptions,
+    dec: &mut Decider,
+) -> Result<NumericalEvidence, Refusal> {
+    let build = if body.kind() == BodyKind::Surface {
+        catallax_topology::numerical::build_surface_with_sampled_carriers
     } else {
-        catallax_topology::numerical::build(d, body.options().clone(), dec)?
+        catallax_topology::numerical::build_with_sampled_carriers
     };
-    Ok(emitted.evidence().clone())
+    let admitted = build(
+        definition,
+        native_trims,
+        body.sampled_carriers().clone(),
+        limit.clone(),
+        dec,
+    )?;
+    let mut checks = admitted.evidence().checks().to_vec();
+    checks.extend(extra);
+    NumericalEvidence::new(limit.tolerance_mm.clone(), checks, Vec::new())
 }
 
 struct Writer<'a> {
@@ -570,6 +703,11 @@ struct Writer<'a> {
     dec: &'a mut Decider,
     error: Rational,
     direction_error: Rational,
+    /// The largest rounding error of a line's magnitude, which is the rate
+    /// of the line's parameter as well as a length.
+    magnitude_error: Rational,
+    /// Whether this is [`audit_written`]: the written values are admitted.
+    audit: bool,
 }
 impl Writer<'_> {
     fn scalar(&mut self, q: &Rational) -> Result<Field, Refusal> {
@@ -607,22 +745,59 @@ impl Writer<'_> {
 }
 /// Builds a separate approximate STEP artifact for a checked numerical body.
 /// Planar lines, native spline edges and rational patches retain their carriers
-/// and explicit physical loops. The selected decimal payload is checked under
-/// the body's stated tolerance; source incidence need not be exactly zero.
-/// Unsupported carriers refuse. No topology is inferred and no vertex is healed.
-/// The source tolerance is metadata, not a body bound. With a receiver
-/// profile the file's global uncertainty is the largest entity tolerance
-/// (rule T8); without one the file has none.
+/// and explicit physical loops. Unsupported carriers refuse. No topology is
+/// inferred and no vertex is healed.
+///
+/// Check once: the numbers are written and the file records one tolerance,
+/// the body's largest entity tolerance plus the rounding error of the
+/// written numbers ([`RoundingError`]). The stamp holds it as
+/// `recorded_tolerance_mm`. The written values are not admitted again, so a
+/// file is written whatever its rounding does to a gap; the recorded
+/// tolerance says how much that can be. [`audit_written`] measures it.
+/// With a receiver profile the file's global uncertainty is that same
+/// tolerance (rule T8); without one the file has none.
 /// The caller's allowance covers all work; no global policy is changed.
 ///
 /// With a receiver profile (rule T8), the face copies of edge uses over the
 /// receiver's tolerance are refitted first, the entities still over it are
 /// listed, features under 10 times and 4 times its tolerance are listed, and
-/// a micro part is offered a scaled export, and the file's uncertainty is the
-/// largest entity tolerance.
+/// a micro part is offered a scaled export.
 pub fn build(
     body: &NumericalBody,
     options: &NumericalStepOptions,
+    dec: &mut Decider,
+) -> Result<NumericalStep, Refusal> {
+    write(body, options, false, dec)
+}
+
+/// Writes the file as [`build`] does and then admits the values it wrote: the
+/// full check of every vertex, edge and edge use of the decimal model, and of
+/// the written u/v curves of an analytic face. It refuses with
+/// `numbers.numerical-tolerance-exceeded` where a gap measured on the written
+/// values is over the tolerance the file records. It is a full admission, so
+/// any other rule can refuse it too: rule T5 does on a body whose coarse
+/// rounding leaves its entities too loose for its features.
+///
+/// This is the admission an export ran before check once. It costs more than
+/// the export itself and is for tests and CI, as the audit of derived copies
+/// is ([`catallax_topology::numerical::audit_derived_copies`]).
+pub fn audit_written(
+    body: &NumericalBody,
+    options: &NumericalStepOptions,
+    dec: &mut Decider,
+) -> Result<WrittenAudit, Refusal> {
+    let mut file = write(body, options, true, dec)?;
+    let evidence = file
+        .written
+        .take()
+        .expect("an audit admits the written values");
+    Ok(WrittenAudit { file, evidence })
+}
+
+fn write(
+    body: &NumericalBody,
+    options: &NumericalStepOptions,
+    audit: bool,
     dec: &mut Decider,
 ) -> Result<NumericalStep, Refusal> {
     guarded(|| {
@@ -635,9 +810,9 @@ pub fn build(
             None => (std::borrow::Cow::Borrowed(body), None),
         };
         let mut artifact = if analytic::applies(&prepared) {
-            analytic::build(&prepared, options, dec)?
+            analytic::build(&prepared, options, audit, dec)?
         } else {
-            build_inner(&prepared, options, dec)?
+            build_inner(&prepared, options, audit, dec)?
         };
         artifact.report.receiver = receiver;
         Ok(artifact)
@@ -717,19 +892,6 @@ fn for_receiver(
     ))
 }
 
-/// The file's uncertainty (rule T8): the largest entity tolerance of the
-/// source body and of the check of the emitted values, rounded up to the
-/// written digits, and its decimal text.
-fn uncertainty(
-    body: &NumericalBody,
-    emitted: &NumericalEvidence,
-    options: &NumericalStepOptions,
-) -> Result<(Rational, String), Refusal> {
-    let emitted = tolerance::largest_recorded(emitted).max(body.tolerances().largest_mm());
-    let text = crate::number::decimal(&emitted.to_decimal_bounds(options.significant_digits).1);
-    Ok((emitted, text))
-}
-
 /// The STEP header of a numerical file: its length unit, and, for an export
 /// with a receiver profile, its uncertainty.
 fn file_header(
@@ -784,6 +946,7 @@ fn stamp_extras(options: &NumericalStepOptions) -> String {
 fn build_inner(
     body: &NumericalBody,
     options: &NumericalStepOptions,
+    audit: bool,
     dec: &mut Decider,
 ) -> Result<NumericalStep, Refusal> {
     if options.product_name.trim().is_empty()
@@ -808,7 +971,7 @@ fn build_inner(
             .iter()
             .any(|face| !matches!(face.surface, Surface::Plane(_)))
     {
-        return curved::build(body, options, dec);
+        return curved::build(body, options, audit, dec);
     }
     let mut w = Writer {
         graph: Graph::default(),
@@ -816,6 +979,8 @@ fn build_inner(
         dec,
         error: Rational::zero(),
         direction_error: Rational::zero(),
+        magnitude_error: Rational::zero(),
+        audit,
     };
     let mut vertices = Vec::new();
     for vertex in &d.vertices {
@@ -924,15 +1089,14 @@ fn build_inner(
         ));
     }
     let solid = w.representation(faces, body)?;
-    let emitted_evidence = emitted_checks(body, options, w.dec)?;
     w.finish(
         solid,
         body,
-        emitted_evidence,
+        Payload::Planar,
         None,
         vec![
             "source.retained-line-and-plane-carriers".into(),
-            "file.decimal-model-numerical-admission".into(),
+            "file.rounding-error-added-to-tolerance".into(),
             "file.canonical-byte-identity".into(),
             "file.planar-seam-contract".into(),
             "file.approximate-category-no-global-bound".into(),
@@ -981,7 +1145,7 @@ impl Writer<'_> {
         self,
         solid: Id,
         body: &NumericalBody,
-        emitted_evidence: NumericalEvidence,
+        payload: Payload,
         spline_rounding: Option<NumericalSplineRounding>,
         checks: Vec<String>,
     ) -> Result<NumericalStep, Refusal> {
@@ -1008,13 +1172,59 @@ impl Writer<'_> {
                 rounding.max_parameter_error, rounding.max_weight_error
             ));
         }
-        let (uncertainty_mm, uncertainty_text) = uncertainty(body, &emitted_evidence, options)?;
+        let errors = RoundingErrors {
+            length_mm: self.error.clone(),
+            line_magnitude: self.magnitude_error.clone(),
+            direction: self.direction_error.clone(),
+            parameter: spline_rounding
+                .as_ref()
+                .map_or_else(Rational::zero, |rounding| {
+                    rounding.max_parameter_error.clone()
+                }),
+            weight: spline_rounding
+                .as_ref()
+                .map_or_else(Rational::zero, |rounding| rounding.max_weight_error.clone()),
+        };
+        // A planar file's numbers are its vertices and carriers' own, so the
+        // body's tables hold the same sizes as the file.
+        let written = match &payload {
+            Payload::Planar => (body.definition(), &[][..]),
+            Payload::Curved {
+                definition,
+                native_trims,
+                ..
+            } => (definition, native_trims.as_slice()),
+        };
+        let recorded = recorded(body, written, errors, options, self.dec)?;
+        description.push_str(&recorded_stamp(&recorded));
         description.push_str(&stamp_extras(options));
+        let uncertainty_text = crate::number::decimal(&recorded.text);
         let mut file = self.graph.write(&[solid], |roots| {
             file_header(body, options, roots, &description, &uncertainty_text)
         });
         file.push_str("ENDSEC;\nEND-ISO-10303-21;\n");
+        let written = if self.audit {
+            let limit = audit_limit(&recorded.tolerance_mm);
+            Some(match payload {
+                Payload::Planar => admit_written(
+                    body,
+                    planar_payload(body, options, self.dec)?,
+                    Vec::new(),
+                    Vec::new(),
+                    &limit,
+                    self.dec,
+                )?,
+                Payload::Curved {
+                    definition,
+                    native_trims,
+                    checks,
+                } => admit_written(body, definition, native_trims, checks, &limit, self.dec)?,
+            })
+        } else {
+            None
+        };
         let artifact = NumericalStep {
+            written,
             bytes: file.into_bytes(),
             report: NumericalStepReport {
                 kind: body.kind(),
@@ -1026,14 +1236,14 @@ impl Writer<'_> {
                 source_name: d.name.clone(),
                 source_definition: d.clone(),
                 source_evidence: body.evidence().clone(),
-                emitted_evidence,
+                rounding: recorded.rounding,
                 scalar_rounding_limit_mm: options.max_scalar_rounding_error_mm.clone(),
                 max_scalar_rounding_error_mm: self.error,
                 max_direction_ratio_rounding_error: self.direction_error,
                 counts: [count.faces, count.edges, count.vertices],
                 checks,
                 spline_rounding,
-                uncertainty_mm,
+                uncertainty_mm: recorded.tolerance_mm,
                 receiver: None,
                 scale: options.scale,
             },

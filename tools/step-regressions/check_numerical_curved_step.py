@@ -6,6 +6,7 @@ call TransferRoots, ShapeFix, sewing or SameParameter before validation.
 import argparse
 import hashlib
 import json
+from fractions import Fraction
 from pathlib import Path
 
 import OCP
@@ -54,7 +55,16 @@ def check(root, name, counts, expected_volume, material, void, cut_x):
     assert not response['work']['exhausted'] and response['work']['used'] <= 20_000_000
     assert sum(response['work_stages'].values()) == response['work']['used']
     assert response['source_evidence']['tolerance_mm'] == '1/10000000'
-    assert response['emitted_evidence']['tolerance_mm'] == '1/10000000'
+    # Check once: the file records the body's tolerance plus the rounding
+    # error of its numbers. The control then audits the written values: no
+    # gap measured on them is over that record, which the audit's limit of
+    # 1.1 times the record (rule T4) states.
+    recorded = Fraction(response['recorded_tolerance_mm'])
+    rounding = Fraction(response['rounding_error_mm'])
+    assert 0 <= rounding < Fraction(1, 10**10)
+    assert rounding < recorded <= (Fraction(1, 10**7) + rounding) * (1 + Fraction(1, 10**15))
+    assert Fraction(response['written_audit']['tolerance_mm']) == Fraction(11, 10) * recorded
+    assert response['written_audit']['checks']
     assert response['complete_body_bound'] == 'unestablished'
     path = out / 'answer.step'
     before = path.read_bytes()

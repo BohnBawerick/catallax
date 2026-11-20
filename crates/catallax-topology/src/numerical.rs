@@ -469,6 +469,7 @@ impl NumericalBody {
                         self.options.clone(),
                         self.evidence.repairs().to_vec(),
                         accounts,
+                        None,
                         dec,
                     )?;
                     next.inherit(self, dec)?;
@@ -937,6 +938,7 @@ fn admit_on(
             options,
             Vec::new(),
             Some(accounts),
+            None,
             dec,
         )
     })
@@ -1027,6 +1029,59 @@ fn use_slot(
         .map(Vec::len)
         .sum();
     before + use_index
+}
+
+/// Admits a definition read back from a file that records its tolerance
+/// (check once, roadmap item 3.0A step 5: "Reopening trusts the tolerance
+/// recorded at export").
+///
+/// `recorded_mm` is that tolerance. It stands for every distance admission
+/// would measure: each edge end at its vertex and each edge use against its
+/// face copy hold it, under the check names
+/// [`tolerance::RECORDED_VERTEX`] and [`tolerance::RECORDED_USE`], so a
+/// recorded value is never read as a measurement. Rule T4's margin is not
+/// applied to it again. Every vertex and edge of the result has it as its
+/// tolerance, or rule T1's floor where that is larger.
+///
+/// What is still checked is what makes the tables a body at all: the
+/// topology, each carrier's definition, and each loop's simple, oriented u/v
+/// walk. No curve or surface is evaluated against another, and rule T5's
+/// distances are not taken again.
+///
+/// The body's limit is `options` or the recorded tolerance, whichever is
+/// larger, so that a later operation, which measures again, is not refused
+/// for a tolerance the file already held. The import caps of rule T3 are for
+/// files that are measured; this one is not.
+pub fn admit_recorded(
+    kind: BodyKind,
+    definition: NumericalDefinition,
+    native_trims: Vec<NumericalNativeTrim>,
+    options: NumericalOptions,
+    recorded_mm: &Rational,
+    dec: &mut Decider,
+) -> Result<NumericalBody, Refusal> {
+    if recorded_mm.sign() != Sign::Positive {
+        return Err(bad("definition", "a recorded tolerance must be positive"));
+    }
+    let options = NumericalOptions {
+        tolerance_mm: options.tolerance_mm.max(recorded_mm.clone()),
+        vertex_tolerance_mm: options
+            .vertex_tolerance_mm
+            .map(|vertex| vertex.max(recorded_mm.clone())),
+    };
+    guarded(|| {
+        build_inner_kind_on(
+            kind,
+            definition,
+            native_trims,
+            BTreeSet::new(),
+            options,
+            Vec::new(),
+            None,
+            Some(recorded_mm),
+            dec,
+        )
+    })
 }
 
 fn opt_in_refusal(mut refusal: Refusal) -> Refusal {
@@ -1263,6 +1318,7 @@ fn build_inner_kind(
         options,
         repairs,
         None,
+        None,
         dec,
     )
 }
@@ -1272,6 +1328,11 @@ fn build_inner_kind(
 /// one work allowance, and a use whose reading is kept in its account is not
 /// read again ([`edge_gap::UseAccount`]). Without accounts every use is read
 /// under the checker's cap.
+///
+/// With `recorded`, the tolerance a file recorded at export stands for every
+/// distance: the structure and every u/v walk are checked as always, and
+/// nothing is measured ([`admit_recorded`]). It has no accounts, because it
+/// reads no use.
 #[allow(clippy::too_many_arguments)]
 fn build_inner_kind_on(
     kind: BodyKind,
@@ -1281,6 +1342,7 @@ fn build_inner_kind_on(
     options: NumericalOptions,
     repairs: Vec<NumericalRepair>,
     mut accounts: Option<&mut [edge_gap::UseAccount]>,
+    recorded: Option<&Rational>,
     dec: &mut Decider,
 ) -> Result<NumericalBody, Refusal> {
     precision_allowed(dec)?;
@@ -1480,18 +1542,27 @@ fn build_inner_kind_on(
         for i in 0..2 {
             dec.charge_work(1)?;
             let t = &edge.parameters[i];
-            let value = crate::numerical::curve_at(&edge.curve, t, dec)?
-                .ok_or_else(|| bad("unsupported", "edge has no parameter evaluator"))?;
+            let distance_upper_mm = match recorded {
+                // The file's tolerance stands for the distance.
+                Some(recorded) => recorded.clone(),
+                None => {
+                    let value = crate::numerical::curve_at(&edge.curve, t, dec)?
+                        .ok_or_else(|| bad("unsupported", "edge has no parameter evaluator"))?;
+                    distance(
+                        &value,
+                        &point_box(&definition.vertices[edge.vertices[i]].position),
+                    )
+                }
+            };
             samples.push(NumericalSample {
                 parameters: vec![t.clone()],
-                distance_upper_mm: distance(
-                    &value,
-                    &point_box(&definition.vertices[edge.vertices[i]].position),
-                ),
+                distance_upper_mm,
             });
         }
         checks.push(NumericalCheck::Samples {
-            name: if native.numerical_pair(edge_index) {
+            name: if recorded.is_some() {
+                tolerance::RECORDED_VERTEX
+            } else if native.numerical_pair(edge_index) {
                 "edge.numerical-pair-vertex-distance"
             } else {
                 "edge.vertex-distance"
@@ -1514,13 +1585,15 @@ fn build_inner_kind_on(
                 dec,
             )?;
         }
-        checks.extend(native::join_samples(
-            face_index,
-            face,
-            &definition.edges,
-            &native,
-            dec,
-        )?);
+        if recorded.is_none() {
+            checks.extend(native::join_samples(
+                face_index,
+                face,
+                &definition.edges,
+                &native,
+                dec,
+            )?);
+        }
         let sampled = native.has_face(face_index) || analytic::projected(face, &definition.edges);
         checks.push(NumericalCheck::Passed {
             name: if sampled_carriers.contains(&face.key) {
@@ -1618,6 +1691,24 @@ fn build_inner_kind_on(
             let numerical_pair = native.numerical_pair(trim.edge);
             let curve = native.get(face_index, boundary_index, use_index);
             let scope = format!("face {:?}, edge {:?}, use {index}", face.key, edge.key);
+            if let Some(recorded) = recorded {
+                // One record per use, as below, under a name that says the
+                // value was read from the file and not measured.
+                dec.charge_work(1)?;
+                checks.push(NumericalCheck::Samples {
+                    name: tolerance::RECORDED_USE.into(),
+                    scope,
+                    samples: vec![NumericalSample {
+                        parameters: if trim.sense == Sense::Same {
+                            edge.parameters.to_vec()
+                        } else {
+                            vec![edge.parameters[1].clone(), edge.parameters[0].clone()]
+                        },
+                        distance_upper_mm: recorded.clone(),
+                    }],
+                });
+                continue;
+            }
             if let Some(curve) = curve {
                 checks.push(NumericalCheck::Samples {
                     name: if numerical_pair {
@@ -1671,7 +1762,7 @@ fn build_inner_kind_on(
         options.tolerance_mm.clone()
     };
     let evidence = NumericalEvidence::new(evidence_tolerance, checks, repairs)?;
-    let tolerances = tolerance_report(&definition, &native, &evidence, &options, dec)?;
+    let tolerances = tolerance_report(&definition, &native, &evidence, &options, recorded, dec)?;
     dec.check_deadline()?;
     Ok(NumericalBody {
         source: definition.clone(),
@@ -1695,11 +1786,16 @@ fn build_inner_kind_on(
 /// pair whose tolerances add up to more than half their distance. That is the
 /// local term the class cap (`options.tolerance_mm`) is compared with: the
 /// cap that applies is the smaller of the two.
+///
+/// With `recorded`, every vertex and edge holds the tolerance its file
+/// recorded, and rule T5 is not run again: it compares distances, and
+/// reopening measures none.
 fn tolerance_report(
     definition: &NumericalDefinition,
     native: &native::Index<'_>,
     evidence: &NumericalEvidence,
     options: &NumericalOptions,
+    recorded: Option<&Rational>,
     dec: &mut Decider,
 ) -> Result<ToleranceReport, Refusal> {
     let frame = tolerance::BodyFrame::of(definition, dec)?;
@@ -1719,11 +1815,13 @@ fn tolerance_report(
             extent_mm: frame.extent_mm.clone(),
         });
     }
-    warnings.extend(
-        tolerance::pair_rule_check(definition, native, &entities, &frame.centre, dec)?
-            .into_iter()
-            .map(ToleranceWarning::Pair),
-    );
+    if recorded.is_none() {
+        warnings.extend(
+            tolerance::pair_rule_check(definition, native, &entities, &frame.centre, dec)?
+                .into_iter()
+                .map(ToleranceWarning::Pair),
+        );
+    }
     Ok(ToleranceReport {
         coordinate_size_mm: frame.coordinate_size_mm,
         floor_mm,

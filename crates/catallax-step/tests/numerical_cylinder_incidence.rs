@@ -451,16 +451,17 @@ fn tilted_circle_skip_path_retains_its_checked_endpoint_height_slope() {
         &mut Decider::default(),
     )
     .unwrap();
-    let file = output::build(
+    let audit = output::audit_written(
         &body,
         &NumericalStepOptions::default(),
         &mut Decider::default(),
     )
     .unwrap();
+    let file = audit.file;
     file.check_written(file.bytes(), &mut Decider::default())
         .unwrap();
     for (key, original) in circle_keys.iter().zip(&end_heights) {
-        let checks = file.report().emitted_evidence.checks();
+        let checks = audit.evidence.checks();
         let actual = checks
             .iter()
             .find_map(|check| match check {

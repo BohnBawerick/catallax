@@ -92,15 +92,10 @@ fn numerical_step_requests_keep_tolerance_evidence_and_refused_artifacts_separat
         assert_eq!(manifest["exact"], false);
         assert_eq!(manifest["category"], "approximate");
         assert_eq!(manifest["result"]["faces"], 9);
-        for scope in ["source", "emitted"] {
-            assert_eq!(manifest["numerical"][scope]["tolerance_mm"], "1/10000000");
-            assert!(
-                !manifest["numerical"][scope]["checks"]
-                    .as_array()
-                    .unwrap()
-                    .is_empty()
-            );
-        }
+        let source = &manifest["numerical"]["source"];
+        assert_eq!(source["tolerance_mm"], "1/10000000");
+        assert!(!source["checks"].as_array().unwrap().is_empty());
+        assert_written_record(&manifest["numerical"], "1/10000000");
         assert_eq!(manifest["step"]["complete_body_bound"], "unestablished");
         assert_eq!(manifest["step"]["seams"], "required");
         let work = row["work"]["used"].as_u64().unwrap();
@@ -166,15 +161,10 @@ fn numerical_step_requests_keep_tolerance_evidence_and_refused_artifacts_separat
     assert_eq!(step["tolerance_mm"], "1/100000");
     assert_eq!(step["complete_body_bound"], "unestablished");
     assert_eq!(step["seams"], "required");
-    for scope in ["source", "emitted"] {
-        assert_eq!(step["numerical"][scope]["tolerance_mm"], "1/100000");
-        assert!(
-            !step["numerical"][scope]["checks"]
-                .as_array()
-                .unwrap()
-                .is_empty()
-        );
-    }
+    let source = &step["numerical"]["source"];
+    assert_eq!(source["tolerance_mm"], "1/100000");
+    assert!(!source["checks"].as_array().unwrap().is_empty());
+    assert_written_record(&step["numerical"], "1/100000");
     assert_eq!(ordinary["work"]["limit"], 20_000_000);
     assert_eq!(ordinary["work"]["exhausted"], false);
     assert!(ordinary["work"]["used"].as_u64().unwrap() < 20_000_000);
@@ -362,4 +352,34 @@ fn numerical_hole_fallback_reuses_the_prefix() {
     if temporary {
         fs::remove_dir_all(dir).unwrap();
     }
+}
+
+/// Check once (roadmap item 3.0A step 5): the manifest holds what the file
+/// records of its own values, the body's largest entity tolerance plus the
+/// rounding error of the written numbers, and no second set of samples.
+fn assert_written_record(numerical: &Value, cap: &str) {
+    use catallax_numbers::Rational;
+    assert!(numerical["emitted"].is_null());
+    let written = &numerical["written"];
+    let read = |field: &str| Rational::parse(written[field].as_str().unwrap()).unwrap();
+    let (recorded, rounding) = (read("recorded_tolerance_mm"), read("rounding_error_mm"));
+    assert!(rounding < Rational::parse("1e-9").unwrap(), "{rounding}");
+    assert!(recorded > rounding, "{recorded}");
+    // The record is within the body's cap plus the rounding error, with the
+    // last written digit rounded up.
+    let cap = Rational::parse(cap).unwrap();
+    assert!(
+        recorded <= (&cap + &rounding) * Rational::parse("1.000000000000001").unwrap(),
+        "{recorded}"
+    );
+    for field in [
+        "length_mm",
+        "direction",
+        "parameter",
+        "weight",
+        "line_magnitude",
+    ] {
+        assert!(written["largest_errors"][field].is_string(), "{field}");
+    }
+    assert!(written["levers"]["reach_mm"].as_f64().unwrap() > 0.0);
 }

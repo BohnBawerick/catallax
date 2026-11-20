@@ -365,11 +365,14 @@ fn open_prepared(
         return Ok(result);
     }
     let before = current_operation_work().used;
+    // Check once: a file that records its tolerance is taken with it.
+    let recorded = crate::recorded::recorded_tolerance(bytes);
     let native = Arc::new(admission::admit(
         parsed,
         Arc::clone(&result.source),
         angles,
         admission::AdmissionPolicy::MainFirst(&incomplete),
+        recorded.as_ref().map(|record| &record.tolerance_mm),
         dec,
     )?);
     result.native_admission_work_used = current_operation_work().used.saturating_sub(before);
@@ -439,6 +442,7 @@ fn upgrade_native(result: &mut OpenedStep, step: &StepId, dec: &mut Decider) {
                 result.source.source_sha256(),
                 strict_refusal,
                 &options,
+                body.recorded_tolerance_mm(),
                 dec,
             )?;
             outcome.tier = Tier::RepairedSolid;
@@ -546,6 +550,7 @@ fn checked_admit(
 ) {
     let expected_sha256 = result.source.source_sha256.as_str();
     let numerical_options = upgrade_options(&result.source.options.maximum_mm);
+    let recorded = crate::recorded::recorded_tolerance(bytes);
     let before = current_operation_work().used;
     let admission = numerical::import_step(bytes, expected_sha256, step, &numerical_options, dec);
     result.file_admission_work_used = current_operation_work().used.saturating_sub(before);
@@ -660,11 +665,20 @@ fn checked_admit(
                         faces: shells.remove(0).faces,
                     });
                 }
+                // Check once: a candidate healing left as the file wrote it
+                // is taken with the tolerance the file records. One whose
+                // topology healing changed is no longer the file's own, and
+                // is measured.
+                let recorded = recorded
+                    .as_ref()
+                    .filter(|_| healed.report().changes.is_empty())
+                    .map(|record| &record.tolerance_mm);
                 numerical::admit_retained_definition(
                     &definition,
                     expected_sha256,
                     strict_refusal,
                     &numerical_options,
+                    recorded,
                     dec,
                 )
             }) {

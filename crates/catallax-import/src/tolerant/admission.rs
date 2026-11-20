@@ -58,7 +58,9 @@ pub struct UvSample {
     pub curve: super::native::NativeLocation,
     /// Native surface chart and UV.
     pub surface: super::native::NativeLocation,
-    /// Final physical curve correspondence residual in millimetres.
+    /// Final physical curve correspondence residual in millimetres. In a
+    /// body taken with the tolerance its file recorded, that tolerance:
+    /// nothing was measured.
     pub residual_mm: f64,
     /// Final topology-vertex incidence at a boundary endpoint, in millimetres.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -209,8 +211,15 @@ pub struct TolerantSolid {
     pub(crate) body: TolerantBody,
     counts: TolerantCounts,
     source_index: usize,
+    recorded_mm: Option<Rational>,
 }
 impl TolerantSolid {
+    /// The tolerance the file recorded at export, where this body was taken
+    /// with it and nothing was measured (check once, roadmap item 3.0A
+    /// step 5). `None` for a body that was measured.
+    pub fn recorded_tolerance_mm(&self) -> Option<&Rational> {
+        self.recorded_mm.as_ref()
+    }
     /// Source identity of this body's definition.
     pub fn name(&self) -> &str {
         self.body.name()
@@ -556,6 +565,9 @@ fn source_angles(contexts: &[crate::geometry_source::ContextUnits]) -> Result<An
 
 /// Admit a separately labelled tolerant document without whole-domain proof gates.
 /// Request deadlines and externally installed budgets remain effective.
+///
+/// A file that records its tolerance is taken with it (check once); see
+/// [`crate::recorded`] and [`TolerantSolid::recorded_tolerance_mm`].
 pub fn import_step(
     bytes: &[u8],
     expected_sha256: &str,
@@ -563,7 +575,15 @@ pub fn import_step(
     dec: &mut Decider,
 ) -> Result<TolerantImport, Error> {
     let (parsed, source, angles) = prepare(bytes, expected_sha256, options, dec)?;
-    let imported = admit(parsed, source, angles, AdmissionPolicy::Repair, dec)?;
+    let recorded = crate::recorded::recorded_tolerance(bytes);
+    let imported = admit(
+        parsed,
+        source,
+        angles,
+        AdmissionPolicy::Repair,
+        recorded.as_ref().map(|record| &record.tolerance_mm),
+        dec,
+    )?;
     if imported.bodies.is_empty() {
         return Err(imported
             .body_errors
@@ -629,11 +649,25 @@ pub(crate) enum AdmissionPolicy<'a> {
     MainFirst(&'a [bool]),
 }
 
+/// One pass over the bodies still to be admitted.
+#[derive(Clone, Copy)]
+enum Round {
+    /// Check once: the file records its tolerance, so each use's face copy
+    /// is read as written and nothing is measured. A body this pass cannot
+    /// take is measured by the passes after it.
+    Recorded,
+    /// Every entity is measured (rule T3), with boundary repair or without.
+    Measured { repair_boundaries: bool },
+}
+
+/// `recorded_mm` is the tolerance the file recorded at export, if any
+/// ([`crate::recorded`]).
 pub(crate) fn admit(
     parsed: Arc<ParsedStep>,
     source: Arc<TolerantFile>,
     angles: AngleUnit,
     policy: AdmissionPolicy<'_>,
+    recorded_mm: Option<&Rational>,
     dec: &mut Decider,
 ) -> Result<TolerantImport, Error> {
     let mut fits = fit::Context::new(
@@ -658,13 +692,33 @@ pub(crate) fn admit(
     };
     let mut bodies = Vec::with_capacity(source.bodies.len());
     let mut body_errors = vec![None; source.bodies.len()];
-    let (rounds, incomplete): (&[bool], Option<&[bool]>) = match policy {
+    let (measured, incomplete): (&[bool], Option<&[bool]>) = match policy {
         AdmissionPolicy::Repair => (&[true], None),
         AdmissionPolicy::MainFirst(incomplete) => (&[false, true], Some(incomplete)),
     };
+    let rounds: Vec<Round> = recorded_mm
+        .map(|_| Round::Recorded)
+        .into_iter()
+        .chain(
+            measured
+                .iter()
+                .map(|&repair_boundaries| Round::Measured { repair_boundaries }),
+        )
+        .collect();
     let mut settled = vec![false; source.bodies.len()];
-    for &repair_boundaries in rounds {
-        fits.repair_boundaries = repair_boundaries;
+    for round in rounds {
+        // A recorded pass reads the written source parameters, as the first
+        // measured pass of the main-first policy does.
+        fits.repair_boundaries = matches!(
+            round,
+            Round::Measured {
+                repair_boundaries: true
+            }
+        );
+        let recorded = match round {
+            Round::Recorded => recorded_mm,
+            Round::Measured { .. } => None,
+        };
         for (source_index, original) in source.bodies.iter().enumerate() {
             if settled[source_index] || incomplete.is_some_and(|needed| !needed[source_index]) {
                 continue;
@@ -690,6 +744,14 @@ pub(crate) fn admit(
                     &mut fits.stage,
                     dec,
                 )?;
+                if recorded.is_some() && !repaired.changes.is_empty() {
+                    // The record is of the file's own entities. A repaired
+                    // topology is not theirs, so the body is measured.
+                    return Err(invalid(
+                        "import.tolerant-broken-topology",
+                        "the file's topology needed a repair, so its recorded tolerance does not describe the repaired body",
+                    ));
+                }
                 evidence.repairs.extend(repaired.changes);
                 evidence.topology_checks.extend(repaired.checks);
                 evidence.topology_measurements.extend(repaired.measurements);
@@ -711,7 +773,16 @@ pub(crate) fn admit(
                     });
                 }
                 let mut body = repaired.candidate;
-                let counts = fit::check_body(&mut fits, &mut body, &mut evidence, dec)?;
+                let counts = match recorded {
+                    Some(recorded) => fit::check_recorded_body(
+                        &mut fits,
+                        &mut body,
+                        &mut evidence,
+                        recorded,
+                        dec,
+                    )?,
+                    None => fit::check_body(&mut fits, &mut body, &mut evidence, dec)?,
+                };
                 dec.check_deadline()?;
                 if catallax_numbers::current_operation_work().exhausted {
                     return Err(ImportRefusal::ResourceLimit.into());
@@ -720,6 +791,7 @@ pub(crate) fn admit(
                     body,
                     counts,
                     source_index,
+                    recorded_mm: recorded.cloned(),
                 })
             })();
             match candidate {
@@ -730,6 +802,19 @@ pub(crate) fn admit(
                 }
                 Err(error) => {
                     evidence.rollback(checkpoint);
+                    if recorded.is_some() && !super::native::control(&error) {
+                        // The measured passes follow. This says why the
+                        // file's record was not used.
+                        evidence.warnings.push(NativeWarning {
+                            body: Some(original.name.clone()),
+                            scope: "body".into(),
+                            code: "recorded-tolerance-unused",
+                            detail: format!(
+                                "the file records a tolerance, but this reader could not take the body as written at {:?} ({error:?}); it is measured instead",
+                                fits.stage
+                            ),
+                        });
+                    }
                     body_errors[source_index] = Some(NativeBodyFailure {
                         stage: fits.stage,
                         error,

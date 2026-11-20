@@ -1062,6 +1062,46 @@ impl NativeUvCurve {
         Ok(([value.point_mm[0], value.point_mm[1]], value.uncertainty_mm))
     }
 
+    /// The u/v at the parameter of this curve nearest to `parameter`, and
+    /// how far that parameter is from it: zero inside the curve's domain.
+    /// A STEP edge has no parameter range of its own, so an end placed on
+    /// its 3D curve from its vertex can fall just outside the interval the
+    /// file gives the u/v curve.
+    pub(crate) fn sample_nearest(
+        &self,
+        parameter: f64,
+        dec: &mut Decider,
+    ) -> Result<([f64; 2], f64), Error> {
+        let at = |chart: usize, parameter: f64| NativeLocation {
+            chart,
+            parameters: [parameter, 0.0],
+        };
+        match self.sample(at(0, parameter), dec) {
+            Ok((uv, _)) => return Ok((uv, 0.0)),
+            Err(error) if control(&error) => return Err(error),
+            Err(_) => {}
+        }
+        let mut nearest: Option<(usize, f64, f64)> = None;
+        for (chart, cover) in self.0.charts.iter().enumerate() {
+            let limits = &cover.domain()[0];
+            let mut inside = parameter;
+            if let Some(low) = &limits[0] {
+                inside = inside.max(low.to_f64_nearest());
+            }
+            if let Some(high) = &limits[1] {
+                inside = inside.min(high.to_f64_nearest());
+            }
+            let moved = (inside - parameter).abs();
+            if nearest.is_none_or(|(_, _, least)| moved < least) {
+                nearest = Some((chart, inside, moved));
+            }
+        }
+        let (chart, inside, moved) =
+            nearest.ok_or_else(|| broken("a u/v curve has no parameter chart"))?;
+        let (uv, _) = self.sample(at(chart, inside), dec)?;
+        Ok((uv, moved))
+    }
+
     pub(crate) fn hint(
         &self,
         parameter: f64,

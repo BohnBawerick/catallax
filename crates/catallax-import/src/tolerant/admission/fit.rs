@@ -330,17 +330,15 @@ fn chart_at(curve: &NativeCurve, parameter: f64, preferred: usize) -> usize {
     }
 }
 
-fn finite_edge(
+/// The source curve of an edge and the carrier its points are read from.
+fn edge_carrier(
     context: &mut Context<'_>,
     body: &TolerantBody,
     edge_index: usize,
     vertices: &[NativeSample],
-    vertex_tolerances: &mut [Accumulator],
-    evidence: &mut TolerantEvidence,
     dec: &mut Decider,
-) -> Result<(EdgeSamples, Accumulator), Error> {
+) -> Result<(Option<u64>, PhysicalCurve), Error> {
     let edge = &body.edges[edge_index];
-    let mut edge_tolerance = Accumulator::new(edge.tolerance_mm().to_f64_nearest());
     let source_curve = match id(&edge.name).filter(|_| !edge.degenerate) {
         Some(entity) => match context.parsed.topology(entity, dec)? {
             Topology::Edge { curve, .. } => curve,
@@ -369,6 +367,96 @@ fn finite_edge(
             format!("{} has no source curve declaration", edge.name),
         ));
     };
+    Ok((source_curve, carrier))
+}
+
+/// An edge of a file that records its tolerance (check once): its carrier,
+/// its parameter range and its stations.
+///
+/// A STEP edge carries no parameter range, so where the file's curve is not
+/// trimmed each end is still placed on the curve from its vertex, as any
+/// reader of the file must. The distance found there is not kept, and
+/// nothing is compared with a limit.
+fn recorded_edge(
+    context: &mut Context<'_>,
+    body: &TolerantBody,
+    edge_index: usize,
+    vertices: &[NativeSample],
+    dec: &mut Decider,
+) -> Result<EdgeSamples, Error> {
+    let edge = &body.edges[edge_index];
+    let (source_curve, carrier) = edge_carrier(context, body, edge_index, vertices, dec)?;
+    let (parameters, mut preferred) = match (&carrier, &edge.source_range) {
+        (PhysicalCurve::Native(curve), Some(range)) => {
+            let parameters = range.each_ref().map(Rational::to_f64_nearest);
+            (parameters, chart_at(curve, parameters[0], 0))
+        }
+        _ => {
+            let mut ends = [0.0; 2];
+            let mut chart = 0;
+            for (endpoint, &vertex) in edge.vertices.iter().enumerate() {
+                let target = vertices[vertex].point_mm;
+                ends[endpoint] = match &carrier {
+                    PhysicalCurve::Native(curve) => {
+                        let location = curve.project(target, None, dec)?.location;
+                        if endpoint == 0 {
+                            chart = location.chart;
+                        }
+                        location.parameters[0]
+                    }
+                    PhysicalCurve::Point(_) => endpoint as f64,
+                    PhysicalCurve::Line { origin, direction } => {
+                        let length = dot(*direction, *direction);
+                        if length <= 0.0 || !length.is_finite() {
+                            return Err(invalid(
+                                "import.tolerant-broken-geometry",
+                                "zero source line direction",
+                            ));
+                        }
+                        dot(subtract(target, *origin), *direction) / length
+                    }
+                };
+            }
+            if let PhysicalCurve::Native(curve) = &carrier {
+                ends = curve.finite_range(
+                    ends,
+                    edge.curve_same_sense,
+                    edge.vertices[0] == edge.vertices[1],
+                )?;
+            }
+            if let Some(range) = &edge.source_range {
+                ends = range.each_ref().map(Rational::to_f64_nearest);
+            }
+            (ends, chart)
+        }
+    };
+    let mut points = Vec::with_capacity(STATIONS + 1);
+    for station in 0..=STATIONS {
+        dec.charge_work(1)?;
+        let t = parameters[0] + (parameters[1] - parameters[0]) * station as f64 / STATIONS as f64;
+        let (location, sample) = carrier.sample_at(t, preferred, dec)?;
+        preferred = location.chart;
+        points.push((location, sample));
+    }
+    Ok(EdgeSamples {
+        points,
+        source_curve,
+        carrier,
+    })
+}
+
+fn finite_edge(
+    context: &mut Context<'_>,
+    body: &TolerantBody,
+    edge_index: usize,
+    vertices: &[NativeSample],
+    vertex_tolerances: &mut [Accumulator],
+    evidence: &mut TolerantEvidence,
+    dec: &mut Decider,
+) -> Result<(EdgeSamples, Accumulator), Error> {
+    let edge = &body.edges[edge_index];
+    let mut edge_tolerance = Accumulator::new(edge.tolerance_mm().to_f64_nearest());
+    let (source_curve, carrier) = edge_carrier(context, body, edge_index, vertices, dec)?;
     let mut endpoint_fits = Vec::with_capacity(2);
     for (endpoint, &vertex) in edge.vertices.iter().enumerate() {
         let target = vertices[vertex];
@@ -1406,5 +1494,261 @@ pub(super) fn check_body(
         .maximum_mm
         .clone()
         .max(body.maximum_attained_mm.clone());
+    Ok(counts)
+}
+
+/// A body of a file that records its tolerance (check once, roadmap item
+/// 3.0A step 5: "Reopening trusts the tolerance recorded at export").
+///
+/// Each edge use's face copy is read as the file wrote it: the u/v curve the
+/// file carries on a curved face, and the plane's own coordinates on a
+/// plane. Every vertex, edge and face takes the recorded tolerance. No point
+/// is projected on a surface, no trace is rebuilt and no distance is
+/// compared with a limit. A use with no u/v curve on a curved face, one
+/// whose u/v curve leaves its surface's charts, or an edge that runs past the
+/// interval of its u/v curve by more than the recorded tolerance refuses
+/// here, and the measured passes then admit the body as they do any import.
+pub(super) fn check_recorded_body(
+    context: &mut Context<'_>,
+    body: &mut TolerantBody,
+    evidence: &mut TolerantEvidence,
+    recorded_mm: &Rational,
+    dec: &mut Decider,
+) -> Result<TolerantCounts, Error> {
+    context.stage = super::NativeStage::ManifoldIncidence;
+    let counts = manifold(body, dec)?;
+    context.stage = super::NativeStage::CurveFit;
+    let vertices = body
+        .vertices
+        .iter()
+        .map(|vertex| point(&vertex.source.point))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut active = vec![false; body.edges.len()];
+    for shell in &body.shells {
+        for face in &shell.faces {
+            for boundary in &face.loops {
+                for usage in &boundary.edges {
+                    active[usage.edge] = true;
+                }
+            }
+        }
+    }
+    let mut edges = Vec::with_capacity(body.edges.len());
+    for (index, is_active) in active.iter().enumerate() {
+        edges.push(if *is_active {
+            Some(recorded_edge(context, body, index, &vertices, dec)?)
+        } else {
+            None
+        });
+    }
+    // The caller's starting tolerance is a floor it asked for.
+    let tolerance_mm = recorded_mm.clone().max(body.options.initial_mm.clone());
+    let tolerance = tolerance_mm.to_f64_nearest();
+    let held = |samples: usize| Accumulator {
+        tolerance,
+        residual: 0.0,
+        samples,
+    };
+    for shell in &body.shells {
+        for face in &shell.faces {
+            context.stage = super::NativeStage::SurfaceFit;
+            dec.check_deadline()?;
+            let surface_entity = match id(&face.name) {
+                Some(entity) => match context.parsed.topology(entity, dec)? {
+                    Topology::Face { surface, .. } => surface,
+                    _ => None,
+                },
+                None => None,
+            };
+            let surface = surface_entity
+                .map(|entity| context.surface(entity, dec))
+                .transpose()?;
+            let plane = match &face.surface {
+                Surface::Plane(placement) => Some(PlaneFrame::new(
+                    placement,
+                    if surface.is_some() {
+                        context.scale.to_f64_nearest()
+                    } else {
+                        1.0
+                    },
+                )?),
+                _ if surface.is_none() => {
+                    return Err(invalid(
+                        "import.tolerant-broken-reference",
+                        "face has no retained surface declaration",
+                    ));
+                }
+                _ => None,
+            };
+            let mut face_tolerance = held(0);
+            let mut sample_count = 0;
+            let mut repeated = BTreeMap::<usize, usize>::new();
+            for (boundary_index, boundary) in face.loops.iter().enumerate() {
+                let mut previous: Option<NativeLocation> = None;
+                for (use_index, usage) in boundary.edges.iter().enumerate() {
+                    let edge = edges[usage.edge].as_ref().expect("active source edge");
+                    let associated = match (edge.source_curve, surface_entity) {
+                        (Some(curve), Some(surface)) => pcurves(context, curve, surface, dec)?,
+                        _ => Vec::new(),
+                    };
+                    let occurrence = repeated.entry(usage.edge).or_default();
+                    let source_pcurve = associated
+                        .get(*occurrence % associated.len().max(1))
+                        .copied();
+                    *occurrence += 1;
+                    let pcurve = source_pcurve
+                        .map(|entity| context.pcurve(entity, dec))
+                        .transpose()?
+                        .flatten();
+                    let mut samples = Vec::with_capacity(STATIONS + 1);
+                    for station in 0..=STATIONS {
+                        dec.charge_work(1)?;
+                        let index = if usage.forward {
+                            station
+                        } else {
+                            STATIONS - station
+                        };
+                        let (curve_location, target) = edge.points[index];
+                        let location = match (&plane, &surface, &pcurve) {
+                            // A plane's u and v are its own coordinates of
+                            // the edge's point.
+                            (Some(plane), _, _) => plane.project(target).location,
+                            (None, Some(surface), Some(pcurve)) => {
+                                let (written, moved) =
+                                    pcurve.sample_nearest(curve_location.parameters[0], dec)?;
+                                if moved > 0.0 {
+                                    // The end was placed on the 3D curve from
+                                    // its vertex, and a vertex is held to its
+                                    // edge's end only within the tolerance. So
+                                    // the edge may run that far past the
+                                    // interval of its u/v curve, and no
+                                    // farther. The chord to the next station
+                                    // gives the edge's speed there.
+                                    let next = if index == 0 { 1 } else { index - 1 };
+                                    let (beside, point) = edge.points[next];
+                                    let step =
+                                        (beside.parameters[0] - curve_location.parameters[0]).abs();
+                                    let chord = norm(subtract(point.point_mm, target.point_mm));
+                                    if step <= 0.0 || moved * chord > tolerance * step {
+                                        context.stage = super::NativeStage::TraceRebuild;
+                                        return Err(invalid(
+                                            "import.tolerant-inconsistent-trace",
+                                            "an edge runs past the interval of its u/v curve by more than the recorded tolerance",
+                                        ));
+                                    }
+                                }
+                                let aligned = surface.align_parameters(
+                                    written,
+                                    previous.map(|location| location.parameters),
+                                );
+                                match surface.location(aligned) {
+                                    Ok(location) => location,
+                                    Err(error) if super::super::native::control(&error) => {
+                                        return Err(error);
+                                    }
+                                    Err(_) => surface.location(written)?,
+                                }
+                            }
+                            _ => {
+                                context.stage = super::NativeStage::TraceRebuild;
+                                return Err(invalid(
+                                    "import.tolerant-inconsistent-trace",
+                                    "a file that records its tolerance carries no u/v curve for this edge use",
+                                ));
+                            }
+                        };
+                        let at_end = index == 0 || index == STATIONS;
+                        previous = Some(location);
+                        samples.push(UvSample {
+                            fraction: station as f64 / STATIONS as f64,
+                            curve: curve_location,
+                            surface: location,
+                            residual_mm: tolerance,
+                            vertex_residual_mm: at_end.then_some(tolerance),
+                            converged: true,
+                        });
+                    }
+                    sample_count += samples.len();
+                    evidence.native_trims.push(NativeTrim {
+                        body: body.name.clone(),
+                        face: face.name.clone(),
+                        boundary: boundary_index,
+                        use_index,
+                        edge: body.edges[usage.edge].name.clone(),
+                        forward: usage.forward,
+                        source_pcurve: source_pcurve.filter(|_| pcurve.is_some()),
+                        samples,
+                        reconstructed: false,
+                        projected: None,
+                    });
+                }
+            }
+            if face.loops.iter().all(|boundary| boundary.edges.is_empty()) {
+                // An edgeless face closes on itself. Its natural limits are
+                // read from the surface, as for any import.
+                let surface = surface.as_ref().ok_or_else(|| {
+                    invalid(
+                        "import.tolerant-broken-reference",
+                        "closed face has no native surface",
+                    )
+                })?;
+                let entity = surface_entity.expect("native surface source identity");
+                let (samples, bounds) =
+                    closed_surface_samples(context, entity, surface, &mut face_tolerance, dec)?;
+                evidence.native_domains.push(super::NativeDomain {
+                    body: body.name.clone(),
+                    face: face.name.clone(),
+                    bounds,
+                });
+                sample_count += samples;
+            }
+            evidence.sampled_checks.push(SampledCheck {
+                body: body.name.clone(),
+                scope: face.name.clone(),
+                check: "face.recorded-tolerance-written-uv",
+                samples: sample_count,
+                maximum_residual_mm: tolerance,
+                converged: sample_count,
+            });
+            evidence
+                .tolerances
+                .push(face_tolerance.record(&body.name, "face", &face.name));
+        }
+    }
+    context.stage = super::NativeStage::ToleranceGrowth;
+    for (index, is_active) in active.iter().enumerate() {
+        if !*is_active {
+            continue;
+        }
+        evidence.sampled_checks.push(SampledCheck {
+            body: body.name.clone(),
+            scope: body.edges[index].name.clone(),
+            check: "edge.recorded-tolerance",
+            samples: 0,
+            maximum_residual_mm: tolerance,
+            converged: 0,
+        });
+        evidence
+            .tolerances
+            .push(held(0).record(&body.name, "edge", &body.edges[index].name));
+        body.edges[index].tolerance_mm = tolerance_mm.clone();
+    }
+    for vertex in &mut body.vertices {
+        evidence
+            .tolerances
+            .push(held(0).record(&body.name, "vertex", &vertex.source.name));
+        vertex.tolerance_mm = tolerance_mm.clone();
+    }
+    evidence.warnings.push(NativeWarning {
+        body: Some(body.name.clone()),
+        scope: "body".into(),
+        code: "recorded-tolerance",
+        detail: format!(
+            "every tolerance is the {tolerance_mm} mm the file recorded at export; nothing was measured on opening"
+        ),
+    });
+    context.stage = super::NativeStage::PoleBoundary;
+    body.maximum_attained_mm = tolerance_mm.clone();
+    body.options.maximum_mm = body.options.maximum_mm.clone().max(tolerance_mm);
     Ok(counts)
 }

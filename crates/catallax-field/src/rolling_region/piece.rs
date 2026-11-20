@@ -1,4 +1,4 @@
-//! A rolling-ball path piece compiled as a field leaf (4.2a step 2).
+//! A rolling-ball path piece compiled as a field leaf (4.2a steps 2 and 3).
 //!
 //! The leaf is the piece's region: membership from [`path::classify`], with a
 //! membership the cover cannot settle reported as `Indeterminate`. Its value
@@ -10,9 +10,11 @@
 //! nearest station, ellipses bound `r - m` from the meridian station. Outside
 //! the region, the distance to its box is a further lower bound.
 
+use super::coaxial::{Coaxial, CoaxialCover};
 use super::generator::{Generator, GeneratorCover};
 use super::path::{self, Cover, Frame, Path};
 use super::revolved::{Revolved, RevolvedCover};
+use super::saddle::{Saddle, SaddleCover};
 use super::{Range, Relation};
 use crate::Location;
 use crate::metric::{Arithmetic, PRECISION};
@@ -21,13 +23,42 @@ use catallax_numbers::{Ball, Decider, Rational, Real, Refusal};
 use catallax_recipe::Origin;
 use catallax_shapes::{Isometry, Point3, RPoint3, Surface};
 
-/// The path of a [`Piece`].
+/// Runs `$body` with `$path` bound to the path of any [`Kind`].
+macro_rules! each_kind {
+    ($kind:expr, $path:ident => $body:expr) => {
+        match $kind {
+            Kind::Revolved($path) => $body,
+            Kind::Generator($path) => $body,
+            Kind::Coaxial($path) => $body,
+            Kind::Saddle($path) => $body,
+        }
+    };
+}
+/// Runs `$body` with `$cover` bound to the cover of any [`PieceCover`].
+macro_rules! each_cover {
+    ($kind:expr, $cover:ident => $body:expr) => {
+        match $kind {
+            PieceCover::Revolved($cover) => $body,
+            PieceCover::Generator($cover) => $body,
+            PieceCover::Coaxial($cover) => $body,
+            PieceCover::Saddle($cover) => $body,
+        }
+    };
+}
+
+/// The path of a [`Piece`]. A piece lives boxed in its field leaf, so the
+/// size gap between the variants costs nothing worth a second box.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
 pub enum Kind {
     /// A plane with a cylinder, cone or sphere.
     Revolved(Revolved),
     /// Supports parallel to one line.
     Generator(Generator),
+    /// Two curved supports about one axis.
+    Coaxial(Coaxial),
+    /// A cylinder with a second cylinder or a sphere off its axis.
+    Saddle(Saddle),
 }
 
 /// A compiled rolling-ball path piece: the material a convex fillet removes or
@@ -65,10 +96,7 @@ impl Piece {
         supports: [&Surface; 2],
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
-        let hull = match &kind {
-            Kind::Revolved(path) => path.hull(dec)?,
-            Kind::Generator(path) => path.hull(dec)?,
-        };
+        let hull = each_kind!(&kind, path => path.hull(dec)?);
         Ok(Self {
             kind,
             origin,
@@ -93,6 +121,11 @@ impl Piece {
     pub fn bounds(&self) -> Option<&[[Rational; 2]; 3]> {
         self.bounds.as_ref()
     }
+    /// Boxes that together hold the region, tighter than [`Piece::bounds`]
+    /// for a closed path.
+    pub(crate) fn boxes(&self, dec: &mut Decider) -> Result<Vec<[Ball; 3]>, Refusal> {
+        each_kind!(&self.kind, path => path.boxes(dec))
+    }
     /// Strict membership in the region.
     pub fn classify(&self, point: &Point3, dec: &mut Decider) -> Result<Relation, Refusal> {
         path::classify(self, point, dec)
@@ -107,10 +140,7 @@ impl Piece {
         path::distance(self, point, width, dec)
     }
     fn radius(&self) -> &Real {
-        match &self.kind {
-            Kind::Revolved(path) => path.radius(),
-            Kind::Generator(path) => path.radius(),
-        }
+        each_kind!(&self.kind, path => path.radius())
     }
 
     pub(crate) fn location(
@@ -197,17 +227,11 @@ impl Piece {
     }
 
     pub(crate) fn fast<A: Arithmetic>(&self, p: [f64; 3]) -> f64 {
-        match &self.kind {
-            Kind::Revolved(path) => path.fast(p, A::sqrt),
-            Kind::Generator(path) => path.fast(p, A::sqrt),
-        }
+        each_kind!(&self.kind, path => path.fast(p, A::sqrt))
     }
 
     pub(crate) fn transform(&mut self, pose: &Isometry) {
-        match &mut self.kind {
-            Kind::Revolved(path) => path.transform(pose),
-            Kind::Generator(path) => path.transform(pose),
-        }
+        each_kind!(&mut self.kind, path => path.transform(pose));
         for support in &mut self.supports {
             support.transform(pose);
         }
@@ -246,70 +270,67 @@ pub enum PieceCover {
     Revolved(RevolvedCover),
     /// Supports parallel to one line.
     Generator(GeneratorCover),
+    /// Two curved supports about one axis.
+    Coaxial(CoaxialCover),
+    /// A cylinder with a second cylinder or a sphere off its axis.
+    Saddle(SaddleCover),
 }
 impl Cover for PieceCover {
     fn radius(&self) -> &Ball {
-        match self {
-            Self::Revolved(c) => c.radius(),
-            Self::Generator(c) => c.radius(),
-        }
+        each_cover!(self, c => c.radius())
     }
     fn centre(&self, u: &Ball) -> Result<[Ball; 3], Refusal> {
-        match self {
-            Self::Revolved(c) => c.centre(u),
-            Self::Generator(c) => c.centre(u),
-        }
+        each_cover!(self, c => c.centre(u))
     }
     fn frame(&self, u: &Ball) -> Result<Frame, Refusal> {
-        match self {
-            Self::Revolved(c) => c.frame(u),
-            Self::Generator(c) => c.frame(u),
-        }
+        each_cover!(self, c => c.frame(u))
+    }
+    fn excludes(&self, p: &[Ball; 3], u: &Ball) -> Result<bool, Refusal> {
+        each_cover!(self, c => c.excludes(p, u))
+    }
+    fn below(&self, p: &[Ball; 3], u: &Ball) -> Result<bool, Refusal> {
+        each_cover!(self, c => c.below(p, u))
+    }
+    fn exists(&self, u: &Ball) -> Result<bool, Refusal> {
+        each_cover!(self, c => c.exists(u))
+    }
+    fn empty(&self, u: &Ball) -> Result<bool, Refusal> {
+        each_cover!(self, c => c.empty(u))
     }
 }
 
 impl Path for Piece {
     type Cover = PieceCover;
     fn local(&self, point: &Point3) -> [Real; 3] {
-        match &self.kind {
-            Kind::Revolved(path) => path.local(point),
-            Kind::Generator(path) => path.local(point),
-        }
+        each_kind!(&self.kind, path => path.local(point))
     }
     fn walls(&self, local: &[Real; 3], dec: &mut Decider) -> Result<Vec<Real>, Refusal> {
-        match &self.kind {
-            Kind::Revolved(path) => path.walls(local, dec),
-            Kind::Generator(path) => path.walls(local, dec),
-        }
+        each_kind!(&self.kind, path => path.walls(local, dec))
     }
     fn walls_are_faces(&self) -> bool {
-        match &self.kind {
-            Kind::Revolved(path) => path.walls_are_faces(),
-            Kind::Generator(path) => path.walls_are_faces(),
-        }
+        each_kind!(&self.kind, path => path.walls_are_faces())
+    }
+    fn bands(&self, local: &[Real; 3], dec: &mut Decider) -> Result<Vec<Real>, Refusal> {
+        each_kind!(&self.kind, path => path.bands(local, dec))
     }
     fn uniform(&self) -> bool {
-        match &self.kind {
-            Kind::Revolved(path) => path.uniform(),
-            Kind::Generator(path) => path.uniform(),
-        }
+        each_kind!(&self.kind, path => path.uniform())
     }
     fn separation(&self, local: &[Real; 3]) -> Option<Real> {
-        match &self.kind {
-            Kind::Revolved(path) => path.separation(local),
-            Kind::Generator(path) => path.separation(local),
-        }
+        each_kind!(&self.kind, path => path.separation(local))
     }
     fn cover(&self, dec: &mut Decider) -> Result<PieceCover, Refusal> {
         Ok(match &self.kind {
             Kind::Revolved(path) => PieceCover::Revolved(path.cover(dec)?),
             Kind::Generator(path) => PieceCover::Generator(path.cover(dec)?),
+            Kind::Coaxial(path) => PieceCover::Coaxial(path.cover(dec)?),
+            Kind::Saddle(path) => PieceCover::Saddle(path.cover(dec)?),
         })
     }
     fn nearest(&self, local: &[Real; 3], dec: &mut Decider) -> Result<Option<Frame>, Refusal> {
-        match &self.kind {
-            Kind::Revolved(path) => path.nearest(local, dec),
-            Kind::Generator(path) => path.nearest(local, dec),
-        }
+        each_kind!(&self.kind, path => path.nearest(local, dec))
+    }
+    fn guess(&self, local: &[Real; 3]) -> Option<Rational> {
+        each_kind!(&self.kind, path => path.guess(local))
     }
 }

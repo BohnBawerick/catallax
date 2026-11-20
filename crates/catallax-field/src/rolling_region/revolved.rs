@@ -334,6 +334,17 @@ impl Revolved {
                 let (basis, tilt, circle) = if sign(&normal_axis.norm_squared(), dec)? == Sign::Zero
                 {
                     let major = &gain / &cross;
+                    // The foot on a cone lies `b r / sqrt(1 + k^2)` nearer the
+                    // axis than the centre; past the axis it is on the other
+                    // nappe, beyond the apex, and no ball touches the face.
+                    if cone
+                        && !positive(
+                            &(&magnitude(&major, dec)? - &(&(&b * &radius) / &root_growth)),
+                            dec,
+                        )?
+                    {
+                        return Err(reach("the ball's foot on the cone lies past its apex"));
+                    }
                     let ring = positive(&(&major - &radius), dec)?;
                     let circle = Circle {
                         centre: origin.plus(&axis.scaled(&(&start / &cross))),
@@ -505,23 +516,35 @@ impl Revolved {
     /// a sphere's arc in that disc. The panel width only sets how loose the
     /// box is.
     pub fn hull(&self, dec: &mut Decider) -> Result<[Ball; 3], Refusal> {
-        const PANELS: i64 = 64;
         let cover = self.cover(dec)?;
         let mut points = Vec::new();
-        for i in 0..PANELS {
-            let lo = Rational::from_i64(2 * i - PANELS) / Rational::from_i64(PANELS);
-            let hi = Rational::from_i64(2 * i + 2 - PANELS) / Rational::from_i64(PANELS);
-            let u = interval(&lo, &hi);
-            let frame = cover.frame(&u)?;
-            let edge = cover.edge(&u)?;
-            if let Kind::Round { .. } = cover.kind {
-                points.extend(chord_cube(&edge, &frame.feet[1])?);
-            }
-            points.push(edge);
-            points.push(frame.centre);
-            points.extend(frame.feet);
+        for u in panels() {
+            points.extend(Self::panel_points(&cover, &u)?);
         }
         Ok(hull_points(&points))
+    }
+
+    /// The box of the region over each of the 64 panels of [`Revolved::hull`].
+    /// A box round a whole ring holds the axis, so a support near the ring's
+    /// inside can reach it while staying clear of every panel's box.
+    pub fn boxes(&self, dec: &mut Decider) -> Result<Vec<[Ball; 3]>, Refusal> {
+        let cover = self.cover(dec)?;
+        panels()
+            .map(|u| Ok(hull_points(&Self::panel_points(&cover, &u)?)))
+            .collect()
+    }
+
+    fn panel_points(cover: &RevolvedCover, u: &Ball) -> Result<Vec<[Ball; 3]>, Refusal> {
+        let mut points = Vec::new();
+        let frame = cover.frame(u)?;
+        let edge = cover.edge(u)?;
+        if let Kind::Round { .. } = cover.kind {
+            points.extend(chord_cube(&edge, &frame.feet[1])?);
+        }
+        points.push(edge);
+        points.push(frame.centre);
+        points.extend(frame.feet);
+        Ok(points)
     }
 
     /// Tentative binary64 value for display: negative inside the region. The
@@ -614,6 +637,17 @@ impl Revolved {
     }
 }
 
+/// A cover of `[-1, 1]` by 64 panels of width `1 / 32`, for the boxes of a
+/// closed path.
+pub(super) fn panels() -> impl Iterator<Item = Ball> {
+    const PANELS: i64 = 64;
+    (0..PANELS).map(|i| {
+        let lo = Rational::from_i64(2 * i - PANELS) / Rational::from_i64(PANELS);
+        let hi = Rational::from_i64(2 * i + 2 - PANELS) / Rational::from_i64(PANELS);
+        interval(&lo, &hi)
+    })
+}
+
 /// Interval cover of a [`Revolved`] path; `u` in `[-1, 1]` is the angle `pi u`
 /// from the first basis direction.
 #[derive(Clone, Debug)]
@@ -650,22 +684,27 @@ enum Kind {
         edge_major: Ball,
     },
 }
+/// Cosine, sine and meridian `cos e1 + sin e2` over the panel of angles
+/// `pi u`, by the mean-value form at its midpoint: with `|h| <= delta`,
+/// `cos(t + h) = cos t - h sin t` and `sin(t + h) = sin t + h cos t`, each
+/// within `delta^2 / 2`. A Taylor series over the whole panel loses much more
+/// near `pi`.
+pub(super) fn angle(pi: &Ball, basis: &[[Ball; 3]; 2], u: &Ball) -> (Ball, Ball, [Ball; 3]) {
+    let centre = pi * &Ball::from_rational(&u.mid(), BITS);
+    let (c, s) = (centre.cos(), centre.sin());
+    let delta = (pi * &Ball::from_rational(&u.rad(), BITS)).hi();
+    let h = interval(&-&delta, &delta);
+    let rest = &delta * &delta / q(2);
+    let rest = interval(&-&rest, &rest);
+    let cos = &(&c - &(&s * &h)) + &rest;
+    let sin = &(&s + &(&c * &h)) + &rest;
+    let direction = sum(&scaled(&cos, &basis[0]), &scaled(&sin, &basis[1]));
+    (cos, sin, direction)
+}
+
 impl RevolvedCover {
-    /// Cosine, sine and meridian over the panel, by the mean-value form at its
-    /// midpoint: with `|h| <= delta`, `cos(t + h) = cos t - h sin t` and
-    /// `sin(t + h) = sin t + h cos t`, each within `delta^2 / 2`. A Taylor
-    /// series over the whole panel loses much more near `pi`.
     fn angle(&self, u: &Ball) -> (Ball, Ball, [Ball; 3]) {
-        let centre = &self.pi * &Ball::from_rational(&u.mid(), BITS);
-        let (c, s) = (centre.cos(), centre.sin());
-        let delta = (&self.pi * &Ball::from_rational(&u.rad(), BITS)).hi();
-        let h = interval(&-&delta, &delta);
-        let rest = &delta * &delta / q(2);
-        let rest = interval(&-&rest, &rest);
-        let cos = &(&c - &(&s * &h)) + &rest;
-        let sin = &(&s + &(&c * &h)) + &rest;
-        let direction = sum(&scaled(&cos, &self.basis[0]), &scaled(&sin, &self.basis[1]));
-        (cos, sin, direction)
+        angle(&self.pi, &self.basis, u)
     }
     /// `p + (G / D) (m - a cos (n.u1) / n.a)` for a pivot and gain.
     fn conic(&self, u: &Ball, pivot: &[Ball; 3], gain: &Ball) -> Result<[Ball; 3], Refusal> {

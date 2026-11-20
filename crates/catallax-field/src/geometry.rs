@@ -1045,6 +1045,39 @@ impl Leaf {
         }
     }
 
+    /// [`Leaf::on_face`] at a point that may be algebraic. Rational points take
+    /// [`Leaf::on_face`] unchanged.
+    pub(crate) fn on_face_algebraic(
+        &self,
+        origin: &Origin,
+        role: &Role,
+        p: &Point3,
+        dec: &mut Decider,
+    ) -> Result<Option<bool>, Refusal> {
+        if let Some(r) = p.as_rational() {
+            return self.on_face(origin, role, &[r.x, r.y, r.z], dec);
+        }
+        match self {
+            Self::Smooth(_) | Self::Rolling(_) => Ok(Some(false)),
+            Self::Primitive(_) | Self::Cell(_) => Ok(Some(true)),
+            Self::Draft(region) => {
+                if matches!(
+                    region.cell,
+                    crate::draft::Cell::Polyhedral(_) | crate::draft::Cell::Oblique(_)
+                ) {
+                    region.on_face_point(origin, p, dec).map(Some)
+                } else {
+                    Ok(Some(region.source_origin(origin).is_some()))
+                }
+            }
+            Self::Feature(a) => a.on_face_algebraic(role, p, dec).map(Some),
+            Self::Lattice(_) | Self::Gyroid(_) | Self::Mesh(_) => Err(Refusal::new(
+                "field.fillet-contact",
+                "a lattice, gyroid or mesh face's membership needs a rational point",
+            )),
+        }
+    }
+
     pub(crate) fn draft_witness(&self, dec: &mut Decider) -> Result<Point3, Refusal> {
         match self {
             Self::Primitive(p) => {

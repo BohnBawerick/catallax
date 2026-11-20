@@ -387,6 +387,27 @@ No test fails for speed. A benchmark target measures and prints:
 
 The numbers are written to the benchmark output so later runs can be compared.
 
+## Feature recognition
+
+`recognition::recognise(model, body, dec)` reads a body's features off its faces: round holes, groups of equal holes, round bosses and round-ended slots. It builds nothing and changes nothing, and it works the same on a built body and an imported one.
+
+The method is the rule-based one of the literature (the attributed adjacency graph of Joshi and Chang, 1988) and of open recognisers such as quiddity: features are patterns in the faces, their surface kinds, the side of each surface that holds material and the edges faces share. The body states all of these, so nothing is fitted or sampled. OpenCASCADE's open source and SMLib have no feature recogniser to follow.
+
+| Feature | Rule |
+|---|---|
+| Round | The faces of one cylinder: same axis, same radius, material on the same side |
+| End of a round | A face it meets along an edge that is not a line along its axis. The end is closed when that face stays within the round's radius and open when it reaches beyond |
+| Hole | A round with material outside whose every side meets an end, and at least one open end. Through when no end is closed. Depth is the distance between two ends that are circles about the axis |
+| Hole pattern | Holes of one radius and one depth, with parallel axes, that open onto the same faces. A hole is in at most one pattern |
+| Boss | A round with material inside, one open end (the face it stands on) and one closed end (its top) |
+| Slot | Two rounds of one radius with material outside and parallel, different axes, joined by exactly two planar faces that are parallel, along the axes and a diameter apart. Blind when a face that meets all four has no edge of its own |
+
+Every condition in the table is decided exactly: equal radii, parallel and common axes, a point beyond a radius, flats tangent to the ends. Sizes are reported as the nearest doubles to the exact values, for display. A decision the decider cannot make within its allowance returns its refusal.
+
+A face no rule reads is in no feature. Not read yet: cones (countersinks, drill points as their own feature), a counterbore as one feature (it reads as a blind hole above a through hole), pockets, steps, fillets and chamfers, and rounds on tori or splines.
+
+Checked by `crates/catallax-features/tests/recognition.rs` (the P1 bracket's bore, boss, four patterned holes and slot; blind holes; holes of different depth; a boss and a bare rod; a blind slot and a pocket that is not one) and `crates/catallax-step/tests/recognition_import.rs` (the bracket written as STEP without manufacturing information and imported gives the same records). quiddity 0.5.4 reports the same bore, boss, four holes with their pattern and slot on the bracket's STEP file.
+
 ## Out of scope for this piece
 
 - Moments of inertia and other integrals (later, on the same machinery).

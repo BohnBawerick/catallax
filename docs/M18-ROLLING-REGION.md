@@ -51,6 +51,13 @@ is an exact exclusion witness. Inclusion requires a **whole interval** cover of
 distance squared above `r^2`, throughout that panel. Subdivision has no gaps;
 shared endpoints are included. Sampling cannot establish inclusion.
 
+Since 4.2a step 1 the region is one path kind of the general routine in
+[the field fillet milestone note](M42A-FIELD-FILLETS.md), which also gives it a
+guaranteed distance range to its face. Its membership answers and work are
+unchanged, except that a panel at the depth limit no longer ends the search: the
+rest of the cover may still hold an exclusion witness, and inclusion is refused
+only after the whole cover is visited.
+
 The invariant `0 <= m-D <= m-(o-C)` tightens the interval evaluation, using only
 bounds justified by the validated finite parameter domain. Arithmetic uses
 96 bits, at most 4096 evaluated panels and depth 64. These are new local refusal

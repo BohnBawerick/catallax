@@ -232,6 +232,7 @@ fn bracket_pmi(part: &Bracket) -> (Pmi<FaceId>, BTreeMap<&'static str, &'static 
                 }),
                 nominal: None,
                 through: false,
+                thread: None,
             }),
         ),
         item(
@@ -262,6 +263,7 @@ fn bracket_pmi(part: &Bracket) -> (Pmi<FaceId>, BTreeMap<&'static str, &'static 
                 limits: deviations("0.1", "-0.1"),
                 nominal: None,
                 through: false,
+                thread: None,
             }),
         ),
         item(
@@ -281,6 +283,7 @@ fn bracket_pmi(part: &Bracket) -> (Pmi<FaceId>, BTreeMap<&'static str, &'static 
                 limits: deviations("0.1", "0"),
                 nominal: None,
                 through: true,
+                thread: None,
             }),
         ),
         item(
@@ -326,6 +329,7 @@ fn bracket_pmi(part: &Bracket) -> (Pmi<FaceId>, BTreeMap<&'static str, &'static 
                 limits: None,
                 nominal: None,
                 through: false,
+                thread: None,
             }),
         ),
         item(
@@ -529,34 +533,83 @@ fn a_changed_bore_keeps_its_items_and_reads_its_new_size() {
         body: built.result,
     };
     let bore = part.round(2, "5", ["30", "25"]);
-    let pmi = Pmi {
-        items: vec![item(
-            "Bore diameter",
-            ItemKind::Size(Size {
-                kind: SizeKind::Diameter,
-                features: vec![bore],
-                limits: Some(Limits::Fit {
-                    deviation: "H".into(),
-                    grade: "7".into(),
-                }),
-                nominal: None,
-                through: false,
+    let datum = |letter: &str, feature: Feature<FaceId>| {
+        item(
+            &format!("Datum {letter}"),
+            ItemKind::Datum(Datum {
+                letter: letter.to_owned(),
+                feature,
             }),
-        )],
+        )
+    };
+    // The bore's fit and its position tolerance, with the datums the tolerance needs.
+    let pmi = Pmi {
+        items: vec![
+            datum("A", part.planes(2, "0")),
+            datum("B", part.planes(1, "0")),
+            datum("C", part.planes(0, "0")),
+            item(
+                "Bore diameter",
+                ItemKind::Size(Size {
+                    kind: SizeKind::Diameter,
+                    features: vec![bore.clone()],
+                    limits: Some(Limits::Fit {
+                        deviation: "H".into(),
+                        grade: "7".into(),
+                    }),
+                    nominal: None,
+                    through: false,
+                    thread: None,
+                }),
+            ),
+            item(
+                "Bore position",
+                ItemKind::Tolerance(GeometricTolerance {
+                    characteristic: Characteristic::Position,
+                    value: q("0.05"),
+                    diameter_zone: true,
+                    material: None,
+                    datums: ["A", "B", "C"].map(str::to_owned).to_vec(),
+                    features: vec![bore],
+                }),
+            ),
+        ],
         part: PartNotes::default(),
     };
     let (file, _) = write(&part, &pmi);
     let read = read_step_pmi(file.as_bytes()).unwrap();
-    let [
-        Item {
-            kind: ItemKind::Size(size),
-            ..
-        },
-    ] = read.pmi.items.as_slice()
-    else {
-        panic!("one size expected, found {:?}", read.pmi.items);
+    assert!(read.skipped.is_empty(), "{:?}", read.skipped);
+    let find = |name: &str| {
+        read.pmi
+            .items
+            .iter()
+            .find(|item| item.id == name)
+            .unwrap_or_else(|| panic!("{name} is in the file"))
+    };
+    // The size is the new one and still has its fit.
+    let ItemKind::Size(size) = &find("Bore diameter").kind else {
+        panic!("a size");
     };
     assert_eq!(size.nominal, Some(q("10")));
+    assert_eq!(
+        size.limits,
+        Some(Limits::Fit {
+            deviation: "H".into(),
+            grade: "7".into(),
+        })
+    );
+    // The position tolerance is still on the bore: the size's own face, with its zone
+    // and its three datums.
+    let ItemKind::Tolerance(position) = &find("Bore position").kind else {
+        panic!("a geometric tolerance");
+    };
+    assert_eq!(position.features, size.features);
+    assert_eq!(position.characteristic, Characteristic::Position);
+    assert_eq!(
+        (position.value.clone(), position.diameter_zone),
+        (q("0.05"), true)
+    );
+    assert_eq!(position.datums, ["A", "B", "C"]);
 }
 
 #[test]
@@ -588,6 +641,7 @@ fn information_that_does_not_fit_the_part_is_refused() {
             limits: None,
             nominal: None,
             through: false,
+            thread: None,
         }))),
         "step.pmi-not-measurable"
     );
@@ -621,7 +675,76 @@ fn information_that_does_not_fit_the_part_is_refused() {
             limits: deviations("0", "0.1"),
             nominal: None,
             through: false,
+            thread: None,
         }))),
         "step.pmi-invalid"
     );
+}
+
+#[test]
+fn a_threaded_hole_reads_back_with_its_designation() {
+    let part = bracket();
+    let holes: Vec<Feature<FaceId>> = [["10", "12"], ["10", "32"], ["50", "12"], ["50", "32"]]
+        .into_iter()
+        .map(|at| part.round(2, "2", at))
+        .collect();
+    let pmi = Pmi {
+        items: vec![item(
+            "Tapped holes",
+            ItemKind::Size(Size {
+                kind: SizeKind::Diameter,
+                features: holes.clone(),
+                limits: None,
+                nominal: None,
+                through: true,
+                thread: Some("M5x0.8 - 6H".to_owned()),
+            }),
+        )],
+        part: PartNotes::default(),
+    };
+    let (file, _) = write(&part, &pmi);
+    assert!(
+        file.contains("'thread'") && file.contains("'M5x0.8 - 6H'"),
+        "the designation is in the file"
+    );
+    let read = read_step_pmi(file.as_bytes()).unwrap();
+    assert!(read.skipped.is_empty(), "{:?}", read.skipped);
+    let [
+        Item {
+            kind: ItemKind::Size(size),
+            ..
+        },
+    ] = read.pmi.items.as_slice()
+    else {
+        panic!("one size expected, found {:?}", read.pmi.items);
+    };
+    assert_eq!(size.thread.as_deref(), Some("M5x0.8 - 6H"));
+    assert!(size.through);
+    assert_eq!(size.features.len(), 4, "on the four holes");
+
+    // A radius is not threaded.
+    let radius = Pmi {
+        items: vec![item(
+            "Threaded radius",
+            ItemKind::Size(Size {
+                kind: SizeKind::Radius,
+                features: vec![holes[0].clone()],
+                limits: None,
+                nominal: None,
+                through: false,
+                thread: Some("M5".to_owned()),
+            }),
+        )],
+        part: PartNotes::default(),
+    };
+    let refusal = write_step_with_pmi(
+        &part.model,
+        part.body,
+        &StepOptions::default(),
+        &radius,
+        &mut Decider::default(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
+    assert_eq!(refusal.code, "step.pmi-invalid");
 }

@@ -22,7 +22,7 @@ use catallax_numbers::{Rational, Refusal};
 
 pub use measure::nominals;
 pub(crate) use write::emit;
-pub use write::{HOLE_DEPTH, THROUGH};
+pub use write::{HOLE_DEPTH, THREAD, THROUGH};
 
 /// The faces of one feature: a bore's cylinder, or the two flats of a slot.
 pub type Feature<F> = Vec<F>;
@@ -76,6 +76,7 @@ impl<F> Pmi<F> {
                         .collect::<Result<_, _>>()?,
                     limits: size.limits.clone(),
                     through: size.through,
+                    thread: size.thread.clone(),
                     nominal: size.nominal.clone(),
                 }),
                 ItemKind::Location(location) => {
@@ -182,6 +183,10 @@ pub struct Size<F> {
     pub limits: Option<Limits>,
     /// The size is a hole's diameter and the hole goes through the part.
     pub through: bool,
+    /// The feature is threaded: its designation as a drawing writes it, such as
+    /// `M6x1 - 6H`. The diameter is then the thread's nominal diameter or the
+    /// diameter of the hole it is cut in, whichever the faces have.
+    pub thread: Option<String>,
     /// The nominal value in millimetres a file states. `None` on the way
     /// out: the writer measures it.
     pub nominal: Option<Rational>,
@@ -526,6 +531,20 @@ impl<F: Ord + Clone> Pmi<F> {
                     }
                     if size.through && size.kind != SizeKind::Diameter {
                         return Err(refuse(id, "only a diameter goes through"));
+                    }
+                    if let Some(thread) = &size.thread {
+                        if size.kind != SizeKind::Diameter {
+                            return Err(refuse(id, "only a diameter is threaded"));
+                        }
+                        // A designation such as `M6x1 - 6H`: plain text a STEP string
+                        // holds as it stands.
+                        let plain = !thread.trim().is_empty()
+                            && thread.len() <= 40
+                            && thread.bytes().all(|b| b.is_ascii_graphic() || b == b' ')
+                            && !thread.contains(['\'', '\\']);
+                        if !plain {
+                            return Err(refuse(id, "the thread's designation is not plain text"));
+                        }
                     }
                     check_limits(id, size.limits.as_ref())?;
                 }

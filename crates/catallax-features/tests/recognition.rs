@@ -9,6 +9,11 @@ use catallax_measure::recognition::{Recognised, recognise};
 use catallax_numbers::Decider;
 use catallax_recipe::Recipe;
 
+/// True when a reported size is the expected one to the last few bits.
+fn is(size: f64, expected: f64) -> bool {
+    (size - expected).abs() < 1e-12
+}
+
 fn bracket() -> Recognised {
     let recipe = Recipe::parse(include_str!("../../../parts/P1-bracket.json")).unwrap();
     let built = evaluate(&recipe, &mut Decider::default()).unwrap();
@@ -49,7 +54,7 @@ fn the_bracket_has_a_bore_a_boss_four_patterned_holes_and_a_slot() {
     assert!(
         pattern
             .iter()
-            .all(|hole| found.holes[*hole].diameter == 4.0),
+            .all(|hole| is(found.holes[*hole].diameter, 4.0)),
         "of the four bolt holes"
     );
 
@@ -59,7 +64,7 @@ fn the_bracket_has_a_bore_a_boss_four_patterned_holes_and_a_slot() {
     let bore = found
         .holes
         .iter()
-        .find(|hole| hole.diameter == 8.0)
+        .find(|hole| is(hole.diameter, 8.0))
         .unwrap();
     assert!(
         bore.opens_onto.contains(&boss.top),

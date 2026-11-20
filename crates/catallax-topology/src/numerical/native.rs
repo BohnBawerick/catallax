@@ -107,7 +107,7 @@ impl<'a> Index<'a> {
     }
 }
 
-fn parameters(
+pub(super) fn parameters(
     edge: &NumericalEdge,
     curve: &BSplineCurve,
     sense: Sense,
@@ -180,7 +180,7 @@ pub(super) fn point(
     }
 }
 
-fn numerical_parameters(
+pub(super) fn numerical_parameters(
     edge: &NumericalEdge,
     sense: Sense,
     dec: &mut Decider,

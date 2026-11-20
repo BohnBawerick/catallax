@@ -1,6 +1,6 @@
 # Catallax recipe language
 
-Version 5 specification, format `catallax-recipe/5`. The reader accepts versions 3, 4 and 5 explicitly. Version 5 adds optional face-origin filters, explicit variable-radius fillet laws, and bend and twist (section 4.20), and retains version 4 operation meanings. One-sided through-all and bounded face/next extrusions have data-model and evaluator support; other additions below remain implementation contracts where noted.
+Version 5 specification, format `catallax-recipe/5`. The reader accepts versions 3, 4 and 5 explicitly. Version 5 adds optional face-origin filters, explicit variable-radius fillet laws, bend and twist (section 4.20), and mesh Booleans and decimation (sections 4.21 and 4.22), and retains version 4 operation meanings. One-sided through-all and bounded face/next extrusions have data-model and evaluator support; other additions below remain implementation contracts where noted.
 
 A recipe is the feature tree, the master model of a part. The B-rep kernel and the field kernel both build the part from it. This document gives each operation its parameters, one mathematical definition both kernels can be checked against, the names of the faces it makes, and the inputs that are impossible. It defines how names survive upstream edits, how a lost name fails, the file format, and how SolidDraft's present references map onto Catallax names.
 
@@ -1290,6 +1290,49 @@ Version 5 adds `twist` and `bend`. Each sends one body through a space warp: Bar
 **Construction.** Both build only as fitted geometry, through the numerical outcome; the exact build refuses with `deform.requires-numerical-evaluation`. SMLib keeps a warped surface procedural (`SmSrfInVolume`) and makes a B-spline only where an exact one exists. Catallax has no procedural carrier, so it follows OpenCASCADE's conversion of a procedural surface (`GeomConvert_ApproxSurface`): each face's warped surface and each edge's warped curve is fitted in binary64 as a cubic B-spline over the source's own parameters. Faces keep their source charts and trims, so topology and keys carry over. Each fit doubles its spans from four until it meets a quarter of rule T2's target at the eighths of every span, and admission measures every edge gap under T2's cap. The first build takes planar faces with straight edges; curved input refuses with `deform.unsupported-face` or `deform.unsupported-edge` until the [coverage follow-on](../ROADMAP.md#coverage-bend-twist-and-blends). The other refusals are `deform.bend-axis`, `deform.bend-overlap`, `deform.definition` and `deform.fit`. A later step cannot read the result until numerical continuation exists (3.0B).
 
 - **A warp of the whole space.** SMLib bends and twists everything, without trim planes. The alternative is a bend zone between two planes with rigid motion beyond it, as some CAD tools offer. That needs knots where the zone ends and a choice of how far the zone reaches, and no reference kernel defines it.
+
+### 4.21 Mesh Booleans
+
+Version 5 adds `mesh_boolean`: the union, difference or intersection of two closed triangle meshes, kept as a closed triangle mesh.
+
+| Parameter | Value |
+|---|---|
+| `kind` | `union`, `subtract` or `intersect`, as for `boolean` |
+| `target` | a mesh step: `import_mesh`, `mesh_boolean` or `mesh_decimate` |
+| `tool` | a mesh step of the same kinds |
+
+**Definition.** The region is the one `boolean` defines for the same two solids (section 4.4). The result's surface is made of pieces of the operands' triangles, each split along the curve where the two surfaces cross; the tool's pieces face inward for `subtract`. Every new vertex is the exact rational point where an edge of one mesh crosses the plane of a triangle of the other, and every decision is an exact orientation sign, so nothing is joined by distance, as in section 4.19.
+
+**Names.** It makes no faces. Each face keeps the origin of the mesh step its triangles came from, so a result face names `import_mesh` steps through any chain of mesh steps. Coplanar neighbouring triangles join one planar face only when they share that origin.
+
+**Impossible.** None beyond the operands' own: two valid closed meshes always have a Boolean.
+
+**Construction.** It follows SMLib's `SmPolyMerge::ManifoldBoolean`: candidate triangle pairs come from a box tree, each pair is intersected, the intersection edges go into both meshes, the pieces are sorted into inside and outside of the other solid by a flood fill that stops at intersection edges, and the operation keeps its pieces. SMLib works in binary64 and relates points within its tolerances. Catallax works on the exact coordinates instead: the corefinement of CGAL's Polygon Mesh Processing package under its exact-construction kernel. Each cut triangle is retriangulated in its own plane, its intersection segments recovered by edge flips (Sloan 1993). One exact winding number per flood-filled set of pieces, along the import's perturbed ray, decides inside or outside. The result passes the full closed-mesh check of section 4.19 once, and its B-rep is built as an imported mesh's is. OpenCASCADE's open-source kernel has no mesh Boolean.
+
+**Refusals.** `mesh-boolean.coplanar` when a triangle of each mesh overlaps the other in one plane; touching edges and points are handled, coplanar contact is not in this first build. `mesh-boolean.non-manifold` when the meshes touch along an edge or at a point so that the result is not a manifold solid, as section 4.19 refuses for an import. `mesh-boolean.internal` names a result that fails its own check, which is a bug. A step that is not a mesh step is a recipe error. The field kernel refuses `mesh_boolean` with `field.unsupported-operation`, so a print of its result refuses too.
+
+- **A separate operation.** `boolean` keeps every answer it gives today. On two 224-triangle sphere imports it had not finished after ten minutes on the work PC; `mesh_boolean` builds the same region in about 1M work. SMLib keeps the two apart as well (`SmPolyMerge` beside `SmMerge`). The alternative is to send `boolean` to this path when both inputs are meshes; that changes existing B-rep results and their face structure.
+
+### 4.22 Mesh decimation
+
+Version 5 adds `mesh_decimate`: a closed triangle mesh with edges collapsed towards a triangle count.
+
+| Parameter | Value |
+|---|---|
+| `body` | a mesh step: `import_mesh`, `mesh_boolean` or `mesh_decimate` |
+| `triangles` | the most triangles the result keeps where allowed collapses reach it, a positive integer |
+
+**Definition.** Edges collapse one at a time, cheapest first by the quadric error metric of Garland and Heckbert ("Surface simplification using quadric error metrics", SIGGRAPH 1997), until at most `triangles` remain or no allowed collapse is left. A vertex's quadric is the sum over its triangles of the squared distance to each triangle's plane, weighted by a third of the triangle's area, as SMLib's `SmQuadricVertexAttr` weights it; a collapse adds the two quadrics. The surviving vertex goes to whichever of the two ends and their midpoint has the least error, Garland and Heckbert's own fallback set. Ties break by vertex index. A collapse is allowed when it keeps a 2-manifold, by the link condition of Dey, Edelsbrunner, Guha and Nekhayev ("Topology preserving edge contraction", 1999), and when no moved triangle turns over or becomes flat: each moved triangle's exact normal keeps a positive dot product with its old one. A count at or above the mesh's own keeps the mesh as it is.
+
+**Names.** It makes no faces. A collapse keeps every triangle it does not remove, with corners moved, so each result triangle keeps its input triangle's origin.
+
+**Impossible.** `triangles` of zero.
+
+**Construction.** It follows SMLib's `SmPolyDecimate::DoQuadricDecimation` with three differences, each for a reason. The optimal point `-Q^-1 b` needs a rank test with a threshold and is a fitted binary64 point, while ends and midpoints are exact, so the result stays an exact mesh. SMLib checks no topology; the link condition keeps the result a closed manifold. SMLib checks no inversion; the normal test does. Costs and placement choices are binary64 decisions; the chosen positions and the inversion test are exact. The result passes the full closed-mesh check of section 4.19 once. OpenCASCADE's open-source kernel has no decimation.
+
+**Refusals.** `mesh-decimate.crossing` when the collapsed surface would cross itself, which only the final check sees; the first build does not test crossings per collapse. `mesh-decimate.internal` names any other failed check, which is a bug. A step that is not a mesh step, or a count of zero, is a recipe error. The field kernel refuses `mesh_decimate` with `field.unsupported-operation`.
+
+- **A triangle count, not a deviation.** SMLib's stopping test also takes a maximum quadric error, but its own code applies it only when an edge first enters the queue. A count is what a designer can predict. A bound on distance from the input needs a certified surface-to-surface distance, which coverage follow-on item 3 can add.
 
 ## 5. On-disk form
 

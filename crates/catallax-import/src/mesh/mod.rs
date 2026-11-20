@@ -12,7 +12,9 @@
 //! All predicates work on the file's own coordinates. A positive scale does
 //! not change any sign, so scaling is applied only to the points handed out.
 
+pub mod boolean;
 pub(crate) mod bvh;
+pub mod decimate;
 pub(crate) mod parse;
 mod predicates;
 
@@ -292,6 +294,100 @@ impl ClosedMesh {
         meter.flush()?;
         let soup = parse::read(bytes, limit.min(MAX_TRIANGLES))?;
         let mesh = Self::validate(soup.points, soup.triangles, scale.clone(), &mut meter)?;
+        meter.flush()?;
+        Ok(mesh)
+    }
+
+    /// Validates triangles over exact points in millimetres, with every proof
+    /// a read makes. Mesh Booleans and decimation hand their results here, so
+    /// each result is checked once, as an imported file is.
+    pub fn from_parts(
+        points: Vec<[Rational; 3]>,
+        triangles: Vec<[u32; 3]>,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        let mut meter = Meter::new(dec);
+        meter.tick(triangles.len() as u64 + 1)?;
+        let mesh = Self::validate(points, triangles, Rational::one(), &mut meter)?;
+        meter.flush()?;
+        Ok(mesh)
+    }
+
+    /// The scaled mesh moved by the exact rigid motion `p -> rotation p +
+    /// translation`, in millimetres. The motion must be a rotation (orthogonal,
+    /// determinant one): every orientation sign the read proved is then the
+    /// same at the moved points, so the proofs carry over and are not repeated.
+    pub fn placed(
+        &self,
+        rotation: [[&Rational; 3]; 3],
+        translation: [&Rational; 3],
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        let mut meter = Meter::new(dec);
+        predicates::record_exact(60, rotation.iter().flatten().copied());
+        let entry = |i: usize, j: usize| -> Rational {
+            (0..3).fold(Rational::zero(), |sum, k| {
+                &sum + &(rotation[i][k] * rotation[j][k])
+            })
+        };
+        let orthogonal = (0..3).all(|i| {
+            (0..3).all(|j| {
+                let want = if i == j {
+                    Rational::one()
+                } else {
+                    Rational::zero()
+                };
+                entry(i, j) == want
+            })
+        });
+        let r = |i: usize, j: usize| rotation[i][j];
+        let det = &(&(r(0, 0) * &(&(r(1, 1) * r(2, 2)) - &(r(1, 2) * r(2, 1))))
+            - &(r(0, 1) * &(&(r(1, 0) * r(2, 2)) - &(r(1, 2) * r(2, 0)))))
+            + &(r(0, 2) * &(&(r(1, 0) * r(2, 1)) - &(r(1, 1) * r(2, 0))));
+        if !orthogonal || det != Rational::one() {
+            return Err(refuse(
+                "import.mesh-pose",
+                "a mesh placement must be an exact rotation and translation",
+            ));
+        }
+        let exact: Vec<[Rational; 3]> = (0..self.exact.len() as u32)
+            .map(|v| {
+                let p = self.vertex(v);
+                // Nine products and nine sums on the vertex and the motion.
+                predicates::record_exact(18, p.iter().chain(rotation.iter().flatten().copied()));
+                meter.tick(1)?;
+                Ok(std::array::from_fn(|i| {
+                    (0..3).fold(translation[i].clone(), |sum, k| {
+                        &sum + &(rotation[i][k] * &p[k])
+                    })
+                }))
+            })
+            .collect::<Result<_, Refusal>>()?;
+        let approx: Vec<[f64; 3]> = exact
+            .iter()
+            .map(|p| p.each_ref().map(Rational::to_f64_nearest))
+            .collect();
+        let close = exact
+            .iter()
+            .zip(&approx)
+            .map(|(e, f)| predicates::close(e, f))
+            .collect();
+        let boxes = self
+            .triangles
+            .iter()
+            .map(|t| outward_box(t.map(|v| &approx[v as usize])))
+            .collect();
+        meter.tick(self.triangles.len() as u64)?;
+        let mesh = Self {
+            exact,
+            approx,
+            close,
+            scale: Rational::one(),
+            triangles: self.triangles.clone(),
+            twins: self.twins.clone(),
+            shells: self.shells.clone(),
+            tree: Bvh::new(boxes),
+        };
         meter.flush()?;
         Ok(mesh)
     }

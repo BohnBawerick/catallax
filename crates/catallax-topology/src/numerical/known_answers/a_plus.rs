@@ -35,7 +35,7 @@ impl GapChecker for APlus {
         let found = gap::measure(&copies(geometry), &Hints::default(), Limits::default(), dec)?;
         Ok(Reading {
             raw_mm: exact(found.raw_mm),
-            allowance_mm: exact(found.allowance_mm),
+            allowance_mm: exact(found.error_mm),
             stored_mm: Some(exact(found.stored_mm())),
             at: Some(exact(found.parameter)),
             exact_zero: false,
@@ -45,8 +45,7 @@ impl GapChecker for APlus {
     }
 }
 
-/// What the oracle's receipt has no column for: how each result was reached,
-/// and the search uncertainty apart from the rounding allowance.
+/// What the oracle's receipt has no column for: how each result was reached.
 fn search_receipt(seed: Option<u64>, cases: &[EdgeCase]) -> String {
     let mut text = format!(
         "checker=a-plus seed={}\n",
@@ -63,28 +62,16 @@ fn search_receipt(seed: Option<u64>, cases: &[EdgeCase]) -> String {
         .expect("measure");
         // Clock time is recorded and judges nothing.
         let micros = started.elapsed().as_micros();
-        // The search uncertainty fits inside the margin, so the stored
-        // tolerance covers the raw value and what the search may have left.
-        // On a zero-gap control both are rounding noise, far under the
-        // 1e-7 mm floor of rule T1; a billionth of a millimetre sets it aside.
-        assert!(
-            found.raw_mm + found.search_mm <= found.stored_mm() + 1e-9,
-            "{}: search {} against stored {}",
-            case.name,
-            found.search_mm,
-            found.stored_mm()
-        );
         text.push_str(&format!(
-            "edge={} method={:?} pieces={} points={} splits={} raw_mm={:.9e} \
-             rounding_mm={:.3e} search_mm={:.3e} stored_mm={:.9e} evaluations={} micros={micros}\n",
+            "edge={} method={:?} pieces={} points={} doublings={} raw_mm={:.9e} \
+             error_mm={:.3e} stored_mm={:.9e} evaluations={} micros={micros}\n",
             case.name,
             found.method,
             found.plan.len(),
             found.plan.iter().map(|piece| piece.points).sum::<usize>(),
             found.refinements.len(),
             found.raw_mm,
-            found.allowance_mm,
-            found.search_mm,
+            found.error_mm,
             found.stored_mm(),
             found.evaluations,
         ));
@@ -108,31 +95,6 @@ fn a_plus_passes_every_known_answer_edge() {
     assert!(accept(&APlus).is_ok());
 }
 
-/// The oracle's reason for a rounding allowance above a thousandth of the
-/// true gap.
-const ALLOWANCE_RULE: &str = "error allowance is too large to judge the measurement";
-
-/// Whether a row of the frozen steep surface family misses only the oracle's
-/// allowance-share rule and still meets the done-when line of roadmap item
-/// 3.0A: reported at least the true gap and at most 1.1 times it.
-///
-/// That family puts random control heights inside a knot cluster as narrow
-/// as 2^-20, so the surface slopes by millions of millimetres per unit
-/// parameter and the face copy's own rounding, carried through that slope,
-/// can exceed a thousandth of the smallest bumps. The checker says so in its
-/// allowance. Such a row is not counted as meeting the share rule: it is
-/// held to the done-when line and listed in the receipt as stress evidence.
-fn allowance_limited(row: &Row) -> bool {
-    let reported = row.reading.reported_mm();
-    row.name.starts_with("fresh-surface-bump-")
-        && row
-            .verdict
-            .as_ref()
-            .is_err_and(|reason| reason == ALLOWANCE_RULE)
-        && reported >= row.truth.hi
-        && reported <= &row.truth.lo * &Rational::from_ratio(11, 10).expect("nonzero")
-}
-
 /// Guard 1: new edges on every run, each with a hidden bump. The frozen
 /// families replay from the seed as the baseline recorded them; the smooth
 /// surface family draws from its own stream beside them.
@@ -150,19 +112,7 @@ fn a_plus_finds_the_hidden_bump_on_fresh_edges() {
         "known-answers-fresh-a-plus-search.txt",
         &search_receipt(Some(seed), &cases),
     );
-    let mut steep = format!("checker=a-plus seed={seed}\n");
     for row in &rows {
-        if allowance_limited(row) {
-            steep.push_str(&format!(
-                "{} allowance-limited raw={:e} allowance={:e} true=[{:e}, {:e}]\n",
-                row.name,
-                row.reading.raw_mm.to_f64_nearest(),
-                row.reading.allowance_mm.to_f64_nearest(),
-                row.truth.lo.to_f64_nearest(),
-                row.truth.hi.to_f64_nearest(),
-            ));
-            continue;
-        }
         assert!(
             row.verdict.is_ok(),
             "seed {seed}, {}: {:?}",
@@ -170,78 +120,12 @@ fn a_plus_finds_the_hidden_bump_on_fresh_edges() {
             row.verdict
         );
     }
-    publish("known-answers-fresh-a-plus-steep.txt", &steep);
-}
-
-/// The steep-family allowance is an exception for that family's one rule and
-/// nothing else: a low reading, a high reading or another family fails.
-#[test]
-fn only_a_steep_row_inside_the_done_when_line_is_allowance_limited() {
-    let truth = Truth {
-        lo: Rational::from_i64(1000),
-        hi: Rational::from_i64(1000),
-        at: Rational::zero(),
-    };
-    let row = |name: &str, raw: i64, allowance: i64, verdict: Result<(), String>| Row {
-        name: name.into(),
-        truth: truth.clone(),
-        reading: Reading {
-            raw_mm: Rational::from_i64(raw),
-            allowance_mm: Rational::from_i64(allowance),
-            stored_mm: None,
-            at: None,
-            exact_zero: false,
-            domain_exit: None,
-            evaluations: 0,
-        },
-        work: 0,
-        verdict,
-    };
-    let rule = || Err(ALLOWANCE_RULE.to_string());
-    assert!(allowance_limited(&row(
-        "fresh-surface-bump-0",
-        998,
-        5,
-        rule()
-    )));
-    // Below the true gap, and above 1.1 times it.
-    assert!(!allowance_limited(&row(
-        "fresh-surface-bump-0",
-        990,
-        5,
-        rule()
-    )));
-    assert!(!allowance_limited(&row(
-        "fresh-surface-bump-0",
-        1000,
-        101,
-        rule()
-    )));
-    // Another family, another reason, and a pass.
-    assert!(!allowance_limited(&row(
-        "fresh-plane-lift-0",
-        998,
-        5,
-        rule()
-    )));
-    assert!(!allowance_limited(&row(
-        "fresh-surface-bump-0",
-        998,
-        5,
-        Err("reported gap is below the true gap".into())
-    )));
-    assert!(!allowance_limited(&row(
-        "fresh-surface-bump-0",
-        998,
-        5,
-        Ok(())
-    )));
 }
 
 /// Guard 2: the first sample plan depends on the shape of the edge only. A
 /// scaled and shifted twin has the same knots, degrees and crossings, so it
-/// gets the same pieces and the same points, and any later split carries a
-/// recorded reason.
+/// gets the same pieces and the same points, and any later doubling carries
+/// a recorded reason.
 #[test]
 fn the_sample_plan_depends_on_shape_only() {
     let seed = fresh::seed();
@@ -281,10 +165,10 @@ fn the_sample_plan_depends_on_shape_only() {
             assert_eq!(refinement.reason, Reason::LoudTail);
         }
         // The twin's answer is the scale times the original's, to within
-        // the two rounding allowances.
+        // the two measurement errors.
         let difference = (twin_found.raw_mm - 7.0 / 3.0 * found.raw_mm).abs();
         assert!(
-            difference <= twin_found.allowance_mm + 7.0 / 3.0 * found.allowance_mm,
+            difference <= twin_found.error_mm + 7.0 / 3.0 * found.error_mm,
             "seed {seed}, {}: {difference}",
             case.name
         );
@@ -302,16 +186,17 @@ fn the_sample_plan_depends_on_shape_only() {
         face: 1,
         surface: 0,
     };
-    assert_eq!(analytic.points(), 18);
+    assert_eq!(analytic.points(), 17);
 }
 
 /// A curved analytic surface has no degree, so its pieces start at the least
 /// point count whatever the face copy does. Here a degree-23 face copy
 /// wiggles the angle on a cylinder twenty-one times inside one piece. The
-/// coefficient tail is loud, the piece is split until the wiggle is
-/// resolved, and the result agrees with a dense sweep of exact values.
+/// coefficient tail is loud, the points of the piece are doubled until the
+/// wiggle is resolved, and the result agrees with a dense sweep of exact
+/// values.
 #[test]
-fn a_loud_tail_splits_a_piece_until_it_is_resolved() {
+fn a_loud_tail_doubles_the_points_of_a_piece_until_it_is_quiet() {
     use exact::{bernstein_from_power, circle, clamped, cylinder, pcurve, q, qi};
     // w(x) = T_21(x) (1 - x^2) on x = 2 t - 1, from the Chebyshev recurrence.
     let x = catallax_numbers::UPoly::new(vec![qi(-1), qi(2)]);
@@ -358,14 +243,15 @@ fn a_loud_tail_splits_a_piece_until_it_is_resolved() {
     )
     .expect("measure");
     assert_eq!(found.plan.len(), 1);
-    assert_eq!(found.plan[0].points, 18);
+    assert_eq!(found.plan[0].points, 17);
     assert!(!found.refinements.is_empty());
-    assert!(
-        found
-            .refinements
-            .iter()
-            .all(|split| split.reason == Reason::LoudTail)
-    );
+    // The grids nest: 17, 33, 65 and so on.
+    let mut points = found.plan[0].points;
+    for doubling in &found.refinements {
+        assert_eq!(doubling.reason, Reason::LoudTail);
+        points = 2 * points - 1;
+        assert_eq!(doubling.points, points);
+    }
     // The gap is the chord 2 R sin(|A w| / 2). A sweep of 1001 exact values
     // falls short of its maximum by less than one part in a thousand.
     let mut dense = Rational::zero();
@@ -381,27 +267,14 @@ fn a_loud_tail_splits_a_piece_until_it_is_resolved() {
         found.raw_mm
     );
     assert!(found.raw_mm <= dense * (1.0 + 1e-3));
-    assert!(found.search_mm <= (gap::MARGIN - 1.0) * found.raw_mm);
+    assert!(found.error_mm <= (gap::MARGIN - 1.0) * found.raw_mm);
     println!(
-        "loud tail: splits={} evaluations={} raw_mm={:e} search_mm={:e}",
+        "loud tail: doublings={} points={points} evaluations={} raw_mm={:e} error_mm={:e}",
         found.refinements.len(),
         found.evaluations,
         found.raw_mm,
-        found.search_mm
+        found.error_mm
     );
-    // Forbidden to split, the same piece is loud and cannot be looked at
-    // more closely. A missed peak would have no bound, so it refuses.
-    let refusal = gap::measure(
-        &copies(&geometry),
-        &Hints::default(),
-        Limits {
-            narrowest_split: 1.0,
-            ..Limits::default()
-        },
-        &mut dec,
-    )
-    .expect_err("unresolved");
-    assert_eq!(refusal.code, "numerical.gap-unresolved");
 }
 
 /// The straight-residual rule is used where it applies and only there.
@@ -443,7 +316,7 @@ fn the_stored_tolerance_is_the_margin_times_the_reported_gap() {
             &mut dec,
         )
         .expect("measure");
-        let reported = found.raw_mm + found.allowance_mm;
+        let reported = found.raw_mm + found.error_mm;
         assert!(found.reported_mm() >= reported);
         assert!(found.stored_mm() >= gap::MARGIN * reported);
         assert!(found.stored_mm() <= gap::MARGIN * reported * (1.0 + 4.0 * f64::EPSILON));
@@ -459,10 +332,7 @@ fn the_evaluation_cap_refuses_by_name() {
     let refusal = gap::measure(
         &copies(&case.geometry),
         &Hints::default(),
-        Limits {
-            evaluations: 1000,
-            ..Limits::default()
-        },
+        Limits { evaluations: 1000 },
         &mut Decider::default(),
     )
     .expect_err("capped");
@@ -483,10 +353,7 @@ fn the_closing_probes_count_inside_the_cap() {
             gap::measure(
                 &copies(&case.geometry),
                 &Hints::default(),
-                Limits {
-                    evaluations,
-                    ..Limits::default()
-                },
+                Limits { evaluations },
                 &mut Decider::default(),
             )
         };

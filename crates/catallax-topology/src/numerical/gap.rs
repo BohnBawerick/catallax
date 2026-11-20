@@ -18,19 +18,21 @@
 //!    builder reports. OpenCASCADE's `GeomLib_CheckCurveOnSurface` cuts at
 //!    the same places since its October 2026 fix.
 //! 4. On each piece take `max(17, 3 x composed degree)` samples at Chebyshev
-//!    points of the first kind, plus both ends. The count depends only on
-//!    degrees. No interior point is a rational share of its piece, so none
-//!    coincides with a builder that checks at eighths.
+//!    points, both ends included. The count depends only on degrees. Apart
+//!    from the ends and the middle of an odd grid, no point is a rational
+//!    share of its piece, so none coincides with a builder that checks at
+//!    eighths.
 //! 5. Read the Chebyshev coefficient tail of the residual on each piece. It
-//!    estimates what the samples leave unresolved. A piece whose estimate
-//!    does not fit inside the storage margin is split in two and both halves
-//!    are sampled again. The tail can only add points; it never ends the
-//!    search early.
+//!    estimates what the samples leave unresolved. While that estimate does
+//!    not fit inside the storage margin, the points of the piece are
+//!    doubled. The grids nest (17, 33, 65), so every sample is kept. The
+//!    tail can only add points; it never ends the search early.
 //! 6. Polish every local maximum of the samples with Brent's method on the
 //!    true gap.
-//! 7. Report the largest value, where it is, a rounding-error allowance from
-//!    the binary64 error estimate and, apart from it, the search uncertainty
-//!    of step 5. Nothing is escalated to higher precision here.
+//! 7. Report the largest value, where it is, and the measurement error of
+//!    rule T4: the binary64 rounding estimate plus what the last tail says
+//!    the samples left unresolved. Nothing is escalated to higher precision
+//!    here.
 //!
 //! All arithmetic is IEEE basic operations in one thread, so the result is
 //! the same bits on every machine and at any thread count.
@@ -91,10 +93,6 @@ pub struct Hints {
 pub struct Limits {
     /// Most residual evaluations one edge may spend before a named refusal.
     pub evaluations: u64,
-    /// The narrowest piece that may still be split, as a share of the edge.
-    /// A piece at this width whose samples leave more unresolved than the
-    /// margin covers is refused by name: its peak cannot be bounded.
-    pub narrowest_split: f64,
 }
 
 /// Source: judgement; no source gives a per-edge cap. One million
@@ -107,7 +105,6 @@ impl Default for Limits {
     fn default() -> Self {
         Self {
             evaluations: EDGE_EVALUATIONS,
-            narrowest_split: SPLIT_FLOOR * NARROWEST_PIECE,
         }
     }
 }
@@ -128,13 +125,15 @@ pub enum Reason {
     LoudTail,
 }
 
-/// One piece that was split after its first sampling.
+/// One doubling of the points of a piece after its first sampling.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Refinement {
-    /// The piece that was split.
+    /// The piece whose points were doubled.
     pub piece: [f64; 2],
     /// Why.
     pub reason: Reason,
+    /// Its sample points after the doubling.
+    pub points: usize,
 }
 
 /// One piece of the first sample plan.
@@ -142,7 +141,7 @@ pub struct Refinement {
 pub struct PlannedPiece {
     /// The piece in edge-parameter order.
     pub piece: [f64; 2],
-    /// Interior sample points. Both ends are sampled as well.
+    /// Sample points, both ends included.
     pub points: usize,
 }
 
@@ -151,14 +150,11 @@ pub struct PlannedPiece {
 pub struct GapMeasure {
     /// The largest same-parameter distance found, in millimetres.
     pub raw_mm: f64,
-    /// An estimate of the binary64 rounding error of that value. It is
-    /// arithmetic error only.
-    pub allowance_mm: f64,
-    /// An estimate of how far the true maximum may lie above the raw value
-    /// because of what the samples did not resolve. It is kept apart from the
-    /// rounding allowance: the storage margin is what covers it, and a piece
-    /// is split until it fits inside the margin. Zero for a straight residual.
-    pub search_mm: f64,
+    /// The measurement error of rule T4: an estimate of the binary64
+    /// rounding error of that value, plus an estimate of how far the true
+    /// maximum may lie above it because of what the samples did not resolve.
+    /// The second part is zero for a straight residual.
+    pub error_mm: f64,
     /// The edge parameter where it was found.
     pub parameter: f64,
     /// The first parameter in traversal order at which the face copy is
@@ -169,7 +165,7 @@ pub struct GapMeasure {
     pub method: Method,
     /// The first sample plan, which depends only on the shape of the edge.
     pub plan: Vec<PlannedPiece>,
-    /// Pieces that were split afterwards, each with its reason.
+    /// Every later doubling of a piece's points, with its reason.
     pub refinements: Vec<Refinement>,
     /// Residual evaluations spent.
     pub evaluations: u64,
@@ -181,9 +177,9 @@ pub struct GapMeasure {
 pub const MARGIN: f64 = 1.1;
 
 impl GapMeasure {
-    /// The reported gap: the raw value plus its error allowance.
+    /// The reported gap: the raw value plus its measurement error.
     pub fn reported_mm(&self) -> f64 {
-        (self.raw_mm + self.allowance_mm).next_up()
+        (self.raw_mm + self.error_mm).next_up()
     }
     /// The tolerance rule T4 stores for a fresh measurement, rounded up.
     pub fn stored_mm(&self) -> f64 {
@@ -226,12 +222,10 @@ impl PieceShape {
     pub fn composed_degree(&self) -> usize {
         self.curve.max(self.face * self.surface)
     }
-    /// Interior sample points for a piece of this shape:
-    /// `max(17, 3 x composed degree)`, made even so that no point is a
-    /// rational share of the piece (see `numeric::chebyshev_shares`).
+    /// Sample points for a piece of this shape, both ends included:
+    /// `max(17, 3 x composed degree)`.
     pub fn points(&self) -> usize {
-        let count = LEAST_POINTS.max(POINTS_PER_DEGREE * self.composed_degree());
-        count + count % 2
+        LEAST_POINTS.max(POINTS_PER_DEGREE * self.composed_degree())
     }
 }
 
@@ -261,10 +255,6 @@ fn shape(lifted: &Lifted) -> PieceShape {
 /// 2^-45 of the edge are within 256 units in the last place of each other at
 /// the edge's own scale and leave no room for an interior sample.
 const NARROWEST_PIECE: f64 = 1.0 / ((1_u64 << 45) as f64);
-
-/// Source: a piece is split in two, so the narrowest piece that can be split
-/// is twice the narrowest piece that can hold a sample.
-const SPLIT_FLOOR: f64 = 2.0;
 
 /// The values of one surface parameter, within `range`, at which the lifted
 /// curve is cut: knot lines and domain borders of a spline surface, the seam
@@ -468,10 +458,11 @@ fn planned(lifted: &Lifted, breaks: &[f64]) -> Vec<PlannedPiece> {
         .windows(2)
         .map(|pair| PlannedPiece {
             piece: [pair[0], pair[1]],
+            // A piece too narrow for an interior sample is read at its ends.
             points: if pair[1] - pair[0] > NARROWEST_PIECE * (hi - lo) {
                 points
             } else {
-                0
+                2
             },
         })
         .collect()
@@ -515,7 +506,7 @@ impl Search<'_> {
 
     /// Charges one work unit for every evaluation since the last call, as
     /// the kernel's other binary64 samplers charge. It is called once per
-    /// piece, split and polish, so the operation allowance is checked that
+    /// piece, doubling and polish, so the operation allowance is checked that
     /// often.
     fn settle(&mut self, dec: &mut Decider) -> Result<(), Refusal> {
         let due = self.evaluations - self.charged;
@@ -546,15 +537,15 @@ struct Unresolved {
     noise: f64,
 }
 
-fn unresolved(interior: &[Sample]) -> Unresolved {
-    let residuals: Vec<[f64; 3]> = interior.iter().map(|sample| sample.residual).collect();
-    let error = interior
+fn unresolved(piece: &[Sample]) -> Unresolved {
+    let residuals: Vec<[f64; 3]> = piece.iter().map(|sample| sample.residual).collect();
+    let error = piece
         .iter()
         .fold(0.0_f64, |sum, sample| sum.max(sample.error));
     let scale = SEARCH_FACTOR * INTERPOLATION_FACTOR;
     Unresolved {
         search: scale * numeric::chebyshev_tail(&residuals),
-        noise: scale * interior.len() as f64 * error,
+        noise: scale * piece.len() as f64 * error,
     }
 }
 
@@ -570,11 +561,8 @@ impl Unresolved {
 /// Measures the largest gap between the two copies of one edge use.
 ///
 /// Refuses with `numerical.gap-unsupported` for a curve or surface without a
-/// parameter evaluator, with `numerical.gap-work-cap` when the edge spends
-/// its evaluation allowance, and with `numerical.gap-unresolved` when a piece
-/// at the narrowest width still leaves more unresolved than the margin
-/// covers. In the last two cases a peak may have been missed and cannot be
-/// bounded, so no value is returned. One work unit is charged per
+/// parameter evaluator, and with `numerical.gap-work-cap` when the edge would
+/// spend more than its evaluation allowance. One work unit is charged per
 /// evaluation, as the kernel's other binary64 samplers charge, in one charge
 /// per piece.
 pub fn measure(
@@ -606,7 +594,7 @@ pub fn measure(
         } else {
             ends[0]
         };
-        // Convexity makes the end values the maximum: no search uncertainty.
+        // Convexity makes the end values the maximum: nothing is unresolved.
         return finish(
             &mut search,
             best,
@@ -621,24 +609,25 @@ pub fn measure(
     // Refuse before the first sample when the plan alone is over the cap.
     let planned_evaluations = plan
         .iter()
-        .fold(1_u64, |sum, piece| sum + piece.points as u64 + 1);
+        .fold(1_u64, |sum, piece| sum + piece.points as u64 - 1);
     if planned_evaluations > limit {
         return Err(work_cap(
             "the first sample plan of an edge is larger than its evaluation allowance",
         ));
     }
 
-    // First pass: every piece at its planned points, ends included.
+    // First pass: every piece at its planned points. Neighbours share an end.
     let mut pieces: Vec<Vec<Sample>> = Vec::with_capacity(plan.len());
     let mut largest = 0.0_f64;
     let mut end = search.sample(breaks[0])?;
     for piece in &plan {
+        let [from, to] = piece.piece;
+        let shares = numeric::chebyshev_shares(piece.points);
         let mut samples = vec![end];
-        for share in numeric::chebyshev_shares(piece.points) {
-            let t = piece.piece[0] + share * (piece.piece[1] - piece.piece[0]);
-            samples.push(search.sample(t)?);
+        for share in &shares[1..piece.points - 1] {
+            samples.push(search.sample(from + share * (to - from))?);
         }
-        end = search.sample(piece.piece[1])?;
+        end = search.sample(to)?;
         samples.push(end);
         search.settle(dec)?;
         for sample in &samples {
@@ -647,64 +636,51 @@ pub fn measure(
         pieces.push(samples);
     }
 
-    // Second pass: split every piece whose tail is loud, left to right.
+    // Second pass: double the points of every piece whose tail is loud. The
+    // new grid contains the old one, so only the points in between are new.
     let mut refinements = Vec::new();
     let mut search_error = 0.0_f64;
     let mut samples: Vec<Sample> = Vec::new();
-    for piece in pieces {
-        let mut stack = vec![piece];
-        while let Some(piece) = stack.pop() {
-            let (from, to) = (piece[0].t, piece[piece.len() - 1].t);
-            let interior = &piece[1..piece.len() - 1];
-            let splittable = to - from > limits.narrowest_split * (hi - lo);
-            let left = (!interior.is_empty()).then(|| unresolved(interior));
-            let quiet = left.as_ref().is_none_or(|left| !left.loud(largest));
-            if !quiet && !splittable {
-                // The samples say there is more on this piece than the margin
-                // covers, and the piece cannot be looked at more closely. A
-                // peak there has no bound, so no tolerance is stored.
-                return Err(Refusal::new(
-                    "numerical.gap-unresolved",
-                    format!(
-                        "the gap between parameters {from} and {to} is not resolved \
-                         at the narrowest piece width"
-                    ),
-                ));
-            }
-            if quiet {
-                if let Some(left) = left {
-                    search_error = search_error.max(left.search);
-                }
-                // Shared ends appear once.
-                let shared = |s: &Sample| s.t.to_bits() == piece[0].t.to_bits();
-                let skip = usize::from(samples.last().is_some_and(shared));
-                samples.extend_from_slice(&piece[skip..]);
-                continue;
+    for mut piece in pieces {
+        let (from, to) = (piece[0].t, piece[piece.len() - 1].t);
+        // A piece read at its two ends has no tail.
+        while piece.len() > 2 {
+            let left = unresolved(&piece);
+            let shares = numeric::chebyshev_shares(2 * piece.len() - 1);
+            let between: Vec<f64> = (0..piece.len() - 1)
+                .map(|index| from + shares[2 * index + 1] * (to - from))
+                .collect();
+            // Once a new point no longer falls strictly between its
+            // neighbours, binary64 has no room for more points here.
+            let room = between
+                .iter()
+                .zip(piece.windows(2))
+                .all(|(t, pair)| *t > pair[0].t && *t < pair[1].t);
+            if !left.loud(largest) || !room {
+                search_error = search_error.max(left.search);
+                break;
             }
             refinements.push(Refinement {
                 piece: [from, to],
                 reason: Reason::LoudTail,
+                points: shares.len(),
             });
-            // Split at the sample just past the middle. It is an irrational
-            // share of the piece and its value is already known.
-            let middle = interior[interior.len() / 2];
-            let mut halves = Vec::with_capacity(2);
-            for (a, b) in [(piece[0], middle), (middle, piece[piece.len() - 1])] {
-                let mut half = vec![a];
-                for share in numeric::chebyshev_shares(interior.len()) {
-                    half.push(search.sample(a.t + share * (b.t - a.t))?);
-                }
-                half.push(b);
-                for sample in &half {
+            let mut doubled = Vec::with_capacity(shares.len());
+            for (index, old) in piece.iter().enumerate() {
+                doubled.push(*old);
+                if let Some(t) = between.get(index) {
+                    let sample = search.sample(*t)?;
                     largest = largest.max(sample.squared.sqrt());
+                    doubled.push(sample);
                 }
-                halves.push(half);
             }
             search.settle(dec)?;
-            // The left half is handled first, so samples stay in order.
-            stack.push(halves.pop().expect("right half"));
-            stack.push(halves.pop().expect("left half"));
+            piece = doubled;
         }
+        // Shared ends appear once.
+        let shared = |s: &Sample| s.t.to_bits() == from.to_bits();
+        let skip = usize::from(samples.last().is_some_and(shared));
+        samples.extend_from_slice(&piece[skip..]);
     }
 
     // Third pass: polish every local maximum of the samples.
@@ -787,7 +763,7 @@ pub fn measure(
 fn finish(
     search: &mut Search<'_>,
     best: Sample,
-    (search_mm, domain_exit, method): (f64, Option<f64>, Method),
+    (search_error, domain_exit, method): (f64, Option<f64>, Method),
     (plan, refinements): (Vec<PlannedPiece>, Vec<Refinement>),
     dec: &mut Decider,
 ) -> Result<GapMeasure, Refusal> {
@@ -807,8 +783,7 @@ fn finish(
     search.settle(dec)?;
     Ok(GapMeasure {
         raw_mm: best.squared.sqrt(),
-        allowance_mm: allowance,
-        search_mm,
+        error_mm: allowance + search_error,
         parameter: best.t,
         domain_exit,
         method,

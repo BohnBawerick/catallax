@@ -249,19 +249,36 @@ fn halve(
     );
 }
 
-/// The `count` Chebyshev points of the first kind in `(0, 1)`, ascending:
-/// `(1 - cos((2 j + 1) pi / (2 count))) / 2`.
-/// Source: Mason and Handscomb, "Chebyshev Polynomials", 2003, section 6.3.
-/// With an even count no point is a rational share of the piece: the cosine
-/// of a rational multiple of pi is rational only at multiples of pi / 3 and
-/// pi / 2 (Niven's theorem), and `(2 j + 1) / (2 count)` is neither when the
-/// count is even. So no point can coincide with a builder that checks at
-/// rational shares such as eighths.
+/// Chebyshev points of the second kind on a piece, as shares in ascending
+/// order: `(1 - cos(j pi / (count - 1))) / 2` for `j` in `0..count`. They are
+/// the extrema of the Chebyshev polynomial of degree `count - 1`, both ends
+/// included (Trefethen, "Approximation Theory and Approximation Practice",
+/// 2013, chapter 2).
+///
+/// A grid of `n` points is every second point of the grid of `2 n - 1`
+/// points (17, 33, 65), bit for bit: doubling the numerator and the
+/// denominator of the angle leaves the quotient unchanged. So doubling the
+/// points of a piece keeps every sample already taken.
+///
+/// The cosine of a rational multiple of pi is rational only at multiples of
+/// pi / 3 and pi / 2 (Niven's theorem). The grids used here have 17 or three
+/// times a degree points, or a doubling of those, so `count - 1` is never a
+/// multiple of three. That leaves the two ends and, when the count is odd,
+/// the middle as the only points that are rational shares of the piece.
+/// Every other point is off any grid of eighths, sixteenths or thirds that a
+/// builder checks at.
 pub(super) fn chebyshev_shares(count: usize) -> Vec<f64> {
+    let last = count - 1;
     (0..count)
         .map(|j| {
-            let angle = std::f64::consts::PI * (2 * j + 1) as f64 / (2 * count) as f64;
-            (1.0 - sin_cos(angle).1) / 2.0
+            if j == 0 {
+                0.0
+            } else if j == last {
+                1.0
+            } else {
+                let angle = std::f64::consts::PI * j as f64 / last as f64;
+                (1.0 - sin_cos(angle).1) / 2.0
+            }
         })
         .collect()
 }
@@ -273,22 +290,26 @@ pub(super) fn chebyshev_shares(count: usize) -> Vec<f64> {
 const TAIL_SHARE_DENOMINATOR: usize = 3;
 
 /// The size of the high-order tail of the Chebyshev series through the
-/// samples of a vector function at first-kind points: the sum over the top
-/// third of the coefficients of their Euclidean length.
+/// samples of a vector function at second-kind points, both ends included:
+/// the sum over the top third of the coefficients of their Euclidean length.
 ///
 /// Coefficients come from the discrete orthogonality of the Chebyshev
-/// polynomials on these points, `c_k = (2 / n) sum_j f(x_j) T_k(x_j)`
-/// (Mason and Handscomb, section 6.3). The interpolant's error is at most
-/// twice the sum of the magnitudes of the neglected coefficients (Trefethen,
-/// "Approximation Theory and Approximation Practice", 2013, chapter 4,
-/// the aliasing formula and the bound that follows from it), and the last
-/// retained coefficients estimate the neglected ones (Boyd, "Chebyshev and
-/// Fourier Spectral Methods", 2nd ed., section 2.12).
+/// polynomials on these points,
+/// `c_k = (2 / N) sum'' f(x_j) cos(k j pi / N)` with `N` one less than the
+/// number of points and the first and last terms halved (Mason and Handscomb,
+/// "Chebyshev Polynomials", 2003, section 6.3); the last coefficient is
+/// halved again. The interpolant's error is at most twice the sum of the
+/// magnitudes of the neglected coefficients (Trefethen, "Approximation
+/// Theory and Approximation Practice", 2013, chapter 4, the aliasing formula
+/// and the bound that follows from it), and the last retained coefficients
+/// estimate the neglected ones (Boyd, "Chebyshev and Fourier Spectral
+/// Methods", 2nd ed., section 2.12).
 pub(super) fn chebyshev_tail(samples: &[[f64; 3]]) -> f64 {
     let n = samples.len();
-    // cos(pi m / (2 n)) for every m that k (2 j + 1) can reach modulo 4 n.
-    let table: Vec<f64> = (0..4 * n)
-        .map(|m| sin_cos(std::f64::consts::PI * m as f64 / (2 * n) as f64).1)
+    let last = n - 1;
+    // cos(pi m / N) for every m that k j can reach modulo 2 N.
+    let table: Vec<f64> = (0..2 * last)
+        .map(|m| sin_cos(std::f64::consts::PI * m as f64 / last as f64).1)
         .collect();
     let first = n - n / TAIL_SHARE_DENOMINATOR;
     (first..n)
@@ -297,12 +318,18 @@ pub(super) fn chebyshev_tail(samples: &[[f64; 3]]) -> f64 {
             // Samples are ascending in the share, which is descending in the
             // Chebyshev variable; the order only flips the sign of odd terms.
             for (j, sample) in samples.iter().enumerate() {
-                let weight = table[(k * (2 * j + 1)) % (4 * n)];
+                let mut weight = table[(k * j) % (2 * last)];
+                if j == 0 || j == last {
+                    weight /= 2.0;
+                }
                 for axis in 0..3 {
                     coefficient[axis] += sample[axis] * weight;
                 }
             }
-            let scale = 2.0 / n as f64;
+            let mut scale = 2.0 / last as f64;
+            if k == last {
+                scale /= 2.0;
+            }
             (coefficient[0] * coefficient[0]
                 + coefficient[1] * coefficient[1]
                 + coefficient[2] * coefficient[2])
@@ -495,7 +522,7 @@ mod tests {
 
     #[test]
     fn chebyshev_tail_is_quiet_on_a_resolved_polynomial_and_loud_on_a_spike() {
-        let shares = chebyshev_shares(18);
+        let shares = chebyshev_shares(17);
         assert!(shares.windows(2).all(|pair| pair[0] < pair[1]));
         let smooth: Vec<[f64; 3]> = shares
             .iter()
@@ -510,17 +537,29 @@ mod tests {
     }
 
     #[test]
-    fn no_sample_share_is_a_builder_fraction() {
+    fn a_doubled_grid_keeps_every_point() {
+        for count in [17, 33, 54, 65] {
+            let (coarse, fine) = (chebyshev_shares(count), chebyshev_shares(2 * count - 1));
+            for (j, share) in coarse.iter().enumerate() {
+                assert_eq!(share.to_bits(), fine[2 * j].to_bits(), "{count}: {j}");
+            }
+            assert_eq!(coarse[0].to_bits(), 0.0_f64.to_bits());
+            assert_eq!(coarse[count - 1].to_bits(), 1.0_f64.to_bits());
+        }
+    }
+
+    #[test]
+    fn only_the_ends_and_the_middle_are_builder_fractions() {
         // The fitter checks at eighths today. Thirds, sixteenths and
         // sixty-fourths are covered as well.
-        for count in (18..=162).step_by(2) {
-            for share in chebyshev_shares(count) {
+        let first = (6..=54).map(|degree| 3 * degree).chain([17]);
+        for count in first.flat_map(|count| [count, 2 * count - 1, 4 * count - 3]) {
+            for (j, share) in chebyshev_shares(count).into_iter().enumerate() {
+                let rational = j == 0 || j == count - 1 || 2 * j == count - 1;
                 for denominator in [3.0, 64.0] {
                     let scaled = share * denominator;
-                    assert!(
-                        (scaled - scaled.round()).abs() > 1e-9 * denominator,
-                        "{count}: {share}"
-                    );
+                    let on_grid = (scaled - scaled.round()).abs() <= 1e-9 * denominator;
+                    assert!(!on_grid || rational, "{count}: {share}");
                 }
             }
         }

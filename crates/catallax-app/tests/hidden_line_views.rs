@@ -1,17 +1,19 @@
 //! Hidden-line views of the P1 bracket and the P3 filleted boss, of
-//! cylinders, cones, spheres and tori, and of spline faces.
+//! cylinders, cones, spheres and tori, of spline faces, and of edges on
+//! intersection branches.
 
 use std::num::NonZeroUsize;
 
 use catallax_app::DEFAULT_BUILD_WORK;
 use catallax_app::views::{
-    CONTOUR_FIT_MARK, HiddenLineView, StrokeSource, VIEW_RAY_MARK, VIEW_SPLIT_MARK, ViewStroke,
-    contour_generators, hidden_line_view,
+    CONTOUR_FIT_MARK, DRAWING_FIT_MARK, HiddenLineView, StrokeSource, VIEW_RAY_MARK,
+    VIEW_SPLIT_MARK, ViewStroke, contour_generators, hidden_line_view,
 };
+use catallax_boolean::{BoolOp, boolean};
 use catallax_features::evaluate;
 use catallax_numbers::{Answer, Decider, Rational, Real, set_threads, with_operation_budget};
 use catallax_recipe::Recipe;
-use catallax_shapes::{Curve, Point3, PointId, Pose, RVector3, Surface};
+use catallax_shapes::{Curve, Point3, PointId, Pose, RVector3, Rotation, Surface};
 use catallax_topology::{BodyId, EdgeId, FaceId, Model, cone, cylinder, sphere, torus};
 
 #[allow(dead_code)]
@@ -421,5 +423,177 @@ fn spline_faces_draw_their_rulings_and_traced_outlines() {
                 assert!(s.fit.is_some());
             }
         }
+    }
+}
+
+/// The ball of radius 5 about the origin less the cylinder of radius 2
+/// along z through (1, 0): its two edges are closed intersection branches.
+fn holed_ball() -> (Model, BodyId) {
+    let mut model = Model::new();
+    let ball = sphere(&mut model, 5.into(), &Pose::identity()).unwrap();
+    let hole = cylinder(
+        &mut model,
+        2.into(),
+        20.into(),
+        &Pose::from_rational(Rotation::identity(), vector(1, 0, -10)),
+    )
+    .unwrap();
+    let body = boolean(
+        &mut model,
+        ball,
+        hole,
+        BoolOp::Subtract,
+        &mut Decider::default(),
+    )
+    .unwrap()
+    .body;
+    (model, body)
+}
+
+fn dot3(a: [f64; 3], b: [f64; 3]) -> f64 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+/// An independent judge for the holed ball: strictly inside the ball and
+/// outside the hole.
+fn in_holed_ball(q: [f64; 3]) -> bool {
+    dot3(q, q) < 25.0 - 1e-9 && (q[0] - 1.0).powi(2) + q[1] * q[1] > 4.0 + 1e-9
+}
+
+/// The point of the true edge `|x|^2 = 25`, `(x - 1)^2 + y^2 = 4` nearest
+/// `p`, by minimum-norm Newton steps on the two equations.
+fn on_branch(p: [f64; 3]) -> [f64; 3] {
+    let mut x = p;
+    for _ in 0..20 {
+        let (f, g) = (dot3(x, x) - 25.0, (x[0] - 1.0).powi(2) + x[1] * x[1] - 4.0);
+        let (gf, gg) = (
+            [2.0 * x[0], 2.0 * x[1], 2.0 * x[2]],
+            [2.0 * (x[0] - 1.0), 2.0 * x[1], 0.0],
+        );
+        let (ff, fg, qq) = (dot3(gf, gf), dot3(gf, gg), dot3(gg, gg));
+        let det = ff * qq - fg * fg;
+        let (a, b) = ((qq * f - fg * g) / det, (ff * g - fg * f) / det);
+        x = std::array::from_fn(|k| x[k] - a * gf[k] - b * gg[k]);
+    }
+    x
+}
+
+/// Whether the ray from `p` toward the viewer passes inside the holed
+/// ball, marched in binary64.
+fn holed_ball_hides(p: [f64; 3], d: [f64; 3]) -> bool {
+    let n = dot3(d, d).sqrt();
+    let d = d.map(|x| x / n);
+    let mut t = 1e-4;
+    while t < 20.0 {
+        if in_holed_ball(std::array::from_fn(|k| p[k] + t * d[k])) {
+            return true;
+        }
+        t *= 1.001;
+    }
+    false
+}
+
+/// A binary64 point in the middle of a stroke on a line or circle carrier.
+fn exact_middle(view: &HiddenLineView, s: &ViewStroke) -> [f64; 3] {
+    let geom = view.model.geom();
+    let ends = [s.start, s.end].map(|p| p.map(|p| close(&geom.position(p))));
+    match geom.curve(s.curve) {
+        Curve::Line(_) => {
+            let [Some(a), Some(b)] = ends else {
+                panic!("a line stroke has ends");
+            };
+            std::array::from_fn(|k| (a[k] + b[k]) / 2.0)
+        }
+        Curve::Circle(c) => {
+            let centre = close(&c.center);
+            let n = close(&Point3::new(
+                c.normal.x.clone(),
+                c.normal.y.clone(),
+                c.normal.z.clone(),
+            ));
+            let n = n.map(|x| x / dot3(n, n).sqrt());
+            let radius = c.radius_sq.to_f64().sqrt();
+            let r = close(&Point3::new(
+                c.ref_dir.x.clone(),
+                c.ref_dir.y.clone(),
+                c.ref_dir.z.clone(),
+            ));
+            let (u, sweep) = match ends {
+                [Some(a), Some(b)] => {
+                    let u: [f64; 3] = std::array::from_fn(|k| a[k] - centre[k]);
+                    let v = [
+                        n[1] * u[2] - n[2] * u[1],
+                        n[2] * u[0] - n[0] * u[2],
+                        n[0] * u[1] - n[1] * u[0],
+                    ];
+                    let w: [f64; 3] = std::array::from_fn(|k| b[k] - centre[k]);
+                    let mut sweep = dot3(w, v).atan2(dot3(w, u));
+                    if sweep <= 1e-12 {
+                        sweep += std::f64::consts::TAU;
+                    }
+                    (u, sweep)
+                }
+                _ => {
+                    let scale = radius / dot3(r, r).sqrt();
+                    (r.map(|x| x * scale), 0.0)
+                }
+            };
+            let v = [
+                n[1] * u[2] - n[2] * u[1],
+                n[2] * u[0] - n[0] * u[2],
+                n[0] * u[1] - n[1] * u[0],
+            ];
+            let (sin, cos) = (sweep / 2.0).sin_cos();
+            std::array::from_fn(|k| centre[k] + cos * u[k] + sin * v[k])
+        }
+        other => panic!("unexpected carrier {other:?}"),
+    }
+}
+
+#[test]
+fn intersection_branch_edges_agree_with_an_independent_ray_march() {
+    let (model, body) = holed_ball();
+    // The last view runs along the ball's plane of symmetry y = 0.
+    for (d, symmetric) in [
+        (vector(1, 0, 1), false),
+        (vector(1, -2, 2), false),
+        (vector(3, 0, 1), false),
+        (vector(-1, 1, -2), false),
+        (vector(0, 0, 1), false),
+        (vector(0, -1, 0), true),
+    ] {
+        let answer = steady(&model, body, &d);
+        assert!(has(&answer, DRAWING_FIT_MARK), "{d:?}");
+        let view = &answer.value;
+        let d64 = [
+            d.x.to_f64_nearest(),
+            d.y.to_f64_nearest(),
+            d.z.to_f64_nearest(),
+        ];
+        let mut fitted = 0;
+        for s in &view.strokes {
+            let p = match (s.source, &s.fit) {
+                (StrokeSource::Edge(_), Some(fit)) => {
+                    fitted += 1;
+                    assert!(fit.deviation_mm <= fit.target_mm, "{fit:?}");
+                    assert!(!s.smooth);
+                    on_branch(middle(view, s))
+                }
+                _ => exact_middle(view, s),
+            };
+            // Seen along its plane of symmetry, each branch's far half lies
+            // on the sheet exactly over its near half, and the far half's
+            // ray only touches the near edge, which leaves it visible. The
+            // fitted edge's ray starts beside it and meets the near hole
+            // wall, as OpenCASCADE's hider counts a point on a face's
+            // outline as covered by the face; the far half is drawn under
+            // the visible near half either way.
+            if symmetric && s.fit.is_some() && p[1] > 0.0 {
+                assert!(!s.visible, "{d:?} at {p:?}");
+                continue;
+            }
+            assert_eq!(!holed_ball_hides(p, d64), s.visible, "{d:?} at {p:?}");
+        }
+        assert!(fitted >= 2, "{d:?}");
     }
 }

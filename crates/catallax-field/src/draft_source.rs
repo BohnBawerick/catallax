@@ -286,7 +286,8 @@ impl Source {
                 geometry::Leaf::Smooth(_)
                 | geometry::Leaf::Lattice(_)
                 | geometry::Leaf::Gyroid(_)
-                | geometry::Leaf::Mesh(_) => {
+                | geometry::Leaf::Mesh(_)
+                | geometry::Leaf::Rolling(_) => {
                     return Err(failure(
                         "field-only surfaces are not planar draft source faces",
                     ));

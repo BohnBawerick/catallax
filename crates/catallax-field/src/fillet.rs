@@ -6,14 +6,19 @@ use catallax_numbers::{Decider, Rational, Real, Refusal, Sign};
 use catallax_recipe::{
     BooleanKind, EdgeName, EdgeSelection, ElementId, Origin, Role, StepId, Turn, VertexName,
 };
-use catallax_shapes::{Curve, GeomStore, Plane, Point3, Surface, Vector3};
+use catallax_shapes::{Curve, CurveId, GeomStore, Line, Plane, Point3, Surface, Vector3};
 
 use crate::{Instruction, Location, Plan, features::Feature, geometry, profile};
 
 #[path = "fillet_network.rs"]
 mod network;
+#[path = "fillet_rolling.rs"]
+mod rolling;
 #[path = "fillet_smooth.rs"]
 mod smooth;
+
+/// Edge points with the station interval of each, for line runs.
+type Samples = Vec<(Point3, Option<[Rational; 2]>)>;
 
 pub(crate) struct Settings<'a> {
     pub radius: &'a Real,
@@ -264,6 +269,60 @@ impl Plan {
         Ok(())
     }
 
+    /// Midpoints of the stations where a support line crosses the source
+    /// supports, each with its station interval.
+    fn line_samples(
+        &self,
+        line: &Line,
+        curve: CurveId,
+        geom: &mut GeomStore,
+        source_faces: &[usize],
+        bound: &Rational,
+        dec: &mut Decider,
+    ) -> Result<Samples, Refusal> {
+        // A rational lower bound on the length suffices for
+        // finite station bracketing. Requiring its square root
+        // to be rational excludes oblique planar edges.
+        let squared = q(&line.dir.norm_squared())?;
+        if squared.sign() != Sign::Positive {
+            return Err(bad("a line intersection needs a nonzero direction"));
+        }
+        let length = squared.min(Rational::one());
+        let origin_bound =
+            q(&line.origin.x)?.abs() + q(&line.origin.y)?.abs() + q(&line.origin.z)?.abs();
+        let extent = (bound + &origin_bound) / length;
+        let mut stations = vec![-&extent, extent];
+        for &index in source_faces {
+            let face = &self.faces[index];
+            let surface = geom.add_surface(face.surface.clone());
+            if let CurveSurface::Meets(hits) =
+                catallax_intersect::intersect_curve_surface(geom, curve, surface, dec)?.value
+            {
+                for hit in hits {
+                    let p = geom.position(hit.point);
+                    stations.push(q(
+                        &(p.minus(&line.origin).dot(&line.dir) / line.dir.norm_squared())
+                    )?);
+                }
+            }
+        }
+        stations.sort();
+        stations.dedup();
+        Ok(stations
+            .windows(2)
+            .map(|pair| {
+                (
+                    line.origin.plus(
+                        &line
+                            .dir
+                            .scaled(&Real::from((&pair[0] + &pair[1]) / Rational::from_i64(2))),
+                    ),
+                    Some([pair[0].clone(), pair[1].clone()]),
+                )
+            })
+            .collect())
+    }
+
     pub(crate) fn fillet(
         &mut self,
         root: usize,
@@ -327,18 +386,20 @@ impl Plan {
             }
         }
         let mut definitions = Vec::new();
+        let mut runs = Vec::new();
         for faces in pairs {
             let supports = faces.map(|i| self.faces[i].surface.clone());
-            if !matches!(
+            let elementary = matches!(
                 (&supports[0], &supports[1]),
                 (Surface::Plane(_), Surface::Plane(_) | Surface::Cylinder(_))
                     | (Surface::Cylinder(_), Surface::Plane(_))
-            ) {
+            );
+            if !elementary && !rolling::admits(&supports, dec)? {
                 if matches!(selection, EdgeSelection::All) {
                     continue;
                 }
                 return Err(bad(
-                    "elementary fillets need planes or a perpendicular plane and cylinder",
+                    "field fillets need a plane with a plane, cylinder, cone or sphere, or two parallel cylinders",
                 ));
             }
             let mut geom = GeomStore::new();
@@ -354,6 +415,26 @@ impl Plan {
                     continue;
                 };
                 let edge = geom.curve(curve).clone();
+                // The elementary route keeps the lines and circles it sections
+                // today; the rolling route takes the rest.
+                if !elementary || !matches!(edge, Curve::Line(_) | Curve::Circle(_)) {
+                    if let Some(found) = self.rolling_component(
+                        root,
+                        faces,
+                        &supports,
+                        &edge,
+                        curve,
+                        &mut geom,
+                        source_faces,
+                        &bound,
+                        radius,
+                        step,
+                        dec,
+                    )? {
+                        runs.extend(found);
+                    }
+                    continue;
+                }
                 let samples = match &edge {
                     Curve::Circle(c) => vec![(
                         c.center
@@ -361,48 +442,7 @@ impl Plan {
                         None,
                     )],
                     Curve::Line(line) => {
-                        // A rational lower bound on the length suffices for
-                        // finite station bracketing. Requiring its square root
-                        // to be rational excludes oblique planar edges.
-                        let squared = q(&line.dir.norm_squared())?;
-                        if squared.sign() != Sign::Positive {
-                            return Err(bad("a line intersection needs a nonzero direction"));
-                        }
-                        let length = squared.min(Rational::one());
-                        let origin_bound = q(&line.origin.x)?.abs()
-                            + q(&line.origin.y)?.abs()
-                            + q(&line.origin.z)?.abs();
-                        let extent = (&bound + &origin_bound) / length;
-                        let mut stations = vec![-&extent, extent];
-                        for &index in source_faces {
-                            let face = &self.faces[index];
-                            let surface = geom.add_surface(face.surface.clone());
-                            if let CurveSurface::Meets(hits) =
-                                catallax_intersect::intersect_curve_surface(
-                                    &mut geom, curve, surface, dec,
-                                )?
-                                .value
-                            {
-                                for hit in hits {
-                                    let p = geom.position(hit.point);
-                                    stations.push(q(&(p.minus(&line.origin).dot(&line.dir)
-                                        / line.dir.norm_squared()))?);
-                                }
-                            }
-                        }
-                        stations.sort();
-                        stations.dedup();
-                        stations
-                            .windows(2)
-                            .map(|pair| {
-                                (
-                                    line.origin.plus(&line.dir.scaled(&Real::from(
-                                        (&pair[0] + &pair[1]) / Rational::from_i64(2),
-                                    ))),
-                                    Some([pair[0].clone(), pair[1].clone()]),
-                                )
-                            })
-                            .collect()
+                        self.line_samples(line, curve, &mut geom, source_faces, &bound, dec)?
                     }
                     _ => continue,
                 };
@@ -460,6 +500,7 @@ impl Plan {
             }
         }
         if definitions.is_empty()
+            && runs.is_empty()
             && !matches!(selection, EdgeSelection::Refs(refs) if refs.is_empty())
         {
             return Err(Refusal::new(
@@ -469,20 +510,53 @@ impl Plan {
         }
         if let EdgeSelection::Refs(refs) = selection {
             for reference in refs {
-                if !definitions.iter().any(|(definition, _)| {
-                    let Role::Blend { edge } = &definition.origin.role else {
+                let named = |origin: &Origin| {
+                    let Role::Blend { edge } = &origin.role else {
                         return false;
                     };
                     let [a, b] = edge.between();
                     (reference.between[0].matches(a) && reference.between[1].matches(b))
                         || (reference.between[1].matches(a) && reference.between[0].matches(b))
-                }) {
+                };
+                if !definitions
+                    .iter()
+                    .any(|(definition, _)| named(&definition.origin))
+                    && !runs.iter().any(|run| named(run.piece.origin()))
+                {
                     return Err(Refusal::new(
                         "fillet.lost-edge",
                         "an edge reference has no surviving sharp input component",
                     ));
                 }
             }
+        }
+        // Straight runs that share one name, which the elementary route
+        // refuses, become generator pieces; they register no named faces.
+        let mut kept = Vec::with_capacity(definitions.len());
+        let shared = |definition: &FilletDefinition,
+                      all: &[(FilletDefinition, Option<[Rational; 2]>)]| {
+            all.iter()
+                .filter(|(other, _)| other.origin == definition.origin)
+                .count()
+                > 1
+        };
+        let split = definitions
+            .iter()
+            .any(|(definition, _)| shared(definition, &definitions))
+            && definitions.iter().all(|(definition, interval)| {
+                !shared(definition, &definitions)
+                    || (matches!(definition.edge, Curve::Line(_)) && interval.is_some())
+            });
+        if split {
+            let all = std::mem::take(&mut definitions);
+            for (definition, interval) in &all {
+                if !shared(definition, &all) {
+                    kept.push((definition.clone(), interval.clone()));
+                    continue;
+                }
+                runs.push(self.converted_run(definition, interval, source_faces, step, dec)?);
+            }
+            definitions = kept;
         }
         let mut endpoints: Vec<(Point3, Vec<usize>)> = Vec::new();
         for (i, (definition, interval)) in definitions.iter().enumerate() {
@@ -516,20 +590,49 @@ impl Plan {
                 }
             }
         }
-        if let Some(result) =
+        let mut result = if let Some(result) =
             self.network_fillet(root, source_faces, &definitions, &endpoints, step, dec)?
         {
-            return Ok(result);
-        }
-        if closure == catallax_recipe::FilletCorner::Smooth
+            result
+        } else if closure == catallax_recipe::FilletCorner::Smooth
             && let Some(result) =
                 self.smooth_fillet(root, source_faces, &definitions, &endpoints, step, dec)?
         {
-            return Ok(result);
+            result
+        } else {
+            self.elementary_fillets(
+                root,
+                source_faces,
+                definitions,
+                &endpoints,
+                &mut runs,
+                step,
+                dec,
+            )?
+        };
+        for run in runs {
+            result = self.apply_run(result, run, source_faces, dec)?;
         }
+        Ok(result)
+    }
+
+    /// The elementary route's strips, rings and trihedral corners. A straight
+    /// strip whose section it cannot write exactly, and that meets no other
+    /// run, becomes a generator run instead.
+    #[allow(clippy::too_many_arguments)]
+    fn elementary_fillets(
+        &mut self,
+        root: usize,
+        source_faces: &[usize],
+        definitions: Vec<(FilletDefinition, Option<[Rational; 2]>)>,
+        endpoints: &[(Point3, Vec<usize>)],
+        runs: &mut Vec<rolling::Run>,
+        step: &StepId,
+        dec: &mut Decider,
+    ) -> Result<usize, Refusal> {
         let mut corners = Vec::new();
-        for (_, runs) in &endpoints {
-            let [a, b, c] = runs.as_slice() else {
+        for (_, meeting) in endpoints {
+            let [a, b, c] = meeting.as_slice() else {
                 continue;
             };
             let strips = [*a, *b, *c].map(|i| &definitions[i].0);
@@ -558,7 +661,7 @@ impl Plan {
             )?);
         }
         let mut result = root;
-        for (definition, mut interval) in definitions {
+        for (index, (definition, mut interval)) in definitions.into_iter().enumerate() {
             let faces = [
                 self.faces
                     .iter()
@@ -569,16 +672,33 @@ impl Plan {
                     .position(|f| f.surface.same_definition(&definition.supports[1]))
                     .expect("source support"),
             ];
-            self.fillet_domain(
-                &definition,
-                faces,
-                &mut interval,
-                source_faces,
-                &mut GeomStore::new(),
-                dec,
-            )?;
+            let run = interval.clone();
             let convex = definition.convex;
-            let (feature, faces) = region(definition, interval, step, dec)?;
+            let alone = !endpoints
+                .iter()
+                .any(|(_, meeting)| meeting.len() > 1 && meeting.contains(&index));
+            let fallback = (alone && matches!(definition.edge, Curve::Line(_)))
+                .then(|| (definition.clone(), run));
+            let built = self
+                .fillet_domain(
+                    &definition,
+                    faces,
+                    &mut interval,
+                    source_faces,
+                    &mut GeomStore::new(),
+                    dec,
+                )
+                .and_then(|()| region(definition, interval, step, dec));
+            let (feature, faces) = match (built, fallback) {
+                (Ok(found), _) => found,
+                (Err(refusal), Some((definition, run)))
+                    if refusal.code == "field.fillet-contact" =>
+                {
+                    runs.push(self.converted_run(&definition, &run, source_faces, step, dec)?);
+                    continue;
+                }
+                (Err(refusal), _) => return Err(refusal),
+            };
             let node = self.leaf(geometry::Leaf::Feature(feature), faces, dec)?;
             result = self.boolean(
                 if convex {

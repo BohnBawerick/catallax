@@ -674,6 +674,8 @@ pub(crate) enum Leaf {
     Gyroid(Box<crate::gyroid::Gyroid>),
     Mesh(Box<crate::mesh::MeshLeaf>),
     Smooth(Box<crate::smooth::Smooth>),
+    /// A rolling-ball path piece's region (4.2a); a residual, not a distance.
+    Rolling(Box<crate::rolling_region::piece::Piece>),
 }
 impl Leaf {
     /// Whether a lattice radius or gyroid level is a linear grade whose anchors differ
@@ -692,7 +694,11 @@ impl Leaf {
             Self::Feature(a) => &a.constraints,
             Self::Cell(a) => &a.constraints,
             Self::Draft(a) => &a.constraints,
-            Self::Lattice(_) | Self::Gyroid(_) | Self::Mesh(_) | Self::Smooth(_) => &[],
+            Self::Lattice(_)
+            | Self::Gyroid(_)
+            | Self::Mesh(_)
+            | Self::Smooth(_)
+            | Self::Rolling(_) => &[],
         }
     }
 
@@ -706,6 +712,13 @@ impl Leaf {
                 })));
             }
             Self::Feature(a) => return a.display_box(dec),
+            Self::Rolling(a) => {
+                return Ok(a.bounds().map(|bounds| {
+                    bounds.each_ref().map(|[lo, hi]| {
+                        Ball::from_rational(lo, 128).hull(&Ball::from_rational(hi, 128))
+                    })
+                }));
+            }
             Self::Draft(a) => return a.display_box(dec).map(Some),
             Self::Lattice(_) | Self::Gyroid(_) => return Ok(None),
             Self::Mesh(a) => {
@@ -747,6 +760,13 @@ impl Leaf {
             Self::Primitive(a) => a,
             Self::Feature(a) => return a.display_radius(dec),
             Self::Smooth(a) => return a.radius(dec).map(Some),
+            Self::Rolling(a) => {
+                return Ok(a.bounds().map(|bounds| {
+                    bounds.iter().fold(Rational::zero(), |sum, [lo, hi]| {
+                        sum + lo.abs().max(hi.abs())
+                    })
+                }));
+            }
             Self::Draft(a) => return a.display_radius(dec).map(Some),
             Self::Cell(a) => return a.display_radius(dec),
             Self::Lattice(_) | Self::Gyroid(_) => return Ok(None),
@@ -814,6 +834,10 @@ impl Leaf {
             Self::Gyroid(a) => a.transform(pose),
             Self::Mesh(a) => a.transform(pose),
             Self::Smooth(a) => a.transform(pose),
+            Self::Rolling(a) => {
+                a.transform(pose);
+                Ok(())
+            }
         }
     }
     pub fn true_distance(&self) -> bool {
@@ -830,6 +854,7 @@ impl Leaf {
             Self::Gyroid(a) => a.location(p, dec),
             Self::Mesh(a) => a.location(p, dec),
             Self::Smooth(a) => a.location(p, dec),
+            Self::Rolling(a) => a.location(p, dec),
         }
     }
     pub fn proven_distance(
@@ -847,6 +872,7 @@ impl Leaf {
             Self::Gyroid(a) => Ok(a.proven_distance(p, l)),
             Self::Mesh(a) => a.proven_distance(p, l, dec),
             Self::Smooth(a) => a.residual(p, dec),
+            Self::Rolling(a) => a.residual(p, l, dec),
         }
     }
     /// Tentative value. `A` chooses the square root. Draft leaves already take
@@ -862,6 +888,7 @@ impl Leaf {
             Self::Gyroid(a) => a.fast_distance(p),
             Self::Mesh(a) => a.fast_distance(p),
             Self::Smooth(a) => a.fast::<A>(p),
+            Self::Rolling(a) => a.fast::<A>(p),
         }
     }
     /// Collects every zero constraint when local membership changes are planar.
@@ -951,6 +978,12 @@ impl Leaf {
                 Location::Boundary => Location::Indeterminate,
                 l => l,
             }),
+            // A boundary point's side along a direction is not settled for
+            // rolling pieces yet; it stays explicitly unresolved.
+            Self::Rolling(a) => Ok(match a.location(p, dec)? {
+                Location::Boundary => Location::Indeterminate,
+                l => l,
+            }),
             Self::Primitive(a) => ray_location(a, p, d, dec),
             Self::Feature(a) => a.ray(p, d, dec),
             Self::Cell(a) => a.ray(p, d, dec),
@@ -987,7 +1020,7 @@ impl Leaf {
         dec: &mut Decider,
     ) -> Result<Option<bool>, Refusal> {
         match self {
-            Self::Smooth(_) => Ok(Some(false)),
+            Self::Smooth(_) | Self::Rolling(_) => Ok(Some(false)),
             Self::Primitive(_) => Ok(Some(true)),
             Self::Draft(region) => {
                 if matches!(
@@ -1068,6 +1101,10 @@ impl Leaf {
             Self::Smooth(_) => Err(Refusal::new(
                 "smooth.draft-unsupported",
                 "smooth boundary has no admitted draft carrier",
+            )),
+            Self::Rolling(_) => Err(Refusal::new(
+                "draft.unsupported-surface",
+                "rolling-ball path pieces are not draft source faces",
             )),
             Self::Lattice(_) => Err(Refusal::new(
                 "draft.unsupported-surface",

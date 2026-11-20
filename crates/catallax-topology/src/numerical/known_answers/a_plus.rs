@@ -499,6 +499,33 @@ fn every_smaller_allowance_refuses_by_name_and_charges_its_work() {
     assert_eq!(capped(needed).0.expect("exact").work, needed);
 }
 
+/// The reading of the two ends alone runs under the allowance it is given,
+/// which in admission is what the first reading of the same edge use left.
+/// Exactly what it needs passes; one unit less, or nothing, refuses by name.
+#[test]
+fn the_ends_reading_runs_under_the_allowance_it_is_given() {
+    let case = fixed::cases()
+        .into_iter()
+        .find(|case| case.name == "14-circle-against-rational-copy")
+        .expect("case");
+    let capped = |work: u64| {
+        gap::measure_ends(
+            &copies(&case.geometry),
+            Limits { work },
+            &mut Decider::default(),
+        )
+    };
+    let needed = capped(gap::EDGE_WORK).expect("default").work;
+    assert_eq!(capped(needed).expect("exact").work, needed);
+    for work in [0, needed - 1] {
+        assert_eq!(
+            capped(work).expect_err("short").code,
+            "numerical.gap-work-cap",
+            "{work}"
+        );
+    }
+}
+
 /// A face copy that winds around a cylinder 1e29 times has that many seam
 /// crossings. They are counted before any is listed, and the edge is refused
 /// by name after a handful of work units.

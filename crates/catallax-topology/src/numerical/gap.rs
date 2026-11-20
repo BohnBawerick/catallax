@@ -629,6 +629,18 @@ pub fn measure(
     limits: Limits,
     dec: &mut Decider,
 ) -> Result<GapMeasure, Refusal> {
+    under_allowance(copies, limits, dec, |search, dec| {
+        search_edge(search, hints, dec)
+    })
+}
+
+/// Runs one search of an edge under its allowance.
+fn under_allowance(
+    copies: &EdgeCopies<'_>,
+    limits: Limits,
+    dec: &mut Decider,
+    run: impl FnOnce(&mut Search<'_>, &mut Decider) -> Result<GapMeasure, Refusal>,
+) -> Result<GapMeasure, Refusal> {
     let lifted = lift::lift(copies, dec)?;
     // The closing probes of the rounding allowance count inside the same cap,
     // so they are set aside before the first sample.
@@ -645,7 +657,7 @@ pub fn measure(
         other: 0,
         charged: 0,
     };
-    let found = search_edge(&mut search, hints, dec);
+    let found = run(&mut search, dec);
     if let Err(refusal) = &found {
         // Work done before a refusal is still work: it is charged to the
         // operation before the refusal is returned. If the operation's own
@@ -857,33 +869,33 @@ fn search_edge(
     )
 }
 
-/// The gap at the two ends of an edge use and nowhere else. Admission uses
-/// it for the declared end values of a projected trim, which has no u/v of
-/// its own in between.
-pub fn measure_ends(copies: &EdgeCopies<'_>, dec: &mut Decider) -> Result<GapMeasure, Refusal> {
-    let lifted = lift::lift(copies, dec)?;
-    let mut search = Search {
-        lifted: &lifted,
-        scratch: Scratch::default(),
-        limit: Limits::default().work - lift::ALLOWANCE_EVALUATIONS,
-        evaluations: 0,
-        other: 0,
-        charged: 0,
-    };
-    let [first, last] = lifted.parameters;
-    let ends = [search.sample(first)?, search.sample(last)?];
-    let best = if ends[1].squared > ends[0].squared {
-        ends[1]
-    } else {
-        ends[0]
-    };
-    finish(
-        &mut search,
-        best,
-        (0.0, None, Method::EndsOnly),
-        (Vec::new(), Vec::new()),
-        dec,
-    )
+/// The gap at the two ends of an edge alone, for a face copy that is
+/// declared only there.
+///
+/// `limits` is what the edge use has left of its one allowance when another
+/// measurement of the same use came first. The two end samples and the
+/// closing probes draw on it, and it refuses by name like [`measure`].
+pub fn measure_ends(
+    copies: &EdgeCopies<'_>,
+    limits: Limits,
+    dec: &mut Decider,
+) -> Result<GapMeasure, Refusal> {
+    under_allowance(copies, limits, dec, |search, dec| {
+        let [first, last] = search.lifted.parameters;
+        let ends = [search.sample(first)?, search.sample(last)?];
+        let best = if ends[1].squared > ends[0].squared {
+            ends[1]
+        } else {
+            ends[0]
+        };
+        finish(
+            search,
+            best,
+            (0.0, None, Method::EndsOnly),
+            (Vec::new(), Vec::new()),
+            dec,
+        )
+    })
 }
 
 fn finish(

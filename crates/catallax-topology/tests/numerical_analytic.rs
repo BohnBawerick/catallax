@@ -108,6 +108,54 @@ fn a_gap_within_rounding_of_the_limit_is_decided_at_higher_precision() {
     }
 }
 
+/// A circle over a plane is read twice: the projected curve, and the two
+/// declared end values of its trim. Here the circle sits 1e-16 mm under the
+/// height that stores exactly the limit, so the projected reading passes at
+/// 128 bits. One declared end is then moved 2e-9 mm in the plane, which puts
+/// that end about 1.2e-16 mm over. The body must refuse on the declared end,
+/// whichever reading looked larger in binary64.
+#[test]
+fn a_declared_end_over_the_limit_refuses_beside_a_projected_reading_under_it() {
+    let height = &q("1/110") - &q("1e-16");
+    for (shift, pass) in [("0", true), ("2e-9", false)] {
+        let mut source = quarter();
+        // The bottom arc, between vertices v1 and v2.
+        for edge in &mut source.edges {
+            let mut ends = edge.vertices;
+            ends.sort();
+            if let (catallax_shapes::Curve::Circle(circle), [1, 2]) = (&mut edge.curve, ends) {
+                circle.center.z = height.clone().into();
+            }
+        }
+        // The declared u/v of vertex v1 on the bottom plane, on both uses.
+        for uv in source.faces[0].loops[0]
+            .iter_mut()
+            .flat_map(|trim| &mut trim.uv)
+        {
+            if *uv == [q("1"), q("0")] {
+                uv[0] = &uv[0] + &q(shift);
+            }
+        }
+        let result = n::build(
+            source,
+            n::NumericalOptions::default(),
+            &mut Decider::default(),
+        );
+        match result {
+            Ok(_) => assert!(pass, "shift {shift}"),
+            Err(refusal) => {
+                assert!(!pass, "shift {shift}: {}", refusal.detail);
+                assert_eq!(refusal.code, "numbers.numerical-tolerance-exceeded");
+                assert!(
+                    refusal.detail.contains("trim.edge-surface-distance"),
+                    "{}",
+                    refusal.detail
+                );
+            }
+        }
+    }
+}
+
 #[test]
 fn reversed_cylinder_winding_and_unresolved_periodic_cover_refuse() {
     let mut source = quarter();

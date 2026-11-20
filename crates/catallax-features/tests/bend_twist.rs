@@ -236,6 +236,16 @@ fn bends_outside_smlibs_domain_and_curved_input_refuse_by_name() {
 }
 
 #[test]
+fn a_toward_nearly_along_the_axis_keeps_its_exact_part_across() {
+    // The part of `toward` across the z axis is 1e-400 along +y. It underflows
+    // in binary64, so only the exact inputs keep it, and the bend is the one
+    // `toward` +y gives.
+    let (_, near, _) = built(&bent_plate("20", ["0", "1e-400", "1"]));
+    let (_, plain, _) = built(&bent_plate("20", ["0", "1", "0"]));
+    assert_eq!(near, plain, "the same frame must write the same STEP bytes");
+}
+
+#[test]
 fn bend_and_twist_need_recipe_format_five() {
     let mut text: Value = serde_json::from_str(&twisted_bar("90").to_text()).unwrap();
     text["format"] = json!("catallax-recipe/4");

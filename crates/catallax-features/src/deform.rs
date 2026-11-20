@@ -22,7 +22,7 @@
 
 use crate::numerical_embedding::nurbs;
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal};
-use catallax_recipe::{Axis, Number, Operation, Vector3 as RecipeVector};
+use catallax_recipe::{Axis, Number, Operation};
 use catallax_shapes::{
     BSplineCurve, BSplineSurface, Curve, Point3, RationalAtlas, SplineSupport, Surface,
 };
@@ -71,9 +71,6 @@ fn distance(a: V, b: V) -> f64 {
 fn number(n: &Number) -> f64 {
     n.value().to_f64_nearest()
 }
-fn recipe_vector(v: &RecipeVector) -> V {
-    v.0.each_ref().map(number)
-}
 
 fn unit(v: V, what: &str) -> Result<V, Refusal> {
     let length = dot(v, v).sqrt();
@@ -81,6 +78,24 @@ fn unit(v: V, what: &str) -> Result<V, Refusal> {
         return Err(bad(format!("the {what} is zero or not finite")));
     }
     Ok(scale(v, 1.0 / length))
+}
+
+/// The unit direction of an exact vector. Dividing by its largest component
+/// first puts every component in [-1, 1], one of them exactly 1 or -1, so no
+/// component overflows or underflows in binary64 and the direction survives
+/// rounding to within a unit in the last place.
+fn exact_direction(v: &[Rational; 3], what: &str) -> Result<V, Refusal> {
+    let largest =
+        v.iter().map(Rational::abs).fold(
+            Rational::zero(),
+            |largest, x| {
+                if x > largest { x } else { largest }
+            },
+        );
+    let inverse = largest
+        .recip()
+        .ok_or_else(|| bad(format!("the {what} is zero")))?;
+    unit(v.each_ref().map(|x| (x * &inverse).to_f64_nearest()), what)
 }
 
 fn exact(value: f64) -> Result<Rational, Refusal> {
@@ -162,7 +177,10 @@ impl Warp {
                 }
                 Self::Twist {
                     origin: point.0.each_ref().map(number),
-                    axis: unit(recipe_vector(direction), "twist axis")?,
+                    axis: exact_direction(
+                        &direction.0.each_ref().map(|n| n.value().clone()),
+                        "twist axis",
+                    )?,
                     rate,
                 }
             }
@@ -189,13 +207,26 @@ impl Warp {
                         "the bend direction runs along the axis (or is zero); it must point across it",
                     ));
                 }
-                let axis = unit(recipe_vector(direction), "bend axis")?;
-                let toward = recipe_vector(toward);
                 // SMLib orients the bend by its axis and a mid direction
                 // orthogonal to it; `toward` gives that direction up to its
-                // component along the axis.
+                // component along the axis. That part is taken on the exact
+                // inputs as well: |a|^2 t - (a.t) a is it times |a|^2. Rounding
+                // the inputs first can leave only a residue pointing anywhere,
+                // as for a = (3, 5, 7) and t = (3, 5, 7.0000000000000001),
+                // whose part across is along (-21, -35, 34).
+                let exact = |v: &[Number; 3]| v.each_ref().map(|n| n.value().clone());
+                let (a, t) = (exact(a), exact(t));
+                let inner = |x: &[Rational; 3], y: &[Rational; 3]| {
+                    &(&(&x[0] * &y[0]) + &(&x[1] * &y[1])) + &(&x[2] * &y[2])
+                };
+                let (aa, at) = (inner(&a, &a), inner(&a, &t));
+                let across: [Rational; 3] =
+                    std::array::from_fn(|i| &(&t[i] * &aa) - &(&a[i] * &at));
+                let axis = exact_direction(&a, "bend axis")?;
+                let mid = exact_direction(&across, "bend direction across the axis")?;
+                // One Gram-Schmidt step removes the rounding left between the two.
                 let mid = unit(
-                    sub(toward, scale(axis, dot(toward, axis))),
+                    sub(mid, scale(axis, dot(mid, axis))),
                     "bend direction across the axis",
                 )?;
                 Self::Bend {
@@ -779,6 +810,40 @@ mod tests {
                 .code,
             "deform.bend-overlap"
         );
+    }
+
+    /// The part of `toward` across the axis comes from the exact inputs. In
+    /// binary64 both vectors below round to (3, 5, 7), whose difference is a
+    /// residue near (0, 0, -1); the exact part is along (-21, -35, 34).
+    #[test]
+    fn a_nearly_parallel_bend_direction_keeps_its_exact_part_across() {
+        let recipe = catallax_recipe::Recipe::parse(
+            r#"{"format": "catallax-recipe/5", "name": "near", "result": "bent", "steps": [
+                {"id": "plate", "op": "block", "size": ["1", "1", "1"],
+                 "pose": {"rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "0"]}},
+                {"id": "bent", "op": "bend", "body": "plate",
+                 "axis": {"point": ["0", "0", "0"], "direction": ["3", "5", "7"]},
+                 "toward": ["3", "5", "7.0000000000000001"], "radius": "20"}]}"#,
+        )
+        .unwrap();
+        let Some(Warp::Bend {
+            axis,
+            mid,
+            binormal,
+            ..
+        }) = Warp::of(&recipe.steps[1].op).unwrap()
+        else {
+            panic!("a bend step gives a bend");
+        };
+        let length = (21.0f64 * 21.0 + 35.0 * 35.0 + 34.0 * 34.0).sqrt();
+        assert!(
+            close(mid, [-21.0 / length, -35.0 / length, 34.0 / length]),
+            "{mid:?}"
+        );
+        assert!(dot(mid, axis).abs() <= 1e-15);
+        assert!(close(binormal, cross(axis, mid)));
+        // The two frames disagree on which side of the axis (0, 0, -1) lies.
+        assert!(dot([0.0, 0.0, -1.0], mid) < 0.0);
     }
 
     #[test]

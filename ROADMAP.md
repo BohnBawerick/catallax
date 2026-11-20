@@ -128,7 +128,7 @@ Twelve things neither reference kernel does are not in the count. They include e
 - Unlocks: every freeform part past its first cut, and the spline fillets of milestone 2.1.
 - Done when: the 14 recorded spline Boolean requests and the loft top cut build and reach STEP. The later cuts on the filleted housing are not a criterion here. They are deferred to 2.1.
 
-**1.4 Everyday edge and wall features**
+<a id="everyday-edge-and-wall"></a>**1.4 Everyday edge and wall features**
 - Doing: fillets over mixed corners, shells with side openings, hollow oblique draft, chamfer corners and general holes on ordinary prismatic and turned parts.
 - Why here: two thirds of the census files have only flat and round faces, so this is where most real parts are. It touches different code from 1.1 to 1.3 and runs beside them. The owner's bar from 7 Nov stands: at least match OpenCASCADE on fillets.
 - Unlocks: the five everyday target parts end to end, and the first complete line in the weakest area.
@@ -152,15 +152,15 @@ The phase 2 lane setup is retained in [history](#phase-2-lane-setup-superseded-a
 
 | # | Milestone | What we are doing | Why here | Unlocks | Done when |
 |---|---|---|---|---|---|
-| 2.1 | Fillets between spline faces | Rounded edges on lofted and imported freeform parts, across more than one surface patch. | Needs 1.3. The centre curve of a spline fillet is found by the same engine that intersects spline faces. [One loft edge already rounds within 59 nm](docs/research/spline-fillet-offset-search.md). Moved from phase 1 on 16 Nov. | Finished freeform parts. P9, the lofted duct. The curved-housing chain of 1.1. | A fillet across several patches builds on a loft and on an imported part, and a radius edit keeps the names. The curved housing builds as loft, spline cut, fillet, one more edit, its STEP opens in OpenCASCADE with healing off and takes an edit there, and the later cuts on the filleted housing (old M8) build. |
-| 2.2 | NURBS toolkit | Freeform surface construction: Coons patch, surface through a grid of points, Gordon surface, guided skin, N-sided fill. SMLib's surface-construction code may be adapted, with attribution, under the 16 Nov widening of the port rule. | Lane 3, from the first day. Three "not started" lines sit here. Surface bodies and direct edits need its tools. | Freeform surfacing. Lofts with guide curves. | Each surface builds and exports. Knot insertion, degree raise, split and join are public. |
-| 2.3 | Surface bodies | Open surfaces and wires as bodies. Sew, trim, extend, thicken into a solid. | Lane 2. Sewing comes first, as stitching imported surface bodies into checked solids; trim, extend and thicken follow 2.2. Direct edits (2.5) need its trim, extend and sew. | Surface modelling. Imported files that are not closed solids. | A surface trims, extends and thickens into a solid. Faces sew into a solid outside import. |
-| 2.4 | General sweeps | Extrude with taper. Sweep with a guide, with twist and along a helix. Extrude up to a curved face. | Lane 3, after 2.2. Two "not started" lines. It depends on neither 2.2 nor 2.3. | Springs, threads, tapered and twisted shapes. P8, the spring and threaded boss. | P8 builds. |
+| 2.1 | <a id="spline-fillets"></a>Fillets between spline faces | Rounded edges on lofted and imported freeform parts, across more than one surface patch. | Needs 1.3. The centre curve of a spline fillet is found by the same engine that intersects spline faces. [One loft edge already rounds within 59 nm](docs/research/spline-fillet-offset-search.md). Moved from phase 1 on 16 Nov. | Finished freeform parts. P9, the lofted duct. The curved-housing chain of 1.1. | A fillet across several patches builds on a loft and on an imported part, and a radius edit keeps the names. The curved housing builds as loft, spline cut, fillet, one more edit, its STEP opens in OpenCASCADE with healing off and takes an edit there, and the later cuts on the filleted housing (old M8) build. |
+| 2.2 | <a id="nurbs-toolkit"></a>NURBS toolkit | Freeform surface construction: Coons patch, surface through a grid of points, Gordon surface, guided skin, N-sided fill. SMLib's surface-construction code may be adapted, with attribution, under the 16 Nov widening of the port rule. | Lane 3, from the first day. Three "not started" lines sit here. Surface bodies and direct edits need its tools. | Freeform surfacing. Lofts with guide curves. | Each surface builds and exports. Knot insertion, degree raise, split and join are public. |
+| 2.3 | <a id="surface-bodies"></a>Surface bodies | Open surfaces and wires as bodies. Sew, trim, extend, thicken into a solid. | Lane 2. Sewing comes first, as stitching imported surface bodies into checked solids; trim, extend and thicken follow 2.2. Direct edits (2.5) need its trim, extend and sew. | Surface modelling. Imported files that are not closed solids. | A surface trims, extends and thickens into a solid. Faces sew into a solid outside import. |
+| 2.4 | <a id="general-sweeps"></a>General sweeps | Extrude with taper. Sweep with a guide, with twist and along a helix. Extrude up to a curved face. | Lane 3, after 2.2. Two "not started" lines. It depends on neither 2.2 nor 2.3. | Springs, threads, tapered and twisted shapes. P8, the spring and threaded boss. | P8 builds. |
 | 2.5 | Direct edits | Delete a face, a fillet or a hole and heal the solid. Move, offset or replace a face. | Lane 3, after 2.3, while lane 1 keeps 2.1. Needs 2.2 and 2.3. It pays only once imports work (1.2). | Editing bought-in parts that have no feature tree. | Each edit works on an imported solid. |
 
 **2.4 partial delivery:** taper, guide/twist sweeps, a quarter helix and curved-face termination have build/edit/save/reopen and unhealed STEP evidence. General-motion fits are explicitly numerical. P8 clears the earlier 100M carrier-comparison budget barrier but still refuses `intersect.parametric-surface` during threaded-union clipping at 55,626,285 work; the milestone remains open. Its [stage record](docs/RECIPE.md#work-recorded-for-phase-5) is retained for Phase 5.
 
-**App, alongside:** import health report, reverse-engineering workspace, direct-edit commands, reference axis and point, slot, draft check, exact sketch solver.
+<a id="phase-2-app"></a>**App, alongside:** import health report, reverse-engineering workspace, direct-edit commands, reference axis and point, slot, draft check, exact sketch solver.
 
 **Checkpoint 2.** Scoreboard and census rerun, and the coverage recount. Order of phase 3.
 
@@ -217,7 +217,7 @@ The three guards against tuning to the test:
 
 Coverage: infrastructure for existing lines; no line becomes full from this milestone alone.
 
-**3.0B One model and the predictor**
+<a id="one-model-and-predictor"></a>**3.0B One model and the predictor**
 
 [Checkpoint 2 specification, section 4.5](docs/checkpoints/checkpoint-2-decisions.md#45-item-30b-one-model-and-the-predictor), Q12 to Q14, Q18, Q25 and Q28. Follows 3.0A, before 3.1.
 
@@ -262,12 +262,12 @@ Open sub-question for 3.0B: whether exact entities use no tolerance or a floor l
 
 Done when, for one model: exact and tolerant entities coexist under the rules above; a hole after a numerical fillet works without `features.numerical-continuation`; the numerical checker is part of `Model::check`. The predictor's frozen-corpus done-when lines above also hold. Coverage: infrastructure and continuation within existing lines, not a full-line promotion.
 
-**Drawings and PMI, alongside and just behind 3.0B**
+<a id="drawings-and-pmi"></a>**Drawings and PMI, alongside and just behind 3.0B**
 
 - Doing: AP242 semantic PMI stored on the part, automatic drawings from it, feature recognition on bare imports and a rules-based interview. [Checkpoint 2 decisions, section 4.8](docs/checkpoints/checkpoint-2-decisions.md#48-drawings-and-pmi-the-p1-bracket-test) and the [P1 bracket specification with D1 to D6](docs/checkpoints/checkpoint-2-drawings-pmi.md) define the scope. One owner across kernel and app. Fable, moving to Claude Opus if Fable quota runs short; the dot reviews.
 - Why here: the owner adopted the P1 bracket test, Q3 and Q20. Runs mostly in parallel wherever it does not touch 3.0A or 3.0B code. Its roadmap place is just behind 3.0B, not a renumbering of 3.1.
 - Unlocks: manufacturing information travels in STEP and produces the drawing without hand layout. The PMI owner owns annotations within 3.2; the exchange lane owns structure, names and colours.
-- Done when: C1 round trip of all 14 items passes the NIST analyzer, OCCT reads all 14, and re-import, save and reopen keep their attachments; C2 bore edit 8 to 10 mm keeps its tolerance; C3 one button gives STEP plus PDF and DXF, every item once, no overlaps or hand moves, with title block; C4 no drawing information is absent from the file; C5 bare-import recognition finds bore, boss, four holes and slot, and the interview asks only for missing information. These are the specification's C1 to C5, not coverage IDs. Coverage: X8 annotations, partial until 3.2's structure, colours and names also round-trip.
+- <a id="drawings-pmi-acceptance"></a>Done when: C1 round trip of all 14 items passes the NIST analyzer, OCCT reads all 14, and re-import, save and reopen keep their attachments; C2 bore edit 8 to 10 mm keeps its tolerance; C3 one button gives STEP plus PDF and DXF, every item once, no overlaps or hand moves, with title block; C4 no drawing information is absent from the file; C5 bare-import recognition finds bore, boss, four holes and slot, and the interview asks only for missing information. These are the specification's C1 to C5, not coverage IDs. Coverage: X8 annotations, partial until 3.2's structure, colours and names also round-trip.
 
 
 | # | Milestone | What we are doing | Why here | Unlocks | Done when |
@@ -275,7 +275,7 @@ Done when, for one model: exact and tolerant entities coexist under the rules ab
 | 3.1 | Drawing views from the kernel | Exact section curves, silhouettes on curved solids, hidden-line views. | Drawings work today from meshes. This makes them exact. | Drawings that match the model to the last digit. | SolidDraft drawings use them in place of mesh outlines. |
 | 3.2 | Assemblies and exchange | The kernel holds several solids as an assembly. STEP carries structure, colours, names and annotations. | Needs import (1.2) to be solid first. | Whole products in one file, both ways. | A STEP assembly round-trips. IGES exports spheres and tori. |
 | 3.3 | Clash, clearance and mass | Clash, clear by a stated gap, or unresolved, for every pair. | Exact overlap already works. Distant and nested pairs are left. | A proven gap between parts. Refusals that state the largest radius or thickness that fits. | Every pair in a test assembly gets one of the three answers. |
-| 3.4 | Tools only SMLib has | Bend and twist. Curvature-continuous blends. Mesh Booleans and decimation. | Last because OpenCASCADE does not have them either. | The final three lines. | Each has a first build. |
+| 3.4 | <a id="smlib-modelling-tools"></a>Tools only SMLib has | Bend and twist. Curvature-continuous blends. Mesh Booleans and decimation. | Last because OpenCASCADE does not have them either. | The final three lines. | Each has a first build. |
 
 **App, alongside:** assemblies in the browser, assembly drawings, BOM and balloons, Pack and Go, the remaining mates, drawing annotations, URDF and USD export with joints, the refusal assistant.
 
@@ -288,7 +288,7 @@ Why this phase is fourth: this is what neither reference kernel has. It is our e
 | # | Milestone | What we are doing | Why here | Unlocks | Done when |
 |---|---|---|---|---|---|
 | 4.1 | Field preview and first display * | The app draws field previews only for field-only features, lattices and gyroids. The B-rep previews everything else. Remove proved and bounded lights; keep a refused message and a working indicator. | First in the phase: field-only features need a display. [Checkpoint 2 decisions](docs/checkpoints/checkpoint-2-decisions.md), Q31 and Q32. | A feature shows at once. | A preview never stands in for an export. |
-| 4.2 | The field catches up | Field versions of fillets, sweeps and lofts. The field may take over a B-rep step's result only when that is the only way to build the part, and only with no downstream problem, Q15. | The field must hold every part before it can print or analyse it. | Every part has both descriptions. | P5 builds in the field with no fillet refusal. 4.2a below defines the independent fillet route. |
+| 4.2 | <a id="field-modelling"></a>The field catches up | Field versions of fillets, sweeps and lofts. The field may take over a B-rep step's result only when that is the only way to build the part, and only with no downstream problem, Q15. | The field must hold every part before it can print or analyse it. | Every part has both descriptions. | P5 builds in the field with no fillet refusal. 4.2a below defines the independent fillet route. |
 | 4.3 | Lattices and printing | Printable lattice parts. The missing piece is [a proof that a mesh keeps its cavities](docs/research/adaptive-printing.md). | Needs 4.2. | P6 and P7. Sheet gyroids. | P6 exports a printable mesh at its recorded accuracy. |
 | 4.4 | Imports and scans in both kernels | Imported spline parts in the field. [Scan fitting](docs/research/scan-fitting.md) grows past planes and cylinders. | Needs import (1.2) and the spline work (1.3, 2.1). | Bought-in parts and real scans in the field. | An imported spline part builds in the field. A real scan becomes a clean part. |
 | 4.5 | FEA groundwork, first result and P10 | [Parked by the owner on 13 Nov](docs/research/fea-first-beam.md). | Starts on the owner's word at a checkpoint. | Stress on the same part the B-rep exports. | |
@@ -354,13 +354,13 @@ Caveat: the three M11 test edges are single-span bilinear or biquadratic patches
 Coverage: independent field parity is outside the 61 reference-kernel lines. No extra coverage points.
 
 
-**App, alongside:** field-driven thickness, more grades, fields on imported bodies, infill that is denser near the skin or the load.
+<a id="phase-4-app"></a>**App, alongside:** field-driven thickness, more grades, fields on imported bodies, infill that is denser near the skin or the load.
 
 **Checkpoint 4.** Order of the speed work, from measurements.
 
 ### Phase 5: speed and simplification *
 
-**5.1 Speed and simplification.**
+<a id="speed-and-simplification"></a>**5.1 Speed and simplification.**
 
 Why last: the owner's ruling of 11 Nov. Clock targets were stalling capability work, and speeding up a method that is about to be replaced is wasted.
 
@@ -388,26 +388,26 @@ Twelve changes: seven widen an existing done-when line and five add a new milest
 
 #### Curves and surfaces
 
-1. **Widen 2.2 (C7, C8, C9, C10, F8).** Add least-squares fitting of curves and surfaces to points within a stated tolerance, G1 N-sided and Gordon fills, curve networks whose corners miss by up to the stated tolerance, and lofts with guide curves. Done when each builds on a generated set without refusing possible geometry. *A user can fit a smooth surface to a point cloud, fill an n-sided hole with a tangent patch, and loft through sections along guide rails.*
+1. <a id="coverage-guided-loft"></a>**Widen 2.2 (C7, C8, C9, C10, F8).** Add least-squares fitting of curves and surfaces to points within a stated tolerance, G1 N-sided and Gordon fills, curve networks whose corners miss by up to the stated tolerance, and lofts with guide curves. Done when each builds on a generated set without refusing possible geometry. *A user can fit a smooth surface to a point cloud, fill an n-sided hole with a tangent patch, and loft through sections along guide rails.*
 2. **New line: offsets and projection (C6, C11, E6).** Offset any curve, surface or whole solid, spline faces included, within a stated tolerance. Project curves onto surfaces. *A user can offset a freeform part's skin by 2 mm or wrap a sketch onto a curved face.*
-3. **Widen 3.4 from "a first build" to general input (C12, E8, Q8).** *A user can bend or twist any body, blend faces with curvature continuity, and run Booleans and decimation on meshes.*
+3. <a id="coverage-bend-twist-and-blends"></a>**Widen 3.4 from "a first build" to general input (C12, E8, Q8).** *A user can bend or twist any body, blend faces with curvature continuity, and run Booleans and decimation on meshes.*
 
 #### Intersection
 
-4. **New line: intersections complete (I1, I3, I4, I5).** Every analytic pair, skew cone/torus and cylinder/torus included. Spline against spline, and curve against surface, with no refusal on the generated set. Tangent and near-tangent contact answered under the bounded-answer rule. *A user's cut or join never stops because two faces touch or meet at an awkward angle.*
+4. <a id="coverage-intersections"></a>**New line: intersections complete (I1, I3, I4, I5).** Every analytic pair, skew cone/torus and cylinder/torus included. Spline against spline, and curve against surface, with no refusal on the generated set. Tangent and near-tangent contact answered under the bounded-answer rule. *A user's cut or join never stops because two faces touch or meet at an awkward angle.*
 
 #### Solids and topology
 
-5. **Widen 1.3 and 2.1 (S3, E3).** Done when Booleans and fillets on spline-faced solids pass a generated set and the census parts, not 15 named requests. *A user can cut, join and round any freeform part, imported or modelled.*
-6. **Widen 2.3 (S6, S7, X7) and add split and imprint (S5, F10).** Sew any face set that closes. Non-manifold bodies. Sheets and wires export as sewn shells. Split a solid by a plane, sheet or body, keeping every piece. Imprint a curve on a face. *A user can sew a patchwork of imported faces into a solid, slice a part in two, and imprint a logo outline on a face.*
+5. <a id="coverage-spline-booleans-and-fillets"></a>**Widen 1.3 and 2.1 (S3, E3).** Done when Booleans and fillets on spline-faced solids pass a generated set and the census parts, not 15 named requests. *A user can cut, join and round any freeform part, imported or modelled.*
+6. <a id="coverage-surface-bodies"></a>**Widen 2.3 (S6, S7, X7) and add split and imprint (S5, F10).** Sew any face set that closes. Non-manifold bodies. Sheets and wires export as sewn shells. Split a solid by a plane, sheet or body, keeping every piece. Imprint a curve on a face. *A user can sew a patchwork of imported faces into a solid, slice a part in two, and imprint a logo outline on a face.*
 
 #### Features
 
-7. **Widen 2.4 from "P8 builds" (F4, F5, F6, F7, F9, F11).** Taper, guide, twist, helix and up-to-face each build on line, arc, ellipse and spline profiles along any path. *A user can sweep any profile along any path, with a guide or twist, and extrude up to any curved face.*
+7. <a id="coverage-general-sweeps"></a>**Widen 2.4 from "P8 builds" (F4, F5, F6, F7, F9, F11).** Taper, guide, twist, helix and up-to-face each build on line, arc, ellipse and spline profiles along any path. *A user can sweep any profile along any path, with a guide or twist, and extrude up to any curved face.*
 
 #### Edge and wall features
 
-8. **New line: edge and wall features in general (E1, E2, E4, E5, E7).** Constant and variable-radius fillets with any law on any edge. Chamfer roll-over and general corners. Shells and draft on any face, spline and oblique cylinder included. Done when the census parts take each feature without refusal of possible geometry. *A user can round, chamfer, shell or draft any edge or face of a bought-in part, as in OpenCASCADE.*
+8. <a id="coverage-edge-and-wall"></a>**New line: edge and wall features in general (E1, E2, E4, E5, E7).** Constant and variable-radius fillets with any law on any edge. Chamfer roll-over and general corners. Shells and draft on any face, spline and oblique cylinder included. Done when the census parts take each feature without refusal of possible geometry. *A user can round, chamfer, shell or draft any edge or face of a bought-in part, as in OpenCASCADE.*
 9. **Widen 2.5 (E9).** Each direct edit works on any face type, through SolidDraft. *A user can delete a fillet or move a face on any imported part.*
 
 #### File exchange
@@ -568,6 +568,24 @@ Each entry links to a short file: what we were trying to achieve, why it was pro
 - Dual-implicit experiments and the old Draftwell queue. Closed on 12 Nov.
 - Not scheduled: machine-checked core arithmetic, the field choosing which shell faces survive, USD BRep slices, a pure field kernel as its own product.
 - Waiting on the owner: Windows signing, crates.io publication, when FEA restarts.
+
+## Later planning: SolidDraft feature gaps
+
+The owner put all eleven proposals in Later. They are candidates for checkpoint review. Their letters identify the research proposals, and the sizes are rough audit estimates. Starting work requires the owner's decision at a checkpoint.
+
+| Proposal | Use case | Rough size | Existing roadmap scope |
+|---|---|---|---|
+| [A. Hole stacks and callouts](docs/research/feature-gap/report.md#proposal-a) | Edit a compound fastener seat as one hole and carry its stages into a drawing callout. | M · 2–4 engineer-weeks | [1.4](#everyday-edge-and-wall) delivered ordinary holes. [3.0B](#one-model-and-predictor) covers continuation. [Drawings and PMI](#drawings-and-pmi) owns the annotation pipeline. |
+| [B. Grid and adaptive feature patterns](docs/research/feature-gap/report.md#proposal-b) | Lay out holes or pockets with two pitches, skip members and replay the seed where supports vary. | M · 2–4 engineer-weeks for a grid, L with replay | [C5](#drawings-pmi-acceptance) covers recognition of bracket holes on import. The authoring grid and replay are Later. |
+| [C. Slot, pocket and profile cuts](docs/research/feature-gap/report.md#proposal-c) | Edit a keyway, guide slot or radiused-floor pocket through its profile and termination. | M · 2–4 engineer-weeks for straight cuts, L for general sweeps | [Phase 2 App](#phase-2-app) owns Solid Slot. [2.4 and Coverage #7](#coverage-general-sweeps) cover sweep and termination breadth. [Coverage #5](#coverage-spline-booleans-and-fillets) and [#8](#coverage-edge-and-wall) cover spline stock and floor-round dependencies. Later planning covers the expanded profile-cut workflow. |
+| [D. Revolved cuts and groove presets](docs/research/feature-gap/report.md#proposal-d) | Place a retaining-ring seat or seal gland and move it from an axis or face datum. | M · 2–4 engineer-weeks | [Coverage #8](#coverage-edge-and-wall) covers edge treatments used on groove rims. |
+| [E. Edge finishing that survives edits](docs/research/feature-gap/report.md#proposal-e) | Adjust a housing's rounds and chamfers after a recess or hole changes while keeping surviving references. | L · 1–2 engineer-months per major slice | [2.1](#spline-fillets), [3.0B](#one-model-and-predictor), [3.4](#smlib-modelling-tools) and Coverage [#3](#coverage-bend-twist-and-blends), [#5](#coverage-spline-booleans-and-fillets) and [#8](#coverage-edge-and-wall) own kernel blends, chamfers and continuation. [4.2/4.2a](#field-modelling) owns field fillets. Later planning covers app controls and previews beyond those commitments. |
+| [F. Rib and gusset](docs/research/feature-gap/report.md#proposal-f) | Stiffen a bracket or housing with a repeatable support that follows adjacent faces. | M · 2–4 engineer-weeks for planar ribs | [Coverage #8](#coverage-edge-and-wall) covers subsequent rib finishing. |
+| [G. Shell and enclosed cavity controls](docs/research/feature-gap/report.md#proposal-g) | Lighten an enclosure while inspecting its walls, openings and sealed cavities. | L · 1–2 engineer-months for first curved coverage | [Coverage #8](#coverage-edge-and-wall) owns wider shell geometry. [Phase 4 App](#phase-4-app) covers field-driven thickness. Later planning covers cavity controls and section previews. |
+| [H. Sheet metal and flat patterns](docs/research/feature-gap/report.md#proposal-h) | Produce a folded bracket, its flat DXF and bend directions from one feature history. | XL · 2–4+ engineer-months, staged | [3.4](#smlib-modelling-tools) and [Coverage #3](#coverage-bend-twist-and-blends) cover general bend and twist geometry. [Coverage #8](#coverage-edge-and-wall) supports edge and wall geometry. The bend graph and flat pattern are Later. |
+| [I. Threads and coils](docs/research/feature-gap/report.md#proposal-i) | Specify tapped holes for manufacture, model printable threads and check coil fit. | M · 2–4 engineer-weeks for thread intent, XL for geometry | [2.4 and P8](#general-sweeps), [Coverage #7](#coverage-general-sweeps) and [5.1](#speed-and-simplification) own helix delivery and cost follow-up. Later planning covers thread intent and thread/coil controls. |
+| [J. Guided loft and connected surfaces](docs/research/feature-gap/report.md#proposal-j) | Shape a duct along editable rails and repair and close its surfaces for manufacturing. | XL · 2–4+ engineer-months, staged | [2.2](#nurbs-toolkit), [2.3](#surface-bodies), [2.1](#spline-fillets) and Coverage [#1](#coverage-guided-loft), [#5](#coverage-spline-booleans-and-fillets) and [#6](#coverage-surface-bodies) own guided construction, surface operations and spline finishing. Later planning covers rail and section controls and diagnostics. |
+| [K. Dedicated spur gear generator](docs/research/feature-gap/report.md#proposal-k) | Generate an involute spur gear for a prototype transmission with editable tooth size and backlash. | L · 1–2 engineer-months for external spur gears | Dedicated gear authoring is Later. |
 
 ## Further reading
 

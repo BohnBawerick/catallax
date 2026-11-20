@@ -4,6 +4,7 @@
 use super::a_plus::copies;
 use super::exact::*;
 use super::*;
+use crate::numerical::edge_gap::UseAccount;
 use crate::numerical::gap::{self, GapMeasure, GeometricMeasure, Hints, Limits, refit};
 use crate::numerical::import_gap::{self, ImportGapOutcome, UseReading};
 
@@ -92,6 +93,7 @@ fn a_stretched_copy_has_no_geometric_gap_and_one_span_gives_it_the_edge_paramete
     let mut dec = Decider::default();
     let next = refit::reparametrise(&copies(&case.geometry), 1e-7, Limits::default(), &mut dec)
         .expect("reparametrise")
+        .copy
         .expect("a change of parameter");
     println!(
         "edge 8: same-parameter {:.3e} mm, geometric {:.3e} mm, reparametrised {:.3e} mm stored in {} span",
@@ -120,6 +122,7 @@ fn a_circle_against_its_rational_copy_is_a_difference_of_speed() {
     let floor = tolerance::floor_minimum_mm().to_f64_nearest();
     let next = refit::reparametrise(&copies(&case.geometry), floor, Limits::default(), &mut dec)
         .expect("reparametrise")
+        .copy
         .expect("a change of parameter");
     println!(
         "edge 14: same-parameter {:.6e} mm, geometric {:.3e} mm, reparametrised {:.3e} mm stored in {} spans",
@@ -158,6 +161,7 @@ fn a_stretched_arc_on_a_wider_cylinder_keeps_its_radial_gap() {
     let target = gap::MARGIN * gap::MARGIN * geometric.reported_mm();
     let next = refit::reparametrise(&copies(&geometry), target, Limits::default(), &mut dec)
         .expect("reparametrise")
+        .copy
         .expect("a change of parameter");
     println!(
         "arc: same-parameter {:.6e} mm, geometric {:.6e} mm forward and {:.6e} mm backward, reparametrised {:.6e} mm stored in {} spans",
@@ -276,13 +280,15 @@ fn floor_mm() -> f64 {
     tolerance::floor_minimum_mm().to_f64_nearest()
 }
 
-/// The gap rule for one edge use under an allowance of `work` units, and the
-/// work it charged to the operation.
+/// The gap rule for one edge use on an account of `work` units that holds no
+/// reading yet, and the work charged to the operation. The rule then takes
+/// the first reading itself, on the same account, as admission takes it in
+/// an import.
 fn rule(geometry: &EdgeGeometry, work: u64) -> (Result<Option<UseReading>, Refusal>, u64) {
     let (read, charged) = with_operation_budget(DEFAULT_WORK, || {
         import_gap::read_use(
             &copies(geometry),
-            Limits { work },
+            &mut UseAccount::new(Limits { work }),
             floor_mm(),
             &mut Decider::default(),
         )
@@ -310,11 +316,12 @@ fn uses_at_different_speeds() -> [(&'static str, EdgeGeometry); 3] {
     ]
 }
 
-/// Section 4.2 step 8: "A hard per-edge work cap refuses by name." The rule
-/// does three things with a use: it reads the same-parameter gap, reads the
-/// geometric gap, and changes the parameter. This is the small-allowance
-/// control that the three draw on one allowance and that nothing stands in
-/// for the refusal.
+/// Section 4.2 step 8: "A hard per-edge work cap refuses by name." Three
+/// things are done with a use: its same-parameter gap is read, its geometric
+/// gap is read, and its parameter is changed. This is the small-allowance
+/// control that the three draw on one account and that nothing stands in for
+/// the refusal. The first reading is the one admission takes in an import;
+/// here the account holds none, so the rule takes it on the same account.
 ///
 /// Read alone, each of the three fits an allowance one unit short of their
 /// sum, so an allowance that started again for any of them would let the use
@@ -334,24 +341,34 @@ fn everything_the_rule_does_with_a_use_draws_on_one_allowance() {
         let full = full.expect("the full cap").expect("a use the rule reads");
         assert_eq!(full.outcome, ImportGapOutcome::Reparametrised, "{name}");
         let next = full.reparametrised.as_ref().expect("a new copy");
-        let steps = [full.parametric.work, full.geometric.work, next.work];
+
+        // The three steps, each counted alone at the full cap. The account
+        // holds the first reading once and the two steps after it.
+        let copies = copies(geometry);
+        let mut dec = Decider::default();
+        let target = (gap::MARGIN * gap::MARGIN * full.geometric.reported_mm()).max(floor_mm());
+        let change = |limits: Limits, dec: &mut Decider| {
+            refit::reparametrise(&copies, target, limits, dec).expect("alone")
+        };
+        let steps = [
+            full.parametric.work,
+            full.geometric.work,
+            change(Limits::default(), &mut dec).work,
+        ];
         let total: u64 = steps.iter().sum();
+        assert_eq!(full.work, total, "{name}");
         assert!(total < gap::EDGE_WORK);
 
         // Alone, each step fits an allowance one unit short of the total.
         let short = Limits { work: total - 1 };
-        let copies = copies(geometry);
-        let mut dec = Decider::default();
         let parametric = gap::measure(&copies, &Hints::default(), short, &mut dec).expect("alone");
         assert_eq!(parametric.work, steps[0]);
         let geometric = gap::measure_geometric(&copies, &Hints::default(), short, &mut dec)
             .expect("alone")
             .expect("a copy with its own u/v");
         assert_eq!(geometric.work, steps[1]);
-        let target = (gap::MARGIN * gap::MARGIN * geometric.reported_mm()).max(floor_mm());
-        let alone = refit::reparametrise(&copies, target, short, &mut dec)
-            .expect("alone")
-            .expect("a new copy");
+        let alone = change(short, &mut dec);
+        assert!(alone.copy.is_some());
         assert_eq!(alone.work, steps[2]);
 
         // Together they do not, and no smaller allowance gives any answer
@@ -384,7 +401,7 @@ fn everything_the_rule_does_with_a_use_draws_on_one_allowance() {
         assert_eq!(again.stored_mm.to_bits(), next.stored_mm.to_bits());
         assert_eq!(again.spans, next.spans);
         assert!(again.curve.same_definition(&next.curve));
-        assert_eq!(again.work, next.work);
+        assert_eq!(same.work, full.work);
         assert_eq!(recharged, charged);
         text.push_str(&format!(
             "use={name} same_parameter_work={} geometric_work={} change_of_parameter_work={} least_allowance={total} spans={} operation_work={charged}\n",
@@ -421,17 +438,16 @@ fn a_change_of_parameter_counts_its_projections_and_every_candidate() {
         })
     };
     let (full, charged) = fit(floor, gap::EDGE_WORK);
-    let full = full.expect("the full cap").expect("a new copy");
+    let full = full.expect("the full cap");
+    let full_spans = full.copy.as_ref().expect("a new copy").spans;
 
     let mut target = f64::INFINITY;
     let mut counted = 0;
     let mut largest = 0;
     let mut candidates = 0;
     loop {
-        let stop = fit(target, gap::EDGE_WORK)
-            .0
-            .expect("the full cap")
-            .expect("a candidate");
+        let stopped = fit(target, gap::EDGE_WORK).0.expect("the full cap");
+        let stop = stopped.copy.as_ref().expect("a candidate");
         let alone = gap::measure(
             &gap::EdgeCopies {
                 face_copy: gap::FaceCopyRef::Native(&stop.curve),
@@ -453,17 +469,19 @@ fn a_change_of_parameter_counts_its_projections_and_every_candidate() {
             &mut Decider::default(),
         )
         .expect("one candidate under its own work");
+        // The reading the fit keeps of its candidate is the checker's.
+        assert_eq!(stop.reading.work, alone.work);
         assert!(
-            stop.work > counted + alone.work,
+            stopped.work > counted + alone.work,
             "{} spans: {} after {counted} with {} for the candidate",
             stop.spans,
-            stop.work,
+            stopped.work,
             alone.work
         );
-        counted = stop.work;
+        counted = stopped.work;
         largest = largest.max(alone.work);
         candidates += 1;
-        if stop.spans == full.spans {
+        if stop.spans == full_spans {
             break;
         }
         target = stop.stored_mm.next_down();
@@ -521,6 +539,7 @@ fn a_projected_copy_has_no_geometric_reading() {
     assert!(
         refit::reparametrise(&copies, 1e-7, Limits::default(), &mut dec)
             .expect("read")
+            .copy
             .is_none()
     );
 }

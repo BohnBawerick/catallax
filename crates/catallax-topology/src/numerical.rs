@@ -781,34 +781,37 @@ const TOLERANCE_EXCEEDED: &str = "numbers.numerical-tolerance-exceeded";
 /// reparametrised copy is returned as imported, unless the refusal says
 /// that work or time ran out.
 ///
-/// Work: everything the gap rule does with one edge use draws on that use's
-/// one allowance, the checker's hard per-edge cap (section 4.2 step 8). A
-/// use that spends it refuses the admission with `numerical.gap-work-cap`.
-/// The same refusal from the admission of the new copies is returned by
-/// name too, and so are the operation's allowance and its deadline. The
-/// body as imported is not returned in their place.
+/// Work: an edge use has one allowance for this whole admission, the
+/// checker's hard per-edge cap (section 4.2 step 8). Admission's reading of
+/// the use draws on it first, then the gap rule's geometric reading and its
+/// change of parameter. The checker reads each copy once: the rule uses the
+/// reading admission took, and the admission of the new copies uses the
+/// readings already taken, the new copy's among them. A use that spends its
+/// allowance refuses the admission with `numerical.gap-work-cap`. That
+/// refusal is returned by name wherever it comes from, and so are the
+/// operation's allowance and its deadline. The body as imported is not
+/// returned in their place.
 pub fn admit_import(
     definition: NumericalDefinition,
     native_trims: Vec<NumericalNativeTrim>,
     options: NumericalOptions,
     dec: &mut Decider,
 ) -> Result<NumericalBody, Refusal> {
-    admit_import_within(
-        definition,
-        native_trims,
-        options,
-        gap::Limits::default(),
-        dec,
-    )
+    // One account per edge use for the whole admission, each with the
+    // checker's cap.
+    let mut accounts = edge_gap::UseAccount::for_uses(&definition, gap::Limits::default());
+    admit_import_on(definition, native_trims, options, &mut accounts, dec)
 }
 
-/// [`admit_import`] with the work allowance the gap rule gives each edge
-/// use. It is the checker's cap; only the tests that spend it pass less.
-fn admit_import_within(
+/// [`admit_import`] on the accounts of its edge uses, one per use in
+/// definition order. Admission's reading of a use is the first to draw on
+/// its account, and the reading is kept there. Only the tests that spend an
+/// allowance pass accounts with less than the checker's cap.
+fn admit_import_on(
     definition: NumericalDefinition,
     native_trims: Vec<NumericalNativeTrim>,
     options: NumericalOptions,
-    each_use: gap::Limits,
+    accounts: &mut [edge_gap::UseAccount],
     dec: &mut Decider,
 ) -> Result<NumericalBody, Refusal> {
     if options.tolerance_mm > tolerance::import_opt_in_limit_mm() {
@@ -822,22 +825,28 @@ fn admit_import_within(
         ));
     }
     let options = tolerance::import_options(options.tolerance_mm);
-    let first = build_with_native_trims(
+    let first = admit_on(
         definition.clone(),
         native_trims.clone(),
         options.clone(),
+        accounts,
         dec,
     );
-    let known = match &first {
-        Ok(body) => Some(tolerance::use_records(&body.evidence)),
-        Err(refusal) if refusal.code == TOLERANCE_EXCEEDED => None,
+    match &first {
+        Ok(_) => (),
+        Err(refusal) if refusal.code == TOLERANCE_EXCEEDED => (),
         Err(_) => return first,
-    };
-    let (reparametrised, mut rows) = guarded(|| {
-        import_gap::settle(&definition, &native_trims, known.as_deref(), each_use, dec)
-    })?;
+    }
+    let (reparametrised, mut rows) =
+        guarded(|| import_gap::settle(&definition, &native_trims, accounts, dec))?;
     let with_new_copies = reparametrised.map(|native_trims| {
-        admit_under_cap(definition.clone(), native_trims, options.clone(), dec)
+        admit_under_cap(
+            definition.clone(),
+            native_trims,
+            options.clone(),
+            accounts,
+            dec,
+        )
     });
     let admitted = import_gap::settled_body(first, with_new_copies, &mut rows, |refusal| {
         refit_under_cap(definition, native_trims, options, refusal, dec)
@@ -848,18 +857,45 @@ fn admit_import_within(
     })
 }
 
-/// Admits a definition under the caller's cap, with rule T3's refit where a
-/// stored tolerance is over it.
+/// Admits a definition as [`build_with_native_trims`] does, on the accounts
+/// of an import admission: a use is read under what it has left of its one
+/// allowance, and a use whose reading is kept is not read again.
+fn admit_on(
+    definition: NumericalDefinition,
+    native_trims: Vec<NumericalNativeTrim>,
+    options: NumericalOptions,
+    accounts: &mut [edge_gap::UseAccount],
+    dec: &mut Decider,
+) -> Result<NumericalBody, Refusal> {
+    guarded(|| {
+        build_inner_kind_on(
+            BodyKind::Solid,
+            definition,
+            native_trims,
+            BTreeSet::new(),
+            options,
+            Vec::new(),
+            Some(accounts),
+            dec,
+        )
+    })
+}
+
+/// Admits a definition with the gap rule's new copies under the caller's
+/// cap, on the accounts of the same import admission, with rule T3's refit
+/// where a stored tolerance is over the cap.
 fn admit_under_cap(
     definition: NumericalDefinition,
     native_trims: Vec<NumericalNativeTrim>,
     options: NumericalOptions,
+    accounts: &mut [edge_gap::UseAccount],
     dec: &mut Decider,
 ) -> Result<NumericalBody, Refusal> {
-    match build_with_native_trims(
+    match admit_on(
         definition.clone(),
         native_trims.clone(),
         options.clone(),
+        accounts,
         dec,
     ) {
         Err(refusal) if refusal.code == TOLERANCE_EXCEEDED => {
@@ -1133,6 +1169,34 @@ fn build_inner_kind(
     repairs: Vec<NumericalRepair>,
     dec: &mut Decider,
 ) -> Result<NumericalBody, Refusal> {
+    build_inner_kind_on(
+        kind,
+        definition,
+        native_trims,
+        sampled_carriers,
+        options,
+        repairs,
+        None,
+        dec,
+    )
+}
+
+/// [`build_inner_kind`] on the accounts of an import admission, one per edge
+/// use in definition order: each use is read under what it has left of its
+/// one work allowance, and a use whose reading is kept in its account is not
+/// read again ([`edge_gap::UseAccount`]). Without accounts every use is read
+/// under the checker's cap.
+#[allow(clippy::too_many_arguments)]
+fn build_inner_kind_on(
+    kind: BodyKind,
+    definition: NumericalDefinition,
+    native_trims: Vec<NumericalNativeTrim>,
+    sampled_carriers: BTreeSet<String>,
+    options: NumericalOptions,
+    repairs: Vec<NumericalRepair>,
+    mut accounts: Option<&mut [edge_gap::UseAccount]>,
+    dec: &mut Decider,
+) -> Result<NumericalBody, Refusal> {
     precision_allowed(dec)?;
     dec.charge_work(1)?;
     if definition.name.trim().is_empty() || options.tolerance_mm.sign() != Sign::Positive {
@@ -1351,6 +1415,8 @@ fn build_inner_kind(
             samples,
         });
     }
+    // The place of an edge use in definition order, for its work account.
+    let mut slot = 0;
     for (face_index, face) in definition.faces.iter().enumerate() {
         if face.loops.len() == 1 {
             native::check_loops(
@@ -1454,6 +1520,14 @@ fn build_inner_kind(
             .flat_map(|(b, row)| row.iter().enumerate().map(move |(u, t)| (b, u, t)))
             .enumerate()
         {
+            let account = match accounts.as_deref_mut() {
+                Some(all) => Some(
+                    all.get_mut(slot)
+                        .ok_or_else(|| bad("definition", "an edge use has no work account"))?,
+                ),
+                None => None,
+            };
+            slot += 1;
             let edge = &definition.edges[trim.edge];
             let numerical_pair = native.numerical_pair(trim.edge);
             let curve = native.get(face_index, boundary_index, use_index);
@@ -1485,6 +1559,7 @@ fn build_inner_kind(
                     .tag(face_index, boundary_index, use_index)
                     .unwrap_or(&trim.tag),
                 &options.tolerance_mm,
+                account,
                 dec,
             )?;
             checks.push(NumericalCheck::Samples {

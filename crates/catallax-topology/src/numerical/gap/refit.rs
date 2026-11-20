@@ -32,12 +32,14 @@
 //! name"). It comes after two readings of the same use, so it is handed what
 //! they left, and every projection, every reading of the old copy and the
 //! checker's work on every candidate is drawn from that remainder (`Drawn`).
+//! It reports what it took, with or without a new copy, and the checker's
+//! reading of the copy it returns, so that reading is not taken again.
 
 use catallax_numbers::{Decider, Rational, Real, Refusal};
 use catallax_shapes::{BSplineCurve, Curve, Point3};
 
 use super::geometric::{self, Way};
-use super::{EdgeCopies, FaceCopyRef, Hints, Limits, lift, measure, work_cap};
+use super::{EdgeCopies, FaceCopyRef, GapMeasure, Hints, Limits, lift, measure, work_cap};
 
 /// Source: the span limit of the fitter of `numerical_embedding.rs`
 /// (`MAX_SPANS`), which builds the same kind of copy.
@@ -58,10 +60,20 @@ pub struct Refit {
     pub stored_mm: f64,
     /// Spans of the new copy.
     pub spans: usize,
-    /// Work the fit counted: the evaluations of its feet and the checker's
-    /// work on every candidate, kept or not. A change of parameter also
-    /// counts each reading of the old copy, and all of it was drawn from the
-    /// allowance it was given.
+    /// The checker's reading of the new copy, which `stored_mm` comes from.
+    pub reading: GapMeasure,
+}
+
+/// What a change of parameter found for one edge use, and what it took.
+#[derive(Clone, Debug)]
+pub struct ChangeOfParameter {
+    /// The face copy in the parameter of the 3D curve. `None` for a copy
+    /// that has no u/v of its own, and where the old copy has no valid
+    /// change of parameter.
+    pub copy: Option<Refit>,
+    /// Work counted against the allowance the change was given: one unit per
+    /// evaluation of either copy while a foot is found, one per reading of
+    /// the old copy, and the checker's work on every candidate, kept or not.
     pub work: u64,
 }
 
@@ -173,7 +185,7 @@ pub fn refit(
     target_mm: f64,
     dec: &mut Decider,
 ) -> Result<Option<Refit>, Refusal> {
-    fit(copies, target_mm, Nodes::SurfaceFoot, dec)
+    fit(copies, target_mm, Nodes::SurfaceFoot, dec).map(|(copy, _)| copy)
 }
 
 /// Gives the face copy of one edge use the parameter of its 3D curve
@@ -190,17 +202,22 @@ pub fn refit(
 /// use refuses with `numerical.gap-work-cap`; no candidate read before that
 /// is returned in its place.
 ///
-/// `None` for a copy that has no u/v of its own, and where the old copy has
-/// no valid change of parameter: the nearest points must ascend along it as
-/// the 3D curve is run through, which is the order OpenCASCADE's
-/// `Approx_SameParameter` asks of its projected pairs.
+/// The copy comes with the checker's reading of it, the last one the fit
+/// took, so an admission of the copy need not read it again.
+///
+/// No copy is returned for one that has no u/v of its own, and where the old
+/// copy has no valid change of parameter: the nearest points must ascend
+/// along it as the 3D curve is run through, which is the order OpenCASCADE's
+/// `Approx_SameParameter` asks of its projected pairs. The work taken is
+/// returned either way.
 pub fn reparametrise(
     copies: &EdgeCopies<'_>,
     target_mm: f64,
     limits: Limits,
     dec: &mut Decider,
-) -> Result<Option<Refit>, Refusal> {
+) -> Result<ChangeOfParameter, Refusal> {
     fit(copies, target_mm, Nodes::OldCopy(limits), dec)
+        .map(|(copy, work)| ChangeOfParameter { copy, work })
 }
 
 /// Source: Dennis and Schnabel 1983, section 5.4: a forward difference takes
@@ -211,14 +228,16 @@ fn same_node(a: f64, b: f64, width: f64) -> bool {
     (a - b).abs() <= f64::EPSILON.sqrt() * width
 }
 
+/// The new copy, where one was found, and the work the fit counted: the
+/// evaluations of its feet and the checker's work on every candidate.
 fn fit(
     copies: &EdgeCopies<'_>,
     target_mm: f64,
     nodes_from: Nodes,
     dec: &mut Decider,
-) -> Result<Option<Refit>, Refusal> {
+) -> Result<(Option<Refit>, u64), Refusal> {
     if matches!(copies.face_copy, FaceCopyRef::Projected) {
-        return Ok(None);
+        return Ok((None, 0));
     }
     let lifted = lift::lift(copies, dec)?;
     let mut scratch = lift::Scratch::default();
@@ -379,7 +398,7 @@ fn fit(
                 curve,
                 stored_mm,
                 spans,
-                work: 0,
+                reading: found,
             });
         }
         if stored_mm <= target_mm || !better {
@@ -387,8 +406,5 @@ fn fit(
         }
         cuts *= 2;
     }
-    Ok(best.map(|best| Refit {
-        work: drawn.spent,
-        ..best
-    }))
+    Ok((best, drawn.spent))
 }

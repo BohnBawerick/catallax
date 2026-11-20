@@ -122,7 +122,6 @@ fn queries(built: &Built) -> Vec<String> {
             origin: RPoint3::new(0.into(), 0.into(), Rational::parse("1/2").unwrap()),
             normal: RVector3::new(0.into(), 0.into(), 1.into()),
         },
-        &accuracy,
         &mut Decider::default(),
     );
     match section {

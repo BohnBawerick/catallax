@@ -1,7 +1,8 @@
 use super::*;
 use catallax_intersect::{CurveForm, curve_form};
 use catallax_numbers::{BudgetPolicy, MarkLog, with_operation_budget};
-use catallax_topology::{Body, BodyKind, sphere};
+use catallax_shapes::{Pose, Rotation};
+use catallax_topology::{Body, BodyKind, block, sphere};
 
 fn vector(x: i64, y: i64, z: i64) -> RVector3 {
     RVector3::new(x.into(), y.into(), z.into())
@@ -38,19 +39,12 @@ fn sections_have_exact_trims_for_axis_oblique_and_reversed_planes() {
         (plane(point(1, 1, 1), vector(1, 1, 1)), 6),
         (plane(point(0, 0, 3), vector(0, 0, 1)), 0),
     ] {
-        let answer = section_curves(
-            &model,
-            body,
-            &request,
-            &Accuracy::default(),
-            &mut Decider::default(),
-        )
-        .unwrap();
+        let answer = section_curves(&model, body, &request, &mut Decider::default()).unwrap();
         assert!(answer.marks.is_empty());
         assert_eq!(answer.value.curves.len(), count);
         assert!(answer.value.points.is_empty());
         for curve in &answer.value.curves {
-            assert!(!curve.faces_of_first.is_empty());
+            assert!(!curve.faces.is_empty());
             assert!(matches!(
                 curve_form(
                     answer.value.model.geom(),
@@ -82,7 +76,6 @@ fn sphere_section_and_silhouette_are_exact_circles() {
         &model,
         body,
         &plane(point(0, 0, 3), vector(0, 0, 1)),
-        &Accuracy::default(),
         &mut Decider::default(),
     )
     .unwrap();
@@ -210,26 +203,58 @@ fn contact_patches_are_clipped_and_edge_touches_have_no_area_contact() {
 }
 
 #[test]
-fn invalid_coplanar_and_starved_requests_keep_typed_evidence() {
+fn a_plane_through_a_face_gives_its_edges_once() {
     let mut model = Model::new();
     let body = cube(&mut model, [0, 0, 0], 2);
-    let coplanar = section_curves(
+    for at in [0, 2] {
+        let answer = section_curves(
+            &model,
+            body,
+            &plane(point(0, 0, at), vector(0, 0, 1)),
+            &mut Decider::default(),
+        )
+        .unwrap();
+        assert!(answer.marks.is_empty());
+        assert!(answer.value.points.is_empty());
+        let curves = &answer.value.curves;
+        assert_eq!(curves.len(), 4);
+        for arc in curves {
+            let edge = arc.edge.expect("an edge in the plane");
+            assert_eq!(arc.curve, model.edge(edge).curve);
+            assert_eq!(arc.faces.len(), 2);
+        }
+    }
+    // A plane through one corner only touches it there.
+    let corner = section_curves(
         &model,
         body,
-        &plane(point(0, 0, 0), vector(0, 0, 1)),
-        &Accuracy::default(),
+        &plane(point(0, 0, 0), vector(1, 1, 1)),
         &mut Decider::default(),
     )
-    .unwrap_err();
-    assert_eq!(coplanar.refusal.code, "app.section-coplanar");
-    assert_eq!(
-        (
-            coplanar.operands[0].faces,
-            coplanar.operands[0].edges,
-            coplanar.operands[0].vertices
-        ),
-        (6, 12, 8)
-    );
+    .unwrap();
+    assert!(corner.value.curves.is_empty());
+    assert_eq!(corner.value.points.len(), 1);
+    let p = corner.value.model.geom().position(corner.value.points[0]);
+    for c in [&p.x, &p.y, &p.z] {
+        exact(c, 0);
+    }
+    // Through an edge: the edge itself.
+    let along = section_curves(
+        &model,
+        body,
+        &plane(point(0, 0, 0), vector(1, 1, 0)),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    assert_eq!(along.value.curves.len(), 1);
+    assert!(along.value.curves[0].edge.is_some());
+    assert!(along.value.points.is_empty());
+}
+
+#[test]
+fn invalid_and_starved_requests_keep_typed_evidence() {
+    let mut model = Model::new();
+    let body = cube(&mut model, [0, 0, 0], 2);
     assert_eq!(
         silhouette(&model, body, &vector(0, 0, 0), &mut Decider::default())
             .unwrap_err()
@@ -242,7 +267,6 @@ fn invalid_coplanar_and_starved_requests_keep_typed_evidence() {
             &model,
             body,
             &plane(point(0, 0, 1), vector(0, 0, 0)),
-            &Accuracy::default(),
             &mut Decider::default()
         )
         .unwrap_err()
@@ -285,7 +309,6 @@ fn empty_bodies_have_empty_curves_zero_overlap_and_no_contacts() {
             &model,
             body,
             &plane(point(0, 0, 0), vector(0, 0, 1)),
-            &Accuracy::default(),
             &mut Decider::default()
         )
         .unwrap()
@@ -331,7 +354,6 @@ fn tangent_section_keeps_the_isolated_contact_point() {
         &model,
         body,
         &plane(point(0, 0, 5), vector(0, 0, 1)),
-        &Accuracy::default(),
         &mut Decider::default(),
     )
     .unwrap();
@@ -363,7 +385,6 @@ fn construction_marks_survive_each_query() {
         &model,
         body,
         &plane(point(0, 0, 1), vector(0, 0, 1)),
-        &accuracy,
         &mut dec,
     )
     .unwrap();

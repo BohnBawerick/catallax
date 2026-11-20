@@ -1008,14 +1008,17 @@ pub(super) fn build(
         weight: Rational::zero(),
     };
     let recorded = recorded(body, (d, &[]), errors, options, w.dec)?;
-    let description = format!(
-        "{description}{}{}",
-        recorded_stamp(&recorded),
-        stamp_extras(options)
-    );
+    let description = format!("{description}{}", stamp_extras(options));
+    let record = recorded_stamp(&recorded);
     let uncertainty_text = crate::number::decimal(&recorded.text);
     let mut file = w.graph.write(&[solid], |roots| {
-        file_header(body, options, roots, &description, &uncertainty_text)
+        file_header(
+            body,
+            options,
+            roots,
+            [&description, &record],
+            &uncertainty_text,
+        )
     });
     file.push_str("ENDSEC;\nEND-ISO-10303-21;\n");
     // The canonical projected vertex walk checks finite trim topology. Actual

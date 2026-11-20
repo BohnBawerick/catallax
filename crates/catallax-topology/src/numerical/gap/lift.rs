@@ -10,7 +10,9 @@
 use super::numeric::{
     TRIG_ROUNDINGS, UNIT_ROUNDOFF, basis_functions, find_span, roundings, sin_cos,
 };
-use super::{EdgeCopies, FaceCopyRef, GapSurface, unsupported};
+use super::{
+    EdgeCopies, FaceCopyRef, GapCurve, GapSurface, SampledCurve, SampledSurface, unsupported,
+};
 use crate::numerical::BITS;
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal};
 use catallax_shapes::{BSplineCurve, BSplineSurface, Curve, Point3, Surface, Vector3};
@@ -49,6 +51,9 @@ pub(super) enum Curve64 {
         minor: [f64; 3],
     },
     Spline(Spline<4>),
+    /// A curve with no kernel form, read through its own evaluator in the
+    /// frame that evaluator works in.
+    Sampled(SampledCurve),
 }
 
 /// The kinds of surface of revolution and their two radii.
@@ -76,6 +81,9 @@ pub(super) enum Surface64 {
         sizes: [f64; 2],
     },
     Spline(Net),
+    /// A surface with no kernel form, read through its own evaluator in the
+    /// frame that evaluator works in.
+    Sampled(SampledSurface),
 }
 
 pub(super) enum Face64 {
@@ -298,7 +306,21 @@ fn face_start(copies: &EdgeCopies<'_>, dec: &mut Decider) -> Result<[Rational; 2
 
 /// Rounds both copies and the surface to binary64 about a local origin.
 pub(super) fn lift(copies: &EdgeCopies<'_>, dec: &mut Decider) -> Result<Lifted, Refusal> {
-    let origin = match copies.curve {
+    let source = match (copies.curve, copies.surface) {
+        (GapCurve::Sampled(curve), GapSurface::Sampled(surface)) => {
+            return lift_sampled(copies, curve, surface, dec);
+        }
+        // An evaluator works in its owner's frame, and a kernel carrier is
+        // shifted here to a frame of its own: the two cannot be read
+        // against each other.
+        (GapCurve::Sampled(_), _) | (_, GapSurface::Sampled(_)) => {
+            return Err(unsupported(
+                "a sampled carrier is read against a sampled carrier in the same frame",
+            ));
+        }
+        (GapCurve::Kernel(source), _) => source,
+    };
+    let origin = match source {
         Curve::Line(line) => rational_point(&line.origin, dec)?,
         Curve::Circle(circle) => rational_point(&circle.center, dec)?,
         Curve::Ellipse(ellipse) => rational_point(&ellipse.center, dec)?,
@@ -306,7 +328,7 @@ pub(super) fn lift(copies: &EdgeCopies<'_>, dec: &mut Decider) -> Result<Lifted,
         _ => return Err(unsupported("the 3D copy has no parameter evaluator")),
     };
     let zero = Ball::from_rational(&Rational::zero(), BITS);
-    let curve = match copies.curve {
+    let curve = match source {
         Curve::Line(line) => {
             let dir = &line.dir;
             Curve64::Line {
@@ -458,7 +480,19 @@ pub(super) fn lift(copies: &EdgeCopies<'_>, dec: &mut Decider) -> Result<Lifted,
             )?
         }
         GapSurface::Kernel(_) => return Err(unsupported("the surface has no chart evaluator")),
+        GapSurface::Sampled(_) => unreachable!("refused above"),
     };
+    lifted(copies, curve, surface, shift, dec)
+}
+
+/// The face copy rounded about the u/v shift, and the edge's parameters.
+fn lifted(
+    copies: &EdgeCopies<'_>,
+    curve: Curve64,
+    surface: Surface64,
+    shift: [Rational; 2],
+    dec: &mut Decider,
+) -> Result<Lifted, Refusal> {
     let face = match copies.face_copy {
         FaceCopyRef::Native(source) => Face64::Native(spline_curve(source, &shift, dec)?),
         FaceCopyRef::Linear(ends) => {
@@ -489,6 +523,24 @@ pub(super) fn lift(copies: &EdgeCopies<'_>, dec: &mut Decider) -> Result<Lifted,
         low: [low[0], low[1]],
         shift,
     })
+}
+
+/// Both copies of an edge use whose 3D curve and surface are read through
+/// their own evaluators. Nothing is shifted: the evaluators share a frame of
+/// their owner's choice, and the face copy keeps the surface's own u/v.
+fn lift_sampled(
+    copies: &EdgeCopies<'_>,
+    curve: &SampledCurve,
+    surface: &SampledSurface,
+    dec: &mut Decider,
+) -> Result<Lifted, Refusal> {
+    lifted(
+        copies,
+        Curve64::Sampled(curve.clone()),
+        Surface64::Sampled(surface.clone()),
+        [Rational::zero(), Rational::zero()],
+        dec,
+    )
 }
 
 fn dot(a: &[f64; 3], b: &[f64; 3]) -> f64 {
@@ -631,6 +683,10 @@ impl Surface64 {
     pub(super) fn point(&self, uv: [f64; 2], scratch: &mut Scratch) -> Bounded<[f64; 3]> {
         match self {
             Self::Spline(net) => net.point(uv[0], uv[1], scratch),
+            Self::Sampled(sampled) => {
+                let (value, error) = (sampled.point)(uv);
+                Bounded { value, error }
+            }
             Self::Plane { origin, frame } => {
                 let value = std::array::from_fn(|axis| {
                     origin[axis] + uv[0] * frame[0][axis] + uv[1] * frame[1][axis]
@@ -784,6 +840,10 @@ impl Curve64 {
                     value: [value[0], value[1], value[2]],
                     error,
                 }
+            }
+            Self::Sampled(sampled) => {
+                let (value, error) = (sampled.point)(t);
+                Bounded { value, error }
             }
         }
     }

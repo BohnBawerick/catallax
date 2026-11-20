@@ -322,6 +322,7 @@ ENDSEC;END-ISO-10303-21;";
                 warnings: vec![],
                 native_trims: vec![],
                 native_domains: vec![],
+                import_gaps: vec![],
             };
             let mut vertices = body
                 .vertices

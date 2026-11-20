@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use catallax_numbers::{Decider, Rational};
+use catallax_topology::numerical as n;
 
 use crate::geometry_source::{AngleUnit, Curve as SourceCurve, Geometry, ParsedStep, Topology};
 use crate::{Curve, Placement, Surface};
@@ -15,6 +16,7 @@ use super::{
 };
 
 mod crossing;
+mod import_gap;
 mod poles;
 mod trace;
 
@@ -27,6 +29,9 @@ pub(super) struct Context<'a> {
     pub(super) curves: BTreeMap<u64, Arc<NativeCurve>>,
     surfaces: BTreeMap<u64, Arc<NativeSurface>>,
     pcurves: BTreeMap<u64, Arc<NativeUvCurve>>,
+    /// Binary64 readings of source curves and surfaces for the gap rule.
+    curves64: BTreeMap<u64, Arc<super::super::native::Binary64Carrier>>,
+    surfaces64: BTreeMap<u64, Arc<super::super::native::Binary64Carrier>>,
     repair_cap: f64,
     pub(super) stage: super::NativeStage,
     pub(super) repair_boundaries: bool,
@@ -52,6 +57,8 @@ impl<'a> Context<'a> {
             curves,
             surfaces: BTreeMap::new(),
             pcurves: BTreeMap::new(),
+            curves64: BTreeMap::new(),
+            surfaces64: BTreeMap::new(),
             repair_cap,
             stage: super::NativeStage::BodyBuild,
             repair_boundaries: true,
@@ -754,9 +761,44 @@ fn pcurves(
     ))
 }
 
+/// The face copy an edge use reads its u/v from.
+enum FaceCopy {
+    /// The source PCURVE, as the file wrote it.
+    File(Arc<NativeUvCurve>),
+    /// The source PCURVE at the parameter of its 3D curve, from the gap rule
+    /// for imports ([`import_gap`]).
+    Reparametrised(super::ReparametrisedTrace),
+}
+
+impl FaceCopy {
+    /// The u/v at a parameter of the 3D curve.
+    fn sample(&self, parameter: f64, dec: &mut Decider) -> Result<[f64; 2], Error> {
+        match self {
+            Self::File(curve) => curve
+                .sample(
+                    NativeLocation {
+                        chart: 0,
+                        parameters: [parameter, 0.0],
+                    },
+                    dec,
+                )
+                .map(|(uv, _)| uv),
+            Self::Reparametrised(trace) => Ok(trace.uv(parameter)),
+        }
+    }
+
+    /// The u/v at a parameter, where the copy has one there.
+    fn hint(&self, parameter: f64, dec: &mut Decider) -> Result<Option<[f64; 2]>, Error> {
+        match self {
+            Self::File(curve) => curve.hint(parameter, dec),
+            Self::Reparametrised(trace) => Ok(Some(trace.uv(parameter))),
+        }
+    }
+}
+
 fn pcurve_seed(
     surface: &NativeSurface,
-    pcurve: Option<&NativeUvCurve>,
+    pcurve: Option<&FaceCopy>,
     parameter: f64,
     previous: Option<NativeLocation>,
     dec: &mut Decider,
@@ -1017,10 +1059,43 @@ pub(super) fn check_body(
                         .get(*occurrence % associated.len().max(1))
                         .copied();
                     *occurrence += 1;
-                    let pcurve = source_pcurve
+                    let file = source_pcurve
                         .map(|entity| context.pcurve(entity, dec))
                         .transpose()?
                         .flatten();
+                    // The gap rule for imports (decision Q9): a file's u/v
+                    // curve is a copy of its own, and nothing ties its
+                    // parameter to the 3D curve's. The rule reads the use's
+                    // two copies before any station compares them at one
+                    // parameter, and a copy at another speed is given the
+                    // 3D curve's parameter here.
+                    let mut gap_rule = None;
+                    let mut pcurve = None;
+                    if let (Some(file), Some(source), Some(native), Some(entity)) =
+                        (&file, source_pcurve, &surface, surface_entity)
+                    {
+                        let used = import_gap::FileUse {
+                            edge,
+                            surface: (entity, native.as_ref()),
+                            pcurve: (source, file.as_ref()),
+                            overshoot_mm: body.options.initial_mm.to_f64_nearest(),
+                        };
+                        match import_gap::read_use(context, &used, dec)? {
+                            Ok(read) => {
+                                pcurve = read.copy.clone().map(FaceCopy::Reparametrised);
+                                gap_rule = Some((source, read));
+                            }
+                            Err(why) => evidence.warnings.push(NativeWarning {
+                                body: Some(body.name.clone()),
+                                scope: format!("{}:{}", face.name, body.edges[usage.edge].name),
+                                code: "import-gap-rule-unread",
+                                detail: format!(
+                                    "the gap rule for imports does not read this edge use: {why}; it is measured at its stations alone"
+                                ),
+                            }),
+                        }
+                    }
+                    let pcurve = pcurve.or(file.map(FaceCopy::File));
                     let mut preserve_pcurve = pcurve.is_some();
                     let mut samples = Vec::with_capacity(STATIONS + 1);
                     for station in 0..=STATIONS {
@@ -1045,7 +1120,7 @@ pub(super) fn check_body(
                             match &surface {
                                 Some(surface) => pcurve_seed(
                                     surface,
-                                    pcurve.as_deref(),
+                                    pcurve.as_ref(),
                                     curve_location.parameters[0],
                                     previous,
                                     dec,
@@ -1055,15 +1130,9 @@ pub(super) fn check_body(
                         } else if station == 0 {
                             match &pcurve {
                                 Some(curve) => {
-                                    let sampled = curve.sample(
-                                        NativeLocation {
-                                            chart: 0,
-                                            parameters: [curve_location.parameters[0], 0.0],
-                                        },
-                                        dec,
-                                    );
+                                    let sampled = curve.sample(curve_location.parameters[0], dec);
                                     let uv = match sampled {
-                                        Ok((uv, _)) => uv,
+                                        Ok(uv) => uv,
                                         Err(error) if super::super::native::control(&error) => {
                                             return Err(error);
                                         }
@@ -1086,7 +1155,7 @@ pub(super) fn check_body(
                             match &surface {
                                 Some(surface) => pcurve_seed(
                                     surface,
-                                    pcurve.as_deref(),
+                                    pcurve.as_ref(),
                                     curve_location.parameters[0],
                                     previous,
                                     dec,
@@ -1187,13 +1256,10 @@ pub(super) fn check_body(
                         if preserve_pcurve {
                             let retained =
                                 (|| {
-                                    let (uv, _) = pcurve.as_ref().expect("retained trace").sample(
-                                        NativeLocation {
-                                            chart: 0,
-                                            parameters: [curve_location.parameters[0], 0.0],
-                                        },
-                                        dec,
-                                    )?;
+                                    let uv = pcurve
+                                        .as_ref()
+                                        .expect("retained trace")
+                                        .sample(curve_location.parameters[0], dec)?;
                                     let surface = surface.as_ref().expect("source pcurve surface");
                                     if surface.periods().into_iter().enumerate().any(
                                         |(axis, period)| {
@@ -1374,6 +1440,52 @@ pub(super) fn check_body(
                                 maximum_residual_mm: format!("{maximum_residual:.17e}"),
                             });
                     }
+                    // The copy the use keeps: the file's, or the file's at
+                    // the 3D curve's parameter. A trace this admission
+                    // rebuilt replaces either.
+                    let kept = pcurve.as_ref().filter(|_| preserve_pcurve);
+                    if let Some((source, read)) = gap_rule {
+                        // "Then continue with the same-parameter gap": rule
+                        // T4's tolerance of the kept copy, as the full
+                        // checker read it, is the edge's.
+                        if kept.is_some() {
+                            edge_tolerances[usage.edge].measure(read.rule.stored_mm())?;
+                        }
+                        evidence.import_gaps.push(super::NativeImportGap {
+                            body: body.name.clone(),
+                            face: face.name.clone(),
+                            edge: body.edges[usage.edge].name.clone(),
+                            boundary: boundary_index,
+                            use_index,
+                            source_pcurve: source,
+                            parametric_mm: read.rule.parametric.stored_mm(),
+                            geometric_mm: read
+                                .rule
+                                .geometric
+                                .as_ref()
+                                .map(|geometric| geometric.reported_mm()),
+                            reparametrised_mm: read
+                                .rule
+                                .reparametrised
+                                .as_ref()
+                                .map(|next| next.stored_mm),
+                            outcome: match read.rule.outcome {
+                                None => "as-imported",
+                                Some(n::ImportGapOutcome::Geometric) => "geometric",
+                                Some(n::ImportGapOutcome::Reparametrised) => "reparametrised",
+                                Some(
+                                    n::ImportGapOutcome::NotLowered
+                                    | n::ImportGapOutcome::NotAdmitted,
+                                ) => "not-lowered",
+                            },
+                            kept: kept.is_some(),
+                            work: read.rule.work,
+                        });
+                    }
+                    let reparametrised = match kept {
+                        Some(FaceCopy::Reparametrised(trace)) => Some(trace.clone()),
+                        _ => None,
+                    };
                     evidence.native_trims.push(NativeTrim {
                         body: body.name.clone(),
                         face: face.name.clone(),
@@ -1381,10 +1493,12 @@ pub(super) fn check_body(
                         use_index,
                         edge: body.edges[usage.edge].name.clone(),
                         forward: usage.forward,
-                        source_pcurve: source_pcurve.filter(|_| preserve_pcurve),
+                        source_pcurve: source_pcurve
+                            .filter(|_| matches!(kept, Some(FaceCopy::File(_)))),
                         samples,
                         reconstructed,
                         projected,
+                        reparametrised,
                     });
                 }
             }
@@ -1680,6 +1794,7 @@ pub(super) fn check_recorded_body(
                         samples,
                         reconstructed: false,
                         projected: None,
+                        reparametrised: None,
                     });
                 }
             }

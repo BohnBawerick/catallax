@@ -42,8 +42,16 @@
 //! above then measures the copy that is kept. All of that draws on the one
 //! work allowance of the edge use ([`Limits`]).
 //!
+//! A carrier with no kernel form, such as an imported surface a reader holds
+//! in the file's own terms, is read through its own binary64 evaluator
+//! ([`SampledCurve`], [`SampledSurface`]). The search is the same: the
+//! carrier states its breaks and its degree, and where it has no degree the
+//! least count of step 4 is taken and step 5 adds points.
+//!
 //! All arithmetic is IEEE basic operations in one thread, so the result is
 //! the same bits on every machine and at any thread count.
+
+use std::sync::Arc;
 
 use catallax_numbers::{Decider, Rational, Refusal};
 use catallax_shapes::{BSplineCurve, BSplineSurface, Curve, Surface};
@@ -122,6 +130,9 @@ impl FramedSurface {
         };
         match &self.surface {
             Surface64::Plane { .. } => return None,
+            Surface64::Sampled(_) => {
+                unreachable!("a framed surface is rounded from a kernel surface")
+            }
             Surface64::Spline(net) => {
                 for control in net.controls_over(rect) {
                     let w = control[3];
@@ -239,6 +250,7 @@ impl FramedCurve {
         let degree = match &curve {
             Curve64::Line { .. } => 1,
             Curve64::Conic { .. } => 2,
+            Curve64::Sampled(_) => unreachable!("a framed curve is rounded from a kernel curve"),
             Curve64::Spline(spline) => {
                 for knot in &spline.knots {
                     if *knot > range[0] && *knot < range[1] && breaks.last() != Some(knot) {
@@ -298,6 +310,7 @@ impl FramedCurve {
                     take([control[0] / w, control[1] / w, control[2] / w], [0.0; 3]);
                 }
             }
+            Curve64::Sampled(_) => unreachable!("a framed curve is rounded from a kernel curve"),
         }
         std::array::from_fn(|axis| {
             let slack = BOX_ROUNDINGS
@@ -308,6 +321,84 @@ impl FramedCurve {
     }
 }
 
+/// The binary64 evaluator of a 3D curve with no kernel form: the point at a
+/// parameter, and a bound on the rounding error of that point.
+pub type CurveEvaluator = Arc<dyn Fn(f64) -> ([f64; 3], f64) + Send + Sync>;
+
+/// The binary64 evaluator of a surface with no kernel form: the point at a
+/// u/v, and a bound on the rounding error of that point. It answers at every
+/// u/v it is asked, continuing past its own borders as it sees fit.
+pub type SurfaceEvaluator = Arc<dyn Fn([f64; 2]) -> ([f64; 3], f64) + Send + Sync>;
+
+/// A 3D curve read through its own evaluator.
+///
+/// A reader of a foreign file holds carriers the kernel has no form for: an
+/// offset curve, a curve on a swept surface, a curve in the file's own
+/// parameter units. The checker reads such a curve at the points it chooses,
+/// as it reads a kernel curve. What it needs of the shape is stated here, so
+/// the point count still depends on the shape alone (decision Q22, guard 2).
+///
+/// The evaluator gives points in a frame of its owner's choice. The surface
+/// of the same edge use is then a [`SampledSurface`] in the same frame: the
+/// checker cannot shift an evaluator to a local frame of its own (rule T1).
+#[derive(Clone)]
+pub struct SampledCurve {
+    /// The point at a parameter and its rounding bound.
+    pub point: CurveEvaluator,
+    /// Parameters at which the curve changes piece: its knots, the borders
+    /// of its charts, the joints of a traced curve. In any order; those
+    /// outside the edge are not used.
+    pub breaks: Vec<f64>,
+    /// The polynomial degree of its pieces. Zero for a curve that has none,
+    /// as for a circle.
+    pub degree: usize,
+}
+
+impl std::fmt::Debug for SampledCurve {
+    fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        out.debug_struct("SampledCurve")
+            .field("breaks", &self.breaks)
+            .field("degree", &self.degree)
+            .finish_non_exhaustive()
+    }
+}
+
+/// A surface read through its own evaluator. See [`SampledCurve`].
+#[derive(Clone)]
+pub struct SampledSurface {
+    /// The point at a u/v and its rounding bound.
+    pub point: SurfaceEvaluator,
+    /// The values of u, then of v, at which the surface changes piece: its
+    /// knot lines, the borders of its charts and its pole lines. A face copy
+    /// is cut where it crosses one (section 4.2 step 3).
+    pub lines: [Vec<f64>; 2],
+    /// The period of u, then of v, where the surface closes on itself. Every
+    /// whole number of periods is a seam, and a face copy is cut there too.
+    pub periods: [Option<f64>; 2],
+    /// The sum of its two polynomial degrees. Zero for a surface that has
+    /// none, as for a cylinder.
+    pub degree: usize,
+}
+
+impl std::fmt::Debug for SampledSurface {
+    fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        out.debug_struct("SampledSurface")
+            .field("lines", &self.lines)
+            .field("periods", &self.periods)
+            .field("degree", &self.degree)
+            .finish_non_exhaustive()
+    }
+}
+
+/// The 3D copy of an edge.
+#[derive(Clone, Copy, Debug)]
+pub enum GapCurve<'a> {
+    /// A kernel curve: a line, a circle, an ellipse or a B-spline.
+    Kernel(&'a Curve),
+    /// A curve read through its own evaluator.
+    Sampled(&'a SampledCurve),
+}
+
 /// The surface a face copy is lifted through.
 #[derive(Clone, Copy, Debug)]
 pub enum GapSurface<'a> {
@@ -315,6 +406,8 @@ pub enum GapSurface<'a> {
     Kernel(&'a Surface),
     /// A spline carrier on its own.
     Carrier(&'a BSplineSurface),
+    /// A surface read through its own evaluator.
+    Sampled(&'a SampledSurface),
 }
 
 /// The copy of an edge in a face's parameters.
@@ -332,8 +425,8 @@ pub enum FaceCopyRef<'a> {
 /// The two copies of one edge use.
 #[derive(Clone, Copy, Debug)]
 pub struct EdgeCopies<'a> {
-    /// The 3D copy: a line, a circle, an ellipse or a B-spline.
-    pub curve: &'a Curve,
+    /// The 3D copy.
+    pub curve: GapCurve<'a>,
     /// Edge parameters in traversal order.
     pub parameters: [&'a Rational; 2],
     /// The surface of the face.
@@ -522,6 +615,7 @@ fn shape(lifted: &Lifted) -> PieceShape {
         Curve64::Line { .. } => 1,
         Curve64::Conic { .. } => 0,
         Curve64::Spline(spline) => spline.degree,
+        Curve64::Sampled(sampled) => sampled.degree,
     };
     PieceShape {
         curve,
@@ -535,6 +629,7 @@ fn shape(lifted: &Lifted) -> PieceShape {
             Surface64::Plane { .. } => 1,
             Surface64::Revolved { .. } => 0,
             Surface64::Spline(net) => net.degrees[0] + net.degrees[1],
+            Surface64::Sampled(sampled) => sampled.degree,
         },
     }
 }
@@ -544,12 +639,32 @@ fn shape(lifted: &Lifted) -> PieceShape {
 /// the edge's own scale and leave no room for an interior sample.
 const NARROWEST_PIECE: f64 = 1.0 / ((1_u64 << 45) as f64);
 
-/// The values of one surface parameter, within `range`, at which the lifted
-/// curve is cut: knot lines and domain borders of a spline surface, the seam
-/// of a periodic chart, and the pole lines of a sphere or a cone.
+/// The seams of a periodic parameter within `range`: every whole number of
+/// `turn`. One spare turn covers the rounding of the two quotients.
 ///
 /// The number of seams is fixed before any is listed. A face copy that winds
 /// around its surface more than `most` times is refused, not walked.
+fn seams(turn: f64, range: [f64; 2], most: u64, out: &mut Vec<f64>) -> Result<(), Refusal> {
+    let first = (range[0] / turn).ceil();
+    let turns = (range[1] / turn).floor() - first + 2.0;
+    if !turns.is_finite() || turns > most as f64 {
+        return Err(work_cap(
+            "a face copy winds around its surface more often than its edge may be cut",
+        ));
+    }
+    for index in 0..turns.max(0.0) as u64 {
+        let seam = (first + index as f64) * turn;
+        if seam <= range[1] {
+            out.push(seam);
+        }
+    }
+    Ok(())
+}
+
+/// The values of one surface parameter, within `range`, at which the lifted
+/// curve is cut: knot lines and domain borders of a spline surface, the seam
+/// of a periodic chart, and the pole lines of a sphere or a cone. A sampled
+/// surface states its own lines and periods.
 fn cut_lines(
     surface: &Surface64,
     axis: usize,
@@ -566,21 +681,8 @@ fn cut_lines(
         Surface64::Revolved { kind, .. } => {
             let turn = 2.0 * std::f64::consts::PI;
             if axis == 0 {
-                // The seam, u = 0 modulo one turn. One spare turn covers
-                // the rounding of the two quotients.
-                let first = (range[0] / turn).ceil();
-                let turns = (range[1] / turn).floor() - first + 2.0;
-                if !turns.is_finite() || turns > most as f64 {
-                    return Err(work_cap(
-                        "a face copy winds around its surface more often than its edge may be cut",
-                    ));
-                }
-                for index in 0..turns.max(0.0) as u64 {
-                    let seam = (first + index as f64) * turn;
-                    if seam <= range[1] {
-                        out.push(seam);
-                    }
-                }
+                // The seam, u = 0 modulo one turn.
+                seams(turn, range, most, out)?;
             } else {
                 let poles: &[f64] = match kind {
                     Revolved::Sphere => {
@@ -590,6 +692,20 @@ fn cut_lines(
                     _ => &[],
                 };
                 out.extend(poles.iter().copied().filter(|pole| within(*pole)));
+            }
+        }
+        Surface64::Sampled(sampled) => {
+            out.extend(
+                sampled.lines[axis]
+                    .iter()
+                    .copied()
+                    .filter(|line| within(*line)),
+            );
+            if let Some(turn) = sampled.periods[axis] {
+                if !(turn.is_finite() && turn > 0.0) {
+                    return Err(unsupported("a sampled surface has no finite period"));
+                }
+                seams(turn, range, most, out)?;
             }
         }
     }
@@ -700,8 +816,10 @@ fn breaks(search: &mut Search<'_>, hints: &Hints, dec: &mut Decider) -> Result<V
     }
     let inside = |t: &f64| *t > lo && *t < hi;
     let mut cuts = vec![lo, hi];
-    if let Curve64::Spline(spline) = &lifted.curve {
-        cuts.extend(spline.knots.iter().copied().filter(inside));
+    match &lifted.curve {
+        Curve64::Spline(spline) => cuts.extend(spline.knots.iter().copied().filter(inside)),
+        Curve64::Sampled(sampled) => cuts.extend(sampled.breaks.iter().copied().filter(inside)),
+        Curve64::Line { .. } | Curve64::Conic { .. } => (),
     }
     if let Face64::Native(spline) = &lifted.face {
         cuts.extend(spline.knots.iter().copied().filter(inside));

@@ -92,6 +92,91 @@ pub struct NativeTrim {
     pub reconstructed: bool,
     /// Plane projection keeps the source spline's exact knots and weights.
     pub projected: Option<ProjectedTrace>,
+    /// The source PCURVE at the parameter of its 3D curve, where the gap
+    /// rule for imports gave the use one (decision Q9). It replaces the
+    /// source PCURVE as the use's face copy.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reparametrised: Option<ReparametrisedTrace>,
+}
+
+/// A face copy in the parameter of its 3D curve: a polynomial B-spline in the
+/// surface's original UV units, with knots in the 3D curve's native
+/// parameter.
+#[derive(Clone, Debug, Serialize)]
+pub struct ReparametrisedTrace {
+    /// Polynomial degree.
+    pub degree: usize,
+    /// Full knot vector, ascending.
+    pub knots: Vec<f64>,
+    /// Controls in the surface's original UV units.
+    pub controls: Vec<[f64; 2]>,
+    /// Spans the change of parameter took.
+    pub spans: usize,
+}
+
+impl ReparametrisedTrace {
+    /// The UV at a parameter of the 3D curve, by de Boor's recurrence
+    /// (Piegl and Tiller, "The NURBS Book", algorithm A3.1). Past either end
+    /// the end span's polynomial continues.
+    pub fn uv(&self, parameter: f64) -> [f64; 2] {
+        let (degree, knots) = (self.degree, &self.knots);
+        let last = self.controls.len() - 1;
+        let mut span = degree;
+        while span < last && parameter >= knots[span + 1] {
+            span += 1;
+        }
+        let mut points: Vec<[f64; 2]> = self.controls[span - degree..=span].to_vec();
+        for round in 1..=degree {
+            for index in (round..=degree).rev() {
+                let low = knots[span + index - degree];
+                let high = knots[span + 1 + index - round];
+                let share = (parameter - low) / (high - low);
+                points[index] = std::array::from_fn(|axis| {
+                    (1.0 - share) * points[index - 1][axis] + share * points[index][axis]
+                });
+            }
+        }
+        points[degree]
+    }
+}
+
+/// What the gap rule for imports read of one edge use that carries a source
+/// PCURVE (decision Q9, and section 4.2 step 2 of the Checkpoint 2
+/// decisions): "measure the geometric gap both ways, reparametrise, then
+/// continue with the same-parameter gap".
+#[derive(Clone, Debug, Serialize)]
+pub struct NativeImportGap {
+    /// Source body.
+    pub body: String,
+    /// Source face.
+    pub face: String,
+    /// Source edge.
+    pub edge: String,
+    /// Source boundary index.
+    pub boundary: usize,
+    /// Position in the boundary.
+    pub use_index: usize,
+    /// The source PCURVE that was read.
+    pub source_pcurve: u64,
+    /// Rule T4's tolerance of the same-parameter gap of the source PCURVE,
+    /// as the A+ checker read it, in millimetres.
+    pub parametric_mm: f64,
+    /// The geometric gap, the larger of its two directions with its
+    /// rounding error, in millimetres. Absent where the rule leaves the use
+    /// as it is: a tolerance at rule T1's least floor, or a straight
+    /// residual.
+    pub geometric_mm: Option<f64>,
+    /// Rule T4's tolerance of the same-parameter gap of the copy in the 3D
+    /// curve's parameter, where one was made, in millimetres.
+    pub reparametrised_mm: Option<f64>,
+    /// `as-imported`, `geometric`, `reparametrised` or `not-lowered`.
+    pub outcome: &'static str,
+    /// Whether the copy the rule read is the use's face copy. `false` where
+    /// this admission then rebuilt the trace from the 3D curve, so the
+    /// reading describes a copy the use no longer has.
+    pub kept: bool,
+    /// Work counted against the use's one allowance.
+    pub work: u64,
 }
 
 /// A plane trace that preserves the source curve's parameterization.
@@ -165,10 +250,14 @@ pub struct TolerantEvidence {
     pub native_trims: Vec<NativeTrim>,
     /// Natural domains whose opposing rims or poles were sampled for closure.
     pub native_domains: Vec<NativeDomain>,
+    /// The gap rule's reading of every edge use that carries a source
+    /// PCURVE the checker reads.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub import_gaps: Vec<NativeImportGap>,
 }
 
 impl TolerantEvidence {
-    fn checkpoint(&self) -> [usize; 8] {
+    fn checkpoint(&self) -> [usize; 9] {
         [
             self.tolerances.len(),
             self.sampled_checks.len(),
@@ -178,9 +267,10 @@ impl TolerantEvidence {
             self.warnings.len(),
             self.native_trims.len(),
             self.native_domains.len(),
+            self.import_gaps.len(),
         ]
     }
-    fn rollback(&mut self, lengths: [usize; 8]) {
+    fn rollback(&mut self, lengths: [usize; 9]) {
         self.tolerances.truncate(lengths[0]);
         self.sampled_checks.truncate(lengths[1]);
         self.repairs.truncate(lengths[2]);
@@ -189,6 +279,7 @@ impl TolerantEvidence {
         self.warnings.truncate(lengths[5]);
         self.native_trims.truncate(lengths[6]);
         self.native_domains.truncate(lengths[7]);
+        self.import_gaps.truncate(lengths[8]);
     }
 }
 
@@ -575,7 +666,9 @@ pub fn import_step(
     dec: &mut Decider,
 ) -> Result<TolerantImport, Error> {
     let (parsed, source, angles) = prepare(bytes, expected_sha256, options, dec)?;
-    let recorded = crate::recorded::recorded_tolerance(bytes);
+    // The record is in the file's length unit, which this reading has.
+    let recorded = crate::recorded::written_tolerance(bytes)
+        .and_then(|written| written.in_millimetres(&source.mm_per_unit));
     let imported = admit(
         parsed,
         source,
@@ -689,6 +782,7 @@ pub(crate) fn admit(
         warnings: Vec::new(),
         native_trims: Vec::new(),
         native_domains: Vec::new(),
+        import_gaps: Vec::new(),
     };
     let mut bodies = Vec::with_capacity(source.bodies.len());
     let mut body_errors = vec![None; source.bodies.len()];

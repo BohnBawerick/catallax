@@ -15,10 +15,10 @@ use catallax_import::{
 };
 use catallax_numbers::{Decider, NumericalCheck, OperationWork, Rational, with_operation_budget};
 use catallax_recipe::StepId;
-use catallax_step::numerical::{self, NumericalStepOptions};
+use catallax_step::numerical::{self, LengthScale, NumericalStepOptions};
 use catallax_topology::numerical::{
     self as n, NumericalBody, NumericalOptions,
-    tolerance::{RECORDED_USE, RECORDED_VERTEX},
+    tolerance::{RECORDED_USE, RECORDED_VERTEX, ReceiverProfile},
 };
 use fixture::{q, quarter};
 
@@ -82,7 +82,13 @@ fn names(body: &NumericalBody) -> Vec<&str> {
 /// exact and the certified import takes it; this one has a real gap, so the
 /// numerical import takes it.
 fn gapped_quarter() -> NumericalBody {
+    gapped_quarter_named(&quarter().name)
+}
+
+/// [`gapped_quarter`] under a name of the caller's.
+fn gapped_quarter_named(name: &str) -> NumericalBody {
     let mut definition = quarter();
+    definition.name = name.into();
     let side = definition
         .faces
         .iter_mut()
@@ -362,6 +368,180 @@ fn a_body_the_reader_cannot_take_as_written_is_measured() {
     );
 }
 
+/// One straight u/v curve of the spline face, written again as a quadratic
+/// that traces the same segment at another speed: its middle control sits
+/// four tenths of the way along, so the copy lags its edge by up to a
+/// twentieth of the segment at the same parameter.
+fn with_one_uv_curve_at_another_speed(text: &str) -> String {
+    let curve = text
+        .lines()
+        .find(|line| {
+            line.contains("=B_SPLINE_CURVE_WITH_KNOTS('',1,") && line.contains("(2,2),(0.,1.),")
+        })
+        .expect("a straight u/v curve over the edge's interval");
+    let controls = curve
+        .split("'',1,(")
+        .nth(1)
+        .and_then(|rest| rest.split(')').next())
+        .expect("two controls");
+    let ends: Vec<&str> = controls.split(',').collect();
+    assert_eq!(ends.len(), 2, "{curve}");
+    let uv = |name: &str| -> [f64; 2] {
+        let line = text
+            .lines()
+            .find(|line| line.starts_with(&format!("{name}=CARTESIAN_POINT(")))
+            .expect("a control point");
+        let inner = line
+            .rsplit("(")
+            .next()
+            .and_then(|rest| rest.split(')').next())
+            .expect("coordinates");
+        let values: Vec<f64> = inner.split(',').map(|x| x.parse().unwrap()).collect();
+        [values[0], values[1]]
+    };
+    let (first, last) = (uv(ends[0]), uv(ends[1]));
+    let middle = [0, 1].map(|axis| first[axis] + 0.4 * (last[axis] - first[axis]));
+    let next = text
+        .lines()
+        .filter_map(|line| {
+            line.strip_prefix('#')?
+                .split('=')
+                .next()?
+                .parse::<u64>()
+                .ok()
+        })
+        .max()
+        .expect("an entity")
+        + 1;
+    let quadratic = curve
+        .replace(
+            &format!("'',1,({controls})"),
+            &format!("'',2,({},#{next},{})", ends[0], ends[1]),
+        )
+        .replace("(2,2),(0.,1.),", "(3,3),(0.,1.),");
+    assert_ne!(quadratic, curve);
+    text.replace(
+        curve,
+        &format!(
+            "#{next}=CARTESIAN_POINT('',({:.17},{:.17}));\n{quadratic}",
+            middle[0], middle[1]
+        ),
+    )
+}
+
+/// A file that records nothing is an import, and its u/v curves are copies
+/// of its own (decision Q9: "Imports: geometric gap first; if the parametric
+/// gap is much larger, reparametrise instead of raising the tolerance").
+/// The native tolerant admission reads every edge use that carries one
+/// through the gap rule for imports, the code the numerical import runs.
+///
+/// The spline-topped tube as written has every u/v curve at its edge's
+/// speed, and the rule keeps them all. With one of them at another speed the
+/// same-parameter gap is tenths of a millimetre and the geometric gap is the
+/// micrometre the top is off its edges. That copy is given its edge's
+/// parameter. The edge's tolerance covers the micrometre and not the speed,
+/// and the trace is not rebuilt from the 3D curve.
+#[test]
+fn a_file_that_records_nothing_is_read_by_the_gap_rule_for_imports() {
+    let body = spline_topped_tube();
+    let (bytes, _) = written(&body);
+    let plain = unstamped(&bytes);
+
+    let (opened, _) = open(&plain);
+    let import = opened
+        .tolerant_admission()
+        .expect("the native admission ran");
+    let evidence = import.evidence();
+    assert!(!evidence.import_gaps.is_empty());
+    for row in &evidence.import_gaps {
+        assert!(row.kept, "{row:?}");
+        assert_ne!(row.outcome, "reparametrised", "{row:?}");
+        assert!(row.parametric_mm < 2e-6, "{row:?}");
+    }
+    assert!(
+        evidence
+            .native_trims
+            .iter()
+            .all(|trim| trim.reparametrised.is_none())
+    );
+    assert!(
+        evidence
+            .warnings
+            .iter()
+            .all(|warning| warning.code != "import-gap-rule-unread"),
+        "{:?}",
+        evidence.warnings
+    );
+
+    let stretched =
+        with_one_uv_curve_at_another_speed(std::str::from_utf8(&plain).unwrap()).into_bytes();
+    let (opened, work) = open(&stretched);
+    let import = opened
+        .tolerant_admission()
+        .expect("the native admission ran");
+    assert_eq!(import.bodies().len(), 1, "{:?}", opened.first_refusal());
+    let evidence = import.evidence();
+    let changed: Vec<_> = evidence
+        .import_gaps
+        .iter()
+        .filter(|row| row.outcome == "reparametrised")
+        .collect();
+    assert_eq!(changed.len(), 1, "{:?}", evidence.import_gaps);
+    let row = changed[0];
+    let geometric = row.geometric_mm.expect("a geometric reading");
+    let next = row
+        .reparametrised_mm
+        .expect("a copy in the edge's parameter");
+    println!(
+        "tube with one u/v curve at another speed: same-parameter {:.6e} mm stored, geometric {:.6e} mm, reparametrised {:.6e} mm stored, {} units; native admission {} work, whole reopen {} work",
+        row.parametric_mm,
+        geometric,
+        next,
+        row.work,
+        opened.native_admission_work_used(),
+        work.used
+    );
+    assert!(row.kept, "{row:?}");
+    assert!(row.parametric_mm > 0.05, "{row:?}");
+    // The top is a micrometre off its edges: that is the geometric gap, and
+    // the new copy stores rule T4's tolerance of it.
+    assert!((0.9e-6..1.1e-6).contains(&geometric), "{row:?}");
+    assert!(next >= 1.1 * 0.9e-6 && next <= 1.21 * geometric, "{row:?}");
+
+    // The use holds the file's curve at its edge's parameter: no source
+    // PCURVE, and no trace rebuilt from the 3D curve.
+    let trim = evidence
+        .native_trims
+        .iter()
+        .find(|trim| {
+            trim.face == row.face
+                && trim.boundary == row.boundary
+                && trim.use_index == row.use_index
+        })
+        .expect("the use");
+    assert!(trim.reparametrised.is_some());
+    assert!(trim.source_pcurve.is_none());
+    assert!(!trim.reconstructed);
+    assert!(evidence.repairs.is_empty(), "{:?}", evidence.repairs);
+    // The edge's tolerance covers the new copy's gap, and nothing of the
+    // tenths of a millimetre of speed.
+    let edge = evidence
+        .tolerances
+        .iter()
+        .find(|entity| entity.kind == "edge" && entity.entity == row.edge)
+        .expect("the edge");
+    assert!(edge.tolerance_mm >= next, "{edge:?}");
+    assert!(edge.tolerance_mm < 1e-5, "{edge:?}");
+
+    // The body's own STEP export writes the copy it holds.
+    let exported = import.export_step(&mut Decider::default()).unwrap();
+    assert!(
+        std::str::from_utf8(exported.bytes())
+            .unwrap()
+            .contains("source trace in the parameter of its 3D curve")
+    );
+}
+
 /// Nothing binds the record to the geometry under it (owner ruling of 20
 /// November 2026: no binding and no fingerprint). A file whose wall was
 /// moved by hand after export still opens with the tolerance it records, as
@@ -419,6 +599,95 @@ fn nothing_binds_the_record_to_the_geometry_under_it() {
     }
     let refusal = import(&unstamped(&moved)).unwrap_err();
     assert!(format!("{refusal:?}").contains("tolerance"), "{refusal:?}");
+}
+
+/// Every tolerance of a body reopened from a file, which must all be the one
+/// the file records.
+fn reopened_at(bytes: &[u8], recorded: &Rational, what: &str) {
+    let read = recorded_tolerance(bytes).unwrap_or_else(|| panic!("{what}: no record"));
+    assert_eq!(&read.tolerance_mm, recorded, "{what}");
+    assert_eq!(read.field, RecordedField::Recorded, "{what}");
+    let (reopened, _) = import(bytes);
+    let entities = &reopened.tolerances().entities;
+    assert!(!entities.is_empty(), "{what}");
+    for entity in entities {
+        assert_eq!(&entity.tolerance_mm, recorded, "{what}: {entity:?}");
+    }
+}
+
+/// The stamp names the body and the receiver, and both names are a caller's
+/// text. Here both look like the writer's own fields, a scale among them.
+/// The file is not scaled, and it reopens with the tolerance its export
+/// reports: the record is a string of its own, and the scale is the file's
+/// length unit.
+#[test]
+fn names_that_look_like_fields_do_not_change_what_an_unscaled_file_records() {
+    let name = "part;scaled_export=x1000;written_values=millimetres;rounding_error_mm=3;recorded_tolerance_mm=5;source_tolerance_mm=7";
+    let body = gapped_quarter_named(name);
+    let (_, plain) = written(&gapped_quarter());
+    let receivers = [
+        None,
+        Some(ReceiverProfile {
+            name: "NX;recorded_tolerance_mm=9;scaled_export=x10;written_values=millimetres".into(),
+            tolerance_mm: q("0.01"),
+        }),
+    ];
+    for receiver in receivers {
+        let what = format!(
+            "receiver {:?}",
+            receiver.as_ref().map(|profile| &profile.name)
+        );
+        let options = NumericalStepOptions {
+            receiver,
+            ..Default::default()
+        };
+        let file = numerical::build(&body, &options, &mut Decider::default()).unwrap();
+        let text = std::str::from_utf8(file.bytes()).unwrap();
+        assert!(text.contains("SI_UNIT(.MILLI.,.METRE.)"), "{what}");
+        assert!(text.contains(name), "{what}");
+        // The name changes nothing the file records.
+        let recorded = file.report().uncertainty_mm.clone();
+        assert_eq!(recorded, plain, "{what}");
+        reopened_at(file.bytes(), &recorded, &what);
+    }
+}
+
+/// A scaled export writes the model's millimetre values under a larger
+/// length unit, and its record is one of those values. The file reopens
+/// with every length, and the record, that many times larger. The body's
+/// name claims another scale, and it is not read.
+#[test]
+fn a_scaled_file_is_reopened_at_the_scale_of_its_length_unit() {
+    let body = gapped_quarter_named("part;scaled_export=x10;written_values=millimetres");
+    let (_, plain) = written(&body);
+    for scale in LengthScale::ALL {
+        let what = format!("{scale:?}");
+        let options = NumericalStepOptions {
+            scale: Some(scale),
+            ..Default::default()
+        };
+        let file = numerical::build(&body, &options, &mut Decider::default()).unwrap();
+        // The written record is the unscaled file's: the model's value.
+        assert_eq!(file.report().uncertainty_mm, plain, "{what}");
+        let recorded = &plain * &Rational::from_i64(scale.factor());
+        reopened_at(file.bytes(), &recorded, &what);
+    }
+
+    // The native tolerant path, at a thousand times.
+    let tube = spline_topped_tube();
+    let (_, plain) = written(&tube);
+    let options = NumericalStepOptions {
+        scale: Some(LengthScale::Thousand),
+        ..Default::default()
+    };
+    let file = numerical::build(&tube, &options, &mut Decider::default()).unwrap();
+    let recorded = &plain * &Rational::from_i64(1000);
+    let (opened, _) = open(file.bytes());
+    let import = opened
+        .tolerant_admission()
+        .expect("the native admission ran");
+    assert_eq!(import.bodies().len(), 1, "{:?}", opened.first_refusal());
+    assert_eq!(import.bodies()[0].recorded_tolerance_mm(), Some(&recorded));
 }
 
 /// SolidDraft's STEP export of the owner's pocket rim rounded at R2, written

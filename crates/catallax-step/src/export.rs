@@ -2008,15 +2008,15 @@ impl<'a> Exporter<'a> {
                     } else {
                         "SHAPE_REPRESENTATION"
                     },
-                    if self.approximate_pipe_ends {
+                    &[if self.approximate_pipe_ends {
                         "approximate pipe end parameter maps; requested distance tolerance applies to samples and fitted components; complete_body_bound=unestablished"
                     } else {
                         "catallax export"
-                    },
+                    }],
                     MILLI,
                 )
             } else if self.approximate_pipe_ends {
-                approximate_header(&self.options.product_name, numbers, "approximate pipe end parameter maps; requested distance tolerance applies to samples and fitted components; complete_body_bound=unestablished", None, MILLI)
+                approximate_header(&self.options.product_name, numbers, &["approximate pipe end parameter maps; requested distance tolerance applies to samples and fitted components; complete_body_bound=unestablished"], None, MILLI)
             } else {
                 header(&self.options.product_name, numbers, &uncertainty)
             }
@@ -2095,7 +2095,7 @@ pub(crate) fn header(product_name: &str, solids: &[usize], uncertainty: &str) ->
         solids,
         Some(uncertainty),
         "ADVANCED_BREP_SHAPE_REPRESENTATION",
-        "catallax export",
+        &["catallax export"],
         MILLI,
     )
 }
@@ -2106,7 +2106,7 @@ fn stand_in_header(product_name: &str, items: &[usize], uncertainty: &str) -> St
         items,
         Some(uncertainty),
         "SHAPE_REPRESENTATION",
-        "catallax export",
+        &["catallax export"],
         MILLI,
     )
 }
@@ -2114,10 +2114,11 @@ fn stand_in_header(product_name: &str, items: &[usize], uncertainty: &str) -> St
 /// The length unit of every file but a scaled numerical export.
 pub(crate) const MILLI: &str = ".MILLI.";
 
+/// `description` is the header's list of description strings, in order.
 pub(crate) fn approximate_header(
     product_name: &str,
     solids: &[usize],
-    description: &str,
+    description: &[&str],
     uncertainty: Option<&str>,
     length_prefix: &str,
 ) -> String {
@@ -2134,7 +2135,7 @@ pub(crate) fn approximate_header(
 pub(crate) fn approximate_surface_header(
     product_name: &str,
     items: &[usize],
-    description: &str,
+    description: &[&str],
     uncertainty: Option<&str>,
     length_prefix: &str,
 ) -> String {
@@ -2153,10 +2154,17 @@ fn representation_header(
     solids: &[usize],
     uncertainty: Option<&str>,
     representation: &str,
-    description: &str,
+    description: &[&str],
     length_prefix: &str,
 ) -> String {
-    let description = string(description);
+    // One STEP string per entry: text inside one entry cannot end it, so an
+    // entry of its own is never mixed with another's text.
+    let description = description
+        .iter()
+        .copied()
+        .map(string)
+        .collect::<Vec<_>>()
+        .join(",");
     let uncertainty_entity = uncertainty.map_or_else(String::new, |value| format!(
         "#13=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE({value}),#10,'distance_accuracy_value','maximum deviation from the exact model');\n"
     ));

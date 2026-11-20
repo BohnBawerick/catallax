@@ -487,7 +487,7 @@ of its 8 mm limit the five-edge rim's export costs 41.8M and its preview 9.9M.
 Constructions are under the 20M target except those two near-limit rows; the
 STEP export, which re-admits the rounded decimals of every face, is over it.
 Since check once (roadmap 3.0A step 5) the export writes the numbers and does
-not admit them again: the R2 rim's export costs 363,084 work, and reopening
-its file 11,489,621 where it took 1,085,655,229. See
+not admit them again: the R2 rim's export costs 363,114 work, and reopening
+its file 11,491,278 where it took 1,085,655,205. See
 [the check-once note](milestones/3.0A-check-once.md).
 A box with all twelve edges rounded stays exact at 9,467 to 13,195 work.

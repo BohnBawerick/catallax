@@ -651,10 +651,19 @@ fn largest_entity_tolerance(body: &NumericalBody, dec: &mut Decider) -> Result<R
     Ok(tolerance::largest_recorded(body.evidence()).max(floor))
 }
 
-/// The stamp's record of the tolerance.
+/// The record of the tolerance: a description string of its own, after the
+/// stamp.
+///
+/// The stamp names the body and the receiver, which are a caller's text, so
+/// a reader cannot tell a field there from a name that looks like one. This
+/// string holds two numbers this writer formats and nothing else. A reader
+/// takes the record from it alone (`catallax_import::recorded`). The values
+/// are in the file's length unit: a scaled export writes the model's
+/// millimetre values under a larger unit, and a reader takes the record that
+/// many times larger with every other length.
 fn recorded_stamp(recorded: &Recorded) -> String {
     format!(
-        ";rounding_error_mm={};recorded_tolerance_mm={}",
+        "catallax recorded tolerance;rounding_error_mm={};recorded_tolerance_mm={}",
         recorded.rounding_text, recorded.text
     )
 }
@@ -892,13 +901,14 @@ fn for_receiver(
     ))
 }
 
-/// The STEP header of a numerical file: its length unit, and, for an export
-/// with a receiver profile, its uncertainty.
+/// The STEP header of a numerical file: its two description strings (the
+/// stamp, then the record of the tolerance), its length unit, and, for an
+/// export with a receiver profile, its uncertainty.
 fn file_header(
     body: &NumericalBody,
     options: &NumericalStepOptions,
     items: &[usize],
-    description: &str,
+    description: [&str; 2],
     uncertainty: &str,
 ) -> String {
     let prefix = options
@@ -911,7 +921,7 @@ fn file_header(
         crate::export::approximate_surface_header(
             &options.product_name,
             items,
-            description,
+            &description,
             uncertainty,
             prefix,
         )
@@ -919,7 +929,7 @@ fn file_header(
         crate::export::approximate_header(
             &options.product_name,
             items,
-            description,
+            &description,
             uncertainty,
             prefix,
         )
@@ -1196,11 +1206,17 @@ impl Writer<'_> {
             } => (definition, native_trims.as_slice()),
         };
         let recorded = recorded(body, written, errors, options, self.dec)?;
-        description.push_str(&recorded_stamp(&recorded));
         description.push_str(&stamp_extras(options));
+        let record = recorded_stamp(&recorded);
         let uncertainty_text = crate::number::decimal(&recorded.text);
         let mut file = self.graph.write(&[solid], |roots| {
-            file_header(body, options, roots, &description, &uncertainty_text)
+            file_header(
+                body,
+                options,
+                roots,
+                [&description, &record],
+                &uncertainty_text,
+            )
         });
         file.push_str("ENDSEC;\nEND-ISO-10303-21;\n");
         let written = if self.audit {

@@ -36,7 +36,12 @@ impl Serialize for Scope<'_> {
             return self.evidence.serialize(serializer);
         };
         let evidence = self.evidence;
-        let mut result = serializer.serialize_struct("TolerantEvidence", 11)?;
+        let fields = if evidence.import_gaps.iter().any(|row| row.body == body) {
+            12
+        } else {
+            11
+        };
+        let mut result = serializer.serialize_struct("TolerantEvidence", fields)?;
         result.serialize_field("method", &evidence.method)?;
         result.serialize_field("source_sha256", &evidence.source_sha256)?;
         result.serialize_field("authority", &evidence.authority)?;
@@ -104,6 +109,16 @@ impl Serialize for Scope<'_> {
                 belongs: |record, body| record.body == body,
             },
         )?;
+        if evidence.import_gaps.iter().any(|row| row.body == body) {
+            result.serialize_field(
+                "import_gaps",
+                &Selected {
+                    records: &evidence.import_gaps,
+                    body,
+                    belongs: |record, body| record.body == body,
+                },
+            )?;
+        }
         result.end()
     }
 }

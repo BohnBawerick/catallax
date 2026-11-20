@@ -525,7 +525,7 @@ fn a_projected_copy_has_no_geometric_reading() {
     );
     let parameters = [Rational::zero(), Rational::one()];
     let copies = gap::EdgeCopies {
-        curve: &curve,
+        curve: gap::GapCurve::Kernel(&curve),
         parameters: parameters.each_ref(),
         surface: gap::GapSurface::Kernel(&surface),
         face_copy: gap::FaceCopyRef::Projected,
@@ -542,4 +542,176 @@ fn a_projected_copy_has_no_geometric_reading() {
             .copy
             .is_none()
     );
+}
+
+/// The arc of [`arc_on_wider_cylinder`] and its cylinder as a reader of a
+/// foreign file holds them: two binary64 evaluators in one frame, with the
+/// shape stated beside them. A circle has no degree and no breaks; the
+/// cylinder closes on itself in u.
+fn sampled_arc(offset: f64) -> (gap::SampledCurve, gap::SampledSurface) {
+    let radius = 10.0_f64;
+    let rounding = 4.0 * f64::EPSILON * (radius + offset);
+    (
+        gap::SampledCurve {
+            point: std::sync::Arc::new(move |t: f64| {
+                ([radius * t.cos(), radius * t.sin(), 0.0], rounding)
+            }),
+            breaks: Vec::new(),
+            degree: 0,
+        },
+        gap::SampledSurface {
+            point: std::sync::Arc::new(move |uv: [f64; 2]| {
+                let r = radius + offset;
+                ([r * uv[0].cos(), r * uv[0].sin(), uv[1]], rounding)
+            }),
+            lines: [Vec::new(), Vec::new()],
+            periods: [Some(std::f64::consts::TAU), None],
+            degree: 0,
+        },
+    )
+}
+
+/// A carrier with no kernel form is read through its own evaluator, by the
+/// same search. The known answer is the arc on its wider cylinder: the
+/// same-parameter gap is the chord, the geometric gap the 1e-4 mm, and the
+/// rule gives the copy the arc's parameter. The plan is the kernel form's,
+/// because the stated shape is the same: no degree, no breaks, one seam.
+#[test]
+fn sampled_carriers_are_read_by_the_same_search_and_the_same_rule() {
+    let (offset, stretch) = (1e-4, 1e-4);
+    let geometry = arc_on_wider_cylinder("1e-4", "1e-4", "0");
+    let kernel = copies(&geometry);
+    let (curve, surface) = sampled_arc(offset);
+    let sampled = gap::EdgeCopies {
+        curve: gap::GapCurve::Sampled(&curve),
+        surface: gap::GapSurface::Sampled(&surface),
+        ..kernel
+    };
+    let mut dec = Decider::default();
+    let by_kernel =
+        gap::measure(&kernel, &Hints::default(), Limits::default(), &mut dec).expect("kernel");
+    let by_evaluator =
+        gap::measure(&sampled, &Hints::default(), Limits::default(), &mut dec).expect("sampled");
+    let chord_mm = chord(10.0, offset, stretch);
+    assert!(
+        (by_evaluator.raw_mm - chord_mm).abs() < 1e-9 * chord_mm,
+        "{by_evaluator:?}"
+    );
+    assert_eq!(by_evaluator.plan, by_kernel.plan);
+    assert_eq!(by_evaluator.method, gap::Method::Sampled);
+
+    let (read, charged) = with_operation_budget(DEFAULT_WORK, || {
+        import_gap::read_import_use(&sampled, Limits::default(), &mut Decider::default())
+    });
+    let read = read.expect("the rule");
+    let geometric = read.geometric.expect("a geometric reading");
+    for way in [geometric.forward_mm, geometric.backward_mm] {
+        assert!((way - offset).abs() < 1e-9 * offset, "{geometric:?}");
+    }
+    assert_eq!(read.outcome, Some(ImportGapOutcome::Reparametrised));
+    let next = read.new_copy().expect("a new copy");
+    assert!(next.stored_mm >= gap::MARGIN * offset, "{}", next.stored_mm);
+    assert!(
+        next.stored_mm <= gap::MARGIN * gap::MARGIN * geometric.reported_mm(),
+        "{}",
+        next.stored_mm
+    );
+    assert_eq!(read.stored_mm(), next.stored_mm);
+    // Every unit the use counts is charged to the operation, with one
+    // deadline poll per charge on top.
+    assert!(charged.used >= read.work, "{charged:?} under {}", read.work);
+    println!(
+        "sampled arc: same-parameter {:.6e} mm, geometric {:.6e} mm, reparametrised {:.6e} mm stored in {} spans, {} units",
+        read.parametric.raw_mm,
+        geometric.reported_mm(),
+        next.stored_mm,
+        next.spans,
+        read.work
+    );
+
+    // One allowance for the use: a unit short of what it took refuses by
+    // name, and nothing read before that stands in for the answer.
+    let short = import_gap::read_import_use(
+        &sampled,
+        Limits {
+            work: read.work - 1,
+        },
+        &mut Decider::default(),
+    );
+    assert_eq!(short.unwrap_err().code, "numerical.gap-work-cap");
+    let full = import_gap::read_import_use(
+        &sampled,
+        Limits { work: read.work },
+        &mut Decider::default(),
+    )
+    .expect("the least allowance");
+    assert_eq!(full.stored_mm().to_bits(), read.stored_mm().to_bits());
+}
+
+/// An evaluator works in its owner's frame and a kernel carrier is shifted
+/// to a frame of the checker's: one of each is refused by name, not read.
+#[test]
+fn a_sampled_carrier_is_not_read_against_a_kernel_carrier() {
+    let geometry = arc_on_wider_cylinder("1e-4", "1e-4", "0");
+    let kernel = copies(&geometry);
+    let (curve, surface) = sampled_arc(1e-4);
+    for mixed in [
+        gap::EdgeCopies {
+            curve: gap::GapCurve::Sampled(&curve),
+            ..kernel
+        },
+        gap::EdgeCopies {
+            surface: gap::GapSurface::Sampled(&surface),
+            ..kernel
+        },
+    ] {
+        let refused = gap::measure(
+            &mixed,
+            &Hints::default(),
+            Limits::default(),
+            &mut Decider::default(),
+        );
+        assert_eq!(refused.unwrap_err().code, "numerical.gap-unsupported");
+    }
+}
+
+/// A sampled surface states its own cut lines: a face copy that crosses one
+/// is cut there, as it is at a knot line of a kernel spline (section 4.2
+/// step 3). A stated break of the 3D curve is a cut too.
+#[test]
+fn a_sampled_carrier_is_cut_at_the_breaks_it_states() {
+    let geometry = arc_on_wider_cylinder("1e-4", "1e-4", "0");
+    let kernel = copies(&geometry);
+    let (mut curve, mut surface) = sampled_arc(1e-4);
+    let plain = gap::EdgeCopies {
+        curve: gap::GapCurve::Sampled(&curve),
+        surface: gap::GapSurface::Sampled(&surface),
+        ..kernel
+    };
+    let mut dec = Decider::default();
+    let before = gap::plan(&plain, &Hints::default(), Limits::default(), &mut dec).expect("plan");
+    curve.breaks = vec![0.25, 7.0];
+    surface.lines[0] = vec![0.5];
+    let cut = gap::EdgeCopies {
+        curve: gap::GapCurve::Sampled(&curve),
+        surface: gap::GapSurface::Sampled(&surface),
+        ..kernel
+    };
+    let after = gap::plan(&cut, &Hints::default(), Limits::default(), &mut dec).expect("plan");
+    assert_eq!(after.len(), before.len() + 2, "{after:?}");
+    assert!(
+        after
+            .iter()
+            .any(|piece| piece.piece[1].to_bits() == 0.25_f64.to_bits())
+    );
+    // The copy's angle reaches 0.5 near, not at, the parameter 0.5: it runs
+    // up to 1e-4 rad ahead.
+    assert!(
+        after
+            .iter()
+            .any(|piece| (piece.piece[1] - 0.5).abs() < 1e-3 && (piece.piece[1] - 0.5).abs() > 0.0),
+        "{after:?}"
+    );
+    // Every piece has the count of a shape with no degree.
+    assert!(after.iter().all(|piece| piece.points == before[0].points));
 }

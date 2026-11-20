@@ -177,8 +177,10 @@ impl ParameterChart {
 /// the middle of a parameter box, rounded, with a running bound on the
 /// rounding error and on the box's own width in place of an enclosure. Display sampling takes thousands of points per face and claims
 /// no bound on any of them; an interval evaluation of each costs a body's
-/// whole work allowance. Nothing that admits, fits or certifies geometry may
-/// use it.
+/// whole work allowance. Nothing that fits or certifies geometry may use it.
+/// The edge-gap checker of roadmap item 3.0A reads edge copies with it and
+/// adds the bound of its samples to the measurement error it reports
+/// (Checkpoint 2 decisions, section 4.2 step 7).
 #[derive(Clone, Debug)]
 pub struct Binary64Chart {
     program: ex::Program,

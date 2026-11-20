@@ -91,8 +91,9 @@ pub struct Hints {
 #[derive(Clone, Copy, Debug)]
 pub struct Limits {
     /// Most work one edge may spend before a named refusal. A unit is one
-    /// residual evaluation, one sample and mode pair of a tail transform, or
-    /// one domain probe: everything the measurement does that grows with the
+    /// break or one halving of a crossing search while planning, one residual
+    /// evaluation, one sample and mode pair of a tail transform, or one
+    /// domain probe: everything the measurement does that grows with the
     /// edge.
     pub work: u64,
 }
@@ -168,8 +169,8 @@ pub struct GapMeasure {
     pub refinements: Vec<Refinement>,
     /// Residual evaluations spent.
     pub evaluations: u64,
-    /// Work counted against the edge's cap: the evaluations, the tail
-    /// transforms and the domain probes.
+    /// Work counted against the edge's cap: the planning, the evaluations,
+    /// the tail transforms and the domain probes.
     pub work: u64,
 }
 
@@ -390,16 +391,14 @@ fn crossings(
     Ok(work)
 }
 
-/// Every break of the edge in ascending order, both ends included. Work is
-/// charged window by window, and an edge with more than `most` breaks is
-/// refused: each piece takes at least one evaluation, so it could not be
-/// sampled within the allowance.
-fn breaks(
-    lifted: &Lifted,
-    hints: &Hints,
-    most: u64,
-    dec: &mut Decider,
-) -> Result<Vec<f64>, Refusal> {
+/// Every break of the edge in ascending order, both ends included.
+///
+/// Planning draws on the same allowance as sampling. Each break is one unit
+/// and each crossing search costs its halvings; both are debited from the
+/// edge's allowance and charged as they are done, so the search that follows
+/// starts with what planning left.
+fn breaks(search: &mut Search<'_>, hints: &Hints, dec: &mut Decider) -> Result<Vec<f64>, Refusal> {
+    let lifted = search.lifted;
     let [lo, hi] = lifted.range();
     if !(lo.is_finite() && hi.is_finite() && lo < hi) {
         return Err(unsupported("an edge has no finite parameter range"));
@@ -415,20 +414,17 @@ fn breaks(
     cuts.extend(hints.parameters.iter().copied().filter(inside));
     cuts.sort_by(f64::total_cmp);
     cuts.dedup();
-    let too_many = || work_cap("an edge has more breaks than its evaluation allowance can sample");
-    if cuts.len() as u64 > most {
-        return Err(too_many());
-    }
-    dec.charge_work(cuts.len() as u64)?;
+    search.reserve(cuts.len() as u64)?;
+    search.settle(dec)?;
     // Between these cuts the face copy is one polynomial or rational piece.
     let mut crossed = Vec::new();
     for pair in cuts.windows(2) {
-        let work = crossings(lifted, pair[0], pair[1], most, &mut crossed)?;
+        // No more seams are listed than the allowance has units left.
+        let left = search.limit.saturating_sub(search.spent());
+        let work = crossings(lifted, pair[0], pair[1], left, &mut crossed)?;
         if work > 0 {
-            dec.charge_work(work)?;
-        }
-        if (cuts.len() + crossed.len()) as u64 > most {
-            return Err(too_many());
+            search.reserve(work)?;
+            search.settle(dec)?;
         }
     }
     cuts.extend(crossed.into_iter().filter(inside));
@@ -451,7 +447,16 @@ pub fn plan(
     if straight_residual(&lifted) {
         return Ok(Vec::new());
     }
-    Ok(planned(&lifted, &breaks(&lifted, hints, limits.work, dec)?))
+    let mut search = Search {
+        lifted: &lifted,
+        scratch: Scratch::default(),
+        limit: limits.work,
+        evaluations: 0,
+        other: 0,
+        charged: 0,
+    };
+    let breaks = breaks(&mut search, hints, dec)?;
+    Ok(planned(&lifted, &breaks))
 }
 
 fn planned(lifted: &Lifted, breaks: &[f64]) -> Vec<PlannedPiece> {
@@ -622,17 +627,17 @@ pub fn measure(
             dec,
         );
     }
-    let breaks = breaks(&lifted, hints, limit, dec)?;
+    let breaks = breaks(&mut search, hints, dec)?;
     let plan = planned(&lifted, &breaks);
     let [lo, hi] = lifted.range();
-    // Refuse before the first sample when the plan alone is over the cap:
-    // its samples, the first tail transform of each piece and, on a spline
-    // surface, one domain probe per piece.
+    // Refuse before the first sample when the plan alone is more than
+    // planning left of the allowance: its samples, the first tail transform
+    // of each piece and, on a spline surface, one domain probe per piece.
     let probes = u64::from(matches!(lifted.surface, Surface64::Spline(_)));
     let planned_work = plan.iter().fold(1_u64, |sum, piece| {
         sum + piece.points as u64 + 1 + numeric::chebyshev_tail_pairs(piece.points) + probes
     });
-    if planned_work > limit {
+    if planned_work > limit.saturating_sub(search.spent()) {
         return Err(work_cap(
             "the first sample plan of an edge is larger than its work allowance",
         ));

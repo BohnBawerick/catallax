@@ -2013,9 +2013,10 @@ impl<'a> Exporter<'a> {
                     } else {
                         "catallax export"
                     },
+                    MILLI,
                 )
             } else if self.approximate_pipe_ends {
-                approximate_header(&self.options.product_name, numbers, "approximate pipe end parameter maps; requested distance tolerance applies to samples and fitted components; complete_body_bound=unestablished")
+                approximate_header(&self.options.product_name, numbers, "approximate pipe end parameter maps; requested distance tolerance applies to samples and fitted components; complete_body_bound=unestablished", None, MILLI)
             } else {
                 header(&self.options.product_name, numbers, &uncertainty)
             }
@@ -2095,6 +2096,7 @@ pub(crate) fn header(product_name: &str, solids: &[usize], uncertainty: &str) ->
         Some(uncertainty),
         "ADVANCED_BREP_SHAPE_REPRESENTATION",
         "catallax export",
+        MILLI,
     )
 }
 
@@ -2105,20 +2107,27 @@ fn stand_in_header(product_name: &str, items: &[usize], uncertainty: &str) -> St
         Some(uncertainty),
         "SHAPE_REPRESENTATION",
         "catallax export",
+        MILLI,
     )
 }
+
+/// The length unit of every file but a scaled numerical export.
+pub(crate) const MILLI: &str = ".MILLI.";
 
 pub(crate) fn approximate_header(
     product_name: &str,
     solids: &[usize],
     description: &str,
+    uncertainty: Option<&str>,
+    length_prefix: &str,
 ) -> String {
     representation_header(
         product_name,
         solids,
-        None,
+        uncertainty,
         "ADVANCED_BREP_SHAPE_REPRESENTATION",
         description,
+        length_prefix,
     )
 }
 
@@ -2126,13 +2135,16 @@ pub(crate) fn approximate_surface_header(
     product_name: &str,
     items: &[usize],
     description: &str,
+    uncertainty: Option<&str>,
+    length_prefix: &str,
 ) -> String {
     representation_header(
         product_name,
         items,
-        None,
+        uncertainty,
         "MANIFOLD_SURFACE_SHAPE_REPRESENTATION",
         description,
+        length_prefix,
     )
 }
 
@@ -2142,6 +2154,7 @@ fn representation_header(
     uncertainty: Option<&str>,
     representation: &str,
     description: &str,
+    length_prefix: &str,
 ) -> String {
     let description = string(description);
     let uncertainty_entity = uncertainty.map_or_else(String::new, |value| format!(
@@ -2159,7 +2172,7 @@ fn representation_header(
         write!(items, ",#{id}").unwrap();
     }
     format!(
-        "ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(({description}),'2;1');\nFILE_NAME({filename},'1970-01-01T00:00:00',(''),(''),'catallax','catallax','');\nFILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF {{ 1 0 10303 442 1 1 4 }}'));\nENDSEC;\nDATA;\n#1=APPLICATION_CONTEXT('managed model based 3d engineering');\n#2=APPLICATION_PROTOCOL_DEFINITION('international standard','ap242_managed_model_based_3d_engineering',2014,#1);\n#3=PRODUCT_CONTEXT('',#1,'mechanical');\n#4=PRODUCT({name},{name},'',(#3));\n#5=PRODUCT_DEFINITION_FORMATION('','',#4);\n#6=PRODUCT_DEFINITION_CONTEXT('part definition',#1,'design');\n#7=PRODUCT_DEFINITION('design','',#5,#6);\n#8=PRODUCT_DEFINITION_SHAPE('','',#7);\n#9=SHAPE_DEFINITION_REPRESENTATION(#8,#16);\n#10=(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT(.MILLI.,.METRE.));\n#11=(NAMED_UNIT(*)PLANE_ANGLE_UNIT()SI_UNIT($,.RADIAN.));\n#12=(NAMED_UNIT(*)SI_UNIT($,.STERADIAN.)SOLID_ANGLE_UNIT());\n{uncertainty_entity}#14=(GEOMETRIC_REPRESENTATION_CONTEXT(3){uncertainty_context}GLOBAL_UNIT_ASSIGNED_CONTEXT((#10,#11,#12))REPRESENTATION_CONTEXT('',''));\n#15=PRODUCT_RELATED_PRODUCT_CATEGORY('part',$,(#4));\n#16={representation}({name},({items}),#14);\n#17=AXIS2_PLACEMENT_3D('',#18,#19,#20);\n#18=CARTESIAN_POINT('',(0.,0.,0.));\n#19=DIRECTION('',(0.,0.,1.));\n#20=DIRECTION('',(1.,0.,0.));\n"
+        "ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(({description}),'2;1');\nFILE_NAME({filename},'1970-01-01T00:00:00',(''),(''),'catallax','catallax','');\nFILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF {{ 1 0 10303 442 1 1 4 }}'));\nENDSEC;\nDATA;\n#1=APPLICATION_CONTEXT('managed model based 3d engineering');\n#2=APPLICATION_PROTOCOL_DEFINITION('international standard','ap242_managed_model_based_3d_engineering',2014,#1);\n#3=PRODUCT_CONTEXT('',#1,'mechanical');\n#4=PRODUCT({name},{name},'',(#3));\n#5=PRODUCT_DEFINITION_FORMATION('','',#4);\n#6=PRODUCT_DEFINITION_CONTEXT('part definition',#1,'design');\n#7=PRODUCT_DEFINITION('design','',#5,#6);\n#8=PRODUCT_DEFINITION_SHAPE('','',#7);\n#9=SHAPE_DEFINITION_REPRESENTATION(#8,#16);\n#10=(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT({length_prefix},.METRE.));\n#11=(NAMED_UNIT(*)PLANE_ANGLE_UNIT()SI_UNIT($,.RADIAN.));\n#12=(NAMED_UNIT(*)SI_UNIT($,.STERADIAN.)SOLID_ANGLE_UNIT());\n{uncertainty_entity}#14=(GEOMETRIC_REPRESENTATION_CONTEXT(3){uncertainty_context}GLOBAL_UNIT_ASSIGNED_CONTEXT((#10,#11,#12))REPRESENTATION_CONTEXT('',''));\n#15=PRODUCT_RELATED_PRODUCT_CATEGORY('part',$,(#4));\n#16={representation}({name},({items}),#14);\n#17=AXIS2_PLACEMENT_3D('',#18,#19,#20);\n#18=CARTESIAN_POINT('',(0.,0.,0.));\n#19=DIRECTION('',(0.,0.,1.));\n#20=DIRECTION('',(1.,0.,0.));\n"
     )
 }
 

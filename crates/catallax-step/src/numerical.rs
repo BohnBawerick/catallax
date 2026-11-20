@@ -8,8 +8,13 @@ use catallax_numbers::{
 use catallax_shapes::{Curve, Point3, Surface, Vector3};
 use catallax_topology::{
     BodyKind, Sense,
-    numerical::{DEFAULT_WORK, NumericalBody},
+    numerical::{
+        DEFAULT_WORK, NumericalBody, RefitRow,
+        tolerance::{self, EntityTolerance, FeatureBand, FeaturePair},
+    },
 };
+
+pub use catallax_topology::numerical::tolerance::ReceiverProfile;
 
 mod analytic;
 mod curved;
@@ -24,6 +29,12 @@ pub struct NumericalStepOptions {
     /// Maximum decimal error of each written length scalar, in millimetres.
     /// This is not a whole-body approximation bound.
     pub max_scalar_rounding_error_mm: Rational,
+    /// The receiving system, for rule T8's export with a receiver profile.
+    pub receiver: Option<ReceiverProfile>,
+    /// A scaled export (rule T8, for micro parts): the same numbers written
+    /// under a larger length unit, so a receiver reads a part this many
+    /// times larger.
+    pub scale: Option<LengthScale>,
 }
 impl Default for NumericalStepOptions {
     fn default() -> Self {
@@ -31,8 +42,90 @@ impl Default for NumericalStepOptions {
             product_name: "catallax numerical approximate".into(),
             significant_digits: 17,
             max_scalar_rounding_error_mm: Rational::from_ratio(1, 10_000_000).unwrap(),
+            receiver: None,
+            scale: None,
         }
     }
+}
+
+/// The factor of a scaled export (rule T8). The written numbers stay the
+/// millimetre values; the file's length unit becomes the centimetre, the
+/// decimetre or the metre, so a receiver reads every length, and the file's
+/// uncertainty, that many times larger. Nothing is rounded again.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum LengthScale {
+    /// Ten times: centimetres.
+    Ten,
+    /// A hundred times: decimetres.
+    Hundred,
+    /// A thousand times: metres.
+    Thousand,
+}
+
+impl LengthScale {
+    /// The factor.
+    pub fn factor(self) -> i64 {
+        match self {
+            Self::Ten => 10,
+            Self::Hundred => 100,
+            Self::Thousand => 1000,
+        }
+    }
+    /// The STEP `SI_UNIT` prefix of the written length unit.
+    fn prefix(self) -> &'static str {
+        match self {
+            Self::Ten => ".CENTI.",
+            Self::Hundred => ".DECI.",
+            Self::Thousand => "$",
+        }
+    }
+    /// Every scale, smallest first.
+    pub const ALL: [Self; 3] = [Self::Ten, Self::Hundred, Self::Thousand];
+}
+
+/// A small feature as a receiver will see it (rule T8).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReceiverFeature {
+    /// Two entities that share no topology, with their distance in the
+    /// model's millimetres.
+    pub pair: FeaturePair,
+    /// The distance the receiver reads: the model's distance times the
+    /// export's scale, in the receiver's millimetres.
+    pub receiver_distance_mm: Rational,
+    /// Under 10 times, or under 4 times, the receiver's tolerance.
+    pub band: FeatureBand,
+}
+
+/// An entity whose tolerance stays over the receiver's after the refit.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReceiverResidual {
+    /// The entity, with its tolerance in the model's millimetres.
+    pub entity: EntityTolerance,
+    /// The tolerance the receiver reads: the model's times the export's
+    /// scale.
+    pub receiver_tolerance_mm: Rational,
+}
+
+/// What rule T8 did for a receiver profile.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReceiverReport {
+    /// The profile.
+    pub profile: ReceiverProfile,
+    /// Edge uses over the receiver's tolerance whose face copies were
+    /// refitted, with their stored tolerances before and after in the
+    /// receiver's millimetres.
+    pub refits: Vec<RefitRow>,
+    /// The scale the receiver reads the file at: 1, or the export's scale.
+    pub scale: i64,
+    /// Entities still over the receiver's tolerance after the refit, read at
+    /// the export's scale.
+    pub residuals: Vec<ReceiverResidual>,
+    /// Features under 10 times and 4 times the receiver's tolerance.
+    pub features: Vec<ReceiverFeature>,
+    /// Offered for a micro part, one with a feature under 4 times the
+    /// receiver's tolerance: the smallest scale that lifts every feature to
+    /// at least 10 times it, or the largest scale where none does.
+    pub scaled_export_offer: Option<LengthScale>,
 }
 /// Rounding of native spline parameters and weights, separate from lengths.
 #[derive(Clone, Debug, Default)]
@@ -81,6 +174,14 @@ pub struct NumericalStepReport {
     pub spline_rounding: Option<NumericalSplineRounding>,
     /// Checks performed by this writer, distinct from external reference checks.
     pub checks: Vec<String>,
+    /// The largest entity tolerance of the source and of the emitted check,
+    /// in millimetres before any scale. Rule T8 writes it as the file's
+    /// uncertainty when the export has a receiver profile.
+    pub uncertainty_mm: Rational,
+    /// Rule T8's report, when a receiver profile was given.
+    pub receiver: Option<ReceiverReport>,
+    /// The scale written, if any.
+    pub scale: Option<LengthScale>,
 }
 /// An approximate file, with no implicit conversion to a proven/bounded result.
 /// The private bytes were checked before this value was returned.
@@ -509,20 +610,176 @@ impl Writer<'_> {
 /// and explicit physical loops. The selected decimal payload is checked under
 /// the body's stated tolerance; source incidence need not be exactly zero.
 /// Unsupported carriers refuse. No topology is inferred and no vertex is healed.
-/// The source tolerance is metadata, not a STEP global uncertainty or body bound.
+/// The source tolerance is metadata, not a body bound. With a receiver
+/// profile the file's global uncertainty is the largest entity tolerance
+/// (rule T8); without one the file has none.
 /// The caller's allowance covers all work; no global policy is changed.
+///
+/// With a receiver profile (rule T8), the face copies of edge uses over the
+/// receiver's tolerance are refitted first, the entities still over it are
+/// listed, features under 10 times and 4 times its tolerance are listed, and
+/// a micro part is offered a scaled export, and the file's uncertainty is the
+/// largest entity tolerance.
 pub fn build(
     body: &NumericalBody,
     options: &NumericalStepOptions,
     dec: &mut Decider,
 ) -> Result<NumericalStep, Refusal> {
     guarded(|| {
-        if analytic::applies(body) {
-            analytic::build(body, options, dec)
+        let (prepared, receiver) = match &options.receiver {
+            Some(profile) => {
+                let scale = options.scale.map_or(1, LengthScale::factor);
+                let (prepared, report) = for_receiver(body, profile, scale, dec)?;
+                (std::borrow::Cow::Owned(prepared), Some(report))
+            }
+            None => (std::borrow::Cow::Borrowed(body), None),
+        };
+        let mut artifact = if analytic::applies(&prepared) {
+            analytic::build(&prepared, options, dec)?
         } else {
-            build_inner(body, options, dec)
-        }
+            build_inner(&prepared, options, dec)?
+        };
+        artifact.report.receiver = receiver;
+        Ok(artifact)
     })
+}
+
+/// Rule T8 before writing: refit edges above the receiver's tolerance, list
+/// what stays above it and the features under 10 and 4 times it, and offer
+/// a scaled export for a micro part.
+///
+/// The receiver reads the file at `scale`: every length the model has, times
+/// the scale. So its limits are taken in the model's millimetres divided by
+/// the scale for the refit and the feature search, and what is reported is
+/// read at the scale, in the receiver's millimetres. The offer is the
+/// smallest scale that lifts every feature to 10 times the receiver's
+/// tolerance, read from the model's own distances.
+fn for_receiver(
+    body: &NumericalBody,
+    profile: &ReceiverProfile,
+    scale: i64,
+    dec: &mut Decider,
+) -> Result<(NumericalBody, ReceiverReport), Refusal> {
+    let factor = Rational::from_i64(scale);
+    let model_limit = &profile.tolerance_mm / &factor;
+    let (refitted, mut refits) = body.refit_face_copies(&model_limit, dec)?;
+    for row in &mut refits {
+        dec.charge_work(1)?;
+        row.before_mm = &row.before_mm * &factor;
+        row.after_mm = &row.after_mm * &factor;
+    }
+    let residuals = refitted
+        .tolerances()
+        .entities
+        .iter()
+        .filter(|entity| entity.tolerance_mm > model_limit)
+        .map(|entity| ReceiverResidual {
+            entity: entity.clone(),
+            receiver_tolerance_mm: &entity.tolerance_mm * &factor,
+        })
+        .collect();
+    let reach = &model_limit * &Rational::from_i64(tolerance::RECEIVER_WIDE_BAND);
+    let mut features = Vec::new();
+    for pair in tolerance::features_within(&refitted, &reach, dec)? {
+        let receiver_distance_mm = &pair.distance_mm * &factor;
+        if let Some(band) = tolerance::feature_band(&receiver_distance_mm, profile) {
+            features.push(ReceiverFeature {
+                pair,
+                receiver_distance_mm,
+                band,
+            });
+        }
+    }
+    let smallest = features
+        .iter()
+        .filter(|feature| feature.band == FeatureBand::UnderFour)
+        .map(|feature| feature.pair.distance_mm.clone())
+        .min();
+    let scaled_export_offer = smallest.map(|size| {
+        LengthScale::ALL
+            .into_iter()
+            .find(|scale| {
+                tolerance::feature_band(&(&size * &Rational::from_i64(scale.factor())), profile)
+                    .is_none()
+            })
+            .unwrap_or(LengthScale::Thousand)
+    });
+    Ok((
+        refitted,
+        ReceiverReport {
+            profile: profile.clone(),
+            refits,
+            scale,
+            residuals,
+            features,
+            scaled_export_offer,
+        },
+    ))
+}
+
+/// The file's uncertainty (rule T8): the largest entity tolerance of the
+/// source body and of the check of the emitted values, rounded up to the
+/// written digits, and its decimal text.
+fn uncertainty(
+    body: &NumericalBody,
+    emitted: &NumericalEvidence,
+    options: &NumericalStepOptions,
+) -> Result<(Rational, String), Refusal> {
+    let emitted = tolerance::largest_recorded(emitted).max(body.tolerances().largest_mm());
+    let text = crate::number::decimal(&emitted.to_decimal_bounds(options.significant_digits).1);
+    Ok((emitted, text))
+}
+
+/// The STEP header of a numerical file: its length unit, and, for an export
+/// with a receiver profile, its uncertainty.
+fn file_header(
+    body: &NumericalBody,
+    options: &NumericalStepOptions,
+    items: &[usize],
+    description: &str,
+    uncertainty: &str,
+) -> String {
+    let prefix = options
+        .scale
+        .map_or(crate::export::MILLI, LengthScale::prefix);
+    // Rule T8 writes the uncertainty as part of an export with a receiver
+    // profile. Without one the header stays as it was.
+    let uncertainty = options.receiver.as_ref().map(|_| uncertainty);
+    if body.kind() == BodyKind::Surface {
+        crate::export::approximate_surface_header(
+            &options.product_name,
+            items,
+            description,
+            uncertainty,
+            prefix,
+        )
+    } else {
+        crate::export::approximate_header(
+            &options.product_name,
+            items,
+            description,
+            uncertainty,
+            prefix,
+        )
+    }
+}
+
+/// The stamp's note of a scale and a receiver.
+fn stamp_extras(options: &NumericalStepOptions) -> String {
+    let mut out = String::new();
+    if let Some(scale) = options.scale {
+        out.push_str(&format!(
+            ";scaled_export=x{};written_values=millimetres",
+            scale.factor()
+        ));
+    }
+    if let Some(profile) = &options.receiver {
+        out.push_str(&format!(
+            ";receiver={};receiver_tolerance_mm={}",
+            profile.name, profile.tolerance_mm
+        ));
+    }
+    out
 }
 fn build_inner(
     body: &NumericalBody,
@@ -751,9 +1008,10 @@ impl Writer<'_> {
                 rounding.max_parameter_error, rounding.max_weight_error
             ));
         }
+        let (uncertainty_mm, uncertainty_text) = uncertainty(body, &emitted_evidence, options)?;
+        description.push_str(&stamp_extras(options));
         let mut file = self.graph.write(&[solid], |roots| {
-            // Reuse AP242 product/unit framing, not its exact-model uncertainty claim.
-            numerical_header(body, &options.product_name, roots, &description)
+            file_header(body, options, roots, &description, &uncertainty_text)
         });
         file.push_str("ENDSEC;\nEND-ISO-10303-21;\n");
         let artifact = NumericalStep {
@@ -775,22 +1033,12 @@ impl Writer<'_> {
                 counts: [count.faces, count.edges, count.vertices],
                 checks,
                 spline_rounding,
+                uncertainty_mm,
+                receiver: None,
+                scale: options.scale,
             },
         };
         artifact.check_written(artifact.bytes(), self.dec)?;
         Ok(artifact)
-    }
-}
-
-fn numerical_header(
-    body: &NumericalBody,
-    name: &str,
-    items: &[usize],
-    description: &str,
-) -> String {
-    if body.kind() == BodyKind::Surface {
-        crate::export::approximate_surface_header(name, items, description)
-    } else {
-        crate::export::approximate_header(name, items, description)
     }
 }

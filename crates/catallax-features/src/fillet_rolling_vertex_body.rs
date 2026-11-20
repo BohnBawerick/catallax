@@ -308,7 +308,7 @@ pub(crate) fn build(
         });
         native.push(vec![curves]);
     }
-    publish(source, d, native, sampled, tolerance, dec)
+    publish(source, d, native, sampled, dec)
 }
 
 #[cfg(test)]
@@ -351,6 +351,7 @@ mod tests {
                 native,
                 NumericalOptions {
                     tolerance_mm: tolerance.clone(),
+                    vertex_tolerance_mm: None,
                 },
                 &mut dec,
             )
@@ -438,6 +439,7 @@ mod tests {
                 native,
                 NumericalOptions {
                     tolerance_mm: tolerance.clone(),
+                    vertex_tolerance_mm: None,
                 },
                 &mut dec,
             )

@@ -361,6 +361,11 @@ impl NumericalFilletBuilt {
 
 /// Rounds a selected native edge of a numerical body. Source conversion and
 /// approximate STEP remain explicit caller operations. No exact model is returned.
+///
+/// `tolerance_mm`, at most 1 micrometre, is the fit target and also the
+/// result's limit where it is under the source's. The recipe evaluation
+/// states rule T2's target here, so its spline fillets are held to the
+/// target, inside rule T2's cap.
 pub fn build(
     source: NumericalBody,
     edge: &str,

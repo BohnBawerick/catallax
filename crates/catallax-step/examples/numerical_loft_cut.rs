@@ -237,6 +237,7 @@ fn run(out: &Path, case: &str, control: &str) -> Result<Value, String> {
         native_trims,
         NumericalOptions {
             tolerance_mm: Rational::parse("1/10000000").unwrap(),
+            vertex_tolerance_mm: None,
         },
         &mut dec,
     )

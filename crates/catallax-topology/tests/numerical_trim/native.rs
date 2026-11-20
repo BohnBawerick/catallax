@@ -79,6 +79,7 @@ fn input() -> (NumericalDefinition, Vec<NumericalNativeTrim>) {
 fn controls() -> NumericalOptions {
     NumericalOptions {
         tolerance_mm: q("1e-7"),
+        vertex_tolerance_mm: None,
     }
 }
 

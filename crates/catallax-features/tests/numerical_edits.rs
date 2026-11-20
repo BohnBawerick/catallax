@@ -31,6 +31,7 @@ fn edit(id: &str, operation: NumericalOperation) -> NumericalEdit {
         id: id.into(),
         options: NumericalOptions {
             tolerance_mm: q("0.002"),
+            vertex_tolerance_mm: None,
         },
         operation,
     }

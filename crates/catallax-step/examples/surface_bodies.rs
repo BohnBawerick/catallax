@@ -54,6 +54,7 @@ fn run(out: &Path) {
         surface,
         NumericalOptions {
             tolerance_mm: q("1/100000"),
+            vertex_tolerance_mm: None,
         },
         &mut dec,
     )

@@ -107,6 +107,12 @@ impl<'a> Index<'a> {
     pub fn get(&self, face: usize, boundary: usize, use_index: usize) -> Option<&'a BSplineCurve> {
         self.curves.get(&(face, boundary, use_index)).copied()
     }
+
+    pub fn curves_for_face(&self, face: usize) -> impl Iterator<Item = &'a BSplineCurve> + '_ {
+        self.curves
+            .range((face, 0, 0)..=(face, usize::MAX, usize::MAX))
+            .map(|(_, curve)| *curve)
+    }
     /// The tag of the native curve bound to this use, if one is.
     pub fn tag(&self, face: usize, boundary: usize, use_index: usize) -> Option<&'a CopyTag> {
         self.tags.get(&(face, boundary, use_index)).copied()
@@ -499,8 +505,8 @@ impl NumericalBody {
                 self.evidence.repairs().to_vec(),
                 dec,
             )?;
-            next.inherit(self);
-            Ok(next)
+            next.inherit(self, dec)?;
+            next.lower_growth(self, dec)
         })
     }
 }

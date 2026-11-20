@@ -3,10 +3,13 @@
 use std::{io, path::Path};
 
 use catallax_boolean::numerical::loft::{loft_box_selection, stock_overlaps_loft_top};
-use catallax_numbers::{BoundKind, Decider, Mark, OperationSpan, Refusal};
+use catallax_numbers::{BoundKind, Decider, Mark, OperationSpan, Rational, Refusal};
 use catallax_recipe::{BooleanKind, Operation, Recipe};
-use catallax_step::numerical::{self as step, NumericalStepOptions};
+use catallax_step::numerical as step;
+use catallax_topology::numerical::{self, NumericalOptions, tolerance};
 use serde_json::{Value, json};
+
+use crate::numerical_step::{embedding_step_options, exact_floor};
 
 fn failure(error: Refusal, stage: &str) -> Value {
     json!({"format":"catallax-manifest/5","status":"refused","exact":false,
@@ -72,7 +75,17 @@ pub(crate) fn evaluate(
     };
     let loft = built.bodies[target];
     let stock = built.bodies[tool];
-    let tolerance = catallax_step::StepOptions::default().curve_tolerance;
+    // Rule T2 for own fitted geometry (Checkpoint 2 decisions, section 4.3;
+    // owner's choice A of 20 November 2026): the traced cut and its
+    // embedding fit to max(1e-6 mm, 10 eps), and the body admits under
+    // max(1e-5 mm, 100 eps). The floor is rule T1's in the frame of the
+    // input bodies' exact vertices.
+    let eps = match exact_floor(&built.model, [loft, stock], dec) {
+        Ok(eps) => eps,
+        Err(error) => return Ok(Some(failure(error, "width-routing"))),
+    };
+    let fitted = tolerance::own_fitted(&eps, None);
+    let tolerance = fitted.target_mm;
     match measured("numerical-loft-routing", recipe, dec, |dec| {
         stock_overlaps_loft_top(&built.model, loft, stock, &tolerance, dec)
     }) {
@@ -93,38 +106,42 @@ pub(crate) fn evaluate(
         Ok(selected) => selected,
         Err(error) => return Ok(Some(failure(error, "numerical-boolean"))),
     };
-    let options = NumericalStepOptions {
-        max_scalar_rounding_error_mm: tolerance
-            .clone()
-            .min(NumericalStepOptions::default().max_scalar_rounding_error_mm),
-        ..Default::default()
-    };
+    let mut fit_target = tolerance.clone();
     let mut artifact = None;
     let mut failed_stage = "numerical-step-definition";
     let span = OperationSpan::begin("brep", &recipe.result, "numerical-step", dec);
-    let body = selected.admit_with(dec, |model, collection, admission, dec| {
-        let (definition, native_trims) =
+    let cap = NumericalOptions {
+        tolerance_mm: fitted.cap_mm,
+        vertex_tolerance_mm: None,
+    };
+    let body = selected.admit_with(dec, |model, collection, _, dec| {
+        let embed = |target: &Rational, dec: &mut Decider| {
             measured("numerical-step-definition", recipe, dec, |dec| {
                 catallax_features::numerical_embedding::definition_from_exact_model(
                     model,
                     collection,
                     recipe.name.clone(),
-                    &admission.tolerance_mm,
+                    target,
                     dec,
                 )
-            })?;
+            })
+        };
+        let (mut definition, mut native_trims) = embed(&tolerance, dec)?;
+        failed_stage = "numerical-step-feature-search";
+        fit_target = measured(failed_stage, recipe, dec, |dec| {
+            tolerance::fitted_target_for_definition(&definition, &native_trims, &eps, dec)
+        })?;
+        if fit_target < tolerance {
+            failed_stage = "numerical-step-definition";
+            (definition, native_trims) = embed(&fit_target, dec)?;
+        }
         failed_stage = "numerical-native-admission";
-        let body = measured("numerical-native-admission", recipe, dec, |dec| {
-            catallax_topology::numerical::build_with_native_trims(
-                definition,
-                native_trims,
-                admission,
-                dec,
-            )
+        let body = measured(failed_stage, recipe, dec, |dec| {
+            numerical::build_with_native_trims(definition, native_trims, cap, dec)
         })?;
         failed_stage = "numerical-step-payload";
         let file = measured("numerical-step-payload", recipe, dec, |dec| {
-            step::build(&body, &options, dec)
+            step::build(&body, &embedding_step_options(fit_target.clone()), dec)
         })?;
         artifact = Some(file);
         Ok(body)
@@ -152,7 +169,7 @@ pub(crate) fn evaluate(
     let mark = Mark::new(
         "step.numerical-approximate",
         BoundKind::Value,
-        tolerance.clone(),
+        fit_target.clone(),
         "numerically selected material and checked STEP embedding; complete body bound unestablished",
     );
     Ok(Some(
@@ -160,7 +177,7 @@ pub(crate) fn evaluate(
             "proof":"numerical","category":"approximate","refusal":null,
             "result":{"lumps":counts.lumps,"shells":counts.shells,"faces":counts.faces,"loops":counts.loops,"edges":counts.edges,"vertices":counts.vertices},
             "step":step,"marks":[crate::mark_entry(&mark,None)],
-            "numerical":{"tolerance_mm":tolerance.to_string(),"material_classifications":classes,
+            "numerical":{"tolerance_mm":fit_target.to_string(),"material_classifications":classes,
                 "work_stages":{
                     "source_admission":selected.work_stages[0],
                     "intersection":selected.work_stages[1],

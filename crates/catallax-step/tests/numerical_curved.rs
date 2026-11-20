@@ -30,6 +30,7 @@ fn cut_body(
         definition,
         NumericalOptions {
             tolerance_mm: Rational::parse("1/10000000").unwrap(),
+            vertex_tolerance_mm: None,
         },
         dec,
     )
@@ -173,6 +174,7 @@ fn repeated_endpoint_carrier_keeps_the_admitted_finite_traversal() {
         definition,
         NumericalOptions {
             tolerance_mm: tube::q("1/10000000"),
+            vertex_tolerance_mm: None,
         },
         &mut dec,
     )

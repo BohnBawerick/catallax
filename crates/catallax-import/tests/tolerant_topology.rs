@@ -185,13 +185,15 @@ fn cap_and_invalid_requests_leave_the_entire_graph_unchanged() {
         );
         assert_eq!(graph, before);
     }
+    // Rule T3 (Checkpoint 2 decisions, section 4.3): a vertex's automatic
+    // cap is 0.02 mm, an edge's 0.01 mm.
     let before = graph.clone();
     assert!(
         graph
             .grow_vertex_tolerance(
                 &body,
                 &vertex,
-                r("0.01000000001"),
+                r("0.02000000001"),
                 "gap",
                 &mut Decider::default()
             )
@@ -204,6 +206,12 @@ fn cap_and_invalid_requests_leave_the_entire_graph_unchanged() {
             .unwrap()
     );
     assert_eq!(graph.bodies()[0].maximum_tolerance_mm(), &r("0.01"));
+    assert!(
+        graph
+            .grow_vertex_tolerance(&body, &vertex, r("0.015"), "gap", &mut Decider::default())
+            .unwrap()
+    );
+    assert_eq!(graph.bodies()[0].maximum_tolerance_mm(), &r("0.015"));
 }
 
 #[test]

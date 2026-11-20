@@ -83,6 +83,7 @@ fn run(upper: bool, sense: Sense, offset: &str, skew: bool) -> NumericalFacePart
             },
             NumericalOptions {
                 tolerance_mm: Rational::from_ratio(1, 10_000_000).unwrap(),
+                vertex_tolerance_mm: None,
             },
             &mut Decider::default(),
         )

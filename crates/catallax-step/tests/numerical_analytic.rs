@@ -410,6 +410,7 @@ fn collapsed_arc_control(reverse: bool) {
         definition,
         n::NumericalOptions {
             tolerance_mm: q("1/1000000000000"),
+            vertex_tolerance_mm: None,
         },
         &mut Decider::default(),
     )

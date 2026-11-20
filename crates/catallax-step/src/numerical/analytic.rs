@@ -1005,8 +1005,10 @@ pub(super) fn build(
             "file.cone-semi-angle-rounding-max-rad={angle_error}"
         ));
     }
+    let (uncertainty_mm, uncertainty_text) = uncertainty(body, &emitted, options)?;
+    let description = format!("{description}{}", stamp_extras(options));
     let mut file = w.graph.write(&[solid], |roots| {
-        numerical_header(body, &options.product_name, roots, &description)
+        file_header(body, options, roots, &description, &uncertainty_text)
     });
     file.push_str("ENDSEC;\nEND-ISO-10303-21;\n");
     let artifact = NumericalStep {
@@ -1028,6 +1030,9 @@ pub(super) fn build(
             counts: [count.faces, count.edges, count.vertices],
             spline_rounding: None,
             checks: file_checks,
+            uncertainty_mm,
+            receiver: None,
+            scale: options.scale,
         },
     };
     artifact.check_written(artifact.bytes(), w.dec)?;

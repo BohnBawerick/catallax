@@ -39,6 +39,7 @@ fn the_loft_crossing_keeps_its_curved_edges_and_two_loop_face_numerically() {
             definition,
             NumericalOptions {
                 tolerance_mm: Rational::parse("1/10000000").unwrap(),
+                vertex_tolerance_mm: None,
             },
             &mut dec,
         )

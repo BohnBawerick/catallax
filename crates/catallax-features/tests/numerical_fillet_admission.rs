@@ -367,6 +367,7 @@ fn source(bore: bool, gap: bool, dec: &mut Decider) -> (NumericalBody, String) {
         bindings,
         NumericalOptions {
             tolerance_mm: tolerance,
+            vertex_tolerance_mm: None,
         },
         dec,
     )
@@ -384,6 +385,7 @@ fn a_stricter_fillet_request_refuses_a_loose_source_border() {
                 exact.definition().clone(),
                 NumericalOptions {
                     tolerance_mm: q("1/1000"),
+                    vertex_tolerance_mm: None,
                 },
                 &mut dec,
             )

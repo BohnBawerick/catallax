@@ -547,6 +547,7 @@ impl NumericalRecipe {
                 id: text(&e["id"])?,
                 options: NumericalOptions {
                     tolerance_mm: q(&e["tolerance_mm"])?,
+                    vertex_tolerance_mm: None,
                 },
                 operation,
             });
@@ -561,6 +562,7 @@ impl NumericalRecipe {
             sew,
             options: NumericalOptions {
                 tolerance_mm: q(&v["tolerance_mm"])?,
+                vertex_tolerance_mm: None,
             },
             edits,
         })

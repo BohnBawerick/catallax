@@ -233,7 +233,7 @@ impl SplineSurfaceBody {
                 self.body.options.clone(),
                 dec,
             )?;
-            next.body.inherit(&self.body);
+            next.body.inherit(&self.body, dec)?;
             Ok(next)
         })
     }
@@ -292,7 +292,7 @@ impl SplineSurfaceBody {
                     samples,
                 }],
             )?;
-            next.body.inherit(&self.body);
+            next.body.inherit(&self.body, dec)?;
             Ok(next)
         })
     }
@@ -329,7 +329,7 @@ impl SplineSurfaceBody {
                 dec,
             )?;
             append_checks(&mut result, checks)?;
-            result.inherit(&self.body);
+            result.inherit(&self.body, dec)?;
             Ok(result)
         })
     }

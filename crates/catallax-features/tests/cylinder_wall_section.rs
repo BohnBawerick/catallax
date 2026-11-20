@@ -105,6 +105,7 @@ fn skew_wall_section_joins_the_original_cone_ring_after_the_diameter_edit() {
                 span.interval_mm.clone(),
                 NumericalOptions {
                     tolerance_mm: q("1e-7"),
+                    vertex_tolerance_mm: None,
                 },
                 &mut dec,
             )

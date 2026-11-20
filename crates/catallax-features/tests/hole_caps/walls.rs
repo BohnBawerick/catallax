@@ -35,6 +35,7 @@ fn skew_collar_builds_edits_saves_reopens_and_exports_with_native_names() {
         let recipe = recipe(&diameter);
         let options = NumericalOptions {
             tolerance_mm: q("1e-7"),
+            vertex_tolerance_mm: None,
         };
         let (next, build_work) = request(label, || {
             let next = if let Some(previous) = &previous {
@@ -98,6 +99,7 @@ fn skew_collar_builds_edits_saves_reopens_and_exports_with_native_names() {
                 Recipe::parse(&value["recipe"].to_string()).map_err(|error| error.to_string())?;
             let options = NumericalOptions {
                 tolerance_mm: Rational::parse(value["tolerance_mm"].as_str().unwrap()).unwrap(),
+                vertex_tolerance_mm: None,
             };
             evaluate_numerical_hole(&recipe, options, &mut dec)
                 .map_err(|error| error.to_string())?

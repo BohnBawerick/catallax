@@ -62,6 +62,7 @@ fn thickening_retains_a_bump_between_global_sample_nodes() {
             source,
             NumericalOptions {
                 tolerance_mm: tolerance.clone(),
+                vertex_tolerance_mm: None,
             },
             &mut dec,
         )

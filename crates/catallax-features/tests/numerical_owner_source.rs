@@ -30,6 +30,7 @@ fn owner_source_preserves_open_pocket_in_numerical_embedding() {
             native,
             NumericalOptions {
                 tolerance_mm: tolerance,
+                vertex_tolerance_mm: None,
             },
             &mut dec,
         )

@@ -104,6 +104,7 @@ pub(super) fn run(
                 recipe,
                 NumericalOptions {
                     tolerance_mm: tolerance.clone(),
+                    vertex_tolerance_mm: None,
                 },
                 &mut Decider::default(),
             )

@@ -23,10 +23,16 @@ struct Builder<'a> {
     reals: Vec<Point3>,
     vertices: Vec<VertexId>,
     edges: HashMap<(u32, u32), EdgeId>,
-    origins: Vec<Origin>,
+    /// The face origin of each triangle.
+    origins: &'a [Origin],
+    labels: &'a [u32],
 }
 
 impl Builder<'_> {
+    fn origin(&self, t: u32) -> &Origin {
+        &self.origins[self.labels.get(t as usize).map_or(0, |&l| l as usize)]
+    }
+
     fn edge(&mut self, model: &mut Model, a: u32, b: u32) -> (EdgeId, Sense) {
         let key = (a.min(b), a.max(b));
         let (points, reals, vertices) = (&self.points, &self.reals, &self.vertices);
@@ -70,7 +76,7 @@ impl Builder<'_> {
             Sense::Same,
             paths,
             None,
-            self.origins.clone(),
+            vec![self.origin(t).clone()],
         )
     }
 }
@@ -145,6 +151,25 @@ pub(crate) fn build(
     step: &StepId,
     dec: &mut Decider,
 ) -> Result<(BodyId, Rational), Refusal> {
+    let origins = [Origin {
+        step: step.clone(),
+        role: Role::Mesh,
+    }];
+    build_labelled(model, mesh, placement, &origins, &[], dec)
+}
+
+/// [`build`] with a face origin per triangle: triangle `t` takes
+/// `origins[labels[t]]`, or the first origin when `labels` is empty. Coplanar
+/// triangles join one face only when they share an origin, so a mesh Boolean's
+/// faces keep the names of the steps they came from.
+pub(crate) fn build_labelled(
+    model: &mut Model,
+    mesh: &ClosedMesh,
+    placement: &Isometry,
+    origins: &[Origin],
+    labels: &[u32],
+    dec: &mut Decider,
+) -> Result<(BodyId, Rational), Refusal> {
     let triangles = mesh.triangles();
     if triangles.is_empty() {
         return Ok((catallax_topology::empty(model), Rational::zero()));
@@ -193,17 +218,16 @@ pub(crate) fn build(
         reals,
         vertices,
         edges: HashMap::new(),
-        origins: vec![Origin {
-            step: step.clone(),
-            role: Role::Mesh,
-        }],
+        origins,
+        labels,
     };
+    let label = |t: u32| labels.get(t as usize).copied().unwrap_or(0);
 
     let mut parents: Vec<u32> = (0..triangles.len() as u32).collect();
     for t in 0..triangles.len() as u32 {
         for slot in 0..3 {
             let u = mesh.twin(t, slot);
-            if t < u && mesh.coplanar_across(t, slot, dec)? {
+            if t < u && label(t) == label(u) && mesh.coplanar_across(t, slot, dec)? {
                 let (a, b) = (root(&mut parents, t), root(&mut parents, u));
                 parents[a.max(b) as usize] = a.min(b);
             }

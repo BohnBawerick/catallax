@@ -112,6 +112,7 @@ pub struct EvaluationCheckpoint {
     profiles: OrdMap<StepId, Profile>,
     paths: OrdMap<StepId, crate::sweep::Path>,
     bodies: OrdMap<StepId, BodyValue>,
+    meshes: OrdMap<StepId, crate::mesh_ops::MeshValue>,
     policy: BudgetPolicy,
 }
 
@@ -133,6 +134,7 @@ impl EvaluationCheckpoint {
             profiles: self.profiles,
             paths: self.paths,
             bodies: self.bodies,
+            meshes: self.meshes,
             fillets: built.fillets,
             consumed: built.consumed,
             chamfers: built.chamfers,
@@ -149,6 +151,8 @@ struct EvaluationState {
     profiles: OrdMap<StepId, Profile>,
     paths: OrdMap<StepId, crate::sweep::Path>,
     bodies: OrdMap<StepId, BodyValue>,
+    /// The exact triangles of every mesh step, RECIPE.md sections 4.19 to 4.22.
+    meshes: OrdMap<StepId, crate::mesh_ops::MeshValue>,
     fillets: Vec<crate::fillet::FilletDefinition>,
     consumed: Vec<crate::ConsumedFace>,
     chamfers: Vec<crate::chamfer::ChamferDefinition>,
@@ -738,11 +742,13 @@ fn checkpoint(mut state: EvaluationState, recipe: &Recipe, dec: &Decider) -> Eva
     let profiles = std::mem::take(&mut state.profiles);
     let paths = std::mem::take(&mut state.paths);
     let bodies = state.bodies.clone();
+    let meshes = state.meshes.clone();
     EvaluationCheckpoint {
         built: Arc::new(state.finish(Arc::new(recipe.clone()))),
         profiles,
         paths,
         bodies,
+        meshes,
         policy: *dec.policy(),
     }
 }
@@ -830,6 +836,7 @@ fn evaluate_impl(
         mut profiles,
         mut paths,
         mut bodies,
+        mut meshes,
         mut fillets,
         mut consumed,
         mut chamfers,
@@ -989,13 +996,25 @@ fn evaluate_impl(
                         dec,
                     )?;
                     let placement = crate::profile::placement(pose, dec)?;
-                    let (body, radius) = crate::mesh_import::build(
-                        model,
-                        &mesh,
-                        &Isometry::from(&placement),
-                        &step.id,
-                        dec,
-                    )?;
+                    let placement = Isometry::from(&placement);
+                    let (body, radius) =
+                        crate::mesh_import::build(model, &mesh, &placement, &step.id, dec)?;
+                    meshes.insert(
+                        step.id.clone(),
+                        crate::mesh_ops::MeshValue::imported(mesh, placement, &step.id),
+                    );
+                    BodyValue { body, radius }
+                }
+                Operation::MeshBoolean { kind, target, tool } => {
+                    let (body, radius, mesh) =
+                        crate::mesh_ops::boolean(model, kind, &meshes[target], &meshes[tool], dec)?;
+                    meshes.insert(step.id.clone(), mesh);
+                    BodyValue { body, radius }
+                }
+                Operation::MeshDecimate { body, triangles } => {
+                    let (body, radius, mesh) =
+                        crate::mesh_ops::decimate(model, &meshes[body], *triangles, dec)?;
+                    meshes.insert(step.id.clone(), mesh);
                     BodyValue { body, radius }
                 }
                 Operation::Extrude {
@@ -1923,6 +1942,7 @@ fn evaluate_impl(
         profiles,
         paths,
         bodies,
+        meshes,
         fillets,
         consumed,
         chamfers,

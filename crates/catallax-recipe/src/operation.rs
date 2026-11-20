@@ -416,6 +416,25 @@ pub enum Operation {
         /// Positive distance from the axis to the neutral plane, which keeps its lengths.
         radius: Number,
     },
+    /// The Boolean of two closed triangle meshes, kept as a triangle mesh.
+    /// SMLib's `SmPolyMerge::ManifoldBoolean`; RECIPE.md section 4.21.
+    MeshBoolean {
+        /// Union, subtract or intersect.
+        kind: BooleanKind,
+        /// The mesh step kept, or cut from. It must be `import_mesh`,
+        /// `mesh_boolean` or `mesh_decimate`.
+        target: StepId,
+        /// The mesh step added, cut away or intersected, of the same kinds.
+        tool: StepId,
+    },
+    /// A closed triangle mesh with edges collapsed towards a triangle count.
+    /// SMLib's `SmPolyDecimate`; RECIPE.md section 4.22.
+    MeshDecimate {
+        /// The mesh step: `import_mesh`, `mesh_boolean` or `mesh_decimate`.
+        body: StepId,
+        /// The most triangles the result keeps, where allowed collapses reach it.
+        triangles: u32,
+    },
     /// A STEP file entering the recipe as a fixed piece.
     ImportStep {
         /// The file.
@@ -499,6 +518,8 @@ impl Operation {
             Operation::SmoothBlend { .. } => "smooth_blend",
             Operation::Twist { .. } => "twist",
             Operation::Bend { .. } => "bend",
+            Operation::MeshBoolean { .. } => "mesh_boolean",
+            Operation::MeshDecimate { .. } => "mesh_decimate",
             Operation::ImportStep { .. } => "import_step",
             Operation::ImportIges { .. } => "import_iges",
             Operation::ImportMesh { .. } => "import_mesh",
@@ -551,6 +572,7 @@ impl Operation {
             } => vec![(target, Body), (profile, Profile)],
             Operation::Hole { target, .. } => vec![(target, Body)],
             Operation::Boolean { target, tool, .. }
+            | Operation::MeshBoolean { target, tool, .. }
             | Operation::SmoothBlend { target, tool, .. } => {
                 vec![(target, Body), (tool, Body)]
             }
@@ -564,7 +586,8 @@ impl Operation {
             | Operation::Pattern { body, .. }
             | Operation::Mirror { body, .. }
             | Operation::Twist { body, .. }
-            | Operation::Bend { body, .. } => vec![(body, Body)],
+            | Operation::Bend { body, .. }
+            | Operation::MeshDecimate { body, .. } => vec![(body, Body)],
             Operation::Sweep {
                 profile,
                 path,

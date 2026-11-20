@@ -86,10 +86,24 @@ impl LengthScale {
 /// A small feature as a receiver will see it (rule T8).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReceiverFeature {
-    /// Two entities that share no topology.
+    /// Two entities that share no topology, with their distance in the
+    /// model's millimetres.
     pub pair: FeaturePair,
+    /// The distance the receiver reads: the model's distance times the
+    /// export's scale, in the receiver's millimetres.
+    pub receiver_distance_mm: Rational,
     /// Under 10 times, or under 4 times, the receiver's tolerance.
     pub band: FeatureBand,
+}
+
+/// An entity whose tolerance stays over the receiver's after the refit.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReceiverResidual {
+    /// The entity, with its tolerance in the model's millimetres.
+    pub entity: EntityTolerance,
+    /// The tolerance the receiver reads: the model's times the export's
+    /// scale.
+    pub receiver_tolerance_mm: Rational,
 }
 
 /// What rule T8 did for a receiver profile.
@@ -100,8 +114,11 @@ pub struct ReceiverReport {
     /// Edge uses over the receiver's tolerance whose face copies were
     /// refitted, with their stored tolerance before and after.
     pub refits: Vec<RefitRow>,
-    /// Entities still over the receiver's tolerance after the refit.
-    pub residuals: Vec<EntityTolerance>,
+    /// The scale the receiver reads the file at: 1, or the export's scale.
+    pub scale: i64,
+    /// Entities still over the receiver's tolerance after the refit, read at
+    /// the export's scale.
+    pub residuals: Vec<ReceiverResidual>,
     /// Features under 10 times and 4 times the receiver's tolerance.
     pub features: Vec<ReceiverFeature>,
     /// Offered for a micro part, one with a feature under 4 times the
@@ -610,7 +627,8 @@ pub fn build(
     guarded(|| {
         let (prepared, receiver) = match &options.receiver {
             Some(profile) => {
-                let (prepared, report) = for_receiver(body, profile, dec)?;
+                let scale = options.scale.map_or(1, LengthScale::factor);
+                let (prepared, report) = for_receiver(body, profile, scale, dec)?;
                 (std::borrow::Cow::Owned(prepared), Some(report))
             }
             None => (std::borrow::Cow::Borrowed(body), None),
@@ -628,24 +646,42 @@ pub fn build(
 /// Rule T8 before writing: refit edges above the receiver's tolerance, list
 /// what stays above it and the features under 10 and 4 times it, and offer
 /// a scaled export for a micro part.
+///
+/// The receiver reads the file at `scale`: every length the model has, times
+/// the scale. So its limits are taken in the model's millimetres divided by
+/// the scale for the refit and the feature search, and what is reported is
+/// read at the scale, in the receiver's millimetres. The offer is the
+/// smallest scale that lifts every feature to 10 times the receiver's
+/// tolerance, read from the model's own distances.
 fn for_receiver(
     body: &NumericalBody,
     profile: &ReceiverProfile,
+    scale: i64,
     dec: &mut Decider,
 ) -> Result<(NumericalBody, ReceiverReport), Refusal> {
-    let (refitted, refits) = body.refit_face_copies(&profile.tolerance_mm, dec)?;
+    let factor = Rational::from_i64(scale);
+    let model_limit = &profile.tolerance_mm / &factor;
+    let (refitted, refits) = body.refit_face_copies(&model_limit, dec)?;
     let residuals = refitted
         .tolerances()
         .entities
         .iter()
-        .filter(|entity| entity.tolerance_mm > profile.tolerance_mm)
-        .cloned()
+        .filter(|entity| entity.tolerance_mm > model_limit)
+        .map(|entity| ReceiverResidual {
+            entity: entity.clone(),
+            receiver_tolerance_mm: &entity.tolerance_mm * &factor,
+        })
         .collect();
-    let reach = &profile.tolerance_mm * &Rational::from_i64(tolerance::RECEIVER_WIDE_BAND);
+    let reach = &model_limit * &Rational::from_i64(tolerance::RECEIVER_WIDE_BAND);
     let mut features = Vec::new();
     for pair in tolerance::features_within(&refitted, &reach, dec)? {
-        if let Some(band) = tolerance::feature_band(&pair.distance_mm, profile) {
-            features.push(ReceiverFeature { pair, band });
+        let receiver_distance_mm = &pair.distance_mm * &factor;
+        if let Some(band) = tolerance::feature_band(&receiver_distance_mm, profile) {
+            features.push(ReceiverFeature {
+                pair,
+                receiver_distance_mm,
+                band,
+            });
         }
     }
     let smallest = features
@@ -667,6 +703,7 @@ fn for_receiver(
         ReceiverReport {
             profile: profile.clone(),
             refits,
+            scale,
             residuals,
             features,
             scaled_export_offer,

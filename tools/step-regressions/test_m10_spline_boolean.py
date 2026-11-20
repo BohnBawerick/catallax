@@ -6,6 +6,7 @@ the `step-regressions-slow` CI job runs beside this suite.
 """
 
 import copy
+from fractions import Fraction
 import hashlib
 import json
 import os
@@ -20,6 +21,13 @@ DRIVER = ROOT / '.claude/skills/verify-catallax/scripts/control-catallax.py'
 ALLOWANCE = 20_000_000
 APPLICATION_ALLOWANCE = 100_000_000
 TOP_CASES = frozenset(['M10-004', 'M10-005', 'M10-006'])
+# Rule T2's cap for own fitted geometry under 10 m (Checkpoint 2 decisions,
+# section 4.3): max(1e-5 mm, 100 x 1e-7 mm).
+T2_CAP = '1/100000'
+# Rule T2's fit target under 10 m: max(1e-6 mm, 10 x 1e-7 mm).
+T2_TARGET = '1/1000000'
+# Rule T4: a measured edge use stores 1.1 times its gap.
+T4_MARGIN = Fraction(11, 10)
 
 
 def allowance(number, application=False):
@@ -107,6 +115,12 @@ def cases():
     return rows
 
 
+def largest_record(checks):
+    """The largest sampled distance or stored tolerance among the checks."""
+    return max((Fraction(check['sampled_max_mm']) for check in checks
+                if check['kind'] == 'samples'), default=Fraction(0))
+
+
 def write_questions(path, rows=None, application=False):
     rows = cases() if rows is None else rows
     path.write_text(''.join(json.dumps({
@@ -144,8 +158,12 @@ class M10Outcomes:
                 self.assertEqual(len(run['cases']), len(rows))
                 observed = []
                 for (number, name, _), case in zip(rows, run['cases'], strict=True):
+                    response = case['response']
+                    # Recorded before the checks, so a failed case still
+                    # keeps every later row at its own index and is reported
+                    # as its own subtest.
+                    observed.append(comparable(response))
                     with self.subTest(number=number, name=name, workers=workers):
-                        response = case['response']
                         manifest = response['manifest']
                         self.assertFalse(case['cache_hit'])
                         self.assertEqual(response['work']['limit'], allowance(number, application))
@@ -156,7 +174,6 @@ class M10Outcomes:
                             self.assert_bounded_refusal(case)
                         else:
                             self.assert_approximate(number, case, manifest, operations)
-                        observed.append(comparable(response))
                 if baseline is None:
                     baseline = observed
                 else:
@@ -198,7 +215,24 @@ class M10Outcomes:
         step = manifest['step']
         self.assertTrue(step['approximate'])
         self.assertEqual(step['category'], 'approximate')
-        self.assertEqual(step['tolerance_mm'], '1/10000000')
+        # The body's class cap. The CLI's numerical export of an exact body is
+        # own fitted geometry under tolerance rule T2: its embedding fits to
+        # max(1e-6 mm, 10 eps) and the body admits under max(1e-5 mm, 100 eps)
+        # (Checkpoint 2 decisions, section 4.3); every part here is under
+        # 10 m, so eps is 1e-7 mm. The loft top cuts keep their own 1e-7 mm.
+        if number in TOP_CASES:
+            self.assertEqual(step['tolerance_mm'], '1/10000000')
+        else:
+            self.assertEqual(step['tolerance_mm'], T2_CAP)
+            for scope in ['source', 'emitted']:
+                self.assertEqual(step['numerical'][scope]['tolerance_mm'], T2_CAP)
+                checks = step['numerical'][scope]['checks']
+                self.assertLessEqual(largest_record(checks), Fraction(T2_CAP), f'{number} {scope}')
+                # The fitted copies stay within the fit target: each edge
+                # use stores rule T4's 1.1 times its gap.
+                gaps = [check for check in checks if check['name'].endswith('edge-surface-distance')]
+                self.assertLessEqual(largest_record(gaps), T4_MARGIN * Fraction(T2_TARGET),
+                                     f'{number} {scope}')
         self.assertEqual(step['complete_body_bound'], 'unestablished')
         data = (Path(case['path']) / 'answer.step').read_bytes()
         self.assertEqual(hashlib.sha256(data).hexdigest(), step['sha256'])

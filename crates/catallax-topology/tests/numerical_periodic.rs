@@ -149,6 +149,7 @@ fn continuous_circle_clearance_respects_the_requested_tolerance() {
         definition,
         NumericalOptions {
             tolerance_mm: fixture::q("1/1000"),
+            vertex_tolerance_mm: None,
         },
         &mut Decider::default(),
     )
@@ -173,6 +174,7 @@ fn multiple_bores_require_pairwise_clearance_under_the_requested_tolerance() {
             fixture::bores(&["-0.4025", "0.4025"], "0.4"),
             NumericalOptions {
                 tolerance_mm: fixture::q(tolerance),
+                vertex_tolerance_mm: None,
             },
             &mut Decider::default(),
         );
@@ -238,6 +240,7 @@ fn a_thin_annulus_uses_its_actual_rims_not_crossing_inscribed_chords() {
             fixture::annulus("1.015"),
             NumericalOptions {
                 tolerance_mm: fixture::q(tolerance),
+                vertex_tolerance_mm: None,
             },
             &mut Decider::default(),
         );

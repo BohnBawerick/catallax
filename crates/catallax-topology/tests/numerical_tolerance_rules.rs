@@ -3,6 +3,8 @@
 //! warning, rule T3's refit before an opt-in, and rule T7 along a chain.
 #[path = "common/analytic.rs"]
 mod fixture;
+#[path = "common/tent.rs"]
+mod tent;
 use catallax_numbers::{Decider, NumericalCheck, Rational};
 use catallax_shapes::Surface;
 use catallax_topology::numerical::{
@@ -17,6 +19,7 @@ const WALL: usize = 4;
 fn options(cap: &str) -> NumericalOptions {
     NumericalOptions {
         tolerance_mm: q(cap),
+        vertex_tolerance_mm: None,
     }
 }
 
@@ -413,4 +416,159 @@ fn an_edit_that_brings_an_unchanged_face_near_is_checked_by_the_pair_rule() {
         "{:?}",
         clear.tolerances().warnings
     );
+}
+
+/// Rule T3 by entity class (reviewer hold on 83858ed4): an imported vertex
+/// may sit 0.02 mm off its edges' ends while edges and faces keep 0.01 mm.
+/// The quarter cylinder's corner `v0` is moved off the ends of its three
+/// edges; the edges themselves are unchanged.
+#[test]
+fn an_imported_vertex_takes_its_own_cap_and_edges_keep_theirs() {
+    let mut dec = Decider::default();
+    let moved = |by: &str| {
+        let mut d = quarter();
+        d.vertices[0].position[2] = q(by);
+        d
+    };
+    // 0.015 mm off: a vertex-end record over 0.01 mm and under 0.02 mm.
+    let admitted = n::admit_import(moved("0.015"), Vec::new(), options("0.01"), &mut dec).unwrap();
+    assert_eq!(admitted.options().vertex_tolerance_mm, Some(q("0.02")));
+    assert_eq!(admitted.tolerances().vertex_cap_mm, Some(q("0.02")));
+    let v0 = admitted.tolerances().of(EntityKind::Vertex, "v0").unwrap();
+    assert!(*v0 > q("0.01") && *v0 <= q("0.02"), "{v0}");
+    for entity in &admitted.tolerances().entities {
+        if entity.kind == EntityKind::Edge {
+            assert!(entity.tolerance_mm <= q("0.01"), "{entity:?}");
+        }
+    }
+    // Own geometry has one class cap: the same vertex refuses at 0.01 mm.
+    let own = n::build(moved("0.015"), options("0.01"), &mut dec).unwrap_err();
+    assert_eq!(own.code, "numbers.numerical-tolerance-exceeded");
+    assert!(own.detail.contains("vertex-distance"), "{}", own.detail);
+    // Past 0.02 mm the vertex refuses under its own cap.
+    let far = n::admit_import(moved("0.025"), Vec::new(), options("0.01"), &mut dec).unwrap_err();
+    assert_eq!(far.code, "numbers.numerical-tolerance-exceeded");
+    assert!(
+        far.detail.contains("vertex-distance") && far.detail.contains("1/50"),
+        "{}",
+        far.detail
+    );
+    // An edge at 0.015 mm is under the vertex cap and still refuses: edges
+    // and faces keep 0.01 mm.
+    let edge =
+        n::admit_import(with_radius("1.015"), Vec::new(), options("0.01"), &mut dec).unwrap_err();
+    assert_eq!(edge.code, "numbers.numerical-tolerance-exceeded");
+    assert!(
+        edge.detail.contains("edge-surface-distance"),
+        "{}",
+        edge.detail
+    );
+}
+
+/// Rule T5 on a face's interior (reviewer hold on 83858ed4): the apex of a
+/// tent sits above the middle of its 100 mm base, which it does not touch,
+/// while every edge and vertex of the base is more than 70 mm away. The apex
+/// vertex is 0.002 mm off its edges' ends, so it carries 0.0022 mm; the base
+/// carries none. The pair is found through the production admission: a
+/// warning between `d/5` and `d/2`, a refusal under `d/2`, nothing just
+/// beyond five times the tolerance.
+#[test]
+fn a_vertex_near_a_large_face_interior_is_a_pair() {
+    let mut dec = Decider::default();
+    let near = n::build(tent::tent("0.006", "0.002"), options("0.01"), &mut dec).unwrap();
+    let apex = near
+        .tolerances()
+        .of(EntityKind::Vertex, tent::APEX)
+        .unwrap()
+        .clone();
+    assert!(apex >= q("0.0022"), "{apex}");
+    let face_pair = |body: &n::NumericalBody| {
+        body.tolerances()
+            .warnings
+            .iter()
+            .find_map(|warning| match warning {
+                ToleranceWarning::Pair(pair)
+                    if [&pair.a, &pair.b]
+                        .contains(&&(EntityKind::Vertex, tent::APEX.to_string()))
+                        && [&pair.a, &pair.b]
+                            .contains(&&(EntityKind::Face, tent::BASE.to_string())) =>
+                {
+                    Some(pair.clone())
+                }
+                _ => None,
+            })
+    };
+    // 0.008 mm above the base: 0.0022 > 0.008 / 5.
+    let pair = face_pair(&near).expect("the apex and the base are a pair");
+    assert_eq!(
+        pair.tolerance_sum_mm.to_f64_nearest(),
+        apex.to_f64_nearest()
+    );
+    assert!(
+        (pair.distance_mm.to_f64_nearest() - 0.008).abs() < 1e-9,
+        "{pair:?}"
+    );
+    // No edge or vertex of the base is near: the pair is the face's interior.
+    assert!(
+        near.tolerances()
+            .warnings
+            .iter()
+            .all(|warning| match warning {
+                ToleranceWarning::Pair(pair) =>
+                    pair.a.0 == EntityKind::Face || pair.b.0 == EntityKind::Face,
+                _ => true,
+            })
+    );
+    // 0.004 mm above: 0.0022 > 0.004 / 2, an error that names the face.
+    let refused = n::build(tent::tent("0.002", "0.002"), options("0.01"), &mut dec).unwrap_err();
+    assert_eq!(refused.code, "numerical.tolerance-pair");
+    assert!(
+        refused.detail.contains("face \"base\""),
+        "{}",
+        refused.detail
+    );
+    // Just beyond five times the apex's tolerance: no pair.
+    let beyond = n::build(tent::tent("0.0094", "0.002"), options("0.01"), &mut dec).unwrap();
+    assert!(
+        face_pair(&beyond).is_none(),
+        "{:?}",
+        beyond.tolerances().warnings
+    );
+}
+
+/// The pair search is charged as work, and an allowance it exhausts refuses
+/// by the operation budget's name (reviewer hold on 83858ed4). The near tent
+/// has one candidate pair to measure; the far one has none. The difference
+/// in work is at least the 81 points of the face grid the search samples. An
+/// allowance between the two admits the far tent and refuses the near one.
+#[test]
+fn the_pair_search_is_charged_and_its_exhaustion_refuses_by_name() {
+    use catallax_numbers::with_operation_budget;
+    let admit = |height: &str, limit: u64| {
+        with_operation_budget(limit, || {
+            n::build(
+                tent::tent(height, "0.002"),
+                options("0.01"),
+                &mut Decider::default(),
+            )
+        })
+    };
+    let (near, near_work) = admit("0.006", 20_000_000);
+    let (far, far_work) = admit("1", 20_000_000);
+    near.unwrap();
+    far.unwrap();
+    println!(
+        "pair search: near {} work, far {} work",
+        near_work.used, far_work.used
+    );
+    assert!(
+        near_work.used >= far_work.used + 81,
+        "{near_work:?} {far_work:?}"
+    );
+    let between = far_work.used + (near_work.used - far_work.used) / 2;
+    let (far, _) = admit("1", between);
+    far.unwrap();
+    let (refused, work) = admit("0.006", between);
+    assert_eq!(refused.unwrap_err().code, "numbers.operation-budget");
+    assert!(work.exhausted);
 }

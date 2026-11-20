@@ -401,11 +401,17 @@ fn open_prepared(
     Ok(result)
 }
 
+/// Rule T3's admission caps for a tolerant body. Healing raises the body's
+/// `maximum_mm` to what it needed, which is no user's opt-in, so a grown
+/// value above the automatic 0.01 mm admits at the automatic caps: 0.01 mm
+/// for edges and faces, 0.02 mm for vertices. A caller's stricter cap holds.
+fn upgrade_options(maximum_mm: &catallax_numbers::Rational) -> n::NumericalOptions {
+    n::tolerance::import_options(maximum_mm.clone().min(n::tolerance::import_cap_mm()))
+}
+
 fn upgrade_native(result: &mut OpenedStep, step: &StepId, dec: &mut Decider) {
     let native = result.native_admission.as_ref().expect("native outcomes");
-    let options = n::NumericalOptions {
-        tolerance_mm: result.source.options.maximum_mm.clone(),
-    };
+    let options = upgrade_options(&result.source.options.maximum_mm);
     for (index, body) in native.bodies().iter().enumerate() {
         let outcome = &mut result.bodies[body.source_index()];
         let attempt = (|| {
@@ -539,9 +545,7 @@ fn checked_admit(
     dec: &mut Decider,
 ) {
     let expected_sha256 = result.source.source_sha256.as_str();
-    let numerical_options = n::NumericalOptions {
-        tolerance_mm: result.source.options.maximum_mm.clone(),
-    };
+    let numerical_options = upgrade_options(&result.source.options.maximum_mm);
     let before = current_operation_work().used;
     let admission = numerical::import_step(bytes, expected_sha256, step, &numerical_options, dec);
     result.file_admission_work_used = current_operation_work().used.saturating_sub(before);

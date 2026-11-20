@@ -293,6 +293,62 @@ pub fn import_cap_for(kind: EntityKind, opt_in_mm: Option<&Rational>) -> Result<
     }
 }
 
+/// Admission options for an import under rule T3 with a stated cap: the
+/// automatic 0.01 mm, an opt-in up to 0.1 mm, or a stricter caller's value.
+/// Edges and faces take the cap; a vertex takes 0.02 mm at the automatic
+/// cap, the opt-in where that is larger, and a stricter caller's cap below
+/// the automatic one.
+pub fn import_options(cap_mm: Rational) -> super::NumericalOptions {
+    let automatic = import_cap_mm();
+    let vertex_tolerance_mm = if cap_mm < automatic {
+        None
+    } else {
+        let opt_in = (cap_mm > automatic).then_some(&cap_mm);
+        import_cap_for(EntityKind::Vertex, opt_in).ok()
+    };
+    super::NumericalOptions {
+        tolerance_mm: cap_mm,
+        vertex_tolerance_mm,
+    }
+}
+
+/// Rule T3's caps by class on admission's records: an edge end's distance
+/// to its vertex against `vertex_mm`, every other sampled record against
+/// `cap_mm`. Refuses as the evidence does, with
+/// `numbers.numerical-tolerance-exceeded`.
+pub(super) fn check_by_class(
+    checks: &[NumericalCheck],
+    cap_mm: &Rational,
+    vertex_mm: &Rational,
+) -> Result<(), Refusal> {
+    for check in checks {
+        if let NumericalCheck::Samples {
+            name,
+            scope,
+            samples,
+        } = check
+        {
+            let limit = if is_vertex_record(name) {
+                vertex_mm
+            } else {
+                cap_mm
+            };
+            for sample in samples {
+                if sample.distance_upper_mm > *limit {
+                    return Err(Refusal::new(
+                        "numbers.numerical-tolerance-exceeded",
+                        format!(
+                            "{name} on {scope}: sampled distance {} mm exceeds {} mm",
+                            sample.distance_upper_mm, limit
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 // ---------------------------------------------------------------------- T5
 
 /// Rule T5's error share: error when `t_a + t_b > d/2`.
@@ -496,6 +552,8 @@ pub struct ToleranceReport {
     pub floor_mm: Rational,
     /// The body's class cap.
     pub cap_mm: Rational,
+    /// The vertex cap where the class has its own (rule T3).
+    pub vertex_cap_mm: Option<Rational>,
     /// Every vertex and edge with its tolerance, in definition order.
     pub entities: Vec<EntityTolerance>,
     /// Warnings of rules T1, T5 and T7.
@@ -666,22 +724,42 @@ pub fn largest_recorded(evidence: &NumericalEvidence) -> Rational {
     largest
 }
 
+/// A report's entity tolerances by kind and key, charging one unit each.
+pub(super) fn by_key<'a>(
+    report: &'a ToleranceReport,
+    dec: &mut Decider,
+) -> Result<std::collections::BTreeMap<(EntityKind, &'a str), &'a Rational>, Refusal> {
+    dec.charge_work(report.entities.len() as u64)?;
+    Ok(report
+        .entities
+        .iter()
+        .map(|entity| ((entity.kind, entity.key.as_str()), &entity.tolerance_mm))
+        .collect())
+}
+
 /// Rule T7's growth warnings of one operation: every entity of `output`
 /// whose tolerance is more than 10 times its input. The input of an entity
 /// that `input` also has, by key and kind, is its own earlier tolerance; the
-/// input of a new entity is the largest tolerance of `input`.
+/// input of a new entity is the largest tolerance of `input`. Each entity
+/// compared is charged.
 ///
 /// An input with no recorded entities (a body read back from a layout that
 /// had no report) gives no warning: there is nothing to compare with.
-pub fn growth_warnings(input: &ToleranceReport, output: &ToleranceReport) -> Vec<ToleranceWarning> {
+pub fn growth_warnings(
+    input: &ToleranceReport,
+    output: &ToleranceReport,
+    dec: &mut Decider,
+) -> Result<Vec<ToleranceWarning>, Refusal> {
     if input.entities.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let largest = input.largest_mm();
+    let earlier = by_key(input, dec)?;
     let mut warnings = Vec::new();
     for entity in &output.entities {
-        let (input_mm, same_entity) = match input.of(entity.kind, &entity.key) {
-            Some(value) => (value.clone(), true),
+        dec.charge_work(1)?;
+        let (input_mm, same_entity) = match earlier.get(&(entity.kind, entity.key.as_str())) {
+            Some(value) => ((*value).clone(), true),
             None => (largest.clone(), false),
         };
         if grew(&input_mm, &entity.tolerance_mm) {
@@ -696,7 +774,7 @@ pub fn growth_warnings(input: &ToleranceReport, output: &ToleranceReport) -> Vec
             });
         }
     }
-    warnings
+    Ok(warnings)
 }
 
 #[cfg(test)]

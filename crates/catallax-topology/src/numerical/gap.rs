@@ -51,6 +51,150 @@ use lift::{Curve64, Face64, Lifted, Revolved, Scratch, Surface64};
 pub(in crate::numerical) use lift::defining_points;
 pub(in crate::numerical) use numeric::{brent_maximum, chebyshev_shares};
 
+/// A face's surface in binary64, in a frame a whole body shares (rule T1),
+/// with its parameters unshifted, for the distance readings of the
+/// tolerance rules.
+pub(in crate::numerical) struct FramedSurface {
+    surface: Surface64,
+    scratch: Scratch,
+    /// The period of u on a surface of revolution.
+    pub period_u: Option<f64>,
+}
+
+impl FramedSurface {
+    /// Rounds `surface` in the frame shifted to `origin`.
+    pub(in crate::numerical) fn new(
+        surface: &Surface,
+        origin: &[Rational; 3],
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        let surface = lift::framed_surface(surface, origin, dec)?;
+        let period_u =
+            matches!(surface, Surface64::Revolved { .. }).then_some(std::f64::consts::TAU);
+        Ok(Self {
+            surface,
+            scratch: Scratch::default(),
+            period_u,
+        })
+    }
+
+    /// The point at `uv`.
+    pub(in crate::numerical) fn point(&mut self, uv: [f64; 2]) -> [f64; 3] {
+        self.surface.point(uv, &mut self.scratch).value
+    }
+
+    /// The foot of `target` from a seed, and the evaluations spent.
+    pub(in crate::numerical) fn foot(
+        &mut self,
+        target: &[f64; 3],
+        seed: [f64; 2],
+    ) -> ([f64; 2], u64) {
+        self.surface.foot(target, seed, &mut self.scratch)
+    }
+
+    /// A box that holds the surface over the u/v rectangle `rect`, or `None`
+    /// for a plane, whose faces lie inside the box of their edges. A surface
+    /// of revolution is held by the box of its local frame's extent: a ring
+    /// of its largest radius over the v range, a sphere or a torus whole. A
+    /// spline is held by the controls whose basis functions are nonzero on
+    /// the rectangle (Piegl and Tiller, "The NURBS Book", section 4.4, and the
+    /// local support of section 2.2; positive weights).
+    pub(in crate::numerical) fn bounding_box(&self, rect: [[f64; 2]; 2]) -> Option<[[f64; 2]; 3]> {
+        let v_range = rect[1];
+        let mut low = [f64::INFINITY; 3];
+        let mut high = [f64::NEG_INFINITY; 3];
+        let mut take = |p: [f64; 3]| {
+            for axis in 0..3 {
+                low[axis] = low[axis].min(p[axis]);
+                high[axis] = high[axis].max(p[axis]);
+            }
+        };
+        match &self.surface {
+            Surface64::Plane { .. } => return None,
+            Surface64::Spline(net) => {
+                for control in net.controls_over(rect) {
+                    let w = control[3];
+                    take([control[0] / w, control[1] / w, control[2] / w]);
+                }
+            }
+            Surface64::Revolved {
+                kind,
+                origin,
+                frame,
+                sizes,
+            } => {
+                let [v0, v1] = v_range;
+                let local: [[f64; 2]; 3] = match kind {
+                    Revolved::Cylinder => [[-sizes[0], sizes[0]], [-sizes[0], sizes[0]], [v0, v1]],
+                    Revolved::EllipticCylinder => {
+                        [[-sizes[0], sizes[0]], [-sizes[1], sizes[1]], [v0, v1]]
+                    }
+                    Revolved::Cone => {
+                        let r = v0.abs().max(v1.abs()) * sizes[0].abs();
+                        [[-r, r], [-r, r], [v0, v1]]
+                    }
+                    Revolved::Sphere => [[-sizes[0], sizes[0]]; 3],
+                    Revolved::Torus => {
+                        let r = sizes[0].abs() + sizes[1].abs();
+                        [[-r, r], [-r, r], [-sizes[1].abs(), sizes[1].abs()]]
+                    }
+                };
+                for a in local[0] {
+                    for b in local[1] {
+                        for c in local[2] {
+                            take(std::array::from_fn(|k| {
+                                origin[k] + a * frame[0][k] + b * frame[1][k] + c * frame[2][k]
+                            }));
+                        }
+                    }
+                }
+            }
+        }
+        Some(std::array::from_fn(|axis| {
+            let slack = BOX_ROUNDINGS
+                * numeric::UNIT_ROUNDOFF
+                * low[axis].abs().max(high[axis].abs()).max(f64::MIN_POSITIVE);
+            [low[axis] - slack, high[axis] + slack]
+        }))
+    }
+}
+
+/// A retained u/v curve in binary64, for the tolerance rules' reading of a
+/// face's boundary in its parameters.
+pub(in crate::numerical) struct FramedUvCurve {
+    curve: lift::Spline<3>,
+    scratch: Scratch,
+}
+
+impl FramedUvCurve {
+    /// Rounds `source`.
+    pub(in crate::numerical) fn new(
+        source: &BSplineCurve,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        Ok(Self {
+            curve: lift::uv_curve(source, dec)?,
+            scratch: Scratch::default(),
+        })
+    }
+
+    /// The controls in u/v: their hull holds the curve (Piegl and Tiller,
+    /// "The NURBS Book", section 4.2; positive weights).
+    pub(in crate::numerical) fn controls(&self) -> Vec<[f64; 2]> {
+        self.curve
+            .controls
+            .iter()
+            .map(|c| [c[0] / c[2], c[1] / c[2]])
+            .collect()
+    }
+
+    /// The u/v at `t`.
+    pub(in crate::numerical) fn point(&mut self, t: f64) -> [f64; 2] {
+        let value = self.curve.point(t, &mut self.scratch).value;
+        [value[0], value[1]]
+    }
+}
+
 /// Source: the allowance `lift.rs` gives a domain border, sixteen roundings
 /// of the largest coordinate, here for the corners of a box.
 const BOX_ROUNDINGS: f64 = 16.0;
@@ -110,7 +254,7 @@ impl FramedCurve {
 
     /// A box that holds the curve over its range: the two ends of a line,
     /// a conic's centre widened by its two semi-axes, or the controls of a
-    /// spline (Piegl and Tiller, property P4.11; positive weights). It is
+    /// spline (Piegl and Tiller, "The NURBS Book", section 4.2; positive weights). It is
     /// widened by the binary64 rounding of its own corners.
     pub(in crate::numerical) fn bounding_box(&mut self) -> [[f64; 2]; 3] {
         let mut low = [f64::INFINITY; 3];

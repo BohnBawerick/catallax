@@ -87,6 +87,11 @@ impl Codec for NumericalBody {
                 ToleranceReport::default()
             },
         })
+        .map(|mut body: NumericalBody| {
+            // The options skip the vertex cap; the report keeps it.
+            body.options.vertex_tolerance_mm = body.tolerances.vertex_cap_mm.clone();
+            body
+        })
     }
     fn register(r: &mut Registry) {
         r.add::<NumericalDefinition>();

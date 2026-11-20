@@ -499,7 +499,7 @@ impl NumericalBody {
                 self.evidence.repairs().to_vec(),
                 dec,
             )?;
-            next.inherit(self);
+            next.inherit(self, dec)?;
             next.lower_growth(self, dec)
         })
     }

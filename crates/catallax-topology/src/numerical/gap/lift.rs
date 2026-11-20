@@ -578,6 +578,28 @@ impl Net {
     }
 
     /// Whether `(u, v)` lies outside the knot rectangle by more than rounding.
+    /// The homogeneous controls whose basis functions are nonzero somewhere
+    /// on the u/v rectangle `rect`: the local support of a B-spline (Piegl
+    /// and Tiller, "The NURBS Book", section 2.2: local support), so their hull holds the surface there.
+    pub(super) fn controls_over(&self, rect: [[f64; 2]; 2]) -> Vec<[f64; 4]> {
+        let spans: [[usize; 2]; 2] = std::array::from_fn(|axis| {
+            let [lo, hi] = rect[axis];
+            let d = self.degrees[axis];
+            let (knots, count) = (&self.knots[axis], self.count[axis]);
+            [
+                find_span(knots, d, count, lo) - d,
+                find_span(knots, d, count, hi),
+            ]
+        });
+        let mut out = Vec::new();
+        for i in spans[0][0]..=spans[0][1] {
+            for j in spans[1][0]..=spans[1][1] {
+                out.push(self.controls[i * self.count[1] + j]);
+            }
+        }
+        out
+    }
+
     pub(super) fn outside(&self, uv: [f64; 2]) -> bool {
         (0..2).any(|axis| {
             let [lo, hi] = self.domain(axis);
@@ -605,7 +627,8 @@ const OUTSIDE_ROUNDINGS: f64 = 16.0;
 const CHART_ROUNDINGS: f64 = 12.0;
 
 impl Surface64 {
-    fn point(&self, uv: [f64; 2], scratch: &mut Scratch) -> Bounded<[f64; 3]> {
+    /// The point at `uv`.
+    pub(super) fn point(&self, uv: [f64; 2], scratch: &mut Scratch) -> Bounded<[f64; 3]> {
         match self {
             Self::Spline(net) => net.point(uv[0], uv[1], scratch),
             Self::Plane { origin, frame } => {
@@ -659,6 +682,49 @@ impl Surface64 {
                 }
             }
         }
+    }
+
+    /// The foot on the surface of `target`, from a seed: Gauss-Newton on the
+    /// squared distance with forward-difference partials, as
+    /// [`Lifted::allowance`] takes them (Dennis and Schnabel 1983, sections
+    /// 5.4 and 10.1). Returns the foot and the evaluations it spent.
+    pub(super) fn foot(
+        &self,
+        target: &[f64; 3],
+        seed: [f64; 2],
+        scratch: &mut Scratch,
+    ) -> ([f64; 2], u64) {
+        let mut uv = seed;
+        let mut evaluations = 0;
+        for _ in 0..FOOT_STEPS {
+            let base = self.point(uv, scratch).value;
+            let r: [f64; 3] = std::array::from_fn(|k| target[k] - base[k]);
+            let mut partial = [[0.0; 3]; 2];
+            for (axis, column) in partial.iter_mut().enumerate() {
+                let step = f64::EPSILON.sqrt() * uv[axis].abs().max(1.0);
+                let mut moved = uv;
+                moved[axis] += step;
+                let there = self.point(moved, scratch).value;
+                *column = std::array::from_fn(|k| (there[k] - base[k]) / step);
+            }
+            evaluations += 3;
+            let (a, b, c) = (
+                dot(&partial[0], &partial[0]),
+                dot(&partial[0], &partial[1]),
+                dot(&partial[1], &partial[1]),
+            );
+            let (g0, g1) = (dot(&partial[0], &r), dot(&partial[1], &r));
+            let det = a * c - b * b;
+            if det == 0.0 || !det.is_finite() {
+                break;
+            }
+            let d = [(c * g0 - b * g1) / det, (a * g1 - b * g0) / det];
+            uv = [uv[0] + d[0], uv[1] + d[1]];
+            if d[0].abs() + d[1].abs() <= f64::EPSILON * (uv[0].abs() + uv[1].abs()).max(1.0) {
+                break;
+            }
+        }
+        (uv, evaluations)
     }
 }
 
@@ -817,37 +883,8 @@ impl Lifted {
     /// and the evaluations it spent.
     pub(super) fn foot(&self, t: f64, seed: [f64; 2], scratch: &mut Scratch) -> ([f64; 2], u64) {
         let target = self.curve.point(t, scratch).value;
-        let mut uv = seed;
-        let mut evaluations = 1;
-        for _ in 0..FOOT_STEPS {
-            let base = self.surface.point(uv, scratch).value;
-            let r: [f64; 3] = std::array::from_fn(|k| target[k] - base[k]);
-            let mut partial = [[0.0; 3]; 2];
-            for (axis, column) in partial.iter_mut().enumerate() {
-                let step = f64::EPSILON.sqrt() * uv[axis].abs().max(1.0);
-                let mut moved = uv;
-                moved[axis] += step;
-                let there = self.surface.point(moved, scratch).value;
-                *column = std::array::from_fn(|k| (there[k] - base[k]) / step);
-            }
-            evaluations += 3;
-            let (a, b, c) = (
-                dot(&partial[0], &partial[0]),
-                dot(&partial[0], &partial[1]),
-                dot(&partial[1], &partial[1]),
-            );
-            let (g0, g1) = (dot(&partial[0], &r), dot(&partial[1], &r));
-            let det = a * c - b * b;
-            if det == 0.0 || !det.is_finite() {
-                break;
-            }
-            let d = [(c * g0 - b * g1) / det, (a * g1 - b * g0) / det];
-            uv = [uv[0] + d[0], uv[1] + d[1]];
-            if d[0].abs() + d[1].abs() <= f64::EPSILON * (uv[0].abs() + uv[1].abs()).max(1.0) {
-                break;
-            }
-        }
-        (uv, evaluations)
+        let (uv, evaluations) = self.surface.foot(&target, seed, scratch);
+        (uv, evaluations + 1)
     }
 
     /// Whether the face copy is outside a spline surface's domain at `t`.
@@ -923,7 +960,7 @@ pub(super) fn framed_curve(
 /// a reach: every point of the curve there is within the reach of one of
 /// them along every axis. A line's two ends; a conic's centre with its
 /// largest semi-axis; a spline's controls, whose hull holds the curve
-/// (Piegl and Tiller, property P4.11; positive weights).
+/// (Piegl and Tiller, "The NURBS Book", section 4.2; positive weights).
 pub(in crate::numerical) fn defining_points(
     curve: &Curve,
     parameters: [&Rational; 2],
@@ -963,4 +1000,102 @@ pub(in crate::numerical) fn defining_points(
             .collect::<Result<_, Refusal>>()?,
         _ => return Err(unsupported("the 3D copy has no parameter evaluator")),
     })
+}
+
+/// A face's surface rounded to binary64 in a frame that a whole body shares,
+/// with its parameters unshifted, for the distance readings of the tolerance
+/// rules. A torus sheet is a torus here.
+pub(super) fn framed_surface(
+    surface: &Surface,
+    origin: &[Rational; 3],
+    dec: &mut Decider,
+) -> Result<Surface64, Refusal> {
+    let zero = Ball::from_rational(&Rational::zero(), BITS);
+    let analytic = |kind: Revolved,
+                    point: &Point3,
+                    axis: &Vector3,
+                    reference: &Vector3,
+                    sizes: [Ball; 2],
+                    dec: &mut Decider|
+     -> Result<Surface64, Refusal> {
+        let frame = frame(axis, reference, dec)?;
+        let point = rational_point(point, dec)?;
+        Ok(Surface64::Revolved {
+            kind,
+            origin: placed(&point, origin, &frame, [&zero, &zero, &zero]),
+            frame: rounded_frame(&frame),
+            sizes: sizes.each_ref().map(rounded),
+        })
+    };
+    Ok(match surface {
+        Surface::BSpline(support) => Surface64::Spline(net(support.carrier(), origin, dec)?),
+        Surface::Plane(plane) => {
+            let frame = frame(&plane.normal, &plane.ref_dir, dec)?;
+            let point = rational_point(&plane.origin, dec)?;
+            Surface64::Plane {
+                origin: placed(&point, origin, &frame, [&zero, &zero, &zero]),
+                frame: rounded_frame(&frame),
+            }
+        }
+        Surface::Cylinder(s) => analytic(
+            Revolved::Cylinder,
+            &s.origin,
+            &s.axis,
+            &s.ref_dir,
+            [root(&s.radius_sq, dec)?, zero.clone()],
+            dec,
+        )?,
+        Surface::EllipticCylinder(s) => analytic(
+            Revolved::EllipticCylinder,
+            &s.origin,
+            &s.axis,
+            &s.major_dir,
+            [root(&s.major_sq, dec)?, root(&s.minor_sq, dec)?],
+            dec,
+        )?,
+        Surface::Cone(s) => analytic(
+            Revolved::Cone,
+            &s.apex,
+            &s.axis,
+            &s.ref_dir,
+            [ball(&rational(&s.slope, dec)?), zero.clone()],
+            dec,
+        )?,
+        Surface::Sphere(s) => analytic(
+            Revolved::Sphere,
+            &s.center,
+            &s.axis,
+            &s.ref_dir,
+            [ball(&rational(&s.radius, dec)?), zero.clone()],
+            dec,
+        )?,
+        Surface::Torus(s) => analytic(
+            Revolved::Torus,
+            &s.center,
+            &s.axis,
+            &s.ref_dir,
+            [
+                ball(&rational(&s.major, dec)?),
+                ball(&rational(&s.minor, dec)?),
+            ],
+            dec,
+        )?,
+        Surface::TorusSheet(s) => analytic(
+            Revolved::Torus,
+            &s.center,
+            &s.axis,
+            &s.ref_dir,
+            [
+                ball(&rational(&s.major, dec)?),
+                ball(&rational(&s.minor, dec)?),
+            ],
+            dec,
+        )?,
+        _ => return Err(unsupported("the surface has no chart evaluator")),
+    })
+}
+
+/// A retained u/v curve in binary64, unshifted.
+pub(super) fn uv_curve(source: &BSplineCurve, dec: &mut Decider) -> Result<Spline<3>, Refusal> {
+    spline_curve(source, &[Rational::zero(), Rational::zero()], dec)
 }

@@ -122,6 +122,7 @@ pub fn run(out: &Path, control: &str) -> Result<serde_json::Value, String> {
         bindings,
         n::NumericalOptions {
             tolerance_mm: tolerance,
+            vertex_tolerance_mm: None,
         },
         &mut dec,
     )

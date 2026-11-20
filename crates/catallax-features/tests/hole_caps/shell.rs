@@ -248,6 +248,7 @@ fn skew_caps_sew_edit_transfer_and_export_as_a_numerical_shell() {
         let mut dec = Decider::default();
         let options = NumericalOptions {
             tolerance_mm: q("1e-7"),
+            vertex_tolerance_mm: None,
         };
         let step_options = NumericalStepOptions::default();
         let mut previous: Option<n::NumericalBody> = None;

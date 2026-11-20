@@ -158,6 +158,7 @@ impl Context {
             let fitted = tolerance::own_fitted(&eps, None);
             let cap = NumericalOptions {
                 tolerance_mm: fitted.cap_mm.clone(),
+                vertex_tolerance_mm: None,
             };
             let tolerance = fitted.target_mm.clone();
             // One edge between two retained spline faces keeps the

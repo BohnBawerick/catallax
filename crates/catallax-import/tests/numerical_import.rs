@@ -189,6 +189,7 @@ fn the_neighbouring_feature_limit_and_requested_tolerance_still_apply() {
         &StepId::new("source").unwrap(),
         &n::NumericalOptions {
             tolerance_mm: r("0.001"),
+            vertex_tolerance_mm: None,
         },
         &mut Decider::default(),
     )

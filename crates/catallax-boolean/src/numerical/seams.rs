@@ -134,6 +134,7 @@ mod tests {
             [q(0), q(1)],
             NumericalOptions {
                 tolerance_mm: tolerance.clone(),
+                vertex_tolerance_mm: None,
             },
             &mut dec,
         )

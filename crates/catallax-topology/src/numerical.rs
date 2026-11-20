@@ -196,13 +196,29 @@ pub struct NumericalOptions {
     /// stores 1.1 times its measured gap (rule T4 of the tolerance rules).
     /// This is not a promised global deviation bound.
     pub tolerance_mm: Rational,
+    /// The largest distance from an edge end to its vertex, where the class
+    /// gives vertices their own cap: rule T3's 0.02 mm for imported vertices
+    /// ([`tolerance::import_options`]). `None`: vertices share
+    /// `tolerance_mm`. A stored body keeps it in its tolerance report.
+    #[transfer(skip)]
+    pub vertex_tolerance_mm: Option<Rational>,
 }
 
 impl Default for NumericalOptions {
     fn default() -> Self {
         Self {
             tolerance_mm: Rational::parse("0.01").expect("constant"),
+            vertex_tolerance_mm: None,
         }
+    }
+}
+
+impl NumericalOptions {
+    /// The cap of an edge end's distance to its vertex.
+    pub fn vertex_cap_mm(&self) -> &Rational {
+        self.vertex_tolerance_mm
+            .as_ref()
+            .unwrap_or(&self.tolerance_mm)
     }
 }
 
@@ -414,6 +430,7 @@ impl NumericalBody {
             for (face_index, face) in self.definition.faces.iter().enumerate() {
                 for (boundary, row) in face.loops.iter().enumerate() {
                     for use_index in 0..row.len() {
+                        dec.charge_work(1)?;
                         let (stored, derived) = &records[index];
                         index += 1;
                         if !derived && stored > above_mm {
@@ -435,7 +452,7 @@ impl NumericalBody {
                         self.evidence.repairs().to_vec(),
                         dec,
                     )?;
-                    next.inherit(self);
+                    next.inherit(self, dec)?;
                     Ok((next, rows))
                 }
             }
@@ -532,21 +549,23 @@ impl NumericalBody {
             return Ok(self);
         }
         let records = tolerance::use_records(&self.evidence);
+        let earlier = tolerance::by_key(&previous.tolerances, dec)?;
         let mut chosen = Vec::new();
         let mut index = 0;
         let mut target = f64::INFINITY;
         for (face_index, face) in self.definition.faces.iter().enumerate() {
             for (boundary, row) in face.loops.iter().enumerate() {
                 for (use_index, trim) in row.iter().enumerate() {
+                    dec.charge_work(1)?;
                     let (stored, derived) = &records[index];
                     index += 1;
                     let key = self.definition.edges[trim.edge].key.as_str();
                     if !derived && grown.contains(key) {
                         chosen.push(((face_index, boundary, use_index), stored.clone()));
-                        let input = previous
-                            .tolerances
-                            .of(tolerance::EntityKind::Edge, key)
-                            .cloned()
+                        dec.charge_work(1)?;
+                        let input = earlier
+                            .get(&(tolerance::EntityKind::Edge, key))
+                            .map(|value| (*value).clone())
                             .unwrap_or_default();
                         target = target.min(
                             (input * Rational::from_i64(tolerance::GROWTH_FACTOR)).to_f64_nearest(),
@@ -567,16 +586,16 @@ impl NumericalBody {
             self.evidence.repairs().to_vec(),
             dec,
         )?;
-        next.inherit(previous);
+        next.inherit(previous, dec)?;
         Ok(next)
     }
 
-    fn inherit(&mut self, previous: &Self) {
+    fn inherit(&mut self, previous: &Self, dec: &mut Decider) -> Result<(), Refusal> {
         // Rule T7: this body was measured again by its own admission, with
         // rule T4's margin on fresh measurements only, so no tolerance is
         // carried over or stacked. What rose more than ten times above its
         // input is reported with its absolute values.
-        let growth = tolerance::growth_warnings(&previous.tolerances, &self.tolerances);
+        let growth = tolerance::growth_warnings(&previous.tolerances, &self.tolerances, dec)?;
         self.tolerances.warnings.extend(growth);
         self.source = previous.source.clone();
         self.source_native_trims = previous.source_native_trims.clone();
@@ -589,6 +608,7 @@ impl NumericalBody {
             options: previous.options.clone(),
             evidence: previous.evidence.clone(),
         });
+        Ok(())
     }
 
     /// Retained generating data, including the finite parameter trims.
@@ -698,7 +718,7 @@ impl NumericalBody {
                 repairs,
                 dec,
             )?;
-            next.inherit(self);
+            next.inherit(self, dec)?;
             next.lower_growth(self, dec)
         })
     }
@@ -748,6 +768,7 @@ pub fn admit_import(
             ),
         ));
     }
+    let options = tolerance::import_options(options.tolerance_mm);
     match build_with_native_trims(
         definition.clone(),
         native_trims.clone(),
@@ -758,9 +779,7 @@ pub fn admit_import(
             let probe = build_with_native_trims(
                 definition.clone(),
                 native_trims,
-                NumericalOptions {
-                    tolerance_mm: tolerance::import_opt_in_limit_mm(),
-                },
+                tolerance::import_options(tolerance::import_opt_in_limit_mm()),
                 dec,
             )
             .map_err(|_| refusal.clone())?;
@@ -1375,8 +1394,17 @@ fn build_inner_kind(
             });
         }
     }
-    let evidence = NumericalEvidence::new(options.tolerance_mm.clone(), checks, repairs)?;
-    let tolerances = tolerance_report(&definition, &evidence, &options, dec)?;
+    // Rule T3 caps a vertex apart from its edges and faces. Every record of an
+    // edge end's distance to its vertex is held to the vertex cap, and every
+    // other record to the class cap; the evidence states the larger.
+    let evidence_tolerance = if let Some(vertex) = &options.vertex_tolerance_mm {
+        tolerance::check_by_class(&checks, &options.tolerance_mm, vertex)?;
+        vertex.clone().max(options.tolerance_mm.clone())
+    } else {
+        options.tolerance_mm.clone()
+    };
+    let evidence = NumericalEvidence::new(evidence_tolerance, checks, repairs)?;
+    let tolerances = tolerance_report(&definition, &native_trims, &evidence, &options, dec)?;
     dec.check_deadline()?;
     Ok(NumericalBody {
         source: definition.clone(),
@@ -1401,12 +1429,16 @@ fn build_inner_kind(
 /// cap that applies is the smaller of the two.
 fn tolerance_report(
     definition: &NumericalDefinition,
+    native_trims: &[NumericalNativeTrim],
     evidence: &NumericalEvidence,
     options: &NumericalOptions,
     dec: &mut Decider,
 ) -> Result<ToleranceReport, Refusal> {
     let frame = tolerance::BodyFrame::of(definition, dec)?;
     let floor_mm = frame.floor_mm();
+    dec.charge_work(
+        (definition.vertices.len() + definition.edges.len() + evidence.checks().len()) as u64,
+    )?;
     let entities = tolerance::entity_tolerances(definition, evidence, &floor_mm)?;
     let mut warnings = Vec::new();
     if frame.extent_mm > tolerance::body_size_warning_mm() {
@@ -1415,7 +1447,7 @@ fn tolerance_report(
         });
     }
     warnings.extend(
-        tolerance::pair_rule_check(definition, &entities, &frame.centre, dec)?
+        tolerance::pair_rule_check(definition, native_trims, &entities, &frame.centre, dec)?
             .into_iter()
             .map(ToleranceWarning::Pair),
     );
@@ -1423,6 +1455,7 @@ fn tolerance_report(
         coordinate_size_mm: frame.coordinate_size_mm,
         floor_mm,
         cap_mm: options.tolerance_mm.clone(),
+        vertex_cap_mm: options.vertex_tolerance_mm.clone(),
         entities,
         warnings,
     })

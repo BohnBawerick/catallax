@@ -462,6 +462,7 @@ mod tests {
                 native,
                 NumericalOptions {
                     tolerance_mm: tolerance.clone(),
+                    vertex_tolerance_mm: None,
                 },
                 &mut dec,
             )
@@ -553,6 +554,7 @@ mod tests {
                     native,
                     NumericalOptions {
                         tolerance_mm: tolerance.clone(),
+                        vertex_tolerance_mm: None,
                     },
                     &mut dec,
                 )

@@ -2101,6 +2101,7 @@ mod tests {
                     &Rational::parse("0.0000001").unwrap(),
                     &NumericalOptions {
                         tolerance_mm: Rational::parse("0.0000001").unwrap(),
+                        vertex_tolerance_mm: None,
                     },
                     &mut dec,
                 )
@@ -2152,6 +2153,7 @@ mod tests {
                 &Rational::parse("0.0000001").unwrap(),
                 &NumericalOptions {
                     tolerance_mm: Rational::parse("0.0000001").unwrap(),
+                    vertex_tolerance_mm: None,
                 },
                 &mut dec,
             )

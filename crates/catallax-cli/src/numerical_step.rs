@@ -244,7 +244,10 @@ pub(crate) fn embedded_exact(
         let body = numerical::build_with_native_trims(
             definition,
             native_trims,
-            NumericalOptions { tolerance_mm: cap },
+            NumericalOptions {
+                tolerance_mm: cap,
+                vertex_tolerance_mm: None,
+            },
             dec,
         )?;
         step::build(&body, &options, dec)
@@ -322,6 +325,7 @@ fn admit(
             recipe,
             NumericalOptions {
                 tolerance_mm: tolerance.clone(),
+                vertex_tolerance_mm: None,
             },
             dec,
         )
@@ -361,6 +365,7 @@ fn admit(
             recipe,
             NumericalOptions {
                 tolerance_mm: tolerance.clone(),
+                vertex_tolerance_mm: None,
             },
             dec,
         )
@@ -395,6 +400,7 @@ fn admit(
                     definition,
                     NumericalOptions {
                         tolerance_mm: tolerance.clone(),
+                        vertex_tolerance_mm: None,
                     },
                     dec,
                 )

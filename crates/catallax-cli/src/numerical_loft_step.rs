@@ -72,14 +72,7 @@ pub(crate) fn evaluate(
     };
     let loft = built.bodies[target];
     let stock = built.bodies[tool];
-    // Rule T2 for own fitted geometry: the traced cut aims at the target.
-    // The selection uses one value as its fit target and its class cap, so
-    // the cap stays at the target, inside rule T2's cap.
-    let eps = match crate::numerical_step::exact_floor(&built.model, loft, dec) {
-        Ok(eps) => eps,
-        Err(error) => return Ok(Some(failure(error, "width-routing"))),
-    };
-    let tolerance = catallax_topology::numerical::tolerance::own_fitted(&eps, None).target_mm;
+    let tolerance = catallax_step::StepOptions::default().curve_tolerance;
     match measured("numerical-loft-routing", recipe, dec, |dec| {
         stock_overlaps_loft_top(&built.model, loft, stock, &tolerance, dec)
     }) {

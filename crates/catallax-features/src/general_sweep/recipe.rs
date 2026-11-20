@@ -395,6 +395,7 @@ mod tests {
                 &recipe,
                 NumericalOptions {
                     tolerance_mm: Rational::from_ratio(1, 100).unwrap(),
+                    vertex_tolerance_mm: None,
                 },
                 &mut dec,
             )
@@ -431,6 +432,7 @@ mod tests {
         let recipe: Recipe = serde_json::from_value(input).unwrap();
         let options = || NumericalOptions {
             tolerance_mm: Rational::from_ratio(1, 100).unwrap(),
+            vertex_tolerance_mm: None,
         };
         let error = prepare_recipe(&recipe, options(), &mut Decider::default())
             .err()

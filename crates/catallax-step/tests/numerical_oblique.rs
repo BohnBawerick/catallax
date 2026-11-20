@@ -114,6 +114,7 @@ fn coarse_oblique_payload_must_pass_its_own_checks() {
         definition(),
         NumericalOptions {
             tolerance_mm: tube::q("0.00000001"),
+            vertex_tolerance_mm: None,
         },
         &mut Decider::default(),
     )

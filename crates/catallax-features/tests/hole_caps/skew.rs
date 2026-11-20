@@ -244,6 +244,7 @@ pub(super) fn component(diameter: &Rational, dec: &mut Decider) -> Component {
     assert_eq!(span.interval_mm, [q("-99/2"), q("99/2")]);
     let options = NumericalOptions {
         tolerance_mm: q("1e-7"),
+        vertex_tolerance_mm: None,
     };
     let part = clip_cone_cylinder_face(
         &built.model,

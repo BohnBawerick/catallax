@@ -66,6 +66,7 @@ fn control(gap: bool) -> catallax_topology::numerical::NumericalBody {
     let mut d = n02::tube();
     let opts = NumericalOptions {
         tolerance_mm: n02::q("0.01"),
+        vertex_tolerance_mm: None,
     };
     if gap {
         let keeper = d.edges[0].vertices[0];

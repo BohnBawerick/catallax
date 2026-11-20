@@ -214,6 +214,7 @@ fn query(
                     .ok_or("--clip-cone requires --finite-bands")?,
                 catallax_topology::numerical::NumericalOptions {
                     tolerance_mm: Rational::from_ratio(1, 10_000_000).unwrap(),
+                    vertex_tolerance_mm: None,
                 },
                 &mut dec,
             )

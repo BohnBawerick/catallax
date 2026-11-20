@@ -743,6 +743,7 @@ fn lattice_preview(
 
 fn work_summary(work: catallax_numbers::OperationWork, limit: u64) -> Value {
     json!({"used":work.used,"limit":limit,"exhausted":work.exhausted,
+        "refunded":work.refunded,
         "target":catallax_app::TARGET_BUILD_WORK,
         "over_target":work.used > catallax_app::TARGET_BUILD_WORK})
 }

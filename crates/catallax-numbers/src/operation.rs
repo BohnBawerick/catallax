@@ -24,6 +24,8 @@ struct State {
     aborted: Arc<AtomicBool>,
     limit: u64,
     used: u64,
+    // Charges that `refund_on_refusal` took back out of `used`.
+    refunded: u64,
     exhausted: bool,
     reduced_angle_series: bool,
     reuse_enclosures: bool,
@@ -103,6 +105,11 @@ pub struct OperationWork {
     pub used: u64,
     /// Whether a reservation exceeded the allowance or a task aborted.
     pub exhausted: bool,
+    /// Arithmetic of refused optional attempts ([`refund_on_refusal`]). The
+    /// allowance got these units back, so they are not in `used`, but the
+    /// machine did the work: `used + refunded` is what the operation cost to
+    /// run.
+    pub refunded: u64,
 }
 
 impl State {
@@ -111,6 +118,7 @@ impl State {
         OperationWork {
             used: if aborted { self.limit } else { self.used },
             exhausted: self.exhausted || aborted,
+            refunded: self.refunded,
         }
     }
 }
@@ -165,13 +173,14 @@ pub(crate) fn angle_reductions() -> u32 {
 }
 
 /// Observes request accounting without charging it.
-/// Outside a request budget both counters are zero/false.
+/// Outside a request budget every counter is zero/false.
 pub fn current_operation_work() -> OperationWork {
     ACTIVE.with(|slot| {
         slot.borrow().as_ref().map_or_else(
             || OperationWork {
                 used: 0,
                 exhausted: false,
+                refunded: 0,
             },
             State::work,
         )
@@ -201,8 +210,9 @@ pub fn with_operation_budget<T>(limit: u64, run: impl FnOnce() -> T) -> (T, Oper
 /// this only runs the attempt.
 ///
 /// Use it for a cheaper construction tried ahead of the one the request is
-/// funded for. The arithmetic of a refused attempt is real machine time, so the
-/// caller bounds how often it makes one.
+/// funded for. The arithmetic of a refused attempt is real machine time. Its
+/// returned charges move to [`OperationWork::refunded`], which only grows, so
+/// the cost of refused attempts stays on the record.
 pub fn refund_on_refusal<T, E>(run: impl FnOnce() -> Result<T, E>) -> Result<T, E> {
     let before = ACTIVE.with(|slot| {
         slot.borrow()
@@ -221,6 +231,9 @@ pub fn refund_on_refusal<T, E>(run: impl FnOnce() -> Result<T, E>) -> Result<T, 
                 && state.request == request
                 && !state.aborted.load(AtomicOrdering::Acquire)
             {
+                state.refunded = state
+                    .refunded
+                    .saturating_add(state.used.saturating_sub(used));
                 state.used = used;
                 state.exhausted = exhausted;
             }
@@ -255,6 +268,7 @@ fn budget_scope<T>(limit: u64, worker: bool, run: impl FnOnce() -> T) -> (T, Ope
             aborted: Arc::new(AtomicBool::new(false)),
             limit,
             used: 0,
+            refunded: 0,
             exhausted: false,
             reduced_angle_series: false,
             reuse_enclosures: false,
@@ -298,6 +312,7 @@ impl OperationTask {
                     State {
                         limit: state.limit.saturating_sub(work.used),
                         used: 0,
+                        refunded: 0,
                         exhausted: work.exhausted,
                         ..state.clone()
                     }
@@ -383,12 +398,24 @@ impl<T> RecordedWork<T> {
         Ok(())
     }
 
+    // The item's refused attempts left no reservation to replay. Their work
+    // was done whether or not the item is admitted, so the request records it.
+    fn carry_refunded(&self) {
+        let Some(work) = self.work else { return };
+        ACTIVE.with(|slot| {
+            if let Some(state) = slot.borrow_mut().as_mut() {
+                state.refunded = state.refunded.saturating_add(work.refunded);
+            }
+        });
+    }
+
     /// Charges the actual accepted reservations of one input share.
     /// `None` means the item exhausted its share and its value is discarded.
     /// Commit every share before retrying incomplete items in input order with
     /// the remaining request cap. Failed attempts are paid, never refunded.
     pub fn commit_share(self) -> Result<Option<T>, crate::Refusal> {
         self.check_request()?;
+        self.carry_refunded();
         let mut accepted = self.work.map_or(0, |work| work.used);
         for units in self.reservations {
             if units > accepted {
@@ -420,6 +447,7 @@ impl<T> RecordedWork<T> {
     /// Later speculative items must be discarded after the first refusal.
     pub fn commit(self) -> Result<T, crate::Refusal> {
         self.check_request()?;
+        self.carry_refunded();
         for units in self.reservations {
             if charge(units) {
                 return Err(crate::Refusal::new(
@@ -717,6 +745,7 @@ pub(crate) fn enter_worker(reduced_angle_series: bool, reuse_enclosures: bool, p
             aborted: Arc::new(AtomicBool::new(false)),
             limit: u64::MAX,
             used: 0,
+            refunded: 0,
             exhausted: false,
             reduced_angle_series,
             reuse_enclosures,
@@ -1081,16 +1110,42 @@ mod allowance_tests {
             assert!(refused.is_err());
             assert_eq!(current_operation_work().used, 2);
             assert!(!current_operation_work().exhausted);
+            // The refused charge of 9 never fitted, so only the 5 was work.
+            assert_eq!(current_operation_work().refunded, 5);
             let kept: Result<(), ()> = refund_on_refusal(|| {
                 assert!(!charge(3));
                 Ok(())
             });
             assert!(kept.is_ok());
             assert_eq!(current_operation_work().used, 5);
+            assert_eq!(current_operation_work().refunded, 5);
             assert!(!charge(5));
         });
         assert_eq!(work.used, 10);
+        assert_eq!(work.refunded, 5);
         assert!(!work.exhausted);
+        assert_eq!(current_operation_work().refunded, 0);
+    }
+
+    #[test]
+    fn nested_refused_attempts_are_each_counted_once() {
+        let (_, work) = with_operation_budget(20, || {
+            let outer: Result<(), ()> = refund_on_refusal(|| {
+                assert!(!charge(2));
+                let inner: Result<(), ()> = refund_on_refusal(|| {
+                    assert!(!charge(3));
+                    Err(())
+                });
+                assert!(inner.is_err());
+                assert_eq!(current_operation_work().used, 2);
+                assert_eq!(current_operation_work().refunded, 3);
+                assert!(!charge(4));
+                Err(())
+            });
+            assert!(outer.is_err());
+        });
+        assert_eq!(work.used, 0);
+        assert_eq!(work.refunded, 9);
     }
 
     #[test]
@@ -1101,6 +1156,7 @@ mod allowance_tests {
             assert!(refused.is_err());
         });
         assert!(work.exhausted);
+        assert_eq!(work.refunded, 0);
     }
 
     #[test]
@@ -1118,6 +1174,28 @@ mod allowance_tests {
             recorded.commit().unwrap();
         });
         assert_eq!(parent.used, 3);
+        assert_eq!(parent.refunded, 6);
+        assert!(!parent.exhausted);
+    }
+
+    #[test]
+    fn a_share_carries_its_refused_attempts_to_the_request() {
+        let (_, parent) = with_operation_budget(10, || {
+            let tasks = OperationTask::capture().split(std::num::NonZeroUsize::new(2).unwrap());
+            for task in tasks {
+                let recorded = task.run(|| {
+                    let refused: Result<(), ()> = refund_on_refusal(|| {
+                        assert!(!charge(4));
+                        Err(())
+                    });
+                    assert!(refused.is_err());
+                    assert!(!charge(1));
+                });
+                assert_eq!(recorded.commit_share().unwrap(), Some(()));
+            }
+        });
+        assert_eq!(parent.used, 2);
+        assert_eq!(parent.refunded, 8);
         assert!(!parent.exhausted);
     }
 }

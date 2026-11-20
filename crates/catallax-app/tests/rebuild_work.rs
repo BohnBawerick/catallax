@@ -213,6 +213,7 @@ fn large_display_above_target_completes_and_reports_stage_work() {
         preview: OperationWork {
             used: 0,
             exhausted: false,
+            refunded: 0,
         },
         proof: Some(work),
     };

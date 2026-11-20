@@ -303,6 +303,78 @@ fn a_line_on_its_plane_is_read_at_its_ends() {
     }
 }
 
+/// Step 1's closed form for conic pairs. A circle of radius 10 about the z
+/// axis is read against a straight copy at the same angular rate on a
+/// cylinder of radius 10.004 whose axis is 0.003 to one side. The gap is
+/// `sqrt(25e-6 - 24e-6 cos t)`, largest at half a turn: 0.007 exactly.
+#[test]
+fn a_circle_against_a_circle_is_read_at_its_stationary_points() {
+    use exact::{circle, cylinder, q, qi};
+    let geometry = EdgeGeometry {
+        curve: circle([q("0.003"), qi(0), qi(3)], [0, 0, 1], &qi(10), [1, 0, 0]),
+        parameters: [qi(0), qi(4)],
+        surface: CaseSurface::Kernel(cylinder(
+            [qi(0), qi(0), qi(0)],
+            [0, 0, 1],
+            &q("10.004"),
+            [1, 0, 0],
+        )),
+        face_copy: FaceCopy::Linear(Box::new([[qi(0), qi(3)], [qi(4), qi(3)]])),
+    };
+    let mut dec = Decider::default();
+    let found = gap::measure(
+        &copies(&geometry),
+        &Hints::default(),
+        Limits::default(),
+        &mut dec,
+    )
+    .expect("measure");
+    assert_eq!(found.method, Method::ConicResidual);
+    assert!(found.plan.is_empty());
+    assert!((found.raw_mm - 0.007).abs() <= found.error_mm, "{found:?}");
+    assert!((found.parameter - std::f64::consts::PI).abs() < 1e-6);
+    assert!(found.evaluations <= 20, "{}", found.evaluations);
+    // A copy that turns at another rate has no conic residual and is sampled.
+    let mut slower = geometry.clone();
+    slower.face_copy = FaceCopy::Linear(Box::new([[qi(0), qi(3)], [q("3.9"), qi(3)]]));
+    let sampled = gap::measure(
+        &copies(&slower),
+        &Hints::default(),
+        Limits::default(),
+        &mut dec,
+    )
+    .expect("measure");
+    assert_eq!(sampled.method, Method::Sampled);
+}
+
+/// Step 1's closed form for a circle on a plane. The circle of radius 10 in
+/// the plane z = 0 is read against its foot on a plane through its centre
+/// with normal (3, 0, 4) / 5. Its height over that plane is `6 cos t`,
+/// largest at t = 0, inside the range.
+#[test]
+fn a_circle_over_a_plane_is_read_at_its_stationary_points() {
+    use exact::{circle, plane, qi};
+    let curve = circle([qi(0), qi(0), qi(0)], [0, 0, 1], &qi(10), [1, 0, 0]);
+    let surface = plane([qi(0), qi(0), qi(0)], [3, 0, 4], [0, 1, 0]);
+    let parameters = [qi(-1), qi(1)];
+    let mut dec = Decider::default();
+    let found = gap::measure(
+        &EdgeCopies {
+            curve: &curve,
+            parameters: parameters.each_ref(),
+            surface: GapSurface::Kernel(&surface),
+            face_copy: FaceCopyRef::Projected,
+        },
+        &Hints::default(),
+        Limits::default(),
+        &mut dec,
+    )
+    .expect("measure");
+    assert_eq!(found.method, Method::ConicResidual);
+    assert!((found.raw_mm - 6.0).abs() <= found.error_mm, "{found:?}");
+    assert!(found.parameter.abs() < 1e-6);
+}
+
 /// Rule T4, apart from the known-answer rule: the stored tolerance is 1.1
 /// times the reported gap, rounded up, so it covers the true gap.
 #[test]
@@ -425,6 +497,33 @@ fn every_smaller_allowance_refuses_by_name_and_charges_its_work() {
     // The longest failed search spent nearly all of what the edge needs.
     assert!(2 * most_spent > needed, "{most_spent} of {needed}");
     assert_eq!(capped(needed).0.expect("exact").work, needed);
+}
+
+/// The reading of the two ends alone runs under the allowance it is given,
+/// which in admission is what the first reading of the same edge use left.
+/// Exactly what it needs passes; one unit less, or nothing, refuses by name.
+#[test]
+fn the_ends_reading_runs_under_the_allowance_it_is_given() {
+    let case = fixed::cases()
+        .into_iter()
+        .find(|case| case.name == "14-circle-against-rational-copy")
+        .expect("case");
+    let capped = |work: u64| {
+        gap::measure_ends(
+            &copies(&case.geometry),
+            Limits { work },
+            &mut Decider::default(),
+        )
+    };
+    let needed = capped(gap::EDGE_WORK).expect("default").work;
+    assert_eq!(capped(needed).expect("exact").work, needed);
+    for work in [0, needed - 1] {
+        assert_eq!(
+            capped(work).expect_err("short").code,
+            "numerical.gap-work-cap",
+            "{work}"
+        );
+    }
 }
 
 /// A face copy that winds around a cylinder 1e29 times has that many seam

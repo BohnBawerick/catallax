@@ -107,7 +107,7 @@ impl<'a> Index<'a> {
     }
 }
 
-pub(super) fn parameters(
+fn parameters(
     edge: &NumericalEdge,
     curve: &BSplineCurve,
     sense: Sense,
@@ -180,63 +180,33 @@ pub(super) fn point(
     }
 }
 
-pub(super) fn numerical_parameters(
-    edge: &NumericalEdge,
-    sense: Sense,
-    dec: &mut Decider,
-) -> Result<Vec<Rational>, Refusal> {
-    let [a, b] = if sense == Sense::Same {
-        edge.parameters.each_ref()
-    } else {
-        [&edge.parameters[1], &edge.parameters[0]]
-    };
-    let span = b - a;
-    let mut points = Vec::with_capacity(SUBDIVISIONS as usize + 1);
-    for i in 0..=SUBDIVISIONS {
-        dec.charge_work(1)?;
-        let share = Rational::from_ratio(i, SUBDIVISIONS).unwrap();
-        points.push(a + &(&share * &span));
-    }
-    Ok(points)
-}
-
-pub(super) fn samples(
+/// Where a native u/v curve's two ends land on the surface against where the
+/// trim's declared end values land, in traversal order.
+pub(super) fn endpoints(
     face: &NumericalFace,
     trim: &NumericalTrim,
     edge: &NumericalEdge,
     curve: &BSplineCurve,
-    numerical_pair: bool,
     dec: &mut Decider,
-) -> Result<(Vec<NumericalSample>, Vec<NumericalSample>), Refusal> {
-    let ts = if numerical_pair {
-        numerical_parameters(edge, trim.sense, dec)?
+) -> Result<Vec<NumericalSample>, Refusal> {
+    let ends = if trim.sense == Sense::Same {
+        edge.parameters.each_ref()
     } else {
-        parameters(edge, curve, trim.sense, dec)?
+        [&edge.parameters[1], &edge.parameters[0]]
     };
-    let mut samples = Vec::new();
-    let mut endpoints = Vec::new();
-    for (i, t) in ts.iter().enumerate() {
+    let mut samples = Vec::with_capacity(2);
+    for (slot, t) in ends.into_iter().enumerate() {
         dec.charge_work(1)?;
         let at = uv(curve, t, dec)?;
-        let q = point(&face.surface, &at, dec)?;
-        let p = crate::numerical::curve_at(&edge.curve, t, dec)?
-            .ok_or_else(|| bad("unsupported", "edge has no parameter evaluator"))?;
-        let values = [midpoint(&at[0], dec)?, midpoint(&at[1], dec)?];
+        let found = point(&face.surface, &at, dec)?;
+        let declared = trim.uv[slot].clone().map(Real::from);
+        let expected = point(&face.surface, &declared, dec)?;
         samples.push(NumericalSample {
-            parameters: vec![t.clone(), values[0].clone(), values[1].clone()],
-            distance_upper_mm: distance(&p, &q),
+            parameters: vec![t.clone()],
+            distance_upper_mm: distance(&found, &expected),
         });
-        if i == 0 || i == ts.len() - 1 {
-            let slot = usize::from(i != 0);
-            let declared = trim.uv[slot].clone().map(Real::from);
-            let expected = point(&face.surface, &declared, dec)?;
-            endpoints.push(NumericalSample {
-                parameters: vec![t.clone()],
-                distance_upper_mm: distance(&q, &expected),
-            });
-        }
     }
-    Ok((samples, endpoints))
+    Ok(samples)
 }
 
 pub(super) fn check_loops(
@@ -337,8 +307,8 @@ pub(super) fn check_loops(
 }
 
 // Face-local UV topology uses nine locations per coedge for a declared
-// numerical carrier. Incident face-pairs use labelled numerical distance
-// samples; exact-exact pairs keep the clipped-knot-span grid.
+// numerical carrier. Its edge uses are measured like every other use, under
+// labelled check names.
 fn check_numerical_loops(
     face_index: usize,
     face: &NumericalFace,
@@ -413,8 +383,8 @@ pub fn build_with_native_trims(
 
 /// Admits explicitly numerical atlas carriers with sampled face-local checks.
 /// Their UV walks use nine locations per coedge; chart coverage uses a 9 by 9
-/// grid. Incident face-pairs use labelled numerical distance samples at the
-/// unchanged tolerance; exact-exact pairs keep their original sample grids.
+/// grid. Their edge uses are measured like every other use, under labelled
+/// check names and the unchanged tolerance.
 /// Undeclared face-local checks retain their original admission path.
 pub fn build_with_sampled_carriers(
     definition: NumericalDefinition,

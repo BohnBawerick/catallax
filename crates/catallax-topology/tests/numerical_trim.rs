@@ -506,7 +506,7 @@ fn continuation_retains_source_sewing_checks() {
 }
 
 #[test]
-fn curved_hole_sampling_does_not_claim_containment_between_nodes() {
+fn a_curved_hole_edge_off_its_side_face_between_nine_points_refuses() {
     let ((), work) = with_operation_budget(20_000_000, || {
         let mut dec = Decider::default();
         let mut input = tube();
@@ -571,23 +571,13 @@ fn curved_hole_sampling_does_not_claim_containment_between_nodes() {
         let witness = curve.point_at(&Real::from_rational(at), &mut dec).unwrap();
         assert_eq!(witness.x.as_rational(), Some(q("-1")));
         input.edges[edge_index].curve = Curve::BSpline(curve);
-        let body = numerical::build(input, options(), &mut dec).unwrap();
-        let checks = body.evidence().checks();
-        assert!(
-            !checks.iter().any(|check| matches!(check,
-                NumericalCheck::Passed { name, scope }
-                    if name == "trim.hole-contained-disjoint" && scope == "f0"
-            )),
-            "the actual curved hole leaves the outer loop between sample nodes"
-        );
-        assert!(checks.iter().any(|check| matches!(check,
-            NumericalCheck::Passed { name, scope }
-                if name == "trim.sampled-hole-contained-disjoint" && scope == "f0"
-        )));
-        assert!(checks.iter().any(|check| matches!(check,
-            NumericalCheck::Passed { name, scope }
-                if name == "trim.hole-contained-disjoint" && scope == "f1"
-        )));
+        // The bumped hole edge stays in the plane of the holed face, and at
+        // the nine old sample locations it also sits on its side face. Between
+        // them it leaves the side face by more than 2 mm. Admission now
+        // measures that gap and refuses the body.
+        let refusal = numerical::build(input, options(), &mut dec).unwrap_err();
+        assert_eq!(refusal.code, "numbers.numerical-tolerance-exceeded");
+        assert!(refusal.detail.contains("trim.edge-surface-distance"));
     });
     assert!(!work.exhausted, "{} work units", work.used);
 }

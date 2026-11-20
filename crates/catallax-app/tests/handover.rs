@@ -467,7 +467,21 @@ fn version_one_bodies_keep_geometry_history_and_empty_kind() {
         .unwrap();
     assert_eq!(source.counts(), imported.counts());
     assert_eq!(source.options(), imported.options());
-    assert_eq!(source.evidence(), imported.evidence());
+    // The stored record holds the checks of the build that wrote it, sample
+    // for sample. A rebuild measures the same definition as it is measured
+    // today, with the same number of check records.
+    assert_eq!(
+        source.evidence().checks().len(),
+        imported.evidence().checks().len()
+    );
+    let remeasured = imported
+        .rebuild(
+            imported.definition().clone(),
+            imported.options().clone(),
+            &mut Decider::default(),
+        )
+        .unwrap();
+    assert_eq!(source.evidence(), remeasured.evidence());
     assert_eq!(source.history().len(), imported.history().len());
     let export = |body: &catallax_app::NumericalBody| {
         catallax_step::numerical::build(body, &Default::default(), &mut Decider::default())

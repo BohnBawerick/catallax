@@ -390,6 +390,32 @@ pub enum Operation {
         /// Blend radius.
         radius: Number,
     },
+    /// A body twisted about an axis: each plane across the axis turns about
+    /// it in proportion to its distance from `axis.point`. SMLib's
+    /// `SmTwistVolume`; RECIPE.md section 4.20.
+    Twist {
+        /// The body.
+        body: StepId,
+        /// The twist axis. The plane across it through `axis.point` stays put.
+        axis: Axis,
+        /// Signed turn in degrees, right-handed about `axis.direction`, per `length`.
+        angle: Number,
+        /// Positive distance along the axis over which the turn is `angle`.
+        length: Number,
+    },
+    /// A body bent round an axis, as sheet metal in a brake press: planes
+    /// parallel to the neutral plane become cylinders about the axis.
+    /// SMLib's `SmBendVolume`; RECIPE.md section 4.20.
+    Bend {
+        /// The body.
+        body: StepId,
+        /// The bend axis. The plane through it along `toward` stays put.
+        axis: Axis,
+        /// From the axis towards the neutral plane, not parallel to the axis.
+        toward: Vector3,
+        /// Positive distance from the axis to the neutral plane, which keeps its lengths.
+        radius: Number,
+    },
     /// A STEP file entering the recipe as a fixed piece.
     ImportStep {
         /// The file.
@@ -471,6 +497,8 @@ impl Operation {
             Operation::Lattice { .. } => "lattice",
             Operation::Gyroid { .. } => "gyroid",
             Operation::SmoothBlend { .. } => "smooth_blend",
+            Operation::Twist { .. } => "twist",
+            Operation::Bend { .. } => "bend",
             Operation::ImportStep { .. } => "import_step",
             Operation::ImportIges { .. } => "import_iges",
             Operation::ImportMesh { .. } => "import_mesh",
@@ -534,7 +562,9 @@ impl Operation {
             | Operation::Thicken { body, .. }
             | Operation::Draft { body, .. }
             | Operation::Pattern { body, .. }
-            | Operation::Mirror { body, .. } => vec![(body, Body)],
+            | Operation::Mirror { body, .. }
+            | Operation::Twist { body, .. }
+            | Operation::Bend { body, .. } => vec![(body, Body)],
             Operation::Sweep {
                 profile,
                 path,

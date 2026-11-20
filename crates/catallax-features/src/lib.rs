@@ -51,6 +51,7 @@ pub mod cone_skin;
 pub mod cone_sweep;
 /// Complete capped-cylinder distance and normal-sweep definitions.
 pub mod cylinder_skin;
+mod deform;
 mod distance_build;
 /// Exact neutral-curve definitions for analytic draft supports.
 pub mod draft;

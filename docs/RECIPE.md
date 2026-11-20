@@ -1,6 +1,6 @@
 # Catallax recipe language
 
-Version 5 specification, format `catallax-recipe/5`. The reader accepts versions 3, 4 and 5 explicitly. Version 5 adds optional face-origin filters and explicit variable-radius fillet laws, and retains version 4 operation meanings. One-sided through-all and bounded face/next extrusions have data-model and evaluator support; other additions below remain implementation contracts where noted.
+Version 5 specification, format `catallax-recipe/5`. The reader accepts versions 3, 4 and 5 explicitly. Version 5 adds optional face-origin filters, explicit variable-radius fillet laws, and bend and twist (section 4.20), and retains version 4 operation meanings. One-sided through-all and bounded face/next extrusions have data-model and evaluator support; other additions below remain implementation contracts where noted.
 
 A recipe is the feature tree, the master model of a part. The B-rep kernel and the field kernel both build the part from it. This document gives each operation its parameters, one mathematical definition both kernels can be checked against, the names of the faces it makes, and the inputs that are impossible. It defines how names survive upstream edits, how a lost name fails, the file format, and how SolidDraft's present references map onto Catallax names.
 
@@ -1260,6 +1260,36 @@ The application reconstructs a solid by writing ordinary recipe steps against th
 Report certified intervals only when the whole surfaces were covered with a proof. A finite sample report must state the sampled domain and maximum observed distances, not claim a Hausdorff bound. Direction matters: an intended closure over a hole in the scan can have a large body-to-scan deviation even when scan-to-body is small. Distance to an empty comparison set is infinite; two empty sets have zero directed deviation. A nonempty scan versus an empty reconstruction has infinite scan-to-body deviation.
 
 The reconstruction's model error remains relative to its own exact recipe under ARCHITECTURE.md. Scan deviation is a separate measurement, not a claim that the unknown scanned object is correct within 1 nm. There is no winding threshold, automatic hole closure or inferred solid in `scan_import`. This preserves the observed data and makes every solid assumption visible in the reconstruction recipe. Reference storage needs no new surface carrier beyond exact triangles; certified deviation to reconstructed curved faces needs the corresponding closest-point proof paths.
+
+### 4.20 Bend and twist
+
+Version 5 adds `twist` and `bend`. Each sends one body through a space warp: Barr's global deformations (Barr, "Global and local deformations of solid primitives", SIGGRAPH 1984), in the frames SMLib's `SmTwistVolume` and `SmBendVolume` define.
+
+| `twist` parameter | Value |
+|---|---|
+| `body` | the body |
+| `axis` | `point` `O` and `direction` `a`, not zero |
+| `angle` | signed turn `θ` in degrees, right-handed about `a` |
+| `length` | positive distance `L` along the axis over which the turn is `θ` |
+
+**Definition.** With `â` the unit axis, a point `p` at `w = (p − O)·â` turns about the axis by `θ w / L`. The plane across the axis through `O` stays put. SMLib states the same map by its period, the distance for one whole turn, `360 L / θ`; the angle over a length reads as a designer states a twist. A twist is one-to-one and keeps volume.
+
+| `bend` parameter | Value |
+|---|---|
+| `body` | the body |
+| `axis` | `point` `O` and `direction` `a`, not zero |
+| `toward` | the direction from the axis to the neutral plane, not parallel to `a` |
+| `radius` | positive distance `R` from the axis to the neutral plane |
+
+**Definition.** Let `â` be the unit axis, `m̂` the unit part of `toward` across it, and `b̂ = â × m̂`. A point with coordinates `u = (p − O)·m̂`, `v = (p − O)·b̂` and `w = (p − O)·â` goes to `O + u cos(v/R) m̂ + u sin(v/R) b̂ + w â`. Planes `u = c` become cylinders of radius `c` about the axis, so the neutral plane `u = R` keeps its lengths, as sheet metal does in a brake press. The plane `v = 0` stays put. Volume scales by `u / R`, so a plate centred on the neutral plane keeps its volume.
+
+**Names.** Neither makes faces. Every face keeps the origins of the body's face it came from.
+
+**Impossible.** A zero axis; for a twist, `L <= 0`; for a bend, `R <= 0` or `toward` along the axis. A bend whose body reaches the axis (`u <= 0`) or spans a whole turn or more along `b̂` (`v` range `>= 2πR`): SMLib's bend is defined on the half-space `u > 0` and folds the body onto itself past one turn.
+
+**Construction.** Both build only as fitted geometry, through the numerical outcome; the exact build refuses with `deform.requires-numerical-evaluation`. SMLib keeps a warped surface procedural (`SmSrfInVolume`) and makes a B-spline only where an exact one exists. Catallax has no procedural carrier, so it follows OpenCASCADE's conversion of a procedural surface (`GeomConvert_ApproxSurface`): each face's warped surface and each edge's warped curve is fitted in binary64 as a cubic B-spline over the source's own parameters. Faces keep their source charts and trims, so topology and keys carry over. Each fit doubles its spans from four until it meets a quarter of rule T2's target at the eighths of every span, and admission measures every edge gap under T2's cap. The first build takes planar faces with straight edges; curved input refuses with `deform.unsupported-face` or `deform.unsupported-edge` until the [coverage follow-on](../ROADMAP.md#coverage-bend-twist-and-blends). The other refusals are `deform.bend-axis`, `deform.bend-overlap`, `deform.definition` and `deform.fit`. A later step cannot read the result until numerical continuation exists (3.0B).
+
+- **A warp of the whole space.** SMLib bends and twists everything, without trim planes. The alternative is a bend zone between two planes with rigid motion beyond it, as some CAD tools offer. That needs knots where the zone ends and a choice of how far the zone reaches, and no reference kernel defines it.
 
 ## 5. On-disk form
 

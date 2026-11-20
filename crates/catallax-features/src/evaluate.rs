@@ -1781,6 +1781,17 @@ fn evaluate_impl(
                         )?;
                     BodyValue { body, radius }
                 }
+                Operation::Twist { body, .. } | Operation::Bend { body, .. } => {
+                    let warp = crate::deform::Warp::of(&step.op)?.expect("a bend or twist step");
+                    let context = numerical.as_deref_mut().ok_or_else(|| {
+                        Refusal::new(
+                            "deform.requires-numerical-evaluation",
+                            "bend and twist build only as numerical geometry; build through the numerical outcome",
+                        )
+                    })?;
+                    context.deform(model, &bodies[body], &warp, &step.id, recipe, dec)?;
+                    return Ok(None);
+                }
                 Operation::Offset { body, distance } => {
                     let input = &bodies[body];
                     let result = crate::distance_build::offset(

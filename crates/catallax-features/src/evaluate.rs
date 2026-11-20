@@ -1569,6 +1569,30 @@ fn evaluate_impl(
                         radius: &target.radius + &(&maximum * &Rational::from_i64(2)),
                     }
                 }
+                Operation::FilletG2 {
+                    body,
+                    edges,
+                    radius,
+                    fullness,
+                } => {
+                    let target = &bodies[body];
+                    let fullness = fullness
+                        .as_ref()
+                        .map_or_else(Rational::one, |f| f.value().clone());
+                    let body = crate::fillet_build::build_g2(
+                        model,
+                        target.body,
+                        edges,
+                        &radius.value().clone().into(),
+                        &fullness.into(),
+                        &step.id,
+                        dec,
+                    )?;
+                    BodyValue {
+                        body,
+                        radius: &target.radius + &(radius.value() * &Rational::from_i64(2)),
+                    }
+                }
                 Operation::Chamfer {
                     body,
                     edges,
@@ -1919,6 +1943,7 @@ fn evaluate_impl(
                 step.op,
                 Operation::Fillet { .. }
                     | Operation::FilletVariable { .. }
+                    | Operation::FilletG2 { .. }
                     | Operation::Shell { .. }
                     | Operation::Thicken { .. }
             );

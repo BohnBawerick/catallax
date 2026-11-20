@@ -1,6 +1,6 @@
 # Catallax recipe language
 
-Version 5 specification, format `catallax-recipe/5`. The reader accepts versions 3, 4 and 5 explicitly. Version 5 adds optional face-origin filters, explicit variable-radius fillet laws, bend and twist (section 4.20), and mesh Booleans and decimation (sections 4.21 and 4.22), and retains version 4 operation meanings. One-sided through-all and bounded face/next extrusions have data-model and evaluator support; other additions below remain implementation contracts where noted.
+Version 5 specification, format `catallax-recipe/5`. The reader accepts versions 3, 4 and 5 explicitly. Version 5 adds optional face-origin filters, explicit variable-radius fillet laws, curvature-continuous fillets (section 4.5.3), bend and twist (section 4.20), and mesh Booleans and decimation (sections 4.21 and 4.22), and retains version 4 operation meanings. One-sided through-all and bounded face/next extrusions have data-model and evaluator support; other additions below remain implementation contracts where noted.
 
 A recipe is the feature tree, the master model of a part. The B-rep kernel and the field kernel both build the part from it. This document gives each operation its parameters, one mathematical definition both kernels can be checked against, the names of the faces it makes, and the inputs that are impossible. It defines how names survive upstream edits, how a lost name fails, the file format, and how SolidDraft's present references map onto Catallax names.
 
@@ -742,6 +742,35 @@ proof](research/fillet-coverage.md#exact-linear-construction).
 - A separate operation leaves the scalar `fillet` contract and saved recipes
   unchanged. Extending the scalar field with guessed samples would hide both
   orientation and interpolation, and could change the requested solid.
+
+#### 4.5.3 Curvature-continuous fillets
+
+Version 5 adds `fillet_g2`. Versions 3 and 4 reject it.
+
+| Parameter | Value |
+|---|---|
+| `body` | `S` |
+| `edges` | edge selection |
+| `radius` | `r`, positive |
+| `fullness` | optional `w`, `0 < w <= 5/4`; 1 when absent |
+
+**Definition.** Take a chosen edge `e` between `A` and `B`, its spine `σ` and the feet `a(c)` and `b(c)` of the ball of radius `r`, as in section 4.5. The blend surface is the union, over `c` in `σ`, of a curvature-continuous section from `a(c)` to `b(c)` in place of the circular arc. The section is SMLib's blend curve of continuity 2 (`SmBlendCurveCrossSectionFSG::CreateSurfaceFromCurves`): the degree-5 polynomial curve `q(t)`, `0 <= t <= 1`, with
+
+- `q(0) = a` and `q(1) = b`;
+- `q'(0) = m T_a` and `q'(1) = m T_b`, where `T_a` and `T_b` are the circular arc's unit tangents at `a` and `b`, running from `a` to `b`;
+- `q''(0)` equal to `m^2` times the second derivative at zero of the curve on `A` through `a` with initial velocity `T_a` whose surface parameters run in a straight line (SMLib's `SmSurface::ComputeHigherOrderDerivs`), and `q''(1)` the same on `B` at `b`. On a plane both are zero.
+
+The length `m` is SMLib's fairing rule (`SmBSplineCurve::FairBlendCurveDerivatives`) times the fullness: `m = 3 t w`, where `t` is the smallest positive root of `|a + t T_a - (b - t T_b)| = t`, the length that makes the three legs of the cubic Hermite polygon equal. `W_e` is the region between the blend surface and `e`. The result combines the regions as for `fillet`.
+
+Between two planes the arc tangents meet at the edge station `p`. Both feet are `s = r cot(α/2)` from it, where `α` is the material angle, and `t = 2 s sin(α/2) / (1 + 2 sin(α/2))`. The section is then the Bezier curve with controls `a`, `a + λ(p - a)`, `a + 2λ(p - a)`, `b + 2λ(p - b)`, `b + λ(p - b)` and `b`, where `λ = 6 w sin(α/2) / (5 (1 + 2 sin(α/2)))` rounded down to a multiple of `2^-52`. The rounding stays within SMLib's own binary64 precision. It keeps the controls rational wherever the feet are, and no foot, tangent plane or rail curvature depends on `λ`. The first three controls lie on `A` and the last three on `B`, so the blend meets each plane with the plane's tangent plane and the plane's zero normal curvature: curvature continuity, G2. A circular fillet meets them with curvature `1/r`. Because `12 sin(α/2) / (5 (1 + 2 sin(α/2)))` is below 4/5, `2λ < 1` whenever `w <= 5/4`, and every section lies in its tangent triangle `a p b`. Along a straight edge the surface is the ruled surface between the end sections, as SMLib builds it (`SmBSplineSurface::CreateRuledSurface`): an exact degree-(5,1) patch.
+
+**Names.** As section 4.5: `{"blend": {"edge": <edge name of e>}}` for the blend face. `A`, `B` and the end faces keep their origins.
+
+**Impossible.** `r <= 0`, `w <= 0`, or section 1.5. A fullness above 5/4 is a recipe error: past it a section's middle controls can pass the edge where the two faces are nearly flat.
+
+**Construction.** The B-rep builds straight convex edges between planes of one valid convex polyhedral shell. Each edge ends at three-face vertices whose third faces are planes normal to the edge, the tangent-triangle prism must be strictly clear of every other face, and the selected prisms must be apart. These are the conditions of the variable-radius constructor (section 4.5.2), whose exact feet the section reuses. The blend face is an exact rational patch whose edges are the two contact lines and the two end sections. Other input refuses by name: `fillet.unsupported-g2-contact` for curved faces, concave edges or a nonconvex shell, `fillet.unsupported-end` for other edge ends, `fillet.unsupported-corner` where two bands meet and `fillet.unsupported-overflow` where a band reaches another face. Junctions, curved supports and concave edges belong to the [coverage follow-on](../ROADMAP.md#coverage-bend-twist-and-blends). The field kernel refuses `fillet_g2` with `field.unsupported-operation`.
+
+- **A separate operation with SMLib's section.** `fillet` keeps its circular sections and its saved recipes. Of the two reference kernels only SMLib has a curvature-continuous edge blend. OpenCASCADE's fillets have circular sections (`ChFi3d`), and its G2 tools fill N-sided holes (`GeomPlate`, `BRepFill_Filling`) rather than blend an edge. The alternative is a conic section with a rho value, as some CAD tools offer, but a conic meets the faces with tangent continuity only.
 
 ### 4.6 Chamfer
 

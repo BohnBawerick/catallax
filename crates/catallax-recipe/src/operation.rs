@@ -258,6 +258,19 @@ pub enum Operation {
         /// One law per selected open edge.
         edges: Vec<VariableFilletEdge>,
     },
+    /// Edges rounded by a curvature-continuous (G2) section between the
+    /// rolling ball's contacts: SMLib's blend curve. RECIPE.md section 4.5.3.
+    FilletG2 {
+        /// The body.
+        body: StepId,
+        /// The edges.
+        edges: EdgeSelection,
+        /// Radius of the rolling ball whose contacts the section joins.
+        radius: Number,
+        /// SMLib's thumbweight, scaling the section's end tangents; 1 when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fullness: Option<Number>,
+    },
     /// Edges bevelled by a ruled face.
     Chamfer {
         /// The body.
@@ -505,6 +518,7 @@ impl Operation {
             Operation::Boolean { .. } => "boolean",
             Operation::Fillet { .. } => "fillet",
             Operation::FilletVariable { .. } => "fillet_variable",
+            Operation::FilletG2 { .. } => "fillet_g2",
             Operation::Chamfer { .. } => "chamfer",
             Operation::Shell { .. } => "shell",
             Operation::Offset { .. } => "offset",
@@ -579,6 +593,7 @@ impl Operation {
             }
             Operation::Fillet { body, .. }
             | Operation::FilletVariable { body, .. }
+            | Operation::FilletG2 { body, .. }
             | Operation::Chamfer { body, .. }
             | Operation::Shell { body, .. }
             | Operation::Offset { body, .. }

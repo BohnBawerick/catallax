@@ -26,6 +26,8 @@ pub use source::definition_from_model;
 pub mod surface;
 
 #[cfg(test)]
+mod known_answers;
+#[cfg(test)]
 mod segment_tests;
 
 /// Shared default work limit for a numerical build or continuation.

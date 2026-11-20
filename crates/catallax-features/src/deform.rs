@@ -175,6 +175,20 @@ impl Warp {
                 if radius.value().sign() != catallax_numbers::Sign::Positive {
                     return Err(bad("a bend needs a positive radius"));
                 }
+                // Decide "along the axis" on the exact inputs: in binary64 the
+                // cross-axis part of a parallel `toward` is a rounding residue,
+                // which `unit` would scale up into an arbitrary direction.
+                let (a, t) = (&direction.0, &toward.0);
+                let parallel = (0..3).all(|i| {
+                    let (j, k) = ((i + 1) % 3, (i + 2) % 3);
+                    let m = |x: &Number, y: &Number| x.value() * y.value();
+                    (&m(&a[j], &t[k]) - &m(&a[k], &t[j])).is_zero()
+                });
+                if parallel {
+                    return Err(bad(
+                        "the bend direction runs along the axis (or is zero); it must point across it",
+                    ));
+                }
                 let axis = unit(recipe_vector(direction), "bend axis")?;
                 let toward = recipe_vector(toward);
                 // SMLib orients the bend by its axis and a mid direction

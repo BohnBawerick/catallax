@@ -203,6 +203,14 @@ fn bends_outside_smlibs_domain_and_curved_input_refuse_by_name() {
         refusal(&bent_plate("20", ["0", "-1", "0"])),
         "deform.bend-axis"
     );
+    // `toward` parallel to an oblique axis has no part across it. In binary64
+    // the cross-axis part of [3, 5, 7] against itself is a rounding residue,
+    // so the decision is exact.
+    let mut oblique: Value = serde_json::from_str(&bent_plate("20", ["3", "5", "7"]).to_text())
+        .expect("canonical recipe text");
+    oblique["steps"][1]["axis"]["direction"] = json!(["3", "5", "7"]);
+    let oblique = Recipe::parse(&oblique.to_string()).expect("a valid recipe");
+    assert_eq!(refusal(&oblique), "deform.definition");
     // Thirty millimetres round a 4 mm radius is more than one turn.
     assert_eq!(
         refusal(&bent_plate("4", ["0", "1", "0"])),

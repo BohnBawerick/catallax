@@ -17,6 +17,8 @@ use crate::{
 mod analytic;
 mod atlas;
 mod curved;
+/// The edge-gap checker: the largest distance between an edge's two copies.
+pub mod gap;
 mod handover;
 mod native;
 pub use native::{NumericalNativeTrim, build_with_native_trims, build_with_sampled_carriers};

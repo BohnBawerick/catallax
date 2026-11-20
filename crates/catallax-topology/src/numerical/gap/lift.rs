@@ -83,6 +83,10 @@ pub(super) enum Face64 {
     /// Straight in u/v from the first edge parameter to the second.
     Linear {
         ends: [[f64; 2]; 2],
+        /// Whether the copy keeps its v and moves its u at exactly the rate
+        /// of the edge parameter, forwards or backwards. Decided on the
+        /// exact values, before any rounding.
+        turns_with_edge: bool,
     },
     /// The foot of the 3D point on a plane.
     Projected,
@@ -455,11 +459,18 @@ pub(super) fn lift(copies: &EdgeCopies<'_>, dec: &mut Decider) -> Result<Lifted,
     };
     let face = match copies.face_copy {
         FaceCopyRef::Native(source) => Face64::Native(spline_curve(source, &shift, dec)?),
-        FaceCopyRef::Linear(ends) => Face64::Linear {
-            ends: ends
-                .each_ref()
-                .map(|uv| std::array::from_fn(|axis| (&uv[axis] - &shift[axis]).to_f64_nearest())),
-        },
+        FaceCopyRef::Linear(ends) => {
+            let [first, last] = copies.parameters;
+            let (turned, run) = (&ends[1][0] - &ends[0][0], last - first);
+            Face64::Linear {
+                ends: ends.each_ref().map(|uv| {
+                    std::array::from_fn(|axis| (&uv[axis] - &shift[axis]).to_f64_nearest())
+                }),
+                turns_with_edge: ends[0][1] == ends[1][1]
+                    && !run.is_zero()
+                    && turned.abs() == run.abs(),
+            }
+        }
         FaceCopyRef::Projected => {
             if !matches!(surface, Surface64::Plane { .. }) {
                 return Err(unsupported("only a plane has a projected face copy"));
@@ -705,7 +716,7 @@ impl Lifted {
                     error,
                 })
             }
-            Face64::Linear { ends } => {
+            Face64::Linear { ends, .. } => {
                 // Differences of the exact parameters, as for knots.
                 let [a, b] = self.parameters;
                 let share = ((t - a) - self.low[0]) / ((b - a) + (self.low[1] - self.low[0]));

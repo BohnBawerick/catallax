@@ -10,8 +10,10 @@
 //! 1. Round both copies to binary64 in a local frame reached by an exact
 //!    shift (rule T1; `lift.rs`).
 //! 2. A straight residual has its maximum at an end. This is the closed form
-//!    for a line on a plane or along a generator, as in OpenCASCADE's
-//!    `ElementaryMaximum`.
+//!    for a line on a plane or along a generator. A circle or an ellipse
+//!    against a lift that is one too, at the same angular rate, has a conic
+//!    residual: its stationary points are the roots of a quartic. Both are
+//!    the pairs of OpenCASCADE's `ElementaryMaximum`.
 //! 3. Otherwise cut the edge at every break: knots of the 3D curve, knots of
 //!    the face copy, every crossing of the face copy with a surface knot
 //!    line, seam or pole line, the surface's domain border, and any joint the
@@ -114,6 +116,10 @@ impl Default for Limits {
 pub enum Method {
     /// A straight residual, read at its two ends.
     StraightResidual,
+    /// A conic residual, read at its ends and its stationary points.
+    ConicResidual,
+    /// The two ends alone, by request.
+    EndsOnly,
     /// Cut, sampled, refined and polished.
     Sampled,
 }
@@ -155,6 +161,10 @@ pub struct GapMeasure {
     /// maximum may lie above it because of what the samples did not resolve.
     /// The second part is zero for a straight residual.
     pub error_mm: f64,
+    /// The noise floor of step 7: the binary64 rounding part of
+    /// `error_mm`. Only this part can be removed by evaluating at a higher
+    /// precision.
+    pub noise_mm: f64,
     /// The edge parameter where it was found.
     pub parameter: f64,
     /// The first parameter in traversal order at which the face copy is
@@ -337,7 +347,7 @@ fn crossings(
     // Homogeneous Bezier coefficients (u w, v w, w) of the face copy.
     let piece: Vec<[f64; 3]> = match &lifted.face {
         Face64::Projected => return Ok(()),
-        Face64::Linear { ends } => {
+        Face64::Linear { ends, .. } => {
             let [a, b] = lifted.parameters;
             [from, to]
                 .map(|t| {
@@ -458,7 +468,7 @@ pub fn plan(
     dec: &mut Decider,
 ) -> Result<Vec<PlannedPiece>, Refusal> {
     let lifted = lift::lift(copies, dec)?;
-    if straight_residual(&lifted) {
+    if straight_residual(&lifted) || conic_residual(&lifted) {
         return Ok(Vec::new());
     }
     let mut search = Search {
@@ -676,6 +686,17 @@ fn search_edge(
             dec,
         );
     }
+    if conic_residual(lifted) {
+        let best = conic_maximum(search, dec)?;
+        // Every stationary point was read: nothing is unresolved.
+        return finish(
+            search,
+            best,
+            (0.0, None, Method::ConicResidual),
+            (Vec::new(), Vec::new()),
+            dec,
+        );
+    }
     let breaks = breaks(search, hints, dec)?;
     let plan = planned(lifted, &breaks);
     let [lo, hi] = lifted.range();
@@ -836,6 +857,35 @@ fn search_edge(
     )
 }
 
+/// The gap at the two ends of an edge use and nowhere else. Admission uses
+/// it for the declared end values of a projected trim, which has no u/v of
+/// its own in between.
+pub fn measure_ends(copies: &EdgeCopies<'_>, dec: &mut Decider) -> Result<GapMeasure, Refusal> {
+    let lifted = lift::lift(copies, dec)?;
+    let mut search = Search {
+        lifted: &lifted,
+        scratch: Scratch::default(),
+        limit: Limits::default().work - lift::ALLOWANCE_EVALUATIONS,
+        evaluations: 0,
+        other: 0,
+        charged: 0,
+    };
+    let [first, last] = lifted.parameters;
+    let ends = [search.sample(first)?, search.sample(last)?];
+    let best = if ends[1].squared > ends[0].squared {
+        ends[1]
+    } else {
+        ends[0]
+    };
+    finish(
+        &mut search,
+        best,
+        (0.0, None, Method::EndsOnly),
+        (Vec::new(), Vec::new()),
+        dec,
+    )
+}
+
 fn finish(
     search: &mut Search<'_>,
     best: Sample,
@@ -860,6 +910,7 @@ fn finish(
     Ok(GapMeasure {
         raw_mm: best.squared.sqrt(),
         error_mm: allowance + search_error,
+        noise_mm: allowance,
         parameter: best.t,
         domain_exit,
         method,
@@ -868,6 +919,121 @@ fn finish(
         evaluations: search.evaluations,
         work: search.spent(),
     })
+}
+
+/// Whether the residual is a conic in the parameter,
+/// `O + A cos t + B sin t`: a circle or an ellipse against a lift that is one
+/// too, at the same angular rate. That holds for the foot of the curve on a
+/// plane, and on a surface of revolution for a straight copy that keeps its
+/// v and moves its u at exactly the rate of the edge parameter. OpenCASCADE's
+/// `ElementaryMaximum` takes the same pairs: both lifted curves are circles
+/// or ellipses.
+fn conic_residual(lifted: &Lifted) -> bool {
+    if !matches!(lifted.curve, Curve64::Conic { .. }) {
+        return false;
+    }
+    match (&lifted.surface, &lifted.face) {
+        (Surface64::Plane { .. }, Face64::Projected) => true,
+        (
+            Surface64::Revolved { .. },
+            Face64::Linear {
+                turns_with_edge, ..
+            },
+        ) => *turns_with_edge,
+        _ => false,
+    }
+}
+
+/// The largest sample of a conic residual `r = O + A cos t + B sin t`.
+///
+/// `O`, `A` and `B` come from three evaluations a quarter turn apart. The
+/// squared length is stationary where `r . r' = 0`. On a quarter turn from
+/// angle `a`, with `z = tan((t - a) / 2)` in `[0, 1]`, that is the quartic
+///
+/// ```text
+/// (p + m) + 2 (k - q) z - 6 m z^2 - 2 (q + k) z^3 + (m - p) z^4 = 0
+/// ```
+///
+/// with `p = O . B`, `q = O . A`, `m = A . B` and `k = |B|^2 - |A|^2` for the
+/// `A` and `B` of that quarter. Its roots are isolated in Bernstein form by
+/// halving. The residual is then evaluated at each root, at each quarter
+/// border and at the two ends, and the largest value is returned. One turn
+/// holds every stationary value of a longer edge.
+/// Source: OpenCASCADE `ElementaryMaximum` (the same stationary equation,
+/// solved there by `math_TrigonometricFunctionRoots`).
+fn conic_maximum(search: &mut Search<'_>, dec: &mut Decider) -> Result<Sample, Refusal> {
+    let [lo, hi] = search.lifted.range();
+    let quarter = std::f64::consts::FRAC_PI_2;
+    let basis = [
+        search.sample(lo)?,
+        search.sample(lo + quarter)?,
+        search.sample(lo + 2.0 * quarter)?,
+    ];
+    let offset: [f64; 3] =
+        std::array::from_fn(|k| (basis[0].residual[k] + basis[2].residual[k]) / 2.0);
+    let cosine: [f64; 3] =
+        std::array::from_fn(|k| (basis[0].residual[k] - basis[2].residual[k]) / 2.0);
+    let sine: [f64; 3] = std::array::from_fn(|k| basis[1].residual[k] - offset[k]);
+    let dot = |a: &[f64; 3], b: &[f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    let negated = |a: &[f64; 3]| a.map(|x| -x);
+    let mut best = basis[0];
+    let mut read = |search: &mut Search<'_>, t: f64| -> Result<(), Refusal> {
+        if t > lo && t <= hi {
+            let sample = search.sample(t)?;
+            if sample.squared > best.squared {
+                best = sample;
+            }
+        }
+        Ok(())
+    };
+    read(search, hi)?;
+    let quarters = ((hi - lo) / quarter).ceil().min(numeric::QUADRANTS) as usize;
+    let mut shares = Vec::new();
+    for index in 0..quarters {
+        let from = lo + index as f64 * quarter;
+        // The cosine and sine vectors, turned by whole quarters.
+        let (a, b) = match index {
+            0 => (cosine, sine),
+            1 => (sine, negated(&cosine)),
+            2 => (negated(&cosine), negated(&sine)),
+            _ => (negated(&sine), cosine),
+        };
+        let (p, q, m) = (dot(&offset, &b), dot(&offset, &a), dot(&a, &b));
+        let k = dot(&b, &b) - dot(&a, &a);
+        let power = [
+            p + m,
+            2.0 * (k - q),
+            -2.0 * (m + m + m),
+            -2.0 * (q + k),
+            m - p,
+        ];
+        let size = power.iter().fold(0.0_f64, |sum, c| sum.max(c.abs()));
+        shares.clear();
+        // The quartic of this quarter, then its halvings one by one, each
+        // taken from the edge's allowance before it is done.
+        search.reserve(1)?;
+        let before = search.left();
+        let mut left = before;
+        let finished = numeric::sign_changes(
+            &numeric::bernstein_from_power(&power),
+            numeric::UNIT_ROUNDOFF * numeric::roundings(power.len() - 1) * size,
+            &mut shares,
+            &mut left,
+        );
+        // The halvings are recorded whether or not the search finished.
+        search.reserve(before - left)?;
+        if finished.is_none() {
+            return Err(work_cap(
+                "an edge spent its work allowance before its gap was resolved",
+            ));
+        }
+        read(search, from)?;
+        for z in &shares {
+            read(search, from + 2.0 * numeric::arctangent(*z))?;
+        }
+    }
+    search.settle(dec)?;
+    Ok(best)
 }
 
 /// Whether the residual is a straight function of the parameter: a line
@@ -886,7 +1052,7 @@ fn straight_residual(lifted: &Lifted) -> bool {
                 kind: Revolved::Cylinder | Revolved::EllipticCylinder | Revolved::Cone,
                 ..
             },
-            Face64::Linear { ends },
+            Face64::Linear { ends, .. },
         ) => (ends[1][0] - ends[0][0]).abs() <= 0.0,
         _ => false,
     }

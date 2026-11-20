@@ -20,7 +20,6 @@ mod a_plus;
 mod exact;
 mod fixed;
 mod fresh;
-mod legacy;
 mod smooth;
 
 /// The surface the face copy is lifted through.
@@ -292,7 +291,7 @@ pub(super) fn receipt(checker: &str, seed: Option<u64>, rows: &[Row]) -> String 
         };
         text.push_str(&format!(
             "edge={} true_mm={} raw_mm={} allowance_mm={} reported_mm={} stored_mm={} \
-             raw_over_true={ratio} exact_zero={} domain_exit={} evaluations={} work={} \
+             raw_over_true={ratio} at={} exact_zero={} domain_exit={} evaluations={} work={} \
              verdict={}\n",
             row.name,
             number(&row.truth.lo),
@@ -301,6 +300,7 @@ pub(super) fn receipt(checker: &str, seed: Option<u64>, rows: &[Row]) -> String 
             number(&row.reading.reported_mm()),
             row.reading.stored_mm.as_ref().map_or("-".into(), number),
             // Recorded, not judged.
+            row.reading.at.as_ref().map_or("-".into(), number),
             row.reading.exact_zero,
             row.reading.domain_exit.as_ref().map_or("-".into(), number),
             row.reading.evaluations,

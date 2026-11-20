@@ -64,21 +64,27 @@ fn a_source_repair_has_numerical_checks_and_separate_source_history() {
     let body = &imported.bodies()[0].1;
     assert_eq!(body.options().tolerance_mm, r("0.01"));
     assert_eq!(body.counts().faces, 6);
-    let samples = body
+    let records = body
         .evidence()
         .checks()
         .iter()
-        .flat_map(|check| match check {
-            NumericalCheck::Samples { samples, .. } => samples.as_slice(),
-            _ => &[],
+        .filter_map(|check| match check {
+            NumericalCheck::Samples { name, samples, .. } => Some((name, samples)),
+            _ => None,
         })
         .collect::<Vec<_>>();
-    assert!(!samples.is_empty());
-    assert!(
-        samples
-            .iter()
-            .all(|sample| sample.distance_upper_mm.is_zero())
-    );
+    assert!(!records.is_empty());
+    for (name, samples) in records {
+        for sample in samples {
+            if name.ends_with("edge-surface-distance") {
+                // A measured gap. An edge that lies on its face stores the
+                // measurement error of a binary64 reading, times 1.1.
+                assert!(sample.distance_upper_mm < r("1e-12"), "{name}");
+            } else {
+                assert!(sample.distance_upper_mm.is_zero(), "{name}");
+            }
+        }
+    }
     // Zero residual still came out of the numerical variant and numerical type.
     assert!(!body.exact_topology_faults().is_empty());
 }

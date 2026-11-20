@@ -116,10 +116,12 @@ fn fresh(
     EdgeCase {
         name,
         source,
-        curve,
-        parameters: [Rational::zero(), Rational::one()],
-        surface,
-        face_copy,
+        geometry: EdgeGeometry {
+            curve,
+            parameters: [Rational::zero(), Rational::one()],
+            surface,
+            face_copy,
+        },
         truth,
         domain_exit: None,
         zero: None,
@@ -361,9 +363,9 @@ pub(super) fn cases(seed: u64, per_family: usize) -> Vec<EdgeCase> {
             "seeded: hidden height bump on a cylinder arc",
             cylinder_arc(&mut random),
         );
-        if let FaceCopy::Native(curve) = &arc.face_copy {
+        if let FaceCopy::Native(curve) = &arc.geometry.face_copy {
             let [lo, hi] = curve.domain();
-            arc.parameters = [lo.clone(), hi.clone()];
+            arc.geometry.parameters = [lo.clone(), hi.clone()];
         }
         cases.push(arc);
     }
@@ -395,7 +397,7 @@ pub(super) fn twin(case: &EdgeCase, scale: &Rational, shift: &[Rational; 3]) -> 
             )
             .expect("twin curve")
         };
-    let curve = match &case.curve {
+    let curve = match &case.geometry.curve {
         Curve::Line(line) => Curve::Line(catallax_shapes::Line {
             origin: moved(&line.origin),
             dir: line.dir.scaled(&Real::from(scale.clone())),
@@ -410,12 +412,12 @@ pub(super) fn twin(case: &EdgeCase, scale: &Rational, shift: &[Rational; 3]) -> 
     };
     // Plane parameters are lengths and scale with the body. A cylinder keeps
     // its angle and scales its height. Carrier parameters do not change.
-    let factors = match &case.surface {
+    let factors = match &case.geometry.surface {
         CaseSurface::Kernel(Surface::Plane(_)) => [scale.clone(), scale.clone()],
         CaseSurface::Kernel(Surface::Cylinder(_)) => [Rational::one(), scale.clone()],
         _ => [Rational::one(), Rational::one()],
     };
-    let surface = match &case.surface {
+    let surface = match &case.geometry.surface {
         CaseSurface::Kernel(Surface::Plane(plane)) => {
             CaseSurface::Kernel(Surface::Plane(catallax_shapes::Plane {
                 origin: moved(&plane.origin),
@@ -442,7 +444,7 @@ pub(super) fn twin(case: &EdgeCase, scale: &Rational, shift: &[Rational; 3]) -> 
         ),
         CaseSurface::Kernel(_) => unreachable!("fixtures use planes and cylinders"),
     };
-    let face_copy = match &case.face_copy {
+    let face_copy = match &case.geometry.face_copy {
         FaceCopy::Native(curve) => FaceCopy::Native(respline(curve, &|p| {
             point([
                 &factors[0] * &p.x.as_rational().expect("rational"),
@@ -457,9 +459,12 @@ pub(super) fn twin(case: &EdgeCase, scale: &Rational, shift: &[Rational; 3]) -> 
     };
     EdgeCase {
         name: format!("{}-twin", case.name),
-        curve,
-        surface,
-        face_copy,
+        geometry: EdgeGeometry {
+            curve,
+            parameters: case.geometry.parameters.clone(),
+            surface,
+            face_copy,
+        },
         truth: Truth {
             lo: &case.truth.lo * scale,
             hi: &case.truth.hi * scale,

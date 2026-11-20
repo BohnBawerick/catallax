@@ -4,7 +4,8 @@
 //! lifted through a surface at the same parameter. The largest distance
 //! between the copies is known exactly by construction, so a checker can be
 //! judged against it. Nothing here measures a gap for admission; this module
-//! is the oracle and holds no checker.
+//! is the oracle and holds no checker. A checker under test is handed an
+//! [`EdgeGeometry`] and nothing else: names, truths and expectations stay here.
 //!
 //! The fourteen fixed edges copy recorded failures of sampled checkers in
 //! OpenCASCADE, SMLib and solidcraft. `docs/research/cp2-grill/checker-failures.md`
@@ -75,13 +76,10 @@ pub(super) enum Zero {
     Measured,
 }
 
-/// One edge with a known largest gap.
+/// Everything a checker is given: the two copies and the surface. It holds
+/// no name, no answer and no expectation, so an adapter cannot read the oracle.
 #[derive(Clone, Debug)]
-pub(super) struct EdgeCase {
-    /// Stable name used in receipts.
-    pub name: String,
-    /// The recorded failure or construction this case stands for.
-    pub source: &'static str,
+pub(super) struct EdgeGeometry {
     /// The 3D copy.
     pub curve: Curve,
     /// Edge parameters in traversal order.
@@ -90,6 +88,18 @@ pub(super) struct EdgeCase {
     pub surface: CaseSurface,
     /// The face copy.
     pub face_copy: FaceCopy,
+}
+
+/// One edge with a known largest gap. Only [`EdgeCase::geometry`] reaches a
+/// checker; the rest stays in the harness.
+#[derive(Clone, Debug)]
+pub(super) struct EdgeCase {
+    /// Stable name used in receipts.
+    pub name: String,
+    /// The recorded failure or construction this case stands for.
+    pub source: &'static str,
+    /// What a checker sees.
+    pub geometry: EdgeGeometry,
     /// The exact largest gap.
     pub truth: Truth,
     /// The parameter where the face copy leaves the surface domain, if it does.
@@ -98,14 +108,14 @@ pub(super) struct EdgeCase {
     pub domain_exit: Option<Rational>,
     /// Set on zero-gap controls.
     pub zero: Option<Zero>,
-    /// Largest acceptable raw value plus allowance on a zero-gap control.
+    /// Largest acceptable reported gap on a zero-gap control.
     pub zero_ceiling: Rational,
 }
 
 /// What a checker reports for one edge.
 #[derive(Clone, Debug)]
 pub(super) struct Reading {
-    /// The largest gap the checker found, before any margin.
+    /// The largest gap the checker found, before any allowance or margin.
     pub raw_mm: Rational,
     /// The checker's own numerical error allowance for that value.
     pub allowance_mm: Rational,
@@ -121,14 +131,24 @@ pub(super) struct Reading {
     pub evaluations: u64,
 }
 
-/// A checker under test. Implementations see only the geometry of the case.
+impl Reading {
+    /// The reported gap: the raw estimate plus the error allowance, before
+    /// the storage margin. The known-answer rule reads this one quantity on
+    /// both sides. A raw binary64 estimate is an attained value and sits at or
+    /// below the true maximum by its rounding error, so the raw value alone
+    /// cannot be required to reach the truth; the checker's own bound on that
+    /// error is part of what it reports, and of what the margin multiplies.
+    pub(super) fn reported_mm(&self) -> Rational {
+        &self.raw_mm + &self.allowance_mm
+    }
+}
+
+/// A checker under test. It is handed the geometry only.
 pub(super) trait GapChecker {
     /// Name used in receipts.
     fn name(&self) -> &'static str;
-    /// Whether this checker has a rule for the case's kind of face copy.
-    fn applies(&self, case: &EdgeCase) -> bool;
     /// Measures one edge.
-    fn measure(&self, case: &EdgeCase, dec: &mut Decider) -> Result<Reading, Refusal>;
+    fn measure(&self, geometry: &EdgeGeometry, dec: &mut Decider) -> Result<Reading, Refusal>;
 }
 
 /// One receipt row: a reading, its charged work and the oracle's verdict.
@@ -142,15 +162,18 @@ pub(super) struct Row {
 }
 
 /// Share of the true gap that a checker's error allowance may take on an edge
-/// with a nonzero answer. The stored margin is ten percent; an allowance above
-/// one hundredth of that margin would let the allowance, not the measurement,
-/// cover a missed maximum.
+/// with a nonzero answer. The stored margin is ten percent. An allowance above
+/// one hundredth of that margin would let the allowance, and not the
+/// measurement, carry the reported gap up to the truth.
 fn allowance_share() -> Rational {
     Rational::from_ratio(1, 1000).expect("nonzero")
 }
 
-/// The done-when rule of roadmap item 3.0A, read on the raw estimate:
-/// the reported gap is at least the true gap and at most 1.1 times it.
+/// The done-when rule of roadmap item 3.0A: the reported gap is at least the
+/// true gap and at most 1.1 times it. Both sides read [`Reading::reported_mm`].
+/// A truth known as an enclosure is taken at its upper end on the lower side
+/// and at its lower end on the upper side, so the enclosure's width never
+/// helps a checker.
 pub(super) fn known_answer_holds(case: &EdgeCase, reading: &Reading) -> Result<(), String> {
     let truth = &case.truth;
     if reading.raw_mm.sign() == Sign::Negative || reading.allowance_mm.sign() == Sign::Negative {
@@ -160,21 +183,22 @@ pub(super) fn known_answer_holds(case: &EdgeCase, reading: &Reading) -> Result<(
         (Some(_), None) => return Err("face copy leaves the surface domain unreported".into()),
         (None, Some(_)) => return Err("reported a domain exit that does not exist".into()),
         (Some(expected), Some(found)) => {
-            let span = (&case.parameters[1] - &case.parameters[0]).abs();
-            if (expected - found).abs() > &span * &exact::pow2(-20) {
+            let [a, b] = &case.geometry.parameters;
+            if (expected - found).abs() > &(b - a).abs() * &exact::pow2(-20) {
                 return Err("domain exit reported at the wrong parameter".into());
             }
         }
         (None, None) => (),
     }
+    let reported = reading.reported_mm();
     if let Some(zero) = case.zero {
         if reading.exact_zero && zero == Zero::Measured {
             return Err("measured coincidence reported as exact".into());
         }
-        if reading.exact_zero && !reading.raw_mm.is_zero() {
+        if reading.exact_zero && !reported.is_zero() {
             return Err("exact zero claimed with a nonzero gap".into());
         }
-        if &reading.raw_mm + &reading.allowance_mm > case.zero_ceiling {
+        if reported > case.zero_ceiling {
             return Err("false alarm on a zero-gap control".into());
         }
         return Ok(());
@@ -185,24 +209,24 @@ pub(super) fn known_answer_holds(case: &EdgeCase, reading: &Reading) -> Result<(
     if reading.allowance_mm > &truth.lo * &allowance_share() {
         return Err("error allowance is too large to judge the measurement".into());
     }
-    if &reading.raw_mm + &reading.allowance_mm < truth.lo {
+    if reported < truth.hi {
         return Err("reported gap is below the true gap".into());
     }
     let margin = Rational::from_ratio(11, 10).expect("nonzero");
-    if reading.raw_mm > &truth.hi * &margin {
+    if reported > &truth.lo * &margin {
         return Err("reported gap is above 1.1 times the true gap".into());
     }
     Ok(())
 }
 
-/// Measures every applicable case under its own work allowance.
+/// Measures every case under its own work allowance. No case is skipped: a
+/// caller that wants a subset passes a subset.
 pub(super) fn run(checker: &dyn GapChecker, cases: &[EdgeCase]) -> Vec<Row> {
     cases
         .iter()
-        .filter(|case| checker.applies(case))
         .map(|case| {
             let (reading, work) = with_operation_budget(DEFAULT_WORK, || {
-                checker.measure(case, &mut Decider::default())
+                checker.measure(&case.geometry, &mut Decider::default())
             });
             assert!(!work.exhausted, "{} ran out of work", case.name);
             // A refusal is a result: the row fails with the refusal's code.
@@ -235,8 +259,43 @@ pub(super) fn run(checker: &dyn GapChecker, cases: &[EdgeCase]) -> Vec<Row> {
         .collect()
 }
 
+/// The acceptance run for a checker that claims the 3.0A done-when line:
+/// every fixed case, by exact name and count, with no filter. A row that
+/// fails or a case that is missing makes this an error listing each one.
+pub(super) fn accept(checker: &dyn GapChecker) -> Result<Vec<Row>, String> {
+    let rows = run(checker, &fixed::cases());
+    all_required_rows_pass(&rows).map(|()| rows)
+}
+
+/// Checks rows against [`fixed::REQUIRED`]: the same names in the same order,
+/// and every verdict a pass.
+pub(super) fn all_required_rows_pass(rows: &[Row]) -> Result<(), String> {
+    let names: Vec<&str> = rows.iter().map(|row| row.name.as_str()).collect();
+    if names != fixed::REQUIRED {
+        return Err(format!(
+            "the required cases are {:?}, the run has {names:?}",
+            fixed::REQUIRED
+        ));
+    }
+    let failures: Vec<String> = rows
+        .iter()
+        .filter_map(|row| {
+            row.verdict
+                .as_ref()
+                .err()
+                .map(|reason| format!("{}: {reason}", row.name))
+        })
+        .collect();
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(failures.join("; "))
+    }
+}
+
 /// A receipt: the seed of any generated cases and, per edge, the true gap, the
-/// raw estimate, the error allowance, the stored tolerance and the work.
+/// raw estimate, the error allowance, their sum (the reported gap), the stored
+/// tolerance and the work.
 pub(super) fn receipt(checker: &str, seed: Option<u64>, rows: &[Row]) -> String {
     let number = |value: &Rational| format!("{:.9e}", value.to_f64_nearest());
     let mut text = format!(
@@ -253,12 +312,13 @@ pub(super) fn receipt(checker: &str, seed: Option<u64>, rows: &[Row]) -> String 
             )
         };
         text.push_str(&format!(
-            "edge={} true_mm={} raw_mm={} allowance_mm={} stored_mm={} found_over_true={ratio} \
-             evaluations={} work={} verdict={}\n",
+            "edge={} true_mm={} raw_mm={} allowance_mm={} reported_mm={} stored_mm={} \
+             raw_over_true={ratio} evaluations={} work={} verdict={}\n",
             row.name,
             number(&row.truth.lo),
             number(&row.reading.raw_mm),
             number(&row.reading.allowance_mm),
+            number(&row.reading.reported_mm()),
             row.reading.stored_mm.as_ref().map_or("-".into(), number),
             row.reading.evaluations,
             row.work,
@@ -287,7 +347,7 @@ pub(super) fn truth_is_attained_and_bounds(case: &EdgeCase, samples: i64) {
     let mut dec = Decider::default();
     let ((), work) = with_operation_budget(10 * DEFAULT_WORK, || {
         let truth = &case.truth;
-        let [a, b] = &case.parameters;
+        let [a, b] = &case.geometry.parameters;
         // Past a domain exit the truth is defined on the end span's polynomial
         // continuation, which the kernel evaluators refuse. Those cases state
         // their continuation in closed form and are checked up to the exit.
@@ -300,7 +360,7 @@ pub(super) fn truth_is_attained_and_bounds(case: &EdgeCase, samples: i64) {
         // its bisection bracket, which moves the value by far less than this.
         let slack = &truth.hi * &exact::pow2(-60) + exact::pow2(-110);
         if inside(&truth.at) {
-            let [lo, hi] = exact::gap_enclosure(case, &truth.at, &mut dec)
+            let [lo, hi] = exact::gap_enclosure(&case.geometry, &truth.at, &mut dec)
                 .unwrap_or_else(|refusal| panic!("{}: {refusal:?}", case.name));
             assert!(
                 hi + slack.clone() >= truth.lo && lo <= &truth.hi + &slack,
@@ -322,7 +382,7 @@ pub(super) fn truth_is_attained_and_bounds(case: &EdgeCase, samples: i64) {
             }
         }
         for t in parameters.into_iter().filter(inside) {
-            let [lo, _] = exact::gap_enclosure(case, &t, &mut dec)
+            let [lo, _] = exact::gap_enclosure(&case.geometry, &t, &mut dec)
                 .unwrap_or_else(|refusal| panic!("{}: {refusal:?}", case.name));
             assert!(
                 lo <= &truth.hi + &slack,
@@ -332,4 +392,111 @@ pub(super) fn truth_is_attained_and_bounds(case: &EdgeCase, samples: i64) {
         }
     });
     assert!(!work.exhausted, "{}: oracle ran out of work", case.name);
+}
+
+#[cfg(test)]
+mod rule_tests {
+    use super::*;
+
+    fn reading(raw: &str, allowance: &str) -> Reading {
+        Reading {
+            raw_mm: exact::q(raw),
+            allowance_mm: exact::q(allowance),
+            stored_mm: None,
+            at: None,
+            exact_zero: false,
+            domain_exit: None,
+            evaluations: 0,
+        }
+    }
+
+    fn with_truth(lo: &str, hi: &str) -> EdgeCase {
+        let mut case = fixed::cases().remove(0);
+        case.truth = Truth {
+            lo: exact::q(lo),
+            hi: exact::q(hi),
+            at: Rational::zero(),
+        };
+        case
+    }
+
+    #[test]
+    fn both_sides_of_the_rule_read_the_reported_gap() {
+        let case = with_truth("1", "1");
+        let holds = |raw, allowance| known_answer_holds(&case, &reading(raw, allowance));
+        assert!(holds("1", "0").is_ok());
+        assert!(holds("1.1", "0").is_ok());
+        // A raw estimate short of the truth fails unless the checker's own
+        // allowance closes the difference.
+        assert!(holds("0.9999", "0").is_err());
+        assert!(holds("0.9999", "0.00009").is_err());
+        assert!(holds("0.9999", "0.0001").is_ok());
+        // The allowance counts on the upper side as well.
+        assert!(holds("1.1", "0.0001").is_err());
+        assert!(holds("1.0995", "0.001").is_err());
+        assert!(holds("1.11", "0").is_err());
+        // An allowance above a thousandth of the truth fails whatever it covers.
+        assert!(holds("0.998", "0.002").is_err());
+        assert!(holds("1", "0.0011").is_err());
+    }
+
+    #[test]
+    fn an_enclosed_truth_never_widens_the_rule() {
+        let case = with_truth("1", "1.01");
+        let holds = |raw| known_answer_holds(&case, &reading(raw, "0"));
+        // The lower side reads the enclosure's upper end.
+        assert!(holds("1.005").is_err());
+        assert!(holds("1.01").is_ok());
+        // The upper side reads 1.1 times its lower end.
+        assert!(holds("1.1").is_ok());
+        assert!(holds("1.105").is_err());
+    }
+
+    #[test]
+    fn a_zero_control_fails_on_a_false_alarm_or_a_false_exact_claim() {
+        let cases = fixed::cases();
+        let measured = cases
+            .iter()
+            .find(|case| case.zero == Some(Zero::Measured))
+            .expect("control");
+        let structural = cases
+            .iter()
+            .find(|case| case.zero == Some(Zero::Structural))
+            .expect("control");
+        let mut exact = reading("0", "0");
+        exact.exact_zero = true;
+        assert!(known_answer_holds(structural, &exact).is_ok());
+        assert!(known_answer_holds(measured, &exact).is_err());
+        assert!(known_answer_holds(measured, &reading("1e-17", "1e-15")).is_ok());
+        assert!(known_answer_holds(measured, &reading("0", "1e-9")).is_err());
+        assert!(known_answer_holds(structural, &reading("1e-9", "0")).is_err());
+    }
+
+    #[test]
+    fn acceptance_needs_every_required_case_by_name() {
+        struct Blind;
+        impl GapChecker for Blind {
+            fn name(&self) -> &'static str {
+                "blind"
+            }
+            fn measure(&self, _: &EdgeGeometry, _: &mut Decider) -> Result<Reading, Refusal> {
+                Ok(reading("0", "0"))
+            }
+        }
+        // A checker that reports nothing passes the zero-gap controls only.
+        let rows = run(&Blind, &fixed::cases());
+        let passing: Vec<_> = rows.iter().filter(|row| row.verdict.is_ok()).collect();
+        assert_eq!(passing.len(), 4);
+        assert!(accept(&Blind).is_err());
+        // Passing rows alone are not acceptance: a missing case is an error.
+        let mut all_pass = rows.clone();
+        for row in &mut all_pass {
+            row.verdict = Ok(());
+        }
+        assert!(all_required_rows_pass(&all_pass).is_ok());
+        all_pass.remove(3);
+        assert!(all_required_rows_pass(&all_pass).is_err());
+        all_pass.retain(|row| row.name.starts_with("13"));
+        assert!(all_required_rows_pass(&all_pass).is_err());
+    }
 }

@@ -10,17 +10,17 @@
 
 use super::*;
 
-fn edge(case: &EdgeCase) -> NumericalEdge {
+fn edge(geometry: &EdgeGeometry) -> NumericalEdge {
     NumericalEdge {
-        key: case.name.clone(),
-        curve: case.curve.clone(),
+        key: "edge".into(),
+        curve: geometry.curve.clone(),
         vertices: [0, 1],
-        parameters: case.parameters.clone(),
+        parameters: geometry.parameters.clone(),
     }
 }
 
 fn largest(
-    case: &EdgeCase,
+    geometry: &EdgeGeometry,
     parameters: Vec<Rational>,
     dec: &mut Decider,
 ) -> Result<Reading, Refusal> {
@@ -34,7 +34,7 @@ fn largest(
         evaluations: parameters.len() as u64,
     };
     for t in parameters {
-        let [_, upper] = exact::gap_enclosure(case, &t, dec)?;
+        let [_, upper] = exact::gap_enclosure(geometry, &t, dec)?;
         if reading.at.is_none() || upper > reading.raw_mm {
             reading.raw_mm = upper;
             reading.at = Some(t);
@@ -50,33 +50,38 @@ impl GapChecker for NinePoints {
     fn name(&self) -> &'static str {
         "legacy-nine-points"
     }
-    fn applies(&self, _: &EdgeCase) -> bool {
-        true
-    }
-    fn measure(&self, case: &EdgeCase, dec: &mut Decider) -> Result<Reading, Refusal> {
-        let parameters = native::numerical_parameters(&edge(case), Sense::Same, dec)?;
-        largest(case, parameters, dec)
+    fn measure(&self, geometry: &EdgeGeometry, dec: &mut Decider) -> Result<Reading, Refusal> {
+        let parameters = native::numerical_parameters(&edge(geometry), Sense::Same, dec)?;
+        largest(geometry, parameters, dec)
     }
 }
 
 /// Eighths of every clipped knot span of the 3D curve and the native u/v
-/// curve (`native::parameters`).
+/// curve (`native::parameters`). Admission has this rule for native u/v
+/// curves only.
 struct KnotSpanEighths;
 
 impl GapChecker for KnotSpanEighths {
     fn name(&self) -> &'static str {
         "legacy-knot-span-eighths"
     }
-    fn applies(&self, case: &EdgeCase) -> bool {
-        matches!(case.face_copy, FaceCopy::Native(_))
-    }
-    fn measure(&self, case: &EdgeCase, dec: &mut Decider) -> Result<Reading, Refusal> {
-        let FaceCopy::Native(curve) = &case.face_copy else {
-            unreachable!("applies to native face copies")
+    fn measure(&self, geometry: &EdgeGeometry, dec: &mut Decider) -> Result<Reading, Refusal> {
+        let FaceCopy::Native(curve) = &geometry.face_copy else {
+            return Err(bad("trim", "the knot-span rule needs a native u/v curve"));
         };
-        let parameters = native::parameters(&edge(case), curve, Sense::Same, dec)?;
-        largest(case, parameters, dec)
+        let parameters = native::parameters(&edge(geometry), curve, Sense::Same, dec)?;
+        largest(geometry, parameters, dec)
     }
+}
+
+/// The cases the knot-span rule exists for. This filter belongs to the
+/// baseline only; an acceptance run has none.
+fn native_only(cases: &[EdgeCase]) -> Vec<EdgeCase> {
+    cases
+        .iter()
+        .filter(|case| matches!(case.geometry.face_copy, FaceCopy::Native(_)))
+        .cloned()
+        .collect()
 }
 
 fn outcome(rows: &[Row]) -> Vec<(String, bool)> {
@@ -93,14 +98,16 @@ fn the_baseline_reads_what_admission_reads() {
         .into_iter()
         .find(|case| case.name == "07a-seam-crossing")
         .expect("case");
-    let (FaceCopy::Native(curve), CaseSurface::Kernel(surface)) = (&case.face_copy, &case.surface)
+    let geometry = &case.geometry;
+    let (FaceCopy::Native(curve), CaseSurface::Kernel(surface)) =
+        (&geometry.face_copy, &geometry.surface)
     else {
         unreachable!("an analytic face with a native curve")
     };
     let mut dec = Decider::default();
-    let edge = edge(&case);
-    let ends = case.parameters.each_ref().map(|t| {
-        let at = exact::face_parameters(&case, t, &mut dec).expect("inside");
+    let edge = edge(geometry);
+    let ends = geometry.parameters.each_ref().map(|t| {
+        let at = exact::face_parameters(geometry, t, &mut dec).expect("inside");
         at.map(|value| value.as_rational().expect("rational end"))
     });
     let face = NumericalFace {
@@ -119,7 +126,7 @@ fn the_baseline_reads_what_admission_reads() {
     let parameters = native::parameters(&edge, curve, Sense::Same, &mut dec).expect("parameters");
     assert_eq!(samples.len(), parameters.len());
     for (sample, t) in samples.iter().zip(&parameters) {
-        let [_, upper] = exact::gap_enclosure(&case, t, &mut dec).expect("gap");
+        let [_, upper] = exact::gap_enclosure(geometry, t, &mut dec).expect("gap");
         assert_eq!(sample.parameters[0], *t);
         assert_eq!(sample.distance_upper_mm, upper);
     }
@@ -133,7 +140,7 @@ fn the_baseline_reads_what_admission_reads() {
 fn todays_sampling_misses_the_recorded_failures() {
     let cases = fixed::cases();
     let nine = run(&NinePoints, &cases);
-    let eighths = run(&KnotSpanEighths, &cases);
+    let eighths = run(&KnotSpanEighths, &native_only(&cases));
     publish(
         "known-answers-legacy-nine-points.txt",
         &receipt(NinePoints.name(), None, &nine),
@@ -149,6 +156,7 @@ fn todays_sampling_misses_the_recorded_failures() {
             .map(|(name, _)| name)
             .collect()
     };
+    assert!(all_required_rows_pass(&nine).is_err());
     assert_eq!(passing(&nine), NINE_POINTS_PASS, "nine-point rule");
     assert_eq!(passing(&eighths), KNOT_SPAN_EIGHTHS_PASS, "knot-span rule");
 }
@@ -175,17 +183,20 @@ const KNOT_SPAN_EIGHTHS_PASS: &[&str] = &[
 fn todays_sampling_on_fresh_edges_is_recorded() {
     let seed = fresh::seed();
     let cases = fresh::cases(seed, 3);
-    for (checker, file) in [
+    let native = native_only(&cases);
+    for (checker, cases, file) in [
         (
             &NinePoints as &dyn GapChecker,
+            &cases,
             "known-answers-fresh-legacy-nine-points.txt",
         ),
         (
             &KnotSpanEighths,
+            &native,
             "known-answers-fresh-legacy-knot-span-eighths.txt",
         ),
     ] {
-        let rows = run(checker, &cases);
+        let rows = run(checker, cases);
         assert_eq!(rows.len(), cases.len());
         publish(file, &receipt(checker.name(), Some(seed), &rows));
     }

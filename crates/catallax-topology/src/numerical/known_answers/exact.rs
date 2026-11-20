@@ -387,7 +387,7 @@ pub(super) fn circle(
 
 /// The face copy's exact u/v at an edge parameter.
 pub(super) fn face_parameters(
-    case: &EdgeCase,
+    case: &EdgeGeometry,
     t: &Rational,
     dec: &mut Decider,
 ) -> Result<[Real; 2], Refusal> {
@@ -409,7 +409,7 @@ pub(super) fn face_parameters(
 /// A 128-bit enclosure of the same-parameter gap at one rational parameter,
 /// from the exact definitions. This is the oracle's only evaluator.
 pub(super) fn gap_enclosure(
-    case: &EdgeCase,
+    case: &EdgeGeometry,
     t: &Rational,
     dec: &mut Decider,
 ) -> Result<[Rational; 2], Refusal> {

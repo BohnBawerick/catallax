@@ -32,10 +32,12 @@ fn case(
     EdgeCase {
         name: name.into(),
         source,
-        curve,
-        parameters: [zero(), one()],
-        surface,
-        face_copy,
+        geometry: EdgeGeometry {
+            curve,
+            parameters: [zero(), one()],
+            surface,
+            face_copy,
+        },
         truth,
         domain_exit: None,
         zero: None,
@@ -206,7 +208,7 @@ fn rational_rail_against_cubic() -> EdgeCase {
         FaceCopy::Native(pcurve(3, unit_knots(3, &[]), flat.into(), None)),
         Truth::exact(&lift * &ratio(4, 9), ratio(1, 2)),
     );
-    edge.parameters = [zero(), ratio(7, 10)];
+    edge.geometry.parameters = [zero(), ratio(7, 10)];
     edge
 }
 
@@ -325,7 +327,7 @@ fn seam(name: &str, start: Rational, end: Rational, shift: &Rational) -> EdgeCas
         FaceCopy::Native(pcurve(3, knots, controls, None)),
         truth,
     );
-    edge.parameters = [start, end];
+    edge.geometry.parameters = [start, end];
     edge
 }
 
@@ -366,11 +368,11 @@ fn face_copy_outside_domain() -> EdgeCase {
         &heights,
         Truth::exact(&height * &reach.pow(3).expect("power"), one()),
     );
-    edge.curve = segment(
+    edge.geometry.curve = segment(
         [zero(), ratio(5, 1), zero()],
         [qi(100) * reach.clone(), ratio(5, 1), zero()],
     );
-    edge.face_copy = FaceCopy::Native(straight(
+    edge.geometry.face_copy = FaceCopy::Native(straight(
         [zero(), ratio(1, 2)],
         [reach.clone(), ratio(1, 2)],
     ));
@@ -549,7 +551,7 @@ fn zero_gap_controls() -> Vec<EdgeCase> {
         FaceCopy::Linear(Box::new([[qi(1), qi(2)], [qi(16), qi(22)]])),
         Truth::exact(zero(), zero()),
     );
-    on_plane.parameters = [zero(), qi(5)];
+    on_plane.geometry.parameters = [zero(), qi(5)];
     let mut on_cylinder = case(
         "13b-zero-circle-on-cylinder",
         "zero-gap control: circle on cylinder",
@@ -563,7 +565,7 @@ fn zero_gap_controls() -> Vec<EdgeCase> {
         FaceCopy::Linear(Box::new([[ratio(1, 4), qi(3)], [qi(2), qi(3)]])),
         Truth::exact(zero(), ratio(1, 4)),
     );
-    on_cylinder.parameters = [ratio(1, 4), qi(2)];
+    on_cylinder.geometry.parameters = [ratio(1, 4), qi(2)];
     let (surface, knots) = wavy_patch(5);
     let rail = case(
         "13c-zero-boundary-rail",
@@ -642,6 +644,33 @@ fn circle_against_rational_copy() -> EdgeCase {
     )
 }
 
+/// The names of the fixed cases, in order. An acceptance run must contain
+/// exactly these: one or more cases for each of the fourteen numbered edges.
+pub(super) const REQUIRED: [&str; 22] = [
+    "01-narrow-peak-dense-knots",
+    "02-surface-knot-peak",
+    "03-degree-25-peak",
+    "04a-rational-end-weight",
+    "04b-rational-rail-against-cubic",
+    "05-origin-1e6",
+    "05-origin-1e9",
+    "05-origin-1e12",
+    "06-peak-midway-between-equal-samples",
+    "07a-seam-crossing",
+    "07b-one-period-shift",
+    "07c-closed-circle",
+    "08-parameter-stretch",
+    "09-face-copy-outside-domain",
+    "10-near-tangent-section",
+    "11-passes-at-eighths",
+    "12-256-spans",
+    "13a-zero-line-on-plane",
+    "13b-zero-circle-on-cylinder",
+    "13c-zero-boundary-rail",
+    "13d-zero-stored-iso-curve",
+    "14-circle-against-rational-copy",
+];
+
 /// All fixed cases in receipt order.
 pub(super) fn cases() -> Vec<EdgeCase> {
     let period = Ball::pi(BITS).mid() * qi(2);
@@ -677,6 +706,8 @@ fn every_fixed_truth_is_attained_and_bounds_dense_samples() {
         .map(|case| case.name[..2].to_string())
         .collect();
     assert_eq!(numbers.len(), 14, "one or more cases per numbered edge");
+    let names: Vec<&str> = cases.iter().map(|case| case.name.as_str()).collect();
+    assert_eq!(names, REQUIRED);
     for case in &cases {
         assert!(!case.source.is_empty());
         assert_eq!(case.truth.is_zero(), case.zero.is_some(), "{}", case.name);
@@ -690,7 +721,7 @@ fn the_domain_exit_truth_is_the_polynomial_continuation() {
     let exit = case.domain_exit.as_ref().expect("exit");
     // Up to the exit the kernel's own evaluator agrees with h u^3.
     let mut dec = Decider::default();
-    let [lo, hi] = gap_enclosure(&case, exit, &mut dec).expect("inside");
+    let [lo, hi] = gap_enclosure(&case.geometry, exit, &mut dec).expect("inside");
     let at_exit = q("2e-3");
     assert!(lo <= at_exit && at_exit <= hi);
     assert_eq!(case.truth.lo, q("2e-3") * ratio(9261, 8000));

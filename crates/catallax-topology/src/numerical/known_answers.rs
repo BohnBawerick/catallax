@@ -16,6 +16,7 @@ use super::*;
 use catallax_numbers::{Real, with_operation_budget};
 use catallax_shapes::{BSplineCurve, BSplineSurface};
 
+mod a_plus;
 mod exact;
 mod fixed;
 mod fresh;

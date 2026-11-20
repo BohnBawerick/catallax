@@ -218,16 +218,15 @@ fn projected_vertices_cannot_reverse_the_written_finite_line() {
         )
         .unwrap();
     definition.edges[0].parameters.swap(0, 1);
-    let body =
+    // The reversed edge's 3D curve runs against its face copies, so its gap
+    // is its own length and its ends' tolerances cover the whole edge. Rule
+    // T5 (Checkpoint 2 decisions, section 4.3) refuses that body at
+    // admission, before any writer sees it: two vertices 0.001 mm apart
+    // with tolerances adding up to more than half of that.
+    let refusal =
         source::build_with_native_trims(definition, native, options, &mut Decider::default())
-            .unwrap();
-    let refusal = numerical::build(
-        &body,
-        &NumericalStepOptions::default(),
-        &mut Decider::default(),
-    )
-    .unwrap_err();
-    assert_eq!(refusal.code, "step.numerical-rounding-topology");
+            .unwrap_err();
+    assert_eq!(refusal.code, "numerical.tolerance-pair");
 }
 #[test]
 fn n03_rounding_cannot_collapse_the_emitted_body() {
@@ -267,16 +266,15 @@ fn n03_rounding_cannot_collapse_the_emitted_body() {
             }
         }
     }
-    let body = source::build(d, NumericalOptions::default(), &mut Decider::default()).unwrap();
-    let options = NumericalStepOptions {
-        significant_digits: 8,
-        ..Default::default()
-    };
+    // A body a few nanometres across sits under rule T1's 1e-7 mm floor, so
+    // its vertices are closer than their floors allow and rule T5 refuses it
+    // at admission (Checkpoint 2 decisions, section 4.3). Before the rules,
+    // the writer refused it when rounding collapsed it.
     assert_eq!(
-        numerical::build(&body, &options, &mut Decider::default())
+        source::build(d, NumericalOptions::default(), &mut Decider::default())
             .unwrap_err()
             .code,
-        "numerical.invalid-definition"
+        "numerical.tolerance-pair"
     );
 }
 #[test]

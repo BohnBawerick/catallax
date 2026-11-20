@@ -101,6 +101,8 @@ pub(super) struct Lifted {
     pub parameters: [f64; 2],
     /// Each exact edge parameter minus its binary64 value.
     low: [f64; 2],
+    /// The exact u/v shift subtracted from the face's parameters.
+    pub shift: [Rational; 2],
 }
 
 /// Reusable basis-function storage.
@@ -485,6 +487,7 @@ pub(super) fn lift(copies: &EdgeCopies<'_>, dec: &mut Decider) -> Result<Lifted,
         surface,
         parameters: [parameters[0], parameters[1]],
         low: [low[0], low[1]],
+        shift,
     })
 }
 
@@ -660,7 +663,7 @@ impl Surface64 {
 }
 
 impl Curve64 {
-    fn point(&self, t: f64, scratch: &mut Scratch) -> Bounded<[f64; 3]> {
+    pub(super) fn point(&self, t: f64, scratch: &mut Scratch) -> Bounded<[f64; 3]> {
         match self {
             Self::Line { origin, dir } => {
                 let value = std::array::from_fn(|axis| origin[axis] + t * dir[axis]);
@@ -807,6 +810,46 @@ impl Lifted {
         )
     }
 
+    /// The foot on the surface of the 3D point at `t`, in the shifted
+    /// parameters, from a seed: Gauss-Newton on the squared distance with
+    /// forward-difference partials, as [`Lifted::allowance`] takes them
+    /// (Dennis and Schnabel 1983, sections 5.4 and 10.1). Returns the foot
+    /// and the evaluations it spent.
+    pub(super) fn foot(&self, t: f64, seed: [f64; 2], scratch: &mut Scratch) -> ([f64; 2], u64) {
+        let target = self.curve.point(t, scratch).value;
+        let mut uv = seed;
+        let mut evaluations = 1;
+        for _ in 0..FOOT_STEPS {
+            let base = self.surface.point(uv, scratch).value;
+            let r: [f64; 3] = std::array::from_fn(|k| target[k] - base[k]);
+            let mut partial = [[0.0; 3]; 2];
+            for (axis, column) in partial.iter_mut().enumerate() {
+                let step = f64::EPSILON.sqrt() * uv[axis].abs().max(1.0);
+                let mut moved = uv;
+                moved[axis] += step;
+                let there = self.surface.point(moved, scratch).value;
+                *column = std::array::from_fn(|k| (there[k] - base[k]) / step);
+            }
+            evaluations += 3;
+            let (a, b, c) = (
+                dot(&partial[0], &partial[0]),
+                dot(&partial[0], &partial[1]),
+                dot(&partial[1], &partial[1]),
+            );
+            let (g0, g1) = (dot(&partial[0], &r), dot(&partial[1], &r));
+            let det = a * c - b * b;
+            if det == 0.0 || !det.is_finite() {
+                break;
+            }
+            let d = [(c * g0 - b * g1) / det, (a * g1 - b * g0) / det];
+            uv = [uv[0] + d[0], uv[1] + d[1]];
+            if d[0].abs() + d[1].abs() <= f64::EPSILON * (uv[0].abs() + uv[1].abs()).max(1.0) {
+                break;
+            }
+        }
+        (uv, evaluations)
+    }
+
     /// Whether the face copy is outside a spline surface's domain at `t`.
     pub(super) fn outside(&self, t: f64, scratch: &mut Scratch) -> bool {
         match (&self.surface, self.face_at(t, scratch)) {
@@ -816,6 +859,11 @@ impl Lifted {
     }
 }
 
+/// Source: Dennis and Schnabel 1983, section 10.1: Gauss-Newton converges
+/// fast from a seed near a foot whose residual is small; eight steps settle a
+/// seed already within the tolerance, and more cannot help a stalled one.
+const FOOT_STEPS: usize = 8;
+
 /// Source: a count of [`Lifted::allowance`]: the residual at the point and
 /// on either side of it, and the surface at two shifted parameters.
 pub(super) const ALLOWANCE_EVALUATIONS: u64 = 5;
@@ -823,3 +871,96 @@ pub(super) const ALLOWANCE_EVALUATIONS: u64 = 5;
 /// Source: an operation count of the straight face copy: a difference and a
 /// quotient for the share, then a difference, a product and a sum.
 const LINEAR_ROUNDINGS: f64 = 5.0;
+
+/// An edge's 3D curve rounded to binary64 in a frame that a whole body
+/// shares, reached by the exact shift `origin` (rule T1: operations run in
+/// local frames reached by exact rational transforms). The tolerance rules
+/// read distances between entities in this frame.
+pub(super) fn framed_curve(
+    curve: &Curve,
+    origin: &[Rational; 3],
+    dec: &mut Decider,
+) -> Result<Curve64, Refusal> {
+    let zero = Ball::from_rational(&Rational::zero(), BITS);
+    Ok(match curve {
+        Curve::Line(line) => {
+            let start = rational_point(&line.origin, dec)?;
+            Curve64::Line {
+                origin: std::array::from_fn(|axis| (&start[axis] - &origin[axis]).to_f64_nearest()),
+                dir: [
+                    rational(&line.dir.x, dec)?.to_f64_nearest(),
+                    rational(&line.dir.y, dec)?.to_f64_nearest(),
+                    rational(&line.dir.z, dec)?.to_f64_nearest(),
+                ],
+            }
+        }
+        Curve::Circle(circle) => {
+            let frame = frame(&circle.normal, &circle.ref_dir, dec)?;
+            let radius = root(&circle.radius_sq, dec)?;
+            let center = rational_point(&circle.center, dec)?;
+            Curve64::Conic {
+                center: placed(&center, origin, &frame, [&zero, &zero, &zero]),
+                major: placed(&center, &center, &frame, [&radius, &zero, &zero]),
+                minor: placed(&center, &center, &frame, [&zero, &radius, &zero]),
+            }
+        }
+        Curve::Ellipse(ellipse) => {
+            let frame = frame(&ellipse.normal, &ellipse.major_dir, dec)?;
+            let (major, minor) = (root(&ellipse.major_sq, dec)?, root(&ellipse.minor_sq, dec)?);
+            let center = rational_point(&ellipse.center, dec)?;
+            Curve64::Conic {
+                center: placed(&center, origin, &frame, [&zero, &zero, &zero]),
+                major: placed(&center, &center, &frame, [&major, &zero, &zero]),
+                minor: placed(&center, &center, &frame, [&zero, &minor, &zero]),
+            }
+        }
+        Curve::BSpline(source) => Curve64::Spline(spline_curve(source, origin, dec)?),
+        _ => return Err(unsupported("the 3D copy has no parameter evaluator")),
+    })
+}
+
+/// Exact points that hold an edge's curve between two parameters, each with
+/// a reach: every point of the curve there is within the reach of one of
+/// them along every axis. A line's two ends; a conic's centre with its
+/// largest semi-axis; a spline's controls, whose hull holds the curve
+/// (Piegl and Tiller, property P4.11; positive weights).
+pub(in crate::numerical) fn defining_points(
+    curve: &Curve,
+    parameters: [&Rational; 2],
+    dec: &mut Decider,
+) -> Result<Vec<([Rational; 3], Rational)>, Refusal> {
+    let zero = Rational::zero();
+    Ok(match curve {
+        Curve::Line(line) => {
+            let start = rational_point(&line.origin, dec)?;
+            let dir = [
+                rational(&line.dir.x, dec)?,
+                rational(&line.dir.y, dec)?,
+                rational(&line.dir.z, dec)?,
+            ];
+            parameters
+                .iter()
+                .map(|t| {
+                    (
+                        std::array::from_fn(|axis| &start[axis] + &(*t * &dir[axis])),
+                        zero.clone(),
+                    )
+                })
+                .collect()
+        }
+        Curve::Circle(circle) => vec![(
+            rational_point(&circle.center, dec)?,
+            root(&circle.radius_sq, dec)?.hi(),
+        )],
+        Curve::Ellipse(ellipse) => vec![(
+            rational_point(&ellipse.center, dec)?,
+            root(&ellipse.major_sq, dec)?
+                .hi()
+                .max(root(&ellipse.minor_sq, dec)?.hi()),
+        )],
+        Curve::BSpline(source) => (0..source.control_count())
+            .map(|i| Ok((rational_point(source.control(i), dec)?, zero.clone())))
+            .collect::<Result<_, Refusal>>()?,
+        _ => return Err(unsupported("the 3D copy has no parameter evaluator")),
+    })
+}

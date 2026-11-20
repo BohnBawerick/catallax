@@ -313,7 +313,7 @@ fn halve(
 /// pi / 2 (Niven's theorem), and `(2 j + 1) / (2 count)` is neither when the
 /// count is even. So no point can coincide with a builder that checks at
 /// rational shares such as eighths.
-pub(super) fn chebyshev_shares(count: usize) -> Vec<f64> {
+pub(in crate::numerical) fn chebyshev_shares(count: usize) -> Vec<f64> {
     (0..count)
         .map(|j| {
             let angle = std::f64::consts::PI * (2 * j + 1) as f64 / (2 * count) as f64;
@@ -391,7 +391,7 @@ const BRENT_STEPS: u32 = 100;
 /// distance of its extremum. The caller maps its bracket onto `[0, 1]`, so
 /// the tolerance is a share of the bracket and not of the parameter.
 /// Returns the best share, its value and the number of evaluations.
-pub(super) fn brent_maximum(f: &mut dyn FnMut(f64) -> f64) -> (f64, f64, u64) {
+pub(in crate::numerical) fn brent_maximum(f: &mut dyn FnMut(f64) -> f64) -> (f64, f64, u64) {
     let tolerance = f64::EPSILON.sqrt();
     let (mut a, mut b) = (0.0_f64, 1.0_f64);
     let mut x = a + GOLDEN * (b - a);

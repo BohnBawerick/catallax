@@ -500,7 +500,7 @@ impl NumericalBody {
                 dec,
             )?;
             next.inherit(self);
-            Ok(next)
+            next.lower_growth(self, dec)
         })
     }
 }

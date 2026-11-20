@@ -1520,6 +1520,7 @@ pub(crate) fn build(
     step: &StepId,
     name: String,
     tolerance: &Rational,
+    cap: &NumericalOptions,
     dec: &mut Decider,
 ) -> Result<Option<Built>, Refusal> {
     let Some(fan) = Fan::read(model, body, dec)? else {
@@ -1975,15 +1976,9 @@ pub(crate) fn build(
         dec,
     )
     .map_err(|error| at_stage("native strip embedding", error))?;
-    let admitted = catallax_topology::numerical::build_with_native_trims(
-        definition,
-        trims,
-        NumericalOptions {
-            tolerance_mm: tolerance.clone(),
-        },
-        dec,
-    )
-    .map_err(|error| at_stage("native strip admission", error))?;
+    let admitted =
+        catallax_topology::numerical::build_with_native_trims(definition, trims, cap.clone(), dec)
+            .map_err(|error| at_stage("native strip admission", error))?;
     let origins = faces
         .into_iter()
         .map(|face| {
@@ -2104,6 +2099,9 @@ mod tests {
                     &StepId::new("round").unwrap(),
                     "flatted disc".into(),
                     &Rational::parse("0.0000001").unwrap(),
+                    &NumericalOptions {
+                        tolerance_mm: Rational::parse("0.0000001").unwrap(),
+                    },
                     &mut dec,
                 )
                 .unwrap()
@@ -2152,6 +2150,9 @@ mod tests {
                 &StepId::new("round").unwrap(),
                 "rim".into(),
                 &Rational::parse("0.0000001").unwrap(),
+                &NumericalOptions {
+                    tolerance_mm: Rational::parse("0.0000001").unwrap(),
+                },
                 &mut dec,
             )
             .unwrap()

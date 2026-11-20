@@ -43,8 +43,115 @@ use catallax_shapes::{BSplineCurve, BSplineSurface, Curve, Surface};
 
 mod lift;
 mod numeric;
+/// Refits of a face copy from its 3D curve (rules T7 and T8).
+pub mod refit;
 
 use lift::{Curve64, Face64, Lifted, Revolved, Scratch, Surface64};
+
+pub(in crate::numerical) use lift::defining_points;
+pub(in crate::numerical) use numeric::{brent_maximum, chebyshev_shares};
+
+/// Source: the allowance `lift.rs` gives a domain border, sixteen roundings
+/// of the largest coordinate, here for the corners of a box.
+const BOX_ROUNDINGS: f64 = 16.0;
+
+/// An edge's 3D curve in binary64, in a frame a whole body shares (rule T1),
+/// for the distance readings of the tolerance rules.
+pub(in crate::numerical) struct FramedCurve {
+    curve: Curve64,
+    scratch: Scratch,
+    /// The parameter range, low end first.
+    pub range: [f64; 2],
+    /// The low end, every distinct knot strictly inside the range, and the
+    /// high end.
+    pub breaks: Vec<f64>,
+    /// The polynomial degree of the pieces between breaks.
+    pub degree: usize,
+}
+
+impl FramedCurve {
+    /// Rounds `curve` between `parameters` in the frame shifted to `origin`.
+    pub(in crate::numerical) fn new(
+        curve: &Curve,
+        parameters: [&Rational; 2],
+        origin: &[Rational; 3],
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        let curve = lift::framed_curve(curve, origin, dec)?;
+        let ends = parameters.map(Rational::to_f64_nearest);
+        let range = [ends[0].min(ends[1]), ends[0].max(ends[1])];
+        let mut breaks = vec![range[0]];
+        let degree = match &curve {
+            Curve64::Line { .. } => 1,
+            Curve64::Conic { .. } => 2,
+            Curve64::Spline(spline) => {
+                for knot in &spline.knots {
+                    if *knot > range[0] && *knot < range[1] && breaks.last() != Some(knot) {
+                        breaks.push(*knot);
+                    }
+                }
+                spline.degree
+            }
+        };
+        breaks.push(range[1]);
+        Ok(Self {
+            curve,
+            scratch: Scratch::default(),
+            range,
+            breaks,
+            degree,
+        })
+    }
+
+    /// The point at `t`.
+    pub(in crate::numerical) fn point(&mut self, t: f64) -> [f64; 3] {
+        self.curve.point(t, &mut self.scratch).value
+    }
+
+    /// A box that holds the curve over its range: the two ends of a line,
+    /// a conic's centre widened by its two semi-axes, or the controls of a
+    /// spline (Piegl and Tiller, property P4.11; positive weights). It is
+    /// widened by the binary64 rounding of its own corners.
+    pub(in crate::numerical) fn bounding_box(&mut self) -> [[f64; 2]; 3] {
+        let mut low = [f64::INFINITY; 3];
+        let mut high = [f64::NEG_INFINITY; 3];
+        let mut take = |point: [f64; 3], reach: [f64; 3]| {
+            for axis in 0..3 {
+                low[axis] = low[axis].min(point[axis] - reach[axis]);
+                high[axis] = high[axis].max(point[axis] + reach[axis]);
+            }
+        };
+        match &self.curve {
+            Curve64::Line { .. } => {
+                let ends = self.range;
+                for t in ends {
+                    let p = self.curve.point(t, &mut self.scratch).value;
+                    take(p, [0.0; 3]);
+                }
+            }
+            Curve64::Conic {
+                center,
+                major,
+                minor,
+            } => take(
+                *center,
+                std::array::from_fn(|axis| major[axis].abs() + minor[axis].abs()),
+            ),
+            Curve64::Spline(spline) => {
+                for control in &spline.controls {
+                    let w = control[3];
+                    take([control[0] / w, control[1] / w, control[2] / w], [0.0; 3]);
+                }
+            }
+        }
+        std::array::from_fn(|axis| {
+            let slack = BOX_ROUNDINGS
+                * numeric::UNIT_ROUNDOFF
+                * low[axis].abs().max(high[axis].abs()).max(f64::MIN_POSITIVE);
+            [low[axis] - slack, high[axis] + slack]
+        })
+    }
+}
 
 /// The surface a face copy is lifted through.
 #[derive(Clone, Copy, Debug)]

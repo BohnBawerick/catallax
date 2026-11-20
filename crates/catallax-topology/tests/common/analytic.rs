@@ -4,7 +4,8 @@ use catallax_shapes::{Circle, Curve, Cylinder, Line, Plane, RPoint3, RVector3, S
 use catallax_topology::{
     Sense,
     numerical::{
-        NumericalDefinition, NumericalEdge, NumericalFace, NumericalTrim, NumericalVertex,
+        NumericalDefinition, NumericalEdge, NumericalFace, NumericalNativeTrim, NumericalTrim,
+        NumericalVertex,
     },
 };
 use std::collections::BTreeMap;
@@ -147,4 +148,119 @@ pub fn quarter() -> NumericalDefinition {
         });
     }
     result
+}
+
+/// A native u/v copy of one circle use on the wall (face 4): the right u at the
+/// right parameter, but v bowed by three quarters of `bow` in the middle, so
+/// its ends still close the loop. Returns the binding and the edge's key.
+#[allow(dead_code)]
+pub fn bowed_copy(source: &NumericalDefinition, bow: &str) -> (NumericalNativeTrim, String) {
+    use catallax_shapes::{BSplineCurve, Point3};
+    let (use_index, trim) = source.faces[4].loops[0]
+        .iter()
+        .enumerate()
+        .find(|(_, trim)| matches!(source.edges[trim.edge].curve, Curve::Circle(_)))
+        .unwrap();
+    let edge = &source.edges[trim.edge];
+    let (lo, hi) = (
+        edge.parameters[0].clone().min(edge.parameters[1].clone()),
+        edge.parameters[0].clone().max(edge.parameters[1].clone()),
+    );
+    // The wall's u is the circle's angle; its v is the circle's height.
+    let height = trim.uv[0][1].clone();
+    let third = (&hi - &lo) / q("3");
+    let us = [lo.clone(), &lo + &third, &hi - &third, hi.clone()];
+    let vs = [
+        height.clone(),
+        &height + &q(bow),
+        &height + &q(bow),
+        height.clone(),
+    ];
+    let controls = us
+        .iter()
+        .zip(&vs)
+        .map(|(u, v)| Point3::new(u.clone().into(), v.clone().into(), 0.into()))
+        .collect();
+    let knots = [
+        lo.clone(),
+        lo.clone(),
+        lo.clone(),
+        lo,
+        hi.clone(),
+        hi.clone(),
+        hi.clone(),
+        hi,
+    ]
+    .to_vec();
+    let curve = BSplineCurve::new(
+        3,
+        knots,
+        controls,
+        vec![catallax_numbers::Real::one(); 4],
+        &mut catallax_numbers::Decider::default(),
+    )
+    .unwrap();
+    (
+        NumericalNativeTrim {
+            face: source.faces[4].key.clone(),
+            boundary: 0,
+            use_index,
+            edge: edge.key.clone(),
+            curve,
+            tag: catallax_topology::numerical::CopyTag::Independent,
+        },
+        edge.key.clone(),
+    )
+}
+
+/// The quarter cylinder scaled by `k` about the origin.
+#[allow(dead_code)]
+pub fn scaled(mut d: NumericalDefinition, k: &Rational) -> NumericalDefinition {
+    use catallax_shapes::Point3;
+    let real = |r: &Rational| -> catallax_numbers::Real { r.clone().into() };
+    let point = |p: &Point3| {
+        Point3::new(
+            p.x.clone() * real(k),
+            p.y.clone() * real(k),
+            p.z.clone() * real(k),
+        )
+    };
+    for vertex in &mut d.vertices {
+        for c in &mut vertex.position {
+            *c = &*c * k;
+        }
+    }
+    for edge in &mut d.edges {
+        match &mut edge.curve {
+            Curve::Line(line) => {
+                line.origin = point(&line.origin);
+                line.dir = line.dir.scaled(&real(k));
+            }
+            Curve::Circle(circle) => {
+                circle.center = point(&circle.center);
+                circle.radius_sq = circle.radius_sq.clone() * real(&(k * k));
+            }
+            _ => unreachable!(),
+        }
+    }
+    for face in &mut d.faces {
+        let planar = matches!(face.surface, Surface::Plane(_));
+        match &mut face.surface {
+            Surface::Plane(plane) => plane.origin = point(&plane.origin),
+            Surface::Cylinder(cylinder) => {
+                cylinder.origin = point(&cylinder.origin);
+                cylinder.radius_sq = cylinder.radius_sq.clone() * real(&(k * k));
+            }
+            _ => unreachable!(),
+        }
+        for trim in face.loops.iter_mut().flatten() {
+            for uv in &mut trim.uv {
+                if planar {
+                    uv[0] = &uv[0] * k;
+                }
+                uv[1] = &uv[1] * k;
+            }
+        }
+    }
+    d
 }

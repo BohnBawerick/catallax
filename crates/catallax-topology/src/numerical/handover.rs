@@ -1,7 +1,8 @@
-//! Versioned numerical records; v02 has no sampled-carrier declarations.
+//! Versioned numerical records; v02 has no sampled-carrier declarations and
+//! v03 no tolerance report.
 use super::{
     BodyId, Model, NumericalBody, NumericalDefinition, NumericalHistory, NumericalNativeTrim,
-    NumericalOptions,
+    NumericalOptions, ToleranceReport,
 };
 use catallax_numbers::{
     NumericalEvidence, Refusal,
@@ -9,7 +10,7 @@ use catallax_numbers::{
 };
 use std::collections::BTreeSet;
 
-const BODY: &[u8; 8] = b"CXNUMB03";
+const BODY: &[u8; 8] = b"CXNUMB04";
 const HISTORY: &[u8; 8] = b"CXNUMH03";
 fn version(
     reader: &mut Reader<'_>,
@@ -42,10 +43,24 @@ impl Codec for NumericalBody {
         self.options.write(w)?;
         self.model.write(w)?;
         self.body.write(w)?;
-        self.evidence.write(w)
+        self.evidence.write(w)?;
+        self.tolerances.write(w)
     }
     fn read(r: &mut Reader<'_>) -> Result<Self, Refusal> {
-        let carriers = version(r, BODY, b"CXNUMB02", "numerical body")?;
+        // v04 adds the tolerance report. A v03 body reads without one: its
+        // report is empty, and a rebuild makes it again.
+        let tag = r.take(8)?;
+        let (carriers, report) = match tag {
+            t if t == BODY => (true, true),
+            t if t == b"CXNUMB03" => (true, false),
+            t if t == b"CXNUMB02" => (false, false),
+            _ => {
+                return Err(Refusal::new(
+                    "handover.version-mismatch",
+                    "unsupported numerical body record layout",
+                ));
+            }
+        };
         Ok(Self {
             source: Codec::read(r)?,
             source_native_trims: Codec::read(r)?,
@@ -66,6 +81,11 @@ impl Codec for NumericalBody {
             model: Codec::read(r)?,
             body: Codec::read(r)?,
             evidence: Codec::read(r)?,
+            tolerances: if report {
+                Codec::read(r)?
+            } else {
+                ToleranceReport::default()
+            },
         })
     }
     fn register(r: &mut Registry) {
@@ -77,6 +97,7 @@ impl Codec for NumericalBody {
         r.add::<Model>();
         r.add::<BodyId>();
         r.add::<NumericalEvidence>();
+        r.add::<ToleranceReport>();
     }
 }
 impl Codec for NumericalHistory {

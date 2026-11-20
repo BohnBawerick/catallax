@@ -122,6 +122,31 @@ fn first_reading<'a>(
     Ok((copy, found))
 }
 
+/// Refits the face copy of one edge use from its 3D curve (rules T7 and T8)
+/// until rule T4's stored tolerance is at most `target_mm`. `None` for a
+/// curve projected on a plane, which has no u/v copy of its own.
+pub(super) fn refit_use(
+    face: &NumericalFace,
+    trim: &NumericalTrim,
+    edge: &NumericalEdge,
+    native: Option<&BSplineCurve>,
+    target_mm: f64,
+    dec: &mut Decider,
+) -> Result<Option<gap::refit::Refit>, Refusal> {
+    let copy = match native {
+        Some(curve) => FaceCopyRef::Native(curve),
+        None if analytic::projected_edge(face, edge) => return Ok(None),
+        None => FaceCopyRef::Linear(&trim.uv),
+    };
+    let copies = EdgeCopies {
+        curve: &edge.curve,
+        parameters: traversal(trim, edge),
+        surface: GapSurface::Kernel(&face.surface),
+        face_copy: copy,
+    };
+    gap::refit::refit(&copies, target_mm, dec)
+}
+
 /// One derived copy as the full check reads it.
 #[derive(Clone, Debug)]
 pub struct DerivedCopyAudit {

@@ -308,7 +308,7 @@ pub(crate) fn build(
         });
         native.push(vec![curves]);
     }
-    publish(source, d, native, sampled, tolerance, dec)
+    publish(source, d, native, sampled, dec)
 }
 
 #[cfg(test)]

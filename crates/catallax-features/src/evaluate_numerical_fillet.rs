@@ -2,7 +2,45 @@
 
 use super::*;
 use catallax_recipe::{EdgeSelection, FilletCorner, FilletOverflow, Origin, Step};
-use catallax_topology::numerical::{NumericalBody, NumericalOptions};
+use catallax_topology::numerical::{NumericalBody, NumericalOptions, tolerance};
+
+/// Rule T1's floor for own fitted geometry built from an exact body: the
+/// floor in the frame of the body's vertices.
+fn exact_floor(model: &Model, body: BodyId, dec: &mut Decider) -> Result<Rational, Refusal> {
+    let mut points = Vec::new();
+    for vertex in model.vertices_of_body(body) {
+        dec.charge_work(1)?;
+        let p = model.geom().position(model.vertex(vertex).point);
+        points.push([
+            dec.enclose_budgeted_at(&p.x, 128)?.mid(),
+            dec.enclose_budgeted_at(&p.y, 128)?.mid(),
+            dec.enclose_budgeted_at(&p.z, 128)?.mid(),
+        ]);
+    }
+    Ok(tolerance::BodyFrame::of_points(&points).floor_mm())
+}
+
+/// Rule T2's tightening near small features: the smallest distance between
+/// two entities of `source` that share no topology, `L`, tightens the fit
+/// target to `L/100` where that is under the target.
+fn near_small_features(
+    source: &NumericalBody,
+    eps: &Rational,
+    target: Rational,
+    dec: &mut Decider,
+) -> Result<Rational, Refusal> {
+    let reach = tolerance::fitted_feature_reach_mm(eps);
+    let smallest = tolerance::features_within(source, &reach, dec)?
+        .into_iter()
+        .map(|pair| pair.distance_mm)
+        .min();
+    Ok(match smallest {
+        Some(size) => tolerance::own_fitted(eps, Some(&size))
+            .target_mm
+            .min(target),
+        None => target,
+    })
+}
 
 /// An exact continuation checkpoint or a separately admitted numerical result.
 #[derive(Clone, Debug)]
@@ -112,7 +150,16 @@ impl Context {
                     format!("source topology is invalid: {faults:?}"),
                 ));
             }
-            let tolerance = Rational::from_ratio(1, 10_000_000).unwrap();
+            // Rule T2 for own fitted geometry: the fitters aim at the
+            // target, and every body admitted here takes the cap as its
+            // class cap. The floor is rule T1's in the frame of the exact
+            // body's vertices.
+            let eps = exact_floor(model, target.body, dec)?;
+            let fitted = tolerance::own_fitted(&eps, None);
+            let cap = NumericalOptions {
+                tolerance_mm: fitted.cap_mm.clone(),
+            };
+            let tolerance = fitted.target_mm.clone();
             // One edge between two retained spline faces keeps the
             // construction that was fitted and measured for it.
             if let [edge] = selected.as_slice()
@@ -134,11 +181,10 @@ impl Context {
                 let source = catallax_topology::numerical::build_with_native_trims(
                     definition,
                     trims,
-                    NumericalOptions {
-                        tolerance_mm: tolerance.clone(),
-                    },
+                    cap.clone(),
                     dec,
                 )?;
+                let tolerance = near_small_features(&source, &eps, tolerance, dec)?;
                 let edge_key = format!("{edge:?}");
                 let mut origins: BTreeMap<_, _> = model
                     .faces_of_body(target.body)
@@ -209,6 +255,7 @@ impl Context {
                 step,
                 recipe.name.clone(),
                 &tolerance,
+                &cap,
                 dec,
             )? {
                 return Ok(NumericalFilletEvaluation {
@@ -232,14 +279,8 @@ impl Context {
                 &tolerance,
                 dec,
             )?;
-            let source = catallax_topology::numerical::build_with_native_trims(
-                definition,
-                trims,
-                NumericalOptions {
-                    tolerance_mm: tolerance.clone(),
-                },
-                dec,
-            )?;
+            let source =
+                catallax_topology::numerical::build_with_native_trims(definition, trims, cap, dec)?;
             let mut source_origins: BTreeMap<_, _> = model
                 .faces_of_body(target.body)
                 .into_iter()

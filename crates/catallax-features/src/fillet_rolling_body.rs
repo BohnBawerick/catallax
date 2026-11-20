@@ -3,7 +3,6 @@
 use super::rolling::RolledStrip;
 use super::*;
 use catallax_shapes::NumericalSurfaceCut;
-use catallax_topology::numerical::NumericalOptions;
 
 pub(super) fn occurrence(
     d: &NumericalDefinition,
@@ -326,7 +325,7 @@ pub(crate) fn cap_strip(
     native.push(vec![blend_native]);
     let mut sampled = source.sampled_carriers().clone();
     sampled.insert(face_key);
-    publish(source, d, native, sampled, tolerance, dec)
+    publish(source, d, native, sampled, dec)
 }
 
 pub(super) fn publish(
@@ -334,7 +333,6 @@ pub(super) fn publish(
     mut d: NumericalDefinition,
     native: NativeRows,
     sampled: BTreeSet<String>,
-    tolerance: &Rational,
     dec: &mut Decider,
 ) -> Result<NumericalBody, Refusal> {
     let mut bindings = Vec::new();
@@ -362,9 +360,9 @@ pub(super) fn publish(
             d,
             bindings,
             sampled,
-            NumericalOptions {
-                tolerance_mm: tolerance.clone(),
-            },
+            // The class cap of the body the strip is cut into (rule T2):
+            // the fit aimed at `tolerance`, and admission measures again.
+            source.options().clone(),
             dec,
         )
         .map_err(|error| at_stage("real-domain publication", error))
@@ -376,6 +374,7 @@ mod tests {
     use catallax_numbers::{BudgetPolicy, with_operation_budget};
     use catallax_shapes::Pose;
     use catallax_topology::Model;
+    use catallax_topology::numerical::NumericalOptions;
 
     fn planar_area(body: &NumericalBody, face: &NumericalFace, dec: &Decider) -> f64 {
         let mut integral = 0.0;

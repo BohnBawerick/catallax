@@ -249,13 +249,15 @@ fn a_thin_annulus_uses_its_actual_rims_not_crossing_inscribed_chords() {
     }
 }
 
-#[test]
-fn rational_patch_native_circles_retain_only_sampled_boundary_evidence() {
-    use catallax_numbers::{NumericalCheck, Real};
+/// An annulus on a flat rational patch, inner radius 1 and the given outer
+/// radius, each rim a cubic u/v approximation of its circle. The cubic is
+/// about 0.008 mm off the circle, so each rim stores about that tolerance.
+fn native_annulus(outer: &str) -> Result<n::NumericalBody, catallax_numbers::Refusal> {
+    use catallax_numbers::Real;
     use catallax_shapes::{
         BSplineCurve, BSplineSurface, Point3, RationalPatch, SplineSupport, Surface,
     };
-    let mut definition = fixture::annulus("1.03");
+    let mut definition = fixture::annulus(outer);
     let mut dec = Decider::default();
     let patch = BSplineSurface::new(
         [1, 1],
@@ -311,7 +313,7 @@ fn rational_patch_native_circles_retain_only_sampled_boundary_evidence() {
         ["1", "0"],
     ];
     let mut bindings = Vec::new();
-    for (boundary, radius) in [(0, "1.03"), (1, "1")] {
+    for (boundary, radius) in [(0, outer), (1, "1")] {
         let radius = fixture::q(radius);
         let controls = CONTROLS
             .into_iter()
@@ -335,9 +337,13 @@ fn rational_patch_native_circles_retain_only_sampled_boundary_evidence() {
                 .unwrap(),
         });
     }
-    let body =
-        n::build_with_native_trims(definition, bindings, NumericalOptions::default(), &mut dec)
-            .unwrap();
+    n::build_with_native_trims(definition, bindings, NumericalOptions::default(), &mut dec)
+}
+
+#[test]
+fn rational_patch_native_circles_retain_only_sampled_boundary_evidence() {
+    use catallax_numbers::NumericalCheck;
+    let body = native_annulus("1.1").unwrap();
     let passed = |name: &str, scope: &str| {
         body.evidence().checks().iter().any(|check| {
             matches!(check, NumericalCheck::Passed { name: actual, scope: actual_scope }
@@ -354,4 +360,38 @@ fn rational_patch_native_circles_retain_only_sampled_boundary_evidence() {
     }
     assert!(passed("trim.continuous-circle-hole-clearance", "f1"));
     assert!(passed("trim.continuous-circle-outer-clearance", "f1"));
+}
+
+/// Rule T5 (Checkpoint 2 decisions, section 4.3) on the annulus: its two rims
+/// share no topology and each stores about 0.008 mm. At 0.03 mm apart their
+/// tolerances add up to more than half the distance: an error. At 0.05 mm
+/// they add up to more than a fifth: a warning. At 0.1 mm the pair is clear.
+#[test]
+fn the_pair_rule_refuses_warns_and_clears_with_the_rims_distance() {
+    let refused = native_annulus("1.03").unwrap_err();
+    assert_eq!(refused.code, "numerical.tolerance-pair");
+    let warned = native_annulus("1.05").unwrap();
+    let pairs: Vec<_> = warned
+        .tolerances()
+        .warnings
+        .iter()
+        .filter_map(|warning| match warning {
+            n::ToleranceWarning::Pair(pair) => Some(pair),
+            _ => None,
+        })
+        .collect();
+    assert!(!pairs.is_empty());
+    for pair in &pairs {
+        let d = pair.distance_mm.to_f64_nearest();
+        let sum = pair.tolerance_sum_mm.to_f64_nearest();
+        assert!(sum > d / 5.0 && sum <= d / 2.0, "{pair:?}");
+    }
+    let clear = native_annulus("1.1").unwrap();
+    assert!(
+        !clear
+            .tolerances()
+            .warnings
+            .iter()
+            .any(|warning| matches!(warning, n::ToleranceWarning::Pair(_)))
+    );
 }

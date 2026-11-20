@@ -182,6 +182,25 @@ fn written(model: &catallax_topology::Model, body: catallax_topology::BodyId) ->
     })
 }
 
+/// Rule T1's floor in the frame of an exact body's vertices.
+pub(crate) fn exact_floor(
+    model: &catallax_topology::Model,
+    body: catallax_topology::BodyId,
+    dec: &mut Decider,
+) -> Result<Rational, catallax_numbers::Refusal> {
+    let mut points = Vec::new();
+    for vertex in model.vertices_of_body(body) {
+        dec.charge_work(1)?;
+        let p = model.geom().position(model.vertex(vertex).point);
+        points.push([
+            dec.enclose_budgeted_at(&p.x, 128)?.mid(),
+            dec.enclose_budgeted_at(&p.y, 128)?.mid(),
+            dec.enclose_budgeted_at(&p.z, 128)?.mid(),
+        ]);
+    }
+    Ok(numerical::tolerance::BodyFrame::of_points(&points).floor_mm())
+}
+
 /// Numerical-first STEP for an exact recipe body whose geometry has no exact
 /// STEP form (ROADMAP "Numerical first"). The tolerance is the exact writer's
 /// requested curve tolerance, fixed before any embedding work. `None` keeps
@@ -197,7 +216,15 @@ pub(crate) fn embedded_exact(
     if !catallax_features::numerical_embedding::embeds(model, body) || !written(model, body) {
         return Ok(None);
     }
-    let tolerance = catallax_step::StepOptions::default().curve_tolerance;
+    // Rule T2 for own fitted geometry: the embedding aims at the target and
+    // the body takes the cap as its class cap. The floor is rule T1's in the
+    // frame of the exact body's vertices.
+    let eps = match exact_floor(model, body, dec) {
+        Ok(eps) => eps,
+        Err(error) => return Ok(Some(Err(error))),
+    };
+    let fitted = numerical::tolerance::own_fitted(&eps, None);
+    let (tolerance, cap) = (fitted.target_mm, fitted.cap_mm);
     let options = NumericalStepOptions {
         max_scalar_rounding_error_mm: tolerance
             .clone()
@@ -217,9 +244,7 @@ pub(crate) fn embedded_exact(
         let body = numerical::build_with_native_trims(
             definition,
             native_trims,
-            NumericalOptions {
-                tolerance_mm: tolerance,
-            },
+            NumericalOptions { tolerance_mm: cap },
             dec,
         )?;
         step::build(&body, &options, dec)

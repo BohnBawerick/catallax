@@ -23,10 +23,14 @@ pub struct NumericalNativeTrim {
     /// X/y are surface parameters at the 3D edge's native parameter. Z is unused.
     /// The full carrier may extend beyond the edge's finite interval.
     pub curve: BSplineCurve,
+    /// What this curve was made from.
+    #[transfer(skip)]
+    pub tag: CopyTag,
 }
 
 pub(super) struct Index<'a> {
     curves: BTreeMap<(usize, usize, usize), &'a BSplineCurve>,
+    tags: BTreeMap<(usize, usize, usize), &'a CopyTag>,
     faces: BTreeSet<usize>,
     sampled_carriers: &'a BTreeSet<String>,
     numerical_edges: BTreeSet<usize>,
@@ -41,6 +45,7 @@ impl<'a> Index<'a> {
     ) -> Result<Self, Refusal> {
         let mut index = Self {
             curves: BTreeMap::new(),
+            tags: BTreeMap::new(),
             faces: BTreeSet::new(),
             sampled_carriers,
             numerical_edges: BTreeSet::new(),
@@ -92,12 +97,19 @@ impl<'a> Index<'a> {
             {
                 return Err(bad("trim", "duplicate native trim binding"));
             }
+            index
+                .tags
+                .insert((face, binding.boundary, binding.use_index), &binding.tag);
             index.faces.insert(face);
         }
         Ok(index)
     }
     pub fn get(&self, face: usize, boundary: usize, use_index: usize) -> Option<&'a BSplineCurve> {
         self.curves.get(&(face, boundary, use_index)).copied()
+    }
+    /// The tag of the native curve bound to this use, if one is.
+    pub fn tag(&self, face: usize, boundary: usize, use_index: usize) -> Option<&'a CopyTag> {
+        self.tags.get(&(face, boundary, use_index)).copied()
     }
     pub fn has_face(&self, face: usize) -> bool {
         self.faces.contains(&face)
@@ -264,6 +276,7 @@ pub(super) fn check_loops(
                         [midpoint(&at[0], dec)?, midpoint(&at[1], dec)?]
                     };
                     polygon.push(NumericalTrim {
+                        tag: crate::numerical::CopyTag::Independent,
                         edge: trim.edge,
                         sense: trim.sense,
                         uv: [previous, at.clone()],
@@ -291,6 +304,7 @@ pub(super) fn check_loops(
                         curved::parameters(&face.surface, &p, dec)?
                     };
                     polygon.push(NumericalTrim {
+                        tag: crate::numerical::CopyTag::Independent,
                         edge: trim.edge,
                         sense: trim.sense,
                         uv: [previous, at.clone()],
@@ -346,6 +360,7 @@ fn check_numerical_loops(
                     [midpoint(&at[0], dec)?, midpoint(&at[1], dec)?]
                 };
                 polygon.push(NumericalTrim {
+                    tag: crate::numerical::CopyTag::Independent,
                     edge: trim.edge,
                     sense: trim.sense,
                     uv: [previous, at.clone()],

@@ -1144,6 +1144,7 @@ impl Assembly {
                 ends.reverse();
             }
             let trim = NumericalTrim {
+                tag: catallax_topology::numerical::CopyTag::Independent,
                 edge,
                 sense,
                 uv: ends.map(|i| uv[i].clone()),
@@ -1164,6 +1165,7 @@ impl Assembly {
                 self.caps[lp][cap].push((
                     b[0][0].clone(),
                     NumericalTrim {
+                        tag: catallax_topology::numerical::CopyTag::Independent,
                         edge,
                         sense: flip(sense),
                         uv: [frame.uv(positions[0])?, frame.uv(positions[1])?],

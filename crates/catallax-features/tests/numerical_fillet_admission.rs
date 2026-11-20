@@ -178,13 +178,19 @@ fn add_periodic_bore(
             }
             let edge = arcs[end][i];
             bindings.push(NumericalNativeTrim {
+                tag: catallax_topology::numerical::CopyTag::Independent,
                 face: definition.faces[cap].key.clone(),
                 boundary,
                 use_index: row.len(),
                 edge: definition.edges[edge].key.clone(),
                 curve: uv_curve.clone(),
             });
-            row.push(NumericalTrim { edge, sense, uv });
+            row.push(NumericalTrim {
+                tag: catallax_topology::numerical::CopyTag::Independent,
+                edge,
+                sense,
+                uv,
+            });
         }
         definition.faces[cap].loops.push(row);
     }
@@ -202,12 +208,14 @@ fn add_periodic_bore(
         parameters: [q("0"), q("3")],
     });
     let mut row = vec![NumericalTrim {
+        tag: catallax_topology::numerical::CopyTag::Independent,
         edge: seam,
         sense: Sense::Same,
         uv: [[q("0"), q("0")], [q("0"), q("3")]],
     }];
     for i in 0..4 {
         row.push(NumericalTrim {
+            tag: catallax_topology::numerical::CopyTag::Independent,
             edge: arcs[1][i],
             sense: Sense::Same,
             uv: [
@@ -217,12 +225,14 @@ fn add_periodic_bore(
         });
     }
     row.push(NumericalTrim {
+        tag: catallax_topology::numerical::CopyTag::Independent,
         edge: seam,
         sense: Sense::Reversed,
         uv: [[q("4"), q("3")], [q("4"), q("0")]],
     });
     for i in (0..4).rev() {
         row.push(NumericalTrim {
+            tag: catallax_topology::numerical::CopyTag::Independent,
             edge: arcs[0][i],
             sense: Sense::Reversed,
             uv: [
@@ -233,6 +243,7 @@ fn add_periodic_bore(
     }
     for (use_index, trim) in row.iter().enumerate() {
         bindings.push(NumericalNativeTrim {
+            tag: catallax_topology::numerical::CopyTag::Independent,
             face: "bore".into(),
             boundary: 0,
             use_index,
@@ -326,6 +337,7 @@ fn source(bore: bool, gap: bool, dec: &mut Decider) -> (NumericalBody, String) {
                 for (use_index, trim) in row.iter().enumerate() {
                     let edge = &definition.edges[trim.edge];
                     bindings.push(NumericalNativeTrim {
+                        tag: catallax_topology::numerical::CopyTag::Independent,
                         face: face.key.clone(),
                         boundary,
                         use_index,
@@ -469,6 +481,7 @@ fn cap_bridge_meets_the_adjacent_native_occurrences() {
                         uv[0] = &uv[0] + &shift;
                     }
                     native.push(NumericalNativeTrim {
+                        tag: catallax_topology::numerical::CopyTag::Independent,
                         face: face.key.clone(),
                         boundary,
                         use_index,

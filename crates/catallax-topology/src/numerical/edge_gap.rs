@@ -88,10 +88,119 @@ fn largest_settled<'a, T: Copy>(
     largest.ok_or_else(|| bad("trim", "an edge use has no gap reading"))
 }
 
-/// Measures one edge use and returns the record admission stores for it: the
-/// parameter of the largest gap and the tolerance of rule T4, 1.1 times the
-/// reported gap. `NumericalEvidence` then compares that tolerance with the
-/// body's limit, as it compared every sample before.
+/// The edge's two parameters in the order this use runs through them.
+fn traversal<'a>(trim: &NumericalTrim, edge: &'a NumericalEdge) -> [&'a Rational; 2] {
+    if trim.sense == Sense::Same {
+        edge.parameters.each_ref()
+    } else {
+        [&edge.parameters[1], &edge.parameters[0]]
+    }
+}
+
+/// The checker's reading of one edge use against its face copy: the retained
+/// native curve where there is one, the projection for a circle or spline on
+/// a plane, and the straight u/v segment otherwise.
+fn first_reading<'a>(
+    face: &'a NumericalFace,
+    trim: &'a NumericalTrim,
+    edge: &'a NumericalEdge,
+    native: Option<&'a BSplineCurve>,
+    dec: &mut Decider,
+) -> Result<(FaceCopyRef<'a>, gap::GapMeasure), Refusal> {
+    let copy = match native {
+        Some(curve) => FaceCopyRef::Native(curve),
+        None if analytic::projected_edge(face, edge) => FaceCopyRef::Projected,
+        None => FaceCopyRef::Linear(&trim.uv),
+    };
+    let copies = EdgeCopies {
+        curve: &edge.curve,
+        parameters: traversal(trim, edge),
+        surface: GapSurface::Kernel(&face.surface),
+        face_copy: copy,
+    };
+    let found = gap::measure(&copies, &Hints::default(), Limits::default(), dec)?;
+    Ok((copy, found))
+}
+
+/// One derived copy as the full check reads it.
+#[derive(Clone, Debug)]
+pub struct DerivedCopyAudit {
+    /// Key of the face of the use.
+    pub face: String,
+    /// Key of the edge.
+    pub edge: String,
+    /// The rule the copy's tag names.
+    pub rule: CopyRule,
+    /// The bound the tag states, in millimetres.
+    pub bound_mm: Rational,
+    /// The largest gap the checker found, in millimetres.
+    pub measured_mm: Rational,
+    /// The measurement error of that reading, in millimetres.
+    pub error_mm: Rational,
+}
+
+impl DerivedCopyAudit {
+    /// Whether the measured gap is inside the stated bound plus the
+    /// measurement error. A copy that fails this carries a wrong tag.
+    pub fn holds(&self) -> bool {
+        self.measured_mm <= &self.bound_mm + &self.error_mm
+    }
+}
+
+/// The audit of decision Q8 (section 4.4): runs the full check on every
+/// derived copy of a body, the copies admission did not measure.
+///
+/// Returns one row per derived copy. A caller fails when a row does not
+/// [`hold`](DerivedCopyAudit::holds). Plane-projected uses are left out:
+/// admission measures them whatever their tag says.
+pub fn audit_derived_copies(
+    body: &NumericalBody,
+    dec: &mut Decider,
+) -> Result<Vec<DerivedCopyAudit>, Refusal> {
+    let definition = body.definition();
+    let index = native::Index::new(
+        definition,
+        body.native_trims(),
+        body.sampled_carriers(),
+        dec,
+    )?;
+    let mut rows = Vec::new();
+    for (face_index, face) in definition.faces.iter().enumerate() {
+        for (boundary, row) in face.loops.iter().enumerate() {
+            for (use_index, trim) in row.iter().enumerate() {
+                let edge = &definition.edges[trim.edge];
+                let native = index.get(face_index, boundary, use_index);
+                let tag = index
+                    .tag(face_index, boundary, use_index)
+                    .unwrap_or(&trim.tag);
+                let CopyTag::Derived { rule, bound, .. } = tag else {
+                    continue;
+                };
+                if native.is_none() && analytic::projected_edge(face, edge) {
+                    continue;
+                }
+                let (_, found) = first_reading(face, trim, edge, native, dec)?;
+                rows.push(DerivedCopyAudit {
+                    face: face.key.clone(),
+                    edge: edge.key.clone(),
+                    rule: *rule,
+                    bound_mm: bound.clone(),
+                    measured_mm: exact(found.raw_mm)?,
+                    error_mm: exact(found.error_mm)?,
+                });
+            }
+        }
+    }
+    Ok(rows)
+}
+
+/// The record admission stores for one edge use, and whether it is the bound
+/// of a derived copy (`true`) or a measurement (`false`).
+///
+/// A measured record holds the parameter of the largest gap and the
+/// tolerance of rule T4, 1.1 times the reported gap. `NumericalEvidence` then
+/// compares that tolerance with the body's limit, as it compared every
+/// sample before.
 ///
 /// A plane-projected use has two readings, the projected curve and its two
 /// declared ends. Both are settled by [`settled`] and the larger is stored.
@@ -100,27 +209,43 @@ pub(super) fn stored_sample(
     trim: &NumericalTrim,
     edge: &NumericalEdge,
     native: Option<&BSplineCurve>,
+    tag: &CopyTag,
     limit: &Rational,
     dec: &mut Decider,
-) -> Result<NumericalSample, Refusal> {
-    let ends = if trim.sense == Sense::Same {
-        edge.parameters.each_ref()
-    } else {
-        [&edge.parameters[1], &edge.parameters[0]]
-    };
+) -> Result<(bool, NumericalSample), Refusal> {
+    let ends = traversal(trim, edge);
     let projected = native.is_none() && analytic::projected_edge(face, edge);
-    let copy = match native {
-        Some(curve) => FaceCopyRef::Native(curve),
-        None if projected => FaceCopyRef::Projected,
-        None => FaceCopyRef::Linear(&trim.uv),
-    };
+    if let (CopyTag::Derived { bound, .. }, false) = (tag, projected) {
+        // A derived copy is not measured. Its rule states the bound, and
+        // the bound is what is stored: the margin of rule T4 is for fresh
+        // measurements only. A projected copy is always measured, whatever
+        // its tag says, because that reading is the only check that the 3D
+        // curve lies on the plane.
+        if *bound < Rational::zero() {
+            return Err(bad(
+                "definition",
+                format!(
+                    "edge {:?} states a negative bound for a derived copy",
+                    edge.key
+                ),
+            ));
+        }
+        // The record names the range of the edge the bound covers.
+        return Ok((
+            true,
+            NumericalSample {
+                parameters: ends.map(Clone::clone).to_vec(),
+                distance_upper_mm: bound.clone(),
+            },
+        ));
+    }
+    let (copy, found) = first_reading(face, trim, edge, native, dec)?;
     let copies = EdgeCopies {
         curve: &edge.curve,
         parameters: ends,
         surface: GapSurface::Kernel(&face.surface),
         face_copy: copy,
     };
-    let found = gap::measure(&copies, &Hints::default(), Limits::default(), dec)?;
     if let Some(exit) = found.domain_exit {
         return Err(bad(
             "trim",
@@ -167,10 +292,13 @@ pub(super) fn stored_sample(
         parameters
             .extend((0..2).map(|axis| &uv[0][axis] + &(&share * &(&uv[1][axis] - &uv[0][axis]))));
     }
-    Ok(NumericalSample {
-        parameters,
-        distance_upper_mm,
-    })
+    Ok((
+        false,
+        NumericalSample {
+            parameters,
+            distance_upper_mm,
+        },
+    ))
 }
 
 #[cfg(test)]

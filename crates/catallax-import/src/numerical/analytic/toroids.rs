@@ -211,12 +211,14 @@ pub(super) fn join_rims(
     *loops = vec![vec![
         first.clone(),
         n::NumericalTrim {
+            tag: catallax_topology::numerical::CopyTag::Independent,
             edge: seam,
             sense: Sense::Same,
             uv: [first.uv[1].clone(), second.uv[0].clone()],
         },
         second.clone(),
         n::NumericalTrim {
+            tag: catallax_topology::numerical::CopyTag::Independent,
             edge: seam,
             sense: Sense::Reversed,
             uv: [second.uv[1].clone(), first.uv[0].clone()],

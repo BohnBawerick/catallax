@@ -141,11 +141,13 @@ pub fn append_planar_cap(
                 parameters.insert(vertex, at);
             }
             trims.push(NumericalTrim {
+                tag: catallax_topology::numerical::CopyTag::Independent,
                 edge: index,
                 sense,
                 uv: uv.try_into().expect("two endpoints"),
             });
             bindings.push(NumericalNativeTrim {
+                tag: catallax_topology::numerical::CopyTag::Independent,
                 face: key.into(),
                 boundary,
                 use_index,

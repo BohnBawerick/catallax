@@ -98,6 +98,9 @@ pub(crate) fn build(
         }
     }
     let mut d = original.clone();
+    // As in `fillet_numerical::build_impl`: earlier derived copies are
+    // measured again.
+    d.reset_copy_tags();
     d.name = format!("{} / {key}", original.name);
     let mut native = native_rows(source)?;
     let mut parameters: Parameters = BTreeMap::new();
@@ -256,11 +259,15 @@ pub(crate) fn build(
                     geometry[corner][section].parameters[0].clone()
                 };
                 curves.push(Some(pcurve));
-                loop_.push(new_trim(
+                let mut trim = new_trim(
                     edge,
                     sense,
                     walked(&d.edges[edge], sense).map(|vertex| parameters[&(face, vertex)].clone()),
-                ));
+                );
+                if rails.contains(&edge) {
+                    trim.tag = blend_row();
+                }
+                loop_.push(trim);
             }
             let face_key = format!("{key}/blend/{edge_key}");
             sampled.insert(face_key.clone());
@@ -389,5 +396,62 @@ mod tests {
             "twelve rolling edges, shared corner boundaries and closed-body publication work={}",
             work.used
         );
+    }
+
+    /// Property test of the producer of blend-row tags on a rolled network
+    /// (decision Q8, section 4.4): a block of random size with all twelve
+    /// edges rounded at a random radius, and the full check on the two rails
+    /// of each of the twelve blend faces.
+    #[test]
+    fn the_rails_of_a_rolled_network_are_rows_of_their_blend_faces() {
+        let mut random = super::super::tag_audit::Stream::seeded("rolled network");
+        let size = [(); 3].map(|()| q(random.between(8, 40)));
+        // A radius between 1/4 and 3 mm, in quarters.
+        let radius = q(random.between(1, 12)).mul_pow2(-2);
+        let (body, work) = with_operation_budget(100_000_000, || {
+            let mut dec = Decider::new(BudgetPolicy {
+                max_work: 100_000_000,
+                ..Default::default()
+            });
+            let mut model = Model::default();
+            let body =
+                catallax_topology::block(&mut model, size.clone(), &Pose::identity()).unwrap();
+            let tolerance = Rational::parse("0.0000001").unwrap();
+            let selected = model.edges_of_body(body);
+            let chains = super::super::rolling::construct(
+                &model, body, &selected, &radius, &tolerance, &mut dec,
+            )
+            .unwrap();
+            let corners =
+                super::super::vertex::construct(&model, &chains, &radius, &tolerance, &mut dec)
+                    .unwrap();
+            let (definition, native) = crate::numerical_embedding::definition_from_exact_model(
+                &model,
+                body,
+                "rolling vertex network".into(),
+                &tolerance,
+                &mut dec,
+            )
+            .unwrap();
+            let source = build_with_native_trims(
+                definition,
+                native,
+                NumericalOptions {
+                    tolerance_mm: tolerance.clone(),
+                },
+                &mut dec,
+            )
+            .unwrap();
+            build(
+                &source, &model, &chains, &corners, "round", &tolerance, &mut dec,
+            )
+            .unwrap()
+        });
+        assert!(!work.exhausted, "{work:?}");
+        println!(
+            "size={:?} radius={radius}",
+            size.each_ref().map(ToString::to_string)
+        );
+        super::super::tag_audit::assert_blend_rows(&body, 12);
     }
 }

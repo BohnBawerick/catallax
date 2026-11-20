@@ -43,6 +43,7 @@ fn native_seam(d: &n::NumericalDefinition) -> n::NumericalNativeTrim {
     )
     .unwrap();
     n::NumericalNativeTrim {
+        tag: catallax_topology::numerical::CopyTag::Independent,
         face: face.key.clone(),
         boundary: 0,
         use_index,

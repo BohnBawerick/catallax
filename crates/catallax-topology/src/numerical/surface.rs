@@ -115,6 +115,7 @@ fn definition(
             parameters: [Rational::zero(), Rational::one()],
         });
         trims.push(NumericalTrim {
+            tag: crate::numerical::CopyTag::Independent,
             edge: i,
             sense: Sense::Same,
             uv: [uv[i].clone(), uv[(i + 1) % 4].clone()],
@@ -664,6 +665,7 @@ fn solid_definition(
         let trims = order
             .into_iter()
             .map(|i| NumericalTrim {
+                tag: crate::numerical::CopyTag::Independent,
                 edge: layer * 4 + i,
                 sense: if layer == 0 {
                     Sense::Reversed
@@ -717,6 +719,7 @@ fn solid_definition(
             .into_iter()
             .enumerate()
             .map(|(j, (edge, sense))| NumericalTrim {
+                tag: crate::numerical::CopyTag::Independent,
                 edge,
                 sense,
                 uv: [rim_uv[j].clone(), rim_uv[(j + 1) % 4].clone()],

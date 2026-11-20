@@ -129,6 +129,7 @@ pub fn quarter() -> NumericalDefinition {
                 index
             });
             trims.push(NumericalTrim {
+                tag: catallax_topology::numerical::CopyTag::Independent,
                 edge: index,
                 sense: if result.edges[index].vertices == ends {
                     Sense::Same

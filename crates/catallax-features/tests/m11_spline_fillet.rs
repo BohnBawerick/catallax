@@ -609,73 +609,159 @@ fn m11_smooth_edge_names_the_missing_cross_chart_proof() {
     catallax_numbers::set_threads(None);
 }
 
+/// The smooth loft as a numerical body, with the edge between its two
+/// station-chart side faces rounded at `radius`.
+#[allow(clippy::type_complexity)]
+fn round_the_smooth_loft(
+    radius: &Rational,
+) -> (
+    Result<catallax_features::fillet::numerical::NumericalFilletBuilt, Refusal>,
+    [catallax_shapes::RationalAtlas; 2],
+    Rational,
+) {
+    let mut definition = serde_json::to_value(smooth_recipe()).unwrap();
+    definition["steps"].as_array_mut().unwrap().pop();
+    definition["result"] = json!("loft");
+    let recipe = Recipe::parse(&definition.to_string()).unwrap();
+    let mut dec = Decider::default();
+    let built = evaluate(&recipe, &mut dec).unwrap();
+    let ends = [[q("1"), q("-1"), q("0")], [q("1"), q("0"), q("2")]];
+    let edge = built
+        .model
+        .edges_of_body(built.result)
+        .into_iter()
+        .find(|id| {
+            let edge = built.model.edge(*id);
+            let (Some(a), Some(b)) = (edge.start, edge.end) else {
+                return false;
+            };
+            let actual = [a, b].map(|v| {
+                let p = built
+                    .model
+                    .geom()
+                    .position(built.model.vertex(v).point)
+                    .as_rational()
+                    .unwrap();
+                [p.x, p.y, p.z]
+            });
+            actual == ends || actual == [ends[1].clone(), ends[0].clone()]
+        })
+        .unwrap();
+    let faces: [_; 2] = users(&built, edge).try_into().unwrap();
+    let supports = faces.map(|face| {
+        let Surface::BSpline(SplineSupport::RationalAtlas(atlas)) =
+            built.model.geom().surface(built.model.face(face).surface)
+        else {
+            panic!("the smooth loft must retain its station charts");
+        };
+        assert!(atlas.charts().len() > 1);
+        atlas.clone()
+    });
+    let tolerance = q("1/10000000");
+    let options = catallax_topology::numerical::NumericalOptions {
+        tolerance_mm: tolerance.clone(),
+    };
+    let (source, native) = catallax_features::numerical_embedding::definition_from_exact_model(
+        &built.model,
+        built.result,
+        recipe.name.clone(),
+        &tolerance,
+        &mut dec,
+    )
+    .unwrap();
+    let source =
+        catallax_topology::numerical::build_with_native_trims(source, native, options, &mut dec)
+            .unwrap();
+    let rounded = catallax_features::fillet::numerical::build(
+        source,
+        &format!("{edge:?}"),
+        "round",
+        radius.clone(),
+        tolerance.clone(),
+        &mut dec,
+    );
+    (rounded, supports, tolerance)
+}
+
+/// Property test of the producer of blend-row tags in
+/// `fillet::numerical::build` (decision Q8, section 4.4 of the Checkpoint 2
+/// decisions). The smooth loft's seam edge is rounded at a radius drawn from
+/// a seed. Both rails of the blend face are tagged as rows of its surface
+/// with a zero bound, admission records that bound without measuring, and
+/// the full check on each rail must find the gap inside the bound plus its
+/// measurement error.
+#[test]
+fn the_rails_of_a_numerical_fillet_are_rows_of_its_blend_face() {
+    use catallax_numbers::NumericalCheck;
+    use catallax_topology::numerical::{CopyRule, CopyTag, audit_derived_copies};
+    let mut seed = std::env::var("CATALLAX_TAG_SEED")
+        .ok()
+        .and_then(|text| text.parse::<u64>().ok())
+        .unwrap_or_else(|| {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |since| since.as_nanos() as u64)
+        });
+    println!("numerical fillet: CATALLAX_TAG_SEED={seed}");
+    for _ in 0..2 {
+        // SplitMix64 (Steele, Lea and Flood, OOPSLA 2014).
+        seed = seed.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = seed;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^= z >> 31;
+        // A radius between 0.075 and 0.125 mm, in steps of 1/800 mm.
+        let radius = Rational::from_ratio(60 + (z % 41) as i64, 800).unwrap();
+        println!("radius={radius}");
+        let (rounded, work) =
+            with_operation_budget(100_000_000, || round_the_smooth_loft(&radius).0.unwrap());
+        assert!(!work.exhausted, "{work:?}");
+        let body = rounded.body();
+        let definition = body.definition();
+        let tagged: Vec<_> = definition
+            .faces
+            .iter()
+            .filter(|face| {
+                face.loops
+                    .iter()
+                    .flatten()
+                    .any(|trim| trim.tag != CopyTag::Independent)
+            })
+            .collect();
+        assert_eq!(tagged.len(), 1);
+        let blend = tagged[0];
+        assert!(matches!(
+            blend.surface,
+            Surface::BSpline(SplineSupport::RationalAtlas(_))
+        ));
+        let recorded = body
+            .evidence()
+            .checks()
+            .iter()
+            .filter(|check| {
+                matches!(check, NumericalCheck::Samples { name, samples, .. }
+                    if name.ends_with("edge-surface-derived-bound")
+                        && samples.iter().all(|sample| sample.distance_upper_mm.is_zero()))
+            })
+            .count();
+        assert_eq!(recorded, 2);
+        let rows = audit_derived_copies(body, &mut Decider::default()).unwrap();
+        assert_eq!(rows.len(), 2);
+        for row in &rows {
+            assert_eq!(row.face, blend.key);
+            assert_eq!(row.rule, CopyRule::BlendRow);
+            assert!(row.bound_mm.is_zero());
+            assert!(row.holds(), "a blend rail is off its row: {row:?}");
+        }
+    }
+}
+
 #[test]
 fn numerical_fillet_builds_on_the_smooth_loft_across_its_station_seam() {
     let ((rounded, supports, radius, tolerance), work) = with_operation_budget(100_000_000, || {
-        let mut definition = serde_json::to_value(smooth_recipe()).unwrap();
-        definition["steps"].as_array_mut().unwrap().pop();
-        definition["result"] = json!("loft");
-        let recipe = Recipe::parse(&definition.to_string()).unwrap();
-        let mut dec = Decider::default();
-        let built = evaluate(&recipe, &mut dec).unwrap();
-        let ends = [[q("1"), q("-1"), q("0")], [q("1"), q("0"), q("2")]];
-        let edge = built
-            .model
-            .edges_of_body(built.result)
-            .into_iter()
-            .find(|id| {
-                let edge = built.model.edge(*id);
-                let (Some(a), Some(b)) = (edge.start, edge.end) else {
-                    return false;
-                };
-                let actual = [a, b].map(|v| {
-                    let p = built
-                        .model
-                        .geom()
-                        .position(built.model.vertex(v).point)
-                        .as_rational()
-                        .unwrap();
-                    [p.x, p.y, p.z]
-                });
-                actual == ends || actual == [ends[1].clone(), ends[0].clone()]
-            })
-            .unwrap();
-        let faces: [_; 2] = users(&built, edge).try_into().unwrap();
-        let supports = faces.map(|face| {
-            let Surface::BSpline(SplineSupport::RationalAtlas(atlas)) =
-                built.model.geom().surface(built.model.face(face).surface)
-            else {
-                panic!("the smooth loft must retain its station charts");
-            };
-            assert!(atlas.charts().len() > 1);
-            atlas.clone()
-        });
         let radius = q("1/10");
-        let tolerance = q("1/10000000");
-        let options = catallax_topology::numerical::NumericalOptions {
-            tolerance_mm: tolerance.clone(),
-        };
-        let (source, native) = catallax_features::numerical_embedding::definition_from_exact_model(
-            &built.model,
-            built.result,
-            recipe.name.clone(),
-            &tolerance,
-            &mut dec,
-        )
-        .unwrap();
-        let source = catallax_topology::numerical::build_with_native_trims(
-            source, native, options, &mut dec,
-        )
-        .unwrap();
-        let rounded = catallax_features::fillet::numerical::build(
-            source,
-            &format!("{edge:?}"),
-            "round",
-            radius.clone(),
-            tolerance.clone(),
-            &mut dec,
-        )
-        .unwrap();
+        let (rounded, supports, tolerance) = round_the_smooth_loft(&radius);
+        let rounded = rounded.unwrap();
         println!(
             "numerical smooth-loft body admission: {} work",
             catallax_numbers::current_operation_work().used

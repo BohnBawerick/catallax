@@ -125,6 +125,7 @@ impl Input<'_> {
                 uv.swap(0, 1)
             }
             arc_uses.entry(quarter).or_default().push(NumericalTrim {
+                tag: catallax_topology::numerical::CopyTag::Independent,
                 edge,
                 sense: if forward {
                     Sense::Same
@@ -255,6 +256,7 @@ impl Input<'_> {
                 for (use_index, trim) in row.iter().enumerate() {
                     if let Some(curve) = topology.native.get(&trim.edge) {
                         native_trims.push(NumericalNativeTrim {
+                            tag: catallax_topology::numerical::CopyTag::Independent,
                             face: face.key.clone(),
                             boundary,
                             use_index,
@@ -392,6 +394,7 @@ impl Topology<'_> {
             edge
         };
         Ok(NumericalTrim {
+            tag: catallax_topology::numerical::CopyTag::Independent,
             edge,
             sense: if forward {
                 Sense::Same

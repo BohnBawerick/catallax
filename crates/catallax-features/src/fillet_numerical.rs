@@ -392,6 +392,22 @@ fn guarded<T>(run: impl FnOnce() -> Result<T, Refusal>) -> Result<T, Refusal> {
 type NativeRows = Vec<Vec<Vec<Option<BSplineCurve>>>>;
 type Parameters = BTreeMap<(usize, usize), [Rational; 2]>;
 
+/// The tag of a rail's use on its own blend face (decision Q8, section 4.4).
+///
+/// The rail is a border row of the blend surface's control net, with the
+/// surface's own knots and weights along it
+/// (`catallax_shapes::spline_fillet::numerical_carrier`), and the surface is
+/// clamped across. So the surface's parameter line at that border is the rail,
+/// exactly: the bound is zero. The same holds for the two u/v endpoints of the
+/// use, which lie on that line.
+pub(super) fn blend_row() -> catallax_topology::numerical::CopyTag {
+    catallax_topology::numerical::CopyTag::Derived {
+        from: catallax_topology::numerical::CopySource::Carrier,
+        rule: catallax_topology::numerical::CopyRule::BlendRow,
+        bound: Rational::zero(),
+    }
+}
+
 fn native_rows(source: &NumericalBody) -> Result<NativeRows, Refusal> {
     let definition = source.definition();
     let faces: BTreeMap<_, _> = definition
@@ -561,7 +577,12 @@ fn parameter_line(
     )
 }
 fn new_trim(edge: usize, sense: Sense, uv: [[Rational; 2]; 2]) -> NumericalTrim {
-    NumericalTrim { edge, sense, uv }
+    NumericalTrim {
+        tag: catallax_topology::numerical::CopyTag::Independent,
+        edge,
+        sense,
+        uv,
+    }
 }
 fn compact(d: &mut NumericalDefinition) {
     let used: BTreeSet<_> = d
@@ -761,6 +782,10 @@ fn build_impl(
             .map_err(|error| at_stage("second end-plane cut", error))?,
     ];
     let mut d = original.clone();
+    // A fillet moves ends and replaces uses on the faces it touches, and it
+    // does not show for each earlier derived copy that its rule still holds.
+    // So admission measures them all again.
+    d.reset_copy_tags();
     d.name = format!("{} / {key}", original.name);
     let mut native_uses = native_rows(&source)?;
     let mut parameters: Parameters = BTreeMap::new();
@@ -950,11 +975,15 @@ fn build_impl(
         .into_iter()
         .map(|(edge, sense)| {
             let ends = walked(&d.edges[edge], sense);
-            new_trim(
+            let mut trim = new_trim(
                 edge,
                 sense,
                 ends.map(|vertex| parameters[&(face_index, vertex)].clone()),
-            )
+            );
+            if rails.contains(&edge) {
+                trim.tag = blend_row();
+            }
+            trim
         })
         .collect();
     let carrier = fillet.surface().source();
@@ -998,6 +1027,9 @@ fn build_impl(
             for (use_index, (trim, curve)) in row.iter().zip(native_row).enumerate() {
                 if let Some(curve) = curve {
                     native_trims.push(NumericalNativeTrim {
+                        // The u/v curve of a use is made by the same rule
+                        // as its endpoints.
+                        tag: trim.tag.clone(),
                         face: f.key.clone(),
                         boundary,
                         use_index,
@@ -1023,4 +1055,95 @@ fn build_impl(
         fillet,
         constrained_parameter_controls,
     })
+}
+
+/// Shared by the property tests of the producers that tag a copy as derived.
+#[cfg(test)]
+pub(super) mod tag_audit {
+    use super::*;
+    use catallax_numbers::NumericalCheck;
+    use catallax_topology::numerical::{CopyRule, CopyTag, audit_derived_copies};
+
+    /// SplitMix64 (Steele, Lea and Flood, OOPSLA 2014).
+    pub struct Stream(u64);
+
+    impl Stream {
+        /// A stream from `CATALLAX_TAG_SEED`, or from the clock. The seed is
+        /// printed so that a failing run can be repeated.
+        pub fn seeded(test: &str) -> Self {
+            let seed = std::env::var("CATALLAX_TAG_SEED")
+                .ok()
+                .and_then(|text| text.parse().ok())
+                .unwrap_or_else(|| {
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map_or(0, |since| since.as_nanos() as u64)
+                });
+            println!("{test}: CATALLAX_TAG_SEED={seed}");
+            Self(seed)
+        }
+        fn next(&mut self) -> u64 {
+            self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+            let mut z = self.0;
+            z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+            z ^ (z >> 31)
+        }
+        /// A whole number in `lo..=hi`.
+        pub fn between(&mut self, lo: i64, hi: i64) -> i64 {
+            lo + (self.next() % (hi - lo + 1) as u64) as i64
+        }
+    }
+
+    /// The audit of decision Q8 on one fillet body. Every blend face has two
+    /// rail uses tagged as rows of its surface with a zero bound. Admission
+    /// recorded the bound for each without measuring. The full check on each
+    /// must find the gap inside the bound plus its measurement error.
+    pub fn assert_blend_rows(body: &NumericalBody, blend_faces: usize) {
+        let definition = body.definition();
+        let tagged: Vec<&str> = definition
+            .faces
+            .iter()
+            .filter(|face| {
+                face.loops
+                    .iter()
+                    .flatten()
+                    .any(|trim| trim.tag != CopyTag::Independent)
+            })
+            .map(|face| face.key.as_str())
+            .collect();
+        assert_eq!(tagged.len(), blend_faces, "{tagged:?}");
+        let recorded = body
+            .evidence()
+            .checks()
+            .iter()
+            .filter(|check| {
+                matches!(check, NumericalCheck::Samples { name, samples, .. }
+                    if name.ends_with("edge-surface-derived-bound")
+                        && samples.iter().all(|sample| sample.distance_upper_mm.is_zero()))
+            })
+            .count();
+        assert_eq!(recorded, 2 * blend_faces);
+        let rows = audit_derived_copies(body, &mut Decider::default()).unwrap();
+        assert_eq!(rows.len(), 2 * blend_faces);
+        for row in &rows {
+            assert!(tagged.contains(&row.face.as_str()), "{row:?}");
+            assert_eq!(row.rule, CopyRule::BlendRow, "{row:?}");
+            assert!(row.bound_mm.is_zero(), "{row:?}");
+            assert!(row.holds(), "a blend rail is off its row: {row:?}");
+        }
+        // Every native curve of a tagged use carries the tag of its use.
+        for binding in body.native_trims() {
+            let face = definition
+                .faces
+                .iter()
+                .find(|face| face.key == binding.face)
+                .unwrap();
+            assert_eq!(
+                binding.tag, face.loops[binding.boundary][binding.use_index].tag,
+                "{} on {}",
+                binding.edge, binding.face
+            );
+        }
+    }
 }

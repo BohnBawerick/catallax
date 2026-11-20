@@ -451,6 +451,7 @@ fn planar_definition(
                         index
                     };
                     trims.push(n::NumericalTrim {
+                        tag: catallax_topology::numerical::CopyTag::Independent,
                         edge: index,
                         sense: if ai == pair[0] {
                             Sense::Same

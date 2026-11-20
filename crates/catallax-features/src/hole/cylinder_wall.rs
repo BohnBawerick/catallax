@@ -154,6 +154,7 @@ pub fn append_cylinder_wall(
                 uv.reverse();
             }
             uses.push(NumericalTrim {
+                tag: catallax_topology::numerical::CopyTag::Independent,
                 edge: boundary.edge,
                 sense: boundary.sense,
                 uv: uv.try_into().expect("two endpoints"),
@@ -232,6 +233,7 @@ pub fn append_cylinder_wall(
                 )?;
                 curves.insert(edge, native_curve);
                 uses.push(NumericalTrim {
+                    tag: catallax_topology::numerical::CopyTag::Independent,
                     edge,
                     sense: if a == ordered[0].0 {
                         Sense::Same
@@ -281,6 +283,7 @@ pub fn append_cylinder_wall(
             for (boundary, row) in loops.iter().enumerate() {
                 for (use_index, trim) in row.iter().enumerate() {
                     added.push(NumericalNativeTrim {
+                        tag: catallax_topology::numerical::CopyTag::Independent,
                         face: face_key.clone(),
                         boundary,
                         use_index,

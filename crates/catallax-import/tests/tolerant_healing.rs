@@ -310,6 +310,7 @@ fn checked_planar_fixture(file: &catallax_import::StepFile) -> n::NumericalBody 
                     (&edge.end.point, &edge.start.point)
                 };
                 trims.push(n::NumericalTrim {
+                    tag: catallax_topology::numerical::CopyTag::Independent,
                     edge: index,
                     sense: if edge.forward {
                         Sense::Same

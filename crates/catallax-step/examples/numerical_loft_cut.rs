@@ -102,6 +102,7 @@ fn nonuniform_edge(
                 )
                 .map_err(|e| format!("{e:?}"))?;
                 bindings.push(numerical::NumericalNativeTrim {
+                    tag: catallax_topology::numerical::CopyTag::Independent,
                     face: face.key.clone(),
                     boundary,
                     use_index,

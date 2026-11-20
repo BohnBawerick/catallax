@@ -28,6 +28,7 @@ use catallax_numbers::{Decider, NumericalCheck, NumericalEvidence, Rational, Ref
 use super::{NumericalDefinition, gap};
 
 mod pairs;
+pub use pairs::fitted_target_for_definition;
 pub(super) use pairs::pair_rule_check;
 pub use pairs::{FeaturePair, features_within};
 
@@ -312,9 +313,9 @@ pub fn import_options(cap_mm: Rational) -> super::NumericalOptions {
     }
 }
 
-/// Rule T3's caps by class on admission's records: an edge end's distance
-/// to its vertex against `vertex_mm`, every other sampled record against
-/// `cap_mm`. Refuses as the evidence does, with
+/// Rule T3's caps by class on admission's records: the stored allowance
+/// for an edge end at its vertex against `vertex_mm`, every other sampled
+/// record against `cap_mm`. Refuses as the evidence does, with
 /// `numbers.numerical-tolerance-exceeded`.
 pub(super) fn check_by_class(
     checks: &[NumericalCheck],
@@ -328,19 +329,16 @@ pub(super) fn check_by_class(
             samples,
         } = check
         {
-            let limit = if is_vertex_record(name) {
-                vertex_mm
-            } else {
-                cap_mm
-            };
             for sample in samples {
-                if sample.distance_upper_mm > *limit {
+                let (stored, limit) = if is_vertex_record(name) {
+                    (vertex_allowance(&sample.distance_upper_mm), vertex_mm)
+                } else {
+                    (sample.distance_upper_mm.clone(), cap_mm)
+                };
+                if stored > *limit {
                     return Err(Refusal::new(
                         "numbers.numerical-tolerance-exceeded",
-                        format!(
-                            "{name} on {scope}: sampled distance {} mm exceeds {} mm",
-                            sample.distance_upper_mm, limit
-                        ),
+                        format!("{name} on {scope}: tolerance {stored} mm exceeds {limit} mm",),
                     ));
                 }
             }
@@ -605,6 +603,10 @@ fn is_vertex_record(name: &str) -> bool {
     )
 }
 
+fn vertex_allowance(distance_upper_mm: &Rational) -> Rational {
+    &margin() * distance_upper_mm
+}
+
 /// The stored record of every edge use, in definition order (face, loop,
 /// use), and whether it is a derived copy's bound.
 pub(super) fn use_records(evidence: &NumericalEvidence) -> Vec<(Rational, bool)> {
@@ -637,6 +639,7 @@ pub(super) fn entity_tolerances(
     definition: &NumericalDefinition,
     evidence: &NumericalEvidence,
     floor: &Rational,
+    vertex_cap: Option<&Rational>,
 ) -> Result<Vec<EntityTolerance>, Refusal> {
     let mut edges = vec![floor.clone(); definition.edges.len()];
     let mut vertices = vec![floor.clone(); definition.vertices.len()];
@@ -675,7 +678,7 @@ pub(super) fn entity_tolerances(
     }
     for (index, edge) in definition.edges.iter().enumerate() {
         for (end, sample) in edge.vertices.iter().zip(vertex_records[index].iter()) {
-            let measured = margin() * sample.distance_upper_mm.clone();
+            let measured = vertex_allowance(&sample.distance_upper_mm);
             vertices[*end] = vertices[*end]
                 .clone()
                 .max(measured)
@@ -684,6 +687,17 @@ pub(super) fn entity_tolerances(
     }
     let mut entities = Vec::with_capacity(vertices.len() + edges.len());
     for (vertex, tolerance_mm) in definition.vertices.iter().zip(vertices) {
+        if let Some(cap) = vertex_cap
+            && tolerance_mm > *cap
+        {
+            return Err(Refusal::new(
+                "numbers.numerical-tolerance-exceeded",
+                format!(
+                    "vertex {}: tolerance {tolerance_mm} mm exceeds {cap} mm",
+                    vertex.key
+                ),
+            ));
+        }
         entities.push(EntityTolerance {
             kind: EntityKind::Vertex,
             key: vertex.key.clone(),
@@ -711,7 +725,7 @@ pub fn largest_recorded(evidence: &NumericalEvidence) -> Rational {
         if let NumericalCheck::Samples { name, samples, .. } = check {
             for sample in samples {
                 let value = if is_vertex_record(name) {
-                    margin() * sample.distance_upper_mm.clone()
+                    vertex_allowance(&sample.distance_upper_mm)
                 } else if is_edge_surface_record(name) {
                     sample.distance_upper_mm.clone()
                 } else {

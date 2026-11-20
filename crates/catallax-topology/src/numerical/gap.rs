@@ -49,7 +49,7 @@ pub mod refit;
 use lift::{Curve64, Face64, Lifted, Revolved, Scratch, Surface64};
 
 pub(in crate::numerical) use lift::defining_points;
-pub(in crate::numerical) use numeric::{brent_maximum, chebyshev_shares};
+pub(in crate::numerical) use numeric::{brent_maximum, chebyshev_shares, try_brent_maximum};
 
 /// A face's surface in binary64, in a frame a whole body shares (rule T1),
 /// with its parameters unshifted, for the distance readings of the

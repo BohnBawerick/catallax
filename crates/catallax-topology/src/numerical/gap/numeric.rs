@@ -392,11 +392,21 @@ const BRENT_STEPS: u32 = 100;
 /// the tolerance is a share of the bracket and not of the parameter.
 /// Returns the best share, its value and the number of evaluations.
 pub(in crate::numerical) fn brent_maximum(f: &mut dyn FnMut(f64) -> f64) -> (f64, f64, u64) {
+    match try_brent_maximum(|x| Ok::<_, std::convert::Infallible>(f(x))) {
+        Ok(maximum) => maximum,
+        Err(never) => match never {},
+    }
+}
+
+/// Brent search whose evaluations can refuse when their work budget runs out.
+pub(in crate::numerical) fn try_brent_maximum<E>(
+    mut f: impl FnMut(f64) -> Result<f64, E>,
+) -> Result<(f64, f64, u64), E> {
     let tolerance = f64::EPSILON.sqrt();
     let (mut a, mut b) = (0.0_f64, 1.0_f64);
     let mut x = a + GOLDEN * (b - a);
     let (mut w, mut v) = (x, x);
-    let mut fx = -f(x);
+    let mut fx = -f(x)?;
     let (mut fw, mut fv) = (fx, fx);
     let (mut d, mut e) = (0.0_f64, 0.0_f64);
     let mut evaluations = 1;
@@ -438,7 +448,7 @@ pub(in crate::numerical) fn brent_maximum(f: &mut dyn FnMut(f64) -> f64) -> (f64
         } else {
             x - tol
         };
-        let fu = -f(u);
+        let fu = -f(u)?;
         evaluations += 1;
         if fu <= fx {
             if u < x {
@@ -463,7 +473,7 @@ pub(in crate::numerical) fn brent_maximum(f: &mut dyn FnMut(f64) -> f64) -> (f64
             }
         }
     }
-    (x, -fx, evaluations)
+    Ok((x, -fx, evaluations))
 }
 
 #[cfg(test)]

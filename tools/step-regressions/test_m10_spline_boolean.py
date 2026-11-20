@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Original M10 STEP answers, with slow top cuts at the 100M application allowance.
+"""M10 approximate STEP answers under the 20M target.
 
-The three top cuts' required 20M refusals live in `slow_m10_top_refusals.py`, which
-the `step-regressions-slow` CI job runs beside this suite.
+The required CI run for the three slow top cuts lives in
+`slow_m10_top_refusals.py`; the application allowance can also be tested.
 """
 
 import copy
@@ -168,12 +168,12 @@ class M10Outcomes:
                         self.assertFalse(case['cache_hit'])
                         self.assertEqual(response['work']['limit'], allowance(number, application))
                         self.assertGreater(response['work']['used'], 0)
-                        self.assertLessEqual(response['work']['used'], allowance(number, application))
+                        self.assertLess(response['work']['used'], ALLOWANCE)
+                        self.assertEqual(response['work']['target'], ALLOWANCE)
+                        self.assertFalse(response['work']['over_target'])
+                        self.assertFalse(response['work']['exhausted'])
                         operations = response['operation_log']['operations']
-                        if number in TOP_CASES and not application:
-                            self.assert_bounded_refusal(case)
-                        else:
-                            self.assert_approximate(number, case, manifest, operations)
+                        self.assert_approximate(number, case, manifest, operations)
                 if baseline is None:
                     baseline = observed
                 else:
@@ -183,28 +183,18 @@ class M10Outcomes:
                 if 'M10-008' not in numbers:
                     continue
                 index = numbers.index('M10-008')
-                first = Path(run['cases'][index]['path'])
-                (first / 'answer.step').write_text('stale STEP result')
-                replay = subprocess.run([
-                    str(BINARY), '--threads', str(workers), 'replay', str(first / 'question.json'),
-                    '--out', str(first),
-                ], capture_output=True, text=True, check=True)
-                self.assertEqual(comparable(json.loads(replay.stdout)), observed[index])
-                self.assertEqual(hashlib.sha256((first / 'answer.step').read_bytes()).hexdigest(),
-                                 observed[index]['manifest']['step']['sha256'])
-
-    def assert_bounded_refusal(self, case):
-        response = case['response']
-        manifest = response['manifest']
-        self.assertEqual(response['work']['limit'], ALLOWANCE)
-        self.assertTrue(response['work']['exhausted'])
-        self.assertEqual(manifest['status'], 'refused')
-        self.assertFalse(manifest['exact'])
-        self.assertEqual(manifest['refusal']['code'], 'numbers.operation-budget')
-        self.assertTrue(manifest['refusal']['detail'])
-        self.assertIsNone(manifest['result'])
-        self.assertIsNone(manifest['step'])
-        self.assertFalse((Path(case['path']) / 'answer.step').exists())
+                with self.subTest(number='M10-008', workers=workers, check='replay'):
+                    step = observed[index]['manifest']['step']
+                    self.assertIsNotNone(step, 'replay requires an answered STEP')
+                    first = Path(run['cases'][index]['path'])
+                    (first / 'answer.step').write_text('stale STEP result')
+                    replay = subprocess.run([
+                        str(BINARY), '--threads', str(workers), 'replay', str(first / 'question.json'),
+                        '--out', str(first),
+                    ], capture_output=True, text=True, check=True)
+                    self.assertEqual(comparable(json.loads(replay.stdout)), observed[index])
+                    self.assertEqual(hashlib.sha256((first / 'answer.step').read_bytes()).hexdigest(),
+                                     step['sha256'])
 
     def assert_approximate(self, number, case, manifest, operations):
         """Check the actual file and the numerical stages that produced it."""
@@ -215,24 +205,21 @@ class M10Outcomes:
         step = manifest['step']
         self.assertTrue(step['approximate'])
         self.assertEqual(step['category'], 'approximate')
-        # The body's class cap. The CLI's numerical export of an exact body is
-        # own fitted geometry under tolerance rule T2: its embedding fits to
-        # max(1e-6 mm, 10 eps) and the body admits under max(1e-5 mm, 100 eps)
-        # (Checkpoint 2 decisions, section 4.3); every part here is under
-        # 10 m, so eps is 1e-7 mm. The loft top cuts keep their own 1e-7 mm.
-        if number in TOP_CASES:
-            self.assertEqual(step['tolerance_mm'], '1/10000000')
-        else:
-            self.assertEqual(step['tolerance_mm'], T2_CAP)
-            for scope in ['source', 'emitted']:
-                self.assertEqual(step['numerical'][scope]['tolerance_mm'], T2_CAP)
-                checks = step['numerical'][scope]['checks']
-                self.assertLessEqual(largest_record(checks), Fraction(T2_CAP), f'{number} {scope}')
-                # The fitted copies stay within the fit target: each edge
-                # use stores rule T4's 1.1 times its gap.
-                gaps = [check for check in checks if check['name'].endswith('edge-surface-distance')]
-                self.assertLessEqual(largest_record(gaps), T4_MARGIN * Fraction(T2_TARGET),
-                                     f'{number} {scope}')
+        self.assertEqual(step['tolerance_mm'], T2_CAP)
+        for scope in ['source', 'emitted']:
+            evidence = step['numerical'][scope]
+            self.assertEqual(evidence['tolerance_mm'], T2_CAP)
+            checks = evidence['checks']
+            self.assertLessEqual(largest_record(checks), Fraction(T2_CAP), f'{number} {scope}')
+            # Require actual A+ edge-gap records in both definitions. Each
+            # record stores the measured gap plus error with T4's margin.
+            gaps = [check for check in checks if check['name'].endswith('edge-surface-distance')]
+            self.assertTrue(gaps, f'{number} {scope} has no A+ edge-gap checks')
+            for gap in gaps:
+                self.assertEqual(gap['kind'], 'samples')
+                self.assertTrue(gap['samples'], f'{number} {scope} {gap["scope"]}')
+                self.assertLessEqual(Fraction(gap['sampled_max_mm']), T4_MARGIN * Fraction(T2_TARGET),
+                                     f'{number} {scope} {gap["scope"]}')
         self.assertEqual(step['complete_body_bound'], 'unestablished')
         data = (Path(case['path']) / 'answer.step').read_bytes()
         self.assertEqual(hashlib.sha256(data).hexdigest(), step['sha256'])
@@ -244,13 +231,10 @@ class M10Outcomes:
             boolean = [op for op in operations if op['operation'] == 'numerical-boolean']
             self.assertEqual([op['status'] for op in boolean], ['answered'])
             self.assertEqual(sum(selected.values()), boolean[0]['work']['used'])
-            for stage in ['numerical-step-definition', 'numerical-native-admission',
+            for stage in ['numerical-step-definition', 'numerical-step-feature-search', 'numerical-native-admission',
                           'numerical-step-payload', 'numerical-step-reread']:
                 self.assertEqual([op['status'] for op in operations if op['operation'] == stage],
                                  ['answered'])
-            self.assertTrue(case['response']['work']['over_target'])
-            self.assertFalse(case['response']['work']['exhausted'])
-            self.assertEqual(case['response']['work']['target'], ALLOWANCE)
             self.assertFalse(any(op['operation'] == 'step' for op in operations))
             return
         construction = [op for op in operations if op['id'] == 'cut'

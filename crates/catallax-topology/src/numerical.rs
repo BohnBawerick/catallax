@@ -1395,8 +1395,8 @@ fn build_inner_kind(
         }
     }
     // Rule T3 caps a vertex apart from its edges and faces. Every record of an
-    // edge end's distance to its vertex is held to the vertex cap, and every
-    // other record to the class cap; the evidence states the larger.
+    // edge end's distance to its vertex is held to the vertex cap with T4's
+    // margin, and every other record to the class cap.
     let evidence_tolerance = if let Some(vertex) = &options.vertex_tolerance_mm {
         tolerance::check_by_class(&checks, &options.tolerance_mm, vertex)?;
         vertex.clone().max(options.tolerance_mm.clone())
@@ -1404,7 +1404,7 @@ fn build_inner_kind(
         options.tolerance_mm.clone()
     };
     let evidence = NumericalEvidence::new(evidence_tolerance, checks, repairs)?;
-    let tolerances = tolerance_report(&definition, &native_trims, &evidence, &options, dec)?;
+    let tolerances = tolerance_report(&definition, &native, &evidence, &options, dec)?;
     dec.check_deadline()?;
     Ok(NumericalBody {
         source: definition.clone(),
@@ -1429,7 +1429,7 @@ fn build_inner_kind(
 /// cap that applies is the smaller of the two.
 fn tolerance_report(
     definition: &NumericalDefinition,
-    native_trims: &[NumericalNativeTrim],
+    native: &native::Index<'_>,
     evidence: &NumericalEvidence,
     options: &NumericalOptions,
     dec: &mut Decider,
@@ -1439,7 +1439,12 @@ fn tolerance_report(
     dec.charge_work(
         (definition.vertices.len() + definition.edges.len() + evidence.checks().len()) as u64,
     )?;
-    let entities = tolerance::entity_tolerances(definition, evidence, &floor_mm)?;
+    let entities = tolerance::entity_tolerances(
+        definition,
+        evidence,
+        &floor_mm,
+        options.vertex_tolerance_mm.as_ref(),
+    )?;
     let mut warnings = Vec::new();
     if frame.extent_mm > tolerance::body_size_warning_mm() {
         warnings.push(ToleranceWarning::LargeBody {
@@ -1447,7 +1452,7 @@ fn tolerance_report(
         });
     }
     warnings.extend(
-        tolerance::pair_rule_check(definition, native_trims, &entities, &frame.centre, dec)?
+        tolerance::pair_rule_check(definition, native, &entities, &frame.centre, dec)?
             .into_iter()
             .map(ToleranceWarning::Pair),
     );

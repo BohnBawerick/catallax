@@ -112,7 +112,8 @@ pub struct ReceiverReport {
     /// The profile.
     pub profile: ReceiverProfile,
     /// Edge uses over the receiver's tolerance whose face copies were
-    /// refitted, with their stored tolerance before and after.
+    /// refitted, with their stored tolerances before and after in the
+    /// receiver's millimetres.
     pub refits: Vec<RefitRow>,
     /// The scale the receiver reads the file at: 1, or the export's scale.
     pub scale: i64,
@@ -661,7 +662,12 @@ fn for_receiver(
 ) -> Result<(NumericalBody, ReceiverReport), Refusal> {
     let factor = Rational::from_i64(scale);
     let model_limit = &profile.tolerance_mm / &factor;
-    let (refitted, refits) = body.refit_face_copies(&model_limit, dec)?;
+    let (refitted, mut refits) = body.refit_face_copies(&model_limit, dec)?;
+    for row in &mut refits {
+        dec.charge_work(1)?;
+        row.before_mm = &row.before_mm * &factor;
+        row.after_mm = &row.after_mm * &factor;
+    }
     let residuals = refitted
         .tolerances()
         .entities

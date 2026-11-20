@@ -142,7 +142,10 @@ fn a_chain_reports_absolute_tolerances_and_headroom_at_every_stage() {
             .fold(Rational::zero(), Rational::max)
     };
     let start = largest_edge(&body);
-    println!("stage 0: largest edge {start} mm (near zero, at the floor), cap {cap} mm");
+    println!(
+        "stage 0: gap 0 mm, largest edge {start} mm (near zero, at the floor), cap {cap} mm, headroom {} mm",
+        body.tolerances().headroom_mm().to_f64_nearest()
+    );
     assert_eq!(start, q("0.0000001"));
     let steps = [
         ("1.000001", true),
@@ -153,6 +156,7 @@ fn a_chain_reports_absolute_tolerances_and_headroom_at_every_stage() {
     for (stage, (radius, warns)) in steps.into_iter().enumerate() {
         let input = largest_edge(&body);
         body = body.replace_surface("f4", wall(radius), &mut dec).unwrap();
+        let gap = q(radius) - q("1");
         let output = largest_edge(&body);
         let report = body.tolerances();
         let growth: Vec<_> = report
@@ -178,8 +182,9 @@ fn a_chain_reports_absolute_tolerances_and_headroom_at_every_stage() {
             })
             .collect();
         println!(
-            "stage {}: radius {radius}: largest edge {} mm -> {} mm (x{:.2}), cap {} mm, headroom {} mm, {} growth warnings",
+            "stage {}: radius {radius}, gap {} mm, largest edge {} mm -> {} mm (x{:.2}), cap {} mm, headroom {} mm, {} growth warnings",
             stage + 1,
+            gap.to_f64_nearest(),
             input.to_f64_nearest(),
             output.to_f64_nearest(),
             (&output / &input).to_f64_nearest(),
@@ -188,6 +193,7 @@ fn a_chain_reports_absolute_tolerances_and_headroom_at_every_stage() {
             growth.len()
         );
         assert_eq!(report.cap_mm, cap);
+        assert!(output >= &gap * &q("1.1"));
         assert!(output <= cap);
         assert_eq!(report.headroom_mm(), &cap - &report.largest_mm());
         assert_eq!(!growth.is_empty(), warns, "stage {}", stage + 1);
@@ -419,7 +425,7 @@ fn an_edit_that_brings_an_unchanged_face_near_is_checked_by_the_pair_rule() {
 }
 
 /// Rule T3 by entity class (reviewer hold on 83858ed4): an imported vertex
-/// may sit 0.02 mm off its edges' ends while edges and faces keep 0.01 mm.
+/// may store up to 0.02 mm while edges and faces keep 0.01 mm.
 /// The quarter cylinder's corner `v0` is moved off the ends of its three
 /// edges; the edges themselves are unchanged.
 #[test]
@@ -435,7 +441,7 @@ fn an_imported_vertex_takes_its_own_cap_and_edges_keep_theirs() {
     assert_eq!(admitted.options().vertex_tolerance_mm, Some(q("0.02")));
     assert_eq!(admitted.tolerances().vertex_cap_mm, Some(q("0.02")));
     let v0 = admitted.tolerances().of(EntityKind::Vertex, "v0").unwrap();
-    assert!(*v0 > q("0.01") && *v0 <= q("0.02"), "{v0}");
+    assert!((v0 - &q("0.0165")).abs() < q("0.000000001"), "{v0}");
     for entity in &admitted.tolerances().entities {
         if entity.kind == EntityKind::Edge {
             assert!(entity.tolerance_mm <= q("0.01"), "{entity:?}");
@@ -452,6 +458,15 @@ fn an_imported_vertex_takes_its_own_cap_and_edges_keep_theirs() {
         far.detail.contains("vertex-distance") && far.detail.contains("1/50"),
         "{}",
         far.detail
+    );
+    // 0.019 mm fits under the cap before T4 and exceeds it as 0.0209 mm.
+    let under_raw_cap =
+        n::admit_import(moved("0.019"), Vec::new(), options("0.01"), &mut dec).unwrap_err();
+    assert_eq!(under_raw_cap.code, "numbers.numerical-tolerance-exceeded");
+    assert!(
+        under_raw_cap.detail.contains("vertex-distance") && under_raw_cap.detail.contains("1/50"),
+        "{}",
+        under_raw_cap.detail
     );
     // An edge at 0.015 mm is under the vertex cap and still refuses: edges
     // and faces keep 0.01 mm.
@@ -534,6 +549,19 @@ fn a_vertex_near_a_large_face_interior_is_a_pair() {
         "{:?}",
         beyond.tolerances().warnings
     );
+}
+
+#[test]
+fn a_small_face_interior_feature_tightens_the_provisional_t2_fit() {
+    let definition = tent::tent("0.00004", "0");
+    let fit = tolerance::fitted_target_for_definition(
+        &definition,
+        &[],
+        &q("0.0000001"),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    assert!((fit.to_f64_nearest() - 0.0000004).abs() < 1e-12, "{fit}");
 }
 
 /// The pair search is charged as work, and an allowance it exhausts refuses

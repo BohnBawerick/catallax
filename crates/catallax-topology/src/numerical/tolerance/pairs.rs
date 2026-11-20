@@ -20,14 +20,19 @@
 //! method. They are searches for the least distance, as the checker's are
 //! searches for the largest gap: the found value is at least the true one.
 
+use std::collections::BTreeSet;
+
 use catallax_numbers::{Decider, Rational, Refusal};
 
-use super::{EntityKind, EntityTolerance, PAIR_INFLATION, PairVerdict, pair_verdict};
+use super::{
+    EntityKind, EntityTolerance, PAIR_INFLATION, PairVerdict, fitted_feature_reach_mm, own_fitted,
+    pair_verdict,
+};
 use crate::Sense;
 use crate::numerical::gap::{
-    FramedCurve, FramedSurface, FramedUvCurve, brent_maximum, chebyshev_shares,
+    FramedCurve, FramedSurface, FramedUvCurve, brent_maximum, chebyshev_shares, try_brent_maximum,
 };
-use crate::numerical::{NumericalBody, NumericalDefinition, NumericalNativeTrim};
+use crate::numerical::{NumericalBody, NumericalDefinition, NumericalNativeTrim, native::Index};
 
 /// Two entities that share no topology, closer than a reach.
 #[derive(Clone, Debug, PartialEq, Eq, catallax_numbers::Transfer)]
@@ -237,15 +242,16 @@ struct FaceData {
 impl FaceData {
     /// Whether `uv` lies inside the face's loops, by the even-odd rule, with
     /// u shifted by a period on a surface of revolution.
-    fn inside(&self, uv: [f64; 2]) -> bool {
+    fn inside(&self, uv: [f64; 2], dec: &mut Decider) -> Result<bool, Refusal> {
         let shifts: &[f64] = match self.surface.period_u {
             Some(p) => &[0.0, -p, p],
             None => &[0.0],
         };
-        shifts.iter().any(|shift| {
+        for shift in shifts {
             let (u, v) = (uv[0] + shift, uv[1]);
             let mut inside = false;
             for polygon in &self.polygons {
+                dec.charge_work(polygon.len() as u64)?;
                 for (k, a) in polygon.iter().enumerate() {
                     let b = polygon[(k + 1) % polygon.len()];
                     if (a[1] > v) != (b[1] > v)
@@ -255,8 +261,11 @@ impl FaceData {
                     }
                 }
             }
-            inside
-        })
+            if inside {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 }
 
@@ -383,7 +392,7 @@ fn point_to_face(
     if !foot.iter().all(|x| x.is_finite()) {
         return Ok((None, seed));
     }
-    if !face.inside(foot) {
+    if !face.inside(foot, dec)? {
         return Ok((None, foot));
     }
     Ok((Some(distance(&face.surface.point(foot), point)), foot))
@@ -430,18 +439,17 @@ fn curve_to_face(
     let Some((mut value, _, foot, [a, b])) = best else {
         return Ok(None);
     };
-    let mut spent = 0;
-    let (_, negative, evaluations) = brent_maximum(&mut |x| {
+    let (_, negative, _) = try_brent_maximum(|x| -> Result<f64, Refusal> {
+        dec.charge_work(3)?;
         let p = curve.point(a + x * (b - a));
         let (uv, n) = face.surface.foot(&p, foot);
-        spent += n + 2;
-        if face.inside(uv) {
-            -distance(&face.surface.point(uv), &p)
+        dec.charge_work(n)?;
+        if face.inside(uv, dec)? {
+            Ok(-distance(&face.surface.point(uv), &p))
         } else {
-            -value
+            Ok(-value)
         }
-    });
-    dec.charge_work(evaluations + spent)?;
+    })?;
     value = value.min(-negative);
     Ok(Some(value))
 }
@@ -522,7 +530,7 @@ fn tolerance_at(tolerances: &[EntityTolerance], index: usize, kind: EntityKind, 
 fn face_rect(
     definition: &NumericalDefinition,
     face: usize,
-    native: &[&NumericalNativeTrim],
+    native: &Index<'_>,
     dec: &mut Decider,
 ) -> Result<[[f64; 2]; 2], Refusal> {
     let mut rect = [[f64::INFINITY, f64::NEG_INFINITY]; 2];
@@ -538,8 +546,8 @@ fn face_rect(
             take([uv[0].to_f64_nearest(), uv[1].to_f64_nearest()]);
         }
     }
-    for binding in native {
-        let curve = FramedUvCurve::new(&binding.curve, dec)?;
+    for curve in native.curves_for_face(face) {
+        let curve = FramedUvCurve::new(curve, dec)?;
         for control in curve.controls() {
             take(control);
         }
@@ -552,7 +560,7 @@ fn face_rect(
 fn face_polygons(
     definition: &NumericalDefinition,
     face: usize,
-    native: &[&NumericalNativeTrim],
+    native: &Index<'_>,
     dec: &mut Decider,
 ) -> Result<Vec<Vec<[f64; 2]>>, Refusal> {
     let mut polygons = Vec::new();
@@ -560,11 +568,8 @@ fn face_polygons(
         let mut polygon = Vec::new();
         for (use_index, trim) in row.iter().enumerate() {
             dec.charge_work(1)?;
-            let binding = native
-                .iter()
-                .find(|b| b.boundary == boundary && b.use_index == use_index);
-            match binding {
-                Some(binding) => {
+            match native.get(face, boundary, use_index) {
+                Some(curve) => {
                     let edge = &definition.edges[trim.edge];
                     let [a, b] = edge.parameters.each_ref().map(Rational::to_f64_nearest);
                     let [start, end] = if trim.sense == Sense::Same {
@@ -572,7 +577,7 @@ fn face_polygons(
                     } else {
                         [b, a]
                     };
-                    let mut curve = FramedUvCurve::new(&binding.curve, dec)?;
+                    let mut curve = FramedUvCurve::new(curve, dec)?;
                     dec.charge_work(LOOP_POINTS as u64)?;
                     for k in 0..LOOP_POINTS {
                         polygon.push(
@@ -600,7 +605,7 @@ struct Prepared {
 
 fn entities(
     definition: &NumericalDefinition,
-    native_trims: &[NumericalNativeTrim],
+    native: &Index<'_>,
     tolerances: &[EntityTolerance],
     centre: &[Rational; 3],
     dec: &mut Decider,
@@ -643,15 +648,19 @@ fn entities(
     let mut rects = Vec::new();
     for (index, face) in definition.faces.iter().enumerate() {
         dec.charge_work(1)?;
-        let native: Vec<&NumericalNativeTrim> =
-            native_trims.iter().filter(|b| b.face == face.key).collect();
-        let rect = face_rect(definition, index, &native, dec)?;
+        let rect = face_rect(definition, index, native, dec)?;
         let surface = FramedSurface::new(&face.surface, centre, dec)?;
         let mut vertices = Vec::new();
         let mut bounds: Option<Bounds> = surface.bounding_box(rect);
         for trim in face.loops.iter().flatten() {
             dec.charge_work(1)?;
-            vertices.extend(definition.edges[trim.edge].vertices);
+            let edge = definition.edges.get(trim.edge).ok_or_else(|| {
+                Refusal::new(
+                    "numerical.invalid-definition",
+                    "face trim names an unknown edge",
+                )
+            })?;
+            vertices.extend(edge.vertices);
             if matches!(face.surface, catallax_shapes::Surface::Plane(_)) {
                 let edge_box = out[first_edge + trim.edge].bounds;
                 bounds = Some(bounds.map_or(edge_box, |b| union(&b, &edge_box)));
@@ -691,7 +700,7 @@ fn adjacent(a: &Entity, b: &Entity) -> bool {
 /// pair's reach, with the distance found.
 fn close_pairs(
     definition: &NumericalDefinition,
-    native_trims: &[NumericalNativeTrim],
+    native: &Index<'_>,
     tolerances: &[EntityTolerance],
     centre: &[Rational; 3],
     reach_of: impl Fn(f64) -> f64,
@@ -703,7 +712,7 @@ fn close_pairs(
         mut curves,
         mut surfaces,
         rects,
-    } = entities(definition, native_trims, tolerances, centre, dec)?;
+    } = entities(definition, native, tolerances, centre, dec)?;
     if entities.len() < 2 {
         return Ok((entities, Vec::new()));
     }
@@ -733,14 +742,10 @@ fn close_pairs(
                     sampled[*k] = Some(pieces(&mut curves[*k], dec)?);
                 }
                 Shape::Face(k) if faces[*k].is_none() => {
-                    let native: Vec<&NumericalNativeTrim> = native_trims
-                        .iter()
-                        .filter(|binding| binding.face == definition.faces[*k].key)
-                        .collect();
                     faces[*k] = Some(FaceData {
                         surface: surfaces[*k].take().expect("prepared"),
                         rect: rects[*k],
-                        polygons: face_polygons(definition, *k, &native, dec)?,
+                        polygons: face_polygons(definition, *k, native, dec)?,
                     });
                 }
                 _ => {}
@@ -814,14 +819,14 @@ fn feature(entities: &[Entity], i: usize, j: usize, d: f64) -> FeaturePair {
 /// than half their distance, and returns the pairs over a fifth as warnings.
 pub(in crate::numerical) fn pair_rule_check(
     definition: &NumericalDefinition,
-    native_trims: &[NumericalNativeTrim],
+    native: &Index<'_>,
     tolerances: &[EntityTolerance],
     centre: &[Rational; 3],
     dec: &mut Decider,
 ) -> Result<Vec<FeaturePair>, Refusal> {
     let (entities, rows) = close_pairs(
         definition,
-        native_trims,
+        native,
         tolerances,
         centre,
         |t| PAIR_INFLATION * t,
@@ -853,8 +858,9 @@ pub(in crate::numerical) fn pair_rule_check(
     Ok(warnings)
 }
 
-/// Every pair of vertices and edges of `body` that share no topology and are
-/// closer than `reach_mm`: the small features of rules T2 (`L`) and T8.
+/// Every disjoint pair of vertices, edges and face interiors of `body` within
+/// `reach_mm`, excluding face-to-face pairs: the small features of rules T2
+/// (`L`) and T8.
 /// A short edge shows as its two end vertices; a sliver face as two of its
 /// edges.
 pub fn features_within(
@@ -865,9 +871,16 @@ pub fn features_within(
     let reach = reach_mm.to_f64_nearest();
     let report = body.tolerances();
     let frame = super::BodyFrame::of(body.definition(), dec)?;
-    let (entities, rows) = close_pairs(
+    let sampled_carriers = BTreeSet::new();
+    let native = Index::new(
         body.definition(),
         body.native_trims(),
+        &sampled_carriers,
+        dec,
+    )?;
+    let (entities, rows) = close_pairs(
+        body.definition(),
+        &native,
         &report.entities,
         &frame.centre,
         |_| reach / 2.0,
@@ -878,4 +891,30 @@ pub fn features_within(
         .iter()
         .map(|(i, j, d)| feature(&entities, *i, *j, *d))
         .collect())
+}
+
+/// Rule T2's fit target for a provisional embedding. Only entity distances
+/// matter here. The producer can tighten the fit before T5 checks the
+/// final body's stored tolerances.
+pub fn fitted_target_for_definition(
+    definition: &NumericalDefinition,
+    native_trims: &[NumericalNativeTrim],
+    eps: &Rational,
+    dec: &mut Decider,
+) -> Result<Rational, Refusal> {
+    let reach = fitted_feature_reach_mm(eps).to_f64_nearest();
+    let frame = super::BodyFrame::of(definition, dec)?;
+    let sampled_carriers = BTreeSet::new();
+    let native = Index::new(definition, native_trims, &sampled_carriers, dec)?;
+    let (_, pairs) = close_pairs(
+        definition,
+        &native,
+        &[],
+        &frame.centre,
+        |_| reach / 2.0,
+        |_, _| reach,
+        dec,
+    )?;
+    let smallest = pairs.into_iter().map(|(_, _, d)| d).reduce(f64::min);
+    Ok(own_fitted(eps, smallest.map(exact).as_ref()).target_mm)
 }

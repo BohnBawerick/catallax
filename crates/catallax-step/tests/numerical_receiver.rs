@@ -84,6 +84,21 @@ fn a_receiver_profile_refits_copies_over_its_tolerance_and_writes_the_largest() 
     assert!(decimal(&uncertainty(&written)) >= file.report().uncertainty_mm);
     assert!(written.contains("receiver=CATIA;receiver_tolerance_mm=1/1000"));
     file.check_written(file.bytes(), &mut dec).unwrap();
+
+    let scaled = numerical::build(
+        &body,
+        &NumericalStepOptions {
+            scale: Some(LengthScale::Ten),
+            ..catia
+        },
+        &mut dec,
+    )
+    .unwrap();
+    let report = scaled.report().receiver.as_ref().unwrap();
+    assert_eq!(report.refits.len(), 1, "{:?}", report.refits);
+    assert_eq!(report.refits[0].before_mm, &refit.before_mm * &q("10"));
+    assert!(report.refits[0].after_mm <= report.profile.tolerance_mm);
+    assert!(report.residuals.is_empty());
 }
 
 /// A gap in the geometry survives the refit: each wall edge of a quarter

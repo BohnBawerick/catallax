@@ -1,9 +1,11 @@
 //! Fillets the elementary route does not section, compiled as rolling-ball
-//! path pieces the field derives itself (4.2a step 2).
+//! path pieces the field derives itself (4.2a steps 2 and 3).
 //!
 //! A plane with a cylinder in any pose, a cone or a sphere becomes a
 //! [`Revolved`] piece; two cylinders with parallel axes become [`Generator`]
-//! pieces, one per sharp run. The elementary route keeps every pair and edge it
+//! pieces, one per sharp run; two cylinders, cones or spheres about one axis
+//! become a [`Coaxial`] piece; a cylinder with a second cylinder or a sphere
+//! off its axis becomes a [`Saddle`] piece per ring or loop. The elementary route keeps every pair and edge it
 //! sections today, so its answers are unchanged; these pieces only take what
 //! it skips or refuses. The ball side of each support comes from the same
 //! exact material quadrant the elementary route uses. A piece's region must be
@@ -16,10 +18,12 @@ use catallax_recipe::{EdgeName, Origin, Role, StepId};
 use catallax_shapes::{Curve, CurveId, GeomStore, Line, Point3, Surface, Vector3};
 
 use super::{bad, coordinates, square_root, unit};
+use crate::rolling_region::coaxial::{Coaxial, Profile};
 use crate::rolling_region::elementary::Flat;
 use crate::rolling_region::generator::{Generator, Wall};
 use crate::rolling_region::piece::{Kind, Piece};
 use crate::rolling_region::revolved::{Revolution, Revolved};
+use crate::rolling_region::saddle::{Branch, Partner, Saddle, Shape};
 use crate::{Plan, geometry};
 
 /// One sharp edge run compiled as a rolling-ball path piece.
@@ -31,16 +35,68 @@ pub(super) struct Run {
 }
 
 /// Whether the rolling route takes this support pair: a plane with a cylinder,
-/// cone or sphere, or two cylinders with parallel axes.
-pub(super) fn admits(supports: &[Surface; 2], dec: &mut Decider) -> Result<bool, Refusal> {
+/// cone or sphere, or two cylinders with parallel axes (step 2); and, for
+/// named edges, two cylinders on crossing axes, a cylinder with a sphere, or
+/// two cylinders, cones or spheres about one axis (step 3). An all-edges
+/// selection still skips the step 3 pairs, as it did before them, so its
+/// answers do not change.
+pub(super) fn admits(
+    supports: &[Surface; 2],
+    named: bool,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
     Ok(match (&supports[0], &supports[1]) {
         (Surface::Plane(_), Surface::Cylinder(_) | Surface::Cone(_) | Surface::Sphere(_))
         | (Surface::Cylinder(_) | Surface::Cone(_) | Surface::Sphere(_), Surface::Plane(_)) => true,
-        (Surface::Cylinder(a), Surface::Cylinder(b)) => {
-            geometry::sign(&a.axis.cross(&b.axis).norm_squared(), dec)? == Sign::Zero
+        (Surface::Cylinder(a), Surface::Cylinder(b))
+            if geometry::sign(&a.axis.cross(&b.axis).norm_squared(), dec)? == Sign::Zero =>
+        {
+            true
         }
-        _ => false,
+        _ if !named => false,
+        (Surface::Cylinder(_), Surface::Cylinder(_) | Surface::Sphere(_))
+        | (Surface::Sphere(_), Surface::Cylinder(_)) => true,
+        (a, b) => coaxial(a, b, dec)?,
     })
+}
+
+/// The axis of a cylinder or cone, as a point and a direction.
+fn axis_of(surface: &Surface) -> Option<(&Point3, &Vector3)> {
+    match surface {
+        Surface::Cylinder(c) => Some((&c.origin, &c.axis)),
+        Surface::Cone(c) => Some((&c.apex, &c.axis)),
+        _ => None,
+    }
+}
+
+/// Whether two curved surfaces of revolution share an axis: a cylinder or
+/// cone has its axis, a sphere any line through its centre.
+fn coaxial(a: &Surface, b: &Surface, dec: &mut Decider) -> Result<bool, Refusal> {
+    let on = |p: &Point3, (q, d): (&Point3, &Vector3), dec: &mut Decider| {
+        Ok::<bool, Refusal>(geometry::sign(&p.minus(q).cross(d).norm_squared(), dec)? == Sign::Zero)
+    };
+    Ok(match (a, b) {
+        (Surface::Sphere(s), other) | (other, Surface::Sphere(s)) => match other {
+            Surface::Sphere(t) => {
+                geometry::sign(&s.center.minus(&t.center).norm_squared(), dec)? != Sign::Zero
+            }
+            _ => match axis_of(other) {
+                Some(line) => on(&s.center, line, dec)?,
+                None => false,
+            },
+        },
+        _ => match (axis_of(a), axis_of(b)) {
+            (Some(first), Some((q, d))) => {
+                geometry::sign(&first.1.cross(d).norm_squared(), dec)? == Sign::Zero
+                    && on(q, first, dec)?
+            }
+            _ => false,
+        },
+    })
+}
+
+fn reach_refusal(detail: &str) -> Refusal {
+    Refusal::new("field.rolling-path-reach", detail)
 }
 
 fn oriented(value: &Real, detail: &str, dec: &mut Decider) -> Result<bool, Refusal> {
@@ -54,6 +110,22 @@ fn oriented(value: &Real, detail: &str, dec: &mut Decider) -> Result<bool, Refus
 /// The component of `v` perpendicular to `axis`.
 fn radial(v: &Vector3, axis: &Vector3) -> Vector3 {
     v.minus(&axis.scaled(&(&v.dot(axis) / &axis.norm_squared())))
+}
+
+/// A point on a closed edge, the end of its first axis, when it has no
+/// rational point.
+fn algebraic_sample(edge: &Curve) -> Option<Point3> {
+    match edge {
+        Curve::Circle(c) => Some(
+            c.center
+                .plus(&unit(&c.ref_dir).scaled(&square_root(&c.radius_sq))),
+        ),
+        Curve::Ellipse(e) => Some(
+            e.center
+                .plus(&unit(&e.major_dir).scaled(&square_root(&e.major_sq))),
+        ),
+        _ => None,
+    }
 }
 
 /// A rational point on a closed edge: an end of either axis.
@@ -114,8 +186,9 @@ impl Plan {
         convex: bool,
         senses: [bool; 2],
     ) -> Result<Vector3, Refusal> {
-        let xyz = coordinates(p)?;
-        let [a, b] = faces.map(|i| crate::normal(&self.faces[i], &xyz));
+        // The same exact gradients as `material`, at a point that may be
+        // algebraic.
+        let [a, b] = faces.map(|i| self.gradient_at(i, p));
         let dot = a.dot(&b);
         let da = a.minus(&b.scaled(&(&dot / &b.norm_squared())));
         let db = b.minus(&a.scaled(&(&dot / &a.norm_squared())));
@@ -164,8 +237,9 @@ impl Plan {
                 if !matches!(supports, [Surface::Cylinder(_), Surface::Cylinder(_)]) =>
             {
                 let sample = loop_sample(edge)
-                    .ok_or_else(|| bad("a closed edge needs a rational point for its material"))?;
-                let Some((convex, senses)) = self.material(root, &sample, faces, dec)? else {
+                    .or_else(|| algebraic_sample(edge))
+                    .ok_or_else(|| bad("a closed edge needs a point for its material"))?;
+                let Some((convex, senses)) = self.material_point(root, &sample, faces, dec)? else {
                     return Ok(Some(vec![]));
                 };
                 let ball = self.ball_direction(faces, &sample, convex, senses)?;
@@ -176,6 +250,15 @@ impl Plan {
                 ) {
                     (Some(plane), None) => (plane, second),
                     (None, Some(plane)) => (plane, first),
+                    (None, None) => {
+                        let Curve::Circle(circle) = edge else {
+                            return Ok(None);
+                        };
+                        let run = self.coaxial_run(
+                            faces, supports, circle, &sample, &ball, convex, step, radius, dec,
+                        )?;
+                        return Ok(Some(vec![run]));
+                    }
                     _ => return Ok(None),
                 };
                 let at = |origin: &Point3| sample.minus(origin);
@@ -225,6 +308,29 @@ impl Plan {
                     ends: vec![],
                 }]))
             }
+            Curve::Ellipse(ellipse)
+                if matches!(supports, [Surface::Cylinder(_), Surface::Cylinder(_)]) =>
+            {
+                self.crossing_run(root, faces, supports, ellipse, radius, step, dec)
+            }
+            Curve::Intersection(intersection)
+                if matches!(
+                    supports,
+                    [
+                        Surface::Cylinder(_),
+                        Surface::Cylinder(_) | Surface::Sphere(_)
+                    ] | [Surface::Sphere(_), Surface::Cylinder(_)]
+                ) =>
+            {
+                let sample = geom.position(intersection.witness).clone();
+                let Some((convex, senses)) = self.material_point(root, &sample, faces, dec)? else {
+                    return Ok(Some(vec![]));
+                };
+                let ball = self.ball_direction(faces, &sample, convex, senses)?;
+                Ok(Some(vec![self.saddle_run(
+                    faces, supports, &sample, &ball, convex, step, radius, dec,
+                )?]))
+            }
             Curve::Line(line)
                 if matches!(supports, [Surface::Cylinder(_), Surface::Cylinder(_)]) =>
             {
@@ -264,6 +370,276 @@ impl Plan {
             }
             _ => Ok(None),
         }
+    }
+
+    /// A ring or loop where a cylinder meets a second cylinder or a sphere,
+    /// as a [`Saddle`] piece. A ring is parametrized about the cylinder it
+    /// winds round; a loop about the first cylinder it is one loop for.
+    #[allow(clippy::too_many_arguments)]
+    fn saddle_run(
+        &self,
+        faces: [usize; 2],
+        supports: &[Surface; 2],
+        sample: &Point3,
+        ball: &Vector3,
+        convex: bool,
+        step: &StepId,
+        radius: &Real,
+        dec: &mut Decider,
+    ) -> Result<Run, Refusal> {
+        let side = |surface: &Surface, dec: &mut Decider| -> Result<bool, Refusal> {
+            let toward = match surface {
+                Surface::Cylinder(c) => ball.dot(&radial(&sample.minus(&c.origin), &c.axis)),
+                Surface::Sphere(s) => ball.dot(&sample.minus(&s.center)),
+                _ => return Err(bad("a saddle piece needs cylinders or a sphere")),
+            };
+            oriented(&toward, "the ball lies in a support's tangent plane", dec)
+        };
+        let partner = |surface: &Surface| match surface {
+            Surface::Cylinder(c) => Partner::Cylinder {
+                point: c.origin.clone(),
+                axis: c.axis.clone(),
+                radius: square_root(&c.radius_sq),
+            },
+            Surface::Sphere(s) => Partner::Sphere {
+                centre: s.center.clone(),
+                radius: s.radius.clone(),
+            },
+            _ => unreachable!("a saddle partner is a cylinder or a sphere"),
+        };
+        // Candidate parametrizations: each cylinder, with the other support
+        // as its partner.
+        let mut candidates = Vec::new();
+        for (k, support) in supports.iter().enumerate() {
+            if let Surface::Cylinder(c) = support {
+                candidates.push((k, c, partner(&supports[1 - k])));
+            }
+        }
+        let mut chosen = None;
+        for wanted in [Shape::Rings, Shape::Loop] {
+            for (k, c, other) in &candidates {
+                let body = square_root(&c.radius_sq);
+                if Saddle::edge_shape((&c.origin, &c.axis, &body), other, dec)? == wanted {
+                    chosen = Some((*k, (*c).clone(), other.clone(), wanted));
+                    break;
+                }
+            }
+            if chosen.is_some() {
+                break;
+            }
+        }
+        let (k, cylinder, other, shape) = chosen.ok_or_else(|| {
+            reach_refusal("the edge is neither a ring round a cylinder nor one loop")
+        })?;
+        let body = square_root(&cylinder.radius_sq);
+        let branch = match shape {
+            Shape::Rings => Branch::Ring(Saddle::edge_sign(
+                (&cylinder.origin, &cylinder.axis, &body),
+                &other,
+                sample,
+                dec,
+            )?),
+            _ => Branch::Loop,
+        };
+        let outside = [side(&supports[k], dec)?, side(&supports[1 - k], dec)?];
+        let path = Saddle::new(
+            (cylinder.origin.clone(), cylinder.axis.clone(), body),
+            other,
+            outside,
+            branch,
+            radius.clone(),
+            dec,
+        )?;
+        let piece = Piece::new(
+            Kind::Saddle(path),
+            self.blend_origin(faces, step)?,
+            convex,
+            [&supports[0], &supports[1]],
+            dec,
+        )?;
+        Ok(Run {
+            piece,
+            faces,
+            ends: vec![],
+        })
+    }
+
+    /// Two equal cylinders whose axes meet cross in two ellipses through two
+    /// poles; one [`Saddle`] crossing piece holds all four bands. It is built
+    /// at the ellipse in the plane normal to the sum of the unit axes; the
+    /// other ellipse adds nothing. The material is probed on all four bands,
+    /// halfway between the poles, and must agree.
+    #[allow(clippy::too_many_arguments)]
+    fn crossing_run(
+        &self,
+        root: usize,
+        faces: [usize; 2],
+        supports: &[Surface; 2],
+        ellipse: &catallax_shapes::Ellipse,
+        radius: &Real,
+        step: &StepId,
+        dec: &mut Decider,
+    ) -> Result<Option<Vec<Run>>, Refusal> {
+        let [Surface::Cylinder(a), Surface::Cylinder(b)] = supports else {
+            unreachable!("a crossing of two cylinders")
+        };
+        let (ua, ub) = (unit(&a.axis), unit(&b.axis));
+        if geometry::sign(&ua.plus(&ub).cross(&ellipse.normal).norm_squared(), dec)? != Sign::Zero {
+            return Ok(Some(vec![]));
+        }
+        let normal = ua.cross(&ub);
+        let t = &b.origin.minus(&a.origin).cross(&ub).dot(&normal) / &normal.norm_squared();
+        let meeting = a.origin.plus(&ua.scaled(&t));
+        let across = unit(&normal.cross(&ua));
+        let body = square_root(&a.radius_sq);
+        let mut found: Option<((bool, [bool; 2]), Point3)> = None;
+        let mut missing = 0;
+        for nu in [ua.plus(&ub), ua.minus(&ub)] {
+            for sense in [1, -1] {
+                let m = across.scaled(&Real::from_i64(sense));
+                let rise = -&(&(&body * &m.dot(&nu)) / &ua.dot(&nu));
+                let sample = meeting.plus(&m.scaled(&body)).plus(&ua.scaled(&rise));
+                match self.material_point(root, &sample, faces, dec)? {
+                    None => missing += 1,
+                    Some(material) => match &found {
+                        None => found = Some((material, sample)),
+                        Some((first, _)) if *first == material => {}
+                        Some(_) => {
+                            return Err(bad(
+                                "the four bands of a crossing differ in their material side",
+                            ));
+                        }
+                    },
+                }
+            }
+        }
+        let Some(((convex, senses), sample)) = found else {
+            return Ok(Some(vec![]));
+        };
+        if missing > 0 {
+            return Err(bad(
+                "a crossing clipped to fewer than four bands needs ends at its poles",
+            ));
+        }
+        let ball = self.ball_direction(faces, &sample, convex, senses)?;
+        let mut outside = Vec::with_capacity(2);
+        for c in [a, b] {
+            outside.push(oriented(
+                &ball.dot(&radial(&sample.minus(&c.origin), &c.axis)),
+                "the ball lies in a support's tangent plane",
+                dec,
+            )?);
+        }
+        let path = Saddle::new(
+            (meeting.clone(), a.axis.clone(), body),
+            Partner::Cylinder {
+                point: meeting,
+                axis: b.axis.clone(),
+                radius: square_root(&b.radius_sq),
+            },
+            [outside[0], outside[1]],
+            Branch::Crossing,
+            radius.clone(),
+            dec,
+        )?;
+        let piece = Piece::new(
+            Kind::Saddle(path),
+            self.blend_origin(faces, step)?,
+            convex,
+            [&supports[0], &supports[1]],
+            dec,
+        )?;
+        Ok(Some(vec![Run {
+            piece,
+            faces,
+            ends: vec![],
+        }]))
+    }
+
+    /// The circle where two curved supports about one axis meet, as a
+    /// [`Coaxial`] piece. The profiles are written in the circle's frame: its
+    /// centre is the origin of stations and its normal the axis.
+    #[allow(clippy::too_many_arguments)]
+    fn coaxial_run(
+        &self,
+        faces: [usize; 2],
+        supports: &[Surface; 2],
+        circle: &catallax_shapes::Circle,
+        sample: &Point3,
+        ball: &Vector3,
+        convex: bool,
+        step: &StepId,
+        radius: &Real,
+        dec: &mut Decider,
+    ) -> Result<Run, Refusal> {
+        let axis = unit(&circle.normal);
+        let point = &circle.center;
+        let station = |p: &Point3| p.minus(point).dot(&axis);
+        let mut profiles = Vec::with_capacity(2);
+        let mut sides = Vec::with_capacity(2);
+        for support in supports {
+            let (profile, outside) = match support {
+                Surface::Cylinder(c) => (
+                    Profile::Cylinder {
+                        radius: square_root(&c.radius_sq),
+                    },
+                    ball.dot(&radial(&sample.minus(&c.origin), &c.axis)),
+                ),
+                Surface::Cone(c) => {
+                    let w = radial(&sample.minus(&c.apex), &c.axis);
+                    let along = unit(&c.axis).scaled(&(&c.slope * &w.norm_squared().sqrt()));
+                    let sense = if oriented(&c.axis.dot(&axis), "a cone axis across the edge", dec)?
+                    {
+                        Real::one()
+                    } else {
+                        Real::from_i64(-1)
+                    };
+                    (
+                        Profile::Cone {
+                            apex: station(&c.apex),
+                            slope: &sense * &c.slope,
+                        },
+                        ball.dot(&w.minus(&along)),
+                    )
+                }
+                Surface::Sphere(s) => (
+                    Profile::Sphere {
+                        centre: station(&s.center),
+                        radius: s.radius.clone(),
+                    },
+                    ball.dot(&sample.minus(&s.center)),
+                ),
+                _ => return Err(bad("a coaxial piece needs cylinders, cones or spheres")),
+            };
+            profiles.push(profile);
+            sides.push(oriented(
+                &outside,
+                "the ball lies in a support's tangent plane",
+                dec,
+            )?);
+        }
+        let profiles: [Profile; 2] = profiles.try_into().map_err(|_| bad("two supports"))?;
+        let path = Coaxial::new(
+            point.clone(),
+            axis,
+            profiles,
+            [sides[0], sides[1]],
+            [square_root(&circle.radius_sq), Real::zero()],
+            radius.clone(),
+            dec,
+        )?;
+        let piece = Piece::new(
+            Kind::Coaxial(path),
+            self.blend_origin(faces, step)?,
+            convex,
+            [&supports[0], &supports[1]],
+            dec,
+        )?;
+        Ok(Run {
+            piece,
+            faces,
+            ends: vec![],
+        })
     }
 
     /// A straight run between supports parallel to its line, over the
@@ -410,6 +786,9 @@ impl Plan {
             .each_ref()
             .map(|[lo, hi]| Ball::from_rational(lo, 128).hull(&Ball::from_rational(hi, 128)));
         let own: Vec<usize> = run.faces.iter().chain(&run.ends).copied().collect();
+        // Boxes of the panels of a closed path, made when the whole box is
+        // too coarse: a box round a ring holds its axis.
+        let mut boxes: Option<Vec<[Ball; 3]>> = None;
         for &i in source_faces {
             let face = &self.faces[i];
             if own
@@ -419,8 +798,17 @@ impl Plan {
                 continue;
             }
             dec.charge_work(1)?;
-            if face.polynomial.eval_ball(&region, dec)?.contains_zero() {
-                return Err(overflow());
+            if !face.polynomial.eval_ball(&region, dec)?.contains_zero() {
+                continue;
+            }
+            if boxes.is_none() {
+                boxes = Some(run.piece.boxes(dec)?);
+            }
+            for panel in boxes.as_deref().unwrap_or_default() {
+                dec.charge_work(1)?;
+                if face.polynomial.eval_ball(panel, dec)?.contains_zero() {
+                    return Err(overflow());
+                }
             }
         }
         Ok(())

@@ -98,7 +98,11 @@ fn cone_witness(
         .plus(&v.scaled(&(&radius * &sin)));
     Ok(Some(s.apex.plus(&offset.to_real())))
 }
-fn location(leaf: &geometry::Leaf, p: &Point3, dec: &mut Decider) -> Result<Location, Refusal> {
+pub(crate) fn location(
+    leaf: &geometry::Leaf,
+    p: &Point3,
+    dec: &mut Decider,
+) -> Result<Location, Refusal> {
     if let Some(p) = p.as_rational() {
         return leaf.location(&[p.x, p.y, p.z], dec);
     }
@@ -172,7 +176,7 @@ fn location(leaf: &geometry::Leaf, p: &Point3, dec: &mut Decider) -> Result<Loca
         }
     }
 }
-fn ray(
+pub(crate) fn ray(
     leaf: &geometry::Leaf,
     p: &Point3,
     d: &Vector3,

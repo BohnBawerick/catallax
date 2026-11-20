@@ -252,6 +252,11 @@ impl Generator {
         Ok(hull_points(&points))
     }
 
+    /// A straight piece's box is already tight: its only box is its hull.
+    pub fn boxes(&self, dec: &mut Decider) -> Result<Vec<[Ball; 3]>, Refusal> {
+        Ok(vec![self.hull(dec)?])
+    }
+
     /// Tentative binary64 value for display: negative inside the region. The
     /// square root is the caller's.
     pub(crate) fn fast(&self, p: [f64; 3], sqrt: fn(f64) -> f64) -> f64 {

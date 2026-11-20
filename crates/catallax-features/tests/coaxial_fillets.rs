@@ -907,16 +907,17 @@ fn rounded_bodies_write_step_with_no_marks() {
     }
 }
 
-/// A plane with a cone builds in the field since 4.2a step 2. The dome's rim
-/// is a circle of radius sqrt 21, which has no rational point, so the exact
-/// material probe cannot run on it yet; a plane with a torus still refuses.
+/// A plane with a cone builds in the field since 4.2a step 2. The dome's rim,
+/// a circle of radius sqrt 21 with no rational point, and the rod's cap, a
+/// cylinder with a sphere about one axis, build since step 3; the field probes
+/// the material at an algebraic point of the rim. A plane with a torus still
+/// refuses (step 6).
 #[test]
 fn the_field_builds_a_frustum_rim_and_names_what_it_still_refuses() {
-    let plan = Plan::compile_checked(&rounded(&frustum_top()), &mut decider()).unwrap();
-    assert_eq!(plan.rolling_pieces().count(), 1);
-    let refusal = Plan::compile_checked(&rounded(&dome_rim("1")), &mut decider()).unwrap_err();
-    assert_eq!(refusal.code, "field.fillet-contact");
-    assert!(refusal.detail.contains("rational point"), "{refusal:?}");
+    for case in [frustum_top(), dome_rim("1"), rod_cap()] {
+        let plan = Plan::compile_checked(&rounded(&case), &mut decider()).unwrap();
+        assert_eq!(plan.rolling_pieces().count(), 1, "{}", case.name);
+    }
     let refusal = Plan::compile_checked(&rounded(&groove_strips()), &mut decider()).unwrap_err();
     assert_eq!(refusal.code, "field.fillet-contact");
 }

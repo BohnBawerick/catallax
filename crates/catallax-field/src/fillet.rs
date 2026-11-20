@@ -169,6 +169,78 @@ impl Plan {
             _ => None,
         })
     }
+    /// [`Plan::material`] at a point that may be algebraic, such as a point of
+    /// a circle of radius `sqrt 21`, which has no rational point. Rational
+    /// points take [`Plan::material`] unchanged; algebraic ones use the same
+    /// exact membership and ray probes through the field's algebraic queries.
+    fn material_point(
+        &self,
+        root: usize,
+        p: &Point3,
+        faces: [usize; 2],
+        dec: &mut Decider,
+    ) -> Result<Option<(bool, [bool; 2])>, Refusal> {
+        if coordinates(p).is_ok() {
+            return self.material(root, p, faces, dec);
+        }
+        for i in faces {
+            let face = &self.faces[i];
+            let leaf = &self.leaves[face.leaf];
+            if crate::distance::location(leaf, p, dec)? != Location::Boundary
+                || leaf.on_face_algebraic(&face.origin, self.definition_role(i), p, dec)?
+                    == Some(false)
+            {
+                return Ok(None);
+            }
+        }
+        let [a, b] = faces.map(|i| self.gradient_at(i, p));
+        let dot = a.dot(&b);
+        let da = a.minus(&b.scaled(&(&dot / &b.norm_squared())));
+        let db = b.minus(&a.scaled(&(&dot / &a.norm_squared())));
+        if geometry::sign(&da.norm_squared(), dec)? == Sign::Zero {
+            return Ok(None);
+        }
+        let mut inside = Vec::new();
+        let mut outside = Vec::new();
+        for signs in [[-1, -1], [-1, 1], [1, -1], [1, 1]] {
+            let direction = da
+                .scaled(&Real::from_i64(signs[0]))
+                .plus(&db.scaled(&Real::from_i64(signs[1])));
+            let mut locations = Vec::with_capacity(root + 1);
+            for instruction in &self.instructions[..=root] {
+                let location = match *instruction {
+                    Instruction::Empty => Location::Outside,
+                    Instruction::Leaf(i) => {
+                        crate::distance::ray(&self.leaves[i], p, &direction, dec)?
+                    }
+                    Instruction::Boolean { kind, a, b } => {
+                        crate::combine(kind, locations[a], locations[b])
+                    }
+                };
+                locations.push(location);
+            }
+            match locations[root] {
+                Location::Inside => inside.push(signs),
+                Location::Outside => outside.push(signs),
+                _ => return Ok(None),
+            }
+        }
+        Ok(match (inside.as_slice(), outside.as_slice()) {
+            ([signs], outside) if outside.len() == 3 => Some((true, signs.map(|s| s < 0))),
+            (inside, [signs]) if inside.len() == 3 => Some((false, signs.map(|s| s > 0))),
+            _ => None,
+        })
+    }
+    /// A face's gradient at a point that may be algebraic.
+    fn gradient_at(&self, face: usize, p: &Point3) -> Vector3 {
+        let values = [p.x.clone(), p.y.clone(), p.z.clone()];
+        let gradient = &self.faces[face].gradient;
+        Vector3::new(
+            gradient[0].eval_real(&values),
+            gradient[1].eval_real(&values),
+            gradient[2].eval_real(&values),
+        )
+    }
     fn fillet_domain(
         &self,
         definition: &FilletDefinition,
@@ -394,12 +466,13 @@ impl Plan {
                 (Surface::Plane(_), Surface::Plane(_) | Surface::Cylinder(_))
                     | (Surface::Cylinder(_), Surface::Plane(_))
             );
-            if !elementary && !rolling::admits(&supports, dec)? {
+            let named = matches!(selection, EdgeSelection::Refs(_));
+            if !elementary && !rolling::admits(&supports, named, dec)? {
                 if matches!(selection, EdgeSelection::All) {
                     continue;
                 }
                 return Err(bad(
-                    "field fillets need a plane with a plane, cylinder, cone or sphere, or two parallel cylinders",
+                    "field fillets need a plane with a plane, cylinder, cone or sphere, two cylinders, a cylinder with a sphere, or two coaxial cylinders, cones or spheres",
                 ));
             }
             let mut geom = GeomStore::new();

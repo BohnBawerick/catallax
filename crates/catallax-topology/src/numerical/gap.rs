@@ -195,6 +195,10 @@ fn unsupported(detail: &str) -> Refusal {
     Refusal::new("numerical.gap-unsupported", detail)
 }
 
+fn work_cap(detail: &str) -> Refusal {
+    Refusal::new("numerical.gap-work-cap", detail)
+}
+
 /// Source: decision Q6, section 4.2 step 4, after Chebfun's seventeen-point
 /// first grid (Aurentz and Trefethen, "Chopping a Chebyshev series", ACM
 /// TOMS 43, 2017).
@@ -265,7 +269,16 @@ const SPLIT_FLOOR: f64 = 2.0;
 /// The values of one surface parameter, within `range`, at which the lifted
 /// curve is cut: knot lines and domain borders of a spline surface, the seam
 /// of a periodic chart, and the pole lines of a sphere or a cone.
-fn cut_lines(surface: &Surface64, axis: usize, range: [f64; 2], out: &mut Vec<f64>) {
+///
+/// The number of seams is fixed before any is listed. A face copy that winds
+/// around its surface more than `most` times is refused, not walked.
+fn cut_lines(
+    surface: &Surface64,
+    axis: usize,
+    range: [f64; 2],
+    most: u64,
+    out: &mut Vec<f64>,
+) -> Result<(), Refusal> {
     let within = |value: f64| value >= range[0] && value <= range[1];
     match surface {
         Surface64::Plane { .. } => (),
@@ -275,11 +288,20 @@ fn cut_lines(surface: &Surface64, axis: usize, range: [f64; 2], out: &mut Vec<f6
         Surface64::Revolved { kind, .. } => {
             let turn = 2.0 * std::f64::consts::PI;
             if axis == 0 {
-                // The seam, u = 0 modulo one turn.
-                let mut turns = (range[0] / turn).ceil();
-                while turns * turn <= range[1] {
-                    out.push(turns * turn);
-                    turns += 1.0;
+                // The seam, u = 0 modulo one turn. One spare turn covers
+                // the rounding of the two quotients.
+                let first = (range[0] / turn).ceil();
+                let turns = (range[1] / turn).floor() - first + 2.0;
+                if !turns.is_finite() || turns > most as f64 {
+                    return Err(work_cap(
+                        "a face copy winds around its surface more often than its edge may be cut",
+                    ));
+                }
+                for index in 0..turns.max(0.0) as u64 {
+                    let seam = (first + index as f64) * turn;
+                    if seam <= range[1] {
+                        out.push(seam);
+                    }
                 }
             } else {
                 let poles: &[f64] = match kind {
@@ -294,14 +316,23 @@ fn cut_lines(surface: &Surface64, axis: usize, range: [f64; 2], out: &mut Vec<f6
         }
     }
     out.dedup();
+    Ok(())
 }
 
 /// Parameters in `(from, to)` where the face copy crosses a cut line of the
 /// surface. The face copy is one polynomial or rational piece on the interval.
-fn crossings(lifted: &Lifted, from: f64, to: f64, out: &mut Vec<f64>, work: &mut u64) {
+/// Returns the work spent.
+fn crossings(
+    lifted: &Lifted,
+    from: f64,
+    to: f64,
+    most: u64,
+    out: &mut Vec<f64>,
+) -> Result<u64, Refusal> {
+    let mut work = 0;
     // Homogeneous Bezier coefficients (u w, v w, w) of the face copy.
     let piece: Vec<[f64; 3]> = match &lifted.face {
-        Face64::Projected => return,
+        Face64::Projected => return Ok(work),
         Face64::Linear { ends } => {
             let [a, b] = lifted.parameters;
             [from, to]
@@ -338,8 +369,13 @@ fn crossings(lifted: &Lifted, from: f64, to: f64, out: &mut Vec<f64>, work: &mut
             lo = lo.min(control[axis] / control[2]);
             hi = hi.max(control[axis] / control[2]);
         }
+        if !(lo.is_finite() && hi.is_finite()) {
+            return Err(unsupported(
+                "a face copy has no finite u/v range on one of its pieces",
+            ));
+        }
         lines.clear();
-        cut_lines(&lifted.surface, axis, [lo, hi], &mut lines);
+        cut_lines(&lifted.surface, axis, [lo, hi], most, &mut lines)?;
         for line in &lines {
             let coefficients: Vec<f64> = piece.iter().map(|c| c[axis] - line * c[2]).collect();
             let size = piece
@@ -351,15 +387,27 @@ fn crossings(lifted: &Lifted, from: f64, to: f64, out: &mut Vec<f64>, work: &mut
                 numeric::UNIT_ROUNDOFF * numeric::roundings(piece.len() - 1) * size,
                 &mut shares,
             );
-            *work += 1 + halvings;
+            work += 1 + halvings;
             out.extend(shares.iter().map(|share| from + share * (to - from)));
         }
     }
+    Ok(work)
 }
 
-/// Every break of the edge in ascending order, both ends included.
-fn breaks(lifted: &Lifted, hints: &Hints, dec: &mut Decider) -> Result<Vec<f64>, Refusal> {
+/// Every break of the edge in ascending order, both ends included. Work is
+/// charged window by window, and an edge with more than `most` breaks is
+/// refused: each piece takes at least one evaluation, so it could not be
+/// sampled within the allowance.
+fn breaks(
+    lifted: &Lifted,
+    hints: &Hints,
+    most: u64,
+    dec: &mut Decider,
+) -> Result<Vec<f64>, Refusal> {
     let [lo, hi] = lifted.range();
+    if !(lo.is_finite() && hi.is_finite() && lo < hi) {
+        return Err(unsupported("an edge has no finite parameter range"));
+    }
     let inside = |t: &f64| *t > lo && *t < hi;
     let mut cuts = vec![lo, hi];
     if let Curve64::Spline(spline) = &lifted.curve {
@@ -371,13 +419,22 @@ fn breaks(lifted: &Lifted, hints: &Hints, dec: &mut Decider) -> Result<Vec<f64>,
     cuts.extend(hints.parameters.iter().copied().filter(inside));
     cuts.sort_by(f64::total_cmp);
     cuts.dedup();
+    let too_many = || work_cap("an edge has more breaks than its evaluation allowance can sample");
+    if cuts.len() as u64 > most {
+        return Err(too_many());
+    }
+    dec.charge_work(cuts.len() as u64)?;
     // Between these cuts the face copy is one polynomial or rational piece.
     let mut crossed = Vec::new();
-    let mut work = cuts.len() as u64;
     for pair in cuts.windows(2) {
-        crossings(lifted, pair[0], pair[1], &mut crossed, &mut work);
+        let work = crossings(lifted, pair[0], pair[1], most, &mut crossed)?;
+        if work > 0 {
+            dec.charge_work(work)?;
+        }
+        if (cuts.len() + crossed.len()) as u64 > most {
+            return Err(too_many());
+        }
     }
-    dec.charge_work(work)?;
     cuts.extend(crossed.into_iter().filter(inside));
     cuts.sort_by(f64::total_cmp);
     cuts.dedup();
@@ -391,13 +448,17 @@ fn breaks(lifted: &Lifted, hints: &Hints, dec: &mut Decider) -> Result<Vec<f64>,
 pub fn plan(
     copies: &EdgeCopies<'_>,
     hints: &Hints,
+    limits: Limits,
     dec: &mut Decider,
 ) -> Result<Vec<PlannedPiece>, Refusal> {
     let lifted = lift::lift(copies, dec)?;
     if straight_residual(&lifted) {
         return Ok(Vec::new());
     }
-    Ok(planned(&lifted, &breaks(&lifted, hints, dec)?))
+    Ok(planned(
+        &lifted,
+        &breaks(&lifted, hints, limits.evaluations, dec)?,
+    ))
 }
 
 fn planned(lifted: &Lifted, breaks: &[f64]) -> Vec<PlannedPiece> {
@@ -523,10 +584,17 @@ pub fn measure(
     dec: &mut Decider,
 ) -> Result<GapMeasure, Refusal> {
     let lifted = lift::lift(copies, dec)?;
+    // The closing probes of the rounding allowance count inside the same cap,
+    // so they are set aside before the first sample.
+    let Some(limit) = limits.evaluations.checked_sub(lift::ALLOWANCE_EVALUATIONS) else {
+        return Err(work_cap(
+            "the evaluation allowance of an edge is smaller than its closing probes",
+        ));
+    };
     let mut search = Search {
         lifted: &lifted,
         scratch: Scratch::default(),
-        limit: limits.evaluations,
+        limit,
         evaluations: 0,
         charged: 0,
     };
@@ -547,9 +615,18 @@ pub fn measure(
             dec,
         );
     }
-    let breaks = breaks(&lifted, hints, dec)?;
+    let breaks = breaks(&lifted, hints, limit, dec)?;
     let plan = planned(&lifted, &breaks);
     let [lo, hi] = lifted.range();
+    // Refuse before the first sample when the plan alone is over the cap.
+    let planned_evaluations = plan
+        .iter()
+        .fold(1_u64, |sum, piece| sum + piece.points as u64 + 1);
+    if planned_evaluations > limit {
+        return Err(work_cap(
+            "the first sample plan of an edge is larger than its evaluation allowance",
+        ));
+    }
 
     // First pass: every piece at its planned points, ends included.
     let mut pieces: Vec<Vec<Sample>> = Vec::with_capacity(plan.len());
@@ -722,7 +799,10 @@ fn finish(
         .map(|piece| piece.piece[1] - piece.piece[0])
         .fold(hi - lo, f64::min)
         / 2.0;
+    // These probes were set aside when the search started, so the total
+    // stays inside the edge's evaluation allowance.
     let (allowance, evaluations) = search.lifted.allowance(best.t, reach, &mut search.scratch);
+    debug_assert!(evaluations <= lift::ALLOWANCE_EVALUATIONS);
     search.evaluations += evaluations;
     search.settle(dec)?;
     Ok(GapMeasure {

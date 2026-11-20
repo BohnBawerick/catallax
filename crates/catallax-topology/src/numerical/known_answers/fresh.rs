@@ -171,7 +171,7 @@ fn plane_lift(random: &mut Random) -> (Curve, CaseSurface, FaceCopy, Truth) {
     )
 }
 
-/// Family B. A smooth random spline patch and its own iso-curve as the 3D copy.
+/// Family B. A random spline patch and its own iso-curve as the 3D copy.
 /// One control of the patch is then lifted, so the bump lives on the surface:
 /// its size is the lift times the v basis value at the iso-parameter times
 /// the u basis function along the edge.
@@ -190,26 +190,15 @@ fn surface_bump(random: &mut Random) -> (Curve, CaseSurface, FaceCopy, Truth) {
     );
     let (us, vs) = (greville(&knots_u, 3), greville(&knots_v, degree_v));
     let origin = offset(random);
-    // The heights follow a random quadratic in the Greville abscissae, so the
-    // patch is smooth and only the hidden bump is narrow. Independent random
-    // heights would put slopes of millions of millimetres per unit parameter
-    // inside the bump's knot cluster, where a rounding error in the face
-    // copy's parameter alone moves the surface by more than the bump.
-    let bend: [Rational; 6] = std::array::from_fn(|_| ratio(random.between(-64, 64), 8));
     let mut net: Vec<Vec<[Rational; 3]>> = us
         .iter()
         .map(|u| {
             vs.iter()
                 .map(|v| {
-                    let terms = [Rational::one(), u.clone(), v.clone(), u * v, u * u, v * v];
-                    let height = bend
-                        .iter()
-                        .zip(&terms)
-                        .fold(Rational::zero(), |sum, (c, term)| sum + c * term);
                     [
                         &origin[0] + &(qi(100) * u.clone()),
                         &origin[1] + &(qi(20) * v.clone()),
-                        &origin[2] + &height,
+                        &origin[2] + &ratio(random.between(-64, 64), 64),
                     ]
                 })
                 .collect()

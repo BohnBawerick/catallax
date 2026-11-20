@@ -807,7 +807,7 @@ impl Lifted {
 
 /// Source: a count of [`Lifted::allowance`]: the residual at the point and
 /// on either side of it, and the surface at two shifted parameters.
-const ALLOWANCE_EVALUATIONS: u64 = 5;
+pub(super) const ALLOWANCE_EVALUATIONS: u64 = 5;
 
 /// Source: an operation count of the straight face copy: a difference and a
 /// quotient for the share, then a difference, a product and a sum.

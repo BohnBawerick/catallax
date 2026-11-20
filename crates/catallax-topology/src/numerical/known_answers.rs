@@ -21,6 +21,7 @@ mod exact;
 mod fixed;
 mod fresh;
 mod legacy;
+mod smooth;
 
 /// The surface the face copy is lifted through.
 #[derive(Clone, Debug)]

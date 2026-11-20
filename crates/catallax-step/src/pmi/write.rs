@@ -33,6 +33,8 @@ pub(crate) const REPRESENTATION: &str = "#16";
 pub const HOLE_DEPTH: &str = "hole depth";
 /// The [`HOLE_DEPTH`] of a hole that goes through the part.
 pub const THROUGH: &str = "through";
+/// The name of the user defined attribute that carries a thread's designation.
+pub const THREAD: &str = "thread";
 
 fn quoted(value: &str) -> Field {
     text(string(value))
@@ -616,6 +618,10 @@ pub(crate) fn emit(
                     // AP242 edition 1 has no hole entity, so the hole's depth is an
                     // attribute of the feature the diameter is on.
                     emitter.attribute(HOLE_DEPTH, THROUGH, target.into());
+                }
+                if let Some(thread) = &size.thread {
+                    // Nor has it a thread entity: the designation is an attribute too.
+                    emitter.attribute(THREAD, thread, target.into());
                 }
             }
             ItemKind::Location(location) => {

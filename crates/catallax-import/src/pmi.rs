@@ -17,7 +17,7 @@ use catallax_numbers::Rational;
 use catallax_step::pmi::{
     Anchor, At, Characteristic, Datum, Feature, GeometricTolerance, HOLE_DEPTH, Item, ItemKind,
     Limits, Location, MaterialCondition, PartNotes, Pmi, Process, Size, SizeKind, SurfaceTexture,
-    THROUGH,
+    THREAD, THROUGH,
 };
 
 use crate::ImportRefusal;
@@ -583,6 +583,18 @@ impl<'a> Reader<'a> {
             })
     }
 
+    /// The thread designation the feature carries, if it has one.
+    fn thread(&self, aspect: u64) -> Option<String> {
+        self.sharing_at(aspect, "PROPERTY_DEFINITION", 2)
+            .into_iter()
+            .find_map(|(id, params)| {
+                (string(params.first()).as_deref() == Some(THREAD)
+                    && string(params.get(1)).as_deref() == Some("user defined attribute"))
+                .then(|| self.attribute_text(id))
+                .flatten()
+            })
+    }
+
     /// The text of a user defined attribute.
     fn attribute_text(&self, property: u64) -> Option<String> {
         let mut text = None;
@@ -618,6 +630,11 @@ impl<'a> Reader<'a> {
                 features: self.features(aspect, 0)?,
                 limits,
                 through: kind == SizeKind::Diameter && self.through(aspect),
+                thread: if kind == SizeKind::Diameter {
+                    self.thread(aspect)
+                } else {
+                    None
+                },
                 nominal,
             }),
         })

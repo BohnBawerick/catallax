@@ -60,6 +60,8 @@ mod pair;
 mod pipe;
 mod planar;
 mod rational_patch;
+/// Holes, hole patterns, bosses and slots read off a body's faces.
+pub mod recognition;
 mod ring;
 mod saddle;
 mod surface;

@@ -714,6 +714,35 @@ pub fn entity_pair(
     entity::measure(model, a, b, request, accuracy, dec)
 }
 
+/// Certified minimum distance between the closed boundaries of two solids in
+/// one model, for the same carriers and curves as [`entity_pair`].
+///
+/// The caller must first prove that the two solids' faces do not cross, for
+/// example by a zero overlap volume: the closed forms enumerate stationary
+/// pairs, which miss a transversal crossing. Face pairs are visited in order
+/// of their boxes' separation and skipped once the best distance found is no
+/// greater, as OpenCASCADE's `BRepExtrema_DistShapeShape` does, so a face far
+/// from the minimum needs neither a closed form nor a supported carrier.
+/// Parallel planar faces with inexact frames meet their minimum on their own
+/// edges and vertices too, which the search visits.
+///
+/// A pair of strata without a closed form whose boxes are nearer than the
+/// minimum is settled by the certified interval search over its two faces,
+/// which proves them no nearer than the minimum or finds a nearer witness.
+/// What that search cannot settle within one face query's default cell count
+/// widens the enclosure to the lower bound it proved: the answer then carries
+/// the `measure.accuracy-not-reached` mark when it misses `accuracy`. With no
+/// witness pair at all the query refuses `measure.distance-uncovered`.
+pub fn solid_gap(
+    model: &Model,
+    a: BodyId,
+    b: BodyId,
+    accuracy: &Accuracy,
+    dec: &mut Decider,
+) -> Answered<Enclosure> {
+    entity::solids(model, a, b, accuracy, dec)
+}
+
 /// Proven enclosing box of a body. An empty body has no box.
 pub fn bounding_box(
     model: &Model,

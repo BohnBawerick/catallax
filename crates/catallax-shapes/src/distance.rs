@@ -767,5 +767,52 @@ pub fn face_distance(
     search.run(options, dec)
 }
 
+/// Proves two compact trimmed faces at least `ceiling` apart, or finds an
+/// admitted pair nearer than it, within `max_cells` visited cells. The ceiling
+/// acts as an upper bound already attained elsewhere: a cell pair whose covers
+/// are at least that far apart is discarded at once, so faces far from it
+/// settle in few cells. The returned `lower` is proven and reaches the ceiling
+/// exactly when the faces are settled. `witnesses` is set only for an admitted
+/// pair nearer than the ceiling, and `upper` is then that pair's distance;
+/// otherwise `upper` is the ceiling, which no witness here attains.
+pub fn face_distance_below(
+    a: &Domain,
+    b: &Domain,
+    ceiling: &Rational,
+    max_cells: usize,
+    trim_a: &mut dyn Trim,
+    trim_b: &mut dyn Trim,
+    dec: &mut Decider,
+) -> Result<Bounds, Refusal> {
+    if max_cells == 0 {
+        return Err(failure("positive cell count required"));
+    }
+    // A zero width runs until the least cell bound reaches the ceiling.
+    let options = Options {
+        width: q(0),
+        max_cells,
+    };
+    let mut search = Search {
+        domains: [a, b],
+        trims: [trim_a, trim_b],
+        fixed: None,
+        result: Bounds {
+            upper: Some(ceiling.clone()),
+            ..empty_bounds()
+        },
+        queue: BinaryHeap::new(),
+        sequence: 0,
+    };
+    if max_cells < a.charts.len() * b.charts.len() {
+        return Ok(search.result);
+    }
+    for ca in &a.charts {
+        for cb in &b.charts {
+            search.visit([ca.clone(), cb.clone()], dec)?;
+        }
+    }
+    search.run(&options, dec)
+}
+
 #[cfg(test)]
 mod tests;

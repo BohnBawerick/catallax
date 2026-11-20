@@ -321,6 +321,26 @@ fn a_rebuild_resets_a_retained_curve_with_its_use_and_a_stored_body_has_no_tags(
         assert!(same.native_trims().iter().all(|binding| binding.tag == tag));
         assert_eq!(stated(&same), bindings.len());
 
+        // The retained curves dropped and every tag left as it was: the face
+        // copy of each use is now its linear u/v ends, a different copy, so
+        // the uses reset and are measured.
+        let dropped = body.rebuild_with_native_trims(
+            body.definition().clone(),
+            Vec::new(),
+            controls(),
+            &mut dec,
+        );
+        let dropped = dropped.unwrap();
+        assert!(
+            dropped
+                .definition()
+                .faces
+                .iter()
+                .flat_map(|face| face.loops.iter().flatten())
+                .all(|trim| trim.tag == CopyTag::Independent)
+        );
+        assert_eq!(stated(&dropped), 0);
+
         // The 3D curve edited and every tag left as it was: the rebuild
         // cannot show the stated bound still holds, so the uses and their
         // curves reset and are measured.

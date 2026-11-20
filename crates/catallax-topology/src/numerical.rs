@@ -326,8 +326,11 @@ impl NumericalBody {
     /// clone a tagged definition and change one copy without touching the
     /// tag. So a use keeps a derived tag only when this body has a use at the
     /// same face, loop and place with the same tag, the same face surface, the
-    /// same sense and u/v ends, and an edge with the same curve and parameter
-    /// range. A retained u/v curve keeps its tag only when, in addition, this
+    /// same sense and u/v ends, an edge with the same curve and parameter
+    /// range, and the same face copy: the linear u/v ends on both sides, or
+    /// the same retained u/v curve on both sides, so dropping or replacing a
+    /// retained curve resets the use. A retained u/v curve keeps its tag only
+    /// when, in addition, this
     /// body retains the same curve with the same tag for that use, and the
     /// use still states that tag after the reset above, so resetting a use
     /// resets its curve as well. Identity is [`Curve::same_definition`] and
@@ -348,9 +351,14 @@ impl NumericalBody {
                 })
             })
             .filter(|(f, b, u, trim)| {
+                let key = definition.faces[*f].key.as_str();
                 trim.tag != CopyTag::Independent
-                    && same_use(before, definition, *f, *b, *u)
+                    && (same_use(before, definition, *f, *b, *u)
                         .is_none_or(|old| old.tag != trim.tag)
+                        || !same_face_copy(
+                            native_at(&self.native_trims, key, *b, *u),
+                            native_at(&*native_trims, key, *b, *u),
+                        ))
             })
             .map(|(f, b, u, _)| (f, b, u))
             .collect();
@@ -653,6 +661,32 @@ fn same_use<'a>(
         && edge_before.curve.same_definition(&edge.curve)
         && edge_before.parameters == edge.parameters)
         .then_some(old)
+}
+/// The retained u/v curve bound to use `use_index` of loop `boundary` of face
+/// `face`, if any.
+fn native_at<'a>(
+    bindings: &'a [NumericalNativeTrim],
+    face: &str,
+    boundary: usize,
+    use_index: usize,
+) -> Option<&'a NumericalNativeTrim> {
+    bindings
+        .iter()
+        .find(|b| b.face == face && b.boundary == boundary && b.use_index == use_index)
+}
+/// Whether a use's face copy is represented the same way before and after an
+/// edit: by the linear u/v ends on both sides, or by the same retained u/v
+/// curve on both sides. Adding, removing or replacing a retained curve changes
+/// the face copy even when the u/v ends stay.
+fn same_face_copy(
+    before: Option<&NumericalNativeTrim>,
+    after: Option<&NumericalNativeTrim>,
+) -> bool {
+    match (before, after) {
+        (None, None) => true,
+        (Some(a), Some(b)) => a.edge == b.edge && a.curve.same_definition(&b.curve),
+        _ => false,
+    }
 }
 fn keys<'a>(values: impl Iterator<Item = &'a str>, dec: &mut Decider) -> Result<(), Refusal> {
     let mut seen = BTreeSet::new();

@@ -18,30 +18,64 @@
 //! membership of one interior point keeps or drops each piece. Only the curved
 //! face itself is touched, never the rest of the body.
 //!
-//! Tori and spline faces have no polar plane. Their generators need a fitted
-//! curve, which is not built yet; those faces refuse with
-//! `app.contour-surface` rather than returning a partial outline.
+//! A ring torus has no polar plane. Seen along its axis its generators are
+//! the two equator circles, and seen across it the two meridian circles in
+//! the plane through the axis and the top and bottom circles; those are exact
+//! sections and take the quadric path. Every other view gives two closed
+//! branches of degree 8, which `torus.rs` fits and marks approximate
+//! (decision Q14), with exact trims. Spline faces and horn or spindle torus
+//! sheets refuse with `app.contour-surface` rather than returning a partial
+//! outline.
 
 use catallax_boolean::face_contains;
 use catallax_intersect::{
     Component, CurveSurface, Cyclic, SurfacePair, arc_point, curve_is_closed, cyclic_order,
     intersect_curve_surface, intersect_surfaces, on_curve, order_on_curve,
 };
-use catallax_numbers::{Answer, Decider, MarkLog, Outcome, Real, Refusal, StrictOrder};
-use catallax_shapes::{
-    Curve, CurveId, Line, Plane, Point3, PointDef, PointId, RVector3, Surface, SurfaceId, Vector3,
+use catallax_numbers::{
+    Answer, BoundKind, Decider, Mark, MarkLog, Outcome, Rational, Real, Refusal, StrictOrder,
 };
-use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model};
+use catallax_shapes::{
+    Circle, Curve, CurveId, Line, Plane, Point3, PointDef, PointId, RVector3, Surface, SurfaceId,
+    Vector3,
+};
+use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense};
 
 use crate::ApplicationBody;
 use crate::queries::{QueryRefusal, perpendicular, query, sign};
+
+mod fit;
+mod torus;
+
+/// Code of the mark a [`Contours`] answer carries when any arc is fitted. Its
+/// bound is the largest [`ContourFit::tolerance_mm`]: a measured value, not a
+/// proof.
+pub const CONTOUR_FIT_MARK: &str = "app.contour-fitted";
+
+/// How far a fitted arc may lie from the true contour generator. Decision
+/// Q14 marks such pieces approximate; exact arcs have none.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ContourFit {
+    /// The largest distance found between the fitted carrier and the true
+    /// generator at the same parameter, plus its measurement error, in
+    /// millimetres: the reported gap of rule T4.
+    pub deviation_mm: f64,
+    /// The tolerance rule T4 stores for it: 1.1 times the deviation, rounded
+    /// up.
+    pub tolerance_mm: f64,
+    /// Rule T2's fit target the fitter aimed at.
+    pub target_mm: f64,
+    /// Cubic Hermite spans in the fitted carrier.
+    pub spans: usize,
+}
 
 /// One trimmed contour generator.
 #[derive(Clone, Debug)]
 pub struct ContourArc {
     /// Curved face of the queried body whose generator this arc is.
     pub face: FaceId,
-    /// Carrier in [`Contours::model`]: the exact face-plane intersection.
+    /// Carrier in [`Contours::model`]: the exact face-plane intersection, or
+    /// for a fitted arc a cubic B-spline over exactly the arc.
     pub curve: CurveId,
     /// Start of the arc; `None` with `end` for a whole closed curve.
     pub start: Option<PointId>,
@@ -52,6 +86,9 @@ pub struct ContourArc {
     /// along an existing edge, such as the edge between a cylinder and a
     /// tangent plane.
     pub on_faces: Vec<FaceId>,
+    /// `None` for an exact arc. A fitted arc's ends are still the exact
+    /// boundary crossings; its carrier passes within the deviation of them.
+    pub fit: Option<ContourFit>,
 }
 
 /// Contour generators of every curved face of one body for one direction.
@@ -62,6 +99,75 @@ pub struct Contours {
     pub model: Model,
     /// Arcs in face order, then carrier order, then along each carrier.
     pub arcs: Vec<ContourArc>,
+}
+
+/// A plane whose section of a face's surface holds the face's generators.
+struct Section {
+    origin: Point3,
+    normal: Vector3,
+    /// The generator itself where the plane touches the surface along it,
+    /// built directly rather than intersected.
+    carrier: Option<Curve>,
+}
+
+/// Where one face's generators come from.
+enum Generators {
+    /// Plane sections; none for a plane or a cylinder seen along its axis.
+    Sections(Vec<Section>),
+    /// A ring torus seen obliquely: two fitted closed branches.
+    ObliqueTorus,
+}
+
+fn sections(surface: &Surface, d: &Vector3, dec: &mut Decider) -> Result<Generators, Refusal> {
+    if let Surface::Torus(t) = surface {
+        // Along the axis, N.d = cos v (a.d) vanishes on the equator circles
+        // rho = R +- r, the section by the plane through the centre normal to
+        // the axis.
+        if sign(&t.axis.cross(d).norm_squared(), dec)? == 0 {
+            return Ok(Generators::Sections(vec![Section {
+                origin: t.center.clone(),
+                normal: t.axis.clone(),
+                carrier: None,
+            }]));
+        }
+        if sign(&t.axis.dot(d), dec)? != 0 {
+            return Ok(Generators::ObliqueTorus);
+        }
+        // Across the axis, N.d = cos v (e(u).d): the two meridian circles in
+        // the plane through the axis normal to d, and the top and bottom
+        // circles v = +-pi/2, along which the plane normal to the axis at
+        // height +-r touches the torus.
+        let lift = t.axis.scaled(&(&t.minor / &t.axis.norm_squared().sqrt()));
+        let mut sections = vec![Section {
+            origin: t.center.clone(),
+            normal: d.clone(),
+            carrier: None,
+        }];
+        for side in [1, -1] {
+            let center = t.center.plus(&lift.scaled(&Real::from_i64(side)));
+            sections.push(Section {
+                origin: center.clone(),
+                normal: t.axis.clone(),
+                carrier: Some(Curve::Circle(Circle {
+                    center,
+                    normal: t.axis.clone(),
+                    radius_sq: t.major.square(),
+                    ref_dir: t.ref_dir.clone(),
+                })),
+            });
+        }
+        return Ok(Generators::Sections(sections));
+    }
+    Ok(Generators::Sections(
+        polar_plane(surface, d, dec)?
+            .map(|(origin, normal)| Section {
+                origin,
+                normal,
+                carrier: None,
+            })
+            .into_iter()
+            .collect(),
+    ))
 }
 
 /// The polar plane of the point at infinity in direction `d` for the quadric
@@ -113,7 +219,8 @@ fn polar_plane(
         _ => {
             return Err(Refusal::new(
                 "app.contour-surface",
-                "contour generators of tori and spline faces need a fitted curve; unfinished",
+                "contour generators of spline faces and horn or spindle torus sheets need a \
+                 traced curve; unfinished",
             ));
         }
     })
@@ -243,18 +350,21 @@ fn cone_generators(
         .collect())
 }
 
-/// The generators of one quadric face, trimmed to the face.
-#[allow(clippy::too_many_arguments)]
+/// The generators of one face in one plane section, trimmed to the face.
 fn face_generators(
     scratch: &mut Model,
     body_faces: &[FaceId],
     face: FaceId,
-    origin: Point3,
-    normal: Vector3,
+    section: Section,
     arcs: &mut Vec<ContourArc>,
     marks: &mut MarkLog,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
+    let Section {
+        origin,
+        normal,
+        carrier,
+    } = section;
     let ref_dir = perpendicular(&normal, dec)?;
     let plane: SurfaceId = scratch.geom_mut().add_surface(Surface::Plane(Plane {
         origin,
@@ -262,7 +372,9 @@ fn face_generators(
         ref_dir,
     }));
     let support = scratch.face(face).surface;
-    let carriers: Vec<CurveId> = if let Surface::Cone(cone) = scratch.geom().surface(support) {
+    let carriers: Vec<CurveId> = if let Some(curve) = carrier {
+        vec![scratch.geom_mut().add_curve(curve)]
+    } else if let Surface::Cone(cone) = scratch.geom().surface(support) {
         let cone = cone.clone();
         cone_generators(scratch, &cone, &normal_of(scratch, plane), dec)?
     } else {
@@ -273,7 +385,7 @@ fn face_generators(
             SurfacePair::Coincident { .. } => {
                 return Err(Refusal::new(
                     "app.contour-degenerate",
-                    "a quadric face coincides with its polar plane",
+                    "a curved face coincides with its generator plane",
                 ));
             }
             SurfacePair::Meets(components) => components
@@ -348,94 +460,96 @@ fn face_generators(
         } else {
             on.windows(2).map(|w| (Some(w[0]), Some(w[1]))).collect()
         };
-        let mut inside = Vec::with_capacity(pieces.len());
-        let mut interiors = Vec::with_capacity(pieces.len());
+        // Each piece kept by the face, with the faces it lies on. Every
+        // in-plane edge's ends are cuts, so a piece lies along an edge's span
+        // entirely or not at all, and one interior point decides both.
+        let mut labels: Vec<Option<Vec<FaceId>>> = Vec::with_capacity(pieces.len());
         for &(start, end) in &pieces {
             let interior = arc_point(scratch.geom(), carrier, start, end, dec)?;
             marks.extend(&interior.marks);
-            inside.push(face_contains(scratch, face, &interior.value, dec)?);
-            interiors.push(interior.value);
+            labels.push(if face_contains(scratch, face, &interior.value, dec)? {
+                Some(lies_along(
+                    scratch,
+                    body_faces,
+                    face,
+                    &interior.value,
+                    &in_plane,
+                    dec,
+                )?)
+            } else {
+                None
+            });
         }
-        // Merge runs of kept pieces. On a closed carrier a run may wrap
-        // round; a carrier kept everywhere is one whole closed arc.
+        // Merge runs of neighbouring kept pieces that lie on the same faces,
+        // so that `on_faces` holds along the whole arc. On a closed carrier a
+        // run may wrap round; a carrier kept everywhere on one set of faces
+        // is one whole closed arc.
         let n = pieces.len();
-        if inside.iter().all(|&kept| kept) && closed {
-            push_arc(
-                scratch,
-                body_faces,
-                face,
-                carrier,
-                (None, None),
-                &interiors[0],
-                &in_plane,
-                arcs,
-                dec,
-            )?;
+        let arc = |span: (Option<PointId>, Option<PointId>), on: &Option<Vec<FaceId>>| ContourArc {
+            face,
+            curve: carrier,
+            start: span.0,
+            end: span.1,
+            on_faces: on.clone().expect("a kept piece"),
+            fit: None,
+        };
+        if closed && labels[0].is_some() && labels.iter().all(|l| *l == labels[0]) {
+            arcs.push(arc((None, None), &labels[0]));
             continue;
         }
+        // Start a closed carrier where one run ends and another begins.
         let first = if closed {
-            inside
-                .iter()
-                .position(|&kept| !kept)
-                .map_or(0, |i| (i + 1) % n)
+            (0..n)
+                .find(|&i| labels[i] != labels[(i + n - 1) % n])
+                .unwrap_or(0)
         } else {
             0
         };
         let mut run: Option<(usize, usize)> = None;
         for step in 0..n {
             let i = (first + step) % n;
-            if inside[i] {
+            if let Some((s, e)) = run
+                && labels[i] != labels[s]
+            {
+                arcs.push(arc((pieces[s].0, pieces[e].1), &labels[s]));
+                run = None;
+            }
+            if labels[i].is_some() {
                 run = Some(run.map_or((i, i), |(s, _)| (s, i)));
             }
-            if (!inside[i] || step + 1 == n)
-                && let Some((s, e)) = run.take()
-            {
-                let span = (pieces[s].0, pieces[e].1);
-                push_arc(
-                    scratch,
-                    body_faces,
-                    face,
-                    carrier,
-                    span,
-                    &interiors[s],
-                    &in_plane,
-                    arcs,
-                    dec,
-                )?;
-            }
+        }
+        if let Some((s, e)) = run {
+            arcs.push(arc((pieces[s].0, pieces[e].1), &labels[s]));
         }
     }
     Ok(())
 }
 
-/// Records one kept arc and the faces it lies on: its own face, and the far
-/// face of any in-plane boundary edge that carries its interior point.
-#[allow(clippy::too_many_arguments)]
-fn push_arc(
+/// The faces a kept piece lies on: its own face, and both faces of every
+/// in-plane boundary edge whose span holds the piece's interior point. The
+/// span decides, not the edge's carrier alone: two edges on one line can
+/// border different faces.
+fn lies_along(
     scratch: &mut Model,
     body_faces: &[FaceId],
     face: FaceId,
-    curve: CurveId,
-    (start, end): (Option<PointId>, Option<PointId>),
     interior: &Point3,
     in_plane: &[EdgeId],
-    arcs: &mut Vec<ContourArc>,
     dec: &mut Decider,
-) -> Result<(), Refusal> {
+) -> Result<Vec<FaceId>, Refusal> {
     let mut on = vec![face];
     if !in_plane.is_empty() {
         let probe = scratch
             .geom_mut()
             .add_point(PointDef::Explicit(interior.clone()));
         for &edge in in_plane {
-            if !lies_on(scratch, scratch.edge(edge).curve, probe, dec)? {
+            if !on_edge_span(scratch, edge, probe, dec)? {
                 continue;
             }
             for coedge in scratch.coedges_of_edge(edge) {
                 if let Some((_, other)) = scratch.owner_of_coedge(coedge)
                     && !on.contains(&other)
                     && body_faces.contains(&other)
-                    && face_contains(scratch, other, interior, dec)?
                 {
                     on.push(other);
                 }
@@ -443,27 +557,71 @@ fn push_arc(
         }
     }
     on.sort_by_key(|f| body_faces.iter().position(|g| g == f));
-    arcs.push(ContourArc {
-        face,
-        curve,
-        start,
-        end,
-        on_faces: on,
-    });
-    Ok(())
+    Ok(on)
+}
+
+/// Whether `point`, which is not a vertex, lies on the span of `edge`: on its
+/// carrier, and on an open carrier between its two vertices, on a closed one
+/// on the arc its sense runs from its start vertex to its end vertex.
+fn on_edge_span(
+    scratch: &Model,
+    edge: EdgeId,
+    point: PointId,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    let stored = scratch.edge(edge);
+    let curve = stored.curve;
+    if !lies_on(scratch, curve, point, dec)? {
+        return Ok(false);
+    }
+    let (Some(start), Some(end)) = (stored.start, stored.end) else {
+        // An edge without vertices is its whole closed carrier.
+        return Ok(true);
+    };
+    let (start, end) = (scratch.vertex(start).point, scratch.vertex(end).point);
+    let geom = scratch.geom();
+    if curve_is_closed(geom, curve, dec)? {
+        if same_point(scratch, start, end, dec)? {
+            return Ok(true);
+        }
+        let order = match stored.sense {
+            Sense::Same => [start, point, end],
+            Sense::Reversed => [end, point, start],
+        };
+        return match cyclic_order(geom, curve, order, dec) {
+            Outcome::Proven(order) => Ok(order == Cyclic::Forward),
+            Outcome::ProvenCoincident(_) => Ok(false),
+            Outcome::NotExact(n) => Err(Refusal::from(n)),
+            Outcome::Refused(r) => Err(r),
+        };
+    }
+    let mut order = |a: PointId, b: PointId| match order_on_curve(geom, curve, a, b, dec) {
+        Outcome::Proven(order) => Ok(Some(order)),
+        Outcome::ProvenCoincident(_) => Ok(None),
+        Outcome::NotExact(n) => Err(Refusal::from(n)),
+        Outcome::Refused(r) => Err(r),
+    };
+    let (before, after) = (order(start, point)?, order(point, end)?);
+    Ok(before.is_some() && before == after)
 }
 
 /// Contour generators of every curved face of `body` seen along `direction`,
 /// which points toward the viewer. Only its line matters: the generators of a
-/// direction and its reverse are the same. Each arc is exact: its carrier is
-/// the exact intersection of the face's quadric with the polar plane, and its
-/// ends are exact points where the face boundary crosses that plane.
-/// Isolated generator points, such as a cone apex seen from inside the cone's
-/// angle, draw nothing and are left out.
+/// direction and its reverse are the same. On quadrics, and on a torus seen
+/// along or across its axis, each arc is exact: its carrier is the exact
+/// intersection of the face's surface with a plane, and its ends are exact
+/// points where the face boundary crosses that plane. On a torus seen
+/// obliquely each arc is fitted: its ends are exact, its carrier is a cubic
+/// B-spline within [`ContourFit::deviation_mm`] of the true generator, and the
+/// answer carries a [`CONTOUR_FIT_MARK`] mark. Isolated generator points, such
+/// as a cone apex seen from inside the cone's angle, draw nothing and are left
+/// out.
 ///
 /// Arcs are not split where they cross in projection and carry no
-/// visibility; hiding is a separate step. A torus or spline face refuses the
-/// whole query with `app.contour-surface`.
+/// visibility; hiding is a separate step. A spline face or a horn or spindle
+/// torus sheet refuses the whole query with `app.contour-surface`; an oblique
+/// torus face bounded by anything other than its parallels and meridians
+/// refuses with `app.contour-trim`.
 pub fn contour_generators(
     model: &Model,
     body: BodyId,
@@ -480,29 +638,66 @@ pub fn contour_generators(
         }
         let d = direction.to_real();
         let faces = model.faces_of_body(body);
-        let mut polar = Vec::new();
+        let mut jobs = Vec::new();
         for &face in &faces {
             dec.check_deadline()?;
-            if let Some((origin, normal)) =
-                polar_plane(model.geom().surface(model.face(face).surface), &d, dec)?
-            {
-                polar.push((face, origin, normal));
+            match sections(model.geom().surface(model.face(face).surface), &d, dec)? {
+                Generators::Sections(sections) => {
+                    jobs.extend(sections.into_iter().map(|s| (face, Some(s))));
+                }
+                Generators::ObliqueTorus => jobs.push((face, None)),
             }
         }
         let mut scratch = model.clone();
         let mut marks = model.body(body).marks.clone();
         let mut arcs = Vec::new();
-        for (face, origin, normal) in polar {
-            face_generators(
-                &mut scratch,
-                &faces,
-                face,
-                origin,
-                normal,
-                &mut arcs,
-                &mut marks,
-                dec,
-            )?;
+        for (face, section) in jobs {
+            match section {
+                Some(section) => face_generators(
+                    &mut scratch,
+                    &faces,
+                    face,
+                    section,
+                    &mut arcs,
+                    &mut marks,
+                    dec,
+                )?,
+                None => {
+                    let Surface::Torus(t) = scratch.geom().surface(scratch.face(face).surface)
+                    else {
+                        unreachable!("only a ring torus is fitted");
+                    };
+                    let t = t.clone();
+                    torus::oblique_generators(
+                        &mut scratch,
+                        face,
+                        &t,
+                        &d,
+                        &mut arcs,
+                        &mut marks,
+                        dec,
+                    )?;
+                }
+            }
+        }
+        let worst = arcs
+            .iter()
+            .filter_map(|arc| arc.fit.as_ref().map(|f| f.tolerance_mm))
+            .reduce(f64::max);
+        if let Some(worst) = worst {
+            let bound = Rational::from_f64_exact(worst).ok_or_else(|| {
+                Refusal::new(
+                    "app.contour-fit",
+                    "a fitted contour generator has a nonfinite tolerance",
+                )
+            })?;
+            marks.push(Mark::new(
+                CONTOUR_FIT_MARK,
+                BoundKind::Distance,
+                bound,
+                "fitted contour generators: rule T4 tolerance of the largest measured \
+                 deviation, not a proof",
+            ));
         }
         Ok(Answer::with_marks(
             Contours {

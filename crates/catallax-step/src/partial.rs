@@ -16,6 +16,27 @@ pub(crate) struct Prepared {
     edge_map: BTreeMap<EdgeId, Vec<EdgeId>>,
 }
 
+impl Prepared {
+    /// Manufacturing information with each face named as this copy names it.
+    pub(crate) fn pmi(&self, pmi: &crate::pmi::Pmi<FaceId>) -> crate::pmi::Pmi<FaceId> {
+        let mapped = pmi.try_map(|_, face| {
+            Ok::<_, std::convert::Infallible>(self.face_map.get(face).copied().unwrap_or(*face))
+        });
+        match mapped {
+            Ok(pmi) => pmi,
+            Err(never) => match never {},
+        }
+    }
+
+    /// The source face of each face this copy replaced.
+    pub(crate) fn source_faces(&self) -> BTreeMap<FaceId, FaceId> {
+        self.face_map
+            .iter()
+            .map(|(source, copy)| (*copy, *source))
+            .collect()
+    }
+}
+
 /// Preserve the legacy encoder for scenes outside the regular-chart contract,
 /// and for complete bands already handled without changing their STEP bytes.
 /// With `reframe`, every trimmed spherical face is first moved onto its

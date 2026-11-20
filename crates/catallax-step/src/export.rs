@@ -109,6 +109,9 @@ pub(crate) struct Exporter<'a> {
     rational_faces: BTreeMap<FaceId, [rational_patch::Row; 4]>,
     fillet_edges: BTreeMap<EdgeId, spline_fillet::Plan>,
     trimmed_faces: std::collections::BTreeSet<FaceId>,
+    /// The written `ADVANCED_FACE` entities of each model face.
+    written_faces: BTreeMap<FaceId, Vec<Id>>,
+    pmi: Option<crate::pmi::Pmi<FaceId>>,
 }
 
 impl<'a> Exporter<'a> {
@@ -141,7 +144,15 @@ impl<'a> Exporter<'a> {
             rational_faces: BTreeMap::new(),
             fillet_edges: BTreeMap::new(),
             trimmed_faces: std::collections::BTreeSet::new(),
+            written_faces: BTreeMap::new(),
+            pmi: None,
         }
+    }
+
+    /// Writes this manufacturing information with the body.
+    pub(crate) fn pmi(mut self, pmi: Option<crate::pmi::Pmi<FaceId>>) -> Self {
+        self.pmi = pmi;
+        self
     }
     pub(crate) fn face_regions(mut self, enabled: bool) -> Self {
         self.face_regions = enabled;
@@ -1647,7 +1658,7 @@ impl<'a> Exporter<'a> {
         self.deviation(error);
         let name = self.face_name(id);
         self.report.faces += 1;
-        Ok(self.graph.add(
+        let written = self.graph.add(
             "ADVANCED_FACE",
             vec![
                 name,
@@ -1655,7 +1666,9 @@ impl<'a> Exporter<'a> {
                 surface_id.into(),
                 boolean(pipe_same.unwrap_or((face.sense == Sense::Same) != reverse)),
             ],
-        ))
+        );
+        self.written_faces.entry(id).or_default().push(written);
+        Ok(written)
     }
 
     fn shell(
@@ -1704,6 +1717,29 @@ impl<'a> Exporter<'a> {
             }
         }
         uses.values().all(|counts| *counts == [1, 1])
+    }
+
+    /// The entities of the part's manufacturing information, added after
+    /// every face is written. Each dimension's nominal is measured here.
+    fn annotations(&mut self, pmi: &crate::pmi::Pmi<FaceId>) -> Result<Vec<Id>, Refusal> {
+        pmi.validate()?;
+        let digits = self.digits();
+        let mut nominals = Vec::with_capacity(pmi.items.len());
+        for value in crate::pmi::nominals(self.model, pmi, self.dec)? {
+            nominals.push(match value {
+                Some(value) => Some(number::decimal(
+                    &number::real(&value, digits, self.dec)?.text,
+                )),
+                None => None,
+            });
+        }
+        crate::pmi::emit(
+            &mut self.graph,
+            self.model,
+            &self.written_faces,
+            pmi,
+            &nominals,
+        )
     }
 
     pub(crate) fn build(self, bodies: &[BodyId]) -> Answered<(String, StepReport)> {
@@ -1798,7 +1834,13 @@ impl<'a> Exporter<'a> {
                             let (face_errors, edge_errors) =
                                 prepared.errors(self.face_errors.clone(), self.edge_errors.clone());
                             let envelope = envelope.map(|_| prepared.bodies[bodies.len()]);
+                            // Manufacturing information follows its faces into the
+                            // charted copy, and the report names the faces it was given.
+                            let pmi = self.pmi.as_ref().map(|pmi| prepared.pmi(pmi));
+                            let sources = prepared.source_faces();
                             Exporter::new(&prepared.model, self.options, self.dec)
+                                .face_regions(pmi.is_some())
+                                .pmi(pmi)
                                 .fillet_scope(self.fillet)
                                 .regularizations(
                                     self.report.regularizations.clone(),
@@ -1807,7 +1849,14 @@ impl<'a> Exporter<'a> {
                                 )
                                 .charts(prepared.plan)
                                 .build_parts(&prepared.bodies[..bodies.len()], envelope)
-                                .map(Some)
+                                .map(|mut answer| {
+                                    for region in &mut answer.value.1.face_map {
+                                        if let Some(source) = sources.get(&region.face) {
+                                            region.face = *source;
+                                        }
+                                    }
+                                    Some(answer)
+                                })
                         });
                     match charted {
                         Ok(Some(answer))
@@ -1940,7 +1989,11 @@ impl<'a> Exporter<'a> {
             .clone()
             .max(self.report.max_deviation.clone());
         let uncertainty = number::decimal(&uncertainty.to_decimal_bounds(self.digits()).1);
-        let mut output = self.graph.write(&solids, |numbers| {
+        let annotations = match self.pmi.take() {
+            Some(pmi) => self.annotations(&pmi)?,
+            None => Vec::new(),
+        };
+        let mut output = self.graph.write_with(&solids, &annotations, |numbers| {
             if envelope.is_some() {
                 stand_in_header(&self.options.product_name, numbers, &uncertainty)
             } else if surfaces || wires {

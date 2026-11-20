@@ -44,7 +44,7 @@ pub(super) fn write<W: Write>(
             expanded.push(*body);
         }
     }
-    let mut answer = write_prepared(&prepared, &expanded, options, dec, out, true)?;
+    let mut answer = write_prepared(&prepared, &expanded, options, dec, out, true, None)?;
     answer.value.added_edges += added_edges;
     answer.value.added_vertices += added_vertices;
     for region in &mut answer.value.face_map {

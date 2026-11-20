@@ -788,10 +788,12 @@ impl Exporter<'_> {
                 }
             }
             let name = self.face_name(id);
-            faces.push(self.graph.add(
+            let written = self.graph.add(
                 "ADVANCED_FACE",
                 vec![name, refs(bounds), surface.into(), boolean(same)],
-            ));
+            );
+            self.written_faces.entry(id).or_default().push(written);
+            faces.push(written);
             self.report.faces += 1;
         }
         Ok(())

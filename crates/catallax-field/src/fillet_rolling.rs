@@ -30,8 +30,14 @@ use crate::{Plan, geometry};
 pub(super) struct Run {
     pub(super) piece: Piece,
     faces: [usize; 2],
-    // End faces of a straight run, which bound it rather than overflow it.
+    // Faces proven not to overflow the run: end faces of a straight run,
+    // which bound it, and a rim's mouths.
     ends: Vec<usize>,
+}
+impl Run {
+    pub(super) fn new(piece: Piece, faces: [usize; 2], ends: Vec<usize>) -> Self {
+        Self { piece, faces, ends }
+    }
 }
 
 /// Whether the rolling route takes this support pair: a plane with a cylinder,
@@ -99,7 +105,7 @@ fn reach_refusal(detail: &str) -> Refusal {
     Refusal::new("field.rolling-path-reach", detail)
 }
 
-fn oriented(value: &Real, detail: &str, dec: &mut Decider) -> Result<bool, Refusal> {
+pub(super) fn oriented(value: &Real, detail: &str, dec: &mut Decider) -> Result<bool, Refusal> {
     match geometry::sign(value, dec)? {
         Sign::Positive => Ok(true),
         Sign::Negative => Ok(false),
@@ -108,13 +114,13 @@ fn oriented(value: &Real, detail: &str, dec: &mut Decider) -> Result<bool, Refus
 }
 
 /// The component of `v` perpendicular to `axis`.
-fn radial(v: &Vector3, axis: &Vector3) -> Vector3 {
+pub(super) fn radial(v: &Vector3, axis: &Vector3) -> Vector3 {
     v.minus(&axis.scaled(&(&v.dot(axis) / &axis.norm_squared())))
 }
 
 /// A point on a closed edge, the end of its first axis, when it has no
 /// rational point.
-fn algebraic_sample(edge: &Curve) -> Option<Point3> {
+pub(super) fn algebraic_sample(edge: &Curve) -> Option<Point3> {
     match edge {
         Curve::Circle(c) => Some(
             c.center
@@ -129,7 +135,7 @@ fn algebraic_sample(edge: &Curve) -> Option<Point3> {
 }
 
 /// A rational point on a closed edge: an end of either axis.
-fn loop_sample(edge: &Curve) -> Option<Point3> {
+pub(super) fn loop_sample(edge: &Curve) -> Option<Point3> {
     let (centre, axes) = match edge {
         Curve::Circle(c) => {
             let r = square_root(&c.radius_sq);
@@ -163,7 +169,7 @@ fn loop_sample(edge: &Curve) -> Option<Point3> {
 }
 
 impl Plan {
-    fn blend_origin(&self, faces: [usize; 2], step: &StepId) -> Result<Origin, Refusal> {
+    pub(super) fn blend_origin(&self, faces: [usize; 2], step: &StepId) -> Result<Origin, Refusal> {
         let edge = EdgeName::new(
             self.faces[faces[0]].origin.clone(),
             self.faces[faces[1]].origin.clone(),
@@ -179,7 +185,7 @@ impl Plan {
     /// rebuilt from the same gradients. For a convex edge the senses mark the
     /// supports whose gradient points away from the ball, for a concave one
     /// those whose gradient points toward it.
-    fn ball_direction(
+    pub(super) fn ball_direction(
         &self,
         faces: [usize; 2],
         p: &Point3,
@@ -196,7 +202,11 @@ impl Plan {
         Ok(da.scaled(&sa).plus(&db.scaled(&sb)))
     }
 
-    fn flat(surface: &Surface, ball: &Vector3, dec: &mut Decider) -> Result<Option<Flat>, Refusal> {
+    pub(super) fn flat(
+        surface: &Surface,
+        ball: &Vector3,
+        dec: &mut Decider,
+    ) -> Result<Option<Flat>, Refusal> {
         let Surface::Plane(plane) = surface else {
             return Ok(None);
         };

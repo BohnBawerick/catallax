@@ -845,46 +845,12 @@ impl Saddle {
         }
         // Moving boxes needs exact corners; the panel boxes and the band are
         // rebuilt from their rational corners.
-        // A box's image is held by the box of its moved corners, each widened
-        // to its certified binary64 bounds; a corner without finite bounds
-        // drops the band to a box no region reaches past.
-        let move_box = |b: &[[Rational; 2]; 3]| -> [[Rational; 2]; 3] {
-            let far = Rational::from_i64(1 << 40);
-            let mut moved: Option<[[Rational; 2]; 3]> = None;
-            for corner in 0..8 {
-                let [x, y, z] = std::array::from_fn(|i| b[i][(corner >> i) & 1].clone());
-                let image = pose.apply_point(&catallax_shapes::RPoint3::new(x, y, z).to_real());
-                let c = [image.x, image.y, image.z].map(|v| {
-                    if let Some(v) = v.as_rational() {
-                        return [v.clone(), v];
-                    }
-                    let e = v.approx();
-                    match (
-                        Rational::from_f64_exact(e.lo()),
-                        Rational::from_f64_exact(e.hi()),
-                    ) {
-                        (Some(lo), Some(hi)) => [lo, hi],
-                        _ => [-&far, far.clone()],
-                    }
-                });
-                moved = Some(match moved {
-                    None => c,
-                    Some(m) => std::array::from_fn(|i| {
-                        [
-                            m[i][0].clone().min(c[i][0].clone()),
-                            m[i][1].clone().max(c[i][1].clone()),
-                        ]
-                    }),
-                });
-            }
-            moved.expect("eight corners")
-        };
-        self.band = move_box(&self.band);
+        self.band = super::moved_box(pose, &self.band);
         self.boxes = self
             .boxes
             .iter()
             .map(|b| {
-                let m = move_box(&b.each_ref().map(|x| [x.lo(), x.hi()]));
+                let m = super::moved_box(pose, &b.each_ref().map(|x| [x.lo(), x.hi()]));
                 m.map(|[lo, hi]| interval(&lo, &hi))
             })
             .collect();

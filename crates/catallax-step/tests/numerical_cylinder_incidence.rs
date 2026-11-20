@@ -429,6 +429,21 @@ fn tilted_circle_skip_path_retains_its_checked_endpoint_height_slope() {
         .filter(|e| matches!(e.curve, Curve::Circle(_)))
         .map(|e| e.key.clone())
         .collect();
+    // The two end heights of each circle along the cylinder axis, read off
+    // its vertices before the rigid rotation, which keeps them. The emitted
+    // admission record holds one measured sample, not the two ends.
+    let end_heights: Vec<_> = definition
+        .edges
+        .iter()
+        .filter(|e| matches!(e.curve, Curve::Circle(_)))
+        .map(|e| {
+            let mut heights = e
+                .vertices
+                .map(|v| definition.vertices[v].position[2].clone());
+            heights.sort();
+            heights
+        })
+        .collect();
     let face_key = definition.faces.last().unwrap().key.clone();
     let body = n::build(
         oblique_axis(definition),
@@ -444,23 +459,8 @@ fn tilted_circle_skip_path_retains_its_checked_endpoint_height_slope() {
     .unwrap();
     file.check_written(file.bytes(), &mut Decider::default())
         .unwrap();
-    for key in &circle_keys {
+    for (key, original) in circle_keys.iter().zip(&end_heights) {
         let checks = file.report().emitted_evidence.checks();
-        let canonical = checks
-            .iter()
-            .find_map(|check| match check {
-                NumericalCheck::Samples {
-                    name,
-                    scope,
-                    samples,
-                } if name == "trim.edge-surface-distance"
-                    && scope.starts_with(&format!("face {face_key:?}, edge {key:?},")) =>
-                {
-                    Some(samples)
-                }
-                _ => None,
-            })
-            .unwrap();
         let actual = checks
             .iter()
             .find_map(|check| match check {
@@ -484,7 +484,6 @@ fn tilted_circle_skip_path_retains_its_checked_endpoint_height_slope() {
             values.sort();
             values
         };
-        let original = heights(canonical);
         let written = heights(actual);
         assert_ne!(
             original[0], original[1],

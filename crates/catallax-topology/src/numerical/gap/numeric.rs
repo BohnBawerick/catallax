@@ -27,7 +27,7 @@ const TAYLOR_TERMS: u32 = 9;
 pub(super) const TRIG_ROUNDINGS: f64 = 4.0;
 
 /// Source: a turn has four quadrants of pi / 2.
-const QUADRANTS: f64 = 4.0;
+pub(super) const QUADRANTS: f64 = 4.0;
 
 /// Sine and cosine from basic operations only: Cody-Waite reduction to
 /// [-pi/4, pi/4], then Taylor sums.
@@ -168,6 +168,44 @@ pub(super) fn bezier_piece<const D: usize>(
             blossom(knots, degree, controls, span, &arguments)
         })
         .collect()
+}
+
+/// Bernstein coefficients on `[0, 1]` of a polynomial given by its power
+/// coefficients: `b_i = sum over j <= i of C(i, j) / C(n, j) c_j`.
+/// Source: Farouki and Rajan, "Algorithms for polynomials in Bernstein
+/// form", Computer Aided Geometric Design 5, 1988.
+pub(super) fn bernstein_from_power(power: &[f64]) -> Vec<f64> {
+    let n = power.len() - 1;
+    (0..=n)
+        .map(|i| {
+            // C(i, j) / C(n, j), stepped from j to j + 1.
+            let mut ratio = 1.0;
+            let mut sum = 0.0;
+            for (j, coefficient) in power.iter().enumerate().take(i + 1) {
+                sum += ratio * coefficient;
+                if j < i {
+                    ratio *= (i - j) as f64 / (n - j) as f64;
+                }
+            }
+            sum
+        })
+        .collect()
+}
+
+/// Source: Newton's method on `sin x - z cos x`, whose root is the
+/// arctangent of `z`. The function is a sine about its root, so from
+/// `x = z` in `[0, 1]` the error falls from under 0.22 to under 1e-24 in
+/// three steps. The fourth is spare.
+const ARCTANGENT_STEPS: u32 = 4;
+
+/// The arctangent of `z` in `[0, 1]`, from the module's own sine and cosine.
+pub(super) fn arctangent(z: f64) -> f64 {
+    let mut x = z;
+    for _ in 0..ARCTANGENT_STEPS {
+        let (sine, cosine) = sin_cos(x);
+        x -= (sine - z * cosine) / (cosine + z * sine);
+    }
+    x
 }
 
 /// Source: judgement. Forty halvings locate a crossing to 2^-40 of its
@@ -558,6 +596,19 @@ mod tests {
             .map(|s| [(-((s - 0.4137) / 0.05).powi(2)).exp(), 0.0, 0.0])
             .collect();
         assert!(chebyshev_tail(&spike) > 1e-3);
+    }
+
+    #[test]
+    fn the_arctangent_and_the_bernstein_form_match_their_definitions() {
+        for z in [0.0, 1e-9, 0.25, 0.5, 0.999, 1.0] {
+            assert!((arctangent(z) - f64::atan(z)).abs() <= 2.0 * f64::EPSILON);
+        }
+        // (1 - z)^2 (1 + z) = 1 - z - z^2 + z^3 has Bernstein coefficients
+        // 1, 2/3, 0, 0.
+        let bernstein = bernstein_from_power(&[1.0, -1.0, -1.0, 1.0]);
+        for (found, expected) in bernstein.iter().zip([1.0, 2.0 / 3.0, 0.0, 0.0]) {
+            assert!((found - expected).abs() <= 2.0 * f64::EPSILON);
+        }
     }
 
     #[test]

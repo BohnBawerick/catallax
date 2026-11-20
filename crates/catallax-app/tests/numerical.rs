@@ -56,8 +56,11 @@ fn general_trim_returns_checked_geometry_with_scoped_samples_not_complete_bounds
         );
         assert_eq!(body.evidence().tolerance_mm(), &q("0.01"));
         assert!(body.evidence().repairs().is_empty());
+        // One record per edge use: where the gap is largest, and the
+        // tolerance stored for it, 1.1 times the gap plus its allowance.
+        let margin = q("11/10");
         let roof_samples = samples(&body);
-        assert_eq!(roof_samples.len(), 36);
+        assert_eq!(roof_samples.len(), 4);
         // Independent formula for the retained graph. Its unit-square trim is
         // strictly inside the carrier, rather than one of its complete rows.
         for sample in &roof_samples {
@@ -69,16 +72,17 @@ fn general_trim_returns_checked_geometry_with_scoped_samples_not_complete_bounds
                 * v.clone()
                 * (q("1") - v.clone())
                 * q(delta);
+            let expected = &margin * &expected;
             assert!(sample.distance_upper_mm >= expected);
-            assert!(&sample.distance_upper_mm - &expected < q("1e-25"));
+            assert!(&sample.distance_upper_mm - &expected < q("1e-12"));
         }
-        let expected = if delta == "0" { q("0") } else { q("1/4500") };
+        let expected = &margin * &(if delta == "0" { q("0") } else { q("1/4500") });
         let measured = roof_samples
             .iter()
             .map(|s| s.distance_upper_mm.clone())
             .max()
             .unwrap();
-        assert!(measured >= expected && &measured - &expected < q("1e-25"));
+        assert!(measured >= expected && &measured - &expected < q("1e-12"));
         let faults = body.exact_topology_faults();
         assert!(!faults.is_empty());
         assert!(
@@ -166,7 +170,7 @@ fn surface_edit_rechecks_samples_keeps_keys_and_refuses_atomically() {
         .map(|s| s.distance_upper_mm.clone())
         .max()
         .unwrap();
-    assert!(maximum >= q("1/2250") && &maximum - &q("1/2250") < q("1e-25"));
+    assert!(maximum >= q("11/22500") && &maximum - &q("11/22500") < q("1e-12"));
     let failed = original
         .replace_surface("roof", roof("0.1"), &mut Decider::default())
         .unwrap_err();
@@ -362,7 +366,7 @@ fn concave_interior_trim_keeps_all_six_edges_on_the_curved_carrier() {
         .find(|f| f.key == "roof")
         .unwrap();
     assert_eq!(roof.loops[0].len(), 6);
-    assert_eq!(samples(&body).len(), 54);
+    assert_eq!(samples(&body).len(), 6);
     // The retained boundary includes the reentrant physical corner (0.4, 0.4).
     assert!(
         roof.loops[0]

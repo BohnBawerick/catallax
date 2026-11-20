@@ -17,6 +17,7 @@ use crate::{
 mod analytic;
 mod atlas;
 mod curved;
+mod edge_gap;
 /// The edge-gap checker: the largest distance between an edge's two copies.
 pub mod gap;
 mod handover;
@@ -106,7 +107,9 @@ pub struct NumericalDefinition {
 /// Stated controls, fixed before a numerical build starts.
 #[derive(Clone, Debug, PartialEq, Eq, catallax_numbers::Transfer)]
 pub struct NumericalOptions {
-    /// Maximum accepted distance at each checked location, in millimetres.
+    /// The largest tolerance an edge use may store, and the largest distance
+    /// accepted at every other checked location, in millimetres. An edge use
+    /// stores 1.1 times its measured gap (rule T4 of the tolerance rules).
     /// This is not a promised global deviation bound.
     pub tolerance_mm: Rational,
 }
@@ -138,30 +141,36 @@ impl Default for NumericalOptions {
 /// - A structurally closed, consistently oriented shell with simple finite u/v
 ///   loops and all endpoint/trim samples within tolerance returns this type.
 /// - Zero sampled residual still returns a numerical body, never an exact proof.
-/// - A sampled maximum of 1/4500 mm passes a 0.01 mm tolerance; 1/45 mm refuses.
+/// - A measured gap of 1/4500 mm passes a 0.01 mm tolerance; 1/45 mm refuses.
 /// - A missing coedge, crossing checked u/v polygon, reversed loop, missing trim,
 ///   unsupported carrier, or exhausted work refuses, even if other samples pass.
 /// - A vertex repair records its before/after positions and point displacement;
 ///   no repair is an explicit empty history. Historical distances do not become
 ///   a bound on the current body.
 ///
-/// Nine equally spaced locations per coedge, including its endpoints, are checked
-/// against its retained face parameters. Planar circular/spline edges use projected curve
-/// samples; other ordinary trims use their linear u/v segment. Retained native
-/// UV curves use endpoints and eight subdivisions of each clipped 3D/UV knot
-/// span at the same finite native parameter. Their endpoint correspondence is
-/// checked in millimetres against the declared loop endpoints. Every edge endpoint is
-/// checked against its vertex. These are pointwise distance enclosures, not bounds
-/// between samples. Projected or retained native UV walks keep their sampled
-/// simplicity checks. Complete planar circular boundaries additionally receive
-/// continuous projected-disk clearance checks, not chord-polygon pair tests.
-/// Other curved boundary containment remains sampled and explicitly unresolved
-/// between nodes.
+/// Every edge use is measured by [`gap::measure`]: the largest distance
+/// between the edge's 3D curve and its face copy at the same parameter. A
+/// retained native UV curve is the face copy where one exists. A circle or
+/// spline on a plane is measured against the plane, and its two declared end
+/// values are measured as well. Other ordinary trims use their linear u/v
+/// segment. The record of a use holds one sample: the parameter of the
+/// largest gap and the tolerance stored for it, 1.1 times the gap plus its
+/// measurement error. A stored tolerance above the body's limit refuses. A
+/// value within its binary64 rounding error of the limit is decided on a
+/// 128-bit enclosure at that parameter; nothing else raises the precision. This is a search for the maximum, not a proof
+/// of one: see `docs/milestones/3.0A-edge-gap-checker.md` for what it can miss.
+/// Native UV curves also have their endpoint correspondence checked in
+/// millimetres against the declared loop endpoints. Every edge endpoint is
+/// checked against its vertex. Projected or retained native UV walks keep
+/// their sampled simplicity checks. Complete planar circular boundaries
+/// additionally receive continuous projected-disk clearance checks, not
+/// chord-polygon pair tests. Other curved boundary containment remains
+/// sampled and explicitly unresolved between nodes.
 /// Explicitly declared numerical atlas carriers use a 9 by 9 chart-box grid
 /// and nine UV-walk locations per coedge for face-local checks. Their evidence
 /// says numerical samples, never continuous filled-box or curved-loop proof.
-/// Incident face-pairs use nine native edge parameters for labelled numerical
-/// distance samples. Exact-exact pairs retain the full native-knot-span grid.
+/// Edge uses on such a carrier are measured like every other use and keep
+/// their own labelled check names.
 /// Other face-local checks keep their original path; incidence stays unchanged.
 /// The checks do not establish whole-body separation, global self-intersection
 /// freedom or a whole-body approximation bound. They grant no STEP export authority.
@@ -824,9 +833,9 @@ fn build_inner_kind(
         {
             let edge = &definition.edges[trim.edge];
             let numerical_pair = native.numerical_pair(trim.edge);
-            if let Some(curve) = native.get(face_index, boundary_index, use_index) {
-                let (samples, endpoints) =
-                    native::samples(face, trim, edge, curve, numerical_pair, dec)?;
+            let curve = native.get(face_index, boundary_index, use_index);
+            let scope = format!("face {:?}, edge {:?}, use {index}", face.key, edge.key);
+            if let Some(curve) = curve {
                 checks.push(NumericalCheck::Samples {
                     name: if numerical_pair {
                         "trim.numerical-pair-native-endpoint-position"
@@ -834,60 +843,12 @@ fn build_inner_kind(
                         "trim.native-endpoint-position"
                     }
                     .into(),
-                    scope: format!("face {:?}, edge {:?}, use {index}", face.key, edge.key),
-                    samples: endpoints,
-                });
-                checks.push(NumericalCheck::Samples {
-                    name: if numerical_pair {
-                        "trim.numerical-pair-edge-surface-distance"
-                    } else {
-                        "trim.edge-surface-distance"
-                    }
-                    .into(),
-                    scope: format!("face {:?}, edge {:?}, use {index}", face.key, edge.key),
-                    samples,
-                });
-                continue;
-            }
-            let [a, b] = if trim.sense == Sense::Same {
-                edge.parameters.each_ref()
-            } else {
-                [&edge.parameters[1], &edge.parameters[0]]
-            };
-            let mut samples = Vec::new();
-            for i in 0..=SUBDIVISIONS {
-                dec.charge_work(1)?;
-                let s = Rational::from_ratio(i, SUBDIVISIONS).expect("positive denominator");
-                let t = a + &((&s) * &(b - a));
-                let mut uv: [Rational; 2] = std::array::from_fn(|axis| {
-                    &trim.uv[0][axis] + &(&s * &(&trim.uv[1][axis] - &trim.uv[0][axis]))
-                });
-                let p = crate::numerical::curve_at(&edge.curve, &t, dec)?
-                    .ok_or_else(|| bad("unsupported", "edge has no parameter evaluator"))?;
-                if i != 0 && i != SUBDIVISIONS && analytic::projected_edge(face, edge) {
-                    uv = curved::parameters(&face.surface, &p, dec)?;
-                }
-                let q = if matches!(
-                    face.surface,
-                    Surface::BSpline(SplineSupport::RationalPatch(_))
-                ) {
-                    native::point(
-                        &face.surface,
-                        &uv.clone().map(catallax_numbers::Real::from),
-                        dec,
-                    )?
-                } else {
-                    face.surface.evaluate(
-                        &Ball::from_rational(&uv[0], BITS),
-                        &Ball::from_rational(&uv[1], BITS),
-                        dec,
-                    )?
-                };
-                samples.push(NumericalSample {
-                    parameters: vec![t, uv[0].clone(), uv[1].clone()],
-                    distance_upper_mm: distance(&p, &q),
+                    scope: scope.clone(),
+                    samples: native::endpoints(face, trim, edge, curve, dec)?,
                 });
             }
+            // One record per use: where the two copies are furthest apart,
+            // and the tolerance stored for that gap.
             checks.push(NumericalCheck::Samples {
                 name: if numerical_pair {
                     "trim.numerical-pair-edge-surface-distance"
@@ -895,8 +856,15 @@ fn build_inner_kind(
                     "trim.edge-surface-distance"
                 }
                 .into(),
-                scope: format!("face {:?}, edge {:?}, use {index}", face.key, edge.key),
-                samples,
+                scope,
+                samples: vec![edge_gap::stored_sample(
+                    face,
+                    trim,
+                    edge,
+                    curve,
+                    &options.tolerance_mm,
+                    dec,
+                )?],
             });
         }
     }

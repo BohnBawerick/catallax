@@ -18,15 +18,14 @@
 //!    builder reports. OpenCASCADE's `GeomLib_CheckCurveOnSurface` cuts at
 //!    the same places since its October 2026 fix.
 //! 4. On each piece take `max(17, 3 x composed degree)` samples at Chebyshev
-//!    points, both ends included. The count depends only on degrees. Apart
-//!    from the ends and the middle of an odd grid, no point is a rational
-//!    share of its piece, so none coincides with a builder that checks at
-//!    eighths.
+//!    points of the first kind, plus both ends. The count depends only on
+//!    degrees and is made even. No point of an even grid is a rational share
+//!    of its piece, so none coincides with a builder that checks at eighths.
 //! 5. Read the Chebyshev coefficient tail of the residual on each piece. It
 //!    estimates what the samples leave unresolved. While that estimate does
 //!    not fit inside the storage margin, the points of the piece are
-//!    doubled. The grids nest (17, 33, 65), so every sample is kept. The
-//!    tail can only add points; it never ends the search early.
+//!    doubled. Every sample already taken stays in the search. The tail can
+//!    only add points; it never ends the search early.
 //! 6. Polish every local maximum of the samples with Brent's method on the
 //!    true gap.
 //! 7. Report the largest value, where it is, and the measurement error of
@@ -91,21 +90,21 @@ pub struct Hints {
 /// Limits fixed before a measurement starts.
 #[derive(Clone, Copy, Debug)]
 pub struct Limits {
-    /// Most residual evaluations one edge may spend before a named refusal.
-    pub evaluations: u64,
+    /// Most work one edge may spend before a named refusal. A unit is one
+    /// residual evaluation, one sample and mode pair of a tail transform, or
+    /// one domain probe: everything the measurement does that grows with the
+    /// edge.
+    pub work: u64,
 }
 
-/// Source: judgement; no source gives a per-edge cap. One million
-/// evaluations is five percent of the 20M operation target (ROADMAP, rules
-/// that stay fixed between checkpoints) and about forty times what the
-/// 256-span known-answer edge needs.
-pub const EDGE_EVALUATIONS: u64 = crate::numerical::DEFAULT_WORK / 20;
+/// Source: judgement; no source gives a per-edge cap. One million units is
+/// five percent of the 20M operation target (ROADMAP, rules that stay fixed
+/// between checkpoints).
+pub const EDGE_WORK: u64 = crate::numerical::DEFAULT_WORK / 20;
 
 impl Default for Limits {
     fn default() -> Self {
-        Self {
-            evaluations: EDGE_EVALUATIONS,
-        }
+        Self { work: EDGE_WORK }
     }
 }
 
@@ -132,7 +131,7 @@ pub struct Refinement {
     pub piece: [f64; 2],
     /// Why.
     pub reason: Reason,
-    /// Its sample points after the doubling.
+    /// The interior sample points of its new grid.
     pub points: usize,
 }
 
@@ -141,7 +140,7 @@ pub struct Refinement {
 pub struct PlannedPiece {
     /// The piece in edge-parameter order.
     pub piece: [f64; 2],
-    /// Sample points, both ends included.
+    /// Interior sample points. Both ends are sampled as well.
     pub points: usize,
 }
 
@@ -169,6 +168,9 @@ pub struct GapMeasure {
     pub refinements: Vec<Refinement>,
     /// Residual evaluations spent.
     pub evaluations: u64,
+    /// Work counted against the edge's cap: the evaluations, the tail
+    /// transforms and the domain probes.
+    pub work: u64,
 }
 
 /// Source: rule T4 of the tolerance rules (Checkpoint 2 decisions, section
@@ -222,10 +224,14 @@ impl PieceShape {
     pub fn composed_degree(&self) -> usize {
         self.curve.max(self.face * self.surface)
     }
-    /// Sample points for a piece of this shape, both ends included:
-    /// `max(17, 3 x composed degree)`.
+    /// Interior sample points for a piece of this shape:
+    /// `max(17, 3 x composed degree)`, made even so that no point is a
+    /// rational share of the piece (see `numeric::chebyshev_shares`). An odd
+    /// grid would have the middle of the piece, which is one of the eighths
+    /// a builder checks at.
     pub fn points(&self) -> usize {
-        LEAST_POINTS.max(POINTS_PER_DEGREE * self.composed_degree())
+        let count = LEAST_POINTS.max(POINTS_PER_DEGREE * self.composed_degree());
+        count + count % 2
     }
 }
 
@@ -445,25 +451,17 @@ pub fn plan(
     if straight_residual(&lifted) {
         return Ok(Vec::new());
     }
-    Ok(planned(
-        &lifted,
-        &breaks(&lifted, hints, limits.evaluations, dec)?,
-    ))
+    Ok(planned(&lifted, &breaks(&lifted, hints, limits.work, dec)?))
 }
 
 fn planned(lifted: &Lifted, breaks: &[f64]) -> Vec<PlannedPiece> {
+    // Every piece gets the full count, however narrow it is.
     let points = shape(lifted).points();
-    let [lo, hi] = lifted.range();
     breaks
         .windows(2)
         .map(|pair| PlannedPiece {
             piece: [pair[0], pair[1]],
-            // A piece too narrow for an interior sample is read at its ends.
-            points: if pair[1] - pair[0] > NARROWEST_PIECE * (hi - lo) {
-                points
-            } else {
-                2
-            },
+            points,
         })
         .collect()
 }
@@ -483,15 +481,20 @@ struct Search<'a> {
     scratch: Scratch,
     limit: u64,
     evaluations: u64,
+    /// Work other than residual evaluations: transforms and domain probes.
+    other: u64,
     charged: u64,
 }
 
 impl Search<'_> {
+    fn spent(&self) -> u64 {
+        self.evaluations + self.other
+    }
+
     fn sample(&mut self, t: f64) -> Result<Sample, Refusal> {
-        if self.evaluations >= self.limit {
-            return Err(Refusal::new(
-                "numerical.gap-work-cap",
-                "an edge spent its evaluation allowance before its gap was resolved",
+        if self.spent() >= self.limit {
+            return Err(work_cap(
+                "an edge spent its work allowance before its gap was resolved",
             ));
         }
         self.evaluations += 1;
@@ -504,13 +507,25 @@ impl Search<'_> {
         })
     }
 
-    /// Charges one work unit for every evaluation since the last call, as
+    /// Counts work other than a residual evaluation against the cap, before
+    /// that work is done.
+    fn reserve(&mut self, units: u64) -> Result<(), Refusal> {
+        if units > self.limit.saturating_sub(self.spent()) {
+            return Err(work_cap(
+                "an edge spent its work allowance before its gap was resolved",
+            ));
+        }
+        self.other += units;
+        Ok(())
+    }
+
+    /// Charges one work unit for every unit spent since the last call, as
     /// the kernel's other binary64 samplers charge. It is called once per
     /// piece, doubling and polish, so the operation allowance is checked that
     /// often.
     fn settle(&mut self, dec: &mut Decider) -> Result<(), Refusal> {
-        let due = self.evaluations - self.charged;
-        self.charged = self.evaluations;
+        let due = self.spent() - self.charged;
+        self.charged = self.spent();
         dec.charge_work(due)
     }
 }
@@ -537,16 +552,18 @@ struct Unresolved {
     noise: f64,
 }
 
-fn unresolved(piece: &[Sample]) -> Unresolved {
-    let residuals: Vec<[f64; 3]> = piece.iter().map(|sample| sample.residual).collect();
-    let error = piece
+/// Reads the tail of one grid. Its work is counted against the cap first.
+fn unresolved(search: &mut Search<'_>, grid: &[Sample]) -> Result<Unresolved, Refusal> {
+    search.reserve(numeric::chebyshev_tail_pairs(grid.len()))?;
+    let residuals: Vec<[f64; 3]> = grid.iter().map(|sample| sample.residual).collect();
+    let error = grid
         .iter()
         .fold(0.0_f64, |sum, sample| sum.max(sample.error));
     let scale = SEARCH_FACTOR * INTERPOLATION_FACTOR;
-    Unresolved {
+    Ok(Unresolved {
         search: scale * numeric::chebyshev_tail(&residuals),
-        noise: scale * piece.len() as f64 * error,
-    }
+        noise: scale * grid.len() as f64 * error,
+    })
 }
 
 impl Unresolved {
@@ -562,9 +579,10 @@ impl Unresolved {
 ///
 /// Refuses with `numerical.gap-unsupported` for a curve or surface without a
 /// parameter evaluator, and with `numerical.gap-work-cap` when the edge would
-/// spend more than its evaluation allowance. One work unit is charged per
-/// evaluation, as the kernel's other binary64 samplers charge, in one charge
-/// per piece.
+/// spend more than its work allowance. One work unit is charged per
+/// evaluation, as the kernel's other binary64 samplers charge, and one per
+/// sample and mode pair of a tail transform and per domain probe, in one
+/// charge per piece.
 pub fn measure(
     copies: &EdgeCopies<'_>,
     hints: &Hints,
@@ -574,9 +592,9 @@ pub fn measure(
     let lifted = lift::lift(copies, dec)?;
     // The closing probes of the rounding allowance count inside the same cap,
     // so they are set aside before the first sample.
-    let Some(limit) = limits.evaluations.checked_sub(lift::ALLOWANCE_EVALUATIONS) else {
+    let Some(limit) = limits.work.checked_sub(lift::ALLOWANCE_EVALUATIONS) else {
         return Err(work_cap(
-            "the evaluation allowance of an edge is smaller than its closing probes",
+            "the work allowance of an edge is smaller than its closing probes",
         ));
     };
     let mut search = Search {
@@ -584,6 +602,7 @@ pub fn measure(
         scratch: Scratch::default(),
         limit,
         evaluations: 0,
+        other: 0,
         charged: 0,
     };
     let [first, last] = lifted.parameters;
@@ -606,56 +625,57 @@ pub fn measure(
     let breaks = breaks(&lifted, hints, limit, dec)?;
     let plan = planned(&lifted, &breaks);
     let [lo, hi] = lifted.range();
-    // Refuse before the first sample when the plan alone is over the cap.
-    let planned_evaluations = plan
-        .iter()
-        .fold(1_u64, |sum, piece| sum + piece.points as u64 - 1);
-    if planned_evaluations > limit {
+    // Refuse before the first sample when the plan alone is over the cap:
+    // its samples, the first tail transform of each piece and, on a spline
+    // surface, one domain probe per piece.
+    let probes = u64::from(matches!(lifted.surface, Surface64::Spline(_)));
+    let planned_work = plan.iter().fold(1_u64, |sum, piece| {
+        sum + piece.points as u64 + 1 + numeric::chebyshev_tail_pairs(piece.points) + probes
+    });
+    if planned_work > limit {
         return Err(work_cap(
-            "the first sample plan of an edge is larger than its evaluation allowance",
+            "the first sample plan of an edge is larger than its work allowance",
         ));
     }
 
-    // First pass: every piece at its planned points. Neighbours share an end.
-    let mut pieces: Vec<Vec<Sample>> = Vec::with_capacity(plan.len());
+    // First pass: every piece at its planned points, then its far end.
+    // Neighbours share an end.
+    let mut pieces: Vec<[Vec<Sample>; 2]> = Vec::with_capacity(plan.len());
     let mut largest = 0.0_f64;
-    let mut end = search.sample(breaks[0])?;
+    let mut ends = vec![search.sample(breaks[0])?];
     for piece in &plan {
         let [from, to] = piece.piece;
-        let shares = numeric::chebyshev_shares(piece.points);
-        let mut samples = vec![end];
-        for share in &shares[1..piece.points - 1] {
-            samples.push(search.sample(from + share * (to - from))?);
+        let mut grid = Vec::with_capacity(piece.points);
+        for share in numeric::chebyshev_shares(piece.points) {
+            grid.push(search.sample(from + share * (to - from))?);
         }
-        end = search.sample(to)?;
-        samples.push(end);
+        ends.push(search.sample(to)?);
         search.settle(dec)?;
-        for sample in &samples {
+        for sample in grid.iter().chain(ends.last()) {
             largest = largest.max(sample.squared.sqrt());
         }
-        pieces.push(samples);
+        // The grid whose tail is read, and the samples of earlier grids.
+        pieces.push([grid, Vec::new()]);
     }
+    largest = largest.max(ends[0].squared.sqrt());
 
-    // Second pass: double the points of every piece whose tail is loud. The
-    // new grid contains the old one, so only the points in between are new.
+    // Second pass: double the points of every piece whose tail is loud.
     let mut refinements = Vec::new();
     let mut search_error = 0.0_f64;
     let mut samples: Vec<Sample> = Vec::new();
-    for mut piece in pieces {
-        let (from, to) = (piece[0].t, piece[piece.len() - 1].t);
-        // A piece read at its two ends has no tail.
-        while piece.len() > 2 {
-            let left = unresolved(&piece);
-            let shares = numeric::chebyshev_shares(2 * piece.len() - 1);
-            let between: Vec<f64> = (0..piece.len() - 1)
-                .map(|index| from + shares[2 * index + 1] * (to - from))
+    for (index, [mut grid, mut earlier]) in pieces.into_iter().enumerate() {
+        let (from, to) = (ends[index].t, ends[index + 1].t);
+        loop {
+            let left = unresolved(&mut search, &grid)?;
+            let fresh: Vec<f64> = numeric::chebyshev_shares(2 * grid.len())
+                .into_iter()
+                .map(|share| from + share * (to - from))
                 .collect();
-            // Once a new point no longer falls strictly between its
-            // neighbours, binary64 has no room for more points here.
-            let room = between
-                .iter()
-                .zip(piece.windows(2))
-                .all(|(t, pair)| *t > pair[0].t && *t < pair[1].t);
+            // Once the points of a finer grid no longer fall strictly in
+            // order between the ends, binary64 has no room for them.
+            let room = fresh[0] > from
+                && fresh[fresh.len() - 1] < to
+                && fresh.windows(2).all(|pair| pair[0] < pair[1]);
             if !left.loud(largest) || !room {
                 search_error = search_error.max(left.search);
                 break;
@@ -663,24 +683,25 @@ pub fn measure(
             refinements.push(Refinement {
                 piece: [from, to],
                 reason: Reason::LoudTail,
-                points: shares.len(),
+                points: fresh.len(),
             });
-            let mut doubled = Vec::with_capacity(shares.len());
-            for (index, old) in piece.iter().enumerate() {
-                doubled.push(*old);
-                if let Some(t) = between.get(index) {
-                    let sample = search.sample(*t)?;
-                    largest = largest.max(sample.squared.sqrt());
-                    doubled.push(sample);
-                }
+            earlier.append(&mut grid);
+            for t in fresh {
+                let sample = search.sample(t)?;
+                largest = largest.max(sample.squared.sqrt());
+                grid.push(sample);
             }
             search.settle(dec)?;
-            piece = doubled;
         }
-        // Shared ends appear once.
-        let shared = |s: &Sample| s.t.to_bits() == from.to_bits();
-        let skip = usize::from(samples.last().is_some_and(shared));
-        samples.extend_from_slice(&piece[skip..]);
+        search.settle(dec)?;
+        if index == 0 {
+            samples.push(ends[0]);
+        }
+        let start = samples.len();
+        samples.append(&mut earlier);
+        samples.append(&mut grid);
+        samples[start..].sort_by(|a, b| a.t.total_cmp(&b.t));
+        samples.push(ends[index + 1]);
     }
 
     // Third pass: polish every local maximum of the samples.
@@ -745,6 +766,7 @@ pub fn measure(
         }
         for pair in order {
             let middle = pair[0] + (pair[1] - pair[0]) / 2.0;
+            search.reserve(1)?;
             if lifted.outside(middle, &mut search.scratch) {
                 exit = Some(if forward { pair[0] } else { pair[1] });
                 break;
@@ -776,7 +798,7 @@ fn finish(
         .fold(hi - lo, f64::min)
         / 2.0;
     // These probes were set aside when the search started, so the total
-    // stays inside the edge's evaluation allowance.
+    // stays inside the edge's work allowance.
     let (allowance, evaluations) = search.lifted.allowance(best.t, reach, &mut search.scratch);
     debug_assert!(evaluations <= lift::ALLOWANCE_EVALUATIONS);
     search.evaluations += evaluations;
@@ -790,6 +812,7 @@ fn finish(
         plan,
         refinements,
         evaluations: search.evaluations,
+        work: search.spent(),
     })
 }
 

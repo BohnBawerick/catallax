@@ -64,7 +64,7 @@ fn search_receipt(seed: Option<u64>, cases: &[EdgeCase]) -> String {
         let micros = started.elapsed().as_micros();
         text.push_str(&format!(
             "edge={} method={:?} pieces={} points={} doublings={} raw_mm={:.9e} \
-             error_mm={:.3e} stored_mm={:.9e} evaluations={} micros={micros}\n",
+             error_mm={:.3e} stored_mm={:.9e} evaluations={} cap_work={} micros={micros}\n",
             case.name,
             found.method,
             found.plan.len(),
@@ -74,6 +74,7 @@ fn search_receipt(seed: Option<u64>, cases: &[EdgeCase]) -> String {
             found.error_mm,
             found.stored_mm(),
             found.evaluations,
+            found.work,
         ));
     }
     text
@@ -186,7 +187,7 @@ fn the_sample_plan_depends_on_shape_only() {
         face: 1,
         surface: 0,
     };
-    assert_eq!(analytic.points(), 17);
+    assert_eq!(analytic.points(), 18);
 }
 
 /// A curved analytic surface has no degree, so its pieces start at the least
@@ -243,13 +244,12 @@ fn a_loud_tail_doubles_the_points_of_a_piece_until_it_is_quiet() {
     )
     .expect("measure");
     assert_eq!(found.plan.len(), 1);
-    assert_eq!(found.plan[0].points, 17);
+    assert_eq!(found.plan[0].points, 18);
     assert!(!found.refinements.is_empty());
-    // The grids nest: 17, 33, 65 and so on.
     let mut points = found.plan[0].points;
     for doubling in &found.refinements {
         assert_eq!(doubling.reason, Reason::LoudTail);
-        points = 2 * points - 1;
+        points *= 2;
         assert_eq!(doubling.points, points);
     }
     // The gap is the chord 2 R sin(|A w| / 2). A sweep of 1001 exact values
@@ -332,33 +332,40 @@ fn the_evaluation_cap_refuses_by_name() {
     let refusal = gap::measure(
         &copies(&case.geometry),
         &Hints::default(),
-        Limits { evaluations: 1000 },
+        Limits { work: 1000 },
         &mut Decider::default(),
     )
     .expect_err("capped");
     assert_eq!(refusal.code, "numerical.gap-work-cap");
 }
 
-/// The cap covers every evaluation of an edge, the closing probes of the
-/// rounding allowance included: an allowance of exactly what the edge needs
-/// passes, and one evaluation less refuses.
+/// The cap covers all the work of an edge: its evaluations, its tail
+/// transforms, its domain probes and the closing probes of the rounding
+/// estimate. An allowance of exactly what the edge needs passes, and one
+/// unit less refuses.
 #[test]
 fn the_closing_probes_count_inside_the_cap() {
-    for name in ["08-parameter-stretch", "13a-zero-line-on-plane"] {
+    for name in [
+        "08-parameter-stretch",
+        "09-face-copy-outside-domain",
+        "13a-zero-line-on-plane",
+    ] {
         let case = fixed::cases()
             .into_iter()
             .find(|case| case.name == name)
             .expect("case");
-        let capped = |evaluations: u64| {
+        let capped = |work: u64| {
             gap::measure(
                 &copies(&case.geometry),
                 &Hints::default(),
-                Limits { evaluations },
+                Limits { work },
                 &mut Decider::default(),
             )
         };
-        let needed = capped(gap::EDGE_EVALUATIONS).expect("default").evaluations;
-        assert_eq!(capped(needed).expect("exact").evaluations, needed, "{name}");
+        let needed = capped(gap::EDGE_WORK).expect("default");
+        assert!(needed.work >= needed.evaluations, "{name}");
+        let needed = needed.work;
+        assert_eq!(capped(needed).expect("exact").work, needed, "{name}");
         let refusal = capped(needed - 1).expect_err("one short");
         assert_eq!(refusal.code, "numerical.gap-work-cap", "{name}");
     }

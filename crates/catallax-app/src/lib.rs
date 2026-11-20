@@ -49,6 +49,8 @@ pub mod pattern;
 pub mod preview;
 /// Exact sections, silhouettes, overlap volume and shared boundary patches.
 pub mod queries;
+/// Drawing views from the kernel: contour generators of curved faces.
+pub mod views;
 pub use preview::{
     ConstructionDisplay, ConstructionOptions, PreviewApplicationBody, PreviewDisplay,
     ProgressiveOptions, build_preview, construction_preview, preview_body,

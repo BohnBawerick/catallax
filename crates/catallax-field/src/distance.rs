@@ -108,6 +108,7 @@ fn location(leaf: &geometry::Leaf, p: &Point3, dec: &mut Decider) -> Result<Loca
             "smooth point query requires rational coordinates",
         )),
         geometry::Leaf::Feature(f) => f.classify(p, dec),
+        geometry::Leaf::Rolling(piece) => piece.locate(p, dec),
         geometry::Leaf::Draft(region) => region.classify(p, None, dec),
         geometry::Leaf::Lattice(_) | geometry::Leaf::Gyroid(_) | geometry::Leaf::Mesh(_) => {
             Ok(Location::Indeterminate)
@@ -191,7 +192,10 @@ fn ray(
     }
     if matches!(
         leaf,
-        geometry::Leaf::Lattice(_) | geometry::Leaf::Gyroid(_) | geometry::Leaf::Mesh(_)
+        geometry::Leaf::Lattice(_)
+            | geometry::Leaf::Gyroid(_)
+            | geometry::Leaf::Mesh(_)
+            | geometry::Leaf::Rolling(_)
     ) {
         return Ok(Location::Indeterminate);
     }

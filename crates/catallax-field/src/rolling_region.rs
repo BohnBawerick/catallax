@@ -4,9 +4,12 @@
 //! region and a guaranteed distance range to its rolling-ball face. [`Region`]
 //! is the P5 rim-contact piece; [`elementary`] holds the line and circle pieces
 //! of plane-plane and plane-cylinder fillets, derived from their supports.
+//! [`revolved`] holds a plane with a cylinder, cone or sphere in any pose and
+//! [`generator`] the straight paths between supports parallel to one line;
+//! [`piece`] compiles either as a field leaf (4.2a step 2).
 //!
-//! These opt-in geometric building blocks are NOT recipe fillet admissions. See
-//! `docs/M18-ROLLING-REGION.md` for the rim region's explicit set and its
+//! Only [`piece`] admits recipe fillets; the other building blocks are not
+//! admissions. See `docs/M18-ROLLING-REGION.md` for the rim region's explicit set and its
 //! remaining incidence obligations, and `docs/M42A-FIELD-FILLETS.md` for the
 //! general routine.
 
@@ -15,7 +18,10 @@ use catallax_numbers::{Ball, Decider, OperationAllowance, Rational, Real, Refusa
 use catallax_shapes::{Point3, RollingEnvelopeDefinition};
 
 pub mod elementary;
+pub mod generator;
 pub mod path;
+pub mod piece;
+pub mod revolved;
 mod sectors;
 pub use path::{Answer, Range};
 pub use sectors::{Sector, Sectors, Transition};
@@ -166,10 +172,10 @@ impl path::Path for Region {
             delta.dot(d.across()),
         ]
     }
-    fn walls(&self, [x, y, z]: &[Real; 3]) -> Vec<Real> {
+    fn walls(&self, [x, y, z]: &[Real; 3], _: &mut Decider) -> Result<Vec<Real>, Refusal> {
         let d = &self.definition;
         let radial = &x.square() + &z.square();
-        vec![
+        Ok(vec![
             y.clone(),
             d.radius() - y,
             &radial - &d.body().square(),
@@ -177,7 +183,7 @@ impl path::Path for Region {
             x.clone(),
             &(x * &self.sine) - &(z * &self.cosine),
             &(x * &self.sine) + &(z * &self.cosine),
-        ]
+        ])
     }
     fn cover(&self, dec: &mut Decider) -> Result<Constants, Refusal> {
         Constants::new(self, dec)
@@ -348,6 +354,27 @@ pub fn query_batch<P: path::Path + Sync>(
         dec,
         "discarded answer after allowance exhaustion",
         |point, child| path::query(path, point, width, child),
+    )
+}
+
+/// Batch distance ranges for any path piece, with the same split and order.
+/// A point on the face needs no membership answer, which an interval cover
+/// cannot settle there.
+pub fn distance_batch<P: path::Path + Sync>(
+    path: &P,
+    points: &[Point3],
+    width: &Rational,
+    workers: Option<usize>,
+    allowance: OperationAllowance,
+    dec: &mut Decider,
+) -> Result<Batch<Range>, Refusal> {
+    batch(
+        points,
+        workers,
+        allowance,
+        dec,
+        "discarded range after allowance exhaustion",
+        |point, child| path::distance(path, point, width, child),
     )
 }
 

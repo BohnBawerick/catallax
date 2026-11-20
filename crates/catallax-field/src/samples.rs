@@ -108,9 +108,11 @@ impl Plan {
                         Leaf::Feature(f) => f.sample_bounds()?,
                         Leaf::Cell(c) => c.sample_bounds()?,
                         Leaf::Draft(region) => Some(region.sample_bounds()?),
-                        Leaf::Smooth(_) | Leaf::Lattice(_) | Leaf::Gyroid(_) | Leaf::Mesh(_) => {
-                            None
-                        }
+                        Leaf::Smooth(_)
+                        | Leaf::Lattice(_)
+                        | Leaf::Gyroid(_)
+                        | Leaf::Mesh(_)
+                        | Leaf::Rolling(_) => None,
                     },
                     Instruction::Boolean { kind, a, b } => match kind {
                         BooleanKind::Subtract => bounds[a].clone(),
@@ -155,7 +157,11 @@ impl Plan {
                 continue;
             }
             let complete = match &self.leaves[face.leaf] {
-                Leaf::Smooth(_) | Leaf::Lattice(_) | Leaf::Gyroid(_) | Leaf::Mesh(_) => false,
+                Leaf::Smooth(_)
+                | Leaf::Lattice(_)
+                | Leaf::Gyroid(_)
+                | Leaf::Mesh(_)
+                | Leaf::Rolling(_) => false,
                 Leaf::Feature(feature) => feature.sample_candidates(
                     self.definition_role(index),
                     divisions,

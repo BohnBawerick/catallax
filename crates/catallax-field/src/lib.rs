@@ -1440,6 +1440,14 @@ impl Plan {
     pub fn faces(&self) -> &[Face] {
         &self.faces
     }
+    /// The rolling-ball path pieces the plan's fillets compiled to (4.2a), in
+    /// compile order. Their faces are not registered as named faces yet.
+    pub fn rolling_pieces(&self) -> impl Iterator<Item = &rolling_region::piece::Piece> {
+        self.leaves.iter().filter_map(|leaf| match leaf {
+            geometry::Leaf::Rolling(piece) => Some(piece.as_ref()),
+            _ => None,
+        })
+    }
     /// Handle for a current result candidate at a face-registry index.
     /// History and unused entries return `None`; Boolean trim membership still
     /// requires [`Self::face_query`]. Split names can have several such handles.

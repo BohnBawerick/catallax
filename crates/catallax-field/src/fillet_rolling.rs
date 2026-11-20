@@ -1,0 +1,455 @@
+//! Fillets the elementary route does not section, compiled as rolling-ball
+//! path pieces the field derives itself (4.2a step 2).
+//!
+//! A plane with a cylinder in any pose, a cone or a sphere becomes a
+//! [`Revolved`] piece; two cylinders with parallel axes become [`Generator`]
+//! pieces, one per sharp run. The elementary route keeps every pair and edge it
+//! sections today, so its answers are unchanged; these pieces only take what
+//! it skips or refuses. The ball side of each support comes from the same
+//! exact material quadrant the elementary route uses. A piece's region must be
+//! clear of every other support, proven on its box; a support that reaches it
+//! needs trimmed continuation and is refused as before.
+
+use catallax_features::fillet::FilletDefinition;
+use catallax_numbers::{Ball, Decider, Rational, Real, Refusal, Sign};
+use catallax_recipe::{EdgeName, Origin, Role, StepId};
+use catallax_shapes::{Curve, CurveId, GeomStore, Line, Point3, Surface, Vector3};
+
+use super::{bad, coordinates, square_root, unit};
+use crate::rolling_region::elementary::Flat;
+use crate::rolling_region::generator::{Generator, Wall};
+use crate::rolling_region::piece::{Kind, Piece};
+use crate::rolling_region::revolved::{Revolution, Revolved};
+use crate::{Plan, geometry};
+
+/// One sharp edge run compiled as a rolling-ball path piece.
+pub(super) struct Run {
+    pub(super) piece: Piece,
+    faces: [usize; 2],
+    // End faces of a straight run, which bound it rather than overflow it.
+    ends: Vec<usize>,
+}
+
+/// Whether the rolling route takes this support pair: a plane with a cylinder,
+/// cone or sphere, or two cylinders with parallel axes.
+pub(super) fn admits(supports: &[Surface; 2], dec: &mut Decider) -> Result<bool, Refusal> {
+    Ok(match (&supports[0], &supports[1]) {
+        (Surface::Plane(_), Surface::Cylinder(_) | Surface::Cone(_) | Surface::Sphere(_))
+        | (Surface::Cylinder(_) | Surface::Cone(_) | Surface::Sphere(_), Surface::Plane(_)) => true,
+        (Surface::Cylinder(a), Surface::Cylinder(b)) => {
+            geometry::sign(&a.axis.cross(&b.axis).norm_squared(), dec)? == Sign::Zero
+        }
+        _ => false,
+    })
+}
+
+fn oriented(value: &Real, detail: &str, dec: &mut Decider) -> Result<bool, Refusal> {
+    match geometry::sign(value, dec)? {
+        Sign::Positive => Ok(true),
+        Sign::Negative => Ok(false),
+        Sign::Zero => Err(bad(detail)),
+    }
+}
+
+/// The component of `v` perpendicular to `axis`.
+fn radial(v: &Vector3, axis: &Vector3) -> Vector3 {
+    v.minus(&axis.scaled(&(&v.dot(axis) / &axis.norm_squared())))
+}
+
+/// A rational point on a closed edge: an end of either axis.
+fn loop_sample(edge: &Curve) -> Option<Point3> {
+    let (centre, axes) = match edge {
+        Curve::Circle(c) => {
+            let r = square_root(&c.radius_sq);
+            let second = c.normal.cross(&c.ref_dir);
+            (
+                &c.center,
+                [unit(&c.ref_dir).scaled(&r), unit(&second).scaled(&r)],
+            )
+        }
+        Curve::Ellipse(e) => {
+            let second = e.normal.cross(&e.major_dir);
+            (
+                &e.center,
+                [
+                    unit(&e.major_dir).scaled(&square_root(&e.major_sq)),
+                    unit(&second).scaled(&square_root(&e.minor_sq)),
+                ],
+            )
+        }
+        _ => return None,
+    };
+    for axis in &axes {
+        for sense in [1, -1] {
+            let point = centre.plus(&axis.scaled(&Real::from_i64(sense)));
+            if coordinates(&point).is_ok() {
+                return Some(point);
+            }
+        }
+    }
+    None
+}
+
+impl Plan {
+    fn blend_origin(&self, faces: [usize; 2], step: &StepId) -> Result<Origin, Refusal> {
+        let edge = EdgeName::new(
+            self.faces[faces[0]].origin.clone(),
+            self.faces[faces[1]].origin.clone(),
+        )
+        .map_err(|e| bad(&e.to_string()))?;
+        Ok(Origin {
+            step: step.clone(),
+            role: Role::Blend { edge },
+        })
+    }
+
+    /// The ball's direction at an edge point: the quadrant of `material`,
+    /// rebuilt from the same gradients. For a convex edge the senses mark the
+    /// supports whose gradient points away from the ball, for a concave one
+    /// those whose gradient points toward it.
+    fn ball_direction(
+        &self,
+        faces: [usize; 2],
+        p: &Point3,
+        convex: bool,
+        senses: [bool; 2],
+    ) -> Result<Vector3, Refusal> {
+        let xyz = coordinates(p)?;
+        let [a, b] = faces.map(|i| crate::normal(&self.faces[i], &xyz));
+        let dot = a.dot(&b);
+        let da = a.minus(&b.scaled(&(&dot / &b.norm_squared())));
+        let db = b.minus(&a.scaled(&(&dot / &a.norm_squared())));
+        let [sa, sb] = senses.map(|sense| Real::from_i64(if convex == sense { -1 } else { 1 }));
+        Ok(da.scaled(&sa).plus(&db.scaled(&sb)))
+    }
+
+    fn flat(surface: &Surface, ball: &Vector3, dec: &mut Decider) -> Result<Option<Flat>, Refusal> {
+        let Surface::Plane(plane) = surface else {
+            return Ok(None);
+        };
+        let toward = oriented(
+            &ball.dot(&plane.normal),
+            "the ball lies in a support plane",
+            dec,
+        )?;
+        Ok(Some(Flat {
+            point: plane.origin.clone(),
+            normal: if toward {
+                plane.normal.clone()
+            } else {
+                plane.normal.scaled(&Real::from_i64(-1))
+            },
+        }))
+    }
+
+    /// Pieces for one support-intersection component the elementary route does
+    /// not section. `None` when no rolling piece exists for the component.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn rolling_component(
+        &self,
+        root: usize,
+        faces: [usize; 2],
+        supports: &[Surface; 2],
+        edge: &Curve,
+        curve: CurveId,
+        geom: &mut GeomStore,
+        source_faces: &[usize],
+        bound: &Rational,
+        radius: &Real,
+        step: &StepId,
+        dec: &mut Decider,
+    ) -> Result<Option<Vec<Run>>, Refusal> {
+        match edge {
+            Curve::Circle(_) | Curve::Ellipse(_)
+                if !matches!(supports, [Surface::Cylinder(_), Surface::Cylinder(_)]) =>
+            {
+                let sample = loop_sample(edge)
+                    .ok_or_else(|| bad("a closed edge needs a rational point for its material"))?;
+                let Some((convex, senses)) = self.material(root, &sample, faces, dec)? else {
+                    return Ok(Some(vec![]));
+                };
+                let ball = self.ball_direction(faces, &sample, convex, senses)?;
+                let [first, second] = supports;
+                let (plane, other) = match (
+                    Self::flat(first, &ball, dec)?,
+                    Self::flat(second, &ball, dec)?,
+                ) {
+                    (Some(plane), None) => (plane, second),
+                    (None, Some(plane)) => (plane, first),
+                    _ => return Ok(None),
+                };
+                let at = |origin: &Point3| sample.minus(origin);
+                let (support, outside) = match other {
+                    Surface::Cylinder(c) => (
+                        Revolution::Cylinder {
+                            point: c.origin.clone(),
+                            axis: c.axis.clone(),
+                            radius: square_root(&c.radius_sq),
+                        },
+                        ball.dot(&radial(&at(&c.origin), &c.axis)),
+                    ),
+                    Surface::Cone(c) => {
+                        let w = radial(&at(&c.apex), &c.axis);
+                        let along = unit(&c.axis).scaled(&(&c.slope * &w.norm_squared().sqrt()));
+                        (
+                            Revolution::Cone {
+                                apex: c.apex.clone(),
+                                axis: c.axis.clone(),
+                                slope: c.slope.clone(),
+                            },
+                            ball.dot(&w.minus(&along)),
+                        )
+                    }
+                    Surface::Sphere(s) => (
+                        Revolution::Sphere {
+                            centre: s.center.clone(),
+                            radius: s.radius.clone(),
+                        },
+                        ball.dot(&at(&s.center)),
+                    ),
+                    _ => return Ok(None),
+                };
+                let outside =
+                    oriented(&outside, "the ball lies in a support's tangent plane", dec)?;
+                let path = Revolved::new(plane, support, outside, radius.clone(), dec)?;
+                let piece = Piece::new(
+                    Kind::Revolved(path),
+                    self.blend_origin(faces, step)?,
+                    convex,
+                    [first, second],
+                    dec,
+                )?;
+                Ok(Some(vec![Run {
+                    piece,
+                    faces,
+                    ends: vec![],
+                }]))
+            }
+            Curve::Line(line)
+                if matches!(supports, [Surface::Cylinder(_), Surface::Cylinder(_)]) =>
+            {
+                let samples = self.line_samples(line, curve, geom, source_faces, bound, dec)?;
+                let mut found: Vec<([Rational; 2], bool, [bool; 2], Point3)> = Vec::new();
+                for (sample, interval) in samples {
+                    let interval = interval.expect("a line sample has its stations");
+                    let Some((convex, senses)) = self.material(root, &sample, faces, dec)? else {
+                        continue;
+                    };
+                    if let Some(last) = found.last_mut()
+                        && last.0[1] == interval[0]
+                        && last.1 == convex
+                        && last.2 == senses
+                    {
+                        last.0[1] = interval[1].clone();
+                        continue;
+                    }
+                    found.push((interval, convex, senses, sample));
+                }
+                let mut runs = Vec::with_capacity(found.len());
+                for (interval, convex, senses, sample) in found {
+                    runs.push(self.generator_run(
+                        faces,
+                        supports,
+                        line,
+                        &interval,
+                        (convex, senses),
+                        &sample,
+                        source_faces,
+                        radius,
+                        step,
+                        dec,
+                    )?);
+                }
+                Ok(Some(runs))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    /// A straight run between supports parallel to its line, over the
+    /// stations `interval` of `line`, bounded by end planes normal to it.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn generator_run(
+        &self,
+        faces: [usize; 2],
+        supports: &[Surface; 2],
+        line: &Line,
+        interval: &[Rational; 2],
+        (convex, senses): (bool, [bool; 2]),
+        sample: &Point3,
+        source_faces: &[usize],
+        radius: &Real,
+        step: &StepId,
+        dec: &mut Decider,
+    ) -> Result<Run, Refusal> {
+        let ball = self.ball_direction(faces, sample, convex, senses)?;
+        let mut walls = Vec::with_capacity(2);
+        for support in supports {
+            walls.push(match support {
+                Surface::Plane(_) => {
+                    Wall::Plane(Self::flat(support, &ball, dec)?.expect("a plane"))
+                }
+                Surface::Cylinder(c) => Wall::Cylinder {
+                    point: c.origin.clone(),
+                    axis: c.axis.clone(),
+                    radius: square_root(&c.radius_sq),
+                    outside: oriented(
+                        &ball.dot(&radial(&sample.minus(&c.origin), &c.axis)),
+                        "the ball lies in a support's tangent plane",
+                        dec,
+                    )?,
+                },
+                _ => return Err(bad("a generator piece needs planes or cylinders")),
+            });
+        }
+        let walls: [Wall; 2] = walls.try_into().map_err(|_| bad("two supports"))?;
+        let mut ends = Vec::new();
+        let mut found = [false; 2];
+        for &i in source_faces {
+            if faces.contains(&i) {
+                continue;
+            }
+            let Surface::Plane(p) = &self.faces[i].surface else {
+                continue;
+            };
+            let across = line.dir.dot(&p.normal);
+            if geometry::sign(&across, dec)? == Sign::Zero {
+                continue;
+            }
+            let station = &p.origin.minus(&line.origin).dot(&p.normal) / &across;
+            for (end, t) in interval.iter().enumerate() {
+                if geometry::sign(&(&station - &Real::from(t.clone())), dec)? != Sign::Zero {
+                    continue;
+                }
+                if geometry::sign(&line.dir.cross(&p.normal).norm_squared(), dec)? != Sign::Zero {
+                    return Err(bad("a generator piece needs end planes normal to its line"));
+                }
+                found[end] = true;
+                ends.push(i);
+            }
+        }
+        if found != [true, true] {
+            return Err(bad("finite line strips need proven transversal end planes"));
+        }
+        let path = Generator::new(
+            walls,
+            line.origin.clone(),
+            line.dir.clone(),
+            interval.clone().map(Real::from),
+            radius.clone(),
+            dec,
+        )?;
+        let piece = Piece::new(
+            Kind::Generator(path),
+            self.blend_origin(faces, step)?,
+            convex,
+            [&supports[0], &supports[1]],
+            dec,
+        )?;
+        Ok(Run { piece, faces, ends })
+    }
+
+    /// A straight strip the elementary route refuses, as a generator run from
+    /// its supports, ball sides, edge and stations. Its section, contacts and
+    /// carrier are not read.
+    pub(super) fn converted_run(
+        &self,
+        definition: &FilletDefinition,
+        interval: &Option<[Rational; 2]>,
+        source_faces: &[usize],
+        step: &StepId,
+        dec: &mut Decider,
+    ) -> Result<Run, Refusal> {
+        let Curve::Line(line) = &definition.edge else {
+            return Err(bad("only straight runs become generator pieces"));
+        };
+        let interval = interval
+            .as_ref()
+            .ok_or_else(|| bad("a line strip needs a finite input interval"))?;
+        let mut faces = [0; 2];
+        for (slot, support) in faces.iter_mut().zip(&definition.supports) {
+            *slot = self
+                .faces
+                .iter()
+                .position(|f| f.surface.same_definition(support))
+                .ok_or_else(|| bad("a strip support is not a source face"))?;
+        }
+        let sample = line.origin.plus(&line.dir.scaled(&Real::from(
+            (&interval[0] + &interval[1]) / Rational::from_i64(2),
+        )));
+        self.generator_run(
+            faces,
+            &definition.supports,
+            line,
+            interval,
+            (definition.convex, definition.same_sense),
+            &sample,
+            source_faces,
+            &definition.radius,
+            step,
+            dec,
+        )
+    }
+
+    /// Every other support is clear of the piece's box, so of its region.
+    /// Supports equal to the piece's own or to its end planes are skipped.
+    pub(super) fn rolling_clear(
+        &self,
+        run: &Run,
+        source_faces: &[usize],
+        dec: &mut Decider,
+    ) -> Result<(), Refusal> {
+        let overflow = || {
+            Refusal::new(
+                "fillet.unsupported-overflow",
+                "the field contact region reaches another support and needs trimmed continuation",
+            )
+        };
+        let bounds = run.piece.bounds().ok_or_else(overflow)?;
+        let region = bounds
+            .each_ref()
+            .map(|[lo, hi]| Ball::from_rational(lo, 128).hull(&Ball::from_rational(hi, 128)));
+        let own: Vec<usize> = run.faces.iter().chain(&run.ends).copied().collect();
+        for &i in source_faces {
+            let face = &self.faces[i];
+            if own
+                .iter()
+                .any(|&j| j == i || face.support.same_definition(&self.faces[j].support))
+            {
+                continue;
+            }
+            dec.charge_work(1)?;
+            if face.polynomial.eval_ball(&region, dec)?.contains_zero() {
+                return Err(overflow());
+            }
+        }
+        Ok(())
+    }
+
+    /// Compiles one run's region and applies it to `result`.
+    pub(super) fn apply_run(
+        &mut self,
+        result: usize,
+        run: Run,
+        source_faces: &[usize],
+        dec: &mut Decider,
+    ) -> Result<usize, Refusal> {
+        self.rolling_clear(&run, source_faces, dec)?;
+        let convex = run.piece.convex();
+        let node = self.leaf(
+            geometry::Leaf::Rolling(Box::new(run.piece)),
+            Vec::new(),
+            dec,
+        )?;
+        self.boolean(
+            if convex {
+                catallax_recipe::BooleanKind::Subtract
+            } else {
+                catallax_recipe::BooleanKind::Union
+            },
+            result,
+            node,
+            dec,
+        )
+    }
+}

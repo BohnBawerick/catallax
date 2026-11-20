@@ -493,11 +493,25 @@ fn crossed_cylinders_round_both_rings() {
     assert_eq!(built.fillets.len(), 2);
 }
 
+/// 4.2a step 2: the field derives each straight path between parallel
+/// cylinders from their offsets and agrees with the B-rep's two strips.
 #[test]
-fn the_independent_field_refuses_cylinder_pairs_rather_than_guessing_a_section() {
+fn the_independent_field_derives_the_cylinder_pair_strips() {
     let recipe = rounded(pair("intersect"), "5/4", json!([walls()]));
-    let refusal = Plan::compile_checked(&recipe, &mut decider()).unwrap_err();
-    assert_eq!(refusal.code, "field.fillet-contact", "{refusal:?}");
+    let plan = Plan::compile_checked(&recipe, &mut decider()).unwrap();
+    assert_eq!(plan.rolling_pieces().count(), 2);
+    let mut workspace = Workspace::default();
+    for (p, want) in [
+        (["0", "17/5", "6"], Location::Inside),
+        (["0", "-17/5", "6"], Location::Inside),
+        (["0", "18/5", "6"], Location::Outside),
+        (["0", "-18/5", "6"], Location::Outside),
+    ] {
+        let query = plan
+            .proven_checked(&point(p), &mut workspace, &mut decider())
+            .unwrap();
+        assert_eq!(query.location, want, "{p:?}");
+    }
 }
 
 #[test]
@@ -744,17 +758,46 @@ fn the_field_agrees_on_a_single_generator_between_a_cylinder_and_a_flat() {
     assert_eq!(query.location, Location::Boundary, "{query:?}");
 }
 
+/// 4.2a step 2: what the elementary route cannot section, two generators
+/// that share one blend name and an irrational ball centre, the field builds
+/// as straight path pieces.
 #[test]
-fn the_field_refuses_what_it_cannot_section_exactly() {
-    // Both generators of a flat share one blend name.
+fn the_field_builds_what_it_cannot_section_exactly() {
     let both = rounded(d_shaft(), "7/4", json!([flat()]));
-    let refusal = Plan::compile_checked(&both, &mut decider()).unwrap_err();
-    assert_eq!(refusal.code, "field.fillet-contact", "{refusal:?}");
-    // An irrational ball centre has no rational section.
     let irrational = rounded(
         with_block("intersect", ["-12", "0", "-10", "3"], IDENTITY),
         "3/4",
         json!([flat()]),
     );
-    assert!(Plan::compile_checked(&irrational, &mut decider()).is_err());
+    let mut workspace = Workspace::default();
+    for (recipe, pieces, points) in [
+        (
+            both,
+            2,
+            vec![
+                (["18/5", "13/5", "6"], Location::Inside),
+                (["-18/5", "13/5", "6"], Location::Inside),
+                (["39/10", "29/10", "6"], Location::Outside),
+                (["-39/10", "29/10", "6"], Location::Outside),
+            ],
+        ),
+        (
+            irrational,
+            1,
+            vec![
+                (["-3", "1", "6"], Location::Inside),
+                (["-1", "1", "6"], Location::Inside),
+                (["1", "1", "6"], Location::Outside),
+            ],
+        ),
+    ] {
+        let plan = Plan::compile_checked(&recipe, &mut decider()).unwrap();
+        assert_eq!(plan.rolling_pieces().count(), pieces);
+        for (p, want) in points {
+            let query = plan
+                .proven_checked(&point(p), &mut workspace, &mut decider())
+                .unwrap();
+            assert_eq!(query.location, want, "{p:?}");
+        }
+    }
 }

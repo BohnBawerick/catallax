@@ -88,8 +88,110 @@ fn largest_settled<'a, T: Copy>(
     largest.ok_or_else(|| bad("trim", "an edge use has no gap reading"))
 }
 
+/// The work allowance of one edge use across an import admission, with what
+/// the checker has read of the use so far.
+///
+/// Section 4.2 step 8: "A hard per-edge work cap refuses by name." An import
+/// admission does more than one thing with a use. Admission reads its
+/// same-parameter gap. The gap rule for imports (decision Q9) reads its
+/// geometric gap and may give its face copy the edge's parameter. The body
+/// is then admitted with the new copies. All of that takes its work from
+/// this one account, and each step is given what the steps before it left.
+///
+/// Where a stored tolerance is over the cap, rule T3's refit and the
+/// admissions around it draw on the same account.
+///
+/// A reading that is kept here is not taken again. A later step of the same
+/// admission uses it as it stands, so no copy is read twice and no reading
+/// starts a new cap.
+#[derive(Clone, Debug)]
+pub(super) struct UseAccount {
+    /// The one allowance of the use.
+    limit: u64,
+    /// What every reading so far has counted against it.
+    spent: u64,
+    /// The checker's readings of the copy the use has now: the copy itself
+    /// and, for a projected copy, its two declared ends. `None` before the
+    /// use is read, and for a derived copy, which is not measured.
+    readings: Option<Vec<gap::GapMeasure>>,
+    /// The readings of the copy as imported, for an admission that goes
+    /// back to it after a new copy was tried.
+    imported: Option<Vec<gap::GapMeasure>>,
+}
+
+impl UseAccount {
+    /// The account of a use that has not been read, with the allowance
+    /// `allowance`.
+    pub(super) fn new(allowance: Limits) -> Self {
+        Self {
+            limit: allowance.work,
+            spent: 0,
+            readings: None,
+            imported: None,
+        }
+    }
+
+    /// One account per edge use of `definition`, in definition order, each
+    /// with the allowance `each_use`.
+    pub(super) fn for_uses(definition: &NumericalDefinition, each_use: Limits) -> Vec<Self> {
+        let uses = definition
+            .faces
+            .iter()
+            .flat_map(|face| &face.loops)
+            .map(Vec::len)
+            .sum();
+        vec![Self::new(each_use); uses]
+    }
+
+    /// What the use has left of its allowance.
+    pub(super) fn left(&self) -> Limits {
+        Limits {
+            work: self.limit.saturating_sub(self.spent),
+        }
+    }
+
+    /// The work counted against the allowance so far.
+    pub(super) fn spent(&self) -> u64 {
+        self.spent
+    }
+
+    /// Counts work that a reading took from [`Self::left`].
+    pub(super) fn spend(&mut self, work: u64) {
+        self.spent = self.spent.saturating_add(work);
+    }
+
+    /// The checker's reading of the copy the use has now, where one is
+    /// kept.
+    pub(super) fn reading(&self) -> Option<&gap::GapMeasure> {
+        self.readings.as_ref().and_then(|kept| kept.first())
+    }
+
+    /// Counts and keeps readings of the copy as imported that were taken
+    /// from [`Self::left`].
+    pub(super) fn keep(&mut self, readings: &[gap::GapMeasure]) {
+        for reading in readings {
+            self.spend(reading.work);
+        }
+        self.readings = Some(readings.to_vec());
+        self.imported = self.readings.clone();
+    }
+
+    /// Keeps `reading` as the reading of a new copy of the use, in place of
+    /// the old copy's. Its work was counted when it was taken.
+    pub(super) fn replace(&mut self, reading: gap::GapMeasure) {
+        self.readings = Some(vec![reading]);
+    }
+
+    /// Goes back to the copy as imported: its readings are the kept ones
+    /// again. Only a use whose copy was replaced changes. What was counted
+    /// stays counted.
+    pub(super) fn back_to_imported(&mut self) {
+        self.readings = self.imported.clone();
+    }
+}
+
 /// The edge's two parameters in the order this use runs through them.
-fn traversal<'a>(trim: &NumericalTrim, edge: &'a NumericalEdge) -> [&'a Rational; 2] {
+pub(super) fn traversal<'a>(trim: &NumericalTrim, edge: &'a NumericalEdge) -> [&'a Rational; 2] {
     if trim.sense == Sense::Same {
         edge.parameters.each_ref()
     } else {
@@ -97,21 +199,33 @@ fn traversal<'a>(trim: &NumericalTrim, edge: &'a NumericalEdge) -> [&'a Rational
     }
 }
 
-/// The checker's reading of one edge use against its face copy: the retained
-/// native curve where there is one, the projection for a circle or spline on
-/// a plane, and the straight u/v segment otherwise.
-fn first_reading<'a>(
+/// The face copy of one edge use: the retained native curve where there is
+/// one, the projection for a circle or spline on a plane, and the straight
+/// u/v segment otherwise.
+fn face_copy<'a>(
+    face: &NumericalFace,
+    trim: &'a NumericalTrim,
+    edge: &NumericalEdge,
+    native: Option<&'a BSplineCurve>,
+) -> FaceCopyRef<'a> {
+    match native {
+        Some(curve) => FaceCopyRef::Native(curve),
+        None if analytic::projected_edge(face, edge) => FaceCopyRef::Projected,
+        None => FaceCopyRef::Linear(&trim.uv),
+    }
+}
+
+/// The checker's reading of one edge use against its face copy, under the
+/// checker's cap, for the audit of derived copies. Admission does not read
+/// through here: it takes its readings in [`stored_sample`].
+fn audit_reading<'a>(
     face: &'a NumericalFace,
     trim: &'a NumericalTrim,
     edge: &'a NumericalEdge,
     native: Option<&'a BSplineCurve>,
     dec: &mut Decider,
 ) -> Result<(FaceCopyRef<'a>, gap::GapMeasure), Refusal> {
-    let copy = match native {
-        Some(curve) => FaceCopyRef::Native(curve),
-        None if analytic::projected_edge(face, edge) => FaceCopyRef::Projected,
-        None => FaceCopyRef::Linear(&trim.uv),
-    };
+    let copy = face_copy(face, trim, edge, native);
     let copies = EdgeCopies {
         curve: &edge.curve,
         parameters: traversal(trim, edge),
@@ -122,15 +236,52 @@ fn first_reading<'a>(
     Ok((copy, found))
 }
 
-/// Refits the face copy of one edge use from its 3D curve (rules T7 and T8)
-/// until rule T4's stored tolerance is at most `target_mm`. `None` for a
+/// The checker's readings of one measured edge use under `limits`, the use's
+/// one allowance: the copy itself and, for a projected copy, its two
+/// declared ends.
+///
+/// A projected copy has no u/v of its own between its ends, but its two
+/// declared end values are part of the trim and are measured. It is the same
+/// edge use, so that second reading draws on what the first one left. A copy
+/// that leaves its surface's domain is refused by the caller, and its ends
+/// are not read.
+fn take_readings(
+    copies: &EdgeCopies<'_>,
+    trim: &NumericalTrim,
+    projected: bool,
+    limits: Limits,
+    dec: &mut Decider,
+) -> Result<Vec<gap::GapMeasure>, Refusal> {
+    let found = gap::measure(copies, &Hints::default(), limits, dec)?;
+    if !projected || found.domain_exit.is_some() {
+        return Ok(vec![found]);
+    }
+    let declared = EdgeCopies {
+        face_copy: FaceCopyRef::Linear(&trim.uv),
+        ..*copies
+    };
+    let left = Limits {
+        work: limits.work.saturating_sub(found.work),
+    };
+    let ends = gap::measure_ends(&declared, left, dec)?;
+    Ok(vec![found, ends])
+}
+
+/// Refits the face copy of one edge use from its 3D curve (rules T3, T7 and
+/// T8) until rule T4's stored tolerance is at most `target_mm`. `None` for a
 /// curve projected on a plane, which has no u/v copy of its own.
+///
+/// `account` is the use's account in an import admission (rule T3). The
+/// refit then draws on what the use has left of its one allowance, and its
+/// work is counted there with or without a new copy. The refit of an own
+/// build passes `None`.
 pub(super) fn refit_use(
     face: &NumericalFace,
     trim: &NumericalTrim,
     edge: &NumericalEdge,
     native: Option<&BSplineCurve>,
     target_mm: f64,
+    account: Option<&mut UseAccount>,
     dec: &mut Decider,
 ) -> Result<Option<gap::refit::Refit>, Refusal> {
     let copy = match native {
@@ -144,7 +295,14 @@ pub(super) fn refit_use(
         surface: GapSurface::Kernel(&face.surface),
         face_copy: copy,
     };
-    gap::refit::refit(&copies, target_mm, dec)
+    match account {
+        None => gap::refit::refit(&copies, target_mm, dec),
+        Some(account) => {
+            let fit = gap::refit::refit_within(&copies, target_mm, account.left(), dec)?;
+            account.spend(fit.work);
+            Ok(fit.copy)
+        }
+    }
 }
 
 /// One derived copy as the full check reads it.
@@ -204,7 +362,7 @@ pub fn audit_derived_copies(
                 if native.is_none() && analytic::projected_edge(face, edge) {
                     continue;
                 }
-                let (_, found) = first_reading(face, trim, edge, native, dec)?;
+                let (_, found) = audit_reading(face, trim, edge, native, dec)?;
                 rows.push(DerivedCopyAudit {
                     face: face.key.clone(),
                     edge: edge.key.clone(),
@@ -229,6 +387,13 @@ pub fn audit_derived_copies(
 ///
 /// A plane-projected use has two readings, the projected curve and its two
 /// declared ends. Both are settled by [`settled`] and the larger is stored.
+///
+/// `account` is the use's account in an import admission. The readings are
+/// then taken under what the use has left of its one allowance, counted and
+/// kept. Where the account already keeps the readings of this copy, they
+/// are used as they stand and the checker does not read the use again.
+/// Every other admission passes `None` and reads under the checker's cap.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn stored_sample(
     face: &NumericalFace,
     trim: &NumericalTrim,
@@ -236,6 +401,7 @@ pub(super) fn stored_sample(
     native: Option<&BSplineCurve>,
     tag: &CopyTag,
     limit: &Rational,
+    account: Option<&mut UseAccount>,
     dec: &mut Decider,
 ) -> Result<(bool, NumericalSample), Refusal> {
     let ends = traversal(trim, edge);
@@ -264,14 +430,30 @@ pub(super) fn stored_sample(
             },
         ));
     }
-    let (copy, found) = first_reading(face, trim, edge, native, dec)?;
+    let copy = face_copy(face, trim, edge, native);
     let copies = EdgeCopies {
         curve: &edge.curve,
         parameters: ends,
         surface: GapSurface::Kernel(&face.surface),
         face_copy: copy,
     };
-    if let Some(exit) = found.domain_exit {
+    let readings = match account
+        .as_deref()
+        .and_then(|account| account.readings.clone())
+    {
+        Some(kept) => kept,
+        None => {
+            let limits = account
+                .as_deref()
+                .map_or_else(Limits::default, UseAccount::left);
+            let taken = take_readings(&copies, trim, projected, limits, dec)?;
+            if let Some(account) = account {
+                account.keep(&taken);
+            }
+            taken
+        }
+    };
+    if let Some(exit) = readings.first().and_then(|found| found.domain_exit) {
         return Err(bad(
             "trim",
             format!(
@@ -280,24 +462,11 @@ pub(super) fn stored_sample(
             ),
         ));
     }
-    let mut candidates = vec![(copy, found)];
-    if projected {
-        // A projected copy has no u/v of its own between its ends, but its
-        // two declared end values are part of the trim and are measured. It
-        // is the same edge use, so this second reading draws on what the
-        // first one left of the use's one allowance.
-        let declared = EdgeCopies {
-            face_copy: FaceCopyRef::Linear(&trim.uv),
-            ..copies
-        };
-        let left = Limits {
-            work: Limits::default().work.saturating_sub(candidates[0].1.work),
-        };
-        candidates.push((
-            FaceCopyRef::Linear(&trim.uv),
-            gap::measure_ends(&declared, left, dec)?,
-        ));
-    }
+    // The copy itself, then the declared ends of a projected copy.
+    let candidates: Vec<(FaceCopyRef<'_>, gap::GapMeasure)> = [copy, FaceCopyRef::Linear(&trim.uv)]
+        .into_iter()
+        .zip(readings)
+        .collect();
     // Every reading goes through the decision near the limit on its own, and
     // the largest result is stored with its own parameter.
     let (decided_on, parameter, distance_upper_mm) =

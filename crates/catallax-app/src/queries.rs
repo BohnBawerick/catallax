@@ -8,14 +8,14 @@
 
 use std::collections::BTreeMap;
 
-use catallax_boolean::{BoolOp, FaceClass, SectionEdge, boolean, classify, imprint, intersect};
+use catallax_boolean::{BoolOp, FaceClass, boolean, classify, imprint, intersect};
 use catallax_measure::{Accuracy, Enclosure};
 use catallax_numbers::{
     Answer, Answered, Decider, Outcome, Rational, Real, Refusal, StrictSign,
     operation_budget_active, with_operation_budget,
 };
-use catallax_shapes::{Circle, PointId, Pose, RPoint3, RVector3, Rotation, Surface, Vector3};
-use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense, block};
+use catallax_shapes::{Circle, CurveId, PointId, RPoint3, RVector3, Surface, Vector3};
+use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense};
 
 use crate::{
     ApplicationBody, DEFAULT_BUILD_WORK,
@@ -62,15 +62,37 @@ pub struct SectionPlane {
     pub normal: RVector3,
 }
 
-/// Trimmed section definitions and isolated tangent points.
+/// One exact piece of a section: a cut across one face, or an edge of the
+/// body that lies in the plane.
+#[derive(Clone, Debug)]
+pub struct SectionArc {
+    /// Carrier in [`SectionCurves::model`]: the exact intersection of a
+    /// face's surface with the plane, or the edge's own curve.
+    pub curve: CurveId,
+    /// Start along the carrier's natural direction; `None` with `end` for
+    /// the whole closed carrier. An edge with one vertex on a closed carrier
+    /// starts and ends there.
+    pub start: Option<PointId>,
+    /// End along the carrier's natural direction.
+    pub end: Option<PointId>,
+    /// Faces of the body the piece lies on, in `faces_of_body` order: the
+    /// one face it cuts across, or the faces of the edge.
+    pub faces: Vec<FaceId>,
+    /// The edge, for an edge of the body that lies in the plane.
+    pub edge: Option<EdgeId>,
+}
+
+/// Trimmed section definitions and isolated contact points.
 #[derive(Clone, Debug)]
 pub struct SectionCurves {
-    /// Owns every curve and point handle below. The input model is untouched.
+    /// Owns every curve and point handle below. The input model is untouched;
+    /// edge and face ids are the input body's.
     pub model: Model,
-    /// Exact trimmed branches in deterministic graph order. Source faces are
-    /// in `faces_of_first`; the second faces belong to the private cutting tool.
-    pub curves: Vec<SectionEdge>,
-    /// Isolated contacts, not silently discarded as an empty section.
+    /// Edges in the plane in edge order, then cuts in face order, each face's
+    /// cuts in carrier order and then along the carrier.
+    pub curves: Vec<SectionArc>,
+    /// Isolated contacts, not silently discarded as an empty section: tangent
+    /// points, and vertices that touch the plane off every curve.
     pub points: Vec<PointId>,
 }
 
@@ -175,15 +197,17 @@ pub(crate) fn sign(value: &Real, dec: &mut Decider) -> Result<i8, Refusal> {
     }
 }
 
-/// Section a body by a rational plane using the Boolean engine's trimmed
-/// intersection graph. A bounded cutting tool encloses the body's certified
-/// box strictly on its other five sides. Coplanar faces refuse explicitly.
-/// Bounding, intersection and tangent-point refusals retain their own codes.
+/// Section a body by a rational plane, face by face (`views/section.rs`,
+/// OpenCASCADE's `BOPAlgo_Section` pattern against an unbounded plane). Each
+/// face's surface meets the plane in exact curves, cut where the face
+/// boundary crosses the plane and kept where the face holds them. A planar
+/// face in the plane contributes its boundary edges; every edge of the body
+/// that lies in the plane appears once, under its own id. Intersection and
+/// membership refusals keep their own codes.
 pub fn section_curves(
     model: &Model,
     body: BodyId,
     plane: &SectionPlane,
-    accuracy: &Accuracy,
     dec: &mut Decider,
 ) -> Result<Answer<SectionCurves>, QueryRefusal> {
     query(model, &[body], || {
@@ -191,89 +215,7 @@ pub fn section_curves(
         if plane.normal.is_zero() {
             return Err(Refusal::new("app.section-normal", "section normal is zero"));
         }
-        let bounds = catallax_measure::bounding_box(model, body, accuracy, dec)?;
-        let mut scratch = model.clone();
-        let mut marks = bounds.marks;
-        marks.extend(&model.body(body).marks);
-        let Some(bounds) = bounds.value else {
-            return Ok(Answer::with_marks(
-                SectionCurves {
-                    model: scratch,
-                    curves: Vec::new(),
-                    points: Vec::new(),
-                },
-                marks,
-            ));
-        };
-        let n = plane.normal.to_real();
-        let origin = plane.origin.to_real();
-        for face in model.faces_of_body(body) {
-            if let Surface::Plane(p) = model.geom().surface(model.face(face).surface)
-                && sign(&p.normal.cross(&n).norm_squared(), dec)? == 0
-                && sign(&origin.minus(&p.origin).dot(&n), dec)? == 0
-            {
-                return Err(Refusal::new(
-                    "app.section-coplanar",
-                    "section contains a planar face; region boundary extraction is unfinished",
-                ));
-            }
-        }
-        let coordinates = [&plane.origin.x, &plane.origin.y, &plane.origin.z];
-        let radius = (0..3).fold(Rational::one(), |sum, i| {
-            sum + (&bounds.min[i] - coordinates[i])
-                .abs()
-                .max((&bounds.max[i] - coordinates[i]).abs())
-        });
-        let unit = n.scaled(&(Real::one() / n.norm_squared().sqrt()));
-        let rotation = if plane.normal.x.is_zero() && plane.normal.y.is_zero() {
-            if plane.normal.z.sign() == catallax_numbers::Sign::Negative {
-                Rotation::from_quaternion(
-                    Rational::zero(),
-                    Rational::one(),
-                    Rational::zero(),
-                    Rational::zero(),
-                )?
-            } else {
-                Rotation::identity()
-            }
-        } else {
-            Rotation::from_real_quaternion(
-                &Real::one() + &unit.z,
-                -&unit.y,
-                unit.x.clone(),
-                Real::zero(),
-                dec,
-            )?
-        };
-        let offset = rotation.apply(&Vector3::new(
-            (-&radius).into(),
-            (-&radius).into(),
-            Real::zero(),
-        ));
-        let pose = Pose::new(
-            rotation,
-            origin
-                .plus(&offset)
-                .minus(&catallax_shapes::Point3::origin()),
-            dec,
-        )?;
-        let tool = block(
-            &mut scratch,
-            [&radius + &radius, &radius + &radius, radius],
-            &pose,
-        )?;
-        let graph = intersect(&mut scratch, body, tool, dec)?;
-        marks.extend(&graph.marks);
-        let curves = graph.value.edges().to_vec();
-        let points = graph.value.points().to_vec();
-        Ok(Answer::with_marks(
-            SectionCurves {
-                model: scratch,
-                curves,
-                points,
-            },
-            marks,
-        ))
+        crate::views::section::plane_section(model, body, &plane.origin, &plane.normal, dec)
     })
 }
 
@@ -635,10 +577,9 @@ impl ApplicationBody {
     pub fn section_curves(
         &self,
         plane: &SectionPlane,
-        accuracy: &Accuracy,
         dec: &mut Decider,
     ) -> Result<Answer<SectionCurves>, QueryRefusal> {
-        section_curves(&self.built.model, self.built.result, plane, accuracy, dec)
+        section_curves(&self.built.model, self.built.result, plane, dec)
     }
     /// Exact outline of this result for a direction toward the viewer.
     pub fn silhouette(

@@ -12,7 +12,7 @@ use std::f64::consts::{FRAC_PI_2, PI, TAU};
 
 use super::super::float::{above, dot, unit};
 
-pub(super) type V3 = [f64; 3];
+pub(in crate::views) type V3 = [f64; 3];
 
 fn add(a: V3, b: V3) -> V3 {
     [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
@@ -34,7 +34,7 @@ pub(super) fn distance(a: V3, b: V3) -> f64 {
 /// One Bezier span of a B-spline, over the knot interval `[lo, hi]`, with
 /// homogeneous controls `(w x, w y, w z, w)`.
 #[derive(Clone, Debug)]
-pub(super) struct Span {
+pub(in crate::views) struct Span {
     pub lo: f64,
     pub hi: f64,
     pub ctrl: Vec<[f64; 4]>,
@@ -83,14 +83,14 @@ pub(super) fn split<const D: usize>(ctrl: &[[f64; D]], s: f64) -> (Vec<[f64; D]>
 }
 
 /// Controls of the part of a Bezier span over local `[a, b]`.
-fn restrict(ctrl: &[[f64; 4]], a: f64, b: f64) -> Vec<[f64; 4]> {
+pub(in crate::views) fn restrict(ctrl: &[[f64; 4]], a: f64, b: f64) -> Vec<[f64; 4]> {
     let (left, _) = split(ctrl, b);
     if b > 0.0 { split(&left, a / b).1 } else { left }
 }
 
 /// Decomposes a B-spline of degree `p` with knots `u` and homogeneous
 /// controls into its Bezier spans (Piegl and Tiller, algorithm A5.6).
-pub(super) fn decompose(p: usize, u: &[f64], pw: &[[f64; 4]]) -> Vec<Span> {
+pub(in crate::views) fn decompose(p: usize, u: &[f64], pw: &[[f64; 4]]) -> Vec<Span> {
     let m = u.len() - 1;
     let mut spans = Vec::new();
     let mut a = p;
@@ -146,7 +146,7 @@ pub(super) fn decompose(p: usize, u: &[f64], pw: &[[f64; 4]]) -> Vec<Span> {
 
 /// How the native parameter follows a piece's Bezier parameter `s`.
 #[derive(Clone, Copy, Debug)]
-pub(super) enum Map {
+pub(in crate::views) enum Map {
     /// `lo + s (hi - lo)`.
     Linear { lo: f64, hi: f64 },
     /// A rational quadratic arc of half angle `half` about angle `mid`:
@@ -166,13 +166,13 @@ impl Map {
 
 /// A rational Bezier piece of a stroke with its parameter map.
 #[derive(Clone, Debug)]
-pub(super) struct Piece {
+pub(in crate::views) struct Piece {
     pub ctrl: Vec<[f64; 4]>,
     pub map: Map,
 }
 
 #[derive(Clone, Debug)]
-pub(super) enum Geo {
+pub(in crate::views) enum Geo {
     /// `o + t v`.
     Line { o: V3, v: V3 },
     /// `c + cos t u + sin t w`, with `u` perpendicular to `w`.

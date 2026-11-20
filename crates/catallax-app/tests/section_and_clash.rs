@@ -21,7 +21,6 @@ fn collar_section_overlap_and_shared_faces_use_retained_definitions() {
             origin: RPoint3::new(0.into(), 6.into(), 0.into()),
             normal: RVector3::new(0.into(), 1.into(), 0.into()),
         },
-        &Accuracy::default(),
         &mut Decider::default(),
     )
     .unwrap();
@@ -97,7 +96,6 @@ fn tray_section_retains_outer_and_inner_trimmed_branches() {
             origin: RPoint3::new(0.into(), 0.into(), 6.into()),
             normal: RVector3::new(0.into(), 0.into(), 1.into()),
         },
-        &Accuracy::default(),
         &mut Decider::default(),
     )
     .unwrap();

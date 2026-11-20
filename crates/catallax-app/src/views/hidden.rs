@@ -49,7 +49,7 @@ use crate::queries::{QueryRefusal, query, sign};
 
 mod cross;
 mod exact;
-mod geo;
+pub(super) mod geo;
 mod ray;
 mod surface;
 

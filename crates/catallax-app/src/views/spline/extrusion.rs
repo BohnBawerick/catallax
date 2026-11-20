@@ -142,7 +142,7 @@ pub(super) fn generators(
         // A ruling at either end of the profile is the band's side edge.
         let on_faces = if sign(&u, dec)? == 0 || sign(&(&Real::one() - &u), dec)? == 0 {
             let middle = base.plus(&direction.scaled(&(&(&low + &high) / &Real::from_i64(2))));
-            lies_along(scratch, body_faces, face, &middle, &rulings, dec)?
+            lies_along(scratch, body_faces, face, &middle, &rulings, dec)?.faces
         } else {
             vec![face]
         };

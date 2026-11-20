@@ -16,10 +16,11 @@ model. Their geometry already includes their placements. It returns:
 
 - `Clash` only when the overlap-volume enclosure has a positive lower bound.
 - `Clear` only after proving zero overlap, then enclosing the minimum distance
-  over every pair of closed boundary faces. Its lower bound must be positive
-  and its width must meet the requested `Accuracy`.
+  between the two closed boundaries. Its lower bound must be positive. An
+  enclosure wider than the requested `Accuracy` carries the
+  `measure.accuracy-not-reached` mark ([3.3 step 1](milestones/3.3-clash-clearance.md)).
 - `QueryRefusal` for contact, empty operands, unsupported distances, uncertain
-  overlap, a wider gap enclosure or exhausted arithmetic work.
+  overlap, a gap not proven positive or exhausted arithmetic work.
 
 Zero overlap establishes the noncrossing precondition of the existing
 trimmed-entity distance query. A minimum over every boundary pair covers all

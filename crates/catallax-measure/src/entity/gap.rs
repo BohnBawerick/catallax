@@ -20,6 +20,10 @@
 //! exact dyadic positions. A missed admitted member is harmless: the admitted
 //! part of such a set is closed and, unless it is the whole set, ends on a
 //! lower stratum, where the same value is stationary again.
+//!
+//! Between two whole solids the face pairs are visited in order of their
+//! boxes' separation, and one best distance prunes every later pair (see
+//! [`solids`]).
 
 use super::critical::Core;
 use super::critical::{CorePair, Critical, Dirs, Family, critical};
@@ -27,7 +31,8 @@ use super::{EdgeCurve, PairEntity, edge_curve, enclose, face_surface, root, sign
 use crate::{Accuracy, Enclosure, distance::PreparedFace};
 use catallax_numbers::{Answer, Answered, Ball, Decider, MarkLog, Rational, Real, Refusal, Sign};
 use catallax_shapes::{Point3, Surface, Vector3, distance::Finite};
-use catallax_topology::{EdgeId, FaceId, Loop, Model, Sense, VertexId};
+use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense, VertexId};
+use std::collections::BTreeMap;
 
 /// Dyadic probe levels along a slid family: at most 31 positions.
 const SLIDE_LEVELS: u32 = 4;
@@ -75,6 +80,10 @@ struct Scratch<'a> {
 }
 
 impl Scratch<'_> {
+    fn model(&mut self) -> &mut Model {
+        self.copy.get_or_insert_with(|| self.model.clone())
+    }
+
     fn contains(&mut self, face: FaceId, p: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
         let model = self.copy.get_or_insert_with(|| self.model.clone());
         catallax_boolean::face_contains(model, face, p, dec)
@@ -382,9 +391,12 @@ struct Best {
     lo: Rational,
 }
 
-struct Search<'a> {
-    scratch: Scratch<'a>,
+struct Search<'s, 'a> {
+    scratch: &'s mut Scratch<'a>,
     best: Option<Best>,
+    /// An upper bound already attained by another pair of entities. A pair
+    /// that cannot come below it cannot lower the minimum.
+    cutoff: Option<Rational>,
 }
 
 fn signs(offset: &Option<Real>) -> &'static [i64] {
@@ -469,7 +481,57 @@ fn slide_range(
     Ok(range.filter(|(lo, hi)| lo <= hi))
 }
 
-impl Search<'_> {
+impl Search<'_, '_> {
+    /// The least upper bound attained so far, here or by another entity pair.
+    fn bound(&self) -> Option<&Rational> {
+        match (self.best.as_ref().map(|b| &b.hi), self.cutoff.as_ref()) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        }
+    }
+
+    /// Visits every pair of strata and returns the pairs without a closed form.
+    fn visit<'x>(
+        &mut self,
+        sa: &'x [Stratum],
+        sb: &'x [Stratum],
+        dec: &mut Decider,
+    ) -> Result<Vec<(&'x Stratum, &'x Stratum)>, Refusal> {
+        let mut deferred = Vec::new();
+        'strata: for (i, x) in sa.iter().enumerate() {
+            for (j, y) in sb.iter().enumerate() {
+                dec.check_deadline()?;
+                let top = i == 0 && j == 0;
+                if !top && skip(self, x, y) {
+                    continue;
+                }
+                let found = match (&x.core, &y.core) {
+                    (Some(cx), Some(cy)) => critical(cx, cy, dec)?,
+                    _ => None,
+                };
+                let Some(found) = found else {
+                    if !parallel_faces(x, y, dec)? {
+                        deferred.push((x, y));
+                    }
+                    continue;
+                };
+                if !self.strata_pair(x, y, &found, dec)? {
+                    deferred.push((x, y));
+                    continue;
+                }
+                // Every stratum lies on the carriers, so attaining their lower
+                // bound ends the search.
+                if top
+                    && let Some(best) = &self.best
+                    && zero(&(&best.value - &floor(x, y, &found, dec)?), dec)?
+                {
+                    break 'strata;
+                }
+            }
+        }
+        Ok(deferred)
+    }
+
     /// The ways to offset `pair` onto both carriers, or `None` when the common
     /// normals form a two-dimensional set.
     fn combos(
@@ -516,7 +578,7 @@ impl Search<'_> {
     }
 
     fn may_improve(&self, combo: &Combo) -> bool {
-        self.best.as_ref().is_none_or(|b| combo.lo < b.hi)
+        self.bound().is_none_or(|b| combo.lo < *b)
     }
 
     /// Offers the offset points of `pair`; true when both trims admit them.
@@ -538,8 +600,8 @@ impl Search<'_> {
         };
         let p = pair.a.plus(&u.scaled(&scaled_offset(&x.offset, combo.sx)));
         let q = pair.b.plus(&u.scaled(&scaled_offset(&y.offset, -combo.sy)));
-        if !x.member.contains(&p, &mut self.scratch, dec)?
-            || !y.member.contains(&q, &mut self.scratch, dec)?
+        if !x.member.contains(&p, self.scratch, dec)?
+            || !y.member.contains(&q, self.scratch, dec)?
         {
             return Ok(false);
         }
@@ -724,11 +786,16 @@ fn floor(
     })
 }
 
-/// Parallel planar faces keep the planar witness search.
+/// Parallel planar faces keep the planar witness search. Faces without exact
+/// rational frames, or without a witness, are left to the strata search, where
+/// their edges and vertices attain the same minimum (see [`parallel_faces`]).
+/// With `general`, a witness search that finds nothing first falls back to the
+/// general trimmed search, as single entity pairs always have.
 fn parallel_planes(
     model: &Model,
     a: FaceId,
     b: FaceId,
+    general: bool,
     accuracy: &Accuracy,
     dec: &mut Decider,
 ) -> Result<Option<Answered<Enclosure>>, Refusal> {
@@ -737,6 +804,15 @@ fn parallel_planes(
         return Ok(None);
     };
     if !zero(&p.normal.cross(&q.normal).norm_squared(), dec)? {
+        return Ok(None);
+    }
+    if [&p.origin, &q.origin]
+        .iter()
+        .any(|o| o.as_rational().is_none())
+        || [&p.normal, &q.normal]
+            .iter()
+            .any(|n| n.as_rational().is_none())
+    {
         return Ok(None);
     }
     let width = if accuracy.absolute.sign() == Sign::Positive {
@@ -751,11 +827,16 @@ fn parallel_planes(
     let mut copy = model.clone();
     let pa = PreparedFace::new(&copy, a, dec)?;
     let pb = PreparedFace::new(&copy, b, dec)?;
-    let bounds = pa.parallel_face_to_face(&pb, &mut copy, &options, dec)?;
+    let bounds = if general {
+        pa.parallel_face_to_face(&pb, &mut copy, &options, dec)?
+    } else {
+        match pa.parallel_witness(&pb, &mut copy, &options, dec)? {
+            Some(bounds) => bounds,
+            None => return Ok(None),
+        }
+    };
     let Some(upper) = bounds.upper else {
-        return Err(uncovered(format!(
-            "no witness pair was found for parallel planar faces {a:?} and {b:?}"
-        )));
+        return Ok(None);
     };
     let enclosure = Enclosure {
         lo: bounds.lower,
@@ -780,44 +861,17 @@ pub(super) fn minimum(
         return Ok(Answer::exact(Enclosure::exact(Rational::zero())));
     }
     if let (PairEntity::Face(fa), PairEntity::Face(fb)) = (a, b)
-        && let Some(answer) = parallel_planes(model, fa, fb, accuracy, dec)?
+        && let Some(answer) = parallel_planes(model, fa, fb, true, accuracy, dec)?
     {
         return answer;
     }
+    let mut scratch = Scratch { model, copy: None };
     let mut search = Search {
-        scratch: Scratch { model, copy: None },
+        scratch: &mut scratch,
         best: None,
+        cutoff: None,
     };
-    let mut deferred = Vec::new();
-    'strata: for (i, x) in sa.iter().enumerate() {
-        for (j, y) in sb.iter().enumerate() {
-            dec.check_deadline()?;
-            let top = i == 0 && j == 0;
-            if !top && skip(&search, x, y) {
-                continue;
-            }
-            let found = match (&x.core, &y.core) {
-                (Some(cx), Some(cy)) => critical(cx, cy, dec)?,
-                _ => None,
-            };
-            let Some(found) = found else {
-                deferred.push((x, y));
-                continue;
-            };
-            if !search.strata_pair(x, y, &found, dec)? {
-                deferred.push((x, y));
-                continue;
-            }
-            // Every stratum lies on the carriers, so attaining their lower
-            // bound ends the search.
-            if top
-                && let Some(best) = &search.best
-                && zero(&(&best.value - &floor(x, y, &found, dec)?), dec)?
-            {
-                break 'strata;
-            }
-        }
-    }
+    let deferred = search.visit(&sa, &sb, dec)?;
     if let Some((x, y)) = deferred.into_iter().find(|(x, y)| !skip(&search, x, y)) {
         return Err(uncovered(format!(
             "no closed form between {:?} and {:?} on {a:?} and {b:?}",
@@ -834,8 +888,310 @@ pub(super) fn minimum(
 
 /// Whether the strata's boxes are at least as far apart as the best witness.
 fn skip(search: &Search, x: &Stratum, y: &Stratum) -> bool {
-    let (Some(best), Some(ex), Some(ey)) = (&search.best, &x.extent, &y.extent) else {
+    let (Some(bound), Some(ex), Some(ey)) = (search.bound(), &x.extent, &y.extent) else {
         return false;
     };
-    separation(ex, ey) >= best.hi
+    separation(ex, ey) >= *bound
+}
+
+/// Whether `x` and `y` are two parallel planar faces. Their stationary pairs
+/// form a two-parameter family with no closed form, but none is needed: the
+/// pairs at the plane gap form a closed region of the overlap of the two
+/// projected faces, and a boundary point of that region lies on an edge or a
+/// vertex of one face. The same minimum is then stationary on that lower
+/// stratum, which the search visits with the faces' own edges and vertices.
+fn parallel_faces(x: &Stratum, y: &Stratum, dec: &mut Decider) -> Result<bool, Refusal> {
+    match (x.kind, y.kind, &x.core, &y.core) {
+        (
+            Kind::Face(_),
+            Kind::Face(_),
+            Some(Core::Plane { normal: n1, .. }),
+            Some(Core::Plane { normal: n2, .. }),
+        ) => zero(&n1.cross(n2).norm_squared(), dec),
+        _ => Ok(false),
+    }
+}
+
+/// One face's strata, or the refusal of an unsupported carrier, and its box.
+struct Prepared {
+    face: FaceId,
+    strata: Result<Vec<Stratum>, Refusal>,
+    extent: Option<[Ball; 3]>,
+}
+
+fn prepare(model: &Model, face: FaceId, dec: &mut Decider) -> Result<Prepared, Refusal> {
+    match strata(model, PairEntity::Face(face), dec) {
+        Ok(strata) => Ok(Prepared {
+            face,
+            extent: strata[0].extent.clone(),
+            strata: Ok(strata),
+        }),
+        Err(refusal) if refusal.code == "measure.unsupported-surface" => {
+            // A carrier without closed forms still has a proven box, which is
+            // enough to set the face aside when it is far from the minimum.
+            let bounds = crate::face_bounding_box(
+                model,
+                face,
+                &Accuracy {
+                    relative: Rational::zero(),
+                    absolute: Rational::from_ratio(1, 1_000_000).unwrap(),
+                },
+                dec,
+            );
+            dec.check_deadline()?;
+            let extent = bounds.ok().filter(|b| b.marks.is_empty()).map(|b| {
+                std::array::from_fn(|i| {
+                    Ball::from_rational(&b.value.min[i], BOX_BITS)
+                        .hull(&Ball::from_rational(&b.value.max[i], BOX_BITS))
+                })
+            });
+            Ok(Prepared {
+                face,
+                strata: Err(refusal),
+                extent,
+            })
+        }
+        Err(refusal) => Err(refusal),
+    }
+}
+
+fn lower(x: &Option<[Ball; 3]>, y: &Option<[Ball; 3]>) -> Rational {
+    match (x, y) {
+        (Some(x), Some(y)) => separation(x, y),
+        _ => Rational::zero(),
+    }
+}
+
+/// An open pair: strata without a closed form, or a face without a supported
+/// carrier, whose boxes' separation is `lower`.
+struct Open {
+    lower: Rational,
+    faces: (usize, usize),
+    what: String,
+}
+
+/// Minimum distance between the closed boundaries of two bodies whose faces do
+/// not cross, as `BRepExtrema_DistShapeShape` in OpenCASCADE prunes it: face
+/// pairs are visited in order of their boxes' separation, and a pair whose
+/// boxes are at least as far apart as the best distance found is skipped. The
+/// strata search of each visited pair also skips anything that cannot come
+/// below that distance. Strata pairs without a closed form whose boxes are
+/// nearer than the final minimum are then settled face pair by face pair with
+/// the certified interval search, which proves the two closed faces no nearer
+/// than that minimum ([`PreparedFace::face_to_face_below`]). Any pair left
+/// unsettled refuses, stating the enclosure reached.
+pub(super) fn solids(
+    model: &Model,
+    a: BodyId,
+    b: BodyId,
+    accuracy: &Accuracy,
+    dec: &mut Decider,
+) -> Answered<Enclosure> {
+    let start = catallax_numbers::current_operation_work().used;
+    let mut sides = [Vec::new(), Vec::new()];
+    for (side, body) in sides.iter_mut().zip([a, b]) {
+        for face in model.faces_of_body(body) {
+            side.push(prepare(model, face, dec)?);
+        }
+    }
+    let [pa, pb] = sides;
+    let mut order = Vec::with_capacity(pa.len() * pb.len());
+    for (i, x) in pa.iter().enumerate() {
+        for (j, y) in pb.iter().enumerate() {
+            order.push((lower(&x.extent, &y.extent), i, j));
+        }
+    }
+    order.sort();
+    let mut scratch = Scratch { model, copy: None };
+    let mut found: Option<Enclosure> = None;
+    let mut marks = MarkLog::new();
+    let mut open: Vec<Open> = Vec::new();
+    for (separated, i, j) in order {
+        dec.check_deadline()?;
+        let cutoff = found.as_ref().map(|f| f.hi.clone());
+        if cutoff.as_ref().is_some_and(|c| separated >= *c) {
+            break;
+        }
+        let (x, y) = (&pa[i], &pb[j]);
+        let (Ok(sx), Ok(sy)) = (&x.strata, &y.strata) else {
+            open.push(Open {
+                lower: separated,
+                faces: (i, j),
+                what: format!("{:?} and {:?}, unsupported carriers", x.face, y.face),
+            });
+            continue;
+        };
+        let answer = if sx.iter().any(|s| sy.iter().any(|t| s.kind == t.kind)) {
+            Some(Answer::exact(Enclosure::exact(Rational::zero())))
+        } else if let Some(answer) = parallel_planes(model, x.face, y.face, false, accuracy, dec)? {
+            Some(answer?)
+        } else {
+            let mut search = Search {
+                scratch: &mut scratch,
+                best: None,
+                cutoff,
+            };
+            for (s, t) in search.visit(sx, sy, dec)? {
+                open.push(Open {
+                    lower: lower(&s.extent, &t.extent),
+                    faces: (i, j),
+                    what: format!(
+                        "{:?} and {:?} on {:?} and {:?}",
+                        s.kind, t.kind, x.face, y.face
+                    ),
+                });
+            }
+            match search.best {
+                Some(best) => Some(enclose(&best.value, accuracy, "minimum distance", dec)?),
+                None => None,
+            }
+        };
+        if let Some(answer) = answer {
+            marks.extend(&answer.marks);
+            found = Some(match found {
+                None => answer.value,
+                Some(f) => Enclosure {
+                    lo: f.lo.min(answer.value.lo),
+                    hi: f.hi.min(answer.value.hi),
+                },
+            });
+        }
+    }
+    // Every open pair lies in the closures of its two faces, so a proof that
+    // those faces are no nearer than the minimum settles all of its pairs.
+    // Without any witness yet, a box diagonal of both solids bounds every
+    // distance between them from above and serves as the ceiling instead.
+    let ceiling = match &found {
+        Some(f) => f.hi.clone(),
+        None => (0..3).fold(Rational::zero(), |sum, k| {
+            let hull = pa
+                .iter()
+                .chain(&pb)
+                .filter_map(|p| p.extent.as_ref())
+                .map(|e| (e[k].lo(), e[k].hi()))
+                .reduce(|(l, h), (a, b)| (l.min(a), h.max(b)));
+            sum + hull.map_or_else(Rational::zero, |(l, h)| h - l)
+        }),
+    };
+    let mut pairs: Vec<(Rational, usize, usize)> = Vec::new();
+    for o in open.iter().filter(|o| o.lower < ceiling) {
+        match pairs.iter_mut().find(|p| (p.1, p.2) == o.faces) {
+            Some(p) => p.0 = p.0.clone().min(o.lower.clone()),
+            None => pairs.push((o.lower.clone(), o.faces.0, o.faces.1)),
+        }
+    }
+    pairs.sort();
+    // With a witness found, settling only tightens a bound the closed forms
+    // already proved, so it may spend at most as much work again as the search
+    // that found them: a pair whose faces make every certified cell costly,
+    // such as planes bounded by spline edges, then keeps its box separation
+    // instead of exhausting the request. Without a witness, settling is the
+    // only route to an answer and runs within the request's own allowance, as
+    // it does outside one. One cell budget, the certified search's own default
+    // for one face pair, serves every open face pair in order.
+    let spent = catallax_numbers::current_operation_work().used - start;
+    let mut settle = || {
+        let mut cells = catallax_shapes::distance::Options::default().max_cells;
+        let mut prepared: BTreeMap<FaceId, Option<PreparedFace>> = BTreeMap::new();
+        let mut unsettled: Vec<(Rational, String)> = Vec::new();
+        let mut witness: Option<Rational> = None;
+        let mut stopped = false;
+        for (least, i, j) in &pairs {
+            let (fa, fb) = (pa[*i].face, pb[*j].face);
+            let what = open
+                .iter()
+                .find(|o| o.faces == (*i, *j))
+                .map(|o| o.what.clone())
+                .unwrap_or_default();
+            if stopped || cells == 0 {
+                unsettled.push((least.clone(), what));
+                continue;
+            }
+            for face in [fa, fb] {
+                if let std::collections::btree_map::Entry::Vacant(slot) = prepared.entry(face) {
+                    slot.insert(PreparedFace::new(model, face, dec).ok());
+                }
+            }
+            let (Some(Some(x)), Some(Some(y))) = (prepared.get(&fa), prepared.get(&fb)) else {
+                stopped = dec.check_deadline().is_err();
+                unsettled.push((least.clone(), what));
+                continue;
+            };
+            match x.face_to_face_below(y, scratch.model(), &ceiling, cells, dec) {
+                Ok(bounds) => {
+                    cells = cells.saturating_sub(bounds.cells);
+                    if bounds.witnesses.is_some()
+                        && let Some(upper) = bounds.upper
+                    {
+                        witness = Some(witness.map_or(upper.clone(), |w| w.min(upper)));
+                    }
+                    if bounds.lower < ceiling {
+                        unsettled.push((bounds.lower.max(least.clone()), what));
+                    }
+                }
+                Err(_) => {
+                    stopped = dec.check_deadline().is_err();
+                    unsettled.push((least.clone(), what));
+                }
+            }
+        }
+        (unsettled, witness)
+    };
+    let (unsettled, witness) = if pairs.is_empty() {
+        (Vec::new(), None)
+    } else if found.is_none() || !catallax_numbers::operation_budget_active() {
+        settle()
+    } else if let Ok(allowance) = catallax_numbers::OperationAllowance::reserve(spent) {
+        allowance.run(settle).0
+    } else {
+        let unsettled = pairs
+            .iter()
+            .map(|(least, i, j)| {
+                let what = open
+                    .iter()
+                    .find(|o| o.faces == (*i, *j))
+                    .map(|o| o.what.clone())
+                    .unwrap_or_default();
+                (least.clone(), what)
+            })
+            .collect();
+        (unsettled, None)
+    };
+    dec.check_deadline()?;
+    if !unsettled.is_empty() {
+        let hi = found
+            .as_ref()
+            .map(|f| f.hi.clone())
+            .into_iter()
+            .chain(witness)
+            .min();
+        let (least, what) = unsettled
+            .iter()
+            .min_by(|p, q| p.0.cmp(&q.0))
+            .expect("nonempty");
+        let lo = found
+            .as_ref()
+            .map_or(least.clone(), |f| f.lo.clone().min(least.clone()));
+        let Some(hi) = hi else {
+            return Err(uncovered(format!(
+                "no closed form between {what} and no witness pair; minimum gap is at least {} mm",
+                lo.to_decimal_bounds(6).0
+            )));
+        };
+        // A proven enclosure, wider than closed forms would give: the bounded
+        // answer kind, marked when it misses the requested accuracy.
+        let enclosure = Enclosure { lo, hi };
+        accuracy.mark(
+            &mut marks,
+            &[&enclosure],
+            &format!("minimum distance, with no closed form between {what},"),
+        );
+        return Ok(Answer::with_marks(enclosure, marks));
+    }
+    let Some(found) = found else {
+        return Err(uncovered(format!(
+            "no stationary pair of {a:?} and {b:?} lies on both boundaries"
+        )));
+    };
+    Ok(Answer::with_marks(found, marks))
 }

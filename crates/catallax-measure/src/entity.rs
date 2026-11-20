@@ -7,7 +7,7 @@ use catallax_numbers::{
     Answer, Answered, Decider, Integer, MarkLog, Outcome, Rational, Real, Refusal, Sign, StrictSign,
 };
 use catallax_shapes::{Point3, Surface, Vector3};
-use catallax_topology::{EdgeId, FaceId, Model};
+use catallax_topology::{BodyId, EdgeId, FaceId, Model};
 
 mod axis;
 mod critical;
@@ -53,6 +53,18 @@ pub(crate) fn measure(
         PairRequest::CentreDistance => axis::centre_distance(model, a, b, accuracy, dec),
         PairRequest::AngleDegrees => axis::angle(model, a, b, accuracy, dec),
     }
+}
+
+pub(crate) fn solids(
+    model: &Model,
+    a: BodyId,
+    b: BodyId,
+    accuracy: &Accuracy,
+    dec: &mut Decider,
+) -> Answered<Enclosure> {
+    accuracy.validate();
+    dec.check_deadline()?;
+    gap::solids(model, a, b, accuracy, dec)
 }
 
 /// Exact sign, refusing when it cannot be decided.

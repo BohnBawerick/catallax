@@ -43,54 +43,12 @@ use catallax_topology::numerical::{gap, tolerance};
 use catallax_topology::{FaceId, Loop, Model};
 
 use super::fit::{self, Jet};
+use super::float::{cross, dot, double, rational, unit, unit_direction};
 use super::{ContourArc, ContourFit, same_point};
 use crate::queries::{perpendicular, sign};
 
 fn zero(value: &Real, dec: &mut Decider) -> Result<bool, Refusal> {
     Ok(sign(value, dec)? == 0)
-}
-
-/// A binary64 value within rule T1's floor of an exact one: the nearest
-/// double of a rational, otherwise the middle of an enclosure that narrow.
-fn double(value: &Real, floor: &Rational, dec: &mut Decider) -> Result<f64, Refusal> {
-    if let Some(rational) = value.rational_ref() {
-        return Ok(rational.to_f64_nearest());
-    }
-    Ok(dec.enclose(value, floor)?.mid().to_f64_nearest())
-}
-
-fn doubles(v: &Vector3, floor: &Rational, dec: &mut Decider) -> Result<[f64; 3], Refusal> {
-    Ok([
-        double(&v.x, floor, dec)?,
-        double(&v.y, floor, dec)?,
-        double(&v.z, floor, dec)?,
-    ])
-}
-
-fn rational(value: f64) -> Result<Rational, Refusal> {
-    Rational::from_f64_exact(value).ok_or_else(|| {
-        Refusal::new(
-            "app.contour-fit",
-            "a fitted contour generator has a nonfinite value",
-        )
-    })
-}
-
-fn unit(v: [f64; 3]) -> [f64; 3] {
-    let n = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
-    [v[0] / n, v[1] / n, v[2] / n]
-}
-
-fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
-
-fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
-    ]
 }
 
 /// The torus and view in binary64, relative to the torus centre.
@@ -401,9 +359,9 @@ fn settings(exact: &Exact<'_>, dec: &mut Decider) -> Result<(Settings, Rational)
     let tube = upper(&t.minor, dec)?;
     let floor = tolerance::floor_mm(&size);
     let target = tolerance::own_fitted(&floor, Some(&tube)).target_mm;
-    let axis = unit(doubles(&t.axis, &floor, dec)?);
-    let reference = unit(doubles(&t.ref_dir, &floor, dec)?);
-    let view = unit(doubles(exact.view, &floor, dec)?);
+    let axis = unit_direction(&t.axis, &floor, dec)?;
+    let reference = unit_direction(&t.ref_dir, &floor, dec)?;
+    let view = unit_direction(exact.view, &floor, dec)?;
     let frame = Frame {
         across: unit(cross(axis, reference)),
         reference,

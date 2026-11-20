@@ -444,4 +444,48 @@ fn a_lofted_barrel_gives_fitted_generators_in_the_plane_through_its_axis() {
     );
     let n = heights.len();
     assert!((heights[n - 1] - 2.0).abs() < 1e-9 && (heights[n - 2] - 2.0).abs() < 1e-9);
+    // The arcs of one generator meet at the chart seams it crosses: they
+    // share their end points there, so each generator is one chain from the
+    // bottom to the top with no loose end inside the face.
+    let mut uses: std::collections::BTreeMap<PointId, Vec<usize>> = Default::default();
+    for (i, arc) in c.arcs.iter().enumerate() {
+        for end in [arc.start.unwrap(), arc.end.unwrap()] {
+            uses.entry(end).or_default().push(i);
+        }
+    }
+    let mut loose = Vec::new();
+    for (point, arcs) in &uses {
+        match arcs.len() {
+            1 => loose.push(position(&c, Some(*point))[2]),
+            2 => assert_ne!(arcs[0], arcs[1], "an arc closes on itself"),
+            k => panic!("{k} arcs meet at one point"),
+        }
+    }
+    loose.sort_by(f64::total_cmp);
+    assert_eq!(loose.len(), 4, "loose ends at heights {loose:?}");
+    assert!(loose[0].abs() < 1e-9 && loose[1].abs() < 1e-9, "{loose:?}");
+    assert!(
+        (loose[2] - 2.0).abs() < 1e-9 && (loose[3] - 2.0).abs() < 1e-9,
+        "{loose:?}"
+    );
+    // Two chains: follow shared ends from each arc.
+    let mut chain = vec![usize::MAX; c.arcs.len()];
+    let mut chains = 0;
+    for first in 0..c.arcs.len() {
+        if chain[first] != usize::MAX {
+            continue;
+        }
+        let mut stack = vec![first];
+        while let Some(i) = stack.pop() {
+            if chain[i] != usize::MAX {
+                continue;
+            }
+            chain[i] = chains;
+            for end in [c.arcs[i].start.unwrap(), c.arcs[i].end.unwrap()] {
+                stack.extend(uses[&end].iter().copied());
+            }
+        }
+        chains += 1;
+    }
+    assert_eq!(chains, 2, "{} arcs", c.arcs.len());
 }

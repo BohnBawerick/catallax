@@ -30,6 +30,9 @@
 //! are traced and fitted (`spline.rs`). Other spline bands refuse with
 //! `app.contour-trim`, and horn or spindle torus sheets with
 //! `app.contour-surface`, rather than return a partial outline.
+//!
+//! [`hidden_line_view`] cuts the edges and generators where visibility can
+//! change and marks each piece visible or hidden (`hidden.rs`).
 
 use catallax_boolean::face_contains;
 use catallax_intersect::{
@@ -50,8 +53,13 @@ use crate::queries::{QueryRefusal, perpendicular, query, sign};
 
 mod fit;
 mod float;
+mod hidden;
 mod spline;
 mod torus;
+
+pub use hidden::{
+    HiddenLineView, StrokeSource, VIEW_RAY_MARK, VIEW_SPLIT_MARK, ViewStroke, hidden_line_view,
+};
 
 /// Code of the mark a [`Contours`] answer carries when any arc is fitted. Its
 /// bound is the largest [`ContourFit::tolerance_mm`]: a measured value, not a
@@ -92,8 +100,12 @@ pub struct ContourArc {
     /// along an existing edge, such as the edge between a cylinder and a
     /// tangent plane.
     pub on_faces: Vec<FaceId>,
-    /// `None` for an exact arc. A fitted arc's ends are still the exact
-    /// boundary crossings; its carrier passes within the deviation of them.
+    /// `None` for an exact arc. On a torus a fitted arc's ends are the
+    /// exact boundary crossings, and its carrier passes within the deviation
+    /// of them. On a traced spline face its ends are where the fitted carrier
+    /// starts and ends, within the deviation of the face boundary; where a
+    /// generator crosses a chart seam of a lofted face, the arcs on the two
+    /// charts share one end point there.
     pub fit: Option<ContourFit>,
 }
 
@@ -635,7 +647,8 @@ fn on_edge_span(
 /// each arc is an exact ruling. On a complete rational patch, or a lofted
 /// face, each arc is fitted the same way, and its ends are where the fitted
 /// carrier starts and ends, within its deviation of the face boundary; a
-/// generator crossing a chart seam of a lofted face is one arc per chart.
+/// generator crossing a chart seam of a lofted face is one arc per chart,
+/// and the two arcs at a seam share their end point there.
 /// Isolated generator points, such as a cone apex seen from inside the
 /// cone's angle, draw nothing and are left out.
 ///

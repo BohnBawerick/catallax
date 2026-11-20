@@ -20,6 +20,7 @@ mod a_plus;
 mod exact;
 mod fixed;
 mod fresh;
+mod import;
 mod smooth;
 
 /// The surface the face copy is lifted through.

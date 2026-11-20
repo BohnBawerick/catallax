@@ -89,7 +89,7 @@ fn largest_settled<'a, T: Copy>(
 }
 
 /// The edge's two parameters in the order this use runs through them.
-fn traversal<'a>(trim: &NumericalTrim, edge: &'a NumericalEdge) -> [&'a Rational; 2] {
+pub(super) fn traversal<'a>(trim: &NumericalTrim, edge: &'a NumericalEdge) -> [&'a Rational; 2] {
     if trim.sense == Sense::Same {
         edge.parameters.each_ref()
     } else {

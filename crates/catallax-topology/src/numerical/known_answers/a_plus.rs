@@ -8,7 +8,7 @@ use crate::numerical::gap::{
 
 struct APlus;
 
-fn copies(geometry: &EdgeGeometry) -> EdgeCopies<'_> {
+pub(super) fn copies(geometry: &EdgeGeometry) -> EdgeCopies<'_> {
     EdgeCopies {
         curve: &geometry.curve,
         parameters: geometry.parameters.each_ref(),
@@ -587,6 +587,7 @@ fn a_hint_is_sampled() {
 fn every_constant_in_the_checker_names_its_source() {
     let files = [
         ("gap.rs", include_str!("../gap.rs")),
+        ("gap/geometric.rs", include_str!("../gap/geometric.rs")),
         ("gap/lift.rs", include_str!("../gap/lift.rs")),
         ("gap/numeric.rs", include_str!("../gap/numeric.rs")),
     ];

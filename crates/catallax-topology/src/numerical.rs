@@ -22,6 +22,8 @@ pub use edge_gap::{DerivedCopyAudit, audit_derived_copies};
 /// The edge-gap checker: the largest distance between an edge's two copies.
 pub mod gap;
 mod handover;
+mod import_gap;
+pub use import_gap::{ImportGapOutcome, ImportGapRow};
 mod native;
 pub use native::{NumericalNativeTrim, build_with_native_trims, build_with_sampled_carriers};
 mod source;
@@ -296,6 +298,7 @@ pub struct NumericalBody {
     body: BodyId,
     evidence: NumericalEvidence,
     tolerances: ToleranceReport,
+    import_gaps: Vec<ImportGapRow>,
 }
 
 /// A previous checked state. Its checks apply to this definition and tolerance only.
@@ -629,6 +632,13 @@ impl NumericalBody {
     pub fn tolerances(&self) -> &ToleranceReport {
         &self.tolerances
     }
+    /// What the gap rule for imports read (decision Q9): one row per edge
+    /// use that [`admit_import`] read geometrically, with the two gaps and
+    /// what was done. Empty for an own build, for a continuation and for a
+    /// body that was read back.
+    pub fn import_gaps(&self) -> &[ImportGapRow] {
+        &self.import_gaps
+    }
     /// Stored topological kind, without exposing the model to exact consumers.
     pub fn kind(&self) -> BodyKind {
         self.model.body(self.body).kind
@@ -743,15 +753,32 @@ pub struct RefitRow {
     pub spans: usize,
 }
 
-/// Admits an imported definition under rule T3. Every entity is measured;
-/// the caller's `options` hold the cap: the automatic 0.01 mm, or a value
-/// the user opted in to, at most 0.1 mm. Where a stored tolerance is over
-/// that cap, the face copies over it are refitted from their 3D curves first
-/// (rule T3: "above that, refit first"), on a probe admitted at the opt-in
-/// limit, and the definition is admitted again under the caller's cap with
-/// the refitted copies. Only what is still over the cap refuses, and the
-/// refusal says the user may opt in. A file's declared uncertainty plays no
-/// part here: rule T3 makes it a hint only.
+/// The refusal of a stored tolerance over the body's cap.
+const TOLERANCE_EXCEEDED: &str = "numbers.numerical-tolerance-exceeded";
+
+/// Admits an imported definition under decision Q9 and rule T3.
+///
+/// Every entity is measured; the caller's `options` hold the cap: the
+/// automatic 0.01 mm, or a value the user opted in to, at most 0.1 mm. A
+/// file's declared uncertainty plays no part here: rule T3 makes it a hint
+/// only.
+///
+/// Decision Q9, the gap rule for imports: an edge use whose same-parameter
+/// gap is much larger than its geometric gap has copies that run at
+/// different speeds. Its face copy is given the parameter of its 3D curve,
+/// and the tolerance stored is that of the new copy's same-parameter gap; no
+/// tolerance is raised to cover a difference of parameter. See
+/// [`NumericalBody::import_gaps`] for what was read and done, and
+/// `docs/milestones/3.0A-import-gap-rule.md` for the method.
+///
+/// Rule T3: where a stored tolerance is still over the cap, the face copies
+/// over it are refitted from their 3D curves first ("above that, refit
+/// first"), on a probe admitted at the opt-in limit, and the definition is
+/// admitted again under the caller's cap with the refitted copies. Only what
+/// is still over the cap refuses, and the refusal says the user may opt in.
+///
+/// A body that is admitted as imported and is not admitted with a
+/// reparametrised copy is returned as imported.
 pub fn admit_import(
     definition: NumericalDefinition,
     native_trims: Vec<NumericalNativeTrim>,
@@ -769,36 +796,80 @@ pub fn admit_import(
         ));
     }
     let options = tolerance::import_options(options.tolerance_mm);
+    let first = build_with_native_trims(
+        definition.clone(),
+        native_trims.clone(),
+        options.clone(),
+        dec,
+    );
+    let known = match &first {
+        Ok(body) => Some(tolerance::use_records(&body.evidence)),
+        Err(refusal) if refusal.code == TOLERANCE_EXCEEDED => None,
+        Err(_) => return first,
+    };
+    let (reparametrised, mut rows) =
+        guarded(|| import_gap::settle(&definition, &native_trims, known.as_deref(), dec))?;
+    let with_new_copies = reparametrised.map(|native_trims| {
+        admit_under_cap(definition.clone(), native_trims, options.clone(), dec)
+    });
+    let admitted = import_gap::settled_body(first, with_new_copies, &mut rows, |refusal| {
+        refit_under_cap(definition, native_trims, options, refusal, dec)
+    });
+    admitted.map(|mut body| {
+        body.import_gaps = rows;
+        body
+    })
+}
+
+/// Admits a definition under the caller's cap, with rule T3's refit where a
+/// stored tolerance is over it.
+fn admit_under_cap(
+    definition: NumericalDefinition,
+    native_trims: Vec<NumericalNativeTrim>,
+    options: NumericalOptions,
+    dec: &mut Decider,
+) -> Result<NumericalBody, Refusal> {
     match build_with_native_trims(
         definition.clone(),
         native_trims.clone(),
         options.clone(),
         dec,
     ) {
-        Err(refusal) if refusal.code == "numbers.numerical-tolerance-exceeded" => {
-            let probe = build_with_native_trims(
-                definition.clone(),
-                native_trims,
-                tolerance::import_options(tolerance::import_opt_in_limit_mm()),
-                dec,
-            )
-            .map_err(|_| refusal.clone())?;
-            let (refitted, rows) = probe.refit_face_copies(&options.tolerance_mm, dec)?;
-            if rows.is_empty() {
-                return Err(opt_in_refusal(refusal));
-            }
-            build_with_native_trims(definition, refitted.native_trims, options, dec).map_err(
-                |again| {
-                    if again.code == "numbers.numerical-tolerance-exceeded" {
-                        opt_in_refusal(again)
-                    } else {
-                        again
-                    }
-                },
-            )
+        Err(refusal) if refusal.code == TOLERANCE_EXCEEDED => {
+            refit_under_cap(definition, native_trims, options, refusal, dec)
         }
         other => other,
     }
+}
+
+/// Rule T3 after `refusal` at the cap: refits the face copies over the cap
+/// on a probe admitted at the opt-in limit, and admits the definition again
+/// under the caller's cap with the refitted copies.
+fn refit_under_cap(
+    definition: NumericalDefinition,
+    native_trims: Vec<NumericalNativeTrim>,
+    options: NumericalOptions,
+    refusal: Refusal,
+    dec: &mut Decider,
+) -> Result<NumericalBody, Refusal> {
+    let probe = build_with_native_trims(
+        definition.clone(),
+        native_trims,
+        tolerance::import_options(tolerance::import_opt_in_limit_mm()),
+        dec,
+    )
+    .map_err(|_| refusal.clone())?;
+    let (refitted, rows) = probe.refit_face_copies(&options.tolerance_mm, dec)?;
+    if rows.is_empty() {
+        return Err(opt_in_refusal(refusal));
+    }
+    build_with_native_trims(definition, refitted.native_trims, options, dec).map_err(|again| {
+        if again.code == TOLERANCE_EXCEEDED {
+            opt_in_refusal(again)
+        } else {
+            again
+        }
+    })
 }
 
 fn opt_in_refusal(mut refusal: Refusal) -> Refusal {
@@ -1419,6 +1490,7 @@ fn build_inner_kind(
         body,
         evidence,
         tolerances,
+        import_gaps: Vec::new(),
     })
 }
 

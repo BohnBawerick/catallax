@@ -35,16 +35,27 @@
 //!    the samples left unresolved. Nothing is escalated to higher precision
 //!    here.
 //!
+//! Step 2 of section 4.2, imports whose copies run at different speeds, is
+//! outside this search: `geometric.rs` reads the geometric gap of an edge use
+//! both ways, `refit.rs` gives a face copy the parameter of its 3D curve, and
+//! `numerical::admit_import` decides between them (decision Q9). The search
+//! above then measures the copy that is kept. All of that draws on the one
+//! work allowance of the edge use ([`Limits`]).
+//!
 //! All arithmetic is IEEE basic operations in one thread, so the result is
 //! the same bits on every machine and at any thread count.
 
 use catallax_numbers::{Decider, Rational, Refusal};
 use catallax_shapes::{BSplineCurve, BSplineSurface, Curve, Surface};
 
+mod geometric;
 mod lift;
 mod numeric;
-/// Refits of a face copy from its 3D curve (rules T7 and T8).
+/// New face copies of an edge use: a refit from its 3D curve (rules T3, T7
+/// and T8) and a change of parameter of the copy it has (decision Q9).
 pub mod refit;
+
+pub use geometric::{GeometricMeasure, measure_geometric};
 
 use lift::{Curve64, Face64, Lifted, Revolved, Scratch, Surface64};
 
@@ -348,6 +359,10 @@ pub struct Limits {
     /// evaluation, one sample and mode pair of a tail transform, or one
     /// domain probe: everything the measurement does that grows with the
     /// edge.
+    ///
+    /// An edge use has one allowance. Where a use is read more than once,
+    /// as the gap rule for imports reads it, each reading is given what the
+    /// readings before it left, so the cap holds for all of them together.
     pub work: u64,
 }
 
@@ -458,7 +473,7 @@ fn unsupported(detail: &str) -> Refusal {
 /// The checker's refusal when an edge would spend more than its allowance.
 /// Source: decision Q6, section 4.2 step 8: a hard per-edge work cap refuses
 /// by name.
-const WORK_CAP: &str = "numerical.gap-work-cap";
+pub(super) const WORK_CAP: &str = "numerical.gap-work-cap";
 
 fn work_cap(detail: &str) -> Refusal {
     Refusal::new(WORK_CAP, detail)
@@ -886,12 +901,12 @@ pub fn measure(
 }
 
 /// Runs one search of an edge under its allowance.
-fn under_allowance(
+fn under_allowance<T>(
     copies: &EdgeCopies<'_>,
     limits: Limits,
     dec: &mut Decider,
-    run: impl FnOnce(&mut Search<'_>, &mut Decider) -> Result<GapMeasure, Refusal>,
-) -> Result<GapMeasure, Refusal> {
+    run: impl FnOnce(&mut Search<'_>, &mut Decider) -> Result<T, Refusal>,
+) -> Result<T, Refusal> {
     let lifted = lift::lift(copies, dec)?;
     // The closing probes of the rounding allowance count inside the same cap,
     // so they are set aside before the first sample.
@@ -962,7 +977,6 @@ fn search_edge(
     }
     let breaks = breaks(search, hints, dec)?;
     let plan = planned(lifted, &breaks);
-    let [lo, hi] = lifted.range();
     // Refuse before the first sample when the plan alone is more than
     // planning left of the allowance: its samples, the first tail transform
     // of each piece and, on a spline surface, one domain probe per piece.
@@ -1043,56 +1057,7 @@ fn search_edge(
     }
 
     // Third pass: polish every local maximum of the samples.
-    let mut best = samples[0];
-    for sample in &samples {
-        if sample.squared > best.squared {
-            best = *sample;
-        }
-    }
-    let mut i = 0;
-    while i < samples.len() {
-        // A run of equal values is one candidate.
-        let mut j = i;
-        while j + 1 < samples.len()
-            && samples[j + 1].squared.to_bits() == samples[i].squared.to_bits()
-        {
-            j += 1;
-        }
-        let left = i.checked_sub(1);
-        let right = (j + 1 < samples.len()).then_some(j + 1);
-        let peak = left.is_none_or(|l| samples[l].squared < samples[i].squared)
-            && right.is_none_or(|r| samples[r].squared < samples[i].squared);
-        // A value inside its own rounding error is noise, not a maximum.
-        let above_noise = samples[i].squared.sqrt() > samples[i].error;
-        let (from, to) = (samples[left.unwrap_or(i)].t, samples[right.unwrap_or(j)].t);
-        let resolvable = to - from > 2.0 * NARROWEST_PIECE * (hi - lo);
-        if peak && above_noise && resolvable {
-            let mut failure = None;
-            let mut polished = samples[i];
-            let (_, _, _) = numeric::brent_maximum(&mut |share| match search
-                .sample(from + share * (to - from))
-            {
-                Ok(sample) => {
-                    if sample.squared > polished.squared {
-                        polished = sample;
-                    }
-                    sample.squared
-                }
-                Err(refusal) => {
-                    failure.get_or_insert(refusal);
-                    f64::NEG_INFINITY
-                }
-            });
-            if let Some(refusal) = failure {
-                return Err(refusal);
-            }
-            search.settle(dec)?;
-            if polished.squared > best.squared {
-                best = polished;
-            }
-        }
-        i = j + 1;
-    }
+    let best = polish(search, &samples, |search, t, _| search.sample(t), dec)?;
 
     // The first parameter in traversal order outside the surface's domain.
     let mut exit = None;
@@ -1118,6 +1083,97 @@ fn search_edge(
         (plan, refinements),
         dec,
     )
+}
+
+/// A sampled value that step 6 can bracket and polish.
+trait Peak: Copy {
+    /// The parameter it was read at.
+    fn at(&self) -> f64;
+    /// The squared gap there.
+    fn squared(&self) -> f64;
+    /// The size of its rounding error.
+    fn error(&self) -> f64;
+}
+
+impl Peak for Sample {
+    fn at(&self) -> f64 {
+        self.t
+    }
+    fn squared(&self) -> f64 {
+        self.squared
+    }
+    fn error(&self) -> f64 {
+        self.error
+    }
+}
+
+/// Step 6 of section 4.2: polishes every local maximum of `samples`, which
+/// ascend in parameter, with Brent's method on the true gap, and returns the
+/// largest value read. `read` evaluates the gap at a parameter inside the
+/// bracket of the sample it is given.
+fn polish<S: Peak>(
+    search: &mut Search<'_>,
+    samples: &[S],
+    read: impl Fn(&mut Search<'_>, f64, &S) -> Result<S, Refusal>,
+    dec: &mut Decider,
+) -> Result<S, Refusal> {
+    let [lo, hi] = search.lifted.range();
+    let mut best = samples[0];
+    for sample in samples {
+        if sample.squared() > best.squared() {
+            best = *sample;
+        }
+    }
+    let mut i = 0;
+    while i < samples.len() {
+        // A run of equal values is one candidate.
+        let mut j = i;
+        while j + 1 < samples.len()
+            && samples[j + 1].squared().to_bits() == samples[i].squared().to_bits()
+        {
+            j += 1;
+        }
+        let left = i.checked_sub(1);
+        let right = (j + 1 < samples.len()).then_some(j + 1);
+        let peak = left.is_none_or(|l| samples[l].squared() < samples[i].squared())
+            && right.is_none_or(|r| samples[r].squared() < samples[i].squared());
+        // A value inside its own rounding error is noise, not a maximum.
+        let above_noise = samples[i].squared().sqrt() > samples[i].error();
+        let (from, to) = (
+            samples[left.unwrap_or(i)].at(),
+            samples[right.unwrap_or(j)].at(),
+        );
+        let resolvable = to - from > 2.0 * NARROWEST_PIECE * (hi - lo);
+        if peak && above_noise && resolvable {
+            let mut failure = None;
+            let mut polished = samples[i];
+            let (_, _, _) = numeric::brent_maximum(&mut |share| match read(
+                search,
+                from + share * (to - from),
+                &samples[i],
+            ) {
+                Ok(sample) => {
+                    if sample.squared() > polished.squared() {
+                        polished = sample;
+                    }
+                    sample.squared()
+                }
+                Err(refusal) => {
+                    failure.get_or_insert(refusal);
+                    f64::NEG_INFINITY
+                }
+            });
+            if let Some(refusal) = failure {
+                return Err(refusal);
+            }
+            search.settle(dec)?;
+            if polished.squared() > best.squared() {
+                best = polished;
+            }
+        }
+        i = j + 1;
+    }
+    Ok(best)
 }
 
 /// The gap at the two ends of an edge alone, for a face copy that is

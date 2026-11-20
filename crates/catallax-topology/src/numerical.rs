@@ -22,6 +22,8 @@ pub use edge_gap::{DerivedCopyAudit, audit_derived_copies};
 /// The edge-gap checker: the largest distance between an edge's two copies.
 pub mod gap;
 mod handover;
+mod import_gap;
+pub use import_gap::{ImportGapOutcome, ImportGapRow};
 mod native;
 pub use native::{NumericalNativeTrim, build_with_native_trims, build_with_sampled_carriers};
 mod source;
@@ -296,6 +298,7 @@ pub struct NumericalBody {
     body: BodyId,
     evidence: NumericalEvidence,
     tolerances: ToleranceReport,
+    import_gaps: Vec<ImportGapRow>,
 }
 
 /// A previous checked state. Its checks apply to this definition and tolerance only.
@@ -423,6 +426,21 @@ impl NumericalBody {
         above_mm: &Rational,
         dec: &mut Decider,
     ) -> Result<(Self, Vec<RefitRow>), Refusal> {
+        self.refit_face_copies_on(above_mm, None, dec)
+    }
+
+    /// [`Self::refit_face_copies`] on the accounts of an import admission
+    /// (rule T3), one per edge use in definition order: each refit draws on
+    /// what its use has left of its one work allowance, the checker's
+    /// reading of a kept refit goes into the account, and the admission of
+    /// the refitted body uses the kept readings. Without accounts each
+    /// candidate and each use is read under the checker's cap.
+    fn refit_face_copies_on(
+        &self,
+        above_mm: &Rational,
+        mut accounts: Option<&mut [edge_gap::UseAccount]>,
+        dec: &mut Decider,
+    ) -> Result<(Self, Vec<RefitRow>), Refusal> {
         guarded(|| {
             let records = tolerance::use_records(&self.evidence);
             let mut chosen = Vec::new();
@@ -440,16 +458,17 @@ impl NumericalBody {
                 }
             }
             let target = above_mm.to_f64_nearest();
-            match self.refit_uses(&chosen, target, dec)? {
+            match self.refit_uses(&chosen, target, accounts.as_deref_mut(), dec)? {
                 None => Ok((self.clone(), Vec::new())),
                 Some((native_trims, rows)) => {
-                    let mut next = build_inner_kind(
+                    let mut next = build_inner_kind_on(
                         self.kind(),
                         self.definition.clone(),
                         native_trims,
                         self.sampled_carriers.clone(),
                         self.options.clone(),
                         self.evidence.repairs().to_vec(),
+                        accounts,
                         dec,
                     )?;
                     next.inherit(self, dec)?;
@@ -462,11 +481,16 @@ impl NumericalBody {
     /// Refits the chosen uses and returns the native curves with every refit
     /// that brings its use's stored tolerance under `target_mm`, or `None`
     /// when none does.
+    ///
+    /// With the accounts of an import admission, each refit draws on its
+    /// use's account, and the checker's reading of a refit that is kept
+    /// replaces the old copy's reading there.
     #[allow(clippy::type_complexity)]
     fn refit_uses(
         &self,
         chosen: &[((usize, usize, usize), Rational)],
         target_mm: f64,
+        mut accounts: Option<&mut [edge_gap::UseAccount]>,
         dec: &mut Decider,
     ) -> Result<Option<(Vec<NumericalNativeTrim>, Vec<RefitRow>)>, Refusal> {
         if chosen.is_empty() {
@@ -485,7 +509,28 @@ impl NumericalBody {
             let trim = &face.loops[*boundary][*use_index];
             let edge = &self.definition.edges[trim.edge];
             let native = index.get(*face_index, *boundary, *use_index);
-            let Some(found) = edge_gap::refit_use(face, trim, edge, native, target_mm, dec)? else {
+            let mut account = match accounts.as_deref_mut() {
+                Some(all) => Some(
+                    all.get_mut(use_slot(
+                        &self.definition,
+                        *face_index,
+                        *boundary,
+                        *use_index,
+                    ))
+                    .ok_or_else(|| bad("definition", "an edge use has no work account"))?,
+                ),
+                None => None,
+            };
+            let Some(found) = edge_gap::refit_use(
+                face,
+                trim,
+                edge,
+                native,
+                target_mm,
+                account.as_deref_mut(),
+                dec,
+            )?
+            else {
                 continue;
             };
             let after = Rational::from_f64_exact(found.stored_mm)
@@ -494,6 +539,9 @@ impl NumericalBody {
             // only moves the reading in its last bits is no lower gap.
             if after >= *before || after.to_f64_nearest() > target_mm {
                 continue;
+            }
+            if let Some(account) = account {
+                account.replace(found.reading);
             }
             native_trims.retain(|binding| {
                 !(binding.face == face.key
@@ -574,7 +622,7 @@ impl NumericalBody {
                 }
             }
         }
-        let Some((native_trims, _)) = self.refit_uses(&chosen, target, dec)? else {
+        let Some((native_trims, _)) = self.refit_uses(&chosen, target, None, dec)? else {
             return Ok(self);
         };
         let mut next = build_inner_kind(
@@ -628,6 +676,13 @@ impl NumericalBody {
     /// T1, T5 and T7. See [`tolerance`].
     pub fn tolerances(&self) -> &ToleranceReport {
         &self.tolerances
+    }
+    /// What the gap rule for imports read (decision Q9): one row per edge
+    /// use that [`admit_import`] read geometrically, with the two gaps and
+    /// what was done. Empty for an own build, for a continuation and for a
+    /// body that was read back.
+    pub fn import_gaps(&self) -> &[ImportGapRow] {
+        &self.import_gaps
     }
     /// Stored topological kind, without exposing the model to exact consumers.
     pub fn kind(&self) -> BodyKind {
@@ -743,19 +798,66 @@ pub struct RefitRow {
     pub spans: usize,
 }
 
-/// Admits an imported definition under rule T3. Every entity is measured;
-/// the caller's `options` hold the cap: the automatic 0.01 mm, or a value
-/// the user opted in to, at most 0.1 mm. Where a stored tolerance is over
-/// that cap, the face copies over it are refitted from their 3D curves first
-/// (rule T3: "above that, refit first"), on a probe admitted at the opt-in
-/// limit, and the definition is admitted again under the caller's cap with
-/// the refitted copies. Only what is still over the cap refuses, and the
-/// refusal says the user may opt in. A file's declared uncertainty plays no
-/// part here: rule T3 makes it a hint only.
+/// The refusal of a stored tolerance over the body's cap.
+const TOLERANCE_EXCEEDED: &str = "numbers.numerical-tolerance-exceeded";
+
+/// Admits an imported definition under decision Q9 and rule T3.
+///
+/// Every entity is measured; the caller's `options` hold the cap: the
+/// automatic 0.01 mm, or a value the user opted in to, at most 0.1 mm. A
+/// file's declared uncertainty plays no part here: rule T3 makes it a hint
+/// only.
+///
+/// Decision Q9, the gap rule for imports: an edge use whose same-parameter
+/// gap is much larger than its geometric gap has copies that run at
+/// different speeds. Its face copy is given the parameter of its 3D curve,
+/// and the tolerance stored is that of the new copy's same-parameter gap; no
+/// tolerance is raised to cover a difference of parameter. See
+/// [`NumericalBody::import_gaps`] for what was read and done, and
+/// `docs/milestones/3.0A-import-gap-rule.md` for the method.
+///
+/// Rule T3: where a stored tolerance is still over the cap, the face copies
+/// over it are refitted from their 3D curves first ("above that, refit
+/// first"), on a probe admitted at the opt-in limit, and the definition is
+/// admitted again under the caller's cap with the refitted copies. Only what
+/// is still over the cap refuses, and the refusal says the user may opt in.
+///
+/// A body that is admitted as imported and is not admitted with a
+/// reparametrised copy is returned as imported, unless the refusal says
+/// that work or time ran out.
+///
+/// Work: an edge use has one allowance for this whole admission, the
+/// checker's hard per-edge cap (section 4.2 step 8). Admission's reading of
+/// the use draws on it first, then the gap rule's geometric reading and its
+/// change of parameter, then rule T3's refit where the use is still over
+/// the cap. The checker reads each copy once: the rule uses the reading
+/// admission took, and every later admission, rule T3's probe among them,
+/// uses the readings already taken, a new copy's among them. A use that
+/// spends its allowance refuses the admission with `numerical.gap-work-cap`.
+/// That refusal is returned by name wherever it comes from, and so are the
+/// operation's allowance and its deadline. The body as imported is not
+/// returned in their place.
 pub fn admit_import(
     definition: NumericalDefinition,
     native_trims: Vec<NumericalNativeTrim>,
     options: NumericalOptions,
+    dec: &mut Decider,
+) -> Result<NumericalBody, Refusal> {
+    // One account per edge use for the whole admission, each with the
+    // checker's cap.
+    let mut accounts = edge_gap::UseAccount::for_uses(&definition, gap::Limits::default());
+    admit_import_on(definition, native_trims, options, &mut accounts, dec)
+}
+
+/// [`admit_import`] on the accounts of its edge uses, one per use in
+/// definition order. Admission's reading of a use is the first to draw on
+/// its account, and the reading is kept there. Only the tests that spend an
+/// allowance pass accounts with less than the checker's cap.
+fn admit_import_on(
+    definition: NumericalDefinition,
+    native_trims: Vec<NumericalNativeTrim>,
+    options: NumericalOptions,
+    accounts: &mut [edge_gap::UseAccount],
     dec: &mut Decider,
 ) -> Result<NumericalBody, Refusal> {
     if options.tolerance_mm > tolerance::import_opt_in_limit_mm() {
@@ -769,36 +871,162 @@ pub fn admit_import(
         ));
     }
     let options = tolerance::import_options(options.tolerance_mm);
-    match build_with_native_trims(
+    let first = admit_on(
         definition.clone(),
         native_trims.clone(),
         options.clone(),
+        accounts,
+        dec,
+    );
+    match &first {
+        Ok(_) => (),
+        Err(refusal) if refusal.code == TOLERANCE_EXCEEDED => (),
+        Err(_) => return first,
+    }
+    let import_gap::Settled {
+        native_trims: reparametrised,
+        mut rows,
+        slots,
+    } = guarded(|| import_gap::settle(&definition, &native_trims, accounts, dec))?;
+    let with_new_copies = reparametrised.map(|native_trims| {
+        admit_under_cap(
+            definition.clone(),
+            native_trims,
+            options.clone(),
+            accounts,
+            dec,
+        )
+    });
+    let admitted = import_gap::settled_body(first, with_new_copies, &mut rows, |refusal| {
+        // Rule T3 on the copies as imported. A use whose new copy was tried
+        // goes back to the reading of its copy as imported.
+        for account in accounts.iter_mut() {
+            account.back_to_imported();
+        }
+        refit_under_cap(definition, native_trims, options, refusal, accounts, dec)
+    });
+    admitted.map(|mut body| {
+        // What the whole admission counted for each use the rule read, the
+        // refit of rule T3 included.
+        for (row, slot) in rows.iter_mut().zip(&slots) {
+            if let Some(account) = accounts.get(*slot) {
+                row.work = account.spent();
+            }
+        }
+        body.import_gaps = rows;
+        body
+    })
+}
+
+/// Admits a definition as [`build_with_native_trims`] does, on the accounts
+/// of an import admission: a use is read under what it has left of its one
+/// allowance, and a use whose reading is kept is not read again.
+fn admit_on(
+    definition: NumericalDefinition,
+    native_trims: Vec<NumericalNativeTrim>,
+    options: NumericalOptions,
+    accounts: &mut [edge_gap::UseAccount],
+    dec: &mut Decider,
+) -> Result<NumericalBody, Refusal> {
+    guarded(|| {
+        build_inner_kind_on(
+            BodyKind::Solid,
+            definition,
+            native_trims,
+            BTreeSet::new(),
+            options,
+            Vec::new(),
+            Some(accounts),
+            dec,
+        )
+    })
+}
+
+/// Admits a definition with the gap rule's new copies under the caller's
+/// cap, on the accounts of the same import admission, with rule T3's refit
+/// where a stored tolerance is over the cap.
+fn admit_under_cap(
+    definition: NumericalDefinition,
+    native_trims: Vec<NumericalNativeTrim>,
+    options: NumericalOptions,
+    accounts: &mut [edge_gap::UseAccount],
+    dec: &mut Decider,
+) -> Result<NumericalBody, Refusal> {
+    match admit_on(
+        definition.clone(),
+        native_trims.clone(),
+        options.clone(),
+        accounts,
         dec,
     ) {
-        Err(refusal) if refusal.code == "numbers.numerical-tolerance-exceeded" => {
-            let probe = build_with_native_trims(
-                definition.clone(),
-                native_trims,
-                tolerance::import_options(tolerance::import_opt_in_limit_mm()),
-                dec,
-            )
-            .map_err(|_| refusal.clone())?;
-            let (refitted, rows) = probe.refit_face_copies(&options.tolerance_mm, dec)?;
-            if rows.is_empty() {
-                return Err(opt_in_refusal(refusal));
-            }
-            build_with_native_trims(definition, refitted.native_trims, options, dec).map_err(
-                |again| {
-                    if again.code == "numbers.numerical-tolerance-exceeded" {
-                        opt_in_refusal(again)
-                    } else {
-                        again
-                    }
-                },
-            )
+        Err(refusal) if refusal.code == TOLERANCE_EXCEEDED => {
+            refit_under_cap(definition, native_trims, options, refusal, accounts, dec)
         }
         other => other,
     }
+}
+
+/// Rule T3 after `refusal` at the cap: refits the face copies over the cap
+/// on a probe admitted at the opt-in limit, and admits the definition again
+/// under the caller's cap with the refitted copies. A probe that is refused
+/// leaves `refusal` as the answer, unless work or time ran out on it: that
+/// refusal, the work cap of an edge among them, keeps its own name.
+///
+/// All of it is on the accounts of the import admission, which hold the
+/// readings of `native_trims`. The probe and the last admission use the
+/// kept readings and read nothing. Each refit draws on what its use has
+/// left of its one allowance, and a use that spends it refuses with
+/// `numerical.gap-work-cap`.
+fn refit_under_cap(
+    definition: NumericalDefinition,
+    native_trims: Vec<NumericalNativeTrim>,
+    options: NumericalOptions,
+    refusal: Refusal,
+    accounts: &mut [edge_gap::UseAccount],
+    dec: &mut Decider,
+) -> Result<NumericalBody, Refusal> {
+    let probe = admit_on(
+        definition.clone(),
+        native_trims,
+        tolerance::import_options(tolerance::import_opt_in_limit_mm()),
+        accounts,
+        dec,
+    )
+    .map_err(|probe| {
+        if import_gap::resource_limit(&probe) {
+            probe
+        } else {
+            refusal.clone()
+        }
+    })?;
+    let (refitted, rows) =
+        probe.refit_face_copies_on(&options.tolerance_mm, Some(&mut *accounts), dec)?;
+    if rows.is_empty() {
+        return Err(opt_in_refusal(refusal));
+    }
+    admit_on(definition, refitted.native_trims, options, accounts, dec).map_err(|again| {
+        if again.code == TOLERANCE_EXCEEDED {
+            opt_in_refusal(again)
+        } else {
+            again
+        }
+    })
+}
+
+/// The place of an edge use in definition order, where its work account is.
+fn use_slot(
+    definition: &NumericalDefinition,
+    face_index: usize,
+    boundary: usize,
+    use_index: usize,
+) -> usize {
+    let before: usize = definition.faces[..face_index]
+        .iter()
+        .flat_map(|face| &face.loops)
+        .chain(&definition.faces[face_index].loops[..boundary])
+        .map(Vec::len)
+        .sum();
+    before + use_index
 }
 
 fn opt_in_refusal(mut refusal: Refusal) -> Refusal {
@@ -1027,6 +1255,34 @@ fn build_inner_kind(
     repairs: Vec<NumericalRepair>,
     dec: &mut Decider,
 ) -> Result<NumericalBody, Refusal> {
+    build_inner_kind_on(
+        kind,
+        definition,
+        native_trims,
+        sampled_carriers,
+        options,
+        repairs,
+        None,
+        dec,
+    )
+}
+
+/// [`build_inner_kind`] on the accounts of an import admission, one per edge
+/// use in definition order: each use is read under what it has left of its
+/// one work allowance, and a use whose reading is kept in its account is not
+/// read again ([`edge_gap::UseAccount`]). Without accounts every use is read
+/// under the checker's cap.
+#[allow(clippy::too_many_arguments)]
+fn build_inner_kind_on(
+    kind: BodyKind,
+    definition: NumericalDefinition,
+    native_trims: Vec<NumericalNativeTrim>,
+    sampled_carriers: BTreeSet<String>,
+    options: NumericalOptions,
+    repairs: Vec<NumericalRepair>,
+    mut accounts: Option<&mut [edge_gap::UseAccount]>,
+    dec: &mut Decider,
+) -> Result<NumericalBody, Refusal> {
     precision_allowed(dec)?;
     dec.charge_work(1)?;
     if definition.name.trim().is_empty() || options.tolerance_mm.sign() != Sign::Positive {
@@ -1245,6 +1501,8 @@ fn build_inner_kind(
             samples,
         });
     }
+    // The place of an edge use in definition order, for its work account.
+    let mut slot = 0;
     for (face_index, face) in definition.faces.iter().enumerate() {
         if face.loops.len() == 1 {
             native::check_loops(
@@ -1348,6 +1606,14 @@ fn build_inner_kind(
             .flat_map(|(b, row)| row.iter().enumerate().map(move |(u, t)| (b, u, t)))
             .enumerate()
         {
+            let account = match accounts.as_deref_mut() {
+                Some(all) => Some(
+                    all.get_mut(slot)
+                        .ok_or_else(|| bad("definition", "an edge use has no work account"))?,
+                ),
+                None => None,
+            };
+            slot += 1;
             let edge = &definition.edges[trim.edge];
             let numerical_pair = native.numerical_pair(trim.edge);
             let curve = native.get(face_index, boundary_index, use_index);
@@ -1379,6 +1645,7 @@ fn build_inner_kind(
                     .tag(face_index, boundary_index, use_index)
                     .unwrap_or(&trim.tag),
                 &options.tolerance_mm,
+                account,
                 dec,
             )?;
             checks.push(NumericalCheck::Samples {
@@ -1419,6 +1686,7 @@ fn build_inner_kind(
         body,
         evidence,
         tolerances,
+        import_gaps: Vec::new(),
     })
 }
 

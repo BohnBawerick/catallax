@@ -86,6 +86,9 @@ impl Codec for NumericalBody {
             } else {
                 ToleranceReport::default()
             },
+            // The rows of the gap rule for imports describe one admission
+            // and are not stored.
+            import_gaps: Vec::new(),
         })
         .map(|mut body: NumericalBody| {
             // The options skip the vertex cap; the report keeps it.

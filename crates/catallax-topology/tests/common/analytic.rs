@@ -213,6 +213,74 @@ pub fn bowed_copy(source: &NumericalDefinition, bow: &str) -> (NumericalNativeTr
     )
 }
 
+/// A native u/v copy of one circle use on the wall (face 4) at another
+/// speed: the right v, and a u that runs ahead of the circle's angle by at
+/// most `stretch` of the arc, two thirds along, with both ends kept. The
+/// copy lies on the same parameter line as the straight copy it replaces;
+/// only its speed differs. It is the stretch of known-answer edge 8. Returns
+/// the binding and the edge's key.
+#[allow(dead_code)]
+pub fn stretched_copy(
+    source: &NumericalDefinition,
+    stretch: &str,
+) -> (NumericalNativeTrim, String) {
+    use catallax_shapes::{BSplineCurve, Point3};
+    let (use_index, trim) = source.faces[4].loops[0]
+        .iter()
+        .enumerate()
+        .find(|(_, trim)| matches!(source.edges[trim.edge].curve, Curve::Circle(_)))
+        .unwrap();
+    let edge = &source.edges[trim.edge];
+    let (lo, hi) = (
+        edge.parameters[0].clone().min(edge.parameters[1].clone()),
+        edge.parameters[0].clone().max(edge.parameters[1].clone()),
+    );
+    let height = trim.uv[0][1].clone();
+    let width = &hi - &lo;
+    // s + e (27/4) s^2 (1 - s) as a cubic Bezier: 0, 1/3, 2/3 + (9/4) e, 1.
+    let shares = [q("0"), q("1/3"), q("2/3") + q("9/4") * q(stretch), q("1")];
+    let controls = shares
+        .iter()
+        .map(|share| {
+            Point3::new(
+                (&lo + &(&width * share)).into(),
+                height.clone().into(),
+                0.into(),
+            )
+        })
+        .collect();
+    let knots = [
+        lo.clone(),
+        lo.clone(),
+        lo.clone(),
+        lo,
+        hi.clone(),
+        hi.clone(),
+        hi.clone(),
+        hi,
+    ]
+    .to_vec();
+    let curve = BSplineCurve::new(
+        3,
+        knots,
+        controls,
+        vec![catallax_numbers::Real::one(); 4],
+        &mut catallax_numbers::Decider::default(),
+    )
+    .unwrap();
+    (
+        NumericalNativeTrim {
+            face: source.faces[4].key.clone(),
+            boundary: 0,
+            use_index,
+            edge: edge.key.clone(),
+            curve,
+            tag: catallax_topology::numerical::CopyTag::Independent,
+        },
+        edge.key.clone(),
+    )
+}
+
 /// The quarter cylinder scaled by `k` about the origin.
 #[allow(dead_code)]
 pub fn scaled(mut d: NumericalDefinition, k: &Rational) -> NumericalDefinition {

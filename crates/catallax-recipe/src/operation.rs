@@ -432,7 +432,8 @@ pub enum Operation {
     MeshDecimate {
         /// The mesh step: `import_mesh`, `mesh_boolean` or `mesh_decimate`.
         body: StepId,
-        /// The most triangles the result keeps, where allowed collapses reach it.
+        /// The triangle count at which collapsing stops; the result keeps more
+        /// when its queue of collapses empties first.
         triangles: u32,
     },
     /// A STEP file entering the recipe as a fixed piece.

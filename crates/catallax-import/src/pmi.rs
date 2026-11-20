@@ -497,10 +497,14 @@ impl<'a> Reader<'a> {
                 match entity.type_name() {
                     "DESCRIPTIVE_REPRESENTATION_ITEM" => {
                         let params = entity.parts[0].1.as_slice();
-                        if string(params.first()).as_deref() != Some("dimensional note") {
-                            let modifier = string(params.get(1)).unwrap_or_default();
-                            return Err(format!("it has the modifier `{modifier}`"));
-                        }
+                        // A basic or reference dimension, or any other note, changes
+                        // what the dimension means, and there is nowhere to keep it.
+                        let note = string(params.get(1)).unwrap_or_default();
+                        return Err(match note.as_str() {
+                            "theoretical" => "it is a basic (theoretical) dimension".into(),
+                            "auxiliary" => "it is a reference (auxiliary) dimension".into(),
+                            _ => format!("it carries the note `{note}`"),
+                        });
                     }
                     "COMPOUND_REPRESENTATION_ITEM" => {
                         return Err("it has dimension modifiers".into());

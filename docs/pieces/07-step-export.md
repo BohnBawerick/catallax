@@ -163,9 +163,14 @@ Every `ADVANCED_FACE` of a PMI file carries the name `face-<index>-<n>`, and
 | part notes | user defined attributes of the product definition named `general tolerance`, `material` and `note 1`, `note 2`, ... |
 
 A file with items also declares ISO 1101 as its dimensioning standard through an
-`APPLIED_DOCUMENT_REFERENCE`. A surface texture on a feature that also has a
-size is repeated as that size's `dimensional note`, such as `Ra 1.6`: readers
-without the surface texture entity, OpenCASCADE among them, find it there.
+`APPLIED_DOCUMENT_REFERENCE`.
+
+The NIST STEP File Analyzer 5.54 reports no error on the P1 bracket file.
+OpenCASCADE 7.9 and 8.0 read its datums, dimensions and geometric tolerances and
+the part notes. They have no reader for `SURFACE_TEXTURE_REPRESENTATION`, so a
+surface texture does not reach an OpenCASCADE application. The recommended
+practices allow only `theoretical` and `auxiliary` as a dimension's note, so the
+texture is not repeated there.
 
 | Code | When |
 | --- | --- |

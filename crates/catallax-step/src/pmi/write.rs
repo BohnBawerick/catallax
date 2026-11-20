@@ -6,9 +6,7 @@
 //! distances are `DIMENSIONAL_SIZE` and `DIMENSIONAL_LOCATION` with a
 //! nominal value and, where given, limits. Geometric tolerances refer to one
 //! shared `DATUM_SYSTEM` per datum sequence. A surface texture is a
-//! `SURFACE_TEXTURE_REPRESENTATION` on the feature, repeated as the note of
-//! a size on the same feature, where readers without the texture entity
-//! still find it. Part notes are user defined attributes of the product
+//! `SURFACE_TEXTURE_REPRESENTATION` on the feature. Part notes are user defined attributes of the product
 //! definition.
 
 use std::collections::BTreeMap;
@@ -51,15 +49,6 @@ pub(crate) fn plain(value: &Rational, item: &str) -> Result<String, Refusal> {
 
 fn real(value: &Rational, item: &str) -> Result<String, Refusal> {
     Ok(decimal(&plain(value, item)?))
-}
-
-/// The note a surface texture leaves on a size of the same feature.
-pub(crate) fn texture_note<F>(texture: &SurfaceTexture<F>, item: &str) -> Result<String, Refusal> {
-    Ok(format!(
-        "{} {}",
-        texture.parameter,
-        plain(&texture.value, item)?
-    ))
 }
 
 struct Emitter<'a> {
@@ -271,7 +260,6 @@ impl Emitter<'_> {
         dimension: Id,
         nominal: &str,
         limits: Option<&Limits>,
-        note: Option<&str>,
         item: &str,
     ) -> Result<(), Refusal> {
         let value = self.graph.add_complex(vec![
@@ -286,13 +274,7 @@ impl Emitter<'_> {
             ),
             ("REPRESENTATION_ITEM", vec![text("'nominal value'")]),
         ]);
-        let mut items = vec![value];
-        if let Some(note) = note {
-            items.push(self.graph.add(
-                "DESCRIPTIVE_REPRESENTATION_ITEM",
-                vec![text("'dimensional note'"), quoted(note)],
-            ));
-        }
+        let items = vec![value];
         let representation = self.graph.add(
             "SHAPE_DIMENSION_REPRESENTATION",
             vec![text("''"), refs(items), header(CONTEXT)],
@@ -581,14 +563,9 @@ pub(crate) fn emit(
     }
     // A datum's feature is a DATUM_FEATURE whatever else is attached to it,
     // so datums come first.
-    let mut notes = BTreeMap::new();
     for item in &pmi.items {
-        match &item.kind {
-            ItemKind::Datum(datum) => emitter.datum(&datum.letter, &datum.feature, &item.id)?,
-            ItemKind::Texture(texture) => {
-                notes.insert(key(&texture.feature), texture_note(texture, &item.id)?);
-            }
-            _ => {}
+        if let ItemKind::Datum(datum) = &item.kind {
+            emitter.datum(&datum.letter, &datum.feature, &item.id)?;
         }
     }
     for (item, nominal) in pmi.items.iter().zip(nominals) {
@@ -612,11 +589,7 @@ pub(crate) fn emit(
                 let dimension = emitter
                     .graph
                     .add("DIMENSIONAL_SIZE", vec![target.into(), text(name)]);
-                let note = match size.features.as_slice() {
-                    [feature] => notes.get(&key(feature)).map(String::as_str),
-                    _ => None,
-                };
-                emitter.dimension(dimension, measured()?, size.limits.as_ref(), note, id)?;
+                emitter.dimension(dimension, measured()?, size.limits.as_ref(), id)?;
             }
             ItemKind::Location(location) => {
                 let from = emitter.anchor(&location.from, id)?;
@@ -626,7 +599,7 @@ pub(crate) fn emit(
                     "DIMENSIONAL_LOCATION",
                     vec![quoted(&name), text("''"), from.into(), to.into()],
                 );
-                emitter.dimension(dimension, measured()?, location.limits.as_ref(), None, id)?;
+                emitter.dimension(dimension, measured()?, location.limits.as_ref(), id)?;
             }
             ItemKind::Tolerance(tolerance) => emitter.tolerance(tolerance, id)?,
             ItemKind::Texture(texture) => emitter.texture(texture, id)?,

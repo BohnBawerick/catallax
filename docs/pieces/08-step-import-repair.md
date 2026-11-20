@@ -307,7 +307,8 @@ with `catallax_step::pmi::nominals` and decides.
 
 Nothing is guessed. An item the reader cannot represent in full is left out
 and listed in `StepPmi::skipped` with its entity, type and reason: an angular
-dimension, a dimension along a path or with a modifier, a datum target or
+dimension, a dimension along a path, a basic or reference dimension or one with
+another modifier or note, a datum target or
 common datum, a tolerance with a modifier other than a material condition, a
 datum reference with a modifier, an item on geometry other than faces. A
 tolerance whose datum was skipped is skipped too. The only refusal is a file

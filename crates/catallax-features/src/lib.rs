@@ -78,6 +78,7 @@ pub mod import_replace;
 pub mod lattice;
 mod loft;
 mod mesh_import;
+mod mesh_ops;
 /// Separate checked numerical edit definitions and replay.
 pub mod numerical;
 /// Approximate embedding of retained topology and carriers for numerical admission.

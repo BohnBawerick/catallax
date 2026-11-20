@@ -47,6 +47,16 @@ pub(crate) fn check(recipe: &Recipe) -> Result<(), RecipeError> {
                 message: "bend and twist require catallax-recipe/5".into(),
             });
         }
+        if recipe.format != FORMAT_V5
+            && matches!(
+                &step.op,
+                Operation::MeshBoolean { .. } | Operation::MeshDecimate { .. }
+            )
+        {
+            return Err(RecipeError::Parse {
+                message: "mesh Booleans and decimation require catallax-recipe/5".into(),
+            });
+        }
         if recipe.format != FORMAT_V5 && face_refs(&step.op).iter().any(|r| r.face.is_none()) {
             return Err(RecipeError::Parse {
                 message: "face references without `face` require catallax-recipe/5".into(),
@@ -207,8 +217,8 @@ fn patterns(op: &Operation) -> Vec<&OriginPattern> {
 }
 
 /// True when the operation makes faces of its own or carries faces of its inputs into
-/// faces it names. A boolean, a draft, a bend and a twist keep their inputs'
-/// names and make none.
+/// faces it names. A boolean, a draft, a bend, a twist and the mesh Boolean
+/// and decimation keep their inputs' names and make none.
 fn makes_faces(op: &Operation) -> bool {
     !matches!(
         op,
@@ -218,6 +228,8 @@ fn makes_faces(op: &Operation) -> bool {
             | Operation::Draft { .. }
             | Operation::Twist { .. }
             | Operation::Bend { .. }
+            | Operation::MeshBoolean { .. }
+            | Operation::MeshDecimate { .. }
     )
 }
 
@@ -267,6 +279,37 @@ impl Ctx<'_> {
     /// Rules particular to one operation.
     fn rules(&self, op: &Operation) -> Result<(), RecipeError> {
         match op {
+            Operation::MeshBoolean { .. } | Operation::MeshDecimate { .. } => {
+                // Mesh operations read exact triangles, which only mesh steps hold.
+                for (input, _) in op.inputs() {
+                    let source = &self.recipe.steps[self.index[input]].op;
+                    if !matches!(
+                        source,
+                        Operation::ImportMesh { .. }
+                            | Operation::MeshBoolean { .. }
+                            | Operation::MeshDecimate { .. }
+                    ) {
+                        return Err(RecipeError::Parse {
+                            message: format!(
+                                "step {}: {} reads closed triangle meshes, made by import_mesh, \
+                                 mesh_boolean or mesh_decimate; {input} is {}",
+                                self.step,
+                                op.name(),
+                                source.name()
+                            ),
+                        });
+                    }
+                }
+                if let Operation::MeshDecimate { triangles: 0, .. } = op {
+                    return Err(RecipeError::Parse {
+                        message: format!(
+                            "step {}: mesh_decimate needs a positive triangle count",
+                            self.step
+                        ),
+                    });
+                }
+                Ok(())
+            }
             Operation::Path { start, segments } => path::check(self.step, start, segments),
             Operation::Fillet {
                 overflow: Some(FilletOverflow::KeepNeighbours(limits)),

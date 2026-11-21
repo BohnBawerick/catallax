@@ -28,6 +28,7 @@ mod bounded;
 mod certificate;
 mod decider;
 mod facts;
+mod gcd;
 mod generator;
 mod height;
 mod identity;

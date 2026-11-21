@@ -27,15 +27,15 @@
 //! is measured by the A+ checker, so a copy is kept only on what the checker
 //! reads.
 //!
-//! In an import admission the work of a fit is held to the one allowance of
-//! its edge use (section 4.2 step 8: "A hard per-edge work cap refuses by
-//! name"). The fit comes after other readings of the same use, so it is
+//! In an admission the work of a fit is held to the one allowance of its
+//! use's edge (section 4.2 step 8: "A hard per-edge work cap refuses by
+//! name"). The fit comes after other readings of the same edge, so it is
 //! handed what they left, and every foot, every reading of the old copy and
 //! the checker's work on every candidate is drawn from that remainder
-//! (`Drawn`). That holds for the change of parameter and for the refit of
-//! rule T3 alike. The fit reports what it took, with or without a new copy,
-//! and the checker's reading of the copy it returns, so that reading is not
-//! taken again.
+//! (`Drawn`). That holds for the change of parameter and for the refits of
+//! rules T3, T7 and T8 alike. The fit reports what it took, with or without
+//! a new copy, and the checker's reading of the copy it returns, so that
+//! reading is not taken again.
 
 use catallax_numbers::{Decider, Rational, Real, Refusal};
 use catallax_shapes::{BSplineCurve, Curve, Point3};
@@ -93,34 +93,32 @@ fn exact(value: f64) -> Result<Rational, Refusal> {
 /// Where the nodes of a new face copy are read.
 #[derive(Clone, Copy, Debug)]
 enum Nodes {
-    /// The foot of the 3D point on the surface. The limits are what the edge
-    /// use has left of its one work allowance, in an import admission.
-    SurfaceFoot(Option<Limits>),
+    /// The foot of the 3D point on the surface. The limits are what the
+    /// use's edge has left of its one work allowance, in an admission.
+    SurfaceFoot(Limits),
     /// The old copy, where its lift is nearest the 3D point. The limits are
-    /// what the edge use has left of its one work allowance.
+    /// what the use's edge has left of its one work allowance.
     OldCopy(Limits),
 }
 
 /// The work one fit has counted, and what it may still count.
 ///
-/// Section 4.2 step 8 gives an edge one hard work cap. In an import
-/// admission a fit is a later reading of its edge use: a change of parameter
+/// Section 4.2 step 8 gives an edge one hard work cap. A fit is a later
+/// reading of its edge. In an import admission a change of parameter
 /// (decision Q9) comes after the use's same-parameter gap and its geometric
 /// gap, and rule T3's refit after those and after any change of parameter.
-/// So the fit starts from what they left. Every foot, every reading of the
-/// old copy and the checker's work on every candidate is taken from that
-/// one remainder, and where it runs out the use refuses by name. Nothing
-/// restarts between candidates.
-///
-/// The refit of an own build (rules T7 and T8) is given no remainder: its
-/// feet are charged to the operation, and each candidate is another copy
-/// that the checker measures under its own cap. It only counts.
+/// The refit of an own build (rules T7 and T8) comes after the refits of
+/// the edge's other uses. So the fit starts from what the earlier readings
+/// of its edge left. Every foot, every reading of the old copy and the
+/// checker's work on every candidate is taken from that one remainder, and
+/// where it runs out the edge refuses by name. Nothing restarts between
+/// candidates.
 struct Drawn {
     /// Units counted so far.
     spent: u64,
-    /// The most the fit may count: the remainder of the use's allowance,
-    /// where it was given one.
-    limit: Option<u64>,
+    /// The most the fit may count: what the use's edge had left of its
+    /// allowance when the fit began.
+    limit: u64,
 }
 
 impl Drawn {
@@ -128,26 +126,20 @@ impl Drawn {
         Self {
             spent: 0,
             limit: match nodes_from {
-                Nodes::SurfaceFoot(limits) => limits.map(|limits| limits.work),
-                Nodes::OldCopy(limits) => Some(limits.work),
+                Nodes::SurfaceFoot(limits) | Nodes::OldCopy(limits) => limits.work,
             },
         }
     }
 
     /// What is left to count.
     fn left(&self) -> u64 {
-        self.limit
-            .map_or(u64::MAX, |limit| limit.saturating_sub(self.spent))
+        self.limit.saturating_sub(self.spent)
     }
 
     /// The limits the checker measures the next candidate under: what is
-    /// left of the use's allowance, or the checker's own cap for the refit
-    /// of an own build.
+    /// left of the edge's allowance.
     fn candidate(&self) -> Limits {
-        match self.limit {
-            Some(_) => Limits { work: self.left() },
-            None => Limits::default(),
-        }
+        Limits { work: self.left() }
     }
 
     /// Runs `work`, which takes each unit from what is left before it spends
@@ -182,36 +174,25 @@ impl Drawn {
     }
 }
 
-/// Refits the face copy of one edge use until rule T4's stored tolerance is
-/// at most `target_mm`, and returns the best candidate the checker read.
-/// `None` for a copy that has no u/v of its own (a curve projected on a
-/// plane: its gap is the curve's distance from the plane, which no copy
-/// changes).
-pub fn refit(
-    copies: &EdgeCopies<'_>,
-    target_mm: f64,
-    dec: &mut Decider,
-) -> Result<Option<Refit>, Refusal> {
-    fit(copies, target_mm, Nodes::SurfaceFoot(None), dec).map(|(copy, _)| copy)
-}
-
-/// [`refit`] in an import admission (rule T3: "above that, refit first").
+/// Refits the face copy of one edge use (rules T3, T7 and T8) until rule
+/// T4's stored tolerance is at most `target_mm`, and finds the best
+/// candidate the checker read. The copy is `None` for one that has no u/v
+/// of its own (a curve projected on a plane: its gap is the curve's
+/// distance from the plane, which no copy changes).
 ///
-/// `limits` is what the edge use has left of its one work allowance after
+/// `limits` is what the use's edge has left of its one work allowance after
 /// the readings that came first. One unit is counted per evaluation while a
 /// foot is found, and the checker counts its own units on each candidate.
-/// All of them are taken from `limits` and charged to the operation, as
-/// [`refit`] charges them. Where `limits` runs out the use refuses with
-/// `numerical.gap-work-cap`. The work taken is returned with or without a
-/// new copy.
+/// All of them are taken from `limits` and charged to the operation. Where
+/// `limits` runs out the edge refuses with `numerical.gap-work-cap`. The
+/// work taken is returned with or without a new copy.
 pub fn refit_within(
     copies: &EdgeCopies<'_>,
     target_mm: f64,
     limits: Limits,
     dec: &mut Decider,
 ) -> Result<Fit, Refusal> {
-    fit(copies, target_mm, Nodes::SurfaceFoot(Some(limits)), dec)
-        .map(|(copy, work)| Fit { copy, work })
+    fit(copies, target_mm, Nodes::SurfaceFoot(limits), dec).map(|(copy, work)| Fit { copy, work })
 }
 
 /// Gives the face copy of one edge use the parameter of its 3D curve
@@ -220,7 +201,7 @@ pub fn refit_within(
 /// until rule T4's stored tolerance is at most `target_mm`; the best
 /// candidate the checker read is returned.
 ///
-/// `limits` is what the edge use has left of its one work allowance after
+/// `limits` is what the use's edge has left of its one work allowance after
 /// the readings that came first. One unit is counted per evaluation of
 /// either copy while a foot is found and per reading of the old copy, and
 /// the checker counts its own units on each candidate. All of them are taken

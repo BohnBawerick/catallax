@@ -293,8 +293,8 @@ fn sweep(
 /// and its same-parameter gap is already the distance of the 3D curve from
 /// the plane.
 ///
-/// `limits` is what the edge use has left of its one allowance when another
-/// measurement of the same use came first. One unit is counted per break and
+/// `limits` is what the use's edge has left of its one allowance when another
+/// measurement of the same edge came first. One unit is counted per break and
 /// per halving while planning, as [`measure`](super::measure) counts them,
 /// and one per evaluation of either copy. It refuses with
 /// `numerical.gap-work-cap` where the allowance runs out, and the same units

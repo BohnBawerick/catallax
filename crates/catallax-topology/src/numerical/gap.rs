@@ -40,7 +40,7 @@
 //! both ways, `refit.rs` gives a face copy the parameter of its 3D curve, and
 //! `numerical::admit_import` decides between them (decision Q9). The search
 //! above then measures the copy that is kept. All of that draws on the one
-//! work allowance of the edge use ([`Limits`]).
+//! work allowance of the use's edge ([`Limits`]).
 //!
 //! A carrier with no kernel form, such as an imported surface a reader holds
 //! in the file's own terms, is read through its own binary64 evaluator
@@ -512,9 +512,10 @@ pub struct Limits {
     /// domain probe: everything the measurement does that grows with the
     /// edge.
     ///
-    /// An edge use has one allowance. Where a use is read more than once,
-    /// as the gap rule for imports reads it, each reading is given what the
-    /// readings before it left, so the cap holds for all of them together.
+    /// The allowance belongs to the edge. Where the edge is read more than
+    /// once, on another of its faces or as the gap rule for imports reads a
+    /// use again, each reading is given what the readings before it left,
+    /// so the cap holds for all of them together.
     pub work: u64,
 }
 
@@ -522,14 +523,13 @@ pub struct Limits {
 /// five percent of the 20M operation target (ROADMAP, rules that stay fixed
 /// between checkpoints).
 ///
-/// The cap covers one edge use, which is what one measurement reads: an
-/// edge's 3D curve against its copy on one face. An edge between two faces
-/// has two uses and two allowances, so reading the whole edge can count up
-/// to twice this. The unit is the checker's own (section 4.2: "find the
-/// largest gap on each freehand edge copy") and OpenCASCADE's, which checks
-/// an edge in the context of one face at a time
-/// (`BRepCheck_Edge::InContext`). It also keeps one use's reading
-/// independent of the order the uses are read in.
+/// The cap is one allowance for the topological edge (section 4.2 step 8:
+/// "A hard per-edge work cap refuses by name"). One measurement reads one
+/// use of an edge, its 3D curve against its copy on one face, and is given
+/// what the edge has left as its [`Limits`]. An edge between two faces is
+/// read twice, and the second reading draws on what the first left. An
+/// admission keeps the allowances and takes each reading's work off its
+/// edge's.
 pub const EDGE_WORK: u64 = crate::numerical::DEFAULT_WORK / 20;
 
 impl Default for Limits {
@@ -1372,7 +1372,7 @@ fn polish<S: Peak>(
 /// The gap at the two ends of an edge alone, for a face copy that is
 /// declared only there.
 ///
-/// `limits` is what the edge use has left of its one allowance when another
+/// `limits` is what the use's edge has left of its one allowance when another
 /// measurement of the same use came first. The two end samples and the
 /// closing probes draw on it, and it refuses by name like [`measure`].
 pub fn measure_ends(

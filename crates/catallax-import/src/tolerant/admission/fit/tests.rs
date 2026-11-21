@@ -336,3 +336,71 @@ fn the_chart_work_of_a_native_use_is_inside_its_one_allowance() {
     );
     assert_eq!(total(read(&sampled, whole).0), (whole, stored));
 }
+
+/// Section 4.2 step 8: "A hard per-edge work cap refuses by name." The cap is
+/// one allowance for the topological edge, shared by its uses.
+///
+/// The stretched use of [`SPEEDS`] is read twice, as the two uses of one
+/// edge on two faces. An allowance that fits the use once, and not twice,
+/// reads the first use and refuses the second by name. One unit short of
+/// twice refuses the second as well. Exactly twice reads both. The uses of
+/// two different edges each have an allowance of their own.
+#[test]
+fn the_uses_of_an_edge_share_its_one_allowance() {
+    let mut dec = Decider::default();
+    let parsed = ParsedStep::read(SPEEDS, &mut dec).unwrap();
+    let scale = Rational::one();
+    let (surface, edge) = speeds_use(&parsed, &scale, &mut dec);
+    let mut context = Context::new(&parsed, &scale, AngleUnit::Radians, BTreeMap::new(), 0.01);
+    let pcurve =
+        NativeUvCurve::from_source(&parsed, 26, &scale, AngleUnit::Radians, &mut dec).unwrap();
+    let used = import_gap::FileUse {
+        edge: &edge,
+        surface: (14, &surface),
+        pcurve: (26, &pcurve),
+        overshoot_mm: 1e-7,
+        allowance: n::gap::Limits::default(),
+    };
+    let sampled = import_gap::sampled_use(&mut context, &used, &mut dec)
+        .unwrap()
+        .unwrap_or_else(|why| panic!("{why}"));
+    // The work of each use of the edges named, read in turn on `allowances`,
+    // or the code the first refused use gives.
+    let read_uses = |allowances: &mut import_gap::EdgeAllowances, edges: [usize; 2]| {
+        let mut counted = Vec::new();
+        for edge in edges {
+            match sampled.read(allowances.left(edge), &mut Decider::default()) {
+                Ok(read) => {
+                    let work = read.unwrap_or_else(|why| panic!("{why}")).rule.work;
+                    allowances.count(edge, work);
+                    counted.push(work);
+                }
+                Err(Error::Numerical(refusal)) => return Err((counted, refusal.code)),
+                Err(other) => panic!("{other:?}"),
+            }
+        }
+        Ok(counted)
+    };
+    let whole = read_uses(&mut import_gap::EdgeAllowances::new(), [7, 7]).unwrap();
+    assert_eq!(whole[0], whole[1]);
+    let once = whole[0];
+    assert!(once > 0 && 2 * once < n::gap::EDGE_WORK);
+
+    for each_edge in [once, 2 * once - 1] {
+        assert_eq!(
+            read_uses(&mut import_gap::EdgeAllowances::of(each_edge), [7, 7]),
+            Err((vec![once], "numerical.gap-work-cap")),
+            "{each_edge} units for an edge whose two uses count {}",
+            2 * once
+        );
+    }
+    assert_eq!(
+        read_uses(&mut import_gap::EdgeAllowances::of(2 * once), [7, 7]),
+        Ok(vec![once, once])
+    );
+    // Two edges, one use each.
+    assert_eq!(
+        read_uses(&mut import_gap::EdgeAllowances::of(once), [7, 8]),
+        Ok(vec![once, once])
+    );
+}

@@ -21,8 +21,8 @@
 //! evaluators of their native charts
 //! ([`Binary64Carrier`](super::super::super::native::Binary64Carrier)), in
 //! millimetres about the file's origin. Each evaluation states the work of
-//! its chart, and the checker takes that from the use's one allowance, with
-//! its own unit, before it evaluates. The u/v curve is read as the file
+//! its chart, and the checker takes that from the one allowance of the use's
+//! edge, with its own unit, before it evaluates. The u/v curve is read as the file
 //! wrote it: a B-spline with its own controls and knots, or the straight
 //! segment between the two ends of a u/v line.
 //!
@@ -253,6 +253,50 @@ fn inside(extent: &[[Option<f64>; 2]; 2], uv: [f64; 2]) -> bool {
     })
 }
 
+/// The one work allowance of each edge of a body for the gap rule, and what
+/// the uses of the edge have counted against it so far.
+///
+/// Section 4.2 step 8: "A hard per-edge work cap refuses by name." The edge
+/// is the topological edge, named by its place in the body's edge table. Its
+/// uses on different faces share one allowance, the checker's cap
+/// (`gap::EDGE_WORK`): each use is read under what the uses before it left,
+/// in the order the body's faces are read.
+pub(super) struct EdgeAllowances {
+    each_edge: u64,
+    counted: BTreeMap<usize, u64>,
+}
+
+impl EdgeAllowances {
+    /// The checker's cap for every edge, with nothing counted.
+    pub(super) fn new() -> Self {
+        Self::of(gap::EDGE_WORK)
+    }
+
+    /// `each_edge` units for every edge, with nothing counted. Only the
+    /// tests that spend an allowance give less than the checker's cap.
+    pub(super) fn of(each_edge: u64) -> Self {
+        Self {
+            each_edge,
+            counted: BTreeMap::new(),
+        }
+    }
+
+    /// What the edge has left for its next use.
+    pub(super) fn left(&self, edge: usize) -> gap::Limits {
+        gap::Limits {
+            work: self
+                .each_edge
+                .saturating_sub(self.counted.get(&edge).copied().unwrap_or(0)),
+        }
+    }
+
+    /// Takes the work one use of the edge counted off its allowance.
+    pub(super) fn count(&mut self, edge: usize, work: u64) {
+        let counted = self.counted.entry(edge).or_default();
+        *counted = counted.saturating_add(work);
+    }
+}
+
 /// One edge use and the file u/v curve it carries.
 pub(super) struct FileUse<'a> {
     /// The edge's stations on its 3D curve.
@@ -264,19 +308,23 @@ pub(super) struct FileUse<'a> {
     /// How far, in millimetres, the edge may run past the interval of its
     /// u/v curve: what the body allows a vertex off its edge's end.
     pub overshoot_mm: f64,
-    /// The use's one work allowance: the checker's cap for an edge.
+    /// What the use's edge has left of its one work allowance, the
+    /// checker's cap for an edge. The edge's uses share that allowance.
     pub allowance: gap::Limits,
 }
 
 /// The gap rule for one edge use that carries a file u/v curve, or why the
 /// checker does not read the use.
 ///
-/// The use has one work allowance (section 4.2 step 8: "A hard per-edge work
-/// cap refuses by name"). The checker takes every unit from it before the
-/// unit is spent: its own unit for an evaluation, and with it the chart work
-/// the native carrier states for that evaluation. A use that spends the
-/// allowance refuses the body with `numerical.gap-work-cap`. Nothing is
-/// charged here beside what the checker counts.
+/// The use's edge has one work allowance (section 4.2 step 8: "A hard
+/// per-edge work cap refuses by name"), and `used.allowance` is what its
+/// uses read before this one left of it. The checker takes every unit from
+/// it before the unit is spent: its own unit for an evaluation, and with it
+/// the chart work the native carrier states for that evaluation. A use that
+/// spends what is left refuses the body with `numerical.gap-work-cap`.
+/// Nothing is charged here beside what the checker counts. The caller takes
+/// the reading's work off the edge's allowance. A use the checker cannot
+/// read reports no work, so nothing is taken off for it.
 pub(super) fn read_use(
     context: &mut Context<'_>,
     used: &FileUse<'_>,
@@ -440,7 +488,8 @@ pub(super) fn sampled_use(
 }
 
 impl SampledUse {
-    /// The gap rule on this use, under the use's one work allowance.
+    /// The gap rule on this use, under what its edge has left of its one
+    /// work allowance.
     pub(super) fn read(
         &self,
         allowance: gap::Limits,

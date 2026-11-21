@@ -4,7 +4,7 @@
 use super::a_plus::copies;
 use super::exact::*;
 use super::*;
-use crate::numerical::edge_gap::UseAccount;
+use crate::numerical::edge_gap::Accounts;
 use crate::numerical::gap::{self, GapMeasure, GeometricMeasure, Hints, Limits, refit};
 use crate::numerical::import_gap::{self, ImportGapOutcome, UseReading};
 
@@ -286,9 +286,11 @@ fn floor_mm() -> f64 {
 /// an import.
 fn rule(geometry: &EdgeGeometry, work: u64) -> (Result<Option<UseReading>, Refusal>, u64) {
     let (read, charged) = with_operation_budget(DEFAULT_WORK, || {
+        let mut accounts = Accounts::of_one_use(Limits { work });
+        let mut account = accounts.draw(0)?;
         import_gap::read_use(
             &copies(geometry),
-            &mut UseAccount::new(Limits { work }),
+            &mut account,
             floor_mm(),
             &mut Decider::default(),
         )

@@ -175,7 +175,7 @@ pub struct NativeImportGap {
     /// this admission then rebuilt the trace from the 3D curve, so the
     /// reading describes a copy the use no longer has.
     pub kept: bool,
-    /// Work counted against the use's one allowance.
+    /// Work this use counted against the one allowance of its edge.
     pub work: u64,
 }
 

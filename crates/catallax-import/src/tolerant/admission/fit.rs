@@ -985,6 +985,11 @@ pub(super) fn check_body(
             dec,
         )?;
     }
+    // The one work allowance of each edge for the gap rule (section 4.2 step
+    // 8: "A hard per-edge work cap refuses by name"). The edge is the
+    // topological edge, so its uses on different faces draw on the same
+    // allowance, in the order the faces are read.
+    let mut gap_allowances = import_gap::EdgeAllowances::new();
     for shell in &body.shells {
         for face in &shell.faces {
             context.stage = super::NativeStage::SurfaceFit;
@@ -1085,10 +1090,11 @@ pub(super) fn check_body(
                             surface: (entity, native.as_ref()),
                             pcurve: (source, file.as_ref()),
                             overshoot_mm: body.options.initial_mm.to_f64_nearest(),
-                            allowance: n::gap::Limits::default(),
+                            allowance: gap_allowances.left(usage.edge),
                         };
                         match import_gap::read_use(context, &used, dec)? {
                             Ok(read) => {
+                                gap_allowances.count(usage.edge, read.rule.work);
                                 pcurve = read.copy.clone().map(FaceCopy::Reparametrised);
                                 gap_rule = Some((source, read));
                             }

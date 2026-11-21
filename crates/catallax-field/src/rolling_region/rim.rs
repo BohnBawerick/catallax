@@ -220,6 +220,16 @@ impl Rim {
         ))
     }
 
+    /// A world enclosure of a point enclosed in the ring's frame.
+    pub(super) fn world_point(
+        &self,
+        local: &[Ball; 3],
+        dec: &mut Decider,
+    ) -> Result<[Ball; 3], Refusal> {
+        let (origin, frame) = self.frame(dec)?;
+        Ok(world(&origin, &frame, local))
+    }
+
     /// The fan's panels as world boxes.
     fn panel_boxes(&self, dec: &mut Decider) -> Result<Vec<[Ball; 3]>, Refusal> {
         let (origin, frame) = self.frame(dec)?;
@@ -516,6 +526,7 @@ impl Cover for RimCover {
                 [&self.body * &c.cos, c.height, &self.body * &c.sin],
                 [fx, zero, fz],
             ],
+            side: None,
         })
     }
     // M18's lower envelope: a point within `r` of a ball's axis line and
@@ -632,6 +643,7 @@ impl Path for Rim {
                     ball(&(&self.major * &sin), dec)?,
                 ],
             ],
+            side: None,
         }))
     }
     fn guess(&self, local: &[Real; 3]) -> Option<Rational> {

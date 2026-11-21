@@ -189,6 +189,7 @@ impl Cover for StripCover {
             centre: shift(&self.centre, &t, &self.direction),
             tangent: self.direction.clone(),
             feet: self.feet.each_ref().map(|f| shift(f, &t, &self.direction)),
+            side: None,
         })
     }
 }
@@ -255,6 +256,7 @@ impl Path for Strip {
                 point_balls(&self.feet[0].plus(&step), dec)?,
                 point_balls(&self.feet[1].plus(&step), dec)?,
             ],
+            side: None,
         }))
     }
 }
@@ -359,6 +361,7 @@ impl Ring {
             centre: point_balls(&centre, dec)?,
             tangent: balls(&self.axis.cross(direction), dec)?,
             feet: [point_balls(&plane, dec)?, point_balls(&wall, dec)?],
+            side: None,
         })
     }
 }
@@ -402,6 +405,7 @@ impl Cover for RingCover {
             centre,
             tangent,
             feet: [plane, wall],
+            side: None,
         })
     }
 }

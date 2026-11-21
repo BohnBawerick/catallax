@@ -643,6 +643,7 @@ impl Cover for TurningCover {
             centre: self.centre(u)?,
             tangent: [ball("1"), ball("0"), ball("0")],
             feet: [foot(&middle - &quarter), foot(&middle + &quarter)],
+            side: None,
         })
     }
 }

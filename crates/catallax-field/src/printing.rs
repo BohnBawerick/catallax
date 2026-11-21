@@ -510,6 +510,16 @@ impl<'a> Prepared<'a> {
                         triangles: mesh.triangle_boxes(),
                     }));
                 }
+                // A patch shell has no carrier polynomials; like a mesh, it
+                // is settled where a box meets none of its faces' boxes.
+                geometry::Leaf::Shell(shell) if coverage == Coverage::Full => {
+                    definitions.push(Some(Definition::Mesh {
+                        bounds: interval_box(&shell.bounds().map(|[lo, hi]| {
+                            Ball::from_rational(&lo, 128).hull(&Ball::from_rational(&hi, 128))
+                        })),
+                        triangles: shell.surface_boxes(),
+                    }));
+                }
                 _ if coverage == Coverage::Full => {
                     definitions.push(Some(carriers(leaf, dec)?));
                 }

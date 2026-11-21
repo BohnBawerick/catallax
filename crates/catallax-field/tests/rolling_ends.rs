@@ -53,9 +53,9 @@ struct Case {
     /// Points the B-rep proves on its boundary.
     boundary: Vec<[Rational; 3]>,
     /// Points on a face a rolling piece shares with the body, with the
-    /// B-rep's answer. A rolling piece registers no named face yet, so the
-    /// field may leave them `Indeterminate`, but never on the wrong side.
-    /// They are the control cases for the face registry.
+    /// B-rep's answer. A wall of the piece passes through each, where the
+    /// piece's registered face does not settle a ray's side, so the field
+    /// may leave them `Indeterminate`, but never on the wrong side.
     shared: Vec<([Rational; 3], Location)>,
     /// Whether the witnesses are derived here rather than taken from the
     /// test file, so the test first checks each against the B-rep.
@@ -359,8 +359,8 @@ fn p5_cases() -> Vec<Case> {
     ] {
         // The file's points in the flange plane under the round, (12.99, 5,
         // 0) and the four contacts, lie on a face the piece shares with the
-        // housing; a rolling piece registers no face to settle them, so they
-        // are shared points.
+        // housing where the rim piece's wall passes; the rim registers no
+        // face to settle them, so they are shared points.
         let (mut inside, mut outside) = strict(true);
         inside.extend(points(&[([13, 1], [499, 100], [0, 1])]));
         outside.extend(points(&[

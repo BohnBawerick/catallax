@@ -673,6 +673,8 @@ pub(crate) enum Leaf {
     Lattice(Box<crate::lattice::Lattice>),
     Gyroid(Box<crate::gyroid::Gyroid>),
     Mesh(Box<crate::mesh::MeshLeaf>),
+    /// A closed shell of whole patches and planar polygons (4.2a step 7.2).
+    Shell(Box<crate::patch_shell::Shell>),
     Smooth(Box<crate::smooth::Smooth>),
     /// A rolling-ball path piece's region (4.2a); a residual, not a distance.
     Rolling(Box<crate::rolling_region::piece::Piece>),
@@ -697,6 +699,7 @@ impl Leaf {
             Self::Lattice(_)
             | Self::Gyroid(_)
             | Self::Mesh(_)
+            | Self::Shell(_)
             | Self::Smooth(_)
             | Self::Rolling(_) => &[],
         }
@@ -722,6 +725,11 @@ impl Leaf {
             Self::Draft(a) => return a.display_box(dec).map(Some),
             Self::Lattice(_) | Self::Gyroid(_) => return Ok(None),
             Self::Mesh(a) => {
+                return Ok(Some(a.bounds().map(|[lo, hi]| {
+                    Ball::from_rational(&lo, 128).hull(&Ball::from_rational(&hi, 128))
+                })));
+            }
+            Self::Shell(a) => {
                 return Ok(Some(a.bounds().map(|[lo, hi]| {
                     Ball::from_rational(&lo, 128).hull(&Ball::from_rational(&hi, 128))
                 })));
@@ -771,6 +779,13 @@ impl Leaf {
             Self::Cell(a) => return a.display_radius(dec),
             Self::Lattice(_) | Self::Gyroid(_) => return Ok(None),
             Self::Mesh(a) => {
+                return Ok(Some(
+                    a.bounds().iter().fold(Rational::zero(), |sum, [lo, hi]| {
+                        sum + lo.abs().max(hi.abs())
+                    }),
+                ));
+            }
+            Self::Shell(a) => {
                 return Ok(Some(
                     a.bounds().iter().fold(Rational::zero(), |sum, [lo, hi]| {
                         sum + lo.abs().max(hi.abs())
@@ -843,6 +858,7 @@ impl Leaf {
             Self::Lattice(a) => a.transform(pose),
             Self::Gyroid(a) => a.transform(pose),
             Self::Mesh(a) => a.transform(pose),
+            Self::Shell(a) => a.transform(pose),
             Self::Smooth(a) => a.transform(pose),
             Self::Rolling(a) => {
                 a.transform(pose);
@@ -851,7 +867,7 @@ impl Leaf {
         }
     }
     pub fn true_distance(&self) -> bool {
-        matches!(self, Self::Primitive(_) | Self::Mesh(_))
+        matches!(self, Self::Primitive(_) | Self::Mesh(_) | Self::Shell(_))
             || matches!(self, Self::Draft(region) if !matches!(region.cell, crate::draft::Cell::Oblique(_)))
     }
     pub fn location(&self, p: &[Rational; 3], dec: &mut Decider) -> Result<Location, Refusal> {
@@ -863,6 +879,7 @@ impl Leaf {
             Self::Lattice(a) => Ok(a.location(p)),
             Self::Gyroid(a) => a.location(p, dec),
             Self::Mesh(a) => a.location(p, dec),
+            Self::Shell(a) => a.location(p, dec),
             Self::Smooth(a) => a.location(p, dec),
             Self::Rolling(a) => a.location(p, dec),
         }
@@ -881,6 +898,7 @@ impl Leaf {
             Self::Lattice(a) => Ok(a.proven_distance(p, l)),
             Self::Gyroid(a) => Ok(a.proven_distance(p, l)),
             Self::Mesh(a) => a.proven_distance(p, l, dec),
+            Self::Shell(a) => a.proven_distance(p, l, dec),
             Self::Smooth(a) => a.residual(p, dec),
             Self::Rolling(a) => a.residual(p, l, dec),
         }
@@ -897,6 +915,7 @@ impl Leaf {
             Self::Lattice(a) => a.fast_distance::<A>(p),
             Self::Gyroid(a) => a.fast_distance(p),
             Self::Mesh(a) => a.fast_distance(p),
+            Self::Shell(a) => a.fast_distance(p),
             Self::Smooth(a) => a.fast::<A>(p),
             Self::Rolling(a) => a.fast::<A>(p),
         }
@@ -909,6 +928,9 @@ impl Leaf {
         planes: &mut Vec<Vector3>,
         dec: &mut Decider,
     ) -> Result<bool, Refusal> {
+        if let Self::Rolling(piece) = self {
+            return piece.planes_at(p, planes, dec);
+        }
         if let Self::Draft(region) = self
             && let crate::draft::Cell::Polyhedral(poly) = &region.cell
         {
@@ -977,6 +999,34 @@ impl Leaf {
         Ok(found)
     }
 
+    /// The polynomial of the one smooth surface that bounds the leaf near a
+    /// boundary point `p`, where the leaf is one side of it there: a
+    /// primitive's or cell's one constraint through `p`, or a rolling piece's
+    /// face or support wall ([`crate::rolling_region::piece::Piece::smooth_side`]).
+    /// `None` for any other leaf or where more than one surface passes.
+    pub(crate) fn smooth_side(
+        &self,
+        p: &[Rational; 3],
+        dec: &mut Decider,
+    ) -> Result<Option<RealPoly>, Refusal> {
+        match self {
+            Self::Primitive(_) | Self::Cell(_) => {
+                let mut found = None;
+                for constraint in self.constraints() {
+                    if crate::polynomial_sign(&constraint.polynomial, p, dec)? == Sign::Zero {
+                        if found.is_some() {
+                            return Ok(None);
+                        }
+                        found = Some(constraint.polynomial.clone());
+                    }
+                }
+                Ok(found)
+            }
+            Self::Rolling(piece) => piece.smooth_side(p, dec),
+            _ => Ok(None),
+        }
+    }
+
     pub fn ray(
         &self,
         p: &[Rational; 3],
@@ -988,12 +1038,9 @@ impl Leaf {
                 Location::Boundary => Location::Indeterminate,
                 l => l,
             }),
-            // A boundary point's side along a direction is not settled for
-            // rolling pieces yet; it stays explicitly unresolved.
-            Self::Rolling(a) => Ok(match a.location(p, dec)? {
-                Location::Boundary => Location::Indeterminate,
-                l => l,
-            }),
+            // On a registered face the face's equation settles the side;
+            // elsewhere on the boundary it stays explicitly unresolved.
+            Self::Rolling(a) => a.ray(p, d, dec),
             Self::Primitive(a) => ray_location(a, p, d, dec),
             Self::Feature(a) => a.ray(p, d, dec),
             Self::Cell(a) => a.ray(p, d, dec),
@@ -1002,6 +1049,11 @@ impl Leaf {
             // A boundary point's side along a direction is not settled for
             // meshes yet; it stays explicitly unresolved.
             Self::Mesh(a) => Ok(match a.location(p, dec)? {
+                Location::Boundary => Location::Indeterminate,
+                location => location,
+            }),
+            // The same for a patch shell.
+            Self::Shell(a) => Ok(match a.location(p, dec)? {
                 Location::Boundary => Location::Indeterminate,
                 location => location,
             }),
@@ -1030,7 +1082,15 @@ impl Leaf {
         dec: &mut Decider,
     ) -> Result<Option<bool>, Refusal> {
         match self {
-            Self::Smooth(_) | Self::Rolling(_) => Ok(Some(false)),
+            Self::Smooth(_) => Ok(Some(false)),
+            Self::Rolling(a) => {
+                let point = Point3::new(
+                    p[0].clone().into(),
+                    p[1].clone().into(),
+                    p[2].clone().into(),
+                );
+                a.on_face(&point, dec).map(Some)
+            }
             Self::Primitive(_) => Ok(Some(true)),
             Self::Draft(region) => {
                 if matches!(
@@ -1052,6 +1112,7 @@ impl Leaf {
             Self::Lattice(a) => Ok(Some(a.location(p) == Location::Boundary)),
             Self::Gyroid(a) => Ok(Some(a.location(p, dec)? == Location::Boundary)),
             Self::Mesh(a) => Ok(Some(a.location(p, dec)? == Location::Boundary)),
+            Self::Shell(a) => Ok(Some(a.location(p, dec)? == Location::Boundary)),
         }
     }
 
@@ -1068,7 +1129,8 @@ impl Leaf {
             return self.on_face(origin, role, &[r.x, r.y, r.z], dec);
         }
         match self {
-            Self::Smooth(_) | Self::Rolling(_) => Ok(Some(false)),
+            Self::Smooth(_) => Ok(Some(false)),
+            Self::Rolling(a) => a.on_face(p, dec).map(Some),
             Self::Primitive(_) | Self::Cell(_) => Ok(Some(true)),
             Self::Draft(region) => {
                 if matches!(
@@ -1084,6 +1146,10 @@ impl Leaf {
             Self::Lattice(_) | Self::Gyroid(_) | Self::Mesh(_) => Err(Refusal::new(
                 "field.fillet-contact",
                 "a lattice, gyroid or mesh face's membership needs a rational point",
+            )),
+            Self::Shell(_) => Err(Refusal::new(
+                "field.fillet-contact",
+                "a patch shell face's membership needs a rational point",
             )),
         }
     }
@@ -1160,6 +1226,10 @@ impl Leaf {
             Self::Mesh(_) => Err(Refusal::new(
                 "draft.unsupported-surface",
                 "imported mesh surfaces are not draft source faces",
+            )),
+            Self::Shell(_) => Err(Refusal::new(
+                "draft.unsupported-surface",
+                "patch shell surfaces are not draft source faces yet",
             )),
             Self::Draft(region) => Ok(match &region.cell {
                 crate::draft::Cell::Oblique(cell) => cell.interior_witness(),
@@ -1262,10 +1332,12 @@ impl Primitive {
         }
         let angular = angular.get_or_init(|| crate::samples::circle(n));
         // An imported complete sphere or torus keeps the file's face name on
-        // the primitive's only face.
+        // the primitive's only face, and a fillet's ball or strip keeps its
+        // blend or corner name on its curved face (4.2a).
         let wall = matches!(role, Role::Side { segment, .. } if segment.as_str() == "wall")
             || (matches!(self.kind, Kind::Sphere | Kind::Torus)
-                && matches!(role, Role::Imported { .. }));
+                && matches!(role, Role::Imported { .. }))
+            || matches!(role, Role::Blend { .. } | Role::Corner { .. });
         match self.kind {
             Kind::Round => {
                 if wall {

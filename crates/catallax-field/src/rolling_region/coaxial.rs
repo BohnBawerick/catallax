@@ -407,6 +407,18 @@ impl Coaxial {
         &self.radius
     }
 
+    /// The exact surface that holds the face, for the face registry: the
+    /// ring torus about the centre circle, whose equation is the separation.
+    pub fn face(&self) -> catallax_shapes::Surface {
+        catallax_shapes::Surface::Torus(catallax_shapes::Torus {
+            center: self.point.plus(&self.axis.scaled(&self.centre[1])),
+            axis: self.axis.clone(),
+            major: self.centre[0].clone(),
+            minor: self.radius.clone(),
+            ref_dir: self.basis[0].clone(),
+        })
+    }
+
     /// Applies an exact rigid motion, reflections included. Meridian
     /// coordinates are invariant.
     pub fn transform(&mut self, pose: &Isometry) {
@@ -439,6 +451,7 @@ impl Coaxial {
                 point_balls(&self.revolve(&self.feet[0], direction), dec)?,
                 point_balls(&self.revolve(&self.feet[1], direction), dec)?,
             ],
+            side: None,
         })
     }
 
@@ -557,6 +570,7 @@ impl Cover for CoaxialCover {
             centre: self.revolve(&self.centre, &direction),
             tangent: turn,
             feet: self.feet.each_ref().map(|f| self.revolve(f, &direction)),
+            side: None,
         })
     }
 }

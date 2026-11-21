@@ -49,6 +49,8 @@ pub mod measurement;
 mod metric;
 mod offset_spline;
 mod ownership;
+pub mod patch_distance;
+pub mod patch_shell;
 mod planar;
 mod planar_face;
 /// Watertight certified print meshes built directly from the field.
@@ -1444,7 +1446,9 @@ impl Plan {
         &self.faces
     }
     /// The rolling-ball path pieces the plan's fillets compiled to (4.2a), in
-    /// compile order. Their faces are not registered as named faces yet.
+    /// compile order. A piece whose face lies on a ring torus, a sphere or a
+    /// cylinder registers it as a named face; other pieces' faces are not
+    /// registered.
     pub fn rolling_pieces(&self) -> impl Iterator<Item = &rolling_region::piece::Piece> {
         self.leaves.iter().filter_map(|leaf| match leaf {
             geometry::Leaf::Rolling(piece) => Some(piece.as_ref()),
@@ -1643,6 +1647,8 @@ impl Plan {
                 location = proven;
             } else if self.boundary_witness(&coordinates, storage, dec)? {
                 location = Location::Boundary;
+            } else if let Some(proven) = self.smooth_location(&coordinates, storage, dec)? {
+                location = proven;
             }
         }
         let direction = if location == Location::Boundary {
@@ -1719,6 +1725,69 @@ impl Plan {
         }
         planar::classify(&storage.planes, dec, |n, dec| {
             self.ray(p, n, &mut storage.rays, dec)
+        })
+    }
+
+    /// Settles a point where every leaf on whose boundary it lies is, near
+    /// it, one side of the same smooth surface (4.2a: a rolling piece's wall
+    /// on the support it shares with the body). Away from that surface each
+    /// such leaf, and every leaf the point is strictly inside or outside, is
+    /// constant near the point, so the result is constant on each side: the
+    /// rays along the surface's normal and against it read the two sides, as
+    /// `planar::classify` reads the cells of several planes. Equal monic
+    /// polynomials with a nonzero gradient at the point are one smooth
+    /// surface there. `None` where a leaf is unsettled or bounded otherwise.
+    fn smooth_location(
+        &self,
+        p: &[Rational; 3],
+        storage: &mut Workspace,
+        dec: &mut Decider,
+    ) -> Result<Option<Location>, Refusal> {
+        let mut surface: Option<(RealPoly, [RealPoly; 3])> = None;
+        for (slot, instruction) in self.instructions.iter().enumerate() {
+            let Instruction::Leaf(i) = *instruction else {
+                continue;
+            };
+            match storage.locations[slot] {
+                Location::Indeterminate => return Ok(None),
+                Location::Boundary => {
+                    let Some(polynomial) = self.leaves[i].smooth_side(p, dec)? else {
+                        return Ok(None);
+                    };
+                    let (monic, gradient) = geometry::support_geometry(&polynomial, dec)?;
+                    match &surface {
+                        None => surface = Some((monic, gradient)),
+                        Some((known, _)) => {
+                            if !known.equals(&monic, dec)? {
+                                return Ok(None);
+                            }
+                        }
+                    }
+                }
+                Location::Inside | Location::Outside => {}
+            }
+        }
+        let Some((_, gradient)) = surface else {
+            return Ok(None);
+        };
+        let values = p.clone().map(Real::from);
+        let n = Vector3::new(
+            gradient[0].eval_real(&values),
+            gradient[1].eval_real(&values),
+            gradient[2].eval_real(&values),
+        );
+        if geometry::sign(&n.norm_squared(), dec)? == Sign::Zero {
+            return Ok(None);
+        }
+        let ahead = self.ray(p, &n, &mut storage.rays, dec)?;
+        let behind = self.ray(p, &n.scaled(&Real::from_i64(-1)), &mut storage.rays, dec)?;
+        Ok(match (ahead, behind) {
+            (Location::Inside, Location::Inside) => Some(Location::Inside),
+            (Location::Outside, Location::Outside) => Some(Location::Outside),
+            (Location::Inside, Location::Outside) | (Location::Outside, Location::Inside) => {
+                Some(Location::Boundary)
+            }
+            _ => None,
         })
     }
 

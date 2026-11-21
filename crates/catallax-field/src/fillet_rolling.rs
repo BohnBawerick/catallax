@@ -31,15 +31,18 @@ pub(super) struct Run {
     pub(super) piece: Piece,
     faces: [usize; 2],
     // Faces proven not to overflow the run: end faces of a straight run,
-    // which bound it, and a rim's mouths.
+    // which bound it, a rim's mouths, narrower rounds that cut a run's
+    // extension past a cliff, and the faces an earlier round rounded where
+    // a sector over it has a fan of one material.
     ends: Vec<usize>,
     // Half-spaces `n . (x - p) >= 0` that hold the region, each bounded by
     // a junction with a tangent neighbour piece. A face on the far side of
     // one cannot enter the region.
     junctions: Vec<(Point3, Vector3)>,
-    // A solid cylinder that holds the region: a ring whose ball lies inside
-    // its cylinder support (4.2a step 5).
-    inside: Option<Solid>,
+    // Solid cylinders that each hold the region: a ring whose ball lies
+    // inside its cylinder support, or a seam inside both rounds of a mitre
+    // (4.2a step 5).
+    inside: Vec<Solid>,
 }
 /// The closed solid cylinder of squared radius `radius_sq` about the axis
 /// through `point` along `axis`.
@@ -56,7 +59,7 @@ impl Run {
             faces,
             ends,
             junctions: Vec::new(),
-            inside: None,
+            inside: Vec::new(),
         }
     }
     /// The run with the half-spaces of its junctions.
@@ -64,9 +67,25 @@ impl Run {
         self.junctions = junctions;
         self
     }
-    /// The run whose region lies in the closed solid cylinder `solid`.
+    /// The run whose region lies in the closed solid cylinder `solid`, too.
     pub(super) fn inside(mut self, solid: Solid) -> Self {
-        self.inside = Some(solid);
+        self.inside.push(solid);
+        self
+    }
+    /// The run with the faces that cut its extension past a cliff (RECIPE
+    /// 4.5.1, 4.2a step 5): narrower rounds it does not roll onto, each past
+    /// the cliff. By the cliff rule they cut the region there, so the
+    /// clearance leaves them to that cut, as it leaves end faces.
+    pub(super) fn cut_by(mut self, faces: Vec<usize>) -> Self {
+        self.ends.extend(faces);
+        self
+    }
+    /// The run with faces that cross its fan where the fan is proven all
+    /// material (convex) or all air (concave), so they bound nothing there
+    /// (4.2a step 5: an earlier round's two faces under a sector whose ball
+    /// lies outside that round's cylinder).
+    pub(super) fn buried(mut self, faces: Vec<usize>) -> Self {
+        self.ends.extend(faces);
         self
     }
 }
@@ -91,6 +110,8 @@ pub(super) fn admits(
             true
         }
         _ if !named => false,
+        // A plane with a torus (step 6), named edges only, as step 3's pairs.
+        (Surface::Plane(_), Surface::Torus(_)) | (Surface::Torus(_), Surface::Plane(_)) => true,
         (Surface::Cylinder(_), Surface::Cylinder(_) | Surface::Sphere(_))
         | (Surface::Sphere(_), Surface::Cylinder(_)) => true,
         (a, b) => coaxial(a, b, dec)?,
@@ -149,7 +170,7 @@ pub(super) fn radial(v: &Vector3, axis: &Vector3) -> Vector3 {
     v.minus(&axis.scaled(&(&v.dot(axis) / &axis.norm_squared())))
 }
 
-/// A cylinder, cone or sphere as a support of revolution, with the ball
+/// A cylinder, cone, sphere or torus as a support of revolution, with the ball
 /// direction's component along its outward normal at `sample`: positive
 /// when the ball lies outside it. `None` for any other surface.
 pub(super) fn revolution(
@@ -186,6 +207,22 @@ pub(super) fn revolution(
             },
             ball.dot(&at(&s.center)),
         ),
+        // The outward normal points from the core circle's point in the
+        // sample's meridian (4.2a step 6).
+        Surface::Torus(t) => {
+            let w = radial(&at(&t.center), &t.axis);
+            let core = t.center.plus(&unit(&w).scaled(&t.major));
+            (
+                Revolution::Torus {
+                    centre: t.center.clone(),
+                    axis: t.axis.clone(),
+                    major: t.major.clone(),
+                    minor: t.minor.clone(),
+                    edge: sample.clone(),
+                },
+                ball.dot(&sample.minus(&core)),
+            )
+        }
         _ => return None,
     })
 }
@@ -321,42 +358,28 @@ impl Plan {
                 let sample = loop_sample(edge)
                     .or_else(|| algebraic_sample(edge))
                     .ok_or_else(|| bad("a closed edge needs a point for its material"))?;
-                let Some((convex, senses)) = self.material_point(root, &sample, faces, dec)? else {
-                    return Ok(Some(vec![]));
-                };
-                let ball = self.ball_direction(faces, &sample, convex, senses)?;
-                let [first, second] = supports;
-                let (plane, other) = match (
-                    Self::flat(first, &ball, dec)?,
-                    Self::flat(second, &ball, dec)?,
-                ) {
-                    (Some(plane), None) => (plane, second),
-                    (None, Some(plane)) => (plane, first),
-                    (None, None) => {
-                        let Curve::Circle(circle) = edge else {
-                            return Ok(None);
-                        };
-                        let run = self.coaxial_run(
-                            faces, supports, circle, &sample, &ball, convex, step, radius, dec,
-                        )?;
-                        return Ok(Some(vec![run]));
-                    }
-                    _ => return Ok(None),
-                };
-                let Some((support, outside)) = revolution(other, &sample, &ball) else {
-                    return Ok(None);
-                };
-                let outside =
-                    oriented(&outside, "the ball lies in a support's tangent plane", dec)?;
-                let path = Revolved::new(plane, support, outside, radius.clone(), dec)?;
-                let piece = Piece::new(
-                    Kind::Revolved(path),
-                    self.blend_origin(faces, step)?,
-                    convex,
-                    [first, second],
+                self.revolved_runs(
+                    root,
+                    faces,
+                    supports,
+                    Some(edge),
+                    &sample,
+                    radius,
+                    step,
                     dec,
-                )?;
-                Ok(Some(vec![Run::new(piece, faces, vec![])]))
+                )
+            }
+            // A plane normal to a torus's axis meets it in circles about the
+            // axis; an irrational one is kept as an intersection curve, whose
+            // witness is a point of the edge (4.2a step 6).
+            Curve::Intersection(intersection)
+                if matches!(
+                    supports,
+                    [Surface::Plane(_), Surface::Torus(_)] | [Surface::Torus(_), Surface::Plane(_)]
+                ) =>
+            {
+                let sample = geom.position(intersection.witness).clone();
+                self.revolved_runs(root, faces, supports, None, &sample, radius, step, dec)
             }
             Curve::Ellipse(ellipse)
                 if matches!(supports, [Surface::Cylinder(_), Surface::Cylinder(_)]) =>
@@ -421,6 +444,60 @@ impl Plan {
             }
             _ => Ok(None),
         }
+    }
+
+    /// The ring piece of a closed edge where a plane meets a cylinder, cone,
+    /// sphere or torus, or the coaxial piece of two curved supports about one
+    /// axis, from an edge point `sample`. `edge` is the edge's circle or
+    /// ellipse when the intersection gave one; a coaxial piece needs its
+    /// circle. An empty list when the edge is no sharp input boundary.
+    #[allow(clippy::too_many_arguments)]
+    fn revolved_runs(
+        &self,
+        root: usize,
+        faces: [usize; 2],
+        supports: &[Surface; 2],
+        edge: Option<&Curve>,
+        sample: &Point3,
+        radius: &Real,
+        step: &StepId,
+        dec: &mut Decider,
+    ) -> Result<Option<Vec<Run>>, Refusal> {
+        let Some((convex, senses)) = self.material_point(root, sample, faces, dec)? else {
+            return Ok(Some(vec![]));
+        };
+        let ball = self.ball_direction(faces, sample, convex, senses)?;
+        let [first, second] = supports;
+        let (plane, other) = match (
+            Self::flat(first, &ball, dec)?,
+            Self::flat(second, &ball, dec)?,
+        ) {
+            (Some(plane), None) => (plane, second),
+            (None, Some(plane)) => (plane, first),
+            (None, None) => {
+                let Some(Curve::Circle(circle)) = edge else {
+                    return Ok(None);
+                };
+                let run = self.coaxial_run(
+                    faces, supports, circle, sample, &ball, convex, step, radius, dec,
+                )?;
+                return Ok(Some(vec![run]));
+            }
+            _ => return Ok(None),
+        };
+        let Some((support, outside)) = revolution(other, sample, &ball) else {
+            return Ok(None);
+        };
+        let outside = oriented(&outside, "the ball lies in a support's tangent plane", dec)?;
+        let path = Revolved::new(plane, support, outside, radius.clone(), dec)?;
+        let piece = Piece::new(
+            Kind::Revolved(path),
+            self.blend_origin(faces, step)?,
+            convex,
+            [first, second],
+            dec,
+        )?;
+        Ok(Some(vec![Run::new(piece, faces, vec![])]))
     }
 
     /// A ring or loop where a cylinder meets a second cylinder or a sphere,
@@ -987,7 +1064,12 @@ impl Plan {
             for panel in boxes.as_deref().unwrap_or_default() {
                 dec.charge_work(1)?;
                 if face.polynomial.eval_ball(panel, dec)?.contains_zero() {
-                    if self.beyond_junction(run, i, dec)? || self.outside_solid(run, i, dec)? {
+                    if self.beyond_junction(run, i, dec)?
+                        || self.outside_solid(run, i, dec)?
+                        || self.beside_prism(run, i, dec)?
+                        || self.beside_box(run, i, dec)?
+                        || self.on_own_plane(run, i, dec)?
+                    {
                         break;
                     }
                     return Err(overflow());
@@ -997,26 +1079,145 @@ impl Plan {
         Ok(())
     }
 
-    /// Whether face `i` is a plane that keeps the run's solid cylinder on
-    /// one side: parallel to its axis and at least its radius from it. The
-    /// region lies in that closed solid (a ring's wall `rho^2 <= R^2` when
-    /// its ball lies inside its cylinder support), so the plane meets it at
-    /// most on its boundary, along the line where a tangent plane touches
-    /// the cylinder: the face of an earlier round's tangent neighbour, which
-    /// passes through the box of the ring that rolls over that round (4.2a
-    /// step 5). A plane that supports a convex set meets it only on its
-    /// boundary.
+    /// Whether face `i` is a plane that keeps one of the run's solid
+    /// cylinders on one side: parallel to its axis and at least its radius
+    /// from it. The region lies in that closed solid (a ring's wall
+    /// `rho^2 <= R^2` when its ball lies inside its cylinder support), so the
+    /// plane meets it at most on its boundary, along the line where a tangent
+    /// plane touches the cylinder: the face of an earlier round's tangent
+    /// neighbour, which passes through the box of the ring that rolls over
+    /// that round (4.2a step 5). A plane that supports a convex set meets it
+    /// only on its boundary.
     fn outside_solid(&self, run: &Run, i: usize, dec: &mut Decider) -> Result<bool, Refusal> {
-        let (Some(solid), Surface::Plane(plane)) = (&run.inside, &self.faces[i].surface) else {
+        let Surface::Plane(plane) = &self.faces[i].surface else {
             return Ok(false);
         };
-        dec.charge_work(1)?;
-        if geometry::sign(&plane.normal.dot(&solid.axis), dec)? != Sign::Zero {
+        for solid in &run.inside {
+            dec.charge_work(1)?;
+            if geometry::sign(&plane.normal.dot(&solid.axis), dec)? != Sign::Zero {
+                continue;
+            }
+            let offset = plane.normal.dot(&solid.point.minus(&plane.origin));
+            let reach = &solid.radius_sq * &plane.normal.norm_squared();
+            if geometry::sign(&(&offset.square() - &reach), dec)? != Sign::Negative {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Whether face `i` is a plane with a straight piece's prism on one
+    /// closed side: every vertex of [`Generator::plane_prism`] is on that
+    /// side. A plane that supports a convex set holding the region meets the
+    /// region at most on its boundary. The test is exact, so it holds where
+    /// the piece's axis-aligned box is too loose: a wide strip in a rotated
+    /// pose, whose box reaches the part's far faces (4.2a step 5).
+    fn beside_prism(&self, run: &Run, i: usize, dec: &mut Decider) -> Result<bool, Refusal> {
+        let (Kind::Generator(path), Surface::Plane(plane)) =
+            (run.piece.kind(), &self.faces[i].surface)
+        else {
+            return Ok(false);
+        };
+        let Some(points) = path.plane_prism() else {
+            return Ok(false);
+        };
+        let mut side = Sign::Zero;
+        for p in &points {
+            dec.charge_work(1)?;
+            match geometry::sign(&plane.normal.dot(&p.minus(&plane.origin)), dec)? {
+                Sign::Zero => {}
+                found if side == Sign::Zero => side = found,
+                found if found != side => return Ok(false),
+                _ => {}
+            }
+        }
+        Ok(true)
+    }
+
+    /// Whether face `i` is a plane that holds one of the run's own plane
+    /// supports, a face of another leaf on the same plane, such as a boss's
+    /// bottom face on the plate it stands on (4.2a step 5). The region lies
+    /// on the ball's closed side of each support it rolls on, so such a
+    /// plane meets it at most on its boundary.
+    fn on_own_plane(&self, run: &Run, i: usize, dec: &mut Decider) -> Result<bool, Refusal> {
+        let Surface::Plane(plane) = &self.faces[i].surface else {
+            return Ok(false);
+        };
+        for &own in &run.faces {
+            let Surface::Plane(support) = &self.faces[own].surface else {
+                continue;
+            };
+            dec.charge_work(1)?;
+            if geometry::sign(&plane.normal.cross(&support.normal).norm_squared(), dec)?
+                == Sign::Zero
+                && geometry::sign(&plane.normal.dot(&support.origin.minus(&plane.origin)), dec)?
+                    == Sign::Zero
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Whether face `i`'s leaf puts the whole face beyond one side of the
+    /// run's box, where the region cannot be: the face meets the region at
+    /// most in that side's plane. A curved face evaluated over a long box
+    /// can seem to reach it by interval dependency alone, such as a far
+    /// corner round over a strip that runs past a cliff along the whole edge
+    /// (4.2a step 5). Proven from the face's leaf, as at a junction.
+    fn beside_box(&self, run: &Run, i: usize, dec: &mut Decider) -> Result<bool, Refusal> {
+        match run.piece.bounds() {
+            Some(bounds) => self.beside_bounds(bounds, i, dec),
+            None => Ok(false),
+        }
+    }
+
+    /// Whether face `i`'s leaf puts the whole face beyond one side of the
+    /// box `bounds`: the face meets the box at most in that side's plane.
+    pub(super) fn beside_bounds(
+        &self,
+        bounds: &[[Rational; 2]; 3],
+        i: usize,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        if !matches!(
+            &self.leaves[self.faces[i].leaf],
+            geometry::Leaf::Feature(_) | geometry::Leaf::Rolling(_)
+        ) {
             return Ok(false);
         }
-        let offset = plane.normal.dot(&solid.point.minus(&plane.origin));
-        let reach = &solid.radius_sq * &plane.normal.norm_squared();
-        Ok(geometry::sign(&(&offset.square() - &reach), dec)? != Sign::Negative)
+        for (axis, [lo, hi]) in bounds.iter().enumerate() {
+            for (sense, level) in [(-1, -lo), (1, hi.clone())] {
+                let mut normal = [Real::zero(), Real::zero(), Real::zero()];
+                normal[axis] = Real::from_i64(sense);
+                let [x, y, z] = normal;
+                let normal = Vector3::new(x, y, z);
+                if self.face_above(i, &normal, &Real::from(level), dec)? {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
+    }
+
+    /// Whether face `i` lies in the closed half-space `normal . x >= level`,
+    /// proven from its leaf: an elementary feature's face, or a straight
+    /// rolling piece's region (4.2a step 5, a round over a chain of rolling
+    /// pieces). `false` for any other leaf.
+    fn face_above(
+        &self,
+        i: usize,
+        normal: &Vector3,
+        level: &Real,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        match &self.leaves[self.faces[i].leaf] {
+            geometry::Leaf::Feature(feature) => {
+                feature.face_above(self.definition_role(i), normal, level, dec)
+            }
+            geometry::Leaf::Rolling(piece) => piece.above(normal, level, dec),
+            _ => Ok(false),
+        }
     }
 
     /// Whether face `i` lies on the far side of one of the run's junctions,
@@ -1024,13 +1225,16 @@ impl Plan {
     /// face meets the region at most in the junction plane, which no face of
     /// the region lies on (4.2a step 4). Proven from the face's leaf.
     fn beyond_junction(&self, run: &Run, i: usize, dec: &mut Decider) -> Result<bool, Refusal> {
-        let geometry::Leaf::Feature(feature) = &self.leaves[self.faces[i].leaf] else {
+        if !matches!(
+            &self.leaves[self.faces[i].leaf],
+            geometry::Leaf::Feature(_) | geometry::Leaf::Rolling(_)
+        ) {
             return Ok(false);
-        };
+        }
         for (point, normal) in &run.junctions {
             let away = normal.scaled(&Real::from_i64(-1));
             let level = away.dot(&point.minus(&Point3::origin()));
-            if feature.face_above(self.definition_role(i), &away, &level, dec)? {
+            if self.face_above(i, &away, &level, dec)? {
                 return Ok(true);
             }
         }
@@ -1047,11 +1251,16 @@ impl Plan {
     ) -> Result<usize, Refusal> {
         self.rolling_clear(&run, source_faces, dec)?;
         let convex = run.piece.convex();
-        let node = self.leaf(
-            geometry::Leaf::Rolling(Box::new(run.piece)),
-            Vec::new(),
-            dec,
-        )?;
+        // The face joins the registry under the piece's name when it lies on
+        // an exact surface (a ring torus, a sphere or a cylinder).
+        let faces = run
+            .piece
+            .face()
+            .map(|surface| geometry::face(surface, run.piece.origin().clone(), dec))
+            .transpose()?
+            .into_iter()
+            .collect();
+        let node = self.leaf(geometry::Leaf::Rolling(Box::new(run.piece)), faces, dec)?;
         self.boolean(
             if convex {
                 catallax_recipe::BooleanKind::Subtract

@@ -38,9 +38,25 @@
 //! A chain over an earlier strip may end a straight run at a plane normal to
 //! it, as an elementary strip ends. The strip's tangent neighbours pass
 //! through the sector's box; the sector lies inside the strip's solid
-//! cylinder, which they only touch. A ball as wide as the strip (a sphere
-//! corner), a ball outside its cylinder and an earlier mitre are later
-//! parts of step 5 and keep their refusals.
+//! cylinder, which they only touch. A ball as wide as the strip keeps its
+//! centre on the strip's centre line (`C = 0`, step 5 part 2), and the sector
+//! is a sphere corner. A ball wider than a strip of its convexity cannot
+//! roll onto it: a straight run between planes takes RECIPE 4.5.1's cliff
+//! rule there, keeps both planes and runs on to the other rail's end, and
+//! the narrower round cuts it (step 5 part 2). Under an earlier mitre
+//! (step 5 part 3), a ball as wide as the mitre's two rounds stops where it
+//! touches both and closes the run with the trihedral corner of its two
+//! planes and the plane the rounds roll on, which swallows the mitre; a ball
+//! wider than both takes the cliff at both feet and runs on to that plane,
+//! where both rounds cut it. A ball outside the strip's cylinder, a convex
+//! chain over a concave strip or the reverse, rolls round its outside on a
+//! ring sector of centre radius `R + r`; the strip's two faces cross that
+//! sector's fan and are cleared by showing the fan is of one material
+//! (step 5 part 4). Every patch of a chain keeps the name of the selected
+//! edge it continues (RECIPE 4.5.1). A ball narrower than both rounds of an
+//! earlier mitre rolls over it: its centre follows the quarter ellipse where
+//! the rounds' offsets meet, from the run's end to the mitre's apex
+//! ([`Seam`], step 5 part 5).
 //!
 //! How the reference kernels do this. OpenCASCADE's
 //! `ChFi3d_Builder::PerformElement` (V7_8_0) collects "all mutually tangent
@@ -58,8 +74,8 @@
 //! both faces (`SmOffsetSurface`) and intersects the offsets by stepping.
 //! The field takes that offset definition in closed form.
 
-use catallax_numbers::{Decider, Rational, Real, Refusal, Sign};
-use catallax_recipe::{EdgeSelection, Role, StepId};
+use catallax_numbers::{Ball, Decider, Rational, Real, Refusal, Sign};
+use catallax_recipe::{BooleanKind, EdgeSelection, Origin, Role, StepId, VertexName};
 use catallax_shapes::{Circle, Curve, GeomStore, Line, Point3, Surface, Vector3};
 
 use super::rolling::{Run, Solid, oriented, revolution};
@@ -67,7 +83,8 @@ use super::{coordinates, square_root, unit};
 use crate::rolling_region::generator::Generator;
 use crate::rolling_region::piece::{Kind, Piece};
 use crate::rolling_region::revolved::{Revolution, Revolved};
-use crate::{Location, Plan, geometry};
+use crate::rolling_region::seam::Seam;
+use crate::{Instruction, Location, Plan, geometry};
 
 /// Where a span runs.
 #[derive(Clone, Debug)]
@@ -83,6 +100,10 @@ enum Track {
 #[derive(Clone, Debug)]
 struct Span {
     faces: [usize; 2],
+    // The faces of the selected run this span continues, which name its
+    // patch: RECIPE 4.5.1 keeps `blend.edge` for the originally selected
+    // input edge on every exposed run patch, including after roll-over.
+    named: [usize; 2],
     convex: bool,
     senses: [bool; 2],
     // An edge point inside the run, for the ball's side.
@@ -118,6 +139,49 @@ impl Span {
 /// One arc between neighbouring cuts: its material, its first and last
 /// cut, and its midpoint.
 type ArcProbe = (Option<(bool, [bool; 2])>, usize, usize, Point3);
+
+/// A straight run's end at an earlier round it cannot roll onto (RECIPE
+/// 4.5.1, the cliff rule): the run's `end`, the `round`'s face, and which
+/// of the run's two faces (`foot`, 0 or 1) is tangent to the round there.
+#[derive(Clone, Copy, Debug)]
+struct Cliff {
+    span: usize,
+    end: usize,
+    round: usize,
+    foot: usize,
+}
+
+/// A trihedral corner of a chain (4.2a step 5): where a straight run's ball
+/// swallows an earlier mitre of two rounds as wide as the ball, or where
+/// three straight runs of an `"all"` selection meet at a block's corner.
+/// The ball's `centre`, the pairwise orthogonal unit `directions` from it to
+/// the three planes, the `faces` the corner may touch (the three planes, then
+/// a mitre's two rounds), the faces whose origins name its vertex, and a
+/// mitre's two `rounds`.
+#[derive(Clone, Debug)]
+struct TrihedralCorner {
+    centre: Point3,
+    directions: [Vector3; 3],
+    faces: Vec<usize>,
+    named: Vec<usize>,
+    rounds: Option<[usize; 2]>,
+    convex: bool,
+}
+
+/// A straight run's end where its ball rolls over an earlier mitre of two
+/// rounds of one radius, wider than the ball (4.2a step 5): the run's `end`,
+/// the unit `normals` of its two planes toward the ball, its unit direction
+/// `out` past the end, the rounds' radius, and the `faces`: the run's two
+/// planes, then the round tangent to each.
+#[derive(Clone, Debug)]
+struct MitreSeam {
+    end: Point3,
+    normals: [Vector3; 2],
+    out: Vector3,
+    round: Real,
+    faces: [usize; 4],
+    convex: bool,
+}
 
 fn same(a: &Point3, b: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
     Ok(geometry::sign(&a.minus(b).norm_squared(), dec)? == Sign::Zero)
@@ -259,12 +323,18 @@ impl Plan {
         step: &StepId,
         dec: &mut Decider,
     ) -> Result<Option<usize>, Refusal> {
-        let EdgeSelection::Refs(refs) = selection else {
-            return Ok(None);
+        // An `"all"` selection takes every sharp run of every support pair
+        // (4.2a step 5); RECIPE 4.5.1 leaves smooth edges out, and the
+        // material probe finds no run where two faces are tangent.
+        let all = matches!(selection, EdgeSelection::All);
+        let refs = match selection {
+            EdgeSelection::Refs(refs) => refs.as_slice(),
+            EdgeSelection::All => &[],
         };
         // A chain may roll over an earlier straight strip, whose face is a
-        // cylinder about its centre line (4.2a step 5). A body an earlier
-        // ring, corner or chamfer rounded keeps its refusal.
+        // cylinder about its centre line (4.2a step 5), or over a straight
+        // rolling piece's registered cylinder. A body an earlier ring,
+        // corner or chamfer rounded keeps its refusal.
         for &i in source_faces {
             if matches!(self.faces[i].origin.role, Role::Corner { .. }) {
                 return Ok(None);
@@ -274,10 +344,22 @@ impl Plan {
                     if feature.chamfer.is_none()
                         && (feature.fillet.is_none() || feature.is_straight_strip()) => {}
                 geometry::Leaf::Primitive(_) => {}
+                geometry::Leaf::Rolling(piece) if matches!(piece.kind(), Kind::Generator(_)) => {}
                 _ => return Ok(None),
             }
         }
+        // Every other `"all"` selection keeps the elementary route's answer.
+        if all && !source_faces.iter().any(|&f| self.earlier_strip(f)) {
+            return Ok(None);
+        }
         let mut pairs = Vec::new();
+        if all {
+            for (position, &a) in source_faces.iter().enumerate() {
+                for &b in &source_faces[position + 1..] {
+                    pairs.push([a, b]);
+                }
+            }
+        }
         for reference in refs {
             if reference.near.is_some() || !reference.touching.is_empty() {
                 return Ok(None);
@@ -302,20 +384,37 @@ impl Plan {
             }
         }
         let mut spans: Vec<Span> = Vec::new();
+        // Pairs of an `"all"` selection that meet in a curve the chain does
+        // not section. Each must be the seam of an earlier mitre that one of
+        // this step's corners swallows, or the chain refuses.
+        let mut unsectioned: Vec<[usize; 2]> = Vec::new();
         for faces in pairs {
-            let Some(found) = self.spans(root, faces, source_faces, &bound, dec)? else {
-                return Ok(None);
-            };
-            spans.extend(found);
+            match self.spans(root, faces, source_faces, &bound, dec)? {
+                Some(found) => spans.extend(found),
+                None if all => unsectioned.push(faces),
+                None => return Ok(None),
+            }
         }
         if spans.is_empty() {
             return Ok(None);
         }
-        if roll_over && !self.continue_tangent(root, &mut spans, source_faces, &bound, dec)? {
+        let mut cliffs = Vec::new();
+        if roll_over
+            && !self.continue_tangent(
+                root,
+                &mut spans,
+                source_faces,
+                &bound,
+                radius,
+                &mut cliffs,
+                dec,
+            )?
+        {
             return Ok(None);
         }
         // The partner of each run end at a tangent junction.
         let mut links: Vec<[Option<(usize, usize)>; 2]> = vec![[None, None]; spans.len()];
+        let mut crowded = false;
         for i in 0..spans.len() {
             for k in 0..2 {
                 let p = spans[i].end(k);
@@ -325,13 +424,74 @@ impl Plan {
                             continue;
                         }
                         if links[i][k].is_some() || links[j][l].is_some() {
-                            return Err(unsupported(
-                                "three or more selected runs meet at one point",
-                            ));
+                            crowded = true;
+                            continue;
                         }
                         links[i][k] = Some((j, l));
                         links[j][l] = Some((i, k));
                     }
+                }
+            }
+        }
+        // Three runs meeting at one point, which every route refused before,
+        // close with a block's trihedral corner where they are its three
+        // edges (4.2a step 5). Their ends are junctions with the corner.
+        let mut corners: Vec<TrihedralCorner> = Vec::new();
+        let mut cornered: Vec<[bool; 2]> = vec![[false, false]; spans.len()];
+        if crowded {
+            let crowd = || unsupported("three or more selected runs meet at one point");
+            let mut meetings: Vec<Vec<(usize, usize)>> = Vec::new();
+            for i in 0..spans.len() {
+                for k in 0..2 {
+                    let p = spans[i].end(k);
+                    let mut found = false;
+                    for meeting in &mut meetings {
+                        let (j, l) = meeting[0];
+                        if same(&p, &spans[j].end(l), dec)? {
+                            meeting.push((i, k));
+                            found = true;
+                            break;
+                        }
+                    }
+                    if !found {
+                        meetings.push(vec![(i, k)]);
+                    }
+                }
+            }
+            links = vec![[None, None]; spans.len()];
+            let mut moves = Vec::new();
+            for meeting in &meetings {
+                match meeting[..] {
+                    [_] => {}
+                    [(i, k), (j, l)] => {
+                        links[i][k] = Some((j, l));
+                        links[j][l] = Some((i, k));
+                    }
+                    [_, _, _] => {
+                        let Some((corner, moved)) =
+                            self.block_corner(&spans, meeting, radius, dec)?
+                        else {
+                            return Err(crowd());
+                        };
+                        for &(i, k) in meeting {
+                            cornered[i][k] = true;
+                        }
+                        corners.push(corner);
+                        moves.extend(moved);
+                    }
+                    _ => return Err(crowd()),
+                }
+            }
+            for (i, k, station) in moves {
+                if let Track::Line { stations, .. } = &mut spans[i].track {
+                    stations[k] = station;
+                }
+            }
+            for span in &spans {
+                if let Track::Line { stations, .. } = &span.track
+                    && stations[0] >= stations[1]
+                {
+                    return Err(crowd());
                 }
             }
         }
@@ -340,21 +500,126 @@ impl Plan {
         // (4.2a step 5). Every other end must be a tangent junction.
         let over = spans
             .iter()
-            .any(|span| span.faces.iter().any(|&f| self.earlier_strip(f)));
+            .any(|span| span.faces.iter().any(|&f| self.earlier_round(f)));
         let mut free: Vec<[Option<usize>; 2]> = vec![[None, None]; spans.len()];
-        if roll_over && over {
+        // A run end at a cliff runs on to the other rail's end, and the
+        // narrower round cuts it there (4.2a step 5). A run end with a cliff
+        // at both feet, as under an earlier mitre of narrower rounds, runs on
+        // to the plane the two rounds roll on, and both cut it.
+        let mut cuts: Vec<Vec<usize>> = vec![Vec::new(); spans.len()];
+        let mut cliff_ends: Vec<((usize, usize), Vec<&Cliff>)> = Vec::new();
+        for cliff in &cliffs {
+            match cliff_ends
+                .iter_mut()
+                .find(|(at, _)| *at == (cliff.span, cliff.end))
+            {
+                Some((_, list)) => list.push(cliff),
+                None => cliff_ends.push(((cliff.span, cliff.end), vec![cliff])),
+            }
+        }
+        for ((i, k), list) in cliff_ends {
+            if links[i][k].is_some() || free[i][k].is_some() || cornered[i][k] {
+                return Ok(None);
+            }
+            let end = match list[..] {
+                [cliff] => self.cliff_end(&mut spans[i], cliff, source_faces, radius, dec)?,
+                [a, b] if a.foot != b.foot => {
+                    self.cliffs_end(&mut spans[i], k, [a.round, b.round], source_faces, dec)?
+                }
+                _ => None,
+            };
+            let Some(end) = end else {
+                return Ok(None);
+            };
+            free[i][k] = Some(end);
+            cuts[i].extend(list.iter().map(|cliff| cliff.round));
+        }
+        if roll_over && (over || !cliffs.is_empty()) {
             for (i, span) in spans.iter().enumerate() {
                 for k in 0..2 {
-                    if links[i][k].is_none() {
+                    if links[i][k].is_none() && free[i][k].is_none() && !cornered[i][k] {
                         free[i][k] = self.end_face(span, k, source_faces, dec)?;
                     }
                 }
             }
         }
-        let chained = links
-            .iter()
-            .zip(&free)
-            .all(|(ends, free)| (0..2).all(|k| ends[k].is_some() || free[k].is_some()));
+        // A run end whose ball swallows an earlier mitre of rounds as wide
+        // as the ball ends at a trihedral corner (4.2a step 5). Only ends
+        // the routes above leave open are tried, so every earlier answer
+        // stands; the other ends of such a chain may then end at a plane
+        // normal to the run.
+        let blocks = corners.len();
+        if roll_over {
+            for (i, span) in spans.iter().enumerate() {
+                for k in 0..2 {
+                    if links[i][k].is_none()
+                        && free[i][k].is_none()
+                        && !cornered[i][k]
+                        && let Some(corner) =
+                            self.mitre_corner(span, k, source_faces, radius, dec)?
+                    {
+                        cornered[i][k] = true;
+                        corners.push(corner);
+                    }
+                }
+            }
+            if corners.len() > blocks && !over && cliffs.is_empty() {
+                for (i, span) in spans.iter().enumerate() {
+                    for k in 0..2 {
+                        if links[i][k].is_none() && free[i][k].is_none() && !cornered[i][k] {
+                            free[i][k] = self.end_face(span, k, source_faces, dec)?;
+                        }
+                    }
+                }
+            }
+        }
+        // A run end whose ball rolls over an earlier mitre of rounds wider
+        // than the ball ends at a junction with a band along the ellipse
+        // where the rounds' offsets meet (4.2a step 5). Only ends every route
+        // above leaves open are tried, so every earlier answer and its work
+        // stand.
+        let mut seams: Vec<MitreSeam> = Vec::new();
+        let mut seamed: Vec<[bool; 2]> = vec![[false, false]; spans.len()];
+        if roll_over {
+            for (i, span) in spans.iter().enumerate() {
+                for k in 0..2 {
+                    if links[i][k].is_none()
+                        && free[i][k].is_none()
+                        && !cornered[i][k]
+                        && let Some(seam) = self.mitre_seam(span, k, source_faces, radius, dec)?
+                    {
+                        seamed[i][k] = true;
+                        seams.push(seam);
+                    }
+                }
+            }
+            if !seams.is_empty() && corners.len() == blocks && !over && cliffs.is_empty() {
+                for (i, span) in spans.iter().enumerate() {
+                    for k in 0..2 {
+                        if links[i][k].is_none()
+                            && free[i][k].is_none()
+                            && !seamed[i][k]
+                            && !cornered[i][k]
+                        {
+                            free[i][k] = self.end_face(span, k, source_faces, dec)?;
+                        }
+                    }
+                }
+            }
+        }
+        // An `"all"` selection's pair that meets in a curve the chain does
+        // not section must be the seam of an earlier mitre that one of this
+        // step's corners swallows.
+        for pair in &unsectioned {
+            if !corners.iter().any(|corner| self.swallows(corner, *pair)) {
+                return Ok(None);
+            }
+        }
+        let chained = (0..spans.len()).all(|i| {
+            (0..2).all(|k| {
+                links[i][k].is_some() || free[i][k].is_some() || cornered[i][k] || seamed[i][k]
+            })
+        });
         let past = !roll_over
             && links.iter().all(|ends| ends.iter().all(Option::is_none))
             && spans
@@ -373,15 +638,51 @@ impl Plan {
                         self.check_junction(span, k, &spans[j], l, dec)?;
                     }
                 }
-                let junction = links[i].map(|link| link.is_some());
-                runs.push(self.junction_run(span, junction, free[i], radius, step, dec)?);
+                let junction =
+                    [0, 1].map(|k| links[i][k].is_some() || cornered[i][k] || seamed[i][k]);
+                let mut run = self
+                    .junction_run(span, junction, free[i], radius, step, dec)?
+                    .cut_by(cuts[i].clone());
+                if let Some(rails) = self.buried_rails(root, span, radius, dec)? {
+                    run = run.buried(rails.to_vec());
+                }
+                runs.push(run);
             } else {
                 runs.push(self.past_run(span, source_faces, &bound, radius, step, dec)?);
+            }
+        }
+        // Every region this step adds or removes must keep clear of the
+        // input's rolling pieces that no source face stands for.
+        let hidden = self.hidden_pieces(root);
+        if !hidden.is_empty() {
+            if !corners.is_empty() || !seams.is_empty() {
+                return Ok(None);
+            }
+            for run in &runs {
+                let Some(bounds) = run.piece.bounds() else {
+                    return Ok(None);
+                };
+                for other in &hidden {
+                    let apart = other.as_ref().is_some_and(|other| {
+                        (0..3).any(|i| bounds[i][1] < other[i][0] || other[i][1] < bounds[i][0])
+                    });
+                    if !apart {
+                        return Err(unsupported(
+                            "a rolling piece with no registered face may reach the chain",
+                        ));
+                    }
+                }
             }
         }
         let mut result = root;
         for run in runs {
             result = self.apply_run(result, run, source_faces, dec)?;
+        }
+        for corner in &corners {
+            result = self.apply_corner(result, corner, source_faces, radius, step, dec)?;
+        }
+        for seam in &seams {
+            result = self.apply_seam(result, seam, source_faces, radius, step, dec)?;
         }
         Ok(Some(result))
     }
@@ -432,6 +733,7 @@ impl Plan {
                         }
                         found.push(Span {
                             faces,
+                            named: faces,
                             convex,
                             senses,
                             sample,
@@ -534,12 +836,12 @@ impl Plan {
             // A fillet face's membership takes rational points only, so an
             // arc on an earlier strip's face is probed at a rational point
             // of the arc where the circle has one (4.2a step 5).
-            if faces.iter().any(|&f| self.earlier_strip(f))
+            if faces.iter().any(|&f| self.earlier_round(f))
                 && let Some(point) = rational_arc_point(circle, a, b, turn, &sample, &cuts, dec)?
             {
                 sample = point;
             }
-            let material = self.material_point(root, &sample, faces, dec)?;
+            let material = self.arc_material(root, &sample, faces, dec)?;
             found.push((material, i, j, sample));
         }
         // Join neighbouring arcs of one material, round the circle.
@@ -565,6 +867,7 @@ impl Plan {
                 let ends = [from, to].map(|c| cuts[c].0.scaled(&(&Real::one() / &radius)));
                 spans.push(Span {
                     faces,
+                    named: faces,
                     convex,
                     senses,
                     sample,
@@ -580,6 +883,258 @@ impl Plan {
             }
         }
         Ok(Some(spans))
+    }
+
+    /// [`Plan::material_point`] at a point of an arc where a plane meets an
+    /// earlier straight strip's face. Where the strip ends at that plane, its
+    /// cap lies in the plane and holds the plane's face along the arc, as the
+    /// B-rep merges the cap into that face: `mixed-ordered`'s concave round
+    /// ends at the L's x_max plane, beyond the reach of the base's x_max
+    /// face. There the strip's cap test replaces the plane face's own.
+    fn arc_material(
+        &self,
+        root: usize,
+        p: &Point3,
+        faces: [usize; 2],
+        dec: &mut Decider,
+    ) -> Result<Option<(bool, [bool; 2])>, Refusal> {
+        if let Some(found) = self.material_point(root, p, faces, dec)? {
+            return Ok(Some(found));
+        }
+        for k in 0..2 {
+            if self.strip_cap(faces[k], faces[1 - k], p, dec)? {
+                return self.material_point_unless(root, p, faces, Some(faces[k]), dec);
+            }
+        }
+        Ok(None)
+    }
+
+    /// Whether `p` lies on a cap of the earlier straight strip whose face is
+    /// `strip`, in the plane of face `plane`, which is normal to the strip's
+    /// line.
+    fn strip_cap(
+        &self,
+        plane: usize,
+        strip: usize,
+        p: &Point3,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        let leaf = &self.leaves[self.faces[strip].leaf];
+        let (Surface::Plane(support), geometry::Leaf::Feature(feature)) =
+            (&self.faces[plane].surface, leaf)
+        else {
+            return Ok(false);
+        };
+        let Some(Curve::Line(edge)) = feature.fillet.as_ref().map(|f| &f.edge) else {
+            return Ok(false);
+        };
+        let values = [p.x.clone(), p.y.clone(), p.z.clone()];
+        if !self.earlier_strip(strip)
+            || !parallel(&support.normal, &edge.dir, dec)?
+            || geometry::sign(&self.faces[plane].polynomial.eval_real(&values), dec)? != Sign::Zero
+        {
+            return Ok(false);
+        }
+        let location = match coordinates(p) {
+            Ok(xyz) => leaf.location(&xyz, dec)?,
+            Err(_) => crate::distance::location(leaf, p, dec)?,
+        };
+        Ok(location == Location::Boundary && feature.on_cap(p, dec)?)
+    }
+
+    /// The two faces an earlier straight strip rounded, which a ring sector
+    /// over that strip's face may cross, when the sector's ball lies outside
+    /// the strip's cylinder: a convex chain over a concave round
+    /// (`mixed-ordered`) or a concave chain over a convex one. Those faces
+    /// pass through the sector's box, and their leaves bound the body there,
+    /// so no box or leaf argument clears them. They are cleared instead by
+    /// showing that the sector's whole fan is material for a convex sector,
+    /// or air for a concave one: removing or adding the fan less its balls is
+    /// then the rolling ball's result whatever those faces do inside it.
+    ///
+    /// Why. The sector rolls on a plane `P` normal to the strip's line and
+    /// on the strip's cylinder of radius `R`, between the strip's rails in
+    /// `P`, which lie on the strip's two plane faces `F1` and `F2`. Its fan
+    /// is the set `Q` of points between `P` and `P` offset by the ball
+    /// radius `r` toward the ball, `R <= rho <= R + r` from the strip's
+    /// axis, between the meridians through the two rails. Every other face
+    /// is cleared from the piece's box as for any run, and the strip runs at
+    /// least `r` past `P` on the ball's side (its face holds a point there),
+    /// so inside `Q` the body's leaves can change only across `F1` and
+    /// `F2`: `P` and the cylinder bound `Q`, the strip's walls lie on `F1`
+    /// and `F2`, and its caps lie outside the open slab. `F1` and `F2` are
+    /// tangent to the cylinder at the rails, so they cut `Q` into at most
+    /// four connected cells: the strip's own section between the arc and the
+    /// corner (on the axis side of both faces), the cell beyond each face
+    /// alone, and the cell beyond both, which is empty when the strip's
+    /// corner lies at least `R + r` from the axis. In cylindrical coordinates
+    /// about the axis each cell is a slab interval times a planar cell, and
+    /// each planar cell is convex (beyond either face the inner disc does
+    /// not reach) or, for the strip's section, an interval of `rho` above
+    /// `R` for each angle; so the body is constant on each cell. One
+    /// rational probe strictly inside each nonempty cell, classified exactly
+    /// in the body, then settles the whole cell. This is the argument of
+    /// the mixed vertex in `fillet_mixed.rs`, with the earlier strip already
+    /// in the body instead of formed in the same step. `None` when the
+    /// sector is not of this kind or a probe fails; the caller then keeps
+    /// the box test's answer.
+    fn buried_rails(
+        &self,
+        root: usize,
+        span: &Span,
+        radius: &Real,
+        dec: &mut Decider,
+    ) -> Result<Option<[usize; 2]>, Refusal> {
+        let Track::Arc { .. } = &span.track else {
+            return Ok(None);
+        };
+        let [first, second] = span.faces;
+        let (plane_face, strip) = if self.earlier_strip(second) {
+            (first, second)
+        } else if self.earlier_strip(first) {
+            (second, first)
+        } else {
+            return Ok(None);
+        };
+        let (Surface::Plane(plane), Surface::Cylinder(cylinder), geometry::Leaf::Feature(feature)) = (
+            &self.faces[plane_face].surface,
+            &self.faces[strip].surface,
+            &self.leaves[self.faces[strip].leaf],
+        ) else {
+            return Ok(None);
+        };
+        let Some(definition) = feature.fillet.as_deref() else {
+            return Ok(None);
+        };
+        let (Curve::Line(edge), [Surface::Plane(_), Surface::Plane(_)]) =
+            (&definition.edge, &definition.supports)
+        else {
+            return Ok(None);
+        };
+        // The ball lies outside the strip's cylinder exactly when the chain
+        // and the strip differ in convexity.
+        if definition.convex == span.convex || !parallel(&plane.normal, &cylinder.axis, dec)? {
+            return Ok(None);
+        }
+        let [Some(f1), Some(f2)] = definition.supports.each_ref().map(|support| {
+            self.faces
+                .iter()
+                .position(|f| f.surface.same_definition(support))
+        }) else {
+            return Ok(None);
+        };
+        let rails = [f1, f2];
+        let ball = self.ball_direction(span.faces, &span.sample, span.convex, span.senses)?;
+        let Some(flat) = Self::flat(&self.faces[plane_face].surface, &ball, dec)? else {
+            return Ok(None);
+        };
+        let up = unit(&flat.normal);
+        let meet = |origin: &Point3, dir: &Vector3| {
+            origin.plus(&dir.scaled(
+                &(&plane.origin.minus(origin).dot(&plane.normal) / &dir.dot(&plane.normal)),
+            ))
+        };
+        let centre = meet(&cylinder.origin, &cylinder.axis);
+        let corner = meet(&edge.origin, &edge.dir);
+        let inner = square_root(&cylinder.radius_sq);
+        let outer = &inner + radius;
+        let sides = |p: &Point3, dec: &mut Decider| -> Result<[Sign; 2], Refusal> {
+            let values = [p.x.clone(), p.y.clone(), p.z.clone()];
+            Ok([
+                geometry::sign(&self.faces[rails[0]].polynomial.eval_real(&values), dec)?,
+                geometry::sign(&self.faces[rails[1]].polynomial.eval_real(&values), dec)?,
+            ])
+        };
+        // The sector's ends are the strip's rails in `P`, one on each face.
+        let (a, b) = (span.end(0), span.end(1));
+        let (at_a, at_b) = (sides(&a, dec)?, sides(&b, dec)?);
+        if !((at_a[0] == Sign::Zero && at_b[1] == Sign::Zero)
+            || (at_a[1] == Sign::Zero && at_b[0] == Sign::Zero))
+        {
+            return Ok(None);
+        }
+        // The strip runs at least `r` past `P` on the ball's side.
+        let past = span.sample.plus(&up.scaled(radius));
+        if coordinates(&span.sample).is_err()
+            || coordinates(&past).is_err()
+            || !self.through(strip, &span.sample, dec)?
+            || !self.through(strip, &past, dec)?
+        {
+            return Ok(None);
+        }
+        let flip = |s: Sign| match s {
+            Sign::Positive => Sign::Negative,
+            Sign::Negative => Sign::Positive,
+            Sign::Zero => Sign::Zero,
+        };
+        let home = sides(&centre, dec)?;
+        let mut cells = vec![home, [flip(home[0]), home[1]], [home[0], flip(home[1])]];
+        if geometry::sign(
+            &(&corner.minus(&centre).norm_squared() - &outer.square()),
+            dec,
+        )? == Sign::Negative
+        {
+            cells.push(home.map(flip));
+        }
+        let (va, vb) = (a.minus(&centre), b.minus(&centre));
+        let turn = geometry::sign(&cylinder.axis.dot(&va.cross(&vb)), dec)?;
+        if turn == Sign::Zero {
+            return Ok(None);
+        }
+        let want = if span.convex {
+            Location::Inside
+        } else {
+            Location::Outside
+        };
+        let lift = up.scaled(&(radius / &Real::from_i64(2)));
+        let mut probed: Vec<[Sign; 2]> = Vec::new();
+        for (n, d) in [(1, 2), (1, 16), (15, 16), (1, 256), (255, 256)] {
+            let along = Real::from(Rational::from_ratio(n, d).expect("a fixed fraction"));
+            let w = unit(&va.scaled(&(&Real::one() - &along)).plus(&vb.scaled(&along)));
+            for (m, e) in [(1, 2), (1, 16), (15, 16)] {
+                let out = Real::from(Rational::from_ratio(m, e).expect("a fixed fraction"));
+                let target = centre
+                    .plus(&w.scaled(&(&inner + &(radius * &out))))
+                    .plus(&lift);
+                let mut xyz = [Rational::zero(), Rational::zero(), Rational::zero()];
+                for (slot, x) in xyz.iter_mut().zip([&target.x, &target.y, &target.z]) {
+                    *slot = geometry::enclose(x, 32, dec)?.mid();
+                }
+                let p = Point3::new(
+                    xyz[0].clone().into(),
+                    xyz[1].clone().into(),
+                    xyz[2].clone().into(),
+                );
+                // Strictly inside the fan: above `P` and below its offset,
+                // between the cylinders and between the meridians.
+                let v = p.minus(&centre);
+                let height = v.dot(&up);
+                let rho = super::rolling::radial(&v, &cylinder.axis).norm_squared();
+                if geometry::sign(&height, dec)? != Sign::Positive
+                    || geometry::sign(&(&height - radius), dec)? != Sign::Negative
+                    || geometry::sign(&(&rho - &cylinder.radius_sq), dec)? != Sign::Positive
+                    || geometry::sign(&(&rho - &outer.square()), dec)? != Sign::Negative
+                    || geometry::sign(&cylinder.axis.dot(&va.cross(&v)), dec)? != turn
+                    || geometry::sign(&cylinder.axis.dot(&v.cross(&vb)), dec)? != turn
+                {
+                    continue;
+                }
+                let cell = sides(&p, dec)?;
+                if cell.contains(&Sign::Zero) {
+                    continue;
+                }
+                if self.root_location(root, &xyz, dec)? != want {
+                    return Ok(None);
+                }
+                if !probed.contains(&cell) {
+                    probed.push(cell);
+                }
+            }
+        }
+        Ok(cells
+            .iter()
+            .all(|cell| probed.contains(cell))
+            .then_some(rails))
     }
 
     /// Whether face `i` passes through `p`: its support does and its leaf
@@ -603,17 +1158,25 @@ impl Plan {
     /// the face it keeps and that face joins the selection, as long as the
     /// faces stay tangent. `false` when a continued pair meets in a curve
     /// other than a line or a circle. Each pair's runs are found once.
+    ///
+    /// A run does not continue onto an earlier round narrower than its
+    /// ball (RECIPE 4.5.1: "A tangent chain stops at such a round instead of
+    /// continuing over it"); that end is recorded in `cliffs`.
+    #[allow(clippy::too_many_arguments)]
     fn continue_tangent(
         &self,
         root: usize,
         spans: &mut Vec<Span>,
         source_faces: &[usize],
         bound: &Rational,
+        radius: &Real,
+        cliffs: &mut Vec<Cliff>,
         dec: &mut Decider,
     ) -> Result<bool, Refusal> {
         let mut pending: Vec<usize> = (0..spans.len()).collect();
         let mut paired: Vec<([usize; 2], Vec<Span>)> = Vec::new();
         while let Some(i) = pending.pop() {
+            let named = spans[i].named;
             for k in 0..2 {
                 let p = spans[i].end(k);
                 let mut linked = false;
@@ -639,42 +1202,75 @@ impl Plan {
                         {
                             continue;
                         }
-                        let pair = if source_faces.iter().position(|&f| f == stay)
-                            < source_faces.iter().position(|&f| f == next)
-                        {
-                            [stay, next]
-                        } else {
-                            [next, stay]
-                        };
-                        let found = match paired.iter().find(|(known, _)| *known == pair) {
-                            Some((_, found)) => found.clone(),
-                            None => {
-                                let Some(found) =
-                                    self.spans(root, pair, source_faces, bound, dec)?
-                                else {
-                                    return Ok(false);
-                                };
-                                paired.push((pair, found.clone()));
-                                found
+                        if self.narrower_round(&spans[i], next, &p, radius, dec)? {
+                            let foot = usize::from(leave == f1);
+                            if !cliffs
+                                .iter()
+                                .any(|c| c.span == i && c.end == k && c.round == next)
+                            {
+                                cliffs.push(Cliff {
+                                    span: i,
+                                    end: k,
+                                    round: next,
+                                    foot,
+                                });
                             }
-                        };
-                        for span in found {
-                            if !(same(&p, &span.end(0), dec)? || same(&p, &span.end(1), dec)?) {
-                                continue;
-                            }
-                            let mut known = false;
-                            for old in spans.iter() {
-                                if old.faces == span.faces
-                                    && same(&old.end(0), &span.end(0), dec)?
-                                    && same(&old.end(1), &span.end(1), dec)?
-                                {
-                                    known = true;
-                                    break;
+                            continue;
+                        }
+                        // The kept face may go on as a coplanar face of
+                        // another leaf, as where two blocks of a union share
+                        // an end plane: the B-rep merges such faces into one.
+                        // Tried only where the kept face itself has no run
+                        // through the end.
+                        let mut keeps = vec![stay];
+                        keeps.extend(source_faces.iter().copied().filter(|&f| {
+                            f != stay && self.same_face(f, stay) && !self.same_face(f, next)
+                        }));
+                        for keep in keeps {
+                            let pair = if source_faces.iter().position(|&f| f == keep)
+                                < source_faces.iter().position(|&f| f == next)
+                            {
+                                [keep, next]
+                            } else {
+                                [next, keep]
+                            };
+                            let found = match paired.iter().find(|(known, _)| *known == pair) {
+                                Some((_, found)) => found.clone(),
+                                None => {
+                                    let Some(found) =
+                                        self.spans(root, pair, source_faces, bound, dec)?
+                                    else {
+                                        return Ok(false);
+                                    };
+                                    paired.push((pair, found.clone()));
+                                    found
+                                }
+                            };
+                            let mut reached = false;
+                            for mut span in found {
+                                if !(same(&p, &span.end(0), dec)? || same(&p, &span.end(1), dec)?) {
+                                    continue;
+                                }
+                                reached = true;
+                                let mut known = false;
+                                for old in spans.iter() {
+                                    if self.same_face(old.faces[0], span.faces[0])
+                                        && self.same_face(old.faces[1], span.faces[1])
+                                        && same(&old.end(0), &span.end(0), dec)?
+                                        && same(&old.end(1), &span.end(1), dec)?
+                                    {
+                                        known = true;
+                                        break;
+                                    }
+                                }
+                                if !known {
+                                    span.named = named;
+                                    spans.push(span);
+                                    pending.push(spans.len() - 1);
                                 }
                             }
-                            if !known {
-                                spans.push(span);
-                                pending.push(spans.len() - 1);
+                            if reached {
+                                break;
                             }
                         }
                     }
@@ -700,7 +1296,7 @@ impl Plan {
         let p = a.end(k);
         let shared: Vec<(usize, usize)> = (0..2)
             .flat_map(|x| (0..2).map(move |y| (x, y)))
-            .filter(|&(x, y)| a.faces[x] == b.faces[y])
+            .filter(|&(x, y)| self.same_face(a.faces[x], b.faces[y]))
             .collect();
         let [(x, y)] = shared[..] else {
             return Err(not_tangent());
@@ -813,7 +1409,7 @@ impl Plan {
         };
         let piece = Piece::new(
             kind,
-            self.blend_origin(span.faces, step)?,
+            self.blend_origin(span.named, step)?,
             span.convex,
             [&supports[0], &supports[1]],
             dec,
@@ -826,12 +1422,856 @@ impl Plan {
         Ok(run)
     }
 
+    /// The corner at end `k` of a straight run between two planes where each
+    /// foot reaches an earlier straight round exactly as wide as the ball,
+    /// tangent to that foot's plane: an earlier mitre of two equal rounds.
+    /// RECIPE 4.5.1: "A round exactly as wide as the ball is not a cliff: the
+    /// ball's centre stays on the round's axis." Both rounds' axes pass
+    /// through the ball's centre at the run end, so the ball stops there,
+    /// touching the run's two planes, both rounds and the third plane they
+    /// roll on. RECIPE 4.5.1's material-set rule takes the input material
+    /// inside the translated positive cone of the active normals at that
+    /// centre and outside the ball. The active normals are the two planes'
+    /// and the rounds' contact normals, which turn from each plane's to the
+    /// third plane's, so the cone is that of the three planes' normals, and
+    /// the three planes bound the material in it: the trihedral corner of the
+    /// three planes, which swallows the mitre between the rounds. The B-rep
+    /// builds the same corner (`fillet_build.rs`, a run that closes an
+    /// earlier mitre with a `CornerDefinition` of the three strips).
+    /// OpenCASCADE refuses the corpus row (`roll-over-mitres`). The three
+    /// directions must be orthogonal unit vectors, as at a block's corner;
+    /// `None` when the end is not of this kind.
+    fn mitre_corner(
+        &self,
+        span: &Span,
+        k: usize,
+        source_faces: &[usize],
+        radius: &Real,
+        dec: &mut Decider,
+    ) -> Result<Option<TrihedralCorner>, Refusal> {
+        if !matches!(span.track, Track::Line { .. }) {
+            return Ok(None);
+        }
+        let supports = span.faces.map(|i| self.faces[i].surface.clone());
+        let ball = self.ball_direction(span.faces, &span.sample, span.convex, span.senses)?;
+        let (Some(a), Some(b)) = (
+            Self::flat(&supports[0], &ball, dec)?,
+            Self::flat(&supports[1], &ball, dec)?,
+        ) else {
+            return Ok(None);
+        };
+        let out = span.outward(k);
+        for v in [&a.normal, &b.normal, &out] {
+            if geometry::sign(&(&v.norm_squared() - &Real::one()), dec)? != Sign::Zero {
+                return Ok(None);
+            }
+        }
+        if geometry::sign(&a.normal.dot(&b.normal), dec)? != Sign::Zero {
+            return Ok(None);
+        }
+        // Each plane's normal points toward the ball, and the run end lies
+        // on both planes.
+        let p = span.end(k);
+        let centre = p
+            .plus(&a.normal.scaled(radius))
+            .plus(&b.normal.scaled(radius));
+        let mut rounds = [None, None];
+        for (j, plane) in [&a, &b].into_iter().enumerate() {
+            for &i in source_faces {
+                if span.faces.contains(&i) || !self.earlier_strip(i) {
+                    continue;
+                }
+                let (Surface::Cylinder(cylinder), geometry::Leaf::Feature(feature)) =
+                    (&self.faces[i].surface, &self.leaves[self.faces[i].leaf])
+                else {
+                    continue;
+                };
+                // A round of the run's convexity, as wide as the ball, its
+                // axis parallel to the foot's plane, normal to the run and
+                // through the centre: it is tangent to that plane there.
+                if feature
+                    .fillet
+                    .as_ref()
+                    .is_none_or(|f| f.convex != span.convex)
+                    || geometry::sign(&(&cylinder.radius_sq - &radius.square()), dec)? != Sign::Zero
+                    || geometry::sign(&cylinder.axis.dot(&plane.normal), dec)? != Sign::Zero
+                    || geometry::sign(&cylinder.axis.dot(&out), dec)? != Sign::Zero
+                    || geometry::sign(
+                        &centre
+                            .minus(&cylinder.origin)
+                            .cross(&cylinder.axis)
+                            .norm_squared(),
+                        dec,
+                    )? != Sign::Zero
+                    || !self.through(i, &p, dec)?
+                {
+                    continue;
+                }
+                rounds[j] = Some(i);
+                break;
+            }
+        }
+        let [Some(first), Some(second)] = rounds else {
+            return Ok(None);
+        };
+        // The plane both rounds roll on: normal to the run, one radius past
+        // the centre, where their axes lie one radius from it.
+        let mut third = None;
+        for &i in source_faces {
+            if span.faces.contains(&i) {
+                continue;
+            }
+            let Surface::Plane(plane) = &self.faces[i].surface else {
+                continue;
+            };
+            if parallel(&plane.normal, &out, dec)?
+                && geometry::sign(&(&plane.origin.minus(&centre).dot(&out) - radius), dec)?
+                    == Sign::Zero
+            {
+                third = Some(i);
+                break;
+            }
+        }
+        let Some(third) = third else {
+            return Ok(None);
+        };
+        let minus = Real::from_i64(-1);
+        // RECIPE 4.5.1 names a junction sector after the operation's input
+        // vertex: the run's end, where its two planes meet the two rounds.
+        Ok(Some(TrihedralCorner {
+            centre,
+            directions: [a.normal.scaled(&minus), b.normal.scaled(&minus), out],
+            faces: vec![span.faces[0], span.faces[1], third, first, second],
+            named: vec![span.faces[0], span.faces[1], first, second],
+            rounds: Some([first, second]),
+            convex: span.convex,
+        }))
+    }
+
+    /// Applies a trihedral corner to `result`: the cell of its three planes
+    /// less its ball, removed or added by the runs' convexity. The cell is
+    /// the cube on the three directions at the centre. Its three planes bound
+    /// it and a mitre's two rounds are the faces it swallows; every other
+    /// source face must stay clear of the cube, or the corner refuses.
+    fn apply_corner(
+        &mut self,
+        result: usize,
+        corner: &TrihedralCorner,
+        source_faces: &[usize],
+        radius: &Real,
+        step: &StepId,
+        dec: &mut Decider,
+    ) -> Result<usize, Refusal> {
+        let overflow = || {
+            Refusal::new(
+                "fillet.unsupported-overflow",
+                "a face reaches the corner where a run swallows an earlier mitre",
+            )
+        };
+        let mut bounds: Option<[[Rational; 2]; 3]> = None;
+        for s in 0..8 {
+            let mut v = corner.centre.clone();
+            for (bit, d) in corner.directions.iter().enumerate() {
+                if (s >> bit) & 1 == 1 {
+                    v = v.plus(&d.scaled(radius));
+                }
+            }
+            let xyz = coordinates(&v).map_err(|_| overflow())?;
+            bounds = Some(match bounds {
+                None => xyz.map(|x| [x.clone(), x]),
+                Some(old) => std::array::from_fn(|i| {
+                    let [lo, hi] = &old[i];
+                    [
+                        lo.clone().min(xyz[i].clone()),
+                        hi.clone().max(xyz[i].clone()),
+                    ]
+                }),
+            });
+        }
+        let bounds = bounds.expect("a cube has corners");
+        let region = bounds
+            .each_ref()
+            .map(|[lo, hi]| Ball::from_rational(lo, 128).hull(&Ball::from_rational(hi, 128)));
+        for &i in source_faces {
+            let face = &self.faces[i];
+            if corner
+                .faces
+                .iter()
+                .any(|&j| j == i || face.support.same_definition(&self.faces[j].support))
+            {
+                continue;
+            }
+            dec.charge_work(1)?;
+            // A curved face can seem to reach the cube by interval
+            // dependency alone, as a far round's cylinder over a block's
+            // corner does; its leaf then shows the whole face beyond one of
+            // the cube's sides.
+            if face.polynomial.eval_ball(&region, dec)?.contains_zero()
+                && !self.beside_bounds(&bounds, i, dec)?
+            {
+                return Err(overflow());
+            }
+        }
+        let [d0, d1, d2] = &corner.directions;
+        let vertex = corner.centre.plus(&d0.plus(d1).plus(d2).scaled(radius));
+        let mut names: Vec<Origin> = corner
+            .named
+            .iter()
+            .map(|&i| self.faces[i].origin.clone())
+            .collect();
+        names.sort();
+        names.dedup();
+        let origin = Origin {
+            step: step.clone(),
+            role: Role::Corner {
+                vertex: VertexName::new(names).map_err(|e| unsupported(&e.to_string()))?,
+            },
+        };
+        let node = self.trihedral(
+            radius,
+            &corner.centre,
+            &corner.directions,
+            &vertex,
+            &origin,
+            step,
+            dec,
+        )?;
+        self.boolean(
+            if corner.convex {
+                BooleanKind::Subtract
+            } else {
+                BooleanKind::Union
+            },
+            result,
+            node,
+            dec,
+        )
+    }
+
+    /// The corner where the three straight runs `ends` (run, end) of one
+    /// convexity meet at one point, each between two of three planes with
+    /// pairwise orthogonal unit normals: a block's corner, as an `"all"`
+    /// selection meets it after an earlier round (4.2a step 5). RECIPE 4.5.1
+    /// blends every chosen edge at once, and at the vertex its material-set
+    /// rule takes the input material inside the cone of the three active
+    /// normals at the ball's centre and outside the ball: with the ball one
+    /// radius from each plane, the trihedral cell of the three planes less
+    /// the ball, as the elementary route closes a box's corner. Each run's
+    /// ball touches the third plane where its centre is one radius short of
+    /// the vertex, so the run ends there, at a junction with the corner.
+    /// OpenCASCADE closes three fillets of one radius at a vertex with a
+    /// sphere (`ChFi3d_FilBuilder::PerformThreeCorner` through
+    /// `ChFiKPart_ComputeData::ComputeCorner`, V7_8_0); SMLib fills a
+    /// three-sided corner with a sphere through its boundary arcs where one
+    /// fits (`SmFilletCorner.cpp`, `CreateSphereFromArcs`). The corner and
+    /// each run's moved end station; `None` when the meeting is not of this
+    /// kind.
+    #[allow(clippy::type_complexity)]
+    fn block_corner(
+        &self,
+        spans: &[Span],
+        ends: &[(usize, usize)],
+        radius: &Real,
+        dec: &mut Decider,
+    ) -> Result<Option<(TrihedralCorner, Vec<(usize, usize, Rational)>)>, Refusal> {
+        let ([(i0, k0), _, _], Some(r)) = (ends, radius.as_rational()) else {
+            return Ok(None);
+        };
+        let convex = spans[*i0].convex;
+        // The three planes, each with its unit normal toward the ball.
+        let mut planes: Vec<(usize, Vector3)> = Vec::new();
+        for &(i, _) in ends {
+            let span = &spans[i];
+            if span.convex != convex || !matches!(span.track, Track::Line { .. }) {
+                return Ok(None);
+            }
+            let ball = self.ball_direction(span.faces, &span.sample, span.convex, span.senses)?;
+            for f in span.faces {
+                let Some(flat) = Self::flat(&self.faces[f].surface, &ball, dec)? else {
+                    return Ok(None);
+                };
+                match planes.iter().find(|(g, _)| self.same_face(*g, f)) {
+                    Some((_, normal)) => {
+                        if !parallel(normal, &flat.normal, dec)?
+                            || geometry::sign(&normal.dot(&flat.normal), dec)? != Sign::Positive
+                        {
+                            return Ok(None);
+                        }
+                    }
+                    None => planes.push((f, flat.normal)),
+                }
+            }
+        }
+        if planes.len() != 3 {
+            return Ok(None);
+        }
+        for (x, (_, n)) in planes.iter().enumerate() {
+            if geometry::sign(&(&n.norm_squared() - &Real::one()), dec)? != Sign::Zero {
+                return Ok(None);
+            }
+            for (_, m) in &planes[x + 1..] {
+                if geometry::sign(&n.dot(m), dec)? != Sign::Zero {
+                    return Ok(None);
+                }
+            }
+        }
+        // Each run lies on two of the planes and runs into the vertex along
+        // the third's normal: its tangent out of the run is that normal
+        // reversed, so its ball's centre at the corner lies one radius back.
+        let mut thirds = Vec::with_capacity(3);
+        let mut moved = Vec::with_capacity(3);
+        for &(i, k) in ends {
+            let span = &spans[i];
+            let Some(third) = planes
+                .iter()
+                .position(|(g, _)| !span.faces.iter().any(|&f| self.same_face(*g, f)))
+            else {
+                return Ok(None);
+            };
+            if thirds.contains(&third) {
+                return Ok(None);
+            }
+            thirds.push(third);
+            let Track::Line { line, stations } = &span.track else {
+                return Ok(None);
+            };
+            let out = span.outward(k);
+            if geometry::sign(&(&line.dir.norm_squared() - &Real::one()), dec)? != Sign::Zero
+                || geometry::sign(&(&out.dot(&planes[third].1) + &Real::one()), dec)? != Sign::Zero
+            {
+                return Ok(None);
+            }
+            let station = if k == 0 {
+                &stations[0] + &r
+            } else {
+                &stations[1] - &r
+            };
+            moved.push((i, k, station));
+        }
+        let vertex = spans[*i0].end(*k0);
+        let centre = planes
+            .iter()
+            .fold(vertex, |c, (_, n)| c.plus(&n.scaled(radius)));
+        let minus = Real::from_i64(-1);
+        let faces: Vec<usize> = planes.iter().map(|(f, _)| *f).collect();
+        Ok(Some((
+            TrihedralCorner {
+                centre,
+                directions: [0, 1, 2].map(|x| planes[x].1.scaled(&minus)),
+                named: faces.clone(),
+                faces,
+                rounds: None,
+                convex,
+            },
+            moved,
+        )))
+    }
+
+    /// Whether `corner` swallows the seam where the faces `pair` meet: they
+    /// are the two rounds of the earlier mitre it closes. Each round rounds
+    /// one of the run's planes and the plane both roll on, as wide as the
+    /// ball with its axis through the ball's centre, so its face lies between
+    /// its two rails, inside the slab of each of those planes' directions
+    /// from the centre out to the plane. A point on both faces lies in all
+    /// three slabs, the corner's cube, and at least one radius from both
+    /// axes, so outside the open ball: in the cell the corner removes (or
+    /// adds). The only ball one radius from both rounds' cylinders on their
+    /// material side has its centre on both axes, the corner's own, so the
+    /// seam gets no round of its own, as the B-rep builds it.
+    fn swallows(&self, corner: &TrihedralCorner, pair: [usize; 2]) -> bool {
+        let Some([first, second]) = corner.rounds else {
+            return false;
+        };
+        if !(pair == [first, second] || pair == [second, first]) {
+            return false;
+        }
+        let third = &self.faces[corner.faces[2]].surface;
+        [(first, corner.faces[0]), (second, corner.faces[1])]
+            .iter()
+            .all(|&(round, plane)| {
+                let geometry::Leaf::Feature(feature) = &self.leaves[self.faces[round].leaf] else {
+                    return false;
+                };
+                let Some(fillet) = &feature.fillet else {
+                    return false;
+                };
+                let plane = &self.faces[plane].surface;
+                let [s, t] = &fillet.supports;
+                (s.same_definition(plane) && t.same_definition(third))
+                    || (s.same_definition(third) && t.same_definition(plane))
+            })
+    }
+
+    /// The end `k` of a straight run between two planes where each foot
+    /// reaches an earlier straight round of the run's convexity, both of one
+    /// radius `R` wider than the ball, tangent to that foot's plane along a
+    /// line normal to the run: an earlier mitre of two equal rounds, which
+    /// the ball rolls over. RECIPE 4.5.1: "The ball rolls between the two
+    /// rounds to the mitre's apex, with its centre on the ellipse where their
+    /// offsets meet, and sweeps one exact rational band." Each round's axis
+    /// lies `R` from its foot's plane, through `p + R n` for the run end `p`
+    /// and that plane's normal `n` toward the ball, along the other plane's
+    /// normal; the two axes meet at `p + R (n_a + n_b)`. A source plane normal
+    /// to the run `R` past its end, which both rounds roll on, must exist, as
+    /// for [`Plan::mitre_corner`]. The B-rep builds the same band
+    /// (`fillet_build.rs`, a rolling corner over an earlier mitre) and
+    /// OpenCASCADE builds the corpus row `narrow-mitres` by walking. The
+    /// directions must be orthogonal unit vectors, as at a block's corner;
+    /// `None` when the end is not of this kind.
+    fn mitre_seam(
+        &self,
+        span: &Span,
+        k: usize,
+        source_faces: &[usize],
+        radius: &Real,
+        dec: &mut Decider,
+    ) -> Result<Option<MitreSeam>, Refusal> {
+        if !matches!(span.track, Track::Line { .. }) {
+            return Ok(None);
+        }
+        let supports = span.faces.map(|i| self.faces[i].surface.clone());
+        let ball = self.ball_direction(span.faces, &span.sample, span.convex, span.senses)?;
+        let (Some(a), Some(b)) = (
+            Self::flat(&supports[0], &ball, dec)?,
+            Self::flat(&supports[1], &ball, dec)?,
+        ) else {
+            return Ok(None);
+        };
+        let out = span.outward(k);
+        for v in [&a.normal, &b.normal, &out] {
+            if geometry::sign(&(&v.norm_squared() - &Real::one()), dec)? != Sign::Zero {
+                return Ok(None);
+            }
+        }
+        if geometry::sign(&a.normal.dot(&b.normal), dec)? != Sign::Zero {
+            return Ok(None);
+        }
+        let p = span.end(k);
+        let mut rounds: [Option<(usize, Real)>; 2] = [None, None];
+        for (j, plane) in [&a, &b].into_iter().enumerate() {
+            for &i in source_faces {
+                if span.faces.contains(&i) || !self.earlier_strip(i) {
+                    continue;
+                }
+                let (Surface::Cylinder(cylinder), geometry::Leaf::Feature(feature)) =
+                    (&self.faces[i].surface, &self.leaves[self.faces[i].leaf])
+                else {
+                    continue;
+                };
+                // A round of the run's convexity, wider than the ball, its
+                // axis parallel to the foot's plane, normal to the run and
+                // `R` from the run end along the plane's normal: tangent to
+                // that plane along the line through the end normal to the
+                // run.
+                if feature
+                    .fillet
+                    .as_ref()
+                    .is_none_or(|f| f.convex != span.convex)
+                    || geometry::sign(&(&cylinder.radius_sq - &radius.square()), dec)?
+                        != Sign::Positive
+                    || geometry::sign(&cylinder.axis.dot(&plane.normal), dec)? != Sign::Zero
+                    || geometry::sign(&cylinder.axis.dot(&out), dec)? != Sign::Zero
+                {
+                    continue;
+                }
+                let round = square_root(&cylinder.radius_sq);
+                let on_axis = p.plus(&plane.normal.scaled(&round));
+                if geometry::sign(
+                    &on_axis
+                        .minus(&cylinder.origin)
+                        .cross(&cylinder.axis)
+                        .norm_squared(),
+                    dec,
+                )? != Sign::Zero
+                    || !self.through(i, &p, dec)?
+                {
+                    continue;
+                }
+                rounds[j] = Some((i, round));
+                break;
+            }
+        }
+        let [Some((first, round)), Some((second, other))] = rounds else {
+            return Ok(None);
+        };
+        if geometry::sign(&(&round - &other), dec)? != Sign::Zero {
+            return Ok(None);
+        }
+        // The plane both rounds roll on: normal to the run, `R` past its end.
+        let mut third = false;
+        for &i in source_faces {
+            if span.faces.contains(&i) {
+                continue;
+            }
+            let Surface::Plane(plane) = &self.faces[i].surface else {
+                continue;
+            };
+            if parallel(&plane.normal, &out, dec)?
+                && geometry::sign(&(&plane.origin.minus(&p).dot(&out) - &round), dec)? == Sign::Zero
+            {
+                third = true;
+                break;
+            }
+        }
+        if !third {
+            return Ok(None);
+        }
+        Ok(Some(MitreSeam {
+            end: p,
+            normals: [a.normal, b.normal],
+            out,
+            round,
+            faces: [span.faces[0], span.faces[1], first, second],
+            convex: span.convex,
+        }))
+    }
+
+    /// Applies the band a ball sweeps rolling over a mitre to `result`: the
+    /// seam piece between the two rounds, removed or added by the run's
+    /// convexity, with a junction where the run's straight piece ends. The
+    /// region lies inside both rounds' solid cylinders, so the run's planes
+    /// and the plane the rounds roll on, each tangent to one of them, meet it
+    /// at most on its boundary. RECIPE 4.5.1 names a junction sector after
+    /// the operation's input vertex, where the run's planes meet the two
+    /// rounds, as the B-rep names this band.
+    fn apply_seam(
+        &mut self,
+        result: usize,
+        seam: &MitreSeam,
+        source_faces: &[usize],
+        radius: &Real,
+        step: &StepId,
+        dec: &mut Decider,
+    ) -> Result<usize, Refusal> {
+        let [na, nb] = &seam.normals;
+        let meet = seam.end.plus(&na.plus(nb).scaled(&seam.round));
+        let path = Seam::new(
+            meet,
+            seam.normals.clone(),
+            seam.out.clone(),
+            seam.round.clone(),
+            radius.clone(),
+            dec,
+        )?;
+        let mut names: Vec<Origin> = seam
+            .faces
+            .iter()
+            .map(|&i| self.faces[i].origin.clone())
+            .collect();
+        names.sort();
+        names.dedup();
+        let origin = Origin {
+            step: step.clone(),
+            role: Role::Corner {
+                vertex: VertexName::new(names).map_err(|e| unsupported(&e.to_string()))?,
+            },
+        };
+        let [_, _, first, second] = seam.faces;
+        let piece = Piece::new(
+            Kind::Seam(path),
+            origin,
+            seam.convex,
+            [&self.faces[first].surface, &self.faces[second].surface],
+            dec,
+        )?;
+        let mut run = Run::new(piece, [first, second], Vec::new())
+            .with_junctions(vec![(seam.end.clone(), seam.out.clone())]);
+        for i in [first, second] {
+            if let Surface::Cylinder(cylinder) = &self.faces[i].surface {
+                run = run.inside(Solid {
+                    point: cylinder.origin.clone(),
+                    axis: cylinder.axis.clone(),
+                    radius_sq: cylinder.radius_sq.clone(),
+                });
+            }
+        }
+        self.apply_run(result, run, source_faces, dec)
+    }
+
+    /// Whether faces `a` and `b` lie on one support: the same face, or
+    /// coplanar faces of two leaves with the same support definition, which
+    /// the B-rep merges into one face.
+    fn same_face(&self, a: usize, b: usize) -> bool {
+        a == b
+            || self.faces[a]
+                .support
+                .same_definition(&self.faces[b].support)
+    }
+
+    /// Whether face `f` is an earlier straight round: an elementary strip's
+    /// face, or the registered cylinder of a straight rolling piece, whose
+    /// face is the same quarter cylinder between two rails (4.2a step 5, a
+    /// round over a chain of rolling pieces).
+    fn earlier_round(&self, f: usize) -> bool {
+        self.earlier_strip(f)
+            || matches!(
+                &self.leaves[self.faces[f].leaf],
+                geometry::Leaf::Rolling(piece) if matches!(piece.kind(), Kind::Generator(_))
+            )
+    }
+
+    /// The boxes of the input body's rolling pieces that register no face
+    /// (horn and spindle tori, ellipse pipes, saddles, rims and seams): no
+    /// source face stands for them, so no clearance test sees them, and the
+    /// chain keeps clear of their boxes instead. `None` for a piece without
+    /// a rational box. Each live instruction is visited once, as in
+    /// `Plan::rolling_below`.
+    fn hidden_pieces(&self, root: usize) -> Vec<Option<[[Rational; 2]; 3]>> {
+        let mut live = vec![false; root + 1];
+        live[root] = true;
+        let mut found = Vec::new();
+        for node in (0..=root).rev() {
+            if !live[node] {
+                continue;
+            }
+            match self.instructions[node] {
+                Instruction::Leaf(i) => {
+                    if let geometry::Leaf::Rolling(piece) = &self.leaves[i]
+                        && piece.face().is_none()
+                    {
+                        found.push(piece.bounds().cloned());
+                    }
+                }
+                Instruction::Boolean { a, b, .. } => {
+                    live[a] = true;
+                    live[b] = true;
+                }
+                _ => {}
+            }
+        }
+        found
+    }
+
     /// Whether face `f` is the face of an earlier straight fillet strip.
     fn earlier_strip(&self, f: usize) -> bool {
         matches!(
             &self.leaves[self.faces[f].leaf],
             geometry::Leaf::Feature(feature) if feature.fillet.is_some() && feature.is_straight_strip()
         )
+    }
+
+    /// Whether face `round` is an earlier straight round that a straight run
+    /// between two planes cannot roll onto at its end `p`: a round of the
+    /// run's convexity, so with the ball inside its cylinder, narrower than
+    /// the ball. Its offset by the ball folds back there, and RECIPE 4.5.1
+    /// takes the cliff rule instead; OpenCASCADE's
+    /// `ChFiKPart_ComputeData_FilPlnCyl` finds no fillet there either ("the
+    /// fillet can't pass" when `cylrad - Radius` is negative). A round as
+    /// wide as the ball keeps the sphere corner.
+    fn narrower_round(
+        &self,
+        span: &Span,
+        round: usize,
+        p: &Point3,
+        radius: &Real,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        let Surface::Cylinder(cylinder) = &self.faces[round].surface else {
+            return Ok(false);
+        };
+        // The round's own support must pass through the run end: a face of
+        // the same leaf can pass the leaf's boundary test elsewhere.
+        let values = [p.x.clone(), p.y.clone(), p.z.clone()];
+        if !self.earlier_round(round)
+            || !matches!(span.track, Track::Line { .. })
+            || !span
+                .faces
+                .iter()
+                .all(|&f| matches!(self.faces[f].surface, Surface::Plane(_)))
+            || geometry::sign(&(&cylinder.radius_sq - &radius.square()), dec)? != Sign::Negative
+            || geometry::sign(&self.faces[round].polynomial.eval_real(&values), dec)? != Sign::Zero
+        {
+            return Ok(false);
+        }
+        let ball = self.ball_direction(span.faces, &span.sample, span.convex, span.senses)?;
+        let outward = super::rolling::radial(&p.minus(&cylinder.origin), &cylinder.axis);
+        Ok(geometry::sign(&ball.dot(&outward), dec)? == Sign::Negative)
+    }
+
+    /// The end of a straight run past a cliff (RECIPE 4.5.1): the strip keeps
+    /// both planes and runs on past the narrower round, which cuts it, to the
+    /// other rail's end. The B-rep walks that cut from the cliff foot until it
+    /// reaches the strip's other face at the other rail's end
+    /// (`fillet_build.rs`, `cliff`). Here the run ends where the nearest
+    /// source plane normal to it past the cliff holds the other rail's
+    /// point, as an elementary strip ends at its end plane, and its station
+    /// moves there. The round's face must lie past the plane normal to the
+    /// run at the cliff, so it meets only the extension, which it cuts.
+    /// `None` when no such plane or round is found; the caller then keeps
+    /// its refusal.
+    fn cliff_end(
+        &self,
+        span: &mut Span,
+        cliff: &Cliff,
+        source_faces: &[usize],
+        radius: &Real,
+        dec: &mut Decider,
+    ) -> Result<Option<usize>, Refusal> {
+        let Track::Line { line, stations } = span.track.clone() else {
+            return Ok(None);
+        };
+        let k = cliff.end;
+        let p = span.end(k);
+        let outward = span.outward(k);
+        let geometry::Leaf::Feature(feature) = &self.leaves[self.faces[cliff.round].leaf] else {
+            return Ok(None);
+        };
+        let level = outward.dot(&p.minus(&Point3::origin()));
+        if !feature.face_above(self.definition_role(cliff.round), &outward, &level, dec)? {
+            return Ok(None);
+        }
+        // The other rail's point at the cliff.
+        let supports = span.faces.map(|i| self.faces[i].surface.clone());
+        let ball = self.ball_direction(span.faces, &span.sample, span.convex, span.senses)?;
+        let walls = Self::generator_walls(&supports, &ball, &span.sample, dec)?;
+        let path = Generator::new(
+            walls,
+            line.origin.clone(),
+            line.dir.clone(),
+            stations.clone().map(Real::from),
+            radius.clone(),
+            dec,
+        )?;
+        let rail = path.section_at(&Real::from(stations[k].clone()))[2 - cliff.foot].clone();
+        // The nearest normal plane past the cliff.
+        let mut nearest: Option<(Rational, Vec<usize>)> = None;
+        for &j in source_faces {
+            if span.faces.contains(&j) {
+                continue;
+            }
+            let Surface::Plane(plane) = &self.faces[j].surface else {
+                continue;
+            };
+            if !parallel(&plane.normal, &line.dir, dec)? {
+                continue;
+            }
+            let Ok(station) = super::q(
+                &(&plane.origin.minus(&line.origin).dot(&plane.normal)
+                    / &line.dir.dot(&plane.normal)),
+            ) else {
+                continue;
+            };
+            let past = if k == 1 {
+                station > stations[1]
+            } else {
+                station < stations[0]
+            };
+            if !past {
+                continue;
+            }
+            match &mut nearest {
+                Some((best, faces)) if *best == station => faces.push(j),
+                Some((best, _)) if (k == 1) == (*best < station) => {}
+                _ => nearest = Some((station, vec![j])),
+            }
+        }
+        let Some((station, faces)) = nearest else {
+            return Ok(None);
+        };
+        let end = rail.plus(&line.dir.scaled(&Real::from(&station - &stations[k])));
+        for j in faces {
+            if self.through(j, &end, dec)? {
+                if let Track::Line { stations, .. } = &mut span.track {
+                    stations[k] = station;
+                }
+                return Ok(Some(j));
+            }
+        }
+        Ok(None)
+    }
+
+    /// The end of a straight run whose two feet both reach rounds narrower
+    /// than its ball at end `k`, as under an earlier mitre of such rounds
+    /// (RECIPE 4.5.1, the cliff rule at both feet): the strip keeps both
+    /// planes, runs on past the cliff, and both rounds cut it. Neither rail
+    /// goes on, so the run ends at the nearest source plane normal to it past
+    /// the cliff to which both rounds are tangent, the plane they roll on;
+    /// its station moves there. The rounds' faces end on that plane, so every
+    /// cut lies short of it. The B-rep bounds its cliff region the same way,
+    /// by a plane normal to the edge past every cut curve (`fillet_build.rs`,
+    /// `Cliff::cut`), and its test file's upright "runs on to the top and the
+    /// rounds cut it". Each round's face must lie past the plane normal to
+    /// the run at the cliff. `None` when no such plane or rounds are found;
+    /// the caller then keeps its refusal.
+    fn cliffs_end(
+        &self,
+        span: &mut Span,
+        k: usize,
+        rounds: [usize; 2],
+        source_faces: &[usize],
+        dec: &mut Decider,
+    ) -> Result<Option<usize>, Refusal> {
+        let Track::Line { line, stations } = span.track.clone() else {
+            return Ok(None);
+        };
+        let p = span.end(k);
+        let outward = span.outward(k);
+        let level = outward.dot(&p.minus(&Point3::origin()));
+        let mut cylinders = Vec::with_capacity(2);
+        for round in rounds {
+            let (geometry::Leaf::Feature(feature), Surface::Cylinder(cylinder)) = (
+                &self.leaves[self.faces[round].leaf],
+                &self.faces[round].surface,
+            ) else {
+                return Ok(None);
+            };
+            if !feature.face_above(self.definition_role(round), &outward, &level, dec)? {
+                return Ok(None);
+            }
+            cylinders.push(cylinder);
+        }
+        let mut nearest: Option<(Rational, usize)> = None;
+        for &j in source_faces {
+            if span.faces.contains(&j) {
+                continue;
+            }
+            let Surface::Plane(plane) = &self.faces[j].surface else {
+                continue;
+            };
+            if !parallel(&plane.normal, &line.dir, dec)? {
+                continue;
+            }
+            // Each round's axis is parallel to the plane, its radius away.
+            let mut tangent = true;
+            for cylinder in &cylinders {
+                let offset = plane.normal.dot(&cylinder.origin.minus(&plane.origin));
+                let reach = &cylinder.radius_sq * &plane.normal.norm_squared();
+                if geometry::sign(&plane.normal.dot(&cylinder.axis), dec)? != Sign::Zero
+                    || geometry::sign(&(&offset.square() - &reach), dec)? != Sign::Zero
+                {
+                    tangent = false;
+                    break;
+                }
+            }
+            if !tangent {
+                continue;
+            }
+            let Ok(station) = super::q(
+                &(&plane.origin.minus(&line.origin).dot(&plane.normal)
+                    / &line.dir.dot(&plane.normal)),
+            ) else {
+                continue;
+            };
+            let past = if k == 1 {
+                station > stations[1]
+            } else {
+                station < stations[0]
+            };
+            if !past {
+                continue;
+            }
+            match &nearest {
+                Some((best, _)) if *best == station || (k == 1) == (*best < station) => {}
+                _ => nearest = Some((station, j)),
+            }
+        }
+        let Some((station, j)) = nearest else {
+            return Ok(None);
+        };
+        if let Track::Line { stations, .. } = &mut span.track {
+            stations[k] = station;
+        }
+        Ok(Some(j))
     }
 
     /// The end face of a straight run at its end `k`: a source plane normal
@@ -967,7 +2407,7 @@ impl Plan {
         }
         let piece = Piece::new(
             Kind::Generator(path),
-            self.blend_origin(span.faces, step)?,
+            self.blend_origin(span.named, step)?,
             span.convex,
             [&supports[0], &supports[1]],
             dec,

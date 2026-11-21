@@ -28,7 +28,17 @@
 //! meridian through the point, as in OpenCASCADE's `Extrema_ExtPElC`, and the
 //! separation from the balls is `(rho - C)^2 + h^2 - r^2`. For `C > r` this has
 //! the sign of the ring-torus polynomial; for a spindle (`0 < C <= r`) the
-//! square root of `rho^2` is kept. Ellipses use the whole-interval panel cover
+//! square root of `rho^2` is kept. A ball exactly as wide as a cylinder it
+//! rolls inside, on a plane normal to the axis, has `C = 0` (4.2a step 5):
+//! every ball is one ball on the axis, the separation is `|x - c|^2 - r^2`
+//! and the face is a sphere, as OpenCASCADE's `ChFiKPart_ComputeData_FilPlnCyl`
+//! makes it. A torus cut by a plane normal to its axis (4.2a step 6) is a
+//! sphere whose meridian circle sits at the core radius `R` off the axis:
+//! its offset is the torus of tube radius `a + b r`, the offset plane meets
+//! it in the circle `rho = R +- sqrt((a + b r)^2 - h0^2)` on the edge's side
+//! of the core circle, or in one circle where the offset plane touches the
+//! offset tube, and the normal line of the meridian wall passes through the
+//! core circle's point `(R, h = 0)`. Ellipses use the whole-interval panel cover
 //! of step 1. OpenCASCADE reaches the nearest point of an ellipse through
 //! `math_TrigonometricFunctionRoots`, a quartic in the half angle; a sampled or
 //! root-polished nearest point gives no guaranteed range, the cover does.
@@ -86,6 +96,22 @@ pub enum Revolution {
         /// Positive radius in mm.
         radius: Real,
     },
+    /// A ring torus about the axis through `centre` along `axis`, whose tube
+    /// of radius `minor` circles the axis at `major` (4.2a step 6). Only a
+    /// plane normal to the axis is taken. `edge` is a point of the edge: its
+    /// side of the tube's core circle chooses the centre circle.
+    Torus {
+        /// Centre.
+        centre: Point3,
+        /// Nonzero axis direction.
+        axis: Vector3,
+        /// Radius of the core circle in mm.
+        major: Real,
+        /// Radius of the tube in mm, less than `major`.
+        minor: Real,
+        /// A point of the edge.
+        edge: Point3,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -122,6 +148,24 @@ enum Shape {
         edge: Real,
         edge_major: Real,
     },
+    Torus {
+        centre: Point3,
+        // The core circle's radius R and the tube's radius a.
+        major: Real,
+        minor: Real,
+        // a' = a + b r, the offset plane's height h0 above the centre, the
+        // edge plane's height and the edge circle's radius.
+        offset: Real,
+        height: Real,
+        edge: Real,
+        edge_major: Real,
+        // +1 or -1: the sign of h0 (rho - R) - (C - R) h at the edge, the
+        // meridian wall's edge side.
+        facing: Real,
+        // +1 or -1: the sign of C - R, the centre circle's side of the core
+        // circle.
+        branch: Real,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -132,9 +176,12 @@ struct Circle {
     major_sq: Real,
     // C > r: the ring-torus polynomial has the separation's sign.
     ring: bool,
+    // C = 0: the centre stays on the axis and every ball is one ball.
+    axial: bool,
 }
 
-/// The rolling-ball path between a plane and a cylinder, cone or sphere.
+/// The rolling-ball path between a plane and a cylinder, cone, sphere or
+/// torus.
 #[derive(Clone, Debug)]
 pub struct Revolved {
     normal: Vector3,
@@ -280,6 +327,7 @@ impl Revolved {
                     major: root(&major_sq),
                     major_sq,
                     ring,
+                    axial: false,
                 };
                 (
                     Shape::Sphere {
@@ -289,6 +337,92 @@ impl Revolved {
                         height,
                         edge,
                         edge_major: root(&edge_sq),
+                    },
+                    basis,
+                    Some(circle),
+                )
+            }
+            Revolution::Torus {
+                centre,
+                axis,
+                major: big,
+                minor,
+                edge: point,
+            } => {
+                // The offset torus has tube radius a' = a + b r about the same
+                // core circle. A plane normal to the axis meets it where
+                // (rho - R)^2 + h0^2 = a'^2: two circles, or one where the
+                // offset plane touches the offset tube's top (4.2a step 6).
+                if !positive(&minor, dec)? || !positive(&(&big - &minor), dec)? {
+                    return Err(reach("the torus needs a tube inside its core circle"));
+                }
+                if sign(&axis.cross(&unit).norm_squared(), dec)? != Sign::Zero {
+                    return Err(reach(
+                        "a plane not normal to the torus axis meets its offset in no circle",
+                    ));
+                }
+                let offset = &minor + &(&b * &radius);
+                if !positive(&offset, dec)? {
+                    return Err(reach(
+                        "the ball is no smaller than the tube it rolls inside",
+                    ));
+                }
+                let lift = unit.dot(&position(&centre));
+                let height = &(&level + &radius) - &lift;
+                let spread_sq = &offset.square() - &height.square();
+                if sign(&spread_sq, dec)? == Sign::Negative {
+                    return Err(reach("the offset plane misses the offset torus"));
+                }
+                let edge = &level - &lift;
+                let edge_sq = &minor.square() - &edge.square();
+                if !positive(&edge_sq, dec)? {
+                    return Err(reach("the plane does not cut the torus"));
+                }
+                // The edge's side of the core circle picks the centre circle.
+                let v = point.minus(&centre);
+                let w = v.minus(&unit.scaled(&unit.dot(&v)));
+                let branch = match sign(&(&w.norm_squared() - &big.square()), dec)? {
+                    Sign::Positive => Real::one(),
+                    Sign::Negative => Real::from_i64(-1),
+                    Sign::Zero => return Err(reach("the edge lies over the core circle")),
+                };
+                let spread = root(&spread_sq);
+                let reach_edge = root(&edge_sq);
+                let major = &big + &(&branch * &spread);
+                if !positive(&major, dec)? {
+                    return Err(reach("the centre circle reaches the torus axis"));
+                }
+                let facing = match sign(
+                    &(&branch * &(&(&height * &reach_edge) - &(&spread * &edge))),
+                    dec,
+                )? {
+                    Sign::Positive => Real::one(),
+                    Sign::Negative => Real::from_i64(-1),
+                    Sign::Zero => {
+                        return Err(reach("the edge lies on the offset tube's normal line"));
+                    }
+                };
+                let basis = basis_of(&unit, dec)?;
+                let ring = positive(&(&major - &radius), dec)?;
+                let circle = Circle {
+                    centre: centre.plus(&unit.scaled(&height)),
+                    axis: unit.clone(),
+                    major_sq: major.square(),
+                    major,
+                    ring,
+                    axial: false,
+                };
+                (
+                    Shape::Torus {
+                        centre,
+                        edge_major: &big + &(&branch * &reach_edge),
+                        major: big,
+                        minor,
+                        offset,
+                        height,
+                        edge,
+                        facing,
+                        branch,
                     },
                     basis,
                     Some(circle),
@@ -304,7 +438,9 @@ impl Revolved {
                     Revolution::Cone { apex, axis, slope } => {
                         (apex, axis, Real::zero(), slope, true)
                     }
-                    Revolution::Sphere { .. } => unreachable!("matched above"),
+                    Revolution::Sphere { .. } | Revolution::Torus { .. } => {
+                        unreachable!("matched above")
+                    }
                 };
                 if !positive(&axis.norm_squared(), dec)? {
                     return Err(reach("the support needs a nonzero axis"));
@@ -316,11 +452,28 @@ impl Revolved {
                 let growth = &Real::one() + &slope.square();
                 let root_growth = if cone { root(&growth) } else { Real::one() };
                 let offset = &rim + &(&(&b * &radius) * &root_growth);
-                if !cone && !positive(&offset, dec)? {
-                    return Err(reach(
-                        "the ball is no smaller than the cylinder it rolls inside",
-                    ));
-                }
+                // A ball exactly as wide as the cylinder it rolls inside keeps
+                // its centre on the axis (4.2a step 5): the offset cylinder is
+                // the axis itself, so the path is one point and the face a
+                // sphere. RECIPE 4.5.1: "A round exactly as wide as the ball is
+                // not a cliff"; OpenCASCADE's `ChFiKPart_ComputeData_FilPlnCyl`
+                // makes the same sphere when `cylrad - Radius` is zero. Only a
+                // plane normal to the axis is taken, where every meridian's
+                // section is the same quarter disc.
+                let normal_axis = axis.cross(&unit);
+                let on_axis = if cone {
+                    false
+                } else {
+                    match sign(&offset, dec)? {
+                        Sign::Positive => false,
+                        Sign::Zero if sign(&normal_axis.norm_squared(), dec)? == Sign::Zero => true,
+                        _ => {
+                            return Err(reach(
+                                "the ball is no smaller than the cylinder it rolls inside",
+                            ));
+                        }
+                    }
+                };
                 let cross = unit.dot(&axis);
                 let facing = sign(&cross, dec)?;
                 if facing == Sign::Zero {
@@ -338,15 +491,19 @@ impl Revolved {
                 let gain = &(&offset * &cross) + &(&slope * &start);
                 let edge_start = &level - &lift;
                 let edge_gain = &(&rim * &cross) + &(&slope * &edge_start);
-                if sign(&gain, dec)? != facing || sign(&edge_gain, dec)? != facing {
+                // On the axis the gain is zero: the centre circle has radius 0.
+                if (sign(&gain, dec)? != facing && !on_axis) || sign(&edge_gain, dec)? != facing {
                     return Err(reach(
                         "the edge or the offset conic leaves the support's nappe",
                     ));
                 }
-                let normal_axis = axis.cross(&unit);
                 let (basis, tilt, circle) = if sign(&normal_axis.norm_squared(), dec)? == Sign::Zero
                 {
-                    let major = &gain / &cross;
+                    let major = if on_axis {
+                        Real::zero()
+                    } else {
+                        &gain / &cross
+                    };
                     // The foot on a cone lies `b r / sqrt(1 + k^2)` nearer the
                     // axis than the centre; past the axis it is on the other
                     // nappe, beyond the apex, and no ball touches the face.
@@ -365,6 +522,7 @@ impl Revolved {
                         major_sq: major.square(),
                         major,
                         ring,
+                        axial: on_axis,
                     };
                     (basis_of(&axis, dec)?, Real::zero(), Some(circle))
                 } else {
@@ -475,6 +633,33 @@ impl Revolved {
         self.circle.is_some()
     }
 
+    /// The exact surface that holds the face, for the face registry: the ring
+    /// torus about a centre circle wider than the ball, or the ball itself
+    /// when the centre stays on the axis. Its equation has the separation's
+    /// sign. A horn or spindle torus has no global equation, and an ellipse
+    /// path's pipe is no elementary surface, so both have none.
+    pub fn face(&self) -> Option<catallax_shapes::Surface> {
+        let circle = self.circle.as_ref()?;
+        if circle.ring {
+            Some(catallax_shapes::Surface::Torus(catallax_shapes::Torus {
+                center: circle.centre.clone(),
+                axis: circle.axis.clone(),
+                major: circle.major.clone(),
+                minor: self.radius.clone(),
+                ref_dir: self.basis[0].clone(),
+            }))
+        } else if circle.axial {
+            Some(catallax_shapes::Surface::Sphere(catallax_shapes::Sphere {
+                center: circle.centre.clone(),
+                radius: self.radius.clone(),
+                axis: circle.axis.clone(),
+                ref_dir: self.basis[0].clone(),
+            }))
+        } else {
+            None
+        }
+    }
+
     /// Ball radius in mm.
     pub fn radius(&self) -> &Real {
         &self.radius
@@ -497,7 +682,7 @@ impl Revolved {
                 p(origin);
                 v(axis);
             }
-            Shape::Sphere { centre, .. } => p(centre),
+            Shape::Sphere { centre, .. } | Shape::Torus { centre, .. } => p(centre),
         }
         if let Some(circle) = &mut self.circle {
             p(&mut circle.centre);
@@ -527,11 +712,43 @@ impl Revolved {
             Shape::Sphere {
                 centre: o, offset, ..
             } => centre.plus(&centre.minus(o).scaled(&-&(&(&b * &self.radius) / offset))),
+            // The foot lies on the line from the core circle's point in the
+            // station's meridian through the station.
+            Shape::Torus {
+                centre: o,
+                major: big,
+                offset,
+                ..
+            } => {
+                let core = o.plus(&direction.scaled(big));
+                centre.plus(
+                    &centre
+                        .minus(&core)
+                        .scaled(&-&(&(&b * &self.radius) / offset)),
+                )
+            }
+        };
+        // A torus's feet are opposite where the offset plane touches the
+        // offset tube's top; the face arc is the half toward the edge.
+        let side = match &self.shape {
+            Shape::Torus {
+                centre: o,
+                edge,
+                edge_major,
+                ..
+            } => {
+                let point = o
+                    .plus(&self.unit.scaled(edge))
+                    .plus(&direction.scaled(edge_major));
+                Some(balls(&point.minus(&centre), dec)?)
+            }
+            _ => None,
         };
         Ok(Frame {
             centre: point_balls(&centre, dec)?,
             tangent: balls(&circle.axis.cross(direction), dec)?,
             feet: [point_balls(&plane, dec)?, point_balls(&wall, dec)?],
+            side,
         })
     }
 
@@ -727,6 +944,33 @@ impl Revolved {
                 let walls = [-b * face, f(h0) * distance - f(offset) * h];
                 (support, station, walls)
             }
+            Shape::Torus {
+                centre,
+                major: big,
+                minor,
+                height: h0,
+                facing,
+                branch,
+                ..
+            } => {
+                let o = fp(centre);
+                let h = dot(n, sub(p, o));
+                let circle = self.circle.as_ref().expect("a torus path is a circle");
+                let c = fp(&circle.centre);
+                let w = add(sub(p, c), -dot(n, sub(p, c)), n);
+                let rho = norm(w);
+                let dir = if rho > 0.0 {
+                    [w[0] / rho, w[1] / rho, w[2] / rho]
+                } else {
+                    u1
+                };
+                let station = add(c, f(&circle.major), dir);
+                let spread = rho - f(big);
+                let support = b * (sqrt(spread * spread + h * h) - f(minor));
+                let face = f(branch) * (spread - (f(&circle.major) - f(big)));
+                let meridian = f(facing) * (f(h0) * spread - (f(&circle.major) - f(big)) * h);
+                (support, station, [-b * face, meridian])
+            }
         };
         let m = norm(sub(p, station));
         let in_sector = self.sector.as_ref().is_none_or(|sector| {
@@ -786,6 +1030,8 @@ enum Kind {
         major: Ball,
         edge: Ball,
         edge_major: Ball,
+        // A torus's core radius; `None` for a sphere.
+        core: Option<Ball>,
     },
 }
 /// Cosine, sine and meridian `cos e1 + sin e2` over the panel of angles
@@ -891,15 +1137,31 @@ impl Cover for RevolvedCover {
                     std::array::from_fn(|i| &direction[i] - &(slope * &axis[i]));
                 (tangent, shift(&centre, &-&self.foot, &normal))
             }
-            Kind::Round { centre: o, .. } => {
-                let radial: [Ball; 3] = std::array::from_fn(|i| &centre[i] - &o[i]);
+            Kind::Round {
+                centre: o, core, ..
+            } => {
+                let radial: [Ball; 3] = match core {
+                    None => std::array::from_fn(|i| &centre[i] - &o[i]),
+                    Some(core) => {
+                        let point = sum(o, &scaled(core, &direction));
+                        std::array::from_fn(|i| &centre[i] - &point[i])
+                    }
+                };
                 (turn, shift(&centre, &-&self.foot, &radial))
             }
+        };
+        let side = match &self.kind {
+            Kind::Round { core: Some(_), .. } => {
+                let edge = self.edge(u)?;
+                Some(std::array::from_fn(|i| &edge[i] - &centre[i]))
+            }
+            _ => None,
         };
         Ok(Frame {
             centre,
             tangent,
             feet: [plane, wall],
+            side,
         })
     }
 }
@@ -940,9 +1202,14 @@ impl Path for Revolved {
                 let w = v.minus(&axis.scaled(&s));
                 let rho2 = w.norm_squared();
                 // The region keeps a positive distance from the axis (see
-                // `Revolved::new`), so an axis point is outside it.
+                // `Revolved::new`), so an axis point is outside it. With the
+                // centre on the axis, the fan's axis points lie between the
+                // plane and the centre, inside the one closed ball; only the
+                // plane contact is on the region's boundary, where `-height`
+                // is zero and the separation decides it.
                 if sign(&rho2, dec)? == Sign::Zero {
-                    walls.push(Real::from_i64(-1));
+                    let axial = self.circle.as_ref().is_some_and(|c| c.axial);
+                    walls.push(if axial { -&height } else { Real::from_i64(-1) });
                     return Ok(walls);
                 }
                 let rho = root(&rho2);
@@ -990,6 +1257,36 @@ impl Path for Revolved {
                 // centre; the edge side has h / |v| < h0 / R'.
                 walls.push(&(h0 * &root(&d2)) - &(offset * &self.unit.dot(&v)));
             }
+            Shape::Torus {
+                centre,
+                major: big,
+                minor,
+                height: h0,
+                facing,
+                branch,
+                ..
+            } => {
+                // In the meridian half-plane the torus is the circle of radius
+                // a about (R, 0), as a sphere's is about (0, 0).
+                let v = x.minus(&position(centre));
+                let h = self.unit.dot(&v);
+                let spread = &root(&(&v.norm_squared() - &h.square())) - big;
+                let tube = &spread.square() + &h.square();
+                walls.push(&b * &(&tube - &minor.square()));
+                if self.outside {
+                    walls.push(&(minor + &(&two * r)).square() - &tube);
+                }
+                // The station's normal to the plane: the point's meridian
+                // distance from the axis is on the edge's side of the centre
+                // circle's. Squared, `(rho - R)^2 + h0^2 - a'^2` would also
+                // hold on the far side of the core circle, where the other
+                // centre circle's fan lies.
+                let circle = self.circle.as_ref().expect("a torus path is a circle");
+                walls.push(-&(&b * &(branch * &(&spread - &(&circle.major - big)))));
+                // The offset tube's normal line through the station passes
+                // through the core circle's point (R, 0) of the meridian.
+                walls.push(facing * &(&(h0 * &spread) - &(&(&circle.major - big) * &h)));
+            }
         }
         Ok(walls)
     }
@@ -1015,6 +1312,9 @@ impl Path for Revolved {
         let s = &(&d2 + &circle.major_sq) - &self.radius.square();
         Some(if circle.ring {
             &s.square() - &(&(&Real::from_i64(4) * &circle.major_sq) * &rho2)
+        } else if circle.axial {
+            // One ball: `|x - c|^2 - r^2`.
+            s
         } else {
             &s - &(&(&Real::from_i64(2) * &circle.major) * &root(&rho2))
         })
@@ -1067,6 +1367,28 @@ impl Path for Revolved {
                         major: ball(&circle.major, dec)?,
                         edge: ball(edge, dec)?,
                         edge_major: ball(edge_major, dec)?,
+                        core: None,
+                    },
+                )
+            }
+            Shape::Torus {
+                centre,
+                major: big,
+                offset,
+                edge,
+                edge_major,
+                ..
+            } => {
+                let circle = self.circle.as_ref().expect("a torus path is a circle");
+                (
+                    ball(&(&(&b * &self.radius) / offset), dec)?,
+                    Kind::Round {
+                        centre: point_balls(centre, dec)?,
+                        circle: point_balls(&circle.centre, dec)?,
+                        major: ball(&circle.major, dec)?,
+                        edge: ball(edge, dec)?,
+                        edge_major: ball(edge_major, dec)?,
+                        core: Some(ball(big, dec)?),
                     },
                 )
             }

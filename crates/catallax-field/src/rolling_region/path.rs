@@ -36,6 +36,11 @@ pub struct Frame {
     pub tangent: [Ball; 3],
     /// Contact feet on the two supports; the face arc runs between them.
     pub feet: [[Ball; 3]; 2],
+    /// A direction from the centre into the face arc's half of the normal
+    /// plane, for a path whose feet can be opposite, where no short arc runs
+    /// between them (4.2a step 6); `None` where the feet always span a
+    /// short arc.
+    pub side: Option<[Ball; 3]>,
 }
 
 /// Interval enclosures of a path over parameter panels inside `[-1, 1]`.
@@ -191,6 +196,9 @@ fn zero() -> Rational {
 /// `sqrt((|v_n|-r)^2 + |v_t|^2)`. It is the distance to the arc when `v_n`
 /// points into the arc's sector; otherwise the nearer foot is the nearest arc
 /// point. Every foot lies on the face, so feet always give upper bounds.
+/// Where the feet may be opposite, the arc is the half circle on the
+/// frame's `side`: the nearest circle point is on it when `v_n` points into
+/// that half, and a foot is nearest when it points into the other half.
 fn arc_bounds(p: &[Ball; 3], frame: &Frame, r: &Ball) -> Result<(Rational, Rational), Refusal> {
     let feet = frame
         .feet
@@ -220,6 +228,23 @@ fn arc_bounds(p: &[Ball; 3], frame: &Frame, r: &Ball) -> Result<(Rational, Ratio
     let a = sub(&frame.feet[0], &frame.centre);
     let b = sub(&frame.feet[1], &frame.centre);
     let n = cross(&a, &b);
+    if let Some(side) = &frame.side
+        && dot(&n, &n).lo() <= zero()
+    {
+        // The side's part across the feet's line.
+        let lean = dot(side, &a)
+            .checked_div(&dot(&a, &a))
+            .ok_or_else(|| gap("foot enclosure contains the centre"))?;
+        let across: [Ball; 3] = std::array::from_fn(|i| &side[i] - &(&lean * &a[i]));
+        let toward = dot(&normal, &across);
+        return Ok(if toward.lo() > zero() {
+            (circle.lo(), circle.hi())
+        } else if toward.hi() < zero() {
+            (foot_lo, foot_hi)
+        } else {
+            (circle.lo().min(foot_lo), foot_hi)
+        });
+    }
     let first = dot(&cross(&a, &normal), &n);
     let second = dot(&cross(&normal, &b), &n);
     let inside = first.lo() > zero() && second.lo() > zero();

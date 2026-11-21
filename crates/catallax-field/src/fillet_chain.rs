@@ -53,8 +53,10 @@
 //! ring sector of centre radius `R + r`; the strip's two faces cross that
 //! sector's fan and are cleared by showing the fan is of one material
 //! (step 5 part 4). Every patch of a chain keeps the name of the selected
-//! edge it continues (RECIPE 4.5.1). A ball that rolls over a mitre of
-//! wider rounds is a later part of step 5 and keeps its refusal.
+//! edge it continues (RECIPE 4.5.1). A ball narrower than both rounds of an
+//! earlier mitre rolls over it: its centre follows the quarter ellipse where
+//! the rounds' offsets meet, from the run's end to the mitre's apex
+//! ([`Seam`], step 5 part 5).
 //!
 //! How the reference kernels do this. OpenCASCADE's
 //! `ChFi3d_Builder::PerformElement` (V7_8_0) collects "all mutually tangent
@@ -81,6 +83,7 @@ use super::{coordinates, square_root, unit};
 use crate::rolling_region::generator::Generator;
 use crate::rolling_region::piece::{Kind, Piece};
 use crate::rolling_region::revolved::{Revolution, Revolved};
+use crate::rolling_region::seam::Seam;
 use crate::{Location, Plan, geometry};
 
 /// Where a span runs.
@@ -158,6 +161,21 @@ struct MitreCorner {
     centre: Point3,
     directions: [Vector3; 3],
     faces: [usize; 5],
+    convex: bool,
+}
+
+/// A straight run's end where its ball rolls over an earlier mitre of two
+/// rounds of one radius, wider than the ball (4.2a step 5): the run's `end`,
+/// the unit `normals` of its two planes toward the ball, its unit direction
+/// `out` past the end, the rounds' radius, and the `faces`: the run's two
+/// planes, then the round tangent to each.
+#[derive(Clone, Debug)]
+struct MitreSeam {
+    end: Point3,
+    normals: [Vector3; 2],
+    out: Vector3,
+    round: Real,
+    faces: [usize; 4],
     convex: bool,
 }
 
@@ -466,8 +484,40 @@ impl Plan {
                 }
             }
         }
+        // A run end whose ball rolls over an earlier mitre of rounds wider
+        // than the ball ends at a junction with a band along the ellipse
+        // where the rounds' offsets meet (4.2a step 5). Only ends every route
+        // above leaves open are tried, so every earlier answer and its work
+        // stand.
+        let mut seams: Vec<MitreSeam> = Vec::new();
+        let mut seamed: Vec<[bool; 2]> = vec![[false, false]; spans.len()];
+        if roll_over {
+            for (i, span) in spans.iter().enumerate() {
+                for k in 0..2 {
+                    if links[i][k].is_none()
+                        && free[i][k].is_none()
+                        && !cornered[i][k]
+                        && let Some(seam) = self.mitre_seam(span, k, source_faces, radius, dec)?
+                    {
+                        seamed[i][k] = true;
+                        seams.push(seam);
+                    }
+                }
+            }
+            if !seams.is_empty() && corners.is_empty() && !over && cliffs.is_empty() {
+                for (i, span) in spans.iter().enumerate() {
+                    for k in 0..2 {
+                        if links[i][k].is_none() && free[i][k].is_none() && !seamed[i][k] {
+                            free[i][k] = self.end_face(span, k, source_faces, dec)?;
+                        }
+                    }
+                }
+            }
+        }
         let chained = (0..spans.len()).all(|i| {
-            (0..2).all(|k| links[i][k].is_some() || free[i][k].is_some() || cornered[i][k])
+            (0..2).all(|k| {
+                links[i][k].is_some() || free[i][k].is_some() || cornered[i][k] || seamed[i][k]
+            })
         });
         let past = !roll_over
             && links.iter().all(|ends| ends.iter().all(Option::is_none))
@@ -487,7 +537,8 @@ impl Plan {
                         self.check_junction(span, k, &spans[j], l, dec)?;
                     }
                 }
-                let junction = [0, 1].map(|k| links[i][k].is_some() || cornered[i][k]);
+                let junction =
+                    [0, 1].map(|k| links[i][k].is_some() || cornered[i][k] || seamed[i][k]);
                 let mut run = self
                     .junction_run(span, junction, free[i], radius, step, dec)?
                     .cut_by(cuts[i].clone());
@@ -505,6 +556,9 @@ impl Plan {
         }
         for corner in &corners {
             result = self.apply_corner(result, corner, source_faces, radius, step, dec)?;
+        }
+        for seam in &seams {
+            result = self.apply_seam(result, seam, source_faces, radius, step, dec)?;
         }
         Ok(Some(result))
     }
@@ -1460,6 +1514,192 @@ impl Plan {
             node,
             dec,
         )
+    }
+
+    /// The end `k` of a straight run between two planes where each foot
+    /// reaches an earlier straight round of the run's convexity, both of one
+    /// radius `R` wider than the ball, tangent to that foot's plane along a
+    /// line normal to the run: an earlier mitre of two equal rounds, which
+    /// the ball rolls over. RECIPE 4.5.1: "The ball rolls between the two
+    /// rounds to the mitre's apex, with its centre on the ellipse where their
+    /// offsets meet, and sweeps one exact rational band." Each round's axis
+    /// lies `R` from its foot's plane, through `p + R n` for the run end `p`
+    /// and that plane's normal `n` toward the ball, along the other plane's
+    /// normal; the two axes meet at `p + R (n_a + n_b)`. A source plane normal
+    /// to the run `R` past its end, which both rounds roll on, must exist, as
+    /// for [`Plan::mitre_corner`]. The B-rep builds the same band
+    /// (`fillet_build.rs`, a rolling corner over an earlier mitre) and
+    /// OpenCASCADE builds the corpus row `narrow-mitres` by walking. The
+    /// directions must be orthogonal unit vectors, as at a block's corner;
+    /// `None` when the end is not of this kind.
+    fn mitre_seam(
+        &self,
+        span: &Span,
+        k: usize,
+        source_faces: &[usize],
+        radius: &Real,
+        dec: &mut Decider,
+    ) -> Result<Option<MitreSeam>, Refusal> {
+        if !matches!(span.track, Track::Line { .. }) {
+            return Ok(None);
+        }
+        let supports = span.faces.map(|i| self.faces[i].surface.clone());
+        let ball = self.ball_direction(span.faces, &span.sample, span.convex, span.senses)?;
+        let (Some(a), Some(b)) = (
+            Self::flat(&supports[0], &ball, dec)?,
+            Self::flat(&supports[1], &ball, dec)?,
+        ) else {
+            return Ok(None);
+        };
+        let out = span.outward(k);
+        for v in [&a.normal, &b.normal, &out] {
+            if geometry::sign(&(&v.norm_squared() - &Real::one()), dec)? != Sign::Zero {
+                return Ok(None);
+            }
+        }
+        if geometry::sign(&a.normal.dot(&b.normal), dec)? != Sign::Zero {
+            return Ok(None);
+        }
+        let p = span.end(k);
+        let mut rounds: [Option<(usize, Real)>; 2] = [None, None];
+        for (j, plane) in [&a, &b].into_iter().enumerate() {
+            for &i in source_faces {
+                if span.faces.contains(&i) || !self.earlier_strip(i) {
+                    continue;
+                }
+                let (Surface::Cylinder(cylinder), geometry::Leaf::Feature(feature)) =
+                    (&self.faces[i].surface, &self.leaves[self.faces[i].leaf])
+                else {
+                    continue;
+                };
+                // A round of the run's convexity, wider than the ball, its
+                // axis parallel to the foot's plane, normal to the run and
+                // `R` from the run end along the plane's normal: tangent to
+                // that plane along the line through the end normal to the
+                // run.
+                if feature
+                    .fillet
+                    .as_ref()
+                    .is_none_or(|f| f.convex != span.convex)
+                    || geometry::sign(&(&cylinder.radius_sq - &radius.square()), dec)?
+                        != Sign::Positive
+                    || geometry::sign(&cylinder.axis.dot(&plane.normal), dec)? != Sign::Zero
+                    || geometry::sign(&cylinder.axis.dot(&out), dec)? != Sign::Zero
+                {
+                    continue;
+                }
+                let round = square_root(&cylinder.radius_sq);
+                let on_axis = p.plus(&plane.normal.scaled(&round));
+                if geometry::sign(
+                    &on_axis
+                        .minus(&cylinder.origin)
+                        .cross(&cylinder.axis)
+                        .norm_squared(),
+                    dec,
+                )? != Sign::Zero
+                    || !self.through(i, &p, dec)?
+                {
+                    continue;
+                }
+                rounds[j] = Some((i, round));
+                break;
+            }
+        }
+        let [Some((first, round)), Some((second, other))] = rounds else {
+            return Ok(None);
+        };
+        if geometry::sign(&(&round - &other), dec)? != Sign::Zero {
+            return Ok(None);
+        }
+        // The plane both rounds roll on: normal to the run, `R` past its end.
+        let mut third = false;
+        for &i in source_faces {
+            if span.faces.contains(&i) {
+                continue;
+            }
+            let Surface::Plane(plane) = &self.faces[i].surface else {
+                continue;
+            };
+            if parallel(&plane.normal, &out, dec)?
+                && geometry::sign(&(&plane.origin.minus(&p).dot(&out) - &round), dec)? == Sign::Zero
+            {
+                third = true;
+                break;
+            }
+        }
+        if !third {
+            return Ok(None);
+        }
+        Ok(Some(MitreSeam {
+            end: p,
+            normals: [a.normal, b.normal],
+            out,
+            round,
+            faces: [span.faces[0], span.faces[1], first, second],
+            convex: span.convex,
+        }))
+    }
+
+    /// Applies the band a ball sweeps rolling over a mitre to `result`: the
+    /// seam piece between the two rounds, removed or added by the run's
+    /// convexity, with a junction where the run's straight piece ends. The
+    /// region lies inside both rounds' solid cylinders, so the run's planes
+    /// and the plane the rounds roll on, each tangent to one of them, meet it
+    /// at most on its boundary. RECIPE 4.5.1 names a junction sector after
+    /// the operation's input vertex, where the run's planes meet the two
+    /// rounds, as the B-rep names this band.
+    fn apply_seam(
+        &mut self,
+        result: usize,
+        seam: &MitreSeam,
+        source_faces: &[usize],
+        radius: &Real,
+        step: &StepId,
+        dec: &mut Decider,
+    ) -> Result<usize, Refusal> {
+        let [na, nb] = &seam.normals;
+        let meet = seam.end.plus(&na.plus(nb).scaled(&seam.round));
+        let path = Seam::new(
+            meet,
+            seam.normals.clone(),
+            seam.out.clone(),
+            seam.round.clone(),
+            radius.clone(),
+            dec,
+        )?;
+        let mut names: Vec<Origin> = seam
+            .faces
+            .iter()
+            .map(|&i| self.faces[i].origin.clone())
+            .collect();
+        names.sort();
+        names.dedup();
+        let origin = Origin {
+            step: step.clone(),
+            role: Role::Corner {
+                vertex: VertexName::new(names).map_err(|e| unsupported(&e.to_string()))?,
+            },
+        };
+        let [_, _, first, second] = seam.faces;
+        let piece = Piece::new(
+            Kind::Seam(path),
+            origin,
+            seam.convex,
+            [&self.faces[first].surface, &self.faces[second].surface],
+            dec,
+        )?;
+        let mut run = Run::new(piece, [first, second], Vec::new())
+            .with_junctions(vec![(seam.end.clone(), seam.out.clone())]);
+        for i in [first, second] {
+            if let Surface::Cylinder(cylinder) = &self.faces[i].surface {
+                run = run.inside(Solid {
+                    point: cylinder.origin.clone(),
+                    axis: cylinder.axis.clone(),
+                    radius_sq: cylinder.radius_sq.clone(),
+                });
+            }
+        }
+        self.apply_run(result, run, source_faces, dec)
     }
 
     /// Whether faces `a` and `b` lie on one support: the same face, or

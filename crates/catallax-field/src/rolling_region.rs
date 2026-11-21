@@ -9,8 +9,9 @@
 //! (4.2a step 2). [`coaxial`] holds two curved supports about one axis and
 //! [`saddle`] a cylinder with a second cylinder or a sphere off its axis
 //! (4.2a step 3). [`rim`] holds a ring whose plane contact crosses circular
-//! mouths, the field's own P5 rim contact (4.2a step 4). [`piece`] compiles
-//! any of them as a field leaf.
+//! mouths, the field's own P5 rim contact (4.2a step 4), and [`seam`] a ball
+//! rolling over an earlier mitre of two equal rounds (4.2a step 5). [`piece`]
+//! compiles any of them as a field leaf.
 //!
 //! Only [`piece`] admits recipe fillets; the other building blocks are not
 //! admissions. See `docs/M18-ROLLING-REGION.md` for the rim region's explicit set and its
@@ -29,6 +30,7 @@ pub mod piece;
 pub mod revolved;
 pub mod rim;
 pub mod saddle;
+pub mod seam;
 mod sectors;
 pub use path::{Answer, Range};
 pub use sectors::{Sector, Sectors, Transition};

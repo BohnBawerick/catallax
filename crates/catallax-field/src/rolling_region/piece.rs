@@ -16,6 +16,7 @@ use super::path::{self, Cover, Frame, Path};
 use super::revolved::{Revolved, RevolvedCover, root};
 use super::rim::{Rim, RimCover};
 use super::saddle::{Saddle, SaddleCover};
+use super::seam::{Seam, SeamCover};
 use super::{Range, Relation};
 use crate::Location;
 use crate::metric::{Arithmetic, PRECISION};
@@ -33,6 +34,7 @@ macro_rules! each_kind {
             Kind::Coaxial($path) => $body,
             Kind::Saddle($path) => $body,
             Kind::Rim($path) => $body,
+            Kind::Seam($path) => $body,
         }
     };
 }
@@ -45,6 +47,7 @@ macro_rules! each_cover {
             PieceCover::Coaxial($cover) => $body,
             PieceCover::Saddle($cover) => $body,
             PieceCover::Rim($cover) => $body,
+            PieceCover::Seam($cover) => $body,
         }
     };
 }
@@ -65,6 +68,8 @@ pub enum Kind {
     /// A plane and a perpendicular cylinder, with the plane contact crossing
     /// circular mouths.
     Rim(Rim),
+    /// Two equal rounds whose mitre the ball rolls over.
+    Seam(Seam),
 }
 
 /// A compiled rolling-ball path piece: the material a convex fillet removes or
@@ -182,14 +187,14 @@ impl Piece {
     /// the centre stays put, or a cylinder about a straight centre line. Its
     /// equation has the sign of the path's separation, so it is positive in
     /// the region near the face and negative in every ball. A horn or spindle
-    /// torus, an ellipse path's pipe, a saddle and a rim have no such
-    /// surface; their faces stay unregistered.
+    /// torus, an ellipse path's pipe, a saddle, a rim and a seam have no
+    /// such surface; their faces stay unregistered.
     pub(crate) fn face(&self) -> Option<Surface> {
         match &self.kind {
             Kind::Revolved(path) => path.face(),
             Kind::Generator(path) => Some(path.face()),
             Kind::Coaxial(path) => Some(path.face()),
-            Kind::Saddle(_) | Kind::Rim(_) => None,
+            Kind::Saddle(_) | Kind::Rim(_) | Kind::Seam(_) => None,
         }
     }
 
@@ -649,6 +654,8 @@ pub enum PieceCover {
     Saddle(SaddleCover),
     /// A ring with mouth contacts.
     Rim(RimCover),
+    /// A seam over a mitre.
+    Seam(SeamCover),
 }
 impl Cover for PieceCover {
     fn radius(&self) -> &Ball {
@@ -704,6 +711,7 @@ impl Path for Piece {
             Kind::Coaxial(path) => PieceCover::Coaxial(path.cover(dec)?),
             Kind::Saddle(path) => PieceCover::Saddle(path.cover(dec)?),
             Kind::Rim(path) => PieceCover::Rim(path.cover(dec)?),
+            Kind::Seam(path) => PieceCover::Seam(path.cover(dec)?),
         })
     }
     fn nearest(&self, local: &[Real; 3], dec: &mut Decider) -> Result<Option<Frame>, Refusal> {

@@ -11,7 +11,9 @@
 //! outside of an earlier round, a convex chain over a concave round (the
 //! corpus row `mixed-ordered` and the test file's bracket) or a concave
 //! chain over convex ones (the test file's boss base), each patch named by
-//! the selected edge (part 4).
+//! the selected edge (part 4); and the recipes whose upright rolls over an
+//! earlier mitre of rounds wider than its ball, the corpus row
+//! `narrow-mitres` among them (part 5).
 //! The corpus row `box-mitre`, which the elementary route already builds, is
 //! checked for membership.
 //!
@@ -20,22 +22,25 @@
 //! round's centre line (a ring, horn or spindle by the radii, or one ball on
 //! the line when the radii are equal), and, where a run swallows an earlier
 //! mitre, the trihedral corner of its three planes less the ball, whose
-//! sphere face is registered under the corner's name. Its membership
+//! sphere face is registered under the corner's name, and where a narrower
+//! run rolls over the mitre, a band along the quarter ellipse where the two
+//! rounds' offsets meet. Its membership
 //! must match each witness: the corpus row's (confirmed by OpenCASCADE), the
 //! test file's (checked against the B-rep there) and points derived here,
 //! each checked against the B-rep first. Every display vertex of the B-rep's
 //! blend faces of the rolling step must lie within the field's guaranteed
 //! distance range of a piece's face at 1 nm, with the same records at 1, 2
 //! and 4 workers; every display vertex of a mitre corner's sphere lies within
-//! 1 nm of the field's corner face. The step 5 recipes left for later parts
-//! keep their refusals, each named.
+//! 1 nm of the field's corner face, and every display vertex of a band over a
+//! mitre within the field's range of its seam piece's face at 1 nm. The step
+//! 5 recipes left for later parts keep their refusals, each named.
 use catallax_features::evaluate;
 use catallax_field::rolling_region::piece::Piece;
 use catallax_field::rolling_region::{Batch, Range, Relation, distance_batch};
 use catallax_field::{Direction, FaceState, Location, Plan, Workspace};
 use catallax_mesh::{MeshOptions, mesh_body};
 use catallax_numbers::{BudgetPolicy, Decider, OperationAllowance, Rational};
-use catallax_recipe::{Recipe, Role};
+use catallax_recipe::{Origin, Recipe, Role};
 use catallax_shapes::{Point3, RPoint3, Surface};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -477,6 +482,22 @@ fn cases() -> Vec<Case> {
         &[([99, 5], [19, 1], [46, 5])],
     ));
     cases.extend(mitre_cliffs());
+    // The top loop at radius 1, then the uprights at radius 1/2, as the test
+    // file's mitred loop 1/(1/2): each upright's ball rolls over the mitre
+    // above it, its centre on the quarter ellipse where the two rounds'
+    // offsets meet. OpenCASCADE builds the row; the B-rep refuses it inside
+    // the corpus allowance and builds it without one. Derived, at the corner
+    // over (20, 20, 10), whose rounds' axes meet at (19, 19, 9): kept inside
+    // the band's ball in the mitre plane, cut between that ball and the
+    // mitre.
+    cases.push(corpus(
+        "narrow-mitres",
+        "upright",
+        8,
+        &[([97, 5], [97, 5], [47, 5])],
+        &[([492, 25], [492, 25], [242, 25])],
+    ));
+    cases.extend(mitre_seams());
     cases.extend(outside_rounds());
     let boss_33 = cases.iter().find(|c| c.name == "boss 3/3").unwrap();
     cases.push(boss_33.placed("placed boss 3/3"));
@@ -905,6 +926,61 @@ fn mitre_cliffs() -> Vec<Case> {
         ),
     ]
 }
+/// An upright narrower than both rounds of an earlier mitre (RECIPE 4.5.1):
+/// its ball rolls between the rounds to the mitre's apex, its centre on the
+/// quarter ellipse where their offsets meet, and sweeps a band. Each case
+/// compiles the upright's strip and the band's seam piece per corner.
+/// Derived points, in the frame `x - q = a n_a + b n_b + h d` of one corner
+/// (`q` where the rounds' axes meet, `n_a`, `n_b` the run's plane normals
+/// toward the ball, `d` the run's direction past its end), on the mitre plane
+/// `a = b`: kept (or air) inside the band's ball at `t = pi/4`, cut (or
+/// added) between that ball and the mitre, inside both rounds and outside
+/// every ball of the band; the strip cut and kept below the junction; and
+/// material the step leaves alone.
+fn mitre_seams() -> Vec<Case> {
+    vec![
+        // Rounds of radius 3 meeting at (17, 17, 7), the upright's ball of
+        // radius 2: `a = 17 - x`, `h = z - 7`. Kept at `a = b = -3/2`,
+        // `h = 3/2`, within 1.38 of the centre at `t = pi/4`; cut
+        // at `a = b = -2`, `h = 11/5`, at least 2.33 from every centre; kept
+        // under the x_max round away from the corner (`b = 5`).
+        Case::new(
+            "mitred 3/2",
+            mitred(4, "3", "2", false),
+            "upright",
+            2,
+            &[
+                ([37, 2], [37, 2], [17, 2]),
+                ([37, 2], [37, 2], [6, 1]),
+                ([19, 1], [12, 1], [8, 1]),
+                ([10, 1], [10, 1], [5, 1]),
+            ],
+            &[([19, 1], [19, 1], [46, 5]), ([39, 2], [39, 2], [6, 1])],
+        ),
+        // Concave: floor rounds of radius 1 meeting at (14, 14, 5), the
+        // upright's ball of radius 1/2, `a = 14 - x`, `h = 5 - z`. Air inside
+        // the band's ball at `a = b = -2/5`, `h = 2/5`; added at
+        // `a = b = -17/25`, `h = 17/25`, at least 0.548 from every centre;
+        // added and air beside the upright's strip; the pocket's air and
+        // uncut material.
+        Case::new(
+            "mitred pocket 1/(1/2)",
+            mitred_pocket("1", "1/2"),
+            "upright",
+            8,
+            &[
+                ([367, 25], [367, 25], [108, 25]),
+                ([149, 10], [149, 10], [7, 1]),
+                ([2, 1], [2, 1], [2, 1]),
+            ],
+            &[
+                ([72, 5], [72, 5], [23, 5]),
+                ([29, 2], [29, 2], [7, 1]),
+                ([10, 1], [10, 1], [7, 1]),
+            ],
+        ),
+    ]
+}
 const CORNER_22_IN: &Points = &[
     ([19, 1], [15, 1], [9, 1]),
     ([19, 1], [7, 5], [44, 5]),
@@ -1197,6 +1273,8 @@ const VERTEX_GROUPS: &[&[&str]] = &[
     &["mixed-ordered", "bracket 3/1"],
     &["bracket 3/4", "bracket 2/(3/2)"],
     &["based 2/1", "based 2/3", "based 3/1"],
+    &["narrow-mitres", "mitred 3/2"],
+    &["mitred pocket 1/(1/2)"],
 ];
 macro_rules! vertex_tests {
     ($($test:ident = $group:literal;)+) => {
@@ -1225,6 +1303,8 @@ vertex_tests! {
     mixed_blend_vertices_lie_on_the_field_face = 13;
     bracket_blend_vertices_lie_on_the_field_face = 14;
     based_blend_vertices_lie_on_the_field_face = 15;
+    seam_blend_vertices_lie_on_the_field_face = 16;
+    seam_pocket_blend_vertices_lie_on_the_field_face = 17;
 }
 
 #[test]
@@ -1507,6 +1587,104 @@ fn mitre_corner_vertices_lie_on_the_field_corner_face() {
     }
 }
 
+/// The band a ball sweeps rolling over an earlier mitre: the B-rep makes it
+/// one corner face of the rolling step per mitre, and the field one seam
+/// piece, under the same corner vertex name. Every display vertex of the
+/// B-rep's band lies within the field's guaranteed range of a seam piece's
+/// face at 1 nm, with the same records at 1, 2 and 4 workers.
+#[test]
+fn mitre_seam_vertices_lie_on_the_field_seam_face() {
+    let tolerance = ratio(1, 1_000_000);
+    let all = cases();
+    for name in ["mitred 3/2", "narrow-mitres", "mitred pocket 1/(1/2)"] {
+        let start = std::time::Instant::now();
+        let case = all.iter().find(|c| c.name == name).unwrap();
+        let plan = Plan::compile_checked(&case.recipe, &mut decider()).unwrap();
+        let seams: Vec<&Piece> = plan
+            .rolling_pieces()
+            .filter(|piece| matches!(piece.origin().role, Role::Corner { .. }))
+            .collect();
+        let built = evaluate(&case.recipe, &mut decider()).unwrap();
+        let brep: std::collections::BTreeSet<Origin> = built
+            .model
+            .faces_of_body(built.result)
+            .into_iter()
+            .flat_map(|face| built.model.face_origins(face).to_vec())
+            .filter(|o| o.step.as_str() == case.step && matches!(o.role, Role::Corner { .. }))
+            .collect();
+        let field: std::collections::BTreeSet<Origin> =
+            seams.iter().map(|piece| piece.origin().clone()).collect();
+        assert_eq!(field, brep, "{name}: band names");
+        assert_eq!(seams.len(), brep.len(), "{name}: one seam per band");
+        let points = step_vertices(&case.recipe, case.step, "1/20", true);
+        assert!(!points.is_empty(), "{name}: no band vertices");
+        let (nearest, most) = nearest_witnesses(name, &seams, &points, &tolerance);
+        let mut worst = Rational::zero();
+        for found in &nearest {
+            let found = found
+                .clone()
+                .unwrap_or_else(|| panic!("{name}: no witness"));
+            assert!(found <= tolerance, "{name}: {found:?}");
+            worst = worst.max(found);
+        }
+        eprintln!(
+            "{name}: {} band vertices in {:?}, worst field distance {}, at most {most} work a query",
+            nearest.len(),
+            start.elapsed(),
+            worst.to_f64_nearest()
+        );
+    }
+}
+
+/// The mitred corner at 3/2 in the rational pose of part 1, which turns the
+/// seam's frame off the axes. The B-rep refuses it while it cuts its band
+/// (`intersect.unsupported-pair`), so the field is checked against itself:
+/// each derived point, placed, takes the answer it takes unplaced, and every
+/// display vertex of the unplaced B-rep's band, placed exactly, lies within
+/// the field's range of the placed seam piece's face at 1 nm.
+#[test]
+fn a_placed_seam_answers_as_unplaced() {
+    let tolerance = ratio(1, 1_000_000);
+    let case = cases()
+        .into_iter()
+        .find(|c| c.name == "mitred 3/2")
+        .unwrap();
+    let plan = Plan::compile_checked(&placed(&case.recipe), &mut decider()).unwrap();
+    assert_eq!(plan.rolling_pieces().count(), case.pieces);
+    for (points, want) in [
+        (&case.inside, Location::Inside),
+        (&case.outside, Location::Outside),
+    ] {
+        for p in points {
+            assert_eq!(location(&plan, &place(p)), want, "{p:?}");
+        }
+    }
+    let seams: Vec<&Piece> = plan
+        .rolling_pieces()
+        .filter(|piece| matches!(piece.origin().role, Role::Corner { .. }))
+        .collect();
+    let points: Vec<Point3> = step_vertices(&case.recipe, case.step, "1/20", true)
+        .iter()
+        .map(|v| {
+            let [x, y, z] = place(&[&v.x, &v.y, &v.z].map(|c| c.as_rational().unwrap()));
+            Point3::new(x.into(), y.into(), z.into())
+        })
+        .collect();
+    assert!(!points.is_empty(), "no band vertices");
+    let (nearest, most) = nearest_witnesses("placed mitred 3/2", &seams, &points, &tolerance);
+    let mut worst = Rational::zero();
+    for found in &nearest {
+        let found = found.clone().expect("a witness");
+        assert!(found <= tolerance, "{found:?}");
+        worst = worst.max(found);
+    }
+    eprintln!(
+        "placed mitred 3/2: {} band vertices placed, worst field distance {}, at most {most} work a query",
+        nearest.len(),
+        worst.to_f64_nearest()
+    );
+}
+
 /// Rational points of a mitre corner's sphere face, `c + (1, 2, 2)` and its
 /// permutations, which lie in the corner's cone. The B-rep puts them on its
 /// boundary, and the field's plan does too, on the registered corner face.
@@ -1713,10 +1891,9 @@ fn corner_bottom() -> Recipe {
 
 /// The step 5 recipes left for later parts of the step, each with the
 /// field's code today. The B-rep builds every one, so each is a field
-/// refusal still to clear: an upright under an earlier mitre of rounds wider
-/// than its ball, which rolls over it; every edge at once; and a round over
-/// a chain of rolling pieces, whose faces the field's fillet routes do not
-/// take as supports to roll on or to clear (`field.fillet-contact`).
+/// refusal still to clear: every edge at once, and a round over a chain of
+/// rolling pieces, whose faces the field's fillet routes do not take as
+/// supports to roll on or to clear (`field.fillet-contact`).
 fn later() -> Vec<(&'static str, Recipe, &'static str)> {
     let overflow = "fillet.unsupported-overflow";
     let contact = "fillet.unsupported-contact";
@@ -1729,9 +1906,6 @@ fn later() -> Vec<(&'static str, Recipe, &'static str)> {
         )
     };
     vec![
-        ("mitred loop 1/(1/2)", mitred(4, "1", "1/2", true), overflow),
-        ("mitred 3/2", mitred(4, "3", "2", false), overflow),
-        ("mitred pocket 1/(1/2)", mitred_pocket("1", "1/2"), overflow),
         (
             "every after a front round 3/1",
             every(front("3"), "1"),

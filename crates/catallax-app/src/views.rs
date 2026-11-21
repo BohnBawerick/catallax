@@ -71,7 +71,8 @@ pub use drawing::{
     face_drawing_loops, stroke_drawing,
 };
 pub use hidden::{
-    HiddenLineView, StrokeSource, VIEW_RAY_MARK, VIEW_SPLIT_MARK, ViewStroke, hidden_line_view,
+    HiddenLineView, StrokeSource, VIEW_RAY_MARK, VIEW_SHORT_PIECE_MARK, VIEW_SPLIT_MARK,
+    ViewStroke, hidden_line_view,
 };
 
 /// Code of the mark a [`Contours`] answer carries when any arc is fitted. Its

@@ -205,7 +205,8 @@ fn near(
 /// across the edge, perpendicular to the edge's binary64 `tangent` within
 /// the face's tangent plane: along `normal x tangent` for side `1`, against
 /// it for `-1`. The offset starts at `start`, which must clear the fit's
-/// tolerance, and doubles while it stays within `limit`.
+/// tolerance, and doubles while it stays within `limit`. No attempt goes
+/// past `limit`: a `start` beyond it refuses before any.
 ///
 /// A face lies on one side of its boundary edge all along it, so `known`,
 /// the side an earlier piece of the edge confirmed, is tried first. Near a
@@ -236,6 +237,9 @@ pub(super) fn across(
             "no exact face point beside a fitted edge lies in its face",
         )
     };
+    if start > limit {
+        return Err(refused());
+    }
     let outward: i8 = if scratch.face(face).sense == Sense::Same {
         1
     } else {
@@ -258,7 +262,7 @@ pub(super) fn across(
     let side = side.map(|x| x / width);
     let first = known.unwrap_or(1.0);
     let mut offset = start;
-    loop {
+    while offset <= limit {
         for (k, way) in [first, -first].into_iter().enumerate() {
             dec.check_deadline()?;
             let target = std::array::from_fn(|k| p64[k] + way * offset * side[k]);
@@ -277,10 +281,8 @@ pub(super) fn across(
             }
         }
         offset *= 2.0;
-        if offset > limit {
-            return Err(refused());
-        }
     }
+    Err(refused())
 }
 
 /// An exact point of `face` beside the fitted point `p64`, whose outward

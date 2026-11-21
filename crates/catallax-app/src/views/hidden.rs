@@ -34,7 +34,14 @@
 //! hidden by its own faces when both face away beside it (SMLib's
 //! `SmHCR::IsBackFacingEdge`); otherwise its ray starts from an exact point
 //! of a facing face just beside it (`surface.rs`), and the answer carries a
-//! [`super::DRAWING_FIT_MARK`] mark.
+//! [`super::DRAWING_FIT_MARK`] mark. That point lies no farther from the
+//! edge than the piece's own ends. A piece whose ends lie nearer its sample
+//! than twice the fit's tolerance has no such point: it takes the visibility
+//! of the piece before it, and the answer carries a
+//! [`VIEW_SHORT_PIECE_MARK`] mark. OpenCASCADE's `HLRBRep_Hider::Hide` leaves
+//! visible a hidden interval no longer than 1e-7 in parameter, and SMLib's
+//! `SmHCR` places a projected vertex within its zone tolerance of an interval
+//! end on that end (`FindInterval`); the tolerance here is the fit's own.
 
 use std::f64::consts::{PI, TAU};
 
@@ -76,6 +83,13 @@ pub const VIEW_SPLIT_MARK: &str = "app.view-split";
 /// the tolerance those meetings were checked to: a measured value, not a
 /// proof.
 pub const VIEW_RAY_MARK: &str = "app.view-ray";
+
+/// Code of the mark a [`HiddenLineView`] carries when a piece of a fitted
+/// edge was too short to classify by itself: no point beside it clears the
+/// fit's tolerance within the piece's own ends, so it took the visibility of
+/// the piece before it. Its bound is the longest such piece: a measured
+/// value, not a proof.
+pub const VIEW_SHORT_PIECE_MARK: &str = "app.view-short-piece";
 
 /// What a stroke draws.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -851,13 +865,15 @@ fn sample(
     Ok(point.value)
 }
 
-/// Where the ray of a fitted edge's piece starts, from its sample point `p`
-/// at the middle of the binary64 interval `(t0, t1)`: an exact point of one
-/// of the edge's faces just beside `p`, on a face that faces the viewer
-/// there, or failing that one seen edge on; `None` when every face of the
-/// edge faces away there, so that they hide the piece themselves. `sides`
-/// keeps the side of the edge each face lies on, as `surface::across`
-/// confirms it, for the edge's later pieces.
+/// Where the ray of a fitted edge's piece starts, from the binary64 image
+/// `p64` of its sample point at the middle of the binary64 interval
+/// `(t0, t1)`: an exact point of one of the edge's faces just beside it,
+/// moved across the edge by an offset from `start` up to `limit` (see
+/// [`classify`]), on a face that faces the viewer there, or failing that one
+/// seen edge on; `None` when every face of the edge faces away there, so
+/// that they hide the piece themselves. `sides` keeps the side of the edge
+/// each face lies on, as `surface::across` confirms it, for the edge's later
+/// pieces.
 ///
 /// SMLib's `SmHCR` decides an edge the same way. `IsBackFacingEdge` hides an
 /// edge whose faces both face away, and for a concave edge whose faces face
@@ -874,24 +890,15 @@ fn edge_start(
     scratch: &mut Model,
     s: &Stroke,
     (t0, t1): (f64, f64),
-    p: &Point3,
+    p64: V3,
+    (start, limit): (f64, f64),
     scene: &ray::Scene,
     sides: &mut std::collections::BTreeMap<FaceId, f64>,
     d: &Vector3,
     floor: &Rational,
     dec: &mut Decider,
 ) -> Result<Option<Point3>, Refusal> {
-    let fit = s.fit.as_ref().expect("a fitted edge keeps its fit");
-    let p64 = point64(p, floor, dec)?;
     let (_, tangent) = s.geo.jet(within(s, (t0 + t1) / 2.0));
-    // The carrier lies within the fit's tolerance of the edge (rule T4), and
-    // its binary64 images within the floor (rule T1): a point twice as far
-    // across the edge lies on the face's own side. The offset grows no
-    // farther from the edge than the piece's own ends, where an outline may
-    // change what the piece sees.
-    let start = 2.0 * fit.tolerance_mm.max(scene.margin);
-    let limit = geo::distance(p64, s.geo.point(within(s, t0)))
-        .min(geo::distance(p64, s.geo.point(within(s, t1))));
     let StrokeSource::Edge(edge) = s.source else {
         unreachable!("only edge strokes start beside their faces");
     };
@@ -933,8 +940,19 @@ fn edge_start(
     Ok(edge_on)
 }
 
-/// The visibility and smoothness of one piece, over the binary64 interval
-/// `part`, at its sample point `p`; `sides` as for [`edge_start`].
+/// What [`classify`] finds for one piece.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Label {
+    /// Whether the piece is visible, and whether it is smooth.
+    Seen(bool, bool),
+    /// A fitted edge's piece too short to start its ray beside it within
+    /// its own ends, with its length: it takes the label of the piece
+    /// before it ([`carry_labels`]).
+    Short(f64),
+}
+
+/// The label of one piece, over the binary64 interval `part`, at its sample
+/// point `p`; `sides` as for [`edge_start`].
 #[allow(clippy::too_many_arguments)]
 fn classify(
     scratch: &mut Model,
@@ -949,16 +967,41 @@ fn classify(
     marks: &mut MarkLog,
     numeric: &mut bool,
     dec: &mut Decider,
-) -> Result<(bool, bool), Refusal> {
+) -> Result<Label, Refusal> {
     // A fitted edge is never smooth: smoothness compares its faces' normals
     // at an exact point of the edge, and a fitted edge has none at hand.
-    if matches!(s.source, StrokeSource::Edge(_)) && s.fit.is_some() {
-        let Some(start) = edge_start(scratch, s, part, p, scene, sides, d, floor, dec)? else {
-            return Ok((false, false));
+    if let (StrokeSource::Edge(_), Some(fit)) = (s.source, &s.fit) {
+        let p64 = point64(p, floor, dec)?;
+        let ends = [part.0, part.1].map(|t| geo::distance(p64, s.geo.point(within(s, t))));
+        // The carrier lies within the fit's tolerance of the edge (rule
+        // T4), and its binary64 images within the floor (rule T1): a point
+        // twice as far across the edge lies on the face's own side. The
+        // offset grows no farther from the edge than the piece's own ends,
+        // where an outline may change what the piece sees; a piece whose
+        // ends lie nearer than the first offset has no such point.
+        let start = 2.0 * fit.tolerance_mm.max(scene.margin);
+        let limit = ends[0].min(ends[1]);
+        if limit < start {
+            return Ok(Label::Short(ends[0] + ends[1]));
+        }
+        let Some(q) = edge_start(
+            scratch,
+            s,
+            part,
+            p64,
+            (start, limit),
+            scene,
+            sides,
+            d,
+            floor,
+            dec,
+        )?
+        else {
+            return Ok(Label::Seen(false, false));
         };
-        let p64 = point64(&start, floor, dec)?;
-        let hidden = ray::hidden(scratch, scene, &start, p64, d, d64, marks, numeric, dec)?;
-        return Ok((!hidden, false));
+        let q64 = point64(&q, floor, dec)?;
+        let hidden = ray::hidden(scratch, scene, &q, q64, d, d64, marks, numeric, dec)?;
+        return Ok(Label::Seen(!hidden, false));
     }
     // A fitted generator's ray, and an exact one's on a spline face, starts
     // from the face beside it.
@@ -987,7 +1030,43 @@ fn classify(
         }
         _ => false,
     };
-    Ok((!hidden, smooth))
+    Ok(Label::Seen(!hidden, smooth))
+}
+
+/// The visibility and smoothness of a stroke's pieces from their labels. A
+/// short piece takes the label of the piece before it; on an open stroke,
+/// pieces before the first decided one take its label, and on a closed one,
+/// the last decided one's. `longest` keeps the longest short piece. Refuses
+/// when no piece is decided.
+fn carry_labels(
+    labels: &[Label],
+    closed: bool,
+    longest: &mut Option<f64>,
+) -> Result<Vec<(bool, bool)>, Refusal> {
+    let seen = |label: &Label| match *label {
+        Label::Seen(visible, smooth) => Some((visible, smooth)),
+        Label::Short(_) => None,
+    };
+    let carried = if closed {
+        labels.iter().rev().find_map(seen)
+    } else {
+        labels.iter().find_map(seen)
+    };
+    let Some(mut carry) = carried else {
+        return Err(Refusal::new(
+            "app.view-sample",
+            "every piece of a fitted edge is too short to start a ray beside it",
+        ));
+    };
+    let mut out = Vec::with_capacity(labels.len());
+    for label in labels {
+        match *label {
+            Label::Seen(visible, smooth) => carry = (visible, smooth),
+            Label::Short(length) => *longest = Some(longest.map_or(length, |l| l.max(length))),
+        }
+        out.push(carry);
+    }
+    Ok(out)
 }
 
 /// Hidden-line view of `body` seen along `direction`, which points toward
@@ -1012,7 +1091,11 @@ fn classify(
 /// not dropped. Edges on intersection branches without a closed form, patch
 /// sections and patch pairs lie on fitted carriers, keep their fit, are
 /// never smooth, and the answer carries a [`super::DRAWING_FIT_MARK`] mark
-/// with the largest tolerance. Edges on parabolas and hyperbolas refuse with
+/// with the largest tolerance. A piece of such an edge too short to classify
+/// within the fit's tolerance takes the visibility of the piece before it,
+/// and the answer carries a [`VIEW_SHORT_PIECE_MARK`] mark; an edge with no
+/// longer piece refuses with `app.view-sample`. Edges on parabolas and
+/// hyperbolas refuse with
 /// `app.view-curve`, as do the faces [`contour_generators`] refuses; a body
 /// that is not one solid refuses with `app.view-solid`.
 pub fn hidden_line_view(
@@ -1348,6 +1431,7 @@ pub fn hidden_line_view(
         let mut numeric = false;
         let mut out = Vec::new();
         let mut worst: Option<f64> = None;
+        let mut short: Option<f64> = None;
         for (i, s) in strokes.iter().enumerate() {
             if !s.drawn {
                 continue;
@@ -1386,6 +1470,8 @@ pub fn hidden_line_view(
                     dec,
                 )?);
             }
+            let closed_loop = s.ends.is_none() || s.anchored;
+            let labels = carry_labels(&labels, closed_loop, &mut short)?;
             let n = parts.len();
             let emit =
                 |from: Option<PointId>, to: Option<PointId>, label: (bool, bool)| ViewStroke {
@@ -1398,7 +1484,6 @@ pub fn hidden_line_view(
                     seam: s.seam,
                     fit: s.fit.clone(),
                 };
-            let closed_loop = s.ends.is_none() || s.anchored;
             if closed_loop && labels.iter().all(|l| *l == labels[0]) {
                 let (from, to) = if s.anchored {
                     (parts[0].0, parts[0].0)
@@ -1447,6 +1532,16 @@ pub fn hidden_line_view(
                 rational(worst.next_up())?,
                 "a visibility change placed by a binary64 crossing search: the sheet distance \
                  left between the two curves there, not a proof",
+            ));
+        }
+        if let Some(length) = short {
+            marks.push(Mark::new(
+                VIEW_SHORT_PIECE_MARK,
+                BoundKind::Distance,
+                rational(length.next_up())?,
+                "a piece of a fitted edge too short to start a ray beside it took the visibility \
+                 of the piece before it: the longest such piece, measured in binary64, not a \
+                 proof",
             ));
         }
         if let Some(fit) = &fitted_edges {

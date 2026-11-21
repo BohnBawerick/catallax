@@ -75,12 +75,15 @@ fn sha256(bytes: &[u8]) -> String {
         .collect()
 }
 
+/// A private source a row imports: its SHA-256 and its bytes.
+type Source = (String, Vec<u8>);
+
 /// A row's recipe and the private source it imports, if any.
 fn recipe_of(
     row: &Value,
     root: &Path,
     sources: Option<&BTreeMap<String, PathBuf>>,
-) -> Result<Option<(Value, Option<(String, Vec<u8>)>)>, Box<dyn std::error::Error>> {
+) -> Result<Option<(Value, Option<Source>)>, Box<dyn std::error::Error>> {
     let read = |path: &str| -> Result<Value, Box<dyn std::error::Error>> {
         Ok(serde_json::from_slice(&fs::read(root.join(path))?)?)
     };
@@ -137,7 +140,7 @@ fn work_json(work: OperationWork) -> Value {
 }
 
 /// Builds and exports one row on a thread of its own, as a request runs.
-fn measure(recipe: &Value, source: Option<&(String, Vec<u8>)>, max_work: u64) -> Value {
+fn measure(recipe: &Value, source: Option<&Source>, max_work: u64) -> Value {
     let text = recipe.to_string();
     std::thread::scope(|scope| {
         std::thread::Builder::new()
@@ -150,7 +153,7 @@ fn measure(recipe: &Value, source: Option<&(String, Vec<u8>)>, max_work: u64) ->
     })
 }
 
-fn measure_here(text: &str, source: Option<&(String, Vec<u8>)>, max_work: u64) -> Value {
+fn measure_here(text: &str, source: Option<&Source>, max_work: u64) -> Value {
     let recipe = match Recipe::parse(text) {
         Ok(recipe) => recipe,
         Err(error) => {

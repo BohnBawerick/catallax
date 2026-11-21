@@ -110,7 +110,7 @@ fn the_model_stores_what_admission_measured_and_the_one_checker_passes_it() {
         assert_eq!(
             body.stored_tolerance(entity.kind, &entity.key)
                 .map(Tolerance::mm),
-            Some(&entity.tolerance_mm).filter(|_| !retightened)
+            (!retightened).then_some(&entity.tolerance_mm)
         );
     }
     assert_eq!(

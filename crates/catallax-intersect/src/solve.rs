@@ -143,6 +143,8 @@ fn reduce(mut p: P, basis: &[P]) -> P {
 struct CachedBasis {
     generators: Vec<P>,
     basis: Arc<[P]>,
+    // What the reduction counted when it ran: the basis's cold price.
+    price: u64,
 }
 
 thread_local! {
@@ -152,29 +154,36 @@ thread_local! {
 }
 
 fn groebner(generators: Vec<P>) -> Arc<[P]> {
-    if let Some(basis) = BASES.with(|bases| {
+    let cached = BASES.with(|bases| {
         bases
             .borrow()
             .iter()
             .find(|entry| entry.generators == generators)
-            .map(|entry| entry.basis.clone())
-    }) {
-        return basis;
-    }
-    // The memo outlives the request on this thread, so its fill is not
-    // counted: a count of it would differ with what the thread ran before.
-    let basis: Arc<[P]> =
-        catallax_numbers::uncounted_memo(|| uncached_groebner(generators.clone())).into();
-    BASES.with(|bases| {
-        let mut bases = bases.borrow_mut();
-        if bases.len() == 32 {
-            bases.pop_front();
-        }
-        bases.push_back(CachedBasis {
-            generators,
-            basis: basis.clone(),
-        });
+            .map(|entry| (entry.basis.clone(), entry.price))
     });
+    let (basis, price) = cached.unwrap_or_else(|| {
+        let (basis, price) =
+            catallax_numbers::priced_memo(|| uncached_groebner(generators.clone()));
+        let basis: Arc<[P]> = basis.into();
+        BASES.with(|bases| {
+            let mut bases = bases.borrow_mut();
+            if bases.len() == 32 {
+                bases.pop_front();
+            }
+            bases.push_back(CachedBasis {
+                generators,
+                basis: basis.clone(),
+                price,
+            });
+        });
+        (basis, price)
+    });
+    // The reduction is charged to nothing, and on a hard pair it is most of
+    // the time an intersection takes, so it is counted. The memo outlives the
+    // request on this thread and another thread has its own, so each use
+    // counts the cold price, found or filled: the count is then the same
+    // whatever this thread ran before.
+    catallax_numbers::count_memo_use(price);
     basis
 }
 
@@ -413,5 +422,56 @@ mod tests {
         }))
         .expect_err("a coincidence is not a root list");
         assert_eq!(coincident.code, "numbers.root-isolation");
+    }
+
+    // A circle, a hyperbola and a relation that ties in the third variable:
+    // enough for the reduction to do rational arithmetic.
+    fn system() -> Vec<P> {
+        let (y, z, t) = (P::var(0), P::var(1), P::var(2));
+        vec![
+            y.times(&y)
+                .plus(&z.times(&z))
+                .minus(&P::constant(Rational::parse("5/3").unwrap())),
+            y.times(&z)
+                .minus(&P::constant(Rational::parse("2/7").unwrap())),
+            t.minus(&y.plus(&z.times(&z))),
+        ]
+    }
+
+    fn counted(run: impl FnOnce()) -> catallax_numbers::OperationWork {
+        catallax_numbers::with_operation_budget(1_000_000, run).1
+    }
+
+    #[test]
+    fn a_basis_counts_its_cold_price_at_every_use_found_or_filled() {
+        let generators = system();
+        // Filled here, in this request.
+        let filled = counted(|| {
+            groebner(generators.clone());
+        });
+        assert!(filled.uncharged > 0, "{filled:?}");
+        // Nothing is charged: the reduction spends no decision work.
+        assert_eq!((filled.used, filled.refunded), (0, 0));
+        // Found, in a later request on this thread, and found twice.
+        let found = counted(|| {
+            groebner(generators.clone());
+        });
+        assert_eq!(found.uncharged, filled.uncharged);
+        let twice = counted(|| {
+            groebner(generators.clone());
+            groebner(generators.clone());
+        });
+        assert_eq!(twice.uncharged, 2 * filled.uncharged);
+        // Filled again on a thread that has never seen it, as a helper would.
+        let price = filled.uncharged;
+        let elsewhere = std::thread::spawn(move || {
+            counted(|| {
+                groebner(generators);
+            })
+            .uncharged
+        })
+        .join()
+        .unwrap();
+        assert_eq!(elsewhere, price);
     }
 }

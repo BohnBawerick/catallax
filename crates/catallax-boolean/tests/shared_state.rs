@@ -12,7 +12,9 @@ use std::{collections::BTreeSet, fs, path::Path};
 enum Kind {
     /// Its fill spends no decision work, so who fills it changes no charge.
     /// Where the fill runs ball or rational arithmetic it is wrapped in
-    /// `uncounted_memo`, so who fills it changes no uncharged count either.
+    /// `uncounted_memo`, so who fills it changes no uncharged count either,
+    /// or in `priced_memo`, and every use then counts the fill's cold price
+    /// whoever filled it.
     Uncharged,
     /// Its fill is charged; a worker asks `shared_caches()` and leaves it alone.
     Guarded,

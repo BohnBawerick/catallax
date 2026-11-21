@@ -188,3 +188,23 @@ fn the_power_basis_of_a_span_is_counted() {
         (&controls[1][0] - &controls[0][0]) * Rational::from_i64(7)
     );
 }
+
+// A knot after the first is one sum and one writing in decimal. The integers
+// here have two limbs, so the sum counts 2 + 2 and the conversion 2 x 2, each
+// with the unit of a charge's deadline check. The knots are the ones the fit
+// wrote before it counted them.
+#[test]
+fn each_knot_counts_its_sum_and_its_decimal_conversion() {
+    for (digits, last) in [(1, "300"), (3, "21"), (17, "21")] {
+        let mut made = Vec::new();
+        let work = work(|| made = knots(21, digits));
+        assert_eq!(made.len(), 22);
+        assert_eq!(made[0], Rational::zero());
+        assert_eq!(made[9], Rational::from_i64(9));
+        // At one digit each knot past 10 is the next one-digit decimal: 20,
+        // 30 and on through 100 and 200 to 300.
+        assert_eq!(made[21], Rational::parse(last).unwrap(), "{digits} digits");
+        assert_eq!(work.uncharged, 21 * ((2 + 2 + 1) + (2 * 2 + 1)));
+        assert_eq!(work.used, 0);
+    }
+}

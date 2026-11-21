@@ -126,16 +126,29 @@ pub(crate) mod counted {
         power
     }
 
-    /// [`super::rounded`]. The midpoint is a sum. Writing it in decimal
-    /// converts its numerator and its denominator to base ten and divides one
-    /// by the other, each quadratic in the value's own limbs with schoolbook
-    /// arithmetic (Knuth, volume 2, section 4.3.1 algorithm D and section
-    /// 4.4), so the conversion is priced as the value times itself. Choosing
-    /// the nearer decimal takes two differences and the error two more.
+    /// Counts the writing of `value` in decimal. That converts its numerator
+    /// and its denominator to base ten and divides one by the other, each
+    /// quadratic in the value's own limbs with schoolbook arithmetic (Knuth,
+    /// volume 2, section 4.3.1 algorithm D and section 4.4), so it is priced
+    /// as the value times itself.
+    fn conversion(value: &Rational) {
+        count_exact_arithmetic(value, value, true);
+    }
+
+    /// [`super::rounded`]. The midpoint is a sum and is written in decimal
+    /// ([`conversion`]). Choosing the nearer decimal takes two differences
+    /// and the error two more.
     pub(crate) fn rounded(lo: &Rational, hi: &Rational, digits: u32) -> Number {
         let mid = add(lo, hi).mul_pow2(-1);
-        count_exact_arithmetic(&mid, &mid, true);
+        conversion(&mid);
         rounded_by(&mid, lo, hi, digits, sub)
+    }
+
+    /// The text of the least decimal of `digits` significant digits that is
+    /// not below `value`, counted as the one decimal conversion it is.
+    pub(crate) fn decimal_above(value: &Rational, digits: u32) -> String {
+        conversion(value);
+        value.to_decimal_bounds(digits).1
     }
 
     /// [`super::ball_number`], counted as [`rounded`].

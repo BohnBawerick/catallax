@@ -2,11 +2,13 @@
 //! Each span carries a uniform Taylor remainder and a convex-hull bound for
 //! decimal rounding, enclosure width, and endpoint replacement.
 //!
-//! Every exact rational sum, difference, product and quotient here goes
-//! through [`number::counted`], which counts it at the decider's limb rate in
-//! `OperationWork::uncharged` and charges nothing. Comparisons, shifts by a
-//! power of two and the fixed control weights, which are made once for the
-//! process, have no price.
+//! Every exact rational sum, difference, product and quotient written here,
+//! and every writing of a value in decimal, goes through [`number::counted`],
+//! which counts it at the decider's limb rate in `OperationWork::uncharged`
+//! and charges nothing. Comparisons, shifts by a power of two and the fixed
+//! control weights, which are made once for the process, have no price. Ball
+//! arithmetic is not counted here: a ball's construction, and its ends, which
+//! `catallax-numbers` takes as a sum and a difference.
 
 use catallax_intersect::{CurveTrace, TracePiece};
 use catallax_numbers::{Ball, Decider, Rational, Refusal};
@@ -228,19 +230,7 @@ fn fit_spans(
         points.reverse();
     }
     let count = (points.len() - 1) / DEGREE;
-    let mut knots = Vec::with_capacity(count + 1);
-    let mut knot = Rational::zero();
-    knots.push(knot.clone());
-    for _ in 0..count {
-        // A repeated Bezier knot isolates each span's parameterization. Choose
-        // the next exactly representable decimal so low digit counts cannot
-        // collapse distinct knots and change the fitted curve.
-        let next = counted::add(&knot, &Rational::one())
-            .to_decimal_bounds(digits.max(1))
-            .1;
-        knot = number::formatted_value(&next);
-        knots.push(knot.clone());
-    }
+    let knots = knots(count, digits);
     let multiplicities = (0..=count)
         .map(|i| {
             if i == 0 || i == count {
@@ -332,6 +322,23 @@ fn span(
         remainder,
         bounds,
     })
+}
+
+/// The knots of `count` spans, from zero. A repeated Bezier knot isolates
+/// each span's parameterization. Each knot is the next exactly representable
+/// decimal past the one before, so low digit counts cannot collapse distinct
+/// knots and change the fitted curve. Each costs one sum and one writing in
+/// decimal.
+fn knots(count: usize, digits: u32) -> Vec<Rational> {
+    let mut knots = Vec::with_capacity(count + 1);
+    let mut knot = Rational::zero();
+    knots.push(knot.clone());
+    for _ in 0..count {
+        let next = counted::decimal_above(&counted::add(&knot, &Rational::one()), digits.max(1));
+        knot = number::formatted_value(&next);
+        knots.push(knot.clone());
+    }
+    knots
 }
 
 /// Convert an enclosed Taylor polynomial on a centered interval to rounded

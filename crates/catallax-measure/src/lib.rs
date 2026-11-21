@@ -729,9 +729,12 @@ pub fn entity_pair(
 /// A pair of strata without a closed form whose boxes are nearer than the
 /// minimum is settled by the certified interval search over its two faces,
 /// which proves them no nearer than the minimum or finds a nearer witness.
-/// What that search cannot settle within one face query's default cell count
-/// widens the enclosure to the lower bound it proved: the answer then carries
-/// the `measure.accuracy-not-reached` mark when it misses `accuracy`. With no
+/// Where that search leaves a face pair open, each of its strata pairs whose
+/// cores are lines, circles or cones is settled by its stationary pairs, each
+/// proven by a Krawczyk test and classified on both trims. What stays open
+/// within one face query's default cell count widens the enclosure to the
+/// lower bound proved for it: the answer then carries the
+/// `measure.accuracy-not-reached` mark when it misses `accuracy`. With no
 /// witness pair at all the query refuses `measure.distance-uncovered`.
 pub fn solid_gap(
     model: &Model,

@@ -11,6 +11,7 @@ No optimisation is part of their capability qualification.
 | M10-006 | builds at 100M, over the 20M target | 25,945,726 | [Stage work and raw STEP checks](phase1/spline-boolean-top-cuts/REPORT.md) |
 | 2.3 spline sheet, trim, extension, +2/5 mm thickening and STEP | builds at 100M, over the 20M target | 29,145,161 | [Signed STEP and healing-off OCCT receipts](SURFACE-BODIES.md#reproduction-and-observed-proof) |
 | 2.3 same chain, -2/5 mm thickening | builds at 100M, over the 20M target | 29,142,981 | [Signed STEP and healing-off OCCT receipts](SURFACE-BODIES.md#reproduction-and-observed-proof) |
+| 3.3 relation: small torus turned 30 degrees in a large torus's hole | clear, 5.75 mm, at 100M, over the 20M target | 32,412,021 | Overlap Boolean 0.4M, closed-form gap search 26.0M, proven stationary pairs 6.0M; [3.3 step 3 results](milestones/3.3-clash-clearance.md#results-2) |
 
 The 2.3 counts cover each complete construction/export request; individual stage
 counts were not profiled. Both signed solids pass raw OpenCASCADE validity with

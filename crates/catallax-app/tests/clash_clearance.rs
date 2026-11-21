@@ -207,7 +207,9 @@ fn a_turned_pin_across_or_beside_a_cone_wall() {
     // A cone about z of radius 10 at z = 0 and 6 at z = 20, and a pin of
     // radius 1 and length 4 turned 30 degrees about x. The Boolean refuses
     // both poses. Across the wall the pin clashes; beside the wall near the
-    // top it is clear of the cone, though inside its box.
+    // top it is clear of the cone, though inside its box. The cone and the
+    // pin's side hold that gap with no closed form; their stationary pairs
+    // are proven, so the gap is stated within the requested accuracy.
     let mut model = Model::new();
     let wall = cone(&mut model, q("10"), q("6"), q("20"), &at("0", "0", "0")).unwrap();
     let pin = cylinder(&mut model, q("1"), q("4"), &at("0", "0", "-2")).unwrap();
@@ -215,8 +217,16 @@ fn a_turned_pin_across_or_beside_a_cone_wall() {
     let beside = turned(&mut model, pin, ["1", "0", "0"], "30", ["0", "9", "17"]);
     let (overlap, _) = clash(&model, wall, across);
     assert!(overlap.lo > q("0"), "{overlap:?}");
-    let gap = clear(&model, wall, beside);
+    let answer = relation(&model, wall, beside);
+    let BodyRelation::Clear { gap } = answer.value else {
+        panic!("{:?}", answer.value);
+    };
     assert!(gap.lo > q("0"), "{gap:?}");
+    assert!(
+        gap.width() <= &Accuracy::default().relative * &gap.lo && answer.marks.is_empty(),
+        "{gap:?} {:?}",
+        answer.marks
+    );
 }
 
 #[test]

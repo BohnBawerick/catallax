@@ -1415,20 +1415,53 @@ impl Decider {
     /// rational addition or multiplication outside the numeric decision layer.
     /// This uses the caller's current operation allowance and per-decision cap.
     ///
-    /// The operation the caller then runs is paid for: a reservation that
-    /// succeeds takes its price off [`crate::OperationWork::uncharged`], which
-    /// the operation adds back as it runs.
+    /// For a caller that runs the [`Rational`] operation itself, next. That
+    /// operation counts itself when it runs, so a reservation that succeeds
+    /// takes its price off [`crate::OperationWork::uncharged`], and what was
+    /// charged is not counted a second time. A caller whose arithmetic will
+    /// not count itself reserves with [`Self::reserve_uncounted_arithmetic`].
     pub fn reserve_exact_arithmetic(
         &mut self,
         a: &Rational,
         b: &Rational,
         multiply: bool,
     ) -> Result<(), Refusal> {
+        self.reserve(a, b, multiply, true)
+    }
+
+    /// The same charge as [`Self::reserve_exact_arithmetic`], for exact
+    /// arithmetic that does not count itself when it runs, so nothing is
+    /// taken off [`crate::OperationWork::uncharged`]:
+    ///
+    /// - an operation of a [`Real`], which runs when the value's rational
+    ///   form is first read, inside the value's own memo;
+    /// - a comparison or an equality test of two rationals, which
+    ///   cross-multiplies inside the comparison;
+    /// - arithmetic on integers done directly.
+    ///
+    /// The count has no price for any of these, and taking the reservation
+    /// off it would leave the count short by what was charged.
+    pub fn reserve_uncounted_arithmetic(
+        &mut self,
+        a: &Rational,
+        b: &Rational,
+        multiply: bool,
+    ) -> Result<(), Refusal> {
+        self.reserve(a, b, multiply, false)
+    }
+
+    fn reserve(
+        &mut self,
+        a: &Rational,
+        b: &Rational,
+        multiply: bool,
+        counts_itself: bool,
+    ) -> Result<(), Refusal> {
         let mut work = Work::new(self.policy, self.deadline);
         let result = work.exact(a, b, multiply);
         self.account(&work);
         drop(work);
-        if result.is_ok() {
+        if result.is_ok() && counts_itself {
             // The caller's operation counts itself when it runs. It is paid
             // for here: the limb rule, and the unit of the deadline check.
             crate::operation::reserved_arithmetic(exact_cost(a, b, multiply).saturating_add(1));

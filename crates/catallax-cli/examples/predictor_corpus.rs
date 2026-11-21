@@ -78,12 +78,15 @@ fn sha256(bytes: &[u8]) -> String {
 /// A private source a row imports: its SHA-256 and its bytes.
 type Source = (String, Vec<u8>);
 
+/// A row ready to run: its recipe and the private source it imports, if any.
+type Row = (Value, Option<Source>);
+
 /// A row's recipe and the private source it imports, if any.
 fn recipe_of(
     row: &Value,
     root: &Path,
     sources: Option<&BTreeMap<String, PathBuf>>,
-) -> Result<Option<(Value, Option<Source>)>, Box<dyn std::error::Error>> {
+) -> Result<Option<Row>, Box<dyn std::error::Error>> {
     let read = |path: &str| -> Result<Value, Box<dyn std::error::Error>> {
         Ok(serde_json::from_slice(&fs::read(root.join(path))?)?)
     };

@@ -164,6 +164,39 @@ fn a_reserved_operation_is_charged_and_not_counted() {
     assert_eq!(refused.uncharged, price);
 }
 
+// Arithmetic that does not count itself is reserved with
+// `reserve_uncounted_arithmetic`: the same charge, and nothing off the count.
+// A product of two `Real`s runs when its rational form is first read, inside
+// the value's memo, and a comparison cross-multiplies inside itself.
+#[test]
+fn a_reservation_for_arithmetic_that_does_not_count_itself_takes_nothing_off() {
+    let a = Rational::from_i64(3).mul_pow2(100);
+    let b = r("5/7");
+    let price = 3 * 2 + 1;
+    let expected = &a * &b;
+    let lazy = work(|| {
+        let mut dec = Decider::default();
+        dec.reserve_uncounted_arithmetic(&a, &b, true).unwrap();
+        let product = &Real::from_rational(a.clone()) * &Real::from_rational(b.clone());
+        assert_eq!(product.as_rational(), Some(expected.clone()));
+        dec.reserve_uncounted_arithmetic(&a, &b, true).unwrap();
+        assert!(a > b);
+        // A counted operation after them is counted in full.
+        drop(&a + &b);
+    });
+    assert_eq!((lazy.used, lazy.uncharged), (2 * price, 3 + 2 + 1));
+    // Reserved as if it counted itself, the same work leaves the count
+    // short by what was charged: the sum after it is not reported.
+    let short = work(|| {
+        let mut dec = Decider::default();
+        dec.reserve_exact_arithmetic(&a, &b, true).unwrap();
+        let product = &Real::from_rational(a.clone()) * &Real::from_rational(b.clone());
+        assert_eq!(product.as_rational(), Some(expected.clone()));
+        drop(&a + &b);
+    });
+    assert_eq!((short.used, short.uncharged), (price, 0));
+}
+
 // A memo on a shared value is filled once, by whichever thread or request
 // reads it first. Its fill is not counted, so a request counts the same
 // whether it finds the memo filled or fills it.

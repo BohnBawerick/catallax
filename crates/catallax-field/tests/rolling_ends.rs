@@ -52,6 +52,14 @@ struct Case {
     outside: Vec<[Rational; 3]>,
     /// Points the B-rep proves on its boundary.
     boundary: Vec<[Rational; 3]>,
+    /// Points on a face a rolling piece shares with the body, with the
+    /// B-rep's answer. A rolling piece registers no named face yet, so the
+    /// field may leave them `Indeterminate`, but never on the wrong side.
+    /// They are the control cases for the face registry.
+    shared: Vec<([Rational; 3], Location)>,
+    /// Whether the witnesses are derived here rather than taken from the
+    /// test file, so the test first checks each against the B-rep.
+    derived: bool,
     /// Rolling pieces the field compiles.
     pieces: usize,
 }
@@ -258,6 +266,8 @@ fn p5_case(name: &str, recipe: Value, place: Place, edit: Location) -> Case {
         // The mouth's nearest point (13, 5, 0) lies on the deepest ball,
         // where no cover settles membership; it is left out.
         boundary: Vec::new(),
+        shared: Vec::new(),
+        derived: false,
         pieces: 1,
     }
 }
@@ -350,7 +360,7 @@ fn p5_cases() -> Vec<Case> {
         // The file's points in the flange plane under the round, (12.99, 5,
         // 0) and the four contacts, lie on a face the piece shares with the
         // housing; a rolling piece registers no face to settle them, so they
-        // are left out.
+        // are shared points.
         let (mut inside, mut outside) = strict(true);
         inside.extend(points(&[([13, 1], [499, 100], [0, 1])]));
         outside.extend(points(&[
@@ -358,12 +368,25 @@ fn p5_cases() -> Vec<Case> {
             ([13, 1], [501, 100], [0, 1]),
         ]));
         let boundary = points(&[([13, 1], [5, 1], [1, 100])]);
+        let mut shared = vec![(
+            place.point(&points(&[([1299, 100], [5, 1], [0, 1])])[0]),
+            Location::Inside,
+        )];
+        for contact in [[13, 0], [0, 13], [-13, 0], [0, -13]] {
+            let [x, z] = contact.map(|v| [v, 1]);
+            shared.push((
+                place.point(&points(&[(x, [5, 1], z)])[0]),
+                Location::Boundary,
+            ));
+        }
         cases.push(Case {
             name: name.into(),
             recipe: parse(&recipe),
             inside: inside.iter().map(|p| place.point(p)).collect(),
             outside: outside.iter().map(|p| place.point(p)).collect(),
             boundary: boundary.iter().map(|p| place.point(p)).collect(),
+            shared,
+            derived: false,
             pieces: 1,
         });
     }
@@ -390,14 +413,168 @@ fn p5_cases() -> Vec<Case> {
             inside: inside.iter().map(|p| place.point(p)).collect(),
             outside: outside.iter().map(|p| place.point(p)).collect(),
             boundary: Vec::new(),
+            shared: Vec::new(),
+            derived: false,
             pieces: 0,
         });
     }
     cases
 }
 
+// The slot file: an extruded slot whose straight sides meet half-circle end
+// walls tangentially, rounded along its top boundary.
+fn slot(segments: &[&str], radius: &str, version: u8) -> Recipe {
+    let edges: Vec<Value> = segments
+        .iter()
+        .map(|segment| {
+            json!({"between": [{"step": "body", "role": "end"},
+                {"step": "body", "role": {"side": {"segment": segment}}}]})
+        })
+        .collect();
+    parse(&json!({
+        "format": format!("catallax-recipe/{version}"), "name": "slot tangent ends",
+        "steps": [
+            {"id": "profile", "op": "sketch",
+                "plane": {"rotation": UP, "translation": ["0", "0", "0"]},
+                "loops": [[
+                    {"kind": "line", "id": "bottom", "to": ["20", "-5"]},
+                    {"kind": "arc", "id": "right", "centre": ["20", "0"], "to": ["20", "5"], "turn": "ccw"},
+                    {"kind": "line", "id": "top", "to": ["-20", "5"]},
+                    {"kind": "arc", "id": "left", "centre": ["-20", "0"], "to": ["-20", "-5"], "turn": "ccw"}]]},
+            {"id": "body", "op": "extrude", "profile": "profile", "distance": "10"},
+            {"id": "round", "op": "fillet", "body": "body", "edges": edges, "radius": radius}],
+        "result": "round"}))
+}
+const LOOP: [&str; 4] = ["bottom", "right", "top", "left"];
+
+fn slot_cases() -> Vec<Case> {
+    let mut cases = Vec::new();
+    // A straight strip runs past its rails and the end walls cut it
+    // (version 3). The file's points, then two derived beside the strip past
+    // x = 20, and the run's two end contacts where they are rational.
+    for radius in [1, 2, 4] {
+        let mut shared = vec![(
+            points(&[([20, 1], [5, 1], [10 - radius, 1])])[0].clone(),
+            Location::Boundary,
+        )];
+        // The top contact is (20 + sqrt(10 r - r^2), 5 - r, 10).
+        if radius != 4 {
+            let reach = if radius == 1 { 3 } else { 4 };
+            shared.push((
+                points(&[([20 + reach, 1], [5 - radius, 1], [10, 1])])[0].clone(),
+                Location::Boundary,
+            ));
+        }
+        cases.push(Case {
+            name: format!("slot top r={radius}"),
+            recipe: slot(&["top"], &radius.to_string(), 3),
+            inside: points(&[
+                ([0, 1], [-49, 10], [99, 10]),
+                ([249, 10], [0, 1], [99, 10]),
+                ([0, 1], [0, 1], [1, 1]),
+                ([21, 1], [-47, 10], [99, 10]),
+            ]),
+            outside: points(&[
+                ([0, 1], [49, 10], [99, 10]),
+                ([22, 1], [9, 2], [99, 10]),
+                ([21, 1], [47, 10], [99, 10]),
+            ]),
+            boundary: Vec::new(),
+            shared,
+            derived: true,
+            pieces: 1,
+        });
+    }
+    for radius in [1, 4] {
+        cases.push(Case {
+            name: format!("slot bottom and top r={radius}"),
+            recipe: slot(&["bottom", "top"], &radius.to_string(), 3),
+            inside: points(&[([0, 1], [0, 1], [1, 1]), ([249, 10], [0, 1], [99, 10])]),
+            outside: points(&[
+                ([0, 1], [49, 10], [99, 10]),
+                ([0, 1], [-49, 10], [99, 10]),
+                ([21, 1], [47, 10], [99, 10]),
+                ([-21, 1], [-47, 10], [99, 10]),
+            ]),
+            boundary: Vec::new(),
+            shared: Vec::new(),
+            derived: true,
+            pieces: 2,
+        });
+    }
+    // The top boundary as one tangent loop of two strips and two half rings:
+    // named whole in either version, or continued from one arc in version 4.
+    // At radius 4 the end walls' rings are spindles (C = 5 - 4 < r).
+    for radius in [1, 2, 4] {
+        let r = radius.to_string();
+        let mut loops = vec![
+            (format!("slot loop v3 r={radius}"), slot(&LOOP, &r, 3)),
+            (format!("slot loop v4 r={radius}"), slot(&LOOP, &r, 4)),
+            (format!("slot right v4 r={radius}"), slot(&["right"], &r, 4)),
+        ];
+        if radius == 4 {
+            loops.push((
+                "slot loop permuted r=4".into(),
+                slot(&["left", "top", "right", "bottom", "top"], &r, 4),
+            ));
+        }
+        for (name, recipe) in loops {
+            // The file's points: at z = 10 - r the side contact keeps the end
+            // radius 5; just below the top the capsule radius is about 5 - r.
+            let x = 10 * (25 - radius);
+            cases.push(Case {
+                name,
+                recipe,
+                inside: points(&[
+                    ([0, 1], [0, 1], [1, 1]),
+                    ([0, 1], [49, 10], [1, 10]),
+                    ([249, 10], [0, 1], [10 - radius, 1]),
+                    ([x - 1, 10], [0, 1], [9999, 1000]),
+                ]),
+                outside: points(&[
+                    ([0, 1], [49, 10], [99, 10]),
+                    ([0, 1], [-49, 10], [99, 10]),
+                    ([249, 10], [0, 1], [99, 10]),
+                    ([251, 10], [0, 1], [10 - radius, 1]),
+                    ([x + 5, 10], [0, 1], [9999, 1000]),
+                ]),
+                boundary: Vec::new(),
+                // The junction's two rail points, on the top and the side.
+                shared: vec![
+                    (
+                        points(&[([20, 1], [5 - radius, 1], [10, 1])])[0].clone(),
+                        Location::Boundary,
+                    ),
+                    (
+                        points(&[([20, 1], [5, 1], [10 - radius, 1])])[0].clone(),
+                        Location::Boundary,
+                    ),
+                ],
+                derived: false,
+                pieces: 4,
+            });
+        }
+    }
+    cases
+}
+
 fn cases() -> Vec<Case> {
-    p5_cases()
+    let mut cases = p5_cases();
+    cases.extend(slot_cases());
+    cases
+}
+
+/// The B-rep's membership of a point, from its exact point classifier.
+fn brep_location(built: &mut catallax_features::Built, p: &[Rational; 3]) -> Location {
+    use catallax_boolean::{Containment, classify_point};
+    use catallax_numbers::Outcome;
+    let point = RPoint3::new(p[0].clone(), p[1].clone(), p[2].clone());
+    match classify_point(&mut built.model, built.result, &point, &mut decider()) {
+        Outcome::Proven(Containment::Inside) => Location::Inside,
+        Outcome::Proven(Containment::Outside) => Location::Outside,
+        Outcome::ProvenCoincident(_) => Location::Boundary,
+        other => panic!("the B-rep does not settle {p:?}: {other:?}"),
+    }
 }
 
 fn location(plan: &Plan, p: &[Rational; 3]) -> Location {
@@ -423,23 +600,40 @@ fn the_field_builds_every_step_four_fillet_and_agrees_on_membership() {
         if pieces != case.pieces {
             failures.push(format!("{}: {pieces} rolling pieces", case.name));
         }
+        let mut built = (case.derived || !case.shared.is_empty())
+            .then(|| evaluate(&case.recipe, &mut decider()).unwrap());
         for (points, want) in [
             (&case.inside, Location::Inside),
             (&case.outside, Location::Outside),
             (&case.boundary, Location::Boundary),
         ] {
             for p in points {
+                if case.derived {
+                    let brep = brep_location(built.as_mut().unwrap(), p);
+                    assert_eq!(brep, want, "{}: the B-rep at {p:?}", case.name);
+                }
                 let found = location(&plan, p);
                 if found != want {
                     failures.push(format!("{} at {p:?}: {found:?}", case.name));
                 }
             }
         }
+        let mut settled = 0;
+        for (p, want) in &case.shared {
+            let brep = brep_location(built.as_mut().unwrap(), p);
+            assert_eq!(brep, *want, "{}: the B-rep at shared {p:?}", case.name);
+            match location(&plan, p) {
+                Location::Indeterminate => {}
+                found if found == *want => settled += 1,
+                found => failures.push(format!("{} at shared {p:?}: {found:?}", case.name)),
+            }
+        }
         eprintln!(
-            "{}: {} witnesses in {:?}",
+            "{}: {} witnesses in {:?}; {settled} of {} shared points settled",
             case.name,
             case.inside.len() + case.outside.len() + case.boundary.len(),
-            start.elapsed()
+            start.elapsed(),
+            case.shared.len()
         );
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
@@ -458,6 +652,21 @@ const VERTEX_GROUPS: &[&[&str]] = &[
         "P5 RZ moved r=1",
         "P5 half r=1/2",
     ],
+    &[
+        "slot top r=1",
+        "slot top r=2",
+        "slot top r=4",
+        "slot bottom and top r=1",
+        "slot bottom and top r=4",
+    ],
+    &["slot loop v3 r=1", "slot loop v3 r=2", "slot loop v3 r=4"],
+    &["slot loop v4 r=1", "slot loop v4 r=2", "slot loop v4 r=4"],
+    &[
+        "slot right v4 r=1",
+        "slot right v4 r=2",
+        "slot right v4 r=4",
+        "slot loop permuted r=4",
+    ],
 ];
 macro_rules! vertex_tests {
     ($($test:ident = $group:literal;)+) => {
@@ -475,6 +684,10 @@ vertex_tests! {
     turned_rim_blend_vertices_lie_on_the_field_face = 2;
     spatial_rim_blend_vertices_lie_on_the_field_face = 3;
     touching_rim_blend_vertices_lie_on_the_field_face = 4;
+    slot_strip_blend_vertices_lie_on_the_field_face = 5;
+    slot_loop_blend_vertices_lie_on_the_field_face = 6;
+    continued_slot_loop_blend_vertices_lie_on_the_field_face = 7;
+    slot_arc_blend_vertices_lie_on_the_field_face = 8;
 }
 
 #[test]
@@ -664,6 +877,8 @@ fn refusals() -> Vec<(&'static str, Recipe)> {
             "P5 short r=999/1000",
             parse(&shortened(with_radius("999/1000"), "11/2")),
         ),
+        ("slot loop v3 r=6", slot(&LOOP, "6", 3)),
+        ("slot top r=6", slot(&["top"], "6", 3)),
     ]
 }
 
@@ -677,6 +892,11 @@ const REFUSED: &[(&str, &str)] = &[
     ("P5 short RZ moved r=2", "fillet.unsupported-overflow"),
     ("P5 short r=1", "fillet.unsupported-overflow"),
     ("P5 short r=999/1000", "fillet.unsupported-overflow"),
+    // A ball of radius 6 cannot sit inside the radius 5 end walls: the
+    // rings' offsets vanish, and the strip's ball at its run end crosses the
+    // end wall.
+    ("slot loop v3 r=6", "field.rolling-path-reach"),
+    ("slot top r=6", "fillet.unsupported-overflow"),
 ];
 
 #[test]

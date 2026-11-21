@@ -778,6 +778,7 @@ impl Plan {
                             fillet::Settings {
                                 radius: &radius.value().clone().into(),
                                 closure: corner.unwrap_or(catallax_recipe::FilletCorner::Cliff),
+                                roll_over: recipe.format != catallax_recipe::FORMAT,
                             },
                             &step.id,
                             dec,

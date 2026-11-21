@@ -33,10 +33,24 @@ pub(super) struct Run {
     // Faces proven not to overflow the run: end faces of a straight run,
     // which bound it, and a rim's mouths.
     ends: Vec<usize>,
+    // Half-spaces `n . (x - p) >= 0` that hold the region, each bounded by
+    // a junction with a tangent neighbour piece. A face on the far side of
+    // one cannot enter the region.
+    junctions: Vec<(Point3, Vector3)>,
 }
 impl Run {
     pub(super) fn new(piece: Piece, faces: [usize; 2], ends: Vec<usize>) -> Self {
-        Self { piece, faces, ends }
+        Self {
+            piece,
+            faces,
+            ends,
+            junctions: Vec::new(),
+        }
+    }
+    /// The run with the half-spaces of its junctions.
+    pub(super) fn with_junctions(mut self, junctions: Vec<(Point3, Vector3)>) -> Self {
+        self.junctions = junctions;
+        self
     }
 }
 
@@ -116,6 +130,47 @@ pub(super) fn oriented(value: &Real, detail: &str, dec: &mut Decider) -> Result<
 /// The component of `v` perpendicular to `axis`.
 pub(super) fn radial(v: &Vector3, axis: &Vector3) -> Vector3 {
     v.minus(&axis.scaled(&(&v.dot(axis) / &axis.norm_squared())))
+}
+
+/// A cylinder, cone or sphere as a support of revolution, with the ball
+/// direction's component along its outward normal at `sample`: positive
+/// when the ball lies outside it. `None` for any other surface.
+pub(super) fn revolution(
+    other: &Surface,
+    sample: &Point3,
+    ball: &Vector3,
+) -> Option<(Revolution, Real)> {
+    let at = |origin: &Point3| sample.minus(origin);
+    Some(match other {
+        Surface::Cylinder(c) => (
+            Revolution::Cylinder {
+                point: c.origin.clone(),
+                axis: c.axis.clone(),
+                radius: square_root(&c.radius_sq),
+            },
+            ball.dot(&radial(&at(&c.origin), &c.axis)),
+        ),
+        Surface::Cone(c) => {
+            let w = radial(&at(&c.apex), &c.axis);
+            let along = unit(&c.axis).scaled(&(&c.slope * &w.norm_squared().sqrt()));
+            (
+                Revolution::Cone {
+                    apex: c.apex.clone(),
+                    axis: c.axis.clone(),
+                    slope: c.slope.clone(),
+                },
+                ball.dot(&w.minus(&along)),
+            )
+        }
+        Surface::Sphere(s) => (
+            Revolution::Sphere {
+                centre: s.center.clone(),
+                radius: s.radius.clone(),
+            },
+            ball.dot(&at(&s.center)),
+        ),
+        _ => return None,
+    })
 }
 
 /// A point on a closed edge, the end of its first axis, when it has no
@@ -271,36 +326,8 @@ impl Plan {
                     }
                     _ => return Ok(None),
                 };
-                let at = |origin: &Point3| sample.minus(origin);
-                let (support, outside) = match other {
-                    Surface::Cylinder(c) => (
-                        Revolution::Cylinder {
-                            point: c.origin.clone(),
-                            axis: c.axis.clone(),
-                            radius: square_root(&c.radius_sq),
-                        },
-                        ball.dot(&radial(&at(&c.origin), &c.axis)),
-                    ),
-                    Surface::Cone(c) => {
-                        let w = radial(&at(&c.apex), &c.axis);
-                        let along = unit(&c.axis).scaled(&(&c.slope * &w.norm_squared().sqrt()));
-                        (
-                            Revolution::Cone {
-                                apex: c.apex.clone(),
-                                axis: c.axis.clone(),
-                                slope: c.slope.clone(),
-                            },
-                            ball.dot(&w.minus(&along)),
-                        )
-                    }
-                    Surface::Sphere(s) => (
-                        Revolution::Sphere {
-                            centre: s.center.clone(),
-                            radius: s.radius.clone(),
-                        },
-                        ball.dot(&at(&s.center)),
-                    ),
-                    _ => return Ok(None),
+                let Some((support, outside)) = revolution(other, &sample, &ball) else {
+                    return Ok(None);
                 };
                 let outside =
                     oriented(&outside, "the ball lies in a support's tangent plane", dec)?;
@@ -312,11 +339,7 @@ impl Plan {
                     [first, second],
                     dec,
                 )?;
-                Ok(Some(vec![Run {
-                    piece,
-                    faces,
-                    ends: vec![],
-                }]))
+                Ok(Some(vec![Run::new(piece, faces, vec![])]))
             }
             Curve::Ellipse(ellipse)
                 if matches!(supports, [Surface::Cylinder(_), Surface::Cylinder(_)]) =>
@@ -467,11 +490,7 @@ impl Plan {
             [&supports[0], &supports[1]],
             dec,
         )?;
-        Ok(Run {
-            piece,
-            faces,
-            ends: vec![],
-        })
+        Ok(Run::new(piece, faces, vec![]))
     }
 
     /// Two equal cylinders whose axes meet cross in two ellipses through two
@@ -559,11 +578,7 @@ impl Plan {
             [&supports[0], &supports[1]],
             dec,
         )?;
-        Ok(Some(vec![Run {
-            piece,
-            faces,
-            ends: vec![],
-        }]))
+        Ok(Some(vec![Run::new(piece, faces, vec![])]))
     }
 
     /// The circle where two curved supports about one axis meet, as a
@@ -645,11 +660,34 @@ impl Plan {
             [&supports[0], &supports[1]],
             dec,
         )?;
-        Ok(Run {
-            piece,
-            faces,
-            ends: vec![],
-        })
+        Ok(Run::new(piece, faces, vec![]))
+    }
+
+    /// The two supports of a straight piece, each with the ball's side.
+    pub(super) fn generator_walls(
+        supports: &[Surface; 2],
+        ball: &Vector3,
+        sample: &Point3,
+        dec: &mut Decider,
+    ) -> Result<[Wall; 2], Refusal> {
+        let mut walls = Vec::with_capacity(2);
+        for support in supports {
+            walls.push(match support {
+                Surface::Plane(_) => Wall::Plane(Self::flat(support, ball, dec)?.expect("a plane")),
+                Surface::Cylinder(c) => Wall::Cylinder {
+                    point: c.origin.clone(),
+                    axis: c.axis.clone(),
+                    radius: square_root(&c.radius_sq),
+                    outside: oriented(
+                        &ball.dot(&radial(&sample.minus(&c.origin), &c.axis)),
+                        "the ball lies in a support's tangent plane",
+                        dec,
+                    )?,
+                },
+                _ => return Err(bad("a generator piece needs planes or cylinders")),
+            });
+        }
+        walls.try_into().map_err(|_| bad("two supports"))
     }
 
     /// A straight run between supports parallel to its line, over the
@@ -669,26 +707,7 @@ impl Plan {
         dec: &mut Decider,
     ) -> Result<Run, Refusal> {
         let ball = self.ball_direction(faces, sample, convex, senses)?;
-        let mut walls = Vec::with_capacity(2);
-        for support in supports {
-            walls.push(match support {
-                Surface::Plane(_) => {
-                    Wall::Plane(Self::flat(support, &ball, dec)?.expect("a plane"))
-                }
-                Surface::Cylinder(c) => Wall::Cylinder {
-                    point: c.origin.clone(),
-                    axis: c.axis.clone(),
-                    radius: square_root(&c.radius_sq),
-                    outside: oriented(
-                        &ball.dot(&radial(&sample.minus(&c.origin), &c.axis)),
-                        "the ball lies in a support's tangent plane",
-                        dec,
-                    )?,
-                },
-                _ => return Err(bad("a generator piece needs planes or cylinders")),
-            });
-        }
-        let walls: [Wall; 2] = walls.try_into().map_err(|_| bad("two supports"))?;
+        let walls = Self::generator_walls(supports, &ball, sample, dec)?;
         let mut ends = Vec::new();
         let mut found = [false; 2];
         for &i in source_faces {
@@ -732,7 +751,7 @@ impl Plan {
             [&supports[0], &supports[1]],
             dec,
         )?;
-        Ok(Run { piece, faces, ends })
+        Ok(Run::new(piece, faces, ends))
     }
 
     /// A straight strip the elementary route refuses, as a generator run from
@@ -817,11 +836,32 @@ impl Plan {
             for panel in boxes.as_deref().unwrap_or_default() {
                 dec.charge_work(1)?;
                 if face.polynomial.eval_ball(panel, dec)?.contains_zero() {
+                    if self.beyond_junction(run, i, dec)? {
+                        break;
+                    }
                     return Err(overflow());
                 }
             }
         }
         Ok(())
+    }
+
+    /// Whether face `i` lies on the far side of one of the run's junctions,
+    /// `n . (x - p) <= 0`, while the region lies on the near side: then the
+    /// face meets the region at most in the junction plane, which no face of
+    /// the region lies on (4.2a step 4). Proven from the face's leaf.
+    fn beyond_junction(&self, run: &Run, i: usize, dec: &mut Decider) -> Result<bool, Refusal> {
+        let geometry::Leaf::Feature(feature) = &self.leaves[self.faces[i].leaf] else {
+            return Ok(false);
+        };
+        for (point, normal) in &run.junctions {
+            let away = normal.scaled(&Real::from_i64(-1));
+            let level = away.dot(&point.minus(&Point3::origin()));
+            if feature.face_above(self.definition_role(i), &away, &level, dec)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     /// Compiles one run's region and applies it to `result`.

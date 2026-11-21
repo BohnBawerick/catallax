@@ -80,7 +80,7 @@ pub use certificate::{
 #[cfg(feature = "test-deadline")]
 #[doc(hidden)]
 pub use decider::test_deadline::{Deadline as TestDeadline, Point as TestDeadlinePoint};
-pub use decider::{BudgetPolicy, Decider, DecisionStats};
+pub use decider::{BudgetPolicy, Decider, DecisionStats, count_exact_arithmetic};
 pub use facts::{Fact, FactBook, FactKind, FactOrigin, FactRead};
 pub use integer::{Integer, ParseErrorKind, ParseNumberError, Sign};
 pub use interval::Interval;

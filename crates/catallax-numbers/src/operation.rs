@@ -26,6 +26,9 @@ struct State {
     used: u64,
     // Charges that `refund_on_refusal` took back out of `used`.
     refunded: u64,
+    // Arithmetic counted at the decider's rate and never charged
+    // (`count_uncharged`).
+    uncharged: u64,
     exhausted: bool,
     reduced_angle_series: bool,
     reuse_enclosures: bool,
@@ -112,6 +115,17 @@ pub struct OperationWork {
     /// that item is then admitted or discarded. A discarded item's other
     /// charges were never admitted and are in neither counter.
     pub refunded: u64,
+    /// Exact arithmetic that was priced at the decider's rate and not charged
+    /// ([`crate::count_exact_arithmetic`]): what `used` would have risen by had
+    /// it been charged. It is outside `used` and outside the allowance, never
+    /// exhausts a request and only grows. It holds the arithmetic of the code
+    /// that reports to it and no other: today the STEP writer's curve fit.
+    ///
+    /// The count is that of one thread. Arithmetic a helper thread did reaches
+    /// it only with a record the request adopts ([`crate::Charges::adopt`]),
+    /// as that record's charges reach `used`. An [`OperationTask`] item
+    /// reports its count as it reports `refunded`.
+    pub uncharged: u64,
 }
 
 impl State {
@@ -121,6 +135,7 @@ impl State {
             used: if aborted { self.limit } else { self.used },
             exhausted: self.exhausted || aborted,
             refunded: self.refunded,
+            uncharged: self.uncharged,
         }
     }
 }
@@ -183,6 +198,7 @@ pub fn current_operation_work() -> OperationWork {
                 used: 0,
                 exhausted: false,
                 refunded: 0,
+                uncharged: 0,
             },
             State::work,
         )
@@ -271,6 +287,7 @@ fn budget_scope<T>(limit: u64, worker: bool, run: impl FnOnce() -> T) -> (T, Ope
             limit,
             used: 0,
             refunded: 0,
+            uncharged: 0,
             exhausted: false,
             reduced_angle_series: false,
             reuse_enclosures: false,
@@ -295,29 +312,32 @@ pub struct OperationTask {
 }
 
 /// A speculative value whose reservations have not yet been admitted.
-/// Admitted or discarded, it reports its refused attempts to its request.
+/// Admitted or discarded, it reports its refused attempts and its uncharged
+/// arithmetic to its request.
 pub struct RecordedWork<T> {
     value: T,
     reservations: Vec<u64>,
     request: Option<u64>,
     work: Option<OperationWork>,
     // Never read: it reports when the record is dropped.
-    _refunded: Refunded,
+    _unreserved: Unreserved,
 }
 
-// The refused attempts of one recorded item (`refund_on_refusal`). They left no
-// reservation to replay, and their arithmetic was done whether the item is then
-// admitted, refused at admission or discarded. So the count goes to the request
-// when the record leaves, by any of those ways, and so exactly once. A record
-// that leaves outside its request has no counter to report to.
-struct Refunded {
+// What one recorded item did outside the allowance: its refused attempts
+// (`refund_on_refusal`) and its uncharged arithmetic (`count_uncharged`).
+// Neither left a reservation to replay, and the arithmetic was done whether the
+// item is then admitted, refused at admission or discarded. So both counts go
+// to the request when the record leaves, by any of those ways, and so exactly
+// once. A record that leaves outside its request has no counter to report to.
+struct Unreserved {
     request: Option<u64>,
-    units: u64,
+    refunded: u64,
+    uncharged: u64,
 }
 
-impl Drop for Refunded {
+impl Drop for Unreserved {
     fn drop(&mut self) {
-        if self.units == 0 {
+        if self.refunded == 0 && self.uncharged == 0 {
             return;
         }
         // A record can be dropped while its thread unwinds or ends.
@@ -326,7 +346,8 @@ impl Drop for Refunded {
                 && let Some(state) = active.as_mut()
                 && Some(state.request) == self.request
             {
-                state.refunded = state.refunded.saturating_add(self.units);
+                state.refunded = state.refunded.saturating_add(self.refunded);
+                state.uncharged = state.uncharged.saturating_add(self.uncharged);
             }
         });
     }
@@ -345,6 +366,7 @@ impl OperationTask {
                         limit: state.limit.saturating_sub(work.used),
                         used: 0,
                         refunded: 0,
+                        uncharged: 0,
                         exhausted: work.exhausted,
                         ..state.clone()
                     }
@@ -378,9 +400,10 @@ impl OperationTask {
                 reservations: Vec::new(),
                 request: None,
                 work: None,
-                _refunded: Refunded {
+                _unreserved: Unreserved {
                     request: None,
-                    units: 0,
+                    refunded: 0,
+                    uncharged: 0,
                 },
             };
         };
@@ -419,9 +442,10 @@ impl OperationTask {
             reservations,
             request: Some(request),
             work: Some(work),
-            _refunded: Refunded {
+            _unreserved: Unreserved {
                 request: Some(request),
-                units: work.refunded,
+                refunded: work.refunded,
+                uncharged: work.uncharged,
             },
         }
     }
@@ -474,7 +498,8 @@ impl<T> RecordedWork<T> {
     /// Reservations replay individually, preserving the exact exhausted prefix.
     /// Later speculative items must be discarded after the first refusal.
     /// A discarded item's charges are not admitted; its refused attempts are
-    /// still reported in [`OperationWork::refunded`].
+    /// still reported in [`OperationWork::refunded`] and its uncharged
+    /// arithmetic in [`OperationWork::uncharged`].
     pub fn commit(self) -> Result<T, crate::Refusal> {
         self.check_request()?;
         for units in self.reservations {
@@ -706,6 +731,21 @@ pub(crate) fn charge(units: u64) -> bool {
     exhausted
 }
 
+/// Adds `units` to [`OperationWork::uncharged`]. Unlike a charge it takes
+/// nothing from the allowance, latches nothing and cannot refuse; outside a
+/// request it does nothing.
+pub(crate) fn count_uncharged(units: u64) {
+    ACTIVE.with(|slot| {
+        if let Some(state) = slot.borrow_mut().as_mut() {
+            state.uncharged = state.uncharged.saturating_add(units);
+        }
+    });
+}
+
+pub(crate) fn uncharged() -> u64 {
+    ACTIVE.with(|slot| slot.borrow().as_ref().map_or(0, |state| state.uncharged))
+}
+
 /// Whether `units` more fit the allowance. Unlike a charge, asking latches
 /// nothing.
 pub(crate) fn affordable(units: u64) -> bool {
@@ -775,6 +815,7 @@ pub(crate) fn enter_worker(reduced_angle_series: bool, reuse_enclosures: bool, p
             limit: u64::MAX,
             used: 0,
             refunded: 0,
+            uncharged: 0,
             exhausted: false,
             reduced_angle_series,
             reuse_enclosures,
@@ -1285,6 +1326,113 @@ mod allowance_tests {
     }
 
     #[test]
+    fn uncharged_arithmetic_is_counted_and_takes_nothing_from_the_allowance() {
+        // No request, no counter.
+        count_uncharged(7);
+        assert_eq!(current_operation_work().uncharged, 0);
+        let (_, work) = with_operation_budget(10, || {
+            // Far more than the allowance holds, and nothing is exhausted.
+            count_uncharged(1_000);
+            assert!(!charge(4));
+            count_uncharged(5);
+            assert_eq!(current_operation_work().uncharged, 1_005);
+            // A refused attempt gives its charges back. What it counted was
+            // never charged, so it stays counted.
+            let refused: Result<(), ()> = refund_on_refusal(|| {
+                assert!(!charge(3));
+                count_uncharged(20);
+                Err(())
+            });
+            assert!(refused.is_err());
+            // Counting goes on after the allowance is spent.
+            assert!(charge(7));
+            count_uncharged(100);
+        });
+        assert_eq!(work.used, 4);
+        assert_eq!(work.refunded, 3);
+        assert_eq!(work.uncharged, 1_125);
+        assert!(work.exhausted);
+        assert_eq!(current_operation_work().uncharged, 0);
+    }
+
+    #[test]
+    fn a_reserved_allowance_reports_its_own_uncharged_arithmetic() {
+        let (_, parent) = with_operation_budget(10, || {
+            count_uncharged(2);
+            let (_, child) = OperationAllowance::reserve(5).unwrap().run(|| {
+                count_uncharged(30);
+                assert_eq!(current_operation_work().uncharged, 30);
+            });
+            assert_eq!(child.uncharged, 30);
+            assert_eq!(current_operation_work().uncharged, 2);
+        });
+        assert_eq!(parent.used, 5);
+        assert_eq!(parent.uncharged, 2);
+    }
+
+    // Three items of one request count 2, 4 and 8. The first is admitted, the
+    // second is refused at admission and the third is discarded.
+    #[test]
+    fn a_recorded_item_reports_its_uncharged_arithmetic_once() {
+        for on_threads in [false, true] {
+            let (_, parent) = with_operation_budget(10, || {
+                let item = |units: u64| {
+                    move || {
+                        assert!(!charge(1));
+                        count_uncharged(units);
+                    }
+                };
+                let tasks = OperationTask::capture().split(std::num::NonZeroUsize::new(3).unwrap());
+                let mut recorded = tasks
+                    .into_iter()
+                    .zip([2, 4, 8])
+                    .map(|(task, units)| {
+                        if on_threads {
+                            std::thread::scope(|scope| {
+                                scope.spawn(move || task.run(item(units))).join().unwrap()
+                            })
+                        } else {
+                            task.run(item(units))
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .into_iter();
+                // Computing the items reported nothing to the request yet.
+                assert_eq!(current_operation_work().uncharged, 0);
+                recorded.next().unwrap().commit().unwrap();
+                assert_eq!(current_operation_work().uncharged, 2);
+                assert!(!charge(9));
+                let second = recorded.next().unwrap();
+                assert_eq!(
+                    second.commit().unwrap_err().code,
+                    "numbers.operation-budget"
+                );
+                assert_eq!(current_operation_work().uncharged, 6);
+                drop(recorded);
+            });
+            assert_eq!(parent.uncharged, 14, "on threads: {on_threads}");
+            assert_eq!(parent.used, 10);
+            assert!(parent.exhausted);
+        }
+    }
+
+    #[test]
+    fn a_share_carries_its_uncharged_arithmetic_to_the_request() {
+        let (_, parent) = with_operation_budget(10, || {
+            let tasks = OperationTask::capture().split(std::num::NonZeroUsize::new(2).unwrap());
+            for task in tasks {
+                let recorded = task.run(|| {
+                    count_uncharged(6);
+                    assert!(!charge(1));
+                });
+                assert_eq!(recorded.commit_share().unwrap(), Some(()));
+            }
+        });
+        assert_eq!(parent.used, 2);
+        assert_eq!(parent.uncharged, 12);
+    }
+
+    #[test]
     fn a_record_outside_its_request_reports_nothing() {
         let attempt = || {
             let refused: Result<(), ()> = refund_on_refusal(|| {
@@ -1297,5 +1445,10 @@ mod allowance_tests {
         assert_eq!(first.refunded, 0);
         let (_, other) = with_operation_budget(10, || drop(recorded));
         assert_eq!(other.refunded, 0);
+        let (recorded, first) =
+            with_operation_budget(10, || OperationTask::capture().run(|| count_uncharged(4)));
+        assert_eq!(first.uncharged, 0);
+        let (_, other) = with_operation_budget(10, || drop(recorded));
+        assert_eq!(other.uncharged, 0);
     }
 }

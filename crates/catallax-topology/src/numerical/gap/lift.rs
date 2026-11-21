@@ -543,7 +543,7 @@ fn lift_sampled(
     )
 }
 
-fn dot(a: &[f64; 3], b: &[f64; 3]) -> f64 {
+pub(super) fn dot(a: &[f64; 3], b: &[f64; 3]) -> f64 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
 
@@ -766,38 +766,60 @@ impl Surface64 {
         scratch: &mut Scratch,
         left: &mut u64,
     ) -> Option<[f64; 2]> {
-        let mut uv = seed;
-        for _ in 0..FOOT_STEPS {
-            self.spend(left)?;
-            let base = self.point(uv, scratch).value;
-            let r: [f64; 3] = std::array::from_fn(|k| target[k] - base[k]);
-            let mut partial = [[0.0; 3]; 2];
-            for (axis, column) in partial.iter_mut().enumerate() {
-                let step = f64::EPSILON.sqrt() * uv[axis].abs().max(1.0);
-                let mut moved = uv;
-                moved[axis] += step;
-                self.spend(left)?;
-                let there = self.point(moved, scratch).value;
-                *column = std::array::from_fn(|k| (there[k] - base[k]) / step);
-            }
-            let (a, b, c) = (
-                dot(&partial[0], &partial[0]),
-                dot(&partial[0], &partial[1]),
-                dot(&partial[1], &partial[1]),
-            );
-            let (g0, g1) = (dot(&partial[0], &r), dot(&partial[1], &r));
-            let det = a * c - b * b;
-            if det == 0.0 || !det.is_finite() {
-                break;
-            }
-            let d = [(c * g0 - b * g1) / det, (a * g1 - b * g0) / det];
-            uv = [uv[0] + d[0], uv[1] + d[1]];
-            if d[0].abs() + d[1].abs() <= f64::EPSILON * (uv[0].abs() + uv[1].abs()).max(1.0) {
-                break;
-            }
-        }
-        Some(uv)
+        nearest_within(
+            |uv| self.point(uv, scratch).value,
+            target,
+            seed,
+            self.work().checked_add(1)?,
+            left,
+        )
     }
+}
+
+/// The two parameters at which `map` is nearest `target`, from a seed:
+/// Gauss-Newton on the squared distance with forward-difference partials, as
+/// [`Lifted::allowance`] takes them (Dennis and Schnabel 1983, sections 5.4
+/// and 10.1). Each evaluation of `map` takes `units` from `left` before it
+/// is made: the checker's own unit and the work the evaluator states
+/// ([`Surface64::spend`]). `None` when `left` runs out.
+pub(super) fn nearest_within(
+    mut map: impl FnMut([f64; 2]) -> [f64; 3],
+    target: &[f64; 3],
+    seed: [f64; 2],
+    units: u64,
+    left: &mut u64,
+) -> Option<[f64; 2]> {
+    let mut uv = seed;
+    for _ in 0..FOOT_STEPS {
+        spend_units(left, units)?;
+        let base = map(uv);
+        let r: [f64; 3] = std::array::from_fn(|k| target[k] - base[k]);
+        let mut partial = [[0.0; 3]; 2];
+        for (axis, column) in partial.iter_mut().enumerate() {
+            let step = f64::EPSILON.sqrt() * uv[axis].abs().max(1.0);
+            let mut moved = uv;
+            moved[axis] += step;
+            spend_units(left, units)?;
+            let there = map(moved);
+            *column = std::array::from_fn(|k| (there[k] - base[k]) / step);
+        }
+        let (a, b, c) = (
+            dot(&partial[0], &partial[0]),
+            dot(&partial[0], &partial[1]),
+            dot(&partial[1], &partial[1]),
+        );
+        let (g0, g1) = (dot(&partial[0], &r), dot(&partial[1], &r));
+        let det = a * c - b * b;
+        if det == 0.0 || !det.is_finite() {
+            break;
+        }
+        let d = [(c * g0 - b * g1) / det, (a * g1 - b * g0) / det];
+        uv = [uv[0] + d[0], uv[1] + d[1]];
+        if d[0].abs() + d[1].abs() <= f64::EPSILON * (uv[0].abs() + uv[1].abs()).max(1.0) {
+            break;
+        }
+    }
+    Some(uv)
 }
 
 /// Takes one evaluation from what is left of an allowance.

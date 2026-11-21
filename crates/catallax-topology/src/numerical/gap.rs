@@ -111,6 +111,17 @@ impl FramedSurface {
         self.surface.foot(target, seed, &mut self.scratch)
     }
 
+    /// The u/v of the foot of `point` on a plane, by the plane's own frame:
+    /// the chart `origin + u e1 + v e2` read backwards. `None` for any other
+    /// surface.
+    pub(in crate::numerical) fn plane_parameters(&self, point: &[f64; 3]) -> Option<[f64; 2]> {
+        let Surface64::Plane { origin, frame } = &self.surface else {
+            return None;
+        };
+        let offset: [f64; 3] = std::array::from_fn(|axis| point[axis] - origin[axis]);
+        Some([lift::dot(&offset, &frame[0]), lift::dot(&offset, &frame[1])])
+    }
+
     /// A box that holds the surface over the u/v rectangle `rect`, or `None`
     /// for a plane, whose faces lie inside the box of their edges. A surface
     /// of revolution is held by the box of its local frame's extent: a ring
@@ -221,6 +232,11 @@ impl FramedUvCurve {
 /// of the largest coordinate, here for the corners of a box.
 const BOX_ROUNDINGS: f64 = 16.0;
 
+/// Source: the halvings that locate a crossing in the edge-gap checker's
+/// plan (`numeric::ROOT_DEPTH`). The tolerance rules follow a change of
+/// side to its crossing by the same count.
+pub(super) const ROOT_DEPTH: u32 = numeric::ROOT_DEPTH;
+
 /// An edge's 3D curve in binary64, in a frame a whole body shares (rule T1),
 /// for the distance readings of the tolerance rules.
 pub(in crate::numerical) struct FramedCurve {
@@ -319,6 +335,35 @@ impl FramedCurve {
             [low[axis] - slack, high[axis] + slack]
         })
     }
+}
+
+/// The parameters at which two framed curves are nearest each other, from a
+/// seed: the Gauss-Newton of the surface foot ([`FramedSurface::foot`]) on
+/// the offset from one curve to the other, which is zero where they cross.
+/// OpenCASCADE's `Extrema_GenLocateExtCC` and SMLib's
+/// `SmCurve::LocalCurveSolve` refine a seed the same way, by Newton's method
+/// on the two conditions that the offset is at right angles to both curves.
+/// The parameters are not held to either curve's range. Returns them and
+/// the evaluations of a curve it spent.
+pub(in crate::numerical) fn nearest_on_curves(
+    a: &mut FramedCurve,
+    b: &mut FramedCurve,
+    seed: [f64; 2],
+) -> ([f64; 2], u64) {
+    let mut left = u64::MAX;
+    let found = lift::nearest_within(
+        |at| {
+            let (p, q) = (a.point(at[0]), b.point(at[1]));
+            std::array::from_fn(|axis| p[axis] - q[axis])
+        },
+        &[0.0; 3],
+        seed,
+        1,
+        &mut left,
+    )
+    .expect("an unlimited allowance");
+    // Each step of the search reads both curves.
+    (found, 2 * (u64::MAX - left))
 }
 
 /// The binary64 evaluator of a 3D curve with no kernel form: the point at a

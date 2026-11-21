@@ -635,7 +635,7 @@ fn unsupported(detail: &str) -> Refusal {
 /// The checker's refusal when an edge would spend more than its allowance.
 /// Source: decision Q6, section 4.2 step 8: a hard per-edge work cap refuses
 /// by name.
-pub(super) const WORK_CAP: &str = "numerical.gap-work-cap";
+pub const WORK_CAP: &str = "numerical.gap-work-cap";
 
 fn work_cap(detail: &str) -> Refusal {
     Refusal::new(WORK_CAP, detail)

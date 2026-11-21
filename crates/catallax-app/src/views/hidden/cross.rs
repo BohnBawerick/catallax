@@ -98,8 +98,9 @@ fn flat(ctrl: &[H2], tol: f64) -> bool {
 enum Meet {
     /// They cross at these local parameters.
     Cross(f64, f64),
-    /// They run together over this local stretch of the first.
-    Run(f64, f64),
+    /// They run together over this local stretch of the first, and this
+    /// one of the second, end matching end.
+    Run([f64; 2], [f64; 2]),
 }
 
 /// Where two flat pieces' chords meet, as local parameters.
@@ -122,7 +123,12 @@ fn chords(a: &[H2], b: &[H2], tol: f64) -> Option<Meet> {
         let s0 = dot2(r, dp) / (lp * lp);
         let s1 = dot2(sub2(q1, p0), dp) / (lp * lp);
         let (lo, hi) = (s0.min(s1).max(0.0), s0.max(s1).min(1.0));
-        return (lo <= hi).then_some(Meet::Run(lo, hi));
+        // The same stretch on the second chord.
+        let on_b = |s: f64| {
+            let p = [p0[0] + s * dp[0], p0[1] + s * dp[1]];
+            (dot2(sub2(p, q0), dq) / (lq * lq)).clamp(0.0, 1.0)
+        };
+        return (lo <= hi).then_some(Meet::Run([lo, hi], [on_b(lo), on_b(hi)]));
     }
     let s = cross2(r, dq) / den;
     let t = cross2(r, dp) / den;
@@ -136,11 +142,14 @@ fn chords(a: &[H2], b: &[H2], tol: f64) -> Option<Meet> {
     Some(Meet::Cross(s.clamp(0.0, 1.0), t.clamp(0.0, 1.0)))
 }
 
-/// What the search found on one pair of pieces, in local parameters.
+/// What the search found on one pair of pieces, in local parameters: the
+/// common stretches on the first piece in `runs`, on the second in
+/// `runs_b`.
 #[derive(Default)]
 struct Found {
     crossings: Vec<(f64, f64)>,
     runs: Vec<[f64; 2]>,
+    runs_b: Vec<[f64; 2]>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -166,9 +175,12 @@ fn search(
             Some(Meet::Cross(s, t)) => out
                 .crossings
                 .push((ra[0] + s * (ra[1] - ra[0]), rb[0] + t * (rb[1] - rb[0]))),
-            Some(Meet::Run(lo, hi)) => out
-                .runs
-                .push([ra[0] + lo * (ra[1] - ra[0]), ra[0] + hi * (ra[1] - ra[0])]),
+            Some(Meet::Run([lo, hi], [u0, u1])) => {
+                out.runs
+                    .push([ra[0] + lo * (ra[1] - ra[0]), ra[0] + hi * (ra[1] - ra[0])]);
+                out.runs_b
+                    .push([rb[0] + u0 * (rb[1] - rb[0]), rb[0] + u1 * (rb[1] - rb[0])]);
+            }
             None => {}
         }
         return;
@@ -315,11 +327,13 @@ fn polish(
 }
 
 /// Crossings of `a` over `ra` with `b` over `rb` on the sheet, within twice
-/// rule T1's floor `tol`. For `same`, the stroke against itself: each pair
-/// of distinct pieces, and each piece against itself through
-/// [`self_search`], with both parameters cuts. Where the two run together on
-/// the sheet, only the ends of each common stretch count, with their own
-/// parameter as `u` too.
+/// `tol`: rule T1's floor, widened by the fits of fitted carriers. For
+/// `same`, the stroke against itself: each pair of distinct pieces, and each
+/// piece against itself through [`self_search`], with both parameters cuts.
+/// Where the two run together on the sheet, only the ends of each common
+/// stretch count, with the matching end of the other as `u`; against itself
+/// a fold that lies along itself counts, as a curve symmetric about a plane
+/// through the view does.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn crossings(
     sheet: &Sheet,
@@ -334,7 +348,9 @@ pub(super) fn crossings(
     let pa = a.pieces(ra[0], ra[1]);
     let pb = b.pieces(rb[0], rb[1]);
     let mut starts = Vec::new();
-    let mut runs: Vec<[f64; 2]> = Vec::new();
+    // Stretches that run together on the sheet: on `a`, and the same
+    // stretch on `b`, matching end to end.
+    let mut pairs: Vec<([f64; 2], [f64; 2])> = Vec::new();
     for (i, x) in pa.iter().enumerate() {
         let xa = project(sheet, &x.ctrl);
         if same {
@@ -346,6 +362,12 @@ pub(super) fn crossings(
                     .into_iter()
                     .map(|(s, t)| (x.map.native(s), x.map.native(t))),
             );
+            pairs.extend(local.runs.into_iter().zip(local.runs_b).map(|(r, q)| {
+                (
+                    [x.map.native(r[0]), x.map.native(r[1])],
+                    [x.map.native(q[0]), x.map.native(q[1])],
+                )
+            }));
         }
         for (j, y) in pb.iter().enumerate() {
             if same && j <= i {
@@ -360,17 +382,27 @@ pub(super) fn crossings(
                     .into_iter()
                     .map(|(s, t)| (x.map.native(s), y.map.native(t))),
             );
-            if !same {
-                runs.extend(
-                    local
-                        .runs
-                        .into_iter()
-                        .map(|[lo, hi]| [x.map.native(lo), x.map.native(hi)]),
-                );
-            }
+            pairs.extend(local.runs.into_iter().zip(local.runs_b).map(|(r, q)| {
+                (
+                    [x.map.native(r[0]), x.map.native(r[1])],
+                    [y.map.native(q[0]), y.map.native(q[1])],
+                )
+            }));
         }
     }
-    // Leaves of one common stretch touch end to end; merge them.
+    // Against itself, neighbouring leaves meet end to end at one point in
+    // space: only two stretches at different depths lie along each other.
+    if same {
+        let middle = |x: [f64; 2]| a.point((x[0] + x[1]) / 2.0);
+        pairs.retain(|(r, q)| distance(middle(*r), middle(*q)) > tol);
+    }
+    // Leaves of one common stretch touch end to end; merge them. Against
+    // itself both stretches lie on `a`.
+    let mut runs: Vec<[f64; 2]> = pairs
+        .iter()
+        .flat_map(|(r, q)| if same { vec![*r, *q] } else { vec![*r] })
+        .map(|r| [r[0].min(r[1]), r[0].max(r[1])])
+        .collect();
     runs.sort_by(|x, y| x[0].total_cmp(&y[0]));
     let slack = resolution(ra);
     let mut merged: Vec<[f64; 2]> = Vec::new();
@@ -381,24 +413,10 @@ pub(super) fn crossings(
         }
     }
     let within = |t: f64| merged.iter().any(|r| t > r[0] + slack && t < r[1] - slack);
+    // The ends of the merged stretches, each with the matching end of the
+    // stretch beside it as its partner, then the crossings.
     let mut found: Vec<Crossing> = Vec::new();
-    for run in &merged {
-        for t in *run {
-            found.push(Crossing {
-                t,
-                u: t,
-                residual: tol,
-            });
-        }
-    }
-    for start in starts {
-        if within(start.0) {
-            continue;
-        }
-        let mut c = polish(sheet, a, ra, b, rb, start, work);
-        if c.residual > 2.0 * tol {
-            continue;
-        }
+    let add = |mut c: Crossing, found: &mut Vec<Crossing>| {
         // Against itself a crossing and its swap are one; keep `t <= u`.
         if same && c.u < c.t {
             (c.t, c.u) = (c.u, c.t);
@@ -406,7 +424,7 @@ pub(super) fn crossings(
         // Against itself, neighbouring pieces share their joint: one point
         // in space, not a crossing of two points at different depths.
         if same && distance(a.point(c.t), a.point(c.u)) <= tol {
-            continue;
+            return;
         }
         let p = a.point(c.t);
         match found.iter_mut().find(|f| distance(a.point(f.t), p) <= tol) {
@@ -414,9 +432,89 @@ pub(super) fn crossings(
             Some(_) => {}
             None => found.push(c),
         }
+    };
+    for (r, q) in &pairs {
+        for k in 0..2 {
+            let (t, u) = (r[k], q[k]);
+            if within(t) && (!same || within(u)) {
+                continue;
+            }
+            add(
+                Crossing {
+                    t,
+                    u,
+                    residual: tol,
+                },
+                &mut found,
+            );
+        }
+    }
+    for start in starts {
+        if within(start.0) || (same && within(start.1)) {
+            continue;
+        }
+        let c = polish(sheet, a, ra, b, rb, start, work);
+        if c.residual > 2.0 * tol {
+            continue;
+        }
+        add(c, &mut found);
     }
     found.sort_by(|x, y| x.t.total_cmp(&y.t));
+    // A chain of crossings whose lenses are no wider than the reach is one
+    // common stretch at this tolerance, such as two fitted copies of curves
+    // that run together, or stretches the leaves above found in parts: only
+    // its ends count.
+    let links: Vec<bool> = found
+        .windows(2)
+        .map(|w| together(sheet, a, b, rb, &w[0], &w[1], tol, work))
+        .collect();
     found
+        .iter()
+        .enumerate()
+        .filter(|&(k, _)| !(k > 0 && k < links.len() && links[k - 1] && links[k]))
+        .map(|(_, c)| *c)
+        .collect()
+}
+
+/// Whether `b` stays within twice `tol` of `a` on the sheet between the
+/// crossings `c` and `e`: the sheet distance from `a` at the middle of its
+/// stretch to the nearest point of `b` over `rb`, found by Gauss-Newton
+/// steps from the middle of `b`'s stretch (Piegl and Tiller, section 6.1,
+/// point inversion). Curves that cross transversally part between
+/// consecutive crossings, and the lens between them is widest near its
+/// middle. A common stretch's end has its partner from a flat chord, right
+/// across the curve but not along it, so the search runs on all of `rb`.
+#[allow(clippy::too_many_arguments)]
+fn together(
+    sheet: &Sheet,
+    a: &Geo,
+    b: &Geo,
+    rb: [f64; 2],
+    c: &Crossing,
+    e: &Crossing,
+    tol: f64,
+    work: &mut u64,
+) -> bool {
+    let p = sheet.project(a.point((c.t + e.t) / 2.0));
+    let (lo, hi) = (rb[0].min(rb[1]), rb[0].max(rb[1]));
+    let mut u = (c.u + e.u) / 2.0;
+    for _ in 0..SOLVE_STEPS {
+        *work += 1;
+        let (q, dq) = b.jet(u);
+        let (r, dq) = (sub2(sheet.project(q), p), sheet.project(dq));
+        let h = dot2(dq, dq);
+        if h == 0.0 || !h.is_finite() {
+            break;
+        }
+        let next = (u - dot2(r, dq) / h).clamp(lo, hi);
+        let done = (next - u).abs() <= resolution([lo, hi]);
+        u = next;
+        if done {
+            break;
+        }
+    }
+    let r = sub2(sheet.project(b.point(u)), p);
+    dot2(r, r).sqrt() <= 2.0 * tol
 }
 
 fn binomial(n: usize, k: usize) -> f64 {

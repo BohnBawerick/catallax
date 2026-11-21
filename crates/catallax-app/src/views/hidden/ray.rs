@@ -37,6 +37,9 @@ pub(super) struct Scene {
     /// their control boxes.
     pub patches: std::collections::BTreeMap<FaceId, Vec<(RationalPatch, Box3)>>,
     pub vertices: Vec<(PointId, V3)>,
+    /// Binary64 boxes of the body's edges, a fitted edge's widened by its
+    /// tolerance.
+    pub edges: std::collections::BTreeMap<catallax_topology::EdgeId, Box3>,
     pub margin: f64,
     /// The largest coordinate size of the body.
     pub size: f64,

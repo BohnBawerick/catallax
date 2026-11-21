@@ -418,6 +418,12 @@ pub(super) fn point_box(p: V3) -> Box3 {
     [p, p]
 }
 
+/// The distance from `p` to the box, zero inside it.
+pub(super) fn box_distance(b: &Box3, p: V3) -> f64 {
+    let gap: V3 = std::array::from_fn(|k| (b[0][k] - p[k]).max(p[k] - b[1][k]).max(0.0));
+    (gap[0] * gap[0] + gap[1] * gap[1] + gap[2] * gap[2]).sqrt()
+}
+
 /// Whether the closed ray `p + t d`, `t >= 0`, meets the box widened by
 /// `margin` (the slab test of Kay and Kajiya, "Ray tracing complex scenes",
 /// SIGGRAPH 1986).

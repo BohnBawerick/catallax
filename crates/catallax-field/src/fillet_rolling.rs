@@ -100,6 +100,8 @@ pub(super) fn admits(
             true
         }
         _ if !named => false,
+        // A plane with a torus (step 6), named edges only, as step 3's pairs.
+        (Surface::Plane(_), Surface::Torus(_)) | (Surface::Torus(_), Surface::Plane(_)) => true,
         (Surface::Cylinder(_), Surface::Cylinder(_) | Surface::Sphere(_))
         | (Surface::Sphere(_), Surface::Cylinder(_)) => true,
         (a, b) => coaxial(a, b, dec)?,
@@ -158,7 +160,7 @@ pub(super) fn radial(v: &Vector3, axis: &Vector3) -> Vector3 {
     v.minus(&axis.scaled(&(&v.dot(axis) / &axis.norm_squared())))
 }
 
-/// A cylinder, cone or sphere as a support of revolution, with the ball
+/// A cylinder, cone, sphere or torus as a support of revolution, with the ball
 /// direction's component along its outward normal at `sample`: positive
 /// when the ball lies outside it. `None` for any other surface.
 pub(super) fn revolution(
@@ -195,6 +197,22 @@ pub(super) fn revolution(
             },
             ball.dot(&at(&s.center)),
         ),
+        // The outward normal points from the core circle's point in the
+        // sample's meridian (4.2a step 6).
+        Surface::Torus(t) => {
+            let w = radial(&at(&t.center), &t.axis);
+            let core = t.center.plus(&unit(&w).scaled(&t.major));
+            (
+                Revolution::Torus {
+                    centre: t.center.clone(),
+                    axis: t.axis.clone(),
+                    major: t.major.clone(),
+                    minor: t.minor.clone(),
+                    edge: sample.clone(),
+                },
+                ball.dot(&sample.minus(&core)),
+            )
+        }
         _ => return None,
     })
 }
@@ -330,42 +348,28 @@ impl Plan {
                 let sample = loop_sample(edge)
                     .or_else(|| algebraic_sample(edge))
                     .ok_or_else(|| bad("a closed edge needs a point for its material"))?;
-                let Some((convex, senses)) = self.material_point(root, &sample, faces, dec)? else {
-                    return Ok(Some(vec![]));
-                };
-                let ball = self.ball_direction(faces, &sample, convex, senses)?;
-                let [first, second] = supports;
-                let (plane, other) = match (
-                    Self::flat(first, &ball, dec)?,
-                    Self::flat(second, &ball, dec)?,
-                ) {
-                    (Some(plane), None) => (plane, second),
-                    (None, Some(plane)) => (plane, first),
-                    (None, None) => {
-                        let Curve::Circle(circle) = edge else {
-                            return Ok(None);
-                        };
-                        let run = self.coaxial_run(
-                            faces, supports, circle, &sample, &ball, convex, step, radius, dec,
-                        )?;
-                        return Ok(Some(vec![run]));
-                    }
-                    _ => return Ok(None),
-                };
-                let Some((support, outside)) = revolution(other, &sample, &ball) else {
-                    return Ok(None);
-                };
-                let outside =
-                    oriented(&outside, "the ball lies in a support's tangent plane", dec)?;
-                let path = Revolved::new(plane, support, outside, radius.clone(), dec)?;
-                let piece = Piece::new(
-                    Kind::Revolved(path),
-                    self.blend_origin(faces, step)?,
-                    convex,
-                    [first, second],
+                self.revolved_runs(
+                    root,
+                    faces,
+                    supports,
+                    Some(edge),
+                    &sample,
+                    radius,
+                    step,
                     dec,
-                )?;
-                Ok(Some(vec![Run::new(piece, faces, vec![])]))
+                )
+            }
+            // A plane normal to a torus's axis meets it in circles about the
+            // axis; an irrational one is kept as an intersection curve, whose
+            // witness is a point of the edge (4.2a step 6).
+            Curve::Intersection(intersection)
+                if matches!(
+                    supports,
+                    [Surface::Plane(_), Surface::Torus(_)] | [Surface::Torus(_), Surface::Plane(_)]
+                ) =>
+            {
+                let sample = geom.position(intersection.witness).clone();
+                self.revolved_runs(root, faces, supports, None, &sample, radius, step, dec)
             }
             Curve::Ellipse(ellipse)
                 if matches!(supports, [Surface::Cylinder(_), Surface::Cylinder(_)]) =>
@@ -430,6 +434,60 @@ impl Plan {
             }
             _ => Ok(None),
         }
+    }
+
+    /// The ring piece of a closed edge where a plane meets a cylinder, cone,
+    /// sphere or torus, or the coaxial piece of two curved supports about one
+    /// axis, from an edge point `sample`. `edge` is the edge's circle or
+    /// ellipse when the intersection gave one; a coaxial piece needs its
+    /// circle. An empty list when the edge is no sharp input boundary.
+    #[allow(clippy::too_many_arguments)]
+    fn revolved_runs(
+        &self,
+        root: usize,
+        faces: [usize; 2],
+        supports: &[Surface; 2],
+        edge: Option<&Curve>,
+        sample: &Point3,
+        radius: &Real,
+        step: &StepId,
+        dec: &mut Decider,
+    ) -> Result<Option<Vec<Run>>, Refusal> {
+        let Some((convex, senses)) = self.material_point(root, sample, faces, dec)? else {
+            return Ok(Some(vec![]));
+        };
+        let ball = self.ball_direction(faces, sample, convex, senses)?;
+        let [first, second] = supports;
+        let (plane, other) = match (
+            Self::flat(first, &ball, dec)?,
+            Self::flat(second, &ball, dec)?,
+        ) {
+            (Some(plane), None) => (plane, second),
+            (None, Some(plane)) => (plane, first),
+            (None, None) => {
+                let Some(Curve::Circle(circle)) = edge else {
+                    return Ok(None);
+                };
+                let run = self.coaxial_run(
+                    faces, supports, circle, sample, &ball, convex, step, radius, dec,
+                )?;
+                return Ok(Some(vec![run]));
+            }
+            _ => return Ok(None),
+        };
+        let Some((support, outside)) = revolution(other, sample, &ball) else {
+            return Ok(None);
+        };
+        let outside = oriented(&outside, "the ball lies in a support's tangent plane", dec)?;
+        let path = Revolved::new(plane, support, outside, radius.clone(), dec)?;
+        let piece = Piece::new(
+            Kind::Revolved(path),
+            self.blend_origin(faces, step)?,
+            convex,
+            [first, second],
+            dec,
+        )?;
+        Ok(Some(vec![Run::new(piece, faces, vec![])]))
     }
 
     /// A ring or loop where a cylinder meets a second cylinder or a sphere,

@@ -320,6 +320,7 @@ impl path::Cover for Constants {
             centre: [x, height, z],
             tangent,
             feet: [cylinder, mouth],
+            side: None,
         })
     }
     fn excludes(&self, p: &[Ball; 3], u: &Ball) -> Result<bool, Refusal> {

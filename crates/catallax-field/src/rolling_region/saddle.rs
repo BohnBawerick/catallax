@@ -332,6 +332,7 @@ impl SaddleCover {
             centre: c,
             tangent: root.tangent,
             feet: [first, second],
+            side: None,
         })
     }
 
@@ -379,6 +380,7 @@ impl Cover for SaddleCover {
                         hull3(&f.feet[0], &next.feet[0]),
                         hull3(&f.feet[1], &next.feet[1]),
                     ],
+                    side: None,
                 },
             });
         }

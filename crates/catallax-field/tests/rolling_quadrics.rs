@@ -1374,7 +1374,10 @@ const REFUSED: &[(&str, &str)] = &[
     ("dome r=3/2", "field.rolling-path-reach"),
     ("narrow frustum r=2", "field.rolling-path-reach"),
     ("spike r=12", "field.rolling-path-reach"),
-    ("torus slice r=3/5", "field.fillet-contact"),
+    // Step 6 takes a plane with a torus. No ball wider than 1/2 fits this
+    // section (the B-rep refuses with that radius limit), and the field's
+    // offset plane misses the offset torus.
+    ("torus slice r=3/5", "field.rolling-path-reach"),
 ];
 
 #[test]

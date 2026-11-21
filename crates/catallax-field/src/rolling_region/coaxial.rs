@@ -439,6 +439,7 @@ impl Coaxial {
                 point_balls(&self.revolve(&self.feet[0], direction), dec)?,
                 point_balls(&self.revolve(&self.feet[1], direction), dec)?,
             ],
+            side: None,
         })
     }
 
@@ -557,6 +558,7 @@ impl Cover for CoaxialCover {
             centre: self.revolve(&self.centre, &direction),
             tangent: turn,
             feet: self.feet.each_ref().map(|f| self.revolve(f, &direction)),
+            side: None,
         })
     }
 }

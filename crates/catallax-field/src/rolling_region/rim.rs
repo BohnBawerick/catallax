@@ -516,6 +516,7 @@ impl Cover for RimCover {
                 [&self.body * &c.cos, c.height, &self.body * &c.sin],
                 [fx, zero, fz],
             ],
+            side: None,
         })
     }
     // M18's lower envelope: a point within `r` of a ball's axis line and
@@ -632,6 +633,7 @@ impl Path for Rim {
                     ball(&(&self.major * &sin), dec)?,
                 ],
             ],
+            side: None,
         }))
     }
     fn guess(&self, local: &[Real; 3]) -> Option<Rational> {

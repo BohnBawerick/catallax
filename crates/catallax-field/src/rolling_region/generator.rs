@@ -585,6 +585,7 @@ impl Cover for GeneratorCover {
             centre: shift(&self.centre, &t, &self.direction),
             tangent: self.direction.clone(),
             feet: self.feet.each_ref().map(|f| shift(f, &t, &self.direction)),
+            side: None,
         })
     }
 }
@@ -683,6 +684,7 @@ impl Path for Generator {
                 point_balls(&self.feet[0].plus(&step), dec)?,
                 point_balls(&self.feet[1].plus(&step), dec)?,
             ],
+            side: None,
         }))
     }
 }

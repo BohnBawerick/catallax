@@ -25,7 +25,7 @@ pub(super) fn exact(
     dec: &mut Decider,
 ) -> Result<Real, Refusal> {
     if let (Some(a), Some(b)) = (a.rational_ref(), b.rational_ref()) {
-        dec.reserve_exact_arithmetic(a, b, multiply)?;
+        dec.reserve_uncounted_arithmetic(a, b, multiply)?;
     } else {
         dec.charge_work(1)?;
     }

@@ -22,6 +22,8 @@ mod cylinder_wall;
 pub use cylinder_wall::{CylinderWallBoundary, append_cylinder_wall};
 mod ring;
 pub use ring::{CylinderRingCurve, cylinder_ring_curve};
+/// A through hole in a body with tolerant entities.
+pub mod through_tolerant;
 
 /// One positive-height cylindrical or conical band of a drill tool.
 #[derive(Clone, Debug)]
@@ -452,6 +454,7 @@ impl HoleTool {
                 sense: Sense::Same,
                 start: None,
                 end: None,
+                tolerance: None,
             })
         };
         let first = &self.bands[0];
@@ -479,7 +482,10 @@ impl HoleTool {
                 let point = model
                     .geom_mut()
                     .add_point(PointDef::Explicit(self.at_depth(&band.depth[1])));
-                Some(model.add_vertex(Vertex { point }))
+                Some(model.add_vertex(Vertex {
+                    point,
+                    tolerance: None,
+                }))
             };
             faces.push(crate::extrude::face(
                 model,

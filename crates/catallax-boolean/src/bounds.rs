@@ -834,6 +834,7 @@ mod tests {
                     surface: model.face(wall).surface,
                     sense: Sense::Same,
                     loops: vec![],
+                    tolerance: None,
                 });
                 assert_eq!(
                     bounds.excludes(&mut model, cap, support, &mut dec),
@@ -867,6 +868,7 @@ mod tests {
             surface: model.face(cap).surface,
             sense: model.face(cap).sense,
             loops: vec![],
+            tolerance: None,
         });
         assert!(!bounds.separated(&mut model, cap, unbounded, &mut dec));
     }
@@ -898,6 +900,7 @@ mod tests {
                 surface,
                 sense: Sense::Same,
                 loops: vec![],
+                tolerance: None,
             });
             assert_eq!(
                 bounds.disjoint(&mut model, cap, other, &mut dec).unwrap(),

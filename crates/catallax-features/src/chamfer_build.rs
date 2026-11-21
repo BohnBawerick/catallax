@@ -24,7 +24,10 @@ fn bad(detail: &str) -> Refusal {
 }
 fn vertex(model: &mut Model, p: Point3) -> VertexId {
     let point = model.geom_mut().add_point(PointDef::Explicit(p));
-    model.add_vertex(Vertex { point })
+    model.add_vertex(Vertex {
+        point,
+        tolerance: None,
+    })
 }
 fn same(a: &Point3, b: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
     Ok(sign(&a.minus(b).norm_squared(), dec)? == Sign::Zero)
@@ -287,6 +290,7 @@ fn connector(
         sense: Sense::Same,
         start: Some(from),
         end: Some(to),
+        tolerance: None,
     }))
 }
 fn region_vertices(model: &Model, run: &Run) -> Vec<Point3> {
@@ -591,6 +595,7 @@ pub(crate) fn build(
                 sense: input.sense,
                 start: input.start.map(|v| run.ends[&(v, *face)]),
                 end: input.end.map(|v| run.ends[&(v, *face)]),
+                tolerance: None,
             });
             edit.edges.insert((*face, run.edge), edge);
             rails.push((edge, reverse(run.senses[i])));

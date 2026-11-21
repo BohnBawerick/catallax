@@ -368,6 +368,7 @@ pub(super) fn build(
                 sense,
                 start: input.start,
                 end: input.end,
+                tolerance: None,
             });
             edit.edges.insert((faces[i], old), edge);
             boundary.push((edge, super::reverse(senses[i])));

@@ -27,7 +27,10 @@ blind_test!(
                 }));
             assert_eq!(m.geom().curve(curve).is_closed(), None);
             let end = if with_vertex {
-                Some(m.add_vertex(Vertex { point }))
+                Some(m.add_vertex(Vertex {
+                    point,
+                    tolerance: None,
+                }))
             } else {
                 None
             };
@@ -44,6 +47,7 @@ blind_test!(
                 sense: Sense::Reversed,
                 start: end,
                 end,
+                tolerance: None,
             });
             let north = cycle(&mut m, &[(edge, Sense::Same)]);
             let south = cycle(&mut m, &[(edge, Sense::Reversed)]);
@@ -95,12 +99,16 @@ blind_test!(check_uses_factbook_closure_not_only_direct_records, {
         GeomKey::Curve(curve),
         GeomKey::Surface(s0),
     );
-    let vertex = m.add_vertex(Vertex { point: point0 });
+    let vertex = m.add_vertex(Vertex {
+        point: point0,
+        tolerance: None,
+    });
     let edge = m.add_edge(Edge {
         curve,
         sense: Sense::Same,
         start: Some(vertex),
         end: Some(vertex),
+        tolerance: None,
     });
     let a = cycle(&mut m, &[(edge, Sense::Same)]);
     let b = cycle(&mut m, &[(edge, Sense::Reversed)]);

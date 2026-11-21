@@ -117,7 +117,7 @@ impl Integer {
     }
     /// Non-negative greatest common divisor; `gcd(0, 0)` is 0.
     pub fn gcd(&self, other: &Self) -> Self {
-        Self(self.0.gcd(&other.0))
+        Self(crate::gcd::gcd(&self.0, &other.0))
     }
     /// Floor quotient and remainder; the remainder has the divisor's sign.
     /// Returns `None` when the divisor is zero.

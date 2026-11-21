@@ -483,6 +483,7 @@ pub fn loft_box_selection(
             surface: face.surface,
             sense: reversed(face.sense),
             loops,
+            tolerance: face.tolerance.clone(),
         }));
     }
     let mut pairs = BTreeMap::<_, [u64; 2]>::new();

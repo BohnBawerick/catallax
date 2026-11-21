@@ -824,6 +824,7 @@ fn rebuild(
                 vertices.entry(fan).or_insert_with(|| {
                     model.add_vertex(Vertex {
                         point: fan_points[&fan],
+                        tolerance: None,
                     })
                 });
             }
@@ -848,6 +849,7 @@ fn rebuild(
             sense: edge.sense,
             start,
             end,
+            tolerance: None,
         });
         model.record_edge_constructions(stored, std::mem::take(&mut edge.constructions));
         stored_edges.insert(i, stored);
@@ -882,6 +884,7 @@ fn rebuild(
                 surface: face.surface,
                 sense: face.sense,
                 loops,
+                tolerance: None,
             },
             face.origins.clone(),
         ));

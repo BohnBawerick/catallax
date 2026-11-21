@@ -143,6 +143,7 @@ blind_test!(face_point_refuses_a_carrier_with_no_rational_points, {
         surface,
         sense: Sense::Same,
         loops: vec![],
+        tolerance: None,
     });
     let refusal = face_point(&mut m, f, &mut Decider::default()).unwrap_err();
     assert_eq!(refusal.code, "boolean.no-rational-point");

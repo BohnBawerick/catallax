@@ -451,6 +451,7 @@ pub(super) fn build(
             },
             start: Some(rail_vertices[rail][0]),
             end: Some(rail_vertices[rail][1]),
+            tolerance: None,
         });
         edit.edges.insert((side.face, edge), rails[rail]);
     }
@@ -480,6 +481,7 @@ pub(super) fn build(
             sense: Sense::Same,
             start: Some(rail_vertices[0][end]),
             end: Some(rail_vertices[1][end]),
+            tolerance: None,
         });
         edit.gaps.insert((caps[end], *vertex), Gap::Edge(cuts[end]));
         for (rail, side) in [&first, &second].into_iter().enumerate() {

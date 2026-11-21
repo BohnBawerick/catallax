@@ -37,7 +37,10 @@ fn patch(
         let point = model
             .geom_mut()
             .add_point(PointDef::Explicit(position.clone()));
-        model.add_vertex(Vertex { point })
+        model.add_vertex(Vertex {
+            point,
+            tolerance: None,
+        })
     });
     let mut coedges = Vec::new();
     for index in 0..4 {
@@ -97,6 +100,7 @@ fn patch(
             sense,
             start: Some(vertices[index]),
             end: Some(vertices[next]),
+            tolerance: None,
         });
         coedges.push(model.add_coedge(Coedge {
             edge,
@@ -119,6 +123,7 @@ fn patch(
             Sense::Same
         },
         loops: vec![loop_],
+        tolerance: None,
     })
 }
 

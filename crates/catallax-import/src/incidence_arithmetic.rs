@@ -35,14 +35,16 @@ pub(super) fn arithmetic(
 
 pub(super) fn compare(a: &Rational, b: &Rational, dec: &mut Decider) -> Result<Ordering, String> {
     // Fraction ordering can cross-multiply twice, as in the patch proofs.
-    dec.reserve_exact_arithmetic(a, b, true).map_err(failure)?;
-    dec.reserve_exact_arithmetic(a, b, true).map_err(failure)?;
+    dec.reserve_uncounted_arithmetic(a, b, true)
+        .map_err(failure)?;
+    dec.reserve_uncounted_arithmetic(a, b, true)
+        .map_err(failure)?;
     Ok(a.cmp(b))
 }
 
 pub(super) fn same(a: &Vec3, b: &Vec3, dec: &mut Decider) -> Result<bool, String> {
     for i in 0..3 {
-        dec.reserve_exact_arithmetic(&a[i], &b[i], false)
+        dec.reserve_uncounted_arithmetic(&a[i], &b[i], false)
             .map_err(failure)?;
         if a[i] != b[i] {
             return Ok(false);
@@ -97,7 +99,8 @@ pub(super) fn maximum(a: Rational, b: Rational, dec: &mut Decider) -> Result<Rat
 }
 
 pub(super) fn equal(a: &Rational, b: &Rational, dec: &mut Decider) -> Result<bool, String> {
-    dec.reserve_exact_arithmetic(a, b, false).map_err(failure)?;
+    dec.reserve_uncounted_arithmetic(a, b, false)
+        .map_err(failure)?;
     Ok(a == b)
 }
 
@@ -126,7 +129,7 @@ pub(super) fn integer_arithmetic(
 ) -> Result<Integer, String> {
     let ra = Rational::from_integer(a.clone());
     let rb = Rational::from_integer(b.clone());
-    dec.reserve_exact_arithmetic(&ra, &rb, matches!(op, '*' | '/'))
+    dec.reserve_uncounted_arithmetic(&ra, &rb, matches!(op, '*' | '/'))
         .map_err(failure)?;
     Ok(match op {
         '+' => a + b,
@@ -161,7 +164,7 @@ pub(super) fn sqrt_enclosure(
             let y = integer_arithmetic(&sum, &Integer::from_i64(2), '/', dec)?;
             let ry = Rational::from_integer(y.clone());
             let rx = Rational::from_integer(x.clone());
-            dec.reserve_exact_arithmetic(&ry, &rx, false)
+            dec.reserve_uncounted_arithmetic(&ry, &rx, false)
                 .map_err(failure)?;
             if y >= x {
                 break x;

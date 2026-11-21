@@ -10,6 +10,13 @@
 //! runs on tangentially, or the intersection of the two strips at a sharp
 //! corner, with the piece of the neighbouring wall the deeper strip exposes.
 //!
+//! Sines, cosines, arctangents and hypotenuses in binary64 go through the
+//! `libm` crate (the musl library's routines in Rust), not the methods of
+//! `f64`, which call the platform's library and differ in the last bit from
+//! one machine to the next. The work that follows from these values is
+//! counted, and the predictor's done-when lines ask for the same work on two
+//! machines (Checkpoint 2 decisions, section 4.5).
+//!
 //! Every position here is a binary64 proposal. The body is assembled beside
 //! the exact model, embedded and admitted by the ordinary numerical checks at
 //! the stated tolerance; nothing in this file is authority for the result.
@@ -257,7 +264,7 @@ impl Spine {
                 ..
             } => add(
                 centre,
-                add(mul(x, radius * t.cos()), mul(y, radius * t.sin())),
+                add(mul(x, radius * libm::cos(t)), mul(y, radius * libm::sin(t))),
             ),
         }
     }
@@ -266,7 +273,7 @@ impl Spine {
     fn tangent(&self, t: f64) -> V {
         match *self {
             Self::Line { dir, .. } => dir,
-            Self::Circle { x, y, .. } => add(mul(x, -t.sin()), mul(y, t.cos())),
+            Self::Circle { x, y, .. } => add(mul(x, -libm::sin(t)), mul(y, libm::cos(t))),
         }
     }
 
@@ -285,7 +292,7 @@ impl Spine {
             Self::Line { origin, dir } => dot(sub(p, origin), dir),
             Self::Circle { centre, x, y, .. } => {
                 let offset = sub(p, centre);
-                let angle = dot(offset, y).atan2(dot(offset, x));
+                let angle = libm::atan2(dot(offset, y), dot(offset, x));
                 angle + ((near - angle) / std::f64::consts::TAU).round() * std::f64::consts::TAU
             }
         }
@@ -331,7 +338,7 @@ impl Spine {
                 let offset = sub(p, centre);
                 let height = dot(offset, axis);
                 let radial = norm(sub(offset, mul(axis, height)));
-                (radial - radius).hypot(height)
+                libm::hypot(radial - radius, height)
             }
         }
     }
@@ -364,7 +371,7 @@ impl Strip {
         let second = unit(sub(self.contact(1, t)?, centre))?;
         let cosine = dot(first, second).clamp(-1.0, 1.0);
         let across = unit(sub(second, mul(first, cosine)))?;
-        Some((centre, first, across, cosine.acos()))
+        Some((centre, first, across, libm::acos(cosine)))
     }
 
     fn point(&self, t: f64, angle: f64) -> Option<V> {
@@ -372,8 +379,8 @@ impl Strip {
         Some(add(
             centre,
             add(
-                mul(first, self.radius * angle.cos()),
-                mul(across, self.radius * angle.sin()),
+                mul(first, self.radius * libm::cos(angle)),
+                mul(across, self.radius * libm::sin(angle)),
             ),
         ))
     }
@@ -382,8 +389,8 @@ impl Strip {
     fn around(&self, t: f64, angle: f64) -> Option<V> {
         let (_, first, across, _) = self.section(t)?;
         Some(add(
-            mul(first, -self.radius * angle.sin()),
-            mul(across, self.radius * angle.cos()),
+            mul(first, -self.radius * libm::sin(angle)),
+            mul(across, self.radius * libm::cos(angle)),
         ))
     }
 
@@ -402,7 +409,7 @@ impl Strip {
         let t = self.spine.parameter(p, near);
         let (centre, first, across, _) = self.section(t)?;
         let offset = sub(p, centre);
-        Some((t, dot(offset, across).atan2(dot(offset, first))))
+        Some((t, libm::atan2(dot(offset, across), dot(offset, first))))
     }
 
     /// Section angle of the contact with support `side`.
@@ -1360,7 +1367,10 @@ impl Scratch<'_> {
             .model
             .geom_mut()
             .add_point(PointDef::Explicit(exact_point(at)?));
-        Ok(self.model.add_vertex(Vertex { point }))
+        Ok(self.model.add_vertex(Vertex {
+            point,
+            tolerance: None,
+        }))
     }
 
     fn edge(&mut self, curve: Curve, sense: Sense, ends: [VertexId; 2]) -> EdgeId {
@@ -1370,6 +1380,7 @@ impl Scratch<'_> {
             sense,
             start: Some(ends[0]),
             end: Some(ends[1]),
+            tolerance: None,
         })
     }
 
@@ -1452,7 +1463,7 @@ fn keeps_its_way(old: [V; 2], new: [V; 2], turning: Option<(V, V)>) -> bool {
     };
     let from_start = |to: V| {
         let (a, b) = (sub(old[0], centre), sub(to, centre));
-        let angle = dot(cross(a, b), axis).atan2(dot(a, b));
+        let angle = libm::atan2(dot(cross(a, b), axis), dot(a, b));
         if angle < 0.0 { angle + TAU } else { angle }
     };
     // A closed ring spans the whole turn.
@@ -1666,8 +1677,8 @@ pub(crate) fn build(
             return Ok(None);
         };
         let bisector = add(
-            mul(first, (0.5 * angle).cos()),
-            mul(across, (0.5 * angle).sin()),
+            mul(first, libm::cos(0.5 * angle)),
+            mul(across, libm::sin(0.5 * angle)),
         );
         for side in 0..2 {
             let (Some((from, from_at)), Some((to, to_at))) = (
@@ -1938,6 +1949,7 @@ pub(crate) fn build(
                     Sense::Reversed
                 },
                 loops: vec![boundary],
+                tolerance: None,
             },
             vec![Origin {
                 step: step.clone(),

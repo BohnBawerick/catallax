@@ -7,6 +7,13 @@
 //! at 128 bits under the declared tolerance. This returns no admitted body,
 //! exact answer, complete body bound, or STEP authority.
 //!
+//! Sines, cosines, arctangents and hypotenuses in binary64 go through the
+//! `libm` crate (the musl library's routines in Rust), not the methods of
+//! `f64`, which call the platform's library and differ in the last bit from
+//! one machine to the next. The work that follows from these values is
+//! counted, and the predictor's done-when lines ask for the same work on two
+//! machines (Checkpoint 2 decisions, section 4.5).
+//!
 //! This follows OCCT's face/face section, which approximates each section as
 //! one 3D B-spline and one 2D B-spline on each face (`IntTools_FaceFace` with
 //! curve and both pcurve approximations enabled) before the Boolean stores
@@ -403,13 +410,13 @@ impl Circle64 {
     }
 
     fn point(&self, t: f64) -> [f64; 3] {
-        let (sin, cos) = t.sin_cos();
+        let (sin, cos) = libm::sincos(t);
         std::array::from_fn(|i| self.center[i] + self.radius * (self.x[i] * cos + self.y[i] * sin))
     }
 
     fn phase(&self, point: [f64; 3]) -> f64 {
         let delta = sub(point, self.center);
-        dot(delta, self.y).atan2(dot(delta, self.x))
+        libm::atan2(dot(delta, self.y), dot(delta, self.x))
     }
 }
 
@@ -1663,7 +1670,10 @@ mod tests {
                         let point = model.geom_mut().add_point(PointDef::Explicit(
                             RPoint3::new(q(x), q(0), q(0)).to_real(),
                         ));
-                        model.add_vertex(Vertex { point })
+                        model.add_vertex(Vertex {
+                            point,
+                            tolerance: None,
+                        })
                     });
                     let mut ends = if lower {
                         [vertices[1], vertices[0]]
@@ -1678,6 +1688,7 @@ mod tests {
                         sense,
                         start: Some(ends[0]),
                         end: Some(ends[1]),
+                        tolerance: None,
                     });
                     let mut dec = Decider::default();
                     let tolerance = Rational::parse("0.0000001").unwrap();

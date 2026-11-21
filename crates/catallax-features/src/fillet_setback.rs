@@ -36,6 +36,7 @@ fn line_edge(
         sense: Sense::Same,
         start: Some(from),
         end: Some(to),
+        tolerance: None,
     })
 }
 
@@ -63,6 +64,7 @@ pub(crate) fn build(
     }
     let input_uses = uses(model, body);
     let selected = resolve(model, selection, &input_uses, dec)?;
+    crate::predictor::cap_fillet_attempt(model, &selected, radius, step);
     let [edge] = selected.as_slice() else {
         return Err(unsupported(
             "station clipping currently requires one selected straight edge",
@@ -280,6 +282,7 @@ pub(super) fn region(
             sense: Sense::Same,
             start: Some(vertices[offset + 1]),
             end: Some(vertices[offset + 2]),
+            tolerance: None,
         });
         sections.push([
             line_edge(model, vertices[offset], vertices[offset + 1]),

@@ -34,6 +34,7 @@ fn face(upper: bool, sense: Sense) -> (Model, FaceId) {
             sense: Sense::Same,
             start: None,
             end: None,
+            tolerance: None,
         });
         let coedge = model.add_coedge(Coedge {
             edge,
@@ -50,6 +51,7 @@ fn face(upper: bool, sense: Sense) -> (Model, FaceId) {
         surface,
         sense,
         loops,
+        tolerance: None,
     });
     (model, face)
 }

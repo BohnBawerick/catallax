@@ -915,7 +915,10 @@ fn sphere_split_along_a_long_arc(model: &mut Model) -> BodyId {
         let point = model
             .geom_mut()
             .add_point(PointDef::Explicit(RPoint3::new(a, b, c).into()));
-        model.add_vertex(Vertex { point })
+        model.add_vertex(Vertex {
+            point,
+            tolerance: None,
+        })
     });
     let mut dec = Decider::default();
     let mut arc = |model: &mut Model, normal: [i64; 3], seam: [i64; 3], ends| {
@@ -936,6 +939,7 @@ fn sphere_split_along_a_long_arc(model: &mut Model) -> BodyId {
             sense: Sense::Same,
             start: Some(start),
             end: Some(end),
+            tolerance: None,
         })
     };
     let edges = [
@@ -957,6 +961,7 @@ fn sphere_split_along_a_long_arc(model: &mut Model) -> BodyId {
             surface,
             sense: Sense::Same,
             loops: vec![boundary],
+            tolerance: None,
         }));
     }
     let shell = model.add_shell(Shell { faces });
@@ -1085,6 +1090,7 @@ fn pole_split_sphere(model: &mut Model) -> BodyId {
         sense: Sense::Same,
         start: None,
         end: None,
+        tolerance: None,
     });
     let mut faces = Vec::with_capacity(2);
     for sense in [Sense::Same, Sense::Reversed] {
@@ -1094,6 +1100,7 @@ fn pole_split_sphere(model: &mut Model) -> BodyId {
             surface,
             sense: Sense::Same,
             loops: vec![boundary],
+            tolerance: None,
         }));
     }
     let shell = model.add_shell(Shell { faces });

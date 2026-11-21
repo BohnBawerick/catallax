@@ -248,7 +248,7 @@ impl Warp {
                 let d = sub(p, origin);
                 let w = dot(d, axis);
                 let across = sub(d, scale(axis, w));
-                let (sin, cos) = (rate * w).sin_cos();
+                let (sin, cos) = libm::sincos(rate * w);
                 // Rodrigues' rotation of a vector orthogonal to the axis.
                 add(
                     add(origin, scale(axis, w)),
@@ -264,7 +264,7 @@ impl Warp {
             } => {
                 let d = sub(p, origin);
                 let [u, v, w] = [dot(d, mid), dot(d, binormal), dot(d, axis)];
-                let (sin, cos) = (v / radius).sin_cos();
+                let (sin, cos) = libm::sincos(v / radius);
                 add(
                     origin,
                     add(

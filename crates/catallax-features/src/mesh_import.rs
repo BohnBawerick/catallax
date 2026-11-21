@@ -47,6 +47,7 @@ impl Builder<'_> {
                 sense: Sense::Same,
                 start: Some(vertices[key.0 as usize]),
                 end: Some(vertices[key.1 as usize]),
+                tolerance: None,
             })
         });
         (edge, if a < b { Sense::Same } else { Sense::Reversed })
@@ -209,7 +210,10 @@ pub(crate) fn build_labelled(
         .iter()
         .map(|p| {
             let point = model.geom_mut().add_point(PointDef::Explicit(p.clone()));
-            model.add_vertex(Vertex { point })
+            model.add_vertex(Vertex {
+                point,
+                tolerance: None,
+            })
         })
         .collect();
     let mut builder = Builder {

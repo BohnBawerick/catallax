@@ -416,7 +416,7 @@ fn direction_values(
     }
     let mut scale = Rational::zero();
     for q in v {
-        dec.reserve_exact_arithmetic(q, &scale, true)?;
+        dec.reserve_uncounted_arithmetic(q, &scale, true)?;
         scale = scale.max(q.abs());
     }
     if scale.is_zero() {
@@ -431,7 +431,7 @@ fn direction_values(
         let ratio = arithmetic(q, &scale, '/', dec)?;
         dec.charge_work(1)?;
         let number = crate::number::rational(&ratio, options.significant_digits);
-        dec.reserve_exact_arithmetic(&result.error, &number.error, true)?;
+        dec.reserve_uncounted_arithmetic(&result.error, &number.error, true)?;
         result.error = result.error.max(number.error);
         result.values[i] = written(&ratio, options)?;
         result.tokens[i] = number.text;

@@ -1,5 +1,5 @@
 use super::*;
-use crate::{BodyKind, block, cone, cylinder, empty, sphere, torus};
+use crate::{BodyKind, Tolerance, block, cone, cylinder, empty, sphere, torus};
 use catallax_numbers::{Fact, FactKind, FactOrigin, MarkLog, Rational};
 use catallax_shapes::{
     Circle, Curve, GeomKey, Line, Plane, PointDef, Pose, RPoint3, RVector3, Rotation, Surface,
@@ -483,6 +483,7 @@ fn ring_face(
         surface,
         sense: Sense::Same,
         loops,
+        tolerance: None,
     })
 }
 
@@ -503,6 +504,7 @@ fn sound_ring_faces_and_same_face_double_use() {
         sense: Sense::Same,
         start: None,
         end: None,
+        tolerance: None,
     });
     let north = ring_face(&mut m, surface, edge, &[Sense::Same]);
     let south = ring_face(&mut m, surface, edge, &[Sense::Reversed]);
@@ -522,6 +524,7 @@ fn sound_ring_faces_and_same_face_double_use() {
         sense: Sense::Same,
         start: None,
         end: None,
+        tolerance: None,
     });
     let face = ring_face(&mut m, surface, edge, &[Sense::Same, Sense::Reversed]);
     let cut = body(&mut m, vec![face]);
@@ -596,6 +599,7 @@ fn structural_and_incidence_faults() {
         surface,
         sense: Sense::Same,
         loops: vec![],
+        tolerance: None,
     });
     let unbounded = body(&mut m, vec![plane]);
     assert_fault(&m, unbounded, "topology.unbounded-face");
@@ -604,18 +608,23 @@ fn structural_and_incidence_faults() {
         surface,
         sense: Sense::Same,
         loops: vec![empty_loop],
+        tolerance: None,
     });
     let b = body(&mut m, vec![f]);
     assert_fault(&m, b, "topology.empty-part");
     let point = m
         .geom_mut()
         .add_point(PointDef::Explicit((p(0, 0, 0)).into()));
-    let vertex = m.add_vertex(Vertex { point });
+    let vertex = m.add_vertex(Vertex {
+        point,
+        tolerance: None,
+    });
     let vertex_loop = m.add_loop(Loop::Vertex(vertex));
     let f = m.add_face(Face {
         surface,
         sense: Sense::Same,
         loops: vec![vertex_loop],
+        tolerance: None,
     });
     let b = body(&mut m, vec![f]);
     assert_fault(&m, b, "topology.vertex-loop");
@@ -634,6 +643,7 @@ fn structural_and_incidence_faults() {
             sense: Sense::Same,
             start,
             end,
+            tolerance: None,
         });
         let f = ring_face(&mut m, surface, edge, &[Sense::Same]);
         let b = body(&mut m, vec![f]);
@@ -761,6 +771,7 @@ fn multiple_lumps_voids_and_cross_shell_sharing() {
             surface: face.surface,
             sense: Sense::Reversed,
             loops,
+            tolerance: None,
         }));
     }
     let void = m.add_shell(Shell { faces: void_faces });
@@ -824,6 +835,7 @@ fn block_with_cylindrical_hole_has_genus_one() {
         surface: side.surface,
         sense: Sense::Reversed,
         loops: hole_loops,
+        tolerance: None,
     }));
     let holed = body(&mut m, faces);
     assert_eq!(m.check(holed), vec![]);
@@ -848,7 +860,10 @@ fn one_vertex_closed_edges_and_repeated_vertex_boundaries() {
     let point = m
         .geom_mut()
         .add_point(PointDef::Explicit((p(2, 0, 0)).into()));
-    let vertex = m.add_vertex(Vertex { point });
+    let vertex = m.add_vertex(Vertex {
+        point,
+        tolerance: None,
+    });
     fact(&mut m, GeomKey::Curve(curve), GeomKey::Surface(surface));
     fact(&mut m, GeomKey::Point(point), GeomKey::Curve(curve));
     let edge = m.add_edge(Edge {
@@ -856,6 +871,7 @@ fn one_vertex_closed_edges_and_repeated_vertex_boundaries() {
         sense: Sense::Reversed,
         start: Some(vertex),
         end: Some(vertex),
+        tolerance: None,
     });
     let north = ring_face(&mut m, surface, edge, &[Sense::Same]);
     let south = ring_face(&mut m, surface, edge, &[Sense::Reversed]);
@@ -885,4 +901,328 @@ fn one_vertex_closed_edges_and_repeated_vertex_boundaries() {
         marks: MarkLog::new(),
     });
     assert_fault(&m, invalid, "topology.shared-entity");
+}
+
+// ------------------------------------------------- exact and tolerant entities
+
+fn tol(text: &str) -> Tolerance {
+    Tolerance::new(Rational::parse(text).unwrap()).unwrap()
+}
+
+/// A copy of `source` over the same geometry, with each vertex, edge and face
+/// passed through its closure. The facts recorded for the geometry hold for
+/// the copy as well.
+fn rebuilt(
+    m: &mut Model,
+    source: BodyId,
+    vertex: impl Fn(VertexId, Vertex) -> Vertex,
+    edge: impl Fn(EdgeId, Edge) -> Edge,
+    face: impl Fn(FaceId, Face) -> Face,
+) -> BodyId {
+    let mut vertices = BTreeMap::new();
+    for v in m.vertices_of_body(source) {
+        let copy = vertex(v, m.vertex(v).clone());
+        vertices.insert(v, m.add_vertex(copy));
+    }
+    let mut edges = BTreeMap::new();
+    for e in m.edges_of_body(source) {
+        let old = m.edge(e).clone();
+        let copy = edge(
+            e,
+            Edge {
+                start: old.start.map(|v| vertices[&v]),
+                end: old.end.map(|v| vertices[&v]),
+                ..old
+            },
+        );
+        edges.insert(e, m.add_edge(copy));
+    }
+    let mut faces = Vec::new();
+    for f in m.faces_of_body(source) {
+        let old = m.face(f).clone();
+        let mut loops = Vec::new();
+        for l in &old.loops {
+            let copy = match m.loop_(*l).clone() {
+                Loop::Vertex(v) => Loop::Vertex(vertices[&v]),
+                Loop::Coedges(uses) => Loop::Coedges(
+                    uses.into_iter()
+                        .map(|c| {
+                            let c = m.coedge(c).clone();
+                            m.add_coedge(Coedge {
+                                edge: edges[&c.edge],
+                                sense: c.sense,
+                            })
+                        })
+                        .collect(),
+                ),
+            };
+            loops.push(m.add_loop(copy));
+        }
+        let copy = face(f, Face { loops, ..old });
+        faces.push(m.add_face(copy));
+    }
+    body(m, faces)
+}
+
+fn a_block(m: &mut Model) -> BodyId {
+    block(m, [r(2), r(3), r(5)], &Pose::identity()).unwrap()
+}
+
+fn codes(faults: &[TopologyFault]) -> Vec<&'static str> {
+    faults.iter().map(|fault| fault.code).collect()
+}
+
+/// The tolerance of every vertex, edge and face of a body, in the body's
+/// fixed order.
+fn tolerances(m: &Model, b: BodyId) -> [Vec<Option<Tolerance>>; 3] {
+    [
+        m.vertices_of_body(b)
+            .into_iter()
+            .map(|v| m.vertex(v).tolerance.clone())
+            .collect(),
+        m.edges_of_body(b)
+            .into_iter()
+            .map(|e| m.edge(e).tolerance.clone())
+            .collect(),
+        m.faces_of_body(b)
+            .into_iter()
+            .map(|f| m.face(f).tolerance.clone())
+            .collect(),
+    ]
+}
+
+/// A block with one tolerant face: the face at 1e-6 mm, its edges at 2e-6
+/// and their vertices at 3e-6. Everything else is exact.
+fn block_with_a_tolerant_face(m: &mut Model) -> BodyId {
+    let source = a_block(m);
+    let face = m.faces_of_body(source)[0];
+    let Loop::Coedges(uses) = m.loop_(m.face(face).loops[0]).clone() else {
+        unreachable!("a block face has one loop of coedges")
+    };
+    let edges: Vec<EdgeId> = uses.iter().map(|c| m.coedge(*c).edge).collect();
+    let vertices: Vec<VertexId> = edges
+        .iter()
+        .flat_map(|e| [m.edge(*e).start, m.edge(*e).end])
+        .flatten()
+        .collect();
+    rebuilt(
+        m,
+        source,
+        |id, v| Vertex {
+            tolerance: vertices.contains(&id).then(|| tol("3/1000000")),
+            ..v
+        },
+        |id, e| Edge {
+            tolerance: edges.contains(&id).then(|| tol("2/1000000")),
+            ..e
+        },
+        |id, f| Face {
+            tolerance: (id == face).then(|| tol("1/1000000")),
+            ..f
+        },
+    )
+}
+
+#[test]
+fn a_tolerant_edge_forces_its_vertices_and_leaves_its_faces_exact() {
+    let mut m = Model::new();
+    let source = a_block(&mut m);
+    let edge = m.edges_of_body(source)[0];
+    let ends = [m.edge(edge).start.unwrap(), m.edge(edge).end.unwrap()];
+    let stored = tol("1/1000000");
+    let on_edge = |id: EdgeId, e: Edge| Edge {
+        tolerance: (id == edge).then(|| stored.clone()),
+        ..e
+    };
+
+    // One tolerant edge between two tolerant vertices, in an exact body. Its
+    // two faces stay exact, and the body is sound.
+    let mixed = rebuilt(
+        &mut m,
+        source,
+        |id, v| Vertex {
+            tolerance: ends.contains(&id).then(|| stored.clone()),
+            ..v
+        },
+        on_edge,
+        |_, f| f,
+    );
+    assert_eq!(m.check(mixed), Vec::new());
+    assert!(tolerances(&m, mixed)[2].iter().all(Option::is_none));
+    assert_eq!(tolerances(&m, mixed)[1].iter().flatten().count(), 1);
+
+    // A vertex may hold more than its edge.
+    let wider = rebuilt(
+        &mut m,
+        source,
+        |id, v| Vertex {
+            tolerance: ends.contains(&id).then(|| tol("1/1000")),
+            ..v
+        },
+        on_edge,
+        |_, f| f,
+    );
+    assert_eq!(m.check(wider), Vec::new());
+
+    // Exact vertices under a tolerant edge: one fault for each end.
+    let unforced = rebuilt(&mut m, source, |_, v| v, on_edge, |_, f| f);
+    assert_eq!(
+        codes(&m.check(unforced)),
+        ["topology.tolerance-order", "topology.tolerance-order"]
+    );
+
+    // One end holds less than the edge.
+    let short = rebuilt(
+        &mut m,
+        source,
+        |id, v| Vertex {
+            tolerance: if id == ends[0] {
+                Some(tol("1/10000000"))
+            } else if id == ends[1] {
+                Some(stored.clone())
+            } else {
+                None
+            },
+            ..v
+        },
+        on_edge,
+        |_, f| f,
+    );
+    let faults = m.check(short);
+    assert_eq!(codes(&faults), ["topology.tolerance-order"]);
+    assert!(
+        faults[0].detail.contains("1/10000000 mm") && faults[0].detail.contains("1/1000000 mm"),
+        "{}",
+        faults[0].detail
+    );
+}
+
+#[test]
+fn a_tolerant_face_needs_edges_and_vertices_at_least_as_wide() {
+    let mut m = Model::new();
+    let sound = block_with_a_tolerant_face(&mut m);
+    assert_eq!(m.check(sound), Vec::new());
+
+    // The face alone: each of its four edges holds less than it does.
+    let source = a_block(&mut m);
+    let face = m.faces_of_body(source)[0];
+    let alone = rebuilt(
+        &mut m,
+        source,
+        |_, v| v,
+        |_, e| e,
+        |id, f| Face {
+            tolerance: (id == face).then(|| tol("1/1000000")),
+            ..f
+        },
+    );
+    assert_eq!(codes(&m.check(alone)), ["topology.tolerance-order"; 4]);
+}
+
+#[test]
+fn a_tolerance_is_the_record_where_no_fact_is() {
+    let mut m = Model::new();
+    let source = a_block(&mut m);
+    let edge = m.edges_of_body(source)[0];
+    let ends = [m.edge(edge).start.unwrap(), m.edge(edge).end.unwrap()];
+    // The same line under a new handle: nothing is recorded about it.
+    let line = m.geom().curve(m.edge(edge).curve).clone();
+    let unproven = m.geom_mut().add_curve(line);
+    let on_edge = |tolerance: Option<Tolerance>| {
+        move |id: EdgeId, e: Edge| {
+            if id == edge {
+                Edge {
+                    curve: unproven,
+                    tolerance: tolerance.clone(),
+                    ..e
+                }
+            } else {
+                e
+            }
+        }
+    };
+
+    // Exact, the edge needs its facts.
+    let exact = rebuilt(&mut m, source, |_, v| v, on_edge(None), |_, f| f);
+    let faults = m.check(exact);
+    assert!(!faults.is_empty());
+    assert!(
+        codes(&faults)
+            .iter()
+            .all(|code| *code == "topology.missing-incidence")
+    );
+
+    // Tolerant, its tolerance is what its builder measured, and the rest of
+    // the body is held to its facts as before.
+    let stored = tol("1/1000000");
+    let tolerant = rebuilt(
+        &mut m,
+        source,
+        |id, v| Vertex {
+            tolerance: ends.contains(&id).then(|| stored.clone()),
+            ..v
+        },
+        on_edge(Some(stored.clone())),
+        |_, f| f,
+    );
+    assert_eq!(m.check(tolerant), Vec::new());
+}
+
+#[test]
+fn a_moved_copy_keeps_every_tolerance() {
+    let mut m = Model::new();
+    let source = block_with_a_tolerant_face(&mut m);
+    for map in [
+        catallax_shapes::Isometry::translation(v(10, -4, 7)),
+        catallax_shapes::Isometry::reflection(&p(0, 0, 9), &v(0, 0, 1)).unwrap(),
+    ] {
+        let moved = crate::transformed_body(&mut m, source, &map, Clone::clone);
+        assert_eq!(m.check(moved), Vec::new());
+        let [mut vertices, mut edges, mut faces] = tolerances(&m, moved);
+        let [mut source_vertices, mut source_edges, mut source_faces] = tolerances(&m, source);
+        // A reflection walks each loop the other way, so compare as sets.
+        for list in [
+            &mut vertices,
+            &mut edges,
+            &mut faces,
+            &mut source_vertices,
+            &mut source_edges,
+            &mut source_faces,
+        ] {
+            list.sort();
+        }
+        assert_eq!(
+            [vertices, edges, faces],
+            [source_vertices, source_edges, source_faces]
+        );
+    }
+}
+
+#[test]
+fn a_replayed_journal_keeps_every_tolerance() {
+    let mut original = Model::new();
+    let source = a_block(&mut original);
+    let mut copy = original.clone();
+    copy.journal_begin();
+    let made = block_with_a_tolerant_face(&mut copy);
+    let journal = copy.journal_end();
+    // The original grows before the replay, so every handle moves.
+    let _ = (source, a_block(&mut original));
+    let remap = original.replay(&journal);
+    let replayed = remap.body(made);
+    assert_eq!(tolerances(&original, replayed), tolerances(&copy, made));
+    assert_eq!(tolerances(&copy, made)[0].iter().flatten().count(), 4);
+    assert_eq!(original.check(replayed), Vec::new());
+}
+
+#[test]
+fn a_handed_over_model_keeps_every_tolerance() {
+    let mut m = Model::new();
+    let body = block_with_a_tolerant_face(&mut m);
+    let mut dec = catallax_numbers::Decider::default();
+    let written = catallax_numbers::transfer::encode(&m, &mut dec).unwrap();
+    assert_eq!(&written[8..12], &3_u32.to_le_bytes());
+    let read: Model = catallax_numbers::transfer::decode(&written, &mut dec).unwrap();
+    assert_eq!(tolerances(&read, body), tolerances(&m, body));
+    assert_eq!(read.check(body), Vec::new());
 }

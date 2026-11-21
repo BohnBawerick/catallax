@@ -192,7 +192,10 @@ fn parallel_face(
                     let point = model
                         .geom_mut()
                         .add_point(PointDef::Explicit(skin.vertices[vertex].plus(&shift)));
-                    model.add_vertex(Vertex { point })
+                    model.add_vertex(Vertex {
+                        point,
+                        tolerance: None,
+                    })
                 });
             }
             let curve = model.geom_mut().add_curve(Curve::Line(Line {
@@ -204,6 +207,7 @@ fn parallel_face(
                 sense: Sense::Same,
                 start: Some(vertices[&a]),
                 end: Some(vertices[&b]),
+                tolerance: None,
             });
             path.push((edge, Sense::Same));
         }
@@ -249,6 +253,7 @@ fn cylinder_face(
             sense: Sense::Same,
             start: None,
             end: None,
+            tolerance: None,
         })
     });
     crate::extrude::face(
@@ -442,6 +447,7 @@ pub(super) fn build(
                         surface,
                         sense: Sense::Same,
                         loops: Vec::new(),
+                        tolerance: None,
                     },
                     vec![Origin {
                         step: step.clone(),

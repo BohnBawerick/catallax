@@ -118,7 +118,7 @@ Nothing a worker does reaches the writer except through a record. A cache that l
 
 Cells whose fill is not charged, such as a node's coarse enclosure or a curve's equations, are shared freely. A worker that fills one saves the writer time and changes no count.
 
-The rule for new code: a cache on a shared object, or one a thread keeps for itself, whose miss spends decision work must ask `catallax_numbers::shared_caches()` before it is read or filled, or call `private_cache()` when it is read. `crates/catallax-boolean/tests/shared_state.rs` lists every such place and fails when one is added without a line in the list.
+The rule for new code: a cache on a shared object, or one a thread keeps for itself, whose miss spends decision work must ask `catallax_numbers::shared_caches()` before it is read or filled, or call `private_cache()` when it is read. `crates/catallax-boolean/tests/shared_state.rs` lists every such place and fails when one is added without a line in the list. A memo on a shared object whose fill is not charged needs no guard for `used`. Where its fill runs ball or rational arithmetic, wrap the fill in `catallax_numbers::uncounted_memo`: the number types count their own arithmetic in `OperationWork::uncharged`, and a fill that whichever thread reads first runs would make that count differ with the thread count ([the predictor note](milestones/3.0B-predictor.md)).
 
 ## 5. Where the threads work
 

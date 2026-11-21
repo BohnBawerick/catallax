@@ -27,8 +27,8 @@ pub(super) fn mul(a: &Rational, b: &Rational, dec: &mut Decider) -> Result<Ratio
 }
 /// Comparing fractions cross-multiplies, so it reserves two products.
 pub(super) fn less(a: &Rational, b: &Rational, dec: &mut Decider) -> Result<bool, Refusal> {
-    dec.reserve_exact_arithmetic(a, b, true)?;
-    dec.reserve_exact_arithmetic(a, b, true)?;
+    dec.reserve_uncounted_arithmetic(a, b, true)?;
+    dec.reserve_uncounted_arithmetic(a, b, true)?;
     Ok(a < b)
 }
 fn lerp(a: &Rational, b: &Rational, t: &Rational, dec: &mut Decider) -> Result<Rational, Refusal> {
@@ -264,7 +264,7 @@ impl Value for Rational {
         lerp(a, b, t, dec)
     }
     fn same(a: &Self, b: &Self, dec: &mut Decider) -> Result<bool, Refusal> {
-        dec.reserve_exact_arithmetic(a, b, false)?;
+        dec.reserve_uncounted_arithmetic(a, b, false)?;
         Ok(a == b)
     }
     fn bounds(&self) -> [Rational; 2] {
@@ -1084,7 +1084,7 @@ fn round_out(value: &Rational, dec: &mut Decider) -> Result<[Rational; 2], Refus
     if limbs(value) <= 4 {
         return Ok([value.clone(), value.clone()]);
     }
-    dec.reserve_exact_arithmetic(value, value, false)?;
+    dec.reserve_uncounted_arithmetic(value, value, false)?;
     let scaled = value.mul_pow2(COARSE_BITS);
     let lo = Rational::from_integer(scaled.floor()).mul_pow2(-COARSE_BITS);
     let hi = Rational::from_integer(scaled.ceil()).mul_pow2(-COARSE_BITS);

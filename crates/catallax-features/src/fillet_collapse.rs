@@ -237,6 +237,7 @@ fn rail(model: &mut Model, source: EdgeId, contact: &Curve) -> EdgeId {
         sense,
         start: None,
         end: None,
+        tolerance: None,
     })
 }
 

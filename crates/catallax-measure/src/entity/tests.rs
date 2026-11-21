@@ -526,13 +526,17 @@ fn segments(pairs: &[[RPoint3; 2]]) -> (Model, Vec<EdgeId>) {
             let point = model
                 .geom_mut()
                 .add_point(PointDef::Explicit(q.clone().into()));
-            model.add_vertex(Vertex { point })
+            model.add_vertex(Vertex {
+                point,
+                tolerance: None,
+            })
         });
         edges.push(model.add_edge(TopoEdge {
             curve,
             sense: Sense::Same,
             start: Some(a),
             end: Some(b),
+            tolerance: None,
         }));
     }
     (model, edges)

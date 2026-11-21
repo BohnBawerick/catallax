@@ -152,6 +152,7 @@ fn elliptic_cylinder_preserves_euclidean_distance_and_oblique_circle_trims() {
             sense: Sense::Same,
             start: None,
             end: None,
+            tolerance: None,
         });
         let coedge = model.add_coedge(Coedge { edge, sense });
         loops.push(model.add_loop(Loop::Coedges(vec![coedge])));
@@ -160,6 +161,7 @@ fn elliptic_cylinder_preserves_euclidean_distance_and_oblique_circle_trims() {
         surface,
         sense: Sense::Same,
         loops,
+        tolerance: None,
     });
     let mut dec = Decider::default();
     let prepared = PreparedFace::new(&model, face, &mut dec).unwrap();
@@ -399,6 +401,7 @@ fn spherical_face(
                 sense: edge_sense,
                 start: None,
                 end: None,
+                tolerance: None,
             });
             let coedge = model.add_coedge(Coedge {
                 edge,
@@ -411,6 +414,7 @@ fn spherical_face(
         surface,
         sense: face_sense,
         loops,
+        tolerance: None,
     });
     (model, face)
 }

@@ -63,7 +63,10 @@ fn sense_sign(sense: Sense) -> i8 {
 }
 pub(super) fn vertex(model: &mut Model, p: Point3) -> VertexId {
     let point = model.geom_mut().add_point(PointDef::Explicit(p));
-    model.add_vertex(Vertex { point })
+    model.add_vertex(Vertex {
+        point,
+        tolerance: None,
+    })
 }
 
 // A mouth that the ball reaches, with its exact envelope definition.
@@ -578,6 +581,7 @@ pub(crate) fn build(
             sense: Sense::Same,
             start: Some(foot[0]),
             end: Some(foot[1]),
+            tolerance: None,
         })
     };
     let mut meridians = Vec::with_capacity(holes.len());
@@ -597,6 +601,7 @@ pub(crate) fn build(
                 sense,
                 start: Some(from),
                 end: Some(to),
+                tolerance: None,
             })
         };
         cylinder_arcs.push(arc(
@@ -636,6 +641,7 @@ pub(crate) fn build(
             sense: Sense::Same,
             start: Some(start),
             end: Some(end),
+            tolerance: None,
         }));
         let mouth_curve = model.edge(hole.edge).curve;
         let sense = ccw_sense(&Curve::Circle(hole.circle.clone()), &axis, dec)?;
@@ -670,6 +676,7 @@ pub(crate) fn build(
                 sense,
                 start: Some(from),
                 end: Some(to),
+                tolerance: None,
             })
         };
         let near = ccw(model, near_from, near_to);

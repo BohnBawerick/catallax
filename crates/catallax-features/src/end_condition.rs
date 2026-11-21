@@ -1001,6 +1001,7 @@ fn boundary_face(
                 sense: catallax_topology::Sense::Same,
                 start: Some(vertices[key.0]),
                 end: Some(vertices[key.1]),
+                tolerance: None,
             })
         });
         path.push((
@@ -1078,7 +1079,10 @@ impl Capped {
                 let point = model
                     .geom_mut()
                     .add_point(catallax_shapes::PointDef::Explicit(p.clone()));
-                vertices.push(model.add_vertex(Vertex { point }));
+                vertices.push(model.add_vertex(Vertex {
+                    point,
+                    tolerance: None,
+                }));
                 points.push(p);
             }
         }

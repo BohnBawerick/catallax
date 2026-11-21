@@ -243,7 +243,13 @@ fn opening(
         let point = model
             .geom_mut()
             .add_point(catallax_shapes::PointDef::Explicit(point));
-        vertices.insert(*vertex, model.add_vertex(Vertex { point }));
+        vertices.insert(
+            *vertex,
+            model.add_vertex(Vertex {
+                point,
+                tolerance: None,
+            }),
+        );
     }
     let mut edges = BTreeMap::new();
     let mut boundary: [Vec<(EdgeId, Sense)>; 2] = Default::default();
@@ -275,6 +281,7 @@ fn opening(
             sense: e.sense,
             start: e.start.map(|v| vertices[&v]),
             end: e.end.map(|v| vertices[&v]),
+            tolerance: None,
         });
         edges.insert(*edge, copied);
         match senses.as_slice() {

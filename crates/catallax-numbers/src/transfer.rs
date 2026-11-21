@@ -15,7 +15,11 @@ use std::{
 };
 
 const MAGIC: &[u8; 8] = b"CXBODY\0\0";
-const VERSION: u32 = 2;
+// Version 2 added the free wires of a body. Version 3 added the optional
+// tolerance of a vertex, an edge and a face. A reader takes all three: an
+// older record has no wires and no tolerances.
+const VERSION: u32 = 3;
+const OLDEST_VERSION: u32 = 1;
 
 mod json;
 pub use json::charge_json_number;
@@ -336,7 +340,7 @@ pub fn decode<T: Codec>(bytes: &[u8], decider: &mut Decider) -> Result<T, Refusa
             .try_into()
             .map_err(|_| invalid("truncated version"))?,
     );
-    if version != 1 && version != VERSION {
+    if !(OLDEST_VERSION..=VERSION).contains(&version) {
         return Err(Refusal::new(
             "handover.version-mismatch",
             "unsupported body handover format version",
@@ -1180,10 +1184,27 @@ mod tests {
         legacy.extend(json);
         legacy.extend(Sha256::digest(&legacy).as_slice());
         let mut current = legacy[..legacy.len() - 32].to_vec();
-        current[8..12].copy_from_slice(&2_u32.to_le_bytes());
+        current[8..12].copy_from_slice(&VERSION.to_le_bytes());
         current.extend(Sha256::digest(&current).as_slice());
         assert_eq!(encode(&value, &mut Decider::default()).unwrap(), current);
-        let restored: Metadata = decode(&legacy, &mut Decider::default()).unwrap();
-        assert_eq!(restored.0, value.0);
+        // Every version from the oldest to the current one reads, and no other.
+        for version in OLDEST_VERSION..=VERSION {
+            let mut stored = legacy[..legacy.len() - 32].to_vec();
+            stored[8..12].copy_from_slice(&version.to_le_bytes());
+            stored.extend(Sha256::digest(&stored).as_slice());
+            let restored: Metadata = decode(&stored, &mut Decider::default()).unwrap();
+            assert_eq!(restored.0, value.0);
+        }
+        for version in [OLDEST_VERSION - 1, VERSION + 1] {
+            let mut stored = legacy[..legacy.len() - 32].to_vec();
+            stored[8..12].copy_from_slice(&version.to_le_bytes());
+            stored.extend(Sha256::digest(&stored).as_slice());
+            assert_eq!(
+                decode::<Metadata>(&stored, &mut Decider::default())
+                    .err()
+                    .map(|refusal| refusal.code),
+                Some("handover.version-mismatch")
+            );
+        }
     }
 }

@@ -226,7 +226,10 @@ fn append(
                 y.into(),
                 z.into(),
             )));
-            model.add_vertex(Vertex { point })
+            model.add_vertex(Vertex {
+                point,
+                tolerance: None,
+            })
         })
         .collect();
     let edges: Vec<_> = definition
@@ -239,6 +242,7 @@ fn append(
                 sense: Sense::Same,
                 start: Some(vertices[e.vertices[0]]),
                 end: Some(vertices[e.vertices[1]]),
+                tolerance: None,
             })
         })
         .collect();

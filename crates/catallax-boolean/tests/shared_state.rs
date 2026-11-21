@@ -10,7 +10,9 @@ use std::{collections::BTreeSet, fs, path::Path};
 /// Why state a worker can reach cannot change the writer's work.
 #[derive(Clone, Copy, Debug)]
 enum Kind {
-    /// Its fill spends no decision work, so who fills it changes no count.
+    /// Its fill spends no decision work, so who fills it changes no charge.
+    /// Where the fill runs ball or rational arithmetic it is wrapped in
+    /// `uncounted_memo`, so who fills it changes no uncharged count either.
     Uncharged,
     /// Its fill is charged; a worker asks `shared_caches()` and leaves it alone.
     Guarded,
@@ -114,6 +116,22 @@ const KNOWN: &[(&str, &str, Kind)] = &[
     // The grouped atomic type import matches the scanner. It is a compiled-out
     // namespace binding, not an additional runtime cell.
     ("catallax-numbers/src/operation.rs", "atomic", Kind::Setting),
+    // What the number types have counted on this thread for its installed
+    // counter, and whether the count is closed. A worker's is its own, and it
+    // reaches the writer only with a record the writer adopts.
+    (
+        "catallax-numbers/src/operation.rs",
+        "ARITHMETIC",
+        Kind::PerThread,
+    ),
+    // The cap decisions the capped attempts open on this thread have put
+    // off. A decision is asked by a charge of the thread that put it off, and
+    // an item or a worker starts with none.
+    (
+        "catallax-numbers/src/operation.rs",
+        "PENDING",
+        Kind::PerThread,
+    ),
     (
         "catallax-numbers/src/operation.rs",
         "ROOT_PROOFS",
@@ -393,7 +411,8 @@ fn every_shared_cell_a_worker_can_reach_is_accounted_for() {
         unlisted.is_empty(),
         "state a run-ahead worker can reach, with no reason listed here: {unlisted:?}. \
          If filling it spends decision work, guard it with catallax_numbers::shared_caches() \
-         (docs/RUN-AHEAD.md, section 4), then add it to KNOWN."
+         (docs/RUN-AHEAD.md, section 4). If its fill is not charged and runs ball or rational \
+         arithmetic, wrap the fill in catallax_numbers::uncounted_memo. Then add it to KNOWN."
     );
     let gone: Vec<_> = known.difference(&found).collect();
     assert!(

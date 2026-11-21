@@ -34,7 +34,10 @@ pub fn block(model: &mut Model, size: [Rational; 3], pose: &Pose) -> Result<Body
         let point = model
             .geom_mut()
             .add_point(PointDef::Explicit(pose.apply_point(&corners[i])));
-        model.add_vertex(Vertex { point })
+        model.add_vertex(Vertex {
+            point,
+            tolerance: None,
+        })
     });
     let mut edges = BTreeMap::new();
     for (axis, mask) in [4, 2, 1].into_iter().enumerate() {
@@ -52,6 +55,7 @@ pub fn block(model: &mut Model, size: [Rational; 3], pose: &Pose) -> Result<Body
                     sense: Sense::Same,
                     start: Some(vertices[i]),
                     end: Some(vertices[i | mask]),
+                    tolerance: None,
                 });
                 edges.insert((i, i | mask), edge);
             }
@@ -263,6 +267,7 @@ fn closed_solid(model: &mut Model, surface: Surface, pose: &Pose) -> BodyId {
         surface,
         sense: Sense::Same,
         loops: Vec::new(),
+        tolerance: None,
     });
     solid(model, vec![face])
 }
@@ -322,6 +327,7 @@ fn face(model: &mut Model, surface: SurfaceId, loops: Vec<LoopId>, origin: &'sta
         surface,
         sense: Sense::Same,
         loops,
+        tolerance: None,
     })
 }
 
@@ -340,6 +346,7 @@ fn ring(model: &mut Model, radius: &Rational, z: Rational, pose: &Pose) -> EdgeI
         sense: Sense::Same,
         start: None,
         end: None,
+        tolerance: None,
     })
 }
 
@@ -395,7 +402,10 @@ fn round_solid(
         let point = model
             .geom_mut()
             .add_point(PointDef::Explicit(pose.apply_point(&at_z(height))));
-        let vertex = model.add_vertex(Vertex { point });
+        let vertex = model.add_vertex(Vertex {
+            point,
+            tolerance: None,
+        });
         model.add_loop(Loop::Vertex(vertex))
     });
     let side_key = GeomKey::Surface(side_surface);

@@ -35,6 +35,22 @@ pub(super) struct Context<'a> {
     repair_cap: f64,
     pub(super) stage: super::NativeStage,
     pub(super) repair_boundaries: bool,
+    /// The work allowance of each edge for the gap rule: the checker's cap
+    /// (`gap::EDGE_WORK`). Only a test of the cap gives less.
+    pub(super) edge_work: u64,
+    /// What the edges of the source body now being checked have counted
+    /// against their allowances in the rounds before this one, by the name
+    /// of their `EDGE_CURVE`. Section 4.2 step 8: "A hard per-edge work cap
+    /// refuses by name." A round that fails for another reason is followed
+    /// by another round on the same source body, and an edge that both
+    /// rounds read has one allowance for the two. The admission puts a
+    /// body's ledger here before its check and takes it back after, on
+    /// either outcome.
+    pub(super) edge_spent: BTreeMap<String, u64>,
+    /// The edges sewing replaced in this candidate, each with the edge that
+    /// was kept in its place: `(replaced, retained)` by `EDGE_CURVE` name.
+    /// What a replaced edge has counted is the retained edge's.
+    pub(super) sewn: Vec<(String, String)>,
 }
 #[derive(Debug)]
 pub(super) struct Carriers {
@@ -62,6 +78,9 @@ impl<'a> Context<'a> {
             repair_cap,
             stage: super::NativeStage::BodyBuild,
             repair_boundaries: true,
+            edge_work: n::gap::EDGE_WORK,
+            edge_spent: BTreeMap::new(),
+            sewn: Vec::new(),
         }
     }
     pub fn into_carriers(self) -> Carriers {
@@ -921,6 +940,55 @@ pub(super) fn check_body(
     evidence: &mut TolerantEvidence,
     dec: &mut Decider,
 ) -> Result<TolerantCounts, Error> {
+    let mut gap_allowances = import_gap::EdgeAllowances::of(context.edge_work);
+    let checked = check_body_under(context, body, evidence, &mut gap_allowances, dec);
+    // What each edge has counted stays with its name on either outcome, for
+    // a later round on this source body. A round that ended before its
+    // edges were given their allowances has counted nothing and leaves the
+    // ledger as it was.
+    for (edge, counted) in gap_allowances.counted() {
+        keep(
+            &mut context.edge_spent,
+            &context.sewn,
+            &body.edges[edge].name,
+            counted,
+        );
+    }
+    checked
+}
+
+/// What an edge starts a round with: what it counted in the rounds before,
+/// and what each edge that sewing replaced by it counted there. `spent` is
+/// by `EDGE_CURVE` name and `sewn` is `(replaced, retained)`.
+fn carried(spent: &BTreeMap<String, u64>, sewn: &[(String, String)], name: &str) -> u64 {
+    let of = |name: &str| spent.get(name).copied().unwrap_or(0);
+    sewn.iter()
+        .filter(|(_, retained)| retained == name)
+        .fold(of(name), |sum, (replaced, _)| {
+            sum.saturating_add(of(replaced))
+        })
+}
+
+/// Keeps what a round added to an edge under the edge's own name. `counted`
+/// is the edge's whole count at the end of the round, what it started with
+/// included. Only the round's own part is added, so the count of an edge
+/// sewing replaced stays under that edge's name and is carried once however
+/// a later round sews.
+fn keep(spent: &mut BTreeMap<String, u64>, sewn: &[(String, String)], name: &str, counted: u64) {
+    let added = counted.saturating_sub(carried(spent, sewn, name));
+    let own = spent.entry(name.to_owned()).or_default();
+    *own = own.saturating_add(added);
+}
+
+/// [`check_body`] on allowances its caller keeps, so that what the edges
+/// counted is known whatever this returns.
+fn check_body_under(
+    context: &mut Context<'_>,
+    body: &mut TolerantBody,
+    evidence: &mut TolerantEvidence,
+    gap_allowances: &mut import_gap::EdgeAllowances,
+    dec: &mut Decider,
+) -> Result<TolerantCounts, Error> {
     context.stage = super::NativeStage::ManifoldIncidence;
     let mut counts = manifold(body, dec)?;
     context.stage = super::NativeStage::CurveFit;
@@ -984,6 +1052,19 @@ pub(super) fn check_body(
             evidence,
             dec,
         )?;
+    }
+    // The one work allowance of each edge for the gap rule (section 4.2 step
+    // 8: "A hard per-edge work cap refuses by name"). The edge is the
+    // topological edge, so its uses on different faces draw on the same
+    // allowance, in the order the faces are read. An edge an earlier round
+    // of this admission read starts with what it counted there, and an edge
+    // that stands for one sewing replaced starts with that one's count too.
+    for (index, edge) in body.edges.iter().enumerate() {
+        dec.charge_work(1)?;
+        gap_allowances.carry(
+            index,
+            carried(&context.edge_spent, &context.sewn, &edge.name),
+        );
     }
     for shell in &body.shells {
         for face in &shell.faces {
@@ -1080,14 +1161,20 @@ pub(super) fn check_body(
                     if let (Some(file), Some(source), Some(native), Some(entity)) =
                         (&file, source_pcurve, &surface, surface_entity)
                     {
-                        let used = import_gap::FileUse {
-                            edge,
-                            surface: (entity, native.as_ref()),
-                            pcurve: (source, file.as_ref()),
-                            overshoot_mm: body.options.initial_mm.to_f64_nearest(),
-                            allowance: n::gap::Limits::default(),
-                        };
-                        match import_gap::read_use(context, &used, dec)? {
+                        // What the use counts is taken off its edge's
+                        // allowance here, read or unread, before anything
+                        // below decides to rebuild its trace.
+                        let outcome = gap_allowances.read(usage.edge, |allowance| {
+                            let used = import_gap::FileUse {
+                                edge,
+                                surface: (entity, native.as_ref()),
+                                pcurve: (source, file.as_ref()),
+                                overshoot_mm: body.options.initial_mm.to_f64_nearest(),
+                                allowance,
+                            };
+                            import_gap::read_use(context, &used, dec)
+                        })?;
+                        match outcome.map_err(|unread| unread.why) {
                             Ok(read) => {
                                 pcurve = read.copy.clone().map(FaceCopy::Reparametrised);
                                 gap_rule = Some((source, read));

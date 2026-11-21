@@ -299,6 +299,7 @@ pub(super) fn build_prism(
             sense: Sense::Same,
             start: None,
             end: None,
+            tolerance: None,
         })
     });
     let Surface::EllipticCylinder(original) = spline.definition().original() else {

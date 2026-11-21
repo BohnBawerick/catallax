@@ -273,6 +273,7 @@ pub(super) fn build(
             sense,
             start: Some(from),
             end: Some(to),
+            tolerance: None,
         }));
         let own = indices
             .iter()

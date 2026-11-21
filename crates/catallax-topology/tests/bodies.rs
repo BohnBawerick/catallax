@@ -89,6 +89,7 @@ blind_test!(case_14_vertex_order_uses_coedge_sense_not_edge_sense, {
         sense: Sense::Reversed,
         start: Some(a),
         end: Some(b),
+        tolerance: None,
     });
     let l = cycle(&mut m, &[(e, Sense::Reversed), (e, Sense::Same)]);
     let f = face(

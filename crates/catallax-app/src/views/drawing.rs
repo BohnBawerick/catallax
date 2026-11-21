@@ -610,28 +610,20 @@ fn natural(
             )?)
         }
         CurveForm::Branch | CurveForm::PatchSection(_) | CurveForm::PatchPair(_) => {
-            let (from, to) = match ends {
-                Some([a, b]) if !anchored => (Some(a), Some(b)),
-                _ => (None, None),
-            };
-            let traced = trace(geom, curve, from, to, dec)?;
-            marks.extend(&traced.marks);
-            let ends = match &positions {
-                Some([a, b]) if !anchored => Some([point(a, dec)?, point(b, dec)?]),
-                _ => None,
-            };
-            let drawn = fitted(traced.value.pieces(), ends, dec)?;
-            if let Some(fit) = &drawn.fit {
+            let ends = ends.map(|[a, b]| if anchored { [a, a] } else { [a, b] });
+            let drawn = traced(model, curve, ends, dec)?;
+            marks.extend(&drawn.marks);
+            if let Some(fit) = &drawn.value.fit {
                 marks.push(fit_mark(fit)?);
             }
-            Answer::exact(drawn)
+            Answer::exact(drawn.value)
         }
         _ => return Err(refused("this curve has no drawing conversion")),
     };
     Ok(Answer::with_marks(drawn.value, marks))
 }
 
-fn fit_mark(fit: &ContourFit) -> Result<Mark, Refusal> {
+pub(in crate::views) fn fit_mark(fit: &ContourFit) -> Result<Mark, Refusal> {
     let bound = Rational::from_f64_exact(fit.tolerance_mm)
         .ok_or_else(|| refused("a fitted drawing curve has a nonfinite tolerance"))?;
     Ok(Mark::new(
@@ -768,11 +760,39 @@ fn piece_jet(piece: &TracePiece, t: f64, dec: &Decider) -> Result<Jet, Refusal> 
     Ok((jets[0].each_ref().map(mid), jets[1].each_ref().map(mid)))
 }
 
+/// The arc of the traced curve `curve` from `ends[0]` to `ends[1]` along its
+/// natural direction, fitted as [`fitted`] fits it: both ends the same point
+/// for the whole closed curve from there, `None` for the whole closed curve
+/// from the trace's own start. The fitted curve runs through the binary64
+/// images of the ends, and a whole closed curve closes on its first point.
+/// The answer carries the trace's marks, not the fit's.
+pub(in crate::views) fn traced(
+    model: &Model,
+    curve: CurveId,
+    ends: Option<[PointId; 2]>,
+    dec: &mut Decider,
+) -> Answered<DrawnCurve> {
+    let geom = model.geom();
+    let traced = trace(geom, curve, ends.map(|e| e[0]), ends.map(|e| e[1]), dec)?;
+    let ends = match ends {
+        Some([a, b]) => Some([
+            point(&geom.position(a), dec)?,
+            point(&geom.position(b), dec)?,
+        ]),
+        None => None,
+    };
+    let drawn = fitted(traced.value.pieces(), ends, dec)?;
+    Ok(Answer::with_marks(drawn, traced.marks))
+}
+
 /// Fits each trace piece by cubic Hermite spans in its own parameter and
 /// joins the pieces, end to end, into one cubic B-spline: a double knot at
 /// every span joint (C1 within a piece) and a triple knot where pieces meet
 /// (C0, since the pieces' parameters run at different speeds). `ends`
-/// replace the first and last points by the exact ends.
+/// replace the first and last points by the exact ends; without them the
+/// trace is a whole closed curve, and the last point becomes the first. A
+/// moved end control moves the curve by at most its own move, since the
+/// cubic Bernstein weights are at most one, so the deviation grows by it.
 fn fitted(
     pieces: &[TracePiece],
     ends: Option<[[f64; 3]; 2]>,
@@ -843,11 +863,15 @@ fn fitted(
         let skip = usize::from(k > 0);
         points.extend(fit.controls[skip..].iter().map(|&c| add(c, origin)));
     }
-    if let Some([a, b]) = ends {
-        let last = points.len() - 1;
-        points[0] = a;
-        points[last] = b;
-    }
+    let last = points.len() - 1;
+    let [a, b] = ends.unwrap_or([points[0], points[0]]);
+    let moved = |from: [f64; 3], to: [f64; 3]| {
+        let gap = sub(to, from);
+        dot(gap, gap).sqrt()
+    };
+    deviation += moved(points[0], a).max(moved(points[last], b));
+    points[0] = a;
+    points[last] = b;
     Ok(DrawnCurve {
         curve: DrawingCurve::Nurbs {
             degree: 3,

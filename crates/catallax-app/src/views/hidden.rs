@@ -26,6 +26,15 @@
 //! An edge keeps its id along every piece, including where a contour
 //! generator runs along it: that generator is not drawn again, and the
 //! edge's pieces under it are outline, not smooth.
+//!
+//! Edges on intersection branches, patch sections and patch pairs have no
+//! closed form. Each is traced and fitted over its span as its drawing is
+//! (`drawing.rs`), as OpenCASCADE's HLR works on an intersection edge's
+//! approximated 3D curve, and the stroke keeps the fit. Such a piece is
+//! hidden by its own faces when both face away beside it (SMLib's
+//! `SmHCR::IsBackFacingEdge`); otherwise its ray starts from an exact point
+//! of a facing face just beside it (`surface.rs`), and the answer carries a
+//! [`super::DRAWING_FIT_MARK`] mark.
 
 use std::f64::consts::{FRAC_PI_2, PI, TAU};
 
@@ -37,7 +46,8 @@ use catallax_numbers::{
     StrictOrder,
 };
 use catallax_shapes::{
-    Circle, Curve, CurveId, Ellipse, Line, Point3, PointId, RVector3, Surface, Vector3,
+    BSplineCurve, Circle, Curve, CurveId, Ellipse, Line, Point3, PointId, RVector3, Surface,
+    Vector3,
 };
 use catallax_topology::numerical::tolerance;
 use catallax_topology::{BodyId, BodyKind, EdgeId, FaceId, Model, Sense};
@@ -98,7 +108,8 @@ pub struct ViewStroke {
     /// An edge with the same face on both sides.
     pub seam: bool,
     /// The fit of a fitted contour generator, as in
-    /// [`super::ContourArc::fit`].
+    /// [`super::ContourArc::fit`], or of a fitted edge's carrier: an edge on
+    /// an intersection branch, patch section or patch pair.
     pub fit: Option<ContourFit>,
 }
 
@@ -137,6 +148,90 @@ struct Carrier {
     axes: Option<[Vector3; 2]>,
     geo: Geo,
     closed: bool,
+    /// The fit of a traced curve's fitted carrier.
+    fit: Option<ContourFit>,
+}
+
+/// The carrier of an exact B-spline already in `scratch`.
+fn spline_carrier(
+    scratch: &Model,
+    curve: CurveId,
+    spline: &BSplineCurve,
+    floor: &Rational,
+    dec: &mut Decider,
+) -> Result<Carrier, Refusal> {
+    let knots: Vec<f64> = spline
+        .knots()
+        .iter()
+        .map(Rational::to_f64_nearest)
+        .collect();
+    let mut ctrl = Vec::with_capacity(spline.control_count());
+    for i in 0..spline.control_count() {
+        let p = point64(spline.control(i), floor, dec)?;
+        let w = double(spline.weight(i), floor, dec)?;
+        ctrl.push([w * p[0], w * p[1], w * p[2], w]);
+    }
+    let geo = Geo::Spline {
+        spans: geo::decompose(spline.degree(), &knots, &ctrl),
+    };
+    let closed = curve_is_closed(scratch.geom(), curve, dec)?;
+    Ok(Carrier {
+        curve,
+        form: Form::Spline,
+        axes: None,
+        geo,
+        closed,
+        fit: None,
+    })
+}
+
+/// An intersection branch, patch section or patch pair between `ends`,
+/// traced and fitted as its drawing is (`drawing::traced`), held as an
+/// exact cubic B-spline whose controls are the fit's binary64 values. The
+/// fit's knots and controls are binary64 numbers, so the carrier is exactly
+/// the fitted curve.
+fn fitted_carrier(
+    scratch: &mut Model,
+    curve: CurveId,
+    ends: Option<[PointId; 2]>,
+    floor: &Rational,
+    marks: &mut MarkLog,
+    dec: &mut Decider,
+) -> Result<Carrier, Refusal> {
+    // Two ends at one point ask for the whole closed curve from there.
+    let ends = match ends {
+        Some([a, b]) if same_point(scratch, a, b, dec)? => Some([a, a]),
+        other => other,
+    };
+    let drawn = super::drawing::traced(scratch, curve, ends, dec)?;
+    marks.extend(&drawn.marks);
+    let super::DrawingCurve::Nurbs {
+        degree,
+        knots,
+        points,
+        ..
+    } = drawn.value.curve
+    else {
+        unreachable!("a traced curve is fitted as a NURBS");
+    };
+    let knots = knots
+        .iter()
+        .map(|&k| rational(k))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut controls = Vec::with_capacity(points.len());
+    for p in &points {
+        controls.push(Point3::new(
+            Real::from(rational(p[0])?),
+            Real::from(rational(p[1])?),
+            Real::from(rational(p[2])?),
+        ));
+    }
+    let weights = vec![Real::one(); controls.len()];
+    let spline = BSplineCurve::new(degree, knots, controls, weights, dec)?;
+    let plain = scratch.geom_mut().add_curve(Curve::BSpline(spline.clone()));
+    let mut c = spline_carrier(scratch, plain, &spline, floor, dec)?;
+    c.fit = drawn.value.fit;
+    Ok(c)
 }
 
 pub(super) struct Stroke {
@@ -211,14 +306,19 @@ fn vector64(v: &Vector3, floor: &Rational, dec: &mut Decider) -> Result<V3, Refu
     ])
 }
 
-/// A plain carrier for `curve`: its closed form as a line, circle, ellipse
-/// or B-spline. Intersection components are read through their closed form,
-/// so later curve-plane meetings take the direct conic paths.
+/// A plain carrier for `curve` between `ends`: its closed form as a line,
+/// circle, ellipse or B-spline. Intersection components are read through
+/// their closed form, so later curve-plane meetings take the direct conic
+/// paths. Intersection branches, patch sections and patch pairs have none,
+/// and take a fitted B-spline over exactly the span (`fitted_carrier`).
+#[allow(clippy::too_many_arguments)]
 fn carrier(
     scratch: &mut Model,
     curve: CurveId,
+    ends: Option<[PointId; 2]>,
     d: &Vector3,
     floor: &Rational,
+    marks: &mut MarkLog,
     dec: &mut Decider,
 ) -> Result<Carrier, Refusal> {
     match curve_form(scratch.geom(), curve, dec)? {
@@ -237,6 +337,7 @@ fn carrier(
                 axes: None,
                 geo,
                 closed: false,
+                fit: None,
             })
         }
         CurveForm::Circle {
@@ -271,6 +372,7 @@ fn carrier(
                 axes: Some([u, w]),
                 geo,
                 closed: true,
+                fit: None,
             })
         }
         CurveForm::Ellipse {
@@ -307,6 +409,7 @@ fn carrier(
                 axes: Some([u, w]),
                 geo,
                 closed: true,
+                fit: None,
             })
         }
         CurveForm::BSpline(spline) => {
@@ -315,39 +418,20 @@ fn carrier(
             } else {
                 scratch.geom_mut().add_curve(Curve::BSpline(spline.clone()))
             };
-            let knots: Vec<f64> = spline
-                .knots()
-                .iter()
-                .map(Rational::to_f64_nearest)
-                .collect();
-            let mut ctrl = Vec::with_capacity(spline.control_count());
-            for i in 0..spline.control_count() {
-                let p = point64(spline.control(i), floor, dec)?;
-                let w = double(spline.weight(i), floor, dec)?;
-                ctrl.push([w * p[0], w * p[1], w * p[2], w]);
-            }
-            let geo = Geo::Spline {
-                spans: geo::decompose(spline.degree(), &knots, &ctrl),
-            };
-            let closed = curve_is_closed(scratch.geom(), plain, dec)?;
-            Ok(Carrier {
-                curve: plain,
-                form: Form::Spline,
-                axes: None,
-                geo,
-                closed,
-            })
+            spline_carrier(scratch, plain, &spline, floor, dec)
+        }
+        CurveForm::Branch | CurveForm::PatchSection(_) | CurveForm::PatchPair(_) => {
+            fitted_carrier(scratch, curve, ends, floor, marks, dec)
         }
         _ => Err(Refusal::new(
             "app.view-curve",
-            "hidden-line views of edges on intersection branches, patch sections and traced \
-             curves need their drawing conversion; unfinished",
+            "hidden-line views of edges on parabolas and hyperbolas are unfinished",
         )),
     }
 }
 
-/// Builds a stroke on `curve` between `ends`, or `None` when it projects to
-/// a point: a line along the view.
+/// Builds a stroke on `curve` between `ends`, with its binary64 box and
+/// whether it draws anything: a line along the view projects to a point.
 #[allow(clippy::too_many_arguments)]
 fn stroke(
     scratch: &mut Model,
@@ -357,9 +441,10 @@ fn stroke(
     sheet: &Sheet,
     d: &Vector3,
     floor: &Rational,
+    marks: &mut MarkLog,
     dec: &mut Decider,
 ) -> Result<(Stroke, Box3, bool), Refusal> {
-    let c = carrier(scratch, curve, d, floor, dec)?;
+    let c = carrier(scratch, curve, ends, d, floor, marks, dec)?;
     let on_sheet = match &c.form {
         Form::Line { dir, .. } => sign(&dir.cross(d).norm_squared(), dec)? != 0,
         _ => true,
@@ -390,7 +475,14 @@ fn stroke(
         }
     };
     let bounds = sheet.bounds(&c.geo, range[0], range[1]);
-    let box3 = geo::box3(&c.geo, range[0], range[1]);
+    let mut box3 = geo::box3(&c.geo, range[0], range[1]);
+    // The true curve lies within the fit's tolerance of a fitted carrier.
+    if let Some(fit) = &c.fit {
+        for k in 0..3 {
+            box3[0][k] -= fit.tolerance_mm;
+            box3[1][k] += fit.tolerance_mm;
+        }
+    }
     Ok((
         Stroke {
             source,
@@ -398,7 +490,7 @@ fn stroke(
             occluder: on_sheet,
             faces: Vec::new(),
             seam: false,
-            fit: None,
+            fit: c.fit,
             curve: c.curve,
             form: c.form,
             axes: c.axes,
@@ -521,6 +613,17 @@ fn exact_point(scratch: &Model, s: &Stroke, t: f64, dec: &mut Decider) -> Result
             let at = rational(t)?.max(lo.clone()).min(hi.clone());
             curve.point_at(&Real::from(at), dec)
         }
+    }
+}
+
+/// `t` moved into a closed spline carrier's domain: the last piece of a
+/// closed stroke cut into pieces runs past the domain's end.
+fn within(s: &Stroke, t: f64) -> f64 {
+    let [lo, hi] = s.geo.whole();
+    if s.closed && matches!(s.geo, Geo::Spline { .. }) && t > hi {
+        t - (hi - lo)
+    } else {
+        t
     }
 }
 
@@ -761,7 +864,7 @@ fn sample(
     let whole = from.is_none() || from == to;
     let spline = matches!(s.form, Form::Spline);
     if whole || spline || (mid - t0 > 2.0 * mu && t1 - mid > 2.0 * mu) {
-        return exact_point(scratch, s, mid, dec);
+        return exact_point(scratch, s, within(s, mid), dec);
     }
     // Too short for binary64 to place the middle: the carrier's point there
     // still keeps short numbers when exact order confirms it.
@@ -792,13 +895,98 @@ fn sample(
     Ok(point.value)
 }
 
-/// The visibility and smoothness of one piece at its sample point.
+/// Where the ray of a fitted edge's piece starts, from its sample point `p`
+/// at the middle of the binary64 interval `(t0, t1)`: an exact point of one
+/// of the edge's faces just beside `p`, on a face that faces the viewer
+/// there, or failing that one seen edge on; `None` when every face of the
+/// edge faces away there, so that they hide the piece themselves. `sides`
+/// keeps the side of the edge each face lies on, as `surface::across`
+/// confirms it, for the edge's later pieces.
+///
+/// SMLib's `SmHCR` decides an edge the same way. `IsBackFacingEdge` hides an
+/// edge whose faces both face away, and for a concave edge whose faces face
+/// opposite ways it tests whether the view runs into the solid's sector; an
+/// edge it keeps is classified by a ray that stops short of the edge's own
+/// faces by an offset. OpenCASCADE's `HLRBRep_Data` skips the edge's own
+/// face instead. Here the ray starts on the face, exactly: from a facing
+/// face it leaves the solid at once, then meets the other face just beside
+/// the edge exactly when the view runs into a concave edge's sector, so the
+/// sector test needs no separate code. A face seen edge on keeps the ray
+/// along it, where the ray's own grazing rules decide.
+#[allow(clippy::too_many_arguments)]
+fn edge_start(
+    scratch: &mut Model,
+    s: &Stroke,
+    (t0, t1): (f64, f64),
+    p: &Point3,
+    scene: &ray::Scene,
+    sides: &mut std::collections::BTreeMap<FaceId, f64>,
+    d: &Vector3,
+    floor: &Rational,
+    dec: &mut Decider,
+) -> Result<Option<Point3>, Refusal> {
+    let fit = s.fit.as_ref().expect("a fitted edge keeps its fit");
+    let p64 = point64(p, floor, dec)?;
+    let (_, tangent) = s.geo.jet(within(s, (t0 + t1) / 2.0));
+    // The carrier lies within the fit's tolerance of the edge (rule T4), and
+    // its binary64 images within the floor (rule T1): a point twice as far
+    // across the edge lies on the face's own side. The offset grows no
+    // farther from the edge than the piece's own ends, where an outline may
+    // change what the piece sees.
+    let start = 2.0 * fit.tolerance_mm.max(scene.margin);
+    let limit = geo::distance(p64, s.geo.point(within(s, t0)))
+        .min(geo::distance(p64, s.geo.point(within(s, t1))));
+    let StrokeSource::Edge(edge) = s.source else {
+        unreachable!("only edge strokes start beside their faces");
+    };
+    let mut edge_on = None;
+    for &face in &s.faces {
+        // The face's other boundary edges, and whether it has a point
+        // boundary: where none comes near, the face beside the edge is the
+        // side the topology names.
+        let mut others = Vec::new();
+        let mut point_boundary = false;
+        for &lp in &scratch.face(face).loops {
+            match scratch.loop_(lp) {
+                catallax_topology::Loop::Vertex(_) => point_boundary = true,
+                catallax_topology::Loop::Coedges(coedges) => {
+                    for &c in coedges {
+                        let e = scratch.coedge(c).edge;
+                        if e != edge
+                            && let Some(&b) = scene.edges.get(&e)
+                        {
+                            others.push(b);
+                        }
+                    }
+                }
+            }
+        }
+        let others = (!point_boundary).then_some(others.as_slice());
+        let known = sides.get(&face).copied();
+        let (q, facing, side) = surface::across(
+            scratch, face, p64, tangent, known, others, d, start, limit, floor, dec,
+        )?;
+        sides.insert(face, side);
+        if facing > 0 {
+            return Ok(Some(q));
+        }
+        if facing == 0 && edge_on.is_none() {
+            edge_on = Some(q);
+        }
+    }
+    Ok(edge_on)
+}
+
+/// The visibility and smoothness of one piece, over the binary64 interval
+/// `part`, at its sample point `p`; `sides` as for [`edge_start`].
 #[allow(clippy::too_many_arguments)]
 fn classify(
     scratch: &mut Model,
     s: &Stroke,
+    part: (f64, f64),
     p: &Point3,
     scene: &ray::Scene,
+    sides: &mut std::collections::BTreeMap<FaceId, f64>,
     d: &Vector3,
     d64: V3,
     floor: &Rational,
@@ -806,6 +994,16 @@ fn classify(
     numeric: &mut bool,
     dec: &mut Decider,
 ) -> Result<(bool, bool), Refusal> {
+    // A fitted edge is never smooth: smoothness compares its faces' normals
+    // at an exact point of the edge, and a fitted edge has none at hand.
+    if matches!(s.source, StrokeSource::Edge(_)) && s.fit.is_some() {
+        let Some(start) = edge_start(scratch, s, part, p, scene, sides, d, floor, dec)? else {
+            return Ok((false, false));
+        };
+        let p64 = point64(&start, floor, dec)?;
+        let hidden = ray::hidden(scratch, scene, &start, p64, d, d64, marks, numeric, dec)?;
+        return Ok((!hidden, false));
+    }
     // A fitted generator's ray, and an exact one's on a spline face, starts
     // from the face beside it.
     let start = match s.source {
@@ -856,9 +1054,11 @@ fn classify(
 /// Edges keep their ids. A contour generator that runs along an edge is
 /// drawn as that edge, whose pieces there are not smooth. Seams are marked,
 /// not dropped. Edges on intersection branches without a closed form, patch
-/// sections and traced curves refuse with `app.view-curve`, as do the
-/// faces [`contour_generators`] refuses; a body that is not one solid
-/// refuses with `app.view-solid`.
+/// sections and patch pairs lie on fitted carriers, keep their fit, are
+/// never smooth, and the answer carries a [`super::DRAWING_FIT_MARK`] mark
+/// with the largest tolerance. Edges on parabolas and hyperbolas refuse with
+/// `app.view-curve`, as do the faces [`contour_generators`] refuses; a body
+/// that is not one solid refuses with `app.view-solid`.
 pub fn hidden_line_view(
     model: &Model,
     body: BodyId,
@@ -889,6 +1089,8 @@ pub fn hidden_line_view(
 
         let mut strokes: Vec<Stroke> = Vec::new();
         let mut edge_boxes = std::collections::BTreeMap::new();
+        // The fit with the largest tolerance among fitted edges.
+        let mut fitted_edges: Option<ContourFit> = None;
         for edge in model.edges_of_body(body) {
             dec.check_deadline()?;
             let stored = scratch.edge(edge).clone();
@@ -919,9 +1121,17 @@ pub fn hidden_line_view(
                 &sheet,
                 &d,
                 &fine,
+                &mut marks,
                 dec,
             )?;
             edge_boxes.insert(edge, box3);
+            if let Some(fit) = &s.fit
+                && fitted_edges
+                    .as_ref()
+                    .is_none_or(|f: &ContourFit| f.tolerance_mm < fit.tolerance_mm)
+            {
+                fitted_edges = Some(fit.clone());
+            }
             if !on_sheet {
                 continue;
             }
@@ -955,6 +1165,7 @@ pub fn hidden_line_view(
                 &sheet,
                 &d,
                 &fine,
+                &mut marks,
                 dec,
             )?;
             if !on_sheet {
@@ -964,7 +1175,9 @@ pub fn hidden_line_view(
             // bounds what it hides.
             s.drawn = arc.on_faces.len() == 1;
             s.faces = arc.on_faces.clone();
-            s.fit = arc.fit.clone();
+            if arc.fit.is_some() {
+                s.fit = arc.fit.clone();
+            }
             strokes.push(s);
         }
 
@@ -1035,6 +1248,7 @@ pub fn hidden_line_view(
             faces,
             patches,
             vertices,
+            edges: edge_boxes,
             margin,
             size,
         };
@@ -1066,8 +1280,11 @@ pub fn hidden_line_view(
                         .add_point(catallax_shapes::PointDef::Explicit(p));
                     candidates[i].push((p, Some(0.0)));
                 }
+                // Two stretches of one fitted carrier each lie within the
+                // fit's tolerance of the curve it stands for.
+                let reach = margin + 2.0 * a.fit.as_ref().map_or(0.0, |f| f.tolerance_mm);
                 for c in cross::crossings(
-                    &sheet, &a.geo, a.range, &a.geo, a.range, true, margin, &mut work,
+                    &sheet, &a.geo, a.range, &a.geo, a.range, true, reach, &mut work,
                 ) {
                     for t in [c.t, c.u] {
                         let p = exact_point(&scratch, a, t, dec)?;
@@ -1083,11 +1300,17 @@ pub fn hidden_line_view(
                 if i == j || !b.occluder {
                     continue;
                 }
+                // A fitted carrier lies within its tolerance of the curve
+                // it stands for: an edge, or a generator whose ends lie on
+                // edges.
+                let reach = margin
+                    + a.fit.as_ref().map_or(0.0, |f| f.tolerance_mm)
+                    + b.fit.as_ref().map_or(0.0, |f| f.tolerance_mm);
                 let (x, y) = (a.sheet, b.sheet);
-                if x[0] > y[2] + margin
-                    || y[0] > x[2] + margin
-                    || x[1] > y[3] + margin
-                    || y[1] > x[3] + margin
+                if x[0] > y[2] + reach
+                    || y[0] > x[2] + reach
+                    || x[1] > y[3] + reach
+                    || y[1] > x[3] + reach
                 {
                     continue;
                 }
@@ -1107,16 +1330,32 @@ pub fn hidden_line_view(
                         }
                     }
                     None => {
-                        // A fitted arc lies within its tolerance of the
-                        // generator it stands for, whose ends lie on edges.
-                        let reach = margin
-                            + a.fit.as_ref().map_or(0.0, |f| f.tolerance_mm)
-                            + b.fit.as_ref().map_or(0.0, |f| f.tolerance_mm);
                         let found = cross::crossings(
                             &sheet, &a.geo, a.range, &b.geo, b.range, false, reach, &mut work,
                         );
-                        // A fitted generator's exact ends that lie on A stand
-                        // for the binary64 cuts near them.
+                        // An end of another stroke on a fitted edge, within
+                        // reach in space, is a T-junction: an outline ending
+                        // on the edge, whose projection the edge's touches
+                        // there. The leaf search can pass such a tangent
+                        // meeting by, so the end cuts the carrier itself.
+                        if a.fit.is_some() && matches!(a.source, StrokeSource::Edge(_)) {
+                            for e in b.ends.into_iter().flatten() {
+                                let e64 = point64(&scratch.geom().position(e), &fine, dec)?;
+                                let t = a.geo.param(e64);
+                                let gap = geo::distance(a.geo.point(t), e64);
+                                if gap <= reach {
+                                    let p = exact_point(&scratch, a, t, dec)?;
+                                    let p = scratch
+                                        .geom_mut()
+                                        .add_point(catallax_shapes::PointDef::Explicit(p));
+                                    candidates[i].push((p, Some(gap)));
+                                }
+                            }
+                        }
+                        // A fitted carrier's exact ends that lie on A, a
+                        // fitted edge's vertices or a fitted generator's
+                        // boundary points, stand for the binary64 cuts near
+                        // them.
                         let mut ends = Vec::new();
                         if b.fit.is_some() && !matches!(a.form, Form::Spline) {
                             for e in b.ends.into_iter().flatten() {
@@ -1172,14 +1411,17 @@ pub fn hidden_line_view(
             }
             let parts = pieces(s, &cuts);
             let mut labels = Vec::with_capacity(parts.len());
+            let mut sides = std::collections::BTreeMap::new();
             for &part in &parts {
                 dec.check_deadline()?;
                 let p = sample(&mut scratch, s, part, margin, dec)?;
                 labels.push(classify(
                     &mut scratch,
                     s,
+                    (part.2, part.3),
                     &p,
                     &scene,
+                    &mut sides,
                     &d,
                     d64,
                     &fine,
@@ -1250,6 +1492,9 @@ pub fn hidden_line_view(
                 "a visibility change placed by a binary64 crossing search: the sheet distance \
                  left between the two curves there, not a proof",
             ));
+        }
+        if let Some(fit) = &fitted_edges {
+            marks.push(super::drawing::fit_mark(fit)?);
         }
         Ok(Answer::with_marks(
             HiddenLineView {

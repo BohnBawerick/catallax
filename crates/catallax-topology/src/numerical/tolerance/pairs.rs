@@ -6,7 +6,8 @@
 //! touch. Their boxes go in a bounding-box tree, each widened by its reach,
 //! and only the pairs whose widened boxes overlap are measured. On a part
 //! with no small features the tree returns no pair and nothing is measured.
-//! Every box test, sample, evaluation and foot search is charged as work.
+//! Every box test, sample, evaluation and foot search is charged as work,
+//! and each reading of a curve or a surface before it is made.
 //!
 //! A face of a numerical body stores no tolerance (its surface is the
 //! authoritative copy), so a pair with a face has `t_face = 0`. Its distance
@@ -15,10 +16,27 @@
 //! face's own edges and vertices are the pair. Two faces both have `t = 0`,
 //! so rule T5 cannot fire on them, and they are not paired.
 //!
+//! A face's loops are read in its parameters as chains of nodes. A use that
+//! is straight in u/v is one node and a straight run to the next. A use with
+//! a retained u/v curve, and a circle or spline on a plane (admission's
+//! projected copy), is walked: at nine points, and at every place between
+//! them where its u or its v turns, so that both run one way between two
+//! nodes. A point is inside by the even-odd count of the runs a line of
+//! constant v meets beyond it. A curved run is counted by its two ends where
+//! the point lies outside their box, and on the curve itself where it lies
+//! inside, so the zone between a chord and its arc is read on the arc.
+//! OpenCASCADE's `BRepTopAdaptor_FClass2d` takes the same two steps: a
+//! sampled polygon with the chord sag as its tolerance, then the true curves
+//! (`BRepClass_FaceClassifier`) for a point inside that tolerance. SMLib's
+//! `SmLoop::ContainsUVPoint` marches the true trim curve near the boundary.
+//!
 //! Distances are read in binary64 in the body's frame (rule T1), by the
 //! sampling rule of the edge-gap checker (section 4.2 step 4) and Brent's
-//! method. They are searches for the least distance, as the checker's are
-//! searches for the largest gap: the found value is at least the true one.
+//! method. Two curves are then polished together by the Gauss-Newton of the
+//! surface foot, and a curve that changes side of a face between two samples
+//! is followed to the crossing by halving. They are searches for the least
+//! distance, as the checker's are searches for the largest gap: the found
+//! value is at least the true one.
 
 use std::collections::BTreeSet;
 
@@ -30,9 +48,12 @@ use super::{
 };
 use crate::Sense;
 use crate::numerical::gap::{
-    FramedCurve, FramedSurface, FramedUvCurve, brent_maximum, chebyshev_shares, try_brent_maximum,
+    FramedCurve, FramedSurface, FramedUvCurve, ROOT_DEPTH, chebyshev_shares, nearest_on_curves,
+    try_brent_maximum,
 };
-use crate::numerical::{NumericalBody, NumericalDefinition, NumericalNativeTrim, native::Index};
+use crate::numerical::{
+    NumericalBody, NumericalDefinition, NumericalNativeTrim, analytic, native::Index,
+};
 
 /// Two entities that share no topology, closer than a reach.
 #[derive(Clone, Debug, PartialEq, Eq, catallax_numbers::Transfer)]
@@ -64,8 +85,8 @@ const POINTS_PER_DEGREE: usize = 3;
 const FACE_GRID: usize = 9;
 
 /// Source: the same allowance, nine points, admission gives the u/v walk of
-/// each edge use on a numerical carrier. A retained u/v curve is read at
-/// these points when a face's loops are written as polygons.
+/// each edge use on a numerical carrier. A curved copy of an edge use is
+/// read at these points when a face's loops are written as nodes.
 const LOOP_POINTS: usize = 9;
 
 /// Source: judgement. Each round of alternating Brent searches on two
@@ -103,6 +124,16 @@ fn union(a: &Bounds, b: &Bounds) -> Bounds {
 fn distance(a: &[f64; 3], b: &[f64; 3]) -> f64 {
     let d = [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
     (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
+}
+
+fn dot(a: &[f64; 3], b: &[f64; 3]) -> f64 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+/// Whether `t` lies strictly between two parameters, given in either order.
+/// A halving stops where it does not: no binary64 number is left between.
+fn between(t: f64, a: f64, b: f64) -> bool {
+    a.min(b) < t && t < a.max(b)
 }
 
 /// A binary bounding-box tree over widened entity boxes, split at the median
@@ -231,32 +262,85 @@ struct Entity {
     bounds: Bounds,
 }
 
+/// A curved copy of an edge use in its face's parameters.
+enum Walk {
+    /// A retained u/v curve.
+    Retained(FramedUvCurve),
+    /// The 3D curve of a circle or spline on a plane, read through the
+    /// plane's chart: admission's projected copy.
+    Projected(FramedCurve),
+}
+
+impl Walk {
+    /// The copy's u/v at the edge parameter `t`.
+    fn at(&mut self, surface: &FramedSurface, t: f64) -> [f64; 2] {
+        match self {
+            Self::Retained(curve) => curve.point(t),
+            Self::Projected(curve) => surface
+                .plane_parameters(&curve.point(t))
+                .expect("a projected copy lies on a plane"),
+        }
+    }
+}
+
+/// One point of a face's loop in u/v, and how the loop runs on to the next.
+struct LoopNode {
+    uv: [f64; 2],
+    /// Where the run to the next node follows a curved copy: the copy's
+    /// index among the face's walks and its parameters at the two nodes.
+    /// `None` for a straight run.
+    along: Option<(usize, [f64; 2])>,
+}
+
 /// A face as the pair rule reads it: its surface, its u/v box and its loops
-/// as u/v polygons, made when a pair first needs them.
+/// as chains of nodes in u/v, made when a pair first needs them.
 struct FaceData {
     surface: FramedSurface,
     rect: [[f64; 2]; 2],
-    polygons: Vec<Vec<[f64; 2]>>,
+    loops: Vec<Vec<LoopNode>>,
+    walks: Vec<Walk>,
 }
 
 impl FaceData {
     /// Whether `uv` lies inside the face's loops, by the even-odd rule, with
     /// u shifted by a period on a surface of revolution.
-    fn inside(&self, uv: [f64; 2], dec: &mut Decider) -> Result<bool, Refusal> {
-        let shifts: &[f64] = match self.surface.period_u {
+    ///
+    /// A run counts where it meets the line of constant v beyond the point.
+    /// A straight run is its chord. A curved run goes one way in u and in v
+    /// between its nodes, so it lies in the box of its two ends: a point
+    /// short of that box has the meeting beyond it, a point past the box has
+    /// not, and for a point inside the box the meeting is found on the copy
+    /// itself.
+    fn inside(&mut self, uv: [f64; 2], dec: &mut Decider) -> Result<bool, Refusal> {
+        let Self {
+            surface,
+            loops,
+            walks,
+            ..
+        } = self;
+        let shifts: &[f64] = match surface.period_u {
             Some(p) => &[0.0, -p, p],
             None => &[0.0],
         };
         for shift in shifts {
             let (u, v) = (uv[0] + shift, uv[1]);
             let mut inside = false;
-            for polygon in &self.polygons {
-                dec.charge_work(polygon.len() as u64)?;
-                for (k, a) in polygon.iter().enumerate() {
-                    let b = polygon[(k + 1) % polygon.len()];
-                    if (a[1] > v) != (b[1] > v)
-                        && u < a[0] + (v - a[1]) * (b[0] - a[0]) / (b[1] - a[1])
-                    {
+            for nodes in loops.iter() {
+                dec.charge_work(nodes.len() as u64)?;
+                for (k, node) in nodes.iter().enumerate() {
+                    let (a, b) = (node.uv, nodes[(k + 1) % nodes.len()].uv);
+                    if (a[1] > v) == (b[1] > v) {
+                        continue;
+                    }
+                    let beyond = match node.along {
+                        None => u < a[0] + (v - a[1]) * (b[0] - a[0]) / (b[1] - a[1]),
+                        Some(_) if u < a[0].min(b[0]) => true,
+                        Some(_) if u >= a[0].max(b[0]) => false,
+                        Some((walk, ends)) => {
+                            u < meeting(&mut walks[walk], surface, ends, a[1] > v, v, dec)?
+                        }
+                    };
+                    if beyond {
                         inside = !inside;
                     }
                 }
@@ -266,6 +350,42 @@ impl FaceData {
             }
         }
         Ok(false)
+    }
+}
+
+/// The u at which a curved run meets the line of constant `v`. The run
+/// goes one way in v from the parameter `from`, where it is `above` the
+/// line or not, to `to`, where it is on the other side, so the meeting is
+/// its one change of side. It is found by halving, [`ROOT_DEPTH`] times.
+fn meeting(
+    walk: &mut Walk,
+    surface: &FramedSurface,
+    [mut from, mut to]: [f64; 2],
+    above: bool,
+    v: f64,
+    dec: &mut Decider,
+) -> Result<f64, Refusal> {
+    let mut u = None;
+    for _ in 0..ROOT_DEPTH {
+        let middle = from + (to - from) / 2.0;
+        if !between(middle, from, to) {
+            break;
+        }
+        dec.charge_work(1)?;
+        let at = walk.at(surface, middle);
+        if (at[1] > v) == above {
+            from = middle;
+        } else {
+            to = middle;
+        }
+        u = Some(at[0]);
+    }
+    match u {
+        Some(u) => Ok(u),
+        None => {
+            dec.charge_work(1)?;
+            Ok(walk.at(surface, from)[0])
+        }
     }
 }
 
@@ -311,6 +431,64 @@ fn pieces(curve: &mut FramedCurve, dec: &mut Decider) -> Result<Vec<Piece>, Refu
     Ok(out)
 }
 
+/// Charges `units` for readings a search is about to make. Where the charge
+/// refuses, the refusal is kept for the caller and the search is told to stop
+/// before it reads.
+fn pay(dec: &mut Decider, units: u64, refused: &mut Option<Refusal>) -> Option<()> {
+    match dec.charge_work(units) {
+        Ok(()) => Some(()),
+        Err(refusal) => {
+            *refused = Some(refusal);
+            None
+        }
+    }
+}
+
+/// What a foot search reads of a surface. The searches go through it so that
+/// a test can count the readings made.
+trait Sought {
+    /// The point at `uv`.
+    fn point(&mut self, uv: [f64; 2]) -> [f64; 3];
+
+    /// [`FramedSurface::foot_spending`].
+    fn foot_spending(
+        &mut self,
+        target: &[f64; 3],
+        seed: [f64; 2],
+        spend: &mut dyn FnMut() -> Option<()>,
+    ) -> Option<[f64; 2]>;
+}
+
+impl Sought for FramedSurface {
+    fn point(&mut self, uv: [f64; 2]) -> [f64; 3] {
+        FramedSurface::point(self, uv)
+    }
+
+    fn foot_spending(
+        &mut self,
+        target: &[f64; 3],
+        seed: [f64; 2],
+        spend: &mut dyn FnMut() -> Option<()>,
+    ) -> Option<[f64; 2]> {
+        FramedSurface::foot_spending(self, target, seed, spend)
+    }
+}
+
+/// The foot of `point` on a surface, from `seed`. Each evaluation of the
+/// surface is charged before it is made (section 4.2 step 8), one unit as
+/// every reading here is, so a search the allowance cannot pay for stops at
+/// the evaluation it cannot afford and gives the allowance's refusal.
+fn charged_foot(
+    surface: &mut impl Sought,
+    point: &[f64; 3],
+    seed: [f64; 2],
+    dec: &mut Decider,
+) -> Result<[f64; 2], Refusal> {
+    let mut refused = None;
+    let foot = surface.foot_spending(point, seed, &mut || pay(dec, 1, &mut refused));
+    foot.ok_or_else(|| refused.expect("a search ends early only where a charge refused"))
+}
+
 /// The least distance from `point` to a curve's pieces within `reach`, by
 /// the samples and a Brent polish of every sampled local minimum.
 fn point_to_curve(
@@ -340,9 +518,10 @@ fn point_to_curve(
             let mut found = (*value, piece.samples[i].0);
             if let (Some(_), Some(_)) = (left, right) {
                 let [a, b] = [piece.samples[i - 1].0, piece.samples[i + 1].0];
-                let (share, negative, evaluations) =
-                    brent_maximum(&mut |s| -distance(&curve.point(a + s * (b - a)), point));
-                dec.charge_work(evaluations)?;
+                let (share, negative, _) = try_brent_maximum(|s| -> Result<f64, Refusal> {
+                    dec.charge_work(1)?;
+                    Ok(-distance(&curve.point(a + s * (b - a)), point))
+                })?;
                 if -negative < found.0 {
                     found = (-negative, a + share * (b - a));
                 }
@@ -355,17 +534,16 @@ fn point_to_curve(
     Ok(best)
 }
 
-/// The distance from `point` to the interior of a face: the foot of the
-/// point on the surface, seeded by the nearest point of a grid on the face's
-/// u/v box, where that foot lies inside the face. `None` where it does not:
-/// the face's boundary is read through its edges and vertices. The foot is
-/// returned either way, to seed the next point along a curve.
-fn point_to_face(
+/// The foot of `point` on a face's surface, from `seed` or, without one,
+/// from the nearest point of a grid on the face's u/v box. `None` where the
+/// search does not end at a finite u/v. The second value seeds the next
+/// point along a curve: the foot, or the seed where there is no foot.
+fn foot_on(
     point: &[f64; 3],
     face: &mut FaceData,
     seed: Option<[f64; 2]>,
     dec: &mut Decider,
-) -> Result<(Option<f64>, [f64; 2]), Refusal> {
+) -> Result<(Option<[f64; 2]>, [f64; 2]), Refusal> {
     let seed = match seed {
         Some(seed) => seed,
         None => {
@@ -387,20 +565,49 @@ fn point_to_face(
             best.1
         }
     };
-    let (foot, evaluations) = face.surface.foot(point, seed);
-    dec.charge_work(evaluations + 1)?;
+    let foot = charged_foot(&mut face.surface, point, seed, dec)?;
+    // The surface's point at the foot, which every caller reads next.
+    dec.charge_work(1)?;
     if !foot.iter().all(|x| x.is_finite()) {
         return Ok((None, seed));
     }
+    Ok((Some(foot), foot))
+}
+
+/// The distance from `point` to the interior of a face: its foot on the
+/// surface, where that foot lies inside the face. `None` where it does not:
+/// the face's boundary is read through its edges and vertices.
+fn point_to_face(
+    point: &[f64; 3],
+    face: &mut FaceData,
+    dec: &mut Decider,
+) -> Result<Option<f64>, Refusal> {
+    let (Some(foot), _) = foot_on(point, face, None, dec)? else {
+        return Ok(None);
+    };
     if !face.inside(foot, dec)? {
-        return Ok((None, foot));
+        return Ok(None);
     }
-    Ok((Some(distance(&face.surface.point(foot), point)), foot))
+    Ok(Some(distance(&face.surface.point(foot), point)))
 }
 
 /// The least distance from a curve's pieces within `reach` of a face's box
-/// to the face's interior: every sample's foot, then a Brent polish around
-/// the nearest.
+/// to the face's interior.
+///
+/// A sample's foot is sought where a run of the curve next to it can come
+/// within reach of the face's box: the box of the run's two samples, widened
+/// by their spacing as a piece's box is. The nearest sample whose foot lies
+/// inside the face is polished by Brent's method between its neighbours.
+///
+/// Two consecutive samples whose offsets from their feet point to opposite
+/// sides of the surface have a crossing between them, however far from the
+/// surface both are. It is followed by halving the run, [`ROOT_DEPTH`]
+/// times, and it counts where its foot lies inside the face. OpenCASCADE's
+/// `IntCurveSurface_Inter` brackets a crossing the same way, by a segment of
+/// the curve's polygon that passes through the surface's polyhedron, and
+/// then solves `S(u, v) = C(t)` by Newton's method, as SMLib's
+/// `SmSurface::LocalCurveIntersect` does. Halving keeps the bracket and
+/// needs no derivative of the curve.
 fn curve_to_face(
     curve: &mut FramedCurve,
     pieces: &[Piece],
@@ -409,62 +616,150 @@ fn curve_to_face(
     reach: f64,
     dec: &mut Decider,
 ) -> Result<Option<f64>, Refusal> {
-    let mut best: Option<(f64, f64, [f64; 2], [f64; 2])> = None;
+    let mut best: Option<(f64, [f64; 2], [f64; 2])> = None;
+    // The runs that change side: their two parameters, the offset at the
+    // first and the foot at the second.
+    let mut crossings: Vec<([f64; 2], [f64; 3], [f64; 2])> = Vec::new();
     let mut seed = None;
     for piece in pieces {
         if box_distance(&piece.bounds, face_box) > reach {
             continue;
         }
+        let near: Vec<bool> = piece
+            .samples
+            .windows(2)
+            .map(|run| {
+                let (p, q) = (&run[0].1, &run[1].1);
+                let held: Bounds =
+                    std::array::from_fn(|axis| [p[axis].min(q[axis]), p[axis].max(q[axis])]);
+                box_distance(&widened(&held, distance(p, q)), face_box) <= reach
+            })
+            .collect();
+        let mut before: Option<(f64, [f64; 3])> = None;
         for (k, (t, p)) in piece.samples.iter().enumerate() {
-            // A sample farther from the face's box than the reach cannot
-            // come within it; no foot is sought for it.
+            // A sample with no run next to it that can come within reach of
+            // the face's box has no foot sought.
             dec.charge_work(1)?;
-            if box_distance(&[[p[0]; 2], [p[1]; 2], [p[2]; 2]], face_box) > reach {
+            if !((k > 0 && near[k - 1]) || near.get(k).is_some_and(|near| *near)) {
+                before = None;
                 continue;
             }
-            let (found, foot) = point_to_face(p, face, seed, dec)?;
-            seed = Some(foot);
-            let Some(d) = found else {
+            let (foot, next) = foot_on(p, face, seed, dec)?;
+            seed = Some(next);
+            let Some(foot) = foot else {
+                before = None;
                 continue;
             };
+            let on = face.surface.point(foot);
+            let offset: [f64; 3] = std::array::from_fn(|axis| p[axis] - on[axis]);
+            if let Some((t_before, side)) = before
+                && dot(&side, &offset) < 0.0
+            {
+                crossings.push(([t_before, *t], side, foot));
+            }
+            before = Some((*t, offset));
+            if !face.inside(foot, dec)? {
+                continue;
+            }
+            let d = distance(&on, p);
             let bracket = [
                 piece.samples[k.saturating_sub(1)].0,
                 piece.samples[(k + 1).min(piece.samples.len() - 1)].0,
             ];
             if best.is_none_or(|(b, ..)| d < b) {
-                best = Some((d, *t, foot, bracket));
+                best = Some((d, foot, bracket));
             }
         }
     }
-    let Some((mut value, _, foot, [a, b])) = best else {
-        return Ok(None);
-    };
-    let (_, negative, _) = try_brent_maximum(|x| -> Result<f64, Refusal> {
-        dec.charge_work(3)?;
-        let p = curve.point(a + x * (b - a));
-        let (uv, n) = face.surface.foot(&p, foot);
-        dec.charge_work(n)?;
-        if face.inside(uv, dec)? {
-            Ok(-distance(&face.surface.point(uv), &p))
-        } else {
-            Ok(-value)
+    let mut least: Option<f64> = None;
+    if let Some((value, foot, [a, b])) = best {
+        let (_, negative, _) = try_brent_maximum(|x| -> Result<f64, Refusal> {
+            dec.charge_work(3)?;
+            let p = curve.point(a + x * (b - a));
+            let uv = charged_foot(&mut face.surface, &p, foot, dec)?;
+            if face.inside(uv, dec)? {
+                Ok(-distance(&face.surface.point(uv), &p))
+            } else {
+                Ok(-value)
+            }
+        })?;
+        least = Some(value.min(-negative));
+    }
+    for (run, side, foot) in crossings {
+        let found = follow_crossing(run, &side, foot, |t| curve.point(t), &mut face.surface, dec)?;
+        if let Some((uv, d)) = found
+            && face.inside(uv, dec)?
+        {
+            least = Some(least.map_or(d, |known| known.min(d)));
         }
-    })?;
-    value = value.min(-negative);
-    Ok(Some(value))
+    }
+    Ok(least)
+}
+
+/// Follows a change of side between two parameters of a curve to its
+/// crossing with a surface, by halving the run [`ROOT_DEPTH`] times.
+/// `side` is the offset from the surface at the first parameter and `foot`
+/// the foot at the second. Returns the foot of the last point read and that
+/// point's distance from the surface, or `None` where no binary64 parameter
+/// lies between the two.
+///
+/// Each reading is charged before it is made (section 4.2 step 8): one unit
+/// for the curve's point, the search for its foot as it iterates
+/// ([`charged_foot`]) and one unit for the surface's point at the foot. A
+/// halving the allowance cannot pay for stops at the reading it cannot
+/// afford.
+fn follow_crossing(
+    [mut from, mut to]: [f64; 2],
+    side: &[f64; 3],
+    mut foot: [f64; 2],
+    mut point: impl FnMut(f64) -> [f64; 3],
+    surface: &mut impl Sought,
+    dec: &mut Decider,
+) -> Result<Option<([f64; 2], f64)>, Refusal> {
+    let mut found = None;
+    for _ in 0..ROOT_DEPTH {
+        let middle = from + (to - from) / 2.0;
+        if !between(middle, from, to) {
+            break;
+        }
+        dec.charge_work(1)?;
+        let p = point(middle);
+        let uv = charged_foot(surface, &p, foot, dec)?;
+        if !uv.iter().all(|x| x.is_finite()) {
+            break;
+        }
+        foot = uv;
+        dec.charge_work(1)?;
+        let on = surface.point(uv);
+        let offset: [f64; 3] = std::array::from_fn(|axis| p[axis] - on[axis]);
+        if dot(side, &offset) > 0.0 {
+            from = middle;
+        } else {
+            to = middle;
+        }
+        found = Some((uv, distance(&on, &p)));
+    }
+    Ok(found)
 }
 
 /// The least distance between two curves within `reach`: the nearest sample
 /// pair of every pair of pieces whose boxes are within reach, polished by
-/// alternating Brent searches on each curve.
+/// alternating Brent searches on each curve between that pair's neighbours,
+/// and then by [`nearest_on_curves`] over the whole of both edges. The
+/// alternation nears a crossing by a constant factor a round and cannot
+/// leave its first brackets; the second polish moves both parameters at
+/// once and settles on a crossing to rounding. Where it leaves the range of
+/// a closed edge, one that starts and ends at the same vertex, it has
+/// passed that vertex: the parameter is taken round to the other end and
+/// the polish runs once more from there.
 fn curve_to_curve(
-    a: (&mut FramedCurve, &[Piece]),
-    b: (&mut FramedCurve, &[Piece]),
+    a: (&mut FramedCurve, &[Piece], bool),
+    b: (&mut FramedCurve, &[Piece], bool),
     reach: f64,
     dec: &mut Decider,
 ) -> Result<Option<f64>, Refusal> {
-    let (curve_a, pieces_a) = a;
-    let (curve_b, pieces_b) = b;
+    let (curve_a, pieces_a, closed_a) = a;
+    let (curve_b, pieces_b, closed_b) = b;
     let mut best: Option<f64> = None;
     for piece_a in pieces_a {
         for piece_b in pieces_b {
@@ -493,20 +788,47 @@ fn curve_to_curve(
             let (mut s, mut t) = (piece_a.samples[nearest.1].0, piece_b.samples[nearest.2].0);
             let mut value = nearest.0;
             for _ in 0..ALTERNATIONS {
+                dec.charge_work(1)?;
                 let p = curve_a.point(s);
-                let (share, negative, evaluations) =
-                    brent_maximum(&mut |x| -distance(&curve_b.point(b0 + x * (b1 - b0)), &p));
-                dec.charge_work(evaluations)?;
+                let (share, negative, _) = try_brent_maximum(|x| -> Result<f64, Refusal> {
+                    dec.charge_work(1)?;
+                    Ok(-distance(&curve_b.point(b0 + x * (b1 - b0)), &p))
+                })?;
                 if -negative <= value {
                     (t, value) = (b0 + share * (b1 - b0), -negative);
                 }
+                dec.charge_work(1)?;
                 let q = curve_b.point(t);
-                let (share, negative, evaluations) =
-                    brent_maximum(&mut |x| -distance(&curve_a.point(a0 + x * (a1 - a0)), &q));
-                dec.charge_work(evaluations)?;
+                let (share, negative, _) = try_brent_maximum(|x| -> Result<f64, Refusal> {
+                    dec.charge_work(1)?;
+                    Ok(-distance(&curve_a.point(a0 + x * (a1 - a0)), &q))
+                })?;
                 if -negative <= value {
                     (s, value) = (a0 + share * (a1 - a0), -negative);
                 }
+            }
+            let mut at = [s, t];
+            // The polish, and once more where a closed edge is re-entered.
+            for _ in 0..2 {
+                // Each reading of the search is a point of both curves.
+                let mut refused = None;
+                let found = nearest_on_curves(curve_a, curve_b, at, || pay(dec, 2, &mut refused));
+                let Some(found) = found else {
+                    return Err(refused.expect("a search ends early only where a charge refused"));
+                };
+                let round = [
+                    reentered(curve_a, closed_a, found[0]),
+                    reentered(curve_b, closed_b, found[1]),
+                ];
+                at = [round[0].unwrap_or(found[0]), round[1].unwrap_or(found[1])];
+                if round.iter().all(Option::is_none) {
+                    break;
+                }
+            }
+            // The two points the distance is read at.
+            dec.charge_work(2)?;
+            if on_edge(curve_a, at[0]) && on_edge(curve_b, at[1]) {
+                value = value.min(distance(&curve_a.point(at[0]), &curve_b.point(at[1])));
             }
             if best.is_none_or(|d| value < d) {
                 best = Some(value);
@@ -514,6 +836,24 @@ fn curve_to_curve(
         }
     }
     Ok(best)
+}
+
+fn on_edge(curve: &FramedCurve, t: f64) -> bool {
+    (curve.range[0]..=curve.range[1]).contains(&t)
+}
+
+/// A parameter beyond an end of a closed edge, taken round to the other
+/// end: the edge's two ends are one point, so the curve goes on there.
+/// `None` for a parameter that needs no such move.
+fn reentered(curve: &FramedCurve, closed: bool, t: f64) -> Option<f64> {
+    let [low, high] = curve.range;
+    if closed && t < low {
+        Some(t + (high - low))
+    } else if closed && t > high {
+        Some(t - (high - low))
+    } else {
+        None
+    }
 }
 
 /// An entity's tolerance, found by its place: the
@@ -555,45 +895,144 @@ fn face_rect(
     Ok(rect)
 }
 
-/// A face's loops as u/v polygons: each use's start, and, along a retained
-/// u/v curve, the curve at evenly spaced parameters.
-fn face_polygons(
+/// The parameters of the nodes of a curved copy from `start` to `end`, in
+/// the order of the walk: [`LOOP_POINTS`] evenly spaced points from the
+/// start, every place between them where the copy's u or v turns, and the
+/// end.
+///
+/// A turn shows where a coordinate that rose from one point to the next
+/// falls at a later step, or the reverse, with no step between that moves it
+/// at all: two points either side of a turn can round to the same value. It
+/// is polished by Brent's method between the start of the first of those
+/// two steps and the end of the second. Next to each end one more point is
+/// read, a forward-difference step inside it (Dennis and Schnabel 1983,
+/// section 5.4: the square root of the machine epsilon, here as a share of
+/// the use), so a turn between an end and the first point after it shows as
+/// well. The walk takes it that each coordinate turns at most once between
+/// two of its points.
+fn walk_parameters(
+    walk: &mut Walk,
+    surface: &FramedSurface,
+    [start, end]: [f64; 2],
+    dec: &mut Decider,
+) -> Result<Vec<f64>, Refusal> {
+    let span = end - start;
+    let even = |k: usize| start + span * k as f64 / LOOP_POINTS as f64;
+    let inset = f64::EPSILON.sqrt() * span;
+    let mut read = vec![start, start + inset];
+    read.extend((1..LOOP_POINTS).map(even));
+    read.extend([end - inset, end]);
+    dec.charge_work(read.len() as u64)?;
+    let points: Vec<[f64; 2]> = read.iter().map(|t| walk.at(surface, *t)).collect();
+    let mut nodes: Vec<f64> = (0..LOOP_POINTS).map(even).collect();
+    nodes.push(end);
+    for axis in 0..2 {
+        // The last step that moved this coordinate: the point it began at,
+        // and whether it rose.
+        let mut last: Option<(usize, bool)> = None;
+        for k in 1..read.len() {
+            let step = points[k][axis] - points[k - 1][axis];
+            if step == 0.0 || step.is_nan() {
+                continue;
+            }
+            let rising = step > 0.0;
+            if let Some((began, rose)) = last
+                && rose != rising
+            {
+                let (from, to) = (read[began], read[k]);
+                let sign = if rose { 1.0 } else { -1.0 };
+                let (share, _, _) = try_brent_maximum(|x| -> Result<f64, Refusal> {
+                    dec.charge_work(1)?;
+                    Ok(sign * walk.at(surface, from + x * (to - from))[axis])
+                })?;
+                nodes.push(from + share * (to - from));
+            }
+            last = Some((k - 1, rising));
+        }
+    }
+    nodes.sort_by(|a, b| {
+        if span < 0.0 {
+            b.total_cmp(a)
+        } else {
+            a.total_cmp(b)
+        }
+    });
+    nodes.dedup();
+    Ok(nodes)
+}
+
+/// The nodes of one curved copy from `start` to `end`, the face's walk
+/// number `index`: each runs along the copy to the next, and the last one
+/// to whatever node follows it in its loop.
+fn walked(
+    walk: &mut Walk,
+    index: usize,
+    surface: &FramedSurface,
+    ends: [f64; 2],
+    dec: &mut Decider,
+) -> Result<Vec<LoopNode>, Refusal> {
+    let parameters = walk_parameters(walk, surface, ends, dec)?;
+    dec.charge_work(parameters.len() as u64)?;
+    Ok(parameters
+        .windows(2)
+        .map(|run| LoopNode {
+            uv: walk.at(surface, run[0]),
+            along: Some((index, [run[0], run[1]])),
+        })
+        .collect())
+}
+
+/// A face's loops as chains of nodes in u/v, and the curved copies they
+/// follow. A use that is straight in u/v is its start. A use with a
+/// retained u/v curve, and a circle or spline on a plane, is walked
+/// ([`walk_parameters`]): each of its nodes runs along the copy to the
+/// next, the last one to the start of the next use.
+fn face_loops(
     definition: &NumericalDefinition,
     face: usize,
     native: &Index<'_>,
+    surface: &FramedSurface,
+    centre: &[Rational; 3],
     dec: &mut Decider,
-) -> Result<Vec<Vec<[f64; 2]>>, Refusal> {
-    let mut polygons = Vec::new();
-    for (boundary, row) in definition.faces[face].loops.iter().enumerate() {
-        let mut polygon = Vec::new();
+) -> Result<(Vec<Vec<LoopNode>>, Vec<Walk>), Refusal> {
+    let source = &definition.faces[face];
+    let mut loops = Vec::new();
+    let mut walks = Vec::new();
+    for (boundary, row) in source.loops.iter().enumerate() {
+        let mut nodes = Vec::new();
         for (use_index, trim) in row.iter().enumerate() {
             dec.charge_work(1)?;
-            match native.get(face, boundary, use_index) {
-                Some(curve) => {
-                    let edge = &definition.edges[trim.edge];
-                    let [a, b] = edge.parameters.each_ref().map(Rational::to_f64_nearest);
-                    let [start, end] = if trim.sense == Sense::Same {
-                        [a, b]
-                    } else {
-                        [b, a]
-                    };
-                    let mut curve = FramedUvCurve::new(curve, dec)?;
-                    dec.charge_work(LOOP_POINTS as u64)?;
-                    for k in 0..LOOP_POINTS {
-                        polygon.push(
-                            curve.point(start + (end - start) * k as f64 / LOOP_POINTS as f64),
-                        );
-                    }
-                }
-                None => polygon.push([
-                    trim.uv[0][0].to_f64_nearest(),
-                    trim.uv[0][1].to_f64_nearest(),
-                ]),
-            }
+            let edge = &definition.edges[trim.edge];
+            let [a, b] = edge.parameters.each_ref().map(Rational::to_f64_nearest);
+            let [start, end] = if trim.sense == Sense::Same {
+                [a, b]
+            } else {
+                [b, a]
+            };
+            let walk = match native.get(face, boundary, use_index) {
+                _ if end - start == 0.0 => None,
+                Some(curve) => Some(Walk::Retained(FramedUvCurve::new(curve, dec)?)),
+                None if analytic::projected_edge(source, edge) => Some(Walk::Projected(
+                    FramedCurve::new(&edge.curve, edge.parameters.each_ref(), centre, dec)?,
+                )),
+                None => None,
+            };
+            let Some(mut walk) = walk else {
+                nodes.push(LoopNode {
+                    uv: [
+                        trim.uv[0][0].to_f64_nearest(),
+                        trim.uv[0][1].to_f64_nearest(),
+                    ],
+                    along: None,
+                });
+                continue;
+            };
+            nodes.extend(walked(&mut walk, walks.len(), surface, [start, end], dec)?);
+            walks.push(walk);
         }
-        polygons.push(polygon);
+        loops.push(nodes);
     }
-    Ok(polygons)
+    Ok((loops, walks))
 }
 
 struct Prepared {
@@ -742,10 +1181,13 @@ fn close_pairs(
                     sampled[*k] = Some(pieces(&mut curves[*k], dec)?);
                 }
                 Shape::Face(k) if faces[*k].is_none() => {
+                    let surface = surfaces[*k].take().expect("prepared");
+                    let (loops, walks) = face_loops(definition, *k, native, &surface, centre, dec)?;
                     faces[*k] = Some(FaceData {
-                        surface: surfaces[*k].take().expect("prepared"),
+                        surface,
                         rect: rects[*k],
-                        polygons: face_polygons(definition, *k, native, dec)?,
+                        loops,
+                        walks,
                     });
                 }
                 _ => {}
@@ -763,14 +1205,17 @@ fn close_pairs(
             (Shape::Curve(ka), Shape::Curve(kb)) => {
                 // Edges come after vertices in index order, so `ka < kb`.
                 let (low, high) = curves.split_at_mut(*kb);
+                // An edge whose two ends are one vertex is closed.
                 curve_to_curve(
                     (
                         &mut low[*ka],
                         sampled[*ka].as_deref().expect("sampled above"),
+                        a.vertices.len() == 1,
                     ),
                     (
                         &mut high[0],
                         sampled[*kb].as_deref().expect("sampled above"),
+                        b.vertices.len() == 1,
                     ),
                     reach,
                     dec,
@@ -778,7 +1223,7 @@ fn close_pairs(
             }
             (Shape::Point(p), Shape::Face(k)) | (Shape::Face(k), Shape::Point(p)) => {
                 let face = faces[*k].as_mut().expect("prepared above");
-                point_to_face(p, face, None, dec)?.0
+                point_to_face(p, face, dec)?
             }
             (Shape::Curve(c), Shape::Face(k)) | (Shape::Face(k), Shape::Curve(c)) => {
                 let face_box = entities[if matches!(a.shape, Shape::Face(_)) {
@@ -917,4 +1362,166 @@ pub fn fitted_target_for_definition(
     )?;
     let smallest = pairs.into_iter().map(|(_, _, d)| d).reduce(f64::min);
     Ok(own_fitted(eps, smallest.map(exact).as_ref()).target_mm)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use catallax_shapes::{Circle, Curve, Plane, RPoint3, RVector3, Surface};
+
+    fn q(text: &str) -> Rational {
+        Rational::parse(text).expect("number")
+    }
+
+    fn origin() -> [Rational; 3] {
+        [q("0"), q("0"), q("0")]
+    }
+
+    /// The plane z = 0, with u along x and v along y.
+    fn plane(dec: &mut Decider) -> FramedSurface {
+        let surface = Surface::Plane(Plane {
+            origin: RPoint3::new(q("0"), q("0"), q("0")).to_real(),
+            normal: RVector3::new(q("0"), q("0"), q("1")).to_real(),
+            ref_dir: RVector3::new(q("1"), q("0"), q("0")).to_real(),
+        });
+        FramedSurface::new(&surface, &origin(), dec).expect("a plane")
+    }
+
+    /// The circle of radius 10 about (3, -2, 0) in that plane between two
+    /// parameters, as the projected copy of an edge use.
+    fn arc(ends: [f64; 2], dec: &mut Decider) -> Walk {
+        let curve = Curve::Circle(Circle {
+            center: RPoint3::new(q("3"), q("-2"), q("0")).to_real(),
+            normal: RVector3::new(q("0"), q("0"), q("1")).to_real(),
+            radius_sq: q("100").into(),
+            ref_dir: RVector3::new(q("1"), q("0"), q("0")).to_real(),
+        });
+        let ends = ends.map(|t| Rational::from_f64_exact(t).expect("finite"));
+        Walk::Projected(
+            FramedCurve::new(&curve, [&ends[0], &ends[1]], &origin(), dec).expect("a circle"),
+        )
+    }
+
+    /// An arc from 1.5 to 3.2 radians: its v turns at pi/2, between the
+    /// start and the first of the nine points, and its u turns at pi,
+    /// between the last of them and the end. Both turns are nodes, in
+    /// either direction of the walk.
+    #[test]
+    fn a_walk_has_a_node_at_a_turn_next_to_either_end() {
+        let mut dec = Decider::default();
+        let surface = plane(&mut dec);
+        let turns = [std::f64::consts::FRAC_PI_2, std::f64::consts::PI];
+        for ends in [[1.5, 3.2], [3.2, 1.5]] {
+            let mut walk = arc(ends, &mut dec);
+            let nodes = walk_parameters(&mut walk, &surface, ends, &mut dec).unwrap();
+            assert_eq!(nodes.len(), LOOP_POINTS + 1 + turns.len(), "{nodes:?}");
+            assert_eq!(nodes.first(), Some(&ends[0]));
+            assert_eq!(nodes.last(), Some(&ends[1]));
+            assert!(
+                nodes
+                    .windows(2)
+                    .all(|run| (run[1] - run[0]) * (ends[1] - ends[0]) > 0.0),
+                "{nodes:?}"
+            );
+            for turn in turns {
+                assert!(
+                    nodes.iter().any(|t| (t - turn).abs() < 1e-6),
+                    "{turn}: {nodes:?}"
+                );
+            }
+        }
+    }
+
+    /// A face bounded by one complete circle of radius 10 is read on the
+    /// circle: all the way round, a point a billionth of the radius inside
+    /// it is inside the face and one a billionth outside is not. A polygon
+    /// through the walk's points is up to 0.6 mm inside the circle.
+    #[test]
+    fn a_disc_is_read_on_its_circle_and_not_on_chords() {
+        let mut dec = Decider::default();
+        let surface = plane(&mut dec);
+        let ends = [0.0, std::f64::consts::TAU];
+        let mut walk = arc(ends, &mut dec);
+        let nodes = walked(&mut walk, 0, &surface, ends, &mut dec).unwrap();
+        let mut face = FaceData {
+            surface,
+            rect: [[-7.0, 13.0], [-12.0, 8.0]],
+            loops: vec![nodes],
+            walks: vec![walk],
+        };
+        for k in 0..360 {
+            let angle = 0.001 + f64::from(k) * std::f64::consts::TAU / 360.0;
+            let at = |radius: f64| [3.0 + radius * angle.cos(), -2.0 + radius * angle.sin()];
+            assert!(face.inside(at(10.0 - 1e-8), &mut dec).unwrap(), "{angle}");
+            assert!(!face.inside(at(10.0 + 1e-8), &mut dec).unwrap(), "{angle}");
+        }
+    }
+
+    /// The plane z = 0 with u along x and v along y, in closed form, read
+    /// through [`Sought`] by the kernel's own foot search. It counts every
+    /// evaluation made of it.
+    struct Flat {
+        readings: u64,
+    }
+
+    impl Sought for Flat {
+        fn point(&mut self, uv: [f64; 2]) -> [f64; 3] {
+            self.readings += 1;
+            [uv[0], uv[1], 0.0]
+        }
+
+        fn foot_spending(
+            &mut self,
+            target: &[f64; 3],
+            seed: [f64; 2],
+            spend: &mut dyn FnMut() -> Option<()>,
+        ) -> Option<[f64; 2]> {
+            crate::numerical::gap::nearest_within(|uv| self.point(uv), target, seed, spend)
+        }
+    }
+
+    /// The line (t, 1, t - 0.3) crosses the plane at t = 0.3. Followed from
+    /// its ends at 0 and 1, every reading of the line and of the plane pays
+    /// one unit and the unit of its deadline check before it is made. With
+    /// any smaller allowance the search refuses by name, and the readings
+    /// made are the ones the allowance paid for in full: the reading that
+    /// does not fit is not made.
+    #[test]
+    fn a_crossing_is_followed_only_as_far_as_it_is_paid_for() {
+        let follow = |limit: u64| {
+            let mut plane = Flat { readings: 0 };
+            let mut line = 0_u64;
+            let (found, work) = catallax_numbers::with_operation_budget(limit, || {
+                follow_crossing(
+                    [0.0, 1.0],
+                    &[0.0, 0.0, -0.3],
+                    [1.0, 1.0],
+                    |t| {
+                        line += 1;
+                        [t, 1.0, t - 0.3]
+                    },
+                    &mut plane,
+                    &mut Decider::default(),
+                )
+            });
+            (found, work, line + plane.readings)
+        };
+        let (found, whole, readings) = follow(u64::MAX);
+        let (foot, apart) = found.expect("paid in full").expect("a crossing");
+        assert!((foot[0] - 0.3).abs() < 1e-9 && (foot[1] - 1.0).abs() < 1e-9);
+        assert!(apart < 1e-9, "{apart}");
+        assert!(readings > 100, "{readings}");
+        assert_eq!(whole.used, 2 * readings);
+        for limit in 0..whole.used {
+            let (found, work, readings) = follow(limit);
+            assert_eq!(
+                found.expect_err("an allowance short of the search").code,
+                "numbers.operation-budget",
+                "allowance {limit}"
+            );
+            assert!(work.exhausted, "allowance {limit}");
+            assert_eq!(readings, limit / 2, "allowance {limit}");
+        }
+        assert!(follow(whole.used).0.is_ok());
+    }
 }

@@ -210,7 +210,7 @@ pub(super) fn arctangent(z: f64) -> f64 {
 
 /// Source: judgement. Forty halvings locate a crossing to 2^-40 of its
 /// piece, about 1e-12, far inside the spacing of any sample plan.
-const ROOT_DEPTH: u32 = 40;
+pub(super) const ROOT_DEPTH: u32 = 40;
 
 /// Shares in `(0, 1)` where a Bernstein polynomial is zero, by recursive de
 /// Casteljau halving. A piece whose coefficients share one strict sign has

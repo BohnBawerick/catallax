@@ -194,3 +194,55 @@ fn rounded_corners_vertices_and_tangent_chains_export_within_one_million_work() 
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+// The writer's curve fit is counted at the decider's limb rate and not
+// charged (Checkpoint 2 decisions, section 4.5, predictor step 1). The count
+// is the writer's own at any thread count: a helper's fit reaches it only with
+// a span the walk adopts.
+#[test]
+fn the_fit_is_counted_alike_at_one_two_and_four_threads_and_never_charged() {
+    let export = |threads: usize, wait: bool| {
+        catallax_numbers::set_threads(std::num::NonZeroUsize::new(threads));
+        catallax_numbers::set_run_ahead_wait(wait);
+        let adopted = catallax_numbers::run_ahead_adopted();
+        let (out, work) = std::thread::Builder::new()
+            .stack_size(8 * 1024 * 1024)
+            .spawn(|| {
+                with_operation_budget(1_000_000, || {
+                    let mut dec = Decider::default();
+                    let built = evaluate(&recipe("acute-5deg"), &mut dec).unwrap();
+                    let mut out = Vec::new();
+                    write_step(
+                        &built.model,
+                        &[built.result],
+                        &StepOptions::default(),
+                        &mut dec,
+                        &mut out,
+                    )
+                    .unwrap();
+                    out
+                })
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+        catallax_numbers::set_run_ahead_wait(false);
+        catallax_numbers::set_threads(None);
+        assert!(!work.exhausted, "{threads} threads: {work:?}");
+        (
+            (out, work.used, work.uncharged),
+            catallax_numbers::run_ahead_adopted() - adopted,
+        )
+    };
+    let (one, _) = export(1, false);
+    // The fit alone counts more than the whole allowance the build and the
+    // export ran in, so none of it was charged there.
+    assert!(one.2 > 1_000_000, "{} counted, {} charged", one.2, one.1);
+    for threads in [2, 4] {
+        // Every span adopted from a helper, then whichever the walk reaches.
+        let (waited, adopted) = export(threads, true);
+        assert!(adopted > 0, "{threads} threads adopted no span");
+        assert!(waited == one, "{threads} threads, every span adopted");
+        assert!(export(threads, false).0 == one, "{threads} threads");
+    }
+}

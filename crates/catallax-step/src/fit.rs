@@ -1,12 +1,18 @@
 //! Piecewise Taylor polynomials written as degree-seven Bezier spans.
 //! Each span carries a uniform Taylor remainder and a convex-hull bound for
 //! decimal rounding, enclosure width, and endpoint replacement.
+//!
+//! Every exact rational sum, difference, product and quotient here goes
+//! through [`number::counted`], which counts it at the decider's limb rate in
+//! `OperationWork::uncharged` and charges nothing. Comparisons, shifts by a
+//! power of two and the fixed control weights, which are made once for the
+//! process, have no price.
 
 use catallax_intersect::{CurveTrace, TracePiece};
 use catallax_numbers::{Ball, Decider, Rational, Refusal};
 
 use crate::StepOptions;
-use crate::number::{self, Point};
+use crate::number::{self, Point, counted};
 use std::collections::BTreeMap;
 
 pub(crate) const DEGREE: usize = 7;
@@ -35,14 +41,16 @@ impl Span {
             .zip(&self.ideals)
             .map(|(p, b)| {
                 (0..3).fold(Rational::zero(), |s, i| {
-                    s + (&p.xyz[i].value - &b[i][0])
+                    let value = &p.xyz[i].value;
+                    let distance = counted::sub(value, &b[i][0])
                         .abs()
-                        .max((&p.xyz[i].value - &b[i][1]).abs())
+                        .max(counted::sub(value, &b[i][1]).abs());
+                    counted::add(&s, &distance)
                 })
             })
             .max()
             .unwrap();
-        &self.remainder + &controls
+        counted::add(&self.remainder, &controls)
     }
 }
 
@@ -84,7 +92,7 @@ pub(crate) fn fit_with_ranges(
     let mut ranges = Vec::new();
     // A chart projects the written space curve back onto its carrier. Reserve
     // the remaining requested error for that projection and its pcurve fit.
-    let tolerance = &options.curve_tolerance / &Rational::from_i64(4);
+    let tolerance = counted::div(&options.curve_tolerance, &Rational::from_i64(4));
     let fit = fit_spans(
         trace,
         start,
@@ -162,11 +170,11 @@ fn fit_spans(
             dec.check_deadline()?;
             let error = current.error();
             // Once decimal/enclosure error dominates, subdivision cannot help.
-            let useful =
-                &current.remainder * &Rational::from_i64(4) > error.clone().max(tolerance.clone());
+            let useful = counted::mul(&current.remainder, &Rational::from_i64(4))
+                > error.clone().max(tolerance.clone());
             if &error > tolerance && useful && remaining >= cost.saturating_mul(2) {
                 remaining -= cost * 2;
-                let mid = (&lo + &hi).mul_pow2(-1);
+                let mid = counted::add(&lo, &hi).mul_pow2(-1);
                 let left = span(
                     piece,
                     &lo,
@@ -227,7 +235,7 @@ fn fit_spans(
         // A repeated Bezier knot isolates each span's parameterization. Choose
         // the next exactly representable decimal so low digit counts cannot
         // collapse distinct knots and change the fitted curve.
-        let next = (&knot + &Rational::one())
+        let next = counted::add(&knot, &Rational::one())
             .to_decimal_bounds(digits.max(1))
             .1;
         knot = number::formatted_value(&next);
@@ -261,8 +269,8 @@ fn span(
     dec: &Decider,
     endpoints: &mut BTreeMap<Rational, [Ball; 3]>,
 ) -> Result<Span, Refusal> {
-    let mid = (lo + hi).mul_pow2(-1);
-    let width = hi - lo;
+    let mid = counted::add(lo, hi).mul_pow2(-1);
+    let width = counted::sub(hi, lo);
     let lower = whole.lo();
     let upper = whole.hi();
     let inside = |ball: &Ball| ball.lo() >= lower && ball.hi() <= upper;
@@ -282,10 +290,10 @@ fn span(
         .unwrap_or(whole);
     let mut coefficients = piece.taylor(center, order, dec)?;
     let remainder_coefficient = piece.taylor(domain, order + 1, dec)?.pop().unwrap();
-    let remainder = remainder_coefficient
-        .iter()
-        .fold(Rational::zero(), |s, b| s + number::magnitude(b))
-        * width.mul_pow2(-1).pow((order + 1) as i32).unwrap();
+    let magnitude = remainder_coefficient.iter().fold(Rational::zero(), |s, b| {
+        counted::add(&s, &number::magnitude(b))
+    });
+    let remainder = counted::mul(&magnitude, &counted::pow(&width.mul_pow2(-1), order + 1));
     // Elevate a lower-order polynomial into the existing degree-seven format.
     coefficients.resize_with(DEGREE + 1, || {
         std::array::from_fn(|_| Ball::from_rational(&Rational::zero(), precision))
@@ -311,7 +319,7 @@ fn span(
             piece.evaluate(parameter, dec)?
         };
         points[index] = Point {
-            xyz: position.each_ref().map(|b| number::ball_number(b, digits)),
+            xyz: position.each_ref().map(|b| counted::ball_number(b, digits)),
         };
     }
     let bounds = piece
@@ -353,16 +361,26 @@ pub(crate) fn taylor_controls<const N: usize>(
         })
     });
     assert_eq!(coefficients.len(), DEGREE + 1);
+    let zeros = || -> [[[Rational; 2]; N]; DEGREE + 1] {
+        std::array::from_fn(|_| std::array::from_fn(|_| [Rational::zero(), Rational::zero()]))
+    };
     // Scale each coefficient enclosure once, before applying the control weights.
     // All operations are rational, so reassociation introduces no rounding.
-    let scaled: [[[Rational; 2]; N]; DEGREE + 1] = std::array::from_fn(|k| {
-        let power = width.pow(k as i32).unwrap();
-        coefficients[k]
-            .each_ref()
-            .map(|coefficient| [&coefficient.lo() * &power, &coefficient.hi() * &power])
-    });
-    let mut controls: [[[Rational; 2]; N]; DEGREE + 1] =
-        std::array::from_fn(|_| std::array::from_fn(|_| [Rational::zero(), Rational::zero()]));
+    // Each power of the width is one product more than the last.
+    let mut scaled = zeros();
+    let mut power = Rational::one();
+    for (k, (row, coefficient)) in scaled.iter_mut().zip(coefficients).enumerate() {
+        if k != 0 {
+            power = counted::mul(&power, width);
+        }
+        for (cell, ball) in row.iter_mut().zip(coefficient) {
+            *cell = [
+                counted::mul(&ball.lo(), &power),
+                counted::mul(&ball.hi(), &power),
+            ];
+        }
+    }
+    let mut controls = zeros();
     for (j, weights) in WEIGHTS.iter().enumerate() {
         let mut parts: [[[Rational; 2]; N]; 2] =
             std::array::from_fn(|_| std::array::from_fn(|_| [Rational::zero(), Rational::zero()]));
@@ -371,19 +389,25 @@ pub(crate) fn taylor_controls<const N: usize>(
                 continue;
             }
             for i in 0..N {
-                let a = &coefficient[i][0] * weight;
-                let b = &coefficient[i][1] * weight;
+                let a = counted::mul(&coefficient[i][0], weight);
+                let b = counted::mul(&coefficient[i][1], weight);
                 let (lower, upper) = if a <= b { (a, b) } else { (b, a) };
                 let interval = &mut parts[k % 2][i];
-                interval[0] = &interval[0] + &lower;
-                interval[1] = &interval[1] + &upper;
+                interval[0] = counted::add(&interval[0], &lower);
+                interval[1] = counted::add(&interval[1], &upper);
             }
         }
         for i in 0..N {
             let (even, odd) = (&parts[0][i], &parts[1][i]);
-            controls[j][i] = [&even[0] + &odd[0], &even[1] + &odd[1]];
+            controls[j][i] = [
+                counted::add(&even[0], &odd[0]),
+                counted::add(&even[1], &odd[1]),
+            ];
             if DEGREE - j != j {
-                controls[DEGREE - j][i] = [&even[0] - &odd[1], &even[1] - &odd[0]];
+                controls[DEGREE - j][i] = [
+                    counted::sub(&even[0], &odd[1]),
+                    counted::sub(&even[1], &odd[0]),
+                ];
             }
         }
     }
@@ -391,7 +415,7 @@ pub(crate) fn taylor_controls<const N: usize>(
         push(
             control
                 .each_ref()
-                .map(|b| number::rounded(&b[0], &b[1], digits)),
+                .map(|b| counted::rounded(&b[0], &b[1], digits)),
             control,
         );
     }
@@ -404,11 +428,12 @@ pub(crate) fn bezier_power<const N: usize>(
     for (k, power) in powers.iter_mut().enumerate() {
         let factor = Rational::from_i64(binomial(DEGREE, k));
         for (value, difference) in power.iter_mut().zip(&differences[0]) {
-            *value = difference * &factor;
+            *value = counted::mul(difference, &factor);
         }
         for j in 0..DEGREE - k {
-            differences[j] =
-                std::array::from_fn(|axis| &differences[j + 1][axis] - &differences[j][axis]);
+            differences[j] = std::array::from_fn(|axis| {
+                counted::sub(&differences[j + 1][axis], &differences[j][axis])
+            });
         }
     }
     powers

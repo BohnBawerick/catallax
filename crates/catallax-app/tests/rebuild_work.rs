@@ -214,6 +214,7 @@ fn large_display_above_target_completes_and_reports_stage_work() {
             used: 0,
             exhausted: false,
             refunded: 0,
+            uncharged: 0,
         },
         proof: Some(work),
     };

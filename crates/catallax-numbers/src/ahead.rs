@@ -14,7 +14,9 @@
 //! replays the tape against the writer's own caches, so the writer charges what
 //! it would have charged had it done the arithmetic itself:
 //!
-//! - work outside the proof caches is replayed as the amount recorded;
+//! - work outside the proof caches is replayed as the amount recorded, and so
+//!   is arithmetic that was counted without being charged
+//!   (`OperationWork::uncharged`);
 //! - each algebraic root enclosure goes through the writer's real cache
 //!   protocol, which decides between a reuse and a cold proof exactly as it
 //!   does without workers. Only the cold arithmetic is taken from the record.
@@ -312,6 +314,8 @@ struct Record {
     tape: Vec<Item>,
     /// No replay of the tape can charge more than this.
     most: u64,
+    /// Arithmetic the decision counted without charging it.
+    uncharged: u64,
 }
 
 enum Slot {
@@ -449,6 +453,10 @@ struct Recording {
     /// Request work at the last tape item.
     mark: u64,
     most: u64,
+    /// The thread's uncharged count when the recording began. No cache
+    /// changes what that arithmetic counts, so its place on the tape does not
+    /// matter and one amount describes it.
+    uncharged: u64,
     unusable: bool,
 }
 
@@ -686,6 +694,7 @@ pub(crate) fn decide<H: Host, T: Clone + Send + Sync + 'static>(
             stats.absorb(&record.stats);
         }
         replay(&record.tape, &pairing, epoch);
+        crate::operation::count_uncharged(record.uncharged);
         ADOPTED.fetch_add(1, Ordering::Relaxed);
         let outcome = record
             .outcome
@@ -761,6 +770,7 @@ fn decide_ahead<H: Host, T: Clone + Send + Sync + 'static>(
                 tape: Vec::new(),
                 mark: crate::operation::used(),
                 most: 0,
+                uncharged: crate::operation::uncharged(),
                 unusable: false,
             });
             worker.deciding = Some(Deciding {
@@ -805,6 +815,7 @@ fn decide_ahead<H: Host, T: Clone + Send + Sync + 'static>(
                 stats: delta,
                 tape: recording.tape,
                 most: recording.most,
+                uncharged: crate::operation::uncharged().saturating_sub(recording.uncharged),
             })
         });
     if let Some(Deciding {
@@ -1076,14 +1087,18 @@ pub(crate) fn record_pi(precision: u32, dec: &Decider) -> Result<crate::Ball, cr
 pub struct Charges {
     tape: Vec<Item>,
     most: u64,
+    /// Arithmetic the computation counted without charging it.
+    uncharged: u64,
     epoch: u64,
 }
 
 impl Charges {
     /// Charges this thread what the recorded computation would charge it now,
-    /// and leaves its proof caches as that computation would. Returns `false`
-    /// and charges nothing when the work might not fit the remaining
-    /// allowance; the caller then runs the computation itself.
+    /// and leaves its proof caches as that computation would. What the
+    /// computation counted without charging ([`crate::OperationWork::uncharged`])
+    /// is counted here too. Returns `false` and charges and counts nothing
+    /// when the work might not fit the remaining allowance; the caller then
+    /// runs the computation itself.
     ///
     /// Only for a computation whose result depends on nothing but values the
     /// recording thread and this thread share: its charges may depend on the
@@ -1100,6 +1115,7 @@ impl Charges {
             return false;
         }
         replay(&self.tape, &Pairing::default(), self.epoch);
+        crate::operation::count_uncharged(self.uncharged);
         ADOPTED.fetch_add(1, Ordering::Relaxed);
         true
     }
@@ -1133,6 +1149,7 @@ pub fn record<T>(code: impl FnOnce() -> T) -> (T, Option<Charges>) {
             tape: Vec::new(),
             mark: crate::operation::used(),
             most: 0,
+            uncharged: crate::operation::uncharged(),
             unusable: false,
         });
         Some(worker.epoch)
@@ -1165,6 +1182,7 @@ pub fn record<T>(code: impl FnOnce() -> T) -> (T, Option<Charges>) {
             Charges {
                 tape: recording.tape,
                 most: recording.most,
+                uncharged: crate::operation::uncharged().saturating_sub(recording.uncharged),
                 epoch,
             }
         });

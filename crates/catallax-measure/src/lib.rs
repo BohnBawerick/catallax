@@ -731,7 +731,9 @@ pub fn entity_pair(
 /// which proves them no nearer than the minimum or finds a nearer witness.
 /// Where that search leaves a face pair open, each of its strata pairs whose
 /// cores are lines, circles or cones is settled by its stationary pairs, each
-/// proven by a Krawczyk test and classified on both trims. What stays open
+/// proven by a Krawczyk test and classified on both trims. An edge with no
+/// line or circle form, such as the ellipse of a fillet mitre, takes the box
+/// of a face that holds it. What stays open
 /// within one face query's default cell count widens the enclosure to the
 /// lower bound proved for it: the answer then carries the
 /// `measure.accuracy-not-reached` mark when it misses `accuracy`. With no

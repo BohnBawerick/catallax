@@ -1030,19 +1030,42 @@ impl Plan {
         step: &StepId,
         dec: &mut Decider,
     ) -> Result<usize, Refusal> {
-        let radius = number(q(&corner.sector.radius)?);
-        let centre = corner.centre();
+        self.trihedral(
+            &corner.sector.radius,
+            corner.centre(),
+            &corner.sector.directions,
+            &corner.vertex,
+            &corner.origin,
+            step,
+            dec,
+        )
+    }
+
+    /// The cell of a trihedral corner less its ball: the cone of the unit
+    /// contact `directions` at the ball's `centre`, short of the three
+    /// supports at `radius`, whose vertex is `vertex`. The ball's face is
+    /// named `origin`. Shared by the elementary corner and the corner where
+    /// a run swallows an earlier mitre (4.2a step 5).
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn trihedral(
+        &mut self,
+        radius: &Real,
+        centre: &Point3,
+        directions: &[Vector3; 3],
+        vertex: &Point3,
+        origin: &Origin,
+        step: &StepId,
+        dec: &mut Decider,
+    ) -> Result<usize, Refusal> {
+        let ball_radius = number(q(radius)?);
+        let [a, b, c] = directions;
+        let volume = Real::one() / a.dot(&b.cross(c));
+        let duals = [b.cross(c), c.cross(a), a.cross(b)].map(|v| v.scaled(&volume));
         let mut planes = Vec::with_capacity(6);
-        for (i, (normal, dual)) in corner
-            .sector
-            .directions
-            .iter()
-            .zip(corner.sector.dual_basis())
-            .enumerate()
-        {
-            let next = &corner.sector.directions[(i + 1) % 3];
+        for (i, (normal, dual)) in directions.iter().zip(duals).enumerate() {
+            let next = &directions[(i + 1) % 3];
             planes.push(Surface::Plane(Plane {
-                origin: centre.plus(&normal.scaled(&corner.sector.radius)),
+                origin: centre.plus(&normal.scaled(radius)),
                 normal: normal.clone(),
                 ref_dir: normal.cross(next),
             }));
@@ -1052,7 +1075,7 @@ impl Plan {
                 ref_dir: next.clone(),
             }));
         }
-        let reach = coordinates(&corner.vertex)?
+        let reach = coordinates(vertex)?
             .iter()
             .zip(coordinates(centre)?)
             .fold(Rational::zero(), |sum, (v, c)| sum + (v - &c).abs());
@@ -1062,7 +1085,7 @@ impl Plan {
         let cell = geometry::Leaf::Cell(geometry::Cell::new(planes, Some(bound))?);
         let (ball, mut faces) = geometry::compile(
             &catallax_recipe::Operation::Sphere {
-                radius,
+                radius: ball_radius,
                 pose: catallax_recipe::Pose {
                     rotation: [1, 0, 0, 0].map(|v| number(Rational::from_i64(v))),
                     translation: catallax_recipe::Vector3(coordinates(centre)?.map(number)),
@@ -1072,7 +1095,7 @@ impl Plan {
             dec,
         )?;
         for face in &mut faces {
-            face.origin = corner.origin.clone();
+            face.origin = origin.clone();
         }
         let cell = self.leaf(cell, Vec::new(), dec)?;
         let ball = self.leaf(ball, faces, dec)?;

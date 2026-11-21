@@ -764,16 +764,22 @@ fn fillets_over_fillets_not_built_yet_refuse_with_typed_codes() {
         "{}",
         refusal.detail
     );
-    // The field rolls a chain over an earlier strip (4.2a step 5), and with a
-    // ball as wide as the round it rolls over it sweeps a sphere (part 2).
-    // An upright under an earlier mitre is a later part of that step.
-    for recipe in [boss(4, "3", "1", false), pocket("3", "3")] {
+    // The field rolls a chain over an earlier strip (4.2a step 5), with a
+    // ball as wide as the round it rolls over it sweeps a sphere (part 2),
+    // and an upright as wide as an earlier mitre's rounds swallows the mitre
+    // with a trihedral corner (part 3). An upright narrower than the rounds,
+    // which rolls over the mitre, is a later part of that step.
+    for recipe in [
+        boss(4, "3", "1", false),
+        pocket("3", "3"),
+        mitred(4, "3", "3", false),
+    ] {
         assert!(catallax_field::Plan::compile_checked(&recipe, &mut decider()).is_ok());
     }
     let Err(refusal) =
-        catallax_field::Plan::compile_checked(&mitred(4, "3", "3", false), &mut decider())
+        catallax_field::Plan::compile_checked(&mitred(4, "3", "2", false), &mut decider())
     else {
-        panic!("the field compiled a mitre");
+        panic!("the field compiled a roll over a mitre");
     };
     assert_eq!(
         refusal.code, "fillet.unsupported-overflow",

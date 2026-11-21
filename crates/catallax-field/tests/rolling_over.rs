@@ -3,21 +3,26 @@
 //! the recipes of `fillet_over_fillet.rs` whose chain rolls over an earlier
 //! strip with its ball on the strip's axis side (part 1), or with a ball as
 //! wide as the strip, a sphere corner, and the recipes whose straight run
-//! stops at a strip narrower than its ball and takes the cliff (part 2). The
-//! corpus row `box-mitre`, which the elementary route already builds, is
+//! stops at a strip narrower than its ball and takes the cliff (part 2), and
+//! the recipes whose straight run swallows an earlier mitre of two rounds as
+//! wide as its ball, the corpus row `roll-over-mitres` among them (part 3).
+//! The corpus row `box-mitre`, which the elementary route already builds, is
 //! checked for membership.
 //!
 //! The field compiles each chain from its own path pieces: straight pieces
 //! along the sharp runs and, over each earlier round, a ring sector about the
 //! round's centre line (a ring, horn or spindle by the radii, or one ball on
-//! the line when the radii are equal). Its membership
+//! the line when the radii are equal), and, where a run swallows an earlier
+//! mitre, the trihedral corner of its three planes less the ball, whose
+//! sphere face is registered under the corner's name. Its membership
 //! must match each witness: the corpus row's (confirmed by OpenCASCADE), the
 //! test file's (checked against the B-rep there) and points derived here,
 //! each checked against the B-rep first. Every display vertex of the B-rep's
 //! blend faces of the rolling step must lie within the field's guaranteed
 //! distance range of a piece's face at 1 nm, with the same records at 1, 2
-//! and 4 workers. The step 5 recipes left for later parts keep their
-//! refusals, each named.
+//! and 4 workers; every display vertex of a mitre corner's sphere lies within
+//! 1 nm of the field's corner face. The step 5 recipes left for later parts
+//! keep their refusals, each named.
 use catallax_features::evaluate;
 use catallax_field::rolling_region::piece::Piece;
 use catallax_field::rolling_region::{Batch, Range, Relation, distance_batch};
@@ -25,7 +30,7 @@ use catallax_field::{Location, Plan, Workspace};
 use catallax_mesh::{MeshOptions, mesh_body};
 use catallax_numbers::{BudgetPolicy, Decider, OperationAllowance, Rational};
 use catallax_recipe::{Recipe, Role};
-use catallax_shapes::{Point3, RPoint3};
+use catallax_shapes::{Point3, RPoint3, Surface};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
@@ -440,8 +445,22 @@ fn cases() -> Vec<Case> {
     ];
     cases.extend(sphere_corners());
     cases.extend(cliffs());
+    // The top loop and then the uprights, all at radius 1: each upright's
+    // ball swallows the mitre above it. Derived: kept inside an upright's
+    // ball, and cut where the mitre stood at the corner over (0, 0, 10),
+    // the corner ball about (1, 1, 9).
+    cases.push(corpus(
+        "roll-over-mitres",
+        "upright",
+        4,
+        &[([1, 2], [3, 4], [5, 1]), ([3, 2], [1, 2], [19, 2])],
+        &[([1, 4], [1, 4], [91, 10]), ([1, 10], [1, 10], [3, 1])],
+    ));
+    cases.extend(mitre_corners());
     let boss_33 = cases.iter().find(|c| c.name == "boss 3/3").unwrap();
     cases.push(boss_33.placed("placed boss 3/3"));
+    let mitred_33 = cases.iter().find(|c| c.name == "mitred 3/3").unwrap();
+    cases.push(mitred_33.placed("placed mitred 3/3"));
     cases.push(boss_31.placed("placed boss 3/1"));
     cases.push(corner_31.placed("placed corner 3/1"));
     cases.push(boss_31);
@@ -618,6 +637,91 @@ fn cliffs() -> Vec<Case> {
                 ([199, 10], [10, 1], [99, 10]),
                 ([199, 10], [1, 2], [93, 10]),
                 ([19, 1], [10, 1], [99, 10]),
+            ],
+        ),
+    ]
+}
+/// An upright whose ball swallows an earlier mitre of two rounds as wide
+/// as the ball (RECIPE 4.5.1): its straight strip runs up to the rounds,
+/// and the trihedral corner of its two planes and the plane the rounds roll
+/// on, less the ball, closes it. Derived points: kept inside the strip's
+/// ball and the corner ball, cut or added outside them, in the strip and
+/// where the mitre stood (inside both rounds, outside the corner ball); a
+/// round away from the corner untouched; with the test file's points.
+fn mitre_corners() -> Vec<Case> {
+    vec![
+        // The ball about (17, 17, 7).
+        Case::new(
+            "mitred 3/3",
+            mitred(4, "3", "3", false),
+            "upright",
+            1,
+            &[
+                ([37, 2], [37, 2], [17, 2]),
+                ([19, 1], [18, 1], [3, 1]),
+                ([19, 1], [18, 1], [8, 1]),
+                ([19, 1], [10, 1], [9, 1]),
+                ([10, 1], [10, 1], [5, 1]),
+            ],
+            &[
+                ([199, 10], [199, 10], [9, 1]),
+                ([19, 1], [19, 1], [99, 10]),
+                ([199, 10], [199, 10], [3, 1]),
+                ([39, 2], [19, 1], [15, 2]),
+            ],
+        ),
+        // The ball about (18, 18, 8).
+        Case::new(
+            "mitred 2/2",
+            mitred(4, "2", "2", false),
+            "upright",
+            1,
+            &[
+                ([19, 1], [19, 1], [9, 1]),
+                ([39, 2], [37, 2], [3, 1]),
+                ([10, 1], [10, 1], [5, 1]),
+            ],
+            &[
+                ([199, 10], [199, 10], [9, 1]),
+                ([39, 2], [39, 2], [17, 2]),
+                ([199, 10], [199, 10], [4, 1]),
+            ],
+        ),
+        // Balls about (3, 3, 7), (17, 3, 7), (17, 17, 7) and (3, 17, 7).
+        Case::new(
+            "mitred loop 3/3",
+            mitred(4, "3", "3", true),
+            "upright",
+            4,
+            &[
+                ([37, 2], [37, 2], [17, 2]),
+                ([3, 2], [3, 2], [17, 2]),
+                ([10, 1], [10, 1], [5, 1]),
+            ],
+            &[
+                ([1, 10], [1, 10], [9, 1]),
+                ([1, 2], [39, 2], [15, 2]),
+                ([39, 2], [1, 2], [15, 2]),
+            ],
+        ),
+        // Concave: balls about (6, 6, 5) and (14, 14, 5) among four. Where
+        // the mitre's air stood, inside both floor rounds and outside the
+        // corner ball, the corner adds material.
+        Case::new(
+            "mitred pocket 1/1",
+            mitred_pocket("1", "1"),
+            "upright",
+            4,
+            &[
+                ([21, 4], [21, 4], [49, 10]),
+                ([59, 4], [59, 4], [49, 10]),
+                ([51, 10], [51, 10], [7, 1]),
+                ([2, 1], [2, 1], [2, 1]),
+            ],
+            &[
+                ([11, 2], [11, 2], [9, 2]),
+                ([11, 2], [11, 2], [7, 1]),
+                ([10, 1], [10, 1], [7, 1]),
             ],
         ),
     ]
@@ -864,6 +968,8 @@ const VERTEX_GROUPS: &[&[&str]] = &[
     &["corner 3/3", "corner 2/2", "corner 2/2 from the arc"],
     &["placed boss 3/3"],
     &["boss 1/3", "pocket 1/3", "corner 1/2"],
+    &["roll-over-mitres", "mitred 3/3", "mitred 2/2"],
+    &["mitred loop 3/3", "mitred pocket 1/1", "placed mitred 3/3"],
 ];
 macro_rules! vertex_tests {
     ($($test:ident = $group:literal;)+) => {
@@ -886,6 +992,8 @@ vertex_tests! {
     sphere_corner_blend_vertices_lie_on_the_field_face = 7;
     placed_sphere_blend_vertices_lie_on_the_field_face = 8;
     cliff_blend_vertices_lie_on_the_field_face = 9;
+    mitre_blend_vertices_lie_on_the_field_face = 10;
+    mitre_loop_blend_vertices_lie_on_the_field_face = 11;
 }
 
 #[test]
@@ -906,6 +1014,12 @@ fn every_case_has_its_vertices_checked() {
 /// such face here is an exact cylinder or torus, so the part's tolerance at
 /// each vertex is 1 nm.
 fn blend_vertices(recipe: &Recipe, step: &str, chord: &str) -> Vec<Point3> {
+    step_vertices(recipe, step, chord, false)
+}
+
+/// The display vertices of the B-rep's blend faces made by `step`, or of
+/// its corner faces when `corners` is set.
+fn step_vertices(recipe: &Recipe, step: &str, chord: &str, corners: bool) -> Vec<Point3> {
     let built = evaluate(recipe, &mut decider()).unwrap();
     let mesh = mesh_body(
         &built.model,
@@ -925,7 +1039,12 @@ fn blend_vertices(recipe: &Recipe, step: &str, chord: &str) -> Vec<Point3> {
             while let Role::Copy { of, .. } = &origin.role {
                 origin = of;
             }
-            origin.step.as_str() == step && matches!(origin.role, Role::Blend { .. })
+            origin.step.as_str() == step
+                && if corners {
+                    matches!(origin.role, Role::Corner { .. })
+                } else {
+                    matches!(origin.role, Role::Blend { .. })
+                }
         }) {
             continue;
         }
@@ -1035,6 +1154,147 @@ fn blend_vertices_lie_on_the_field_face(names: &[&str]) {
             nearest.len(),
             start.elapsed(),
             worst.to_f64_nearest()
+        );
+    }
+}
+
+/// One mitre corner derived here: its ball's centre, the signs of the
+/// cube's directions along x, y and z, and its radius.
+type Corner = ([i64; 3], [i64; 3], i64);
+
+/// Each mitre corner registers its sphere face under a corner name of the
+/// rolling step, about the centre and with the radius derived here, and
+/// every display vertex of the B-rep's corner faces of that step lies
+/// within 1 nm of one of those spheres and at most 1 nm outside the cone of
+/// its cell, whose directions are derived here: the radial projection of a
+/// point of that cone lies on the face. The test reads the field's
+/// registered faces directly; the distance to a sphere is exact.
+#[test]
+fn mitre_corner_vertices_lie_on_the_field_corner_face() {
+    let tolerance = ratio(1, 1_000_000);
+    let corners: [(&str, Vec<Corner>); 6] = [
+        (
+            "roll-over-mitres",
+            vec![
+                ([1, 1, 9], [-1, -1, 1], 1),
+                ([19, 1, 9], [1, -1, 1], 1),
+                ([19, 19, 9], [1, 1, 1], 1),
+                ([1, 19, 9], [-1, 1, 1], 1),
+            ],
+        ),
+        ("mitred 3/3", vec![([17, 17, 7], [1, 1, 1], 3)]),
+        ("mitred 2/2", vec![([18, 18, 8], [1, 1, 1], 2)]),
+        (
+            "mitred loop 3/3",
+            vec![
+                ([3, 3, 7], [-1, -1, 1], 3),
+                ([17, 3, 7], [1, -1, 1], 3),
+                ([17, 17, 7], [1, 1, 1], 3),
+                ([3, 17, 7], [-1, 1, 1], 3),
+            ],
+        ),
+        (
+            "mitred pocket 1/1",
+            vec![
+                ([6, 6, 5], [-1, -1, -1], 1),
+                ([14, 6, 5], [1, -1, -1], 1),
+                ([14, 14, 5], [1, 1, -1], 1),
+                ([6, 14, 5], [-1, 1, -1], 1),
+            ],
+        ),
+        ("placed mitred 3/3", vec![([17, 17, 7], [1, 1, 1], 3)]),
+    ];
+    let cases = cases();
+    for (name, expected) in corners {
+        let case = cases.iter().find(|c| c.name == name).unwrap();
+        let placed = name.starts_with("placed");
+        // Each corner's centre and its three unit directions, moved as the
+        // case's blocks are.
+        let expected: Vec<([Rational; 3], [[Rational; 3]; 3], Rational)> = expected
+            .iter()
+            .map(|(c, signs, r)| {
+                let c = c.map(Rational::from_i64);
+                let mut directions: [[Rational; 3]; 3] = std::array::from_fn(|i| {
+                    std::array::from_fn(|j| Rational::from_i64(if i == j { signs[i] } else { 0 }))
+                });
+                if placed {
+                    let origin = place(&[Rational::zero(), Rational::zero(), Rational::zero()]);
+                    for d in &mut directions {
+                        let moved = place(d);
+                        *d = std::array::from_fn(|i| moved[i].clone() - origin[i].clone());
+                    }
+                }
+                let c = if placed { place(&c) } else { c };
+                (c, directions, Rational::from_i64(*r))
+            })
+            .collect();
+        let plan = Plan::compile_checked(&case.recipe, &mut decider()).unwrap();
+        let mut spheres: Vec<([Rational; 3], Rational)> = plan
+            .faces()
+            .iter()
+            .filter(|f| {
+                f.origin.step.as_str() == case.step && matches!(f.origin.role, Role::Corner { .. })
+            })
+            .map(|f| {
+                let Surface::Sphere(s) = &f.surface else {
+                    panic!("{name}: a corner face that is no sphere");
+                };
+                let c = [&s.center.x, &s.center.y, &s.center.z]
+                    .map(|x| x.as_rational().expect("a rational centre"));
+                (c, s.radius.as_rational().expect("a rational radius"))
+            })
+            .collect();
+        spheres.sort();
+        let mut want: Vec<_> = expected
+            .iter()
+            .map(|(c, _, r)| (c.clone(), r.clone()))
+            .collect();
+        want.sort();
+        assert_eq!(spheres, want, "{name}: corner faces");
+        let points = step_vertices(&case.recipe, case.step, "1/20", true);
+        assert!(!points.is_empty(), "{name}: no corner vertices");
+        for p in &points {
+            let p = [&p.x, &p.y, &p.z].map(|x| x.as_rational().unwrap());
+            let near = expected.iter().any(|(c, directions, r)| {
+                let u: [Rational; 3] = std::array::from_fn(|i| p[i].clone() - c[i].clone());
+                let squared = u
+                    .iter()
+                    .fold(Rational::zero(), |sum, x| sum + x.clone() * x.clone());
+                let lo = r.clone() - tolerance.clone();
+                let hi = r.clone() + tolerance.clone();
+                let within = lo.clone() * lo <= squared && squared <= hi.clone() * hi;
+                let cone = directions.iter().all(|d| {
+                    let along =
+                        (0..3).fold(Rational::zero(), |sum, i| sum + u[i].clone() * d[i].clone());
+                    along >= -tolerance.clone()
+                });
+                within && cone
+            });
+            assert!(near, "{name}: {p:?} is not on a field corner face");
+        }
+        eprintln!("{name}: {} corner vertices within 1 nm", points.len());
+    }
+}
+
+/// Rational points of a mitre corner's sphere face, `c + (1, 2, 2)` and its
+/// permutations, which lie in the corner's cone. The B-rep puts them on its
+/// boundary, and the field's plan does too, on the registered corner face.
+#[test]
+fn a_mitre_corner_face_holds_its_rational_points() {
+    let recipe = mitred(4, "3", "3", false);
+    let plan = Plan::compile_checked(&recipe, &mut decider()).unwrap();
+    let mut built = evaluate(&recipe, &mut decider()).unwrap();
+    for p in [[18, 19, 9], [19, 18, 9], [19, 19, 8]] {
+        let p = p.map(Rational::from_i64);
+        assert_eq!(
+            brep_location(&mut built, &p),
+            Location::Boundary,
+            "the B-rep at {p:?}"
+        );
+        assert_eq!(
+            location(&plan, &p),
+            Location::Boundary,
+            "the field at {p:?}"
         );
     }
 }
@@ -1161,7 +1421,8 @@ fn corner_bottom() -> Recipe {
 /// field's code today. The B-rep builds every one, so each is a field
 /// refusal still to clear: a ball outside the round's cylinder (a convex
 /// chain over a concave round, or the reverse) crosses the round's tangent
-/// faces; an upright under an earlier mitre, as a cliff or rolling over it;
+/// faces; an upright under an earlier mitre of rounds wider than its ball,
+/// which rolls over it, or narrower, a cliff at both feet;
 /// every edge at once; and a round over a chain of rolling pieces, which
 /// register no face to roll on or to clear (`field.fillet-contact`).
 fn later() -> Vec<(&'static str, Recipe, &'static str)> {
@@ -1181,25 +1442,16 @@ fn later() -> Vec<(&'static str, Recipe, &'static str)> {
             parse(&corpus_row("mixed-ordered")["recipe"]),
             overflow,
         ),
-        (
-            "roll-over-mitres",
-            parse(&corpus_row("roll-over-mitres")["recipe"]),
-            overflow,
-        ),
         ("bracket 3/1", bracket("3", "1"), overflow),
         ("bracket 3/4", bracket("3", "4"), overflow),
         ("bracket 2/(3/2)", bracket("2", "3/2"), overflow),
         ("based 2/1", based("2", "1"), overflow),
         ("based 2/3", based("2", "3"), overflow),
         ("based 3/1", based("3", "1"), overflow),
-        ("mitred 3/3", mitred(4, "3", "3", false), overflow),
-        ("mitred 2/2", mitred(4, "2", "2", false), overflow),
-        ("mitred loop 3/3", mitred(4, "3", "3", true), overflow),
         ("mitred loop 1/2", mitred(4, "1", "2", true), overflow),
         ("mitred 3/4", mitred(4, "3", "4", false), overflow),
         ("mitred loop 1/(1/2)", mitred(4, "1", "1/2", true), overflow),
         ("mitred 3/2", mitred(4, "3", "2", false), overflow),
-        ("mitred pocket 1/1", mitred_pocket("1", "1"), overflow),
         ("mitred pocket 1/(3/2)", mitred_pocket("1", "3/2"), overflow),
         ("mitred pocket 1/(1/2)", mitred_pocket("1", "1/2"), overflow),
         (

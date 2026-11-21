@@ -25,6 +25,10 @@ model. Their geometry already includes their placements. It returns:
   `measure.accuracy-not-reached` mark ([3.3 step 1](milestones/3.3-clash-clearance.md)).
 - `QueryRefusal` for contact, empty operands, unsupported distances, uncertain
   overlap, a gap not proven positive or exhausted arithmetic work.
+- Through `ApplicationBody`, `app.relation-envelope` when either body is a
+  field-only envelope: a lattice or gyroid step, or a step that reads one. The
+  B-rep carries such a step as its region's envelope, which is not the part's
+  material; the field relates it ([3.3 step 4](milestones/3.3-clash-clearance.md#step-4-the-test-assembly)).
 
 Zero overlap, or the faces proven apart, establishes the noncrossing
 precondition of the existing trimmed-entity distance query. A minimum over every boundary pair covers all

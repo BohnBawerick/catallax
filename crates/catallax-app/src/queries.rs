@@ -9,11 +9,13 @@
 use std::collections::BTreeMap;
 
 use catallax_boolean::{BoolOp, FaceClass, boolean, classify, imprint, intersect};
+use catallax_features::Built;
 use catallax_measure::{Accuracy, Enclosure};
 use catallax_numbers::{
     Answer, Answered, Decider, Outcome, Rational, Real, Refusal, StrictSign,
     operation_budget_active, with_operation_budget,
 };
+use catallax_recipe::StepId;
 use catallax_shapes::{Circle, CurveId, PointId, RPoint3, RVector3, Surface, Vector3};
 use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense};
 
@@ -629,14 +631,89 @@ pub fn contact_faces(
     })
 }
 
+/// Why a B-rep relation must not use `step`'s body, if it must not. A lattice
+/// or gyroid step is field-only: the B-rep carries its region's envelope in
+/// its place (PRD section 7, [`catallax_features::StandIn`]), and so does
+/// every step that reads it, directly or through other steps. The part's
+/// material lies only on the beams or the sheet, so a gap, overlap or contact
+/// measured on the envelope is not the part's: the envelope can state a
+/// smaller gap than the part has, or an overlap the part does not have. The
+/// field kernel holds the material. Mass refuses the same envelope as
+/// `assembly.mass-envelope` ([`crate::assembly::uniform_mass`]).
+pub fn field_only_envelope(built: &Built, step: &StepId) -> Option<Refusal> {
+    let envelopes = envelope_steps(built);
+    envelopes
+        .get(step)
+        .map(|stand_in| envelope_refusal(step, stand_in))
+}
+
+/// Each step whose body the B-rep carries as a field-only envelope, with the
+/// field-only step it reads. A step reads only steps before it, so one pass
+/// in recipe order finds every step that reads one through others.
+fn envelope_steps(built: &Built) -> BTreeMap<StepId, StepId> {
+    let mut envelopes: BTreeMap<StepId, StepId> = built
+        .stand_ins
+        .iter()
+        .map(|s| (s.step.clone(), s.step.clone()))
+        .collect();
+    if envelopes.is_empty() {
+        return envelopes;
+    }
+    for step in &built.recipe().steps {
+        let read = step
+            .op
+            .inputs()
+            .into_iter()
+            .find_map(|(input, _)| envelopes.get(input).cloned());
+        if let Some(stand_in) = read {
+            envelopes.entry(step.id.clone()).or_insert(stand_in);
+        }
+    }
+    envelopes
+}
+
+fn envelope_refusal(step: &StepId, stand_in: &StepId) -> Refusal {
+    Refusal::new(
+        "app.relation-envelope",
+        format!(
+            "{step} carries the field-only step {stand_in} as its region's envelope, not its material"
+        ),
+    )
+}
+
 impl ApplicationBody {
-    /// Clash or proven minimum gap to another retained, placed body.
+    /// The refusal for a relation between this result and `other` when
+    /// either body is a field-only envelope ([`field_only_envelope`]). A
+    /// lattice step's body is its region's body, so the region refuses too.
+    fn envelope_operand(&self, other: BodyId) -> Option<Refusal> {
+        let built = &self.built;
+        envelope_steps(built)
+            .iter()
+            .find(|(step, _)| {
+                built
+                    .bodies
+                    .get(*step)
+                    .is_some_and(|&body| body == built.result || body == other)
+            })
+            .map(|(step, stand_in)| envelope_refusal(step, stand_in))
+    }
+    /// Refuses `refusal` with both operands' counts, as the query would.
+    fn refused<T>(&self, other: BodyId, refusal: Refusal) -> Result<Answer<T>, QueryRefusal> {
+        query(&self.built.model, &[self.built.result, other], || {
+            Err(refusal)
+        })
+    }
+    /// Clash or proven minimum gap to another retained, placed body. A
+    /// field-only envelope on either side refuses `app.relation-envelope`.
     pub fn body_relation(
         &self,
         other: BodyId,
         accuracy: &Accuracy,
         dec: &mut Decider,
     ) -> Result<Answer<BodyRelation>, QueryRefusal> {
+        if let Some(refusal) = self.envelope_operand(other) {
+            return self.refused(other, refusal);
+        }
         body_relation(&self.built.model, self.built.result, other, accuracy, dec)
     }
     /// Exact section of this result, independent of its display.
@@ -655,21 +732,29 @@ impl ApplicationBody {
     ) -> Result<Answer<Silhouette>, QueryRefusal> {
         silhouette(&self.built.model, self.built.result, direction, dec)
     }
-    /// Overlap with another body retained in this build's model.
+    /// Overlap with another body retained in this build's model. A
+    /// field-only envelope on either side refuses `app.relation-envelope`.
     pub fn overlap_volume(
         &self,
         other: BodyId,
         accuracy: &Accuracy,
         dec: &mut Decider,
     ) -> Result<Answer<Enclosure>, QueryRefusal> {
+        if let Some(refusal) = self.envelope_operand(other) {
+            return self.refused(other, refusal);
+        }
         overlap_volume(&self.built.model, self.built.result, other, accuracy, dec)
     }
-    /// Shared boundary patches with another body in this build's model.
+    /// Shared boundary patches with another body in this build's model. A
+    /// field-only envelope on either side refuses `app.relation-envelope`.
     pub fn contact_faces(
         &self,
         other: BodyId,
         dec: &mut Decider,
     ) -> Result<Answer<ContactFaces>, QueryRefusal> {
+        if let Some(refusal) = self.envelope_operand(other) {
+            return self.refused(other, refusal);
+        }
         contact_faces(&self.built.model, self.built.result, other, dec)
     }
 }

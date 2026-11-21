@@ -222,13 +222,22 @@ fn face_stratum(model: &Model, face: FaceId, dec: &mut Decider) -> Result<Stratu
     })
 }
 
-fn edge_stratum(model: &Model, edge: EdgeId, dec: &mut Decider) -> Result<Stratum, Refusal> {
+/// `within` is the proven box of a face whose closure holds the edge. An edge
+/// without a line or circle form, such as the ellipse where two fillet
+/// cylinders meet in a mitre, keeps that box, so a pair far from the minimum
+/// is set aside and a near one keeps a positive lower bound.
+fn edge_stratum(
+    model: &Model,
+    edge: EdgeId,
+    within: Option<&[Ball; 3]>,
+    dec: &mut Decider,
+) -> Result<Stratum, Refusal> {
     let unknown = Stratum {
         kind: Kind::Edge(edge),
         core: None,
         offset: None,
         member: Member::Whole,
-        extent: None,
+        extent: within.cloned(),
     };
     let Ok(curve) = edge_curve(model, edge, dec) else {
         return Ok(unknown);
@@ -349,8 +358,13 @@ fn strata(model: &Model, entity: PairEntity, dec: &mut Decider) -> Result<Vec<St
             add_edge(edge, &mut edges, &mut vertices);
         }
     }
+    // A face's edges lie in its closure, so its box holds each of them.
+    let within = match entity {
+        PairEntity::Face(_) => out[0].extent.clone(),
+        PairEntity::Edge(_) => None,
+    };
     for e in edges {
-        out.push(edge_stratum(model, e, dec)?);
+        out.push(edge_stratum(model, e, within.as_ref(), dec)?);
     }
     for v in vertices {
         out.push(vertex_stratum(model, v, dec)?);

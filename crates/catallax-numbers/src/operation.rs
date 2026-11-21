@@ -6,7 +6,7 @@ use crate::{
     decider::CachedRoots,
 };
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     cmp::Ordering,
     collections::{BTreeMap, HashMap},
     rc::Rc,
@@ -26,8 +26,12 @@ struct State {
     used: u64,
     // Charges that `refund_on_refusal` took back out of `used`.
     refunded: u64,
-    // Arithmetic counted at the decider's rate and never charged
-    // (`count_uncharged`).
+    // Arithmetic counted at the decider's rate and never charged: what was
+    // added by hand (`count_uncharged`) and what the number types counted
+    // while an earlier holder of this thread had the state set aside. What
+    // they have counted since it was installed is in `ARITHMETIC`. It wraps,
+    // because a reservation takes its price off before the operation it pays
+    // for adds it (`reserved_arithmetic`); `work` reports it floored at zero.
     uncharged: u64,
     exhausted: bool,
     reduced_angle_series: bool,
@@ -98,6 +102,18 @@ thread_local! {
     static ROOT_LIST_PROOFS: RefCell<RootListProofs> = RefCell::new(RootListProofs::new());
     static ENCLOSURE_PROOFS: RefCell<EnclosureProofs> = RefCell::new(HashMap::new());
     static PI_PROOFS: RefCell<BTreeMap<u32, Ball>> = const { RefCell::new(BTreeMap::new()) };
+    static ARITHMETIC: Cell<Arithmetic> = const { Cell::new(Arithmetic { closed: 0, units: 0 }) };
+}
+
+// The count the number types keep on this thread (`count_arithmetic`).
+#[derive(Clone, Copy)]
+struct Arithmetic {
+    // Above zero while operations are not counted: inside a decision, inside
+    // an operation counted whole, or inside the fill of a shared memo.
+    closed: u32,
+    // Counted since this thread's state was installed. It wraps, as
+    // `State::uncharged` does.
+    units: u64,
 }
 
 /// Accounting for one complete operation, including all its deciders.
@@ -115,11 +131,17 @@ pub struct OperationWork {
     /// that item is then admitted or discarded. A discarded item's other
     /// charges were never admitted and are in neither counter.
     pub refunded: u64,
-    /// Exact arithmetic that was priced at the decider's rate and not charged
-    /// ([`crate::count_exact_arithmetic`]): what `used` would have risen by had
-    /// it been charged. It is outside `used` and outside the allowance, never
-    /// exhausts a request and only grows. It holds the arithmetic of the code
-    /// that reports to it and no other: today the STEP writer's curve fit.
+    /// Ball and rational arithmetic that ran outside a decision, priced at the
+    /// decider's rate and not charged: what `used` would have risen by had it
+    /// been charged. It is outside `used` and outside the allowance and never
+    /// exhausts a request. `used + refunded + uncharged` is the request's
+    /// arithmetic counted once.
+    ///
+    /// The number types count it themselves as they run, so no caller can
+    /// leave an operation out: every sum, difference, product, square,
+    /// reciprocal and square root of a [`Ball`], and every sum, difference,
+    /// product, quotient and decimal conversion of a [`crate::Rational`]. The
+    /// rules are at `count_arithmetic` in `operation.rs`.
     ///
     /// The count is that of one thread. Arithmetic a helper thread did reaches
     /// it only with a record the request adopts ([`crate::Charges::adopt`]),
@@ -135,9 +157,48 @@ impl State {
             used: if aborted { self.limit } else { self.used },
             exhausted: self.exhausted || aborted,
             refunded: self.refunded,
-            uncharged: self.uncharged,
+            uncharged: floor(self.counted()),
         }
     }
+
+    // The wrapping count of the installed state: what it holds and what the
+    // number types have counted since it was installed.
+    fn counted(&self) -> u64 {
+        self.uncharged
+            .wrapping_add(ARITHMETIC.with(|count| count.get().units))
+    }
+}
+
+// A wrapped count below zero reads as zero: reservations whose operations
+// never ran took off more than was counted.
+fn floor(counted: u64) -> u64 {
+    if counted > u64::MAX / 2 { 0 } else { counted }
+}
+
+// Makes `state` this thread's request state. The number types' count starts
+// again from zero for it.
+fn install(state: State) {
+    ARITHMETIC.with(|count| {
+        count.set(Arithmetic {
+            units: 0,
+            ..count.get()
+        });
+    });
+    ACTIVE.with(|slot| *slot.borrow_mut() = Some(state));
+}
+
+// Sets this thread's request state aside, with what the number types counted
+// for it folded in.
+fn uninstall() -> Option<State> {
+    let mut state = ACTIVE.with(|slot| slot.take())?;
+    state.uncharged = state.counted();
+    ARITHMETIC.with(|count| {
+        count.set(Arithmetic {
+            units: 0,
+            ..count.get()
+        });
+    });
+    Some(state)
 }
 
 /// Whether the caller already owns a request-scoped work allowance.
@@ -278,22 +339,22 @@ fn budget_scope<T>(limit: u64, worker: bool, run: impl FnOnce() -> T) -> (T, Ope
             PI_PROOFS.with(|proofs| proofs.borrow_mut().clear());
         }
     }
-    ACTIVE.with(|slot| {
-        let mut active = slot.borrow_mut();
-        assert!(active.is_none(), "operation budgets cannot nest");
-        *active = Some(State {
-            request: NEXT_REQUEST.fetch_add(1, AtomicOrdering::Relaxed),
-            aborted: Arc::new(AtomicBool::new(false)),
-            limit,
-            used: 0,
-            refunded: 0,
-            uncharged: 0,
-            exhausted: false,
-            reduced_angle_series: false,
-            reuse_enclosures: false,
-            worker,
-            ticks: 0,
-        });
+    assert!(
+        ACTIVE.with(|slot| slot.borrow().is_none()),
+        "operation budgets cannot nest"
+    );
+    install(State {
+        request: NEXT_REQUEST.fetch_add(1, AtomicOrdering::Relaxed),
+        aborted: Arc::new(AtomicBool::new(false)),
+        limit,
+        used: 0,
+        refunded: 0,
+        uncharged: 0,
+        exhausted: false,
+        reduced_angle_series: false,
+        reuse_enclosures: false,
+        worker,
+        ticks: 0,
     });
     ROOT_PROOFS.with(|proofs| proofs.borrow_mut().clear());
     ROOT_LIST_PROOFS.with(|proofs| proofs.borrow_mut().clear());
@@ -332,6 +393,7 @@ pub struct RecordedWork<T> {
 struct Unreserved {
     request: Option<u64>,
     refunded: u64,
+    // The item's wrapping count (`uncharged`), not its floored report.
     uncharged: u64,
 }
 
@@ -347,7 +409,7 @@ impl Drop for Unreserved {
                 && Some(state.request) == self.request
             {
                 state.refunded = state.refunded.saturating_add(self.refunded);
-                state.uncharged = state.uncharged.saturating_add(self.uncharged);
+                state.uncharged = state.uncharged.wrapping_add(self.uncharged);
             }
         });
     }
@@ -430,13 +492,14 @@ impl OperationTask {
                 RESERVATIONS.with(|slot| *slot.borrow_mut() = self.0.take());
             }
         }
-        let ((value, reservations), work) = OperationAllowance { limit: state.limit }.run(|| {
-            ACTIVE.with(|slot| *slot.borrow_mut() = Some(state));
-            let _restore = Restore(RESERVATIONS.with(|slot| slot.replace(Some(Vec::new()))));
-            let value = run();
-            let reservations = RESERVATIONS.with(|slot| slot.take().unwrap());
-            (value, reservations)
-        });
+        let ((value, reservations, uncharged), work) = OperationAllowance { limit: state.limit }
+            .run(|| {
+                install(state);
+                let _restore = Restore(RESERVATIONS.with(|slot| slot.replace(Some(Vec::new()))));
+                let value = run();
+                let reservations = RESERVATIONS.with(|slot| slot.take().unwrap());
+                (value, reservations, uncharged())
+            });
         RecordedWork {
             value,
             reservations,
@@ -445,7 +508,7 @@ impl OperationTask {
             _unreserved: Unreserved {
                 request: Some(request),
                 refunded: work.refunded,
-                uncharged: work.uncharged,
+                uncharged,
             },
         }
     }
@@ -566,7 +629,10 @@ impl OperationAllowance {
         }
         impl Drop for Restore {
             fn drop(&mut self) {
-                ACTIVE.with(|slot| *slot.borrow_mut() = self.state.take());
+                ACTIVE.with(|slot| *slot.borrow_mut() = None);
+                if let Some(state) = self.state.take() {
+                    install(state);
+                }
                 RESERVATIONS.with(|slot| *slot.borrow_mut() = self.reservations.take());
                 ROOT_PROOFS.with(|slot| *slot.borrow_mut() = std::mem::take(&mut self.roots));
                 ROOT_LIST_PROOFS.with(|slot| *slot.borrow_mut() = std::mem::take(&mut self.lists));
@@ -582,7 +648,7 @@ impl OperationAllowance {
         let worker = worker();
         let _unrecorded = crate::ahead::suspend(worker);
         let _restore = Restore {
-            state: ACTIVE.with(|slot| slot.take()),
+            state: uninstall(),
             reservations: RESERVATIONS.with(|slot| slot.take()),
             roots: ROOT_PROOFS.with(|slot| std::mem::take(&mut *slot.borrow_mut())),
             lists: ROOT_LIST_PROOFS.with(|slot| std::mem::take(&mut *slot.borrow_mut())),
@@ -731,19 +797,150 @@ pub(crate) fn charge(units: u64) -> bool {
     exhausted
 }
 
-/// Adds `units` to [`OperationWork::uncharged`]. Unlike a charge it takes
-/// nothing from the allowance, latches nothing and cannot refuse; outside a
-/// request it does nothing.
+/// Adds `units` to [`OperationWork::uncharged`]: a count taken on another
+/// thread, or for another item, that this request now owns. Unlike a charge
+/// it takes nothing from the allowance, latches nothing and cannot refuse;
+/// outside a request it does nothing. `units` is a wrapping count, as
+/// [`uncharged`] returns.
 pub(crate) fn count_uncharged(units: u64) {
     ACTIVE.with(|slot| {
         if let Some(state) = slot.borrow_mut().as_mut() {
-            state.uncharged = state.uncharged.saturating_add(units);
+            state.uncharged = state.uncharged.wrapping_add(units);
         }
     });
 }
 
+/// This thread's count as it stands, wrapping: the difference of two readings
+/// (`wrapping_sub`) is what was counted between them, also where a
+/// reservation took its price off before its operation ran.
 pub(crate) fn uncharged() -> u64 {
-    ACTIVE.with(|slot| slot.borrow().as_ref().map_or(0, |state| state.uncharged))
+    ACTIVE.with(|slot| slot.borrow().as_ref().map_or(0, State::counted))
+}
+
+// ---------------------------------------------------------------------------
+// The count the number types keep
+// ---------------------------------------------------------------------------
+//
+// Checkpoint 2 decisions, section 4.5, predictor step 1, asks for a complete
+// work meter, and its done-when line reads wall time against work. The
+// owner's ruling of 21 November 2026 is to count every ball and rational
+// operation and to charge none of it. So the number types count themselves:
+//
+// - `Ball`: a sum or a difference counts 4L and a product, a square, a
+//   reciprocal or a square root 8L^2, with L = ceil(p / 64) of the working
+//   precision. A quotient is its reciprocal and its product.
+// - `Rational`: a sum or a difference counts the two operands' limbs added, a
+//   product or a quotient their limbs multiplied, and a decimal conversion the
+//   value's limbs squared.
+//
+// Those are the decider's own prices for the same operations (`Work::ball`
+// and `Work::exact` in `decider.rs`, under "Logical arithmetic costs"). They
+// are the limb operations of schoolbook addition and multiplication (Knuth,
+// The Art of Computer Programming, volume 2, section 4.3.1, algorithms A and
+// M); a decimal conversion converts and divides, each quadratic in the value's
+// limbs (the same section, algorithm D, and section 4.4). Every operation
+// counts one unit more, because every charge of the decider also pays one
+// unit for its deadline check (`Work::charge`).
+//
+// What is not counted, and why:
+//
+// - Arithmetic inside a decision, which is while a `Work` is alive. The
+//   decision charges its arithmetic to `used` as it goes, and that charge is
+//   its price. A decision's charges do not depend on which proofs are cached
+//   or on which thread proved them (`ahead.rs`); the arithmetic it runs does.
+// - Arithmetic inside an operation that is counted whole: a ball operation
+//   and a decimal conversion are priced as one operation each.
+// - The fill of a memo that lives on a shared value and is not charged
+//   (`uncounted_memo`). Whichever thread or request reads the value first
+//   fills it, once for the process, so a count of it would differ with the
+//   thread count and with what ran before. The decider prices a read of such
+//   a memo at nothing ("Construction-time caches spend no decision budget").
+// - Comparisons, negations, shifts by a power of two and conversions between
+//   the types. The decider has no price for them.
+// - `Integer` arithmetic done directly. The decider prices rationals and
+//   balls only.
+//
+// `Decider::reserve_exact_arithmetic` charges `used` for a rational operation
+// its caller runs next, outside the decision. That operation counts itself,
+// so the reservation takes the same amount off (`reserved_arithmetic`), and
+// what was charged is not counted a second time.
+//
+// A `Decider::charge_work` is a caller's own tally of its loop and pays for no
+// operation of the number types here. Arithmetic its caller runs is counted.
+
+/// Counts one operation of the number types that costs `price` at the
+/// decider's rate, unless the count is closed on this thread.
+#[inline]
+pub(crate) fn count_arithmetic(price: u64) {
+    ARITHMETIC.with(|count| {
+        let mut now = count.get();
+        if now.closed == 0 {
+            now.units = now.units.wrapping_add(price.saturating_add(1));
+            count.set(now);
+        }
+    });
+}
+
+/// Takes `units` off the count: the price a reservation charged for an
+/// operation that will count itself when it runs.
+pub(crate) fn reserved_arithmetic(units: u64) {
+    ARITHMETIC.with(|count| {
+        let mut now = count.get();
+        if now.closed == 0 {
+            now.units = now.units.wrapping_sub(units);
+            count.set(now);
+        }
+    });
+}
+
+/// Keeps the count closed on this thread while it lives.
+pub(crate) struct Uncounted(());
+
+impl Uncounted {
+    #[inline]
+    pub(crate) fn enter() -> Self {
+        ARITHMETIC.with(|count| {
+            let mut now = count.get();
+            now.closed += 1;
+            count.set(now);
+        });
+        Self(())
+    }
+
+    /// Counts one operation that costs `price` and closes the count for the
+    /// arithmetic it is made of.
+    #[inline]
+    pub(crate) fn whole(price: u64) -> Self {
+        count_arithmetic(price);
+        Self::enter()
+    }
+}
+
+impl Drop for Uncounted {
+    #[inline]
+    fn drop(&mut self) {
+        ARITHMETIC.with(|count| {
+            let mut now = count.get();
+            now.closed -= 1;
+            count.set(now);
+        });
+    }
+}
+
+/// Runs the fill of a memo that lives on a value shared between threads or
+/// requests and whose fill is not charged. Its arithmetic is not counted in
+/// [`OperationWork::uncharged`].
+///
+/// Such a memo is filled once, by whichever thread or request reads the value
+/// first. A count of the fill would make a request's count depend on its
+/// thread count and on what ran before it in the process, and the count is to
+/// be the same at any thread count. Use it at every such memo whose fill runs
+/// ball or rational arithmetic; a memo whose fill is charged is guarded with
+/// [`crate::shared_caches`] instead, and its arithmetic is counted where it
+/// is charged.
+pub fn uncounted_memo<T>(fill: impl FnOnce() -> T) -> T {
+    let _closed = Uncounted::enter();
+    fill()
 }
 
 /// Whether `units` more fit the allowance. Unlike a charge, asking latches
@@ -808,20 +1005,18 @@ impl Proofs {
 /// Gives a worker thread its own counter for one item, and proof caches of
 /// its own that start as the writer's root proofs.
 pub(crate) fn enter_worker(reduced_angle_series: bool, reuse_enclosures: bool, proofs: &Proofs) {
-    ACTIVE.with(|slot| {
-        *slot.borrow_mut() = Some(State {
-            request: NEXT_REQUEST.fetch_add(1, AtomicOrdering::Relaxed),
-            aborted: Arc::new(AtomicBool::new(false)),
-            limit: u64::MAX,
-            used: 0,
-            refunded: 0,
-            uncharged: 0,
-            exhausted: false,
-            reduced_angle_series,
-            reuse_enclosures,
-            worker: true,
-            ticks: 0,
-        });
+    install(State {
+        request: NEXT_REQUEST.fetch_add(1, AtomicOrdering::Relaxed),
+        aborted: Arc::new(AtomicBool::new(false)),
+        limit: u64::MAX,
+        used: 0,
+        refunded: 0,
+        uncharged: 0,
+        exhausted: false,
+        reduced_angle_series,
+        reuse_enclosures,
+        worker: true,
+        ticks: 0,
     });
     clear_proofs();
     ROOT_PROOFS.with(|slot| *slot.borrow_mut() = proofs.roots.clone());

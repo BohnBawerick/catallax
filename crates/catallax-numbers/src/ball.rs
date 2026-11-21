@@ -179,6 +179,7 @@ impl Ball {
     }
     /// Enclosure of the square.
     pub fn square(&self) -> Self {
+        let _whole = counted(self.precision, true);
         let lo = self.lower();
         let hi = self.upper();
         let a = &lo * &lo;
@@ -195,6 +196,7 @@ impl Ball {
     }
     /// Square root of the non-negative part; `None` only when entirely negative.
     pub fn sqrt(&self) -> Option<Self> {
+        let _whole = counted(self.precision, true);
         let hi = self.hi();
         if hi.sign() == Sign::Negative {
             return None;
@@ -206,6 +208,7 @@ impl Ball {
     }
     /// Reciprocal, or `None` if zero is inside.
     pub fn recip(&self) -> Option<Self> {
+        let _whole = counted(self.precision, true);
         if self.contains_zero() {
             return None;
         }
@@ -391,6 +394,7 @@ impl Ball {
         Self::bounds(&self.lo() - error, &self.hi() + error, self.precision)
     }
     fn add(&self, rhs: &Self) -> Self {
+        let _whole = counted(self.precision.max(rhs.precision), false);
         Self::centered(
             &self.mid + &rhs.mid,
             &self.rad + &rhs.rad,
@@ -398,6 +402,7 @@ impl Ball {
         )
     }
     fn sub(&self, rhs: &Self) -> Self {
+        let _whole = counted(self.precision.max(rhs.precision), false);
         Self::centered(
             &self.mid - &rhs.mid,
             &self.rad + &rhs.rad,
@@ -406,6 +411,7 @@ impl Ball {
     }
     fn mul(&self, rhs: &Self) -> Self {
         let precision = self.precision.max(rhs.precision);
+        let _whole = counted(precision, true);
         if self.rad.is_zero() && rhs.rad.is_zero() {
             return Self::centered(&self.mid * &rhs.mid, Binary::zero(), precision);
         }
@@ -513,6 +519,13 @@ impl Ball {
             k += 1;
         }
     }
+}
+// Counts one ball operation at working precision `p`, at the decider's price
+// for it (`decider::ball_cost`), as one operation: the arithmetic it is made
+// of is not counted again (`operation.rs`, "The count the number types keep").
+#[inline]
+fn counted(p: u32, product: bool) -> crate::operation::Uncounted {
+    crate::operation::Uncounted::whole(crate::decider::ball_cost(p, product))
 }
 fn rounded(r: &Rational, p: u32, upwards: bool) -> Rational {
     if r.is_zero() {

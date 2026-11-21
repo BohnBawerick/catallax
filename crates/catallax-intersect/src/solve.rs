@@ -161,7 +161,10 @@ fn groebner(generators: Vec<P>) -> Arc<[P]> {
     }) {
         return basis;
     }
-    let basis: Arc<[P]> = uncached_groebner(generators.clone()).into();
+    // The memo outlives the request on this thread, so its fill is not
+    // counted: a count of it would differ with what the thread ran before.
+    let basis: Arc<[P]> =
+        catallax_numbers::uncounted_memo(|| uncached_groebner(generators.clone())).into();
     BASES.with(|bases| {
         let mut bases = bases.borrow_mut();
         if bases.len() == 32 {

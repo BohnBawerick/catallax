@@ -162,29 +162,33 @@ impl RollingSaddle {
         if let Some(turns) = cache.as_ref() {
             return Ok(turns.clone());
         }
-        let mut patches = self.patches(self.data.net.bits);
-        let u_cuts = if matches!(&self.data.construction, Construction::Crossing(_)) {
-            CROSSING_U_CUTS
-        } else {
-            0
-        };
-        for _ in 0..u_cuts {
-            patches = along(patches, 0);
-        }
-        for _ in 0..CUTS {
-            patches = along(patches, 1);
-        }
-        // Each cut keeps a span's pieces together and in order.
-        let mut spans = Vec::with_capacity(self.span_count());
-        for pieces in patches.chunks(1 << (CUTS + u_cuts)) {
-            let mut worst = [Rational::zero(), Rational::zero(), Rational::zero()];
-            for patch in pieces {
-                for (top, value) in worst.iter_mut().zip(turns_of(patch)?) {
-                    *top = top.clone().max(value);
-                }
+        // An uncharged memo on the shared net: its fill is not counted.
+        let spans = catallax_numbers::uncounted_memo(|| -> Result<_, Refusal> {
+            let mut patches = self.patches(self.data.net.bits);
+            let u_cuts = if matches!(&self.data.construction, Construction::Crossing(_)) {
+                CROSSING_U_CUTS
+            } else {
+                0
+            };
+            for _ in 0..u_cuts {
+                patches = along(patches, 0);
             }
-            spans.push(worst);
-        }
+            for _ in 0..CUTS {
+                patches = along(patches, 1);
+            }
+            // Each cut keeps a span's pieces together and in order.
+            let mut spans = Vec::with_capacity(self.span_count());
+            for pieces in patches.chunks(1 << (CUTS + u_cuts)) {
+                let mut worst = [Rational::zero(), Rational::zero(), Rational::zero()];
+                for patch in pieces {
+                    for (top, value) in worst.iter_mut().zip(turns_of(patch)?) {
+                        *top = top.clone().max(value);
+                    }
+                }
+                spans.push(worst);
+            }
+            Ok(spans)
+        })?;
         *cache = Some(spans.clone());
         Ok(spans)
     }

@@ -40,7 +40,7 @@ mod outcome;
 pub use operation::{
     OperationAllowance, OperationTask, OperationWork, RecordedWork, current_operation_work,
     operation_budget_active, prefer_reduced_angle_series, refund_on_refusal,
-    reuse_operation_enclosures, with_operation_budget,
+    reuse_operation_enclosures, uncounted_memo, with_operation_budget,
 };
 mod poly;
 #[cfg(feature = "work-profile")]
@@ -80,7 +80,7 @@ pub use certificate::{
 #[cfg(feature = "test-deadline")]
 #[doc(hidden)]
 pub use decider::test_deadline::{Deadline as TestDeadline, Point as TestDeadlinePoint};
-pub use decider::{BudgetPolicy, Decider, DecisionStats, count_exact_arithmetic};
+pub use decider::{BudgetPolicy, Decider, DecisionStats};
 pub use facts::{Fact, FactBook, FactKind, FactOrigin, FactRead};
 pub use integer::{Integer, ParseErrorKind, ParseNumberError, Sign};
 pub use interval::Interval;

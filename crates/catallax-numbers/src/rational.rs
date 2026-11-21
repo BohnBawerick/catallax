@@ -197,10 +197,18 @@ impl Rational {
     /// Integer power; `None` for zero to a negative power.
     pub fn pow(&self, exp: i32) -> Option<Self> {
         let r = if exp < 0 { self.recip()? } else { self.clone() };
-        Some(Self {
+        let power = Self {
             n: r.n.pow(exp.unsigned_abs()),
             d: r.d.pow(exp.unsigned_abs()),
-        })
+        };
+        // Counted as the products a repeated multiplication takes, one fewer
+        // than the exponent, each priced as the largest of them: the power by
+        // the base.
+        crate::operation::count_arithmetic(
+            u64::from(exp.unsigned_abs().saturating_sub(1))
+                .saturating_mul(power.limbs().saturating_mul(self.limbs())),
+        );
+        Some(power)
     }
     /// Largest integer not above the value.
     pub fn floor(&self) -> Integer {
@@ -298,6 +306,7 @@ impl Rational {
     }
     /// Exact terminating decimal, or `None` for other denominators.
     pub fn to_decimal_exact(&self) -> Option<String> {
+        let _whole = self.decimal_conversion();
         let mut d = self.d.0.clone();
         let mut twos = 0u32;
         let mut fives = 0u32;
@@ -322,6 +331,7 @@ impl Rational {
         if self.is_zero() {
             return ("0".into(), "0".into());
         }
+        let _whole = self.decimal_conversion();
         let r = self.abs();
         let mut e = r.n.0.to_str_radix(10).len() as i64 - r.d.0.to_str_radix(10).len() as i64;
         let ten = |k: i64| {
@@ -347,6 +357,24 @@ impl Rational {
             format_significant(&scaled.ceil().0, step),
         )
     }
+    // Counts the writing of this value in decimal as one operation. That
+    // converts the numerator and the denominator to base ten and divides one
+    // by the other, each quadratic in the value's own limbs with schoolbook
+    // arithmetic (Knuth, volume 2, section 4.3.1 algorithm D and section 4.4),
+    // so it is priced as the value times itself.
+    fn decimal_conversion(&self) -> crate::operation::Uncounted {
+        crate::operation::Uncounted::whole(self.limbs().saturating_mul(self.limbs()))
+    }
+    /// The limbs of the numerator and of the denominator, added: the size
+    /// the decider prices this value's arithmetic by (`decider.rs`, "Logical
+    /// arithmetic costs").
+    pub(crate) fn limbs(&self) -> u64 {
+        self.n
+            .bit_length()
+            .div_ceil(64)
+            .max(1)
+            .saturating_add(self.d.bit_length().div_ceil(64).max(1))
+    }
     pub(crate) fn binary_exponent(&self) -> i64 {
         assert!(!self.is_zero());
         let mut e = self.n.bit_length() as i64 - self.d.bit_length() as i64;
@@ -364,6 +392,7 @@ impl Rational {
         self.add_sub(rhs, false)
     }
     fn add_sub(&self, rhs: &Self, subtract: bool) -> Self {
+        crate::operation::count_arithmetic(self.limbs().saturating_add(rhs.limbs()));
         if rhs.is_zero() {
             return self.clone();
         }
@@ -469,6 +498,7 @@ impl Rational {
         }
     }
     pub(crate) fn mul(&self, rhs: &Self) -> Self {
+        crate::operation::count_arithmetic(self.limbs().saturating_mul(rhs.limbs()));
         if self.is_zero() || rhs.is_zero() {
             return Self::zero();
         }

@@ -27,6 +27,21 @@
 //! extrusion, so it is shown to lie on the far side of the junction, where
 //! it can meet the piece's region only in the junction plane.
 //!
+//! Fillet over fillet (4.2a step 5, part 1). A chain may roll over an
+//! earlier straight strip. The strip's face is a cylinder about its centre
+//! line, tangent to the faces it rounded, so a plane's run continues across
+//! it as a ring sector about that line. This is the research note's nested
+//! path. The earlier round is a pipe of radius `R` about its spine, its
+//! offset by the ball is the coaxial pipe of radius `R - r` (the ball on
+//! the spine's side), and the plane's offset meets it in the circle the
+//! sector follows.
+//! A chain over an earlier strip may end a straight run at a plane normal to
+//! it, as an elementary strip ends. The strip's tangent neighbours pass
+//! through the sector's box; the sector lies inside the strip's solid
+//! cylinder, which they only touch. A ball as wide as the strip (a sphere
+//! corner), a ball outside its cylinder and an earlier mitre are later
+//! parts of step 5 and keep their refusals.
+//!
 //! How the reference kernels do this. OpenCASCADE's
 //! `ChFi3d_Builder::PerformElement` (V7_8_0) collects "all mutually tangent
 //! edges" into one spine, requiring the faces opposite two adjacent edges to
@@ -36,17 +51,22 @@
 //! one, and adjusts the tangent corners between them (`AdjustTangentCorner`).
 //! The field keeps the same chain rule but cuts the chain at each tangent
 //! junction into pieces with their own closed forms, a straight strip and a
-//! ring sector, which meet in one section, so no walk is needed.
+//! ring sector, which meet in one section, so no walk is needed. Over an
+//! earlier round both kernels treat the round as an ordinary face:
+//! OpenCASCADE builds a plane with a cylinder on a circular spine in closed
+//! form as a torus (`ChFiKPart_ComputeData_FilPlnCyl`), and SMLib offsets
+//! both faces (`SmOffsetSurface`) and intersects the offsets by stepping.
+//! The field takes that offset definition in closed form.
 
 use catallax_numbers::{Decider, Rational, Real, Refusal, Sign};
-use catallax_recipe::{EdgeSelection, StepId};
+use catallax_recipe::{EdgeSelection, Role, StepId};
 use catallax_shapes::{Circle, Curve, GeomStore, Line, Point3, Surface, Vector3};
 
-use super::rolling::{Run, oriented, revolution};
+use super::rolling::{Run, Solid, oriented, revolution};
 use super::{coordinates, square_root, unit};
 use crate::rolling_region::generator::Generator;
 use crate::rolling_region::piece::{Kind, Piece};
-use crate::rolling_region::revolved::Revolved;
+use crate::rolling_region::revolved::{Revolution, Revolved};
 use crate::{Location, Plan, geometry};
 
 /// Where a span runs.
@@ -127,6 +147,93 @@ fn before(a: &[Real; 2], b: &[Real; 2], dec: &mut Decider) -> Result<bool, Refus
     Ok(geometry::sign(&turn, dec)? == Sign::Positive)
 }
 
+/// A rational point of `circle` strictly inside its arc from the cut `a` to
+/// the cut `b` (vectors from the centre, turning positively about the
+/// normal; `turn` is the sign of that turn, zero for opposite cuts or a
+/// single one), near `target`. A line through a rational point `p0` of the
+/// circle in a rational direction `d` of its plane meets the circle again
+/// at `p0 + s d` with `s = -2 d.(p0 - c) / |d|^2`, which is rational: the
+/// rational parametrization of a conic from one of its rational points.
+/// `p0` is a rational cut and `d` points at `target` rounded into the
+/// plane, to 16 bits first, so the point's coordinates stay short, and
+/// finer only when the rounded point misses the arc. `None` when the
+/// circle has no rational cut or every rounding misses the arc.
+fn rational_arc_point(
+    circle: &Circle,
+    a: &Vector3,
+    b: &Vector3,
+    turn: Sign,
+    target: &Point3,
+    cuts: &[(Vector3, [Real; 2])],
+    dec: &mut Decider,
+) -> Result<Option<Point3>, Refusal> {
+    let rational = |v: [&Real; 3]| -> Option<[Rational; 3]> {
+        Some([
+            v[0].as_rational()?,
+            v[1].as_rational()?,
+            v[2].as_rational()?,
+        ])
+    };
+    let (Some(c), Some(n)) = (
+        rational([&circle.center.x, &circle.center.y, &circle.center.z]),
+        rational([&circle.normal.x, &circle.normal.y, &circle.normal.z]),
+    ) else {
+        return Ok(None);
+    };
+    let Some(p0) = cuts.iter().find_map(|(v, _)| {
+        let p = circle.center.plus(v);
+        rational([&p.x, &p.y, &p.z])
+    }) else {
+        return Ok(None);
+    };
+    let dot = |u: &[Rational; 3], v: &[Rational; 3]| {
+        &(&(&u[0] * &v[0]) + &(&u[1] * &v[1])) + &(&u[2] * &v[2])
+    };
+    let minus = |u: &[Rational; 3], v: &[Rational; 3]| -> [Rational; 3] {
+        std::array::from_fn(|i| &u[i] - &v[i])
+    };
+    for bits in [16, 32, 64] {
+        let mut t = [Rational::zero(), Rational::zero(), Rational::zero()];
+        for (slot, x) in t.iter_mut().zip([&target.x, &target.y, &target.z]) {
+            *slot = geometry::enclose(x, bits, dec)?.mid();
+        }
+        // The rounded target, projected into the circle's plane.
+        let lift = &dot(&n, &minus(&t, &c)) / &dot(&n, &n);
+        let t: [Rational; 3] = std::array::from_fn(|i| &t[i] - &(&lift * &n[i]));
+        let d = minus(&t, &p0);
+        let length = dot(&d, &d);
+        if length.sign() == Sign::Zero {
+            continue;
+        }
+        let s = &(&Rational::from_i64(-2) * &dot(&d, &minus(&p0, &c))) / &length;
+        let point: [Rational; 3] = std::array::from_fn(|i| &p0[i] + &(&s * &d[i]));
+        let v = Vector3::new(
+            (&point[0] - &c[0]).into(),
+            (&point[1] - &c[1]).into(),
+            (&point[2] - &c[2]).into(),
+        );
+        // Strictly inside the arc from `a` to `b`.
+        let after_a = geometry::sign(&circle.normal.dot(&a.cross(&v)), dec)? == Sign::Positive;
+        let before_b = geometry::sign(&circle.normal.dot(&v.cross(b)), dec)? == Sign::Positive;
+        let inside = match turn {
+            Sign::Positive => after_a && before_b,
+            Sign::Negative => after_a || before_b,
+            Sign::Zero if cuts.len() == 1 => {
+                geometry::sign(&v.minus(a).norm_squared(), dec)? != Sign::Zero
+            }
+            Sign::Zero => after_a,
+        };
+        if inside {
+            return Ok(Some(Point3::new(
+                point[0].clone().into(),
+                point[1].clone().into(),
+                point[2].clone().into(),
+            )));
+        }
+    }
+    Ok(None)
+}
+
 /// Whether the chain route may take a fillet the other routes refused: a
 /// refusal about the fillet's shape, not about exhausted work.
 pub(super) fn retried(refusal: &Refusal) -> bool {
@@ -155,12 +262,17 @@ impl Plan {
         let EdgeSelection::Refs(refs) = selection else {
             return Ok(None);
         };
-        // A body an earlier fillet or chamfer rounded is step 5's: rolling
-        // over earlier rounds is not a tangent junction of this route.
+        // A chain may roll over an earlier straight strip, whose face is a
+        // cylinder about its centre line (4.2a step 5). A body an earlier
+        // ring, corner or chamfer rounded keeps its refusal.
         for &i in source_faces {
+            if matches!(self.faces[i].origin.role, Role::Corner { .. }) {
+                return Ok(None);
+            }
             match &self.leaves[self.faces[i].leaf] {
                 geometry::Leaf::Feature(feature)
-                    if feature.fillet.is_none() && feature.chamfer.is_none() => {}
+                    if feature.chamfer.is_none()
+                        && (feature.fillet.is_none() || feature.is_straight_strip()) => {}
                 geometry::Leaf::Primitive(_) => {}
                 _ => return Ok(None),
             }
@@ -223,7 +335,26 @@ impl Plan {
                 }
             }
         }
-        let chained = links.iter().all(|ends| ends.iter().all(Option::is_some));
+        // A chain that rolls over an earlier strip may end a straight run at
+        // a source plane normal to it, as the elementary route ends a strip
+        // (4.2a step 5). Every other end must be a tangent junction.
+        let over = spans
+            .iter()
+            .any(|span| span.faces.iter().any(|&f| self.earlier_strip(f)));
+        let mut free: Vec<[Option<usize>; 2]> = vec![[None, None]; spans.len()];
+        if roll_over && over {
+            for (i, span) in spans.iter().enumerate() {
+                for k in 0..2 {
+                    if links[i][k].is_none() {
+                        free[i][k] = self.end_face(span, k, source_faces, dec)?;
+                    }
+                }
+            }
+        }
+        let chained = links
+            .iter()
+            .zip(&free)
+            .all(|(ends, free)| (0..2).all(|k| ends[k].is_some() || free[k].is_some()));
         let past = !roll_over
             && links.iter().all(|ends| ends.iter().all(Option::is_none))
             && spans
@@ -236,12 +367,14 @@ impl Plan {
         for (i, span) in spans.iter().enumerate() {
             if chained {
                 for (k, link) in links[i].iter().enumerate() {
-                    let (j, l) = link.expect("a chained end");
-                    if j > i {
+                    if let Some((j, l)) = *link
+                        && j > i
+                    {
                         self.check_junction(span, k, &spans[j], l, dec)?;
                     }
                 }
-                runs.push(self.junction_run(span, radius, step, dec)?);
+                let junction = links[i].map(|link| link.is_some());
+                runs.push(self.junction_run(span, junction, free[i], radius, step, dec)?);
             } else {
                 runs.push(self.past_run(span, source_faces, &bound, radius, step, dec)?);
             }
@@ -397,7 +530,15 @@ impl Plan {
                 Sign::Zero if cuts.len() == 1 => a.scaled(&Real::from_i64(-1)),
                 Sign::Zero => circle.normal.cross(a),
             };
-            let sample = circle.center.plus(&unit(&middle).scaled(&radius));
+            let mut sample = circle.center.plus(&unit(&middle).scaled(&radius));
+            // A fillet face's membership takes rational points only, so an
+            // arc on an earlier strip's face is probed at a rational point
+            // of the arc where the circle has one (4.2a step 5).
+            if faces.iter().any(|&f| self.earlier_strip(f))
+                && let Some(point) = rational_arc_point(circle, a, b, turn, &sample, &cuts, dec)?
+            {
+                sample = point;
+            }
             let material = self.material_point(root, &sample, faces, dec)?;
             found.push((material, i, j, sample));
         }
@@ -461,7 +602,7 @@ impl Plan {
     /// leaves is tangent to another face through that end: the run between
     /// the face it keeps and that face joins the selection, as long as the
     /// faces stay tangent. `false` when a continued pair meets in a curve
-    /// other than a line or a circle.
+    /// other than a line or a circle. Each pair's runs are found once.
     fn continue_tangent(
         &self,
         root: usize,
@@ -471,6 +612,7 @@ impl Plan {
         dec: &mut Decider,
     ) -> Result<bool, Refusal> {
         let mut pending: Vec<usize> = (0..spans.len()).collect();
+        let mut paired: Vec<([usize; 2], Vec<Span>)> = Vec::new();
         while let Some(i) = pending.pop() {
             for k in 0..2 {
                 let p = spans[i].end(k);
@@ -504,8 +646,17 @@ impl Plan {
                         } else {
                             [next, stay]
                         };
-                        let Some(found) = self.spans(root, pair, source_faces, bound, dec)? else {
-                            return Ok(false);
+                        let found = match paired.iter().find(|(known, _)| *known == pair) {
+                            Some((_, found)) => found.clone(),
+                            None => {
+                                let Some(found) =
+                                    self.spans(root, pair, source_faces, bound, dec)?
+                                else {
+                                    return Ok(false);
+                                };
+                                paired.push((pair, found.clone()));
+                                found
+                            }
                         };
                         for span in found {
                             if !(same(&p, &span.end(0), dec)? || same(&p, &span.end(1), dec)?) {
@@ -575,11 +726,14 @@ impl Plan {
         Ok(())
     }
 
-    /// The piece of a run between two tangent junctions: a straight piece
-    /// whose end planes are junctions, or a ring sector.
+    /// The piece of a run between tangent junctions: a straight piece whose
+    /// end planes are junctions or, where `junction` is false, end planes at
+    /// its `end_faces`; or a ring sector, junctions at both ends.
     fn junction_run(
         &self,
         span: &Span,
+        junction: [bool; 2],
+        end_faces: [Option<usize>; 2],
         radius: &Real,
         step: &StepId,
         dec: &mut Decider,
@@ -587,8 +741,12 @@ impl Plan {
         let supports = span.faces.map(|i| self.faces[i].surface.clone());
         let ball = self.ball_direction(span.faces, &span.sample, span.convex, span.senses)?;
         let junctions: Vec<(Point3, Vector3)> = (0..2)
+            .filter(|&k| junction[k])
             .map(|k| (span.end(k), span.outward(k).scaled(&Real::from_i64(-1))))
             .collect();
+        // A ring whose ball lies inside its cylinder support lies inside
+        // that solid cylinder.
+        let mut inside = None;
         let kind = match &span.track {
             Track::Line { line, stations } => {
                 let walls = Self::generator_walls(&supports, &ball, &span.sample, dec)?;
@@ -601,8 +759,13 @@ impl Plan {
                         radius.clone(),
                         dec,
                     )?
-                    .with_junctions([true, true]),
+                    .with_junctions(junction),
                 )
+            }
+            Track::Arc { .. } if junction != [true, true] => {
+                return Err(unsupported(
+                    "a ring sector needs a tangent junction at each end",
+                ));
             }
             Track::Arc { circle, ends } => {
                 let (plane, other) = match (
@@ -623,6 +786,21 @@ impl Plan {
                     })?;
                 let outside =
                     oriented(&outside, "the ball lies in a support's tangent plane", dec)?;
+                if let (
+                    false,
+                    Revolution::Cylinder {
+                        point,
+                        axis,
+                        radius,
+                    },
+                ) = (outside, &support)
+                {
+                    inside = Some(Solid {
+                        point: point.clone(),
+                        axis: axis.clone(),
+                        radius_sq: radius.square(),
+                    });
+                }
                 Kind::Revolved(
                     Revolved::new(plane, support, outside, radius.clone(), dec)?.with_sector(
                         ends[0].clone(),
@@ -640,7 +818,53 @@ impl Plan {
             [&supports[0], &supports[1]],
             dec,
         )?;
-        Ok(Run::new(piece, span.faces, Vec::new()).with_junctions(junctions))
+        let ends = end_faces.iter().flatten().copied().collect();
+        let mut run = Run::new(piece, span.faces, ends).with_junctions(junctions);
+        if let Some(solid) = inside {
+            run = run.inside(solid);
+        }
+        Ok(run)
+    }
+
+    /// Whether face `f` is the face of an earlier straight fillet strip.
+    fn earlier_strip(&self, f: usize) -> bool {
+        matches!(
+            &self.leaves[self.faces[f].leaf],
+            geometry::Leaf::Feature(feature) if feature.fillet.is_some() && feature.is_straight_strip()
+        )
+    }
+
+    /// The end face of a straight run at its end `k`: a source plane normal
+    /// to the run through that end, as an elementary strip ends at its end
+    /// plane. `None` for an arc or when no such face passes there.
+    fn end_face(
+        &self,
+        span: &Span,
+        k: usize,
+        source_faces: &[usize],
+        dec: &mut Decider,
+    ) -> Result<Option<usize>, Refusal> {
+        let Track::Line { line, .. } = &span.track else {
+            return Ok(None);
+        };
+        let p = span.end(k);
+        let values = [p.x.clone(), p.y.clone(), p.z.clone()];
+        for &i in source_faces {
+            if span.faces.contains(&i) {
+                continue;
+            }
+            let face = &self.faces[i];
+            let Surface::Plane(plane) = &face.surface else {
+                continue;
+            };
+            if parallel(&plane.normal, &line.dir, dec)?
+                && geometry::sign(&face.polynomial.eval_real(&values), dec)? == Sign::Zero
+                && self.through(i, &p, dec)?
+            {
+                return Ok(Some(i));
+            }
+        }
+        Ok(None)
     }
 
     /// A straight convex run past its rails (version 3): the strip over the

@@ -253,9 +253,26 @@ impl UseDraw<'_> {
     }
 
     /// Counts work that a reading of this use took from [`Self::left`].
-    pub(super) fn spend(&mut self, work: u64) {
+    fn spend(&mut self, work: u64) {
         self.account.spent = self.account.spent.saturating_add(work);
         self.edge.spent = self.edge.spent.saturating_add(work);
+    }
+
+    /// Runs one reading of this use under what its edge has left, and takes
+    /// what the reading counted off the edge's allowance.
+    ///
+    /// `read` is given the limits and a count to add its work to. The count
+    /// is taken off whether the reading finished or was refused: a reading
+    /// that is refused has still spent what it counted, and the edge's
+    /// other uses do not get those units again.
+    pub(super) fn draw_on<T>(
+        &mut self,
+        read: impl FnOnce(Limits, &mut u64) -> Result<T, Refusal>,
+    ) -> Result<T, Refusal> {
+        let mut counted = 0;
+        let found = read(self.left(), &mut counted);
+        self.spend(counted);
+        found
     }
 
     /// The checker's reading of the copy the use has now, where one is
@@ -269,12 +286,9 @@ impl UseDraw<'_> {
         self.account.readings.as_deref()
     }
 
-    /// Counts and keeps readings of the copy as imported that were taken
-    /// from [`Self::left`].
+    /// Keeps readings of the copy as imported. Their work was counted when
+    /// they were taken ([`Self::draw_on`]).
     pub(super) fn keep(&mut self, readings: &[gap::GapMeasure]) {
-        for reading in readings {
-            self.spend(reading.work);
-        }
         self.account.readings = Some(readings.to_vec());
         self.account.imported = self.account.readings.clone();
     }
@@ -320,6 +334,7 @@ fn audit_reading<'a>(
     edge: &'a NumericalEdge,
     native: Option<&'a BSplineCurve>,
     limits: Limits,
+    spent: &mut u64,
     dec: &mut Decider,
 ) -> Result<(FaceCopyRef<'a>, gap::GapMeasure), Refusal> {
     let copy = face_copy(face, trim, edge, native);
@@ -329,13 +344,14 @@ fn audit_reading<'a>(
         surface: GapSurface::Kernel(&face.surface),
         face_copy: copy,
     };
-    let found = gap::measure(&copies, &Hints::default(), limits, dec)?;
+    let found = gap::measure_counted(&copies, &Hints::default(), limits, spent, dec)?;
     Ok((copy, found))
 }
 
 /// The checker's readings of one measured edge use under `limits`, what its
 /// edge has left of its one allowance: the copy itself and, for a projected
-/// copy, its two declared ends.
+/// copy, its two declared ends. What the readings count is added to
+/// `spent`, also where one is refused.
 ///
 /// A projected copy has no u/v of its own between its ends, but its two
 /// declared end values are part of the trim and are measured. It is the same
@@ -347,9 +363,10 @@ fn take_readings(
     trim: &NumericalTrim,
     projected: bool,
     limits: Limits,
+    spent: &mut u64,
     dec: &mut Decider,
 ) -> Result<Vec<gap::GapMeasure>, Refusal> {
-    let found = gap::measure(copies, &Hints::default(), limits, dec)?;
+    let found = gap::measure_counted(copies, &Hints::default(), limits, spent, dec)?;
     if !projected || found.domain_exit.is_some() {
         return Ok(vec![found]);
     }
@@ -360,7 +377,7 @@ fn take_readings(
     let left = Limits {
         work: limits.work.saturating_sub(found.work),
     };
-    let ends = gap::measure_ends(&declared, left, dec)?;
+    let ends = gap::measure_ends_counted(&declared, left, spent, dec)?;
     Ok(vec![found, ends])
 }
 
@@ -370,7 +387,7 @@ fn take_readings(
 ///
 /// `account` is the use in the accounts of its admission. The refit draws on
 /// what the use's edge has left of its one allowance, and its work is
-/// counted there with or without a new copy.
+/// counted there with or without a new copy, and where it is refused.
 pub(super) fn refit_use(
     face: &NumericalFace,
     trim: &NumericalTrim,
@@ -391,8 +408,9 @@ pub(super) fn refit_use(
         surface: GapSurface::Kernel(&face.surface),
         face_copy: copy,
     };
-    let fit = gap::refit::refit_within(&copies, target_mm, account.left(), dec)?;
-    account.spend(fit.work);
+    let fit = account.draw_on(|limits, spent| {
+        gap::refit::refit_within_counted(&copies, target_mm, limits, spent, dec)
+    })?;
     Ok(fit.copy)
 }
 
@@ -460,8 +478,9 @@ pub fn audit_derived_copies(
                 if native.is_none() && analytic::projected_edge(face, edge) {
                     continue;
                 }
-                let (_, found) = audit_reading(face, trim, edge, native, account.left(), dec)?;
-                account.spend(found.work);
+                let (_, found) = account.draw_on(|limits, spent| {
+                    audit_reading(face, trim, edge, native, limits, spent, dec)
+                })?;
                 rows.push(DerivedCopyAudit {
                     face: face.key.clone(),
                     edge: edge.key.clone(),
@@ -538,7 +557,9 @@ pub(super) fn stored_sample(
     let readings = match account.readings() {
         Some(kept) => kept.to_vec(),
         None => {
-            let taken = take_readings(&copies, trim, projected, account.left(), dec)?;
+            let taken = account.draw_on(|limits, spent| {
+                take_readings(&copies, trim, projected, limits, spent, dec)
+            })?;
             account.keep(&taken);
             taken
         }

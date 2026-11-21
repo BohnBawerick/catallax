@@ -1085,16 +1085,21 @@ pub(super) fn check_body(
                     if let (Some(file), Some(source), Some(native), Some(entity)) =
                         (&file, source_pcurve, &surface, surface_entity)
                     {
-                        let used = import_gap::FileUse {
-                            edge,
-                            surface: (entity, native.as_ref()),
-                            pcurve: (source, file.as_ref()),
-                            overshoot_mm: body.options.initial_mm.to_f64_nearest(),
-                            allowance: gap_allowances.left(usage.edge),
-                        };
-                        match import_gap::read_use(context, &used, dec)? {
+                        // What the use counts is taken off its edge's
+                        // allowance here, read or unread, before anything
+                        // below decides to rebuild its trace.
+                        let outcome = gap_allowances.read(usage.edge, |allowance| {
+                            let used = import_gap::FileUse {
+                                edge,
+                                surface: (entity, native.as_ref()),
+                                pcurve: (source, file.as_ref()),
+                                overshoot_mm: body.options.initial_mm.to_f64_nearest(),
+                                allowance,
+                            };
+                            import_gap::read_use(context, &used, dec)
+                        })?;
+                        match outcome.map_err(|unread| unread.why) {
                             Ok(read) => {
-                                gap_allowances.count(usage.edge, read.rule.work);
                                 pcurve = read.copy.clone().map(FaceCopy::Reparametrised);
                                 gap_rule = Some((source, read));
                             }

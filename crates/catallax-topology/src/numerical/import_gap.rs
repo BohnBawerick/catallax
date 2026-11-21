@@ -144,6 +144,9 @@ pub(super) struct UseReading {
 ///    projections, its readings of the old copy and the checker's work on
 ///    every candidate.
 ///
+/// Each step's work is taken off the edge's allowance as the step counts
+/// it, also where the step is refused ([`UseDraw::draw_on`]).
+///
 /// Where the allowance runs out at any of these, the edge refuses with
 /// `numerical.gap-work-cap`. Nothing read before that stands in for the
 /// answer: not the copy as imported, and not an earlier candidate.
@@ -164,7 +167,9 @@ pub(super) fn read_use(
     let parametric = match account.reading() {
         Some(kept) => kept.clone(),
         None => {
-            let found = gap::measure(copies, &Hints::default(), account.left(), dec)?;
+            let found = account.draw_on(|limits, spent| {
+                gap::measure_counted(copies, &Hints::default(), limits, spent, dec)
+            })?;
             account.keep(std::slice::from_ref(&found));
             found
         }
@@ -175,11 +180,12 @@ pub(super) fn read_use(
     {
         return Ok(None);
     }
-    let Some(geometric) = gap::measure_geometric(copies, &Hints::default(), account.left(), dec)?
+    let Some(geometric) = account.draw_on(|limits, spent| {
+        gap::measure_geometric_counted(copies, &Hints::default(), limits, spent, dec)
+    })?
     else {
         return Ok(None);
     };
-    account.spend(geometric.work);
     let mut reparametrised = None;
     let mut outcome = ImportGapOutcome::Geometric;
     if much_larger(parametric.reported_mm(), geometric.reported_mm()) {
@@ -187,8 +193,9 @@ pub(super) fn read_use(
         // larger than the geometric gap, or stores the floor.
         let target = (gap::MARGIN * gap::MARGIN * geometric.reported_mm()).max(floor_mm);
         outcome = ImportGapOutcome::NotLowered;
-        let change = gap::refit::reparametrise(copies, target, account.left(), dec)?;
-        account.spend(change.work);
+        let change = account.draw_on(|limits, spent| {
+            gap::refit::reparametrise_counted(copies, target, limits, spent, dec)
+        })?;
         reparametrised = change.copy;
         if let Some(next) = &reparametrised
             && much_larger(parametric.stored_mm(), next.stored_mm)
@@ -271,7 +278,31 @@ pub fn read_import_use(
     limits: gap::Limits,
     dec: &mut Decider,
 ) -> Result<ImportUseReading, Refusal> {
+    read_import_use_counted(copies, limits, &mut 0, dec)
+}
+
+/// [`read_import_use`], with all the work the use counted added to `spent`
+/// whether the rule finished or was refused. On a finished reading that is
+/// the reading's `work`. A reader that goes on after a refusal that is not a
+/// resource limit, to another use of the same edge, takes `spent` off the
+/// edge's allowance either way.
+pub fn read_import_use_counted(
+    copies: &EdgeCopies<'_>,
+    limits: gap::Limits,
+    spent: &mut u64,
+    dec: &mut Decider,
+) -> Result<ImportUseReading, Refusal> {
     let mut accounts = Accounts::of_one_use(limits);
+    let read = read_one_use(copies, &mut accounts, dec);
+    *spent = spent.saturating_add(accounts.spent_by_use(0));
+    read
+}
+
+fn read_one_use(
+    copies: &EdgeCopies<'_>,
+    accounts: &mut Accounts,
+    dec: &mut Decider,
+) -> Result<ImportUseReading, Refusal> {
     let mut account = accounts.draw(0)?;
     let floor_mm = tolerance::floor_minimum_mm().to_f64_nearest();
     Ok(match read_use(copies, &mut account, floor_mm, dec)? {

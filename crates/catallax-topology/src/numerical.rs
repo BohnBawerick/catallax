@@ -25,7 +25,9 @@ pub use edge_gap::{DerivedCopyAudit, audit_derived_copies};
 pub mod gap;
 mod handover;
 mod import_gap;
-pub use import_gap::{ImportGapOutcome, ImportGapRow, ImportUseReading, read_import_use};
+pub use import_gap::{
+    ImportGapOutcome, ImportGapRow, ImportUseReading, read_import_use, read_import_use_counted,
+};
 mod native;
 pub use native::{NumericalNativeTrim, build_with_native_trims, build_with_sampled_carriers};
 mod source;

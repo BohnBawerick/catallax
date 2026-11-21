@@ -63,6 +63,7 @@ mod numeric;
 /// and T8) and a change of parameter of the copy it has (decision Q9).
 pub mod refit;
 
+pub(in crate::numerical) use geometric::measure_geometric_counted;
 pub use geometric::{GeometricMeasure, measure_geometric};
 
 use lift::{Curve64, Face64, Lifted, Revolved, Scratch, Surface64};
@@ -1085,15 +1086,30 @@ pub fn measure(
     limits: Limits,
     dec: &mut Decider,
 ) -> Result<GapMeasure, Refusal> {
-    under_allowance(copies, limits, dec, |search, dec| {
+    measure_counted(copies, hints, limits, &mut 0, dec)
+}
+
+/// [`measure`], with the work the search counted added to `spent` whether
+/// or not it finished. A reading that is refused has still spent what it
+/// counted, and an admission takes that off the edge's allowance too.
+pub(in crate::numerical) fn measure_counted(
+    copies: &EdgeCopies<'_>,
+    hints: &Hints,
+    limits: Limits,
+    spent: &mut u64,
+    dec: &mut Decider,
+) -> Result<GapMeasure, Refusal> {
+    under_allowance(copies, limits, spent, dec, |search, dec| {
         search_edge(search, hints, dec)
     })
 }
 
-/// Runs one search of an edge under its allowance.
+/// Runs one search of an edge under its allowance, and adds what the search
+/// counted to `spent`, finished or refused.
 fn under_allowance<T>(
     copies: &EdgeCopies<'_>,
     limits: Limits,
+    spent: &mut u64,
     dec: &mut Decider,
     run: impl FnOnce(&mut Search<'_>, &mut Decider) -> Result<T, Refusal>,
 ) -> Result<T, Refusal> {
@@ -1114,15 +1130,16 @@ fn under_allowance<T>(
         charged: 0,
     };
     let found = run(&mut search, dec);
+    *spent = spent.saturating_add(search.spent());
     if let Err(refusal) = &found {
         // Work done before a refusal is still work: it is charged to the
         // operation before the refusal is returned. If the operation's own
         // allowance is gone as well, the edge's refusal is still the answer.
-        let (spent, limit) = (search.spent(), search.limit);
+        let (counted, limit) = (search.spent(), search.limit);
         search.settle(dec).ok();
         if refusal.code == WORK_CAP {
             return Err(work_cap(&format!(
-                "{}; {spent} of {limit} units were spent",
+                "{}; {counted} of {limit} units were spent",
                 refusal.detail
             )));
         }
@@ -1380,7 +1397,18 @@ pub fn measure_ends(
     limits: Limits,
     dec: &mut Decider,
 ) -> Result<GapMeasure, Refusal> {
-    under_allowance(copies, limits, dec, |search, dec| {
+    measure_ends_counted(copies, limits, &mut 0, dec)
+}
+
+/// [`measure_ends`], with the work counted added to `spent` whether or not
+/// the reading finished.
+pub(in crate::numerical) fn measure_ends_counted(
+    copies: &EdgeCopies<'_>,
+    limits: Limits,
+    spent: &mut u64,
+    dec: &mut Decider,
+) -> Result<GapMeasure, Refusal> {
+    under_allowance(copies, limits, spent, dec, |search, dec| {
         let [first, last] = search.lifted.parameters;
         let ends = [search.sample(first)?, search.sample(last)?];
         let best = if ends[1].squared > ends[0].squared {

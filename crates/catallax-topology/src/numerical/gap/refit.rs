@@ -42,7 +42,7 @@ use catallax_shapes::{BSplineCurve, Curve, Point3};
 
 use super::geometric::{self, Way};
 use super::{
-    EdgeCopies, FaceCopyRef, GapCurve, GapMeasure, Hints, Limits, lift, measure, work_cap,
+    EdgeCopies, FaceCopyRef, GapCurve, GapMeasure, Hints, Limits, lift, measure_counted, work_cap,
 };
 
 /// Source: the span limit of the fitter of `numerical_embedding.rs`
@@ -113,22 +113,33 @@ enum Nodes {
 /// checker's work on every candidate is taken from that one remainder, and
 /// where it runs out the edge refuses by name. Nothing restarts between
 /// candidates.
-struct Drawn {
+struct Drawn<'a> {
     /// Units counted so far.
     spent: u64,
     /// The most the fit may count: what the use's edge had left of its
     /// allowance when the fit began.
     limit: u64,
+    /// The caller's count of the same units. It is added to as each unit
+    /// is counted, so a fit that is refused part of the way has still told
+    /// its caller what it spent.
+    counted: &'a mut u64,
 }
 
-impl Drawn {
-    fn new(nodes_from: Nodes) -> Self {
+impl<'a> Drawn<'a> {
+    fn new(nodes_from: Nodes, counted: &'a mut u64) -> Self {
         Self {
             spent: 0,
             limit: match nodes_from {
                 Nodes::SurfaceFoot(limits) | Nodes::OldCopy(limits) => limits.work,
             },
+            counted,
         }
+    }
+
+    /// Counts `units` that were taken from what is left.
+    fn count(&mut self, units: u64) {
+        self.spent = self.spent.saturating_add(units);
+        *self.counted = self.counted.saturating_add(units);
     }
 
     /// What is left to count.
@@ -156,7 +167,7 @@ impl Drawn {
         let mut left = before;
         let found = work(&mut left);
         let taken = before - left;
-        self.spent += taken;
+        self.count(taken);
         let charged = if taken == 0 {
             Ok(())
         } else {
@@ -192,7 +203,20 @@ pub fn refit_within(
     limits: Limits,
     dec: &mut Decider,
 ) -> Result<Fit, Refusal> {
-    fit(copies, target_mm, Nodes::SurfaceFoot(limits), dec).map(|(copy, work)| Fit { copy, work })
+    refit_within_counted(copies, target_mm, limits, &mut 0, dec)
+}
+
+/// [`refit_within`], with the work the fit counted added to `spent` whether
+/// or not it finished.
+pub(in crate::numerical) fn refit_within_counted(
+    copies: &EdgeCopies<'_>,
+    target_mm: f64,
+    limits: Limits,
+    spent: &mut u64,
+    dec: &mut Decider,
+) -> Result<Fit, Refusal> {
+    fit(copies, target_mm, Nodes::SurfaceFoot(limits), spent, dec)
+        .map(|(copy, work)| Fit { copy, work })
 }
 
 /// Gives the face copy of one edge use the parameter of its 3D curve
@@ -223,7 +247,20 @@ pub fn reparametrise(
     limits: Limits,
     dec: &mut Decider,
 ) -> Result<Fit, Refusal> {
-    fit(copies, target_mm, Nodes::OldCopy(limits), dec).map(|(copy, work)| Fit { copy, work })
+    reparametrise_counted(copies, target_mm, limits, &mut 0, dec)
+}
+
+/// [`reparametrise`], with the work the fit counted added to `spent`
+/// whether or not it finished.
+pub(in crate::numerical) fn reparametrise_counted(
+    copies: &EdgeCopies<'_>,
+    target_mm: f64,
+    limits: Limits,
+    spent: &mut u64,
+    dec: &mut Decider,
+) -> Result<Fit, Refusal> {
+    fit(copies, target_mm, Nodes::OldCopy(limits), spent, dec)
+        .map(|(copy, work)| Fit { copy, work })
 }
 
 /// Source: Dennis and Schnabel 1983, section 5.4: a forward difference takes
@@ -235,11 +272,14 @@ fn same_node(a: f64, b: f64, width: f64) -> bool {
 }
 
 /// The new copy, where one was found, and the work the fit counted: the
-/// evaluations of its feet and the checker's work on every candidate.
+/// evaluations of its feet and the checker's work on every candidate. The
+/// same work is added to `counted` as it is counted, so a fit that is
+/// refused has reported it as well.
 fn fit(
     copies: &EdgeCopies<'_>,
     target_mm: f64,
     nodes_from: Nodes,
+    counted: &mut u64,
     dec: &mut Decider,
 ) -> Result<(Option<Refit>, u64), Refusal> {
     if matches!(copies.face_copy, FaceCopyRef::Projected) {
@@ -247,7 +287,7 @@ fn fit(
     }
     let lifted = lift::lift(copies, dec)?;
     let mut scratch = lift::Scratch::default();
-    let mut drawn = Drawn::new(nodes_from);
+    let mut drawn = Drawn::new(nodes_from, counted);
     let [lo, hi] = lifted.range();
     let mut breaks = vec![lo];
     match copies.curve {
@@ -394,16 +434,20 @@ fn fit(
             .collect::<Result<Vec<_>, Refusal>>()?;
         let weights = vec![Real::one(); points.len()];
         let curve = BSplineCurve::new(3, knots, points, weights, dec)?;
-        let found = measure(
+        // The candidate's reading counts what it spent, finished or not.
+        let mut by_candidate = 0;
+        let found = measure_counted(
             &EdgeCopies {
                 face_copy: FaceCopyRef::Native(&curve),
                 ..*copies
             },
             &Hints::default(),
             drawn.candidate(),
+            &mut by_candidate,
             dec,
-        )?;
-        drawn.spent += found.work;
+        );
+        drawn.count(by_candidate);
+        let found = found?;
         // A copy that leaves a spline surface's domain is refused by
         // admission, so it is no candidate.
         let stored_mm = if found.domain_exit.is_some() {

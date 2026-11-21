@@ -305,10 +305,22 @@ pub fn measure_geometric(
     limits: Limits,
     dec: &mut Decider,
 ) -> Result<Option<GeometricMeasure>, Refusal> {
+    measure_geometric_counted(copies, hints, limits, &mut 0, dec)
+}
+
+/// [`measure_geometric`], with the work counted added to `spent` whether or
+/// not the reading finished.
+pub(in crate::numerical) fn measure_geometric_counted(
+    copies: &EdgeCopies<'_>,
+    hints: &Hints,
+    limits: Limits,
+    spent: &mut u64,
+    dec: &mut Decider,
+) -> Result<Option<GeometricMeasure>, Refusal> {
     if matches!(copies.face_copy, FaceCopyRef::Projected) {
         return Ok(None);
     }
-    under_allowance(copies, limits, dec, |search, dec| {
+    under_allowance(copies, limits, spent, dec, |search, dec| {
         let breaks = breaks(search, hints, dec)?;
         let plan = planned(search.lifted, &breaks);
         let planning = search.spent();

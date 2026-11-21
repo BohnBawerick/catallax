@@ -169,7 +169,7 @@ fn a_file_uv_curve_at_another_speed_is_given_the_parameter_of_its_edge() {
 
     // At the edge's own speed nothing could be lowered: the same-parameter
     // gap stores rule T1's least floor or less, and the rule leaves the use.
-    let same = read(22, &mut dec).unwrap_or_else(|why| panic!("{why}"));
+    let same = read(22, &mut dec).unwrap_or_else(|unread| panic!("{}", unread.why));
     assert_eq!(same.rule.outcome, None);
     assert!(same.rule.geometric.is_none());
     assert!(same.copy.is_none());
@@ -177,7 +177,7 @@ fn a_file_uv_curve_at_another_speed_is_given_the_parameter_of_its_edge() {
 
     // At another speed the gap is all parameter.
     let (stretched, work) = with_operation_budget(20_000_000, || {
-        read(26, &mut Decider::default()).unwrap_or_else(|why| panic!("{why}"))
+        read(26, &mut Decider::default()).unwrap_or_else(|unread| panic!("{}", unread.why))
     });
     let rule = &stretched.rule;
     assert!((rule.parametric.raw_mm - 0.25).abs() < 1e-9, "{rule:?}");
@@ -205,24 +205,37 @@ fn a_file_uv_curve_at_another_speed_is_given_the_parameter_of_its_edge() {
     );
 
     // A use the checker cannot read is said to be unread, with the reason.
+    // These three are found unread before the checker works on them, so
+    // they carry no work.
     let short = read(33, &mut dec)
         .err()
         .expect("a u/v curve that stops short");
     assert!(
-        short.contains("does not hold the edge's parameter range"),
-        "{short}"
+        short
+            .why
+            .contains("does not hold the edge's parameter range"),
+        "{}",
+        short.why
     );
     let off = read(37, &mut dec).err().expect("a u/v curve off the patch");
-    assert!(off.contains("leaves the charts of its surface"), "{off}");
+    assert!(
+        off.why.contains("leaves the charts of its surface"),
+        "{}",
+        off.why
+    );
     // The curve of `#22` on an interval of its own is the same segment, and
     // the rule does not read it: its interval is not its edge's.
     let shifted = read(46, &mut dec)
         .err()
         .expect("a u/v curve on a shifted interval");
     assert!(
-        shifted.contains("does not hold the edge's parameter range"),
-        "{shifted}"
+        shifted
+            .why
+            .contains("does not hold the edge's parameter range"),
+        "{}",
+        shifted.why
     );
+    assert_eq!([short.work, off.work, shifted.work], [0, 0, 0]);
 }
 
 /// De Boor's recurrence on the trace a change of parameter leaves: a cubic
@@ -295,15 +308,18 @@ fn the_chart_work_of_a_native_use_is_inside_its_one_allowance() {
             sampled.read(n::gap::Limits { work: allowance }, &mut Decider::default())
         })
     };
-    let total = |read: Result<Result<import_gap::UseReading, &'static str>, Error>| {
-        let read = read.unwrap().unwrap_or_else(|why| panic!("{why}"));
+    let total = |read: Result<Result<import_gap::UseReading, import_gap::Unread>, Error>| {
+        let read = read
+            .unwrap()
+            .unwrap_or_else(|unread| panic!("{}", unread.why));
         (read.rule.work, read.rule.stored_mm().to_bits())
     };
-    let refused = |read: Result<Result<import_gap::UseReading, &'static str>, Error>| match read {
-        Err(Error::Numerical(refusal)) => refusal.code,
-        Err(other) => panic!("{other:?}"),
-        Ok(_) => panic!("the use was read"),
-    };
+    let refused =
+        |read: Result<Result<import_gap::UseReading, import_gap::Unread>, Error>| match read {
+            Err(Error::Numerical(refusal)) => refusal.code,
+            Err(other) => panic!("{other:?}"),
+            Ok(_) => panic!("the use was read"),
+        };
 
     let (as_it_is, charged) = read(&sampled, n::gap::EDGE_WORK);
     let (whole, stored) = total(as_it_is);
@@ -369,12 +385,15 @@ fn the_uses_of_an_edge_share_its_one_allowance() {
     let read_uses = |allowances: &mut import_gap::EdgeAllowances, edges: [usize; 2]| {
         let mut counted = Vec::new();
         for edge in edges {
-            match sampled.read(allowances.left(edge), &mut Decider::default()) {
-                Ok(read) => {
-                    let work = read.unwrap_or_else(|why| panic!("{why}")).rule.work;
-                    allowances.count(edge, work);
-                    counted.push(work);
-                }
+            let read = allowances.read(edge, |allowance| {
+                sampled.read(allowance, &mut Decider::default())
+            });
+            match read {
+                Ok(read) => counted.push(
+                    read.unwrap_or_else(|unread| panic!("{}", unread.why))
+                        .rule
+                        .work,
+                ),
                 Err(Error::Numerical(refusal)) => return Err((counted, refusal.code)),
                 Err(other) => panic!("{other:?}"),
             }
@@ -403,4 +422,90 @@ fn the_uses_of_an_edge_share_its_one_allowance() {
         read_uses(&mut import_gap::EdgeAllowances::of(once), [7, 8]),
         Ok(vec![once, once])
     );
+}
+
+/// A use that is found unread after the checker has worked on it has still
+/// spent that work, and its edge's next use does not get it again (section
+/// 4.2 step 8: "A hard per-edge work cap refuses by name").
+///
+/// The stretched use of [`SPEEDS`] is read as the two uses of one edge. On
+/// the first, the rule's new copy is forced outside the charts of the
+/// surface, so the rule finishes, counts its work, and the use is unread:
+/// the caller rebuilds its trace and goes on. With an allowance one unit
+/// short of the two uses together, the second use of the edge then refuses
+/// by name. With exactly the two together it is read. An allowance that
+/// took nothing off for the unread use would have read the second use under
+/// both.
+#[test]
+fn an_unread_use_has_spent_its_work_on_the_edge() {
+    let mut dec = Decider::default();
+    let parsed = ParsedStep::read(SPEEDS, &mut dec).unwrap();
+    let scale = Rational::one();
+    let (surface, edge) = speeds_use(&parsed, &scale, &mut dec);
+    let mut context = Context::new(&parsed, &scale, AngleUnit::Radians, BTreeMap::new(), 0.01);
+    let pcurve =
+        NativeUvCurve::from_source(&parsed, 26, &scale, AngleUnit::Radians, &mut dec).unwrap();
+    let used = import_gap::FileUse {
+        edge: &edge,
+        surface: (14, &surface),
+        pcurve: (26, &pcurve),
+        overshoot_mm: 1e-7,
+        allowance: n::gap::Limits::default(),
+    };
+    let mut sampled = import_gap::sampled_use(&mut context, &used, &mut dec)
+        .unwrap()
+        .unwrap_or_else(|why| panic!("{why}"));
+    let whole_charts = sampled.extent;
+    let once = sampled
+        .read(n::gap::Limits::default(), &mut dec)
+        .unwrap()
+        .unwrap_or_else(|unread| panic!("{}", unread.why))
+        .rule
+        .work;
+    assert!(once > 0);
+
+    // The same use with an extent in u that no point is inside, so the new
+    // copy the rule makes is found outside the charts after the rule ran.
+    sampled.extent[0][0] = Some(f64::INFINITY);
+    let unread = sampled
+        .read(n::gap::Limits::default(), &mut dec)
+        .unwrap()
+        .err()
+        .expect("a new copy that leaves the charts");
+    assert_eq!(
+        unread,
+        import_gap::Unread {
+            why: "its copy in the edge's parameter leaves the charts of its surface",
+            work: once,
+        }
+    );
+
+    // The first use of edge 7 is unread and the second is read as it is.
+    let as_it_is = import_gap::sampled_use(&mut context, &used, &mut dec)
+        .unwrap()
+        .unwrap_or_else(|why| panic!("{why}"));
+    assert_eq!(as_it_is.extent, whole_charts);
+    let second_use = |each_edge: u64| {
+        let mut allowances = import_gap::EdgeAllowances::of(each_edge);
+        let first = allowances
+            .read(7, |allowance| {
+                sampled.read(allowance, &mut Decider::default())
+            })
+            .unwrap();
+        assert_eq!(first.err().map(|unread| unread.work), Some(once));
+        assert_eq!(allowances.left(7).work, each_edge - once);
+        match allowances.read(7, |allowance| {
+            as_it_is.read(allowance, &mut Decider::default())
+        }) {
+            Ok(read) => Ok(read
+                .unwrap_or_else(|unread| panic!("{}", unread.why))
+                .rule
+                .work),
+            Err(Error::Numerical(refusal)) => Err(refusal.code),
+            Err(other) => panic!("{other:?}"),
+        }
+    };
+    assert_eq!(second_use(2 * once - 1), Err("numerical.gap-work-cap"));
+    assert_eq!(second_use(once + 1), Err("numerical.gap-work-cap"));
+    assert_eq!(second_use(2 * once), Ok(once));
 }

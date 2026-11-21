@@ -54,6 +54,29 @@ pub(super) struct UseReading {
     pub copy: Option<ReparametrisedTrace>,
 }
 
+/// An edge use the gap rule did not read, and the work it counted before
+/// that was known.
+///
+/// A use can be unread after the checker has worked on it: the rule finishes
+/// and the copy it made leaves the charts of its surface, or the checker
+/// stops at a carrier it cannot evaluate. That work was drawn from the one
+/// allowance of the use's edge (section 4.2 step 8), so it is carried here
+/// and taken off the edge like the work of a use that was read.
+#[derive(Debug, PartialEq, Eq)]
+pub(super) struct Unread {
+    /// Why the checker does not read the use.
+    pub why: &'static str,
+    /// Work the checker counted on the use before it was found unread.
+    pub work: u64,
+}
+
+impl Unread {
+    /// A use that was found unread before the checker did any work on it.
+    fn before_any_work(why: &'static str) -> Self {
+        Self { why, work: 0 }
+    }
+}
+
 /// The file's u/v curve of an edge use, in a form the checker reads.
 enum FileCopy {
     /// A B-spline, with the controls, weights and knots the file wrote.
@@ -281,6 +304,27 @@ impl EdgeAllowances {
         }
     }
 
+    /// Reads one use of `edge` under what the edge has left, and takes what
+    /// the reading counted off the edge's allowance, whether the use was
+    /// read or found unread after the checker had worked on it. A caller
+    /// that goes on after an unread use therefore gives the edge's next use
+    /// only what is really left.
+    pub(super) fn read(
+        &mut self,
+        edge: usize,
+        read: impl FnOnce(gap::Limits) -> Result<Result<UseReading, Unread>, Error>,
+    ) -> Result<Result<UseReading, Unread>, Error> {
+        let outcome = read(self.left(edge))?;
+        self.count(
+            edge,
+            match &outcome {
+                Ok(read) => read.rule.work,
+                Err(unread) => unread.work,
+            },
+        );
+        Ok(outcome)
+    }
+
     /// What the edge has left for its next use.
     pub(super) fn left(&self, edge: usize) -> gap::Limits {
         gap::Limits {
@@ -291,7 +335,7 @@ impl EdgeAllowances {
     }
 
     /// Takes the work one use of the edge counted off its allowance.
-    pub(super) fn count(&mut self, edge: usize, work: u64) {
+    fn count(&mut self, edge: usize, work: u64) {
         let counted = self.counted.entry(edge).or_default();
         *counted = counted.saturating_add(work);
     }
@@ -322,17 +366,19 @@ pub(super) struct FileUse<'a> {
 /// it before the unit is spent: its own unit for an evaluation, and with it
 /// the chart work the native carrier states for that evaluation. A use that
 /// spends what is left refuses the body with `numerical.gap-work-cap`.
-/// Nothing is charged here beside what the checker counts. The caller takes
-/// the reading's work off the edge's allowance. A use the checker cannot
-/// read reports no work, so nothing is taken off for it.
+/// Nothing is charged here beside what the checker counts. Both outcomes
+/// carry that count, a reading in its rule and an unread use in
+/// [`Unread::work`], and the caller takes it off the edge's allowance
+/// ([`EdgeAllowances::read`]).
 pub(super) fn read_use(
     context: &mut Context<'_>,
     used: &FileUse<'_>,
     dec: &mut Decider,
-) -> Result<Result<UseReading, &'static str>, Error> {
+) -> Result<Result<UseReading, Unread>, Error> {
     match sampled_use(context, used, dec)? {
         Ok(sampled) => sampled.read(used.allowance, dec),
-        Err(why) => Ok(Err(why)),
+        // The use has no form the checker reads, so the checker did no work.
+        Err(why) => Ok(Err(Unread::before_any_work(why))),
     }
 }
 
@@ -346,8 +392,9 @@ pub(super) struct SampledUse {
     file: FileCopy,
     /// The edge's two parameters.
     parameters: [Rational; 2],
-    /// The extent of the surface's charts in u and in v.
-    extent: [[Option<f64>; 2]; 2],
+    /// The extent of the surface's charts in u and in v. A new copy of the
+    /// use that leaves it is not kept.
+    pub extent: [[Option<f64>; 2]; 2],
 }
 
 /// The two copies of one edge use in the forms the checker reads, or why it
@@ -489,12 +536,13 @@ pub(super) fn sampled_use(
 
 impl SampledUse {
     /// The gap rule on this use, under what its edge has left of its one
-    /// work allowance.
+    /// work allowance. An unread use carries the work the checker counted
+    /// on it before it was found unread.
     pub(super) fn read(
         &self,
         allowance: gap::Limits,
         dec: &mut Decider,
-    ) -> Result<Result<UseReading, &'static str>, Error> {
+    ) -> Result<Result<UseReading, Unread>, Error> {
         let copies = gap::EdgeCopies {
             curve: gap::GapCurve::Sampled(&self.curve),
             parameters: self.parameters.each_ref(),
@@ -504,13 +552,24 @@ impl SampledUse {
                 FileCopy::Straight(ends) => gap::FaceCopyRef::Linear(ends),
             },
         };
-        let rule = match n::read_import_use(&copies, allowance, dec) {
+        // Everything the checker counts on this use, also where it stops
+        // part of the way.
+        let mut work = 0;
+        let rule = match n::read_import_use_counted(&copies, allowance, &mut work, dec) {
             Ok(rule) => rule,
             Err(refusal) if resource_limit(&refusal) => return Err(refusal.into()),
-            Err(_) => return Ok(Err("the checker has no reading of its two copies")),
+            Err(_) => {
+                return Ok(Err(Unread {
+                    why: "the checker has no reading of its two copies",
+                    work,
+                }));
+            }
         };
         if !rule.stored_mm().is_finite() || !rule.parametric.stored_mm().is_finite() {
-            return Ok(Err("binary64 cannot place a sample of its two copies"));
+            return Ok(Err(Unread {
+                why: "binary64 cannot place a sample of its two copies",
+                work,
+            }));
         }
         let copy = match rule.new_copy() {
             None => None,
@@ -519,9 +578,12 @@ impl SampledUse {
                 for control in next.curve.controls() {
                     let uv = [rounded(&control.x, dec)?, rounded(&control.y, dec)?];
                     if !inside(&self.extent, uv) {
-                        return Ok(Err(
-                            "its copy in the edge's parameter leaves the charts of its surface",
-                        ));
+                        // The rule finished and counted its work before
+                        // this copy was found unusable.
+                        return Ok(Err(Unread {
+                            why: "its copy in the edge's parameter leaves the charts of its surface",
+                            work,
+                        }));
                     }
                     controls.push(uv);
                 }

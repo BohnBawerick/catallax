@@ -1444,7 +1444,9 @@ impl Plan {
         &self.faces
     }
     /// The rolling-ball path pieces the plan's fillets compiled to (4.2a), in
-    /// compile order. Their faces are not registered as named faces yet.
+    /// compile order. A piece whose face lies on a ring torus, a sphere or a
+    /// cylinder registers it as a named face; other pieces' faces are not
+    /// registered.
     pub fn rolling_pieces(&self) -> impl Iterator<Item = &rolling_region::piece::Piece> {
         self.leaves.iter().filter_map(|leaf| match leaf {
             geometry::Leaf::Rolling(piece) => Some(piece.as_ref()),

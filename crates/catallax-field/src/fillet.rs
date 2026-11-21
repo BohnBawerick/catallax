@@ -536,12 +536,12 @@ impl Plan {
         }
     }
 
-    /// A rolling piece registers no face, so a later fillet or chamfer on
-    /// its body would neither roll over it nor see it in its clearance proof
-    /// (4.2a step 5): the third round of `fillet_over_fillet.rs`, which the
-    /// B-rep continues over the second round's piece, would come out as a
-    /// plain strip. Such a step refuses until the pieces' faces join the
-    /// face registry.
+    /// The fillet routes do not take a rolling piece's face as a support,
+    /// registered or not, so a later fillet or chamfer on its body would
+    /// neither roll over it nor see it in its clearance proof (4.2a step 5):
+    /// the third round of `fillet_over_fillet.rs`, which the B-rep continues
+    /// over the second round's piece, would come out as a plain strip. Such
+    /// a step refuses until the routes take those faces.
     pub(crate) fn refuse_over_rolling(&self, root: usize) -> Result<(), Refusal> {
         let mut pending = vec![root];
         while let Some(node) = pending.pop() {
@@ -772,7 +772,7 @@ impl Plan {
             }
         }
         // Straight runs that share one name, which the elementary route
-        // refuses, become generator pieces; they register no named faces.
+        // refuses, become generator pieces, which register their cylinders.
         let mut kept = Vec::with_capacity(definitions.len());
         let shared = |definition: &FilletDefinition,
                       all: &[(FilletDefinition, Option<[Rational; 2]>)]| {

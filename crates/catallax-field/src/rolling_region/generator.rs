@@ -267,6 +267,19 @@ impl Generator {
         &self.radius
     }
 
+    /// The exact surface that holds the face, for the face registry: the
+    /// cylinder of the ball's radius about the centre line, whose equation
+    /// has the separation's sign. The first foot lies in the section normal
+    /// to the line, so it gives the seam direction.
+    pub fn face(&self) -> catallax_shapes::Surface {
+        catallax_shapes::Surface::Cylinder(catallax_shapes::Cylinder {
+            origin: self.centre.clone(),
+            axis: self.direction.clone(),
+            radius_sq: self.radius.square(),
+            ref_dir: self.feet[0].minus(&self.centre),
+        })
+    }
+
     /// Applies an exact rigid motion, reflections included. Stations are
     /// relative to the moved centre and direction, so they are unchanged.
     pub fn transform(&mut self, pose: &Isometry) {

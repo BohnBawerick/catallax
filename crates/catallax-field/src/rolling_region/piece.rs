@@ -20,9 +20,9 @@ use super::{Range, Relation};
 use crate::Location;
 use crate::metric::{Arithmetic, PRECISION};
 use crate::support::Support;
-use catallax_numbers::{Ball, Decider, Rational, Real, Refusal};
+use catallax_numbers::{Ball, Decider, Rational, Real, Refusal, Sign};
 use catallax_recipe::Origin;
-use catallax_shapes::{Isometry, Point3, RPoint3, Surface};
+use catallax_shapes::{Isometry, Point3, RPoint3, Surface, Vector3};
 
 /// Runs `$body` with `$path` bound to the path of any [`Kind`].
 macro_rules! each_kind {
@@ -165,6 +165,80 @@ impl Piece {
     }
     fn radius(&self) -> &Real {
         each_kind!(&self.kind, path => path.radius())
+    }
+
+    /// The exact surface that holds the face, for the face registry (4.2a):
+    /// a ring torus about a centre circle wider than the ball, a sphere where
+    /// the centre stays put, or a cylinder about a straight centre line. Its
+    /// equation has the sign of the path's separation, so it is positive in
+    /// the region near the face and negative in every ball. A horn or spindle
+    /// torus, an ellipse path's pipe, a saddle and a rim have no such
+    /// surface; their faces stay unregistered.
+    pub(crate) fn face(&self) -> Option<Surface> {
+        match &self.kind {
+            Kind::Revolved(path) => path.face(),
+            Kind::Generator(path) => Some(path.face()),
+            Kind::Coaxial(path) => Some(path.face()),
+            Kind::Saddle(_) | Kind::Rim(_) => None,
+        }
+    }
+
+    /// Whether a boundary point of the region lies on the face. A boundary
+    /// point lies on a ball of the family (the face) or, outside every ball,
+    /// on a wall; the closed-form separation tells which exactly. A path
+    /// without a registered face answers no.
+    pub(crate) fn on_face(&self, point: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
+        if self.face().is_none() {
+            return Ok(false);
+        }
+        let Some(value) = self.separation(&self.local(point)) else {
+            return Ok(false);
+        };
+        Ok(crate::geometry::sign(&value, dec)? == Sign::Zero)
+    }
+
+    /// The region's side of `p + t d` for small `t > 0`. Off the boundary it
+    /// is the membership itself. On the face, away from every wall and
+    /// junction, the region near `p` is where the separation is positive,
+    /// which is where the face's equation is (see [`Piece::face`]); the first
+    /// nonzero coefficient of that equation along the ray decides it, as for
+    /// a primitive's constraint. Where a wall or junction passes through the
+    /// point, or the path has no registered face, it stays unresolved.
+    pub(crate) fn ray(
+        &self,
+        p: &[Rational; 3],
+        d: &Vector3,
+        dec: &mut Decider,
+    ) -> Result<Location, Refusal> {
+        let location = self.location(p, dec)?;
+        if location != Location::Boundary {
+            return Ok(location);
+        }
+        let Some(surface) = self.face() else {
+            return Ok(Location::Indeterminate);
+        };
+        let local = self.local(&Point3::new(
+            p[0].clone().into(),
+            p[1].clone().into(),
+            p[2].clone().into(),
+        ));
+        let walls = self.walls(&local, dec)?;
+        let junctions = self.junctions(&local, dec)?;
+        for value in walls.iter().chain(&junctions) {
+            if crate::geometry::sign(value, dec)? != Sign::Positive {
+                return Ok(Location::Indeterminate);
+            }
+        }
+        let equation = crate::geometry::constraint(surface)?;
+        // A positive constraint along the ray leaves every ball, into the
+        // region; a negative one enters a ball.
+        Ok(
+            match crate::geometry::ray_constraints(&[equation], p, d, dec)? {
+                Location::Outside => Location::Inside,
+                Location::Inside => Location::Outside,
+                other => other,
+            },
+        )
     }
 
     pub(crate) fn location(

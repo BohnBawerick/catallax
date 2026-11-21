@@ -257,9 +257,42 @@ Two more things were needed. A plane-torus circle of irrational radius comes fro
 
 Results (`rolling_tori.rs`). The field builds `torus-slice`, `torus-intersection` and a cut at z = -1 below the torus's centre plane (r = 1/5), two ring pieces each, and agrees with every witness: the corpus rows' (built by OpenCASCADE for `torus-slice`) and points derived here, each checked against the B-rep first; `torus-intersection`'s two boundary witnesses lie on a piece's region boundary at distance 0. Every display vertex of the B-rep's blend faces lies within the field's guaranteed range of a piece's face at 1 nm, with the same records at 1, 2 and 4 workers: 2,192, 3,136 and 1,288 vertices, the worst 4.7e-15 mm, at most 8,559 units a query. Compile work is 378 units for `torus-slice` and about 139,000 for the two cuts with irrational edges. The step 3 refusal `torus slice r=3/5` (`rolling_quadrics.rs`), where no ball wider than 1/2 fits the section and the B-rep refuses with that radius limit, now reaches the field's own reason: the offset plane misses the offset torus (`field.rolling-path-reach`).
 
+## The face registry for rolling pieces
+
+Code: `Piece::face`, `Piece::on_face` and `Piece::ray` in `crates/catallax-field/src/rolling_region/piece.rs`, `face` on `Revolved`, `Generator` and `Coaxial`, the registration in `Plan::apply_run` (`fillet_rolling.rs`), the rolling leaf's `ray` and `on_face` in `geometry.rs`, and its face test in `Prepared::member` (`distance.rs`). Tests: `crates/catallax-field/tests/rolling_over.rs` (`a_sphere_corner_face_holds_its_rational_points`, `a_straight_piece_face_is_a_registered_face`).
+
+A piece whose face lies on an exact surface registers that surface as a named face, under the piece's name: the ring torus about a centre circle wider than the ball (`Revolved` circles and `Coaxial` pieces), the ball itself where the centre stays on the axis (the sphere corner of step 5), and the cylinder of the ball's radius about a straight centre line (`Generator`). They are the surfaces OpenCASCADE's closed-form fillets build for the same pairs (`ChFiKPart_ComputeData_FilPlnPln` a cylinder, `_FilPlnCyl` a torus, or a sphere when `cylrad - Radius` is zero, read at V7_8_0 for steps 2 and 5). Each equation has the sign of the path's closed-form separation: the cylinder's and the sphere's are the separation times a positive constant, and the ring-torus polynomial factors as `((rho - C)^2 + h^2 - r^2) ((rho + C)^2 + h^2 - r^2)`, whose second factor is positive for `C > r`. So the equation is negative in every ball and positive in the region near the face.
+
+Two leaf answers make the face usable by the plan, which needs a side for each ray from a boundary point and a face test there.
+
+- Rays (`Piece::ray`). Where every wall and junction is strictly positive at a point of the face, the region near the point is where the separation is positive. The side of `p + t d` for small `t > 0` is then the sign of the first nonzero coefficient of the face's equation along the ray, as for a primitive's constraint. Where a wall or junction passes through the point, the ray stays unresolved, as before.
+- Face membership (`Piece::on_face`). A boundary point of the region lies on a ball of the family, which is the face, or outside every ball on a wall. The separation is zero exactly on the face.
+
+The plan now answers `Boundary`, with a unique outward normal, at the rational points of these faces, which it left `Indeterminate`: the sphere corners' points `c + (1, 2, 2)` of the boss, pocket and corner at 3/3, and the points `c + 3 (3/5, 4/5, 0)` of the upright's straight piece under the mitred corner at 3/3, where points 1/1000 off the face along the normal are cut and kept as in the B-rep. A horn or spindle torus has no global equation (`Surface::TorusSheet`), and an ellipse path's pipe, a saddle and a rim lie on no elementary surface, so those pieces still register no face. The shared points that `rolling_ends.rs` keeps per case lie on a support face where a wall of the piece passes, so they stay `Indeterminate`: settling them needs the side of each wall along a ray.
+
+With every live leaf named, the solver's whole-boundary distance (`Queries::distances`) no longer refuses `solver.distance-coverage` for such plans. The region's boundary is its face and parts of the two supports, which the body already registers, so the named faces cover the result's boundary. Plans with a horn, ellipse, saddle or rim piece keep the refusal.
+
+A later fillet or chamfer on a body that holds a rolling piece still refuses (`Plan::refuse_over_rolling`): to roll over a piece's face, the chain must take it as a support, which the field's fillet routes do not do for these faces yet.
+
 ## Open for the done-when line
 
-The done-when line asks catallax-compare to find every B-rep display vertex within the field's bound. Compare's forward pass needs a field face witness to bound a vertex from above, and a rolling piece registers no named face. Until the pieces' faces join the field's face registry (names, directions, prepared witnesses from `path::distance`), compare leaves these vertices unresolved; `rolling_conics.rs` runs the same check directly against the pieces. This building block is needed before the milestone's done-when can be shown through compare. Its control cases are the shared points that `rolling_ends.rs` keeps per case: P5's flange-plane point under the round and its four contacts, the slot's rail ends, and `vertex-4-one`'s point on the rounded edge, which the field leaves `Indeterminate` today.
+The done-when line asks catallax-compare to find every B-rep display vertex within the field's bound. With the registry, compare pairs the registered faces by origin: the field's names match the B-rep's for the rows checked (`torus-slice`'s two blend tori, `l-mixed-all`'s two corner tori and its strips). A scratch compare run over ten corpus rows, at the base and at this change, each inside 100M work:
+
+| Row | Base | With the registry |
+| --- | --- | --- |
+| `box-single` (control, elementary) | agree | agree, unchanged |
+| `l-mixed-all` | 100M exhausted, 12,288 unresolved findings, no reverse sample | 2.4M work, 14,305 forward vertices, 378 reverse samples, 99 findings |
+| `vertex-4-one` | disagree: one reverse sample's names | one finding: a B-rep face's sampled coverage is incomplete |
+| `torus-slice`, `cone-top`, `cone-base`, `sphere-dome`, `roll-over-mitres` | 100M exhausted | 100M exhausted, with fewer unresolved findings when it runs out (5,762 to 5,413 on `torus-slice`, 3,842 to 969 on `sphere-dome`) |
+| `tangent-boss`, `narrow-cone` | refused on the B-rep side | the same |
+
+`l-mixed-all`'s findings: 74 vertices where the plan stays `Indeterminate`, 24 reverse samples on the concave strip near a corner, which the B-rep splits there and names after the corner while the field names the whole strip after its edge, and one from the field's boundary sampler, which has no chart for a rolling face's role. Three things still stop the rest:
+
+- Witnesses on irrational faces. Compare bounds a vertex from above with a rational point of the field face (`catallax_boolean::surface_witness`). The blend tori of `torus-slice`, `cone-top`, `cone-base` and `sphere-dome` have irrational radii and no such point near the vertices, so compare falls back to a whole-boundary search for each vertex. A prepared witness from the piece's own distance range (`path::distance`), checked against the plan's other leaves, would replace it.
+- Work. One field query costs 4,000 to 16,000 units at a display vertex of those rows, so compare spends its 100M allowance on the first 5,000 to 20,000 vertices, at the base and with the registry alike.
+- B-rep faces with no equation. `tangent-boss` and `narrow-cone` have horn-torus or fitted B-rep blend faces, which compare refuses before it reaches the field (`surface comparison needs a finite parametric correspondence solver`). The saddle and ellipse rows of steps 2 and 3 are fitted on the B-rep side too.
+
+Until then, the step tests run the same check directly against the pieces. The control cases are the shared points that `rolling_ends.rs` keeps per case: P5's flange-plane point under the round and its four contacts, the slot's rail ends, and `vertex-4-one`'s point on the rounded edge.
 
 ## Frozen case list for the done-when lines
 
@@ -291,6 +324,6 @@ The list does not change during the milestone. A case added later joins the next
 | 2 | Plane with cylinder in any pose, cone or sphere | [#724](https://github.com/BohnBawerick/catallax/pull/724) |
 | 3 | Quadric pairs (closed forms per Dupont, Lazard, Lazard, Petitjean 2008) | [#729](https://github.com/BohnBawerick/catallax/pull/729) |
 | 4 | Ends at an edge or vertex, P5 at radius 2 | part 1, rim contact and hole rings: [#733](https://github.com/BohnBawerick/catallax/pull/733); part 2, the slot file: [#738](https://github.com/BohnBawerick/catallax/pull/738); part 3, `l-mixed-all` and `vertex-4-one`: [#742](https://github.com/BohnBawerick/catallax/pull/742) |
-| 5 | Fillet over fillet, nested path | part 1, chains over an earlier straight round with the ball on its axis side: [#744](https://github.com/BohnBawerick/catallax/pull/744); part 2, sphere corners and cliffs; part 3, an upright under an earlier mitre: this change |
+| 5 | Fillet over fillet, nested path | part 1, chains over an earlier straight round with the ball on its axis side: [#744](https://github.com/BohnBawerick/catallax/pull/744); part 2, sphere corners and cliffs; part 3, an upright under an earlier mitre; the face registry for rolling pieces: this change |
 | 6 | Torus pairs | `torus-slice`, `torus-intersection` and a cut below the centre plane: this change |
 | 7 | Spline faces (7.0 to 7.7 of the decisions) | |

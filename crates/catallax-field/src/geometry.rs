@@ -988,12 +988,9 @@ impl Leaf {
                 Location::Boundary => Location::Indeterminate,
                 l => l,
             }),
-            // A boundary point's side along a direction is not settled for
-            // rolling pieces yet; it stays explicitly unresolved.
-            Self::Rolling(a) => Ok(match a.location(p, dec)? {
-                Location::Boundary => Location::Indeterminate,
-                l => l,
-            }),
+            // On a registered face the face's equation settles the side;
+            // elsewhere on the boundary it stays explicitly unresolved.
+            Self::Rolling(a) => a.ray(p, d, dec),
             Self::Primitive(a) => ray_location(a, p, d, dec),
             Self::Feature(a) => a.ray(p, d, dec),
             Self::Cell(a) => a.ray(p, d, dec),
@@ -1030,7 +1027,15 @@ impl Leaf {
         dec: &mut Decider,
     ) -> Result<Option<bool>, Refusal> {
         match self {
-            Self::Smooth(_) | Self::Rolling(_) => Ok(Some(false)),
+            Self::Smooth(_) => Ok(Some(false)),
+            Self::Rolling(a) => {
+                let point = Point3::new(
+                    p[0].clone().into(),
+                    p[1].clone().into(),
+                    p[2].clone().into(),
+                );
+                a.on_face(&point, dec).map(Some)
+            }
             Self::Primitive(_) => Ok(Some(true)),
             Self::Draft(region) => {
                 if matches!(
@@ -1068,7 +1073,8 @@ impl Leaf {
             return self.on_face(origin, role, &[r.x, r.y, r.z], dec);
         }
         match self {
-            Self::Smooth(_) | Self::Rolling(_) => Ok(Some(false)),
+            Self::Smooth(_) => Ok(Some(false)),
+            Self::Rolling(a) => a.on_face(p, dec).map(Some),
             Self::Primitive(_) | Self::Cell(_) => Ok(Some(true)),
             Self::Draft(region) => {
                 if matches!(

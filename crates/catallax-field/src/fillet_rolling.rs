@@ -1172,11 +1172,16 @@ impl Plan {
     ) -> Result<usize, Refusal> {
         self.rolling_clear(&run, source_faces, dec)?;
         let convex = run.piece.convex();
-        let node = self.leaf(
-            geometry::Leaf::Rolling(Box::new(run.piece)),
-            Vec::new(),
-            dec,
-        )?;
+        // The face joins the registry under the piece's name when it lies on
+        // an exact surface (a ring torus, a sphere or a cylinder).
+        let faces = run
+            .piece
+            .face()
+            .map(|surface| geometry::face(surface, run.piece.origin().clone(), dec))
+            .transpose()?
+            .into_iter()
+            .collect();
+        let node = self.leaf(geometry::Leaf::Rolling(Box::new(run.piece)), faces, dec)?;
         self.boolean(
             if convex {
                 catallax_recipe::BooleanKind::Subtract

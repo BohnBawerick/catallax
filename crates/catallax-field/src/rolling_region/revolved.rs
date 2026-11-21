@@ -629,6 +629,33 @@ impl Revolved {
         self.circle.is_some()
     }
 
+    /// The exact surface that holds the face, for the face registry: the ring
+    /// torus about a centre circle wider than the ball, or the ball itself
+    /// when the centre stays on the axis. Its equation has the separation's
+    /// sign. A horn or spindle torus has no global equation, and an ellipse
+    /// path's pipe is no elementary surface, so both have none.
+    pub fn face(&self) -> Option<catallax_shapes::Surface> {
+        let circle = self.circle.as_ref()?;
+        if circle.ring {
+            Some(catallax_shapes::Surface::Torus(catallax_shapes::Torus {
+                center: circle.centre.clone(),
+                axis: circle.axis.clone(),
+                major: circle.major.clone(),
+                minor: self.radius.clone(),
+                ref_dir: self.basis[0].clone(),
+            }))
+        } else if circle.axial {
+            Some(catallax_shapes::Surface::Sphere(catallax_shapes::Sphere {
+                center: circle.centre.clone(),
+                radius: self.radius.clone(),
+                axis: circle.axis.clone(),
+                ref_dir: self.basis[0].clone(),
+            }))
+        } else {
+            None
+        }
+    }
+
     /// Ball radius in mm.
     pub fn radius(&self) -> &Real {
         &self.radius

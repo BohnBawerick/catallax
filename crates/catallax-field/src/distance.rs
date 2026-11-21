@@ -482,6 +482,13 @@ impl Prepared<'_> {
         {
             return Ok(false);
         }
+        // A rolling piece's boundary off its balls lies on a wall, not on
+        // its face.
+        if let geometry::Leaf::Rolling(piece) = leaf
+            && !piece.on_face(p, dec)?
+        {
+            return Ok(false);
+        }
         if matches!(self.plan.instructions[self.plan.root], Instruction::Leaf(i) if i == face.leaf)
         {
             return Ok(true);

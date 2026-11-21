@@ -28,7 +28,7 @@
 use catallax_features::evaluate;
 use catallax_field::rolling_region::piece::Piece;
 use catallax_field::rolling_region::{Batch, Range, Relation, distance_batch};
-use catallax_field::{Location, Plan, Workspace};
+use catallax_field::{Direction, FaceState, Location, Plan, Workspace};
 use catallax_mesh::{MeshOptions, mesh_body};
 use catallax_numbers::{BudgetPolicy, Decider, OperationAllowance, Rational};
 use catallax_recipe::{Recipe, Role};
@@ -797,10 +797,9 @@ const CORNER_22_OUT: &Points = &[
 /// Rational points of each sphere corner's face, `c + (1, 2, 2)` and its
 /// permutations within the sector. The B-rep puts them on its boundary.
 /// In the field exactly one rolling piece, the sector, holds each on its
-/// region's boundary, and its distance range starts at 0. The plan leaves
-/// them `Indeterminate`: a point on a subtracted or added region's boundary
-/// needs that region's face registered, which rolling pieces do not do yet
-/// (`docs/M42A-FIELD-FILLETS.md`, open for the done-when line).
+/// region's boundary, and its distance range starts at 0. The plan puts them
+/// on its boundary too: the sector's sphere is a registered face, whose
+/// equation settles the side of each ray from the point.
 #[test]
 fn a_sphere_corner_face_holds_its_rational_points() {
     let points: [(&str, Recipe, [[i64; 3]; 3]); 3] = [
@@ -831,11 +830,7 @@ fn a_sphere_corner_face_holds_its_rational_points() {
                 Location::Boundary,
                 "{name}: the B-rep at {p:?}"
             );
-            assert_eq!(
-                location(&plan, &p),
-                Location::Indeterminate,
-                "{name} at {p:?}"
-            );
+            assert_eq!(location(&plan, &p), Location::Boundary, "{name} at {p:?}");
             let point = Point3::new(
                 p[0].clone().into(),
                 p[1].clone().into(),
@@ -852,6 +847,26 @@ fn a_sphere_corner_face_holds_its_rational_points() {
             let [piece] = on[..] else {
                 panic!("{name}: {p:?} on {} pieces' boundaries", on.len());
             };
+            let id = plan
+                .select(piece.origin())
+                .expect("the sector's face is registered");
+            assert!(matches!(
+                plan.faces()[id.index()].surface,
+                Surface::Sphere(_)
+            ));
+            let query = plan
+                .face_query_checked(
+                    id,
+                    &RPoint3::new(p[0].clone(), p[1].clone(), p[2].clone()),
+                    &mut Workspace::default(),
+                    &mut decider(),
+                )
+                .unwrap();
+            assert_eq!(query.state, FaceState::OnFace, "{name} at {p:?}");
+            assert!(
+                matches!(query.direction, Direction::Unique(_)),
+                "{name} at {p:?}: {query:?}"
+            );
             let range = piece.distance(&point, &width, &mut decider()).unwrap();
             assert_eq!(range.lower, Rational::zero(), "{name} at {p:?}");
             assert!(
@@ -1355,6 +1370,69 @@ fn a_mitre_corner_face_holds_its_rational_points() {
     }
 }
 
+/// The face registry (4.2a): a straight piece's face is the cylinder about
+/// its centre line, registered under the piece's name. The upright under the
+/// mitred corner at 3/3 has its centre line at `x = y = 17`; the rational
+/// points `c + 3 (3/5, 4/5, 0)` and their mirrors about the diagonal lie on
+/// the B-rep's boundary. The field's plan puts them on its boundary, the
+/// registered face holds them with the unique outward normal away from the
+/// centre line, and points 1/1000 off the face along that normal are cut
+/// outside the ball and kept inside it, as in the B-rep.
+#[test]
+fn a_straight_piece_face_is_a_registered_face() {
+    let recipe = mitred(4, "3", "3", false);
+    let plan = Plan::compile_checked(&recipe, &mut decider()).unwrap();
+    let mut built = evaluate(&recipe, &mut decider()).unwrap();
+    let registered: Vec<_> = (0..plan.faces().len())
+        .filter(|&i| {
+            plan.result_face(i).is_some()
+                && matches!(plan.faces()[i].surface, Surface::Cylinder(_))
+                && plan
+                    .rolling_pieces()
+                    .any(|piece| piece.origin() == &plan.faces()[i].origin)
+        })
+        .collect();
+    let [index] = registered[..] else {
+        panic!("{} registered straight faces", registered.len());
+    };
+    let id = plan.result_face(index).unwrap();
+    for (x, y, normal) in [(94, 97, [3, 4]), (97, 94, [4, 3])] {
+        for z in [1, 3, 6] {
+            let p = [ratio(x, 5), ratio(y, 5), ratio(z, 1)];
+            assert_eq!(brep_location(&mut built, &p), Location::Boundary, "{p:?}");
+            assert_eq!(location(&plan, &p), Location::Boundary, "{p:?}");
+            let point = RPoint3::new(p[0].clone(), p[1].clone(), p[2].clone());
+            let query = plan
+                .face_query_checked(id, &point, &mut Workspace::default(), &mut decider())
+                .unwrap();
+            assert_eq!(query.state, FaceState::OnFace, "{p:?}");
+            let Direction::Unique(direction) = query.direction else {
+                panic!("{p:?}: {query:?}");
+            };
+            let expected = [normal[0] as f64 / 5.0, normal[1] as f64 / 5.0, 0.0];
+            for (component, want) in direction.iter().zip(expected) {
+                assert!(
+                    (component.lo() - want).abs() < 1e-9 && (component.hi() - want).abs() < 1e-9,
+                    "{p:?}: {direction:?}"
+                );
+            }
+            for (sign, want) in [(1, Location::Outside), (-1, Location::Inside)] {
+                let off = [
+                    &p[0] + &ratio(sign * normal[0], 5000),
+                    &p[1] + &ratio(sign * normal[1], 5000),
+                    p[2].clone(),
+                ];
+                assert_eq!(
+                    brep_location(&mut built, &off),
+                    want,
+                    "the B-rep at {off:?}"
+                );
+                assert_eq!(location(&plan, &off), want, "{off:?}");
+            }
+        }
+    }
+}
+
 // The other recipes of `fillet_over_fillet.rs`.
 /// The block's top edges along x_max and y_max, or its whole top loop,
 /// rounded together with mitred corners, then the upright under each mitre.
@@ -1479,8 +1557,9 @@ fn corner_bottom() -> Recipe {
 /// chain over a concave round, or the reverse) crosses the round's tangent
 /// faces; an upright under an earlier mitre of rounds wider than its ball,
 /// which rolls over it;
-/// every edge at once; and a round over a chain of rolling pieces, which
-/// register no face to roll on or to clear (`field.fillet-contact`).
+/// every edge at once; and a round over a chain of rolling pieces, whose
+/// faces the field's fillet routes do not take as supports to roll on or to
+/// clear (`field.fillet-contact`).
 fn later() -> Vec<(&'static str, Recipe, &'static str)> {
     let overflow = "fillet.unsupported-overflow";
     let contact = "fillet.unsupported-contact";

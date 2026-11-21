@@ -238,6 +238,26 @@ fn control_refusal(error: &Error) -> bool {
         || matches!(error, Error::Numerical(r) if r.code == "numbers.deadline")
 }
 
+/// The bodies the native admission still has to try: those no earlier
+/// admission took, less any that an edge's hard work cap refused (Checkpoint
+/// 2 decisions, section 4.2 step 8: "A hard per-edge work cap refuses by
+/// name").
+///
+/// The native admission measures a body again and gives each of its edges a
+/// fresh work allowance. A body whose refusal is the cap's has spent an
+/// edge's allowance already, so it is ended here, with its refusal, and its
+/// siblings go on. The check is of the body's own refusal. `control_refusal`
+/// stops every body and does not know the cap.
+fn still_to_admit(bodies: &[BodyOutcome]) -> Vec<bool> {
+    bodies
+        .iter()
+        .map(|body| {
+            body.tier == Tier::SurfaceBody
+                && !body.refusal.as_ref().is_some_and(admission::edge_work_cap)
+        })
+        .collect()
+}
+
 fn retain_surface(outcome: &mut BodyOutcome, error: Error) {
     outcome.storage = Storage::Source;
     outcome.tier = Tier::SurfaceBody;
@@ -356,11 +376,7 @@ fn open_prepared(
         });
     }
     result.checked_upgrade_work_used = current_operation_work().used.saturating_sub(before);
-    let incomplete: Vec<_> = result
-        .bodies
-        .iter()
-        .map(|body| body.tier == Tier::SurfaceBody)
-        .collect();
+    let incomplete = still_to_admit(&result.bodies);
     if incomplete.iter().all(|needed| !needed) {
         return Ok(result);
     }
@@ -756,6 +772,36 @@ pub fn reopen(
 mod tests {
     use super::*;
     use catallax_numbers::{TestDeadline, TestDeadlinePoint};
+
+    #[test]
+    fn a_body_an_edge_cap_refused_is_not_given_to_the_native_admission() {
+        let unsettled = |refusal: Option<&'static str>| BodyOutcome {
+            tier: Tier::SurfaceBody,
+            approximate: true,
+            storage: Storage::Source,
+            healed: None,
+            refusal: refusal.map(|code| {
+                Error::Numerical(catallax_numbers::Refusal::new(code, "a test refusal"))
+            }),
+            checked_refusal: None,
+            healing_failure: None,
+            upgrade_refusal: None,
+            first_blocker: None,
+        };
+        let mut taken = unsettled(None);
+        taken.tier = Tier::RepairedSolid;
+        let bodies = [
+            unsettled(Some(n::gap::WORK_CAP)),
+            unsettled(Some("numbers.numerical-tolerance-exceeded")),
+            unsettled(None),
+            taken,
+        ];
+        // The capped body is ended. One refused for its geometry and one not
+        // tried yet are measured, and one already taken is left alone.
+        assert_eq!(still_to_admit(&bodies), [false, true, true, false]);
+        // What stops every body does not know the cap, and is not asked.
+        assert!(!control_refusal(bodies[0].refusal.as_ref().unwrap()));
+    }
 
     #[test]
     fn strict_retry_expiry_retains_prepaid_surfaces_before_healing() {

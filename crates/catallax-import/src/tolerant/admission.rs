@@ -756,7 +756,7 @@ enum Round {
 /// Whether an edge's hard work cap refused this body (Checkpoint 2
 /// decisions, section 4.2 step 8: "A hard per-edge work cap refuses by
 /// name").
-fn edge_work_cap(error: &Error) -> bool {
+pub(super) fn edge_work_cap(error: &Error) -> bool {
     matches!(error, Error::Numerical(refusal)
         if refusal.code == catallax_topology::numerical::gap::WORK_CAP)
 }

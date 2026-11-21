@@ -36,14 +36,13 @@
 //! of a facing face just beside it (`surface.rs`), and the answer carries a
 //! [`super::DRAWING_FIT_MARK`] mark.
 
-use std::f64::consts::{FRAC_PI_2, PI, TAU};
+use std::f64::consts::{PI, TAU};
 
 use catallax_intersect::{
     CurveForm, Cyclic, arc_point, curve_form, curve_is_closed, cyclic_order, order_on_curve,
 };
 use catallax_numbers::{
-    Answer, BoundKind, Decider, Integer, Mark, MarkLog, Outcome, Rational, Real, Refusal, Sign,
-    StrictOrder,
+    Answer, BoundKind, Decider, Mark, MarkLog, Outcome, Rational, Real, Refusal, StrictOrder,
 };
 use catallax_shapes::{
     BSplineCurve, Circle, Curve, CurveId, Ellipse, Line, Point3, PointId, RVector3, Surface,
@@ -52,7 +51,9 @@ use catallax_shapes::{
 use catallax_topology::numerical::tolerance;
 use catallax_topology::{BodyId, BodyKind, EdgeId, FaceId, Model, Sense};
 
-use super::float::{double, rational, unit_direction};
+use super::float::{
+    conic_point, double, native_parameter, rational, root, shifted_knots, unit_direction,
+};
 use super::{ContourFit, Contours, contour_generators, same_point};
 use crate::ApplicationBody;
 use crate::queries::{QueryRefusal, query, sign};
@@ -160,11 +161,12 @@ fn spline_carrier(
     floor: &Rational,
     dec: &mut Decider,
 ) -> Result<Carrier, Refusal> {
-    let knots: Vec<f64> = spline
-        .knots()
-        .iter()
-        .map(Rational::to_f64_nearest)
-        .collect();
+    let knots = shifted_knots(spline).ok_or_else(|| {
+        Refusal::new(
+            "app.view-curve",
+            "two B-spline knots are closer than binary64 separates",
+        )
+    })?;
     let mut ctrl = Vec::with_capacity(spline.control_count());
     for i in 0..spline.control_count() {
         let p = point64(spline.control(i), floor, dec)?;
@@ -261,33 +263,6 @@ impl Stroke {
     pub(super) fn is_line(&self) -> bool {
         matches!(self.form, Form::Line { .. })
     }
-}
-
-/// The square root of an exact square rational stays rational; anything
-/// else becomes a lazy root.
-fn root(value: &Real) -> Real {
-    fn integer_sqrt(n: &Integer) -> Option<Integer> {
-        if n.sign() == Sign::Negative {
-            return None;
-        }
-        if n.is_zero() {
-            return Some(Integer::zero());
-        }
-        let mut x = Integer::one().mul_pow2(n.bit_length().div_ceil(2));
-        loop {
-            let y = (&x + &n.div_rem_floor(&x)?.0)
-                .div_rem_floor(&Integer::from_i64(2))?
-                .0;
-            if y >= x {
-                return (&x * &x == *n).then_some(x);
-            }
-            x = y;
-        }
-    }
-    value
-        .rational_ref()
-        .and_then(|q| Rational::new(integer_sqrt(q.numerator())?, integer_sqrt(q.denominator())?))
-        .map_or_else(|| value.sqrt(), Real::from)
 }
 
 fn point64(p: &Point3, floor: &Rational, dec: &mut Decider) -> Result<V3, Refusal> {
@@ -586,32 +561,13 @@ fn exact_point(scratch: &Model, s: &Stroke, t: f64, dec: &mut Decider) -> Result
         Form::Line { origin, dir } => Ok(origin.plus(&dir.scaled(&Real::from(rational(t)?)))),
         Form::Conic { center, .. } => {
             let [u, w] = s.axes.as_ref().expect("a conic stroke keeps its axes");
-            // The half-angle form keeps the point exactly on the conic:
-            // cos t = (1 - s^2) / (1 + s^2), sin t = 2 s / (1 + s^2).
-            let mut angle = t.rem_euclid(TAU);
-            let mut flip = Real::one();
-            if angle > PI {
-                angle -= TAU;
-            }
-            if angle.abs() > FRAC_PI_2 {
-                angle -= PI.copysign(angle);
-                flip = -Real::one();
-            }
-            let s = Real::from(rational((angle / 2.0).tan())?);
-            let one = Real::one();
-            let den = &one + &s.square();
-            let cos = &(&(&one - &s.square()) / &den) * &flip;
-            let sin = &(&(&Real::from_i64(2) * &s) / &den) * &flip;
-            Ok(center.plus(&u.scaled(&cos).plus(&w.scaled(&sin))))
+            conic_point(center, [u, w], t)
         }
         Form::Spline => {
             let Curve::BSpline(curve) = scratch.geom().curve(s.curve) else {
                 unreachable!("a spline stroke's carrier is a B-spline");
             };
-            // Knots rounded to binary64 can reach past the exact domain.
-            let [lo, hi] = curve.domain();
-            let at = rational(t)?.max(lo.clone()).min(hi.clone());
-            curve.point_at(&Real::from(at), dec)
+            curve.point_at(&Real::from(native_parameter(curve, t)?), dec)
         }
     }
 }

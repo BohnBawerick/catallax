@@ -937,8 +937,26 @@ pub fn admit_import(
     options: NumericalOptions,
     dec: &mut Decider,
 ) -> Result<NumericalBody, Refusal> {
-    // One allowance per edge for the whole admission, the checker's cap.
-    let mut accounts = edge_gap::Accounts::for_definition(&definition, gap::Limits::default());
+    admit_import_under(
+        gap::Limits::default(),
+        definition,
+        native_trims,
+        options,
+        dec,
+    )
+}
+
+/// [`admit_import`] with `limits` as each edge's allowance in place of the
+/// checker's cap ([`gap::EDGE_WORK`]). Only a test of the cap gives less.
+pub fn admit_import_under(
+    limits: gap::Limits,
+    definition: NumericalDefinition,
+    native_trims: Vec<NumericalNativeTrim>,
+    options: NumericalOptions,
+    dec: &mut Decider,
+) -> Result<NumericalBody, Refusal> {
+    // One allowance per edge for the whole admission.
+    let mut accounts = edge_gap::Accounts::for_definition(&definition, limits);
     admit_import_on(definition, native_trims, options, &mut accounts, dec)
 }
 

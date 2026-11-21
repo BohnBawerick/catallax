@@ -784,6 +784,7 @@ fn many_planar_pairs_do_not_prepay_optional_work() {
 }
 
 pub(super) fn import(
+    cap: &mut super::EdgeCap,
     bytes: &[u8],
     verified_sha256: &str,
     refusal: ImportRefusal,
@@ -803,6 +804,7 @@ pub(super) fn import(
     dec.charge_work(bytes.len() as u64)?;
     let file = crate::read_step(bytes)?;
     admit_definition(
+        cap,
         &file,
         verified_sha256,
         refusal,
@@ -813,7 +815,9 @@ pub(super) fn import(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn admit_definition(
+    cap: &mut super::EdgeCap,
     file: &crate::StepFile,
     verified_sha256: &str,
     refusal: ImportRefusal,
@@ -880,7 +884,14 @@ pub(super) fn admit_definition(
             recorded.filter(|_| face_tolerances.is_empty() && topology_repairs.len() == repairs);
         bodies.push((
             solid.name.clone(),
-            super::admit(definition, &continuation_options, recorded, dec)?,
+            super::admit(
+                &solid.name,
+                definition,
+                &continuation_options,
+                recorded,
+                cap,
+                dec,
+            )?,
         ));
     }
     if bodies.is_empty() {

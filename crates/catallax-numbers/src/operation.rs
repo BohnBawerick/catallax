@@ -1087,46 +1087,6 @@ pub fn uncounted_memo<T>(fill: impl FnOnce() -> T) -> T {
     fill()
 }
 
-/// Runs the fill of a memo whose arithmetic is charged to nothing and is too
-/// large to leave out of the count, and returns the fill's count: the memo's
-/// cold price. The fill adds nothing to the caller's count. The caller keeps
-/// the price with the value and counts it at every use, the first one
-/// included, with [`count_memo_use`].
-///
-/// [`uncounted_memo`] leaves a fill out because whoever reads a shared value
-/// first fills it. Counting the cold price at every use has the same effect
-/// on the count as that, it is the same whoever filled the memo and whenever,
-/// and it is how a decision prices a cached proof: "A cached node retains its
-/// own cold arithmetic cost." It counts a use that found the memo filled as
-/// much as the fill, so it suits a memo that is filled more often than it is
-/// found.
-pub fn priced_memo<T>(fill: impl FnOnce() -> T) -> (T, u64) {
-    // The caller's count is set aside, open or closed, and put back.
-    struct Restore(Arithmetic);
-    impl Drop for Restore {
-        fn drop(&mut self) {
-            ARITHMETIC.with(|count| count.set(self.0));
-        }
-    }
-    let restore = Restore(ARITHMETIC.with(|count| {
-        count.replace(Arithmetic {
-            closed: 0,
-            units: 0,
-        })
-    }));
-    let value = fill();
-    let price = floor(ARITHMETIC.with(|count| count.get().units));
-    drop(restore);
-    (value, price)
-}
-
-/// Counts one use of a memo at the cold price [`priced_memo`] gave for it, in
-/// [`OperationWork::uncharged`]. It counts inside a decision as well: the
-/// decision does not charge this arithmetic.
-pub fn count_memo_use(price: u64) {
-    count_uncharged(price);
-}
-
 /// Whether `units` more fit the allowance. Unlike a charge, asking latches
 /// nothing.
 pub(crate) fn affordable(units: u64) -> bool {

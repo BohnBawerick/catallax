@@ -29,6 +29,7 @@ pub use import_gap::{
     ImportGapOutcome, ImportGapRow, ImportUseReading, read_import_use, read_import_use_counted,
 };
 mod native;
+mod retighten;
 pub use native::{NumericalNativeTrim, build_with_native_trims, build_with_sampled_carriers};
 mod source;
 pub use source::definition_from_model;
@@ -1965,9 +1966,11 @@ impl ModelGeometry {
     /// a face per entry of the definition's tables, one coedge per edge use,
     /// one shell and one lump.
     ///
-    /// With `tolerances`, each vertex and each edge stores its own. Without,
-    /// every entity stores none; that body is for the structure check only
-    /// and never leaves admission. A face stores none either way.
+    /// With `tolerances`, each vertex and each edge stores its own, except an
+    /// edge whose curve lies exactly on the surfaces of its faces: that one
+    /// is re-tightened to exact, with its `Incident` facts (`retighten.rs`).
+    /// Without, every entity stores none; that body is for the structure
+    /// check only and never leaves admission. A face stores none either way.
     ///
     /// The caller has validated every index of the definition.
     fn topology(
@@ -1977,6 +1980,7 @@ impl ModelGeometry {
         tolerances: Option<&StoredTolerances>,
     ) -> (Model, BodyId) {
         let mut model = self.model.clone();
+        let exact = tolerances.map(|_| retighten::exact_edges(definition));
         let vertices: Vec<_> = self
             .points
             .iter()
@@ -2002,10 +2006,19 @@ impl ModelGeometry {
                     },
                     start: Some(vertices[edge.vertices[0]]),
                     end: Some(vertices[edge.vertices[1]]),
-                    tolerance: tolerances.map(|stored| stored.edges[index].clone()),
+                    tolerance: tolerances
+                        .filter(|_| !exact.as_ref().is_some_and(|exact| exact[index]))
+                        .map(|stored| stored.edges[index].clone()),
                 })
             })
             .collect();
+        if let Some(exact) = &exact {
+            for (index, face) in definition.faces.iter().enumerate() {
+                for trim in face.loops.iter().flatten().filter(|trim| exact[trim.edge]) {
+                    retighten::record(&mut model, self.curves[trim.edge], self.surfaces[index]);
+                }
+            }
+        }
         let faces = definition
             .faces
             .iter()

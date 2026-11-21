@@ -1,6 +1,7 @@
 //! A numerical body's model is a body of the one model (section 4.5 of the
 //! Checkpoint 2 decisions): its vertices and edges store the tolerances
-//! admission measured, and `Model::check` is its checker.
+//! admission measured, an edge between two exact surfaces is re-tightened to
+//! exact, and `Model::check` is its checker.
 use super::test_fixture::{q, quarter};
 use super::*;
 
@@ -52,32 +53,64 @@ fn reported(body: &NumericalBody) -> (Vec<Option<Rational>>, Vec<Option<Rational
     )
 }
 
+/// What the model is to store: the report's value, or nothing for an edge
+/// that is re-tightened.
+fn expected(body: &NumericalBody) -> (Vec<Option<Rational>>, Vec<Option<Rational>>) {
+    let (vertices, edges) = reported(body);
+    let exact = retighten::exact_edges(&body.definition);
+    (
+        vertices,
+        edges
+            .into_iter()
+            .zip(exact)
+            .map(|(measured, exact)| measured.filter(|_| !exact))
+            .collect(),
+    )
+}
+
 #[test]
 fn the_model_stores_what_admission_measured_and_the_one_checker_passes_it() {
-    let body = admitted();
+    // The wall is 4 thousandths off its edges, so the edges on it keep what
+    // admission measured, and the edges between two planes are exact.
+    let body = build(
+        gapped("1.004"),
+        NumericalOptions::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
     let (vertices, edges, faces) = stored(&body);
-    assert_eq!((vertices.clone(), edges.clone()), reported(&body));
+    assert_eq!((vertices.clone(), edges.clone()), expected(&body));
     assert_eq!(vertices.len(), body.definition.vertices.len());
     assert_eq!(edges.len(), body.definition.edges.len());
     // A face stores none: its surface is the authoritative copy.
     assert_eq!(faces, 0);
-    // Nothing is exact, even where a measured distance is zero: no value is
-    // under rule T1's floor.
+    // A stored value is never under rule T1's floor, also where the measured
+    // distance is zero. A vertex is a rounded point and always stores one.
     let floor = tolerance::floor_minimum_mm();
     assert!(
         vertices
             .iter()
-            .chain(&edges)
             .all(|value| value.as_ref().is_some_and(|value| *value >= floor))
     );
+    assert!(edges.iter().flatten().all(|value| *value >= floor));
+    let kept = edges.iter().flatten().count();
+    assert!(0 < kept && kept < edges.len(), "{edges:?}");
     assert_eq!(body.model.check(body.body), Vec::new());
     assert_eq!(body.topology_faults(), Vec::new());
     // By key, as a caller reads it.
+    let exact = retighten::exact_edges(&body.definition);
     for entity in &body.tolerances.entities {
+        let retightened = entity.kind == tolerance::EntityKind::Edge
+            && body
+                .definition
+                .edges
+                .iter()
+                .zip(&exact)
+                .any(|(edge, exact)| edge.key == entity.key && *exact);
         assert_eq!(
             body.stored_tolerance(entity.kind, &entity.key)
                 .map(Tolerance::mm),
-            Some(&entity.tolerance_mm)
+            Some(&entity.tolerance_mm).filter(|_| !retightened)
         );
     }
     assert_eq!(
@@ -88,6 +121,39 @@ fn the_model_stores_what_admission_measured_and_the_one_checker_passes_it() {
         body.stored_tolerance(tolerance::EntityKind::Edge, "no such edge"),
         None
     );
+}
+
+#[test]
+fn an_edge_whose_curve_lies_on_both_its_surfaces_is_exact_with_its_facts() {
+    // Every edge of the quarter cylinder is a line or an arc of its two
+    // surfaces, in rationals: all of them are re-tightened.
+    let body = admitted();
+    let (vertices, edges, _) = stored(&body);
+    assert!(edges.iter().all(Option::is_none), "{edges:?}");
+    assert!(vertices.iter().all(Option::is_some));
+    // The one checker asks an exact edge on an exact face for its fact, and
+    // every use has one. The same edges with no fact are not sound, which is
+    // the test below.
+    assert_eq!(body.model.check(body.body), Vec::new());
+    let model = &body.model;
+    let mut uses = 0;
+    for face in model.faces_of_body(body.body) {
+        for boundary in &model.face(face).loops {
+            let Loop::Coedges(coedges) = model.loop_(*boundary) else {
+                continue;
+            };
+            for coedge in coedges {
+                let curve = model.edge(model.coedge(*coedge).edge).curve;
+                assert!(model.geom().facts().holds(
+                    catallax_numbers::FactKind::Incident,
+                    catallax_shapes::GeomKey::Curve(curve),
+                    catallax_shapes::GeomKey::Surface(model.face(face).surface),
+                ));
+                uses += 1;
+            }
+        }
+    }
+    assert_eq!(uses, 2 * body.definition.edges.len());
 }
 
 #[test]
@@ -160,9 +226,12 @@ fn a_record_older_than_the_report_takes_its_largest_recorded_tolerance() {
     assert!(
         vertices
             .iter()
-            .chain(&edges)
             .all(|value| value.as_ref() == Some(&largest))
     );
+    // An edge between two planes is exact again. The others take the value.
+    assert!(edges.iter().flatten().all(|value| *value == largest));
+    let kept = edges.iter().flatten().count();
+    assert!(0 < kept && kept < edges.len(), "{edges:?}");
     assert_eq!(faces, 0);
     assert_eq!(read.topology_faults(), Vec::new());
 
@@ -175,9 +244,9 @@ fn a_record_older_than_the_report_takes_its_largest_recorded_tolerance() {
     assert!(
         vertices
             .iter()
-            .chain(&edges)
             .all(|value| value.as_ref() == Some(&tolerance::floor_minimum_mm()))
     );
+    assert!(edges.iter().all(Option::is_none));
 }
 
 #[test]

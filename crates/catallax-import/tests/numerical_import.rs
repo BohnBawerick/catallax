@@ -86,12 +86,20 @@ fn a_source_repair_has_numerical_checks_and_separate_source_history() {
         }
     }
     // Zero residual still came out of the numerical variant and numerical
-    // type: every vertex and edge of the body's model stores a tolerance, so
-    // nothing in it is exact.
+    // type. Every vertex of the body's model stores a tolerance, because a
+    // vertex is a rounded point. An edge stores one unless its curve lies
+    // exactly on both of its surfaces, which re-tightens it to exact.
     assert_eq!(body.topology_faults(), Vec::new());
     assert!(!body.tolerances().entities.is_empty());
     for entity in &body.tolerances().entities {
-        assert!(body.stored_tolerance(entity.kind, &entity.key).is_some());
+        let stored = body.stored_tolerance(entity.kind, &entity.key);
+        assert!(
+            stored.is_some()
+                || entity.kind == catallax_topology::numerical::tolerance::EntityKind::Edge,
+            "{}",
+            entity.key
+        );
+        assert!(stored.is_none_or(|stored| stored.mm() == &entity.tolerance_mm));
     }
 }
 

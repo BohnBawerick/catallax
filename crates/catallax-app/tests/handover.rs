@@ -9,6 +9,21 @@ use catallax_shapes::{RPoint3, RVector3};
 use catallax_topology::numerical::tolerance::{self, EntityKind};
 use serde_json::{Value, json};
 
+/// Whether the body's model stores `expected` for the entity, or the entity
+/// is an edge re-tightened to exact, which stores nothing. A vertex is a
+/// rounded point and always stores its tolerance.
+fn stores_or_is_exact(
+    body: &catallax_app::NumericalBody,
+    kind: EntityKind,
+    key: &str,
+    expected: &Rational,
+) -> bool {
+    match body.stored_tolerance(kind, key) {
+        Some(stored) => stored.mm() == expected,
+        None => kind == EntityKind::Edge,
+    }
+}
+
 mod numerical_cases;
 #[path = "../../catallax-step/tests/common/n03_tube.rs"]
 mod numerical_tube;
@@ -240,12 +255,12 @@ fn numerical_admission_tolerance_checks_and_history_survive() {
     assert_eq!(imported.topology_faults(), Vec::new());
     assert_eq!(source.tolerances(), imported.tolerances());
     for entity in &source.tolerances().entities {
-        assert_eq!(
-            imported
-                .stored_tolerance(entity.kind, &entity.key)
-                .map(|stored| stored.mm()),
-            Some(&entity.tolerance_mm)
-        );
+        assert!(stores_or_is_exact(
+            &imported,
+            entity.kind,
+            &entity.key,
+            &entity.tolerance_mm
+        ));
     }
     let options = catallax_step::numerical::NumericalStepOptions::default();
     let exported = |body: &catallax_app::NumericalBody| {
@@ -476,9 +491,9 @@ fn version_one_bodies_keep_geometry_history_and_empty_kind() {
     assert_eq!(source.counts(), imported.counts());
     assert_eq!(source.options(), imported.options());
     // A version-one record has no tolerance on any entity and no tolerance
-    // report. Read back, every vertex and edge of the body's model holds the
-    // largest tolerance the record's own checks state, so nothing in it is
-    // exact and the one checker passes it.
+    // report. Read back, every vertex of the body's model holds the largest
+    // tolerance the record's own checks state, and so does every edge that
+    // is not re-tightened to exact. The one checker passes it.
     assert!(imported.tolerances().entities.is_empty());
     assert_eq!(imported.topology_faults(), Vec::new());
     let largest =
@@ -495,13 +510,7 @@ fn version_one_bodies_keep_geometry_history_and_empty_kind() {
                 .map(|edge| (EntityKind::Edge, edge.key.as_str())),
         );
     for (kind, key) in keys {
-        assert_eq!(
-            imported
-                .stored_tolerance(kind, key)
-                .map(|stored| stored.mm()),
-            Some(&largest),
-            "{key}"
-        );
+        assert!(stores_or_is_exact(&imported, kind, key, &largest), "{key}");
     }
     // The stored record holds the checks of the build that wrote it, sample
     // for sample. A rebuild measures the same definition as it is measured
@@ -610,11 +619,8 @@ fn version_two_bodies_are_exact_and_numerical_ones_get_their_tolerances_back() {
     assert_eq!(source.evidence(), imported.evidence());
     assert!(!imported.tolerances().entities.is_empty());
     for entity in &imported.tolerances().entities {
-        assert_eq!(
-            imported
-                .stored_tolerance(entity.kind, &entity.key)
-                .map(|stored| stored.mm()),
-            Some(&entity.tolerance_mm),
+        assert!(
+            stores_or_is_exact(&imported, entity.kind, &entity.key, &entity.tolerance_mm),
             "{}",
             entity.key
         );

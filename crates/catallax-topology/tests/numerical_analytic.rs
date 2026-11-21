@@ -28,11 +28,19 @@ fn finite_circular_caps_and_cylinder_keep_numerical_checks() {
             .flatten()
             .all(|sample| sample.distance_upper_mm <= q("0.01"))
     );
-    // The one checker passes the body, and nothing in it is exact.
+    // The one checker passes the body. Every vertex stores a tolerance, and
+    // an edge stores one unless it was re-tightened to exact.
     assert_eq!(body.topology_faults(), Vec::new());
     assert!(!body.tolerances().entities.is_empty());
     for entity in &body.tolerances().entities {
-        assert!(body.stored_tolerance(entity.kind, &entity.key).is_some());
+        let stored = body.stored_tolerance(entity.kind, &entity.key);
+        assert!(
+            stored.is_some()
+                || entity.kind == catallax_topology::numerical::tolerance::EntityKind::Edge,
+            "{}",
+            entity.key
+        );
+        assert!(stored.is_none_or(|stored| stored.mm() == &entity.tolerance_mm));
     }
 }
 

@@ -83,15 +83,22 @@ fn general_trim_returns_checked_geometry_with_scoped_samples_not_complete_bounds
             .max()
             .unwrap();
         assert!(measured >= expected && &measured - &expected < q("1e-12"));
-        // The one checker passes the body, and nothing in it is exact: each
-        // vertex and edge of its model stores the tolerance the report states.
+        // The one checker passes the body. Each vertex of its model stores
+        // the tolerance the report states, and so does each edge that was not
+        // re-tightened to exact.
         assert_eq!(body.topology_faults(), Vec::new());
         assert!(!body.tolerances().entities.is_empty());
         for entity in &body.tolerances().entities {
-            assert_eq!(
-                body.stored_tolerance(entity.kind, &entity.key)
-                    .map(|stored| stored.mm()),
-                Some(&entity.tolerance_mm)
+            let stored = body
+                .stored_tolerance(entity.kind, &entity.key)
+                .map(|stored| stored.mm());
+            assert!(
+                stored == Some(&entity.tolerance_mm)
+                    || (stored.is_none()
+                        && entity.kind
+                            == catallax_topology::numerical::tolerance::EntityKind::Edge),
+                "{}",
+                entity.key
             );
         }
         // Material witnesses from the independently known graph and footprint.

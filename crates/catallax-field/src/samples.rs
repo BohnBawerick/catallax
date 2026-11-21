@@ -112,6 +112,7 @@ impl Plan {
                         | Leaf::Lattice(_)
                         | Leaf::Gyroid(_)
                         | Leaf::Mesh(_)
+                        | Leaf::Shell(_)
                         | Leaf::Rolling(_) => None,
                     },
                     Instruction::Boolean { kind, a, b } => match kind {
@@ -166,7 +167,11 @@ impl Plan {
                     every_face = false;
                     continue;
                 }
-                Leaf::Smooth(_) | Leaf::Lattice(_) | Leaf::Gyroid(_) | Leaf::Mesh(_) => false,
+                Leaf::Smooth(_)
+                | Leaf::Lattice(_)
+                | Leaf::Gyroid(_)
+                | Leaf::Mesh(_)
+                | Leaf::Shell(_) => false,
                 Leaf::Feature(feature) => feature.sample_candidates(
                     self.definition_role(index),
                     divisions,

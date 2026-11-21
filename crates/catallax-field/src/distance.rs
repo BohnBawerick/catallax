@@ -114,9 +114,10 @@ pub(crate) fn location(
         geometry::Leaf::Feature(f) => f.classify(p, dec),
         geometry::Leaf::Rolling(piece) => piece.locate(p, dec),
         geometry::Leaf::Draft(region) => region.classify(p, None, dec),
-        geometry::Leaf::Lattice(_) | geometry::Leaf::Gyroid(_) | geometry::Leaf::Mesh(_) => {
-            Ok(Location::Indeterminate)
-        }
+        geometry::Leaf::Lattice(_)
+        | geometry::Leaf::Gyroid(_)
+        | geometry::Leaf::Mesh(_)
+        | geometry::Leaf::Shell(_) => Ok(Location::Indeterminate),
         geometry::Leaf::Primitive(_) | geometry::Leaf::Cell(_) => {
             let mut boundary = false;
             let xyz = coordinates(p);
@@ -199,6 +200,7 @@ pub(crate) fn ray(
         geometry::Leaf::Lattice(_)
             | geometry::Leaf::Gyroid(_)
             | geometry::Leaf::Mesh(_)
+            | geometry::Leaf::Shell(_)
             | geometry::Leaf::Rolling(_)
     ) {
         return Ok(Location::Indeterminate);

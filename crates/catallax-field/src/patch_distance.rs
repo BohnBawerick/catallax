@@ -37,7 +37,7 @@
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
-use catallax_numbers::{Decider, Interval, Rational, Real, Refusal};
+use catallax_numbers::{Decider, Interval, Rational, Real, Refusal, StrictSign};
 use catallax_shapes::{RPoint3, RationalPatch};
 
 /// The default width of a distance enclosure: `2^-24` mm, about 0.06 nm. It is
@@ -151,6 +151,9 @@ impl PatchDistance {
     /// Encloses the exact homogeneous Bézier controls of every span of `patch`.
     pub fn new(patch: &RationalPatch, dec: &mut Decider) -> Result<Self, Refusal> {
         let degrees = patch.carrier().degrees();
+        if degrees.contains(&0) {
+            return Err(refusal("a patch of degree zero along a side has no area"));
+        }
         let mut spans = Vec::new();
         for (_, controls) in patch.bezier_spans(dec)? {
             let mut net = Vec::with_capacity(controls.len());
@@ -174,6 +177,117 @@ impl PatchDistance {
             spans,
             products: degrees.map(products),
         })
+    }
+
+    /// Bounds on the patch: the hull of its Euclidean controls, which holds
+    /// the patch since every point is a convex combination of them with
+    /// positive weights.
+    pub fn hull(&self) -> [Interval; 3] {
+        let mut out: Option<[Interval; 3]> = None;
+        for c in self.spans.iter().flatten() {
+            let p: [Interval; 3] = std::array::from_fn(|k| c[k] / c[3]);
+            out = Some(match out {
+                None => p,
+                Some(o) => std::array::from_fn(|k| o[k].hull(&p[k])),
+            });
+        }
+        out.expect("a span")
+    }
+
+    /// Boxes whose union holds the patch: the control hulls of each span's
+    /// 64 cells after three halvings along each side.
+    pub fn boxes(&self) -> Vec<[Interval; 3]> {
+        let mut out = Vec::new();
+        for span in &self.spans {
+            let mut cells = vec![span.clone()];
+            for depth in 0..6 {
+                cells = cells
+                    .iter()
+                    .flat_map(|net| halve(self.degrees, net, depth % 2 == 1))
+                    .collect();
+            }
+            for net in cells {
+                let mut hull: Option<[Interval; 3]> = None;
+                for c in &net {
+                    let p: [Interval; 3] = std::array::from_fn(|k| c[k] / c[3]);
+                    hull = Some(match hull {
+                        None => p,
+                        Some(h) => std::array::from_fn(|k| h[k].hull(&p[k])),
+                    });
+                }
+                out.push(hull.expect("a control"));
+            }
+        }
+        out
+    }
+
+    /// Tentative squared distance from `q` to the patch and the side of the
+    /// natural normal `S_u x S_v` at the nearest sample, from binary64
+    /// arithmetic only: a 9 by 9 grid on each span, then eight 5 by 5 grids,
+    /// each half as wide, round the best sample, as SMLib's
+    /// `FindRoughGuess` zooms its grids.
+    pub fn fast_nearest(&self, q: [f64; 3]) -> (f64, f64) {
+        let [m, n] = self.degrees;
+        let rows = n + 1;
+        let mut best = (f64::INFINITY, 1.0);
+        for span in &self.spans {
+            let net: Vec<[f64; 4]> = span.iter().map(|c| c.map(|x| x.mid())).collect();
+            let at = |u: f64, v: f64| -> [f64; 3] {
+                let column: Vec<[f64; 4]> = (0..=m)
+                    .map(|i| casteljau(&net[i * rows..(i + 1) * rows], v))
+                    .collect();
+                let h = casteljau(&column, u);
+                std::array::from_fn(|k| h[k] / h[3])
+            };
+            let gap = |u: f64, v: f64| {
+                let s = at(u, v);
+                (0..3).map(|k| (q[k] - s[k]).powi(2)).sum::<f64>()
+            };
+            let mut here = (f64::INFINITY, 0.0, 0.0);
+            for i in 0..=8 {
+                for j in 0..=8 {
+                    let (u, v) = (f64::from(i) / 8.0, f64::from(j) / 8.0);
+                    let value = gap(u, v);
+                    if value < here.0 {
+                        here = (value, u, v);
+                    }
+                }
+            }
+            let mut step = 1.0 / 16.0;
+            for _ in 0..8 {
+                let (_, cu, cv) = here;
+                for i in -2..=2 {
+                    for j in -2..=2 {
+                        let u = (cu + f64::from(i) * step).clamp(0.0, 1.0);
+                        let v = (cv + f64::from(j) * step).clamp(0.0, 1.0);
+                        let value = gap(u, v);
+                        if value < here.0 {
+                            here = (value, u, v);
+                        }
+                    }
+                }
+                step /= 2.0;
+            }
+            if here.0 < best.0 {
+                let (_, u, v) = here;
+                let h = 1.0 / 1024.0;
+                let s = at(u, v);
+                let du = at((u + h).min(1.0), v);
+                let du0 = at((u + h).min(1.0) - h, v);
+                let dv = at(u, (v + h).min(1.0));
+                let dv0 = at(u, (v + h).min(1.0) - h);
+                let a: [f64; 3] = std::array::from_fn(|k| du[k] - du0[k]);
+                let b: [f64; 3] = std::array::from_fn(|k| dv[k] - dv0[k]);
+                let normal = [
+                    a[1] * b[2] - a[2] * b[1],
+                    a[2] * b[0] - a[0] * b[2],
+                    a[0] * b[1] - a[1] * b[0],
+                ];
+                let side = (0..3).map(|k| (q[k] - s[k]) * normal[k]).sum::<f64>();
+                best = (here.0, side);
+            }
+        }
+        best
     }
 
     /// The distance from `p` to the patch, within `WIDTH`.
@@ -308,7 +422,7 @@ impl PatchDistance {
     }
 
     /// Halves a cell's net at the middle of the side whose controls spread
-    /// wider, by de Casteljau's algorithm at one half.
+    /// wider.
     fn split(&self, net: &[[Interval; 4]]) -> [Vec<[Interval; 4]>; 2] {
         let [m, n] = self.degrees;
         let rows = n + 1;
@@ -326,37 +440,261 @@ impl PatchDistance {
         let across_v = (0..=m)
             .map(|i| spread(&net[i * rows], &net[i * rows + n]))
             .fold(0.0, f64::max);
-        let along_v = across_v > across_u;
-        let (count, lines) = if along_v {
-            (n + 1, m + 1)
-        } else {
-            (m + 1, n + 1)
-        };
-        let index = |line: usize, at: usize| {
-            if along_v {
-                line * rows + at
-            } else {
-                at * rows + line
-            }
-        };
-        let mut low = net.to_vec();
-        let mut high = net.to_vec();
-        let mut row = Vec::with_capacity(count);
-        for line in 0..lines {
-            row.clear();
-            row.extend((0..count).map(|at| net[index(line, at)]));
-            // After pass `r`, `row[0]` is the low half's control `r` and
-            // `row[count - 1 - r]` the high half's control `count - 1 - r`.
-            low[index(line, 0)] = row[0];
-            high[index(line, count - 1)] = row[count - 1];
-            for r in 1..count {
-                for at in 0..count - r {
-                    row[at] = std::array::from_fn(|c| (row[at][c] + row[at + 1][c]) * half());
+        halve(self.degrees, net, across_v > across_u)
+    }
+
+    /// The signed number of points where the open ray `p + t d`, `t > 0`,
+    /// crosses the patch: one for each crossing where `(S_u x S_v) . d` is
+    /// positive, minus one for each where it is negative. `None` where the
+    /// search cannot prove every crossing transverse and inside one span, as
+    /// where the ray meets the patch's border, touches the patch, or starts on
+    /// it; another ray decides those. Each cell charges one unit of work.
+    ///
+    /// With `e1 = d x a` for the coordinate axis `a` along which `d` is
+    /// shortest and `e2 = d x e1`, the patch point `X / W` lies on the ray's
+    /// line where `F_k = (X - W p) . e_k` vanish, `k = 1, 2`, and on the ray
+    /// itself where also `G = (X - W p) . d` is positive. All three are
+    /// polynomials with Bernstein nets on each cell. A cell where `F_1` or
+    /// `F_2` has coefficients of one strict sign holds no crossing. Otherwise
+    /// the Krawczyk operator over the cell (Krawczyk 1969; Moore, Kearfott and
+    /// Cloud, "Introduction to Interval Analysis", 2009, section 8.2) either
+    /// excludes a root, proves exactly one root strictly inside the cell, or
+    /// asks for halving. At a root `X - W p` is parallel to `d`, so the
+    /// Jacobian of `(F_1, F_2)` is `W^2 |e1|^2 (S_u x S_v) . d` in
+    /// determinant, since `e1 x e2 = |e1|^2 d`: its sign over the cell is the
+    /// crossing's sign, and `G`'s sign says whether the root lies ahead.
+    ///
+    /// OpenCASCADE (`IntCurveSurface_Inter`, `IntCurveSurface_TheExactHInter`)
+    /// and SMLib (`SmRayTracer.cpp`) find line-surface hits by sampling and
+    /// Newton steps, which proves no count. The field needs the exact count for
+    /// the winding number, so it counts proved roots only.
+    pub fn crossings(
+        &self,
+        p: &[Rational; 3],
+        d: &[Rational; 3],
+        dec: &mut Decider,
+    ) -> Result<Option<i64>, Refusal> {
+        let shortest = (0..3)
+            .min_by(|&i, &j| d[i].abs().cmp(&d[j].abs()))
+            .expect("three axes");
+        let mut a: [Rational; 3] = std::array::from_fn(|_| Rational::zero());
+        a[shortest] = Rational::one();
+        let e1 = cross(d, &a);
+        let e2 = cross(d, &e1);
+        if e1.iter().all(Rational::is_zero) {
+            return Err(refusal("a ray direction must be nonzero"));
+        }
+        let [p, d, e1, e2] = [p, d, &e1, &e2].map(|v| v.each_ref().map(Interval::from_rational));
+        let dot = |a: &[Interval; 3], b: &[Interval; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        let mut count = 0i64;
+        let mut cells = 0usize;
+        for span in &self.spans {
+            let start: Vec<[Interval; 3]> = span
+                .iter()
+                .map(|c| {
+                    let offset: [Interval; 3] = std::array::from_fn(|k| c[k] - c[3] * p[k]);
+                    [dot(&offset, &e1), dot(&offset, &e2), dot(&offset, &d)]
+                })
+                .collect();
+            // Depth first, low half before high half: a fixed order.
+            let mut stack = vec![(start, 0u32)];
+            while let Some((net, depth)) = stack.pop() {
+                dec.charge_work(1)?;
+                cells += 1;
+                if cells > MAX_CELLS {
+                    return Ok(None);
                 }
-                low[index(line, r)] = row[0];
-                high[index(line, count - 1 - r)] = row[count - 1 - r];
+                match self.root(&net) {
+                    Root::None => (),
+                    Root::One { sign, ahead } => {
+                        if ahead {
+                            count += sign;
+                        }
+                    }
+                    Root::Unknown => {
+                        if depth >= CROSSING_DEPTH {
+                            return Ok(None);
+                        }
+                        let [low, high] = halve(self.degrees, &net, depth % 2 == 1);
+                        stack.push((high, depth + 1));
+                        stack.push((low, depth + 1));
+                    }
+                }
             }
         }
-        [low, high]
+        Ok(Some(count))
     }
+
+    /// What one cell of `(F_1, F_2, G)` nets holds, in the cell's own unit
+    /// square.
+    fn root(&self, net: &[[Interval; 3]]) -> Root {
+        let one_sign =
+            |k: usize| net.iter().all(|c| c[k].lo() > 0.0) || net.iter().all(|c| c[k].hi() < 0.0);
+        if one_sign(0) || one_sign(1) {
+            return Root::None;
+        }
+        let [m, n] = self.degrees;
+        let rows = n + 1;
+        // Bernstein nets of the partials: `m` times the forward differences
+        // along `u`, `n` times those along `v`; their hulls enclose the
+        // Jacobian over the cell.
+        let hull = |values: &mut dyn Iterator<Item = Interval>| {
+            values.reduce(|a, b| a.hull(&b)).expect("a nonempty net")
+        };
+        let scale = |k: usize| Interval::point(k as f64).expect("a degree");
+        let jacobian: [[Interval; 2]; 2] = std::array::from_fn(|k| {
+            [
+                hull(
+                    &mut (0..m)
+                        .flat_map(|i| (0..=n).map(move |j| (i, j)))
+                        .map(|(i, j)| {
+                            scale(m) * (net[(i + 1) * rows + j][k] - net[i * rows + j][k])
+                        }),
+                ),
+                hull(
+                    &mut (0..=m)
+                        .flat_map(|i| (0..n).map(move |j| (i, j)))
+                        .map(|(i, j)| scale(n) * (net[i * rows + j + 1][k] - net[i * rows + j][k])),
+                ),
+            ]
+        });
+        let [[a, b], [c, d]] = jacobian.map(|row| row.map(|x| x.mid()));
+        let det = a * d - b * c;
+        if !det.is_finite() || det == 0.0 {
+            return Root::Unknown;
+        }
+        // Any matrix serves as Krawczyk's preconditioner; the inverse of the
+        // Jacobian's midpoint makes the operator contract.
+        let y = [[d / det, -b / det], [-c / det, a / det]].map(|row| {
+            row.map(|x| Interval::point(x).unwrap_or_else(|| Interval::point(0.0).expect("zero")))
+        });
+        let centre = centre(self.degrees, net);
+        let radius = Interval::new(-0.5, 0.5).expect("a radius");
+        let one = |row: usize, column: usize| {
+            Interval::point(if row == column { 1.0 } else { 0.0 }).expect("a unit")
+        };
+        let image: [Interval; 2] = std::array::from_fn(|row| {
+            let step = y[row][0] * centre[0] + y[row][1] * centre[1];
+            let spread = |column: usize| {
+                one(row, column)
+                    - (y[row][0] * jacobian[0][column] + y[row][1] * jacobian[1][column])
+            };
+            half() - step + spread(0) * radius + spread(1) * radius
+        });
+        if image.iter().any(|k| k.hi() < 0.0 || k.lo() > 1.0) {
+            return Root::None;
+        }
+        if image.iter().any(|k| k.lo() <= 0.0 || k.hi() >= 1.0) {
+            return Root::Unknown;
+        }
+        let determinant = jacobian[0][0] * jacobian[1][1] - jacobian[0][1] * jacobian[1][0];
+        let ahead = if net.iter().all(|c| c[2].lo() > 0.0) {
+            true
+        } else if net.iter().all(|c| c[2].hi() < 0.0) {
+            false
+        } else {
+            return Root::Unknown;
+        };
+        match determinant.sign() {
+            Some(StrictSign::Positive) => Root::One { sign: 1, ahead },
+            Some(StrictSign::Negative) => Root::One { sign: -1, ahead },
+            None => Root::Unknown,
+        }
+    }
+}
+
+/// De Casteljau's value of a Bernstein row at `t`, in binary64.
+fn casteljau(row: &[[f64; 4]], t: f64) -> [f64; 4] {
+    let mut row = row.to_vec();
+    while row.len() > 1 {
+        row = row
+            .windows(2)
+            .map(|w| std::array::from_fn(|c| w[0][c] + t * (w[1][c] - w[0][c])))
+            .collect();
+    }
+    row[0]
+}
+
+/// What a crossing cell holds.
+enum Root {
+    None,
+    One { sign: i64, ahead: bool },
+    Unknown,
+}
+
+/// Most halvings of a span in the crossing search, alternating the sides:
+/// twenty per side. A crossing not proved by then lies on or within a few
+/// units in the last place of a dyadic line of the span, and a ray in
+/// another direction decides.
+const CROSSING_DEPTH: u32 = 40;
+
+fn cross(a: &[Rational; 3], b: &[Rational; 3]) -> [Rational; 3] {
+    [
+        &(&a[1] * &b[2]) - &(&a[2] * &b[1]),
+        &(&a[2] * &b[0]) - &(&a[0] * &b[2]),
+        &(&a[0] * &b[1]) - &(&a[1] * &b[0]),
+    ]
+}
+
+/// Halves a tensor Bernstein net of the given degrees, u-major, along `v`
+/// or along `u`, by de Casteljau's algorithm at one half.
+fn halve<const K: usize>(
+    degrees: [usize; 2],
+    net: &[[Interval; K]],
+    along_v: bool,
+) -> [Vec<[Interval; K]>; 2] {
+    let [m, n] = degrees;
+    let rows = n + 1;
+    let (count, lines) = if along_v {
+        (n + 1, m + 1)
+    } else {
+        (m + 1, n + 1)
+    };
+    let index = |line: usize, at: usize| {
+        if along_v {
+            line * rows + at
+        } else {
+            at * rows + line
+        }
+    };
+    let mut low = net.to_vec();
+    let mut high = net.to_vec();
+    let mut row = Vec::with_capacity(count);
+    for line in 0..lines {
+        row.clear();
+        row.extend((0..count).map(|at| net[index(line, at)]));
+        // After pass `r`, `row[0]` is the low half's control `r` and
+        // `row[count - 1 - r]` the high half's control `count - 1 - r`.
+        low[index(line, 0)] = row[0];
+        high[index(line, count - 1)] = row[count - 1];
+        for r in 1..count {
+            for at in 0..count - r {
+                row[at] = std::array::from_fn(|c| (row[at][c] + row[at + 1][c]) * half());
+            }
+            low[index(line, r)] = row[0];
+            high[index(line, count - 1 - r)] = row[count - 1 - r];
+        }
+    }
+    [low, high]
+}
+
+/// The net's value at the middle of its square, by de Casteljau's algorithm
+/// at one half along `v`, then along `u`.
+fn centre<const K: usize>(degrees: [usize; 2], net: &[[Interval; K]]) -> [Interval; K] {
+    let [m, n] = degrees;
+    let rows = n + 1;
+    let middle = |mut row: Vec<[Interval; K]>| {
+        while row.len() > 1 {
+            row = row
+                .windows(2)
+                .map(|w| std::array::from_fn(|c| (w[0][c] + w[1][c]) * half()))
+                .collect();
+        }
+        row[0]
+    };
+    middle(
+        (0..=m)
+            .map(|i| middle(net[i * rows..(i + 1) * rows].to_vec()))
+            .collect(),
+    )
 }

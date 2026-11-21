@@ -50,6 +50,7 @@ mod metric;
 mod offset_spline;
 mod ownership;
 pub mod patch_distance;
+pub mod patch_shell;
 mod planar;
 mod planar_face;
 /// Watertight certified print meshes built directly from the field.

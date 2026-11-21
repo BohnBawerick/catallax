@@ -369,7 +369,7 @@ impl Plan {
         );
         let height = vector.dot(&normal);
         if height.is_zero() {
-            return Err(fail(sections.len() - 1));
+            return self.patch_or(fail(sections.len() - 1), sections, shape, profiles, dec);
         }
         let mut previous = Rational::zero();
         for (index, section) in sections.iter().enumerate() {
@@ -382,12 +382,12 @@ impl Plan {
                         || a.0.iter().zip(&b.0).any(|(a, b)| !same_segments(a, b))
                 })
             {
-                return Err(fail(index));
+                return self.patch_or(fail(index), sections, shape, profiles, dec);
             }
             if !p.pose.rotation.same_rotation(&first.pose.rotation, dec)?
                 || p.loops.len() != first.loops.len()
             {
-                return Err(fail(index));
+                return self.patch_or(fail(index), sections, shape, profiles, dec);
             }
             for (a, b) in first.loops.iter().zip(&p.loops) {
                 if a.len() != b.len()
@@ -398,7 +398,7 @@ impl Plan {
                             || a.full != b.full
                     })
                 {
-                    return Err(fail(index));
+                    return self.patch_or(fail(index), sections, shape, profiles, dec);
                 }
             }
             for (a, b) in sections[0].start.iter().zip(&section.start) {
@@ -408,7 +408,7 @@ impl Plan {
                     })
                 };
                 if locate(original, a) != locate(current, b) {
-                    return Err(fail(index));
+                    return self.patch_or(fail(index), sections, shape, profiles, dec);
                 }
             }
             let shift = p
@@ -419,13 +419,13 @@ impl Plan {
                 .ok_or_else(|| fail(index))?;
             let t = shift.dot(&normal) / height.clone();
             if !shift.cross(&vector).is_zero() || t < previous || t > Rational::one() {
-                return Err(fail(index));
+                return self.patch_or(fail(index), sections, shape, profiles, dec);
             }
             if shape == LoftShape::Smooth
                 && t != Rational::from_ratio(index as i64, (sections.len() - 1) as i64)
                     .expect("checked sections")
             {
-                return Err(fail(index));
+                return self.patch_or(fail(index), sections, shape, profiles, dec);
             }
             previous = t;
         }
@@ -433,6 +433,197 @@ impl Plan {
             Feature::extrude_vector(first, step, vector, false, dec)?,
             dec,
         )
+    }
+
+    /// `refusal`, unless the loft is one `patch_loft` holds.
+    fn patch_or(
+        &mut self,
+        refusal: Refusal,
+        sections: &[LoftSection],
+        shape: LoftShape,
+        profiles: &BTreeMap<StepId, Profile>,
+        dec: &mut Decider,
+    ) -> Result<usize, Refusal> {
+        match self.patch_loft(sections, shape, profiles, dec)? {
+            Some(node) => Ok(node),
+            None => Err(refusal),
+        }
+    }
+
+    /// A ruled loft between two parallel polygons, every slice of which is a
+    /// convex polygon, held as a patch shell (4.2a step 7.2): a bilinear side
+    /// for each pair of corresponding segments, and the two sections as
+    /// polygon caps. `None` for any other loft.
+    ///
+    /// The sections share a rotation, so the slice at `v` in `[0, 1]` of the
+    /// height is the polygon whose vertices are `(1 - v) a_i + v b_i`, with
+    /// `b_i` moved by the in-plane offset of the second section. The turn at
+    /// a vertex, the cross product of its two edges, is then a quadratic in
+    /// `v` with Bernstein coefficients `c0 = a' x a''`, `c1 = (a' x b'' + b' x
+    /// a'') / 2` and `c2 = b' x b''` for the edges `'` before and `''` after
+    /// it. When every coefficient of every vertex has one strict sign, every
+    /// slice turns strictly one way at every vertex, so it is a strictly
+    /// convex polygon (it starts as the simple first section and no edge
+    /// vanishes on the way). Then the sides meet only along the lines through
+    /// corresponding vertices and the caps only at the sections' edges: the
+    /// faces form a closed shell with no crossings, which is what the leaf
+    /// needs. The sides are exactly the B-rep's ruled sides (the M11 loft's
+    /// bilinear patches): straight lines between points at equal parameters
+    /// of corresponding line segments.
+    fn patch_loft(
+        &mut self,
+        sections: &[LoftSection],
+        shape: LoftShape,
+        profiles: &BTreeMap<StepId, Profile>,
+        dec: &mut Decider,
+    ) -> Result<Option<usize>, Refusal> {
+        use crate::patch_shell::{Face, PatchFace, Polygon, Shell};
+        use catallax_shapes::{BSplineSurface, Point3, RationalPatch};
+        if sections.len() != 2 || shape != LoftShape::Ruled {
+            return Ok(None);
+        }
+        let first = &profiles[&sections[0].profile];
+        let last = &profiles[&sections[1].profile];
+        let ([a], [b]) = (first.loops.as_slice(), last.loops.as_slice()) else {
+            return Ok(None);
+        };
+        let n = a.len();
+        if n < 3
+            || b.len() != n
+            || a.iter()
+                .chain(b)
+                .any(|e| e.circle.is_some() || e.full || e.ids.len() != 1)
+            || !last
+                .pose
+                .rotation
+                .same_rotation(&first.pose.rotation, dec)?
+        {
+            return Ok(None);
+        }
+        let start = |edges: &[crate::profile::Edge], section: &LoftSection| {
+            let id = section.start.first()?;
+            edges.iter().position(|e| &e.ids[0] == id)
+        };
+        let (Some(sa), Some(sb)) = (start(a, &sections[0]), start(b, &sections[1])) else {
+            return Ok(None);
+        };
+        let Some(shift) = last
+            .pose
+            .translation
+            .minus(&first.pose.translation)
+            .as_rational()
+        else {
+            return Ok(None);
+        };
+        let axis = |k: usize| {
+            let mut v = [Rational::zero(), Rational::zero(), Rational::zero()];
+            v[k] = Rational::one();
+            crate::profile::rational_vector(
+                &first.pose,
+                &RVector3::new(v[0].clone(), v[1].clone(), v[2].clone()),
+            )
+        };
+        let offset = [shift.dot(&axis(0)), shift.dot(&axis(1))];
+        let height = shift.dot(&axis(2));
+        if height.is_zero() {
+            return Ok(None);
+        }
+        let lower: Vec<[Rational; 2]> = (0..n).map(|k| a[(sa + k) % n].start.clone()).collect();
+        let upper: Vec<[Rational; 2]> = (0..n)
+            .map(|k| {
+                let p = &b[(sb + k) % n].start;
+                [&p[0] + &offset[0], &p[1] + &offset[1]]
+            })
+            .collect();
+        let edge = |p: &[[Rational; 2]], i: usize| {
+            let (s, t) = (&p[i % n], &p[(i + 1) % n]);
+            [&t[0] - &s[0], &t[1] - &s[1]]
+        };
+        let cross = |u: &[Rational; 2], v: &[Rational; 2]| &(&u[0] * &v[1]) - &(&u[1] * &v[0]);
+        let mut sense = None;
+        for i in 0..n {
+            let (before_a, after_a) = (edge(&lower, i + n - 1), edge(&lower, i));
+            let (before_b, after_b) = (edge(&upper, i + n - 1), edge(&upper, i));
+            let middle = (&cross(&before_a, &after_b) + &cross(&before_b, &after_a)).mul_pow2(-1);
+            for c in [
+                cross(&before_a, &after_a),
+                middle,
+                cross(&before_b, &after_b),
+            ] {
+                let sign = c.sign();
+                if sign == Sign::Zero || *sense.get_or_insert(sign) != sign {
+                    return Ok(None);
+                }
+            }
+        }
+        let counterclockwise = sense == Some(Sign::Positive);
+        let up = height > Rational::zero();
+        let world = |pose: &Pose, p: &[Rational; 2]| {
+            crate::profile::rational_point(
+                pose,
+                &RPoint3::new(p[0].clone(), p[1].clone(), Rational::zero()),
+            )
+        };
+        let bottom: Vec<RPoint3> = (0..n)
+            .map(|k| world(&first.pose, &a[(sa + k) % n].start))
+            .collect();
+        let top: Vec<RPoint3> = (0..n)
+            .map(|k| world(&last.pose, &b[(sb + k) % n].start))
+            .collect();
+        let control =
+            |p: &RPoint3| Point3::new(p.x.clone().into(), p.y.clone().into(), p.z.clone().into());
+        let knots = vec![
+            Rational::zero(),
+            Rational::zero(),
+            Rational::one(),
+            Rational::one(),
+        ];
+        let mut faces = Vec::with_capacity(n + 2);
+        for k in 0..n {
+            let next = (k + 1) % n;
+            let carrier = BSplineSurface::new(
+                [1, 1],
+                [knots.clone(), knots.clone()],
+                [2, 2],
+                vec![
+                    control(&bottom[k]),
+                    control(&top[k]),
+                    control(&bottom[next]),
+                    control(&top[next]),
+                ],
+                vec![catallax_numbers::Real::one(); 4],
+                dec,
+            )?;
+            let patch = match RationalPatch::new(carrier, dec) {
+                Ok(patch) => patch,
+                Err(refusal) if refusal.code == "shapes.rational-patch-unproven" => {
+                    return Ok(None);
+                }
+                Err(refusal) => return Err(refusal),
+            };
+            // `u` runs along the segments in the loop's sense and `v` toward
+            // the second section, so the natural normal points out of a
+            // counterclockwise loft that rises along the frame's normal.
+            faces.push(Face::Patch(Box::new(PatchFace::new(
+                &patch,
+                counterclockwise == up,
+                dec,
+            )?)));
+        }
+        // Each cap's vertices run counterclockwise seen from outside: the
+        // first section is seen from below the loft, the second from above.
+        let mut bottom = bottom;
+        let mut top = top;
+        if counterclockwise == up {
+            bottom.reverse();
+        } else {
+            top.reverse();
+        }
+        faces.push(Face::Polygon(Box::new(Polygon::new(bottom)?)));
+        faces.push(Face::Polygon(Box::new(Polygon::new(top)?)));
+        let shell = Shell::new(faces)?;
+        self.leaf(crate::geometry::Leaf::Shell(Box::new(shell)), vec![], dec)
+            .map(Some)
     }
 
     fn circular_loft(

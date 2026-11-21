@@ -290,13 +290,9 @@ pub(super) struct EdgeAllowances {
 }
 
 impl EdgeAllowances {
-    /// The checker's cap for every edge, with nothing counted.
-    pub(super) fn new() -> Self {
-        Self::of(gap::EDGE_WORK)
-    }
-
-    /// `each_edge` units for every edge, with nothing counted. Only the
-    /// tests that spend an allowance give less than the checker's cap.
+    /// `each_edge` units for every edge, with nothing counted: the
+    /// checker's cap (`gap::EDGE_WORK`). Only the tests that spend an
+    /// allowance give less.
     pub(super) fn of(each_edge: u64) -> Self {
         Self {
             each_edge,

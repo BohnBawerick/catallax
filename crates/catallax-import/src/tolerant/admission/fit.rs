@@ -35,6 +35,9 @@ pub(super) struct Context<'a> {
     repair_cap: f64,
     pub(super) stage: super::NativeStage,
     pub(super) repair_boundaries: bool,
+    /// The work allowance of each edge for the gap rule: the checker's cap
+    /// (`gap::EDGE_WORK`). Only a test of the cap gives less.
+    pub(super) edge_work: u64,
 }
 #[derive(Debug)]
 pub(super) struct Carriers {
@@ -62,6 +65,7 @@ impl<'a> Context<'a> {
             repair_cap,
             stage: super::NativeStage::BodyBuild,
             repair_boundaries: true,
+            edge_work: n::gap::EDGE_WORK,
         }
     }
     pub fn into_carriers(self) -> Carriers {
@@ -989,7 +993,7 @@ pub(super) fn check_body(
     // 8: "A hard per-edge work cap refuses by name"). The edge is the
     // topological edge, so its uses on different faces draw on the same
     // allowance, in the order the faces are read.
-    let mut gap_allowances = import_gap::EdgeAllowances::new();
+    let mut gap_allowances = import_gap::EdgeAllowances::of(context.edge_work);
     for shell in &body.shells {
         for face in &shell.faces {
             context.stage = super::NativeStage::SurfaceFit;

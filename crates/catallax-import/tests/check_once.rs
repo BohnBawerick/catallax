@@ -6,8 +6,8 @@
 //! that records nothing is measured, as every import is (rule T3).
 #[path = "../../catallax-topology/tests/common/analytic.rs"]
 mod fixture;
-#[path = "../../catallax-step/tests/common/n03_tube.rs"]
-mod tube;
+#[path = "common/topped_tube.rs"]
+mod topped_tube;
 use catallax_import::{
     recorded::{RecordedField, recorded_tolerance},
     sha256_hex,
@@ -21,35 +21,13 @@ use catallax_topology::numerical::{
     tolerance::{RECORDED_USE, RECORDED_VERTEX, ReceiverProfile},
 };
 use fixture::{q, quarter};
+use topped_tube::{spline_topped_tube, unstamped, with_one_uv_curve_at_another_speed, written};
 
 fn options() -> NumericalOptions {
     NumericalOptions {
         tolerance_mm: q("0.01"),
         vertex_tolerance_mm: None,
     }
-}
-
-fn written(body: &NumericalBody) -> (Vec<u8>, Rational) {
-    let file = numerical::build(
-        body,
-        &NumericalStepOptions::default(),
-        &mut Decider::default(),
-    )
-    .unwrap();
-    (file.bytes().to_vec(), file.report().uncertainty_mm.clone())
-}
-
-/// The same file as another system's: the stamp no longer names a Catallax
-/// numerical export, so it records nothing.
-fn unstamped(bytes: &[u8]) -> Vec<u8> {
-    let text = std::str::from_utf8(bytes).unwrap();
-    assert!(text.contains("catallax numerical approximate;"));
-    text.replacen(
-        "catallax numerical approximate;",
-        "another system approximate;",
-        1,
-    )
-    .into_bytes()
 }
 
 /// Opens under an allowance large enough to count all the work.
@@ -198,38 +176,6 @@ fn an_analytic_file_is_reopened_with_the_tolerance_it_records() {
     assert!(self::names(reopened).contains(&RECORDED_USE));
 }
 
-/// The square tube with its top face a flat spline patch a micrometre above
-/// its edges. A spline face with a real gap is taken by neither the certified
-/// import nor the analytic one, so the file opens as a native tolerant body,
-/// the way the R2 rim does.
-fn spline_topped_tube() -> NumericalBody {
-    use catallax_shapes::{BSplineSurface, Point3, RationalPatch, Surface};
-    let mut definition = tube::tube();
-    let mut dec = Decider::default();
-    let lifted = catallax_numbers::Real::from(q("1.000001"));
-    let controls = [(0, 0), (0, 4), (4, 0), (4, 4)]
-        .map(|(x, y)| Point3::new(x.into(), y.into(), lifted.clone()))
-        .to_vec();
-    let knots = vec![q("0"), q("0"), q("1"), q("1")];
-    let surface = BSplineSurface::new(
-        [1, 1],
-        [knots.clone(), knots],
-        [2, 2],
-        controls,
-        vec![catallax_numbers::Real::one(); 4],
-        &mut dec,
-    )
-    .unwrap();
-    definition.faces[0].surface =
-        Surface::BSpline(RationalPatch::new(surface, &mut dec).unwrap().into());
-    for trim in definition.faces[0].loops.iter_mut().flatten() {
-        for uv in trim.uv.iter_mut().flatten() {
-            *uv = uv.clone() / q("4");
-        }
-    }
-    n::build(definition, options(), &mut dec).unwrap()
-}
-
 #[test]
 fn a_file_with_a_spline_face_is_reopened_with_the_tolerance_it_records() {
     let body = spline_topped_tube();
@@ -366,67 +312,6 @@ fn a_body_the_reader_cannot_take_as_written_is_measured() {
             .iter()
             .all(|check| !check.check.contains("recorded-tolerance"))
     );
-}
-
-/// One straight u/v curve of the spline face, written again as a quadratic
-/// that traces the same segment at another speed: its middle control sits
-/// four tenths of the way along, so the copy lags its edge by up to a
-/// twentieth of the segment at the same parameter.
-fn with_one_uv_curve_at_another_speed(text: &str) -> String {
-    let curve = text
-        .lines()
-        .find(|line| {
-            line.contains("=B_SPLINE_CURVE_WITH_KNOTS('',1,") && line.contains("(2,2),(0.,1.),")
-        })
-        .expect("a straight u/v curve over the edge's interval");
-    let controls = curve
-        .split("'',1,(")
-        .nth(1)
-        .and_then(|rest| rest.split(')').next())
-        .expect("two controls");
-    let ends: Vec<&str> = controls.split(',').collect();
-    assert_eq!(ends.len(), 2, "{curve}");
-    let uv = |name: &str| -> [f64; 2] {
-        let line = text
-            .lines()
-            .find(|line| line.starts_with(&format!("{name}=CARTESIAN_POINT(")))
-            .expect("a control point");
-        let inner = line
-            .rsplit("(")
-            .next()
-            .and_then(|rest| rest.split(')').next())
-            .expect("coordinates");
-        let values: Vec<f64> = inner.split(',').map(|x| x.parse().unwrap()).collect();
-        [values[0], values[1]]
-    };
-    let (first, last) = (uv(ends[0]), uv(ends[1]));
-    let middle = [0, 1].map(|axis| first[axis] + 0.4 * (last[axis] - first[axis]));
-    let next = text
-        .lines()
-        .filter_map(|line| {
-            line.strip_prefix('#')?
-                .split('=')
-                .next()?
-                .parse::<u64>()
-                .ok()
-        })
-        .max()
-        .expect("an entity")
-        + 1;
-    let quadratic = curve
-        .replace(
-            &format!("'',1,({controls})"),
-            &format!("'',2,({},#{next},{})", ends[0], ends[1]),
-        )
-        .replace("(2,2),(0.,1.),", "(3,3),(0.,1.),");
-    assert_ne!(quadratic, curve);
-    text.replace(
-        curve,
-        &format!(
-            "#{next}=CARTESIAN_POINT('',({:.17},{:.17}));\n{quadratic}",
-            middle[0], middle[1]
-        ),
-    )
 }
 
 /// A file that records nothing is an import, and its u/v curves are copies

@@ -400,7 +400,11 @@ fn the_uses_of_an_edge_share_its_one_allowance() {
         }
         Ok(counted)
     };
-    let whole = read_uses(&mut import_gap::EdgeAllowances::new(), [7, 7]).unwrap();
+    let whole = read_uses(
+        &mut import_gap::EdgeAllowances::of(n::gap::EDGE_WORK),
+        [7, 7],
+    )
+    .unwrap();
     assert_eq!(whole[0], whole[1]);
     let once = whole[0];
     assert!(once > 0 && 2 * once < n::gap::EDGE_WORK);

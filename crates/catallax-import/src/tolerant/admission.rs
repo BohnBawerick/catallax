@@ -821,6 +821,21 @@ pub(crate) fn admit(
     recorded_mm: Option<&Rational>,
     dec: &mut Decider,
 ) -> Result<TolerantImport, Error> {
+    let edge_work = catallax_topology::numerical::gap::EDGE_WORK;
+    admit_under(edge_work, parsed, source, angles, policy, recorded_mm, dec)
+}
+
+/// [`admit`] with `edge_work` units for each edge's gap readings in place of
+/// the checker's cap. Only the test of the cap gives less.
+fn admit_under(
+    edge_work: u64,
+    parsed: Arc<ParsedStep>,
+    source: Arc<TolerantFile>,
+    angles: AngleUnit,
+    policy: AdmissionPolicy<'_>,
+    recorded_mm: Option<&Rational>,
+    dec: &mut Decider,
+) -> Result<TolerantImport, Error> {
     let mut fits = fit::Context::new(
         &parsed,
         &source.mm_per_unit,
@@ -828,6 +843,7 @@ pub(crate) fn admit(
         Default::default(),
         source.options.maximum_mm.to_f64_nearest(),
     );
+    fits.edge_work = edge_work;
     let mut evidence = TolerantEvidence {
         method: "catallax-tolerant-native-v1",
         source_sha256: source.source_sha256.clone(),
@@ -983,9 +999,13 @@ pub(crate) fn admit(
 }
 
 #[cfg(test)]
+#[path = "../../tests/common/topped_tube.rs"]
+mod topped_tube;
+
+#[cfg(test)]
 mod round_tests {
     use super::*;
-    use catallax_topology::numerical::gap::WORK_CAP;
+    use catallax_topology::numerical::gap::{EDGE_WORK, WORK_CAP};
 
     const AS_WRITTEN: Round = Round::Measured {
         repair_boundaries: false,
@@ -1059,5 +1079,160 @@ mod round_tests {
         assert_eq!(tried, [(false, 1)]);
         assert!(admitted.is_empty());
         assert!(refusals[0].is_none() && refusals[1].is_some());
+    }
+
+    /// `second` appended to `first` as one file of two bodies: the entities
+    /// of `second` follow those of `first`, numbered after them.
+    fn one_file(first: &str, second: &str) -> Vec<u8> {
+        let data = |text: &str| -> (usize, usize) {
+            let start = text.find("DATA;").expect("a data section") + "DATA;".len();
+            let end = text.rfind("ENDSEC;").expect("the end of the data section");
+            (start, end)
+        };
+        let offset = first
+            .lines()
+            .filter_map(|line| {
+                line.strip_prefix('#')?
+                    .split('=')
+                    .next()?
+                    .parse::<u64>()
+                    .ok()
+            })
+            .max()
+            .expect("an entity");
+        let (start, end) = data(second);
+        let mut renumbered = String::new();
+        let mut rest = &second[start..end];
+        while let Some(at) = rest.find('#') {
+            renumbered.push_str(&rest[..=at]);
+            rest = &rest[at + 1..];
+            let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
+            if digits > 0 {
+                let id: u64 = rest[..digits].parse().expect("an entity number");
+                renumbered.push_str(&(id + offset).to_string());
+                rest = &rest[digits..];
+            }
+        }
+        renumbered.push_str(rest);
+        let (_, end) = data(first);
+        format!(
+            "{}{}{}",
+            &first[..end],
+            renumbered.trim_start(),
+            &first[end..]
+        )
+        .into_bytes()
+    }
+
+    /// Section 4.2 step 8: "A hard per-edge work cap refuses by name." A file
+    /// of two bodies, read as an import through the measured rounds a reopen
+    /// runs. Both are the square tube with a spline top, whose u/v curves the
+    /// gap rule reads. The first has one u/v curve at another speed, so that
+    /// edge counts more than any edge of the second.
+    ///
+    /// Under the checker's cap both bodies are measured and admitted, which
+    /// gives each edge's count. With one unit less than the costliest edge
+    /// counts, the first body is refused by the cap's name, in the stage that
+    /// measures its faces, after its edges were read under an allowance they
+    /// could spend. The second body is measured and admitted as before, and
+    /// carries no refusal.
+    #[test]
+    fn a_capped_edge_refuses_its_own_body_after_it_was_measured_and_no_other() {
+        use std::collections::BTreeMap;
+        let plain = String::from_utf8(topped_tube::unstamped(
+            &topped_tube::written(&topped_tube::spline_topped_tube()).0,
+        ))
+        .unwrap();
+        let stretched = topped_tube::with_one_uv_curve_at_another_speed(&plain);
+        let bytes = one_file(&stretched, &plain);
+        let sha = crate::sha256_hex(&bytes);
+        let admit_at = |edge_work: u64| {
+            catallax_numbers::with_operation_budget(100_000_000_000, || {
+                let mut dec = Decider::default();
+                let (parsed, source, angles) =
+                    prepare(&bytes, &sha, ToleranceOptions::default(), &mut dec).unwrap();
+                let needed = vec![true; source.bodies.len()];
+                admit_under(
+                    edge_work,
+                    parsed,
+                    source,
+                    angles,
+                    AdmissionPolicy::MainFirst(&needed),
+                    None,
+                    &mut dec,
+                )
+                .unwrap()
+            })
+        };
+
+        let (whole, _) = admit_at(EDGE_WORK);
+        let names: Vec<&str> = whole
+            .source
+            .bodies
+            .iter()
+            .map(|body| body.name.as_str())
+            .collect();
+        assert_eq!(names.len(), 2, "{names:?}");
+        assert_eq!(whole.bodies.len(), 2, "{:?}", whole.body_errors);
+        let mut counted: BTreeMap<(&str, &str), u64> = BTreeMap::new();
+        for row in &whole.evidence.import_gaps {
+            *counted
+                .entry((row.body.as_str(), row.edge.as_str()))
+                .or_default() += row.work;
+        }
+        let costliest = |body: &str| {
+            counted
+                .iter()
+                .filter(|((of, _), _)| *of == body)
+                .map(|(_, work)| *work)
+                .max()
+                .expect("an edge the gap rule read")
+        };
+        let (first, second) = (costliest(names[0]), costliest(names[1]));
+        assert!(second > 0 && first > second, "{first} and {second}");
+
+        let (capped, request) = admit_at(first - 1);
+        assert!(!request.exhausted, "{request:?}");
+        let failure = capped.body_errors[0]
+            .as_ref()
+            .expect("the body with the capped edge");
+        assert!(
+            matches!(&failure.error, Error::Numerical(refusal) if refusal.code == WORK_CAP),
+            "{failure:?}"
+        );
+        // The stage that reads each face's edge uses through the gap rule,
+        // past the body's decoding and its topology, with work spent on the
+        // body. Every edge had an allowance it could spend, `first - 1`, and
+        // only a reading under an edge's allowance gives the cap's name.
+        assert_eq!(failure.stage, NativeStage::SurfaceFit);
+        assert!(failure.work_used > 0, "{failure:?}");
+        assert!(capped.body_errors[1].is_none(), "{:?}", capped.body_errors);
+        let admitted: Vec<usize> = capped
+            .bodies
+            .iter()
+            .map(TolerantSolid::source_index)
+            .collect();
+        assert_eq!(admitted, [1]);
+        // The admitted body's edges were read as under the checker's cap.
+        let read: Vec<_> = capped
+            .evidence
+            .import_gaps
+            .iter()
+            .map(|row| (row.body.as_str(), row.edge.as_str(), row.work))
+            .collect();
+        let before: Vec<_> = whole
+            .evidence
+            .import_gaps
+            .iter()
+            .filter(|row| row.body == names[1])
+            .map(|row| (row.body.as_str(), row.edge.as_str(), row.work))
+            .collect();
+        assert!(!read.is_empty());
+        assert_eq!(read, before);
+        println!(
+            "two tubes: the costliest edge counts {first} units in the first body and {second} in the second; under {} the first body is refused after {} units of its own",
+            first - 1,
+            failure.work_used
+        );
     }
 }

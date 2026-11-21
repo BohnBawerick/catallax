@@ -90,6 +90,14 @@ pub trait Path {
     fn bands(&self, _local: &[Real; 3], _dec: &mut Decider) -> Result<Vec<Real>, Refusal> {
         Ok(Vec::new())
     }
+    /// Exact clips where the piece meets a tangent neighbour piece (4.2a
+    /// step 4). The region is where each is non-negative. A junction is no
+    /// face: the neighbour's section there is the same, so a point on it
+    /// inside the fan and outside every ball lies inside the two pieces'
+    /// union, and a zero value does not make it a boundary point.
+    fn junctions(&self, _local: &[Real; 3], _dec: &mut Decider) -> Result<Vec<Real>, Refusal> {
+        Ok(Vec::new())
+    }
     /// Closed-form value whose sign is that of `min_u |x-c(u)|^2 - r^2`.
     fn separation(&self, _local: &[Real; 3]) -> Option<Real> {
         None
@@ -245,6 +253,11 @@ pub fn classify<P: Path>(path: &P, point: &Point3, dec: &mut Decider) -> Result<
             Sign::Negative => return Ok(Relation::Exterior),
             Sign::Zero => wall = true,
             Sign::Positive => {}
+        }
+    }
+    for c in path.junctions(&local, dec)? {
+        if sign(&c, dec)? == Sign::Negative {
+            return Ok(Relation::Exterior);
         }
     }
     let unseparated = || gap("membership touches a clipping wall; incidence is not certified");

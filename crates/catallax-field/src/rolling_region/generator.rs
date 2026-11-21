@@ -69,6 +69,8 @@ pub struct Generator {
     // and the oriented normal.
     chords: Vec<(Point3, Vector3)>,
     ends: [Real; 2],
+    // Ends that meet a tangent neighbour piece: junctions, not faces.
+    junction: [bool; 2],
 }
 
 fn side(outside: bool) -> Real {
@@ -182,7 +184,21 @@ impl Generator {
             rails,
             chords,
             ends,
+            junction: [false; 2],
         })
+    }
+
+    /// Marks ends that meet a tangent neighbour piece (4.2a step 4). Their
+    /// end planes become junctions: the neighbour's section there is the
+    /// same, so they are no faces of the two pieces' union.
+    pub fn with_junctions(mut self, junction: [bool; 2]) -> Self {
+        self.junction = junction;
+        self
+    }
+
+    /// The ball centre at station `t`.
+    pub fn centre_at(&self, t: &Real) -> Point3 {
+        self.centre.plus(&self.station(t))
     }
 
     /// Ball radius in mm.
@@ -224,6 +240,15 @@ impl Generator {
 
     fn station(&self, t: &Real) -> Vector3 {
         self.direction.scaled(t)
+    }
+
+    /// The two end clips, non-negative between the end planes, from the
+    /// offset `along = d . (x - c)` of a point.
+    fn end_walls(&self, along: &Real) -> [Real; 2] {
+        [
+            along - &(&self.ends[0] * &self.squared),
+            &(&self.ends[1] * &self.squared) - along,
+        ]
     }
 
     /// An axis-aligned box holding the region: the hull of the edge, both
@@ -525,9 +550,25 @@ impl Path for Generator {
         for (foot, normal) in &self.chords {
             walls.push(x.minus(&position(foot)).dot(normal));
         }
-        walls.push(&along - &(&self.ends[0] * &self.squared));
-        walls.push(&(&self.ends[1] * &self.squared) - &along);
+        for (k, wall) in self.end_walls(&along).into_iter().enumerate() {
+            if !self.junction[k] {
+                walls.push(wall);
+            }
+        }
         Ok(walls)
+    }
+    fn junctions(&self, local: &[Real; 3], _: &mut Decider) -> Result<Vec<Real>, Refusal> {
+        if self.junction == [false; 2] {
+            return Ok(Vec::new());
+        }
+        let v = vector(local).minus(&position(&self.centre));
+        let along = self.direction.dot(&v);
+        Ok(self
+            .end_walls(&along)
+            .into_iter()
+            .zip(self.junction)
+            .filter_map(|(wall, junction)| junction.then_some(wall))
+            .collect())
     }
     fn walls_are_faces(&self) -> bool {
         true

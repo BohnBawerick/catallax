@@ -10,6 +10,8 @@ use catallax_shapes::{Curve, CurveId, GeomStore, Line, Plane, Point3, Surface, V
 
 use crate::{Instruction, Location, Plan, features::Feature, geometry, profile};
 
+#[path = "fillet_chain.rs"]
+mod chain;
 #[path = "fillet_network.rs"]
 mod network;
 #[path = "fillet_rim.rs"]
@@ -25,6 +27,9 @@ type Samples = Vec<(Point3, Option<[Rational; 2]>)>;
 pub(crate) struct Settings<'a> {
     pub radius: &'a Real,
     pub closure: catallax_recipe::FilletCorner,
+    /// Whether a run continues across tangent neighbours (recipe version 4
+    /// on); version 3 runs a straight strip past its rails instead.
+    pub roll_over: bool,
 }
 
 fn bad(detail: &str) -> Refusal {
@@ -406,7 +411,45 @@ impl Plan {
         step: &StepId,
         dec: &mut Decider,
     ) -> Result<usize, Refusal> {
-        let Settings { radius, closure } = settings;
+        let (radius, roll_over) = (settings.radius, settings.roll_over);
+        let saved = (self.instructions.len(), self.leaves.len(), self.faces.len());
+        match self.fillet_runs(root, source_faces, selection, settings, step, dec) {
+            Err(refusal) if chain::retried(&refusal) => {
+                // The routes before only append; drop what the refused one
+                // left before trying runs that end at tangent junctions or
+                // run past their rails.
+                self.instructions.truncate(saved.0);
+                self.leaves.truncate(saved.1);
+                self.faces.truncate(saved.2);
+                match self.chain_fillet(
+                    root,
+                    source_faces,
+                    selection,
+                    radius,
+                    roll_over,
+                    step,
+                    dec,
+                )? {
+                    Some(result) => Ok(result),
+                    None => Err(refusal),
+                }
+            }
+            other => other,
+        }
+    }
+
+    fn fillet_runs(
+        &mut self,
+        root: usize,
+        source_faces: &[usize],
+        selection: &EdgeSelection,
+        settings: Settings<'_>,
+        step: &StepId,
+        dec: &mut Decider,
+    ) -> Result<usize, Refusal> {
+        let Settings {
+            radius, closure, ..
+        } = settings;
         if geometry::sign(radius, dec)? != Sign::Positive {
             return Err(Refusal::new(
                 "fillet.non-positive-radius",

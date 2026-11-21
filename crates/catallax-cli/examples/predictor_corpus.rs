@@ -460,12 +460,14 @@ fn check(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         println!("  {path}: {count}");
     }
 
-    // 4. Wall time per million units, over rows the clock can read.
+    // 4. Wall time per million units, over rows the clock can read. The
+    // clock is read at one thread, where the time is the arithmetic's.
     let mut rates: Vec<(f64, String)> = Vec::new();
     for (id, lines) in &rows {
         for part in ["build", "export"] {
             let best = lines
                 .iter()
+                .filter(|line| line["threads"] == 1)
                 .filter_map(|line| line[part]["ms"].as_f64())
                 .fold(f64::INFINITY, f64::min);
             let counted = units(&lines[0][part]);
@@ -485,6 +487,11 @@ fn check(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             high.0,
             high.1
         );
+        // The ends of the band, for whoever reads a failure.
+        let ends = rates.iter().take(5).chain(rates.iter().rev().take(5).rev());
+        for (rate, row) in ends {
+            println!("  {rate:8.1} ms per million  {row}");
+        }
         if band > BAND {
             failures.push(format!("the band is {band:.1}x, past {BAND}x"));
         }

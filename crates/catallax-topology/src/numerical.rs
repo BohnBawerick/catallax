@@ -29,6 +29,9 @@ pub use import_gap::{
     ImportGapOutcome, ImportGapRow, ImportUseReading, read_import_use, read_import_use_counted,
 };
 mod native;
+/// The filtered predicate of a decision with a tolerant participant
+/// (Checkpoint 2 decisions, section 4.5).
+pub mod predicate;
 mod retighten;
 pub use native::{NumericalNativeTrim, build_with_native_trims, build_with_sampled_carriers};
 mod source;

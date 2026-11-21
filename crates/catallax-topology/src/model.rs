@@ -545,6 +545,30 @@ impl Model {
         result
     }
 
+    /// The first entity of a body that stores a tolerance, named for a
+    /// refusal: its faces, then its edges, then its vertices, each in the
+    /// body's fixed order. `None` for a body whose every entity is exact.
+    pub fn tolerant_entity(&self, b: BodyId) -> Option<String> {
+        if let Some(face) = self
+            .faces_of_body(b)
+            .into_iter()
+            .find(|face| self.face(*face).tolerance.is_some())
+        {
+            return Some(format!("face {face:?}"));
+        }
+        if let Some(edge) = self
+            .edges_of_body(b)
+            .into_iter()
+            .find(|edge| self.edge(*edge).tolerance.is_some())
+        {
+            return Some(format!("edge {edge:?}"));
+        }
+        self.vertices_of_body(b)
+            .into_iter()
+            .find(|vertex| self.vertex(*vertex).tolerance.is_some())
+            .map(|vertex| format!("vertex {vertex:?}"))
+    }
+
     /// Vertices of a body in the fixed order of the piece description.
     pub fn vertices_of_body(&self, b: BodyId) -> Vec<VertexId> {
         let mut seen = BTreeSet::new();

@@ -1,12 +1,13 @@
-//! Roadmap 3.3: distant, near and nested pairs of the public target parts get
-//! clash or clear by a stated gap, the same at every thread count.
+//! Roadmap 3.3: distant, near, nested and overlapping pairs of the public
+//! target parts and of primitives get clash or clear by a stated gap, the same
+//! at every thread count, also where the overlap Boolean refuses.
 use catallax_app::queries::{BodyRelation, body_relation};
 use catallax_features::evaluate;
 use catallax_measure::{Accuracy, Enclosure};
 use catallax_numbers::{Answer, Decider, Rational, set_threads, with_operation_budget};
 use catallax_recipe::{Recipe, StepId};
 use catallax_shapes::{Isometry, Pose, RPoint3, RVector3, Rotation, Vector3};
-use catallax_topology::{BodyId, Model, block, cylinder, transformed_body};
+use catallax_topology::{BodyId, Model, block, cone, cylinder, torus, transformed_body};
 use std::num::NonZeroUsize;
 
 const P2: &str = include_str!("../../../parts/P2-collar.json");
@@ -157,4 +158,101 @@ fn answers_and_work_are_the_same_at_every_thread_count() {
     assert!(records.windows(2).all(|w| w[0] == w[1]), "{records:?}");
     assert_eq!(records[0][0].0.lo, q("1"));
     assert_eq!(records[0][1].0.lo, q("24"));
+}
+
+fn clash(model: &Model, a: BodyId, b: BodyId) -> (Enclosure, Vec<&'static str>) {
+    let answer = relation(model, a, b);
+    match answer.value {
+        BodyRelation::Clash { overlap } => (overlap, answer.marks.iter().map(|m| m.code).collect()),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn copies_overlapping_by_half_clash_where_the_boolean_refuses() {
+    // The Boolean refuses both: P2's chamfer cones meet the copy's cylinders
+    // at non-perpendicular axes, P3's torus fillets make non-coaxial pairs.
+    // The overlap lies between a ball inside both and the boxes' overlap.
+    for (text, shift) in [(P2, "12"), (P3, "20")] {
+        let mut built = part(text);
+        let a = built.result;
+        let model = &mut built.model;
+        let half = shifted(model, a, [shift, "0", "0"]);
+        let (overlap, marks) = clash(model, a, half);
+        assert!(
+            overlap.lo > q("0") && overlap.lo < overlap.hi,
+            "{overlap:?}"
+        );
+        assert_eq!(marks, ["measure.accuracy-not-reached"]);
+    }
+}
+
+#[test]
+fn a_torus_inside_a_torus_tube_overlaps_by_its_own_volume() {
+    // A torus of radii 1 and 1/4 turned 30 degrees inside the tube of one of
+    // radii 10 and 3: the Boolean refuses the non-coaxial pair. Its volume is
+    // 2 pi^2 R r^2 = pi^2 / 8 = 1.23370055013616982...
+    let mut model = Model::new();
+    let ring = torus(&mut model, q("10"), q("3"), &at("0", "0", "0")).unwrap();
+    let small = torus(&mut model, q("1"), q("1/4"), &at("0", "0", "0")).unwrap();
+    let inner = turned(&mut model, small, ["1", "0", "0"], "30", ["10", "0", "0"]);
+    let (overlap, marks) = clash(&model, ring, inner);
+    assert!(overlap.lo <= q("1.23370055013617") && overlap.hi >= q("1.23370055013616"));
+    assert!(overlap.width() < q("1e-9"), "{overlap:?}");
+    assert!(marks.is_empty(), "{marks:?}");
+}
+
+#[test]
+fn a_turned_pin_across_or_beside_a_cone_wall() {
+    // A cone about z of radius 10 at z = 0 and 6 at z = 20, and a pin of
+    // radius 1 and length 4 turned 30 degrees about x. The Boolean refuses
+    // both poses. Across the wall the pin clashes; beside the wall near the
+    // top it is clear of the cone, though inside its box.
+    let mut model = Model::new();
+    let wall = cone(&mut model, q("10"), q("6"), q("20"), &at("0", "0", "0")).unwrap();
+    let pin = cylinder(&mut model, q("1"), q("4"), &at("0", "0", "-2")).unwrap();
+    let across = turned(&mut model, pin, ["1", "0", "0"], "30", ["0", "7", "10"]);
+    let beside = turned(&mut model, pin, ["1", "0", "0"], "30", ["0", "9", "17"]);
+    let (overlap, _) = clash(&model, wall, across);
+    assert!(overlap.lo > q("0"), "{overlap:?}");
+    let gap = clear(&model, wall, beside);
+    assert!(gap.lo > q("0"), "{gap:?}");
+}
+
+#[test]
+fn answers_where_the_boolean_refuses_are_the_same_at_every_thread_count() {
+    let mut built = part(P3);
+    let a = built.result;
+    let half = shifted(&mut built.model, a, ["20", "0", "0"]);
+    let ring = torus(&mut built.model, q("10"), q("3"), &at("100", "0", "0")).unwrap();
+    let small = torus(&mut built.model, q("1"), q("1/4"), &at("0", "0", "0")).unwrap();
+    let inner = turned(
+        &mut built.model,
+        small,
+        ["1", "0", "0"],
+        "30",
+        ["110", "0", "0"],
+    );
+    let model = &built.model;
+    let run = || {
+        [(a, half), (ring, inner)].map(|(x, y)| {
+            let (answer, work) = with_operation_budget(catallax_app::DEFAULT_BUILD_WORK, || {
+                body_relation(model, x, y, &Accuracy::default(), &mut Decider::default())
+            });
+            let answer = answer.unwrap_or_else(|e| panic!("{e}"));
+            let overlap = match answer.value {
+                BodyRelation::Clash { overlap } => overlap,
+                other => panic!("{other:?}"),
+            };
+            (overlap, answer.marks.len(), work.used)
+        })
+    };
+    let records: Vec<_> = [1, 2, 4]
+        .map(|n| {
+            set_threads(NonZeroUsize::new(n));
+            run()
+        })
+        .into();
+    set_threads(None);
+    assert!(records.windows(2).all(|w| w[0] == w[1]), "{records:?}");
 }

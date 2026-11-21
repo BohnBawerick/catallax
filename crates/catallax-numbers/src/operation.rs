@@ -24,6 +24,8 @@ struct State {
     aborted: Arc<AtomicBool>,
     limit: u64,
     used: u64,
+    // Charges that `refund_on_refusal` took back out of `used`.
+    refunded: u64,
     exhausted: bool,
     reduced_angle_series: bool,
     reuse_enclosures: bool,
@@ -103,6 +105,13 @@ pub struct OperationWork {
     pub used: u64,
     /// Whether a reservation exceeded the allowance or a task aborted.
     pub exhausted: bool,
+    /// Arithmetic of refused optional attempts ([`refund_on_refusal`]). The
+    /// allowance got these units back, so they are not in `used`, but the
+    /// machine did the work. Every refused attempt inside the operation is
+    /// counted once, including one made by an [`OperationTask`] item, whether
+    /// that item is then admitted or discarded. A discarded item's other
+    /// charges were never admitted and are in neither counter.
+    pub refunded: u64,
 }
 
 impl State {
@@ -111,6 +120,7 @@ impl State {
         OperationWork {
             used: if aborted { self.limit } else { self.used },
             exhausted: self.exhausted || aborted,
+            refunded: self.refunded,
         }
     }
 }
@@ -165,13 +175,14 @@ pub(crate) fn angle_reductions() -> u32 {
 }
 
 /// Observes request accounting without charging it.
-/// Outside a request budget both counters are zero/false.
+/// Outside a request budget every counter is zero/false.
 pub fn current_operation_work() -> OperationWork {
     ACTIVE.with(|slot| {
         slot.borrow().as_ref().map_or_else(
             || OperationWork {
                 used: 0,
                 exhausted: false,
+                refunded: 0,
             },
             State::work,
         )
@@ -201,8 +212,9 @@ pub fn with_operation_budget<T>(limit: u64, run: impl FnOnce() -> T) -> (T, Oper
 /// this only runs the attempt.
 ///
 /// Use it for a cheaper construction tried ahead of the one the request is
-/// funded for. The arithmetic of a refused attempt is real machine time, so the
-/// caller bounds how often it makes one.
+/// funded for. The arithmetic of a refused attempt is real machine time. Its
+/// returned charges move to [`OperationWork::refunded`], which only grows, so
+/// the cost of refused attempts stays on the record.
 pub fn refund_on_refusal<T, E>(run: impl FnOnce() -> Result<T, E>) -> Result<T, E> {
     let before = ACTIVE.with(|slot| {
         slot.borrow()
@@ -221,6 +233,9 @@ pub fn refund_on_refusal<T, E>(run: impl FnOnce() -> Result<T, E>) -> Result<T, 
                 && state.request == request
                 && !state.aborted.load(AtomicOrdering::Acquire)
             {
+                state.refunded = state
+                    .refunded
+                    .saturating_add(state.used.saturating_sub(used));
                 state.used = used;
                 state.exhausted = exhausted;
             }
@@ -255,6 +270,7 @@ fn budget_scope<T>(limit: u64, worker: bool, run: impl FnOnce() -> T) -> (T, Ope
             aborted: Arc::new(AtomicBool::new(false)),
             limit,
             used: 0,
+            refunded: 0,
             exhausted: false,
             reduced_angle_series: false,
             reuse_enclosures: false,
@@ -279,11 +295,41 @@ pub struct OperationTask {
 }
 
 /// A speculative value whose reservations have not yet been admitted.
+/// Admitted or discarded, it reports its refused attempts to its request.
 pub struct RecordedWork<T> {
     value: T,
     reservations: Vec<u64>,
     request: Option<u64>,
     work: Option<OperationWork>,
+    // Never read: it reports when the record is dropped.
+    _refunded: Refunded,
+}
+
+// The refused attempts of one recorded item (`refund_on_refusal`). They left no
+// reservation to replay, and their arithmetic was done whether the item is then
+// admitted, refused at admission or discarded. So the count goes to the request
+// when the record leaves, by any of those ways, and so exactly once. A record
+// that leaves outside its request has no counter to report to.
+struct Refunded {
+    request: Option<u64>,
+    units: u64,
+}
+
+impl Drop for Refunded {
+    fn drop(&mut self) {
+        if self.units == 0 {
+            return;
+        }
+        // A record can be dropped while its thread unwinds or ends.
+        let _ = ACTIVE.try_with(|slot| {
+            if let Ok(mut active) = slot.try_borrow_mut()
+                && let Some(state) = active.as_mut()
+                && Some(state.request) == self.request
+            {
+                state.refunded = state.refunded.saturating_add(self.units);
+            }
+        });
+    }
 }
 
 impl OperationTask {
@@ -298,6 +344,7 @@ impl OperationTask {
                     State {
                         limit: state.limit.saturating_sub(work.used),
                         used: 0,
+                        refunded: 0,
                         exhausted: work.exhausted,
                         ..state.clone()
                     }
@@ -331,6 +378,10 @@ impl OperationTask {
                 reservations: Vec::new(),
                 request: None,
                 work: None,
+                _refunded: Refunded {
+                    request: None,
+                    units: 0,
+                },
             };
         };
         struct AbortOnPanic(Arc<AtomicBool>);
@@ -368,6 +419,10 @@ impl OperationTask {
             reservations,
             request: Some(request),
             work: Some(work),
+            _refunded: Refunded {
+                request: Some(request),
+                units: work.refunded,
+            },
         }
     }
 }
@@ -418,6 +473,8 @@ impl<T> RecordedWork<T> {
     /// Admits this item on the original request thread, in input order.
     /// Reservations replay individually, preserving the exact exhausted prefix.
     /// Later speculative items must be discarded after the first refusal.
+    /// A discarded item's charges are not admitted; its refused attempts are
+    /// still reported in [`OperationWork::refunded`].
     pub fn commit(self) -> Result<T, crate::Refusal> {
         self.check_request()?;
         for units in self.reservations {
@@ -717,6 +774,7 @@ pub(crate) fn enter_worker(reduced_angle_series: bool, reuse_enclosures: bool, p
             aborted: Arc::new(AtomicBool::new(false)),
             limit: u64::MAX,
             used: 0,
+            refunded: 0,
             exhausted: false,
             reduced_angle_series,
             reuse_enclosures,
@@ -1081,16 +1139,42 @@ mod allowance_tests {
             assert!(refused.is_err());
             assert_eq!(current_operation_work().used, 2);
             assert!(!current_operation_work().exhausted);
+            // The refused charge of 9 never fitted, so only the 5 was work.
+            assert_eq!(current_operation_work().refunded, 5);
             let kept: Result<(), ()> = refund_on_refusal(|| {
                 assert!(!charge(3));
                 Ok(())
             });
             assert!(kept.is_ok());
             assert_eq!(current_operation_work().used, 5);
+            assert_eq!(current_operation_work().refunded, 5);
             assert!(!charge(5));
         });
         assert_eq!(work.used, 10);
+        assert_eq!(work.refunded, 5);
         assert!(!work.exhausted);
+        assert_eq!(current_operation_work().refunded, 0);
+    }
+
+    #[test]
+    fn nested_refused_attempts_are_each_counted_once() {
+        let (_, work) = with_operation_budget(20, || {
+            let outer: Result<(), ()> = refund_on_refusal(|| {
+                assert!(!charge(2));
+                let inner: Result<(), ()> = refund_on_refusal(|| {
+                    assert!(!charge(3));
+                    Err(())
+                });
+                assert!(inner.is_err());
+                assert_eq!(current_operation_work().used, 2);
+                assert_eq!(current_operation_work().refunded, 3);
+                assert!(!charge(4));
+                Err(())
+            });
+            assert!(outer.is_err());
+        });
+        assert_eq!(work.used, 0);
+        assert_eq!(work.refunded, 9);
     }
 
     #[test]
@@ -1101,6 +1185,7 @@ mod allowance_tests {
             assert!(refused.is_err());
         });
         assert!(work.exhausted);
+        assert_eq!(work.refunded, 0);
     }
 
     #[test]
@@ -1118,6 +1203,99 @@ mod allowance_tests {
             recorded.commit().unwrap();
         });
         assert_eq!(parent.used, 3);
+        assert_eq!(parent.refunded, 6);
         assert!(!parent.exhausted);
+    }
+
+    #[test]
+    fn a_share_carries_its_refused_attempts_to_the_request() {
+        let (_, parent) = with_operation_budget(10, || {
+            let tasks = OperationTask::capture().split(std::num::NonZeroUsize::new(2).unwrap());
+            for task in tasks {
+                let recorded = task.run(|| {
+                    let refused: Result<(), ()> = refund_on_refusal(|| {
+                        assert!(!charge(4));
+                        Err(())
+                    });
+                    assert!(refused.is_err());
+                    assert!(!charge(1));
+                });
+                assert_eq!(recorded.commit_share().unwrap(), Some(()));
+            }
+        });
+        assert_eq!(parent.used, 2);
+        assert_eq!(parent.refunded, 8);
+        assert!(!parent.exhausted);
+    }
+
+    // Two items are computed against a request of 10, five units each. Each
+    // charges 1 and makes one refused attempt, of 2 and of 4. Before they are
+    // admitted the request spends its 10, so the first admission refuses and
+    // the second item is discarded, as `RecordedWork::commit` requires.
+    fn discard_after_a_refused_admission(on_threads: bool) -> OperationWork {
+        let (_, parent) = with_operation_budget(10, || {
+            let item = |attempt: u64| {
+                move || {
+                    assert!(!charge(1));
+                    let refused: Result<(), ()> = refund_on_refusal(|| {
+                        assert!(!charge(attempt));
+                        Err(())
+                    });
+                    assert!(refused.is_err());
+                }
+            };
+            let tasks = OperationTask::capture().split(std::num::NonZeroUsize::new(2).unwrap());
+            let mut recorded = tasks
+                .into_iter()
+                .zip([2, 4])
+                .map(|(task, attempt)| {
+                    if on_threads {
+                        std::thread::scope(|scope| {
+                            scope.spawn(move || task.run(item(attempt))).join().unwrap()
+                        })
+                    } else {
+                        task.run(item(attempt))
+                    }
+                })
+                .collect::<Vec<_>>()
+                .into_iter();
+            // Computing the items reported nothing to the request yet.
+            assert_eq!(current_operation_work().refunded, 0);
+            assert!(!charge(10));
+            let first = recorded.next().unwrap();
+            assert_eq!(first.commit().unwrap_err().code, "numbers.operation-budget");
+            assert_eq!(current_operation_work().refunded, 2);
+            drop(recorded);
+        });
+        parent
+    }
+
+    #[test]
+    fn a_discarded_item_still_reports_its_refused_attempts() {
+        for on_threads in [false, true] {
+            let parent = discard_after_a_refused_admission(on_threads);
+            // The refused attempts of both items: 2 from the one refused at
+            // admission and 4 from the one that was discarded.
+            assert_eq!(parent.refunded, 6);
+            // Control: neither item's own charge of 1 was admitted, and the
+            // request is exhausted exactly as it was before refunds were kept.
+            assert_eq!(parent.used, 10);
+            assert!(parent.exhausted);
+        }
+    }
+
+    #[test]
+    fn a_record_outside_its_request_reports_nothing() {
+        let attempt = || {
+            let refused: Result<(), ()> = refund_on_refusal(|| {
+                assert!(!charge(4));
+                Err(())
+            });
+            assert!(refused.is_err());
+        };
+        let (recorded, first) = with_operation_budget(10, || OperationTask::capture().run(attempt));
+        assert_eq!(first.refunded, 0);
+        let (_, other) = with_operation_budget(10, || drop(recorded));
+        assert_eq!(other.refunded, 0);
     }
 }

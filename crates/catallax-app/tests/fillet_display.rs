@@ -197,6 +197,7 @@ fn slow_correct_rim_mesh_passes_with_a_warning() {
     let work = OperationWork {
         used: 1,
         exhausted: false,
+        refunded: 0,
     };
     assert_eq!(rim_mesh_warning("rim", &work, Duration::from_secs(4)), None);
     let warning = rim_mesh_warning("rim", &work, Duration::from_secs(6)).unwrap();

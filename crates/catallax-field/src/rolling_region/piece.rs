@@ -96,13 +96,16 @@ fn point(p: &RPoint3) -> Point3 {
 impl Piece {
     /// Wraps a path derived by the field, with the two supports it rolls on.
     pub fn new(
-        kind: Kind,
+        mut kind: Kind,
         origin: Origin,
         convex: bool,
         supports: [&Surface; 2],
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
         let hull = each_kind!(&kind, path => path.hull(dec)?);
+        if let Kind::Generator(path) = &mut kind {
+            path.enclose_cover(dec)?;
+        }
         Ok(Self {
             kind,
             origin,

@@ -14,7 +14,8 @@
 //! The normal wall through each contact rail is a plane: the normals of a
 //! plane, or of a cylinder along one generator, are parallel. The fan lies on
 //! the ball side of both supports, on the edge side of both rail planes and
-//! between the end planes, which must be normal to the line. The bands of
+//! between the end planes, which are normal to the line. A run whose end face
+//! leans across the line ends at a normal plane past it (4.2a step 4). The bands of
 //! [`super::revolved`] keep far zones out. The rail planes meet in an
 //! unbounded wedge that crosses a cylinder the ball lies outside of and leaves
 //! it on the far side, so such a cylinder adds its chord wall: the plane
@@ -71,6 +72,9 @@ pub struct Generator {
     ends: [Real; 2],
     // Ends that meet a tangent neighbour piece: junctions, not faces.
     junction: [bool; 2],
+    // The interval cover, enclosed once when the path becomes a piece. A
+    // rigid motion drops it.
+    enclosed: Option<GeneratorCover>,
 }
 
 fn side(outside: bool) -> Real {
@@ -185,6 +189,32 @@ impl Generator {
             chords,
             ends,
             junction: [false; 2],
+            enclosed: None,
+        })
+    }
+
+    /// Encloses the interval cover once (4.2a step 4). It depends only on the
+    /// path, and a path whose frame is algebraic, such as a strip along a
+    /// diagonal between planes with irrational unit normals, would otherwise
+    /// enclose it again on every query. The cover is the same either way.
+    pub(crate) fn enclose_cover(&mut self, dec: &mut Decider) -> Result<(), Refusal> {
+        self.enclosed = Some(self.enclosure(dec)?);
+        Ok(())
+    }
+
+    fn enclosure(&self, dec: &mut Decider) -> Result<GeneratorCover, Refusal> {
+        Ok(GeneratorCover {
+            centre: point_balls(&self.centre, dec)?,
+            direction: balls(&self.direction, dec)?,
+            feet: [
+                point_balls(&self.feet[0], dec)?,
+                point_balls(&self.feet[1], dec)?,
+            ],
+            ends: [
+                enclose(&self.ends[0], BITS, dec)?,
+                enclose(&self.ends[1], BITS, dec)?,
+            ],
+            radius: enclose(&self.radius, BITS, dec)?,
         })
     }
 
@@ -201,6 +231,17 @@ impl Generator {
         self.centre.plus(&self.station(t))
     }
 
+    /// The edge point and the two contact feet at station `t`, in the
+    /// supports' order. With the centre they span the section there.
+    pub fn section_at(&self, t: &Real) -> [Point3; 3] {
+        let step = self.station(t);
+        [
+            self.edge.plus(&step),
+            self.feet[0].plus(&step),
+            self.feet[1].plus(&step),
+        ]
+    }
+
     /// Ball radius in mm.
     pub fn radius(&self) -> &Real {
         &self.radius
@@ -209,6 +250,7 @@ impl Generator {
     /// Applies an exact rigid motion, reflections included. Stations are
     /// relative to the moved centre and direction, so they are unchanged.
     pub fn transform(&mut self, pose: &Isometry) {
+        self.enclosed = None;
         let v = |v: &mut Vector3| *v = pose.apply_vector(v);
         let p = |p: &mut Point3| *p = pose.apply_point(p);
         for wall in &mut self.supports {
@@ -582,19 +624,10 @@ impl Path for Generator {
         Some(&(&v.norm_squared() - &(&along.square() / &self.squared)) - &self.radius.square())
     }
     fn cover(&self, dec: &mut Decider) -> Result<GeneratorCover, Refusal> {
-        Ok(GeneratorCover {
-            centre: point_balls(&self.centre, dec)?,
-            direction: balls(&self.direction, dec)?,
-            feet: [
-                point_balls(&self.feet[0], dec)?,
-                point_balls(&self.feet[1], dec)?,
-            ],
-            ends: [
-                enclose(&self.ends[0], BITS, dec)?,
-                enclose(&self.ends[1], BITS, dec)?,
-            ],
-            radius: enclose(&self.radius, BITS, dec)?,
-        })
+        match &self.enclosed {
+            Some(cover) => Ok(cover.clone()),
+            None => self.enclosure(dec),
+        }
     }
     fn nearest(&self, local: &[Real; 3], dec: &mut Decider) -> Result<Option<Frame>, Refusal> {
         let v = vector(local).minus(&position(&self.centre));

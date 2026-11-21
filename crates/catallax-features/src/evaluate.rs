@@ -894,7 +894,32 @@ fn evaluate_impl(
         let mut build = |model: &mut Model,
                          dec: &mut Decider|
          -> Result<Option<BodyValue>, Refusal> {
-            if let Some(context) = numerical.as_deref() {
+            if let Some(context) = numerical.as_deref_mut() {
+                // A hole in a body with tolerant entities has a construction
+                // of its own. Nothing else that reads one does yet.
+                if let Operation::Hole {
+                    target,
+                    at,
+                    diameter,
+                    depth,
+                    tip,
+                    head,
+                } = &step.op
+                    && context.has(target)
+                {
+                    context.hole(
+                        target,
+                        at,
+                        diameter.value(),
+                        depth,
+                        tip,
+                        head.as_ref(),
+                        &step.id,
+                        recipe,
+                        dec,
+                    )?;
+                    return Ok(None);
+                }
                 context.exact_inputs(step)?;
             }
             if let Some((body, radius)) = crate::stock::build(model, &step.op, &step.id, dec)? {

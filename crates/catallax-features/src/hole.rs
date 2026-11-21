@@ -22,6 +22,8 @@ mod cylinder_wall;
 pub use cylinder_wall::{CylinderWallBoundary, append_cylinder_wall};
 mod ring;
 pub use ring::{CylinderRingCurve, cylinder_ring_curve};
+/// A through hole in a body with tolerant entities.
+pub mod through_tolerant;
 
 /// One positive-height cylindrical or conical band of a drill tool.
 #[derive(Clone, Debug)]

@@ -1,6 +1,6 @@
 //! Fillet admission preserves requested tolerance and untouched periodic seam uses.
 
-use catallax_features::fillet::numerical as fillet;
+use catallax_features::{fillet::numerical as fillet, hole};
 use catallax_numbers::{Decider, Rational, Real, with_operation_budget};
 use catallax_recipe::Recipe;
 use catallax_shapes::{
@@ -540,4 +540,144 @@ fn cap_bridge_meets_the_adjacent_native_occurrences() {
     });
     assert!(!work.exhausted, "{work:?}");
     println!("cap native residual control: {work:?}");
+}
+
+// A hole after the fillet (Checkpoint 2 decisions, section 4.5: "a hole after
+// a numerical fillet works"). The block's vertical edge at x = 0, y = 0 is
+// rounded between two fitted faces; the top, the bottom and the two other
+// sides stay planes.
+
+/// The block with its edge rounded at 0.1 mm.
+fn rounded(dec: &mut Decider) -> NumericalBody {
+    let (source, key) = source(false, false, dec);
+    fillet::build(source, &key, "round", q("1/10"), q("1/10000000"), dec)
+        .unwrap()
+        .body()
+        .clone()
+}
+
+/// A through drill of diameter 0.5 mm from `point` along `direction`.
+fn drill(point: [&str; 3], direction: [&str; 3], dec: &mut Decider) -> hole::HoleTool {
+    let value = json!({"format":"catallax-recipe/5","name":"a drill","steps":[
+        {"id":"stock","op":"block","size":["3","3","3"],"pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}},
+        {"id":"drilled","op":"hole","target":"stock","at":[{"id":"a","point":point,"direction":direction}],
+         "diameter":"1/2","depth":"through","tip":"flat"}
+    ],"result":"drilled"});
+    let recipe = Recipe::parse(&value.to_string()).unwrap();
+    let catallax_recipe::Operation::Hole {
+        at,
+        diameter,
+        depth,
+        tip,
+        ..
+    } = &recipe.steps[1].op
+    else {
+        panic!("a hole step")
+    };
+    hole::HoleTool::new(&at[0], diameter.value(), depth, tip, None, &q("9"), dec).unwrap()
+}
+
+#[test]
+fn a_through_hole_is_drilled_in_a_body_with_a_fitted_fillet() {
+    use catallax_topology::numerical::tolerance::EntityKind;
+    let ((), work) = with_operation_budget(100_000_000, || {
+        let mut dec = Decider::default();
+        let rounded = rounded(&mut dec);
+        let before = rounded.counts();
+        // Down from the top face, 2 mm from the two planar sides and far
+        // from the fillet.
+        let tool = drill(["2", "2", "3"], ["0", "0", "-1"], &mut dec);
+        let spent = catallax_numbers::current_operation_work().used;
+        let drilled =
+            hole::through_tolerant::through(&rounded, "drilled/a", &tool, &mut dec).unwrap();
+        let spent = catallax_numbers::current_operation_work().used - spent;
+        let body = &drilled.body;
+        assert_eq!(body.topology_faults(), Vec::new());
+        let after = body.counts();
+        // Two rings of four vertices and four arcs, four lines, four walls.
+        assert_eq!(
+            (
+                after.faces - before.faces,
+                after.edges - before.edges,
+                after.vertices - before.vertices
+            ),
+            (4, 12, 8)
+        );
+        assert_eq!(drilled.walls.len(), 4);
+        for (wall, span) in &drilled.walls {
+            assert!(wall.starts_with("drilled/a/wall/"), "{wall}");
+            assert_eq!(span, &[q("0"), q("3")]);
+        }
+        // The top and the bottom each gained one inner loop.
+        let holed = body
+            .definition()
+            .faces
+            .iter()
+            .filter(|face| face.loops.len() == 2)
+            .count();
+        assert_eq!(holed, 2);
+        // Exact and tolerant entities in one body: the new circles and
+        // lines lie exactly on their surfaces and are re-tightened to
+        // exact, and the fillet's fitted edges keep their tolerance.
+        let tolerance = |key: &str| body.stored_tolerance(EntityKind::Edge, key).cloned();
+        let (new, old): (Vec<_>, Vec<_>) = body
+            .definition()
+            .edges
+            .iter()
+            .partition(|edge| edge.key.starts_with("drilled/a/"));
+        assert_eq!(new.len(), 12);
+        for edge in &new {
+            assert_eq!(tolerance(&edge.key), None, "{}", edge.key);
+        }
+        assert!(old.iter().any(|edge| tolerance(&edge.key).is_some()));
+        // Every decision with a tolerant participant went through the
+        // stages, and the fitted faces and edges were read as boxes.
+        assert!(drilled.stages.total() > 0, "{:?}", drilled.stages);
+        assert!(drilled.boxes > 0);
+        assert!(spent > 0);
+        // The body is written as STEP and its file checks against it.
+        let written = catallax_step::numerical::build(body, &Default::default(), &mut dec).unwrap();
+        written.check_written(written.bytes(), &mut dec).unwrap();
+        println!(
+            "hole after a fitted fillet: {spent} units, signs {:?}, {} boxes",
+            drilled.stages, drilled.boxes
+        );
+    });
+    assert!(!work.exhausted, "{work:?}");
+}
+
+#[test]
+fn a_hole_that_is_not_clear_of_the_body_refuses_by_name() {
+    let ((), work) = with_operation_budget(100_000_000, || {
+        let mut dec = Decider::default();
+        let rounded = rounded(&mut dec);
+        let mut refused = |point: [&str; 3], direction: [&str; 3]| {
+            let tool = drill(point, direction, &mut dec);
+            hole::through_tolerant::through(&rounded, "drilled/a", &tool, &mut dec).unwrap_err()
+        };
+        // The drill's cylinder reaches past the side x = 3: it cuts the
+        // top's edge there.
+        let edge = refused(["2.9", "2", "3"], ["0", "0", "-1"]);
+        assert_eq!(edge.code, "hole.numerical-not-clear");
+        assert!(edge.detail.contains("edge"), "{}", edge.detail);
+        // Along x from the plane x = 3 into the fitted face x = 0: a
+        // fitted face is never intersected, so it cannot be drilled.
+        let fitted = refused(["3", "3/2", "3/2"], ["-1", "0", "0"]);
+        assert_eq!(fitted.code, "hole.numerical-not-clear");
+        assert!(fitted.detail.contains("face"), "{}", fitted.detail);
+        // Through the top at a slant.
+        let slanted = refused(["3/2", "3/2", "3"], ["0", "3", "-4"]);
+        assert_eq!(slanted.code, "hole.numerical-oblique-face");
+        // A drill beside the body crosses nothing and leaves it as it is.
+        let tool = drill(["10", "10", "3"], ["0", "0", "-1"], &mut dec);
+        let beside =
+            hole::through_tolerant::through(&rounded, "drilled/a", &tool, &mut dec).unwrap();
+        assert!(beside.walls.is_empty());
+        let (a, b) = (beside.body.counts(), rounded.counts());
+        assert_eq!(
+            (a.faces, a.edges, a.vertices),
+            (b.faces, b.edges, b.vertices)
+        );
+    });
+    assert!(!work.exhausted, "{work:?}");
 }

@@ -82,6 +82,14 @@ pub(super) struct Context {
     bodies: BTreeMap<StepId, Arc<NumericalFilletEvaluation>>,
 }
 impl Context {
+    /// Refuses a step that reads a body with tolerant entities and is about
+    /// to be built by the exact operations.
+    ///
+    /// Such a body never reaches the exact intersector (Checkpoint 2
+    /// decisions, section 4.5). An operation goes on from one only through a
+    /// construction of its own that decides with the filtered predicate. The
+    /// hole has one ([`Self::hole`]). Every other operation refuses here by
+    /// name until it has one.
     pub(super) fn exact_inputs(&self, step: &Step) -> Result<(), Refusal> {
         if self.bodies.is_empty() {
             return Ok(());
@@ -93,13 +101,104 @@ impl Context {
             .find(|(id, _)| self.bodies.contains_key(*id))
         {
             return Err(Refusal::new(
-                "features.numerical-continuation",
+                "features.tolerant-input",
                 format!(
-                    "operation {} reads numerical body {input}; its native numerical continuation has no admitted construction for this operation",
+                    "operation {} reads body {input}, which has tolerant entities, and has no construction on such a body",
                     step.op.name()
                 ),
             ));
         }
+        Ok(())
+    }
+
+    /// Whether `step` built a body with tolerant entities.
+    pub(super) fn has(&self, step: &StepId) -> bool {
+        self.bodies.contains_key(step)
+    }
+
+    /// Drills a hole in a body with tolerant entities (Checkpoint 2
+    /// decisions, section 4.5: "a hole after a numerical fillet works").
+    ///
+    /// Each placement is a through hole of one radius, written into the
+    /// body's definition and admitted again
+    /// ([`crate::hole::through_tolerant`]). A blind hole, a head and a tool
+    /// that is not square to the faces it crosses refuse by name.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn hole(
+        &mut self,
+        target: &StepId,
+        at: &[catallax_recipe::HolePlacement],
+        diameter: &Rational,
+        depth: &catallax_recipe::HoleDepth,
+        tip: &catallax_recipe::HoleTip,
+        head: Option<&catallax_recipe::HoleHead>,
+        step: &StepId,
+        recipe: &Recipe,
+        dec: &mut Decider,
+    ) -> Result<(), Refusal> {
+        crate::hole::validate(diameter, depth, tip, head)?;
+        if !matches!(depth, catallax_recipe::HoleDepth::Through) || head.is_some() {
+            return Err(Refusal::new(
+                "hole.numerical-tool",
+                "only a through hole with no head has a construction on a body with tolerant entities",
+            ));
+        }
+        let source = Arc::clone(&self.bodies[target]);
+        let mut body = source.body.clone();
+        let mut origins = source.origins.clone();
+        // The tool's bands are cut at a bound of the body about the origin.
+        // A through hole is read along its whole axis, so the bound only
+        // has to be a size: the largest vertex coordinate sum.
+        let mut bound = Rational::zero();
+        for vertex in &body.definition().vertices {
+            let mut reach = Rational::zero();
+            for value in &vertex.position {
+                let size = value.abs();
+                dec.reserve_exact_arithmetic(&reach, &size, false)?;
+                reach = reach + size;
+            }
+            dec.reserve_uncounted_arithmetic(&bound, &reach, true)?;
+            bound = bound.max(reach);
+        }
+        for placement in at {
+            let tool =
+                crate::hole::HoleTool::new(placement, diameter, depth, tip, head, &bound, dec)?;
+            let key = format!("{step}/{}", placement.id);
+            let drilled = crate::hole::through_tolerant::through(&body, &key, &tool, dec)?;
+            for (wall, [low, high]) in drilled.walls {
+                // The tool's bands meet at the placement point: the entry
+                // above it and the wall below.
+                let mut parts = Vec::new();
+                if low.sign() == catallax_numbers::Sign::Negative {
+                    parts.push(catallax_recipe::HolePart::Entry);
+                }
+                if high.sign() == catallax_numbers::Sign::Positive {
+                    parts.push(catallax_recipe::HolePart::Wall);
+                }
+                origins.insert(
+                    wall,
+                    parts
+                        .into_iter()
+                        .map(|part| Origin {
+                            step: step.clone(),
+                            role: Role::Hole {
+                                at: placement.id.clone(),
+                                part,
+                            },
+                        })
+                        .collect(),
+                );
+            }
+            body = drilled.body;
+        }
+        self.bodies.insert(
+            step.clone(),
+            Arc::new(NumericalFilletEvaluation {
+                recipe: Arc::new(recipe.clone()),
+                body,
+                origins,
+            }),
+        );
         Ok(())
     }
 

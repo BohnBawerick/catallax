@@ -202,6 +202,26 @@ impl Generator {
         Ok(())
     }
 
+    /// Derives the path again from its supports after a rigid motion moved
+    /// them, then encloses its cover (4.2a step 4). The moved centre and feet
+    /// are the same points, but written through the motion every query
+    /// enclosed deeper expressions; derived from the moved supports they cost
+    /// what the unmoved path's do.
+    pub(crate) fn rederive(&mut self, dec: &mut Decider) -> Result<(), Refusal> {
+        let mut path = Self::new(
+            self.supports.clone(),
+            self.edge.clone(),
+            self.direction.clone(),
+            self.ends.clone(),
+            self.radius.clone(),
+            dec,
+        )?
+        .with_junctions(self.junction);
+        path.enclose_cover(dec)?;
+        *self = path;
+        Ok(())
+    }
+
     fn enclosure(&self, dec: &mut Decider) -> Result<GeneratorCover, Refusal> {
         Ok(GeneratorCover {
             centre: point_balls(&self.centre, dec)?,

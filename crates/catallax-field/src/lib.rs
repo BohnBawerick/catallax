@@ -1264,6 +1264,7 @@ impl Plan {
         result.planar_memberships = Default::default();
         for leaf in &mut result.leaves {
             leaf.transform(&map)?;
+            leaf.rebuild_after_transform(dec)?;
         }
         for face in &mut result.faces {
             geometry::face_geometry(face, face.surface.transformed(&pose), dec)?;
@@ -1306,6 +1307,7 @@ impl Plan {
                 Instruction::Leaf(id) => {
                     let mut leaf = self.leaves[id].clone();
                     leaf.transform(map)?;
+                    leaf.rebuild_after_transform(dec)?;
                     let mut faces = source_faces
                         .iter()
                         .map(|i| &self.faces[*i])

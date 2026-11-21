@@ -96,23 +96,38 @@ fn point(p: &RPoint3) -> Point3 {
 impl Piece {
     /// Wraps a path derived by the field, with the two supports it rolls on.
     pub fn new(
-        mut kind: Kind,
+        kind: Kind,
         origin: Origin,
         convex: bool,
         supports: [&Surface; 2],
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
         let hull = each_kind!(&kind, path => path.hull(dec)?);
-        if let Kind::Generator(path) = &mut kind {
-            path.enclose_cover(dec)?;
-        }
-        Ok(Self {
+        let mut piece = Self {
             kind,
             origin,
             convex,
             supports: supports.map(Support::new),
             bounds: Some(hull.map(|b| [b.lo(), b.hi()])),
-        })
+        };
+        piece.enclose_cover(dec)?;
+        Ok(piece)
+    }
+    /// Encloses a straight piece's interval cover once, when the piece is
+    /// built (4.2a step 4). Other paths enclose theirs per query.
+    fn enclose_cover(&mut self, dec: &mut Decider) -> Result<(), Refusal> {
+        if let Kind::Generator(path) = &mut self.kind {
+            path.enclose_cover(dec)?;
+        }
+        Ok(())
+    }
+    /// After a rigid motion, which drops a straight piece's cover: the piece
+    /// is derived again from its moved supports and encloses its cover.
+    pub(crate) fn rebuild_after_transform(&mut self, dec: &mut Decider) -> Result<(), Refusal> {
+        if let Kind::Generator(path) = &mut self.kind {
+            path.rederive(dec)?;
+        }
+        Ok(())
     }
     /// The path.
     pub fn kind(&self) -> &Kind {

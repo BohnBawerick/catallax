@@ -958,6 +958,44 @@ fn blend_vertices_lie_on_the_field_face(names: &[&str]) {
     }
 }
 
+/// A placed part keeps its straight pieces' enclosed covers: a rigid motion
+/// drops a cover and the placement encloses it again, so `vertex-4-one`'s
+/// blend vertices, moved by a rational translation, pass the same check at
+/// the same per-query cap (reviewer check on #742). Without the cover each
+/// query on this algebraic frame needs about 23,000 units.
+#[test]
+fn a_placed_straight_piece_keeps_its_enclosed_cover() {
+    use catallax_shapes::{Pose, RVector3, Rotation};
+    let case = corpus_cases()
+        .into_iter()
+        .find(|c| c.name == "vertex-4-one")
+        .unwrap();
+    let plan = Plan::compile_checked(&case.recipe, &mut decider()).unwrap();
+    let by = [ratio(3, 1), ratio(-2, 1), ratio(7, 1)];
+    let mut dec = decider();
+    let pose = Pose::new(
+        Rotation::from_quaternion(ratio(1, 1), ratio(0, 1), ratio(0, 1), ratio(0, 1)).unwrap(),
+        RVector3::new(by[0].clone(), by[1].clone(), by[2].clone()).to_real(),
+        &mut dec,
+    )
+    .unwrap();
+    let placed = plan.transformed(&pose, &mut dec).unwrap();
+    let (points, tolerances) = blend_vertices(&case.recipe, "1/20", false);
+    let moved: Vec<Point3> = points
+        .iter()
+        .map(|p| {
+            Point3::new(
+                &p.x + &Real::from(by[0].clone()),
+                &p.y + &Real::from(by[1].clone()),
+                &p.z + &Real::from(by[2].clone()),
+            )
+        })
+        .collect();
+    let pieces: Vec<&Piece> = placed.rolling_pieces().collect();
+    let nearest = nearest_witnesses("placed vertex-4-one", &pieces, &moved, &tolerances);
+    assert_within("placed vertex-4-one", &nearest, &tolerances);
+}
+
 /// The step 4 files' recipes that the field refuses, with the B-rep's
 /// answer: both refuse each of these.
 fn refusals() -> Vec<(&'static str, Recipe)> {

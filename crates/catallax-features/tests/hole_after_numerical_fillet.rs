@@ -126,9 +126,19 @@ fn a_hole_after_a_numerical_fillet_builds() {
             edge.key
         );
     }
+    // The drilled body is written as STEP and its file checks against it.
+    let (written, export) = with_operation_budget(100_000_000, || {
+        let mut dec = Decider::default();
+        let written = catallax_step::numerical::build(body, &Default::default(), &mut dec)?;
+        written.check_written(written.bytes(), &mut dec)?;
+        Ok::<_, catallax_numbers::Refusal>(written.bytes().len())
+    });
+    assert!(!export.exhausted, "{export:?}");
     println!(
-        "the fillet: {} used; the fillet and the hole: {} used",
-        fillet_work.used, work.used
+        "the fillet: {} used; the fillet and the hole: {} used; {} bytes of STEP",
+        fillet_work.used,
+        work.used,
+        written.unwrap()
     );
 }
 

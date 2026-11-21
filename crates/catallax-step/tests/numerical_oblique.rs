@@ -75,9 +75,15 @@ fn oblique_round_trip_keeps_topology_and_separate_rounding_scopes() {
         Rational::zero()
     );
     assert_eq!(before, format!("{:?}", body.definition()));
-    let samples = artifact
-        .report()
-        .emitted_evidence
+    let written = numerical::audit_written(
+        &body,
+        &NumericalStepOptions::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    assert_eq!(written.file.bytes(), artifact.bytes());
+    let samples = written
+        .evidence
         .checks()
         .iter()
         .filter_map(|check| match check {
@@ -109,7 +115,7 @@ fn oblique_round_trip_keeps_topology_and_separate_rounding_scopes() {
 }
 
 #[test]
-fn coarse_oblique_payload_must_pass_its_own_checks() {
+fn a_coarse_oblique_payload_records_the_rounding_it_carries() {
     let body = source::build(
         definition(),
         NumericalOptions {
@@ -124,8 +130,22 @@ fn coarse_oblique_payload_must_pass_its_own_checks() {
         max_scalar_rounding_error_mm: Rational::one(),
         ..Default::default()
     };
-    let error = numerical::build(&body, &options, &mut Decider::default()).unwrap_err();
-    assert_eq!(error.code, "numbers.numerical-tolerance-exceeded");
+    // Check once: the export writes the numbers and adds their rounding
+    // error to the tolerance. It does not admit the written values again, so
+    // one significant digit on a body held to 1e-8 mm is no refusal: the
+    // file records what that digit can do.
+    let file = numerical::build(&body, &options, &mut Decider::default()).unwrap();
+    let report = file.report();
+    assert!(report.max_direction_ratio_rounding_error > Rational::zero());
+    assert!(report.rounding.errors.direction == report.max_direction_ratio_rounding_error);
+    assert!(report.rounding.bound_mm > body.options().tolerance_mm);
+    assert!(report.uncertainty_mm >= &body.tolerances().largest_mm() + &report.rounding.bound_mm);
+    // An audit is a full admission of the written values. One digit leaves
+    // this body's vertices loose against its 1 mm features, and rule T5 says
+    // so. An export no longer runs that admission: it writes the file, and
+    // the file's own record says how loose its values are.
+    let audit = numerical::audit_written(&body, &options, &mut Decider::default()).unwrap_err();
+    assert_eq!(audit.code, "numerical.tolerance-pair");
 }
 
 #[test]
@@ -133,23 +153,16 @@ fn oblique_export_keeps_tolerated_source_residuals_numerical() {
     let mut d = definition();
     d.vertices[0].position[0] = &d.vertices[0].position[0] + &tube::q("0.005");
     let body = source::build(d, NumericalOptions::default(), &mut Decider::default()).unwrap();
-    let artifact = numerical::build(
+    let written = numerical::audit_written(
         &body,
         &NumericalStepOptions::default(),
         &mut Decider::default(),
     )
     .unwrap();
     let minimum_residual = tube::q("0.0049");
-    assert!(
-        artifact
-            .report()
-            .emitted_evidence
-            .checks()
-            .iter()
-            .any(|check| matches!(check,
+    assert!(written.evidence.checks().iter().any(|check| matches!(check,
                 NumericalCheck::Samples { samples, .. }
-                    if samples.iter().any(|sample| sample.distance_upper_mm > minimum_residual)))
-    );
+                    if samples.iter().any(|sample| sample.distance_upper_mm > minimum_residual))));
 }
 
 #[test]
@@ -171,7 +184,15 @@ fn numerical_uv_roundoff_does_not_move_or_refuse_a_planar_boundary() {
     )
     .unwrap();
     assert_eq!(artifact.report().counts, [10, 24, 16]);
-    assert!(artifact.report().emitted_evidence.repairs().is_empty());
+    // The roundoff is far under the rounding error the file records, and an
+    // audit of the written values agrees.
+    assert!(artifact.report().rounding.bound_mm < tube::q("1e-12"));
+    numerical::audit_written(
+        &body,
+        &NumericalStepOptions::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
 }
 
 #[test]
@@ -182,23 +203,16 @@ fn a_tolerated_plane_carrier_gap_remains_in_the_payload_checks() {
     };
     plane.origin.z = &plane.origin.z + &Real::from(tube::q("0.005"));
     let body = source::build(d, NumericalOptions::default(), &mut Decider::default()).unwrap();
-    let artifact = numerical::build(
+    let written = numerical::audit_written(
         &body,
         &NumericalStepOptions::default(),
         &mut Decider::default(),
     )
     .unwrap();
     let minimum_residual = tube::q("0.0049");
-    assert!(
-        artifact
-            .report()
-            .emitted_evidence
-            .checks()
-            .iter()
-            .any(|check| matches!(check,
+    assert!(written.evidence.checks().iter().any(|check| matches!(check,
                 NumericalCheck::Samples { samples, .. }
-                    if samples.iter().any(|sample| sample.distance_upper_mm > minimum_residual)))
-    );
+                    if samples.iter().any(|sample| sample.distance_upper_mm > minimum_residual))));
 }
 
 #[test]

@@ -148,13 +148,24 @@ pub fn run(out: &Path, control: &str) -> Result<serde_json::Value, String> {
         significant_digits: if rounded { 1 } else { 17 },
         ..Default::default()
     };
-    let file =
-        step::build(&body, &options, &mut dec).map_err(|e| format!("decimal admission: {e:?}"))?;
+    // The file is written and records its tolerance; the audit then measures
+    // the values it holds against that record.
+    let audit = step::audit_written(&body, &options, &mut dec)
+        .map_err(|e| format!("written audit: {e:?}"))?;
+    let file = &audit.file;
     std::fs::write(out.join("answer.step"), file.bytes()).map_err(|e| e.to_string())?;
     Ok(
-        json!({"status":"numerical","exact":false,"control":control,"tolerance_mm":body.options().tolerance_mm.to_string(),"source_checks":format!("{:?}",body.evidence()),"emitted_checks":format!("{:?}",file.report().emitted_evidence)}),
+        json!({"status":"numerical","exact":false,"control":control,"tolerance_mm":body.options().tolerance_mm.to_string(),"recorded_tolerance_mm":file.report().uncertainty_mm.to_string(),"recorded_tolerance_text":stamp_field(file.bytes(),"recorded_tolerance_mm"),"rounding_error_mm":file.report().rounding.bound_mm.to_string(),"source_checks":format!("{:?}",body.evidence()),"written_audit":format!("{:?}",audit.evidence)}),
     )
 }
+/// One field of the file's stamp, as it is written.
+fn stamp_field(bytes: &[u8], key: &str) -> Option<String> {
+    let text = std::str::from_utf8(bytes).ok()?;
+    let start = text.find(&format!(";{key}="))? + key.len() + 2;
+    let end = text[start..].find([';', '\''])?;
+    Some(text[start..start + end].to_owned())
+}
+
 fn main() -> ExitCode {
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args.len() != 2 || !matches!(args[1].as_str(), "valid" | "source-gap" | "rounded-gap") {

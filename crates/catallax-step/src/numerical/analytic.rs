@@ -1,5 +1,6 @@
 //! Approximate finite analytic exchange with explicit periodic pcurves.
-//! Decimal carrier and pcurve values are rechecked as numerical geometry.
+//! The file records the body's tolerance plus the rounding error of its
+//! numbers. Only an audit rechecks the decimal carrier and pcurve values.
 
 use super::*;
 use catallax_numbers::{Ball, NumericalCheck, NumericalSample};
@@ -742,6 +743,7 @@ pub(super) fn seam_loop_start(
 pub(super) fn build(
     body: &NumericalBody,
     options: &NumericalStepOptions,
+    audit: bool,
     dec: &mut Decider,
 ) -> Result<NumericalStep, Refusal> {
     if options.product_name.trim().is_empty()
@@ -763,10 +765,12 @@ pub(super) fn build(
         dec,
         error: Rational::zero(),
         direction_error: Rational::zero(),
+        magnitude_error: Rational::zero(),
+        audit,
     };
     let mut d = body.definition().clone();
-    // STEP carries no copy tag and both copies are rounded below, so the
-    // check of the written values measures every use.
+    // STEP carries no copy tag and both copies are rounded below, so an
+    // audit of the written values measures every use.
     d.reset_copy_tags();
     let mut vertices = Vec::new();
     for vertex in &mut d.vertices {
@@ -800,16 +804,9 @@ pub(super) fn build(
         }
         normalize_cylinder_cell(face, w.dec)?;
     }
-    // Validate the actual rounded chart before classifying a repeated edge as
-    // a seam. Admission requires a complete periodic cell for such an edge;
-    // use count alone is not a geometric seam condition.
-    let recheck = if body.kind() == catallax_topology::BodyKind::Surface {
-        n::build_surface
-    } else {
-        n::build
-    };
-    let admitted = recheck(d, body.options().clone(), w.dec)?;
-    let d = admitted.definition();
+    // The body's admission required a complete periodic cell for an edge a
+    // face uses twice, and the written walk is the body's.
+    let d = &d;
     let mut parameter = ParameterRounding {
         error: Rational::zero(),
     };
@@ -860,13 +857,16 @@ pub(super) fn build(
                 &edge.parameters,
                 &ends,
             )?;
-            parameter_checks.push(pcurve_checks(
-                edge,
-                face,
-                &actual,
-                cone_parameters[*f].as_ref(),
-                w.dec,
-            )?);
+            // An audit measures the u/v line as it was written.
+            if w.audit {
+                parameter_checks.push(pcurve_checks(
+                    edge,
+                    face,
+                    &actual,
+                    cone_parameters[*f].as_ref(),
+                    w.dec,
+                )?);
+            }
             pcurves.push(curve);
         }
         let curve = if pcurves.is_empty() {
@@ -897,13 +897,6 @@ pub(super) fn build(
             ],
         ));
     }
-    // The canonical projected vertex walk checks finite trim topology. Actual
-    // independently rounded pcurves get their own distance enclosures, including
-    // endpoints; no rounded parameter gap is silently snapped or called exact.
-    let mut checks = admitted.evidence().checks().to_vec();
-    checks.extend(phase_checks);
-    checks.extend(parameter_checks);
-    let emitted = NumericalEvidence::new(body.options().tolerance_mm.clone(), checks, Vec::new())?;
     let mut faces = Vec::new();
     for (index, face) in d.faces.iter().enumerate() {
         let mut bounds = Vec::new();
@@ -984,7 +977,8 @@ pub(super) fn build(
     }
     let mut file_checks = vec![
         "source.retained-shared-analytic-boundaries".into(),
-        "file.decimal-analytic-carriers-and-pcurves-numerical-admission".into(),
+        "file.decimal-analytic-carriers-and-pcurves".into(),
+        "file.rounding-error-added-to-tolerance".into(),
         "file.canonical-byte-identity".into(),
         "file.approximate-category-no-global-bound".into(),
         format!(
@@ -1005,13 +999,47 @@ pub(super) fn build(
             "file.cone-semi-angle-rounding-max-rad={angle_error}"
         ));
     }
-    let (uncertainty_mm, uncertainty_text) = uncertainty(body, &emitted, options)?;
+    // A cone's semi-angle turns its surface as a direction does.
+    let errors = RoundingErrors {
+        length_mm: w.error.clone(),
+        line_magnitude: Rational::zero(),
+        direction: w.direction_error.clone().max(angle_error.clone()),
+        parameter: parameter.error.clone(),
+        weight: Rational::zero(),
+    };
+    let recorded = recorded(body, (d, &[]), errors, options, w.dec)?;
     let description = format!("{description}{}", stamp_extras(options));
+    let record = recorded_stamp(&recorded);
+    let uncertainty_text = crate::number::decimal(&recorded.text);
     let mut file = w.graph.write(&[solid], |roots| {
-        file_header(body, options, roots, &description, &uncertainty_text)
+        file_header(
+            body,
+            options,
+            roots,
+            [&description, &record],
+            &uncertainty_text,
+        )
     });
     file.push_str("ENDSEC;\nEND-ISO-10303-21;\n");
+    // The canonical projected vertex walk checks finite trim topology. Actual
+    // independently rounded pcurves get their own distance enclosures, including
+    // endpoints; no rounded parameter gap is silently snapped or called exact.
+    let written = if w.audit {
+        let mut checks = phase_checks;
+        checks.extend(parameter_checks);
+        Some(admit_written(
+            body,
+            d.clone(),
+            Vec::new(),
+            checks,
+            &audit_limit(&recorded.tolerance_mm),
+            w.dec,
+        )?)
+    } else {
+        None
+    };
     let artifact = NumericalStep {
+        written,
         bytes: file.into_bytes(),
         report: NumericalStepReport {
             kind: body.kind(),
@@ -1023,14 +1051,14 @@ pub(super) fn build(
             source_name: body.definition().name.clone(),
             source_definition: body.definition().clone(),
             source_evidence: body.evidence().clone(),
-            emitted_evidence: emitted,
+            rounding: recorded.rounding,
             scalar_rounding_limit_mm: options.max_scalar_rounding_error_mm.clone(),
             max_scalar_rounding_error_mm: w.error,
             max_direction_ratio_rounding_error: w.direction_error,
             counts: [count.faces, count.edges, count.vertices],
             spline_rounding: None,
             checks: file_checks,
-            uncertainty_mm,
+            uncertainty_mm: recorded.tolerance_mm,
             receiver: None,
             scale: options.scale,
         },

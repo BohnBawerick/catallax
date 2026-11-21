@@ -41,7 +41,9 @@ use catallax_numbers::{Decider, Rational, Real, Refusal};
 use catallax_shapes::{BSplineCurve, Curve, Point3};
 
 use super::geometric::{self, Way};
-use super::{EdgeCopies, FaceCopyRef, GapMeasure, Hints, Limits, lift, measure, work_cap};
+use super::{
+    EdgeCopies, FaceCopyRef, GapCurve, GapMeasure, Hints, Limits, lift, measure, work_cap,
+};
 
 /// Source: the span limit of the fitter of `numerical_embedding.rs`
 /// (`MAX_SPANS`), which builds the same kind of copy.
@@ -267,13 +269,27 @@ fn fit(
     let mut drawn = Drawn::new(nodes_from);
     let [lo, hi] = lifted.range();
     let mut breaks = vec![lo];
-    if let Curve::BSpline(curve) = copies.curve {
-        for knot in curve.knots() {
-            let k = knot.to_f64_nearest();
-            if k > lo && k < hi && breaks.last() != Some(&k) {
-                breaks.push(k);
+    match copies.curve {
+        GapCurve::Kernel(Curve::BSpline(curve)) => {
+            for knot in curve.knots() {
+                let k = knot.to_f64_nearest();
+                if k > lo && k < hi && breaks.last() != Some(&k) {
+                    breaks.push(k);
+                }
             }
         }
+        GapCurve::Sampled(curve) => {
+            let mut inside: Vec<f64> = curve
+                .breaks
+                .iter()
+                .copied()
+                .filter(|k| *k > lo && *k < hi)
+                .collect();
+            inside.sort_by(f64::total_cmp);
+            inside.dedup();
+            breaks.extend(inside);
+        }
+        GapCurve::Kernel(_) => (),
     }
     breaks.push(hi);
     if let (Nodes::OldCopy(_), FaceCopyRef::Native(old)) = (nodes_from, copies.face_copy) {

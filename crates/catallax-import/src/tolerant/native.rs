@@ -784,7 +784,9 @@ impl NativeSurface {
 /// allowance, so these samples are rounded evaluations that carry a running
 /// rounding bound, and only a sample binary64 cannot place within 1e-8 mm is
 /// enclosed. It is a separate type so that nothing which fits, admits or
-/// certifies geometry can be handed one.
+/// certifies geometry can be handed one. The edge-gap checker has a binary64
+/// reading of its own, [`Binary64Carrier`], whose bounds go into what it
+/// reports.
 #[derive(Debug)]
 pub struct DisplaySurface(NativeSurface);
 impl DisplaySurface {
@@ -1062,6 +1064,46 @@ impl NativeUvCurve {
         Ok(([value.point_mm[0], value.point_mm[1]], value.uncertainty_mm))
     }
 
+    /// The u/v at the parameter of this curve nearest to `parameter`, and
+    /// how far that parameter is from it: zero inside the curve's domain.
+    /// A STEP edge has no parameter range of its own, so an end placed on
+    /// its 3D curve from its vertex can fall just outside the interval the
+    /// file gives the u/v curve.
+    pub(crate) fn sample_nearest(
+        &self,
+        parameter: f64,
+        dec: &mut Decider,
+    ) -> Result<([f64; 2], f64), Error> {
+        let at = |chart: usize, parameter: f64| NativeLocation {
+            chart,
+            parameters: [parameter, 0.0],
+        };
+        match self.sample(at(0, parameter), dec) {
+            Ok((uv, _)) => return Ok((uv, 0.0)),
+            Err(error) if control(&error) => return Err(error),
+            Err(_) => {}
+        }
+        let mut nearest: Option<(usize, f64, f64)> = None;
+        for (chart, cover) in self.0.charts.iter().enumerate() {
+            let limits = &cover.domain()[0];
+            let mut inside = parameter;
+            if let Some(low) = &limits[0] {
+                inside = inside.max(low.to_f64_nearest());
+            }
+            if let Some(high) = &limits[1] {
+                inside = inside.min(high.to_f64_nearest());
+            }
+            let moved = (inside - parameter).abs();
+            if nearest.is_none_or(|(_, _, least)| moved < least) {
+                nearest = Some((chart, inside, moved));
+            }
+        }
+        let (chart, inside, moved) =
+            nearest.ok_or_else(|| broken("a u/v curve has no parameter chart"))?;
+        let (uv, _) = self.sample(at(chart, inside), dec)?;
+        Ok((uv, moved))
+    }
+
     pub(crate) fn hint(
         &self,
         parameter: f64,
@@ -1074,6 +1116,188 @@ impl NativeUvCurve {
             .0
             .try_sample(location, dec)?
             .map(|sample| [sample.point_mm[0], sample.point_mm[1]]))
+    }
+}
+
+/// A carrier's charts in binary64, for the edge-gap checker.
+///
+/// The checker of roadmap item 3.0A reads both copies of an edge in binary64
+/// and puts the rounding bound of its samples into the measurement error it
+/// reports (Checkpoint 2 decisions, section 4.2 step 7: "Record a noise floor
+/// from the f64 error estimate instead of escalating precision"). This is
+/// that reading of a native carrier: every point comes with the bound its
+/// chart's binary64 program states. A point binary64 cannot place has an
+/// infinite bound, and the checker's reading of its edge use is then not
+/// finite, so the caller measures that use the enclosing way.
+///
+/// It is a type of its own, like [`DisplaySurface`]: the fits of a body's
+/// own samples still enclose, and cannot be handed one.
+#[derive(Debug)]
+pub(crate) struct Binary64Carrier {
+    charts: Vec<crate::geometry_source::Binary64Chart>,
+    /// Each chart's limits, rounded to binary64.
+    domains: Vec<[[Option<f64>; 2]; 2]>,
+    dimension: usize,
+    periods: [Option<f64>; 2],
+}
+
+impl Binary64Carrier {
+    fn new(carrier: &Carrier, periods: [Option<f64>; 2], dec: &mut Decider) -> Result<Self, Error> {
+        let charts = carrier
+            .charts
+            .iter()
+            .map(|chart| chart.binary64(dec).map_err(mapped))
+            .collect::<Result<_, _>>()?;
+        let domains = carrier
+            .charts
+            .iter()
+            .map(|chart| {
+                std::array::from_fn(|axis| {
+                    chart.domain()[axis]
+                        .each_ref()
+                        .map(|limit| limit.as_ref().map(Rational::to_f64_nearest))
+                })
+            })
+            .collect();
+        Ok(Self {
+            charts,
+            domains,
+            dimension: carrier.dimension,
+            periods,
+        })
+    }
+
+    /// The chart whose domain holds `parameters`.
+    fn holding(&self, parameters: [f64; 2]) -> Option<usize> {
+        self.domains.iter().position(|domain| {
+            (0..self.dimension).all(|axis| {
+                domain[axis][0].is_none_or(|low| parameters[axis] >= low)
+                    && domain[axis][1].is_none_or(|high| parameters[axis] <= high)
+            })
+        })
+    }
+
+    /// `parameters` moved inside one chart, and how far they moved.
+    fn clamped(&self, chart: usize, mut parameters: [f64; 2]) -> ([f64; 2], f64) {
+        let mut moved: f64 = 0.0;
+        for axis in 0..self.dimension {
+            let [low, high] = self.domains[chart][axis];
+            let inside = parameters[axis]
+                .max(low.unwrap_or(f64::NEG_INFINITY))
+                .min(high.unwrap_or(f64::INFINITY));
+            moved = moved.max((inside - parameters[axis]).abs());
+            parameters[axis] = inside;
+        }
+        (parameters, moved)
+    }
+
+    /// The point at `parameters` and a bound on its rounding error. A
+    /// periodic parameter outside the charts is reduced by its period, and
+    /// the bound carries what the rounding of that reduction moves the point
+    /// by, as [`Carrier::periodic_sample`] states it for an enclosure. Past
+    /// the charts of a parameter with no period the nearest border answers.
+    /// The bound is infinite where binary64 cannot place the point.
+    pub(crate) fn evaluate(&self, parameters: [f64; 2]) -> ([f64; 3], f64) {
+        let unplaced = ([0.0; 3], f64::INFINITY);
+        if parameters[..self.dimension]
+            .iter()
+            .any(|value| !value.is_finite())
+        {
+            return unplaced;
+        }
+        let mut at = parameters;
+        let mut radii = [0.0; 2];
+        let mut chart = self.holding(at);
+        if chart.is_none() {
+            for axis in 0..self.dimension {
+                if let Some(period) = self.periods[axis] {
+                    radii[axis] = 16.0 * f64::EPSILON * (parameters[axis].abs() + period);
+                    at[axis] = parameters[axis].rem_euclid(period);
+                }
+            }
+            chart = self.holding(at);
+        }
+        let chart = chart.or_else(|| {
+            (0..self.charts.len())
+                .min_by(|a, b| self.clamped(*a, at).1.total_cmp(&self.clamped(*b, at).1))
+        });
+        let Some(chart) = chart else {
+            return unplaced;
+        };
+        let (at, _) = self.clamped(chart, at);
+        let (point, bound) =
+            self.charts[chart].evaluate(&at[..self.dimension], &radii[..self.dimension]);
+        if !bound.is_finite() || point.iter().any(|value| !value.is_finite()) {
+            return unplaced;
+        }
+        let size = point
+            .iter()
+            .fold(0.0f64, |size, value| size.max(value.abs()));
+        (point, bound + 8.0 * f64::EPSILON * size)
+    }
+
+    /// The work one evaluation counts: what a display sample charges, a
+    /// sixty-fourth of a unit per binary64 step, for the costliest chart. The
+    /// checker is told this before it evaluates, so it takes the work from
+    /// its edge's allowance first, whichever chart a point falls in.
+    pub(crate) fn work(&self) -> u64 {
+        self.charts
+            .iter()
+            .map(crate::geometry_source::Binary64Chart::work)
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// Every finite border of a chart along one parameter: the knots of a
+    /// spline, the ends of a trimmed carrier.
+    pub(crate) fn borders(&self, axis: usize) -> Vec<f64> {
+        let mut borders: Vec<f64> = self
+            .domains
+            .iter()
+            .flat_map(|domain| domain[axis])
+            .flatten()
+            .collect();
+        borders.sort_by(f64::total_cmp);
+        borders.dedup();
+        borders
+    }
+
+    /// The least and greatest value the charts reach along one parameter.
+    /// `None` on a side where a chart has no limit, and on both sides of a
+    /// periodic parameter.
+    pub(crate) fn extent(&self, axis: usize) -> [Option<f64>; 2] {
+        if self.periods[axis].is_some() {
+            return [None, None];
+        }
+        let side = |which: usize, pick: fn(f64, f64) -> f64| {
+            self.domains
+                .iter()
+                .map(|domain| domain[axis][which])
+                .try_fold(None, |best: Option<f64>, limit| {
+                    limit.map(|limit| Some(best.map_or(limit, |best| pick(best, limit))))
+                })
+                .flatten()
+        };
+        [side(0, f64::min), side(1, f64::max)]
+    }
+
+    /// The period of each parameter, where it has one.
+    pub(crate) fn periods(&self) -> [Option<f64>; 2] {
+        self.periods
+    }
+}
+
+impl NativeCurve {
+    /// This curve for the edge-gap checker. See [`Binary64Carrier`].
+    pub(crate) fn binary64(&self, dec: &mut Decider) -> Result<Binary64Carrier, Error> {
+        Binary64Carrier::new(&self.0, [self.1.then_some(self.0.period), None], dec)
+    }
+}
+
+impl NativeSurface {
+    /// This surface for the edge-gap checker. See [`Binary64Carrier`].
+    pub(crate) fn binary64(&self, dec: &mut Decider) -> Result<Binary64Carrier, Error> {
+        Binary64Carrier::new(&self.0, self.1, dec)
     }
 }
 

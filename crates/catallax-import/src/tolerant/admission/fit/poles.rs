@@ -181,6 +181,7 @@ pub(super) fn insert(
                         source_pcurve: None,
                         reconstructed: true,
                         projected: None,
+                        reparametrised: None,
                         samples: [first, next]
                             .into_iter()
                             .enumerate()

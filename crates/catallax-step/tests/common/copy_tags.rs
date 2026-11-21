@@ -54,21 +54,18 @@ fn bound_and_measured(evidence: &NumericalEvidence) -> [usize; 2] {
 }
 
 /// STEP carries no copy tag (decision Q8, section 4.4 of the Checkpoint 2
-/// decisions). The writer rounds both copies of every use, so the check of
+/// decisions). The writer rounds both copies of every use, so an audit of
 /// the written values measures every use, also one the source body recorded
 /// by its bound.
 pub fn assert_the_written_body_is_measured(body: &NumericalBody, bound: &str) {
     let source = tagged(body, bound);
     let [stated, measured] = bound_and_measured(source.evidence());
     assert!(stated > 0, "no use of the source is recorded by its bound");
-    let file = catallax_step::numerical::build(
+    let audit = catallax_step::numerical::audit_written(
         &source,
         &catallax_step::numerical::NumericalStepOptions::default(),
         &mut Decider::default(),
     )
     .unwrap();
-    assert_eq!(
-        bound_and_measured(&file.report().emitted_evidence),
-        [0, stated + measured]
-    );
+    assert_eq!(bound_and_measured(&audit.evidence), [0, stated + measured]);
 }

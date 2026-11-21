@@ -3,14 +3,14 @@
 
 use super::*;
 use crate::numerical::gap::{
-    self, EdgeCopies, FaceCopyRef, GapSurface, Hints, Limits, Method, PieceShape, Reason,
+    self, EdgeCopies, FaceCopyRef, GapCurve, GapSurface, Hints, Limits, Method, PieceShape, Reason,
 };
 
 struct APlus;
 
 pub(super) fn copies(geometry: &EdgeGeometry) -> EdgeCopies<'_> {
     EdgeCopies {
-        curve: &geometry.curve,
+        curve: GapCurve::Kernel(&geometry.curve),
         parameters: geometry.parameters.each_ref(),
         surface: match &geometry.surface {
             CaseSurface::Kernel(surface) => GapSurface::Kernel(surface),
@@ -360,7 +360,7 @@ fn a_circle_over_a_plane_is_read_at_its_stationary_points() {
     let mut dec = Decider::default();
     let found = gap::measure(
         &EdgeCopies {
-            curve: &curve,
+            curve: GapCurve::Kernel(&curve),
             parameters: parameters.each_ref(),
             surface: GapSurface::Kernel(&surface),
             face_copy: FaceCopyRef::Projected,

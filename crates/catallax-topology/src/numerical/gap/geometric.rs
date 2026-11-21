@@ -35,7 +35,7 @@
 
 use catallax_numbers::{Decider, Refusal};
 
-use super::lift::{Bounded, Lifted, Scratch, spend};
+use super::lift::{Bounded, Lifted, Scratch};
 use super::{
     EdgeCopies, FaceCopyRef, Hints, Limits, Peak, PlannedPiece, Search, breaks, numeric, planned,
     polish, under_allowance, work_cap,
@@ -55,7 +55,8 @@ pub struct GeometricMeasure {
     /// The edge parameter of the point the larger one was read at, on that
     /// point's own copy.
     pub parameter: f64,
-    /// Evaluations of either copy.
+    /// Evaluations of either copy, each with the work a sampled carrier
+    /// states for it.
     pub evaluations: u64,
     /// Work counted against the edge's cap: the planning and the evaluations.
     pub work: u64,
@@ -133,6 +134,17 @@ fn copy_point(lifted: &Lifted, on_face: bool, x: f64, scratch: &mut Scratch) -> 
     lifted.surface.point(uv.value, scratch)
 }
 
+/// Takes one evaluation of a copy from what is left of an allowance, before
+/// it is made: of the 3D curve, or of the face copy lifted through the
+/// surface. A sampled carrier's stated work is taken with it.
+fn spend(lifted: &Lifted, on_face: bool, left: &mut u64) -> Option<()> {
+    if on_face {
+        lifted.surface.spend(left)
+    } else {
+        lifted.curve.spend(left)
+    }
+}
+
 /// The two copies at the same parameter. `None` when `left` runs out.
 pub(super) fn pair(
     lifted: &Lifted,
@@ -142,9 +154,9 @@ pub(super) fn pair(
     left: &mut u64,
 ) -> Option<Foot> {
     let on_face = way == Way::Backward;
-    spend(left)?;
+    spend(lifted, on_face, left)?;
     let own = copy_point(lifted, on_face, x, scratch);
-    spend(left)?;
+    spend(lifted, !on_face, left)?;
     let other = copy_point(lifted, !on_face, x, scratch);
     Some(Foot {
         at: x,
@@ -173,10 +185,10 @@ pub(super) fn foot(
 ) -> Option<Foot> {
     let [lo, hi] = lifted.range();
     let on_face = way == Way::Backward;
-    spend(left)?;
+    spend(lifted, on_face, left)?;
     let target = copy_point(lifted, on_face, x, scratch);
     let mut s = x.clamp(lo, hi);
-    spend(left)?;
+    spend(lifted, !on_face, left)?;
     let mut base = copy_point(lifted, !on_face, s, scratch);
     let mut squared = squared_distance(&target.value, &base.value);
     for _ in 0..FOOT_STEPS {
@@ -185,7 +197,7 @@ pub(super) fn foot(
         if s + step > hi {
             step = -step;
         }
-        spend(left)?;
+        spend(lifted, !on_face, left)?;
         let shifted = copy_point(lifted, !on_face, s + step, scratch);
         let rate: [f64; 3] = std::array::from_fn(|k| (shifted.value[k] - base.value[k]) / step);
         let residual: [f64; 3] = std::array::from_fn(|k| target.value[k] - base.value[k]);
@@ -197,7 +209,7 @@ pub(super) fn foot(
         if (next - s).abs() <= 0.0 {
             break;
         }
-        spend(left)?;
+        spend(lifted, !on_face, left)?;
         let there = copy_point(lifted, !on_face, next, scratch);
         let moved = squared_distance(&target.value, &there.value);
         if moved >= squared {

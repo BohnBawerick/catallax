@@ -142,7 +142,7 @@ pub(crate) fn evaluate(value: &Value, source: &str, out: &Path) -> io::Result<Va
             "category":"approximate","marks":[],"refusal":null,
             "result":{"lumps":counts.lumps,"shells":counts.shells,"faces":counts.faces,"edges":counts.edges,"vertices":counts.vertices},
             "numerical":{"source":crate::numerical_evidence_summary(&report.source_evidence),
-                "emitted":crate::numerical_evidence_summary(&report.emitted_evidence),
+                "written":written_summary(report),
                 "sweep_fitting":sweep_checks,
                 "complete_body_bound":"unestablished"},
             "step":{"file":"answer.step","category":"approximate","seams":"required",
@@ -316,7 +316,7 @@ pub(crate) fn publish_embedded(
         "checks":report.checks,"tolerance_mm":tolerance.to_string(),
         "complete_body_bound":"unestablished",
         "numerical":{"source":crate::numerical_evidence_summary(&report.source_evidence),
-            "emitted":crate::numerical_evidence_summary(&report.emitted_evidence)},
+            "written":written_summary(report)},
         "native_trims":report.source_native_trims.len(),
         "scalar_rounding_limit_mm":report.scalar_rounding_limit_mm.to_string(),
         "max_scalar_rounding_error_mm":report.max_scalar_rounding_error_mm.to_string(),
@@ -442,4 +442,28 @@ fn build_refusal(error: catallax_features::BuildError) -> Value {
         }
         error => refused("cli.invalid-recipe", error),
     }
+}
+
+/// What a numerical file records of its own values (check once): the
+/// tolerance, and the rounding error inside it with its parts. The written
+/// values are not measured, so this holds no samples.
+fn written_summary(report: &catallax_step::numerical::NumericalStepReport) -> Value {
+    let rounding = &report.rounding;
+    json!({
+        "recorded_tolerance_mm":report.uncertainty_mm.to_string(),
+        "rounding_error_mm":rounding.bound_mm.to_string(),
+        "largest_errors":{
+            "length_mm":rounding.errors.length_mm.to_string(),
+            "line_magnitude":rounding.errors.line_magnitude.to_string(),
+            "direction":rounding.errors.direction.to_string(),
+            "parameter":rounding.errors.parameter.to_string(),
+            "weight":rounding.errors.weight.to_string()},
+        "levers":{
+            "reach_mm":rounding.levers.reach_mm,
+            "parameter":rounding.levers.parameter,
+            "speed_mm":rounding.levers.speed_mm,
+            "face_copy_speed":rounding.levers.face_copy_speed,
+            "face_copy_reach":rounding.levers.face_copy_reach,
+            "least_weight":rounding.levers.least_weight}
+    })
 }

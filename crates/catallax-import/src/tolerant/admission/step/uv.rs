@@ -116,6 +116,16 @@ impl<'a> Writer<'a> {
         surface_id: u64,
         spline: u64,
     ) -> Result<u64, Error> {
+        self.labelled(builder, surface_id, spline, "reconstructed native trace")
+    }
+
+    fn labelled(
+        &mut self,
+        builder: &mut Builder<'_>,
+        surface_id: u64,
+        spline: u64,
+        label: &str,
+    ) -> Result<u64, Error> {
         let context = match self.context {
             Some(context) => context,
             None => {
@@ -138,7 +148,7 @@ impl<'a> Writer<'a> {
         builder.add(
             "PCURVE",
             vec![
-                text("reconstructed native trace"),
+                text(label),
                 reference_to(surface_id),
                 reference_to(representation),
             ],
@@ -270,14 +280,15 @@ impl<'a> Writer<'a> {
         self.wrap(builder, surface, curve)
     }
 
-    fn reconstructed(
-        &mut self,
-        builder: &mut Builder<'_>,
+    /// The factor from the reader's parameter of a 3D curve to the written
+    /// curve's parameter units.
+    fn parameter_scale(
+        &self,
+        builder: &Builder<'_>,
         original: u64,
-        surface_id: u64,
         trim: &NativeTrim,
         dec: &mut Decider,
-    ) -> Result<u64, Error> {
+    ) -> Result<f64, Error> {
         let first = trim.samples.first().expect("finite trace");
         let last = trim.samples.last().expect("finite trace");
         let width = last.curve.parameters[0] - first.curve.parameters[0];
@@ -286,7 +297,7 @@ impl<'a> Writer<'a> {
         } else {
             parameter_kind(builder, original, dec)?
         };
-        let scale = match kind {
+        Ok(match kind {
             Some(0) => {
                 let curve = self.import.native_curve(original).ok_or_else(|| {
                     invalid(
@@ -306,7 +317,82 @@ impl<'a> Writer<'a> {
                     "source composite parameter conversion is not established",
                 ));
             }
-        };
+        })
+    }
+
+    /// The source PCURVE at the parameter of its 3D curve, as the gap rule
+    /// for imports made it (decision Q9): a B-spline with its knots in the
+    /// written 3D curve's parameter units.
+    fn reparametrised(
+        &mut self,
+        builder: &mut Builder<'_>,
+        original: u64,
+        surface_id: u64,
+        trim: &NativeTrim,
+        copy: &super::super::ReparametrisedTrace,
+        dec: &mut Decider,
+    ) -> Result<u64, Error> {
+        let scale = self.parameter_scale(builder, original, trim, dec)?;
+        let mut controls = Vec::with_capacity(copy.controls.len());
+        for uv in &copy.controls {
+            let coordinates = uv
+                .iter()
+                .map(|value| number(*value))
+                .collect::<Result<_, _>>()?;
+            controls
+                .push(builder.add("CARTESIAN_POINT", vec![text(""), Param::List(coordinates)])?);
+        }
+        let mut knots: Vec<Param> = Vec::new();
+        let mut multiplicities: Vec<usize> = Vec::new();
+        let mut previous = None;
+        for knot in &copy.knots {
+            if previous == Some(*knot) {
+                *multiplicities.last_mut().expect("a counted knot") += 1;
+            } else {
+                knots.push(number(knot * scale)?);
+                multiplicities.push(1);
+                previous = Some(*knot);
+            }
+        }
+        let spline = builder.add(
+            "B_SPLINE_CURVE_WITH_KNOTS",
+            vec![
+                text(""),
+                Param::Number(copy.degree.to_string()),
+                references(controls),
+                Param::Enum("UNSPECIFIED".into()),
+                Param::Enum("U".into()),
+                Param::Enum("U".into()),
+                Param::List(
+                    multiplicities
+                        .into_iter()
+                        .map(|count| Param::Number(count.to_string()))
+                        .collect(),
+                ),
+                Param::List(knots),
+                Param::Enum("UNSPECIFIED".into()),
+            ],
+        )?;
+        self.labelled(
+            builder,
+            surface_id,
+            spline,
+            "source trace in the parameter of its 3D curve",
+        )
+    }
+
+    fn reconstructed(
+        &mut self,
+        builder: &mut Builder<'_>,
+        original: u64,
+        surface_id: u64,
+        trim: &NativeTrim,
+        dec: &mut Decider,
+    ) -> Result<u64, Error> {
+        let first = trim.samples.first().expect("finite trace");
+        let last = trim.samples.last().expect("finite trace");
+        let width = last.curve.parameters[0] - first.curve.parameters[0];
+        let scale = self.parameter_scale(builder, original, trim, dec)?;
         let reverse = width < 0.0;
         self.spline(
             builder,
@@ -526,6 +612,8 @@ impl<'a> Writer<'a> {
             surfaces.push(surface);
             let curve = if let Some(projected) = &trim.projected {
                 Some(self.projected(builder, surface, projected)?)
+            } else if let Some(copy) = &trim.reparametrised {
+                Some(self.reparametrised(builder, original, surface, trim, copy, dec)?)
             } else if trim.reconstructed {
                 Some(self.reconstructed(builder, original, surface, trim, dec)?)
             } else {

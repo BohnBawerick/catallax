@@ -175,6 +175,12 @@ fn unsupported(detail: &str) -> ImportError {
 /// zero sampled residuals and derivatives with cheap exact construction proofs.
 /// No result is inserted into an exact caller model. The active request allowance
 /// applies; without one, the whole query shares the unchanged 20M default.
+///
+/// Check once: a file that a Catallax numerical export wrote records its
+/// tolerance ([`crate::recorded`]). Where this reader takes such a file's
+/// entities as they are, with no repair, fitted cone or derived seam, the
+/// numerical body is admitted with that tolerance and nothing is measured
+/// ([`n::admit_recorded`]). The certified attempt still comes first.
 pub fn import_step(
     bytes: &[u8],
     expected_sha256: &str,
@@ -211,6 +217,8 @@ fn import_inner(
         }
     })?;
     let mut model = Model::new();
+    let recorded = crate::recorded::recorded_tolerance(bytes);
+    let recorded = recorded.as_ref().map(|record| &record.tolerance_mm);
     let strict_refusal = match crate::import_step_bodies(&mut model, bytes, expected_sha256, step) {
         Ok(bodies) => {
             return Ok(StepImport::Certified(Box::new(CertifiedImport {
@@ -220,13 +228,13 @@ fn import_inner(
             })));
         }
         Err(error) if cones::eligible(bytes, &error, dec)? => {
-            return analytic::import(bytes, expected_sha256, error, options, dec);
+            return analytic::import(bytes, expected_sha256, error, options, recorded, dec);
         }
         Err(error @ ImportRefusal::NotSolid { .. }) if matches!(&error, ImportRefusal::NotSolid { detail } if detail.contains("exactly")) => {
             error
         }
         Err(error) if analytic::eligible(&error) => {
-            return analytic::import(bytes, expected_sha256, error, options, dec);
+            return analytic::import(bytes, expected_sha256, error, options, recorded, dec);
         }
         Err(error) => return Err(error.into()),
     };
@@ -243,7 +251,14 @@ fn import_inner(
     }
     let file = crate::read_step(bytes)?;
     if cones::in_file(&file, None, dec)? {
-        return analytic::import(bytes, expected_sha256, strict_refusal, options, dec);
+        return analytic::import(
+            bytes,
+            expected_sha256,
+            strict_refusal,
+            options,
+            recorded,
+            dec,
+        );
     }
     let imported = match crate::repair::apply_file(
         &mut Model::new(),
@@ -257,10 +272,10 @@ fn import_inner(
     ) {
         Ok(imported) => imported,
         Err(error) if cones::eligible(bytes, &error, dec)? => {
-            return analytic::import(bytes, expected_sha256, error, options, dec);
+            return analytic::import(bytes, expected_sha256, error, options, recorded, dec);
         }
         Err(error) if analytic::eligible(&error) => {
-            return analytic::import(bytes, expected_sha256, error, options, dec);
+            return analytic::import(bytes, expected_sha256, error, options, recorded, dec);
         }
         Err(error) => return Err(error.into()),
     };
@@ -288,12 +303,19 @@ fn import_inner(
             "numerical continuation must retain every surface model and its surface body kind",
         ));
     }
+    // The recorded tolerance is that of the file's own entities. A repair
+    // moves them, so a repaired source is measured.
+    let recorded = recorded.filter(|_| {
+        imported.record.changes.is_empty()
+            && imported.record.face_tolerances.is_empty()
+            && imported.record.cylinder_radius.is_empty()
+    });
     let mut bodies = Vec::new();
     for solid in &definition.solids {
         let definition = planar_definition(solid, dec)?;
         bodies.push((
             solid.name.clone(),
-            n::admit_import(definition, Vec::new(), options.clone(), dec)?,
+            admit(definition, options, recorded, dec)?,
         ));
     }
     Ok(StepImport::Numerical(Box::new(NumericalImport {
@@ -303,13 +325,38 @@ fn import_inner(
     })))
 }
 
+/// Admission of one definition read from a file: with the tolerance the file
+/// recorded where it has one (check once), and measured under rule T3
+/// otherwise.
+fn admit(
+    definition: n::NumericalDefinition,
+    options: &n::NumericalOptions,
+    recorded: Option<&Rational>,
+    dec: &mut Decider,
+) -> Result<n::NumericalBody, Refusal> {
+    match recorded {
+        Some(recorded) => n::admit_recorded(
+            catallax_topology::BodyKind::Solid,
+            definition,
+            Vec::new(),
+            options.clone(),
+            recorded,
+            dec,
+        ),
+        None => n::admit_import(definition, Vec::new(), options.clone(), dec),
+    }
+}
+
 // Only verified, retained source definitions from the opened-file transaction
 // enter here. The existing byte entry and its planar-only policy are unchanged.
+// `recorded` is the tolerance the file recorded for a definition that is the
+// file's own, with no healing between.
 pub(crate) fn admit_retained_definition(
     file: &crate::StepFile,
     verified_sha256: &str,
     strict_refusal: ImportRefusal,
     options: &n::NumericalOptions,
+    recorded: Option<&Rational>,
     dec: &mut Decider,
 ) -> Result<StepImport, ImportError> {
     if options.tolerance_mm.sign() != Sign::Positive
@@ -319,7 +366,15 @@ pub(crate) fn admit_retained_definition(
             "retained numerical tolerance is outside the import cap (rule T3: at most the 0.1 mm a user may opt in to)",
         ));
     }
-    analytic::admit_definition(file, verified_sha256, strict_refusal, options, true, dec)
+    analytic::admit_definition(
+        file,
+        verified_sha256,
+        strict_refusal,
+        options,
+        true,
+        recorded,
+        dec,
+    )
 }
 
 fn point(value: &Vec3) -> catallax_shapes::Point3 {

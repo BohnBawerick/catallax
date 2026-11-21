@@ -72,10 +72,10 @@ fn a_shifted_center_uses_the_written_center_for_its_zero_phase() {
             max_scalar_rounding_error_mm: fixture::q("0.001"),
             ..Default::default()
         };
-        let file = output::build(&body, &options, &mut Decider::default()).unwrap();
-        let checks = file
-            .report()
-            .emitted_evidence
+        let audit = output::audit_written(&body, &options, &mut Decider::default()).unwrap();
+        let file = audit.file;
+        let checks = audit
+            .evidence
             .checks()
             .iter()
             .filter_map(|check| match check {

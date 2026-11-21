@@ -21,19 +21,20 @@ fn circular_boundaries_emit_approximate_step_with_checked_cylindrical_pcurves() 
         &mut Decider::default(),
     )
     .unwrap();
-    let file = output::build(
+    let audit = output::audit_written(
         &body,
         &NumericalStepOptions::default(),
         &mut Decider::default(),
     )
     .unwrap();
+    let file = audit.file;
     let text = std::str::from_utf8(file.bytes()).unwrap();
     assert!(text.contains("catallax numerical approximate"));
     assert!(text.contains("CIRCLE("));
     assert!(text.contains("CYLINDRICAL_SURFACE("));
     assert!(text.contains("PCURVE("));
     assert!(!text.contains("UNCERTAINTY_MEASURE_WITH_UNIT"));
-    assert!(file.report().emitted_evidence.checks().iter().any(|check| matches!(check,NumericalCheck::Samples { name,.. } if name=="file.actual-decimal-pcurve-edge-surface-distance")));
+    assert!(audit.evidence.checks().iter().any(|check| matches!(check,NumericalCheck::Samples { name,.. } if name=="file.actual-decimal-pcurve-edge-surface-distance")));
     file.check_written(file.bytes(), &mut Decider::default())
         .unwrap();
     save("quarter-cylinder.step", file.bytes());
@@ -250,16 +251,16 @@ fn partial_circle_phase_is_checked_after_direction_rounding() {
         &mut Decider::default(),
     )
     .unwrap();
-    let file = output::build(
+    let audit = output::audit_written(
         &body,
         &NumericalStepOptions::default(),
         &mut Decider::default(),
     )
     .unwrap();
+    let file = audit.file;
     save("quarter-oblique-anchor.step", file.bytes());
-    let phases = file
-        .report()
-        .emitted_evidence
+    let phases = audit
+        .evidence
         .checks()
         .iter()
         .filter_map(|check| match check {

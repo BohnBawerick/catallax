@@ -44,7 +44,7 @@
 //! imported ([`settled_body`]).
 
 use super::edge_gap::UseAccount;
-use super::gap::{self, EdgeCopies, FaceCopyRef, GapSurface, Hints};
+use super::gap::{self, EdgeCopies, FaceCopyRef, GapCurve, GapSurface, Hints};
 use super::*;
 
 /// What the gap rule did with one imported edge use.
@@ -205,6 +205,90 @@ pub(super) fn read_use(
     }))
 }
 
+/// What the gap rule read of one imported edge use that a reader holds in
+/// its own forms ([`read_import_use`]).
+#[derive(Clone, Debug)]
+pub struct ImportUseReading {
+    /// The same-parameter gap of the copy as imported, read by the A+
+    /// checker.
+    pub parametric: gap::GapMeasure,
+    /// Its geometric gap, both ways. `None` for a use the rule leaves as it
+    /// is: a straight residual, a copy that leaves its surface's domain, a
+    /// use that stores no more than rule T1's least floor, and a copy with
+    /// no u/v of its own.
+    pub geometric: Option<gap::GeometricMeasure>,
+    /// The copy in the parameter of the 3D curve, where the same-parameter
+    /// gap was much larger than the geometric gap and the old copy has a
+    /// change of parameter. It is the use's copy only where `outcome` is
+    /// [`ImportGapOutcome::Reparametrised`].
+    pub reparametrised: Option<gap::refit::Refit>,
+    /// What the rule did: `Geometric`, `NotLowered` or `Reparametrised`.
+    /// `None` for a use the rule leaves as it is.
+    pub outcome: Option<ImportGapOutcome>,
+    /// All the work counted against the use's one allowance: the
+    /// same-parameter reading, the geometric reading and the change of
+    /// parameter.
+    pub work: u64,
+}
+
+impl ImportUseReading {
+    /// The copy the rule gave the use in place of the imported one.
+    pub fn new_copy(&self) -> Option<&gap::refit::Refit> {
+        self.reparametrised
+            .as_ref()
+            .filter(|_| self.outcome == Some(ImportGapOutcome::Reparametrised))
+    }
+
+    /// The tolerance rule T4 stores for the copy the rule keeps: 1.1 times
+    /// its same-parameter gap, as the full checker read it.
+    pub fn stored_mm(&self) -> f64 {
+        self.new_copy()
+            .map_or_else(|| self.parametric.stored_mm(), |copy| copy.stored_mm)
+    }
+}
+
+/// The gap rule for one imported edge use (decision Q9, and section 4.2 step
+/// 2 of the Checkpoint 2 decisions), for a reader that holds an import in
+/// forms of its own and admits it use by use.
+///
+/// This is the rule [`admit_import`] runs on every use of a numerical
+/// definition, on one use: the A+ checker reads the same-parameter gap of
+/// the copy as imported; where that could be lowered, the geometric gap is
+/// read both ways; where the same-parameter gap is much larger, the face
+/// copy is given the parameter of its 3D curve, and the checker's reading of
+/// the new copy is what the use continues with.
+///
+/// `limits` is the one work allowance of the use (section 4.2 step 8). All
+/// three steps draw on it in turn, every unit is charged to the operation,
+/// and a use that spends it refuses with `numerical.gap-work-cap`.
+pub fn read_import_use(
+    copies: &EdgeCopies<'_>,
+    limits: gap::Limits,
+    dec: &mut Decider,
+) -> Result<ImportUseReading, Refusal> {
+    let mut account = UseAccount::new(limits);
+    let floor_mm = tolerance::floor_minimum_mm().to_f64_nearest();
+    Ok(match read_use(copies, &mut account, floor_mm, dec)? {
+        Some(read) => ImportUseReading {
+            parametric: read.parametric,
+            geometric: Some(read.geometric),
+            reparametrised: read.reparametrised,
+            outcome: Some(read.outcome),
+            work: read.work,
+        },
+        None => ImportUseReading {
+            parametric: account
+                .reading()
+                .cloned()
+                .ok_or_else(|| bad("trim", "an edge use has no gap reading"))?,
+            geometric: None,
+            reparametrised: None,
+            outcome: None,
+            work: account.spent(),
+        },
+    })
+}
+
 /// What the rule did with the uses of a definition.
 pub(super) struct Settled {
     /// The retained u/v curves with the new copies in place, or `None` where
@@ -273,7 +357,7 @@ pub(super) fn settle(
                     None => FaceCopyRef::Linear(&trim.uv),
                 };
                 let copies = EdgeCopies {
-                    curve: &edge.curve,
+                    curve: GapCurve::Kernel(&edge.curve),
                     parameters: edge_gap::traversal(trim, edge),
                     surface: GapSurface::Kernel(&face.surface),
                     face_copy: copy,
@@ -452,7 +536,7 @@ mod tests {
         (
             use_slot(source, wall, copy.boundary, copy.use_index),
             EdgeCopies {
-                curve: &used.curve,
+                curve: GapCurve::Kernel(&used.curve),
                 parameters: edge_gap::traversal(trim, used),
                 surface: GapSurface::Kernel(&face.surface),
                 face_copy: FaceCopyRef::Native(&copy.curve),

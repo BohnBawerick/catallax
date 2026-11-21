@@ -104,6 +104,25 @@ impl FramedSurface {
         self.surface.point(uv, &mut self.scratch).value
     }
 
+    /// A bound of the binary64 rounding of a point of this surface over a
+    /// parameter rectangle, as a length: the largest bound its evaluation
+    /// states for a coordinate at the rectangle's four corners and its
+    /// middle, times [`COORDINATES`]. Five readings.
+    pub(in crate::numerical) fn rounding(&mut self, rect: [[f64; 2]; 2]) -> f64 {
+        let [u, v] = rect;
+        COORDINATES
+            * [
+                [u[0], v[0]],
+                [u[0], v[1]],
+                [u[1], v[0]],
+                [u[1], v[1]],
+                [u[0] / 2.0 + u[1] / 2.0, v[0] / 2.0 + v[1] / 2.0],
+            ]
+            .into_iter()
+            .map(|uv| self.surface.point(uv, &mut self.scratch).error)
+            .fold(0.0, f64::max)
+    }
+
     /// The foot of `target` from a seed. `spend` is asked before each
     /// evaluation of the surface. Where it gives `None` that evaluation is
     /// not made, nor any after it, and the search gives `None`.
@@ -234,6 +253,19 @@ impl FramedUvCurve {
     }
 }
 
+/// Source: the Euclidean norm of three coordinates. A point moves by at
+/// most the square root of three times the largest error of one of its
+/// coordinates, and this is that factor rounded up.
+const COORDINATES: f64 = 2.0;
+
+/// A bound of the rounding of a point read from rationals into binary64, as
+/// a length: one unit roundoff of its largest coordinate (Higham, "Accuracy
+/// and Stability of Numerical Algorithms", 2nd ed., section 2.1), times
+/// [`COORDINATES`].
+pub(in crate::numerical) fn point_rounding(point: &[f64; 3]) -> f64 {
+    COORDINATES * numeric::UNIT_ROUNDOFF * point.iter().fold(0.0_f64, |most, c| most.max(c.abs()))
+}
+
 /// Source: the allowance `lift.rs` gives a domain border, sixteen roundings
 /// of the largest coordinate, here for the corners of a box.
 const BOX_ROUNDINGS: f64 = 16.0;
@@ -295,6 +327,18 @@ impl FramedCurve {
     /// The point at `t`.
     pub(in crate::numerical) fn point(&mut self, t: f64) -> [f64; 3] {
         self.curve.point(t, &mut self.scratch).value
+    }
+
+    /// A bound of the binary64 rounding of a point of this curve, as a
+    /// length: the largest bound its evaluation states for a coordinate at
+    /// its two ends and its middle, times [`COORDINATES`]. Three readings.
+    pub(in crate::numerical) fn rounding(&mut self) -> f64 {
+        let [low, high] = self.range;
+        COORDINATES
+            * [low, low / 2.0 + high / 2.0, high]
+                .into_iter()
+                .map(|t| self.curve.point(t, &mut self.scratch).error)
+                .fold(0.0, f64::max)
     }
 
     /// A box that holds the curve over its range: the two ends of a line,

@@ -242,6 +242,49 @@ enum Polynomial<'a> {
         p: &'a [Rational; 2],
         q: &'a [Rational; 2],
     },
+    /// `|p - q|^2 - reach^2`.
+    Gap {
+        p: &'a [Rational; 3],
+        q: &'a [Rational; 3],
+        reach: &'a Rational,
+    },
+    /// `(p - a) . (b - a)`, less `|b - a|^2` from `b`: the side of the
+    /// segment's end on which the foot of `p` lies.
+    FootOfPoint {
+        p: &'a [Rational; 3],
+        a: &'a [Rational; 3],
+        b: &'a [Rational; 3],
+        from_b: bool,
+    },
+    /// `|u|^2 |w|^2 - (u . w)^2 - reach^2 |w|^2` with `u = p - a` and
+    /// `w = b - a`: the squared distance of `p` from the line through the
+    /// segment less the squared reach, times `|w|^2`.
+    PointFromLine {
+        p: &'a [Rational; 3],
+        a: &'a [Rational; 3],
+        b: &'a [Rational; 3],
+        reach: &'a Rational,
+    },
+    /// A quantity of the two segments `a b` and `c d`, with `d1 = b - a`,
+    /// `d2 = d - c` and `r = a - c` (Ericson, "Real-Time Collision
+    /// Detection", 2005, section 5.1.9).
+    Segments {
+        ends: [&'a [Rational; 3]; 4],
+        what: OfSegments<'a>,
+    },
+}
+
+/// What is asked of two segments.
+#[derive(Clone, Copy)]
+enum OfSegments<'a> {
+    /// `|d1|^2 |d2|^2 - (d1 . d2)^2`: zero where they are parallel.
+    Skew,
+    /// The numerator of the common perpendicular's foot on the first or the
+    /// second segment, less the denominator [`Self::Skew`] from its far end.
+    Foot { second: bool, from_end: bool },
+    /// `(r . n)^2 - reach^2 |n|^2` with `n = d1 x d2`: the squared distance
+    /// between the two lines less the squared reach, times `|n|^2`.
+    Apart(&'a Rational),
 }
 
 impl Polynomial<'_> {
@@ -324,6 +367,102 @@ impl Polynomial<'_> {
                 let left = a.product(&px, &qy)?;
                 let right = a.product(&py, &qx)?;
                 a.difference(&left, &right)
+            }
+            Self::Gap { p, q, reach } => {
+                let (p, q) = (lifted(a, p), lifted(a, q));
+                let between = minus(a, &p, &q)?;
+                let distance = dot(a, &between, &between)?;
+                let reach = a.lift(reach);
+                let reach = a.product(&reach, &reach)?;
+                a.difference(&distance, &reach)
+            }
+            Self::FootOfPoint {
+                p,
+                a: from,
+                b: to,
+                from_b,
+            } => {
+                let (p, from, to) = (lifted(a, p), lifted(a, from), lifted(a, to));
+                let u = minus(a, &p, &from)?;
+                let w = minus(a, &to, &from)?;
+                let foot = dot(a, &u, &w)?;
+                if *from_b {
+                    let whole = dot(a, &w, &w)?;
+                    a.difference(&foot, &whole)
+                } else {
+                    Ok(foot)
+                }
+            }
+            Self::PointFromLine {
+                p,
+                a: from,
+                b: to,
+                reach,
+            } => {
+                let (p, from, to) = (lifted(a, p), lifted(a, from), lifted(a, to));
+                let u = minus(a, &p, &from)?;
+                let w = minus(a, &to, &from)?;
+                let uu = dot(a, &u, &u)?;
+                let ww = dot(a, &w, &w)?;
+                let uw = dot(a, &u, &w)?;
+                let apart = a.product(&uu, &ww)?;
+                let foot = a.product(&uw, &uw)?;
+                let apart = a.difference(&apart, &foot)?;
+                let reach = a.lift(reach);
+                let reach = a.product(&reach, &reach)?;
+                let reach = a.product(&reach, &ww)?;
+                a.difference(&apart, &reach)
+            }
+            Self::Segments { ends, what } => {
+                let [from, to, other, end] = ends.map(|point| lifted(a, point));
+                let d1 = minus(a, &to, &from)?;
+                let d2 = minus(a, &end, &other)?;
+                let r = minus(a, &from, &other)?;
+                let skew = |a: &mut A| -> Result<A::Number, Refusal> {
+                    let first = dot(a, &d1, &d1)?;
+                    let second = dot(a, &d2, &d2)?;
+                    let both = dot(a, &d1, &d2)?;
+                    let lengths = a.product(&first, &second)?;
+                    let square = a.product(&both, &both)?;
+                    a.difference(&lengths, &square)
+                };
+                match what {
+                    OfSegments::Skew => skew(a),
+                    OfSegments::Foot { second, from_end } => {
+                        let both = dot(a, &d1, &d2)?;
+                        let on_first = dot(a, &d1, &r)?;
+                        let on_second = dot(a, &d2, &r)?;
+                        let (left, right) = if *second {
+                            // (d1 . d1)(d2 . r) - (d1 . d2)(d1 . r)
+                            let first = dot(a, &d1, &d1)?;
+                            (a.product(&first, &on_second)?, a.product(&both, &on_first)?)
+                        } else {
+                            // (d1 . d2)(d2 . r) - (d1 . r)(d2 . d2)
+                            let second = dot(a, &d2, &d2)?;
+                            (
+                                a.product(&both, &on_second)?,
+                                a.product(&on_first, &second)?,
+                            )
+                        };
+                        let foot = a.difference(&left, &right)?;
+                        if *from_end {
+                            let whole = skew(a)?;
+                            a.difference(&foot, &whole)
+                        } else {
+                            Ok(foot)
+                        }
+                    }
+                    OfSegments::Apart(reach) => {
+                        let n = cross(a, &d1, &d2)?;
+                        let across = dot(a, &r, &n)?;
+                        let apart = a.product(&across, &across)?;
+                        let reach = a.lift(reach);
+                        let reach = a.product(&reach, &reach)?;
+                        let length = dot(a, &n, &n)?;
+                        let reach = a.product(&reach, &length)?;
+                        a.difference(&apart, &reach)
+                    }
+                }
             }
         }
     }
@@ -432,6 +571,105 @@ impl Line {
         }
         .sign(stages, dec)
     }
+}
+
+/// The sign of the distance between two points less `reach`.
+pub fn points_beyond(
+    p: &[Rational; 3],
+    q: &[Rational; 3],
+    reach: &Rational,
+    stages: &mut Stages,
+    dec: &mut Decider,
+) -> Result<Sign, Refusal> {
+    Polynomial::Gap { p, q, reach }.sign(stages, dec)
+}
+
+/// The sign of the least distance from `p` to the segment `a b` less
+/// `reach`. The nearest point of the segment is an end, or the foot of `p`
+/// where that lies between the ends, and which it is, is two signs.
+pub fn point_segment_beyond(
+    p: &[Rational; 3],
+    a: &[Rational; 3],
+    b: &[Rational; 3],
+    reach: &Rational,
+    stages: &mut Stages,
+    dec: &mut Decider,
+) -> Result<Sign, Refusal> {
+    let foot = |from_b, stages: &mut Stages, dec: &mut Decider| {
+        Polynomial::FootOfPoint { p, a, b, from_b }.sign(stages, dec)
+    };
+    if foot(false, stages, dec)? != Sign::Positive {
+        return points_beyond(p, a, reach, stages, dec);
+    }
+    if foot(true, stages, dec)? != Sign::Negative {
+        return points_beyond(p, b, reach, stages, dec);
+    }
+    Polynomial::PointFromLine { p, a, b, reach }.sign(stages, dec)
+}
+
+/// The sign of the least distance between the segments `a b` and `c d` less
+/// `reach`.
+///
+/// The least distance is between the feet of the common perpendicular where
+/// both lie inside their segments, and from an end of one segment to the
+/// other segment otherwise (Ericson, "Real-Time Collision Detection", 2005,
+/// section 5.1.9). The four ends are always read, and the perpendicular
+/// where its feet are inside, and the least of the signs is returned.
+pub fn segments_beyond(
+    [a, b]: [&[Rational; 3]; 2],
+    [c, d]: [&[Rational; 3]; 2],
+    reach: &Rational,
+    stages: &mut Stages,
+    dec: &mut Decider,
+) -> Result<Sign, Refusal> {
+    let order = |sign: Sign| match sign {
+        Sign::Negative => 0,
+        Sign::Zero => 1,
+        Sign::Positive => 2,
+    };
+    let mut least = Sign::Positive;
+    for (point, from, to) in [(a, c, d), (b, c, d), (c, a, b), (d, a, b)] {
+        let sign = point_segment_beyond(point, from, to, reach, stages, dec)?;
+        if order(sign) < order(least) {
+            least = sign;
+        }
+    }
+    let of = |what, stages: &mut Stages, dec: &mut Decider| {
+        Polynomial::Segments {
+            ends: [a, b, c, d],
+            what,
+        }
+        .sign(stages, dec)
+    };
+    let inside = |second, stages: &mut Stages, dec: &mut Decider| -> Result<bool, Refusal> {
+        Ok(of(
+            OfSegments::Foot {
+                second,
+                from_end: false,
+            },
+            stages,
+            dec,
+        )? == Sign::Positive
+            && of(
+                OfSegments::Foot {
+                    second,
+                    from_end: true,
+                },
+                stages,
+                dec,
+            )? == Sign::Negative)
+    };
+    if least != Sign::Negative
+        && of(OfSegments::Skew, stages, dec)? == Sign::Positive
+        && inside(false, stages, dec)?
+        && inside(true, stages, dec)?
+    {
+        let sign = of(OfSegments::Apart(reach), stages, dec)?;
+        if order(sign) < order(least) {
+            least = sign;
+        }
+    }
+    Ok(least)
 }
 
 /// The sign of the turn from `p` to `q` about the origin, `p.x q.y - p.y
@@ -623,6 +861,71 @@ mod tests {
         // Along the line's direction.
         assert_eq!(beyond(["3", "2", "0"], ["3", "2", "8"]), Sign::Positive);
         assert_eq!(beyond(["1", "5/2", "0"], ["1", "5/2", "8"]), Sign::Negative);
+    }
+
+    #[test]
+    fn a_point_against_a_point_and_against_a_segment() {
+        let mut stages = Stages::default();
+        let mut dec = Decider::default();
+        let (a, b) = (p(["0", "0", "0"]), p(["4", "0", "0"]));
+        // Three and four apart: five.
+        let far = p(["3", "4", "0"]);
+        let gap = |reach: &str, stages: &mut Stages, dec: &mut Decider| {
+            points_beyond(&a, &far, &q(reach), stages, dec).unwrap()
+        };
+        assert_eq!(gap("4", &mut stages, &mut dec), Sign::Positive);
+        assert_eq!(gap("5", &mut stages, &mut dec), Sign::Zero);
+        assert_eq!(gap("6", &mut stages, &mut dec), Sign::Negative);
+        let mut beyond = |point: [&str; 3], reach: &str| {
+            point_segment_beyond(&p(point), &a, &b, &q(reach), &mut stages, &mut dec).unwrap()
+        };
+        // Above the middle: the foot is inside, and the height decides.
+        assert_eq!(beyond(["2", "3", "0"], "5/2"), Sign::Positive);
+        assert_eq!(beyond(["2", "3", "0"], "3"), Sign::Zero);
+        assert_eq!(beyond(["2", "3", "0"], "7/2"), Sign::Negative);
+        // Past either end: the end decides, five away.
+        assert_eq!(beyond(["-3", "4", "0"], "5"), Sign::Zero);
+        assert_eq!(beyond(["7", "0", "4"], "5"), Sign::Zero);
+        assert_eq!(beyond(["7", "0", "4"], "4"), Sign::Positive);
+    }
+
+    #[test]
+    fn two_segments_are_read_at_their_nearest_points() {
+        let mut stages = Stages::default();
+        let mut dec = Decider::default();
+        let mut beyond = |first: [[&str; 3]; 2], second: [[&str; 3]; 2], reach: &str| {
+            let [a, b] = first.map(p);
+            let [c, d] = second.map(p);
+            let forward =
+                segments_beyond([&a, &b], [&c, &d], &q(reach), &mut stages, &mut dec).unwrap();
+            let backward =
+                segments_beyond([&d, &c], [&b, &a], &q(reach), &mut stages, &mut dec).unwrap();
+            assert_eq!(forward, backward);
+            forward
+        };
+        let along_x = [["-2", "0", "0"], ["2", "0", "0"]];
+        // Across it, three above: the common perpendicular, between interiors.
+        let across = [["0", "-2", "3"], ["0", "2", "3"]];
+        assert_eq!(beyond(along_x, across, "2"), Sign::Positive);
+        assert_eq!(beyond(along_x, across, "3"), Sign::Zero);
+        assert_eq!(beyond(along_x, across, "4"), Sign::Negative);
+        // The same line moved off the end: an end against an end, five away.
+        let off = [["5", "4", "0"], ["5", "9", "0"]];
+        assert_eq!(beyond(along_x, off, "5"), Sign::Zero);
+        assert_eq!(beyond(along_x, off, "49/10"), Sign::Positive);
+        // Parallel, two apart, overlapping in part.
+        let beside = [["1", "2", "0"], ["9", "2", "0"]];
+        assert_eq!(beyond(along_x, beside, "2"), Sign::Zero);
+        assert_eq!(beyond(along_x, beside, "21/10"), Sign::Negative);
+        // Crossing lines whose segments do not reach each other: the lines
+        // meet at the origin, and the second segment starts one away.
+        let short = [["0", "1", "0"], ["0", "5", "0"]];
+        assert_eq!(beyond(along_x, short, "1"), Sign::Zero);
+        assert_eq!(beyond(along_x, short, "1/2"), Sign::Positive);
+        // Two segments that cross.
+        let crossing = [["0", "-1", "0"], ["0", "1", "0"]];
+        assert_eq!(beyond(along_x, crossing, "0"), Sign::Zero);
+        assert_eq!(beyond(along_x, crossing, "1/1000"), Sign::Negative);
     }
 
     #[test]

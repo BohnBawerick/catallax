@@ -49,8 +49,9 @@ use super::{
 use crate::Sense;
 use crate::numerical::gap::{
     FramedCurve, FramedSurface, FramedUvCurve, ROOT_DEPTH, chebyshev_shares, nearest_on_curves,
-    try_brent_maximum,
+    point_rounding, try_brent_maximum,
 };
+use crate::numerical::predicate::{self, Stages};
 use crate::numerical::{
     NumericalBody, NumericalDefinition, NumericalNativeTrim, analytic, native::Index,
 };
@@ -95,8 +96,10 @@ const ALTERNATIONS: usize = 3;
 
 type Bounds = [[f64; 2]; 3];
 
-/// Two entity indices and the distance found between them.
-type ClosePair = (usize, usize, f64);
+/// Two entity indices, the distance found between them, and, where the
+/// pair rule asked for it, the binary64 rounding of that distance: what the
+/// evaluations state for a point of each entity.
+type ClosePair = (usize, usize, f64, f64);
 
 fn widened(bounds: &Bounds, by: f64) -> Bounds {
     bounds.map(|[lo, hi]| [lo - by, hi + by])
@@ -1137,6 +1140,7 @@ fn adjacent(a: &Entity, b: &Entity) -> bool {
 
 /// Every pair of entities that share no topology and are closer than their
 /// pair's reach, with the distance found.
+#[allow(clippy::too_many_arguments)]
 fn close_pairs(
     definition: &NumericalDefinition,
     native: &Index<'_>,
@@ -1144,6 +1148,7 @@ fn close_pairs(
     centre: &[Rational; 3],
     reach_of: impl Fn(f64) -> f64,
     pair_reach: impl Fn(f64, f64) -> f64,
+    mut elementary: Option<&mut Elementary<'_>>,
     dec: &mut Decider,
 ) -> Result<(Vec<Entity>, Vec<ClosePair>), Refusal> {
     let Prepared {
@@ -1167,11 +1172,23 @@ fn close_pairs(
     candidates.dedup();
     let mut sampled: Vec<Option<Vec<Piece>>> = (0..curves.len()).map(|_| None).collect();
     let mut faces: Vec<Option<FaceData>> = (0..surfaces.len()).map(|_| None).collect();
+    // The rounding of a point of each entity, read once and only for an
+    // entity of a pair the pair rule decides from a measured distance.
+    let mut roundings: Vec<Option<f64>> = vec![None; entities.len()];
     let mut found = Vec::new();
     for (i, j) in candidates {
         let (a, b) = (&entities[i], &entities[j]);
         dec.charge_work(1)?;
         if matches!((&a.shape, &b.shape), (Shape::Face(_), Shape::Face(_))) || adjacent(a, b) {
+            continue;
+        }
+        // A pair of points and straight edges is not measured here: its
+        // caller decides it from its exact distance.
+        if let Some(elementary) = elementary.as_deref_mut()
+            && elementary.holds(&a.shape)
+            && elementary.holds(&b.shape)
+        {
+            elementary.pairs.push((i, j));
             continue;
         }
         let reach = pair_reach(a.tolerance, b.tolerance);
@@ -1239,7 +1256,33 @@ fn close_pairs(
             (Shape::Face(_), Shape::Face(_)) => unreachable!("skipped above"),
         };
         if let Some(d) = distance.filter(|d| *d < reach) {
-            found.push((i, j, d));
+            let mut rounding = 0.0;
+            if elementary.is_some() {
+                for index in [i, j] {
+                    let known = match roundings[index] {
+                        Some(known) => known,
+                        None => {
+                            // Each reading is charged before it is made.
+                            let read = match &entities[index].shape {
+                                Shape::Point(p) => point_rounding(p),
+                                Shape::Curve(k) => {
+                                    dec.charge_work(3)?;
+                                    curves[*k].rounding()
+                                }
+                                Shape::Face(k) => {
+                                    dec.charge_work(5)?;
+                                    let face = faces[*k].as_mut().expect("prepared above");
+                                    face.surface.rounding(face.rect)
+                                }
+                            };
+                            roundings[index] = Some(read);
+                            read
+                        }
+                    };
+                    rounding += known;
+                }
+            }
+            found.push((i, j, d, rounding));
         }
     }
     Ok((entities, found))
@@ -1259,9 +1302,165 @@ fn feature(entities: &[Entity], i: usize, j: usize, d: f64) -> FeaturePair {
     }
 }
 
+/// A pair the rule decides: two entity indices and, for a measured pair, the
+/// distance found and its rounding. A pair with none is elementary.
+type Candidate = (usize, usize, Option<(f64, f64)>);
+
+/// The pairs whose distance is exact: two points, a point and a straight
+/// edge, or two straight edges, all with rational coordinates.
+struct Elementary<'a> {
+    /// The two ends of each edge that is a line with rational numbers.
+    segments: &'a [Option<[[Rational; 3]; 2]>],
+    /// The candidate pairs of such entities, by entity index.
+    pairs: Vec<(usize, usize)>,
+}
+
+impl Elementary<'_> {
+    fn holds(&self, shape: &Shape) -> bool {
+        match shape {
+            Shape::Point(_) => true,
+            Shape::Curve(edge) => self.segments[*edge].is_some(),
+            Shape::Face(_) => false,
+        }
+    }
+}
+
+/// The ends of an edge that is a line with rational numbers, at its two
+/// parameters. Each product and sum is reserved by the limb rule.
+fn straight_ends(
+    edge: &crate::numerical::NumericalEdge,
+    dec: &mut Decider,
+) -> Result<Option<[[Rational; 3]; 2]>, Refusal> {
+    let catallax_shapes::Curve::Line(line) = &edge.curve else {
+        return Ok(None);
+    };
+    let rational = |p: [&catallax_numbers::Real; 3]| -> Option<[Rational; 3]> {
+        Some([
+            p[0].as_rational()?,
+            p[1].as_rational()?,
+            p[2].as_rational()?,
+        ])
+    };
+    let (Some(origin), Some(direction)) = (
+        rational([&line.origin.x, &line.origin.y, &line.origin.z]),
+        rational([&line.dir.x, &line.dir.y, &line.dir.z]),
+    ) else {
+        return Ok(None);
+    };
+    let mut ends = [origin.clone(), origin.clone()];
+    for (end, parameter) in ends.iter_mut().zip(&edge.parameters) {
+        for axis in 0..3 {
+            dec.reserve_exact_arithmetic(&direction[axis], parameter, true)?;
+            let step = &direction[axis] * parameter;
+            dec.reserve_exact_arithmetic(&origin[axis], &step, false)?;
+            end[axis] = &origin[axis] + &step;
+        }
+    }
+    Ok(Some(ends))
+}
+
+/// A point or a segment of an elementary pair.
+enum Exact<'a> {
+    Point(&'a [Rational; 3]),
+    Segment(&'a [[Rational; 3]; 2]),
+}
+
+/// The sign of the distance between two elementary entities less `reach`,
+/// through the stages of [`predicate`].
+fn beyond(
+    a: &Exact<'_>,
+    b: &Exact<'_>,
+    reach: &Rational,
+    stages: &mut Stages,
+    dec: &mut Decider,
+) -> Result<catallax_numbers::Sign, Refusal> {
+    match (a, b) {
+        (Exact::Point(p), Exact::Point(q)) => predicate::points_beyond(p, q, reach, stages, dec),
+        (Exact::Point(p), Exact::Segment([from, to]))
+        | (Exact::Segment([from, to]), Exact::Point(p)) => {
+            predicate::point_segment_beyond(p, from, to, reach, stages, dec)
+        }
+        (Exact::Segment([a, b]), Exact::Segment([c, d])) => {
+            predicate::segments_beyond([a, b], [c, d], reach, stages, dec)
+        }
+    }
+}
+
+/// The distance between two elementary entities in binary64, for a report.
+/// It decides nothing.
+fn reported_distance(a: &Exact<'_>, b: &Exact<'_>) -> f64 {
+    type P = [f64; 3];
+    let f = |p: &[Rational; 3]| -> P { std::array::from_fn(|i| p[i].to_f64_nearest()) };
+    let sub = |a: &P, b: &P| -> P { std::array::from_fn(|i| a[i] - b[i]) };
+    let at = |a: &P, d: &P, t: f64| -> P { std::array::from_fn(|i| a[i] + t * d[i]) };
+    // The nearest point of the segment `from to` to `p`.
+    let nearest = |p: &P, from: &P, to: &P| -> P {
+        let along = sub(to, from);
+        let length = dot(&along, &along);
+        if length <= 0.0 {
+            return *from;
+        }
+        at(
+            from,
+            &along,
+            (dot(&sub(p, from), &along) / length).clamp(0.0, 1.0),
+        )
+    };
+    match (a, b) {
+        (Exact::Point(p), Exact::Point(q)) => distance(&f(p), &f(q)),
+        (Exact::Point(p), Exact::Segment([from, to]))
+        | (Exact::Segment([from, to]), Exact::Point(p)) => {
+            let p = f(p);
+            distance(&p, &nearest(&p, &f(from), &f(to)))
+        }
+        (Exact::Segment([a, b]), Exact::Segment([c, d])) => {
+            let [a, b, c, d] = [f(a), f(b), f(c), f(d)];
+            // The ends against the other segment, and the feet of the
+            // common perpendicular where the lines are not parallel.
+            let mut least = [(a, c, d), (b, c, d), (c, a, b), (d, a, b)]
+                .iter()
+                .map(|(p, from, to)| distance(p, &nearest(p, from, to)))
+                .fold(f64::INFINITY, f64::min);
+            let (d1, d2, r) = (sub(&b, &a), sub(&d, &c), sub(&a, &c));
+            let (aa, ee, bb) = (dot(&d1, &d1), dot(&d2, &d2), dot(&d1, &d2));
+            let denominator = aa * ee - bb * bb;
+            if denominator > 0.0 {
+                let (c1, f1) = (dot(&d1, &r), dot(&d2, &r));
+                let s = (bb * f1 - c1 * ee) / denominator;
+                let t = (aa * f1 - bb * c1) / denominator;
+                if (0.0..=1.0).contains(&s) && (0.0..=1.0).contains(&t) {
+                    least = least.min(distance(&at(&a, &d1, s), &at(&c, &d2, t)));
+                }
+            }
+            least
+        }
+    }
+}
+
+/// An entity's tolerance as the report holds it, found by its place: zero
+/// for an entity the report does not list at that place.
+fn tolerance_mm_at(tolerances: &[EntityTolerance], index: usize, entity: &Entity) -> Rational {
+    tolerances
+        .get(index)
+        .filter(|listed| listed.kind == entity.kind && listed.key == entity.key)
+        .map_or_else(Rational::zero, |listed| listed.tolerance_mm.clone())
+}
+
 /// Rule T5 on an admitted definition: refuses with
 /// `numerical.tolerance-pair` the first pair whose tolerances add up to more
 /// than half their distance, and returns the pairs over a fifth as warnings.
+///
+/// Checkpoint 2 decisions, section 4.5: a decision with a tolerant
+/// participant goes "f64, then interval, then exact". A pair of points and
+/// straight edges with rational coordinates has an exact distance, and its
+/// two comparisons are signs read through the three stages of
+/// [`predicate`]. Every such pair the box tree returns is decided that way,
+/// and no search is made for it. Any other pair is measured by the search,
+/// and its comparison is read against the measurement's interval, the
+/// value with the rounding of its two evaluations to either side
+/// ([`pair_verdict`](super::pair_verdict)). Where that interval holds the
+/// error threshold the pair refuses `numerical.tolerance-pair-unresolved`:
+/// a curved pair has no exact stage, and the decisions rule one out.
 pub(in crate::numerical) fn pair_rule_check(
     definition: &NumericalDefinition,
     native: &Index<'_>,
@@ -1269,6 +1468,15 @@ pub(in crate::numerical) fn pair_rule_check(
     centre: &[Rational; 3],
     dec: &mut Decider,
 ) -> Result<Vec<FeaturePair>, Refusal> {
+    let mut segments = Vec::with_capacity(definition.edges.len());
+    for edge in &definition.edges {
+        dec.charge_work(1)?;
+        segments.push(straight_ends(edge, dec)?);
+    }
+    let mut elementary = Elementary {
+        segments: &segments,
+        pairs: Vec::new(),
+    };
     let (entities, rows) = close_pairs(
         definition,
         native,
@@ -1276,25 +1484,93 @@ pub(in crate::numerical) fn pair_rule_check(
         centre,
         |t| PAIR_INFLATION * t,
         |a, b| PAIR_INFLATION * (a + b),
+        Some(&mut elementary),
         dec,
     )?;
+    // Both lists are in the order of the candidates. They are decided in
+    // that order, so the first pair in error is the one named.
+    let mut pairs: Vec<Candidate> = rows
+        .iter()
+        .map(|(i, j, d, rounding)| (*i, *j, Some((*d, *rounding))))
+        .chain(elementary.pairs.iter().map(|(i, j)| (*i, *j, None)))
+        .collect();
+    dec.charge_work(pairs.len() as u64)?;
+    pairs.sort_by_key(|(i, j, _)| (*i, *j));
+    let exact_of = |index: usize| match &entities[index].shape {
+        Shape::Point(_) => Exact::Point(&definition.vertices[index].position),
+        Shape::Curve(edge) => Exact::Segment(segments[*edge].as_ref().expect("a straight edge")),
+        Shape::Face(_) => unreachable!("no face is elementary"),
+    };
+    let mut stages = Stages::default();
     let mut warnings = Vec::new();
-    for (i, j, d) in &rows {
-        let pair = feature(&entities, *i, *j, *d);
-        match pair_verdict(entities[*i].tolerance, entities[*j].tolerance, *d) {
+    for (i, j, measured) in pairs {
+        let (verdict, d, rounding) = match measured {
+            Some((d, rounding)) => (
+                pair_verdict(entities[i].tolerance, entities[j].tolerance, d, rounding),
+                d,
+                rounding,
+            ),
+            None => {
+                let (t_a, t_b) = (
+                    tolerance_mm_at(tolerances, i, &entities[i]),
+                    tolerance_mm_at(tolerances, j, &entities[j]),
+                );
+                dec.reserve_exact_arithmetic(&t_a, &t_b, false)?;
+                let sum = &t_a + &t_b;
+                // Two exact entities have no tolerance to compare.
+                if sum.is_zero() {
+                    continue;
+                }
+                let (a, b) = (exact_of(i), exact_of(j));
+                // `t_a + t_b > d / 2` is `d < 2 (t_a + t_b)`, and the same
+                // with 5 for the warning.
+                let verdict = if beyond(&a, &b, &sum.mul_pow2(1), &mut stages, dec)?
+                    == catallax_numbers::Sign::Negative
+                {
+                    PairVerdict::Error
+                } else {
+                    let fifth = Rational::from_i64(5);
+                    dec.reserve_exact_arithmetic(&sum, &fifth, true)?;
+                    if beyond(&a, &b, &(&sum * &fifth), &mut stages, dec)?
+                        == catallax_numbers::Sign::Negative
+                    {
+                        PairVerdict::Warn
+                    } else {
+                        PairVerdict::Clear
+                    }
+                };
+                if verdict == PairVerdict::Clear {
+                    continue;
+                }
+                (verdict, reported_distance(&a, &b), 0.0)
+            }
+        };
+        let pair = feature(&entities, i, j, d);
+        let named = format!(
+            "{} {:?} and {} {:?} share no topology and are {} mm apart",
+            pair.a.0.name(),
+            pair.a.1,
+            pair.b.0.name(),
+            pair.b.1,
+            d
+        );
+        let sum = entities[i].tolerance + entities[j].tolerance;
+        match verdict {
             PairVerdict::Clear => {}
             PairVerdict::Warn => warnings.push(pair),
             PairVerdict::Error => {
                 return Err(Refusal::new(
                     "numerical.tolerance-pair",
                     format!(
-                        "{} {:?} and {} {:?} share no topology and are {} mm apart, but their tolerances add up to {} mm, more than half that (rule T5)",
-                        pair.a.0.name(),
-                        pair.a.1,
-                        pair.b.0.name(),
-                        pair.b.1,
-                        d,
-                        entities[*i].tolerance + entities[*j].tolerance
+                        "{named}, but their tolerances add up to {sum} mm, more than half that (rule T5)"
+                    ),
+                ));
+            }
+            PairVerdict::Unresolved => {
+                return Err(Refusal::new(
+                    "numerical.tolerance-pair-unresolved",
+                    format!(
+                        "{named} as measured, to within {rounding} mm, and their tolerances add up to {sum} mm: whether that is more than half the distance is not decided (rule T5)"
                     ),
                 ));
             }
@@ -1330,11 +1606,12 @@ pub fn features_within(
         &frame.centre,
         |_| reach / 2.0,
         |_, _| reach,
+        None,
         dec,
     )?;
     Ok(rows
         .iter()
-        .map(|(i, j, d)| feature(&entities, *i, *j, *d))
+        .map(|(i, j, d, _)| feature(&entities, *i, *j, *d))
         .collect())
 }
 
@@ -1358,9 +1635,10 @@ pub fn fitted_target_for_definition(
         &frame.centre,
         |_| reach / 2.0,
         |_, _| reach,
+        None,
         dec,
     )?;
-    let smallest = pairs.into_iter().map(|(_, _, d)| d).reduce(f64::min);
+    let smallest = pairs.into_iter().map(|(_, _, d, _)| d).reduce(f64::min);
     Ok(own_fitted(eps, smallest.map(exact).as_ref()).target_mm)
 }
 
@@ -1436,6 +1714,139 @@ mod tests {
     /// circle: all the way round, a point a billionth of the radius inside
     /// it is inside the face and one a billionth outside is not. A polygon
     /// through the walk's points is up to 0.6 mm inside the circle.
+    /// Rule T5 on vertices and edges with no faces, every entity with a
+    /// tolerance of 1/16 mm, so every pair's tolerances add up to 1/8 mm.
+    fn pair_rule(
+        positions: &[[Rational; 3]],
+        edges: Vec<(Curve, [usize; 2], [Rational; 2])>,
+    ) -> Result<Vec<FeaturePair>, Refusal> {
+        use crate::numerical::{NumericalEdge, NumericalVertex};
+        let definition = NumericalDefinition {
+            name: "pairs".into(),
+            vertices: positions
+                .iter()
+                .enumerate()
+                .map(|(index, position)| NumericalVertex {
+                    key: format!("v{index}"),
+                    position: position.clone(),
+                })
+                .collect(),
+            edges: edges
+                .into_iter()
+                .enumerate()
+                .map(|(index, (curve, vertices, parameters))| NumericalEdge {
+                    key: format!("e{index}"),
+                    curve,
+                    vertices,
+                    parameters,
+                })
+                .collect(),
+            faces: Vec::new(),
+        };
+        let listed = |kind, key: &String| EntityTolerance {
+            kind,
+            key: key.clone(),
+            tolerance_mm: q("1/16"),
+        };
+        let tolerances: Vec<EntityTolerance> = definition
+            .vertices
+            .iter()
+            .map(|vertex| listed(EntityKind::Vertex, &vertex.key))
+            .chain(
+                definition
+                    .edges
+                    .iter()
+                    .map(|edge| listed(EntityKind::Edge, &edge.key)),
+            )
+            .collect();
+        let mut dec = Decider::default();
+        let sampled = BTreeSet::new();
+        let native = Index::new(&definition, &[], &sampled, &mut dec)?;
+        pair_rule_check(&definition, &native, &tolerances, &origin(), &mut dec)
+    }
+
+    /// Two straight edges side by side. Their distance is exact, so the
+    /// comparison with twice their tolerances is too: a hair under it is an
+    /// error, where binary64 reads the distance as the threshold itself and
+    /// the comparison in binary64 gave a warning.
+    #[test]
+    fn a_pair_of_straight_edges_is_decided_from_its_exact_distance() {
+        use catallax_shapes::Line;
+        let hair = Rational::one().mul_pow2(-60);
+        let side_by_side = |gap: Rational| {
+            let at = |x: &str, y: &Rational| [q(x), y.clone(), q("0")];
+            let positions = [
+                at("0", &q("0")),
+                at("1", &q("0")),
+                at("0", &gap),
+                at("1", &gap),
+            ];
+            let line = |from: &[Rational; 3]| {
+                Curve::Line(Line {
+                    origin: RPoint3::new(from[0].clone(), from[1].clone(), from[2].clone())
+                        .to_real(),
+                    dir: RVector3::new(q("1"), q("0"), q("0")).to_real(),
+                })
+            };
+            let edges = vec![
+                (line(&positions[0]), [0, 1], [q("0"), q("1")]),
+                (line(&positions[2]), [2, 3], [q("0"), q("1")]),
+            ];
+            pair_rule(&positions, edges)
+        };
+        let nearer = &q("1/4") - &hair;
+        assert_eq!(nearer.to_f64_nearest(), 0.25);
+        assert_eq!(
+            pair_verdict(0.0625, 0.0625, nearer.to_f64_nearest(), 0.0),
+            PairVerdict::Warn
+        );
+        assert_eq!(
+            side_by_side(nearer).unwrap_err().code,
+            "numerical.tolerance-pair"
+        );
+        // At twice the tolerances, and a hair past: a warning, as they are
+        // under five times.
+        assert!(!side_by_side(q("1/4")).unwrap().is_empty());
+        assert!(!side_by_side(&q("1/4") + &hair).unwrap().is_empty());
+        // Past five times: clear.
+        assert!(side_by_side(q("2")).unwrap().is_empty());
+    }
+
+    /// A vertex beside an arc. The distance of a curved pair is measured,
+    /// and a comparison that falls within the measurement's rounding of the
+    /// error threshold is refused by its own name.
+    #[test]
+    fn a_measured_pair_at_the_threshold_is_unresolved_by_name() {
+        let beside = |gap: &str| {
+            let on_circle = |sign: f64| {
+                [
+                    Rational::from_f64_exact(0.5_f64.cos()).expect("finite"),
+                    Rational::from_f64_exact(sign * 0.5_f64.sin()).expect("finite"),
+                    q("0"),
+                ]
+            };
+            let positions = [
+                on_circle(-1.0),
+                on_circle(1.0),
+                [&q("1") + &q(gap), q("0"), q("0")],
+            ];
+            let arc = Curve::Circle(Circle {
+                center: RPoint3::new(q("0"), q("0"), q("0")).to_real(),
+                normal: RVector3::new(q("0"), q("0"), q("1")).to_real(),
+                radius_sq: q("1").into(),
+                ref_dir: RVector3::new(q("1"), q("0"), q("0")).to_real(),
+            });
+            pair_rule(&positions, vec![(arc, [0, 1], [q("-1/2"), q("1/2")])])
+        };
+        // Twice the tolerances is 1/4 mm.
+        assert_eq!(
+            beside("1/4").unwrap_err().code,
+            "numerical.tolerance-pair-unresolved"
+        );
+        assert_eq!(beside("6/25").unwrap_err().code, "numerical.tolerance-pair");
+        assert!(!beside("13/50").unwrap().is_empty());
+    }
+
     #[test]
     fn a_disc_is_read_on_its_circle_and_not_on_chords() {
         let mut dec = Decider::default();

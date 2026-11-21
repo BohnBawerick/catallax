@@ -387,6 +387,7 @@ impl Plan {
                 let mut runs = Vec::with_capacity(found.len());
                 for (interval, convex, senses, sample) in found {
                     runs.push(self.generator_run(
+                        root,
                         faces,
                         supports,
                         line,
@@ -691,10 +692,14 @@ impl Plan {
     }
 
     /// A straight run between supports parallel to its line, over the
-    /// stations `interval` of `line`, bounded by end planes normal to it.
+    /// stations `interval` of `line`, bounded by an end plane at each end.
+    /// An end plane normal to the line ends the piece there. A plane face
+    /// that leans across the line instead ends it at a normal plane past the
+    /// lean; see [`Plan::oblique_stations`].
     #[allow(clippy::too_many_arguments)]
     pub(super) fn generator_run(
         &self,
+        root: usize,
         faces: [usize; 2],
         supports: &[Surface; 2],
         line: &Line,
@@ -710,6 +715,8 @@ impl Plan {
         let walls = Self::generator_walls(supports, &ball, sample, dec)?;
         let mut ends = Vec::new();
         let mut found = [false; 2];
+        // End planes per end, each flagged when it leans across the line.
+        let mut planes: [Vec<(usize, bool)>; 2] = [Vec::new(), Vec::new()];
         for &i in source_faces {
             if faces.contains(&i) {
                 continue;
@@ -726,21 +733,30 @@ impl Plan {
                 if geometry::sign(&(&station - &Real::from(t.clone())), dec)? != Sign::Zero {
                     continue;
                 }
-                if geometry::sign(&line.dir.cross(&p.normal).norm_squared(), dec)? != Sign::Zero {
-                    return Err(bad("a generator piece needs end planes normal to its line"));
-                }
+                let leans =
+                    geometry::sign(&line.dir.cross(&p.normal).norm_squared(), dec)? != Sign::Zero;
+                planes[end].push((i, leans));
                 found[end] = true;
                 ends.push(i);
             }
         }
-        if found != [true, true] {
+        let oblique = planes.iter().flatten().any(|(_, leans)| *leans);
+        if !oblique && found != [true, true] {
             return Err(bad("finite line strips need proven transversal end planes"));
         }
+        let stations = if oblique {
+            if found != [true, true] {
+                return Err(bad("a generator piece needs end planes normal to its line"));
+            }
+            self.oblique_stations(root, &walls, line, interval, &planes, sample, radius, dec)?
+        } else {
+            interval.clone().map(Real::from)
+        };
         let path = Generator::new(
             walls,
             line.origin.clone(),
             line.dir.clone(),
-            interval.clone().map(Real::from),
+            stations,
             radius.clone(),
             dec,
         )?;
@@ -754,11 +770,128 @@ impl Plan {
         Ok(Run::new(piece, faces, ends))
     }
 
+    /// The stations a straight piece runs to when an end face leans across
+    /// its line (4.2a step 4, the corpus row `vertex-4-one`), as the
+    /// elementary strip's domain widens for one.
+    ///
+    /// Both supports must be planes. Each section of the region then lies in
+    /// the triangle of its edge point and two feet: the region is the
+    /// quadrilateral of the edge point, the feet and the centre, less the
+    /// ball, and the ball holds the triangle of the centre and the feet. Past
+    /// the station where one end plane has passed all three points, the
+    /// section lies beyond that plane, so each end takes the plane that passes
+    /// them first. The body must lie on the run's side of every leaning end
+    /// plane: it is an intersection of certified convex planar leaves whose
+    /// planes include the end plane. Then no material lies past an end plane,
+    /// and the region removes the strip as the end faces cut it, as the B-rep
+    /// cuts its exact cylinder by the unselected end walls. An irrational
+    /// station is rounded outward to a dyadic rational, which adds only air.
+    #[allow(clippy::too_many_arguments)]
+    fn oblique_stations(
+        &self,
+        root: usize,
+        walls: &[Wall; 2],
+        line: &Line,
+        interval: &[Rational; 2],
+        planes: &[Vec<(usize, bool)>; 2],
+        sample: &Point3,
+        radius: &Real,
+        dec: &mut Decider,
+    ) -> Result<[Real; 2], Refusal> {
+        if !matches!(walls, [Wall::Plane(_), Wall::Plane(_)]) {
+            return Err(bad(
+                "a straight piece with a leaning end plane needs two plane supports",
+            ));
+        }
+        let body = match self.convex_planar_input(root, dec) {
+            Ok(body) => body,
+            Err(refusal) if refusal.code.starts_with("numbers.") => return Err(refusal),
+            Err(_) => return Err(bad("a leaning end plane needs a convex planar body")),
+        };
+        let plane_of = |i: usize| match &self.faces[i].surface {
+            Surface::Plane(p) => p,
+            _ => unreachable!("end planes are planes"),
+        };
+        for &(i, leans) in planes.iter().flatten() {
+            if !leans {
+                continue;
+            }
+            let p = plane_of(i);
+            let mut bounds = false;
+            for q in &body {
+                if geometry::sign(&p.normal.cross(&q.normal).norm_squared(), dec)? == Sign::Zero
+                    && geometry::sign(&p.origin.minus(&q.origin).dot(&q.normal), dec)? == Sign::Zero
+                    && geometry::sign(&sample.minus(&q.origin).dot(&q.normal), dec)? != Sign::Zero
+                {
+                    bounds = true;
+                    break;
+                }
+            }
+            if !bounds {
+                return Err(bad("a leaning end plane must bound the whole body"));
+            }
+        }
+        let section = Generator::new(
+            walls.clone(),
+            line.origin.clone(),
+            line.dir.clone(),
+            interval.clone().map(Real::from),
+            radius.clone(),
+            dec,
+        )?
+        .section_at(&Real::zero());
+        let mut stations = interval.clone().map(Real::from);
+        for (end, list) in planes.iter().enumerate() {
+            // Moving out of the run: down from the first end, up past the
+            // second.
+            let out = if end == 0 {
+                Sign::Negative
+            } else {
+                Sign::Positive
+            };
+            let mut nearest: Option<Real> = None;
+            for &(i, _) in list {
+                let p = plane_of(i);
+                let across = line.dir.dot(&p.normal);
+                // The station where the plane has passed all three points.
+                let mut passed: Option<Real> = None;
+                for x in &section {
+                    let t = &p.origin.minus(x).dot(&p.normal) / &across;
+                    let further = match &passed {
+                        None => true,
+                        Some(s) => geometry::sign(&(&t - s), dec)? == out,
+                    };
+                    if further {
+                        passed = Some(t);
+                    }
+                }
+                let passed = passed.expect("three section points");
+                let nearer = match &nearest {
+                    None => true,
+                    Some(s) => geometry::sign(&(s - &passed), dec)? == out,
+                };
+                if nearer {
+                    nearest = Some(passed);
+                }
+            }
+            let nearest = nearest.expect("an end plane at each end");
+            stations[end] = match nearest.rational_ref() {
+                Some(exact) => Real::from(exact.clone()),
+                None => {
+                    let ball = geometry::enclose(&nearest, 64, dec)?;
+                    Real::from(if end == 0 { ball.lo() } else { ball.hi() })
+                }
+            };
+        }
+        Ok(stations)
+    }
+
     /// A straight strip the elementary route refuses, as a generator run from
     /// its supports, ball sides, edge and stations. Its section, contacts and
     /// carrier are not read.
     pub(super) fn converted_run(
         &self,
+        root: usize,
         definition: &FilletDefinition,
         interval: &Option<[Rational; 2]>,
         source_faces: &[usize],
@@ -783,6 +916,7 @@ impl Plan {
             (&interval[0] + &interval[1]) / Rational::from_i64(2),
         )));
         self.generator_run(
+            root,
             faces,
             &definition.supports,
             line,

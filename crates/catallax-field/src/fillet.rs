@@ -12,6 +12,8 @@ use crate::{Instruction, Location, Plan, features::Feature, geometry, profile};
 
 #[path = "fillet_chain.rs"]
 mod chain;
+#[path = "fillet_mixed.rs"]
+mod mixed;
 #[path = "fillet_network.rs"]
 mod network;
 #[path = "fillet_rim.rs"]
@@ -248,16 +250,22 @@ impl Plan {
             gradient[2].eval_real(&values),
         )
     }
+    /// Proves a strip's region clear of every other support and fixes its
+    /// span. A `junction` end of a line strip meets a tangent neighbour piece
+    /// there (4.2a step 4) and needs no end plane.
+    #[allow(clippy::too_many_arguments)]
     fn fillet_domain(
         &self,
+        root: usize,
         definition: &FilletDefinition,
         faces: [usize; 2],
         interval: &mut Option<[Rational; 2]>,
+        junction: [bool; 2],
         source_faces: &[usize],
         geom: &mut GeomStore,
         dec: &mut Decider,
     ) -> Result<(), Refusal> {
-        let mut end_planes = [false; 2];
+        let mut end_planes = junction;
         let mut span = interval.clone();
         let mut others = Vec::with_capacity(source_faces.len());
         for &i in source_faces {
@@ -275,7 +283,9 @@ impl Plan {
                 let station =
                     |o: &Point3| q(&(p.origin.minus(o).dot(&p.normal) / edge.dir.dot(&p.normal)));
                 let at = station(&edge.origin)?;
-                if let Some(end) = ends.iter().position(|value| *value == at) {
+                if let Some(end) = ends.iter().position(|value| *value == at)
+                    && !junction[end]
+                {
                     end_planes[end] = true;
                     // An oblique end plane leans past the vertex at a contact
                     // rail; the region's section spans the edge and both rails.
@@ -316,6 +326,9 @@ impl Plan {
             .as_ref()
             .map(|points| points.as_slice())
             .or(ring_hull.as_deref());
+        // Leaves whose faces can bound the body inside the hull, found when a
+        // support would otherwise refuse.
+        let mut bounding: Option<Vec<usize>> = None;
         for i in others {
             let face = &self.faces[i];
             if definition.avoids_support(&face.surface, dec)? {
@@ -335,6 +348,14 @@ impl Plan {
                 if finite_round_clear(definition, &self.leaves[face.leaf], dec)? {
                     continue;
                 }
+                if let Some(hull) = hull {
+                    if bounding.is_none() {
+                        bounding = Some(self.bounding_leaves(root, hull, dec)?);
+                    }
+                    if !bounding.as_ref().is_some_and(|b| b.contains(&face.leaf)) {
+                        continue;
+                    }
+                }
                 return Err(Refusal::new(
                     "fillet.unsupported-overflow",
                     "the field contact region reaches another support and needs trimmed continuation",
@@ -346,6 +367,82 @@ impl Plan {
         }
         *interval = span;
         Ok(())
+    }
+
+    /// The leaves whose faces can bound the body at `node` inside the convex
+    /// hull `H` of `points` (4.2a step 4, the corpus row `l-mixed-all`). A
+    /// union with a child that holds `H` equals that child inside `H`, and an
+    /// intersection with a child that holds `H` equals the other child there,
+    /// so the faces of the child left out cannot bound the body inside `H`:
+    /// a block's face buried in the other block of a union. Every other node
+    /// keeps the leaves of both children.
+    fn bounding_leaves(
+        &self,
+        node: usize,
+        points: &[Point3],
+        dec: &mut Decider,
+    ) -> Result<Vec<usize>, Refusal> {
+        let Instruction::Boolean { kind, a, b } = self.instructions[node] else {
+            return Ok(match self.instructions[node] {
+                Instruction::Leaf(i) => vec![i],
+                _ => Vec::new(),
+            });
+        };
+        match kind {
+            BooleanKind::Union if self.holds(a, points, dec)? => {
+                return self.bounding_leaves(a, points, dec);
+            }
+            BooleanKind::Union if self.holds(b, points, dec)? => {
+                return self.bounding_leaves(b, points, dec);
+            }
+            BooleanKind::Intersect if self.holds(a, points, dec)? => {
+                return self.bounding_leaves(b, points, dec);
+            }
+            BooleanKind::Intersect if self.holds(b, points, dec)? => {
+                return self.bounding_leaves(a, points, dec);
+            }
+            _ => {}
+        }
+        let mut leaves = self.bounding_leaves(a, points, dec)?;
+        leaves.extend(self.bounding_leaves(b, points, dec)?);
+        Ok(leaves)
+    }
+
+    /// Whether the material of `node` holds the convex hull of `points`: a
+    /// certified convex leaf whose closure holds every point, a union with a
+    /// child that holds them, or an intersection whose children both do.
+    fn holds(&self, node: usize, points: &[Point3], dec: &mut Decider) -> Result<bool, Refusal> {
+        match self.instructions[node] {
+            Instruction::Leaf(i) => {
+                let leaf = &self.leaves[i];
+                match leaf.certify_planar_convexity(dec) {
+                    Ok(()) => {}
+                    Err(refusal) if refusal.code.starts_with("numbers.") => return Err(refusal),
+                    Err(_) => return Ok(false),
+                }
+                for p in points {
+                    let location = match coordinates(p) {
+                        Ok(xyz) => leaf.location(&xyz, dec)?,
+                        Err(_) => crate::distance::location(leaf, p, dec)?,
+                    };
+                    if !matches!(location, Location::Inside | Location::Boundary) {
+                        return Ok(false);
+                    }
+                }
+                Ok(true)
+            }
+            Instruction::Boolean {
+                kind: BooleanKind::Union,
+                a,
+                b,
+            } => Ok(self.holds(a, points, dec)? || self.holds(b, points, dec)?),
+            Instruction::Boolean {
+                kind: BooleanKind::Intersect,
+                a,
+                b,
+            } => Ok(self.holds(a, points, dec)? && self.holds(b, points, dec)?),
+            _ => Ok(false),
+        }
     }
 
     /// Midpoints of the stations where a support line crosses the source
@@ -617,6 +714,9 @@ impl Plan {
                 }
             }
         }
+        if matches!(selection, EdgeSelection::All) {
+            merge_runs(&mut definitions);
+        }
         if definitions.is_empty()
             && runs.is_empty()
             && !matches!(selection, EdgeSelection::Refs(refs) if refs.is_empty())
@@ -672,7 +772,14 @@ impl Plan {
                     kept.push((definition.clone(), interval.clone()));
                     continue;
                 }
-                runs.push(self.converted_run(definition, interval, source_faces, step, dec)?);
+                runs.push(self.converted_run(
+                    root,
+                    definition,
+                    interval,
+                    source_faces,
+                    step,
+                    dec,
+                )?);
             }
             definitions = kept;
         }
@@ -748,11 +855,23 @@ impl Plan {
         step: &StepId,
         dec: &mut Decider,
     ) -> Result<usize, Refusal> {
+        // Mixed vertices end their convex runs at junctions with a ring
+        // sector, which replaces the trihedral corner there.
+        let mixed = self.mixed_vertices(root, &definitions, endpoints, step, dec)?;
+        let mut junctions: Vec<[Option<Rational>; 2]> = vec![[None, None]; definitions.len()];
+        for vertex in &mixed {
+            for (index, end, station) in &vertex.junctions {
+                junctions[*index][*end] = Some(station.clone());
+            }
+        }
         let mut corners = Vec::new();
-        for (_, meeting) in endpoints {
+        for (at, (_, meeting)) in endpoints.iter().enumerate() {
             let [a, b, c] = meeting.as_slice() else {
                 continue;
             };
+            if mixed.iter().any(|vertex| vertex.at == at) {
+                continue;
+            }
             let strips = [*a, *b, *c].map(|i| &definitions[i].0);
             let mut faces: Vec<Origin> = strips
                 .iter()
@@ -790,6 +909,13 @@ impl Plan {
                     .position(|f| f.surface.same_definition(&definition.supports[1]))
                     .expect("source support"),
             ];
+            let mut junction = [false; 2];
+            for (k, station) in junctions[index].iter().enumerate() {
+                if let (Some(station), Some(interval)) = (station, interval.as_mut()) {
+                    interval[k] = station.clone();
+                    junction[k] = true;
+                }
+            }
             let run = interval.clone();
             let convex = definition.convex;
             let alone = !endpoints
@@ -803,9 +929,11 @@ impl Plan {
                 .then(|| definition.clone());
             let built = self
                 .fillet_domain(
+                    root,
                     &definition,
                     faces,
                     &mut interval,
+                    junction,
                     source_faces,
                     &mut GeomStore::new(),
                     dec,
@@ -816,7 +944,14 @@ impl Plan {
                 (Err(refusal), Some((definition, run)))
                     if refusal.code == "field.fillet-contact" =>
                 {
-                    runs.push(self.converted_run(&definition, &run, source_faces, step, dec)?);
+                    runs.push(self.converted_run(
+                        root,
+                        &definition,
+                        &run,
+                        source_faces,
+                        step,
+                        dec,
+                    )?);
                     continue;
                 }
                 (Err(refusal), _) if refusal.code == "fillet.unsupported-overflow" => match &ring {
@@ -856,6 +991,8 @@ impl Plan {
                 dec,
             )?;
         }
+        // After every strip, so after the concave blends they roll over.
+        runs.extend(mixed.into_iter().map(|vertex| vertex.run));
         Ok(result)
     }
 
@@ -918,6 +1055,67 @@ impl Plan {
         let ball = self.leaf(ball, faces, dec)?;
         self.boolean(BooleanKind::Subtract, cell, ball, dec)
     }
+}
+
+/// One straight run of each sharp edge (4.2a step 4, the corpus row
+/// `l-mixed-all`). Coplanar faces of two leaves, such as the end faces of
+/// the two blocks of a union, give one edge several support pairs, and each
+/// pair reports the part of the edge on its own faces. Runs with the same
+/// supports, convexity and material senses whose intervals meet or overlap
+/// are one run, named by the first pair.
+fn merge_runs(definitions: &mut Vec<(FilletDefinition, Option<[Rational; 2]>)>) {
+    'joined: loop {
+        for i in 1..definitions.len() {
+            for j in 0..i {
+                if let Some(interval) = joined(&definitions[j], &definitions[i]) {
+                    definitions[j].1 = Some(interval);
+                    definitions.remove(i);
+                    continue 'joined;
+                }
+            }
+        }
+        return;
+    }
+}
+
+/// The interval of `kept`'s line that covers both runs, when `other` is a
+/// run of the same edge that meets or overlaps it.
+fn joined(
+    (kept, interval): &(FilletDefinition, Option<[Rational; 2]>),
+    (other, other_interval): &(FilletDefinition, Option<[Rational; 2]>),
+) -> Option<[Rational; 2]> {
+    let (Curve::Line(line), Curve::Line(other_line), Some(interval), Some(other_interval)) =
+        (&kept.edge, &other.edge, interval, other_interval)
+    else {
+        return None;
+    };
+    let [a, b] = &kept.supports;
+    let [c, d] = &other.supports;
+    let senses = if a.same_definition(c) && b.same_definition(d) {
+        other.same_sense
+    } else if a.same_definition(d) && b.same_definition(c) {
+        [other.same_sense[1], other.same_sense[0]]
+    } else {
+        return None;
+    };
+    if kept.convex != other.convex || kept.same_sense != senses {
+        return None;
+    }
+    let mut ends = Vec::with_capacity(2);
+    for t in other_interval {
+        let p = other_line
+            .origin
+            .plus(&other_line.dir.scaled(&Real::from(t.clone())));
+        ends.push(
+            (&p.minus(&line.origin).dot(&line.dir) / &line.dir.norm_squared()).as_rational()?,
+        );
+    }
+    ends.sort();
+    let [low, high] = [ends[0].clone(), ends[1].clone()];
+    if low > interval[1] || high < interval[0] {
+        return None;
+    }
+    Some([low.min(interval[0].clone()), high.max(interval[1].clone())])
 }
 
 fn region(

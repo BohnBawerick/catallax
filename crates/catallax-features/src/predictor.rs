@@ -3,9 +3,17 @@
 //! Checkpoint 2 decisions, section 4.5, the predictor. An exact attempt that
 //! has a fitted construction behind it runs under a work cap
 //! (`catallax_numbers::capped_attempt`). The cap is one of two tiers, chosen
-//! by a quick look at the attempt's inputs before it does its work. A wrong
-//! tier costs at most the cap, because the construction that takes over is
-//! the one that follows any refusal of the attempt.
+//! by a quick look at the attempt's inputs. A wrong tier costs at most the
+//! cap, because the construction that takes over is the one that follows any
+//! refusal of the attempt.
+//!
+//! The look is taken when the attempt reaches the smaller of the two caps
+//! (`catallax_numbers::cap_attempt_when_reached`). An attempt that ends
+//! before that finishes the same under either cap, so it is never looked at
+//! and pays nothing. One that gets there has charged 2,000,000 units, and the
+//! look reads at most a hundredth of that ([`LOOK_READS`]): "It costs at most
+//! 1% of the operation." The charge at which it is taken is a count of work
+//! units, the same on every machine and at every thread count.
 //!
 //! The design is `docs/research/cp2-grill/predictor-research.md`, design (e):
 //! a prediction sets the cap and a deterministic limit enforces it (Purohit,
@@ -69,6 +77,13 @@ pub const SMALL_LIMBS: u64 = 2;
 /// The largest score, D x L^2, of the low tier: the largest low-complexity
 /// degree product on small rationals.
 pub const LOW_COMPLEXITY_SCORE: u64 = LOW_COMPLEXITY_DEGREE * SMALL_LIMBS * SMALL_LIMBS;
+
+/// The most values one look reads: a hundredth of the work an attempt has
+/// charged when it is looked at, which is [`HIGH_COMPLEXITY_CAP`]. Decisions
+/// 4.5, predictor step 2: "It costs at most 1% of the operation." A surface
+/// with more numbers than are left is not read to its end, and is not taken
+/// for a low-complexity one.
+pub const LOOK_READS: u64 = HIGH_COMPLEXITY_CAP / 100;
 
 /// The cap tier of an exact attempt.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -171,7 +186,17 @@ pub struct Participant {
 impl Participant {
     /// Reads a surface: its kind and every number of its definition.
     pub fn of(surface: &Surface) -> Self {
-        let mut read = Read::default();
+        Self::within(surface, u64::MAX)
+    }
+
+    /// Reads a surface as [`Self::of`] does, and at most `reads` values. A
+    /// surface it could not read to its end has no degree to go by.
+    pub fn within(surface: &Surface, reads: u64) -> Self {
+        let mut read = Read {
+            // One is for the kind.
+            left: reads.saturating_sub(1),
+            ..Read::default()
+        };
         let degree = match surface {
             Surface::Plane(plane) => {
                 read.point(&plane.origin);
@@ -227,13 +252,22 @@ impl Participant {
             Surface::BSpline(support) => {
                 let carrier = support.carrier();
                 for control in carrier.controls() {
+                    if read.short {
+                        break;
+                    }
                     read.point(control);
                 }
                 for weight in carrier.weights() {
+                    if read.short {
+                        break;
+                    }
                     read.number(weight);
                 }
                 for knots in carrier.knots() {
                     for knot in knots {
+                        if read.short {
+                            break;
+                        }
                         read.rational(knot);
                     }
                 }
@@ -245,10 +279,11 @@ impl Participant {
             _ => u64::MAX,
         };
         Self {
-            degree,
+            // Neither is a surface whose numbers were not all read.
+            degree: if read.short { u64::MAX } else { degree },
             limbs: read.limbs,
             // One more for the kind.
-            read: read.count + 1,
+            read: (read.count + 1).min(reads),
         }
     }
 }
@@ -257,6 +292,9 @@ impl Participant {
 struct Read {
     limbs: u64,
     count: u64,
+    // The values that may still be read, and whether one was left unread.
+    left: u64,
+    short: bool,
 }
 
 impl Default for Read {
@@ -264,18 +302,32 @@ impl Default for Read {
         Self {
             limbs: SMALL_LIMBS,
             count: 0,
+            left: u64::MAX,
+            short: false,
         }
     }
 }
 
 impl Read {
-    fn rational(&mut self, value: &catallax_numbers::Rational) {
+    // Whether one more value may be read, taking it off what is left.
+    fn one_more(&mut self) -> bool {
+        if self.left == 0 {
+            self.short = true;
+            return false;
+        }
+        self.left -= 1;
         self.count += 1;
-        self.limbs = self.limbs.max(value.limbs());
+        true
+    }
+    fn rational(&mut self, value: &catallax_numbers::Rational) {
+        if self.one_more() {
+            self.limbs = self.limbs.max(value.limbs());
+        }
     }
     fn number(&mut self, value: &Real) {
-        self.count += 1;
-        self.limbs = self.limbs.max(limbs(value));
+        if self.one_more() {
+            self.limbs = self.limbs.max(limbs(value));
+        }
     }
     fn point(&mut self, point: &catallax_shapes::Point3) {
         self.number(&point.x);
@@ -299,7 +351,8 @@ fn limbs(value: &Real) -> u64 {
 }
 
 /// Reads the edges a fillet rounds: for each, the two faces it lies between.
-/// They meet along the edge, so no pair is proven apart.
+/// They meet along the edge, so no pair is proven apart. It reads at most
+/// [`LOOK_READS`] values.
 pub fn of_fillet(model: &Model, body: BodyId, edges: &[EdgeId], radius: &Real) -> Look {
     let mut faces_of: BTreeMap<EdgeId, Vec<FaceId>> =
         edges.iter().map(|edge| (*edge, Vec::new())).collect();
@@ -317,10 +370,15 @@ pub fn of_fillet(model: &Model, body: BodyId, edges: &[EdgeId], radius: &Real) -
         }
     }
     let mut look = Look::NONE;
+    // One read is kept for the radius.
+    look.number(radius);
     let mut read: BTreeMap<FaceId, Participant> = BTreeMap::new();
     let mut participant = |face: FaceId, look: &mut Look| {
         *read.entry(face).or_insert_with(|| {
-            let participant = Participant::of(model.geom().surface(model.face(face).surface));
+            let participant = Participant::within(
+                model.geom().surface(model.face(face).surface),
+                LOOK_READS - look.read,
+            );
             look.read += participant.read;
             participant
         })
@@ -333,13 +391,14 @@ pub fn of_fillet(model: &Model, body: BodyId, edges: &[EdgeId], radius: &Real) -
             }
         }
     }
-    look.number(radius);
     look
 }
 
-/// Caps the exact fillet attempt that is open on this thread, if one is: it
-/// reads the selected edges and sets the cap of their tier. Outside a capped
-/// attempt it reads nothing. The exact fillet builders call it once they
+/// Caps the exact fillet attempt that is open on this thread, if one is.
+/// The attempt may charge the high tier's cap. If it gets there, the look
+/// reads the selected edges and the attempt goes on under the cap of their
+/// tier, which for the high tier stops it at that charge. Outside a capped
+/// attempt this does nothing. The exact fillet builders call it once they
 /// have resolved their selection, so the cap covers the whole attempt and
 /// the selection is resolved once.
 pub(crate) fn cap_fillet_attempt(
@@ -352,19 +411,35 @@ pub(crate) fn cap_fillet_attempt(
     if !catallax_numbers::capped_attempt_open() {
         return;
     }
-    let look = of_fillet(model, body, edges, radius);
-    catallax_numbers::count_uncharged_work(look.read);
-    catallax_numbers::cap_attempt(look.tier().cap());
+    let step = step.to_string();
     LOG.with(|log| {
         if let Some(choices) = log.borrow_mut().as_mut() {
             choices.push(Choice {
-                step: step.to_string(),
-                look: Some(look),
+                step: step.clone(),
+                look: None,
                 path: Path::Open,
                 attempt_work: 0,
                 operation_work: 0,
             });
         }
+    });
+    // The model is a persistent value, so the copy the look keeps shares its
+    // tables with this one.
+    let (model, edges, radius) = (model.clone(), edges.to_vec(), radius.clone());
+    catallax_numbers::cap_attempt_when_reached(HIGH_COMPLEXITY_CAP, move || {
+        let look = of_fillet(&model, body, &edges, &radius);
+        catallax_numbers::count_uncharged_work(look.read);
+        LOG.with(|log| {
+            if let Some(choice) = log.borrow_mut().as_mut().and_then(|choices| {
+                choices
+                    .iter_mut()
+                    .rev()
+                    .find(|choice| choice.step == step && choice.path == Path::Open)
+            }) {
+                choice.look = Some(look);
+            }
+        });
+        look.tier().cap()
     });
 }
 
@@ -402,7 +477,7 @@ pub struct Choice {
     /// The recipe step.
     pub step: String,
     /// What the quick look read, or `None` when the attempt ended before it
-    /// had resolved what to read and so ran without a cap.
+    /// reached the high tier's cap and so was never looked at.
     pub look: Option<Look>,
     /// What became of the attempt.
     pub path: Path,
@@ -543,6 +618,24 @@ mod tests {
         // A numerator of 130 bits takes three limbs, and the denominator one.
         let long = Participant::of(&plane("1361129467683753853853498429727072845824"));
         assert_eq!((long.degree, long.limbs), (1, 4));
+    }
+
+    #[test]
+    fn a_surface_with_more_numbers_than_may_be_read_is_not_a_cheap_one() {
+        // A plane is its kind and nine numbers. With five reads left the kind
+        // and four numbers are read, and the plane has no degree to go by.
+        let short = Participant::within(&plane("5"), 5);
+        assert_eq!((short.degree, short.read), (u64::MAX, 5));
+        let mut look = Look::NONE;
+        look.pair(short, Participant::of(&plane("5")), false);
+        assert_eq!(look.tier(), Tier::High);
+        // Exactly enough reads is the whole plane.
+        assert_eq!(
+            Participant::within(&plane("5"), 10),
+            Participant::of(&plane("5"))
+        );
+        // A hundredth of the charge at which a look is taken.
+        assert_eq!(LOOK_READS * 100, HIGH_COMPLEXITY_CAP);
     }
 
     #[test]

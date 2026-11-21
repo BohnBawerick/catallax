@@ -39,6 +39,9 @@ struct State {
     // (`refund_on_refusal`) is open inside it. `cap_attempt` counts its cap
     // from here.
     attempt: Option<u64>,
+    // `used` at which the cap decision this thread has put off is asked
+    // (`cap_attempt_when_reached`), while one is pending.
+    soft: Option<u64>,
     reduced_angle_series: bool,
     reuse_enclosures: bool,
     // A worker running a loop item ahead of the writer (`ahead.rs`). Its
@@ -355,6 +358,78 @@ pub fn cap_attempt(units: u64) {
     });
 }
 
+thread_local! {
+    // The cap decisions the capped attempts open on this thread have put off
+    // (`cap_attempt_when_reached`), innermost last.
+    static PENDING: RefCell<Vec<Pending>> = const { RefCell::new(Vec::new()) };
+}
+
+// One cap decision that waits for its attempt to reach the first cap.
+struct Pending {
+    // `used` at the start of the attempt.
+    start: u64,
+    decide: Box<dyn FnOnce() -> u64>,
+}
+
+/// Lets the innermost [`capped_attempt`] charge `first` units, and puts off
+/// the choice of its cap until it has: `decide` is asked once, on this
+/// thread, at the first charge that would pass `first`, and the attempt goes
+/// on under the cap it returns, counted from the attempt's start as
+/// [`cap_attempt`] counts it. An attempt that ends before `first` never asks.
+///
+/// An attempt that cannot reach the smaller of its possible caps finishes the
+/// same under either, so what the choice reads is read only when the choice
+/// matters, and after the attempt has charged `first` units. The charge that
+/// asks is the same on every machine and at every thread count: a recorded
+/// computation is adopted only where all of it fits under `first`, and is run
+/// charge by charge otherwise.
+///
+/// `decide` must not charge. Outside a capped attempt, and inside a plain
+/// [`refund_on_refusal`] within one, this does nothing.
+pub fn cap_attempt_when_reached(first: u64, decide: impl FnOnce() -> u64 + 'static) {
+    let start = ACTIVE.with(|slot| {
+        let mut active = slot.borrow_mut();
+        let state = active.as_mut()?;
+        let start = state.attempt?;
+        // A second call replaces the decision the first put off.
+        let replaces = state.soft.is_some();
+        state.soft = Some(start.saturating_add(first));
+        Some((start, replaces))
+    });
+    if let Some((start, replaces)) = start {
+        PENDING.with(|pending| {
+            let mut pending = pending.borrow_mut();
+            if replaces {
+                pending.pop();
+            }
+            pending.push(Pending {
+                start,
+                decide: Box::new(decide),
+            });
+        });
+    }
+}
+
+// Asks the cap decision this thread has put off, if one is pending, and sets
+// the cap it gives. The decision is taken out first, so nothing it does can
+// ask it again, and no borrow of the request state is held while it runs.
+fn ask_pending_cap() {
+    let pending = ACTIVE.with(|slot| {
+        slot.borrow_mut()
+            .as_mut()
+            .and_then(|state| state.soft.take())
+            .and_then(|_| PENDING.with(|pending| pending.borrow_mut().pop()))
+    });
+    if let Some(Pending { start, decide }) = pending {
+        let cap = decide();
+        ACTIVE.with(|slot| {
+            if let Some(state) = slot.borrow_mut().as_mut() {
+                state.limit = state.limit.min(start.saturating_add(cap));
+            }
+        });
+    }
+}
+
 /// Whether [`cap_attempt`] would set a cap now: a [`capped_attempt`] is open
 /// on this thread with no plain attempt inside it. A caller asks before it
 /// reads what its cap depends on.
@@ -376,23 +451,53 @@ fn attempt<T, E>(capped: bool, run: impl FnOnce() -> Result<T, E>) -> (Result<T,
         exhausted: bool,
         limit: u64,
         attempt: Option<u64>,
+        soft: Option<u64>,
+        pending: usize,
+    }
+    // What a capped attempt puts back of the caps: the limit it found, the
+    // decision an outer attempt had put off, and none of its own left behind.
+    // A plain attempt sets no cap. A limit that changes inside one is the cap
+    // of the capped attempt around it, decided there, and it stays.
+    #[derive(Clone, Copy)]
+    struct Caps {
+        limit: u64,
+        soft: Option<u64>,
+        pending: usize,
+    }
+    impl Caps {
+        fn put_back(self, state: &mut State) {
+            state.limit = self.limit;
+            state.soft = self.soft;
+            let _ = PENDING.try_with(|pending| {
+                if let Ok(mut pending) = pending.try_borrow_mut() {
+                    pending.truncate(self.pending);
+                }
+            });
+        }
     }
     // An attempt that unwinds leaves the request its own limit.
-    struct Unwound(Option<(u64, u64, Option<u64>)>);
+    struct Unwound(Option<(u64, Option<Caps>, Option<u64>)>);
     impl Drop for Unwound {
         fn drop(&mut self) {
-            if let Some((request, limit, attempt)) = self.0.take() {
+            if let Some((request, caps, attempt)) = self.0.take() {
                 let _ = ACTIVE.try_with(|slot| {
                     if let Ok(mut active) = slot.try_borrow_mut()
                         && let Some(state) = active.as_mut()
                         && state.request == request
                     {
-                        state.limit = limit;
+                        if let Some(caps) = caps {
+                            caps.put_back(state);
+                        }
                         state.attempt = attempt;
                     }
                 });
             }
         }
+    }
+    // A capped attempt begun inside one whose cap is put off runs under that
+    // cap, so it is asked for first.
+    if capped {
+        ask_pending_cap();
     }
     let before = ACTIVE.with(|slot| {
         slot.borrow_mut().as_mut().map(|state| {
@@ -402,15 +507,24 @@ fn attempt<T, E>(capped: bool, run: impl FnOnce() -> Result<T, E>) -> (Result<T,
                 exhausted: state.exhausted,
                 limit: state.limit,
                 attempt: state.attempt,
+                soft: state.soft,
+                pending: PENDING.with(|pending| pending.borrow().len()),
             };
             state.attempt = capped.then_some(state.used);
             found
         })
     });
+    let caps = |found: &Found| {
+        capped.then_some(Caps {
+            limit: found.limit,
+            soft: found.soft,
+            pending: found.pending,
+        })
+    };
     let mut unwound = Unwound(
         before
             .as_ref()
-            .map(|found| (found.request, found.limit, found.attempt)),
+            .map(|found| (found.request, caps(found), found.attempt)),
     );
     let recorded = RESERVATIONS.with(|slot| slot.borrow().as_ref().map(Vec::len));
     // A tape of one decision cannot describe charges that are later returned.
@@ -425,7 +539,9 @@ fn attempt<T, E>(capped: bool, run: impl FnOnce() -> Result<T, E>) -> (Result<T,
                 && state.request == found.request
             {
                 let lowered = state.limit;
-                state.limit = found.limit;
+                if let Some(caps) = caps(&found) {
+                    caps.put_back(state);
+                }
                 state.attempt = found.attempt;
                 if state.aborted.load(AtomicOrdering::Acquire) {
                     return;
@@ -483,6 +599,7 @@ fn budget_scope<T>(limit: u64, worker: bool, run: impl FnOnce() -> T) -> (T, Ope
         uncharged: 0,
         exhausted: false,
         attempt: None,
+        soft: None,
         reduced_angle_series: false,
         reuse_enclosures: false,
         worker,
@@ -552,6 +669,9 @@ impl OperationTask {
     /// The coordinator must finish and account for this wave before another
     /// capture. Input shares, not the number of workers, determine allocation.
     pub fn capture() -> Self {
+        // A share is a part of what the cap leaves, so a cap that was put
+        // off is decided before the allowance is divided.
+        ask_pending_cap();
         Self {
             state: ACTIVE.with(|slot| {
                 slot.borrow().as_ref().map(|state| {
@@ -565,6 +685,7 @@ impl OperationTask {
                         // An item's counter starts again, so it has no part
                         // in an attempt its request has open.
                         attempt: None,
+                        soft: None,
                         ..state.clone()
                     }
                 })
@@ -891,13 +1012,26 @@ pub(crate) fn record_pi_proof(precision: u32, ball: &Ball) {
 }
 
 pub(crate) fn charge(units: u64) -> bool {
-    #[cfg(feature = "work-span")]
-    let mut advanced = false;
     RESERVATIONS.with(|slot| {
         if let Some(reservations) = &mut *slot.borrow_mut() {
             reservations.push(units);
         }
     });
+    // A charge that would pass the first cap of an attempt whose cap was put
+    // off asks for the cap, once, and is then made under it.
+    let asks = ACTIVE.with(|slot| {
+        slot.borrow().as_ref().is_some_and(|state| {
+            !state.exhausted
+                && state
+                    .soft
+                    .is_some_and(|soft| units > soft.saturating_sub(state.used))
+        })
+    });
+    if asks {
+        ask_pending_cap();
+    }
+    #[cfg(feature = "work-span")]
+    let mut advanced = false;
     let exhausted = ACTIVE.with(|slot| {
         let mut active = slot.borrow_mut();
         let Some(state) = active.as_mut() else {
@@ -1088,12 +1222,16 @@ pub fn uncounted_memo<T>(fill: impl FnOnce() -> T) -> T {
 }
 
 /// Whether `units` more fit the allowance. Unlike a charge, asking latches
-/// nothing.
+/// nothing. Where an attempt's cap was put off (`cap_attempt_when_reached`)
+/// only what fits under its first cap is affordable: the one caller adopts a
+/// recorded computation or runs it charge by charge, and the cap is asked
+/// for by a charge, at the same one whether a record exists or not.
 pub(crate) fn affordable(units: u64) -> bool {
     ACTIVE.with(|slot| {
         slot.borrow().as_ref().is_none_or(|state| {
             let work = state.work();
-            !work.exhausted && units <= state.limit.saturating_sub(work.used)
+            let limit = state.soft.map_or(state.limit, |soft| soft.min(state.limit));
+            !work.exhausted && units <= limit.saturating_sub(work.used)
         })
     })
 }
@@ -1158,6 +1296,7 @@ pub(crate) fn enter_worker(reduced_angle_series: bool, reuse_enclosures: bool, p
         uncharged: 0,
         exhausted: false,
         attempt: None,
+        soft: None,
         reduced_angle_series,
         reuse_enclosures,
         worker: true,
@@ -1621,6 +1760,162 @@ mod allowance_tests {
             assert_eq!((now.used, now.refunded, now.exhausted), (4, 6, false));
         });
         assert!(!work.exhausted);
+    }
+
+    #[test]
+    fn a_cap_put_off_is_asked_at_the_first_charge_past_the_first_cap() {
+        use std::{cell::Cell, rc::Rc};
+        let asked = Rc::new(Cell::new(0u32));
+        let decision = |cap: u64| {
+            let asked = asked.clone();
+            move || {
+                asked.set(asked.get() + 1);
+                cap
+            }
+        };
+        let (_, work) = with_operation_budget(1_000, || {
+            // Up to the first cap: never asked, and every charge is kept.
+            let kept = capped_attempt(|| {
+                cap_attempt_when_reached(20, decision(50));
+                assert!(!charge(20));
+                Ok(1)
+            });
+            assert_eq!((kept.unwrap(), asked.get()), (1, 0));
+            // Past it with a larger cap: asked once, and on to that cap.
+            let stopped = capped_attempt(|| {
+                // Charged before the cap is known: it counts towards it.
+                assert!(!charge(5));
+                cap_attempt_when_reached(20, decision(50));
+                assert!(!charge(15));
+                assert_eq!(asked.get(), 0);
+                assert!(!charge(1));
+                assert_eq!(asked.get(), 1);
+                assert!(!charge(29));
+                assert!(charge(1));
+                Ok(2)
+            });
+            assert_eq!(stopped.unwrap_err().code, ATTEMPT_CAP);
+            assert_eq!(asked.get(), 1);
+            // The first cap is the cap: the charge that asked is refused.
+            let stopped = capped_attempt(|| {
+                cap_attempt_when_reached(20, decision(20));
+                assert!(!charge(20));
+                assert!(charge(1));
+                Ok(3)
+            });
+            assert_eq!(stopped.unwrap_err().code, ATTEMPT_CAP);
+            assert_eq!(asked.get(), 2);
+            let now = current_operation_work();
+            assert_eq!((now.used, now.refunded, now.exhausted), (20, 70, false));
+        });
+        assert_eq!((work.used, work.refunded), (20, 70));
+    }
+
+    #[test]
+    fn a_cap_asked_inside_a_plain_attempt_stays_with_the_capped_one() {
+        with_operation_budget(1_000, || {
+            let stopped = capped_attempt(|| {
+                cap_attempt_when_reached(20, || 30);
+                assert!(!charge(15));
+                // The charge that asks falls inside a plain attempt, which is
+                // then refused and returns its charges. The cap is not its.
+                let inner: Result<(), crate::Refusal> = refund_on_refusal(|| {
+                    assert!(!charge(10));
+                    Err(crate::Refusal::new("test.refused", "a test refusal"))
+                });
+                assert_eq!(inner.unwrap_err().code, "test.refused");
+                assert_eq!(current_operation_work().used, 15);
+                assert!(!charge(15));
+                assert!(charge(1));
+                Ok(())
+            });
+            assert_eq!(stopped.unwrap_err().code, ATTEMPT_CAP);
+            assert_eq!(current_operation_work().refunded, 40);
+        });
+    }
+
+    #[test]
+    fn a_cap_that_was_never_asked_ends_with_its_attempt() {
+        with_operation_budget(1_000, || {
+            let kept = capped_attempt(|| {
+                cap_attempt_when_reached(20, || panic!("the attempt never got there"));
+                assert!(!charge(5));
+                // Only what fits under the first cap is affordable, and
+                // asking that asks for no cap.
+                assert!(affordable(15));
+                assert!(!affordable(16));
+                Ok(())
+            });
+            assert!(kept.is_ok());
+            // Nothing of it is left for the request or a later attempt.
+            assert!(affordable(995));
+            let later = capped_attempt(|| {
+                assert!(!charge(100));
+                Ok(())
+            });
+            assert!(later.is_ok());
+            assert_eq!(current_operation_work().used, 105);
+        });
+    }
+
+    #[test]
+    fn a_cap_put_off_is_asked_before_an_allowance_is_divided_or_another_cap_is_set() {
+        use std::{cell::Cell, rc::Rc};
+        with_operation_budget(1_000, || {
+            let asked = Rc::new(Cell::new(false));
+            let seen = asked.clone();
+            let stopped = capped_attempt(|| {
+                cap_attempt_when_reached(20, move || {
+                    seen.set(true);
+                    30
+                });
+                assert!(!charge(5));
+                // An item is given what the cap leaves, so the cap is asked.
+                let task = OperationTask::capture();
+                assert!(asked.get());
+                assert_eq!(task.state.as_ref().unwrap().limit, 25);
+                assert!(!charge(25));
+                assert!(charge(1));
+                Ok(())
+            });
+            assert_eq!(stopped.unwrap_err().code, ATTEMPT_CAP);
+
+            let asked = Rc::new(Cell::new(false));
+            let seen = asked.clone();
+            let outer = capped_attempt(|| {
+                cap_attempt_when_reached(20, move || {
+                    seen.set(true);
+                    30
+                });
+                // A capped attempt inside runs under the outer cap. It set
+                // no cap of its own, so the refused charge is the outer's.
+                let inner = capped_attempt(|| {
+                    assert!(asked.get());
+                    assert!(!charge(30));
+                    assert!(charge(1));
+                    Ok(())
+                });
+                assert!(inner.is_ok());
+                Ok(())
+            });
+            assert_eq!(outer.unwrap_err().code, ATTEMPT_CAP);
+        });
+    }
+
+    #[test]
+    fn an_attempt_that_unwinds_takes_the_cap_it_put_off_with_it() {
+        with_operation_budget(1_000, || {
+            let unwound = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _ = capped_attempt(|| -> Result<(), crate::Refusal> {
+                    cap_attempt_when_reached(5, || 5);
+                    panic!("unwind the attempt");
+                });
+            }));
+            assert!(unwound.is_err());
+            // The request charges past that cap, and nothing is asked.
+            assert!(!charge(100));
+            assert!(affordable(900));
+        });
     }
 
     #[test]

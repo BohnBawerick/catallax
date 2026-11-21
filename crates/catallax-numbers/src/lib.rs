@@ -40,9 +40,9 @@ mod operation;
 mod outcome;
 pub use operation::{
     ATTEMPT_CAP, OperationAllowance, OperationTask, OperationWork, RecordedWork, cap_attempt,
-    capped_attempt, capped_attempt_open, count_uncharged_work, current_operation_work,
-    operation_budget_active, prefer_reduced_angle_series, refund_on_refusal,
-    reuse_operation_enclosures, uncounted_memo, with_operation_budget,
+    cap_attempt_when_reached, capped_attempt, capped_attempt_open, count_uncharged_work,
+    current_operation_work, operation_budget_active, prefer_reduced_angle_series,
+    refund_on_refusal, reuse_operation_enclosures, uncounted_memo, with_operation_budget,
 };
 mod poly;
 #[cfg(feature = "work-profile")]

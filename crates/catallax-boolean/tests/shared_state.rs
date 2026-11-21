@@ -124,6 +124,14 @@ const KNOWN: &[(&str, &str, Kind)] = &[
         "ARITHMETIC",
         Kind::PerThread,
     ),
+    // The cap decisions the capped attempts open on this thread have put
+    // off. A decision is asked by a charge of the thread that put it off, and
+    // an item or a worker starts with none.
+    (
+        "catallax-numbers/src/operation.rs",
+        "PENDING",
+        Kind::PerThread,
+    ),
     (
         "catallax-numbers/src/operation.rs",
         "ROOT_PROOFS",

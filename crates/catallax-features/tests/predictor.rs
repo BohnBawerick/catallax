@@ -1,12 +1,15 @@
 //! The predictor's small controls (Checkpoint 2 decisions, section 4.5): one
 //! block and one fillet, with the block's position written in short or long
-//! rationals. The route changes with the tier. What is accepted does not.
+//! rationals. The tier changes with them. A fillet this small ends far under
+//! the smaller cap, so it is never looked at, reads nothing, and is accepted
+//! as it was.
 use catallax_features::{
     Built, EvaluationOutcome, evaluate, evaluate_incremental_outcome,
     predictor::{self, Choice, Path, Tier},
 };
-use catallax_numbers::{Decider, OperationWork, with_operation_budget};
+use catallax_numbers::{Decider, OperationWork, Real, with_operation_budget};
 use catallax_recipe::Recipe;
+use catallax_topology::Loop;
 use serde_json::json;
 
 /// The application's allowance for one build.
@@ -83,7 +86,8 @@ fn exact_only(recipe: &Recipe) -> (Built, OperationWork, Vec<Choice>) {
 }
 
 /// The exact route under a cap is the exact route: the same body, the same
-/// charged work, and the look's reads as the only addition to the count.
+/// charged work and the same count. The attempt ends under the high tier's
+/// cap, so no look is taken of it.
 fn the_route_is_the_exact_one(shift: &str, tier: Tier, limbs: u64) {
     let recipe = rounded_block(shift);
     let (plain, plain_work, unread) = exact_only(&recipe);
@@ -93,20 +97,24 @@ fn the_route_is_the_exact_one(shift: &str, tier: Tier, limbs: u64) {
     let [choice] = choices.as_slice() else {
         panic!("one fillet makes one attempt: {choices:?}");
     };
-    let look = choice.look.expect("the builder resolved its selection");
-    // Two planes meet at the edge: D is 1.
+    assert_eq!((choice.step.as_str(), choice.path), ("round", Path::Exact));
+    // Decisions 4.5: the quick look costs at most 1% of the operation's
+    // work. This operation is a few hundred units, so it has none.
+    assert!(choice.look.is_none(), "{choice:?}");
+    assert!(choice.attempt_work < predictor::HIGH_COMPLEXITY_CAP);
+    // Nothing was refunded or read, and the attempt's charges are the
+    // request's.
+    assert_eq!(
+        (work.used, work.refunded, work.uncharged),
+        (plain_work.used, 0, plain_work.uncharged)
+    );
+    assert_eq!(choice.attempt_work + block_work(&recipe), work.used);
+    // What a look would have read of this block: two planes meet at every
+    // edge, so D is 1, and the tier follows the length of its rationals.
+    let look = look_at_the_block(&recipe);
     assert_eq!((look.degree, look.limbs), (1, limbs));
     assert_eq!(look.tier(), tier);
-    assert_eq!((choice.step.as_str(), choice.path), ("round", Path::Exact));
-    // Nothing was refunded, and the attempt's charges are the request's.
-    assert_eq!((work.used, work.refunded), (plain_work.used, 0));
-    assert_eq!(choice.attempt_work + block_work(&recipe), work.used);
-    assert_eq!(work.uncharged, plain_work.uncharged + look.read);
-    // Decisions 4.5: the quick look costs at most 1% of the operation's work.
-    assert!(
-        look.read * 100 <= choice.operation_work,
-        "{look:?} of {choice:?}"
-    );
+    assert!(look.read > 0 && look.read <= predictor::LOOK_READS);
     // What is accepted is decided as before: the one checker, on the same body.
     let EvaluationOutcome::Exact(checkpoint) = outcome else {
         panic!("the exact builders finish this fillet");
@@ -119,6 +127,35 @@ fn the_route_is_the_exact_one(shift: &str, tier: Tier, limbs: u64) {
     );
 }
 
+/// The recipe's block alone.
+fn block_of(recipe: &Recipe) -> Built {
+    let mut block: serde_json::Value = serde_json::from_str(&recipe.to_text()).unwrap();
+    block["steps"].as_array_mut().unwrap().pop();
+    block["result"] = json!("b");
+    let block = Recipe::parse(&block.to_string()).unwrap();
+    exact_only(&block).0
+}
+
+/// The look a fillet of every edge of the recipe's block would be given.
+fn look_at_the_block(recipe: &Recipe) -> predictor::Look {
+    let block = block_of(recipe);
+    let mut edges = Vec::new();
+    for face in block.model.faces_of_body(block.result) {
+        for boundary in &block.model.face(face).loops {
+            if let Loop::Coedges(uses) = block.model.loop_(*boundary) {
+                for coedge in uses {
+                    let edge = block.model.coedge(*coedge).edge;
+                    if !edges.contains(&edge) {
+                        edges.push(edge);
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(edges.len(), 12);
+    predictor::of_fillet(&block.model, block.result, &edges, &Real::from_i64(1))
+}
+
 /// The charged work of the recipe's block alone.
 fn block_work(recipe: &Recipe) -> u64 {
     let mut block: serde_json::Value = serde_json::from_str(&recipe.to_text()).unwrap();
@@ -129,13 +166,13 @@ fn block_work(recipe: &Recipe) -> u64 {
 }
 
 #[test]
-fn short_rationals_take_the_low_tier_and_the_exact_route_is_unchanged() {
+fn short_rationals_are_the_low_tier_and_the_exact_route_is_unchanged() {
     the_route_is_the_exact_one("0", Tier::Low, 2);
     assert_eq!(Tier::Low.cap(), 20_000_000);
 }
 
 #[test]
-fn long_rationals_take_the_high_tier_and_an_attempt_under_its_cap_stays_exact() {
+fn long_rationals_are_the_high_tier_and_an_attempt_under_its_cap_stays_exact() {
     // 200 bits each way: four limbs for the numerator and four for the
     // denominator, so D x L^2 is 64, past the low tier's 32.
     the_route_is_the_exact_one(&long_shift(200), Tier::High, 8);

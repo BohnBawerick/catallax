@@ -423,20 +423,36 @@ fn check(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // 2. The quick look, against the work of its operation. 3. Refunded work
-    // of a capped attempt, against its cap.
-    let (mut looks, mut worst_share, mut worst_row) = (0, 0.0_f64, String::new());
+    // of a capped attempt, against its cap. An attempt that ended before the
+    // high tier's cap was never looked at: it read nothing, and what it gave
+    // back is under that cap.
+    let (mut attempts, mut looks) = (0, 0);
+    let (mut worst_share, mut worst_row) = (0.0_f64, String::new());
     let mut paths: BTreeMap<String, usize> = BTreeMap::new();
     for (id, lines) in &rows {
         let line = lines[0];
         for choice in line["choices"].as_array().into_iter().flatten() {
+            attempts += 1;
             let path = choice["path"].as_str().unwrap_or("?");
-            let tier = choice["look"]["tier"].as_str().unwrap_or("none");
-            *paths.entry(format!("{tier} tier, {path}")).or_default() += 1;
+            let tier = match choice["look"]["tier"].as_str() {
+                Some(tier) => format!("{tier} tier"),
+                None => "not looked at".into(),
+            };
+            *paths.entry(format!("{tier}, {path}")).or_default() += 1;
+            let attempt = choice["attempt_work"].as_u64().unwrap_or(0);
+            let cap = choice["look"]["cap"]
+                .as_u64()
+                .unwrap_or(predictor::HIGH_COMPLEXITY_CAP);
+            if path != "exact" && attempt > cap {
+                failures.push(format!(
+                    "{id} step {}: refunded {attempt} past its cap of {cap}",
+                    choice["step"]
+                ));
+            }
             let Some(read) = choice["look"]["read"].as_u64() else {
                 continue;
             };
             looks += 1;
-            let attempt = choice["attempt_work"].as_u64().unwrap_or(0);
             let operation = choice["operation_work"].as_u64().unwrap_or(0);
             let share = read as f64 / operation.max(1) as f64;
             if share > worst_share {
@@ -449,17 +465,10 @@ fn check(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     choice["step"]
                 ));
             }
-            let cap = choice["look"]["cap"].as_u64().unwrap_or(u64::MAX);
-            if path != "exact" && attempt > cap {
-                failures.push(format!(
-                    "{id} step {}: refunded {attempt} past its cap of {cap}",
-                    choice["step"]
-                ));
-            }
         }
     }
     println!(
-        "quick look: {looks} attempts, largest share {:.4}% ({worst_row})",
+        "quick look: {attempts} attempts, {looks} looked at, largest share {:.4}% ({worst_row})",
         worst_share * 100.0
     );
     for (path, count) in &paths {

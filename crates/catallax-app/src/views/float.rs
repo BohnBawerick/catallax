@@ -1,7 +1,10 @@
-//! Binary64 helpers shared by the fitted contour generators.
+//! Binary64 helpers shared by the fitted contour generators, the
+//! hidden-line views and the drawing curves.
 
-use catallax_numbers::{Decider, Rational, Real, Refusal};
-use catallax_shapes::Vector3;
+use std::f64::consts::{FRAC_PI_2, PI, TAU};
+
+use catallax_numbers::{Decider, Integer, Rational, Real, Refusal, Sign};
+use catallax_shapes::{BSplineCurve, Point3, Vector3};
 
 /// A binary64 value within rule T1's floor of an exact one: the nearest
 /// double of a rational, otherwise the middle of an enclosure that narrow.
@@ -32,6 +35,88 @@ pub(super) fn rational(value: f64) -> Result<Rational, Refusal> {
             "a fitted contour generator has a nonfinite value",
         )
     })
+}
+
+/// The square root of an exact square rational stays rational; anything
+/// else becomes a lazy root.
+pub(super) fn root(value: &Real) -> Real {
+    fn integer_sqrt(n: &Integer) -> Option<Integer> {
+        if n.sign() == Sign::Negative {
+            return None;
+        }
+        if n.is_zero() {
+            return Some(Integer::zero());
+        }
+        let mut x = Integer::one().mul_pow2(n.bit_length().div_ceil(2));
+        loop {
+            let y = (&x + &n.div_rem_floor(&x)?.0)
+                .div_rem_floor(&Integer::from_i64(2))?
+                .0;
+            if y >= x {
+                return (&x * &x == *n).then_some(x);
+            }
+            x = y;
+        }
+    }
+    value
+        .rational_ref()
+        .and_then(|q| Rational::new(integer_sqrt(q.numerator())?, integer_sqrt(q.denominator())?))
+        .map_or_else(|| value.sqrt(), Real::from)
+}
+
+/// The exact point at binary64 angle `t` of the conic
+/// `center + cos t u + sin t w`. The half-angle form keeps it exactly on the
+/// conic with short numbers: `cos t = (1 - s^2) / (1 + s^2)` and
+/// `sin t = 2 s / (1 + s^2)` for the rational `s` nearest `tan(t / 2)`
+/// (Piegl and Tiller, "The NURBS Book", 2nd ed., section 7.2, the rational
+/// parametrisation of the circle). A half turn first brings `t` within a
+/// quarter turn of zero, so that `|s| <= 1`.
+pub(super) fn conic_point(
+    center: &Point3,
+    [u, w]: [&Vector3; 2],
+    t: f64,
+) -> Result<Point3, Refusal> {
+    let mut angle = t.rem_euclid(TAU);
+    let mut flip = Real::one();
+    if angle > PI {
+        angle -= TAU;
+    }
+    if angle.abs() > FRAC_PI_2 {
+        angle -= PI.copysign(angle);
+        flip = -Real::one();
+    }
+    let s = Real::from(rational((angle / 2.0).tan())?);
+    let one = Real::one();
+    let den = &one + &s.square();
+    let cos = &(&(&one - &s.square()) / &den) * &flip;
+    let sin = &(&(&Real::from_i64(2) * &s) / &den) * &flip;
+    Ok(center.plus(&u.scaled(&cos).plus(&w.scaled(&sin))))
+}
+
+/// Binary64 knots of an exact clamped B-spline, moved exactly so that its
+/// domain starts at zero; `None` when two distinct knots still round to one
+/// binary64 value, or a knot overflows.
+///
+/// A binary64 number keeps 53 significant bits of its own size, not of the
+/// knots' spacing: on the exact domain `[10^16, 10^16 + 1]` both ends round
+/// to `10^16`, and every span would be lost. The exact shift leaves only the
+/// knots' distances from the domain's start to round. The exact parameter
+/// at a binary64 one is the domain's start plus it ([`native_parameter`]),
+/// and an exact affine shift of a curve's parameter changes nothing here.
+pub(super) fn shifted_knots(spline: &BSplineCurve) -> Option<Vec<f64>> {
+    let exact = spline.knots();
+    let start = spline.domain()[0];
+    let knots: Vec<f64> = exact.iter().map(|k| (k - start).to_f64_nearest()).collect();
+    let merged = (1..knots.len()).any(|i| exact[i] > exact[i - 1] && knots[i] <= knots[i - 1]);
+    (knots.iter().all(|k| k.is_finite()) && !merged).then_some(knots)
+}
+
+/// The exact parameter of `spline` at the binary64 parameter `t` of its
+/// [`shifted_knots`], kept inside the exact domain, which rounded knots can
+/// reach past.
+pub(super) fn native_parameter(spline: &BSplineCurve, t: f64) -> Result<Rational, Refusal> {
+    let [lo, hi] = spline.domain();
+    Ok((lo + &rational(t)?).max(lo.clone()).min(hi.clone()))
 }
 
 /// `a > b`; false when either is NaN, so a negated test also catches NaN.

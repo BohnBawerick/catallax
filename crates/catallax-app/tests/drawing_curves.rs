@@ -11,9 +11,9 @@ use catallax_app::views::{
 use catallax_boolean::{BoolOp, boolean};
 use catallax_features::evaluate;
 use catallax_intersect::{CurveForm, curve_form};
-use catallax_numbers::{Decider, Rational, with_operation_budget};
+use catallax_numbers::{Decider, Rational, Real, with_operation_budget};
 use catallax_recipe::Recipe;
-use catallax_shapes::{Point3, Pose, RPoint3, RVector3, Rotation};
+use catallax_shapes::{BSplineCurve, Curve, Point3, PointDef, Pose, RPoint3, RVector3, Rotation};
 use catallax_topology::{BodyId, Model, block, cone, cylinder, sphere};
 
 const TARGET: u64 = 20_000_000;
@@ -424,4 +424,93 @@ fn intersection_branches_are_fitted_and_marked() {
         }
     }
     assert_eq!(branches, 2);
+}
+
+/// A rational cubic with one inner knot on the exact parameter interval
+/// `[shift, shift + 1]`, and the drawings of its arc from `shift + 1/8` to
+/// `shift + 7/8` and of the whole curve from end to end.
+fn shifted_cubic(shift: &Rational) -> [DrawingCurve; 2] {
+    let mut dec = Decider::default();
+    let q = |s: &str| Rational::parse(s).unwrap();
+    let knots = ["0", "0", "0", "0", "1/2", "1", "1", "1", "1"]
+        .map(|k| &q(k) + shift)
+        .to_vec();
+    let controls = [[0, 0, 0], [1, 2, 0], [2, -1, 1], [3, 1, 0], [4, 0, 0]]
+        .map(|[x, y, z]| Point3::new(Real::from_i64(x), Real::from_i64(y), Real::from_i64(z)))
+        .to_vec();
+    let weights = [1, 2, 1, 3, 1].map(Real::from_i64).to_vec();
+    let spline = BSplineCurve::new(3, knots, controls, weights, &mut dec).unwrap();
+    let mut model = Model::new();
+    let mut at = |t: &str| {
+        let p = spline
+            .point_at(&Real::from(&q(t) + shift), &mut dec)
+            .unwrap();
+        model.geom_mut().add_point(PointDef::Explicit(p))
+    };
+    let ends = ["0", "1/8", "7/8", "1"].map(&mut at);
+    let curve = model.geom_mut().add_curve(Curve::BSpline(spline));
+    [(ends[1], ends[2]), (ends[0], ends[3])].map(|(a, b)| {
+        drawing_curve(&model, curve, Some(a), Some(b), &mut Decider::default())
+            .unwrap()
+            .value
+            .curve
+    })
+}
+
+#[test]
+fn an_exact_parameter_shift_draws_the_same_spline() {
+    // Binary64 keeps 53 bits of a knot's own size: unshifted, the knots
+    // 10^16 and 10^16 + 1/2 round together and the drawing loses its spans.
+    let drawn: Vec<_> = [
+        "0",
+        "10000000000000000",
+        "-7/3",
+        "123456789012345678901/1000",
+    ]
+    .map(|s| shifted_cubic(&Rational::parse(s).unwrap()))
+    .into_iter()
+    .collect();
+    for d in &drawn[1..] {
+        assert_eq!(*d, drawn[0]);
+    }
+    let DrawingCurve::Nurbs { knots, .. } = &drawn[0][1] else {
+        panic!("a B-spline draws as a NURBS");
+    };
+    assert_eq!(
+        *knots,
+        [0.0, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 1.0]
+    );
+    // Two distinct knots that still round together refuse rather than
+    // drop the span between them.
+    let mut dec = Decider::default();
+    let q = |s: &str| Rational::parse(s).unwrap();
+    let spline = BSplineCurve::new(
+        1,
+        [
+            "0",
+            "0",
+            "10000000000000000",
+            "20000000000000001/2",
+            "20000000000000001/2",
+        ]
+        .map(q)
+        .to_vec(),
+        [[0, 0, 0], [1, 0, 0], [1, 1, 0]]
+            .map(|[x, y, z]| Point3::new(Real::from_i64(x), Real::from_i64(y), Real::from_i64(z)))
+            .to_vec(),
+        vec![Real::one(); 3],
+        &mut dec,
+    )
+    .unwrap();
+    let mut model = Model::new();
+    let ends = [[0, 0, 0], [1, 1, 0]].map(|[x, y, z]| {
+        model.geom_mut().add_point(PointDef::Explicit(Point3::new(
+            Real::from_i64(x),
+            Real::from_i64(y),
+            Real::from_i64(z),
+        )))
+    });
+    let curve = model.geom_mut().add_curve(Curve::BSpline(spline));
+    let refused = drawing_curve(&model, curve, Some(ends[0]), Some(ends[1]), &mut dec).unwrap_err();
+    assert_eq!(refused.code, "app.drawing-curve", "{}", refused.detail);
 }

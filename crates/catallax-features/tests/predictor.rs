@@ -114,7 +114,11 @@ fn the_route_is_the_exact_one(shift: &str, tier: Tier, limbs: u64) {
     let look = look_at_the_block(&recipe);
     assert_eq!((look.degree, look.limbs), (1, limbs));
     assert_eq!(look.tier(), tier);
-    assert!(look.read > 0 && look.read <= predictor::LOOK_READS);
+    // Everything it did is counted: the radius, the twelve edges, their
+    // twenty-four uses, the twelve pairs, and six planes of a kind and nine
+    // numbers each.
+    assert_eq!(look.read, 1 + 12 + 24 + 12 + 6 * 10);
+    assert!(look.read <= predictor::LOOK_READS);
     // What is accepted is decided as before: the one checker, on the same body.
     let EvaluationOutcome::Exact(checkpoint) = outcome else {
         panic!("the exact builders finish this fillet");
@@ -138,6 +142,26 @@ fn block_of(recipe: &Recipe) -> Built {
 
 /// The look a fillet of every edge of the recipe's block would be given.
 fn look_at_the_block(recipe: &Recipe) -> predictor::Look {
+    let (block, edges) = block_and_its_edges(recipe);
+    predictor::of_fillet(&block.model, &edges, &Real::from_i64(1))
+}
+
+/// A selection too long to read: the look stops at its bound, with every
+/// step through the topology counted, and takes the smaller cap.
+#[test]
+fn a_look_that_would_read_past_its_bound_stops_and_takes_the_high_tier() {
+    let (block, edges) = block_and_its_edges(&rounded_block("0"));
+    // Each edge is one read, two for its uses and one for its pair, so
+    // 6,000 edges are past the 20,000 reads of one look.
+    let many: Vec<_> = edges.iter().cycle().take(6_000).copied().collect();
+    let look = predictor::of_fillet(&block.model, &many, &Real::from_i64(1));
+    assert_eq!(look.read, predictor::LOOK_READS);
+    assert_eq!(look.tier(), Tier::High);
+    // The same block read to its end is the low tier.
+    assert_eq!(look_at_the_block(&rounded_block("0")).tier(), Tier::Low);
+}
+
+fn block_and_its_edges(recipe: &Recipe) -> (Built, Vec<catallax_topology::EdgeId>) {
     let block = block_of(recipe);
     let mut edges = Vec::new();
     for face in block.model.faces_of_body(block.result) {
@@ -153,7 +177,7 @@ fn look_at_the_block(recipe: &Recipe) -> predictor::Look {
         }
     }
     assert_eq!(edges.len(), 12);
-    predictor::of_fillet(&block.model, block.result, &edges, &Real::from_i64(1))
+    (block, edges)
 }
 
 /// The charged work of the recipe's block alone.

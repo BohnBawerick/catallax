@@ -64,7 +64,7 @@ pub(crate) fn build(
     }
     let input_uses = uses(model, body);
     let selected = resolve(model, selection, &input_uses, dec)?;
-    crate::predictor::cap_fillet_attempt(model, body, &selected, radius, step);
+    crate::predictor::cap_fillet_attempt(model, &selected, radius, step);
     let [edge] = selected.as_slice() else {
         return Err(unsupported(
             "station clipping currently requires one selected straight edge",

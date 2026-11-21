@@ -41,6 +41,13 @@
 //!   detection in surface patch intersections", Computer Aided Geometric
 //!   Design 5, 1988, for the same use of a cheap separation test).
 //!
+//! Everything the look does is a read and is counted: each number of a
+//! surface, each surface kind, and each step through the topology that
+//! finds the pairs, which is one for a selected edge, one for each use of
+//! it and one for each pair. A look that would pass [`LOOK_READS`] stops
+//! there and takes the high tier, the smaller cap, so its cost is bounded
+//! whatever the body.
+//!
 //! The score of a pair is D x L^2 and the score of an operation is that of
 //! its costliest pair. The look reads no normal angle: the decisions allow
 //! one only to demote spline pairs, and D already places those. It keeps no
@@ -48,7 +55,8 @@
 
 use catallax_numbers::Real;
 use catallax_shapes::Surface;
-use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model};
+use catallax_shapes::SurfaceId;
+use catallax_topology::{EdgeId, Model};
 use std::{cell::RefCell, collections::BTreeMap};
 
 /// The cap of an exact attempt on low-complexity inputs, in work units: the
@@ -119,9 +127,10 @@ pub struct Look {
     pub degree: u64,
     /// L of the costliest pair: the largest limb count among its rationals.
     pub limbs: u64,
-    /// The values read: one for each surface kind and one for each number.
-    /// This is the look's own work, counted in
-    /// `OperationWork::uncharged` and charged to nothing.
+    /// Everything read: one for each surface kind and each number, and one
+    /// for each selected edge, each use of it and each pair. This is the
+    /// look's own work, counted in `OperationWork::uncharged` and charged to
+    /// nothing.
     pub read: u64,
 }
 
@@ -165,6 +174,24 @@ impl Look {
     pub fn number(&mut self, value: &Real) {
         self.read += 1;
         self.limbs = self.limbs.max(limbs(value));
+    }
+
+    /// Takes one read for a step through the topology: a selected edge, a
+    /// use of it or a pair. `false` once the look has read all it may.
+    fn step(&mut self) -> bool {
+        if self.read >= LOOK_READS {
+            return false;
+        }
+        self.read += 1;
+        true
+    }
+
+    /// A look that stopped before it had read every pair. What it did not
+    /// read may be anything, so it has no degree to go by and is not taken
+    /// for a low-complexity one.
+    fn unfinished(mut self) -> Self {
+        self.degree = u64::MAX;
+        self
     }
 }
 
@@ -350,44 +377,60 @@ fn limbs(value: &Real) -> u64 {
         .map_or(SMALL_LIMBS, catallax_numbers::Rational::limbs)
 }
 
-/// Reads the edges a fillet rounds: for each, the two faces it lies between.
-/// They meet along the edge, so no pair is proven apart. It reads at most
-/// [`LOOK_READS`] values.
-pub fn of_fillet(model: &Model, body: BodyId, edges: &[EdgeId], radius: &Real) -> Look {
-    let mut faces_of: BTreeMap<EdgeId, Vec<FaceId>> =
-        edges.iter().map(|edge| (*edge, Vec::new())).collect();
-    for face in model.faces_of_body(body) {
-        for boundary in &model.face(face).loops {
-            if let Loop::Coedges(uses) = model.loop_(*boundary) {
-                for coedge in uses {
-                    if let Some(faces) = faces_of.get_mut(&model.coedge(*coedge).edge)
-                        && !faces.contains(&face)
-                    {
-                        faces.push(face);
-                    }
-                }
-            }
-        }
-    }
+/// Reads the edges a fillet rounds: for each, the surfaces of the faces that
+/// use it. They meet along the edge, so no pair is proven apart.
+///
+/// The faces of an edge are found through the edge's own uses, so the look
+/// costs by the selection and not by the size of the body. Each selected
+/// edge, each use and each pair is one read, beside the numbers of the
+/// surfaces. At [`LOOK_READS`] the look stops and is
+/// [unfinished](Look::unfinished): the high tier.
+///
+/// A use in another body of the model is read as well. The model keeps
+/// earlier bodies, and a face of one on the same edge lies on a surface
+/// through the same curve. A pair can only raise the score.
+pub fn of_fillet(model: &Model, edges: &[EdgeId], radius: &Real) -> Look {
     let mut look = Look::NONE;
     // One read is kept for the radius.
     look.number(radius);
-    let mut read: BTreeMap<FaceId, Participant> = BTreeMap::new();
-    let mut participant = |face: FaceId, look: &mut Look| {
-        *read.entry(face).or_insert_with(|| {
-            let participant = Participant::within(
-                model.geom().surface(model.face(face).surface),
-                LOOK_READS - look.read,
-            );
-            look.read += participant.read;
-            participant
-        })
-    };
-    for faces in faces_of.values() {
-        for (index, a) in faces.iter().enumerate() {
-            for b in &faces[index + 1..] {
-                let (a, b) = (participant(*a, &mut look), participant(*b, &mut look));
-                look.pair(a, b, false);
+    let mut read: BTreeMap<SurfaceId, Participant> = BTreeMap::new();
+    for edge in edges {
+        if !look.step() {
+            return look.unfinished();
+        }
+        let mut surfaces: Vec<SurfaceId> = Vec::new();
+        for coedge in model.coedges_of_edge(*edge) {
+            if !look.step() {
+                return look.unfinished();
+            }
+            let Some((_, face)) = model.owner_of_coedge(coedge) else {
+                continue;
+            };
+            let surface = model.face(face).surface;
+            if !surfaces.contains(&surface) {
+                surfaces.push(surface);
+            }
+        }
+        let mut participants = Vec::with_capacity(surfaces.len());
+        for surface in surfaces {
+            let participant = match read.get(&surface) {
+                Some(participant) => *participant,
+                None => {
+                    let participant =
+                        Participant::within(model.geom().surface(surface), LOOK_READS - look.read);
+                    look.read += participant.read;
+                    read.insert(surface, participant);
+                    participant
+                }
+            };
+            participants.push(participant);
+        }
+        for (index, a) in participants.iter().enumerate() {
+            for b in &participants[index + 1..] {
+                if !look.step() {
+                    return look.unfinished();
+                }
+                look.pair(*a, *b, false);
             }
         }
     }
@@ -403,7 +446,6 @@ pub fn of_fillet(model: &Model, body: BodyId, edges: &[EdgeId], radius: &Real) -
 /// the selection is resolved once.
 pub(crate) fn cap_fillet_attempt(
     model: &Model,
-    body: BodyId,
     edges: &[EdgeId],
     radius: &Real,
     step: &impl ToString,
@@ -427,7 +469,7 @@ pub(crate) fn cap_fillet_attempt(
     // tables with this one.
     let (model, edges, radius) = (model.clone(), edges.to_vec(), radius.clone());
     catallax_numbers::cap_attempt_when_reached(HIGH_COMPLEXITY_CAP, move || {
-        let look = of_fillet(&model, body, &edges, &radius);
+        let look = of_fillet(&model, &edges, &radius);
         catallax_numbers::count_uncharged_work(look.read);
         LOG.with(|log| {
             if let Some(choice) = log.borrow_mut().as_mut().and_then(|choices| {

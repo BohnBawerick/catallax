@@ -2669,7 +2669,7 @@ pub(crate) fn build(
     catallax_numbers::reuse_operation_enclosures();
     catallax_numbers::prefer_reduced_angle_series();
     let selected = select(model, body, selection, roll_over, earlier, dec)?;
-    crate::predictor::cap_fillet_attempt(model, body, &selected, radius, step);
+    crate::predictor::cap_fillet_attempt(model, &selected, radius, step);
     if fillet_spline::applies(model, body, &selected) {
         return fillet_spline::build(model, body, selected[0], radius, step, dec);
     }

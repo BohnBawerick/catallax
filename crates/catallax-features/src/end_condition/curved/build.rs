@@ -182,6 +182,7 @@ impl CurvedCapped {
             surface,
             sense: Sense::Same,
             loops: Vec::new(),
+            tolerance: None,
         });
         let shell = model.add_shell(Shell { faces: vec![face] });
         let lump = model.add_lump(Lump {
@@ -318,7 +319,10 @@ fn prism(
         .iter()
         .map(|p| {
             let point = model.geom_mut().add_point(PointDef::Explicit(p.clone()));
-            model.add_vertex(Vertex { point })
+            model.add_vertex(Vertex {
+                point,
+                tolerance: None,
+            })
         })
         .collect();
     let mut edges = BTreeMap::new();
@@ -367,6 +371,7 @@ fn prism(
                     sense: Sense::Same,
                     start: Some(vertices[key.0]),
                     end: Some(vertices[key.1]),
+                    tolerance: None,
                 })
             });
             let curve = model.edge(edge).curve;
@@ -388,6 +393,7 @@ fn prism(
                 surface,
                 sense: Sense::Same,
                 loops: vec![boundary],
+                tolerance: None,
             },
             names[face_index].clone(),
         ));

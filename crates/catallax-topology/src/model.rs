@@ -460,6 +460,16 @@ impl Model {
         self.bodies.get(id)
     }
 
+    /// Every vertex of the model, in creation order.
+    pub(crate) fn vertex_handles(&self) -> Vec<VertexId> {
+        self.vertices.handles()
+    }
+
+    /// Every edge of the model, in creation order.
+    pub(crate) fn edge_handles(&self) -> Vec<EdgeId> {
+        self.edges.handles()
+    }
+
     /// Every coedge that uses `e`, in creation order.
     pub fn coedges_of_edge(&self, e: EdgeId) -> Vec<CoedgeId> {
         self.edge(e);
@@ -639,8 +649,15 @@ impl Model {
         counts
     }
 
-    /// Topological faults of a body; empty when sound. Reads entities and
-    /// recorded facts only and makes no numeric decision.
+    /// Faults of a body; empty when sound. The one checker of exact, tolerant
+    /// and mixed bodies.
+    ///
+    /// It reads entities, their tolerances and recorded facts, and measures
+    /// nothing. Two exact entities that meet need their recorded `Incident`
+    /// fact. A tolerant entity has its tolerance as the record of what its
+    /// builder measured. A vertex's tolerance may not be less than an edge's
+    /// that ends at it, nor an edge's less than a face's it bounds
+    /// (`topology.tolerance-order`).
     pub fn check(&self, b: BodyId) -> Vec<TopologyFault> {
         crate::check::check(self, b)
     }

@@ -6,6 +6,7 @@ use catallax_measure::Accuracy;
 use catallax_numbers::{Decider, Rational, with_operation_budget};
 use catallax_recipe::Recipe;
 use catallax_shapes::{RPoint3, RVector3};
+use catallax_topology::numerical::tolerance::{self, EntityKind};
 use serde_json::{Value, json};
 
 mod numerical_cases;
@@ -235,10 +236,17 @@ fn numerical_admission_tolerance_checks_and_history_survive() {
     assert_eq!(source.options(), imported.options());
     assert_eq!(source.counts(), imported.counts());
     assert_eq!(source.history().len(), imported.history().len());
-    assert_eq!(
-        source.exact_topology_faults(),
-        imported.exact_topology_faults()
-    );
+    assert_eq!(source.topology_faults(), Vec::new());
+    assert_eq!(imported.topology_faults(), Vec::new());
+    assert_eq!(source.tolerances(), imported.tolerances());
+    for entity in &source.tolerances().entities {
+        assert_eq!(
+            imported
+                .stored_tolerance(entity.kind, &entity.key)
+                .map(|stored| stored.mm()),
+            Some(&entity.tolerance_mm)
+        );
+    }
     let options = catallax_step::numerical::NumericalStepOptions::default();
     let exported = |body: &catallax_app::NumericalBody| {
         catallax_step::numerical::build(body, &options, &mut Decider::default())
@@ -267,7 +275,8 @@ fn numerical_admission_tolerance_checks_and_history_survive() {
 fn invalid_version_truncation_and_corruption_return_refusals() {
     let bytes = write_body(&build(&block()), &mut Decider::default()).unwrap();
     let mut version = bytes.clone();
-    version[8] ^= 1;
+    // Not a version this reader takes.
+    version[8] ^= 64;
     assert_eq!(
         read_body(&version, &mut Decider::default())
             .unwrap_err()
@@ -421,7 +430,7 @@ fn tiny_remaining_allowance_stops_before_a_large_root_is_materialized() {
     );
 }
 
-fn legacy_v1(text: &str) -> Vec<u8> {
+fn stored_record(text: &str) -> Vec<u8> {
     text.lines()
         .filter(|line| !line.starts_with('#'))
         .flat_map(str::split_ascii_whitespace)
@@ -431,25 +440,25 @@ fn legacy_v1(text: &str) -> Vec<u8> {
 
 #[test]
 fn version_one_bodies_keep_geometry_history_and_empty_kind() {
-    let bytes = legacy_v1(include_str!("handover_v1/certified.hex"));
+    let bytes = stored_record(include_str!("handover_v1/certified.hex"));
     let imported = read_body(&bytes, &mut Decider::default()).unwrap();
     let source = build(&block());
     assert_eq!(queries(&source), queries(&imported));
     assert_eq!(step(&source), step(&imported));
     assert_eq!(
         &write_body(&imported, &mut Decider::default()).unwrap()[8..12],
-        &2_u32.to_le_bytes()
+        &3_u32.to_le_bytes()
     );
 
     let empty: catallax_topology::Body = catallax_numbers::transfer::decode(
-        &legacy_v1(include_str!("handover_v1/empty.hex")),
+        &stored_record(include_str!("handover_v1/empty.hex")),
         &mut Decider::default(),
     )
     .unwrap();
     assert_eq!(empty.kind, catallax_topology::BodyKind::Empty);
     assert!(empty.lumps.is_empty() && empty.wires.is_empty() && empty.marks.is_empty());
 
-    let bytes = legacy_v1(include_str!("handover_v1/numerical.hex"));
+    let bytes = stored_record(include_str!("handover_v1/numerical.hex"));
     let imported = read_numerical(&bytes, &mut Decider::default()).unwrap();
     let source = catallax_app::build_numerical(
         numerical_cases::fixture("0.001"),
@@ -466,6 +475,34 @@ fn version_one_bodies_keep_geometry_history_and_empty_kind() {
         .unwrap();
     assert_eq!(source.counts(), imported.counts());
     assert_eq!(source.options(), imported.options());
+    // A version-one record has no tolerance on any entity and no tolerance
+    // report. Read back, every vertex and edge of the body's model holds the
+    // largest tolerance the record's own checks state, so nothing in it is
+    // exact and the one checker passes it.
+    assert!(imported.tolerances().entities.is_empty());
+    assert_eq!(imported.topology_faults(), Vec::new());
+    let largest =
+        tolerance::largest_recorded(imported.evidence()).max(tolerance::floor_minimum_mm());
+    let definition = imported.definition();
+    let keys = definition
+        .vertices
+        .iter()
+        .map(|vertex| (EntityKind::Vertex, vertex.key.as_str()))
+        .chain(
+            definition
+                .edges
+                .iter()
+                .map(|edge| (EntityKind::Edge, edge.key.as_str())),
+        );
+    for (kind, key) in keys {
+        assert_eq!(
+            imported
+                .stored_tolerance(kind, key)
+                .map(|stored| stored.mm()),
+            Some(&largest),
+            "{key}"
+        );
+    }
     // The stored record holds the checks of the build that wrote it, sample
     // for sample. A rebuild measures the same definition as it is measured
     // today, with the same number of check records.
@@ -507,6 +544,100 @@ fn version_one_bodies_keep_geometry_history_and_empty_kind() {
     );
     assert_eq!(
         &write_numerical(&imported, &mut Decider::default()).unwrap()[8..12],
-        &2_u32.to_le_bytes()
+        &3_u32.to_le_bytes()
     );
+}
+
+/// Version two is the format before a vertex, an edge and a face stored a
+/// tolerance. The two records were written by the build of main named in
+/// their first line.
+#[test]
+fn version_two_bodies_are_exact_and_numerical_ones_get_their_tolerances_back() {
+    let bytes = stored_record(include_str!("handover_v2/certified.hex"));
+    assert_eq!(&bytes[8..12], &2_u32.to_le_bytes());
+    let imported = read_body(&bytes, &mut Decider::default()).unwrap();
+    let source = build(&block());
+    // Every entity of the record is exact, and the body answers and exports
+    // as a build of today does.
+    let model = &imported.model;
+    assert!(
+        model
+            .vertices_of_body(imported.result)
+            .into_iter()
+            .all(|vertex| model.vertex(vertex).tolerance.is_none())
+    );
+    assert!(
+        model
+            .edges_of_body(imported.result)
+            .into_iter()
+            .all(|edge| model.edge(edge).tolerance.is_none())
+    );
+    assert!(
+        model
+            .faces_of_body(imported.result)
+            .into_iter()
+            .all(|face| model.face(face).tolerance.is_none())
+    );
+    assert!(model.check(imported.result).is_empty());
+    assert_eq!(queries(&source), queries(&imported));
+    assert_eq!(step(&source), step(&imported));
+    // Written again, it is a version-three record that reads back the same.
+    let rewritten = write_body(&imported, &mut Decider::default()).unwrap();
+    assert_eq!(&rewritten[8..12], &3_u32.to_le_bytes());
+    let again = read_body(&rewritten, &mut Decider::default()).unwrap();
+    assert_eq!(queries(&again), queries(&imported));
+
+    // A numerical body of that format stored its tolerance report beside a
+    // model with no tolerance. Read back, its model holds the report's
+    // values, as the model of a build of today does.
+    let bytes = stored_record(include_str!("handover_v2/numerical.hex"));
+    assert_eq!(&bytes[8..12], &2_u32.to_le_bytes());
+    let imported = read_numerical(&bytes, &mut Decider::default()).unwrap();
+    let source = catallax_app::build_numerical(
+        numerical_cases::fixture("0.001"),
+        Default::default(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    let source = source
+        .rebuild(
+            source.definition().clone(),
+            source.options().clone(),
+            &mut Decider::default(),
+        )
+        .unwrap();
+    assert_eq!(source.tolerances(), imported.tolerances());
+    assert_eq!(source.evidence(), imported.evidence());
+    assert!(!imported.tolerances().entities.is_empty());
+    for entity in &imported.tolerances().entities {
+        assert_eq!(
+            imported
+                .stored_tolerance(entity.kind, &entity.key)
+                .map(|stored| stored.mm()),
+            Some(&entity.tolerance_mm),
+            "{}",
+            entity.key
+        );
+    }
+    assert_eq!(imported.topology_faults(), Vec::new());
+    assert_eq!(source.counts(), imported.counts());
+    let export = |body: &catallax_app::NumericalBody| {
+        catallax_step::numerical::build(body, &Default::default(), &mut Decider::default())
+            .unwrap()
+            .bytes()
+            .to_vec()
+    };
+    assert_eq!(export(&source), export(&imported));
+    // Written again, it is a version-three record, and that record's model
+    // holds the same tolerances without being built again.
+    let rewritten = write_numerical(&imported, &mut Decider::default()).unwrap();
+    assert_eq!(&rewritten[8..12], &3_u32.to_le_bytes());
+    let again = read_numerical(&rewritten, &mut Decider::default()).unwrap();
+    for entity in &imported.tolerances().entities {
+        assert_eq!(
+            again.stored_tolerance(entity.kind, &entity.key),
+            imported.stored_tolerance(entity.kind, &entity.key)
+        );
+    }
+    assert_eq!(again.topology_faults(), Vec::new());
 }

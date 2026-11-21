@@ -521,6 +521,15 @@ pub struct Limits {
 /// Source: judgement; no source gives a per-edge cap. One million units is
 /// five percent of the 20M operation target (ROADMAP, rules that stay fixed
 /// between checkpoints).
+///
+/// The cap covers one edge use, which is what one measurement reads: an
+/// edge's 3D curve against its copy on one face. An edge between two faces
+/// has two uses and two allowances, so reading the whole edge can count up
+/// to twice this. The unit is the checker's own (section 4.2: "find the
+/// largest gap on each freehand edge copy") and OpenCASCADE's, which checks
+/// an edge in the context of one face at a time
+/// (`BRepCheck_Edge::InContext`). It also keeps one use's reading
+/// independent of the order the uses are read in.
 pub const EDGE_WORK: u64 = crate::numerical::DEFAULT_WORK / 20;
 
 impl Default for Limits {

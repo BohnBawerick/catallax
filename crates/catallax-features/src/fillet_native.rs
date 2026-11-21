@@ -1360,7 +1360,10 @@ impl Scratch<'_> {
             .model
             .geom_mut()
             .add_point(PointDef::Explicit(exact_point(at)?));
-        Ok(self.model.add_vertex(Vertex { point }))
+        Ok(self.model.add_vertex(Vertex {
+            point,
+            tolerance: None,
+        }))
     }
 
     fn edge(&mut self, curve: Curve, sense: Sense, ends: [VertexId; 2]) -> EdgeId {
@@ -1370,6 +1373,7 @@ impl Scratch<'_> {
             sense,
             start: Some(ends[0]),
             end: Some(ends[1]),
+            tolerance: None,
         })
     }
 
@@ -1938,6 +1942,7 @@ pub(crate) fn build(
                     Sense::Reversed
                 },
                 loops: vec![boundary],
+                tolerance: None,
             },
             vec![Origin {
                 step: step.clone(),

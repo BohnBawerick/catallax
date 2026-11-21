@@ -1663,7 +1663,10 @@ mod tests {
                         let point = model.geom_mut().add_point(PointDef::Explicit(
                             RPoint3::new(q(x), q(0), q(0)).to_real(),
                         ));
-                        model.add_vertex(Vertex { point })
+                        model.add_vertex(Vertex {
+                            point,
+                            tolerance: None,
+                        })
                     });
                     let mut ends = if lower {
                         [vertices[1], vertices[0]]
@@ -1678,6 +1681,7 @@ mod tests {
                         sense,
                         start: Some(ends[0]),
                         end: Some(ends[1]),
+                        tolerance: None,
                     });
                     let mut dec = Decider::default();
                     let tolerance = Rational::parse("0.0000001").unwrap();

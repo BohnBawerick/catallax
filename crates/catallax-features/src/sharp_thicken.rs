@@ -339,6 +339,7 @@ impl RotationalThicken {
                 sense: Sense::Same,
                 start: None,
                 end: None,
+                tolerance: None,
             });
             rings.push((circle, edge));
             Ok(edge)

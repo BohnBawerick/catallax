@@ -202,6 +202,7 @@ fn planted_copy(model: &Model, body: BodyId, surface: Surface, plant: Plant) -> 
             sense: edge.sense,
             start: edge.start.map(|v| vertex_map[&v]),
             end: edge.end.map(|v| vertex_map[&v]),
+            tolerance: None,
         };
         edge_map.insert(e, copy.add_edge(copied));
     }
@@ -238,6 +239,7 @@ fn planted_copy(model: &Model, body: BodyId, surface: Surface, plant: Plant) -> 
                 (true, Sense::Reversed) => Sense::Same,
             },
             loops,
+            tolerance: None,
         };
         face_map.insert(f, copy.add_face(copied));
     }

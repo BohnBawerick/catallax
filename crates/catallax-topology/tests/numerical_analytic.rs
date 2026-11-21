@@ -28,7 +28,12 @@ fn finite_circular_caps_and_cylinder_keep_numerical_checks() {
             .flatten()
             .all(|sample| sample.distance_upper_mm <= q("0.01"))
     );
-    assert!(!body.exact_topology_faults().is_empty());
+    // The one checker passes the body, and nothing in it is exact.
+    assert_eq!(body.topology_faults(), Vec::new());
+    assert!(!body.tolerances().entities.is_empty());
+    for entity in &body.tolerances().entities {
+        assert!(body.stored_tolerance(entity.kind, &entity.key).is_some());
+    }
 }
 
 #[test]

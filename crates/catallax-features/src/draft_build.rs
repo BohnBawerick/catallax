@@ -484,6 +484,7 @@ fn assemble_annular(model: &mut Model, cell: &AnnularCell) -> BodyId {
                 sense: Sense::Same,
                 start: None,
                 end: None,
+                tolerance: None,
             });
             let cap_sense = if i == j { Sense::Reversed } else { Sense::Same };
             cap_paths.push(vec![(edge, cap_sense)]);
@@ -545,6 +546,7 @@ fn assemble_round(model: &mut Model, cell: &RoundCell) -> BodyId {
                 sense: Sense::Same,
                 start: None,
                 end: None,
+                tolerance: None,
             });
             faces.push(crate::extrude::face(
                 model,
@@ -563,7 +565,10 @@ fn assemble_round(model: &mut Model, cell: &RoundCell) -> BodyId {
             )]);
         } else {
             let point = model.geom_mut().add_point(PointDef::Explicit(centre));
-            apex = Some(model.add_vertex(Vertex { point }));
+            apex = Some(model.add_vertex(Vertex {
+                point,
+                tolerance: None,
+            }));
         }
     }
     faces.push(crate::extrude::face(
@@ -602,20 +607,27 @@ fn assemble_capped(
             }));
             let vertices = points.map(|point| {
                 let point = model.geom_mut().add_point(PointDef::Explicit(point));
-                model.add_vertex(Vertex { point })
+                model.add_vertex(Vertex {
+                    point,
+                    tolerance: None,
+                })
             });
             let edge = model.add_edge(Edge {
                 curve,
                 sense: Sense::Same,
                 start: Some(vertices[0]),
                 end: Some(vertices[1]),
+                tolerance: None,
             });
             (Some(vertices), Some(edge))
         }
         FootprintBoundary::Tangent(q) => {
             let point = cell.point(&q, &cell.heights_at(&q)[0]);
             let point = model.geom_mut().add_point(PointDef::Explicit(point));
-            let vertex = model.add_vertex(Vertex { point });
+            let vertex = model.add_vertex(Vertex {
+                point,
+                tolerance: None,
+            });
             (Some([vertex, vertex]), None)
         }
     };
@@ -630,6 +642,7 @@ fn assemble_capped(
             sense: Sense::Same,
             start: vertices.map(|v| v[0]),
             end: vertices.map(|v| v[1]),
+            tolerance: None,
         });
         let cap_sense = if (i == 1) == right_handed {
             Sense::Same
@@ -1480,6 +1493,7 @@ fn ring_edge(model: &mut Model, ring: &BoreRing) -> EdgeId {
         sense: ring.edge_sense,
         start: None,
         end: None,
+        tolerance: None,
     })
 }
 
@@ -1592,7 +1606,10 @@ fn assemble_polyhedral(
             let point = model
                 .geom_mut()
                 .add_point(PointDef::Explicit(point.clone()));
-            model.add_vertex(Vertex { point })
+            model.add_vertex(Vertex {
+                point,
+                tolerance: None,
+            })
         })
         .collect();
     let mut carriers = BTreeMap::<_, BTreeSet<_>>::new();
@@ -1642,6 +1659,7 @@ fn assemble_polyhedral(
                         sense: Sense::Same,
                         start: Some(vertices[pair.0]),
                         end: Some(vertices[pair.1]),
+                        tolerance: None,
                     });
                     edges.insert(pair, edge);
                     edge
@@ -1708,7 +1726,10 @@ fn assemble(
             let point = model
                 .geom_mut()
                 .add_point(PointDef::Explicit(point.clone()));
-            model.add_vertex(Vertex { point })
+            model.add_vertex(Vertex {
+                point,
+                tolerance: None,
+            })
         })
         .collect();
     let mut edges = BTreeMap::new();
@@ -1731,6 +1752,7 @@ fn assemble(
                     sense: Sense::Same,
                     start: Some(vertices[pair.0]),
                     end: Some(vertices[pair.1]),
+                    tolerance: None,
                 })
             });
             path.push((edge, if a < b { Sense::Same } else { Sense::Reversed }));

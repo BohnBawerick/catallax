@@ -56,6 +56,7 @@ fn annulus(rotated: bool) -> (Model, catallax_topology::BodyId) {
                 sense: Sense::Same,
                 start: None,
                 end: None,
+                tolerance: None,
             })
         })
     });
@@ -85,6 +86,7 @@ fn annulus(rotated: bool) -> (Model, catallax_topology::BodyId) {
             surface,
             sense,
             loops,
+            tolerance: None,
         })
     };
     let mut faces = Vec::new();

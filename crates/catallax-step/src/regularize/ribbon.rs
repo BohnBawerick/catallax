@@ -428,7 +428,10 @@ pub(super) fn move_edges(
                     let point = model
                         .geom_mut()
                         .add_point(PointDef::Explicit(rational_point(p)));
-                    model.add_vertex(Vertex { point })
+                    model.add_vertex(Vertex {
+                        point,
+                        tolerance: None,
+                    })
                 }
             };
             (*old, new)
@@ -458,6 +461,7 @@ pub(super) fn move_edges(
                     sense: Sense::Same,
                     start,
                     end,
+                    tolerance: None,
                 });
                 edges.insert(c.edge, edge);
             } else if (start, end) != (source.start, source.end) {

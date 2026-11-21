@@ -51,6 +51,7 @@ fn fixture(
             sense: senses[1],
             start: None,
             end: None,
+            tolerance: None,
         });
         let sense = if height == 2 {
             senses[2]
@@ -66,13 +67,17 @@ fn fixture(
     }
     if tip {
         let point = model.geom_mut().add_point(PointDef::Explicit(pt(0, 0, 0)));
-        let vertex = model.add_vertex(Vertex { point });
+        let vertex = model.add_vertex(Vertex {
+            point,
+            tolerance: None,
+        });
         loops.push(model.add_loop(Loop::Vertex(vertex)));
     }
     let face = model.add_face(Face {
         surface,
         sense: senses[0],
         loops,
+        tolerance: None,
     });
     (model, face)
 }
@@ -248,7 +253,10 @@ fn conical_collapsed_boundary_inventory_must_be_the_single_exact_apex() {
     let (mut model, face) = fixture(&Pose::identity(), &q(1), false, [Sense::Same; 3], true);
     let original = model.face(face).clone();
     let point = model.geom_mut().add_point(PointDef::Explicit(p(0, 0, 1)));
-    let vertex = model.add_vertex(Vertex { point });
+    let vertex = model.add_vertex(Vertex {
+        point,
+        tolerance: None,
+    });
     let wrong = model.add_loop(Loop::Vertex(vertex));
     let mut bad = original.clone();
     bad.loops[1] = wrong;
@@ -290,7 +298,10 @@ fn half_cone() -> (Model, FaceId) {
         .into_iter()
         .map(|at| {
             let point = model.geom_mut().add_point(PointDef::Explicit(at));
-            model.add_vertex(Vertex { point })
+            model.add_vertex(Vertex {
+                point,
+                tolerance: None,
+            })
         })
         .collect();
     let curves = [
@@ -319,6 +330,7 @@ fn half_cone() -> (Model, FaceId) {
                 sense: if i == 1 { Sense::Reversed } else { Sense::Same },
                 start: Some(vertices[i]),
                 end: Some(vertices[(i + 1) % 3]),
+                tolerance: None,
             });
             model.add_coedge(Coedge {
                 edge,
@@ -331,6 +343,7 @@ fn half_cone() -> (Model, FaceId) {
         surface,
         sense: Sense::Same,
         loops: vec![lp],
+        tolerance: None,
     });
     (model, face)
 }
@@ -409,6 +422,7 @@ fn conical_nonunit_algebraic_frame_and_slope_keep_the_euclidean_metric() {
             sense: Sense::Same,
             start: None,
             end: None,
+            tolerance: None,
         });
         let coedge = model.add_coedge(Coedge { edge, sense });
         loops.push(model.add_loop(Loop::Coedges(vec![coedge])));
@@ -417,6 +431,7 @@ fn conical_nonunit_algebraic_frame_and_slope_keep_the_euclidean_metric() {
         surface,
         sense: Sense::Same,
         loops,
+        tolerance: None,
     });
     // Query on axis at height 6: min distance 6*k/sqrt(1+k²) = 18/5,
     // attained at height 96/25, strictly between heights 3 and 6.

@@ -227,7 +227,10 @@ impl ConvexCell {
             .iter()
             .map(|p| {
                 let point = model.geom_mut().add_point(PointDef::Explicit(p.clone()));
-                model.add_vertex(Vertex { point })
+                model.add_vertex(Vertex {
+                    point,
+                    tolerance: None,
+                })
             })
             .collect();
         let mut edges = BTreeMap::new();
@@ -251,6 +254,7 @@ impl ConvexCell {
                         sense: Sense::Same,
                         start: Some(vertices[key.0]),
                         end: Some(vertices[key.1]),
+                        tolerance: None,
                     })
                 });
                 path.push((edge, if a < b { Sense::Same } else { Sense::Reversed }));

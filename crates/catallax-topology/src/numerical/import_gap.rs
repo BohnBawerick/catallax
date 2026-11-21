@@ -465,16 +465,11 @@ pub(super) fn settled_body<B>(
     first.or_else(refit)
 }
 
-/// The quarter cylinder of the tests under `tests/`.
-#[cfg(test)]
-#[path = "../../tests/common/analytic.rs"]
-mod fixture;
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::numerical::gap::Limits;
-    use fixture::{bowed_copy, q, quarter, stretched_copy};
+    use crate::numerical::test_fixture::{bowed_copy, q, quarter, stretched_copy};
 
     fn accounts(source: &NumericalDefinition, each_use: u64) -> Vec<UseAccount> {
         UseAccount::for_uses(source, Limits { work: each_use })
@@ -945,5 +940,54 @@ mod tests {
         // A refusal that only shares words with the cap's name is a verdict
         // on the copy, as before.
         assert!(!resource_limit(&refused("numerical.gap-unsupported")));
+    }
+
+    /// The cap of section 4.2 step 8 covers one edge use: an edge's 3D curve
+    /// against its copy on one face. It does not cover the edge across all
+    /// its faces.
+    ///
+    /// The stretched circle of the quarter cylinder is an edge of two faces,
+    /// so it has two uses and two accounts. With every account at exactly
+    /// what the costliest use counts, the body is admitted, and the two uses
+    /// of that edge together count more than one such allowance. One unit
+    /// less refuses by name. A caller that wants the cost of a whole edge
+    /// sums its uses.
+    #[test]
+    fn the_work_cap_covers_each_use_of_an_edge() {
+        let source = quarter();
+        let (stretched, edge) = stretched_copy(&source, "0.001");
+        let (slot, _) = use_of(&source, &stretched);
+        let edge_index = source
+            .edges
+            .iter()
+            .position(|candidate| candidate.key == edge)
+            .expect("the stretched edge");
+        let uses: Vec<usize> = source
+            .faces
+            .iter()
+            .flat_map(|face| face.loops.iter().flatten())
+            .enumerate()
+            .filter(|(_, trim)| trim.edge == edge_index)
+            .map(|(slot, _)| slot)
+            .collect();
+        assert_eq!(uses.len(), 2, "an edge between two faces has two uses");
+        assert!(uses.contains(&slot));
+
+        let (full, counted) = admit(&source, &stretched, gap::EDGE_WORK);
+        full.expect("the full cap");
+        let costliest = counted.iter().map(UseAccount::spent).max().expect("uses");
+        assert_eq!(costliest, counted[slot].spent());
+        let whole_edge: u64 = uses.iter().map(|slot| counted[*slot].spent()).sum();
+        assert!(uses.iter().all(|slot| counted[*slot].spent() > 0));
+        assert!(whole_edge > costliest);
+
+        let (at_one_use, counted) = admit(&source, &stretched, costliest);
+        at_one_use.expect("each use is inside its own allowance");
+        assert_eq!(
+            uses.iter().map(|slot| counted[*slot].spent()).sum::<u64>(),
+            whole_edge
+        );
+        let (under, _) = admit(&source, &stretched, costliest - 1);
+        refuses_by_name(under, "one unit under the costliest use");
     }
 }

@@ -9,9 +9,11 @@ use catallax_numbers::{
 };
 use catallax_shapes::{Curve, Point3, PointDef, SplineSupport, Surface};
 
+use catallax_shapes::{CurveId, PointId, SurfaceId};
+
 use crate::{
     Body, BodyId, BodyKind, Coedge, Edge, EntityCounts, Face, Loop, Lump, Model, Sense, Shell,
-    Vertex,
+    Tolerance, Vertex,
 };
 
 mod analytic;
@@ -37,7 +39,13 @@ pub use tolerance::{ToleranceReport, ToleranceWarning};
 #[cfg(test)]
 mod known_answers;
 #[cfg(test)]
+mod model_tests;
+#[cfg(test)]
 mod segment_tests;
+/// The quarter cylinder of the tests under `tests/`.
+#[cfg(test)]
+#[path = "../tests/common/analytic.rs"]
+mod test_fixture;
 
 /// Shared default work limit for a numerical build or continuation.
 pub const DEFAULT_WORK: u64 = 20_000_000;
@@ -278,6 +286,14 @@ impl NumericalOptions {
 /// freedom or a whole-body approximation bound. They grant no STEP export authority.
 /// Approximate export requires a numerical writer and its own output checks.
 /// Existing exact builds and exporters retain their interfaces and behavior.
+///
+/// The body's topology is a body of the one model type (section 4.5 of the
+/// Checkpoint 2 decisions). Each of its vertices and edges stores the
+/// tolerance admission measured for it, no face stores one, and
+/// [`Model::check`] is its checker ([`Self::topology_faults`]). This type is
+/// a view of that body together with what the model does not hold: the
+/// stable keys, the face copy of each edge use, the copy tags, the evidence
+/// and the history.
 ///
 /// ```compile_fail
 /// use catallax_numbers::Answer;
@@ -694,11 +710,84 @@ impl NumericalBody {
         self.model.counts(self.body)
     }
 
-    /// Diagnostics from the unchanged exact topology checker. Missing exact
-    /// incidence remains missing even when every numerical sample is zero.
-    /// The raw model stays private so this result cannot enter exact consumers.
-    pub fn exact_topology_faults(&self) -> Vec<crate::TopologyFault> {
+    /// What [`Model::check`] says of this body's model: the one checker of
+    /// exact, tolerant and mixed bodies. An admitted body has no fault.
+    ///
+    /// Every vertex and edge of the model stores the tolerance of
+    /// [`Self::tolerances`], and no face stores one. So nothing here is
+    /// exact, even where every measured distance is zero: a tolerance is
+    /// never under rule T1's floor.
+    ///
+    /// The model itself stays private. Operations on exact bodies do not yet
+    /// keep tolerant entities out of the exact intersector (section 4.5 of
+    /// the Checkpoint 2 decisions); until they do, this body does not enter
+    /// them.
+    pub fn topology_faults(&self) -> Vec<crate::TopologyFault> {
         self.model.check(self.body)
+    }
+
+    /// Builds this body's model again with a tolerance on every vertex and
+    /// edge, for a body read from a record whose model had none (a handover
+    /// written before format version 3).
+    ///
+    /// The values are those of the body's tolerance report. A record older
+    /// than the report has none; every vertex and edge of such a body takes
+    /// the largest tolerance its evidence records
+    /// ([`tolerance::largest_recorded`]), or rule T1's fixed 1e-7 mm where
+    /// that is larger. That is an upper value for each entity, and a rebuild
+    /// measures each one again.
+    pub(super) fn restore_model_tolerances(&mut self) -> Result<(), Refusal> {
+        let definition = &self.definition;
+        let indices_hold = definition
+            .edges
+            .iter()
+            .all(|edge| edge.vertices.iter().all(|v| *v < definition.vertices.len()))
+            && definition
+                .faces
+                .iter()
+                .flat_map(|face| face.loops.iter().flatten())
+                .all(|trim| trim.edge < definition.edges.len());
+        if !indices_hold {
+            return Err(catallax_numbers::transfer::invalid(
+                "a numerical definition names a vertex or an edge it does not have",
+            ));
+        }
+        let stored = if self.tolerances.entities.is_empty() {
+            let largest =
+                tolerance::largest_recorded(&self.evidence).max(tolerance::floor_minimum_mm());
+            StoredTolerances::uniform(definition, Tolerance::new(largest)?)
+        } else {
+            StoredTolerances::of(definition, &self.tolerances)?
+        };
+        let (model, body) =
+            ModelGeometry::of(definition).topology(definition, self.kind(), Some(&stored));
+        self.model = model;
+        self.body = body;
+        Ok(())
+    }
+
+    /// The tolerance of the vertex or the edge with this key, read from the
+    /// body's model: the same field every body's entities have. `None` for
+    /// an unknown key and for a face, which stores none.
+    ///
+    /// It is the value [`Self::tolerances`] reports for the entity. The
+    /// model's vertices and edges are in the order of the definition's
+    /// tables, so a key's place in its table is its entity's place in the
+    /// model.
+    pub fn stored_tolerance(&self, kind: tolerance::EntityKind, key: &str) -> Option<&Tolerance> {
+        match kind {
+            tolerance::EntityKind::Vertex => {
+                let index = self.definition.vertices.iter().position(|v| v.key == key)?;
+                let vertex = *self.model.vertex_handles().get(index)?;
+                self.model.vertex(vertex).tolerance.as_ref()
+            }
+            tolerance::EntityKind::Edge => {
+                let index = self.definition.edges.iter().position(|e| e.key == key)?;
+                let edge = *self.model.edge_handles().get(index)?;
+                self.model.edge(edge).tolerance.as_ref()
+            }
+            tolerance::EntityKind::Face => None,
+        }
     }
 
     /// Replaces one support and rechecks its retained trims and the complete body.
@@ -1373,21 +1462,25 @@ fn build_inner_kind_on(
         }
     }
     let native = native::Index::new(&definition, &native_trims, &sampled_carriers, dec)?;
-    let mut model = Model::new();
-    let vertices: Vec<_> = definition
+    // The geometry of the body's model. Its topology is built twice from it,
+    // by `topology`: without tolerances for the structure check that comes
+    // before any measurement, and with the measured ones for the result.
+    let mut geometry = Model::new();
+    let points: Vec<PointId> = definition
         .vertices
         .iter()
         .map(|v| {
             let [x, y, z] = v.position.clone();
-            let point = model.geom_mut().add_point(PointDef::Explicit(Point3::new(
-                x.into(),
-                y.into(),
-                z.into(),
-            )));
-            model.add_vertex(Vertex { point })
+            geometry
+                .geom_mut()
+                .add_point(PointDef::Explicit(Point3::new(
+                    x.into(),
+                    y.into(),
+                    z.into(),
+                )))
         })
         .collect();
-    let mut edges = Vec::new();
+    let mut curves: Vec<CurveId> = Vec::new();
     for edge in &definition.edges {
         dec.charge_work(1)?;
         match &edge.curve {
@@ -1416,7 +1509,7 @@ fn build_inner_kind_on(
                 ));
             }
         }
-        if edge.vertices.iter().any(|i| *i >= vertices.len())
+        if edge.vertices.iter().any(|i| *i >= points.len())
             || edge.parameters[0] == edge.parameters[1]
         {
             return Err(bad(
@@ -1424,19 +1517,9 @@ fn build_inner_kind_on(
                 "edge has an invalid vertex index or empty parameter interval",
             ));
         }
-        let curve = model.geom_mut().add_curve(edge.curve.clone());
-        edges.push(model.add_edge(Edge {
-            curve,
-            sense: if edge.parameters[0] < edge.parameters[1] {
-                Sense::Same
-            } else {
-                Sense::Reversed
-            },
-            start: Some(vertices[edge.vertices[0]]),
-            end: Some(vertices[edge.vertices[1]]),
-        }));
+        curves.push(geometry.geom_mut().add_curve(edge.curve.clone()));
     }
-    let mut faces = Vec::new();
+    let mut surfaces: Vec<SurfaceId> = Vec::new();
     for (face_index, face) in definition.faces.iter().enumerate() {
         dec.charge_work(1)?;
         if !analytic::supports(&face.surface) {
@@ -1491,47 +1574,37 @@ fn build_inner_kind_on(
             )?;
             check_distinct_boundary_vertices(face, &definition.edges, dec)?;
         }
-        let mut loops = Vec::new();
-        for boundary in &face.loops {
-            let mut uses = Vec::new();
-            for trim in boundary {
-                dec.charge_work(1)?;
-                let edge = *edges
-                    .get(trim.edge)
-                    .ok_or_else(|| bad("definition", "trim names an invalid edge index"))?;
-                uses.push(model.add_coedge(Coedge {
-                    edge,
-                    sense: trim.sense,
-                }));
+        for trim in face.loops.iter().flatten() {
+            dec.charge_work(1)?;
+            if trim.edge >= curves.len() {
+                return Err(bad("definition", "trim names an invalid edge index"));
             }
-            loops.push(model.add_loop(Loop::Coedges(uses)));
         }
-        let surface = model.geom_mut().add_surface(face.surface.clone());
-        faces.push(model.add_face(Face {
-            surface,
-            sense: face.sense,
-            loops,
-        }));
+        surfaces.push(geometry.geom_mut().add_surface(face.surface.clone()));
     }
-    let shell = model.add_shell(Shell { faces });
-    let lump = model.add_lump(Lump {
-        shells: vec![shell],
-    });
-    let body = model.add_body(Body {
-        kind,
-        lumps: vec![lump],
-        wires: Vec::new(),
-        marks: MarkLog::new(),
-    });
-    if let Some(fault) = crate::check::structure(&model, body).into_iter().next() {
-        return Err(Refusal::new(fault.code, fault.detail));
-    }
-    let counts = model.counts(body);
-    if counts.vertices != definition.vertices.len() || counts.edges != definition.edges.len() {
-        return Err(bad(
-            "definition",
-            "unused vertices or edges are not part of this result",
-        ));
+    let geometry = ModelGeometry {
+        model: geometry,
+        points,
+        curves,
+        surfaces,
+    };
+    {
+        // The structure does not depend on any tolerance, so a broken shell
+        // refuses here, before a distance is measured.
+        let (unmeasured, body) = geometry.topology(&definition, kind, None);
+        if let Some(fault) = crate::check::structure(&unmeasured, body)
+            .into_iter()
+            .next()
+        {
+            return Err(Refusal::new(fault.code, fault.detail));
+        }
+        let counts = unmeasured.counts(body);
+        if counts.vertices != definition.vertices.len() || counts.edges != definition.edges.len() {
+            return Err(bad(
+                "definition",
+                "unused vertices or edges are not part of this result",
+            ));
+        }
     }
     let mut checks = vec![NumericalCheck::Passed {
         name: "topology.structure".into(),
@@ -1763,6 +1836,17 @@ fn build_inner_kind_on(
     };
     let evidence = NumericalEvidence::new(evidence_tolerance, checks, repairs)?;
     let tolerances = tolerance_report(&definition, &native, &evidence, &options, recorded, dec)?;
+    // The body's model: every vertex and edge with the tolerance admission
+    // just stored for it, and every face with none, since a face's surface is
+    // the authoritative copy and the gap lives on its edges. The model then
+    // goes through the checker every body goes through. That check reads the
+    // entities and compares their stored tolerances; it evaluates nothing and
+    // makes no decision, so like every `Model::check` it is not charged.
+    let stored = StoredTolerances::of(&definition, &tolerances)?;
+    let (model, body) = geometry.topology(&definition, kind, Some(&stored));
+    if let Some(fault) = model.check(body).into_iter().next() {
+        return Err(Refusal::new(fault.code, fault.detail));
+    }
     dec.check_deadline()?;
     Ok(NumericalBody {
         source: definition.clone(),
@@ -1779,6 +1863,188 @@ fn build_inner_kind_on(
         tolerances,
         import_gaps: Vec::new(),
     })
+}
+
+/// The geometry of a numerical body's model: one point per vertex, one
+/// curve per edge and one surface per face of its definition, in definition
+/// order.
+struct ModelGeometry {
+    model: Model,
+    points: Vec<PointId>,
+    curves: Vec<CurveId>,
+    surfaces: Vec<SurfaceId>,
+}
+
+/// The tolerance of every vertex and every edge of a definition, in
+/// definition order.
+struct StoredTolerances {
+    vertices: Vec<Tolerance>,
+    edges: Vec<Tolerance>,
+}
+
+impl StoredTolerances {
+    /// The tolerances a report holds for `definition`: one per vertex, then
+    /// one per edge, as admission writes them.
+    fn of(definition: &NumericalDefinition, report: &ToleranceReport) -> Result<Self, Refusal> {
+        let mismatch = || {
+            Refusal::new(
+                "numerical.invalid-definition",
+                "the tolerance report does not match the definition's vertices and edges",
+            )
+        };
+        let (vertices, edges) = report
+            .entities
+            .split_at_checked(definition.vertices.len())
+            .filter(|(_, edges)| edges.len() == definition.edges.len())
+            .ok_or_else(mismatch)?;
+        let read = |entities: &[tolerance::EntityTolerance], kind: tolerance::EntityKind| {
+            entities
+                .iter()
+                .map(|entity| {
+                    if entity.kind == kind {
+                        Tolerance::new(entity.tolerance_mm.clone())
+                    } else {
+                        Err(mismatch())
+                    }
+                })
+                .collect::<Result<Vec<_>, _>>()
+        };
+        Ok(Self {
+            vertices: read(vertices, tolerance::EntityKind::Vertex)?,
+            edges: read(edges, tolerance::EntityKind::Edge)?,
+        })
+    }
+
+    /// One tolerance for every vertex and edge of `definition`.
+    fn uniform(definition: &NumericalDefinition, tolerance: Tolerance) -> Self {
+        Self {
+            vertices: vec![tolerance.clone(); definition.vertices.len()],
+            edges: vec![tolerance; definition.edges.len()],
+        }
+    }
+}
+
+impl ModelGeometry {
+    /// The geometry of a definition that admission has accepted before, with
+    /// nothing validated again.
+    fn of(definition: &NumericalDefinition) -> Self {
+        let mut model = Model::new();
+        let points = definition
+            .vertices
+            .iter()
+            .map(|v| {
+                let [x, y, z] = v.position.clone();
+                model.geom_mut().add_point(PointDef::Explicit(Point3::new(
+                    x.into(),
+                    y.into(),
+                    z.into(),
+                )))
+            })
+            .collect();
+        let curves = definition
+            .edges
+            .iter()
+            .map(|edge| model.geom_mut().add_curve(edge.curve.clone()))
+            .collect();
+        let surfaces = definition
+            .faces
+            .iter()
+            .map(|face| model.geom_mut().add_surface(face.surface.clone()))
+            .collect();
+        Self {
+            model,
+            points,
+            curves,
+            surfaces,
+        }
+    }
+
+    /// One body of `kind` over a copy of this geometry: a vertex, an edge and
+    /// a face per entry of the definition's tables, one coedge per edge use,
+    /// one shell and one lump.
+    ///
+    /// With `tolerances`, each vertex and each edge stores its own. Without,
+    /// every entity stores none; that body is for the structure check only
+    /// and never leaves admission. A face stores none either way.
+    ///
+    /// The caller has validated every index of the definition.
+    fn topology(
+        &self,
+        definition: &NumericalDefinition,
+        kind: BodyKind,
+        tolerances: Option<&StoredTolerances>,
+    ) -> (Model, BodyId) {
+        let mut model = self.model.clone();
+        let vertices: Vec<_> = self
+            .points
+            .iter()
+            .enumerate()
+            .map(|(index, point)| {
+                model.add_vertex(Vertex {
+                    point: *point,
+                    tolerance: tolerances.map(|stored| stored.vertices[index].clone()),
+                })
+            })
+            .collect();
+        let edges: Vec<_> = definition
+            .edges
+            .iter()
+            .enumerate()
+            .map(|(index, edge)| {
+                model.add_edge(Edge {
+                    curve: self.curves[index],
+                    sense: if edge.parameters[0] < edge.parameters[1] {
+                        Sense::Same
+                    } else {
+                        Sense::Reversed
+                    },
+                    start: Some(vertices[edge.vertices[0]]),
+                    end: Some(vertices[edge.vertices[1]]),
+                    tolerance: tolerances.map(|stored| stored.edges[index].clone()),
+                })
+            })
+            .collect();
+        let faces = definition
+            .faces
+            .iter()
+            .enumerate()
+            .map(|(index, face)| {
+                let loops = face
+                    .loops
+                    .iter()
+                    .map(|boundary| {
+                        let uses = boundary
+                            .iter()
+                            .map(|trim| {
+                                model.add_coedge(Coedge {
+                                    edge: edges[trim.edge],
+                                    sense: trim.sense,
+                                })
+                            })
+                            .collect();
+                        model.add_loop(Loop::Coedges(uses))
+                    })
+                    .collect();
+                model.add_face(Face {
+                    surface: self.surfaces[index],
+                    sense: face.sense,
+                    loops,
+                    tolerance: None,
+                })
+            })
+            .collect();
+        let shell = model.add_shell(Shell { faces });
+        let lump = model.add_lump(Lump {
+            shells: vec![shell],
+        });
+        let body = model.add_body(Body {
+            kind,
+            lumps: vec![lump],
+            wires: Vec::new(),
+            marks: MarkLog::new(),
+        });
+        (model, body)
+    }
 }
 
 /// The tolerance rules on an admitted definition: every entity's tolerance

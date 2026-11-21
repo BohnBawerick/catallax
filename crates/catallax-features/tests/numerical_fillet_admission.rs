@@ -392,13 +392,7 @@ fn a_stricter_fillet_request_refuses_a_loose_source_border() {
             .unwrap();
         let tight =
             fillet::build(loose, &key, "round", q("1/10"), q("1/10000000"), &mut dec).unwrap();
-        assert!(
-            tight
-                .body()
-                .exact_topology_faults()
-                .iter()
-                .all(|fault| fault.code == "topology.missing-incidence")
-        );
+        assert_eq!(tight.body().topology_faults(), Vec::new());
         assert_eq!(tight.body().options().tolerance_mm, q("1/10000000"));
         let (source, key) = source(false, true, &mut dec);
         let refused =
@@ -450,13 +444,7 @@ fn rounding_an_outer_edge_preserves_both_untouched_periodic_seam_uses() {
         let rounded =
             fillet::build(source, &key, "round", q("1/10"), q("1/10000000"), &mut dec).unwrap();
         assert_eq!(sample(rounded.body(), &mut dec), before);
-        assert!(
-            rounded
-                .body()
-                .exact_topology_faults()
-                .iter()
-                .all(|fault| fault.code == "topology.missing-incidence")
-        );
+        assert_eq!(rounded.body().topology_faults(), Vec::new());
     });
     assert!(!work.exhausted, "{work:?}");
     println!("retained periodic seam control: {work:?}");

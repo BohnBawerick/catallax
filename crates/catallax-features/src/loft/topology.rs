@@ -42,7 +42,10 @@ fn vertex(
         let point = model
             .geom_mut()
             .add_point(PointDef::Explicit(point.clone()));
-        model.add_vertex(Vertex { point })
+        model.add_vertex(Vertex {
+            point,
+            tolerance: None,
+        })
     })
 }
 
@@ -203,6 +206,7 @@ pub(crate) fn assemble(
                             sense: Sense::Same,
                             start: Some(corners[ends[0]]),
                             end: Some(corners[ends[1]]),
+                            tolerance: None,
                         })
                     });
                     let used = if sense == Sense::Same {

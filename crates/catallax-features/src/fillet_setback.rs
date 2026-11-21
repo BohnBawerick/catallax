@@ -36,6 +36,7 @@ fn line_edge(
         sense: Sense::Same,
         start: Some(from),
         end: Some(to),
+        tolerance: None,
     })
 }
 
@@ -280,6 +281,7 @@ pub(super) fn region(
             sense: Sense::Same,
             start: Some(vertices[offset + 1]),
             end: Some(vertices[offset + 2]),
+            tolerance: None,
         });
         sections.push([
             line_edge(model, vertices[offset], vertices[offset + 1]),

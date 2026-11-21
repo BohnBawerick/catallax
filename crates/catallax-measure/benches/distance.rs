@@ -114,6 +114,7 @@ fn spherical_queries() {
                     sense: Sense::Same,
                     start: None,
                     end: None,
+                    tolerance: None,
                 });
                 let c = model.add_coedge(Coedge { edge, sense });
                 model.add_loop(Loop::Coedges(vec![c]))
@@ -123,6 +124,7 @@ fn spherical_queries() {
             surface,
             sense: Sense::Same,
             loops,
+            tolerance: None,
         });
         let options = Options {
             width: Rational::from_ratio(1, 1000).unwrap(),

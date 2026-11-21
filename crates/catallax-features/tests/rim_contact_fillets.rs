@@ -1850,8 +1850,14 @@ fn a_truncated_envelope_face_keeps_its_trimmed_domain() {
     let mouth_end = model
         .geom_mut()
         .add_point(PointDef::Explicit(mouth_end.clone()));
-    let rail_end = model.add_vertex(Vertex { point: rail_end });
-    let mouth_end = model.add_vertex(Vertex { point: mouth_end });
+    let rail_end = model.add_vertex(Vertex {
+        point: rail_end,
+        tolerance: None,
+    });
+    let mouth_end = model.add_vertex(Vertex {
+        point: mouth_end,
+        tolerance: None,
+    });
     let [foot, plane] = envelope.definition().corners(Sign::Negative);
     let at_corner = |model: &Model, vertex: VertexId, corner: &Point3| {
         let gap = model
@@ -1883,6 +1889,7 @@ fn a_truncated_envelope_face_keeps_its_trimmed_domain() {
                 sense: edge.sense,
                 start: Some(start),
                 end: Some(end),
+                tolerance: None,
             }),
             if forward {
                 Sense::Same
@@ -1902,6 +1909,7 @@ fn a_truncated_envelope_face_keeps_its_trimmed_domain() {
         sense: Sense::Same,
         start: Some(rail_end),
         end: Some(mouth_end),
+        tolerance: None,
     });
     // Foot to mouth along the meridian, on to the section, down it and back.
     let flip = |sense| match sense {
@@ -1930,6 +1938,7 @@ fn a_truncated_envelope_face_keeps_its_trimmed_domain() {
         surface,
         sense: model.face(face).sense,
         loops: vec![boundary],
+        tolerance: None,
     });
     assert!(!envelope_retains_chart(model, half, &mut dec).unwrap());
     let n = rational_point(row.point([ratio(853, 65), ratio(5, 1), ratio(64, 65)]));

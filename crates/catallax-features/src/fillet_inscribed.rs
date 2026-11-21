@@ -268,6 +268,7 @@ pub(super) fn build(
                 sense: Sense::Same,
                 start: None,
                 end: None,
+                tolerance: None,
             })
         });
         let mut by = Vec::with_capacity(2);

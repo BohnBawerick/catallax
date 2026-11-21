@@ -239,12 +239,12 @@ fn two_loop_material_and_near_gap_sewing_stay_numerical() {
         let toward_hole = Point3::new(2.into(), 2.into(), q("1/2").into()).minus(&plane.origin);
         assert!(toward_hole.dot(&plane.normal).as_rational().unwrap() > q("0"));
     }
-    assert!(
-        body.exact_topology_faults()
-            .iter()
-            .all(|f| f.code == "topology.missing-incidence")
-    );
-    assert!(!body.exact_topology_faults().is_empty());
+    // The one checker passes the body, and nothing in it is exact.
+    assert_eq!(body.topology_faults(), Vec::new());
+    assert!(!body.tolerances().entities.is_empty());
+    for entity in &body.tolerances().entities {
+        assert!(body.stored_tolerance(entity.kind, &entity.key).is_some());
+    }
     for gap in ["0", "0.005"] {
         let mut input = original.clone();
         let pair = split(&mut input, gap);

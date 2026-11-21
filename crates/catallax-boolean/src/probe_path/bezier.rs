@@ -187,13 +187,17 @@ mod tests {
     fn edge(model: &mut Model, curve: CurveId, a: Point3, b: Point3) -> EdgeId {
         let vertices = [a, b].map(|point| {
             let point = model.geom_mut().add_point(PointDef::Explicit(point));
-            model.add_vertex(Vertex { point })
+            model.add_vertex(Vertex {
+                point,
+                tolerance: None,
+            })
         });
         model.add_edge(Edge {
             curve,
             sense: Sense::Same,
             start: Some(vertices[0]),
             end: Some(vertices[1]),
+            tolerance: None,
         })
     }
     fn line(model: &mut Model, a: Point3, b: Point3) -> EdgeId {

@@ -85,8 +85,14 @@ fn a_source_repair_has_numerical_checks_and_separate_source_history() {
             }
         }
     }
-    // Zero residual still came out of the numerical variant and numerical type.
-    assert!(!body.exact_topology_faults().is_empty());
+    // Zero residual still came out of the numerical variant and numerical
+    // type: every vertex and edge of the body's model stores a tolerance, so
+    // nothing in it is exact.
+    assert_eq!(body.topology_faults(), Vec::new());
+    assert!(!body.tolerances().entities.is_empty());
+    for entity in &body.tolerances().entities {
+        assert!(body.stored_tolerance(entity.kind, &entity.key).is_some());
+    }
 }
 
 #[test]

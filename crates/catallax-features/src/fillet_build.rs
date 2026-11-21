@@ -82,7 +82,10 @@ fn bad(detail: &str) -> Refusal {
 }
 fn vertex(model: &mut Model, p: Point3) -> VertexId {
     let point = model.geom_mut().add_point(PointDef::Explicit(p));
-    model.add_vertex(Vertex { point })
+    model.add_vertex(Vertex {
+        point,
+        tolerance: None,
+    })
 }
 fn same(a: &Point3, b: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
     Ok(sign(&a.minus(b).norm_squared(), dec)? == Sign::Zero)
@@ -870,6 +873,7 @@ fn meridian_edge(
         sense,
         start: Some(from),
         end: Some(to),
+        tolerance: None,
     }))
 }
 /// Whether two analytic faces are tangent with agreeing normals at a point.
@@ -1133,6 +1137,7 @@ fn connector(
                         sense,
                         start: Some(from),
                         end: Some(to),
+                        tolerance: None,
                     }));
                 }
                 found.push((curve, sense, sample));
@@ -1157,6 +1162,7 @@ fn connector(
             sense: *sense,
             start: Some(from),
             end: Some(to),
+            tolerance: None,
         })),
         _ => Err(bad("two end-curve arcs lie on one cut face")),
     }
@@ -1898,7 +1904,13 @@ fn cliff(
                 "a contact rail passes the round's rail outside its edge and needs neighbour continuation",
             ));
         }
-        Ok((model.add_vertex(Vertex { point: id }), p))
+        Ok((
+            model.add_vertex(Vertex {
+                point: id,
+                tolerance: None,
+            }),
+            p,
+        ))
     };
     let first = foot(model, start)?;
     let known = match sides[other].1 {
@@ -3196,6 +3208,7 @@ fn build_strips(
                 sense: Sense::Same,
                 start: Some(foot_of(0)),
                 end: Some(foot_of(1)),
+                tolerance: None,
             });
             runs[i].caps.insert(old, vec![cap]);
             let mitre_edge = model.edge(r.edge).clone();
@@ -3215,6 +3228,7 @@ fn build_strips(
                     sense,
                     start: Some(start),
                     end: Some(end),
+                    tolerance: None,
                 });
                 edit.edges.insert((face, r.edge), arc);
                 arcs.push((face, arc));
@@ -3273,6 +3287,7 @@ fn build_strips(
                 sense: Sense::Same,
                 start: Some(feet[a]),
                 end: Some(feet[b]),
+                tolerance: None,
             });
             runs[i].caps.insert(old, vec![cap]);
             // Each earlier strip's boundary arc replaces the mitre in its
@@ -3297,6 +3312,7 @@ fn build_strips(
                     },
                     start: Some(start),
                     end: Some(end),
+                    tolerance: None,
                 });
                 edit.edges.insert((face, m.edge), arc);
                 arcs.push((face, arc));
@@ -3451,6 +3467,7 @@ fn build_strips(
                             sense,
                             start: Some(a),
                             end: Some(b),
+                            tolerance: None,
                         })
                     }
                     None => {
@@ -3658,6 +3675,7 @@ fn build_strips(
                         sense: Sense::Same,
                         start: Some(feet[a]),
                         end: Some(feet[b]),
+                        tolerance: None,
                     });
                     runs[*index].caps.insert(old, vec![cap]);
                 }
@@ -3850,6 +3868,7 @@ fn build_strips(
                 sense,
                 start: input.start.map(|v| run.ends[&(v, *face)]),
                 end: input.end.map(|v| run.ends[&(v, *face)]),
+                tolerance: None,
             });
             edit.edges.insert((*face, run.edge), edge);
             rails.push((Some(edge), reverse(run.senses[i]), *face));
@@ -4081,6 +4100,7 @@ mod tests {
             sense,
             start: Some(start),
             end: Some(end),
+            tolerance: None,
         })
     }
 

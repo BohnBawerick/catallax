@@ -252,17 +252,24 @@ impl SplitPlan {
                     Endpoint::Cut(edge, point) => {
                         *result.vertices.entry((edge, point)).or_insert_with(|| {
                             result.added_vertices += 1;
-                            model.add_vertex(Vertex { point })
+                            model.add_vertex(Vertex {
+                                point,
+                                tolerance: None,
+                            })
                         })
                     }
                 };
                 let start = vertex(segment.from);
                 let end = vertex(segment.to);
+                // A piece of the source edge on the same curve keeps its
+                // tolerance.
+                let tolerance = model.edge(split.source).tolerance.clone();
                 let edge = model.add_edge(Edge {
                     curve: split.curve,
                     start: Some(start),
                     end: Some(end),
                     sense: Sense::Same,
+                    tolerance,
                 });
                 replacement.push(Coedge {
                     edge,

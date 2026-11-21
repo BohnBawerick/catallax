@@ -1,4 +1,5 @@
 //! Copies topology and remaps all defining geometry through an exact isometry.
+//! Every copied vertex, edge and face keeps its tolerance.
 
 use crate::*;
 use catallax_numbers::{Fact, FactKind, FactOrigin};
@@ -100,8 +101,13 @@ impl<F: FnMut(&Origin) -> Origin> Copy<'_, F> {
         if let Some(mapped) = self.vertices.get(&id) {
             return *mapped;
         }
-        let point = self.point(self.model.vertex(id).point);
-        let mapped = self.model.add_vertex(Vertex { point });
+        let source = self.model.vertex(id).clone();
+        let point = self.point(source.point);
+        // An isometry keeps every distance, so a tolerance moves unchanged.
+        let mapped = self.model.add_vertex(Vertex {
+            point,
+            tolerance: source.tolerance,
+        });
         self.vertices.insert(id, mapped);
         mapped
     }
@@ -126,6 +132,7 @@ impl<F: FnMut(&Origin) -> Origin> Copy<'_, F> {
             sense: edge.sense,
             start,
             end,
+            tolerance: edge.tolerance,
         });
         let constructions = self
             .model
@@ -226,6 +233,7 @@ impl<F: FnMut(&Origin) -> Origin> Copy<'_, F> {
                 surface,
                 sense,
                 loops,
+                tolerance: face.tolerance,
             },
             origins,
         );

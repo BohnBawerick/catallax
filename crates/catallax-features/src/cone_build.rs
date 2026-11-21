@@ -157,13 +157,20 @@ pub(crate) fn sections(
             sense: Sense::Same,
             start: None,
             end: None,
+            tolerance: None,
         });
         paths[boundary.faces[0]].push(vec![(edge, Sense::Reversed)]);
         paths[boundary.faces[1]].push(vec![(edge, Sense::Same)]);
     }
     let apex = tip.map(|(p, face)| {
         let point = model.geom_mut().add_point(PointDef::Explicit(p.clone()));
-        (model.add_vertex(Vertex { point }), *face)
+        (
+            model.add_vertex(Vertex {
+                point,
+                tolerance: None,
+            }),
+            *face,
+        )
     });
     let faces = faces
         .iter()
@@ -209,7 +216,10 @@ pub(crate) fn sweep(
                 let point = model
                     .geom_mut()
                     .add_point(PointDef::Explicit(sweep.circle(i).center));
-                Some(model.add_vertex(Vertex { point }))
+                Some(model.add_vertex(Vertex {
+                    point,
+                    tolerance: None,
+                }))
             } else {
                 None
             };
@@ -223,6 +233,7 @@ pub(crate) fn sweep(
                 sense: Sense::Same,
                 start: None,
                 end: None,
+                tolerance: None,
             })));
         }
     }

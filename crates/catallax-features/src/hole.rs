@@ -452,6 +452,7 @@ impl HoleTool {
                 sense: Sense::Same,
                 start: None,
                 end: None,
+                tolerance: None,
             })
         };
         let first = &self.bands[0];
@@ -479,7 +480,10 @@ impl HoleTool {
                 let point = model
                     .geom_mut()
                     .add_point(PointDef::Explicit(self.at_depth(&band.depth[1])));
-                Some(model.add_vertex(Vertex { point }))
+                Some(model.add_vertex(Vertex {
+                    point,
+                    tolerance: None,
+                }))
             };
             faces.push(crate::extrude::face(
                 model,

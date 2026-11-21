@@ -277,6 +277,7 @@ fn a_hole_wall_split_into_two_faces_that_meet_is_one_hole() {
         sense: Sense::Same,
         start: None,
         end: None,
+        tolerance: None,
     });
     let mut half = |rim: usize, sense: Sense| {
         let coedge = model.add_coedge(Coedge { edge, sense });
@@ -285,6 +286,7 @@ fn a_hole_wall_split_into_two_faces_that_meet_is_one_hole() {
             surface: old.surface,
             sense: old.sense,
             loops: vec![old.loops[rim], cut],
+            tolerance: None,
         })
     };
     let halves = [half(0, Sense::Same), half(1, Sense::Reversed)];

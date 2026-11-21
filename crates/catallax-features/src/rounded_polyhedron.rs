@@ -46,7 +46,13 @@ pub(crate) fn build(
             let point = model
                 .geom_mut()
                 .add_point(PointDef::Explicit(cell.vertices()[*v].plus(&direction)));
-            displaced.insert((*v, i), model.add_vertex(Vertex { point }));
+            displaced.insert(
+                (*v, i),
+                model.add_vertex(Vertex {
+                    point,
+                    tolerance: None,
+                }),
+            );
             vertex_faces.entry(*v).or_default().push(i);
         }
         let mut path = Vec::with_capacity(polygon.len());
@@ -63,6 +69,7 @@ pub(crate) fn build(
                 sense: Sense::Same,
                 start: Some(displaced[&(lo, i)]),
                 end: Some(displaced[&(hi, i)]),
+                tolerance: None,
             });
             lines.insert((lo, hi, i), edge);
             let sense = if a < b { Sense::Same } else { Sense::Reversed };
@@ -109,6 +116,7 @@ pub(crate) fn build(
                 sense: arc_sense,
                 start: Some(displaced[&(vertex, *f)]),
                 end: Some(displaced[&(vertex, *g)]),
+                tolerance: None,
             })
         });
         let (at_a, at_b, path) = if *sf == Sense::Same {
@@ -263,7 +271,10 @@ pub(crate) fn plate(
             let point = model.geom_mut().add_point(PointDef::Explicit(
                 cell.vertices()[*v].plus(&direction.scaled(&sign)),
             ));
-            model.add_vertex(Vertex { point })
+            model.add_vertex(Vertex {
+                point,
+                tolerance: None,
+            })
         });
         vertices.push(pair);
     }
@@ -281,6 +292,7 @@ pub(crate) fn plate(
                 sense: Sense::Same,
                 start: Some(vertices[i][side]),
                 end: Some(vertices[j][side]),
+                tolerance: None,
             })
         });
         lines.push(pair);
@@ -337,6 +349,7 @@ pub(crate) fn plate(
                 sense: Sense::Same,
                 start: Some(vertices[local][1]),
                 end: Some(vertices[local][0]),
+                tolerance: None,
             })
         });
         vertex_arcs[i][0] = Some((caps[0], Sense::Reversed));

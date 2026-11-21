@@ -90,10 +90,12 @@ impl Builder {
         canonical_point(model, &mut self.points, p, dec, "boolean.imprint-ambiguous")
     }
     fn vertex(&mut self, model: &mut Model, p: PointId) -> VertexId {
-        *self
-            .vertices
-            .entry(p)
-            .or_insert_with(|| model.add_vertex(Vertex { point: p }))
+        *self.vertices.entry(p).or_insert_with(|| {
+            model.add_vertex(Vertex {
+                point: p,
+                tolerance: None,
+            })
+        })
     }
     fn edge(
         &mut self,
@@ -134,6 +136,7 @@ impl Builder {
             sense: Sense::Same,
             start,
             end,
+            tolerance: None,
         });
         self.edges.push(edge);
         Ok((edge, Sense::Same))
@@ -379,6 +382,7 @@ fn cell(
         surface: f.surface,
         sense: f.sense,
         loops: vec![temporary_loop],
+        tolerance: f.tolerance.clone(),
     });
     left_probe(model, temporary, barriers, dec, |model, point, _, dec| {
         let inside = locate(model, face, point, dec)? == Location::Inside;
@@ -507,6 +511,7 @@ fn pieces(
                 surface: f.surface,
                 sense: f.sense,
                 loops: loops.clone(),
+                tolerance: f.tolerance.clone(),
             });
             for &l in &vertex_loops {
                 let Loop::Vertex(vertex) = model.loop_(l) else {
@@ -524,6 +529,7 @@ fn pieces(
                 surface: f.surface,
                 sense: f.sense,
                 loops,
+                tolerance: f.tolerance.clone(),
             },
             origins.clone(),
         ));
@@ -869,6 +875,7 @@ mod tests {
             surface,
             sense: Sense::Same,
             loops: Vec::new(),
+            tolerance: None,
         });
         let shell = model.add_shell(Shell { faces: vec![face] });
         let lump = model.add_lump(Lump {

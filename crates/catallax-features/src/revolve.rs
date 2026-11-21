@@ -366,7 +366,10 @@ pub fn revolve(
                     let point = model
                         .geom_mut()
                         .add_point(PointDef::Explicit(profile.pose.apply_point(&p.to_real())));
-                    Some(model.add_vertex(Vertex { point }))
+                    Some(model.add_vertex(Vertex {
+                        point,
+                        tolerance: None,
+                    }))
                 };
                 let second = if s.full || on_axis || full {
                     first
@@ -374,7 +377,10 @@ pub fn revolve(
                     let point = model.geom_mut().add_point(PointDef::Explicit(
                         profile.pose.apply_point(&frame.rotate(&p, &cosine, &sine)),
                     ));
-                    Some(model.add_vertex(Vertex { point }))
+                    Some(model.add_vertex(Vertex {
+                        point,
+                        tolerance: None,
+                    }))
                 };
                 vertices.push([first, second]);
                 orbit.push(if on_axis || s.full {
@@ -393,6 +399,7 @@ pub fn revolve(
                         sense: Sense::Same,
                         start: first,
                         end: second,
+                        tolerance: None,
                     }))
                 });
             }
@@ -461,6 +468,7 @@ pub fn revolve(
                             sense: edge_sense,
                             start: start_vertex,
                             end: vertices[next][layer],
+                            tolerance: None,
                         }));
                     }
                     start_path.push((profile_edges[0], reverse(forward)));
@@ -553,7 +561,10 @@ pub fn revolve(
                         let point = model
                             .geom_mut()
                             .add_point(PointDef::Explicit(profile.pose.apply_point(&cone.apex)));
-                        Some(model.add_vertex(Vertex { point }))
+                        Some(model.add_vertex(Vertex {
+                            point,
+                            tolerance: None,
+                        }))
                     } else {
                         None
                     }

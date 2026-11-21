@@ -314,12 +314,18 @@ impl PlanarThicken {
                     let point = model
                         .geom_mut()
                         .add_point(PointDef::Explicit(self.cell.vertices()[*v].clone()));
-                    model.add_vertex(Vertex { point })
+                    model.add_vertex(Vertex {
+                        point,
+                        tolerance: None,
+                    })
                 });
                 let point = model
                     .geom_mut()
                     .add_point(PointDef::Explicit(self.cell.vertices()[*v].plus(&shift)));
-                let far = model.add_vertex(Vertex { point });
+                let far = model.add_vertex(Vertex {
+                    point,
+                    tolerance: None,
+                });
                 displaced.insert((*v, i), far);
             }
             let mut base_path = Vec::new();
@@ -442,6 +448,7 @@ impl PlanarThicken {
                             sense: arc_sense,
                             start: Some(displaced[&(v, *f)]),
                             end: Some(displaced[&(v, *g)]),
+                            tolerance: None,
                         })
                     });
                     let (at_a, at_b, path) = if *sf == Sense::Same {
@@ -598,5 +605,6 @@ fn line(model: &mut Model, start: VertexId, end: VertexId) -> EdgeId {
         sense: Sense::Same,
         start: Some(start),
         end: Some(end),
+        tolerance: None,
     })
 }

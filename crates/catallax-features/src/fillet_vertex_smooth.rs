@@ -253,6 +253,7 @@ pub(super) fn build(
             sense,
             start: Some(from),
             end: Some(to),
+            tolerance: None,
         }));
     }
     let [a_rail, c_rail] = rails.map(Option::unwrap);

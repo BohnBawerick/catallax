@@ -14,7 +14,10 @@ fn incident(m: &mut Model, a: GeomKey, b: GeomKey) {
 fn point_vertex(m: &mut Model, p: impl Into<catallax_shapes::Point3>, curve: CurveId) -> VertexId {
     let point = m.geom_mut().add_point(PointDef::Explicit(p.into()));
     incident(m, GeomKey::Point(point), GeomKey::Curve(curve));
-    m.add_vertex(Vertex { point })
+    m.add_vertex(Vertex {
+        point,
+        tolerance: None,
+    })
 }
 fn loop_from(m: &mut Model, edges: &[(EdgeId, Sense)]) -> LoopId {
     let cs = edges
@@ -61,6 +64,7 @@ fn split_sphere(m: &mut Model, slit: bool) -> BodyId {
         sense: Sense::Same,
         start: Some(start),
         end: Some(end),
+        tolerance: None,
     });
     let faces = if slit {
         let loop_ = loop_from(m, &[(edge, Sense::Same), (edge, Sense::Reversed)]);
@@ -68,6 +72,7 @@ fn split_sphere(m: &mut Model, slit: bool) -> BodyId {
             surface,
             sense: Sense::Same,
             loops: vec![loop_],
+            tolerance: None,
         })]
     } else {
         [Sense::Same, Sense::Reversed]
@@ -78,6 +83,7 @@ fn split_sphere(m: &mut Model, slit: bool) -> BodyId {
                     surface,
                     sense: Sense::Same,
                     loops: vec![loop_],
+                    tolerance: None,
                 })
             })
             .collect()
@@ -118,6 +124,7 @@ fn rebuilt_with_edges(
             surface: old.surface,
             sense: old.sense,
             loops,
+            tolerance: None,
         }));
     }
     let body = solid(m, faces);

@@ -327,7 +327,7 @@ impl RationalPatch {
                 (Some(x), Some(y), Some(z), Some(w)) => {
                     let aa = aa.as_rational().expect("rational centre tangent");
                     let bb = bb.as_rational().expect("rational centre tangent");
-                    dec.reserve_exact_arithmetic(&aa, &bb, true)?;
+                    dec.reserve_uncounted_arithmetic(&aa, &bb, true)?;
                     let exponent = bb.numerator().bit_length() as i64
                         + aa.denominator().bit_length() as i64
                         - bb.denominator().bit_length() as i64

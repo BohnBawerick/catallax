@@ -22,7 +22,7 @@ pub(super) fn div(a: &Real, b: &Real, dec: &mut Decider) -> Result<Real, Refusal
 }
 fn reserve(a: &Real, b: &Real, product: bool, dec: &mut Decider) -> Result<(), Refusal> {
     if let (Some(a), Some(b)) = (a.rational_ref(), b.rational_ref()) {
-        dec.reserve_exact_arithmetic(a, b, product)?;
+        dec.reserve_uncounted_arithmetic(a, b, product)?;
     } else {
         dec.charge_work(1)?;
     }

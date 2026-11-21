@@ -1437,6 +1437,7 @@ impl Decider {
     ///   form is first read, inside the value's own memo;
     /// - a comparison or an equality test of two rationals, which
     ///   cross-multiplies inside the comparison;
+    /// - a shift by a power of two, a floor, a ceiling or a larger-of;
     /// - arithmetic on integers done directly.
     ///
     /// The count has no price for any of these, and taking the reservation

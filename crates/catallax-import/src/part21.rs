@@ -153,6 +153,56 @@ pub(crate) fn parse_document(bytes: &[u8]) -> Result<Document, ImportRefusal> {
     })
 }
 
+/// The description strings of the header's `FILE_DESCRIPTION`, or none where
+/// the header has none this reader can parse. Only the header is read: the
+/// scan stops at the first `ENDSEC` or `DATA` outside a string or comment.
+pub(crate) fn header_description(bytes: &[u8]) -> Vec<String> {
+    let (mut quoted, mut comment, mut start) = (false, false, 0);
+    for index in 0..bytes.len() {
+        if comment {
+            if index > 0 && bytes[index - 1] == b'*' && bytes[index] == b'/' {
+                comment = false;
+            }
+            continue;
+        }
+        match bytes[index] {
+            b'\'' => quoted = !quoted,
+            b'*' if !quoted && index > 0 && bytes[index - 1] == b'/' => comment = true,
+            b';' if !quoted => {
+                let Ok(text) = std::str::from_utf8(&bytes[start..index]) else {
+                    return Vec::new();
+                };
+                start = index + 1;
+                let Ok(statement) = strip_comments(text) else {
+                    return Vec::new();
+                };
+                let mut cursor = Cursor::new(statement.trim());
+                match cursor.keyword().as_str() {
+                    "ENDSEC" | "DATA" => return Vec::new(),
+                    "FILE_DESCRIPTION" => {
+                        let Ok(arguments) = cursor.args() else {
+                            return Vec::new();
+                        };
+                        let Some(Param::List(strings)) = arguments.into_iter().next() else {
+                            return Vec::new();
+                        };
+                        return strings
+                            .into_iter()
+                            .filter_map(|value| match value {
+                                Param::Str(text) => Some(text),
+                                _ => None,
+                            })
+                            .collect();
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+    }
+    Vec::new()
+}
+
 fn strip_comments(text: &str) -> Result<String, ImportRefusal> {
     let mut out = String::with_capacity(text.len());
     let (mut quoted, mut rest) = (false, text);

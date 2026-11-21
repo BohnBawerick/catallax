@@ -206,20 +206,34 @@ class M10Outcomes:
         self.assertTrue(step['approximate'])
         self.assertEqual(step['category'], 'approximate')
         self.assertEqual(step['tolerance_mm'], T2_CAP)
-        for scope in ['source', 'emitted']:
-            evidence = step['numerical'][scope]
-            self.assertEqual(evidence['tolerance_mm'], T2_CAP)
-            checks = evidence['checks']
-            self.assertLessEqual(largest_record(checks), Fraction(T2_CAP), f'{number} {scope}')
-            # Require actual A+ edge-gap records in both definitions. Each
-            # record stores the measured gap plus error with T4's margin.
-            gaps = [check for check in checks if check['name'].endswith('edge-surface-distance')]
-            self.assertTrue(gaps, f'{number} {scope} has no A+ edge-gap checks')
-            for gap in gaps:
-                self.assertEqual(gap['kind'], 'samples')
-                self.assertTrue(gap['samples'], f'{number} {scope} {gap["scope"]}')
-                self.assertLessEqual(Fraction(gap['sampled_max_mm']), T4_MARGIN * Fraction(T2_TARGET),
-                                     f'{number} {scope} {gap["scope"]}')
+        evidence = step['numerical']['source']
+        self.assertEqual(evidence['tolerance_mm'], T2_CAP)
+        checks = evidence['checks']
+        self.assertLessEqual(largest_record(checks), Fraction(T2_CAP), f'{number} source')
+        # Require actual A+ edge-gap records of the body. Each record stores
+        # the measured gap plus error with T4's margin.
+        gaps = [check for check in checks if check['name'].endswith('edge-surface-distance')]
+        self.assertTrue(gaps, f'{number} source has no A+ edge-gap checks')
+        for gap in gaps:
+            self.assertEqual(gap['kind'], 'samples')
+            self.assertTrue(gap['samples'], f'{number} source {gap["scope"]}')
+            self.assertLessEqual(Fraction(gap['sampled_max_mm']), T4_MARGIN * Fraction(T2_TARGET),
+                                 f'{number} source {gap["scope"]}')
+        # Check once (roadmap 3.0A step 5): the export writes the numbers and
+        # records the body's largest entity tolerance plus their rounding
+        # error. It does not measure the written values, so there is no
+        # second set of samples. Seventeen digits round far under the fit
+        # target, and the record stays within the class cap plus that.
+        self.assertNotIn('emitted', step['numerical'])
+        written = step['numerical']['written']
+        rounding = Fraction(written['rounding_error_mm'])
+        recorded = Fraction(written['recorded_tolerance_mm'])
+        self.assertLess(rounding, Fraction(T2_TARGET) / 1000, f'{number} rounding error')
+        self.assertGreaterEqual(recorded, largest_record(gaps) + rounding, f'{number} record')
+        self.assertLessEqual(recorded, (Fraction(T2_CAP) + rounding) * (1 + Fraction(1, 10**15)),
+                             f'{number} record')
+        data = (Path(case['path']) / 'answer.step').read_bytes()
+        self.assertIn(b';recorded_tolerance_mm=', data)
         self.assertEqual(step['complete_body_bound'], 'unestablished')
         data = (Path(case['path']) / 'answer.step').read_bytes()
         self.assertEqual(hashlib.sha256(data).hexdigest(), step['sha256'])

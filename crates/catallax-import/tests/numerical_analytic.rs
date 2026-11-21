@@ -53,9 +53,17 @@ fn displaced_wall(delta: &str) -> Vec<u8> {
         .lines()
         .find(|s| s.starts_with(&format!("#{origin}=")))
         .unwrap();
+    // A wall moved by hand is not what the export recorded. The stamp goes
+    // with it, so the file is measured as any import is; with the stamp,
+    // reopening would trust the tolerance it records (tests/check_once.rs).
     text.replace(
         original,
         &format!("#{origin}=CARTESIAN_POINT('',(0.,{delta},0.));"),
+    )
+    .replacen(
+        "catallax numerical approximate;",
+        "another system approximate;",
+        1,
     )
     .into_bytes()
 }
@@ -410,11 +418,12 @@ fn numerical_cones_export_step_axial_parameters_and_checked_geometry() {
                 panic!("expected numerical cone")
             };
             let body = &imported.bodies()[0].1;
-            let file = output::build(
+            let audit = output::audit_written(
                 body,
                 &NumericalStepOptions::default(),
                 &mut Decider::default(),
             )?;
+            let file = &audit.file;
             let face = body
                 .definition()
                 .faces
@@ -429,9 +438,8 @@ fn numerical_cones_export_step_axial_parameters_and_checked_geometry() {
                 .map(|uv| &uv[1])
                 .min()
                 .unwrap();
-            let step_min = file
-                .report()
-                .emitted_evidence
+            let step_min = audit
+                .evidence
                 .checks()
                 .iter()
                 .filter_map(|c| {

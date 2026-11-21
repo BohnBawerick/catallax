@@ -283,8 +283,11 @@ fn a_native_sphere_previews_within_a_fraction_of_the_request_allowance() {
 // 19 faces, among them torus strips and fitted spline cuts. Opened by default
 // it is a native tolerant body, and its preview used to stop at the 100M
 // request allowance. The source preview of the same file takes 4.6M.
+//
+// Opening it used to measure every edge use again: 1.09G work, 47 s in
+// release. The file records the tolerance its export held, so opening now
+// takes that and measures nothing (check once, roadmap item 3.0A step 5).
 #[test]
-#[ignore = "opening the rim costs 1.09G work, 47 s in release; run on demand"]
 fn a_reopened_rolling_ball_rim_previews_within_the_request_allowance() {
     use catallax_import::tolerant::opened::{BodyView, open_step};
     let source = include_bytes!("fixtures/reopened-rolling-ball-rim-r2.step");
@@ -300,6 +303,7 @@ fn a_reopened_rolling_ball_rim_previews_within_the_request_allowance() {
     let Some(BodyView::Tolerant { import, body }) = opened.body(0) else {
         panic!("the rim opens as a native tolerant body");
     };
+    assert!(import.bodies()[body].recorded_tolerance_mm().is_some());
     // SolidDraft's display request: the default chord and 15 degrees.
     let options = PreviewOptions::from(&catallax_mesh::MeshOptions {
         angular_deviation: Some(Rational::parse("0.2617993875").unwrap()),

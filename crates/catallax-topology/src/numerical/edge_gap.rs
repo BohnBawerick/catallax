@@ -1,7 +1,7 @@
 //! Admission's use of the edge-gap checker: one measured, stored tolerance
 //! per edge use.
 
-use super::gap::{self, EdgeCopies, FaceCopyRef, GapSurface, Hints, Limits};
+use super::gap::{self, EdgeCopies, FaceCopyRef, GapCurve, GapSurface, Hints, Limits};
 use super::*;
 use catallax_numbers::Real;
 use catallax_shapes::BSplineCurve;
@@ -227,7 +227,7 @@ fn audit_reading<'a>(
 ) -> Result<(FaceCopyRef<'a>, gap::GapMeasure), Refusal> {
     let copy = face_copy(face, trim, edge, native);
     let copies = EdgeCopies {
-        curve: &edge.curve,
+        curve: GapCurve::Kernel(&edge.curve),
         parameters: traversal(trim, edge),
         surface: GapSurface::Kernel(&face.surface),
         face_copy: copy,
@@ -290,7 +290,7 @@ pub(super) fn refit_use(
         None => FaceCopyRef::Linear(&trim.uv),
     };
     let copies = EdgeCopies {
-        curve: &edge.curve,
+        curve: GapCurve::Kernel(&edge.curve),
         parameters: traversal(trim, edge),
         surface: GapSurface::Kernel(&face.surface),
         face_copy: copy,
@@ -432,7 +432,7 @@ pub(super) fn stored_sample(
     }
     let copy = face_copy(face, trim, edge, native);
     let copies = EdgeCopies {
-        curve: &edge.curve,
+        curve: GapCurve::Kernel(&edge.curve),
         parameters: ends,
         surface: GapSurface::Kernel(&face.surface),
         face_copy: copy,

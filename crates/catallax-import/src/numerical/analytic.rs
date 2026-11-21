@@ -788,6 +788,7 @@ pub(super) fn import(
     verified_sha256: &str,
     refusal: ImportRefusal,
     options: &n::NumericalOptions,
+    recorded: Option<&Rational>,
     dec: &mut Decider,
 ) -> Result<StepImport, ImportError> {
     if options.tolerance_mm.sign() != Sign::Positive
@@ -801,7 +802,15 @@ pub(super) fn import(
     }
     dec.charge_work(bytes.len() as u64)?;
     let file = crate::read_step(bytes)?;
-    admit_definition(&file, verified_sha256, refusal, options, false, dec)
+    admit_definition(
+        &file,
+        verified_sha256,
+        refusal,
+        options,
+        false,
+        recorded,
+        dec,
+    )
 }
 
 pub(super) fn admit_definition(
@@ -810,6 +819,7 @@ pub(super) fn admit_definition(
     refusal: ImportRefusal,
     options: &n::NumericalOptions,
     permit_planar: bool,
+    recorded: Option<&Rational>,
     dec: &mut Decider,
 ) -> Result<StepImport, ImportError> {
     if !file.surface_models.is_empty() {
@@ -861,14 +871,16 @@ pub(super) fn admit_definition(
     let mut bodies = Vec::new();
     let mut topology_repairs = Vec::new();
     for solid in &file.solids {
+        let repairs = topology_repairs.len();
+        let definition = definition(solid, &mut topology_repairs, dec)?;
+        // The recorded tolerance is that of the file's own entities. A cone
+        // fitted to the source or a seam this reader derived is not one of
+        // them, so such a body is measured.
+        let recorded =
+            recorded.filter(|_| face_tolerances.is_empty() && topology_repairs.len() == repairs);
         bodies.push((
             solid.name.clone(),
-            n::admit_import(
-                definition(solid, &mut topology_repairs, dec)?,
-                Vec::new(),
-                continuation_options.clone(),
-                dec,
-            )?,
+            super::admit(definition, &continuation_options, recorded, dec)?,
         ));
     }
     if bodies.is_empty() {

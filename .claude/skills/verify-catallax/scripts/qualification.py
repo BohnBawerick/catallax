@@ -325,10 +325,18 @@ def audit_run(path, items, binary_hash, workers, cores, driver, default_max_work
                 tolerance = bound(item['problem']['tolerance_mm'])
                 require(tolerance > 0 and bound(manifest['step'].get('tolerance_mm')) == tolerance,
                         'numerical STEP tolerance differs from preset request')
-                for scope in ('source', 'emitted'):
-                    require(bound(manifest['numerical'][scope]['tolerance_mm']) == tolerance and
-                            isinstance(manifest['numerical'][scope]['checks'], list) and
-                            bool(manifest['numerical'][scope]['checks']), 'numerical checks and preset tolerance')
+                source = manifest['numerical']['source']
+                require(bound(source['tolerance_mm']) == tolerance and
+                        isinstance(source['checks'], list) and bool(source['checks']),
+                        'numerical checks and preset tolerance')
+                # Check once: the file records the body's tolerance plus the
+                # rounding error of its numbers; its values are not measured.
+                written = manifest['numerical']['written']
+                require('emitted' not in manifest['numerical'] and
+                        bound(written['rounding_error_mm']) >= 0 and
+                        bound(written['recorded_tolerance_mm']) >= bound(written['rounding_error_mm']) and
+                        bound(written['recorded_tolerance_mm']) > 0,
+                        'numerical STEP recorded tolerance')
                 require(manifest['step']['sha256'] == artifacts['answer.step'] and
                         manifest['step']['bytes'] == (directory / 'answer.step').stat().st_size,
                         'numerical STEP artifact identity')

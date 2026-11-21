@@ -1,4 +1,5 @@
-//! Reconstruct the actual decimal carriers before numerical admission.
+//! Reconstruct the actual decimal carriers: the values the file holds.
+//! An export writes from them; only an audit admits them.
 
 use super::*;
 use catallax_numbers::{Ball, NumericalCheck};
@@ -40,15 +41,23 @@ pub(super) enum SurfaceValues {
 struct Errors {
     scalar: Rational,
     direction: Rational,
+    /// A line's magnitude: its length per unit of its parameter.
+    magnitude: Rational,
     spline: NumericalSplineRounding,
 }
 
 pub(super) struct Payload {
-    pub body: NumericalBody,
+    /// The decimal values of the body's tables, as the file holds them. A
+    /// plane's u/v ends are filled in only for an audit: no file carries
+    /// them.
+    pub definition: catallax_topology::numerical::NumericalDefinition,
+    /// The decimal values of the retained u/v curves.
+    pub native_trims: Vec<catallax_topology::numerical::NumericalNativeTrim>,
     pub curves: Vec<CurveValues>,
     pub surfaces: Vec<SurfaceValues>,
     pub scalar_error: Rational,
     pub direction_error: Rational,
+    pub magnitude_error: Rational,
     pub spline_rounding: NumericalSplineRounding,
     pub phase_checks: Vec<NumericalCheck>,
 }
@@ -175,13 +184,17 @@ pub(super) fn build(body: &NumericalBody, w: &mut Writer<'_>) -> Result<Payload,
             Curve::Line(source) => {
                 let origin = point(&source.origin, &mut errors, options, w.dec)?;
                 let (direction, actual) = direction(&source.dir, &mut errors, options, w.dec)?;
+                let mut magnitude_error = Rational::zero();
                 let magnitude = rounded(
                     &source.dir.norm_squared().sqrt(),
-                    &mut errors.scalar,
+                    &mut magnitude_error,
                     options,
                     true,
                     w.dec,
                 )?;
+                // A length, and the rate of the line's parameter as well.
+                errors.scalar = errors.scalar.clone().max(magnitude_error.clone());
+                errors.magnitude = errors.magnitude.clone().max(magnitude_error);
                 if magnitude.sign() != Sign::Positive {
                     return Err(bad("rounding-topology", "line magnitude vanished"));
                 }
@@ -228,7 +241,10 @@ pub(super) fn build(body: &NumericalBody, w: &mut Writer<'_>) -> Result<Payload,
                     normal: n,
                     ref_dir: x,
                 });
-                for trim in face.loops.iter_mut().flatten() {
+                // A file carries no u/v ends on a plane, so only an audit's
+                // admission reads these.
+                let audit = w.audit;
+                for trim in face.loops.iter_mut().flatten().filter(|_| audit) {
                     let edge = &definition.edges[trim.edge];
                     let vertices = if trim.sense == Sense::Same {
                         edge.vertices
@@ -340,24 +356,14 @@ pub(super) fn build(body: &NumericalBody, w: &mut Writer<'_>) -> Result<Payload,
             )?;
         }
     }
-    let build = if body.kind() == BodyKind::Surface {
-        catallax_topology::numerical::build_surface_with_sampled_carriers
-    } else {
-        catallax_topology::numerical::build_with_sampled_carriers
-    };
-    let emitted = build(
+    Ok(Payload {
         definition,
         native_trims,
-        body.sampled_carriers().clone(),
-        body.options().clone(),
-        w.dec,
-    )?;
-    Ok(Payload {
-        body: emitted,
         curves,
         surfaces,
         scalar_error: errors.scalar,
         direction_error: errors.direction,
+        magnitude_error: errors.magnitude,
         spline_rounding: errors.spline,
         phase_checks,
     })

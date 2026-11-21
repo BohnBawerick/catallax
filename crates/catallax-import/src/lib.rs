@@ -44,6 +44,8 @@ mod planar_incidence;
 /// Manufacturing information read from a file's AP242 semantic PMI.
 pub mod pmi;
 mod recognize;
+/// The tolerance a Catallax numerical export records in its file.
+pub mod recorded;
 mod repair;
 /// Open scans as reference data, never solids.
 pub mod scan;

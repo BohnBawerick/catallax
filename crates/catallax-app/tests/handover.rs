@@ -488,7 +488,23 @@ fn version_one_bodies_keep_geometry_history_and_empty_kind() {
             .bytes()
             .to_vec()
     };
-    assert_eq!(export(&source), export(&imported));
+    // The stamp of a file records its body's tolerance (check once, roadmap
+    // item 3.0A step 5). The stored body holds the records of the build that
+    // wrote it, from before admission measured edge gaps, so its file
+    // records another number than a body measured today. Measured again it
+    // writes the same bytes, and under the stamp the two files are the same.
+    assert_eq!(export(&source), export(&remeasured));
+    let under_the_stamp = |bytes: Vec<u8>| {
+        let text = String::from_utf8(bytes).unwrap();
+        text.lines()
+            .filter(|line| !line.starts_with("FILE_DESCRIPTION("))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    assert_eq!(
+        under_the_stamp(export(&source)),
+        under_the_stamp(export(&imported))
+    );
     assert_eq!(
         &write_numerical(&imported, &mut Decider::default()).unwrap()[8..12],
         &2_u32.to_le_bytes()

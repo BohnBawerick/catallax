@@ -118,8 +118,8 @@ and ruling lines still require explicit interval ownership and refuse.
 The exact writer's finite patch-row gate remains an exact refusal. Its
 `numbers.geometric-gap-unproven` now tries the shared numerical embedding,
 with the exact UV-domain preservation from the embedding owner. The result
-stays numerical at 1e-7 mm, with source and emitted checks and no complete
-body bound. The existing publication/reread tail is a shared helper; this
+stays numerical at 1e-7 mm, with the source's checks, the tolerance the file
+records and no complete body bound. The existing publication/reread tail is a shared helper; this
 does not change its file checks or the `embedded_exact` signature.
 
 The end-to-end test runs fresh requests with request-worker/kernel-thread

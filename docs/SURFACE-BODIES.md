@@ -16,7 +16,7 @@ STEP preserves the actual kind:
 - Wire bodies use `EDGE_BASED_WIREFRAME_MODEL` with one `CONNECTED_EDGE_SET` per path.
 - Solids retain their closed material representation. Mixed exports use the generic shape representation.
 
-Numerical export reconstructs and checks the emitted body with the same kind instead of forcing an open sheet through solid admission.
+Numerical export writes a surface body with its own kind and records its tolerance; it does not admit the written values again. Its audit admits them with the same kind instead of forcing an open sheet through solid admission.
 
 ## Public operations
 

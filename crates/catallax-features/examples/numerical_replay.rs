@@ -167,8 +167,16 @@ mod tests {
         fs::write(&output, "stale").unwrap();
         run(&input, &output).unwrap();
         assert_eq!(fs::read_to_string(&input).unwrap(), saved);
+        // The stored evidence was written before check once added the
+        // record of the tolerance, a second description string, to the
+        // header (roadmap 3.0A step 5). Every other byte is the same.
+        let written = fs::read_to_string(&output).unwrap();
+        let start = written.find(",'catallax recorded tolerance;").unwrap();
+        let end = start + 2 + written[start + 2..].find('\'').unwrap() + 1;
+        assert!(written[start..end].contains(";recorded_tolerance_mm="));
+        assert!(written[end..].starts_with("),'2;1');"));
         assert_eq!(
-            fs::read(&output).unwrap(),
+            format!("{}{}", &written[..start], &written[end..]).as_bytes(),
             include_bytes!("../../../evidence/phase1/N04/edited.step")
         );
         assert_eq!(fs::read_dir(&dir).unwrap().count(), 2);

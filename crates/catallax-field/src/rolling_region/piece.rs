@@ -321,6 +321,9 @@ impl Path for Piece {
     fn bands(&self, local: &[Real; 3], dec: &mut Decider) -> Result<Vec<Real>, Refusal> {
         each_kind!(&self.kind, path => path.bands(local, dec))
     }
+    fn junctions(&self, local: &[Real; 3], dec: &mut Decider) -> Result<Vec<Real>, Refusal> {
+        each_kind!(&self.kind, path => path.junctions(local, dec))
+    }
     fn uniform(&self) -> bool {
         each_kind!(&self.kind, path => path.uniform())
     }

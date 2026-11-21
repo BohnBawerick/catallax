@@ -146,6 +146,19 @@ pub struct Revolved {
     shape: Shape,
     basis: [Vector3; 2],
     circle: Option<Circle>,
+    sector: Option<Sector>,
+}
+
+/// The part of a circle path between two meridian half-planes, at most half
+/// a turn (4.2a step 4). `ends` are the unit radial directions at the
+/// sector's start and end, in turning order about the circle's axis;
+/// `normals` point from each end's half-plane into the sector. A meridian
+/// direction `m` lies in the sector when `normals[k] . m >= 0` for both.
+#[derive(Clone, Debug)]
+struct Sector {
+    centre: Point3,
+    ends: [Vector3; 2],
+    normals: [Vector3; 2],
 }
 
 pub(super) fn root(x: &Real) -> Real {
@@ -400,7 +413,61 @@ impl Revolved {
             shape,
             basis,
             circle,
+            sector: None,
         })
+    }
+
+    /// Restricts a circle path to the sector from the radial direction
+    /// `start` to `end`, turning positively about `turn` (any vector along
+    /// the axis), at most half a turn. Both directions must be unit and
+    /// perpendicular to the axis. The sector's half-planes are junctions:
+    /// each meets a tangent neighbour piece there.
+    pub fn with_sector(
+        mut self,
+        start: Vector3,
+        end: Vector3,
+        turn: &Vector3,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        let circle = self
+            .circle
+            .as_ref()
+            .ok_or_else(|| reach("only a circle path takes a sector"))?;
+        for direction in [&start, &end] {
+            if sign(&(&direction.norm_squared() - &Real::one()), dec)? != Sign::Zero
+                || sign(&direction.dot(&circle.axis), dec)? != Sign::Zero
+            {
+                return Err(reach(
+                    "a sector end must be a unit direction perpendicular to the axis",
+                ));
+            }
+        }
+        // The sector turns from start to end through less than half a turn,
+        // or exactly half when the ends are opposite.
+        let wound = sign(&turn.dot(&start.cross(&end)), dec)?;
+        let opposite = sign(&start.dot(&end), dec)? == Sign::Negative;
+        if wound == Sign::Negative || (wound == Sign::Zero && !opposite) {
+            return Err(reach("a ring sector over half a turn has no convex fan"));
+        }
+        let normals = [turn.cross(&start), end.cross(turn)];
+        self.sector = Some(Sector {
+            centre: circle.centre.clone(),
+            ends: [start, end],
+            normals,
+        });
+        Ok(self)
+    }
+
+    /// The sector's two junction half-planes, each as a point and a normal
+    /// into the sector, when the path has one.
+    pub fn sector_walls(&self) -> Option<[(Point3, Vector3); 2]> {
+        let sector = self.sector.as_ref()?;
+        Some(
+            sector
+                .normals
+                .clone()
+                .map(|normal| (sector.centre.clone(), normal)),
+        )
     }
 
     /// Whether the path is a circle with closed forms.
@@ -435,6 +502,12 @@ impl Revolved {
         if let Some(circle) = &mut self.circle {
             p(&mut circle.centre);
             v(&mut circle.axis);
+        }
+        if let Some(sector) = &mut self.sector {
+            p(&mut sector.centre);
+            for e in sector.ends.iter_mut().chain(&mut sector.normals) {
+                v(e);
+            }
         }
     }
 
@@ -518,10 +591,36 @@ impl Revolved {
     pub fn hull(&self, dec: &mut Decider) -> Result<[Ball; 3], Refusal> {
         let cover = self.cover(dec)?;
         let mut points = Vec::new();
-        for u in panels() {
+        for u in self.panels(&cover, dec)? {
             points.extend(Self::panel_points(&cover, &u)?);
         }
         Ok(hull_points(&points))
+    }
+
+    /// The panels of [`panels`] that may hold a station: all of them, or for
+    /// a sector those whose meridians are not proven outside one of its
+    /// half-planes.
+    fn panels(&self, cover: &RevolvedCover, dec: &mut Decider) -> Result<Vec<Ball>, Refusal> {
+        let Some(sector) = &self.sector else {
+            return Ok(panels().collect());
+        };
+        let normals = [
+            balls(&sector.normals[0], dec)?,
+            balls(&sector.normals[1], dec)?,
+        ];
+        let mut kept = Vec::new();
+        for u in panels() {
+            let (_, _, direction) = cover.angle(&u);
+            let outside = normals.iter().any(|n| {
+                (&(&(&n[0] * &direction[0]) + &(&n[1] * &direction[1])) + &(&n[2] * &direction[2]))
+                    .hi()
+                    < Rational::zero()
+            });
+            if !outside {
+                kept.push(u);
+            }
+        }
+        Ok(kept)
     }
 
     /// The box of the region over each of the 64 panels of [`Revolved::hull`].
@@ -529,8 +628,9 @@ impl Revolved {
     /// inside can reach it while staying clear of every panel's box.
     pub fn boxes(&self, dec: &mut Decider) -> Result<Vec<[Ball; 3]>, Refusal> {
         let cover = self.cover(dec)?;
-        panels()
-            .map(|u| Ok(hull_points(&Self::panel_points(&cover, &u)?)))
+        self.panels(&cover, dec)?
+            .iter()
+            .map(|u| Ok(hull_points(&Self::panel_points(&cover, u)?)))
             .collect()
     }
 
@@ -629,7 +729,11 @@ impl Revolved {
             }
         };
         let m = norm(sub(p, station));
-        if walls.iter().all(|w| *w >= 0.0) {
+        let in_sector = self.sector.as_ref().is_none_or(|sector| {
+            let v = sub(p, fp(&sector.centre));
+            sector.normals.iter().all(|n| dot(fv(n), v) >= 0.0)
+        });
+        if in_sector && walls.iter().all(|w| *w >= 0.0) {
             (-height).max(-support).max(r - m)
         } else {
             (m - r).abs().max(f64::MIN_POSITIVE)
@@ -892,6 +996,13 @@ impl Path for Revolved {
     fn walls_are_faces(&self) -> bool {
         true
     }
+    fn junctions(&self, local: &[Real; 3], _: &mut Decider) -> Result<Vec<Real>, Refusal> {
+        let Some(sector) = &self.sector else {
+            return Ok(Vec::new());
+        };
+        let v = vector(local).minus(&position(&sector.centre));
+        Ok(sector.normals.iter().map(|n| n.dot(&v)).collect())
+    }
     fn uniform(&self) -> bool {
         self.circle.is_some()
     }
@@ -977,10 +1088,29 @@ impl Path for Revolved {
         let w = v.minus(&circle.axis.scaled(&circle.axis.dot(&v)));
         let rho2 = w.norm_squared();
         // On the axis every meridian is nearest; take the first basis direction.
-        let direction = if sign(&rho2, dec)? == Sign::Zero {
-            self.basis[0].clone()
-        } else {
-            w.scaled(&(&Real::one() / &root(&rho2)))
+        let on_axis = sign(&rho2, dec)? == Sign::Zero;
+        let direction = match &self.sector {
+            // The distance from a point to a station's centre grows with the
+            // angle between their meridians, up to half a turn, so outside
+            // the sector the nearer end is nearest: the one whose radial
+            // direction is closer to the point's.
+            Some(sector) => {
+                let mut inside = !on_axis;
+                for n in &sector.normals {
+                    inside = inside && sign(&n.dot(&w), dec)? != Sign::Negative;
+                }
+                if inside {
+                    w.scaled(&(&Real::one() / &root(&rho2)))
+                } else if on_axis
+                    || sign(&w.dot(&sector.ends[0].minus(&sector.ends[1])), dec)? != Sign::Negative
+                {
+                    sector.ends[0].clone()
+                } else {
+                    sector.ends[1].clone()
+                }
+            }
+            None if on_axis => self.basis[0].clone(),
+            None => w.scaled(&(&Real::one() / &root(&rho2))),
         };
         self.frame_at(&direction, dec).map(Some)
     }

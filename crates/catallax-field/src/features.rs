@@ -1431,6 +1431,88 @@ impl Feature {
             }
         }
     }
+    /// Whether every point of this leaf's face `role` satisfies
+    /// `normal . x >= level`, proven exactly (4.2a step 4). Only an extrude's
+    /// side face is answered: it lies in its profile segments swept along the
+    /// extrusion, so in local coordinates each point is `q + t v` with `q` on
+    /// a segment and `t` in `[0, 1]` for the scaled extrusion vector `v` (any
+    /// `t` for a through extrusion, which then needs `normal . v = 0`). The
+    /// function is affine in `q` and `t`, so its least value is at `t` = 0 or
+    /// 1 and, on a segment, at an end or, on an arc, at the arc point whose
+    /// radius points against the function's gradient when the arc holds it.
+    /// A face of a Boolean result lies in its leaf's face. Every other face
+    /// answers `false`.
+    pub(crate) fn face_above(
+        &self,
+        role: &Role,
+        normal: &Vector3,
+        level: &Real,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        let mut role = role;
+        while let Role::Copy { of, .. } = role {
+            role = &of.role;
+        }
+        let (Sweep::Extrude { vector, through }, Role::Side { segment, .. }) = (&self.sweep, role)
+        else {
+            return Ok(false);
+        };
+        if self.fillet.is_some() || self.chamfer.is_some() {
+            return Ok(false);
+        }
+        dec.charge_work(1)?;
+        // With x = W(L) for the local point L: normal . x is
+        // (inverse normal) . L + normal . W(0), the map being orthogonal.
+        let origin = self.inverse.inverse().apply_point(&Point3::origin());
+        let level = level - &normal.dot(&origin.minus(&Point3::origin()));
+        let local = self.inverse.apply_vector(normal);
+        let rise = local.dot(&self.extrusion_vector(vector));
+        let lifts = if *through {
+            if geometry::sign(&rise, dec)? != Sign::Zero {
+                return Ok(false);
+            }
+            vec![Real::zero()]
+        } else {
+            vec![Real::zero(), rise]
+        };
+        let a = [local.x.clone(), local.y.clone()];
+        let value = |q: &[Real; 2]| &(&a[0] * &q[0]) + &(&a[1] * &q[1]);
+        let mut found = false;
+        for e in self
+            .loops
+            .iter()
+            .flatten()
+            .filter(|e| e.ids.contains(segment))
+        {
+            found = true;
+            let mut candidates = vec![
+                value(&profile::real(&e.start)),
+                value(&profile::real(&e.end)),
+            ];
+            if let Some((centre, squared, _)) = &e.circle {
+                let length = &(&a[0] * &a[0]) + &(&a[1] * &a[1]);
+                if geometry::sign(&length, dec)? != Sign::Zero {
+                    let length = sqrt_real(&length, dec)?;
+                    let radius = sqrt_real(&Real::from(squared.clone()), dec)?;
+                    let c = profile::real(centre);
+                    let scale = &radius / &length;
+                    let lowest = [&c[0] - &(&scale * &a[0]), &c[1] - &(&scale * &a[1])];
+                    if e.contains(&lowest, dec)? {
+                        candidates.push(&value(&c) - &(&radius * &length));
+                    }
+                }
+            }
+            for candidate in &candidates {
+                for lift in &lifts {
+                    if geometry::sign(&(&(candidate + lift) - &level), dec)? == Sign::Negative {
+                        return Ok(false);
+                    }
+                }
+            }
+        }
+        Ok(found)
+    }
+
     pub fn proven_distance(
         &self,
         p: &RPoint3,

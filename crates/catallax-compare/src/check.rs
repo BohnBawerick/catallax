@@ -767,6 +767,22 @@ pub(crate) fn run(
                 _ => (),
             }
         }
+        // An unclassified vertex can still lie near an admitted field
+        // boundary point, which proves proximity without a classification,
+        // as on the witness-first path above.
+        if query.location == Location::Indeterminate
+            && witness.is_none()
+            && let Ok(prepared) =
+                distance_domains.get_or_insert_with(|| field.prepare_distances(&mut dec))
+        {
+            choose_preferred(i, &mut preferred);
+            let seed = FieldWitness::seed(prepared, &preferred, &p, &error, options, &mut dec);
+            if let Some(bound) = seed.near_upper() {
+                let upper = bound + &error;
+                retain_distance_upper(&mut report, Some(&upper));
+                continue;
+            }
+        }
         retain_distance_upper(&mut report, upper.as_ref());
         let names: Vec<Vec<Origin>> = incident[i]
             .iter()

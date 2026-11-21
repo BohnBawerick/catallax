@@ -13,16 +13,17 @@
 use super::coaxial::{Coaxial, CoaxialCover};
 use super::generator::{Generator, GeneratorCover};
 use super::path::{self, Cover, Frame, Path};
-use super::revolved::{Revolved, RevolvedCover};
+use super::revolved::{Revolved, RevolvedCover, root};
 use super::rim::{Rim, RimCover};
 use super::saddle::{Saddle, SaddleCover};
+use super::seam::{Seam, SeamCover};
 use super::{Range, Relation};
 use crate::Location;
 use crate::metric::{Arithmetic, PRECISION};
 use crate::support::Support;
-use catallax_numbers::{Ball, Decider, Rational, Real, Refusal};
+use catallax_numbers::{Ball, Decider, Rational, Real, Refusal, Sign};
 use catallax_recipe::Origin;
-use catallax_shapes::{Isometry, Point3, RPoint3, Surface};
+use catallax_shapes::{Isometry, Point3, RPoint3, Surface, Vector3};
 
 /// Runs `$body` with `$path` bound to the path of any [`Kind`].
 macro_rules! each_kind {
@@ -33,6 +34,7 @@ macro_rules! each_kind {
             Kind::Coaxial($path) => $body,
             Kind::Saddle($path) => $body,
             Kind::Rim($path) => $body,
+            Kind::Seam($path) => $body,
         }
     };
 }
@@ -45,6 +47,7 @@ macro_rules! each_cover {
             PieceCover::Coaxial($cover) => $body,
             PieceCover::Saddle($cover) => $body,
             PieceCover::Rim($cover) => $body,
+            PieceCover::Seam($cover) => $body,
         }
     };
 }
@@ -65,6 +68,8 @@ pub enum Kind {
     /// A plane and a perpendicular cylinder, with the plane contact crossing
     /// circular mouths.
     Rim(Rim),
+    /// Two equal rounds whose mitre the ball rolls over.
+    Seam(Seam),
 }
 
 /// A compiled rolling-ball path piece: the material a convex fillet removes or
@@ -75,6 +80,8 @@ pub struct Piece {
     origin: Origin,
     convex: bool,
     supports: [Support; 2],
+    // The supports' exact surfaces, for the side of a wall on one.
+    carriers: [Surface; 2],
     // Rational box of the region, when its corners are rational.
     bounds: Option<[[Rational; 2]; 3]>,
 }
@@ -92,6 +99,13 @@ fn magnitude(x: &Ball) -> Rational {
 fn point(p: &RPoint3) -> Point3 {
     p.to_real()
 }
+fn point_of(p: &[Rational; 3]) -> Point3 {
+    Point3::new(
+        p[0].clone().into(),
+        p[1].clone().into(),
+        p[2].clone().into(),
+    )
+}
 
 impl Piece {
     /// Wraps a path derived by the field, with the two supports it rolls on.
@@ -108,6 +122,7 @@ impl Piece {
             origin,
             convex,
             supports: supports.map(Support::new),
+            carriers: supports.map(Surface::clone),
             bounds: Some(hull.map(|b| [b.lo(), b.hi()])),
         };
         piece.enclose_cover(dec)?;
@@ -165,6 +180,436 @@ impl Piece {
     }
     fn radius(&self) -> &Real {
         each_kind!(&self.kind, path => path.radius())
+    }
+
+    /// The exact surface that holds the face, for the face registry (4.2a):
+    /// a ring torus about a centre circle wider than the ball, a sphere where
+    /// the centre stays put, or a cylinder about a straight centre line. Its
+    /// equation has the sign of the path's separation, so it is positive in
+    /// the region near the face and negative in every ball. A horn or spindle
+    /// torus, an ellipse path's pipe, a saddle, a rim and a seam have no
+    /// such surface; their faces stay unregistered.
+    pub(crate) fn face(&self) -> Option<Surface> {
+        match &self.kind {
+            Kind::Revolved(path) => path.face(),
+            Kind::Generator(path) => Some(path.face()),
+            Kind::Coaxial(path) => Some(path.face()),
+            Kind::Saddle(_) | Kind::Rim(_) | Kind::Seam(_) => None,
+        }
+    }
+
+    /// Whether a boundary point of the region lies on the face. A boundary
+    /// point lies on a ball of the family (the face) or, outside every ball,
+    /// on a wall; the closed-form separation tells which exactly. A path
+    /// without a registered face answers no.
+    pub(crate) fn on_face(&self, point: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
+        if self.face().is_none() {
+            return Ok(false);
+        }
+        let Some(value) = self.separation(&self.local(point)) else {
+            return Ok(false);
+        };
+        Ok(crate::geometry::sign(&value, dec)? == Sign::Zero)
+    }
+
+    /// An exact point of the face near `point`, for a distance witness where
+    /// the face's surface has no rational point near it (a ring torus of
+    /// irrational radius). It is the surface's nearest point in closed form,
+    /// as OpenCASCADE's `Extrema_ExtPElS` finds it for a sphere, cylinder
+    /// or torus: along the ray from the sphere's centre, along the
+    /// perpendicular from the cylinder's axis, and along the ray from the
+    /// torus's core point in the meridian of `point`. On a ring torus that
+    /// meridian point stays in the meridian's half-plane, so the point lies
+    /// on the tube. The point is on the surface by construction, so the
+    /// separation, which is the surface's equation up to a positive factor
+    /// (see [`Piece::face`]), is zero there with no exact zero test. Where
+    /// every band, wall and junction also encloses strictly above zero, the
+    /// point is in the open fan, so it is a boundary point of the region on
+    /// its face: [`path::classify`] answers `Boundary` there and
+    /// [`Piece::on_face`] holds. `None` on an axis, core or centre, where a
+    /// clip does not enclose above zero, or without a registered face.
+    pub(crate) fn face_point(
+        &self,
+        point: &Point3,
+        dec: &mut Decider,
+    ) -> Result<Option<Point3>, Refusal> {
+        let positive = |value: &Real, dec: &mut Decider| -> Result<bool, Refusal> {
+            Ok(crate::geometry::enclose(value, PRECISION, dec)?.lo() > Rational::zero())
+        };
+        // The part of `v` normal to `axis`, which need not be a unit.
+        let across = |v: &Vector3, axis: &Vector3| {
+            v.minus(&axis.scaled(&(&axis.dot(v) / &axis.norm_squared())))
+        };
+        let foot = match self.face() {
+            Some(Surface::Sphere(s)) => {
+                let v = point.minus(&s.center);
+                let n2 = v.norm_squared();
+                if !positive(&n2, dec)? {
+                    return Ok(None);
+                }
+                s.center.plus(&v.scaled(&(&s.radius / &root(&n2))))
+            }
+            Some(Surface::Cylinder(s)) => {
+                let w = across(&point.minus(&s.origin), &s.axis);
+                let n2 = w.norm_squared();
+                if !positive(&n2, dec)? {
+                    return Ok(None);
+                }
+                point.plus(&w.scaled(&(&root(&(&s.radius_sq / &n2)) - &Real::one())))
+            }
+            Some(Surface::Torus(s)) => {
+                if !positive(&(&s.major - &s.minor), dec)? {
+                    return Ok(None);
+                }
+                let w = across(&point.minus(&s.center), &s.axis);
+                let n2 = w.norm_squared();
+                if !positive(&n2, dec)? {
+                    return Ok(None);
+                }
+                let core = s.center.plus(&w.scaled(&(&s.major / &root(&n2))));
+                let d = point.minus(&core);
+                let d2 = d.norm_squared();
+                if !positive(&d2, dec)? {
+                    return Ok(None);
+                }
+                core.plus(&d.scaled(&(&s.minor / &root(&d2))))
+            }
+            _ => return Ok(None),
+        };
+        let local = self.local(&foot);
+        let clips = [
+            self.bands(&local, dec)?,
+            self.walls(&local, dec)?,
+            self.junctions(&local, dec)?,
+        ];
+        for value in clips.iter().flatten() {
+            if !positive(value, dec)? {
+                return Ok(None);
+            }
+        }
+        Ok(Some(foot))
+    }
+
+    /// The region's side of `p + t d` for small `t > 0`. Off the boundary it
+    /// is the membership itself. On the face, away from every wall and
+    /// junction, the region near `p` is where the separation is positive,
+    /// which is where the face's equation is (see [`Piece::face`]); the first
+    /// nonzero coefficient of that equation along the ray decides it, as for
+    /// a primitive's constraint. Off every ball on one wall, the region near
+    /// `p` is one side of the support that wall lies on ([`Piece::wall_side`]),
+    /// and the support's equation decides it the same way. Where a straight
+    /// piece's face meets its end plane, both equations decide it
+    /// ([`Piece::end_ray`]). Where a junction or two walls pass, or another
+    /// wall meets the face, it stays unresolved.
+    pub(crate) fn ray(
+        &self,
+        p: &[Rational; 3],
+        d: &Vector3,
+        dec: &mut Decider,
+    ) -> Result<Location, Refusal> {
+        let location = self.location(p, dec)?;
+        if location != Location::Boundary {
+            return Ok(location);
+        }
+        let local = self.local(&point_of(p));
+        let walls = self.walls(&local, dec)?;
+        let junctions = self.junctions(&local, dec)?;
+        let mut clear = true;
+        for value in walls.iter().chain(&junctions) {
+            if crate::geometry::sign(value, dec)? != Sign::Positive {
+                clear = false;
+                break;
+            }
+        }
+        let (equation, positive) = if clear {
+            let Some(surface) = self.face() else {
+                return Ok(Location::Indeterminate);
+            };
+            // A positive constraint along the ray leaves every ball, into
+            // the region; a negative one enters a ball.
+            (crate::geometry::constraint(surface)?, true)
+        } else {
+            match self.wall_side(p, &local, &walls, &junctions, dec)? {
+                Some(side) => side,
+                None => {
+                    return Ok(self
+                        .end_ray(p, &local, &walls, &junctions, d, dec)?
+                        .unwrap_or(Location::Indeterminate));
+                }
+            }
+        };
+        Ok(
+            match (
+                crate::geometry::ray_constraints(&[equation], p, d, dec)?,
+                positive,
+            ) {
+                (Location::Outside, true) => Location::Inside,
+                (Location::Inside, true) => Location::Outside,
+                (other, _) => other,
+            },
+        )
+    }
+
+    /// The side of `p + t d` for small `t > 0` from a point of the face on
+    /// the end plane of a straight piece, off every other wall and every
+    /// junction: where a strip ends at an end face, its face meets that
+    /// plane in a circle. Near such a point the region is the face's positive
+    /// side (see [`Piece::face`]) within the end plane's side, so the ray
+    /// enters the region where the first nonzero coefficient of both
+    /// equations along it says so, and leaves it where either says so; a ray
+    /// along either surface stays on the boundary. A later round that rolls
+    /// over the strip's end probes its material there (4.2a step 5), as at
+    /// the cap of an elementary strip. `None` at any other point.
+    fn end_ray(
+        &self,
+        p: &[Rational; 3],
+        local: &[Real; 3],
+        walls: &[Real],
+        junctions: &[Real],
+        d: &Vector3,
+        dec: &mut Decider,
+    ) -> Result<Option<Location>, Refusal> {
+        let (Kind::Generator(path), Some(surface)) = (&self.kind, self.face()) else {
+            return Ok(None);
+        };
+        for value in junctions {
+            if crate::geometry::sign(value, dec)? != Sign::Positive {
+                return Ok(None);
+            }
+        }
+        let mut zeros = 0;
+        for value in walls {
+            match crate::geometry::sign(value, dec)? {
+                Sign::Negative => return Ok(None),
+                Sign::Zero => zeros += 1,
+                Sign::Positive => {}
+            }
+        }
+        let Some(separation) = self.separation(local) else {
+            return Ok(None);
+        };
+        if zeros != 1 || crate::geometry::sign(&separation, dec)? != Sign::Zero {
+            return Ok(None);
+        }
+        let Some((point, inward, within)) = path.end_plane_at(local, dec)? else {
+            return Ok(None);
+        };
+        // A constraint holds where its equation is not positive: a plane's
+        // on the side its normal leaves, the face's reversed in the balls.
+        let plane = crate::geometry::constraint(Surface::Plane(catallax_shapes::Plane {
+            origin: point,
+            normal: inward.scaled(&Real::from_i64(-1)),
+            ref_dir: within,
+        }))?;
+        let face = crate::geometry::constraint(surface)?.reversed();
+        Ok(Some(crate::geometry::ray_constraints(
+            &[face, plane],
+            p,
+            d,
+            dec,
+        )?))
+    }
+
+    /// Whether the region, so its face, lies in the closed half-space
+    /// `normal . x >= level`: for a straight piece between two planes,
+    /// every vertex of the prism that holds it does
+    /// ([`Generator::plane_prism`]). A later fillet's clearance proof clears
+    /// such a face from its own region on that plane's far side (4.2a step
+    /// 5), as an elementary strip's leaf does. `false` for any other piece.
+    pub(crate) fn above(
+        &self,
+        normal: &Vector3,
+        level: &Real,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        let Kind::Generator(path) = &self.kind else {
+            return Ok(false);
+        };
+        let Some(points) = path.plane_prism() else {
+            return Ok(false);
+        };
+        for point in &points {
+            dec.charge_work(1)?;
+            let height = &normal.dot(&point.minus(&Point3::origin())) - level;
+            if crate::geometry::sign(&height, dec)? == Sign::Negative {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    /// The polynomial of the one smooth surface bounding the region near a
+    /// boundary point, where the region is one side of it: the face's
+    /// equation away from every wall and junction, or the support under one
+    /// wall off every ball ([`Piece::wall_side`]). `None` elsewhere.
+    pub(crate) fn smooth_side(
+        &self,
+        p: &[Rational; 3],
+        dec: &mut Decider,
+    ) -> Result<Option<catallax_numbers::RealPoly>, Refusal> {
+        let local = self.local(&point_of(p));
+        let walls = self.walls(&local, dec)?;
+        let junctions = self.junctions(&local, dec)?;
+        let mut clear = true;
+        for value in walls.iter().chain(&junctions) {
+            if crate::geometry::sign(value, dec)? != Sign::Positive {
+                clear = false;
+                break;
+            }
+        }
+        if clear {
+            return match self.face() {
+                Some(surface) => Ok(Some(crate::geometry::constraint(surface)?.polynomial)),
+                None => Ok(None),
+            };
+        }
+        Ok(self
+            .wall_side(p, &local, &walls, &junctions, dec)?
+            .map(|(constraint, _)| constraint.polynomial))
+    }
+
+    /// The support under a boundary point of the region that lies off every
+    /// ball on exactly one wall, as its exact equation and whether the region
+    /// near the point is where that equation is positive.
+    ///
+    /// The point is on the boundary off every ball, so the path's walls are
+    /// faces there ([`Path::walls_are_faces`]): it lies on a face of the
+    /// region, which off the balls is one of the two supports. With one
+    /// support through the point and one wall zero there, that wall's zero
+    /// set near the point is the support, so the region near the point is
+    /// one side of it. Each ball touches both supports from the region's
+    /// side, so that side is the one holding the ball centres, read at a
+    /// station's centre. Returns `None` where a junction or more than one
+    /// wall passes, on a ball, where both supports or neither pass, or where
+    /// the centre's side is not settled by its enclosure.
+    fn wall_side(
+        &self,
+        p: &[Rational; 3],
+        local: &[Real; 3],
+        walls: &[Real],
+        junctions: &[Real],
+        dec: &mut Decider,
+    ) -> Result<Option<(crate::geometry::Constraint, bool)>, Refusal> {
+        if !self.walls_are_faces() {
+            return Ok(None);
+        }
+        for value in junctions {
+            if crate::geometry::sign(value, dec)? != Sign::Positive {
+                return Ok(None);
+            }
+        }
+        let mut zeros = 0;
+        for value in walls {
+            match crate::geometry::sign(value, dec)? {
+                Sign::Negative => return Ok(None),
+                Sign::Zero => zeros += 1,
+                Sign::Positive => {}
+            }
+        }
+        if zeros != 1 {
+            return Ok(None);
+        }
+        if let Some(value) = self.separation(local)
+            && crate::geometry::sign(&value, dec)? != Sign::Positive
+        {
+            return Ok(None);
+        }
+        let mut found = None;
+        for surface in &self.carriers {
+            let constraint = crate::geometry::constraint(surface.clone())?;
+            if crate::polynomial_sign(&constraint.polynomial, p, dec)? == Sign::Zero {
+                if found.is_some() {
+                    return Ok(None);
+                }
+                found = Some(constraint);
+            }
+        }
+        let Some(constraint) = found else {
+            return Ok(None);
+        };
+        let Some(centre) = self.centre_near(local, dec)? else {
+            return Ok(None);
+        };
+        let side = constraint.polynomial.eval_ball(&centre, dec)?;
+        Ok(if side.lo() > Rational::zero() {
+            Some((constraint, true))
+        } else if side.hi() < Rational::zero() {
+            Some((constraint, false))
+        } else {
+            None
+        })
+    }
+
+    /// A world enclosure of a ball centre: the closed-form nearest
+    /// station's, or the first station the cover proves to exist among
+    /// `u = 0, +-1/2, +-1`. Frames are in the path's local coordinates,
+    /// which are world coordinates for every path but the rim's.
+    fn centre_near(
+        &self,
+        local: &[Real; 3],
+        dec: &mut Decider,
+    ) -> Result<Option<[Ball; 3]>, Refusal> {
+        let mut centre = None;
+        if let Some(frame) = self.nearest(local, dec)? {
+            centre = Some(frame.centre);
+        } else {
+            let cover = self.cover(dec)?;
+            for (n, d) in [(0, 1), (1, 2), (-1, 2), (1, 1), (-1, 1)] {
+                let u = Rational::from_ratio(n, d).expect("nonzero denominator");
+                let station = Ball::from_rational(&u, PRECISION);
+                if cover.exists(&station)? {
+                    centre = Some(cover.centre(&station)?);
+                    break;
+                }
+            }
+        }
+        match (centre, &self.kind) {
+            (Some(centre), Kind::Rim(path)) => Ok(Some(path.world_point(&centre, dec)?)),
+            (centre, _) => Ok(centre),
+        }
+    }
+
+    /// The normal of the plane bounding the region near a boundary point,
+    /// where the region is one side of a plane support there (see
+    /// [`Piece::wall_side`]). It lets the plan settle such a point from the
+    /// cells of the planes through it, as for a polyhedral leaf. Points off
+    /// every plane support answer `false` before any other exact test.
+    pub(crate) fn planes_at(
+        &self,
+        p: &[Rational; 3],
+        planes: &mut Vec<Vector3>,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        let mut on_plane = false;
+        for surface in &self.carriers {
+            if let Surface::Plane(_) = surface {
+                let constraint = crate::geometry::constraint(surface.clone())?;
+                on_plane |= crate::polynomial_sign(&constraint.polynomial, p, dec)? == Sign::Zero;
+            }
+        }
+        if !on_plane || self.location(p, dec)? != Location::Boundary {
+            return Ok(false);
+        }
+        let local = self.local(&point_of(p));
+        let walls = self.walls(&local, dec)?;
+        let junctions = self.junctions(&local, dec)?;
+        let Some((constraint, _)) = self.wall_side(p, &local, &walls, &junctions, dec)? else {
+            return Ok(false);
+        };
+        let Surface::Plane(plane) = constraint.surface() else {
+            return Ok(false);
+        };
+        let mut duplicate = false;
+        for n in planes.iter() {
+            if crate::geometry::sign(&plane.normal.cross(n).norm_squared(), dec)? == Sign::Zero {
+                duplicate = true;
+                break;
+            }
+        }
+        if !duplicate {
+            planes.push(plane.normal.clone());
+        }
+        Ok(true)
     }
 
     pub(crate) fn location(
@@ -259,6 +704,9 @@ impl Piece {
         for support in &mut self.supports {
             support.transform(pose);
         }
+        for carrier in &mut self.carriers {
+            *carrier = pose.surface(carrier);
+        }
         // A rational map keeps the box's corners rational; otherwise the box
         // is dropped and only the weaker residual remains.
         self.bounds = self.bounds.take().and_then(|bounds| {
@@ -300,6 +748,8 @@ pub enum PieceCover {
     Saddle(SaddleCover),
     /// A ring with mouth contacts.
     Rim(RimCover),
+    /// A seam over a mitre.
+    Seam(SeamCover),
 }
 impl Cover for PieceCover {
     fn radius(&self) -> &Ball {
@@ -355,6 +805,7 @@ impl Path for Piece {
             Kind::Coaxial(path) => PieceCover::Coaxial(path.cover(dec)?),
             Kind::Saddle(path) => PieceCover::Saddle(path.cover(dec)?),
             Kind::Rim(path) => PieceCover::Rim(path.cover(dec)?),
+            Kind::Seam(path) => PieceCover::Seam(path.cover(dec)?),
         })
     }
     fn nearest(&self, local: &[Real; 3], dec: &mut Decider) -> Result<Option<Frame>, Refusal> {

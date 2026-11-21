@@ -114,9 +114,10 @@ pub(crate) fn location(
         geometry::Leaf::Feature(f) => f.classify(p, dec),
         geometry::Leaf::Rolling(piece) => piece.locate(p, dec),
         geometry::Leaf::Draft(region) => region.classify(p, None, dec),
-        geometry::Leaf::Lattice(_) | geometry::Leaf::Gyroid(_) | geometry::Leaf::Mesh(_) => {
-            Ok(Location::Indeterminate)
-        }
+        geometry::Leaf::Lattice(_)
+        | geometry::Leaf::Gyroid(_)
+        | geometry::Leaf::Mesh(_)
+        | geometry::Leaf::Shell(_) => Ok(Location::Indeterminate),
         geometry::Leaf::Primitive(_) | geometry::Leaf::Cell(_) => {
             let mut boundary = false;
             let xyz = coordinates(p);
@@ -199,6 +200,7 @@ pub(crate) fn ray(
         geometry::Leaf::Lattice(_)
             | geometry::Leaf::Gyroid(_)
             | geometry::Leaf::Mesh(_)
+            | geometry::Leaf::Shell(_)
             | geometry::Leaf::Rolling(_)
     ) {
         return Ok(Location::Indeterminate);
@@ -482,6 +484,20 @@ impl Prepared<'_> {
         {
             return Ok(false);
         }
+        // A rolling piece's boundary off its balls lies on a wall, not on
+        // its face.
+        if let geometry::Leaf::Rolling(piece) = leaf
+            && !piece.on_face(p, dec)?
+        {
+            return Ok(false);
+        }
+        self.survives(id, p, dec)
+    }
+    /// Whether a point on face `id`'s own leaf boundary, on the face, lies on
+    /// the result's boundary: the other leaves leave it there through the
+    /// plan's Boolean.
+    fn survives(&self, id: usize, p: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
+        let face = &self.plan.faces[id];
         if matches!(self.plan.instructions[self.plan.root], Instruction::Leaf(i) if i == face.leaf)
         {
             return Ok(true);
@@ -754,7 +770,16 @@ impl Prepared<'_> {
                 Some(p) => p.to_real(),
                 None => match cone_witness(domain.surface(), point, &step, offset)? {
                     Some(p) => p,
-                    None => break,
+                    None => {
+                        if offset == 0
+                            && let Some((upper, p)) = self.rolling_witness(id.0, point, dec)?
+                        {
+                            candidate.converged = &upper <= width;
+                            candidate.upper = Some(upper);
+                            candidate.witnesses = Some([point.clone(), p]);
+                        }
+                        break;
+                    }
                 },
             };
             let squared = point.minus(&p).norm_squared();
@@ -783,6 +808,30 @@ impl Prepared<'_> {
             }
         }
         Ok(candidate)
+    }
+
+    /// A witness on a rolling piece's face where its surface has no rational
+    /// point near `point` (4.2a): the face's nearest point in closed form
+    /// ([`crate::rolling_region::piece::Piece::face_point`]), on the face by
+    /// construction, kept when the plan's other leaves leave it on the
+    /// result's boundary. Returns the distance's upper bound and the point.
+    fn rolling_witness(
+        &self,
+        id: usize,
+        point: &Point3,
+        dec: &mut Decider,
+    ) -> Result<Option<(Rational, Point3)>, Refusal> {
+        let geometry::Leaf::Rolling(piece) = &self.plan.leaves[self.plan.faces[id].leaf] else {
+            return Ok(None);
+        };
+        let Some(foot) = piece.face_point(point, dec)? else {
+            return Ok(None);
+        };
+        if !self.survives(id, &foot, dec)? {
+            return Ok(None);
+        }
+        let squared = dec.enclose_budgeted_at(&point.minus(&foot).norm_squared(), 128)?;
+        Ok(squared.sqrt().map(|distance| (distance.hi(), foot)))
     }
 
     /// Certified point-to-face distance, including the face's closed trim loops.

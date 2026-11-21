@@ -267,6 +267,19 @@ impl Generator {
         &self.radius
     }
 
+    /// The exact surface that holds the face, for the face registry: the
+    /// cylinder of the ball's radius about the centre line, whose equation
+    /// has the separation's sign. The first foot lies in the section normal
+    /// to the line, so it gives the seam direction.
+    pub fn face(&self) -> catallax_shapes::Surface {
+        catallax_shapes::Surface::Cylinder(catallax_shapes::Cylinder {
+            origin: self.centre.clone(),
+            axis: self.direction.clone(),
+            radius_sq: self.radius.square(),
+            ref_dir: self.feet[0].minus(&self.centre),
+        })
+    }
+
     /// Applies an exact rigid motion, reflections included. Stations are
     /// relative to the moved centre and direction, so they are unchanged.
     pub fn transform(&mut self, pose: &Isometry) {
@@ -302,6 +315,32 @@ impl Generator {
 
     fn station(&self, t: &Real) -> Vector3 {
         self.direction.scaled(t)
+    }
+
+    /// The end `k` that is a face, not a junction, whose clip is zero at
+    /// the local point `local`, as that end plane: a point on it, its normal
+    /// into the region and a direction in it. `None` at a junction or off
+    /// both end planes.
+    pub(crate) fn end_plane_at(
+        &self,
+        local: &[Real; 3],
+        dec: &mut Decider,
+    ) -> Result<Option<(Point3, Vector3, Vector3)>, Refusal> {
+        let along = self
+            .direction
+            .dot(&vector(local).minus(&position(&self.centre)));
+        for (k, wall) in self.end_walls(&along).into_iter().enumerate() {
+            if !self.junction[k] && sign(&wall, dec)? == Sign::Zero {
+                let normal = if k == 0 {
+                    self.direction.clone()
+                } else {
+                    self.direction.scaled(&Real::from_i64(-1))
+                };
+                let within = self.direction.cross(&self.feet[0].minus(&self.centre));
+                return Ok(Some((self.centre_at(&self.ends[k]), normal, within)));
+            }
+        }
+        Ok(None)
     }
 
     /// The two end clips, non-negative between the end planes, from the
@@ -342,6 +381,24 @@ impl Generator {
     /// A straight piece's box is already tight: its only box is its hull.
     pub fn boxes(&self, dec: &mut Decider) -> Result<Vec<[Ball; 3]>, Refusal> {
         Ok(vec![self.hull(dec)?])
+    }
+
+    /// The vertices of a prism that holds the region, when both supports
+    /// are planes: the edge point, both feet and the centre at each end
+    /// station. Each section lies in the quadrilateral of its edge point,
+    /// feet and centre (see [`Generator::hull`]), exactly, in any pose.
+    /// `None` when a support is a cylinder, whose arc bulges past that
+    /// quadrilateral.
+    pub(crate) fn plane_prism(&self) -> Option<Vec<Point3>> {
+        if !self.supports.iter().all(|w| matches!(w, Wall::Plane(_))) {
+            return None;
+        }
+        let mut points = Vec::with_capacity(8);
+        for t in &self.ends {
+            let [edge, first, second] = self.section_at(t);
+            points.extend([edge, first, second, self.centre_at(t)]);
+        }
+        Some(points)
     }
 
     /// Tentative binary64 value for display: negative inside the region. The
@@ -567,6 +624,7 @@ impl Cover for GeneratorCover {
             centre: shift(&self.centre, &t, &self.direction),
             tangent: self.direction.clone(),
             feet: self.feet.each_ref().map(|f| shift(f, &t, &self.direction)),
+            side: None,
         })
     }
 }
@@ -665,6 +723,7 @@ impl Path for Generator {
                 point_balls(&self.feet[0].plus(&step), dec)?,
                 point_balls(&self.feet[1].plus(&step), dec)?,
             ],
+            side: None,
         }))
     }
 }

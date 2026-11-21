@@ -112,6 +112,7 @@ impl Plan {
                         | Leaf::Lattice(_)
                         | Leaf::Gyroid(_)
                         | Leaf::Mesh(_)
+                        | Leaf::Shell(_)
                         | Leaf::Rolling(_) => None,
                     },
                     Instruction::Boolean { kind, a, b } => match kind {
@@ -152,16 +153,25 @@ impl Plan {
         };
         let angular = std::cell::OnceCell::new();
         let radial_grid = std::cell::OnceCell::new();
+        // A rolling piece's face has no rational chart (an irrational ring
+        // torus has no rational point at all), so it gets no candidates; the
+        // other faces are still visited (4.2a), and the visit reports that
+        // it did not cover every face.
+        let mut every_face = true;
         for (index, face) in self.faces.iter().enumerate() {
             if !face.in_result || self.leaf_registers[face.leaf].is_none() {
                 continue;
             }
             let complete = match &self.leaves[face.leaf] {
+                Leaf::Rolling(_) => {
+                    every_face = false;
+                    continue;
+                }
                 Leaf::Smooth(_)
                 | Leaf::Lattice(_)
                 | Leaf::Gyroid(_)
                 | Leaf::Mesh(_)
-                | Leaf::Rolling(_) => false,
+                | Leaf::Shell(_) => false,
                 Leaf::Feature(feature) => feature.sample_candidates(
                     self.definition_role(index),
                     divisions,
@@ -207,11 +217,12 @@ impl Plan {
         // Cell candidates are a separate, definition-native pass. They are not
         // boundary certificates; callers must use the same face queries as for
         // all other candidate sources.
-        if let Some(result) = result {
-            cell::visit(self, divisions, result, &mut visit)
+        let visited = if let Some(result) = result {
+            cell::visit(self, divisions, result, &mut visit)?
         } else {
-            Ok(true)
-        }
+            true
+        };
+        Ok(visited && every_face)
     }
 }
 

@@ -567,6 +567,7 @@ mod allowance_tests {
                     used: 0,
                     exhausted: false,
                     refunded: 0,
+                    uncharged: 0,
                 },
                 proof: Some(current_operation_work()),
             })
@@ -589,6 +590,7 @@ mod allowance_tests {
                 used: 10_000_000,
                 exhausted: false,
                 refunded: 0,
+                uncharged: 0,
             },
             proof: None,
         };
@@ -597,6 +599,7 @@ mod allowance_tests {
             used: 10_000_000,
             exhausted: false,
             refunded: 0,
+            uncharged: 0,
         });
         assert!(!report.over_target());
         report.proof.as_mut().unwrap().used += 1;

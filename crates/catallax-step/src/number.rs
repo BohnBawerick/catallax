@@ -48,20 +48,112 @@ pub(crate) fn decimal(s: &str) -> String {
 }
 
 pub(crate) fn rounded(lo: &Rational, hi: &Rational, digits: u32) -> Number {
-    let mid = (lo + hi).mul_pow2(-1);
+    rounded_by(&(lo + hi).mul_pow2(-1), lo, hi, digits, |a, b| a - b)
+}
+
+// `mid` is the midpoint of `lo` and `hi`, and `sub` takes each difference.
+fn rounded_by(
+    mid: &Rational,
+    lo: &Rational,
+    hi: &Rational,
+    digits: u32,
+    sub: impl Fn(&Rational, &Rational) -> Rational,
+) -> Number {
     let (lower, upper) = mid.to_decimal_bounds(digits.max(1));
     let a = formatted_value(&lower);
     let b = formatted_value(&upper);
-    let (value, text) = if (&mid - &a).abs() <= (&b - &mid).abs() {
+    let (value, text) = if sub(mid, &a).abs() <= sub(&b, mid).abs() {
         (a, lower)
     } else {
         (b, upper)
     };
-    let error = (&value - lo).abs().max((&value - hi).abs());
+    let error = sub(&value, lo).abs().max(sub(&value, hi).abs());
     Number {
         value,
         text: decimal(&text),
         error,
+    }
+}
+
+/// Exact rational arithmetic of the curve fit (`fit.rs`), counted as it is
+/// done.
+///
+/// Each operation is priced at the decider's own rate for the same arithmetic
+/// (`Work::exact` in `catallax-numbers/src/decider.rs`, under "Logical
+/// arithmetic costs"): a product or a quotient costs the product of its
+/// operands' limb counts and a sum or a difference their sum, where a
+/// rational's limb count is its numerator's plus its denominator's. Those are
+/// the limb operations of schoolbook multiplication and addition (Knuth, The
+/// Art of Computer Programming, volume 2, section 4.3.1, algorithms M and A).
+///
+/// The price is counted and not charged
+/// ([`catallax_numbers::count_exact_arithmetic`]): it is reported in
+/// `OperationWork::uncharged`, beside `used`, and takes nothing from the
+/// allowance. The written curve has no cheaper construction for a cap to fall
+/// back to, so a charge here could only turn an answer into a refusal
+/// (Checkpoint 2 decisions, section 4.5, predictor steps 1 and 5).
+pub(crate) mod counted {
+    use super::{Number, rounded_by};
+    use catallax_numbers::{Ball, Rational, count_exact_arithmetic};
+
+    pub(crate) fn mul(a: &Rational, b: &Rational) -> Rational {
+        count_exact_arithmetic(a, b, true);
+        a * b
+    }
+
+    /// `a / b`, priced as the product it is: `a` times the reciprocal of `b`.
+    pub(crate) fn div(a: &Rational, b: &Rational) -> Rational {
+        count_exact_arithmetic(a, b, true);
+        a / b
+    }
+
+    pub(crate) fn add(a: &Rational, b: &Rational) -> Rational {
+        count_exact_arithmetic(a, b, false);
+        a + b
+    }
+
+    pub(crate) fn sub(a: &Rational, b: &Rational) -> Rational {
+        count_exact_arithmetic(a, b, false);
+        a - b
+    }
+
+    /// `base` to the power `exponent`, as `exponent` products.
+    pub(crate) fn pow(base: &Rational, exponent: usize) -> Rational {
+        let mut power = Rational::one();
+        for _ in 0..exponent {
+            power = mul(&power, base);
+        }
+        power
+    }
+
+    /// Counts the writing of `value` in decimal. That converts its numerator
+    /// and its denominator to base ten and divides one by the other, each
+    /// quadratic in the value's own limbs with schoolbook arithmetic (Knuth,
+    /// volume 2, section 4.3.1 algorithm D and section 4.4), so it is priced
+    /// as the value times itself.
+    fn conversion(value: &Rational) {
+        count_exact_arithmetic(value, value, true);
+    }
+
+    /// [`super::rounded`]. The midpoint is a sum and is written in decimal
+    /// ([`conversion`]). Choosing the nearer decimal takes two differences
+    /// and the error two more.
+    pub(crate) fn rounded(lo: &Rational, hi: &Rational, digits: u32) -> Number {
+        let mid = add(lo, hi).mul_pow2(-1);
+        conversion(&mid);
+        rounded_by(&mid, lo, hi, digits, sub)
+    }
+
+    /// The text of the least decimal of `digits` significant digits that is
+    /// not below `value`, counted as the one decimal conversion it is.
+    pub(crate) fn decimal_above(value: &Rational, digits: u32) -> String {
+        conversion(value);
+        value.to_decimal_bounds(digits).1
+    }
+
+    /// [`super::ball_number`], counted as [`rounded`].
+    pub(crate) fn ball_number(value: &Ball, digits: u32) -> Number {
+        rounded(&value.lo(), &value.hi(), digits)
     }
 }
 

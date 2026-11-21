@@ -1746,13 +1746,7 @@ impl Work {
     }
 
     pub fn exact(&mut self, a: &Rational, b: &Rational, mul: bool) -> Result<(), &'static str> {
-        let a = limbs(a);
-        let b = limbs(b);
-        self.charge(if mul {
-            a.saturating_mul(b)
-        } else {
-            a.saturating_add(b)
-        })
+        self.charge(exact_cost(a, b, mul))
     }
     pub fn ball(&mut self, p: u32, mul: bool) -> Result<(), &'static str> {
         if p > self.policy.max_precision_bits {
@@ -1837,6 +1831,34 @@ fn limbs(r: &Rational) -> u64 {
         .div_ceil(64)
         .max(1)
         .saturating_add(r.denominator().bit_length().div_ceil(64).max(1))
+}
+
+// The limb rule for one exact rational operation: the product of the operands'
+// limb counts for a product, their sum for a sum or a difference.
+fn exact_cost(a: &Rational, b: &Rational, mul: bool) -> u64 {
+    let a = limbs(a);
+    let b = limbs(b);
+    if mul {
+        a.saturating_mul(b)
+    } else {
+        a.saturating_add(b)
+    }
+}
+
+/// Counts one exact rational product (`multiply`) or sum of `a` and `b` that
+/// the caller does outside a decision, without charging it.
+///
+/// The amount is what [`Decider::reserve_exact_arithmetic`] charges for the
+/// same operation: the limb rule above, and one unit more, because every
+/// charge also pays for its deadline check (`Work::charge`). It goes to
+/// [`crate::OperationWork::uncharged`] and nowhere else: the allowance, `used`
+/// and every refusal stay as they are, no deadline is read, and nothing is
+/// counted outside a request.
+///
+/// For arithmetic whose cost belongs on the record and has no cheaper path
+/// yet for a cap to fall back to.
+pub fn count_exact_arithmetic(a: &Rational, b: &Rational, multiply: bool) {
+    crate::operation::count_uncharged(exact_cost(a, b, multiply).saturating_add(1));
 }
 
 enum EvalError {

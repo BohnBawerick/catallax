@@ -21,7 +21,7 @@ fn endpoint_jets((knots, controls): &Fit) -> [[f64; 3]; 2] {
 fn speed(value: &[f64; 3]) -> Result<f64, Refusal> {
     let length = value
         .iter()
-        .fold(0.0_f64, |sum, coordinate| sum.hypot(*coordinate));
+        .fold(0.0_f64, |sum, coordinate| libm::hypot(sum, *coordinate));
     if !length.is_finite() || length <= 0.0 {
         return Err(fit_failure(
             "a retained guide chart has no finite nonzero endpoint speed",

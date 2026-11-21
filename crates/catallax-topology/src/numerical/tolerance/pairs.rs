@@ -6,7 +6,8 @@
 //! touch. Their boxes go in a bounding-box tree, each widened by its reach,
 //! and only the pairs whose widened boxes overlap are measured. On a part
 //! with no small features the tree returns no pair and nothing is measured.
-//! Every box test, sample, evaluation and foot search is charged as work.
+//! Every box test, sample, evaluation and foot search is charged as work,
+//! and each reading of a curve or a surface before it is made.
 //!
 //! A face of a numerical body stores no tolerance (its surface is the
 //! authoritative copy), so a pair with a face has `t_face = 0`. Its distance
@@ -47,8 +48,8 @@ use super::{
 };
 use crate::Sense;
 use crate::numerical::gap::{
-    FramedCurve, FramedSurface, FramedUvCurve, ROOT_DEPTH, brent_maximum, chebyshev_shares,
-    nearest_on_curves, try_brent_maximum,
+    FramedCurve, FramedSurface, FramedUvCurve, ROOT_DEPTH, chebyshev_shares, nearest_on_curves,
+    try_brent_maximum,
 };
 use crate::numerical::{
     NumericalBody, NumericalDefinition, NumericalNativeTrim, analytic, native::Index,
@@ -430,6 +431,64 @@ fn pieces(curve: &mut FramedCurve, dec: &mut Decider) -> Result<Vec<Piece>, Refu
     Ok(out)
 }
 
+/// Charges `units` for readings a search is about to make. Where the charge
+/// refuses, the refusal is kept for the caller and the search is told to stop
+/// before it reads.
+fn pay(dec: &mut Decider, units: u64, refused: &mut Option<Refusal>) -> Option<()> {
+    match dec.charge_work(units) {
+        Ok(()) => Some(()),
+        Err(refusal) => {
+            *refused = Some(refusal);
+            None
+        }
+    }
+}
+
+/// What a foot search reads of a surface. The searches go through it so that
+/// a test can count the readings made.
+trait Sought {
+    /// The point at `uv`.
+    fn point(&mut self, uv: [f64; 2]) -> [f64; 3];
+
+    /// [`FramedSurface::foot_spending`].
+    fn foot_spending(
+        &mut self,
+        target: &[f64; 3],
+        seed: [f64; 2],
+        spend: &mut dyn FnMut() -> Option<()>,
+    ) -> Option<[f64; 2]>;
+}
+
+impl Sought for FramedSurface {
+    fn point(&mut self, uv: [f64; 2]) -> [f64; 3] {
+        FramedSurface::point(self, uv)
+    }
+
+    fn foot_spending(
+        &mut self,
+        target: &[f64; 3],
+        seed: [f64; 2],
+        spend: &mut dyn FnMut() -> Option<()>,
+    ) -> Option<[f64; 2]> {
+        FramedSurface::foot_spending(self, target, seed, spend)
+    }
+}
+
+/// The foot of `point` on a surface, from `seed`. Each evaluation of the
+/// surface is charged before it is made (section 4.2 step 8), one unit as
+/// every reading here is, so a search the allowance cannot pay for stops at
+/// the evaluation it cannot afford and gives the allowance's refusal.
+fn charged_foot(
+    surface: &mut impl Sought,
+    point: &[f64; 3],
+    seed: [f64; 2],
+    dec: &mut Decider,
+) -> Result<[f64; 2], Refusal> {
+    let mut refused = None;
+    let foot = surface.foot_spending(point, seed, &mut || pay(dec, 1, &mut refused));
+    foot.ok_or_else(|| refused.expect("a search ends early only where a charge refused"))
+}
+
 /// The least distance from `point` to a curve's pieces within `reach`, by
 /// the samples and a Brent polish of every sampled local minimum.
 fn point_to_curve(
@@ -459,9 +518,10 @@ fn point_to_curve(
             let mut found = (*value, piece.samples[i].0);
             if let (Some(_), Some(_)) = (left, right) {
                 let [a, b] = [piece.samples[i - 1].0, piece.samples[i + 1].0];
-                let (share, negative, evaluations) =
-                    brent_maximum(&mut |s| -distance(&curve.point(a + s * (b - a)), point));
-                dec.charge_work(evaluations)?;
+                let (share, negative, _) = try_brent_maximum(|s| -> Result<f64, Refusal> {
+                    dec.charge_work(1)?;
+                    Ok(-distance(&curve.point(a + s * (b - a)), point))
+                })?;
                 if -negative < found.0 {
                     found = (-negative, a + share * (b - a));
                 }
@@ -505,10 +565,9 @@ fn foot_on(
             best.1
         }
     };
-    // One more than the search spent: the surface's point at the foot, which
-    // every caller reads next.
-    let (foot, evaluations) = face.surface.foot(point, seed);
-    dec.charge_work(evaluations + 1)?;
+    let foot = charged_foot(&mut face.surface, point, seed, dec)?;
+    // The surface's point at the foot, which every caller reads next.
+    dec.charge_work(1)?;
     if !foot.iter().all(|x| x.is_finite()) {
         return Ok((None, seed));
     }
@@ -617,8 +676,7 @@ fn curve_to_face(
         let (_, negative, _) = try_brent_maximum(|x| -> Result<f64, Refusal> {
             dec.charge_work(3)?;
             let p = curve.point(a + x * (b - a));
-            let (uv, n) = face.surface.foot(&p, foot);
-            dec.charge_work(n)?;
+            let uv = charged_foot(&mut face.surface, &p, foot, dec)?;
             if face.inside(uv, dec)? {
                 Ok(-distance(&face.surface.point(uv), &p))
             } else {
@@ -627,31 +685,8 @@ fn curve_to_face(
         })?;
         least = Some(value.min(-negative));
     }
-    for ([mut from, mut to], side, mut foot) in crossings {
-        let mut found = None;
-        for _ in 0..ROOT_DEPTH {
-            let middle = from + (to - from) / 2.0;
-            if !between(middle, from, to) {
-                break;
-            }
-            let p = curve.point(middle);
-            let (uv, evaluations) = face.surface.foot(&p, foot);
-            // The curve's point, the search for its foot and the surface's
-            // point there.
-            dec.charge_work(evaluations + 2)?;
-            if !uv.iter().all(|x| x.is_finite()) {
-                break;
-            }
-            foot = uv;
-            let on = face.surface.point(uv);
-            let offset: [f64; 3] = std::array::from_fn(|axis| p[axis] - on[axis]);
-            if dot(&side, &offset) > 0.0 {
-                from = middle;
-            } else {
-                to = middle;
-            }
-            found = Some((uv, distance(&on, &p)));
-        }
+    for (run, side, foot) in crossings {
+        let found = follow_crossing(run, &side, foot, |t| curve.point(t), &mut face.surface, dec)?;
         if let Some((uv, d)) = found
             && face.inside(uv, dec)?
         {
@@ -659,6 +694,52 @@ fn curve_to_face(
         }
     }
     Ok(least)
+}
+
+/// Follows a change of side between two parameters of a curve to its
+/// crossing with a surface, by halving the run [`ROOT_DEPTH`] times.
+/// `side` is the offset from the surface at the first parameter and `foot`
+/// the foot at the second. Returns the foot of the last point read and that
+/// point's distance from the surface, or `None` where no binary64 parameter
+/// lies between the two.
+///
+/// Each reading is charged before it is made (section 4.2 step 8): one unit
+/// for the curve's point, the search for its foot as it iterates
+/// ([`charged_foot`]) and one unit for the surface's point at the foot. A
+/// halving the allowance cannot pay for stops at the reading it cannot
+/// afford.
+fn follow_crossing(
+    [mut from, mut to]: [f64; 2],
+    side: &[f64; 3],
+    mut foot: [f64; 2],
+    mut point: impl FnMut(f64) -> [f64; 3],
+    surface: &mut impl Sought,
+    dec: &mut Decider,
+) -> Result<Option<([f64; 2], f64)>, Refusal> {
+    let mut found = None;
+    for _ in 0..ROOT_DEPTH {
+        let middle = from + (to - from) / 2.0;
+        if !between(middle, from, to) {
+            break;
+        }
+        dec.charge_work(1)?;
+        let p = point(middle);
+        let uv = charged_foot(surface, &p, foot, dec)?;
+        if !uv.iter().all(|x| x.is_finite()) {
+            break;
+        }
+        foot = uv;
+        dec.charge_work(1)?;
+        let on = surface.point(uv);
+        let offset: [f64; 3] = std::array::from_fn(|axis| p[axis] - on[axis]);
+        if dot(side, &offset) > 0.0 {
+            from = middle;
+        } else {
+            to = middle;
+        }
+        found = Some((uv, distance(&on, &p)));
+    }
+    Ok(found)
 }
 
 /// The least distance between two curves within `reach`: the nearest sample
@@ -707,17 +788,21 @@ fn curve_to_curve(
             let (mut s, mut t) = (piece_a.samples[nearest.1].0, piece_b.samples[nearest.2].0);
             let mut value = nearest.0;
             for _ in 0..ALTERNATIONS {
+                dec.charge_work(1)?;
                 let p = curve_a.point(s);
-                let (share, negative, evaluations) =
-                    brent_maximum(&mut |x| -distance(&curve_b.point(b0 + x * (b1 - b0)), &p));
-                dec.charge_work(evaluations)?;
+                let (share, negative, _) = try_brent_maximum(|x| -> Result<f64, Refusal> {
+                    dec.charge_work(1)?;
+                    Ok(-distance(&curve_b.point(b0 + x * (b1 - b0)), &p))
+                })?;
                 if -negative <= value {
                     (t, value) = (b0 + share * (b1 - b0), -negative);
                 }
+                dec.charge_work(1)?;
                 let q = curve_b.point(t);
-                let (share, negative, evaluations) =
-                    brent_maximum(&mut |x| -distance(&curve_a.point(a0 + x * (a1 - a0)), &q));
-                dec.charge_work(evaluations)?;
+                let (share, negative, _) = try_brent_maximum(|x| -> Result<f64, Refusal> {
+                    dec.charge_work(1)?;
+                    Ok(-distance(&curve_a.point(a0 + x * (a1 - a0)), &q))
+                })?;
                 if -negative <= value {
                     (s, value) = (a0 + share * (a1 - a0), -negative);
                 }
@@ -725,8 +810,12 @@ fn curve_to_curve(
             let mut at = [s, t];
             // The polish, and once more where a closed edge is re-entered.
             for _ in 0..2 {
-                let (found, evaluations) = nearest_on_curves(curve_a, curve_b, at);
-                dec.charge_work(evaluations)?;
+                // Each reading of the search is a point of both curves.
+                let mut refused = None;
+                let found = nearest_on_curves(curve_a, curve_b, at, || pay(dec, 2, &mut refused));
+                let Some(found) = found else {
+                    return Err(refused.expect("a search ends early only where a charge refused"));
+                };
                 let round = [
                     reentered(curve_a, closed_a, found[0]),
                     reentered(curve_b, closed_b, found[1]),
@@ -852,9 +941,10 @@ fn walk_parameters(
             {
                 let (from, to) = (read[began], read[k]);
                 let sign = if rose { 1.0 } else { -1.0 };
-                let (share, _, evaluations) =
-                    brent_maximum(&mut |x| sign * walk.at(surface, from + x * (to - from))[axis]);
-                dec.charge_work(evaluations)?;
+                let (share, _, _) = try_brent_maximum(|x| -> Result<f64, Refusal> {
+                    dec.charge_work(1)?;
+                    Ok(sign * walk.at(surface, from + x * (to - from))[axis])
+                })?;
                 nodes.push(from + share * (to - from));
             }
             last = Some((k - 1, rising));
@@ -1365,5 +1455,73 @@ mod tests {
             assert!(face.inside(at(10.0 - 1e-8), &mut dec).unwrap(), "{angle}");
             assert!(!face.inside(at(10.0 + 1e-8), &mut dec).unwrap(), "{angle}");
         }
+    }
+
+    /// The plane z = 0 with u along x and v along y, in closed form, read
+    /// through [`Sought`] by the kernel's own foot search. It counts every
+    /// evaluation made of it.
+    struct Flat {
+        readings: u64,
+    }
+
+    impl Sought for Flat {
+        fn point(&mut self, uv: [f64; 2]) -> [f64; 3] {
+            self.readings += 1;
+            [uv[0], uv[1], 0.0]
+        }
+
+        fn foot_spending(
+            &mut self,
+            target: &[f64; 3],
+            seed: [f64; 2],
+            spend: &mut dyn FnMut() -> Option<()>,
+        ) -> Option<[f64; 2]> {
+            crate::numerical::gap::nearest_within(|uv| self.point(uv), target, seed, spend)
+        }
+    }
+
+    /// The line (t, 1, t - 0.3) crosses the plane at t = 0.3. Followed from
+    /// its ends at 0 and 1, every reading of the line and of the plane pays
+    /// one unit and the unit of its deadline check before it is made. With
+    /// any smaller allowance the search refuses by name, and the readings
+    /// made are the ones the allowance paid for in full: the reading that
+    /// does not fit is not made.
+    #[test]
+    fn a_crossing_is_followed_only_as_far_as_it_is_paid_for() {
+        let follow = |limit: u64| {
+            let mut plane = Flat { readings: 0 };
+            let mut line = 0_u64;
+            let (found, work) = catallax_numbers::with_operation_budget(limit, || {
+                follow_crossing(
+                    [0.0, 1.0],
+                    &[0.0, 0.0, -0.3],
+                    [1.0, 1.0],
+                    |t| {
+                        line += 1;
+                        [t, 1.0, t - 0.3]
+                    },
+                    &mut plane,
+                    &mut Decider::default(),
+                )
+            });
+            (found, work, line + plane.readings)
+        };
+        let (found, whole, readings) = follow(u64::MAX);
+        let (foot, apart) = found.expect("paid in full").expect("a crossing");
+        assert!((foot[0] - 0.3).abs() < 1e-9 && (foot[1] - 1.0).abs() < 1e-9);
+        assert!(apart < 1e-9, "{apart}");
+        assert!(readings > 100, "{readings}");
+        assert_eq!(whole.used, 2 * readings);
+        for limit in 0..whole.used {
+            let (found, work, readings) = follow(limit);
+            assert_eq!(
+                found.expect_err("an allowance short of the search").code,
+                "numbers.operation-budget",
+                "allowance {limit}"
+            );
+            assert!(work.exhausted, "allowance {limit}");
+            assert_eq!(readings, limit / 2, "allowance {limit}");
+        }
+        assert!(follow(whole.used).0.is_ok());
     }
 }

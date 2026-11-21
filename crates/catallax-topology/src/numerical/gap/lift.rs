@@ -743,22 +743,22 @@ impl Surface64 {
     /// The foot on the surface of `target`, from a seed: Gauss-Newton on the
     /// squared distance with forward-difference partials, as
     /// [`Lifted::allowance`] takes them (Dennis and Schnabel 1983, sections
-    /// 5.4 and 10.1). Returns the foot and the evaluations it spent.
-    pub(super) fn foot(
+    /// 5.4 and 10.1). `spend` is asked before each evaluation of the surface.
+    /// Where it gives `None` that evaluation is not made, nor any after it,
+    /// and the search gives `None`.
+    pub(super) fn foot_spending(
         &self,
         target: &[f64; 3],
         seed: [f64; 2],
         scratch: &mut Scratch,
-    ) -> ([f64; 2], u64) {
-        let mut left = u64::MAX;
-        let uv = self
-            .foot_within(target, seed, scratch, &mut left)
-            .expect("an unlimited allowance");
-        (uv, u64::MAX - left)
+        spend: impl FnMut() -> Option<()>,
+    ) -> Option<[f64; 2]> {
+        nearest_within(|uv| self.point(uv, scratch).value, target, seed, spend)
     }
 
-    /// [`Self::foot`] under an allowance: each evaluation of the surface is
-    /// taken from `left` before it is made. `None` when `left` runs out.
+    /// [`Self::foot_spending`] under an allowance: each evaluation of the
+    /// surface, with its stated work, is taken from `left` before it is
+    /// made. `None` when `left` runs out.
     pub(super) fn foot_within(
         &self,
         target: &[f64; 3],
@@ -766,32 +766,25 @@ impl Surface64 {
         scratch: &mut Scratch,
         left: &mut u64,
     ) -> Option<[f64; 2]> {
-        nearest_within(
-            |uv| self.point(uv, scratch).value,
-            target,
-            seed,
-            self.work().checked_add(1)?,
-            left,
-        )
+        self.foot_spending(target, seed, scratch, || self.spend(left))
     }
 }
 
 /// The two parameters at which `map` is nearest `target`, from a seed:
 /// Gauss-Newton on the squared distance with forward-difference partials, as
 /// [`Lifted::allowance`] takes them (Dennis and Schnabel 1983, sections 5.4
-/// and 10.1). Each evaluation of `map` takes `units` from `left` before it
-/// is made: the checker's own unit and the work the evaluator states
-/// ([`Surface64::spend`]). `None` when `left` runs out.
-pub(super) fn nearest_within(
+/// and 10.1). `spend` is asked before each evaluation of `map`. Where it
+/// gives `None` that evaluation is not made, nor any after it, and the search
+/// gives `None`.
+pub(in crate::numerical) fn nearest_within(
     mut map: impl FnMut([f64; 2]) -> [f64; 3],
     target: &[f64; 3],
     seed: [f64; 2],
-    units: u64,
-    left: &mut u64,
+    mut spend: impl FnMut() -> Option<()>,
 ) -> Option<[f64; 2]> {
     let mut uv = seed;
     for _ in 0..FOOT_STEPS {
-        spend_units(left, units)?;
+        spend()?;
         let base = map(uv);
         let r: [f64; 3] = std::array::from_fn(|k| target[k] - base[k]);
         let mut partial = [[0.0; 3]; 2];
@@ -799,7 +792,7 @@ pub(super) fn nearest_within(
             let step = f64::EPSILON.sqrt() * uv[axis].abs().max(1.0);
             let mut moved = uv;
             moved[axis] += step;
-            spend_units(left, units)?;
+            spend()?;
             let there = map(moved);
             *column = std::array::from_fn(|k| (there[k] - base[k]) / step);
         }

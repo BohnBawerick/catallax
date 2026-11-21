@@ -5,7 +5,9 @@
 //! wide as the strip, a sphere corner, and the recipes whose straight run
 //! stops at a strip narrower than its ball and takes the cliff (part 2), and
 //! the recipes whose straight run swallows an earlier mitre of two rounds as
-//! wide as its ball, the corpus row `roll-over-mitres` among them (part 3).
+//! wide as its ball, the corpus row `roll-over-mitres` among them, or that
+//! takes the cliff at both feet under a mitre of narrower rounds, the corpus
+//! row `unequal-mitres` (part 3).
 //! The corpus row `box-mitre`, which the elementary route already builds, is
 //! checked for membership.
 //!
@@ -457,6 +459,20 @@ fn cases() -> Vec<Case> {
         &[([1, 4], [1, 4], [91, 10]), ([1, 10], [1, 10], [3, 1])],
     ));
     cases.extend(mitre_corners());
+    // The top loop at radius 1, then the uprights at radius 2, as the test
+    // file's mitred loop 1/2: each upright takes the cliff at both feet,
+    // runs on to the top and both rounds cut it. The B-rep refuses the row
+    // inside the corpus allowance and builds it without one. Derived, at the
+    // corner over (20, 20, 10): cut outside the upright's disk under the
+    // x_max round, kept inside both.
+    cases.push(corpus(
+        "unequal-mitres",
+        "upright",
+        4,
+        &[([39, 2], [37, 2], [19, 2])],
+        &[([99, 5], [19, 1], [46, 5])],
+    ));
+    cases.extend(mitre_cliffs());
     let boss_33 = cases.iter().find(|c| c.name == "boss 3/3").unwrap();
     cases.push(boss_33.placed("placed boss 3/3"));
     let mitred_33 = cases.iter().find(|c| c.name == "mitred 3/3").unwrap();
@@ -726,6 +742,44 @@ fn mitre_corners() -> Vec<Case> {
         ),
     ]
 }
+/// An upright wider than both rounds of an earlier mitre (RECIPE 4.5.1,
+/// the cliff rule at both feet): its strip keeps both planes and runs on
+/// past the cliff to the plane the rounds roll on, and both rounds cut it.
+/// Derived points: cut or added outside the strip's disk below the cliff
+/// and above it inside a round (in the pocket, inside a floor round's air),
+/// kept inside both the disk and the round (where the mitre's outer part
+/// survives); uncut material.
+fn mitre_cliffs() -> Vec<Case> {
+    vec![
+        // The upright's disk about (16, 16); the rounds' axes at z = 7.
+        Case::new(
+            "mitred 3/4",
+            mitred(4, "3", "4", false),
+            "upright",
+            1,
+            &[
+                ([18, 1], [17, 1], [8, 1]),
+                ([37, 2], [37, 2], [9, 1]),
+                ([10, 1], [10, 1], [5, 1]),
+            ],
+            &[([39, 2], [39, 2], [3, 1]), ([39, 2], [19, 1], [15, 2])],
+        ),
+        // Concave: the disk about (13/2, 13/2), the floor rounds' axes at
+        // z = 5.
+        Case::new(
+            "mitred pocket 1/(3/2)",
+            mitred_pocket("1", "3/2"),
+            "upright",
+            4,
+            &[
+                ([51, 10], [51, 10], [7, 1]),
+                ([51, 10], [11, 2], [23, 5]),
+                ([2, 1], [2, 1], [2, 1]),
+            ],
+            &[([6, 1], [6, 1], [9, 2]), ([10, 1], [10, 1], [7, 1])],
+        ),
+    ]
+}
 const CORNER_22_IN: &Points = &[
     ([19, 1], [15, 1], [9, 1]),
     ([19, 1], [7, 5], [44, 5]),
@@ -970,6 +1024,7 @@ const VERTEX_GROUPS: &[&[&str]] = &[
     &["boss 1/3", "pocket 1/3", "corner 1/2"],
     &["roll-over-mitres", "mitred 3/3", "mitred 2/2"],
     &["mitred loop 3/3", "mitred pocket 1/1", "placed mitred 3/3"],
+    &["unequal-mitres", "mitred 3/4", "mitred pocket 1/(3/2)"],
 ];
 macro_rules! vertex_tests {
     ($($test:ident = $group:literal;)+) => {
@@ -994,6 +1049,7 @@ vertex_tests! {
     cliff_blend_vertices_lie_on_the_field_face = 9;
     mitre_blend_vertices_lie_on_the_field_face = 10;
     mitre_loop_blend_vertices_lie_on_the_field_face = 11;
+    mitre_cliff_blend_vertices_lie_on_the_field_face = 12;
 }
 
 #[test]
@@ -1422,7 +1478,7 @@ fn corner_bottom() -> Recipe {
 /// refusal still to clear: a ball outside the round's cylinder (a convex
 /// chain over a concave round, or the reverse) crosses the round's tangent
 /// faces; an upright under an earlier mitre of rounds wider than its ball,
-/// which rolls over it, or narrower, a cliff at both feet;
+/// which rolls over it;
 /// every edge at once; and a round over a chain of rolling pieces, which
 /// register no face to roll on or to clear (`field.fillet-contact`).
 fn later() -> Vec<(&'static str, Recipe, &'static str)> {
@@ -1448,11 +1504,8 @@ fn later() -> Vec<(&'static str, Recipe, &'static str)> {
         ("based 2/1", based("2", "1"), overflow),
         ("based 2/3", based("2", "3"), overflow),
         ("based 3/1", based("3", "1"), overflow),
-        ("mitred loop 1/2", mitred(4, "1", "2", true), overflow),
-        ("mitred 3/4", mitred(4, "3", "4", false), overflow),
         ("mitred loop 1/(1/2)", mitred(4, "1", "1/2", true), overflow),
         ("mitred 3/2", mitred(4, "3", "2", false), overflow),
-        ("mitred pocket 1/(3/2)", mitred_pocket("1", "3/2"), overflow),
         ("mitred pocket 1/(1/2)", mitred_pocket("1", "1/2"), overflow),
         (
             "every after a front round 3/1",

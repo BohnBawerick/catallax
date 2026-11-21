@@ -48,9 +48,13 @@
 //! touches both and closes the run with the trihedral corner of its two
 //! planes and the plane the rounds roll on, which swallows the mitre; a ball
 //! wider than both takes the cliff at both feet and runs on to that plane,
-//! where both rounds cut it. A ball outside the strip's cylinder and a ball
-//! that rolls over a mitre of wider rounds are later parts of step 5 and keep
-//! their refusals.
+//! where both rounds cut it. A ball outside the strip's cylinder, a convex
+//! chain over a concave strip or the reverse, rolls round its outside on a
+//! ring sector of centre radius `R + r`; the strip's two faces cross that
+//! sector's fan and are cleared by showing the fan is of one material
+//! (step 5 part 4). Every patch of a chain keeps the name of the selected
+//! edge it continues (RECIPE 4.5.1). A ball that rolls over a mitre of
+//! wider rounds is a later part of step 5 and keeps its refusal.
 //!
 //! How the reference kernels do this. OpenCASCADE's
 //! `ChFi3d_Builder::PerformElement` (V7_8_0) collects "all mutually tangent
@@ -93,6 +97,10 @@ enum Track {
 #[derive(Clone, Debug)]
 struct Span {
     faces: [usize; 2],
+    // The faces of the selected run this span continues, which name its
+    // patch: RECIPE 4.5.1 keeps `blend.edge` for the originally selected
+    // input edge on every exposed run patch, including after roll-over.
+    named: [usize; 2],
     convex: bool,
     senses: [bool; 2],
     // An edge point inside the run, for the ball's side.
@@ -480,10 +488,13 @@ impl Plan {
                     }
                 }
                 let junction = [0, 1].map(|k| links[i][k].is_some() || cornered[i][k]);
-                runs.push(
-                    self.junction_run(span, junction, free[i], radius, step, dec)?
-                        .cut_by(cuts[i].clone()),
-                );
+                let mut run = self
+                    .junction_run(span, junction, free[i], radius, step, dec)?
+                    .cut_by(cuts[i].clone());
+                if let Some(rails) = self.buried_rails(root, span, radius, dec)? {
+                    run = run.buried(rails.to_vec());
+                }
+                runs.push(run);
             } else {
                 runs.push(self.past_run(span, source_faces, &bound, radius, step, dec)?);
             }
@@ -544,6 +555,7 @@ impl Plan {
                         }
                         found.push(Span {
                             faces,
+                            named: faces,
                             convex,
                             senses,
                             sample,
@@ -651,7 +663,7 @@ impl Plan {
             {
                 sample = point;
             }
-            let material = self.material_point(root, &sample, faces, dec)?;
+            let material = self.arc_material(root, &sample, faces, dec)?;
             found.push((material, i, j, sample));
         }
         // Join neighbouring arcs of one material, round the circle.
@@ -677,6 +689,7 @@ impl Plan {
                 let ends = [from, to].map(|c| cuts[c].0.scaled(&(&Real::one() / &radius)));
                 spans.push(Span {
                     faces,
+                    named: faces,
                     convex,
                     senses,
                     sample,
@@ -692,6 +705,258 @@ impl Plan {
             }
         }
         Ok(Some(spans))
+    }
+
+    /// [`Plan::material_point`] at a point of an arc where a plane meets an
+    /// earlier straight strip's face. Where the strip ends at that plane, its
+    /// cap lies in the plane and holds the plane's face along the arc, as the
+    /// B-rep merges the cap into that face: `mixed-ordered`'s concave round
+    /// ends at the L's x_max plane, beyond the reach of the base's x_max
+    /// face. There the strip's cap test replaces the plane face's own.
+    fn arc_material(
+        &self,
+        root: usize,
+        p: &Point3,
+        faces: [usize; 2],
+        dec: &mut Decider,
+    ) -> Result<Option<(bool, [bool; 2])>, Refusal> {
+        if let Some(found) = self.material_point(root, p, faces, dec)? {
+            return Ok(Some(found));
+        }
+        for k in 0..2 {
+            if self.strip_cap(faces[k], faces[1 - k], p, dec)? {
+                return self.material_point_unless(root, p, faces, Some(faces[k]), dec);
+            }
+        }
+        Ok(None)
+    }
+
+    /// Whether `p` lies on a cap of the earlier straight strip whose face is
+    /// `strip`, in the plane of face `plane`, which is normal to the strip's
+    /// line.
+    fn strip_cap(
+        &self,
+        plane: usize,
+        strip: usize,
+        p: &Point3,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        let leaf = &self.leaves[self.faces[strip].leaf];
+        let (Surface::Plane(support), geometry::Leaf::Feature(feature)) =
+            (&self.faces[plane].surface, leaf)
+        else {
+            return Ok(false);
+        };
+        let Some(Curve::Line(edge)) = feature.fillet.as_ref().map(|f| &f.edge) else {
+            return Ok(false);
+        };
+        let values = [p.x.clone(), p.y.clone(), p.z.clone()];
+        if !self.earlier_strip(strip)
+            || !parallel(&support.normal, &edge.dir, dec)?
+            || geometry::sign(&self.faces[plane].polynomial.eval_real(&values), dec)? != Sign::Zero
+        {
+            return Ok(false);
+        }
+        let location = match coordinates(p) {
+            Ok(xyz) => leaf.location(&xyz, dec)?,
+            Err(_) => crate::distance::location(leaf, p, dec)?,
+        };
+        Ok(location == Location::Boundary && feature.on_cap(p, dec)?)
+    }
+
+    /// The two faces an earlier straight strip rounded, which a ring sector
+    /// over that strip's face may cross, when the sector's ball lies outside
+    /// the strip's cylinder: a convex chain over a concave round
+    /// (`mixed-ordered`) or a concave chain over a convex one. Those faces
+    /// pass through the sector's box, and their leaves bound the body there,
+    /// so no box or leaf argument clears them. They are cleared instead by
+    /// showing that the sector's whole fan is material for a convex sector,
+    /// or air for a concave one: removing or adding the fan less its balls is
+    /// then the rolling ball's result whatever those faces do inside it.
+    ///
+    /// Why. The sector rolls on a plane `P` normal to the strip's line and
+    /// on the strip's cylinder of radius `R`, between the strip's rails in
+    /// `P`, which lie on the strip's two plane faces `F1` and `F2`. Its fan
+    /// is the set `Q` of points between `P` and `P` offset by the ball
+    /// radius `r` toward the ball, `R <= rho <= R + r` from the strip's
+    /// axis, between the meridians through the two rails. Every other face
+    /// is cleared from the piece's box as for any run, and the strip runs at
+    /// least `r` past `P` on the ball's side (its face holds a point there),
+    /// so inside `Q` the body's leaves can change only across `F1` and
+    /// `F2`: `P` and the cylinder bound `Q`, the strip's walls lie on `F1`
+    /// and `F2`, and its caps lie outside the open slab. `F1` and `F2` are
+    /// tangent to the cylinder at the rails, so they cut `Q` into at most
+    /// four connected cells: the strip's own section between the arc and the
+    /// corner (on the axis side of both faces), the cell beyond each face
+    /// alone, and the cell beyond both, which is empty when the strip's
+    /// corner lies at least `R + r` from the axis. In cylindrical coordinates
+    /// about the axis each cell is a slab interval times a planar cell, and
+    /// each planar cell is convex (beyond either face the inner disc does
+    /// not reach) or, for the strip's section, an interval of `rho` above
+    /// `R` for each angle; so the body is constant on each cell. One
+    /// rational probe strictly inside each nonempty cell, classified exactly
+    /// in the body, then settles the whole cell. This is the argument of
+    /// the mixed vertex in `fillet_mixed.rs`, with the earlier strip already
+    /// in the body instead of formed in the same step. `None` when the
+    /// sector is not of this kind or a probe fails; the caller then keeps
+    /// the box test's answer.
+    fn buried_rails(
+        &self,
+        root: usize,
+        span: &Span,
+        radius: &Real,
+        dec: &mut Decider,
+    ) -> Result<Option<[usize; 2]>, Refusal> {
+        let Track::Arc { .. } = &span.track else {
+            return Ok(None);
+        };
+        let [first, second] = span.faces;
+        let (plane_face, strip) = if self.earlier_strip(second) {
+            (first, second)
+        } else if self.earlier_strip(first) {
+            (second, first)
+        } else {
+            return Ok(None);
+        };
+        let (Surface::Plane(plane), Surface::Cylinder(cylinder), geometry::Leaf::Feature(feature)) = (
+            &self.faces[plane_face].surface,
+            &self.faces[strip].surface,
+            &self.leaves[self.faces[strip].leaf],
+        ) else {
+            return Ok(None);
+        };
+        let Some(definition) = feature.fillet.as_deref() else {
+            return Ok(None);
+        };
+        let (Curve::Line(edge), [Surface::Plane(_), Surface::Plane(_)]) =
+            (&definition.edge, &definition.supports)
+        else {
+            return Ok(None);
+        };
+        // The ball lies outside the strip's cylinder exactly when the chain
+        // and the strip differ in convexity.
+        if definition.convex == span.convex || !parallel(&plane.normal, &cylinder.axis, dec)? {
+            return Ok(None);
+        }
+        let [Some(f1), Some(f2)] = definition.supports.each_ref().map(|support| {
+            self.faces
+                .iter()
+                .position(|f| f.surface.same_definition(support))
+        }) else {
+            return Ok(None);
+        };
+        let rails = [f1, f2];
+        let ball = self.ball_direction(span.faces, &span.sample, span.convex, span.senses)?;
+        let Some(flat) = Self::flat(&self.faces[plane_face].surface, &ball, dec)? else {
+            return Ok(None);
+        };
+        let up = unit(&flat.normal);
+        let meet = |origin: &Point3, dir: &Vector3| {
+            origin.plus(&dir.scaled(
+                &(&plane.origin.minus(origin).dot(&plane.normal) / &dir.dot(&plane.normal)),
+            ))
+        };
+        let centre = meet(&cylinder.origin, &cylinder.axis);
+        let corner = meet(&edge.origin, &edge.dir);
+        let inner = square_root(&cylinder.radius_sq);
+        let outer = &inner + radius;
+        let sides = |p: &Point3, dec: &mut Decider| -> Result<[Sign; 2], Refusal> {
+            let values = [p.x.clone(), p.y.clone(), p.z.clone()];
+            Ok([
+                geometry::sign(&self.faces[rails[0]].polynomial.eval_real(&values), dec)?,
+                geometry::sign(&self.faces[rails[1]].polynomial.eval_real(&values), dec)?,
+            ])
+        };
+        // The sector's ends are the strip's rails in `P`, one on each face.
+        let (a, b) = (span.end(0), span.end(1));
+        let (at_a, at_b) = (sides(&a, dec)?, sides(&b, dec)?);
+        if !((at_a[0] == Sign::Zero && at_b[1] == Sign::Zero)
+            || (at_a[1] == Sign::Zero && at_b[0] == Sign::Zero))
+        {
+            return Ok(None);
+        }
+        // The strip runs at least `r` past `P` on the ball's side.
+        let past = span.sample.plus(&up.scaled(radius));
+        if coordinates(&span.sample).is_err()
+            || coordinates(&past).is_err()
+            || !self.through(strip, &span.sample, dec)?
+            || !self.through(strip, &past, dec)?
+        {
+            return Ok(None);
+        }
+        let flip = |s: Sign| match s {
+            Sign::Positive => Sign::Negative,
+            Sign::Negative => Sign::Positive,
+            Sign::Zero => Sign::Zero,
+        };
+        let home = sides(&centre, dec)?;
+        let mut cells = vec![home, [flip(home[0]), home[1]], [home[0], flip(home[1])]];
+        if geometry::sign(
+            &(&corner.minus(&centre).norm_squared() - &outer.square()),
+            dec,
+        )? == Sign::Negative
+        {
+            cells.push(home.map(flip));
+        }
+        let (va, vb) = (a.minus(&centre), b.minus(&centre));
+        let turn = geometry::sign(&cylinder.axis.dot(&va.cross(&vb)), dec)?;
+        if turn == Sign::Zero {
+            return Ok(None);
+        }
+        let want = if span.convex {
+            Location::Inside
+        } else {
+            Location::Outside
+        };
+        let lift = up.scaled(&(radius / &Real::from_i64(2)));
+        let mut probed: Vec<[Sign; 2]> = Vec::new();
+        for (n, d) in [(1, 2), (1, 16), (15, 16), (1, 256), (255, 256)] {
+            let along = Real::from(Rational::from_ratio(n, d).expect("a fixed fraction"));
+            let w = unit(&va.scaled(&(&Real::one() - &along)).plus(&vb.scaled(&along)));
+            for (m, e) in [(1, 2), (1, 16), (15, 16)] {
+                let out = Real::from(Rational::from_ratio(m, e).expect("a fixed fraction"));
+                let target = centre
+                    .plus(&w.scaled(&(&inner + &(radius * &out))))
+                    .plus(&lift);
+                let mut xyz = [Rational::zero(), Rational::zero(), Rational::zero()];
+                for (slot, x) in xyz.iter_mut().zip([&target.x, &target.y, &target.z]) {
+                    *slot = geometry::enclose(x, 32, dec)?.mid();
+                }
+                let p = Point3::new(
+                    xyz[0].clone().into(),
+                    xyz[1].clone().into(),
+                    xyz[2].clone().into(),
+                );
+                // Strictly inside the fan: above `P` and below its offset,
+                // between the cylinders and between the meridians.
+                let v = p.minus(&centre);
+                let height = v.dot(&up);
+                let rho = super::rolling::radial(&v, &cylinder.axis).norm_squared();
+                if geometry::sign(&height, dec)? != Sign::Positive
+                    || geometry::sign(&(&height - radius), dec)? != Sign::Negative
+                    || geometry::sign(&(&rho - &cylinder.radius_sq), dec)? != Sign::Positive
+                    || geometry::sign(&(&rho - &outer.square()), dec)? != Sign::Negative
+                    || geometry::sign(&cylinder.axis.dot(&va.cross(&v)), dec)? != turn
+                    || geometry::sign(&cylinder.axis.dot(&v.cross(&vb)), dec)? != turn
+                {
+                    continue;
+                }
+                let cell = sides(&p, dec)?;
+                if cell.contains(&Sign::Zero) {
+                    continue;
+                }
+                if self.root_location(root, &xyz, dec)? != want {
+                    return Ok(None);
+                }
+                if !probed.contains(&cell) {
+                    probed.push(cell);
+                }
+            }
+        }
+        Ok(cells
+            .iter()
+            .all(|cell| probed.contains(cell))
+            .then_some(rails))
     }
 
     /// Whether face `i` passes through `p`: its support does and its leaf
@@ -733,6 +998,7 @@ impl Plan {
         let mut pending: Vec<usize> = (0..spans.len()).collect();
         let mut paired: Vec<([usize; 2], Vec<Span>)> = Vec::new();
         while let Some(i) = pending.pop() {
+            let named = spans[i].named;
             for k in 0..2 {
                 let p = spans[i].end(k);
                 let mut linked = false;
@@ -773,42 +1039,60 @@ impl Plan {
                             }
                             continue;
                         }
-                        let pair = if source_faces.iter().position(|&f| f == stay)
-                            < source_faces.iter().position(|&f| f == next)
-                        {
-                            [stay, next]
-                        } else {
-                            [next, stay]
-                        };
-                        let found = match paired.iter().find(|(known, _)| *known == pair) {
-                            Some((_, found)) => found.clone(),
-                            None => {
-                                let Some(found) =
-                                    self.spans(root, pair, source_faces, bound, dec)?
-                                else {
-                                    return Ok(false);
-                                };
-                                paired.push((pair, found.clone()));
-                                found
-                            }
-                        };
-                        for span in found {
-                            if !(same(&p, &span.end(0), dec)? || same(&p, &span.end(1), dec)?) {
-                                continue;
-                            }
-                            let mut known = false;
-                            for old in spans.iter() {
-                                if old.faces == span.faces
-                                    && same(&old.end(0), &span.end(0), dec)?
-                                    && same(&old.end(1), &span.end(1), dec)?
-                                {
-                                    known = true;
-                                    break;
+                        // The kept face may go on as a coplanar face of
+                        // another leaf, as where two blocks of a union share
+                        // an end plane: the B-rep merges such faces into one.
+                        // Tried only where the kept face itself has no run
+                        // through the end.
+                        let mut keeps = vec![stay];
+                        keeps.extend(source_faces.iter().copied().filter(|&f| {
+                            f != stay && self.same_face(f, stay) && !self.same_face(f, next)
+                        }));
+                        for keep in keeps {
+                            let pair = if source_faces.iter().position(|&f| f == keep)
+                                < source_faces.iter().position(|&f| f == next)
+                            {
+                                [keep, next]
+                            } else {
+                                [next, keep]
+                            };
+                            let found = match paired.iter().find(|(known, _)| *known == pair) {
+                                Some((_, found)) => found.clone(),
+                                None => {
+                                    let Some(found) =
+                                        self.spans(root, pair, source_faces, bound, dec)?
+                                    else {
+                                        return Ok(false);
+                                    };
+                                    paired.push((pair, found.clone()));
+                                    found
+                                }
+                            };
+                            let mut reached = false;
+                            for mut span in found {
+                                if !(same(&p, &span.end(0), dec)? || same(&p, &span.end(1), dec)?) {
+                                    continue;
+                                }
+                                reached = true;
+                                let mut known = false;
+                                for old in spans.iter() {
+                                    if self.same_face(old.faces[0], span.faces[0])
+                                        && self.same_face(old.faces[1], span.faces[1])
+                                        && same(&old.end(0), &span.end(0), dec)?
+                                        && same(&old.end(1), &span.end(1), dec)?
+                                    {
+                                        known = true;
+                                        break;
+                                    }
+                                }
+                                if !known {
+                                    span.named = named;
+                                    spans.push(span);
+                                    pending.push(spans.len() - 1);
                                 }
                             }
-                            if !known {
-                                spans.push(span);
-                                pending.push(spans.len() - 1);
+                            if reached {
+                                break;
                             }
                         }
                     }
@@ -834,7 +1118,7 @@ impl Plan {
         let p = a.end(k);
         let shared: Vec<(usize, usize)> = (0..2)
             .flat_map(|x| (0..2).map(move |y| (x, y)))
-            .filter(|&(x, y)| a.faces[x] == b.faces[y])
+            .filter(|&(x, y)| self.same_face(a.faces[x], b.faces[y]))
             .collect();
         let [(x, y)] = shared[..] else {
             return Err(not_tangent());
@@ -947,7 +1231,7 @@ impl Plan {
         };
         let piece = Piece::new(
             kind,
-            self.blend_origin(span.faces, step)?,
+            self.blend_origin(span.named, step)?,
             span.convex,
             [&supports[0], &supports[1]],
             dec,
@@ -1176,6 +1460,16 @@ impl Plan {
             node,
             dec,
         )
+    }
+
+    /// Whether faces `a` and `b` lie on one support: the same face, or
+    /// coplanar faces of two leaves with the same support definition, which
+    /// the B-rep merges into one face.
+    fn same_face(&self, a: usize, b: usize) -> bool {
+        a == b
+            || self.faces[a]
+                .support
+                .same_definition(&self.faces[b].support)
     }
 
     /// Whether face `f` is the face of an earlier straight fillet strip.
@@ -1543,7 +1837,7 @@ impl Plan {
         }
         let piece = Piece::new(
             Kind::Generator(path),
-            self.blend_origin(span.faces, step)?,
+            self.blend_origin(span.named, step)?,
             span.convex,
             [&supports[0], &supports[1]],
             dec,

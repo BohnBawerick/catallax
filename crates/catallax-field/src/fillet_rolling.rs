@@ -31,8 +31,9 @@ pub(super) struct Run {
     pub(super) piece: Piece,
     faces: [usize; 2],
     // Faces proven not to overflow the run: end faces of a straight run,
-    // which bound it, a rim's mouths, and narrower rounds that cut a run's
-    // extension past a cliff.
+    // which bound it, a rim's mouths, narrower rounds that cut a run's
+    // extension past a cliff, and the faces an earlier round rounded where
+    // a sector over it has a fan of one material.
     ends: Vec<usize>,
     // Half-spaces `n . (x - p) >= 0` that hold the region, each bounded by
     // a junction with a tangent neighbour piece. A face on the far side of
@@ -75,6 +76,14 @@ impl Run {
     /// the cliff. By the cliff rule they cut the region there, so the
     /// clearance leaves them to that cut, as it leaves end faces.
     pub(super) fn cut_by(mut self, faces: Vec<usize>) -> Self {
+        self.ends.extend(faces);
+        self
+    }
+    /// The run with faces that cross its fan where the fan is proven all
+    /// material (convex) or all air (concave), so they bound nothing there
+    /// (4.2a step 5: an earlier round's two faces under a sector whose ball
+    /// lies outside that round's cylinder).
+    pub(super) fn buried(mut self, faces: Vec<usize>) -> Self {
         self.ends.extend(faces);
         self
     }
@@ -1058,6 +1067,7 @@ impl Plan {
                         || self.outside_solid(run, i, dec)?
                         || self.beside_prism(run, i, dec)?
                         || self.beside_box(run, i, dec)?
+                        || self.on_own_plane(run, i, dec)?
                     {
                         break;
                     }
@@ -1116,6 +1126,31 @@ impl Plan {
             }
         }
         Ok(true)
+    }
+
+    /// Whether face `i` is a plane that holds one of the run's own plane
+    /// supports, a face of another leaf on the same plane, such as a boss's
+    /// bottom face on the plate it stands on (4.2a step 5). The region lies
+    /// on the ball's closed side of each support it rolls on, so such a
+    /// plane meets it at most on its boundary.
+    fn on_own_plane(&self, run: &Run, i: usize, dec: &mut Decider) -> Result<bool, Refusal> {
+        let Surface::Plane(plane) = &self.faces[i].surface else {
+            return Ok(false);
+        };
+        for &own in &run.faces {
+            let Surface::Plane(support) = &self.faces[own].surface else {
+                continue;
+            };
+            dec.charge_work(1)?;
+            if geometry::sign(&plane.normal.cross(&support.normal).norm_squared(), dec)?
+                == Sign::Zero
+                && geometry::sign(&plane.normal.dot(&support.origin.minus(&plane.origin)), dec)?
+                    == Sign::Zero
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     /// Whether face `i`'s leaf puts the whole face beyond one side of the

@@ -766,13 +766,16 @@ fn fillets_over_fillets_not_built_yet_refuse_with_typed_codes() {
     );
     // The field rolls a chain over an earlier strip (4.2a step 5), with a
     // ball as wide as the round it rolls over it sweeps a sphere (part 2),
-    // and an upright as wide as an earlier mitre's rounds swallows the mitre
-    // with a trihedral corner (part 3). An upright narrower than the rounds,
-    // which rolls over the mitre, is a later part of that step.
+    // an upright as wide as an earlier mitre's rounds swallows the mitre
+    // with a trihedral corner (part 3), and a ball outside the round's
+    // cylinder rolls round its outside (part 4). An upright narrower than
+    // the rounds, which rolls over the mitre, is a later part of that step.
     for recipe in [
         boss(4, "3", "1", false),
         pocket("3", "3"),
         mitred(4, "3", "3", false),
+        bracket("3", "1"),
+        based("2", "1"),
     ] {
         assert!(catallax_field::Plan::compile_checked(&recipe, &mut decider()).is_ok());
     }

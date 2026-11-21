@@ -7,7 +7,11 @@
 //! the recipes whose straight run swallows an earlier mitre of two rounds as
 //! wide as its ball, the corpus row `roll-over-mitres` among them, or that
 //! takes the cliff at both feet under a mitre of narrower rounds, the corpus
-//! row `unequal-mitres` (part 3).
+//! row `unequal-mitres` (part 3); and the recipes whose ball rolls round the
+//! outside of an earlier round, a convex chain over a concave round (the
+//! corpus row `mixed-ordered` and the test file's bracket) or a concave
+//! chain over convex ones (the test file's boss base), each patch named by
+//! the selected edge (part 4).
 //! The corpus row `box-mitre`, which the elementary route already builds, is
 //! checked for membership.
 //!
@@ -473,6 +477,7 @@ fn cases() -> Vec<Case> {
         &[([99, 5], [19, 1], [46, 5])],
     ));
     cases.extend(mitre_cliffs());
+    cases.extend(outside_rounds());
     let boss_33 = cases.iter().find(|c| c.name == "boss 3/3").unwrap();
     cases.push(boss_33.placed("placed boss 3/3"));
     let mitred_33 = cases.iter().find(|c| c.name == "mitred 3/3").unwrap();
@@ -482,6 +487,126 @@ fn cases() -> Vec<Case> {
     cases.push(boss_31);
     cases.push(corner_31);
     cases
+}
+
+/// A ball outside the cylinder of the round it rolls over (`C = R + r`): a
+/// convex chain over a concave round, the L's inside corner, on the L's
+/// x_max plane and up the wall; or a concave chain round a boss's foot over
+/// its convex upright rounds. Derived points: cut (or added) in each strip
+/// and sector outside its ball, 9/10 from the plane and from the edge's
+/// line or circle, and kept (or air) inside the ball, on the sector's
+/// meridian (-3/5, -4/5) about the inner round's axis (3/5, 4/5 about the
+/// upright's); and material the chain leaves alone.
+fn outside_rounds() -> Vec<Case> {
+    // The L: right strip centre (20 - r, y, 5 - r), sector about the inner
+    // round's axis (y, z) = (5 + R, 5 + R) with centre circle R + r at
+    // x = 20 - r, wall strip centre (20 - r, 5 - r, z).
+    let bracket_case = |name: &str, recipe: Recipe, inside: &Points, outside: &Points| {
+        Case::new(name, recipe, "right", 3, inside, outside)
+    };
+    // The boss base: strip centre (20 + r, y, 5 + r) along the x_max side,
+    // sector about the upright through (20 - R, 20 - R) with centre circle
+    // R + r at z = 5 + r.
+    let based_case = |name: &str, recipe: Recipe, inside: &Points, outside: &Points| {
+        Case::new(name, recipe, "base", 8, inside, outside)
+    };
+    vec![
+        // R = 1, r = 1.
+        bracket_case(
+            "mixed-ordered",
+            parse(&corpus_row("mixed-ordered")["recipe"]),
+            &[
+                ([39, 2], [10, 1], [9, 2]),
+                ([39, 2], [51, 10], [24, 5]),
+                ([39, 2], [9, 2], [8, 1]),
+                ([18, 1], [267, 50], [128, 25]),
+                ([10, 1], [10, 1], [2, 1]),
+            ],
+            &[
+                ([199, 10], [10, 1], [49, 10]),
+                ([199, 10], [267, 50], [128, 25]),
+                ([199, 10], [49, 10], [8, 1]),
+                ([10, 1], [13, 2], [13, 2]),
+            ],
+        ),
+        bracket_case(
+            "bracket 3/1",
+            bracket("3", "1"),
+            &[
+                ([39, 2], [15, 1], [9, 2]),
+                ([39, 2], [59, 10], [26, 5]),
+                ([39, 2], [9, 2], [9, 1]),
+            ],
+            &[
+                ([199, 10], [15, 1], [49, 10]),
+                ([199, 10], [307, 50], [138, 25]),
+                ([199, 10], [49, 10], [9, 1]),
+            ],
+        ),
+        bracket_case(
+            "bracket 3/4",
+            bracket("3", "4"),
+            &[
+                ([18, 1], [15, 1], [3, 1]),
+                ([18, 1], [53, 10], [22, 5]),
+                ([18, 1], [3, 1], [9, 1]),
+            ],
+            &[
+                ([199, 10], [15, 1], [49, 10]),
+                ([199, 10], [307, 50], [138, 25]),
+                ([199, 10], [49, 10], [9, 1]),
+            ],
+        ),
+        bracket_case(
+            "bracket 2/(3/2)",
+            bracket("2", "3/2"),
+            &[
+                ([19, 1], [15, 1], [4, 1]),
+                ([19, 1], [26, 5], [23, 5]),
+                ([19, 1], [4, 1], [17, 2]),
+            ],
+            &[
+                ([199, 10], [15, 1], [49, 10]),
+                ([199, 10], [287, 50], [133, 25]),
+                ([199, 10], [49, 10], [17, 2]),
+            ],
+        ),
+        // Uprights R = 2 about (18, 18), base r = 1.
+        based_case(
+            "based 2/1",
+            based("2", "1"),
+            &[
+                ([201, 10], [15, 1], [51, 10]),
+                ([963, 50], [492, 25], [51, 10]),
+                ([5, 1], [5, 1], [2, 1]),
+                ([15, 1], [15, 1], [10, 1]),
+            ],
+            &[
+                ([41, 2], [15, 1], [11, 2]),
+                ([486, 25], [498, 25], [11, 2]),
+                ([199, 10], [199, 10], [10, 1]),
+            ],
+        ),
+        based_case(
+            "based 2/3",
+            based("2", "3"),
+            &[
+                ([201, 10], [15, 1], [51, 10]),
+                ([963, 50], [492, 25], [51, 10]),
+            ],
+            &[([22, 1], [15, 1], [7, 1]), ([102, 5], [106, 5], [7, 1])],
+        ),
+        // Uprights R = 3 about (17, 17), base r = 1.
+        based_case(
+            "based 3/1",
+            based("3", "1"),
+            &[
+                ([201, 10], [15, 1], [51, 10]),
+                ([943, 50], [487, 25], [51, 10]),
+            ],
+            &[([41, 2], [15, 1], [11, 2]), ([191, 10], [99, 5], [11, 2])],
+        ),
+    ]
 }
 
 /// A ball as wide as the round it rolls over (`C = 0`): the centre stays on
@@ -847,13 +972,15 @@ fn a_sphere_corner_face_holds_its_rational_points() {
             let [piece] = on[..] else {
                 panic!("{name}: {p:?} on {} pieces' boundaries", on.len());
             };
-            let id = plan
-                .select(piece.origin())
+            // Every patch of the chain carries the selected edge's name
+            // (RECIPE 4.5.1), so the sector's face is the sphere among them.
+            let id = (0..plan.faces().len())
+                .find(|&i| {
+                    let face = &plan.faces()[i];
+                    &face.origin == piece.origin() && matches!(face.surface, Surface::Sphere(_))
+                })
+                .and_then(|i| plan.result_face(i))
                 .expect("the sector's face is registered");
-            assert!(matches!(
-                plan.faces()[id.index()].surface,
-                Surface::Sphere(_)
-            ));
             let query = plan
                 .face_query_checked(
                     id,
@@ -906,7 +1033,7 @@ fn location(plan: &Plan, p: &[Rational; 3]) -> Location {
 #[test]
 fn junctions_over_an_earlier_round_add_no_seam_face() {
     // (case, junction point, axis of the junction normal, answer)
-    let junctions: [(&str, [Rational; 3], usize, Location); 8] = [
+    let junctions: [(&str, [Rational; 3], usize, Location); 12] = [
         // `tangent-boss`: the right strip meets the sector over (18, 18) in
         // the plane y = 18.
         (
@@ -959,6 +1086,33 @@ fn junctions_over_an_earlier_round_add_no_seam_face() {
         (
             "unequal-ordered",
             [ratio(39, 2), ratio(1, 2), ratio(8, 1)],
+            2,
+            Location::Inside,
+        ),
+        // `mixed-ordered`: the top strip meets the sector outside the inner
+        // round in the plane y = 6, and the sector meets the wall strip in
+        // the plane z = 6.
+        (
+            "mixed-ordered",
+            [ratio(199, 10), ratio(6, 1), ratio(49, 10)],
+            1,
+            Location::Outside,
+        ),
+        (
+            "mixed-ordered",
+            [ratio(39, 2), ratio(6, 1), ratio(9, 2)],
+            1,
+            Location::Inside,
+        ),
+        (
+            "mixed-ordered",
+            [ratio(199, 10), ratio(49, 10), ratio(6, 1)],
+            2,
+            Location::Outside,
+        ),
+        (
+            "mixed-ordered",
+            [ratio(39, 2), ratio(9, 2), ratio(6, 1)],
             2,
             Location::Inside,
         ),
@@ -1040,6 +1194,9 @@ const VERTEX_GROUPS: &[&[&str]] = &[
     &["roll-over-mitres", "mitred 3/3", "mitred 2/2"],
     &["mitred loop 3/3", "mitred pocket 1/1", "placed mitred 3/3"],
     &["unequal-mitres", "mitred 3/4", "mitred pocket 1/(3/2)"],
+    &["mixed-ordered", "bracket 3/1"],
+    &["bracket 3/4", "bracket 2/(3/2)"],
+    &["based 2/1", "based 2/3", "based 3/1"],
 ];
 macro_rules! vertex_tests {
     ($($test:ident = $group:literal;)+) => {
@@ -1065,6 +1222,9 @@ vertex_tests! {
     mitre_blend_vertices_lie_on_the_field_face = 10;
     mitre_loop_blend_vertices_lie_on_the_field_face = 11;
     mitre_cliff_blend_vertices_lie_on_the_field_face = 12;
+    mixed_blend_vertices_lie_on_the_field_face = 13;
+    bracket_blend_vertices_lie_on_the_field_face = 14;
+    based_blend_vertices_lie_on_the_field_face = 15;
 }
 
 #[test]
@@ -1553,13 +1713,10 @@ fn corner_bottom() -> Recipe {
 
 /// The step 5 recipes left for later parts of the step, each with the
 /// field's code today. The B-rep builds every one, so each is a field
-/// refusal still to clear: a ball outside the round's cylinder (a convex
-/// chain over a concave round, or the reverse) crosses the round's tangent
-/// faces; an upright under an earlier mitre of rounds wider than its ball,
-/// which rolls over it;
-/// every edge at once; and a round over a chain of rolling pieces, whose
-/// faces the field's fillet routes do not take as supports to roll on or to
-/// clear (`field.fillet-contact`).
+/// refusal still to clear: an upright under an earlier mitre of rounds wider
+/// than its ball, which rolls over it; every edge at once; and a round over
+/// a chain of rolling pieces, whose faces the field's fillet routes do not
+/// take as supports to roll on or to clear (`field.fillet-contact`).
 fn later() -> Vec<(&'static str, Recipe, &'static str)> {
     let overflow = "fillet.unsupported-overflow";
     let contact = "fillet.unsupported-contact";
@@ -1572,17 +1729,6 @@ fn later() -> Vec<(&'static str, Recipe, &'static str)> {
         )
     };
     vec![
-        (
-            "mixed-ordered",
-            parse(&corpus_row("mixed-ordered")["recipe"]),
-            overflow,
-        ),
-        ("bracket 3/1", bracket("3", "1"), overflow),
-        ("bracket 3/4", bracket("3", "4"), overflow),
-        ("bracket 2/(3/2)", bracket("2", "3/2"), overflow),
-        ("based 2/1", based("2", "1"), overflow),
-        ("based 2/3", based("2", "3"), overflow),
-        ("based 3/1", based("3", "1"), overflow),
         ("mitred loop 1/(1/2)", mitred(4, "1", "1/2", true), overflow),
         ("mitred 3/2", mitred(4, "3", "2", false), overflow),
         ("mitred pocket 1/(1/2)", mitred_pocket("1", "1/2"), overflow),

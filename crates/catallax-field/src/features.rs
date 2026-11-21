@@ -1442,6 +1442,33 @@ impl Feature {
             }
         }
     }
+    /// Whether `p` lies on a cap of this extrusion: at its first or last
+    /// station, inside or on its profile (4.2a step 5). An elementary strip
+    /// registers only its blend face; its caps lie in the end planes it was
+    /// cut by, so a cap holds the part of that face the strip adds or
+    /// removes. A through extrusion has no cap.
+    pub(crate) fn on_cap(&self, p: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
+        let Sweep::Extrude {
+            vector,
+            through: false,
+        } = &self.sweep
+        else {
+            return Ok(false);
+        };
+        let local = self.inverse.apply_point(p);
+        let t = &local.z / &Real::from(vector.z.clone());
+        if geometry::sign(&t, dec)? != Sign::Zero
+            && geometry::sign(&(&t - &self.extrusion_end()), dec)? != Sign::Zero
+        {
+            return Ok(false);
+        }
+        let q = [
+            &local.x - &(&t * &Real::from(vector.x.clone())),
+            &local.y - &(&t * &Real::from(vector.y.clone())),
+        ];
+        Ok(profile::location(&self.loops, &q, dec)? != Location::Outside)
+    }
+
     /// Whether every point of this leaf's face `role` satisfies
     /// `normal . x >= level`, proven exactly (4.2a step 4). Only an extrude's
     /// side face is answered: it lies in its profile segments swept along the

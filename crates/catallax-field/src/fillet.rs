@@ -131,6 +131,26 @@ impl Plan {
         }
         Ok(locations[root])
     }
+    /// The location of a rational point in the body at `root`.
+    fn root_location(
+        &self,
+        root: usize,
+        p: &[Rational; 3],
+        dec: &mut Decider,
+    ) -> Result<Location, Refusal> {
+        let mut locations = Vec::with_capacity(root + 1);
+        for instruction in &self.instructions[..=root] {
+            let location = match *instruction {
+                Instruction::Empty => Location::Outside,
+                Instruction::Leaf(i) => self.leaves[i].location(p, dec)?,
+                Instruction::Boolean { kind, a, b } => {
+                    crate::combine(kind, locations[a], locations[b])
+                }
+            };
+            locations.push(location);
+        }
+        Ok(locations[root])
+    }
     fn material(
         &self,
         root: usize,
@@ -138,8 +158,23 @@ impl Plan {
         faces: [usize; 2],
         dec: &mut Decider,
     ) -> Result<Option<(bool, [bool; 2])>, Refusal> {
+        self.material_unless(root, p, faces, None, dec)
+    }
+    /// [`Plan::material`] without the face test of face `skip`, which the
+    /// caller has settled another way.
+    fn material_unless(
+        &self,
+        root: usize,
+        p: &Point3,
+        faces: [usize; 2],
+        skip: Option<usize>,
+        dec: &mut Decider,
+    ) -> Result<Option<(bool, [bool; 2])>, Refusal> {
         let xyz = coordinates(p)?;
         for i in faces {
+            if skip == Some(i) {
+                continue;
+            }
             let face = &self.faces[i];
             if self.leaves[face.leaf].location(&xyz, dec)? != Location::Boundary
                 || self.leaves[face.leaf].on_face(
@@ -189,10 +224,24 @@ impl Plan {
         faces: [usize; 2],
         dec: &mut Decider,
     ) -> Result<Option<(bool, [bool; 2])>, Refusal> {
+        self.material_point_unless(root, p, faces, None, dec)
+    }
+    /// [`Plan::material_point`] without the face test of face `skip`.
+    fn material_point_unless(
+        &self,
+        root: usize,
+        p: &Point3,
+        faces: [usize; 2],
+        skip: Option<usize>,
+        dec: &mut Decider,
+    ) -> Result<Option<(bool, [bool; 2])>, Refusal> {
         if coordinates(p).is_ok() {
-            return self.material(root, p, faces, dec);
+            return self.material_unless(root, p, faces, skip, dec);
         }
         for i in faces {
+            if skip == Some(i) {
+                continue;
+            }
             let face = &self.faces[i];
             let leaf = &self.leaves[face.leaf];
             if crate::distance::location(leaf, p, dec)? != Location::Boundary
@@ -543,19 +592,39 @@ impl Plan {
     /// over the second round's piece, would come out as a plain strip. Such
     /// a step refuses until the routes take those faces.
     pub(crate) fn refuse_over_rolling(&self, root: usize) -> Result<(), Refusal> {
-        let mut pending = vec![root];
-        while let Some(node) = pending.pop() {
+        if self.rolling_below(root).0 {
+            return Err(bad(
+                "a body with rolling pieces needs their faces registered before a later fillet or chamfer",
+            ));
+        }
+        Ok(())
+    }
+
+    /// Whether the body at `root` holds a rolling leaf, and how many of its
+    /// instructions the walk visited. Booleans share their inputs' history,
+    /// so each live instruction is marked once in one backward sweep, as the
+    /// copy and compaction walks do: a child's index is below its parent's.
+    fn rolling_below(&self, root: usize) -> (bool, usize) {
+        let mut live = vec![false; root + 1];
+        live[root] = true;
+        let mut visited = 0;
+        for node in (0..=root).rev() {
+            if !live[node] {
+                continue;
+            }
+            visited += 1;
             match self.instructions[node] {
                 Instruction::Leaf(i) if matches!(self.leaves[i], geometry::Leaf::Rolling(_)) => {
-                    return Err(bad(
-                        "a body with rolling pieces needs their faces registered before a later fillet or chamfer",
-                    ));
+                    return (true, visited);
                 }
-                Instruction::Boolean { a, b, .. } => pending.extend([a, b]),
+                Instruction::Boolean { a, b, .. } => {
+                    live[a] = true;
+                    live[b] = true;
+                }
                 _ => {}
             }
         }
-        Ok(())
+        (false, visited)
     }
 
     fn fillet_runs(
@@ -1376,4 +1445,38 @@ fn finite_round_clear(
     let gap = &body - &radius;
     Ok(geometry::sign(&gap, dec)? == Sign::Positive
         && geometry::sign(&(&gap.square() - &offset_sq), dec)? == Sign::Positive)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use catallax_recipe::Recipe;
+
+    /// A body whose history every Boolean shares twice: 40 levels would be
+    /// 2^40 visits for a walk that follows both inputs each time. The sweep
+    /// visits each live instruction once (reviewer note on #744).
+    #[test]
+    fn the_rolling_walk_visits_shared_history_once() {
+        let recipe = Recipe::parse(
+            r#"{"format":"catallax-recipe/4","name":"block","result":"block",
+            "steps":[{"id":"block","op":"block","size":["2","2","2"],
+            "pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}}]}"#,
+        )
+        .unwrap();
+        let mut plan = Plan::compile(&recipe).unwrap();
+        let mut node = plan.root;
+        let first = plan.instructions.len();
+        for _ in 0..40 {
+            plan.instructions.push(Instruction::Boolean {
+                kind: BooleanKind::Union,
+                a: node,
+                b: node,
+            });
+            node = plan.instructions.len() - 1;
+        }
+        let (rolling, visited) = plan.rolling_below(node);
+        assert!(!rolling);
+        assert_eq!(visited, plan.instructions.len() - first + 1);
+        assert!(plan.refuse_over_rolling(node).is_ok());
+    }
 }

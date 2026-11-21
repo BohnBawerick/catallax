@@ -542,6 +542,130 @@ fn a_file_that_records_nothing_is_read_by_the_gap_rule_for_imports() {
     );
 }
 
+/// A file's u/v curve is kept as a use's face copy only where the gap rule
+/// read it (section 4.2 step 2: the geometric gap is read both ways before
+/// anything continues). One the rule does not read is never kept on the
+/// strength of the stations: its trace is rebuilt from the 3D curve.
+///
+/// Two controls on the unstamped tube. In the first, one u/v curve of the
+/// top is on an interval of its own, `[10, 11]`, off its edge's `[0, 1]`. In
+/// the second it is the same segment written as a polyline, which agrees
+/// with its edge at every station and which the rule has no reader for.
+///
+/// The pass that repairs nothing refuses the body for that one use. The
+/// repair pass reads a straight edge in its line's own length, not in the
+/// file's parameter, so there every file curve of the top is on another
+/// interval than its edge, is unread, and is rebuilt.
+#[test]
+fn a_file_uv_curve_the_gap_rule_does_not_read_is_never_kept() {
+    let body = spline_topped_tube();
+    let (bytes, _) = written(&body);
+    let plain = String::from_utf8(unstamped(&bytes)).unwrap();
+    let curve = plain
+        .lines()
+        .find(|line| {
+            line.contains("=B_SPLINE_CURVE_WITH_KNOTS('',1,") && line.contains("(2,2),(0.,1.),")
+        })
+        .expect("a straight u/v curve over the edge's interval")
+        .to_owned();
+    let name = curve.split('=').next().expect("an entity name");
+    let controls = curve
+        .split("'',1,(")
+        .nth(1)
+        .and_then(|rest| rest.split(')').next())
+        .expect("two controls");
+    let shifted = plain.replace(&curve, &curve.replace("(2,2),(0.,1.),", "(2,2),(10.,11.),"));
+    let polyline = plain.replace(&curve, &format!("{name}=POLYLINE('',({controls}));"));
+    assert_ne!(shifted, plain);
+    assert_ne!(polyline, plain);
+
+    // As written, the first pass admits the tube and keeps every file curve.
+    let (written_open, _) = open(plain.as_bytes());
+    let as_written = written_open
+        .tolerant_admission()
+        .expect("the native admission ran")
+        .evidence();
+    let kept_as_written = as_written
+        .native_trims
+        .iter()
+        .filter(|trim| trim.source_pcurve.is_some())
+        .count();
+    assert!(kept_as_written > 0);
+    assert!(
+        as_written
+            .native_trims
+            .iter()
+            .all(|trim| !trim.reconstructed)
+    );
+
+    for (what, text, why) in [
+        (
+            "a shifted interval",
+            shifted,
+            "does not hold the edge's parameter range",
+        ),
+        ("a polyline", polyline, "neither a B-spline nor a line"),
+    ] {
+        let (opened, _) = open(text.as_bytes());
+        let import = opened
+            .tolerant_admission()
+            .expect("the native admission ran");
+        assert_eq!(
+            import.bodies().len(),
+            1,
+            "{what}: {:?}",
+            opened.first_refusal()
+        );
+        let evidence = import.evidence();
+        let unread: Vec<_> = evidence
+            .warnings
+            .iter()
+            .filter(|warning| warning.code == "import-gap-rule-unread")
+            .collect();
+        assert!(
+            unread.iter().any(|warning| warning.detail.contains(why)),
+            "{what}: {:?}",
+            evidence.warnings
+        );
+        // Each unread use has a trace of this reader's own, and no file
+        // curve.
+        for warning in &unread {
+            let trim = evidence
+                .native_trims
+                .iter()
+                .find(|trim| warning.scope == format!("{}:{}", trim.face, trim.edge))
+                .unwrap_or_else(|| panic!("{what}: no use for {}", warning.scope));
+            assert!(trim.reconstructed, "{what}: {}", warning.scope);
+            assert!(trim.source_pcurve.is_none(), "{what}: {}", warning.scope);
+            assert!(trim.reparametrised.is_none(), "{what}: {}", warning.scope);
+        }
+        // Every file curve that was kept was read by the rule first, and
+        // fewer are kept than in the file as written.
+        let mut kept = 0;
+        for trim in &evidence.native_trims {
+            if trim.source_pcurve.is_none() {
+                continue;
+            }
+            kept += 1;
+            assert!(
+                evidence.import_gaps.iter().any(|row| row.kept
+                    && row.face == trim.face
+                    && row.boundary == trim.boundary
+                    && row.use_index == trim.use_index),
+                "{what}: {} on {} kept its file curve unread",
+                trim.edge,
+                trim.face
+            );
+        }
+        assert!(kept < kept_as_written, "{what}: {kept}");
+        // The rebuilt traces are measured: no edge is looser than the
+        // micrometre the top is off its edges allows.
+        for entity in &evidence.tolerances {
+            assert!(entity.tolerance_mm < 1e-5, "{what}: {entity:?}");
+        }
+    }
+}
+
 /// Nothing binds the record to the geometry under it (owner ruling of 20
 /// November 2026: no binding and no fingerprint). A file whose wall was
 /// moved by hand after export still opens with the tolerance it records, as

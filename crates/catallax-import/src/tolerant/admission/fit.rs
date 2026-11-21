@@ -1069,6 +1069,12 @@ pub(super) fn check_body(
                     // two copies before any station compares them at one
                     // parameter, and a copy at another speed is given the
                     // 3D curve's parameter here.
+                    //
+                    // A file's copy is kept only where the rule read it. One
+                    // the rule does not read has no geometric gap read both
+                    // ways, so the stations alone never keep it: this pass
+                    // refuses the body where it repairs nothing, and where
+                    // it repairs it rebuilds the trace from the 3D curve.
                     let mut gap_rule = None;
                     let mut pcurve = None;
                     if let (Some(file), Some(source), Some(native), Some(entity)) =
@@ -1085,18 +1091,28 @@ pub(super) fn check_body(
                                 pcurve = read.copy.clone().map(FaceCopy::Reparametrised);
                                 gap_rule = Some((source, read));
                             }
+                            Err(why) if !context.repair_boundaries => {
+                                context.stage = super::NativeStage::TraceRebuild;
+                                return Err(invalid(
+                                    "import.tolerant-inconsistent-trace",
+                                    format!(
+                                        "the gap rule for imports does not read the file's u/v curve of {} on {}: {why}; an unread copy is not kept",
+                                        body.edges[usage.edge].name, face.name
+                                    ),
+                                ));
+                            }
                             Err(why) => evidence.warnings.push(NativeWarning {
                                 body: Some(body.name.clone()),
                                 scope: format!("{}:{}", face.name, body.edges[usage.edge].name),
                                 code: "import-gap-rule-unread",
                                 detail: format!(
-                                    "the gap rule for imports does not read this edge use: {why}; it is measured at its stations alone"
+                                    "the gap rule for imports does not read this edge use: {why}; its file u/v curve is not kept, and its trace is rebuilt from the 3D curve"
                                 ),
                             }),
                         }
                     }
                     let pcurve = pcurve.or(file.map(FaceCopy::File));
-                    let mut preserve_pcurve = pcurve.is_some();
+                    let mut preserve_pcurve = pcurve.is_some() && gap_rule.is_some();
                     let mut samples = Vec::with_capacity(STATIONS + 1);
                     for station in 0..=STATIONS {
                         dec.charge_work(1)?;

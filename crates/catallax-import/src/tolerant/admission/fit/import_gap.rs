@@ -24,8 +24,10 @@
 //! wrote it: a B-spline with its own controls and knots, or the straight
 //! segment between the two ends of a u/v line.
 //!
-//! A use the checker cannot read keeps the reading this admission had before
-//! the rule, and its warning says why:
+//! A file's u/v curve is kept as the use's face copy only where the rule read
+//! it. These are not read, and the caller never keeps them: it rebuilds the
+//! trace from the 3D curve, which is a copy of this reader's own in the
+//! edge's parameter, and its warning says why.
 //!
 //! - a u/v curve that is neither a B-spline with written knots nor a line;
 //! - a u/v curve whose interval does not hold the edge's, which needs the

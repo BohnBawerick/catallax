@@ -558,9 +558,93 @@ fn slot_cases() -> Vec<Case> {
     cases
 }
 
+// The corpus rows of step 4 that end at a vertex, with their witnesses
+// (confirmed by OpenCASCADE) and points derived here, each checked against
+// the B-rep first.
+fn corpus_row(id: &str) -> Value {
+    include_str!("../../../parts/fillets/cases.jsonl")
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .find(|row| row["id"] == id)
+        .unwrap()
+}
+type Points = [([i64; 2], [i64; 2], [i64; 2])];
+/// A corpus row's case. Witnesses in `shared` lie on faces a rolling piece
+/// shares with the body, such as a point of the rounded edge itself.
+fn corpus_case(
+    id: &str,
+    pieces: usize,
+    inside: &Points,
+    outside: &Points,
+    shared: &Points,
+) -> Case {
+    let row = corpus_row(id);
+    let shared = points(shared);
+    let mut case = Case {
+        name: id.to_string(),
+        recipe: parse(&row["recipe"]),
+        inside: points(inside),
+        outside: points(outside),
+        boundary: Vec::new(),
+        shared: Vec::new(),
+        derived: true,
+        pieces,
+    };
+    for witness in row["witnesses"].as_array().unwrap() {
+        let p: [Rational; 3] = std::array::from_fn(|i| number(&witness["point"][i]));
+        let (list, location) = match witness["state"].as_str().unwrap() {
+            "TopAbs_IN" => (&mut case.inside, Location::Inside),
+            "TopAbs_OUT" => (&mut case.outside, Location::Outside),
+            _ => (&mut case.boundary, Location::Boundary),
+        };
+        if shared.contains(&p) {
+            case.shared.push((p, location));
+        } else {
+            list.push(p);
+        }
+    }
+    case
+}
+fn corpus_cases() -> Vec<Case> {
+    vec![
+        // At each end of the concave edge the end rounds roll over the
+        // concave blend as a ring sector about its centre line, (y, z) =
+        // (6, 6), at x = 1 and x = 19. Derived: each sector's ball centre,
+        // a point of the concave blend the sector removes, and the same
+        // point beyond the sector's reach, where the blend stays.
+        corpus_case(
+            "l-mixed-all",
+            2,
+            &[
+                ([1, 1], [24, 5], [22, 5]),
+                ([19, 1], [24, 5], [22, 5]),
+                ([3, 1], [537, 100], [129, 25]),
+                ([17, 1], [537, 100], [129, 25]),
+            ],
+            &[
+                ([1, 10], [537, 100], [129, 25]),
+                ([199, 10], [537, 100], [129, 25]),
+            ],
+            &[],
+        ),
+        // The strip runs past the apex station, where the apex walls lean
+        // across it. Derived: past that station, a point between the edge
+        // and the blend (removed) and one under the blend (kept).
+        corpus_case(
+            "vertex-4-one",
+            1,
+            &[([-1, 10], [-1, 10], [197, 20])],
+            &[([-1, 100], [-1, 100], [1997, 200])],
+            // The rounded edge's midpoint, on both of the piece's supports.
+            &[([5, 1], [5, 1], [5, 1])],
+        ),
+    ]
+}
+
 fn cases() -> Vec<Case> {
     let mut cases = p5_cases();
     cases.extend(slot_cases());
+    cases.extend(corpus_cases());
     cases
 }
 
@@ -667,7 +751,12 @@ const VERTEX_GROUPS: &[&[&str]] = &[
         "slot right v4 r=4",
         "slot loop permuted r=4",
     ],
+    &["l-mixed-all", "vertex-4-one"],
 ];
+/// Cases whose rolling pieces are corner sectors: their B-rep faces named
+/// `corner.vertex` on a torus are checked, not the blends, which the
+/// elementary route builds.
+const CORNER_SECTORS: &[&str] = &["l-mixed-all"];
 macro_rules! vertex_tests {
     ($($test:ident = $group:literal;)+) => {
         $(
@@ -688,6 +777,7 @@ vertex_tests! {
     slot_loop_blend_vertices_lie_on_the_field_face = 6;
     continued_slot_loop_blend_vertices_lie_on_the_field_face = 7;
     slot_arc_blend_vertices_lie_on_the_field_face = 8;
+    corpus_vertex_blend_vertices_lie_on_the_field_face = 9;
 }
 
 #[test]
@@ -705,8 +795,9 @@ fn every_rolling_case_has_its_vertices_checked() {
 }
 
 /// A B-rep body's blend display vertices, each with the part's tolerance at
-/// it: 1 nm, or a fitted envelope's certified bound.
-fn blend_vertices(recipe: &Recipe, chord: &str) -> (Vec<Point3>, Vec<Rational>) {
+/// it: 1 nm, or a fitted envelope's certified bound. With `corners`, the
+/// vertices of its tori named `corner.vertex` instead.
+fn blend_vertices(recipe: &Recipe, chord: &str, corners: bool) -> (Vec<Point3>, Vec<Rational>) {
     let own = q("1/1000000");
     let built = evaluate(recipe, &mut decider()).unwrap();
     let mesh = mesh_body(
@@ -722,20 +813,24 @@ fn blend_vertices(recipe: &Recipe, chord: &str) -> (Vec<Point3>, Vec<Rational>) 
     .value;
     let mut indices: BTreeMap<usize, Rational> = BTreeMap::new();
     for face in &mesh.faces {
+        let surface = built
+            .model
+            .geom()
+            .surface(built.model.face(face.face).surface);
         if !built.model.face_origins(face.face).iter().any(|o| {
             let mut role = &o.role;
             while let Role::Copy { of, .. } = role {
                 role = &of.role;
             }
-            matches!(role, Role::Blend { .. })
+            if corners {
+                matches!(role, Role::Corner { .. }) && matches!(surface, Surface::Torus(_))
+            } else {
+                matches!(role, Role::Blend { .. })
+            }
         }) {
             continue;
         }
-        let bound = match built
-            .model
-            .geom()
-            .surface(built.model.face(face.face).surface)
-        {
+        let bound = match surface {
             Surface::BSpline(SplineSupport::RollingEnvelope(envelope)) => {
                 envelope.bound().upper.clone()
             }
@@ -853,13 +948,52 @@ fn blend_vertices_lie_on_the_field_face(names: &[&str]) {
     {
         let start = std::time::Instant::now();
         let plan = Plan::compile_checked(&case.recipe, &mut decider()).unwrap();
-        let (points, tolerances) = blend_vertices(&case.recipe, "1/20");
+        let corners = CORNER_SECTORS.contains(&case.name.as_str());
+        let (points, tolerances) = blend_vertices(&case.recipe, "1/20", corners);
         assert!(!points.is_empty(), "{}: no blend vertices", case.name);
         let pieces: Vec<&Piece> = plan.rolling_pieces().collect();
         let nearest = nearest_witnesses(&case.name, &pieces, &points, &tolerances);
         eprintln!("{}: checked in {:?}", case.name, start.elapsed());
         assert_within(&case.name, &nearest, &tolerances);
     }
+}
+
+/// A placed part keeps its straight pieces' enclosed covers: a rigid motion
+/// drops a cover and the placement encloses it again, so `vertex-4-one`'s
+/// blend vertices, moved by a rational translation, pass the same check at
+/// the same per-query cap (reviewer check on #742). Without the cover each
+/// query on this algebraic frame needs about 23,000 units.
+#[test]
+fn a_placed_straight_piece_keeps_its_enclosed_cover() {
+    use catallax_shapes::{Pose, RVector3, Rotation};
+    let case = corpus_cases()
+        .into_iter()
+        .find(|c| c.name == "vertex-4-one")
+        .unwrap();
+    let plan = Plan::compile_checked(&case.recipe, &mut decider()).unwrap();
+    let by = [ratio(3, 1), ratio(-2, 1), ratio(7, 1)];
+    let mut dec = decider();
+    let pose = Pose::new(
+        Rotation::from_quaternion(ratio(1, 1), ratio(0, 1), ratio(0, 1), ratio(0, 1)).unwrap(),
+        RVector3::new(by[0].clone(), by[1].clone(), by[2].clone()).to_real(),
+        &mut dec,
+    )
+    .unwrap();
+    let placed = plan.transformed(&pose, &mut dec).unwrap();
+    let (points, tolerances) = blend_vertices(&case.recipe, "1/20", false);
+    let moved: Vec<Point3> = points
+        .iter()
+        .map(|p| {
+            Point3::new(
+                &p.x + &Real::from(by[0].clone()),
+                &p.y + &Real::from(by[1].clone()),
+                &p.z + &Real::from(by[2].clone()),
+            )
+        })
+        .collect();
+    let pieces: Vec<&Piece> = placed.rolling_pieces().collect();
+    let nearest = nearest_witnesses("placed vertex-4-one", &pieces, &moved, &tolerances);
+    assert_within("placed vertex-4-one", &nearest, &tolerances);
 }
 
 /// The step 4 files' recipes that the field refuses, with the B-rep's
@@ -912,6 +1046,135 @@ fn the_field_names_what_it_refuses() {
         found.push((name, code));
     }
     assert_eq!(found, REFUSED);
+}
+
+/// Seam control at tangent junctions (reviewer note on #738). Each point
+/// lies on a junction plane, normal to coordinate axis `axis`; the point
+/// and its two neighbours `1/1000` either side of the plane must take the
+/// same answer, which the geometry fixes: inside the ball (`Inside`), in the
+/// material the pieces remove (`Outside`, never `Boundary`, so the plane is
+/// no face there). No face of the fillet lies in a junction plane.
+#[test]
+fn tangent_junctions_add_no_seam_face() {
+    // (case, axis, plane, points on the plane, answer)
+    type Seam = (&'static str, usize, [i64; 2], Vec<[i64; 4]>, Location);
+    let seams: Vec<Seam> = vec![
+        // The slot loop at radius 1: the top strip meets the right half
+        // ring at x = 20; the ball centre is (y, z) = (4, 9).
+        (
+            "slot loop v4 r=1",
+            0,
+            [20, 1],
+            vec![[41, 10, 91, 10]],
+            Location::Inside,
+        ),
+        (
+            "slot loop v4 r=1",
+            0,
+            [20, 1],
+            vec![[49, 10, 99, 10]],
+            Location::Outside,
+        ),
+        // `l-mixed-all`: at x = 0 the end round along z = 5 meets the ring
+        // sector at y = 6 (ball centre (x, z) = (1, 4)) and the one along
+        // y = 5 meets it at z = 6 (ball centre (x, y) = (1, 4)); at x = 20
+        // the same at x = 19.
+        (
+            "l-mixed-all",
+            1,
+            [6, 1],
+            vec![[9, 10, 41, 10], [191, 10, 41, 10]],
+            Location::Inside,
+        ),
+        (
+            "l-mixed-all",
+            1,
+            [6, 1],
+            vec![[1, 10, 49, 10], [199, 10, 49, 10]],
+            Location::Outside,
+        ),
+        (
+            "l-mixed-all",
+            2,
+            [6, 1],
+            vec![[9, 10, 41, 10], [191, 10, 41, 10]],
+            Location::Inside,
+        ),
+        (
+            "l-mixed-all",
+            2,
+            [6, 1],
+            vec![[1, 10, 49, 10], [199, 10, 49, 10]],
+            Location::Outside,
+        ),
+    ];
+    let all = cases();
+    let mut failures = Vec::new();
+    for (name, axis, plane, list, want) in seams {
+        let case = all.iter().find(|c| c.name == name).unwrap();
+        let plan = Plan::compile_checked(&case.recipe, &mut decider()).unwrap();
+        let level = ratio(plane[0], plane[1]);
+        for face in plan.faces() {
+            if face.origin.step.as_str() != "round" {
+                continue;
+            }
+            if let Surface::Plane(p) = &face.surface {
+                let n = [&p.normal.x, &p.normal.y, &p.normal.z].map(|v| v.as_rational());
+                let o = [&p.origin.x, &p.origin.y, &p.origin.z].map(|v| v.as_rational());
+                let across =
+                    (0..3).all(|i| i == axis || n[i].as_ref().is_some_and(|x| x.is_zero()));
+                assert!(
+                    !(across && o[axis].as_ref() == Some(&level)),
+                    "{name}: a fillet face lies in the junction plane"
+                );
+            }
+        }
+        for [a, b, c, d] in list {
+            let mut p = [Rational::zero(), Rational::zero(), Rational::zero()];
+            let others: Vec<usize> = (0..3).filter(|&i| i != axis).collect();
+            p[others[0]] = ratio(a, b);
+            p[others[1]] = ratio(c, d);
+            for step in [-1, 0, 1] {
+                let mut q = p.clone();
+                q[axis] = level.clone() + ratio(step, 1000);
+                let found = location(&plan, &q);
+                if found != want {
+                    failures.push(format!("{name} at {q:?}: {found:?}"));
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// The frozen corpus rows of step 4 that the B-rep refused when the list
+/// was frozen: the field's answer is recorded with its reason.
+#[test]
+fn the_field_records_the_frozen_vertex_rows() {
+    let mut found = Vec::new();
+    for id in ["vertex-4-two", "vertex-4-all"] {
+        let recipe = parse(&corpus_row(id)["recipe"]);
+        let code = match Plan::compile_checked(&recipe, &mut decider()) {
+            Ok(_) => "built",
+            Err(e) => e.code,
+        };
+        found.push((id, code));
+    }
+    assert_eq!(
+        found,
+        [
+            // Two strips meet at the apex, which neither route closes: the
+            // elementary section of a strip along a diagonal needs
+            // irrational profile coordinates, and two runs that meet at a
+            // point with no tangent junction need a corner the field has
+            // not built.
+            ("vertex-4-two", "field.fillet-contact"),
+            // The two prisms' base faces lie in one plane but are separate
+            // supports, so each base edge counts twice at the base corners:
+            // five runs meet there, past the field's corner patches.
+            ("vertex-4-all", "field.fillet-contact"),
+        ]
+    );
 }
 
 // The hole-ring file: rings where a perpendicular cylinder meets a plane.
@@ -1265,7 +1528,7 @@ fn every_hole_ring_builds_and_agrees_on_its_sides() {
 #[test]
 fn hole_ring_blend_vertices_lie_on_the_field_ring() {
     for ring in hole_rings() {
-        let (points, tolerances) = blend_vertices(&ring.recipe, "1/20");
+        let (points, tolerances) = blend_vertices(&ring.recipe, "1/20", false);
         assert!(!points.is_empty(), "{}: no blend vertices", ring.name);
         let path = ring.path();
         const CAP: u64 = 20_000;

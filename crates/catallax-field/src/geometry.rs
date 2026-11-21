@@ -824,6 +824,16 @@ impl Leaf {
         }
         Ok(false)
     }
+    /// Builds again what [`Leaf::transform`] drops: a straight rolling
+    /// piece's interval cover, with the piece derived from its moved
+    /// supports, so a placed or copied piece does not pay for deeper
+    /// enclosures on every query (4.2a step 4).
+    pub(crate) fn rebuild_after_transform(&mut self, dec: &mut Decider) -> Result<(), Refusal> {
+        if let Self::Rolling(piece) = self {
+            piece.rebuild_after_transform(dec)?;
+        }
+        Ok(())
+    }
     pub fn transform(&mut self, pose: &Isometry) -> Result<(), Refusal> {
         match self {
             Self::Primitive(a) => a.transform(pose),

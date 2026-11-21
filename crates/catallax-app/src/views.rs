@@ -41,8 +41,9 @@
 
 use catallax_boolean::face_contains;
 use catallax_intersect::{
-    Component, CurveSurface, Cyclic, SurfacePair, arc_point, curve_is_closed, cyclic_order,
-    intersect_curve_surface, intersect_surfaces, on_curve, order_on_curve,
+    Component, CurveForm, CurveSurface, Cyclic, SurfacePair, arc_point, curve_form,
+    curve_is_closed, cyclic_order, intersect_curve_surface, intersect_surfaces, on_curve,
+    order_on_curve,
 };
 use catallax_numbers::{
     Answer, BoundKind, Decider, Mark, MarkLog, Outcome, Rational, Real, Refusal, StrictOrder,
@@ -51,6 +52,7 @@ use catallax_shapes::{
     Circle, Curve, CurveId, Line, Plane, Point3, PointDef, PointId, RVector3, Surface, SurfaceId,
     Vector3,
 };
+use catallax_topology::numerical::tolerance;
 use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense};
 
 use crate::ApplicationBody;
@@ -598,15 +600,14 @@ pub(crate) fn carrier_pieces(
     // edge's ends are cuts, so a piece lies along an edge's span entirely
     // or not at all, and one interior point decides both.
     let mut labels: Vec<Option<Along>> = Vec::with_capacity(spans.len());
-    for &(start, end) in &spans {
-        let interior = arc_point(scratch.geom(), carrier, start, end, dec)?;
-        marks.extend(&interior.marks);
-        labels.push(if face_contains(scratch, face, &interior.value, dec)? {
+    for &span in &spans {
+        let interior = piece_point(scratch, carrier, closed, span, marks, dec)?;
+        labels.push(if face_contains(scratch, face, &interior, dec)? {
             Some(lies_along(
                 scratch,
                 body_faces,
                 face,
-                &interior.value,
+                &interior,
                 &boundary.in_plane,
                 dec,
             )?)
@@ -619,6 +620,159 @@ pub(crate) fn carrier_pieces(
         labels,
         closed,
     })
+}
+
+/// An exact point strictly inside the piece of `carrier` between `ends`,
+/// whose face membership labels the piece. Cuts bound every piece, so any
+/// point strictly inside gives the same label; only the work differs.
+///
+/// The intersection crate's arc point halves the piece in the carrier's
+/// chart parameter, so between two algebraic cuts, such as the places an
+/// intersection branch crosses the plane, its coordinates nest the cuts'
+/// radicals, and exact face membership of such a point can cost tens of
+/// millions of work units. On a line, circle or ellipse the carrier's point
+/// at the middle binary64 parameter keeps short numbers instead: rational
+/// on a rational line, and on a conic the half-angle point of
+/// `float::conic_point`, whose axes carry one square root each. Exact
+/// order confirms that it lies strictly inside the piece, as `hidden.rs`
+/// confirms its sample points; failing that, and on other carriers, the arc
+/// point decides.
+fn piece_point(
+    scratch: &mut Model,
+    carrier: CurveId,
+    closed: bool,
+    (start, end): Ends,
+    marks: &mut MarkLog,
+    dec: &mut Decider,
+) -> Result<Point3, Refusal> {
+    if let (Some(a), Some(b)) = (start, end) {
+        for candidate in middles(scratch, carrier, a, b, dec)? {
+            let c = scratch
+                .geom_mut()
+                .add_point(PointDef::Explicit(candidate.clone()));
+            if strictly_inside(scratch, carrier, closed, [a, c, b], dec)? {
+                return Ok(candidate);
+            }
+        }
+    }
+    let interior = arc_point(scratch.geom(), carrier, start, end, dec)?;
+    marks.extend(&interior.marks);
+    Ok(interior.value)
+}
+
+/// Exact points of a line, circle or ellipse carrier at the middle binary64
+/// parameter between `a` and `b` in its closed form's direction; on a conic
+/// also the middle of the rest of the conic, half a turn on, since a carrier
+/// stored as an intersection component may run against its closed form.
+/// None for other carriers.
+fn middles(
+    scratch: &Model,
+    carrier: CurveId,
+    a: PointId,
+    b: PointId,
+    dec: &mut Decider,
+) -> Result<Vec<Point3>, Refusal> {
+    // Rule T1's smallest floor: binary64 images only place the candidate,
+    // and exact order then confirms it.
+    let floor = tolerance::floor_minimum_mm();
+    let image = |p: &Point3, dec: &mut Decider| -> Result<[f64; 3], Refusal> {
+        Ok([
+            float::double(&p.x, &floor, dec)?,
+            float::double(&p.y, &floor, dec)?,
+            float::double(&p.z, &floor, dec)?,
+        ])
+    };
+    let (pa, pb) = (
+        image(&scratch.geom().position(a), dec)?,
+        image(&scratch.geom().position(b), dec)?,
+    );
+    let (center, u, w) = match curve_form(scratch.geom(), carrier, dec)? {
+        CurveForm::Line { origin, dir } => {
+            let o = image(&origin, dec)?;
+            let v = float::doubles(&dir, &floor, dec)?;
+            let along = |p: [f64; 3]| {
+                float::dot(std::array::from_fn(|k| p[k] - o[k]), v) / float::dot(v, v)
+            };
+            let t = (along(pa) + along(pb)) / 2.0;
+            return Ok(vec![
+                origin.plus(&dir.scaled(&Real::from(float::rational(t)?))),
+            ]);
+        }
+        CurveForm::Circle {
+            center,
+            normal,
+            radius_sq,
+            ref_dir,
+        } => {
+            let side = normal.cross(&ref_dir);
+            let u = ref_dir.scaled(&float::root(&(&radius_sq / &ref_dir.norm_squared())));
+            let w = side.scaled(&float::root(&(&radius_sq / &side.norm_squared())));
+            (center, u, w)
+        }
+        CurveForm::Ellipse {
+            center,
+            normal,
+            major_dir,
+            major_sq,
+            minor_sq,
+        } => {
+            let side = normal.cross(&major_dir);
+            let u = major_dir.scaled(&float::root(&(&major_sq / &major_dir.norm_squared())));
+            let w = side.scaled(&float::root(&(&minor_sq / &side.norm_squared())));
+            (center, u, w)
+        }
+        _ => return Ok(Vec::new()),
+    };
+    // `p = c + cos t u + sin t w` with `u` and `w` orthogonal.
+    let (c, u64, w64) = (
+        image(&center, dec)?,
+        float::doubles(&u, &floor, dec)?,
+        float::doubles(&w, &floor, dec)?,
+    );
+    let angle = |p: [f64; 3]| {
+        let r: [f64; 3] = std::array::from_fn(|k| p[k] - c[k]);
+        (float::dot(r, w64) / float::dot(w64, w64)).atan2(float::dot(r, u64) / float::dot(u64, u64))
+    };
+    let start = angle(pa);
+    let mut end = angle(pb);
+    while end <= start {
+        end += std::f64::consts::TAU;
+    }
+    let mid = (start + end) / 2.0;
+    Ok(vec![
+        float::conic_point(&center, [&u, &w], mid)?,
+        float::conic_point(&center, [&u, &w], mid + std::f64::consts::PI)?,
+    ])
+}
+
+/// Whether `c` lies strictly between `a` and `b` along `carrier`: on a
+/// closed carrier going round from `a` in its natural direction. An order
+/// the exact predicates cannot decide counts as not inside, and the arc
+/// point decides instead.
+fn strictly_inside(
+    scratch: &Model,
+    carrier: CurveId,
+    closed: bool,
+    [a, c, b]: [PointId; 3],
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    if closed {
+        return match cyclic_order(scratch.geom(), carrier, [a, c, b], dec) {
+            Outcome::Proven(order) => Ok(order == Cyclic::Forward),
+            Outcome::ProvenCoincident(_) | Outcome::NotExact(_) => Ok(false),
+            Outcome::Refused(r) => Err(r),
+        };
+    }
+    for (p, q) in [(a, c), (c, b)] {
+        match order_on_curve(scratch.geom(), carrier, p, q, dec) {
+            Outcome::Proven(StrictOrder::Less) => {}
+            Outcome::Proven(_) | Outcome::ProvenCoincident(_) | Outcome::NotExact(_) => {
+                return Ok(false);
+            }
+            Outcome::Refused(r) => return Err(r),
+        }
+    }
+    Ok(true)
 }
 
 /// Merges runs of neighbouring kept pieces with equal keys, so that a key

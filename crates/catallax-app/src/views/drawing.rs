@@ -33,7 +33,7 @@ use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense};
 
 use super::ContourFit;
 use super::fit::{self, Jet};
-use super::float::{above, cross, dot, unit, unit_direction};
+use super::float::{above, cross, dot, shifted_knots, unit, unit_direction};
 use super::hidden::geo::{Geo, Span, decompose, restrict};
 use super::hidden::{HiddenLineView, ViewStroke};
 use crate::ApplicationBody;
@@ -635,6 +635,9 @@ pub(in crate::views) fn fit_mark(fit: &ContourFit) -> Result<Mark, Refusal> {
 }
 
 /// The arc of a B-spline carrier between `ends`, as its Bezier spans there.
+/// Its knots are the carrier's, moved exactly so that the carrier's domain
+/// starts at zero ([`shifted_knots`]): an exact shift of the carrier's
+/// parameter draws the same curve.
 fn spline_arc(
     spline: &BSplineCurve,
     ends: Option<&[Point3; 2]>,
@@ -643,11 +646,8 @@ fn spline_arc(
     dec: &mut Decider,
 ) -> Result<DrawingCurve, Refusal> {
     let p = spline.degree();
-    let knots: Vec<f64> = spline
-        .knots()
-        .iter()
-        .map(Rational::to_f64_nearest)
-        .collect();
+    let knots = shifted_knots(spline)
+        .ok_or_else(|| refused("two B-spline knots are closer than binary64 separates"))?;
     let mut ctrl = Vec::with_capacity(spline.control_count());
     for i in 0..spline.control_count() {
         let x = point(spline.control(i), dec)?;

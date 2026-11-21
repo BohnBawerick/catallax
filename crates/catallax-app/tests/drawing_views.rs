@@ -1,17 +1,21 @@
 //! Contour generators on release parts: the P1 bracket, the P3 filleted boss
-//! and an elliptic extrusion; and on spline faces: an extruded Bezier arch,
-//! rational patch roofs and a lofted barrel.
+//! and an elliptic extrusion; on spline faces: an extruded Bezier arch,
+//! rational patch roofs and a lofted barrel; and on faces trimmed by
+//! intersection branches: a ball with a cylindrical hole.
 
 use std::num::NonZeroUsize;
 
 use catallax_app::DEFAULT_BUILD_WORK;
-use catallax_app::views::{CONTOUR_FIT_MARK, ContourArc, Contours, contour_generators};
+use catallax_app::views::{
+    CONTOUR_FIT_MARK, ContourArc, Contours, DrawingCurve, contour_generators, drawing_curve,
+};
+use catallax_boolean::{BoolOp, boolean};
 use catallax_features::evaluate;
 use catallax_intersect::{CurveForm, curve_form};
 use catallax_numbers::{Decider, Rational, Real, set_threads, with_operation_budget};
 use catallax_recipe::Recipe;
-use catallax_shapes::{Curve, PointId, RVector3, Surface};
-use catallax_topology::{BodyId, Model};
+use catallax_shapes::{Curve, PointId, Pose, RVector3, Rotation, Surface};
+use catallax_topology::{BodyId, Model, cylinder, sphere};
 
 #[allow(dead_code)]
 mod rational_patch_cases;
@@ -488,4 +492,233 @@ fn a_lofted_barrel_gives_fitted_generators_in_the_plane_through_its_axis() {
         chains += 1;
     }
     assert_eq!(chains, 2, "{} arcs", c.arcs.len());
+}
+
+/// The ball of radius 5 about the origin less the cylinder of radius 2
+/// along z through (1, 0): the hole's wall meets the sphere in two closed
+/// intersection branches, which trim the generators of both faces.
+fn holed_ball() -> (Model, BodyId) {
+    let mut model = Model::new();
+    let ball = sphere(&mut model, 5.into(), &Pose::identity()).unwrap();
+    let hole = cylinder(
+        &mut model,
+        2.into(),
+        20.into(),
+        &Pose::from_rational(Rotation::identity(), vector(1, 0, -10)),
+    )
+    .unwrap();
+    let body = boolean(
+        &mut model,
+        ball,
+        hole,
+        BoolOp::Subtract,
+        &mut Decider::default(),
+    )
+    .unwrap()
+    .body;
+    (model, body)
+}
+
+fn dot3(a: [f64; 3], b: [f64; 3]) -> f64 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+fn cross3(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+
+fn unit3(v: [f64; 3]) -> [f64; 3] {
+    let n = dot3(v, v).sqrt();
+    v.map(|x| x / n)
+}
+
+/// Distance from the hole's axis, squared.
+fn from_axis(p: [f64; 3]) -> f64 {
+    (p[0] - 1.0).powi(2) + p[1] * p[1]
+}
+
+/// A binary64 image of exact coordinates, good to the last few bits.
+fn close(v: [&Real; 3]) -> [f64; 3] {
+    let floor = Rational::from_f64_exact(1e-12).unwrap();
+    let mut dec = Decider::default();
+    v.map(|x| dec.enclose(x, &floor).unwrap().mid().to_f64_nearest())
+}
+
+fn point_image(c: &Contours, point: Option<PointId>) -> [f64; 3] {
+    let p = c.model.geom().position(point.unwrap());
+    close([&p.x, &p.y, &p.z])
+}
+
+/// The binary64 middle and length of a line or circle arc, read from its
+/// drawing, whose direction along the carrier is decided exactly.
+fn middle_and_length(c: &Contours, arc: &ContourArc) -> ([f64; 3], f64) {
+    let drawn = drawing_curve(
+        &c.model,
+        arc.curve,
+        arc.start,
+        arc.end,
+        &mut Decider::default(),
+    )
+    .unwrap()
+    .value;
+    assert!(drawn.fit.is_none());
+    match drawn.curve {
+        DrawingCurve::Line { a, b } => {
+            let ab: [f64; 3] = std::array::from_fn(|k| b[k] - a[k]);
+            (
+                std::array::from_fn(|k| (a[k] + b[k]) / 2.0),
+                dot3(ab, ab).sqrt(),
+            )
+        }
+        DrawingCurve::Arc {
+            center,
+            normal,
+            x_axis,
+            radius,
+            start_deg,
+            end_deg,
+        } => {
+            let y = cross3(normal, x_axis);
+            let (sin, cos) = ((start_deg + end_deg) / 2.0).to_radians().sin_cos();
+            (
+                std::array::from_fn(|k| center[k] + radius * (cos * x_axis[k] + sin * y[k])),
+                radius * (end_deg - start_deg).to_radians(),
+            )
+        }
+        DrawingCurve::Circle {
+            center,
+            normal,
+            radius,
+        } => {
+            let axis = if normal[0].abs() < 0.9 {
+                [1.0, 0.0, 0.0]
+            } else {
+                [0.0, 1.0, 0.0]
+            };
+            let x = unit3(cross3(normal, axis));
+            (
+                std::array::from_fn(|k| center[k] + radius * x[k]),
+                std::f64::consts::TAU * radius,
+            )
+        }
+        other => panic!("unexpected drawing {other:?}"),
+    }
+}
+
+#[test]
+fn generators_trimmed_by_intersection_branches_stay_exact_and_inside_the_target() {
+    let (model, body) = holed_ball();
+    // From (2, -3, 1) the sphere's generator, a great circle, comes within
+    // 0.07 of the hole's wall where it does not cross it, and the cuts
+    // where the branches cross it are algebraic points of high degree.
+    for d in [
+        vector(2, -3, 1),
+        vector(1, 0, 1),
+        vector(1, -2, 2),
+        vector(-1, 1, -2),
+        vector(0, 0, 1),
+        vector(0, -1, 0),
+        vector(1, 3, 0),
+    ] {
+        let d64 = unit3([
+            d.x.to_f64_nearest(),
+            d.y.to_f64_nearest(),
+            d.z.to_f64_nearest(),
+        ]);
+        let mut reference = None;
+        for threads in [1, 2, 4] {
+            set_threads(NonZeroUsize::new(threads));
+            let (answer, work) = with_operation_budget(DEFAULT_BUILD_WORK, || {
+                contour_generators(&model, body, &d, &mut Decider::default())
+            });
+            assert!(!work.exhausted, "{d:?}");
+            let answer = answer.unwrap();
+            assert!(answer.is_exact(), "{d:?}");
+            eprintln!(
+                "holed ball {d:?} at {threads} threads: {} arcs, {} work",
+                answer.value.arcs.len(),
+                work.used
+            );
+            assert!(work.used < TARGET, "{d:?}: {} work units", work.used);
+            let c = &answer.value;
+            let (mut sphere_length, mut rulings) = (0.0, Vec::new());
+            for arc in &c.arcs {
+                assert!(arc.fit.is_none(), "{d:?}");
+                for end in [arc.start, arc.end].into_iter().flatten() {
+                    let p = point_image(c, Some(end));
+                    assert!((dot3(p, p) - 25.0).abs() < 1e-9, "{d:?}: end {p:?}");
+                    assert!((from_axis(p) - 4.0).abs() < 1e-9, "{d:?}: end {p:?}");
+                }
+                let (m, length) = middle_and_length(c, arc);
+                if matches!(
+                    model.geom().surface(model.face(arc.face).surface),
+                    Surface::Sphere(_)
+                ) {
+                    assert!((dot3(m, m) - 25.0).abs() < 1e-9, "{d:?}: {m:?}");
+                    assert!(from_axis(m) > 4.0, "{d:?}: {m:?} lies in the hole");
+                    assert!(dot3(unit3(m), d64).abs() < 1e-12, "{d:?}: {m:?}");
+                    sphere_length += length;
+                } else {
+                    assert!((from_axis(m) - 4.0).abs() < 1e-9, "{d:?}: {m:?}");
+                    assert!(dot3(m, m) < 25.0, "{d:?}: {m:?} lies outside the ball");
+                    let normal = unit3([m[0] - 1.0, m[1], 0.0]);
+                    assert!(dot3(normal, d64).abs() < 1e-12, "{d:?}: {m:?}");
+                    // A whole ruling inside the ball, from branch to branch.
+                    let reach = 2.0 * (25.0 - m[0] * m[0] - m[1] * m[1]).sqrt();
+                    assert!((length - reach).abs() < 1e-9, "{d:?}: {length} {reach}");
+                    rulings.push(m);
+                }
+            }
+            // The great circle across the view, sampled: the part outside
+            // the hole is what the sphere's arcs cover.
+            let e1 = unit3(cross3(
+                d64,
+                if d64[2].abs() < 0.9 {
+                    [0.0, 0.0, 1.0]
+                } else {
+                    [1.0, 0.0, 0.0]
+                },
+            ));
+            let e2 = cross3(d64, e1);
+            let samples = 1 << 16;
+            let outside = (0..samples)
+                .filter(|&k| {
+                    let (sin, cos) = (std::f64::consts::TAU * k as f64 / samples as f64).sin_cos();
+                    from_axis(std::array::from_fn(|i| 5.0 * (cos * e1[i] + sin * e2[i]))) > 4.0
+                })
+                .count();
+            let expected = std::f64::consts::TAU * 5.0 * outside as f64 / samples as f64;
+            let step = std::f64::consts::TAU * 5.0 / samples as f64;
+            assert!(
+                (sphere_length - expected).abs() <= 2.0 * step,
+                "{d:?}: {sphere_length} against {expected}"
+            );
+            // The wall's rulings where its normal is across the view: two,
+            // unless the view runs along the axis.
+            let across = d64[0].abs() > 0.0 || d64[1].abs() > 0.0;
+            assert_eq!(rulings.len(), if across { 2 } else { 0 }, "{d:?}");
+            let record = (
+                c.arcs
+                    .iter()
+                    .map(|a| {
+                        (
+                            a.face,
+                            a.start.map(|p| point_image(c, Some(p))),
+                            a.end.map(|p| point_image(c, Some(p))),
+                        )
+                    })
+                    .collect::<Vec<_>>(),
+                work.used,
+            );
+            match &reference {
+                None => reference = Some(record),
+                Some(first) => assert_eq!(*first, record, "{d:?} at {threads} threads"),
+            }
+        }
+        set_threads(None);
+    }
 }

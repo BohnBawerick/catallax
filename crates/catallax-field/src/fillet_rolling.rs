@@ -1166,18 +1166,33 @@ impl Plan {
     /// corner round over a strip that runs past a cliff along the whole edge
     /// (4.2a step 5). Proven from the face's leaf, as at a junction.
     fn beside_box(&self, run: &Run, i: usize, dec: &mut Decider) -> Result<bool, Refusal> {
-        let (geometry::Leaf::Feature(feature), Some(bounds)) =
-            (&self.leaves[self.faces[i].leaf], run.piece.bounds())
-        else {
+        match run.piece.bounds() {
+            Some(bounds) => self.beside_bounds(bounds, i, dec),
+            None => Ok(false),
+        }
+    }
+
+    /// Whether face `i`'s leaf puts the whole face beyond one side of the
+    /// box `bounds`: the face meets the box at most in that side's plane.
+    pub(super) fn beside_bounds(
+        &self,
+        bounds: &[[Rational; 2]; 3],
+        i: usize,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        if !matches!(
+            &self.leaves[self.faces[i].leaf],
+            geometry::Leaf::Feature(_) | geometry::Leaf::Rolling(_)
+        ) {
             return Ok(false);
-        };
+        }
         for (axis, [lo, hi]) in bounds.iter().enumerate() {
             for (sense, level) in [(-1, -lo), (1, hi.clone())] {
                 let mut normal = [Real::zero(), Real::zero(), Real::zero()];
                 normal[axis] = Real::from_i64(sense);
                 let [x, y, z] = normal;
                 let normal = Vector3::new(x, y, z);
-                if feature.face_above(self.definition_role(i), &normal, &Real::from(level), dec)? {
+                if self.face_above(i, &normal, &Real::from(level), dec)? {
                     return Ok(true);
                 }
             }
@@ -1185,18 +1200,41 @@ impl Plan {
         Ok(false)
     }
 
+    /// Whether face `i` lies in the closed half-space `normal . x >= level`,
+    /// proven from its leaf: an elementary feature's face, or a straight
+    /// rolling piece's region (4.2a step 5, a round over a chain of rolling
+    /// pieces). `false` for any other leaf.
+    fn face_above(
+        &self,
+        i: usize,
+        normal: &Vector3,
+        level: &Real,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        match &self.leaves[self.faces[i].leaf] {
+            geometry::Leaf::Feature(feature) => {
+                feature.face_above(self.definition_role(i), normal, level, dec)
+            }
+            geometry::Leaf::Rolling(piece) => piece.above(normal, level, dec),
+            _ => Ok(false),
+        }
+    }
+
     /// Whether face `i` lies on the far side of one of the run's junctions,
     /// `n . (x - p) <= 0`, while the region lies on the near side: then the
     /// face meets the region at most in the junction plane, which no face of
     /// the region lies on (4.2a step 4). Proven from the face's leaf.
     fn beyond_junction(&self, run: &Run, i: usize, dec: &mut Decider) -> Result<bool, Refusal> {
-        let geometry::Leaf::Feature(feature) = &self.leaves[self.faces[i].leaf] else {
+        if !matches!(
+            &self.leaves[self.faces[i].leaf],
+            geometry::Leaf::Feature(_) | geometry::Leaf::Rolling(_)
+        ) {
             return Ok(false);
-        };
+        }
         for (point, normal) in &run.junctions {
             let away = normal.scaled(&Real::from_i64(-1));
             let level = away.dot(&point.minus(&Point3::origin()));
-            if feature.face_above(self.definition_role(i), &away, &level, dec)? {
+            if self.face_above(i, &away, &level, dec)? {
                 return Ok(true);
             }
         }

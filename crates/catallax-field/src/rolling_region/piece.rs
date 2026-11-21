@@ -297,8 +297,10 @@ impl Piece {
     /// nonzero coefficient of that equation along the ray decides it, as for
     /// a primitive's constraint. Off every ball on one wall, the region near
     /// `p` is one side of the support that wall lies on ([`Piece::wall_side`]),
-    /// and the support's equation decides it the same way. Where a junction
-    /// or two walls pass, or a wall meets the face, it stays unresolved.
+    /// and the support's equation decides it the same way. Where a straight
+    /// piece's face meets its end plane, both equations decide it
+    /// ([`Piece::end_ray`]). Where a junction or two walls pass, or another
+    /// wall meets the face, it stays unresolved.
     pub(crate) fn ray(
         &self,
         p: &[Rational; 3],
@@ -329,7 +331,11 @@ impl Piece {
         } else {
             match self.wall_side(p, &local, &walls, &junctions, dec)? {
                 Some(side) => side,
-                None => return Ok(Location::Indeterminate),
+                None => {
+                    return Ok(self
+                        .end_ray(p, &local, &walls, &junctions, d, dec)?
+                        .unwrap_or(Location::Indeterminate));
+                }
             }
         };
         Ok(
@@ -342,6 +348,94 @@ impl Piece {
                 (other, _) => other,
             },
         )
+    }
+
+    /// The side of `p + t d` for small `t > 0` from a point of the face on
+    /// the end plane of a straight piece, off every other wall and every
+    /// junction: where a strip ends at an end face, its face meets that
+    /// plane in a circle. Near such a point the region is the face's positive
+    /// side (see [`Piece::face`]) within the end plane's side, so the ray
+    /// enters the region where the first nonzero coefficient of both
+    /// equations along it says so, and leaves it where either says so; a ray
+    /// along either surface stays on the boundary. A later round that rolls
+    /// over the strip's end probes its material there (4.2a step 5), as at
+    /// the cap of an elementary strip. `None` at any other point.
+    fn end_ray(
+        &self,
+        p: &[Rational; 3],
+        local: &[Real; 3],
+        walls: &[Real],
+        junctions: &[Real],
+        d: &Vector3,
+        dec: &mut Decider,
+    ) -> Result<Option<Location>, Refusal> {
+        let (Kind::Generator(path), Some(surface)) = (&self.kind, self.face()) else {
+            return Ok(None);
+        };
+        for value in junctions {
+            if crate::geometry::sign(value, dec)? != Sign::Positive {
+                return Ok(None);
+            }
+        }
+        let mut zeros = 0;
+        for value in walls {
+            match crate::geometry::sign(value, dec)? {
+                Sign::Negative => return Ok(None),
+                Sign::Zero => zeros += 1,
+                Sign::Positive => {}
+            }
+        }
+        let Some(separation) = self.separation(local) else {
+            return Ok(None);
+        };
+        if zeros != 1 || crate::geometry::sign(&separation, dec)? != Sign::Zero {
+            return Ok(None);
+        }
+        let Some((point, inward, within)) = path.end_plane_at(local, dec)? else {
+            return Ok(None);
+        };
+        // A constraint holds where its equation is not positive: a plane's
+        // on the side its normal leaves, the face's reversed in the balls.
+        let plane = crate::geometry::constraint(Surface::Plane(catallax_shapes::Plane {
+            origin: point,
+            normal: inward.scaled(&Real::from_i64(-1)),
+            ref_dir: within,
+        }))?;
+        let face = crate::geometry::constraint(surface)?.reversed();
+        Ok(Some(crate::geometry::ray_constraints(
+            &[face, plane],
+            p,
+            d,
+            dec,
+        )?))
+    }
+
+    /// Whether the region, so its face, lies in the closed half-space
+    /// `normal . x >= level`: for a straight piece between two planes,
+    /// every vertex of the prism that holds it does
+    /// ([`Generator::plane_prism`]). A later fillet's clearance proof clears
+    /// such a face from its own region on that plane's far side (4.2a step
+    /// 5), as an elementary strip's leaf does. `false` for any other piece.
+    pub(crate) fn above(
+        &self,
+        normal: &Vector3,
+        level: &Real,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        let Kind::Generator(path) = &self.kind else {
+            return Ok(false);
+        };
+        let Some(points) = path.plane_prism() else {
+            return Ok(false);
+        };
+        for point in &points {
+            dec.charge_work(1)?;
+            let height = &normal.dot(&point.minus(&Point3::origin())) - level;
+            if crate::geometry::sign(&height, dec)? == Sign::Negative {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 
     /// The polynomial of the one smooth surface bounding the region near a

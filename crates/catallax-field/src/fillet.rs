@@ -557,8 +557,30 @@ impl Plan {
         step: &StepId,
         dec: &mut Decider,
     ) -> Result<usize, Refusal> {
-        self.refuse_over_rolling(root)?;
         let (radius, roll_over) = (settings.radius, settings.roll_over);
+        if self.rolling_below(root).0 {
+            // Only the chain route takes a straight rolling piece's
+            // registered face as a support and keeps clear of the pieces
+            // that register none (4.2a step 5); every other route still
+            // refuses such a body, with the reason it gave before.
+            let refusal = self
+                .refuse_over_rolling(root)
+                .expect_err("the body holds a rolling piece");
+            return match self.chain_fillet(
+                root,
+                source_faces,
+                selection,
+                radius,
+                roll_over,
+                step,
+                dec,
+            ) {
+                Ok(Some(result)) => Ok(result),
+                Ok(None) => Err(refusal),
+                Err(chained) if chain::retried(&chained) => Err(refusal),
+                Err(chained) => Err(chained),
+            };
+        }
         let saved = (self.instructions.len(), self.leaves.len(), self.faces.len());
         match self.fillet_runs(root, source_faces, selection, settings, step, dec) {
             Err(refusal) if chain::retried(&refusal) => {
@@ -568,17 +590,18 @@ impl Plan {
                 self.instructions.truncate(saved.0);
                 self.leaves.truncate(saved.1);
                 self.faces.truncate(saved.2);
-                match self.chain_fillet(
-                    root,
-                    source_faces,
-                    selection,
-                    radius,
-                    roll_over,
-                    step,
-                    dec,
-                )? {
-                    Some(result) => Ok(result),
-                    None => Err(refusal),
+                match self.chain_fillet(root, source_faces, selection, radius, roll_over, step, dec)
+                {
+                    Ok(Some(result)) => Ok(result),
+                    Ok(None) => Err(refusal),
+                    // An `"all"` selection the chain cannot close keeps the
+                    // first route's reason, as before the chain took it.
+                    Err(chained)
+                        if matches!(selection, EdgeSelection::All) && chain::retried(&chained) =>
+                    {
+                        Err(refusal)
+                    }
+                    Err(chained) => Err(chained),
                 }
             }
             other => other,

@@ -317,6 +317,32 @@ impl Generator {
         self.direction.scaled(t)
     }
 
+    /// The end `k` that is a face, not a junction, whose clip is zero at
+    /// the local point `local`, as that end plane: a point on it, its normal
+    /// into the region and a direction in it. `None` at a junction or off
+    /// both end planes.
+    pub(crate) fn end_plane_at(
+        &self,
+        local: &[Real; 3],
+        dec: &mut Decider,
+    ) -> Result<Option<(Point3, Vector3, Vector3)>, Refusal> {
+        let along = self
+            .direction
+            .dot(&vector(local).minus(&position(&self.centre)));
+        for (k, wall) in self.end_walls(&along).into_iter().enumerate() {
+            if !self.junction[k] && sign(&wall, dec)? == Sign::Zero {
+                let normal = if k == 0 {
+                    self.direction.clone()
+                } else {
+                    self.direction.scaled(&Real::from_i64(-1))
+                };
+                let within = self.direction.cross(&self.feet[0].minus(&self.centre));
+                return Ok(Some((self.centre_at(&self.ends[k]), normal, within)));
+            }
+        }
+        Ok(None)
+    }
+
     /// The two end clips, non-negative between the end planes, from the
     /// offset `along = d . (x - c)` of a point.
     fn end_walls(&self, along: &Real) -> [Real; 2] {

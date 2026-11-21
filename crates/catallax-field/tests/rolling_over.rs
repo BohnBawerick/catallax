@@ -13,7 +13,10 @@
 //! chain over convex ones (the test file's boss base), each patch named by
 //! the selected edge (part 4); and the recipes whose upright rolls over an
 //! earlier mitre of rounds wider than its ball, the corpus row
-//! `narrow-mitres` among them (part 5).
+//! `narrow-mitres` among them (part 5); and the recipes that round every
+//! edge at once after an earlier round, whose chains roll over it and whose
+//! block corners close with a trihedral corner; and a third round that
+//! rolls over the foot of a chain of rolling pieces.
 //! The corpus row `box-mitre`, which the elementary route already builds, is
 //! checked for membership.
 //!
@@ -499,6 +502,34 @@ fn cases() -> Vec<Case> {
     ));
     cases.extend(mitre_seams());
     cases.extend(outside_rounds());
+    cases.extend(every_edges());
+    // A third round over the right chain of `corner 3/2`: along the bottom
+    // right edge about (19, y, 1), over the foot of the chain's upright
+    // round, about its axis through (18, 2) at radius 1 (a horn torus), and
+    // along the bottom front edge about (x, 1, 1). Derived: cut 1/10 from
+    // both faces and kept inside the ball, on the sector's meridian
+    // (3/5, -4/5) about that axis; the upright round's air and material
+    // above the chain; uncut material.
+    cases.push(Case::new(
+        "corner bottom 3/2/1",
+        corner_bottom(),
+        "bottom",
+        6,
+        &[
+            ([39, 2], [10, 1], [1, 2]),
+            ([189, 10], [4, 5], [1, 2]),
+            ([10, 1], [1, 2], [1, 2]),
+            ([19, 1], [1, 1], [4, 1]),
+            ([10, 1], [10, 1], [5, 1]),
+        ],
+        &[
+            ([199, 10], [10, 1], [1, 10]),
+            ([957, 50], [12, 25], [1, 10]),
+            ([10, 1], [1, 10], [1, 10]),
+            ([39, 2], [1, 2], [4, 1]),
+            ([199, 10], [199, 10], [1, 10]),
+        ],
+    ));
     let boss_33 = cases.iter().find(|c| c.name == "boss 3/3").unwrap();
     cases.push(boss_33.placed("placed boss 3/3"));
     let mitred_33 = cases.iter().find(|c| c.name == "mitred 3/3").unwrap();
@@ -981,6 +1012,125 @@ fn mitre_seams() -> Vec<Case> {
         ),
     ]
 }
+/// Every edge at once after an earlier round (an `"all"` selection): the
+/// chains roll over the round's ends, three runs meet at each of the
+/// block's corners, which closes with the trihedral corner of its planes
+/// less the ball, and under an earlier mitre of rounds as wide as the ball
+/// each upright closes with its mitre corner, which swallows the seam
+/// between the rounds. Derived points, in the strips, sectors and corners
+/// the step adds: cut (or air) outside each ball, 1/10 from the faces, and
+/// kept inside it; the corner and boss points where the chain is the one
+/// of `corner 3/1` or `boss 3/1`, and the boss's mirrored for its bottom
+/// loop; and material the step leaves alone.
+fn every_edges() -> Vec<Case> {
+    let front = |radius: &str| {
+        fillet(
+            "first",
+            "block",
+            radius,
+            vec![edge(cap("block", "end"), side("block", "y_min"))],
+        )
+    };
+    let mut boss_in = BOSS_IN.to_vec();
+    let mut boss_out = BOSS_OUT.to_vec();
+    boss_in.extend([([39, 2], [10, 1], [1, 2]), ([37, 2], [19, 1], [1, 2])]);
+    boss_out.extend([
+        ([199, 10], [10, 1], [1, 10]),
+        ([1877, 100], [1936, 100], [1, 20]),
+    ]);
+    let mut corner_in = CORNER_IN.to_vec();
+    let mut corner_out = CORNER_OUT.to_vec();
+    // The block's corners about (19, 19, 1) and (1, 19, 9), and the bottom
+    // strip along x_max about (19, y, 1).
+    corner_in.extend([
+        ([39, 2], [39, 2], [1, 2]),
+        ([1, 2], [39, 2], [19, 2]),
+        ([39, 2], [10, 1], [1, 2]),
+    ]);
+    corner_out.extend([
+        ([199, 10], [199, 10], [1, 10]),
+        ([1, 10], [199, 10], [99, 10]),
+        ([199, 10], [10, 1], [1, 10]),
+    ]);
+    vec![
+        Case::new(
+            "every 3/1",
+            every(front("3"), "1"),
+            "rest",
+            13,
+            &corner_in,
+            &corner_out,
+        ),
+        // The front round as wide as the ball: the ball about (18, 2, 8)
+        // where the chain crosses its end, the block's corner about
+        // (18, 18, 2), the upright about (18, 2, z) and the top strip
+        // about (18, y, 8).
+        Case::new(
+            "every 2/2",
+            every(front("2"), "2"),
+            "rest",
+            13,
+            &[
+                ([19, 1], [11, 10], [46, 5]),
+                ([19, 1], [19, 1], [1, 1]),
+                ([19, 1], [1, 1], [5, 1]),
+                ([19, 1], [10, 1], [9, 1]),
+                ([10, 1], [10, 1], [5, 1]),
+            ],
+            &[
+                ([199, 10], [43, 50], [238, 25]),
+                ([199, 10], [199, 10], [1, 10]),
+                ([199, 10], [1, 10], [5, 1]),
+                ([199, 10], [10, 1], [99, 10]),
+            ],
+        ),
+        Case::new(
+            "every after uprights",
+            every(fillet("first", "block", "3", uprights("block")), "1"),
+            "rest",
+            16,
+            &boss_in,
+            &boss_out,
+        ),
+        // Mitre corners about (18, 18, 8) and the others, the block's
+        // corner about (18, 18, 2), the bottom strip about (18, y, 2), the
+        // upright about (18, 18, z), and the top round along y_min left
+        // alone between the corners.
+        Case::new(
+            "every after a mitred loop",
+            every(
+                fillet(
+                    "first",
+                    "block",
+                    "2",
+                    SIDES
+                        .iter()
+                        .map(|s| edge(cap("block", "end"), side("block", s)))
+                        .collect(),
+                ),
+                "2",
+            ),
+            "rest",
+            8,
+            &[
+                ([19, 1], [19, 1], [9, 1]),
+                ([19, 1], [19, 1], [1, 1]),
+                ([19, 1], [10, 1], [1, 1]),
+                ([39, 2], [37, 2], [5, 1]),
+                ([10, 1], [1, 2], [9, 1]),
+                ([10, 1], [10, 1], [5, 1]),
+            ],
+            &[
+                ([199, 10], [199, 10], [9, 1]),
+                ([39, 2], [39, 2], [17, 2]),
+                ([199, 10], [199, 10], [1, 10]),
+                ([199, 10], [10, 1], [1, 10]),
+                ([199, 10], [199, 10], [5, 1]),
+                ([10, 1], [1, 10], [99, 10]),
+            ],
+        ),
+    ]
+}
 const CORNER_22_IN: &Points = &[
     ([19, 1], [15, 1], [9, 1]),
     ([19, 1], [7, 5], [44, 5]),
@@ -1275,6 +1425,9 @@ const VERTEX_GROUPS: &[&[&str]] = &[
     &["based 2/1", "based 2/3", "based 3/1"],
     &["narrow-mitres", "mitred 3/2"],
     &["mitred pocket 1/(1/2)"],
+    &["every 3/1", "every 2/2"],
+    &["every after uprights", "every after a mitred loop"],
+    &["corner bottom 3/2/1"],
 ];
 macro_rules! vertex_tests {
     ($($test:ident = $group:literal;)+) => {
@@ -1305,6 +1458,9 @@ vertex_tests! {
     based_blend_vertices_lie_on_the_field_face = 15;
     seam_blend_vertices_lie_on_the_field_face = 16;
     seam_pocket_blend_vertices_lie_on_the_field_face = 17;
+    every_blend_vertices_lie_on_the_field_face = 18;
+    every_loop_blend_vertices_lie_on_the_field_face = 19;
+    third_round_blend_vertices_lie_on_the_field_face = 20;
 }
 
 #[test]
@@ -1473,7 +1629,8 @@ fn blend_vertices_lie_on_the_field_face(names: &[&str]) {
 /// cube's directions along x, y and z, and its radius.
 type Corner = ([i64; 3], [i64; 3], i64);
 
-/// Each mitre corner registers its sphere face under a corner name of the
+/// Each mitre corner, and each block corner of an `"all"` selection,
+/// registers its sphere face under a corner name of the
 /// rolling step, about the centre and with the radius derived here, and
 /// every display vertex of the B-rep's corner faces of that step lies
 /// within 1 nm of one of those spheres and at most 1 nm outside the cone of
@@ -1483,7 +1640,18 @@ type Corner = ([i64; 3], [i64; 3], i64);
 #[test]
 fn mitre_corner_vertices_lie_on_the_field_corner_face() {
     let tolerance = ratio(1, 1_000_000);
-    let corners: [(&str, Vec<Corner>); 6] = [
+    let blocks = |r: i64, top: &[([i64; 3], [i64; 3])]| -> Vec<Corner> {
+        let (lo, hi) = (r, 20 - r);
+        let mut list = vec![
+            ([lo, lo, r], [-1, -1, -1], r),
+            ([hi, lo, r], [1, -1, -1], r),
+            ([hi, hi, r], [1, 1, -1], r),
+            ([lo, hi, r], [-1, 1, -1], r),
+        ];
+        list.extend(top.iter().map(|&(c, signs)| (c, signs, r)));
+        list
+    };
+    let corners: Vec<(&str, Vec<Corner>)> = vec![
         (
             "roll-over-mitres",
             vec![
@@ -1514,6 +1682,28 @@ fn mitre_corner_vertices_lie_on_the_field_corner_face() {
             ],
         ),
         ("placed mitred 3/3", vec![([17, 17, 7], [1, 1, 1], 3)]),
+        // Every edge at once: the block's corners, and under the mitred
+        // loop the upright's mitre corners.
+        (
+            "every 3/1",
+            blocks(1, &[([1, 19, 9], [-1, 1, 1]), ([19, 19, 9], [1, 1, 1])]),
+        ),
+        (
+            "every 2/2",
+            blocks(2, &[([2, 18, 8], [-1, 1, 1]), ([18, 18, 8], [1, 1, 1])]),
+        ),
+        (
+            "every after a mitred loop",
+            blocks(
+                2,
+                &[
+                    ([2, 2, 8], [-1, -1, 1]),
+                    ([18, 2, 8], [1, -1, 1]),
+                    ([18, 18, 8], [1, 1, 1]),
+                    ([2, 18, 8], [-1, 1, 1]),
+                ],
+            ),
+        ),
     ];
     let cases = cases();
     for (name, expected) in corners {
@@ -1564,8 +1754,12 @@ fn mitre_corner_vertices_lie_on_the_field_corner_face() {
         assert_eq!(spheres, want, "{name}: corner faces");
         let points = step_vertices(&case.recipe, case.step, "1/20", true);
         assert!(!points.is_empty(), "{name}: no corner vertices");
+        // Vertices on a corner's sphere but past its cell: outside the
+        // corner face itself, a B-rep display finding.
+        let mut past = Vec::new();
         for p in &points {
             let p = [&p.x, &p.y, &p.z].map(|x| x.as_rational().unwrap());
+            let mut on_sphere = false;
             let near = expected.iter().any(|(c, directions, r)| {
                 let u: [Rational; 3] = std::array::from_fn(|i| p[i].clone() - c[i].clone());
                 let squared = u
@@ -1579,11 +1773,31 @@ fn mitre_corner_vertices_lie_on_the_field_corner_face() {
                         (0..3).fold(Rational::zero(), |sum, i| sum + u[i].clone() * d[i].clone());
                     along >= -tolerance.clone()
                 });
+                on_sphere |= within;
                 within && cone
             });
+            if !near && on_sphere {
+                past.push(p.clone());
+                continue;
+            }
             assert!(near, "{name}: {p:?} is not on a field corner face");
         }
-        eprintln!("{name}: {} corner vertices within 1 nm", points.len());
+        // A B-rep display finding: with every edge at radius 2, one display
+        // vertex of the B-rep's corner sphere about (2, 18, 2) lies 0.62 um
+        // past the circle where the sphere meets the bottom strip along
+        // x_min, outside the B-rep's own corner face and 96 nm inside the
+        // strip's exact cylinder. The same vertex comes out in both cases.
+        let findings = usize::from(matches!(name, "every 2/2" | "every after a mitred loop"));
+        assert_eq!(
+            past.len(),
+            findings,
+            "{name}: corner vertices past the cell: {past:?}"
+        );
+        eprintln!(
+            "{name}: {} corner vertices within 1 nm, {} on a corner sphere past its cell",
+            points.len() - past.len(),
+            past.len()
+        );
     }
 }
 
@@ -1876,7 +2090,8 @@ fn every(first: Value, rest: &str) -> Recipe {
         ],
     )
 }
-/// A third round that rolls over the right chain of `corner("3", "2")`.
+/// A third round that rolls over the right chain of `corner("3", "2")`,
+/// whose upright is a straight rolling piece.
 fn corner_bottom() -> Recipe {
     let mut value = serde_json::to_value(corner("3", "2", false)).unwrap();
     value["steps"].as_array_mut().unwrap().push(fillet(
@@ -1887,62 +2102,6 @@ fn corner_bottom() -> Recipe {
     ));
     value["result"] = json!("bottom");
     parse(&value)
-}
-
-/// The step 5 recipes left for later parts of the step, each with the
-/// field's code today. The B-rep builds every one, so each is a field
-/// refusal still to clear: every edge at once, and a round over a chain of
-/// rolling pieces, whose faces the field's fillet routes do not take as
-/// supports to roll on or to clear (`field.fillet-contact`).
-fn later() -> Vec<(&'static str, Recipe, &'static str)> {
-    let overflow = "fillet.unsupported-overflow";
-    let contact = "fillet.unsupported-contact";
-    let front = |radius: &str| {
-        fillet(
-            "first",
-            "block",
-            radius,
-            vec![edge(cap("block", "end"), side("block", "y_min"))],
-        )
-    };
-    vec![
-        (
-            "every after a front round 3/1",
-            every(front("3"), "1"),
-            overflow,
-        ),
-        (
-            "every after a front round 2/2",
-            every(front("2"), "2"),
-            contact,
-        ),
-        (
-            "every after uprights",
-            every(fillet("first", "block", "3", uprights("block")), "1"),
-            overflow,
-        ),
-        (
-            "every after a mitred loop",
-            every(
-                fillet(
-                    "first",
-                    "block",
-                    "2",
-                    SIDES
-                        .iter()
-                        .map(|s| edge(cap("block", "end"), side("block", s)))
-                        .collect(),
-                ),
-                "2",
-            ),
-            contact,
-        ),
-        (
-            "corner bottom over the right chain",
-            corner_bottom(),
-            "field.fillet-contact",
-        ),
-    ]
 }
 
 /// The recipes of `fillet_over_fillet.rs` that both kernels refuse, with
@@ -1976,7 +2135,7 @@ fn both_refuse() -> Vec<(&'static str, Recipe, &'static str)> {
 
 #[test]
 fn the_field_names_what_it_has_not_rolled_over_yet() {
-    for list in [later(), both_refuse()] {
+    for list in [both_refuse()] {
         let mut found = BTreeMap::new();
         let mut want = BTreeMap::new();
         for (name, recipe, code) in list {

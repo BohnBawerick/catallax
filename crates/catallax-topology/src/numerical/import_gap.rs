@@ -633,6 +633,80 @@ mod tests {
     /// own, so an admission that fell back would have had a body to return.
     /// Exactly the sum admits, with the rows and tolerances of the full cap.
     #[test]
+    fn a_stage_a_helper_refuses_has_spent_its_work_and_the_stages_before_it_have_theirs() {
+        // The rule's three stages on one use, as `read_use` runs them, each
+        // through `draw_on`. The first two finish. The third counts work and
+        // is then refused by a helper, as a change of parameter is when a
+        // fitted control is not a finite number. That refusal is not a
+        // resource limit, so a reader may go on to the edge's next use.
+        let mut accounts = Accounts::of_one_use(Limits { work: 100 });
+        let refused = (|| -> Result<(), Refusal> {
+            let mut account = accounts.draw(0)?;
+            account.draw_on(|limits, spent| {
+                assert_eq!(limits.work, 100);
+                *spent += 30;
+                Ok(())
+            })?;
+            account.draw_on(|limits, spent| {
+                assert_eq!(limits.work, 70);
+                *spent += 20;
+                Ok(())
+            })?;
+            account.draw_on(|limits, spent| {
+                assert_eq!(limits.work, 50);
+                *spent += 7;
+                Err(bad("trim", "a refitted face copy is not a finite number"))
+            })
+        })();
+        assert_eq!(refused.unwrap_err().code, "numerical.invalid-trim");
+        // All three debits stand: the two finished stages and the refused one.
+        assert_eq!(accounts.spent_by_use(0), 57);
+        assert_eq!(accounts.spent_by_edge(0), 57);
+        // The edge's next reading is given what is really left.
+        assert_eq!(accounts.draw(0).unwrap().left().work, 43);
+    }
+
+    #[test]
+    fn a_reading_refused_part_of_the_way_reports_its_work_and_the_reading_before_it() {
+        // The same through the rule's entry for a reader, on real copies. The
+        // first reading runs in full, and the edge's allowance ends inside
+        // the second. What the reader is told the use spent is both: the
+        // finished reading and what the refused one counted before it stopped.
+        let source = quarter();
+        let (stretched, _) = stretched_copy(&source, "0.02");
+        let (_, copies) = use_of(&source, &stretched);
+        let mut dec = Decider::default();
+        let (mut first, mut second) = (0, 0);
+        gap::measure_counted(
+            &copies,
+            &Hints::default(),
+            Limits::default(),
+            &mut first,
+            &mut dec,
+        )
+        .expect("the copy as imported");
+        gap::measure_geometric_counted(
+            &copies,
+            &Hints::default(),
+            Limits::default(),
+            &mut second,
+            &mut dec,
+        )
+        .expect("the geometric gap");
+        assert!(first > 0 && second > 1);
+        let allowance = first + second / 2;
+        let mut spent = 0;
+        let refused =
+            read_import_use_counted(&copies, Limits { work: allowance }, &mut spent, &mut dec)
+                .unwrap_err();
+        assert_eq!(refused.code, "numerical.gap-work-cap");
+        assert!(
+            first < spent && spent <= allowance,
+            "{spent} of {allowance}, {first} first"
+        );
+    }
+
+    #[test]
     fn one_allowance_covers_admission_and_the_rule_and_no_body_stands_in() {
         let source = quarter();
         let (stretched, edge) = stretched_copy(&source, "0.001");

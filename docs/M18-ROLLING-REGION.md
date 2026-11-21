@@ -128,7 +128,11 @@ needs all of these together:
   `Face` registry uses analytic support polynomials; substituting the fitted
   carrier, an arbitrary polynomial, or the complete torus is not valid.
 
-The existing `fillet.unsupported-overflow` therefore remains for authored P5.
+The existing `fillet.unsupported-overflow` therefore remained for authored P5
+until 4.2a step 4, which builds it with the field's own rim piece
+(`rolling_region::rim`, [the field fillet milestone note](M42A-FIELD-FILLETS.md)):
+one path for the whole ring with the same lower-envelope region, its mouths
+found from the field's leaves and supports, not from this definition.
 This is substantive native region work, **not** completion of the assigned P5
 exit. Smooth blend is not implemented after that unresolved first exit. It
 still requires true operand distances, not existing Boolean residuals. Wider

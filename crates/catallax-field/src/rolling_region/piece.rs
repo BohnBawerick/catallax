@@ -1,4 +1,4 @@
-//! A rolling-ball path piece compiled as a field leaf (4.2a steps 2 and 3).
+//! A rolling-ball path piece compiled as a field leaf (4.2a steps 2 to 4).
 //!
 //! The leaf is the piece's region: membership from [`path::classify`], with a
 //! membership the cover cannot settle reported as `Indeterminate`. Its value
@@ -14,6 +14,7 @@ use super::coaxial::{Coaxial, CoaxialCover};
 use super::generator::{Generator, GeneratorCover};
 use super::path::{self, Cover, Frame, Path};
 use super::revolved::{Revolved, RevolvedCover};
+use super::rim::{Rim, RimCover};
 use super::saddle::{Saddle, SaddleCover};
 use super::{Range, Relation};
 use crate::Location;
@@ -31,6 +32,7 @@ macro_rules! each_kind {
             Kind::Generator($path) => $body,
             Kind::Coaxial($path) => $body,
             Kind::Saddle($path) => $body,
+            Kind::Rim($path) => $body,
         }
     };
 }
@@ -42,6 +44,7 @@ macro_rules! each_cover {
             PieceCover::Generator($cover) => $body,
             PieceCover::Coaxial($cover) => $body,
             PieceCover::Saddle($cover) => $body,
+            PieceCover::Rim($cover) => $body,
         }
     };
 }
@@ -59,6 +62,9 @@ pub enum Kind {
     Coaxial(Coaxial),
     /// A cylinder with a second cylinder or a sphere off its axis.
     Saddle(Saddle),
+    /// A plane and a perpendicular cylinder, with the plane contact crossing
+    /// circular mouths.
+    Rim(Rim),
 }
 
 /// A compiled rolling-ball path piece: the material a convex fillet removes or
@@ -274,6 +280,8 @@ pub enum PieceCover {
     Coaxial(CoaxialCover),
     /// A cylinder with a second cylinder or a sphere off its axis.
     Saddle(SaddleCover),
+    /// A ring with mouth contacts.
+    Rim(RimCover),
 }
 impl Cover for PieceCover {
     fn radius(&self) -> &Ball {
@@ -325,6 +333,7 @@ impl Path for Piece {
             Kind::Generator(path) => PieceCover::Generator(path.cover(dec)?),
             Kind::Coaxial(path) => PieceCover::Coaxial(path.cover(dec)?),
             Kind::Saddle(path) => PieceCover::Saddle(path.cover(dec)?),
+            Kind::Rim(path) => PieceCover::Rim(path.cover(dec)?),
         })
     }
     fn nearest(&self, local: &[Real; 3], dec: &mut Decider) -> Result<Option<Frame>, Refusal> {

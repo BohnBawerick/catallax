@@ -88,16 +88,23 @@ fn cases() -> Vec<(String, Plan)> {
     cases
 }
 
+/// Authored P5 compiles since 4.2a step 4: the field's rim piece rounds the
+/// junction over the four countersink mouths (checked against the B-rep in
+/// `catallax-field/tests/rolling_ends.rs`). Field previews are for field-only
+/// features (Checkpoint 2 decisions, Q32), so a rolling-ball piece has no
+/// preview shader, and the translation refuses whole rather than drop it.
 #[test]
-fn authored_p5_keeps_its_compiler_refusal_before_shader_translation() {
+fn authored_p5_compiles_and_its_rim_piece_has_no_preview_shader() {
     let recipe = Recipe::parse(include_str!("../../../parts/P5-flanged-housing.json")).unwrap();
     let (answer, work) = with_operation_budget(100_000_000, || Plan::compile(&recipe));
-    let refusal = answer.unwrap_err();
-    assert_eq!(refusal.code, "fillet.unsupported-overflow");
+    let plan = answer.unwrap();
     assert!(!work.exhausted);
+    assert_eq!(plan.rolling_pieces().count(), 1);
+    let refusal = plan.unproved_preview_wgsl().unwrap_err();
+    assert_eq!(refusal.code, "field.preview-wgsl-unsupported");
     eprintln!(
-        "authored P5 radius=2: {}: {}; work={}",
-        refusal.code, refusal.detail, work.used
+        "authored P5 radius=2: compiled with work={}; preview {}: {}",
+        work.used, refusal.code, refusal.detail
     );
 }
 

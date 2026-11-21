@@ -1,4 +1,4 @@
-//! Finite round-primitive clearance does not invent mouth-edge continuation.
+//! Finite round-primitive clearance, and the rim piece past the mouth contact.
 #[path = "../examples/m18/cases.rs"]
 mod cases;
 #[test]
@@ -19,17 +19,18 @@ fn finite_round_controls_preserve_full_parallel_answers_and_exhaustion() {
                     .min(8)
             );
             if cap == 1_000_000 {
+                // Radius 1/2 in three placements keeps the elementary
+                // torus; radii 1, 2 and 5/2 take the field's rim piece
+                // (4.2a step 4); at 7/2 the drill's top reaches the fan.
                 assert!(
-                    records[..3]
+                    records[..6]
                         .iter()
                         .all(|r| r.result.is_ok() && !r.exhausted)
                 );
-                for r in &records[3..7] {
-                    assert_eq!(
-                        r.result.as_ref().unwrap_err().code,
-                        "fillet.unsupported-overflow"
-                    );
-                }
+                assert_eq!(
+                    records[6].result.as_ref().unwrap_err().code,
+                    "fillet.unsupported-overflow"
+                );
                 assert_eq!(
                     records[7].result.as_ref().unwrap_err().code,
                     "fillet.non-positive-radius"

@@ -14,7 +14,7 @@ Code the field shares with the B-rep, and what a bug in it would do:
 | --- | --- | --- |
 | `catallax-numbers` (`Real`, `Ball`, `Decider`, allowances) | all exact signs and interval enclosures | A bug here breaks many unrelated tests at once, so it is unlikely to hide. |
 | `catallax-shapes` points, vectors and surface records | inputs and outputs | Plain data, no fillet logic. |
-| `catallax_shapes::RollingEnvelopeDefinition` | the P5 rim piece's validated dimensions, frame and normal-cone regime | The field computes the rim centre curve itself from these numbers. A wrong regime check would admit or refuse the same rims in both kernels. Step 4 replaces it with a field-side check or records why not. |
+| `catallax_shapes::RollingEnvelopeDefinition` | the M18 `Region` building block's input, in the M18 tests only | Replaced in step 4: the field's rim piece (`rolling_region::rim`) finds each mouth from its own leaves and supports and checks the regime itself. The M18 `Region` still takes the B-rep's definition as its input format; no recipe compiles through it. |
 | `catallax_features::fillet::FilletDefinition` and `CornerDefinition` | today's compiled plane-plane and plane-cylinder field fillets (edge, contacts, section) | These elementary definitions predate 4.2a. The step 1 path pieces do not use them; the step 1 tests compare the two, so a bug in either shows. Production keeps them until a later step moves the compile route onto the path pieces. |
 | `catallax-intersect` support intersection | finding which support pairs meet at a sharp edge | Edge discovery only. The ball path is not computed there. |
 | M10 pair search (`offset_meeting`) | step 7 only, spline spine topology | Named by the decisions. Step 7 adds the dense binary64 third check that catches a bug shared through M10. |
@@ -116,6 +116,37 @@ Refusals, each named. Where the B-rep builds and the field refuses, with `fillet
 
 Residual: a saddle piece has no nearest station, so its residual near the path is the supports' and, outside its box, the box's distance; inside the box it is zero.
 
+## Step 4, part 1: rim contact
+
+Code: `crates/catallax-field/src/rolling_region/rim.rs` and the compile route `crates/catallax-field/src/fillet_rim.rs`. Tests: `crates/catallax-field/tests/rolling_ends.rs`, and the updated M18 tests `m18_p5_verdict.rs` and `m18_clearance.rs`.
+
+One new path kind, derived by the field from its own supports and leaves. It reads no B-rep fillet module, no fillet definition's section, contacts or carrier, and not the B-rep's `RollingEnvelopeDefinition`.
+
+| Kind | Supports | Path | Closed forms |
+| --- | --- | --- | --- |
+| `rim::Rim` | a plane and a perpendicular cylinder, the ball outside it, with circular mouths in the plane | the ring's centre circle of radius `C = R + r`; over a mouth of radius `m` the ball leaves the plane for the mouth's edge and its centre drops to `H = sqrt(r^2 - (m - D)^2)`, `D` the horizontal distance to the mouth's axis | the ring's, when no mouth is crossed |
+
+The path is one piece for the whole ring, mouths included, so no seam between a mouth and the ring needs its own proof. Its region is M18's: in the ring's frame, `0 <= y <= r` and `R <= rho <= C`, below the lower envelope of every ball. The interval cover writes the dip as the gap `g = sum of max(0, m_k - D_k)` over the mouths, so a panel that straddles a mouth's sector holds both the ring's and the dipped stations; no station comes nearer a mouth's axis than `o - C`. The edge contact is the edge point nearest the centre, which lies on the ball's characteristic circle, so the face's arc runs from the cylinder foot to it.
+
+The route runs only where the elementary ring refuses with `fillet.unsupported-overflow`, so every earlier answer is unchanged. It proves every other source face either misses the ring's fan or is the side of a mouth:
+
+- a support misses the fan when its exact second-order form about each of 64 panel centres, in the ring's frame, excludes zero on the panel; a support of higher degree is evaluated on the panel's world box;
+- a face misses it when its leaf does: a Round primitive parallel to the ring's axis is compared with the fan exactly (heights against `[0, r]`, its disc against the annulus `[R, C]`), any other Round primitive by its box;
+- a mouth is a Round primitive parallel to the axis, wholly on the material side of the plane, with one cap in it. Its cap circle is the edge; its side face's depth and flare give the edge's normal cone. A ray probe just below the plane, inside the mouth and the fan, separates a hole (air) from a buried cap (material), and one above shows the ring's side open. Mouth discs must keep apart;
+- the ball must cross a mouth on its near side (`R < o - m < C < o`), stay above it (`C - (o - m) < r`), stay on the edge rather than the side face (`depth H + flare g > 0` at the deepest station), stay above the side face's far end, and the mouths' sectors must keep apart (the test `Sectors::new` uses).
+
+A mouth the centre circle only touches (P5 at radius 1) or clears leaves the ring unchanged: the piece is the ring with its closed forms.
+
+How the reference kernels do this. OpenCASCADE rolls a ball on a surface and an edge with `BRepBlend_SurfRstConstRad`, its constant-radius function with the edge's curve on the other face as the second support, walked by `BRepBlend_SurfRstLineBuilder` (read at V7_8_0). SMLib (the Apache-2.0 tree in `NVIDIA-Omniverse/usd-brep`) names the case a cliff rollover (`SM_FG_CLIFF_ROLLOVER` in `SmFilletGeom.h`), found where a rail crosses an edge (`SM_FV_RAIL_X_EDGEUSE`), and steps it like its other blends. Both take the edge as the second support, as the field does; the field keeps the closed form of that contact, the tube of radius `r` about the edge circle, and replaces walking and stepping with exact walls and a whole-interval cover.
+
+Results (`rolling_ends.rs`). The field builds every P5 row of the rim-contact file that the B-rep builds: radius 2 and 5/2, translated, scaled by 1/2 and 2, turned (RZ) and turned in space (RQ), with and without a move; the four rows whose rail touches every mouth (radius 1); and the four whose rail clears them (the elementary torus, as before). It agrees with every membership witness of that file except the points in the flange plane under the round and at the contacts, which lie on a face the piece shares with the housing: a rolling piece registers no face to settle them. Every display vertex of every B-rep blend face lies within the field's guaranteed range of the rim piece's face, at the part's tolerance: 1 nm on the exact tori, the certified bound on the fitted envelopes. On P5 at radius 2 the worst of 3,192 vertices is 9.2e-8 mm from the field's face; on the touching rows 8e-15 mm. Records and work are the same at 1, 2 and 4 workers.
+
+The hole-ring file's 17 rings already built on the elementary route. The test checks each ring's two side points from that file and every B-rep blend display vertex against the field's own `elementary::Ring` path, within 3.3e-15 mm.
+
+Refusals, each named, where both kernels refuse: P5 at radius 7/2 (the B-rep: the ball would leave the mouth's edge for the cone; the field: the drill's top, 1 mm above the flange, reaches the wider fan first), and the three rows with a wall lower than the ball (its top plane reaches the fan), all `fillet.unsupported-overflow`.
+
+Still to do in step 4: the slot file (straight strips that run past their rails and are cut by the end walls, in recipe version 3, and the tangent loop of strips and half rings that version 4 continues; at radius 4 the end walls' rings are spindles), and the corpus rows `l-mixed-all` and `vertex-4-one` (a mixed convex and concave corner, and a strip that ends at a four-face vertex). The field refuses them today with `fillet.unsupported-overflow` or `field.fillet-contact`. `box-all` builds on the elementary corner route.
+
 ## Open for the done-when line
 
 The done-when line asks catallax-compare to find every B-rep display vertex within the field's bound. Compare's forward pass needs a field face witness to bound a vertex from above, and a rolling piece registers no named face. Until the pieces' faces join the field's face registry (names, directions, prepared witnesses from `path::distance`), compare leaves these vertices unresolved; `rolling_conics.rs` runs the same check directly against the pieces. This building block is needed before the milestone's done-when can be shown through compare.
@@ -148,8 +179,8 @@ The list does not change during the milestone. A case added later joins the next
 | --- | --- | --- |
 | 1 | General path routine; line and circle pieces match today's answers | done ([#716](https://github.com/BohnBawerick/catallax/pull/716)) |
 | 2 | Plane with cylinder in any pose, cone or sphere | [#724](https://github.com/BohnBawerick/catallax/pull/724) |
-| 3 | Quadric pairs (closed forms per Dupont, Lazard, Lazard, Petitjean 2008) | this change |
-| 4 | Ends at an edge or vertex, P5 at radius 2 | |
+| 3 | Quadric pairs (closed forms per Dupont, Lazard, Lazard, Petitjean 2008) | [#729](https://github.com/BohnBawerick/catallax/pull/729) |
+| 4 | Ends at an edge or vertex, P5 at radius 2 | part 1, rim contact and hole rings: this change |
 | 5 | Fillet over fillet, nested path | |
 | 6 | Torus pairs | |
 | 7 | Spline faces (7.0 to 7.7 of the decisions) | |

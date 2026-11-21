@@ -6,11 +6,13 @@ use catallax_shapes::RPoint3;
 fn q(s: &str) -> Rational {
     Rational::parse(s).unwrap()
 }
+/// Point answers, the blend face's query and the plan's face names.
+pub type Answers = (Vec<Query>, Option<FaceQuery>, Vec<String>);
 #[derive(Clone, Debug, PartialEq)]
 pub struct Record {
     pub radius: String,
     pub placement: usize,
-    pub result: Result<(Vec<Query>, FaceQuery, Vec<String>), Refusal>,
+    pub result: Result<Answers, Refusal>,
     pub work: u64,
     pub exhausted: bool,
 }
@@ -75,12 +77,18 @@ fn place([x, y, z]: [Rational; 3], placement: usize) -> [Rational; 3] {
         _ => unreachable!(),
     }
 }
-fn run_one(
-    radius: &str,
-    placement: usize,
-) -> Result<(Vec<Query>, FaceQuery, Vec<String>), Refusal> {
+fn run_one(radius: &str, placement: usize) -> Result<Answers, Refusal> {
     let mut dec = Decider::default();
     let plan = Plan::compile_checked(&recipe(radius, placement), &mut dec)?;
+    // From radius 1 the field's rim piece takes the ring (4.2a step 4); its
+    // points are checked against the B-rep in `rolling_ends.rs`.
+    if plan.rolling_pieces().next().is_some() {
+        return Ok((
+            Vec::new(),
+            None,
+            plan.faces().iter().map(|f| f.origin.key()).collect(),
+        ));
+    }
     let mut storage = Workspace::default();
     let mut answers = Vec::new();
     // In the meridian at direction (3/5,4/5): ring centre (12.5,5.5), radius .5.
@@ -119,7 +127,7 @@ fn run_one(
     assert_eq!(face.state, FaceState::OnFace);
     Ok((
         answers,
-        face,
+        Some(face),
         plan.faces().iter().map(|f| f.origin.key()).collect(),
     ))
 }

@@ -83,6 +83,8 @@ fn the_owner_pocket_rim_builds_exports_and_displays() {
         let EvaluatedApplicationOutcome::Numerical(result) = outcome.unwrap() else {
             panic!("R{radius}: the exact builders refuse this rim");
         };
+        // The exact attempt gave its charges back, and they stay on the record.
+        assert!(work.refunded > 0, "R{radius}: {work:?}");
         let body = result.body();
         assert_eq!(body.kind(), catallax_topology::BodyKind::Solid);
         assert_eq!(body.definition().faces.len(), 19, "R{radius}");
@@ -156,6 +158,28 @@ fn a_rim_radius_past_the_wall_names_the_face_it_reaches_and_the_limit() {
 }
 
 #[test]
+fn a_refused_exact_attempt_is_counted_the_same_at_every_thread_count() {
+    // Past the radius limit the exact builders refuse and so does the rolling
+    // ball, early: a short request that still makes a refund.
+    let recipe = rim("5", &WHOLE_RIM);
+    let mut reference = None;
+    for threads in [1, 2, 4] {
+        catallax_numbers::set_threads(std::num::NonZeroUsize::new(threads));
+        let (outcome, work) = build(&recipe);
+        assert!(outcome.is_err(), "{threads} threads");
+        assert!(!work.exhausted, "{threads} threads: {work:?}");
+        assert!(work.refunded > 0, "{threads} threads: {work:?}");
+        let counted = (work.used, work.refunded);
+        assert_eq!(
+            *reference.get_or_insert(counted),
+            counted,
+            "{threads} threads"
+        );
+    }
+    catallax_numbers::set_threads(None);
+}
+
+#[test]
 fn an_open_rim_end_is_cut_by_the_wall_it_runs_into() {
     let five: Vec<_> = WHOLE_RIM
         .into_iter()
@@ -211,6 +235,7 @@ fn naming_the_default_overflow_and_corner_builds_the_same_rim() {
             "{options}"
         );
         assert_eq!(work.used, plain_work.used, "{options}");
+        assert_eq!(work.refunded, plain_work.refunded, "{options}");
     }
     // A smooth corner is a construction the rolling ball does not have, and
     // it says so rather than building a cliff.
@@ -256,6 +281,8 @@ fn a_fillet_the_exact_builders_finish_stays_exact_and_takes_later_features() {
     );
     let (outcome, work) = build(&all);
     assert!(!work.exhausted, "{work:?}");
+    // Nothing was refused, so nothing was refunded.
+    assert_eq!(work.refunded, 0, "{work:?}");
     let EvaluatedApplicationOutcome::Exact(body) = outcome.unwrap() else {
         panic!("a box fillet is exact");
     };

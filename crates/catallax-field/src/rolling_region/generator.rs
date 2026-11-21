@@ -344,6 +344,24 @@ impl Generator {
         Ok(vec![self.hull(dec)?])
     }
 
+    /// The vertices of a prism that holds the region, when both supports
+    /// are planes: the edge point, both feet and the centre at each end
+    /// station. Each section lies in the quadrilateral of its edge point,
+    /// feet and centre (see [`Generator::hull`]), exactly, in any pose.
+    /// `None` when a support is a cylinder, whose arc bulges past that
+    /// quadrilateral.
+    pub(crate) fn plane_prism(&self) -> Option<Vec<Point3>> {
+        if !self.supports.iter().all(|w| matches!(w, Wall::Plane(_))) {
+            return None;
+        }
+        let mut points = Vec::with_capacity(8);
+        for t in &self.ends {
+            let [edge, first, second] = self.section_at(t);
+            points.extend([edge, first, second, self.centre_at(t)]);
+        }
+        Some(points)
+    }
+
     /// Tentative binary64 value for display: negative inside the region. The
     /// square root is the caller's.
     pub(crate) fn fast(&self, p: [f64; 3], sqrt: fn(f64) -> f64) -> f64 {

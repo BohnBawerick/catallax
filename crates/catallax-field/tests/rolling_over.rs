@@ -1,13 +1,16 @@
-//! 4.2a step 5, part 1: fillets that roll over an earlier straight round.
-//! The corpus rows `tangent-boss`, `tangent-pocket` and `unequal-ordered`,
-//! and the recipes of `fillet_over_fillet.rs` whose chain rolls over an
-//! earlier strip with its ball on the strip's axis side. The corpus row
-//! `box-mitre`, which the elementary route already builds, is checked for
-//! membership.
+//! 4.2a step 5: fillets that roll over an earlier straight round. The
+//! corpus rows `tangent-boss`, `tangent-pocket` and `unequal-ordered`, and
+//! the recipes of `fillet_over_fillet.rs` whose chain rolls over an earlier
+//! strip with its ball on the strip's axis side (part 1), or with a ball as
+//! wide as the strip, a sphere corner, and the recipes whose straight run
+//! stops at a strip narrower than its ball and takes the cliff (part 2). The
+//! corpus row `box-mitre`, which the elementary route already builds, is
+//! checked for membership.
 //!
 //! The field compiles each chain from its own path pieces: straight pieces
 //! along the sharp runs and, over each earlier round, a ring sector about the
-//! round's centre line (a ring, horn or spindle by the radii). Its membership
+//! round's centre line (a ring, horn or spindle by the radii, or one ball on
+//! the line when the radii are equal). Its membership
 //! must match each witness: the corpus row's (confirmed by OpenCASCADE), the
 //! test file's (checked against the B-rep there) and points derived here,
 //! each checked against the B-rep first. Every display vertex of the B-rep's
@@ -17,7 +20,7 @@
 //! refusals, each named.
 use catallax_features::evaluate;
 use catallax_field::rolling_region::piece::Piece;
-use catallax_field::rolling_region::{Batch, Range, distance_batch};
+use catallax_field::rolling_region::{Batch, Range, Relation, distance_batch};
 use catallax_field::{Location, Plan, Workspace};
 use catallax_mesh::{MeshOptions, mesh_body};
 use catallax_numbers::{BudgetPolicy, Decider, OperationAllowance, Rational};
@@ -435,11 +438,270 @@ fn cases() -> Vec<Case> {
             ],
         ),
     ];
+    cases.extend(sphere_corners());
+    cases.extend(cliffs());
+    let boss_33 = cases.iter().find(|c| c.name == "boss 3/3").unwrap();
+    cases.push(boss_33.placed("placed boss 3/3"));
     cases.push(boss_31.placed("placed boss 3/1"));
     cases.push(corner_31.placed("placed corner 3/1"));
     cases.push(boss_31);
     cases.push(corner_31);
     cases
+}
+
+/// A ball as wide as the round it rolls over (`C = 0`): the centre stays on
+/// the round's axis, so each sector is one ball, a sphere corner. Derived
+/// points: kept inside each strip's ball and the corner ball (on its axis
+/// too, just short of the plane it touches), cut or added outside them in
+/// the strip and in the corner cell; with the test file's points.
+fn sphere_corners() -> Vec<Case> {
+    // Ball centres: the boss at (17, 17, 7) and (18, 18, 8), the pocket at
+    // (12, 12, 7) and (13, 13, 6), the corner at (17, 3, 7) and (18, 2, 8).
+    // Corner points lie on the meridian (3/5, 4/5) of each round's axis.
+    let right = |name: &str, recipe: Recipe, inside: &Points, outside: &Points| {
+        Case::new(name, recipe, "right", 3, inside, outside)
+    };
+    vec![
+        Case::new(
+            "boss 3/3",
+            boss(4, "3", "3", false),
+            "top",
+            8,
+            &[
+                ([18, 1], [10, 1], [8, 1]),
+                ([91, 5], [93, 5], [9, 1]),
+                ([1847, 100], [1896, 100], [17, 2]),
+                ([17, 1], [17, 1], [999, 100]),
+                ([10, 1], [10, 1], [5, 1]),
+            ],
+            &[
+                ([199, 10], [10, 1], [99, 10]),
+                ([1877, 100], [1936, 100], [199, 20]),
+                ([199, 10], [199, 10], [5, 1]),
+            ],
+        ),
+        Case::new(
+            "boss 2/2",
+            boss(4, "2", "2", false),
+            "top",
+            8,
+            &[
+                ([19, 1], [10, 1], [9, 1]),
+                ([93, 5], [94, 5], [9, 1]),
+                ([18, 1], [18, 1], [999, 100]),
+                ([10, 1], [10, 1], [5, 1]),
+            ],
+            &[
+                ([199, 10], [10, 1], [99, 10]),
+                ([1917, 100], [1956, 100], [199, 20]),
+                ([199, 10], [199, 10], [5, 1]),
+            ],
+        ),
+        Case::new(
+            "pocket 3/3",
+            pocket("3", "3"),
+            "floor",
+            8,
+            &[
+                ([149, 10], [10, 1], [41, 10]),
+                ([1377, 100], [1436, 100], [81, 20]),
+                ([2, 1], [2, 1], [2, 1]),
+            ],
+            &[
+                ([14, 1], [10, 1], [5, 1]),
+                ([66, 5], [68, 5], [5, 1]),
+                ([27, 2], [14, 1], [6, 1]),
+                ([12, 1], [12, 1], [401, 100]),
+                ([10, 1], [10, 1], [7, 1]),
+            ],
+        ),
+        Case::new(
+            "pocket 2/2",
+            pocket("2", "2"),
+            "floor",
+            8,
+            &[
+                ([149, 10], [10, 1], [41, 10]),
+                ([1417, 100], [1456, 100], [81, 20]),
+                ([2, 1], [2, 1], [2, 1]),
+            ],
+            &[
+                ([14, 1], [10, 1], [5, 1]),
+                ([68, 5], [69, 5], [5, 1]),
+                ([13, 1], [13, 1], [401, 100]),
+                ([10, 1], [10, 1], [7, 1]),
+            ],
+        ),
+        // The corner's meridian is (-3/5, 4/5) in (y, z) about an axis
+        // along x.
+        right(
+            "corner 3/3",
+            corner("3", "3", false),
+            &[
+                ([18, 1], [15, 1], [8, 1]),
+                ([19, 1], [9, 5], [43, 5]),
+                ([18, 1], [2, 1], [3, 1]),
+                ([1999, 100], [3, 1], [7, 1]),
+                ([10, 1], [10, 1], [5, 1]),
+            ],
+            &[
+                ([199, 10], [15, 1], [99, 10]),
+                ([399, 20], [123, 100], [936, 100]),
+                ([199, 10], [1, 10], [3, 1]),
+            ],
+        ),
+        right(
+            "corner 2/2",
+            corner("2", "2", false),
+            CORNER_22_IN,
+            CORNER_22_OUT,
+        ),
+        right(
+            "corner 2/2 from the arc",
+            corner("2", "2", true),
+            CORNER_22_IN,
+            CORNER_22_OUT,
+        ),
+    ]
+}
+/// A ball wider than the round its run reaches (RECIPE 4.5.1, the cliff
+/// rule): the chain stops there, and its one straight strip keeps both
+/// planes, runs on to the other rail's end and the round cuts it. Derived
+/// points: kept inside the strip's ball and cut or added outside it, along
+/// the run and on its extension over the round, where the round's material
+/// (or, in the pocket, its air) meets the strip; the edges the chain does not
+/// reach stay sharp. The corner's points past the front round are the test
+/// file's.
+fn cliffs() -> Vec<Case> {
+    vec![
+        Case::new(
+            "boss 1/3",
+            boss(4, "1", "3", false),
+            "top",
+            1,
+            &[
+                ([18, 1], [10, 1], [8, 1]),
+                ([39, 2], [39, 2], [8, 1]),
+                ([10, 1], [199, 10], [99, 10]),
+                ([10, 1], [10, 1], [5, 1]),
+            ],
+            &[([199, 10], [10, 1], [99, 10]), ([39, 2], [39, 2], [99, 10])],
+        ),
+        Case::new(
+            "pocket 1/3",
+            pocket("1", "3"),
+            "floor",
+            1,
+            &[
+                ([149, 10], [10, 1], [41, 10]),
+                ([29, 2], [29, 2], [41, 10]),
+                ([2, 1], [2, 1], [2, 1]),
+            ],
+            &[
+                ([14, 1], [10, 1], [5, 1]),
+                ([29, 2], [29, 2], [6, 1]),
+                ([10, 1], [10, 1], [7, 1]),
+            ],
+        ),
+        Case::new(
+            "corner 1/2",
+            corner("1", "2", false),
+            "right",
+            1,
+            &[
+                ([19, 1], [10, 1], [9, 1]),
+                ([19, 1], [1, 2], [9, 1]),
+                ([10, 1], [1, 2], [19, 2]),
+                ([10, 1], [10, 1], [5, 1]),
+            ],
+            &[
+                ([199, 10], [10, 1], [99, 10]),
+                ([199, 10], [1, 2], [93, 10]),
+                ([19, 1], [10, 1], [99, 10]),
+            ],
+        ),
+    ]
+}
+const CORNER_22_IN: &Points = &[
+    ([19, 1], [15, 1], [9, 1]),
+    ([19, 1], [7, 5], [44, 5]),
+    ([19, 1], [11, 10], [46, 5]),
+    ([19, 1], [1, 1], [3, 1]),
+    ([1999, 100], [2, 1], [8, 1]),
+    ([10, 1], [10, 1], [5, 1]),
+];
+const CORNER_22_OUT: &Points = &[
+    ([199, 10], [15, 1], [99, 10]),
+    ([399, 20], [83, 100], [956, 100]),
+    ([199, 10], [43, 50], [238, 25]),
+    ([199, 10], [1, 10], [3, 1]),
+];
+/// Rational points of each sphere corner's face, `c + (1, 2, 2)` and its
+/// permutations within the sector. The B-rep puts them on its boundary.
+/// In the field exactly one rolling piece, the sector, holds each on its
+/// region's boundary, and its distance range starts at 0. The plan leaves
+/// them `Indeterminate`: a point on a subtracted or added region's boundary
+/// needs that region's face registered, which rolling pieces do not do yet
+/// (`docs/M42A-FIELD-FILLETS.md`, open for the done-when line).
+#[test]
+fn a_sphere_corner_face_holds_its_rational_points() {
+    let points: [(&str, Recipe, [[i64; 3]; 3]); 3] = [
+        (
+            "boss 3/3",
+            boss(4, "3", "3", false),
+            [[18, 19, 9], [19, 18, 9], [19, 19, 8]],
+        ),
+        (
+            "pocket 3/3",
+            pocket("3", "3"),
+            [[13, 14, 5], [14, 13, 5], [14, 14, 6]],
+        ),
+        (
+            "corner 3/3",
+            corner("3", "3", false),
+            [[19, 1, 8], [18, 1, 9], [19, 2, 9]],
+        ),
+    ];
+    let width = ratio(1, 1_000_000_000_000);
+    for (name, recipe, list) in points {
+        let plan = Plan::compile_checked(&recipe, &mut decider()).unwrap();
+        let mut built = evaluate(&recipe, &mut decider()).unwrap();
+        for p in list {
+            let p = p.map(Rational::from_i64);
+            assert_eq!(
+                brep_location(&mut built, &p),
+                Location::Boundary,
+                "{name}: the B-rep at {p:?}"
+            );
+            assert_eq!(
+                location(&plan, &p),
+                Location::Indeterminate,
+                "{name} at {p:?}"
+            );
+            let point = Point3::new(
+                p[0].clone().into(),
+                p[1].clone().into(),
+                p[2].clone().into(),
+            );
+            let mut on = Vec::new();
+            for piece in plan.rolling_pieces() {
+                match piece.classify(&point, &mut decider()).unwrap() {
+                    Relation::Boundary => on.push(piece),
+                    Relation::Exterior => {}
+                    Relation::Interior => panic!("{name}: {p:?} inside a piece's region"),
+                }
+            }
+            let [piece] = on[..] else {
+                panic!("{name}: {p:?} on {} pieces' boundaries", on.len());
+            };
+            let range = piece.distance(&point, &width, &mut decider()).unwrap();
+            assert_eq!(range.lower, Rational::zero(), "{name} at {p:?}");
+            assert!(
+                range.upper.as_ref().is_some_and(|u| *u <= width),
+                "{name} at {p:?}: {range:?}"
+            );
+        }
+    }
 }
 
 /// The B-rep's membership of a point, from its exact point classifier.
@@ -597,6 +859,11 @@ const VERTEX_GROUPS: &[&[&str]] = &[
     &["unequal-ordered", "corner 3/1", "corner 3/1 from the arc"],
     &["boss 3/2", "corner 3/2", "boss 3/1 named loop"],
     &["placed boss 3/1", "placed corner 3/1"],
+    &["boss 3/3", "boss 2/2"],
+    &["pocket 3/3", "pocket 2/2"],
+    &["corner 3/3", "corner 2/2", "corner 2/2 from the arc"],
+    &["placed boss 3/3"],
+    &["boss 1/3", "pocket 1/3", "corner 1/2"],
 ];
 macro_rules! vertex_tests {
     ($($test:ident = $group:literal;)+) => {
@@ -614,6 +881,11 @@ vertex_tests! {
     corner_blend_vertices_lie_on_the_field_face = 2;
     spindle_blend_vertices_lie_on_the_field_face = 3;
     placed_blend_vertices_lie_on_the_field_face = 4;
+    sphere_boss_blend_vertices_lie_on_the_field_face = 5;
+    sphere_pocket_blend_vertices_lie_on_the_field_face = 6;
+    sphere_corner_blend_vertices_lie_on_the_field_face = 7;
+    placed_sphere_blend_vertices_lie_on_the_field_face = 8;
+    cliff_blend_vertices_lie_on_the_field_face = 9;
 }
 
 #[test]
@@ -887,17 +1159,13 @@ fn corner_bottom() -> Recipe {
 
 /// The step 5 recipes left for later parts of the step, each with the
 /// field's code today. The B-rep builds every one, so each is a field
-/// refusal still to clear: a ball as wide as the round it rolls over sweeps
-/// a sphere corner (`field.rolling-path-reach` names the ball no smaller
-/// than the cylinder it rolls inside); a ball wider than the round takes
-/// the cliff; a ball outside the round's cylinder (a convex chain over a
-/// concave round, or the reverse) crosses the round's tangent faces; an
-/// upright under an earlier mitre; every edge at once; and a round over a
-/// chain of rolling pieces, which register no face to roll on or to clear
-/// (`field.fillet-contact`).
+/// refusal still to clear: a ball outside the round's cylinder (a convex
+/// chain over a concave round, or the reverse) crosses the round's tangent
+/// faces; an upright under an earlier mitre, as a cliff or rolling over it;
+/// every edge at once; and a round over a chain of rolling pieces, which
+/// register no face to roll on or to clear (`field.fillet-contact`).
 fn later() -> Vec<(&'static str, Recipe, &'static str)> {
     let overflow = "fillet.unsupported-overflow";
-    let reach = "field.rolling-path-reach";
     let contact = "fillet.unsupported-contact";
     let front = |radius: &str| {
         fillet(
@@ -918,16 +1186,6 @@ fn later() -> Vec<(&'static str, Recipe, &'static str)> {
             parse(&corpus_row("roll-over-mitres")["recipe"]),
             overflow,
         ),
-        ("boss 3/3", boss(4, "3", "3", false), reach),
-        ("boss 2/2", boss(4, "2", "2", false), reach),
-        ("pocket 3/3", pocket("3", "3"), reach),
-        ("pocket 2/2", pocket("2", "2"), reach),
-        ("corner 3/3", corner("3", "3", false), reach),
-        ("corner 2/2", corner("2", "2", false), reach),
-        ("corner 2/2 from the arc", corner("2", "2", true), reach),
-        ("boss 1/3", boss(4, "1", "3", false), reach),
-        ("pocket 1/3", pocket("1", "3"), reach),
-        ("corner 1/2", corner("1", "2", false), reach),
         ("bracket 3/1", bracket("3", "1"), overflow),
         ("bracket 3/4", bracket("3", "4"), overflow),
         ("bracket 2/(3/2)", bracket("2", "3/2"), overflow),

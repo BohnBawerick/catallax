@@ -31,7 +31,8 @@ pub(super) struct Run {
     pub(super) piece: Piece,
     faces: [usize; 2],
     // Faces proven not to overflow the run: end faces of a straight run,
-    // which bound it, and a rim's mouths.
+    // which bound it, a rim's mouths, and narrower rounds that cut a run's
+    // extension past a cliff.
     ends: Vec<usize>,
     // Half-spaces `n . (x - p) >= 0` that hold the region, each bounded by
     // a junction with a tangent neighbour piece. A face on the far side of
@@ -67,6 +68,14 @@ impl Run {
     /// The run whose region lies in the closed solid cylinder `solid`.
     pub(super) fn inside(mut self, solid: Solid) -> Self {
         self.inside = Some(solid);
+        self
+    }
+    /// The run with the faces that cut its extension past a cliff (RECIPE
+    /// 4.5.1, 4.2a step 5): narrower rounds it does not roll onto, each past
+    /// the cliff. By the cliff rule they cut the region there, so the
+    /// clearance leaves them to that cut, as it leaves end faces.
+    pub(super) fn cut_by(mut self, faces: Vec<usize>) -> Self {
+        self.ends.extend(faces);
         self
     }
 }
@@ -987,7 +996,11 @@ impl Plan {
             for panel in boxes.as_deref().unwrap_or_default() {
                 dec.charge_work(1)?;
                 if face.polynomial.eval_ball(panel, dec)?.contains_zero() {
-                    if self.beyond_junction(run, i, dec)? || self.outside_solid(run, i, dec)? {
+                    if self.beyond_junction(run, i, dec)?
+                        || self.outside_solid(run, i, dec)?
+                        || self.beside_prism(run, i, dec)?
+                        || self.beside_box(run, i, dec)?
+                    {
                         break;
                     }
                     return Err(overflow());
@@ -1017,6 +1030,60 @@ impl Plan {
         let offset = plane.normal.dot(&solid.point.minus(&plane.origin));
         let reach = &solid.radius_sq * &plane.normal.norm_squared();
         Ok(geometry::sign(&(&offset.square() - &reach), dec)? != Sign::Negative)
+    }
+
+    /// Whether face `i` is a plane with a straight piece's prism on one
+    /// closed side: every vertex of [`Generator::plane_prism`] is on that
+    /// side. A plane that supports a convex set holding the region meets the
+    /// region at most on its boundary. The test is exact, so it holds where
+    /// the piece's axis-aligned box is too loose: a wide strip in a rotated
+    /// pose, whose box reaches the part's far faces (4.2a step 5).
+    fn beside_prism(&self, run: &Run, i: usize, dec: &mut Decider) -> Result<bool, Refusal> {
+        let (Kind::Generator(path), Surface::Plane(plane)) =
+            (run.piece.kind(), &self.faces[i].surface)
+        else {
+            return Ok(false);
+        };
+        let Some(points) = path.plane_prism() else {
+            return Ok(false);
+        };
+        let mut side = Sign::Zero;
+        for p in &points {
+            dec.charge_work(1)?;
+            match geometry::sign(&plane.normal.dot(&p.minus(&plane.origin)), dec)? {
+                Sign::Zero => {}
+                found if side == Sign::Zero => side = found,
+                found if found != side => return Ok(false),
+                _ => {}
+            }
+        }
+        Ok(true)
+    }
+
+    /// Whether face `i`'s leaf puts the whole face beyond one side of the
+    /// run's box, where the region cannot be: the face meets the region at
+    /// most in that side's plane. A curved face evaluated over a long box
+    /// can seem to reach it by interval dependency alone, such as a far
+    /// corner round over a strip that runs past a cliff along the whole edge
+    /// (4.2a step 5). Proven from the face's leaf, as at a junction.
+    fn beside_box(&self, run: &Run, i: usize, dec: &mut Decider) -> Result<bool, Refusal> {
+        let (geometry::Leaf::Feature(feature), Some(bounds)) =
+            (&self.leaves[self.faces[i].leaf], run.piece.bounds())
+        else {
+            return Ok(false);
+        };
+        for (axis, [lo, hi]) in bounds.iter().enumerate() {
+            for (sense, level) in [(-1, -lo), (1, hi.clone())] {
+                let mut normal = [Real::zero(), Real::zero(), Real::zero()];
+                normal[axis] = Real::from_i64(sense);
+                let [x, y, z] = normal;
+                let normal = Vector3::new(x, y, z);
+                if feature.face_above(self.definition_role(i), &normal, &Real::from(level), dec)? {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
     }
 
     /// Whether face `i` lies on the far side of one of the run's junctions,

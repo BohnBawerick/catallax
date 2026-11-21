@@ -38,9 +38,14 @@
 //! A chain over an earlier strip may end a straight run at a plane normal to
 //! it, as an elementary strip ends. The strip's tangent neighbours pass
 //! through the sector's box; the sector lies inside the strip's solid
-//! cylinder, which they only touch. A ball as wide as the strip (a sphere
-//! corner), a ball outside its cylinder and an earlier mitre are later
-//! parts of step 5 and keep their refusals.
+//! cylinder, which they only touch. A ball as wide as the strip keeps its
+//! centre on the strip's centre line (`C = 0`, step 5 part 2), and the sector
+//! is a sphere corner. A ball wider than a strip of its convexity cannot
+//! roll onto it: a straight run between planes takes RECIPE 4.5.1's cliff
+//! rule there, keeps both planes and runs on to the other rail's end, and
+//! the narrower round cuts it (step 5 part 2). A ball outside the strip's
+//! cylinder and an earlier mitre are later parts of step 5 and keep their
+//! refusals.
 //!
 //! How the reference kernels do this. OpenCASCADE's
 //! `ChFi3d_Builder::PerformElement` (V7_8_0) collects "all mutually tangent
@@ -118,6 +123,17 @@ impl Span {
 /// One arc between neighbouring cuts: its material, its first and last
 /// cut, and its midpoint.
 type ArcProbe = (Option<(bool, [bool; 2])>, usize, usize, Point3);
+
+/// A straight run's end at an earlier round it cannot roll onto (RECIPE
+/// 4.5.1, the cliff rule): the run's `end`, the `round`'s face, and which
+/// of the run's two faces (`foot`, 0 or 1) is tangent to the round there.
+#[derive(Clone, Copy, Debug)]
+struct Cliff {
+    span: usize,
+    end: usize,
+    round: usize,
+    foot: usize,
+}
 
 fn same(a: &Point3, b: &Point3, dec: &mut Decider) -> Result<bool, Refusal> {
     Ok(geometry::sign(&a.minus(b).norm_squared(), dec)? == Sign::Zero)
@@ -311,7 +327,18 @@ impl Plan {
         if spans.is_empty() {
             return Ok(None);
         }
-        if roll_over && !self.continue_tangent(root, &mut spans, source_faces, &bound, dec)? {
+        let mut cliffs = Vec::new();
+        if roll_over
+            && !self.continue_tangent(
+                root,
+                &mut spans,
+                source_faces,
+                &bound,
+                radius,
+                &mut cliffs,
+                dec,
+            )?
+        {
             return Ok(None);
         }
         // The partner of each run end at a tangent junction.
@@ -342,10 +369,26 @@ impl Plan {
             .iter()
             .any(|span| span.faces.iter().any(|&f| self.earlier_strip(f)));
         let mut free: Vec<[Option<usize>; 2]> = vec![[None, None]; spans.len()];
-        if roll_over && over {
+        // A run end at a cliff runs on to the other rail's end, and the
+        // narrower round cuts it there (4.2a step 5). Two cliffs at one end,
+        // as under an earlier mitre, keep the refusal.
+        let mut cuts: Vec<Vec<usize>> = vec![Vec::new(); spans.len()];
+        for cliff in &cliffs {
+            if links[cliff.span][cliff.end].is_some() || free[cliff.span][cliff.end].is_some() {
+                return Ok(None);
+            }
+            let Some(end) =
+                self.cliff_end(&mut spans[cliff.span], cliff, source_faces, radius, dec)?
+            else {
+                return Ok(None);
+            };
+            free[cliff.span][cliff.end] = Some(end);
+            cuts[cliff.span].push(cliff.round);
+        }
+        if roll_over && (over || !cliffs.is_empty()) {
             for (i, span) in spans.iter().enumerate() {
                 for k in 0..2 {
-                    if links[i][k].is_none() {
+                    if links[i][k].is_none() && free[i][k].is_none() {
                         free[i][k] = self.end_face(span, k, source_faces, dec)?;
                     }
                 }
@@ -374,7 +417,10 @@ impl Plan {
                     }
                 }
                 let junction = links[i].map(|link| link.is_some());
-                runs.push(self.junction_run(span, junction, free[i], radius, step, dec)?);
+                runs.push(
+                    self.junction_run(span, junction, free[i], radius, step, dec)?
+                        .cut_by(cuts[i].clone()),
+                );
             } else {
                 runs.push(self.past_run(span, source_faces, &bound, radius, step, dec)?);
             }
@@ -603,12 +649,19 @@ impl Plan {
     /// the face it keeps and that face joins the selection, as long as the
     /// faces stay tangent. `false` when a continued pair meets in a curve
     /// other than a line or a circle. Each pair's runs are found once.
+    ///
+    /// A run does not continue onto an earlier round narrower than its
+    /// ball (RECIPE 4.5.1: "A tangent chain stops at such a round instead of
+    /// continuing over it"); that end is recorded in `cliffs`.
+    #[allow(clippy::too_many_arguments)]
     fn continue_tangent(
         &self,
         root: usize,
         spans: &mut Vec<Span>,
         source_faces: &[usize],
         bound: &Rational,
+        radius: &Real,
+        cliffs: &mut Vec<Cliff>,
         dec: &mut Decider,
     ) -> Result<bool, Refusal> {
         let mut pending: Vec<usize> = (0..spans.len()).collect();
@@ -637,6 +690,21 @@ impl Plan {
                             || !self.through(next, &p, dec)?
                             || !parallel(&gradient, &self.gradient_at(next, &p), dec)?
                         {
+                            continue;
+                        }
+                        if self.narrower_round(&spans[i], next, &p, radius, dec)? {
+                            let foot = usize::from(leave == f1);
+                            if !cliffs
+                                .iter()
+                                .any(|c| c.span == i && c.end == k && c.round == next)
+                            {
+                                cliffs.push(Cliff {
+                                    span: i,
+                                    end: k,
+                                    round: next,
+                                    foot,
+                                });
+                            }
                             continue;
                         }
                         let pair = if source_faces.iter().position(|&f| f == stay)
@@ -832,6 +900,136 @@ impl Plan {
             &self.leaves[self.faces[f].leaf],
             geometry::Leaf::Feature(feature) if feature.fillet.is_some() && feature.is_straight_strip()
         )
+    }
+
+    /// Whether face `round` is an earlier straight round that a straight run
+    /// between two planes cannot roll onto at its end `p`: a round of the
+    /// run's convexity, so with the ball inside its cylinder, narrower than
+    /// the ball. Its offset by the ball folds back there, and RECIPE 4.5.1
+    /// takes the cliff rule instead; OpenCASCADE's
+    /// `ChFiKPart_ComputeData_FilPlnCyl` finds no fillet there either ("the
+    /// fillet can't pass" when `cylrad - Radius` is negative). A round as
+    /// wide as the ball keeps the sphere corner.
+    fn narrower_round(
+        &self,
+        span: &Span,
+        round: usize,
+        p: &Point3,
+        radius: &Real,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        let Surface::Cylinder(cylinder) = &self.faces[round].surface else {
+            return Ok(false);
+        };
+        // The round's own support must pass through the run end: a face of
+        // the same leaf can pass the leaf's boundary test elsewhere.
+        let values = [p.x.clone(), p.y.clone(), p.z.clone()];
+        if !self.earlier_strip(round)
+            || !matches!(span.track, Track::Line { .. })
+            || !span
+                .faces
+                .iter()
+                .all(|&f| matches!(self.faces[f].surface, Surface::Plane(_)))
+            || geometry::sign(&(&cylinder.radius_sq - &radius.square()), dec)? != Sign::Negative
+            || geometry::sign(&self.faces[round].polynomial.eval_real(&values), dec)? != Sign::Zero
+        {
+            return Ok(false);
+        }
+        let ball = self.ball_direction(span.faces, &span.sample, span.convex, span.senses)?;
+        let outward = super::rolling::radial(&p.minus(&cylinder.origin), &cylinder.axis);
+        Ok(geometry::sign(&ball.dot(&outward), dec)? == Sign::Negative)
+    }
+
+    /// The end of a straight run past a cliff (RECIPE 4.5.1): the strip keeps
+    /// both planes and runs on past the narrower round, which cuts it, to the
+    /// other rail's end. The B-rep walks that cut from the cliff foot until it
+    /// reaches the strip's other face at the other rail's end
+    /// (`fillet_build.rs`, `cliff`). Here the run ends where the nearest
+    /// source plane normal to it past the cliff holds the other rail's
+    /// point, as an elementary strip ends at its end plane, and its station
+    /// moves there. The round's face must lie past the plane normal to the
+    /// run at the cliff, so it meets only the extension, which it cuts.
+    /// `None` when no such plane or round is found; the caller then keeps
+    /// its refusal.
+    fn cliff_end(
+        &self,
+        span: &mut Span,
+        cliff: &Cliff,
+        source_faces: &[usize],
+        radius: &Real,
+        dec: &mut Decider,
+    ) -> Result<Option<usize>, Refusal> {
+        let Track::Line { line, stations } = span.track.clone() else {
+            return Ok(None);
+        };
+        let k = cliff.end;
+        let p = span.end(k);
+        let outward = span.outward(k);
+        let geometry::Leaf::Feature(feature) = &self.leaves[self.faces[cliff.round].leaf] else {
+            return Ok(None);
+        };
+        let level = outward.dot(&p.minus(&Point3::origin()));
+        if !feature.face_above(self.definition_role(cliff.round), &outward, &level, dec)? {
+            return Ok(None);
+        }
+        // The other rail's point at the cliff.
+        let supports = span.faces.map(|i| self.faces[i].surface.clone());
+        let ball = self.ball_direction(span.faces, &span.sample, span.convex, span.senses)?;
+        let walls = Self::generator_walls(&supports, &ball, &span.sample, dec)?;
+        let path = Generator::new(
+            walls,
+            line.origin.clone(),
+            line.dir.clone(),
+            stations.clone().map(Real::from),
+            radius.clone(),
+            dec,
+        )?;
+        let rail = path.section_at(&Real::from(stations[k].clone()))[2 - cliff.foot].clone();
+        // The nearest normal plane past the cliff.
+        let mut nearest: Option<(Rational, Vec<usize>)> = None;
+        for &j in source_faces {
+            if span.faces.contains(&j) {
+                continue;
+            }
+            let Surface::Plane(plane) = &self.faces[j].surface else {
+                continue;
+            };
+            if !parallel(&plane.normal, &line.dir, dec)? {
+                continue;
+            }
+            let Ok(station) = super::q(
+                &(&plane.origin.minus(&line.origin).dot(&plane.normal)
+                    / &line.dir.dot(&plane.normal)),
+            ) else {
+                continue;
+            };
+            let past = if k == 1 {
+                station > stations[1]
+            } else {
+                station < stations[0]
+            };
+            if !past {
+                continue;
+            }
+            match &mut nearest {
+                Some((best, faces)) if *best == station => faces.push(j),
+                Some((best, _)) if (k == 1) == (*best < station) => {}
+                _ => nearest = Some((station, vec![j])),
+            }
+        }
+        let Some((station, faces)) = nearest else {
+            return Ok(None);
+        };
+        let end = rail.plus(&line.dir.scaled(&Real::from(&station - &stations[k])));
+        for j in faces {
+            if self.through(j, &end, dec)? {
+                if let Track::Line { stations, .. } = &mut span.track {
+                    stations[k] = station;
+                }
+                return Ok(Some(j));
+            }
+        }
+        Ok(None)
     }
 
     /// The end face of a straight run at its end `k`: a source plane normal

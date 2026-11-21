@@ -28,7 +28,11 @@
 //! meridian through the point, as in OpenCASCADE's `Extrema_ExtPElC`, and the
 //! separation from the balls is `(rho - C)^2 + h^2 - r^2`. For `C > r` this has
 //! the sign of the ring-torus polynomial; for a spindle (`0 < C <= r`) the
-//! square root of `rho^2` is kept. Ellipses use the whole-interval panel cover
+//! square root of `rho^2` is kept. A ball exactly as wide as a cylinder it
+//! rolls inside, on a plane normal to the axis, has `C = 0` (4.2a step 5):
+//! every ball is one ball on the axis, the separation is `|x - c|^2 - r^2`
+//! and the face is a sphere, as OpenCASCADE's `ChFiKPart_ComputeData_FilPlnCyl`
+//! makes it. Ellipses use the whole-interval panel cover
 //! of step 1. OpenCASCADE reaches the nearest point of an ellipse through
 //! `math_TrigonometricFunctionRoots`, a quartic in the half angle; a sampled or
 //! root-polished nearest point gives no guaranteed range, the cover does.
@@ -132,6 +136,8 @@ struct Circle {
     major_sq: Real,
     // C > r: the ring-torus polynomial has the separation's sign.
     ring: bool,
+    // C = 0: the centre stays on the axis and every ball is one ball.
+    axial: bool,
 }
 
 /// The rolling-ball path between a plane and a cylinder, cone or sphere.
@@ -280,6 +286,7 @@ impl Revolved {
                     major: root(&major_sq),
                     major_sq,
                     ring,
+                    axial: false,
                 };
                 (
                     Shape::Sphere {
@@ -316,11 +323,28 @@ impl Revolved {
                 let growth = &Real::one() + &slope.square();
                 let root_growth = if cone { root(&growth) } else { Real::one() };
                 let offset = &rim + &(&(&b * &radius) * &root_growth);
-                if !cone && !positive(&offset, dec)? {
-                    return Err(reach(
-                        "the ball is no smaller than the cylinder it rolls inside",
-                    ));
-                }
+                // A ball exactly as wide as the cylinder it rolls inside keeps
+                // its centre on the axis (4.2a step 5): the offset cylinder is
+                // the axis itself, so the path is one point and the face a
+                // sphere. RECIPE 4.5.1: "A round exactly as wide as the ball is
+                // not a cliff"; OpenCASCADE's `ChFiKPart_ComputeData_FilPlnCyl`
+                // makes the same sphere when `cylrad - Radius` is zero. Only a
+                // plane normal to the axis is taken, where every meridian's
+                // section is the same quarter disc.
+                let normal_axis = axis.cross(&unit);
+                let on_axis = if cone {
+                    false
+                } else {
+                    match sign(&offset, dec)? {
+                        Sign::Positive => false,
+                        Sign::Zero if sign(&normal_axis.norm_squared(), dec)? == Sign::Zero => true,
+                        _ => {
+                            return Err(reach(
+                                "the ball is no smaller than the cylinder it rolls inside",
+                            ));
+                        }
+                    }
+                };
                 let cross = unit.dot(&axis);
                 let facing = sign(&cross, dec)?;
                 if facing == Sign::Zero {
@@ -338,15 +362,19 @@ impl Revolved {
                 let gain = &(&offset * &cross) + &(&slope * &start);
                 let edge_start = &level - &lift;
                 let edge_gain = &(&rim * &cross) + &(&slope * &edge_start);
-                if sign(&gain, dec)? != facing || sign(&edge_gain, dec)? != facing {
+                // On the axis the gain is zero: the centre circle has radius 0.
+                if (sign(&gain, dec)? != facing && !on_axis) || sign(&edge_gain, dec)? != facing {
                     return Err(reach(
                         "the edge or the offset conic leaves the support's nappe",
                     ));
                 }
-                let normal_axis = axis.cross(&unit);
                 let (basis, tilt, circle) = if sign(&normal_axis.norm_squared(), dec)? == Sign::Zero
                 {
-                    let major = &gain / &cross;
+                    let major = if on_axis {
+                        Real::zero()
+                    } else {
+                        &gain / &cross
+                    };
                     // The foot on a cone lies `b r / sqrt(1 + k^2)` nearer the
                     // axis than the centre; past the axis it is on the other
                     // nappe, beyond the apex, and no ball touches the face.
@@ -365,6 +393,7 @@ impl Revolved {
                         major_sq: major.square(),
                         major,
                         ring,
+                        axial: on_axis,
                     };
                     (basis_of(&axis, dec)?, Real::zero(), Some(circle))
                 } else {
@@ -940,9 +969,14 @@ impl Path for Revolved {
                 let w = v.minus(&axis.scaled(&s));
                 let rho2 = w.norm_squared();
                 // The region keeps a positive distance from the axis (see
-                // `Revolved::new`), so an axis point is outside it.
+                // `Revolved::new`), so an axis point is outside it. With the
+                // centre on the axis, the fan's axis points lie between the
+                // plane and the centre, inside the one closed ball; only the
+                // plane contact is on the region's boundary, where `-height`
+                // is zero and the separation decides it.
                 if sign(&rho2, dec)? == Sign::Zero {
-                    walls.push(Real::from_i64(-1));
+                    let axial = self.circle.as_ref().is_some_and(|c| c.axial);
+                    walls.push(if axial { -&height } else { Real::from_i64(-1) });
                     return Ok(walls);
                 }
                 let rho = root(&rho2);
@@ -1015,6 +1049,9 @@ impl Path for Revolved {
         let s = &(&d2 + &circle.major_sq) - &self.radius.square();
         Some(if circle.ring {
             &s.square() - &(&(&Real::from_i64(4) * &circle.major_sq) * &rho2)
+        } else if circle.axial {
+            // One ball: `|x - c|^2 - r^2`.
+            s
         } else {
             &s - &(&(&Real::from_i64(2) * &circle.major) * &root(&rho2))
         })

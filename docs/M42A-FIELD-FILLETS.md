@@ -17,6 +17,7 @@ Code the field shares with the B-rep, and what a bug in it would do:
 | `catallax_shapes::RollingEnvelopeDefinition` | the M18 `Region` building block's input, in the M18 tests only | Replaced in step 4: the field's rim piece (`rolling_region::rim`) finds each mouth from its own leaves and supports and checks the regime itself. The M18 `Region` still takes the B-rep's definition as its input format; no recipe compiles through it. |
 | `catallax_features::fillet::FilletDefinition` and `CornerDefinition` | today's compiled plane-plane and plane-cylinder field fillets (edge, contacts, section) | These elementary definitions predate 4.2a. The step 1 path pieces do not use them; the step 1 tests compare the two, so a bug in either shows. Production keeps them until a later step moves the compile route onto the path pieces. |
 | `catallax-intersect` support intersection | finding which support pairs meet at a sharp edge | Edge discovery only. The ball path is not computed there. |
+| `RationalPatch::bezier_spans` | step 7, each span's exact homogeneous Bezier controls, which `PatchDistance` encloses | Blossom extraction shared with every spline route. A wrong control would move the patch for both kernels; the step 7.1 test checks every distance against binary64 points of the support's own polynomials, which do not go through it. |
 | M10 pair search (`offset_meeting`) | step 7 only, spline spine topology | Named by the decisions. Step 7 adds the dense binary64 third check that catches a bug shared through M10. |
 
 ## Query contract (Q23)
@@ -375,6 +376,23 @@ Compare over the rolling corpus rows, each inside 100M work, at the face registr
 
 What remains is reverse. Each row keeps one or two `selected B-rep face lacks complete sampled origin/direction coverage` findings: compare wants field samples on each blend face, and a rolling face has none. `l-mixed-all` keeps 24 reverse `Origins` findings on its concave strip near the mixed corners, where the B-rep names parts of the strip's cylinder `corner.vertex`; RECIPE 4.5.1 keeps `blend.edge` on every exposed part of an edge's run and gives `corner.vertex` to the junction sector, so these read as a B-rep naming difference for the B-rep's owners, not a field change.
 
+## Step 7.1: certified distance to a patch
+
+Code: `crates/catallax-field/src/patch_distance.rs` (`PatchDistance`). Tests: `crates/catallax-field/tests/patch_distance.rs`.
+
+The field cannot hold a spline face yet (decisions 4.6, step 7). The first piece it needs is the distance from a point to a whole rational patch, with bounds it proves. `PatchDistance` holds each Bezier span of the patch as outward binary64 interval enclosures of its homogeneous controls `(X, Y, Z, W)`. The squared distance from `p` to the span's point `X / W` is `N / D`, with `N = |X - W p|^2` and `D = W^2`, both polynomials of twice the span's degrees. On a parameter cell their Bernstein coefficients come from the cell's controls by the product rule (Farouki and Rajan, CAGD 5, 1988). Every `D_k` is positive, so `N / D` is a convex combination of the ratios `N_k / D_k`: the smallest ratio bounds the squared distance from below on the cell, and the corner ratios are values of it. A best-first search halves the cell with the smallest lower bound, across its wider side, drops cells whose lower bound passes the smallest corner value, and stops when the square roots of the two bounds differ by at most `WIDTH`, 2^-24 mm (about 0.06 nm, below a thousandth of step 7.3's 100 nm tube). Both bounds approach the minimum as the square of the cell size (Garloff 1986). A query stops at 4,096 cells, the rolling region's panel cap, or at 52 halvings, and then returns its wider bounds marked as not converged. A query is sequential, so its answer and work are the same at any worker count.
+
+How the reference kernels do this. OpenCASCADE's `Extrema_GenExtPS` and SMLib's `SmSurfPtGlobalSolver::FindRoughGuess` (`SmSurfacePointSolve.cpp`: the control polygon, or 7 by 7, 5 by 5 and 3 by 3 grids zooming on the best sample) take a sampled guess and polish it with Newton steps. Neither proves that no other point is nearer. The field keeps the subdivision bound instead, which is a proof, and needs no Newton step: the corner values reach the minimum as the cells shrink.
+
+The spike the decisions ask for (7.1): 10^4 points on the M27 loft edge's two bilinear supports, and the same on the biquadratic edge's pair, half within 0.3 mm of the shared edge and half in a box round both supports. Each enclosure is checked against an independent binary64 search (a 64 by 64 grid, then twenty 9 by 9 grids, each a quarter as wide, round the best sample), which shares no code with the field: its value lies inside every enclosure, to 1e-12 mm^2. Release build on the work PC:
+
+| Supports | Queries | Median | 99th percentile | Slowest | Cells, median and largest |
+| --- | ---: | ---: | ---: | ---: | --- |
+| M27 loft edge, bilinear | 20,000 | 55 us | 226 us | 1.8 ms | 51, 281 |
+| Biquadratic edge | 20,000 | 219 us | 586 us | 1.5 ms | 51, 183 |
+
+Every query converged within `WIDTH`, and the answers and work are the same at 1, 2 and 4 threads. The risk the decisions named first (a slow certified distance per query) is retired for these supports: well under a millisecond a query. A point on a support gets the lower bound 0 and an upper bound within `WIDTH`. Multi-span patches are covered (each span is a root cell); trimmed faces are not, as the decisions put them in 4.4.
+
 ## Open for the done-when line
 
 - Samples on rolling faces, for the reverse coverage findings. Rational samples exist on rational tori, cylinders and spheres; irrational faces need another route.
@@ -412,4 +430,4 @@ The list does not change during the milestone. A case added later joins the next
 | 4 | Ends at an edge or vertex, P5 at radius 2 | part 1, rim contact and hole rings: [#733](https://github.com/BohnBawerick/catallax/pull/733); part 2, the slot file: [#738](https://github.com/BohnBawerick/catallax/pull/738); part 3, `l-mixed-all` and `vertex-4-one`: [#742](https://github.com/BohnBawerick/catallax/pull/742) |
 | 5 | Fillet over fillet, nested path | part 1, chains over an earlier straight round with the ball on its axis side: [#744](https://github.com/BohnBawerick/catallax/pull/744); part 2, sphere corners and cliffs; part 3, an upright under an earlier mitre; the face registry for rolling pieces and compare on rolling faces; part 4, a ball outside the round's cylinder (`mixed-ordered`); part 5, a ball narrower than a mitre's rounds (`narrow-mitres`); part 6, every edge at once and a third round over rolling pieces: this change |
 | 6 | Torus pairs | `torus-slice`, `torus-intersection` and a cut below the centre plane: this change |
-| 7 | Spline faces (7.0 to 7.7 of the decisions) | |
+| 7 | Spline faces (7.0 to 7.7 of the decisions) | 7.1, the spike, certified distance to a whole patch: this change |

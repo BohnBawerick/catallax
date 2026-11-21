@@ -21,12 +21,20 @@
 //! implicit equations. An edge that fails one, or whose numbers are not all
 //! rational, keeps its measured tolerance.
 //!
+//! A spline has one identity here: on a plane. Every point of a spline with
+//! positive weights is a weighted mean of its control points, with weights
+//! that sum to one, so a spline whose every control point is on a plane lies
+//! on that plane. A straight edge that a fit or an import wrote as a spline
+//! between two exact planes is re-tightened by it. No surface is intersected:
+//! a spline on any other surface, or with a control point off the plane,
+//! keeps its tolerance.
+//!
 //! The vertices of such an edge keep theirs: a vertex of a numerical body is
 //! a rounded point, and the rule vertex >= edge allows it.
 
 use super::*;
 use catallax_numbers::{Fact, FactKind, FactOrigin};
-use catallax_shapes::{Circle, GeomKey, Line};
+use catallax_shapes::{BSplineCurve, Circle, GeomKey, Line};
 
 type V = [Rational; 3];
 
@@ -73,9 +81,26 @@ pub(super) fn lies_on(curve: &Curve, surface: &Surface) -> bool {
     match curve {
         Curve::Line(line) => line_on(line, surface),
         Curve::Circle(circle) => circle_on(circle, surface),
+        Curve::BSpline(spline) => spline_on(spline, surface),
         _ => None,
     }
     .unwrap_or(false)
+}
+
+/// A spline on a plane: every control point on it. The check ends at the
+/// first control point that is off the plane or is not rational, so a
+/// fitted spline costs one or two points.
+fn spline_on(spline: &BSplineCurve, surface: &Surface) -> Option<bool> {
+    let Surface::Plane(plane) = surface else {
+        return None;
+    };
+    let (o, n) = (point(&plane.origin)?, vector(&plane.normal)?);
+    for control in spline.controls() {
+        if !dot(&sub(&point(control)?, &o), &n).is_zero() {
+            return Some(false);
+        }
+    }
+    Some(true)
 }
 
 fn line_on(line: &Line, surface: &Surface) -> Option<bool> {
@@ -280,6 +305,51 @@ mod tests {
             &circle(p("1", "1000001/1000000", "12"), z(), "25"),
             &cylinder
         ));
+    }
+
+    #[test]
+    fn a_spline_with_every_control_on_a_plane() {
+        // A rational quadratic along the x axis, the meeting of the planes
+        // z = 0 and y = 0, with unequal weights and unequal steps.
+        let spline = |controls: [Point3; 3]| {
+            let knots = ["0", "0", "0", "1", "1", "1"]
+                .map(|knot| Rational::parse(knot).unwrap())
+                .to_vec();
+            Curve::BSpline(
+                BSplineCurve::new(
+                    2,
+                    knots,
+                    controls.to_vec(),
+                    vec![q("1"), q("3/2"), q("2")],
+                    &mut Decider::default(),
+                )
+                .unwrap(),
+            )
+        };
+        let floor = Surface::Plane(Plane {
+            origin: p("0", "0", "0"),
+            normal: z(),
+            ref_dir: x(),
+        });
+        let wall = Surface::Plane(Plane {
+            origin: p("5", "0", "7"),
+            normal: v("0", "-3", "0"),
+            ref_dir: x(),
+        });
+        let straight = spline([p("0", "0", "0"), p("1", "0", "0"), p("3", "0", "0")]);
+        assert!(lies_on(&straight, &floor) && lies_on(&straight, &wall));
+        // One control a millionth above the floor: on the wall and not on
+        // the floor, so the edge keeps its tolerance.
+        let lifted = spline([p("0", "0", "0"), p("1", "0", "1/1000000"), p("3", "0", "0")]);
+        assert!(lies_on(&lifted, &wall) && !lies_on(&lifted, &floor));
+        // A spline has no identity on a curved surface.
+        let cylinder = Surface::Cylinder(Cylinder {
+            origin: p("0", "1", "0"),
+            axis: x(),
+            radius_sq: q("1"),
+            ref_dir: z(),
+        });
+        assert!(!lies_on(&straight, &cylinder));
     }
 
     #[test]

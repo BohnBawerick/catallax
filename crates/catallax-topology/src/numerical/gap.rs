@@ -352,6 +352,12 @@ pub struct SampledCurve {
     /// The polynomial degree of its pieces. Zero for a curve that has none,
     /// as for a circle.
     pub degree: usize,
+    /// The work one evaluation counts against the edge's allowance, on top
+    /// of the checker's own unit. The checker takes it from the allowance
+    /// before each evaluation and charges it to the operation, so the hard
+    /// work cap of the edge covers it (section 4.2 step 8). Zero for an
+    /// evaluator that costs what a kernel curve does.
+    pub work: u64,
 }
 
 impl std::fmt::Debug for SampledCurve {
@@ -359,6 +365,7 @@ impl std::fmt::Debug for SampledCurve {
         out.debug_struct("SampledCurve")
             .field("breaks", &self.breaks)
             .field("degree", &self.degree)
+            .field("work", &self.work)
             .finish_non_exhaustive()
     }
 }
@@ -378,6 +385,9 @@ pub struct SampledSurface {
     /// The sum of its two polynomial degrees. Zero for a surface that has
     /// none, as for a cylinder.
     pub degree: usize,
+    /// The work one evaluation counts against the edge's allowance, on top
+    /// of the checker's own unit. See [`SampledCurve::work`].
+    pub work: u64,
 }
 
 impl std::fmt::Debug for SampledSurface {
@@ -386,6 +396,7 @@ impl std::fmt::Debug for SampledSurface {
             .field("lines", &self.lines)
             .field("periods", &self.periods)
             .field("degree", &self.degree)
+            .field("work", &self.work)
             .finish_non_exhaustive()
     }
 }
@@ -913,12 +924,16 @@ impl Search<'_> {
     }
 
     fn sample(&mut self, t: f64) -> Result<Sample, Refusal> {
-        if self.spent() >= self.limit {
+        // The evaluation's own unit and what a sampled carrier states for
+        // it, taken before the evaluation is made.
+        let stated = self.lifted.sample_work() - 1;
+        if self.spent() >= self.limit || stated > self.limit - self.spent() - 1 {
             return Err(work_cap(
                 "an edge spent its work allowance before its gap was resolved",
             ));
         }
         self.evaluations += 1;
+        self.other += stated;
         let lift::Bounded { value, error } = self.lifted.residual(t, &mut self.scratch);
         Ok(Sample {
             t,
@@ -1028,7 +1043,7 @@ fn under_allowance<T>(
     let lifted = lift::lift(copies, dec)?;
     // The closing probes of the rounding allowance count inside the same cap,
     // so they are set aside before the first sample.
-    let Some(limit) = limits.work.checked_sub(lift::ALLOWANCE_EVALUATIONS) else {
+    let Some(limit) = limits.work.checked_sub(lifted.closing_work()) else {
         return Err(work_cap(
             "the work allowance of an edge is smaller than its closing probes",
         ));
@@ -1099,8 +1114,11 @@ fn search_edge(
     // planning left of the allowance: its samples, the first tail transform
     // of each piece and, on a spline surface, one domain probe per piece.
     let probes = u64::from(matches!(lifted.surface, Surface64::Spline(_)));
-    let planned_work = plan.iter().fold(1_u64, |sum, piece| {
-        sum + piece.points as u64 + 1 + numeric::chebyshev_tail_pairs(piece.points) + probes
+    // Each sample counts its own unit and what a sampled carrier states.
+    let each = lifted.sample_work();
+    let planned_work = plan.iter().fold(each, |sum, piece| {
+        sum.saturating_add((piece.points as u64 + 1).saturating_mul(each))
+            .saturating_add(numeric::chebyshev_tail_pairs(piece.points) + probes)
     });
     if planned_work > search.left() {
         return Err(work_cap(
@@ -1343,6 +1361,8 @@ fn finish(
     let (allowance, evaluations) = search.lifted.allowance(best.t, reach, &mut search.scratch);
     debug_assert!(evaluations <= lift::ALLOWANCE_EVALUATIONS);
     search.evaluations += evaluations;
+    // What the sampled carriers state for the points those probes read.
+    search.other += search.lifted.closing_work() - lift::ALLOWANCE_EVALUATIONS;
     search.settle(dec)?;
     Ok(GapMeasure {
         raw_mm: best.squared.sqrt(),

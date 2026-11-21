@@ -20,7 +20,9 @@
 //! kernel has no form for in general. The checker reads them through binary64
 //! evaluators of their native charts
 //! ([`Binary64Carrier`](super::super::super::native::Binary64Carrier)), in
-//! millimetres about the file's origin. The u/v curve is read as the file
+//! millimetres about the file's origin. Each evaluation states the work of
+//! its chart, and the checker takes that from the use's one allowance, with
+//! its own unit, before it evaluates. The u/v curve is read as the file
 //! wrote it: a B-spline with its own controls and knots, or the straight
 //! segment between the two ends of a u/v line.
 //!
@@ -262,24 +264,57 @@ pub(super) struct FileUse<'a> {
     /// How far, in millimetres, the edge may run past the interval of its
     /// u/v curve: what the body allows a vertex off its edge's end.
     pub overshoot_mm: f64,
+    /// The use's one work allowance: the checker's cap for an edge.
+    pub allowance: gap::Limits,
 }
 
 /// The gap rule for one edge use that carries a file u/v curve, or why the
 /// checker does not read the use.
 ///
-/// The use has one work allowance, the checker's cap for an edge. A use that
-/// spends it refuses the body with `numerical.gap-work-cap`. The chart work
-/// of every native evaluation is charged on top of the checker's own units.
+/// The use has one work allowance (section 4.2 step 8: "A hard per-edge work
+/// cap refuses by name"). The checker takes every unit from it before the
+/// unit is spent: its own unit for an evaluation, and with it the chart work
+/// the native carrier states for that evaluation. A use that spends the
+/// allowance refuses the body with `numerical.gap-work-cap`. Nothing is
+/// charged here beside what the checker counts.
 pub(super) fn read_use(
     context: &mut Context<'_>,
     used: &FileUse<'_>,
     dec: &mut Decider,
 ) -> Result<Result<UseReading, &'static str>, Error> {
+    match sampled_use(context, used, dec)? {
+        Ok(sampled) => sampled.read(used.allowance, dec),
+        Err(why) => Ok(Err(why)),
+    }
+}
+
+/// One edge use as the checker reads it: the file's own 3D curve and
+/// surface through their evaluators, and the file's u/v curve.
+pub(super) struct SampledUse {
+    /// The 3D curve, with the work one evaluation of it counts.
+    pub curve: gap::SampledCurve,
+    /// The surface, with the work one evaluation of it counts.
+    pub surface: gap::SampledSurface,
+    file: FileCopy,
+    /// The edge's two parameters.
+    parameters: [Rational; 2],
+    /// The extent of the surface's charts in u and in v.
+    extent: [[Option<f64>; 2]; 2],
+}
+
+/// The two copies of one edge use in the forms the checker reads, or why it
+/// does not read the use.
+pub(super) fn sampled_use(
+    context: &mut Context<'_>,
+    used: &FileUse<'_>,
+    dec: &mut Decider,
+) -> Result<Result<SampledUse, &'static str>, Error> {
     let FileUse {
         edge,
         surface: (surface_entity, surface),
         pcurve: (pcurve_entity, pcurve),
         overshoot_mm,
+        allowance: _,
     } = *used;
     let range = [
         edge.points[0].0.parameters[0],
@@ -293,29 +328,26 @@ pub(super) fn read_use(
         PhysicalCurve::Native(native) => {
             let reading = context.curve64(native, dec)?;
             let evaluator = Arc::clone(&reading);
-            (
-                gap::SampledCurve {
-                    point: Arc::new(move |t: f64| evaluator.evaluate([t, 0.0])),
-                    breaks: reading.borders(0),
-                    degree: curve_degree(context.parsed, native.source(), dec)?,
-                },
-                Some(reading),
-            )
+            gap::SampledCurve {
+                point: Arc::new(move |t: f64| evaluator.evaluate([t, 0.0])),
+                breaks: reading.borders(0),
+                degree: curve_degree(context.parsed, native.source(), dec)?,
+                work: reading.work(),
+            }
         }
         PhysicalCurve::Line { origin, direction } => {
             let (origin, direction) = (*origin, *direction);
-            (
-                gap::SampledCurve {
-                    point: Arc::new(move |t: f64| {
-                        let point: [f64; 3] =
-                            std::array::from_fn(|axis| origin[axis] + t * direction[axis]);
-                        (point, 8.0 * f64::EPSILON * norm(point))
-                    }),
-                    breaks: Vec::new(),
-                    degree: 1,
-                },
-                None,
-            )
+            gap::SampledCurve {
+                point: Arc::new(move |t: f64| {
+                    let point: [f64; 3] =
+                        std::array::from_fn(|axis| origin[axis] + t * direction[axis]);
+                    (point, 8.0 * f64::EPSILON * norm(point))
+                }),
+                breaks: Vec::new(),
+                degree: 1,
+                // A product and a sum a coordinate, as a kernel line costs.
+                work: 0,
+            }
         }
         PhysicalCurve::Point(_) => return Ok(Err("its edge is a point")),
     };
@@ -327,6 +359,7 @@ pub(super) fn read_use(
         lines: [surface64.borders(0), surface64.borders(1)],
         periods: surface64.periods(),
         degree: surface_degree(context.parsed, surface_entity, dec)?,
+        work: surface64.work(),
     };
     let file = match file_copy(context.parsed, pcurve_entity, pcurve, range, dec)? {
         Ok(file) => file,
@@ -397,55 +430,65 @@ pub(super) fn read_use(
     {
         return Ok(Err("its u/v curve leaves the charts of its surface"));
     }
-    let parameters = [exact(range[0])?, exact(range[1])?];
-    let copies = gap::EdgeCopies {
-        curve: gap::GapCurve::Sampled(&curve.0),
-        parameters: parameters.each_ref(),
-        surface: gap::GapSurface::Sampled(&lifted),
-        face_copy: match &file {
-            FileCopy::Spline(spline) => gap::FaceCopyRef::Native(spline),
-            FileCopy::Straight(ends) => gap::FaceCopyRef::Linear(ends),
-        },
-    };
-    let read = n::read_import_use(&copies, gap::Limits::default(), dec);
-    // What the native charts charge for their evaluations, with or without
-    // an answer. The rule's refusal stays the answer where there is one.
-    let charts = curve.1.as_ref().map_or(0, |reading| reading.take_work()) + surface64.take_work();
-    let charged = dec.charge_work(charts);
-    let rule = match read {
-        Ok(rule) => rule,
-        Err(refusal) if resource_limit(&refusal) => return Err(refusal.into()),
-        Err(_) => return Ok(Err("the checker has no reading of its two copies")),
-    };
-    charged?;
-    if !rule.stored_mm().is_finite() || !rule.parametric.stored_mm().is_finite() {
-        return Ok(Err("binary64 cannot place a sample of its two copies"));
-    }
-    let copy = match rule.new_copy() {
-        None => None,
-        Some(next) => {
-            let mut controls = Vec::with_capacity(next.curve.control_count());
-            for control in next.curve.controls() {
-                let uv = [rounded(&control.x, dec)?, rounded(&control.y, dec)?];
-                if !inside(&extent, uv) {
-                    return Ok(Err(
-                        "its copy in the edge's parameter leaves the charts of its surface",
-                    ));
-                }
-                controls.push(uv);
-            }
-            Some(ReparametrisedTrace {
-                degree: next.curve.degree(),
-                knots: next
-                    .curve
-                    .knots()
-                    .iter()
-                    .map(Rational::to_f64_nearest)
-                    .collect(),
-                controls,
-                spans: next.spans,
-            })
+    Ok(Ok(SampledUse {
+        curve,
+        surface: lifted,
+        file,
+        parameters: [exact(range[0])?, exact(range[1])?],
+        extent,
+    }))
+}
+
+impl SampledUse {
+    /// The gap rule on this use, under the use's one work allowance.
+    pub(super) fn read(
+        &self,
+        allowance: gap::Limits,
+        dec: &mut Decider,
+    ) -> Result<Result<UseReading, &'static str>, Error> {
+        let copies = gap::EdgeCopies {
+            curve: gap::GapCurve::Sampled(&self.curve),
+            parameters: self.parameters.each_ref(),
+            surface: gap::GapSurface::Sampled(&self.surface),
+            face_copy: match &self.file {
+                FileCopy::Spline(spline) => gap::FaceCopyRef::Native(spline),
+                FileCopy::Straight(ends) => gap::FaceCopyRef::Linear(ends),
+            },
+        };
+        let rule = match n::read_import_use(&copies, allowance, dec) {
+            Ok(rule) => rule,
+            Err(refusal) if resource_limit(&refusal) => return Err(refusal.into()),
+            Err(_) => return Ok(Err("the checker has no reading of its two copies")),
+        };
+        if !rule.stored_mm().is_finite() || !rule.parametric.stored_mm().is_finite() {
+            return Ok(Err("binary64 cannot place a sample of its two copies"));
         }
-    };
-    Ok(Ok(UseReading { rule, copy }))
+        let copy = match rule.new_copy() {
+            None => None,
+            Some(next) => {
+                let mut controls = Vec::with_capacity(next.curve.control_count());
+                for control in next.curve.controls() {
+                    let uv = [rounded(&control.x, dec)?, rounded(&control.y, dec)?];
+                    if !inside(&self.extent, uv) {
+                        return Ok(Err(
+                            "its copy in the edge's parameter leaves the charts of its surface",
+                        ));
+                    }
+                    controls.push(uv);
+                }
+                Some(ReparametrisedTrace {
+                    degree: next.curve.degree(),
+                    knots: next
+                        .curve
+                        .knots()
+                        .iter()
+                        .map(Rational::to_f64_nearest)
+                        .collect(),
+                    controls,
+                    spans: next.spans,
+                })
+            }
+        };
+        Ok(Ok(UseReading { rule, copy }))
+    }
 }

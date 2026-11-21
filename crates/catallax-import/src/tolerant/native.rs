@@ -1139,8 +1139,6 @@ pub(crate) struct Binary64Carrier {
     domains: Vec<[[Option<f64>; 2]; 2]>,
     dimension: usize,
     periods: [Option<f64>; 2],
-    /// The chart work of the evaluations not yet charged.
-    uncharged: std::sync::atomic::AtomicU64,
 }
 
 impl Binary64Carrier {
@@ -1166,7 +1164,6 @@ impl Binary64Carrier {
             domains,
             dimension: carrier.dimension,
             periods,
-            uncharged: std::sync::atomic::AtomicU64::new(0),
         })
     }
 
@@ -1228,10 +1225,6 @@ impl Binary64Carrier {
             return unplaced;
         };
         let (at, _) = self.clamped(chart, at);
-        self.uncharged.fetch_add(
-            self.charts[chart].work(),
-            std::sync::atomic::Ordering::Relaxed,
-        );
         let (point, bound) =
             self.charts[chart].evaluate(&at[..self.dimension], &radii[..self.dimension]);
         if !bound.is_finite() || point.iter().any(|value| !value.is_finite()) {
@@ -1243,10 +1236,16 @@ impl Binary64Carrier {
         (point, bound + 8.0 * f64::EPSILON * size)
     }
 
-    /// The chart work of the evaluations since the last call: what a display
-    /// sample charges for each, a sixty-fourth of a unit per binary64 step.
-    pub(crate) fn take_work(&self) -> u64 {
-        self.uncharged.swap(0, std::sync::atomic::Ordering::Relaxed)
+    /// The work one evaluation counts: what a display sample charges, a
+    /// sixty-fourth of a unit per binary64 step, for the costliest chart. The
+    /// checker is told this before it evaluates, so it takes the work from
+    /// its edge's allowance first, whichever chart a point falls in.
+    pub(crate) fn work(&self) -> u64 {
+        self.charts
+            .iter()
+            .map(crate::geometry_source::Binary64Chart::work)
+            .max()
+            .unwrap_or(0)
     }
 
     /// Every finite border of a chart along one parameter: the knots of a

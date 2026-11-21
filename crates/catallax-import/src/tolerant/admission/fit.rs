@@ -1085,6 +1085,7 @@ pub(super) fn check_body(
                             surface: (entity, native.as_ref()),
                             pcurve: (source, file.as_ref()),
                             overshoot_mm: body.options.initial_mm.to_f64_nearest(),
+                            allowance: n::gap::Limits::default(),
                         };
                         match import_gap::read_use(context, &used, dec)? {
                             Ok(read) => {

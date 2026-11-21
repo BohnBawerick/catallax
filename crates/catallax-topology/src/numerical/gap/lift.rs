@@ -768,7 +768,7 @@ impl Surface64 {
     ) -> Option<[f64; 2]> {
         let mut uv = seed;
         for _ in 0..FOOT_STEPS {
-            spend(left)?;
+            self.spend(left)?;
             let base = self.point(uv, scratch).value;
             let r: [f64; 3] = std::array::from_fn(|k| target[k] - base[k]);
             let mut partial = [[0.0; 3]; 2];
@@ -776,7 +776,7 @@ impl Surface64 {
                 let step = f64::EPSILON.sqrt() * uv[axis].abs().max(1.0);
                 let mut moved = uv;
                 moved[axis] += step;
-                spend(left)?;
+                self.spend(left)?;
                 let there = self.point(moved, scratch).value;
                 *column = std::array::from_fn(|k| (there[k] - base[k]) / step);
             }
@@ -802,11 +802,48 @@ impl Surface64 {
 
 /// Takes one evaluation from what is left of an allowance.
 pub(super) fn spend(left: &mut u64) -> Option<()> {
-    *left = left.checked_sub(1)?;
+    spend_units(left, 1)
+}
+
+/// Takes `units` from what is left of an allowance, before they are spent.
+fn spend_units(left: &mut u64, units: u64) -> Option<()> {
+    *left = left.checked_sub(units)?;
     Some(())
 }
 
+impl Surface64 {
+    /// The work a sampled surface states for one evaluation, on top of the
+    /// checker's own unit. A kernel surface has none.
+    pub(super) fn work(&self) -> u64 {
+        match self {
+            Self::Sampled(sampled) => sampled.work,
+            Self::Plane { .. } | Self::Revolved { .. } | Self::Spline(_) => 0,
+        }
+    }
+
+    /// Takes one evaluation of this surface, with its stated work, from what
+    /// is left of an allowance, before the evaluation is made.
+    pub(super) fn spend(&self, left: &mut u64) -> Option<()> {
+        spend_units(left, self.work().checked_add(1)?)
+    }
+}
+
 impl Curve64 {
+    /// The work a sampled curve states for one evaluation, on top of the
+    /// checker's own unit. A kernel curve has none.
+    pub(super) fn work(&self) -> u64 {
+        match self {
+            Self::Sampled(sampled) => sampled.work,
+            Self::Line { .. } | Self::Conic { .. } | Self::Spline(_) => 0,
+        }
+    }
+
+    /// Takes one evaluation of this curve, with its stated work, from what
+    /// is left of an allowance, before the evaluation is made.
+    pub(super) fn spend(&self, left: &mut u64) -> Option<()> {
+        spend_units(left, self.work().checked_add(1)?)
+    }
+
     pub(super) fn point(&self, t: f64, scratch: &mut Scratch) -> Bounded<[f64; 3]> {
         match self {
             Self::Line { origin, dir } => {
@@ -854,6 +891,25 @@ impl Lifted {
     pub(super) fn range(&self) -> [f64; 2] {
         let [a, b] = self.parameters;
         [a.min(b), a.max(b)]
+    }
+
+    /// The work of one residual evaluation: the checker's unit, and what the
+    /// two carriers state for one evaluation each. It is one unit for kernel
+    /// carriers.
+    pub(super) fn sample_work(&self) -> u64 {
+        self.curve
+            .work()
+            .saturating_add(self.surface.work())
+            .saturating_add(1)
+    }
+
+    /// The work of [`Lifted::allowance`], the closing probes of a search:
+    /// its evaluations, and what the two carriers state for the points it
+    /// reads of each.
+    pub(super) fn closing_work(&self) -> u64 {
+        ALLOWANCE_EVALUATIONS
+            .saturating_add(ALLOWANCE_CURVE_POINTS.saturating_mul(self.curve.work()))
+            .saturating_add(ALLOWANCE_SURFACE_POINTS.saturating_mul(self.surface.work()))
     }
 
     /// The face copy's u/v at `t`, in the shifted parameters. `None` for a
@@ -971,7 +1027,7 @@ impl Lifted {
         scratch: &mut Scratch,
         left: &mut u64,
     ) -> Option<[f64; 2]> {
-        spend(left)?;
+        self.curve.spend(left)?;
         let target = self.curve.point(t, scratch).value;
         self.surface.foot_within(&target, seed, scratch, left)
     }
@@ -993,6 +1049,15 @@ const FOOT_STEPS: usize = 8;
 /// Source: a count of [`Lifted::allowance`]: the residual at the point and
 /// on either side of it, and the surface at two shifted parameters.
 pub(super) const ALLOWANCE_EVALUATIONS: u64 = 5;
+
+/// Source: a count of [`Lifted::allowance`]: the 3D curve is read at the
+/// point and on either side of it.
+const ALLOWANCE_CURVE_POINTS: u64 = 3;
+
+/// Source: a count of [`Lifted::allowance`]: the surface is read under each
+/// of those three curve points, at the point again, and at its two shifted
+/// parameters.
+const ALLOWANCE_SURFACE_POINTS: u64 = 6;
 
 /// Source: an operation count of the straight face copy: a difference and a
 /// quotient for the share, then a difference, a product and a sum.

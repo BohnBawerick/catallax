@@ -558,6 +558,7 @@ fn sampled_arc(offset: f64) -> (gap::SampledCurve, gap::SampledSurface) {
             }),
             breaks: Vec::new(),
             degree: 0,
+            work: 0,
         },
         gap::SampledSurface {
             point: std::sync::Arc::new(move |uv: [f64; 2]| {
@@ -567,6 +568,7 @@ fn sampled_arc(offset: f64) -> (gap::SampledCurve, gap::SampledSurface) {
             lines: [Vec::new(), Vec::new()],
             periods: [Some(std::f64::consts::TAU), None],
             degree: 0,
+            work: 0,
         },
     )
 }
@@ -714,4 +716,78 @@ fn a_sampled_carrier_is_cut_at_the_breaks_it_states() {
     );
     // Every piece has the count of a shape with no degree.
     assert!(after.iter().all(|piece| piece.points == before[0].points));
+}
+
+/// Section 4.2 step 8: "A hard per-edge work cap refuses by name." A sampled
+/// carrier states the work of one evaluation, and the checker takes that
+/// from the use's one allowance with its own unit, before the evaluation.
+///
+/// The same use is read with evaluators that state no work and with ones
+/// that state three and five units. The answer is the same and the work is
+/// more. Under an allowance that fits the checker's own work exactly, the
+/// use with the stated work refuses by name, with the operation's allowance
+/// hardly touched. A unit short of its own total it refuses too, and under
+/// exactly its total it gives the answer of the full cap.
+#[test]
+fn the_work_a_sampled_carrier_states_is_inside_the_edges_one_allowance() {
+    let geometry = arc_on_wider_cylinder("1e-4", "1e-4", "0");
+    let kernel = copies(&geometry);
+    let read = |stated: [u64; 2], allowance: u64| {
+        let (mut curve, mut surface) = sampled_arc(1e-4);
+        (curve.work, surface.work) = (stated[0], stated[1]);
+        let sampled = gap::EdgeCopies {
+            curve: gap::GapCurve::Sampled(&curve),
+            surface: gap::GapSurface::Sampled(&surface),
+            ..kernel
+        };
+        with_operation_budget(DEFAULT_WORK, || {
+            import_gap::read_import_use(
+                &sampled,
+                Limits { work: allowance },
+                &mut Decider::default(),
+            )
+        })
+    };
+    let (free, _) = read([0, 0], gap::EDGE_WORK);
+    let free = free.expect("free evaluators");
+    let (costly, charged) = read([3, 5], gap::EDGE_WORK);
+    let costly = costly.expect("costly evaluators");
+    assert_eq!(costly.outcome, Some(ImportGapOutcome::Reparametrised));
+    assert_eq!(costly.stored_mm().to_bits(), free.stored_mm().to_bits());
+    assert!(
+        costly.work > 4 * free.work,
+        "{} and {}",
+        costly.work,
+        free.work
+    );
+    // Every unit of the use is charged to the operation.
+    assert!(charged.used >= costly.work, "{charged:?}");
+    println!(
+        "sampled arc: {} units with free evaluators, {} with 3 and 5 units an evaluation, {} charged",
+        free.work, costly.work, charged.used
+    );
+
+    // The checker's own work fits this allowance, and the total does not.
+    let (alone, _) = read([0, 0], free.work);
+    assert_eq!(
+        alone
+            .expect("the checker's work alone")
+            .stored_mm()
+            .to_bits(),
+        free.stored_mm().to_bits()
+    );
+    let (refused, request) = read([3, 5], free.work);
+    assert_eq!(refused.unwrap_err().code, "numerical.gap-work-cap");
+    assert!(
+        !request.exhausted && request.used <= 2 * free.work,
+        "{request:?}"
+    );
+
+    let (short, _) = read([3, 5], costly.work - 1);
+    assert_eq!(short.unwrap_err().code, "numerical.gap-work-cap");
+    let (full, _) = read([3, 5], costly.work);
+    assert_eq!(
+        full.expect("the least allowance").stored_mm().to_bits(),
+        costly.stored_mm().to_bits()
+    );
 }

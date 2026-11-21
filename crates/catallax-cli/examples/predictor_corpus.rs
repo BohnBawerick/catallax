@@ -30,15 +30,25 @@ use std::{
 const USAGE: &str = "usage:
   predictor_corpus run --corpus FILE --out FILE [--root DIR] [--sources DIR --selection FILE]
                        [--threads 1,2,4,24] [--repeat N] [--rows ID,ID] [--label TEXT]
-  predictor_corpus check FILE... [--base FILE]
+  predictor_corpus check --corpus FILE FILE... [--base FILE]
 
 run   builds and exports every row at every thread count, N times each, and
       appends one JSON line for each to --out. Rows that import a private
       source need --sources and --selection, as tools/checkpoint/checkpoint.py
       takes them; without them those rows are skipped and named.
-check tests the predictor's done-when lines on the lines of one or more
-      runs. Runs of two machines are given as two files. --base is a run of
-      the same corpus on the revision the predictor is compared with.";
+check tests the predictor's done-when lines on the lines of the runs. It
+      needs every row of --corpus at 1, 2, 4 and 24 threads on two machines,
+      a machine being a --label, and fails on any that is missing. --base is
+      a run of the same corpus on the revision the predictor is compared
+      with, and it too must hold every row.";
+
+/// The thread counts of the done-when line: "path choice and work are
+/// identical at 1, 2, 4 and 24 threads and on two machines" (Checkpoint 2
+/// decisions, section 4.5).
+const THREADS: [u64; 4] = [1, 2, 4, 24];
+
+/// The machines of the same line.
+const MACHINES: usize = 2;
 
 /// A row's time is read only where its best time reaches this many
 /// milliseconds. Below it the clock reads process and allocation overhead,
@@ -384,12 +394,21 @@ fn lines(path: &str) -> Result<Vec<Value>, Box<dyn std::error::Error>> {
 
 fn check(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let base = flag(args, "--base");
+    let corpus: Value = serde_json::from_slice(&fs::read(
+        flag(args, "--corpus").ok_or("check needs --corpus")?,
+    )?)?;
+    let expected: Vec<&str> = corpus["rows"]
+        .as_array()
+        .ok_or("a corpus has rows")?
+        .iter()
+        .map(|row| row["id"].as_str().ok_or("a row has an id"))
+        .collect::<Result<_, _>>()?;
     let mut all = Vec::new();
     let mut skip = false;
     for arg in args {
         if skip {
             skip = false;
-        } else if arg == "--base" {
+        } else if arg == "--base" || arg == "--corpus" {
             skip = true;
         } else {
             all.extend(lines(arg)?);
@@ -402,6 +421,54 @@ fn check(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             .push(line);
     }
     let mut failures = Vec::new();
+
+    // 0. Coverage: every row of the corpus, on each machine, at each thread
+    // count. A row, a machine or a thread count that was not run is a
+    // failure, and so is a row the corpus does not have.
+    let machines: std::collections::BTreeSet<&str> = all
+        .iter()
+        .map(|line| line["label"].as_str().unwrap_or(""))
+        .collect();
+    if machines.len() != MACHINES {
+        failures.push(format!(
+            "the runs are of {} machines ({machines:?}), and the line asks for {MACHINES}",
+            machines.len()
+        ));
+    }
+    let mut missing = 0;
+    for id in &expected {
+        for machine in &machines {
+            for threads in THREADS {
+                let ran = rows.get(*id).is_some_and(|lines| {
+                    lines.iter().any(|line| {
+                        line["label"].as_str().unwrap_or("") == *machine
+                            && line["threads"] == threads
+                    })
+                });
+                if !ran {
+                    missing += 1;
+                    // The first few name what is missing; the count says how much.
+                    if missing <= 12 {
+                        failures.push(format!(
+                            "{id}: no line at {threads} threads on machine {machine:?}"
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    if missing > 12 {
+        failures.push(format!("{missing} lines are missing in all"));
+    }
+    for id in rows.keys() {
+        if !expected.contains(&id.as_str()) {
+            failures.push(format!("{id}: not a row of the corpus"));
+        }
+    }
+    println!(
+        "coverage: {} rows of the corpus, machines {machines:?}, threads {THREADS:?}, {missing} lines missing",
+        expected.len()
+    );
 
     // 1. Path choice and work are the same in every line of a row.
     let mut runs = 0;
@@ -476,48 +543,61 @@ fn check(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // 4. Wall time per million units, over rows the clock can read. The
-    // clock is read at one thread, where the time is the arithmetic's.
-    let mut rates: Vec<(f64, String)> = Vec::new();
-    for (id, lines) in &rows {
-        for part in ["build", "export"] {
-            let best = lines
-                .iter()
-                .filter(|line| line["threads"] == 1)
-                .filter_map(|line| line[part]["ms"].as_f64())
-                .fold(f64::INFINITY, f64::min);
-            let counted = units(&lines[0][part]);
-            if best.is_finite() && best >= BAND_FLOOR_MS && counted > 0 {
-                rates.push((best / (counted as f64 / 1e6), format!("{id} {part}")));
+    // clock is read at one thread, where the time is the arithmetic's, and
+    // on one machine at a time: two machines' clocks are not one scale.
+    for machine in &machines {
+        let mut rates: Vec<(f64, String)> = Vec::new();
+        for (id, lines) in &rows {
+            for part in ["build", "export"] {
+                let best = lines
+                    .iter()
+                    .filter(|line| line["threads"] == 1)
+                    .filter(|line| line["label"].as_str().unwrap_or("") == *machine)
+                    .filter_map(|line| line[part]["ms"].as_f64())
+                    .fold(f64::INFINITY, f64::min);
+                let counted = units(&lines[0][part]);
+                if best.is_finite() && best >= BAND_FLOOR_MS && counted > 0 {
+                    rates.push((best / (counted as f64 / 1e6), format!("{id} {part}")));
+                }
             }
         }
-    }
-    rates.sort_by(|a, b| a.0.total_cmp(&b.0));
-    if let (Some(low), Some(high)) = (rates.first(), rates.last()) {
-        let band = high.0 / low.0;
-        println!(
-            "wall time per million units, {} measurements of {BAND_FLOOR_MS} ms or more: {:.1} ({}) to {:.1} ({}), band {band:.1}x",
-            rates.len(),
-            low.0,
-            low.1,
-            high.0,
-            high.1
-        );
-        // The ends of the band, for whoever reads a failure.
-        let ends = rates.iter().take(5).chain(rates.iter().rev().take(5).rev());
-        for (rate, row) in ends {
-            println!("  {rate:8.1} ms per million  {row}");
-        }
-        if band > BAND {
-            failures.push(format!("the band is {band:.1}x, past {BAND}x"));
+        rates.sort_by(|a, b| a.0.total_cmp(&b.0));
+        if let (Some(low), Some(high)) = (rates.first(), rates.last()) {
+            let band = high.0 / low.0;
+            println!(
+                "wall time per million units on {machine:?}, {} measurements of {BAND_FLOOR_MS} ms or more: {:.1} ({}) to {:.1} ({}), band {band:.1}x",
+                rates.len(),
+                low.0,
+                low.1,
+                high.0,
+                high.1
+            );
+            // The ends of the band, for whoever reads a failure.
+            let ends = rates.iter().take(5).chain(rates.iter().rev().take(5).rev());
+            for (rate, row) in ends {
+                println!("  {rate:8.1} ms per million  {row}");
+            }
+            if band > BAND {
+                failures.push(format!(
+                    "the band on {machine:?} is {band:.1}x, past {BAND}x"
+                ));
+            }
         }
     }
 
     // 5. What built exact within the target on the base revision still does.
     if let Some(base) = base {
         let (mut compared, mut exact) = (0, 0);
-        for line in lines(base)? {
+        let base = lines(base)?;
+        for id in &expected {
+            if !base.iter().any(|line| line["id"] == *id) {
+                failures.push(format!("{id}: not in the base run"));
+            }
+        }
+        for line in base {
             let id = line["id"].as_str().unwrap_or("?");
             let Some(head) = rows.get(id).map(|lines| lines[0]) else {
+                failures.push(format!("{id}: in the base run and not in these runs"));
                 continue;
             };
             compared += 1;

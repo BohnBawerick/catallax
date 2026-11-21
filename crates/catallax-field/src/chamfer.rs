@@ -225,6 +225,7 @@ impl Plan {
                 ));
             }
         }
+        self.refuse_over_rolling(root)?;
         if matches!(selection, EdgeSelection::Refs(refs) if refs.is_empty())
             || (matches!(selection, EdgeSelection::All) && source_faces.len() < 2)
         {

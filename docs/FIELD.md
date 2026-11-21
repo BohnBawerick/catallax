@@ -355,6 +355,8 @@ Edges the elementary route skips or refuses compile as rolling-ball path pieces 
 
 Step 3 adds quadric pairs for named edges: two cylinders, cones or spheres about one axis (a circle in the meridian half-plane, with the closed forms of a circle), and a cylinder with a second cylinder or a sphere off its axis (a ring, a loop, or two equal cylinders crossing in two ellipses), parametrized by the cylinder's angle with one square root. An edge with no rational point is probed for its material at an algebraic point. An all-edges selection still skips these pairs.
 
+Step 5 lets a named chain roll over an earlier straight fillet strip, whose face is a cylinder about its centre line. Version 4 continues the chain from a plane across the strip's face, which is tangent to it, as a ring sector about that centre line: the circle where the plane's offset meets the strip's cylinder offset by the ball radius toward the centre line, a ring, horn or spindle by the radii. A straight piece of such a chain may also end at a plane normal to it through its end, as an elementary strip does. A plane tangent to the strip's cylinder passes through the sector's box but only touches its region, which lies inside the solid cylinder. An arc on a strip's face is probed for its material at a rational point of the arc. A ball as wide as the strip, wider than it, or outside its cylinder keeps its refusal.
+
 With `corner: "smooth"`, a convex planar two-strip four-face fan uses exact
 analytic cells instead of rational profile sections. The active A/B/C
 offsets determine one sphere. Its missing A/C side continues as a

@@ -508,6 +508,7 @@ impl Plan {
         step: &StepId,
         dec: &mut Decider,
     ) -> Result<usize, Refusal> {
+        self.refuse_over_rolling(root)?;
         let (radius, roll_over) = (settings.radius, settings.roll_over);
         let saved = (self.instructions.len(), self.leaves.len(), self.faces.len());
         match self.fillet_runs(root, source_faces, selection, settings, step, dec) {
@@ -533,6 +534,28 @@ impl Plan {
             }
             other => other,
         }
+    }
+
+    /// A rolling piece registers no face, so a later fillet or chamfer on
+    /// its body would neither roll over it nor see it in its clearance proof
+    /// (4.2a step 5): the third round of `fillet_over_fillet.rs`, which the
+    /// B-rep continues over the second round's piece, would come out as a
+    /// plain strip. Such a step refuses until the pieces' faces join the
+    /// face registry.
+    pub(crate) fn refuse_over_rolling(&self, root: usize) -> Result<(), Refusal> {
+        let mut pending = vec![root];
+        while let Some(node) = pending.pop() {
+            match self.instructions[node] {
+                Instruction::Leaf(i) if matches!(self.leaves[i], geometry::Leaf::Rolling(_)) => {
+                    return Err(bad(
+                        "a body with rolling pieces needs their faces registered before a later fillet or chamfer",
+                    ));
+                }
+                Instruction::Boolean { a, b, .. } => pending.extend([a, b]),
+                _ => {}
+            }
+        }
+        Ok(())
     }
 
     fn fillet_runs(

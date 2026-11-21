@@ -91,6 +91,8 @@ mod planar_face;
 pub mod polyhedral_offset;
 /// Exact bounded convex plane arrangements shared by the independent kernels.
 pub mod polyhedron;
+/// Exact or fitted for one operation: the quick look and the cap tiers.
+pub mod predictor;
 mod profile;
 /// Closed-skin radial distance and normal-sweep definitions.
 pub mod radial;

@@ -1513,12 +1513,26 @@ fn evaluate_impl(
                         // charged as it always was. A refusal of theirs is no
                         // verdict on the fillet and returns what it charged,
                         // so the rolling-ball construction keeps the whole
-                        // allowance it found.
+                        // allowance it found. The attempt runs under the cap
+                        // of its tier, which the builders set once they have
+                        // resolved their selection (`predictor.rs`): reaching
+                        // it is a refusal of the attempt like any other.
                         Some(context) => {
-                            match catallax_numbers::refund_on_refusal(|| exact(model, dec)) {
-                                Ok(result) => result,
+                            let refunded = || catallax_numbers::current_operation_work().refunded;
+                            let used = || catallax_numbers::current_operation_work().used;
+                            let (before, returned) = (used(), refunded());
+                            match catallax_numbers::capped_attempt(|| exact(model, dec)) {
+                                Ok(result) => {
+                                    crate::predictor::record(
+                                        &step.id,
+                                        crate::predictor::Path::Exact,
+                                        used() - before,
+                                    );
+                                    result
+                                }
                                 Err(refusal) => {
-                                    context.fillet(
+                                    let attempt = refunded() - returned;
+                                    let fitted = context.fillet(
                                         model,
                                         target,
                                         edges,
@@ -1530,7 +1544,17 @@ fn evaluate_impl(
                                         recipe,
                                         refusal,
                                         dec,
-                                    )?;
+                                    );
+                                    crate::predictor::record(
+                                        &step.id,
+                                        if fitted.is_ok() {
+                                            crate::predictor::Path::Fitted
+                                        } else {
+                                            crate::predictor::Path::Refused
+                                        },
+                                        attempt,
+                                    );
+                                    fitted?;
                                     return Ok(None);
                                 }
                             }

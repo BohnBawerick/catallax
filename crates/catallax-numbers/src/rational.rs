@@ -368,7 +368,7 @@ impl Rational {
     /// The limbs of the numerator and of the denominator, added: the size
     /// the decider prices this value's arithmetic by (`decider.rs`, "Logical
     /// arithmetic costs").
-    pub(crate) fn limbs(&self) -> u64 {
+    pub fn limbs(&self) -> u64 {
         self.n
             .bit_length()
             .div_ceil(64)

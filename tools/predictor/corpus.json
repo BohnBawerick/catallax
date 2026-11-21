@@ -1,0 +1,2147 @@
+{
+ "format": "catallax-predictor-corpus/1",
+ "rows": [
+  {
+   "id": "P0-block-sphere",
+   "group": "checkpoint-1",
+   "recipe": "parts/P0/block-sphere.json"
+  },
+  {
+   "id": "P0-crossing-pipes",
+   "group": "checkpoint-1",
+   "recipe": "parts/P0/crossing-pipes.json"
+  },
+  {
+   "id": "P0-equal-cylinder-sphere",
+   "group": "checkpoint-1",
+   "recipe": "parts/P0/equal-cylinder-sphere.json"
+  },
+  {
+   "id": "P0-general-cone",
+   "group": "checkpoint-1",
+   "recipe": "parts/P0/general-cone.json"
+  },
+  {
+   "id": "P0-general-torus",
+   "group": "checkpoint-1",
+   "recipe": "parts/P0/general-torus.json"
+  },
+  {
+   "id": "P0-line-tangent",
+   "group": "checkpoint-1",
+   "recipe": "parts/P0/line-tangent.json"
+  },
+  {
+   "id": "P0-near-miss",
+   "group": "checkpoint-1",
+   "recipe": "parts/P0/near-miss.json"
+  },
+  {
+   "id": "P0-seam",
+   "group": "checkpoint-1",
+   "recipe": "parts/P0/seam.json"
+  },
+  {
+   "id": "P1-bracket",
+   "group": "checkpoint-1",
+   "recipe": "parts/P1-bracket.json"
+  },
+  {
+   "id": "P1-drafted-bracket",
+   "group": "checkpoint-1",
+   "recipe": "parts/P1-drafted-bracket.json"
+  },
+  {
+   "id": "P2-collar",
+   "group": "checkpoint-1",
+   "recipe": "parts/P2-collar.json"
+  },
+  {
+   "id": "P3-filleted-boss",
+   "group": "checkpoint-1",
+   "recipe": "parts/P3-filleted-boss.json"
+  },
+  {
+   "id": "P4-shelled-tray",
+   "group": "checkpoint-1",
+   "recipe": "parts/P4-shelled-tray.json"
+  },
+  {
+   "id": "P5-flanged-housing",
+   "group": "checkpoint-1",
+   "recipe": "parts/P5-flanged-housing.json"
+  },
+  {
+   "id": "P6-lattice-bracket",
+   "group": "checkpoint-1",
+   "recipe": "parts/P6-lattice-bracket.json"
+  },
+  {
+   "id": "holes-P1-bolt-holes",
+   "group": "checkpoint-1",
+   "recipe": "parts/holes/P1-bolt-holes.json"
+  },
+  {
+   "id": "holes-P5-countersinks",
+   "group": "checkpoint-1",
+   "recipe": "parts/holes/P5-countersinks.json"
+  },
+  {
+   "id": "phase2-P8-spring-threaded-boss",
+   "group": "checkpoint-1",
+   "recipe": "tools/checkpoint/phase2/P8-spring-threaded-boss.json"
+  },
+  {
+   "id": "phase2-P9-lofted-duct",
+   "group": "checkpoint-1",
+   "recipe": "tools/checkpoint/phase2/P9-lofted-duct.json"
+  },
+  {
+   "id": "phase2-curved-housing",
+   "group": "checkpoint-1",
+   "recipe": "tools/checkpoint/phase2/curved-housing.json"
+  },
+  {
+   "id": "fillet-box-single",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "box-single"
+  },
+  {
+   "id": "fillet-near-face-limit",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "near-face-limit"
+  },
+  {
+   "id": "fillet-at-face-limit",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "at-face-limit"
+  },
+  {
+   "id": "fillet-past-face-limit",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "past-face-limit"
+  },
+  {
+   "id": "fillet-swallowed-face",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "swallowed-face"
+  },
+  {
+   "id": "fillet-box-all",
+   "group": "box-fillet",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "box-all"
+  },
+  {
+   "id": "fillet-box-mitre",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "box-mitre"
+  },
+  {
+   "id": "fillet-acute-5deg",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "acute-5deg"
+  },
+  {
+   "id": "fillet-acute-halfdeg",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "acute-halfdeg"
+  },
+  {
+   "id": "fillet-obtuse-174deg",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "obtuse-174deg"
+  },
+  {
+   "id": "fillet-obtuse-179deg",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "obtuse-179deg"
+  },
+  {
+   "id": "fillet-l-concave",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "l-concave"
+  },
+  {
+   "id": "fillet-l-mixed-all",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "l-mixed-all"
+  },
+  {
+   "id": "fillet-cylinder-rim",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "cylinder-rim"
+  },
+  {
+   "id": "fillet-cylinder-collapse",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "cylinder-collapse"
+  },
+  {
+   "id": "fillet-cylinder-past-collapse",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "cylinder-past-collapse"
+  },
+  {
+   "id": "fillet-boss-rim",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "boss-rim"
+  },
+  {
+   "id": "fillet-boss-seam-rotated",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "boss-seam-rotated"
+  },
+  {
+   "id": "fillet-hole-mouth",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "hole-mouth"
+  },
+  {
+   "id": "fillet-cone-top",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "cone-top"
+  },
+  {
+   "id": "fillet-cone-base",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "cone-base"
+  },
+  {
+   "id": "fillet-sphere-dome",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "sphere-dome"
+  },
+  {
+   "id": "fillet-torus-slice",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "torus-slice"
+  },
+  {
+   "id": "fillet-torus-intersection",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "torus-intersection"
+  },
+  {
+   "id": "fillet-cross-equal",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "cross-equal"
+  },
+  {
+   "id": "fillet-cross-unequal",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "cross-unequal"
+  },
+  {
+   "id": "fillet-oblique-cylinder",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "oblique-cylinder"
+  },
+  {
+   "id": "fillet-oblique-cone",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "oblique-cone"
+  },
+  {
+   "id": "fillet-sphere-cylinder",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "sphere-cylinder"
+  },
+  {
+   "id": "fillet-tangent-boss",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "tangent-boss"
+  },
+  {
+   "id": "fillet-tangent-pocket",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "tangent-pocket"
+  },
+  {
+   "id": "fillet-unequal-ordered",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "unequal-ordered"
+  },
+  {
+   "id": "fillet-roll-over-mitres",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "roll-over-mitres"
+  },
+  {
+   "id": "fillet-mixed-ordered",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "mixed-ordered"
+  },
+  {
+   "id": "fillet-explicit-setbacks",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "explicit-setbacks"
+  },
+  {
+   "id": "fillet-variable-linear",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "variable-linear"
+  },
+  {
+   "id": "fillet-variable-zero-end",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "variable-zero-end"
+  },
+  {
+   "id": "fillet-vertex-4-one",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "vertex-4-one"
+  },
+  {
+   "id": "fillet-vertex-4-two",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "vertex-4-two"
+  },
+  {
+   "id": "fillet-vertex-4-all",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "vertex-4-all"
+  },
+  {
+   "id": "fillet-partial-oblique",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "partial-oblique"
+  },
+  {
+   "id": "fillet-unequal-mitres",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "unequal-mitres"
+  },
+  {
+   "id": "fillet-narrow-mitres",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "narrow-mitres"
+  },
+  {
+   "id": "fillet-narrow-cone",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "narrow-cone"
+  },
+  {
+   "id": "fillet-vertex-4-all-unequal-slopes",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "vertex-4-all-unequal-slopes"
+  },
+  {
+   "id": "fillet-r12-cube-at-contact",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "r12-cube-at-contact"
+  },
+  {
+   "id": "fillet-r12-cube-past-contact",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "r12-cube-past-contact"
+  },
+  {
+   "id": "fillet-r12-legacy-plane-bound",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "r12-legacy-plane-bound"
+  },
+  {
+   "id": "fillet-r12-rim-rational-bound",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "r12-rim-rational-bound"
+  },
+  {
+   "id": "fillet-r12-generator-bound",
+   "group": "fillets",
+   "cases": "parts/fillets/cases.jsonl",
+   "case": "r12-generator-bound"
+  },
+  {
+   "id": "m8-k01-wall-hole",
+   "group": "phase-5",
+   "recipe": "crates/catallax-features/tests/fixtures/p5-later-cuts/k01-wall-hole.json"
+  },
+  {
+   "id": "m8-k02-top-slot",
+   "group": "phase-5",
+   "recipe": "crates/catallax-features/tests/fixtures/p5-later-cuts/k02-top-slot.json"
+  },
+  {
+   "id": "m8-k03-rim-notch",
+   "group": "phase-5",
+   "recipe": "crates/catallax-features/tests/fixtures/p5-later-cuts/k03-rim-notch.json"
+  },
+  {
+   "id": "m8-k04-torus-pocket",
+   "group": "phase-5",
+   "recipe": "crates/catallax-features/tests/fixtures/p5-later-cuts/k04-torus-pocket.json"
+  },
+  {
+   "id": "m8-k05-plane-notch",
+   "group": "phase-5",
+   "recipe": "crates/catallax-features/tests/fixtures/p5-later-cuts/k05-plane-notch.json"
+  },
+  {
+   "id": "m8-k06-cylinder-drill",
+   "group": "phase-5",
+   "recipe": "crates/catallax-features/tests/fixtures/p5-later-cuts/k06-cylinder-drill.json"
+  },
+  {
+   "id": "m8-k07-cone-drill",
+   "group": "phase-5",
+   "recipe": "crates/catallax-features/tests/fixtures/p5-later-cuts/k07-cone-drill.json"
+  },
+  {
+   "id": "m8-k08-sphere-dimple",
+   "group": "phase-5",
+   "recipe": "crates/catallax-features/tests/fixtures/p5-later-cuts/k08-sphere-dimple.json"
+  },
+  {
+   "id": "m8-k09-ring-groove",
+   "group": "phase-5",
+   "recipe": "crates/catallax-features/tests/fixtures/p5-later-cuts/k09-ring-groove.json"
+  },
+  {
+   "id": "m8-k10-axis-section",
+   "group": "phase-5",
+   "recipe": "crates/catallax-features/tests/fixtures/p5-later-cuts/k10-axis-section.json"
+  },
+  {
+   "id": "m8-k11-offset-section",
+   "group": "phase-5",
+   "recipe": "crates/catallax-features/tests/fixtures/p5-later-cuts/k11-offset-section.json"
+  },
+  {
+   "id": "m8-k12-far-disjoint",
+   "group": "phase-5",
+   "recipe": "crates/catallax-features/tests/fixtures/p5-later-cuts/k12-far-disjoint.json"
+  },
+  {
+   "id": "m8-k13-fillet-first",
+   "group": "phase-5",
+   "recipe": "crates/catallax-features/tests/fixtures/p5-later-cuts/k13-fillet-first.json"
+  },
+  {
+   "id": "rim-six-r1_2",
+   "group": "phase-5",
+   "recipe": "crates/catallax-features/tests/fixtures/owner-curved-pocket.json",
+   "append": [
+    {
+     "id": "round",
+     "op": "fillet",
+     "body": "pocket",
+     "radius": "1/2",
+     "edges": [
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "top"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "near"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "top"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "left"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "top"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "far"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "right-round"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "near"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "right-round"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "right"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "right-round"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "far"
+          }
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "result": "round"
+  },
+  {
+   "id": "rim-six-r1",
+   "group": "phase-5",
+   "recipe": "crates/catallax-features/tests/fixtures/owner-curved-pocket.json",
+   "append": [
+    {
+     "id": "round",
+     "op": "fillet",
+     "body": "pocket",
+     "radius": "1",
+     "edges": [
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "top"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "near"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "top"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "left"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "top"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "far"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "right-round"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "near"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "right-round"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "right"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "right-round"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "far"
+          }
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "result": "round"
+  },
+  {
+   "id": "rim-six-r2",
+   "group": "phase-5",
+   "recipe": "crates/catallax-features/tests/fixtures/owner-curved-pocket.json",
+   "append": [
+    {
+     "id": "round",
+     "op": "fillet",
+     "body": "pocket",
+     "radius": "2",
+     "edges": [
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "top"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "near"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "top"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "left"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "top"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "far"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "right-round"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "near"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "right-round"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "right"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "right-round"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "far"
+          }
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "result": "round"
+  },
+  {
+   "id": "rim-six-r3.99",
+   "group": "phase-5",
+   "recipe": "crates/catallax-features/tests/fixtures/owner-curved-pocket.json",
+   "append": [
+    {
+     "id": "round",
+     "op": "fillet",
+     "body": "pocket",
+     "radius": "3.99",
+     "edges": [
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "top"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "near"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "top"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "left"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "top"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "far"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "right-round"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "near"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "right-round"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "right"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "right-round"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "far"
+          }
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "result": "round"
+  },
+  {
+   "id": "rim-six-r5",
+   "group": "phase-5",
+   "recipe": "crates/catallax-features/tests/fixtures/owner-curved-pocket.json",
+   "append": [
+    {
+     "id": "round",
+     "op": "fillet",
+     "body": "pocket",
+     "radius": "5",
+     "edges": [
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "top"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "near"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "top"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "left"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "top"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "far"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "right-round"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "near"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "right-round"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "right"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "right-round"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "far"
+          }
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "result": "round"
+  },
+  {
+   "id": "rim-five-r1",
+   "group": "phase-5",
+   "recipe": "crates/catallax-features/tests/fixtures/owner-curved-pocket.json",
+   "append": [
+    {
+     "id": "round",
+     "op": "fillet",
+     "body": "pocket",
+     "radius": "1",
+     "edges": [
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "top"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "near"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "top"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "left"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "top"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "far"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "right-round"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "near"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "right-round"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "far"
+          }
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "result": "round"
+  },
+  {
+   "id": "rim-five-r5",
+   "group": "phase-5",
+   "recipe": "crates/catallax-features/tests/fixtures/owner-curved-pocket.json",
+   "append": [
+    {
+     "id": "round",
+     "op": "fillet",
+     "body": "pocket",
+     "radius": "5",
+     "edges": [
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "top"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "near"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "top"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "left"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "top"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "far"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "right-round"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "near"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "right-round"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "far"
+          }
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "result": "round"
+  },
+  {
+   "id": "rim-five-r7.9",
+   "group": "phase-5",
+   "recipe": "crates/catallax-features/tests/fixtures/owner-curved-pocket.json",
+   "append": [
+    {
+     "id": "round",
+     "op": "fillet",
+     "body": "pocket",
+     "radius": "7.9",
+     "edges": [
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "top"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "near"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "top"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "left"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "top"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "far"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "right-round"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "near"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "right-round"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "far"
+          }
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "result": "round"
+  },
+  {
+   "id": "rim-five-r7.99",
+   "group": "phase-5",
+   "recipe": "crates/catallax-features/tests/fixtures/owner-curved-pocket.json",
+   "append": [
+    {
+     "id": "round",
+     "op": "fillet",
+     "body": "pocket",
+     "radius": "7.99",
+     "edges": [
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "top"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "near"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "top"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "left"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "top"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "far"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "right-round"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "near"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "right-round"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "far"
+          }
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "result": "round"
+  },
+  {
+   "id": "rim-five-r8",
+   "group": "phase-5",
+   "recipe": "crates/catallax-features/tests/fixtures/owner-curved-pocket.json",
+   "append": [
+    {
+     "id": "round",
+     "op": "fillet",
+     "body": "pocket",
+     "radius": "8",
+     "edges": [
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "top"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "near"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "top"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "left"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "top"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "far"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "right-round"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "near"
+          }
+         }
+        }
+       ]
+      },
+      {
+       "between": [
+        {
+         "step": "blank",
+         "role": {
+          "side": {
+           "segment": "right-round"
+          }
+         }
+        },
+        {
+         "step": "pocket-tool",
+         "role": {
+          "side": {
+           "segment": "far"
+          }
+         }
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "result": "round"
+  },
+  {
+   "id": "m10-top-cut",
+   "group": "phase-5",
+   "recipe": "crates/catallax-features/tests/fixtures/m10-smooth-loft.json",
+   "append": [
+    {
+     "id": "box",
+     "op": "block",
+     "size": [
+      "10",
+      "10",
+      "1"
+     ],
+     "pose": {
+      "rotation": [
+       "1",
+       "0",
+       "0",
+       "0"
+      ],
+      "translation": [
+       "-3",
+       "5/2",
+       "1/2"
+      ]
+     }
+    },
+    {
+     "id": "cut",
+     "op": "boolean",
+     "kind": "subtract",
+     "target": "loft",
+     "tool": "box"
+    }
+   ],
+   "result": "cut"
+  },
+  {
+   "id": "abc-00000240",
+   "group": "held-out",
+   "import": {
+    "model": "00000240",
+    "sha256": "b3b033a6988527c4084b8b141f4671f2748fa535c54dfd89221f4e7c258f63f7"
+   },
+   "append": [
+    {
+     "id": "round",
+     "op": "fillet",
+     "body": "imported",
+     "radius": "1/10",
+     "edges": "all"
+    }
+   ],
+   "result": "round",
+   "format": "catallax-recipe/4"
+  },
+  {
+   "id": "abc-00000549",
+   "group": "held-out",
+   "import": {
+    "model": "00000549",
+    "sha256": "0ed22af4076fdfab722e85e8397f3136093cc9265cb9f243dd5d77119f052f2a"
+   },
+   "append": [
+    {
+     "id": "round",
+     "op": "fillet",
+     "body": "imported",
+     "radius": "1/10",
+     "edges": "all"
+    }
+   ],
+   "result": "round",
+   "format": "catallax-recipe/4"
+  },
+  {
+   "id": "abc-00000845",
+   "group": "held-out",
+   "import": {
+    "model": "00000845",
+    "sha256": "80d55fa7c18d5e72b1255b87e965a7fa76a1d75173741f024f3ba34c5d0e2de3"
+   },
+   "append": [
+    {
+     "id": "round",
+     "op": "fillet",
+     "body": "imported",
+     "radius": "1/10",
+     "edges": "all"
+    }
+   ],
+   "result": "round",
+   "format": "catallax-recipe/4"
+  },
+  {
+   "id": "abc-00000858",
+   "group": "held-out",
+   "import": {
+    "model": "00000858",
+    "sha256": "5cc90c59f07d031202655693cf53acab5109e470392afeb965ee81789c871642"
+   },
+   "append": [
+    {
+     "id": "round",
+     "op": "fillet",
+     "body": "imported",
+     "radius": "1/10",
+     "edges": "all"
+    }
+   ],
+   "result": "round",
+   "format": "catallax-recipe/4"
+  },
+  {
+   "id": "abc-00000938",
+   "group": "held-out",
+   "import": {
+    "model": "00000938",
+    "sha256": "5288af09ee346d76fd60cbb42a6c09a1295dda69c72e43a68da7d919cd141ce5"
+   },
+   "append": [
+    {
+     "id": "round",
+     "op": "fillet",
+     "body": "imported",
+     "radius": "1/10",
+     "edges": "all"
+    }
+   ],
+   "result": "round",
+   "format": "catallax-recipe/4"
+  },
+  {
+   "id": "abc-00001006",
+   "group": "held-out",
+   "import": {
+    "model": "00001006",
+    "sha256": "6c0779696ee9f589237a498efe7b1d9b0105f7aeb51c7b4fab716803fc42b42e"
+   },
+   "append": [
+    {
+     "id": "round",
+     "op": "fillet",
+     "body": "imported",
+     "radius": "1/10",
+     "edges": "all"
+    }
+   ],
+   "result": "round",
+   "format": "catallax-recipe/4"
+  },
+  {
+   "id": "abc-00001044",
+   "group": "held-out",
+   "import": {
+    "model": "00001044",
+    "sha256": "cb7612910e3aae654aa71c8d948e494436ffed05bba341579903eeafff879b34"
+   },
+   "append": [
+    {
+     "id": "round",
+     "op": "fillet",
+     "body": "imported",
+     "radius": "1/10",
+     "edges": "all"
+    }
+   ],
+   "result": "round",
+   "format": "catallax-recipe/4"
+  },
+  {
+   "id": "abc-00001130",
+   "group": "held-out",
+   "import": {
+    "model": "00001130",
+    "sha256": "4c9ad5393de74e4d768762776b4a59170df4ea642222e33ec1be77e49d08b33a"
+   },
+   "append": [
+    {
+     "id": "round",
+     "op": "fillet",
+     "body": "imported",
+     "radius": "1/10",
+     "edges": "all"
+    }
+   ],
+   "result": "round",
+   "format": "catallax-recipe/4"
+  },
+  {
+   "id": "abc-00001237",
+   "group": "held-out",
+   "import": {
+    "model": "00001237",
+    "sha256": "304acef6a99f22c7b5b3f68bf3229fbf623e0b3d226dd7ea410498a6e1a8a4ab"
+   },
+   "append": [
+    {
+     "id": "round",
+     "op": "fillet",
+     "body": "imported",
+     "radius": "1/10",
+     "edges": "all"
+    }
+   ],
+   "result": "round",
+   "format": "catallax-recipe/4"
+  },
+  {
+   "id": "abc-00001260",
+   "group": "held-out",
+   "import": {
+    "model": "00001260",
+    "sha256": "b1bcc1228b6089762be2778a4b496f9251c7abc94007f115e75cce5ab92b0174"
+   },
+   "append": [
+    {
+     "id": "round",
+     "op": "fillet",
+     "body": "imported",
+     "radius": "1/10",
+     "edges": "all"
+    }
+   ],
+   "result": "round",
+   "format": "catallax-recipe/4"
+  },
+  {
+   "id": "abc-00001285",
+   "group": "held-out",
+   "import": {
+    "model": "00001285",
+    "sha256": "3d90ba629d27e024b5e7b87de26cda6f6f5b5a56996027bd37822bed3eaf0a1a"
+   },
+   "append": [
+    {
+     "id": "round",
+     "op": "fillet",
+     "body": "imported",
+     "radius": "1/10",
+     "edges": "all"
+    }
+   ],
+   "result": "round",
+   "format": "catallax-recipe/4"
+  },
+  {
+   "id": "abc-00001339",
+   "group": "held-out",
+   "import": {
+    "model": "00001339",
+    "sha256": "df317e40101fc7dde5ec738ce06aa501d1fe90cd34aa81fa0c0377a12cf2485d"
+   },
+   "append": [
+    {
+     "id": "round",
+     "op": "fillet",
+     "body": "imported",
+     "radius": "1/10",
+     "edges": "all"
+    }
+   ],
+   "result": "round",
+   "format": "catallax-recipe/4"
+  },
+  {
+   "id": "abc-00001344",
+   "group": "held-out",
+   "import": {
+    "model": "00001344",
+    "sha256": "a6dfa42705a9af28695a5bf47f83056be3f906ea548da5c0116d8fb6aba717a8"
+   },
+   "append": [
+    {
+     "id": "round",
+     "op": "fillet",
+     "body": "imported",
+     "radius": "1/10",
+     "edges": "all"
+    }
+   ],
+   "result": "round",
+   "format": "catallax-recipe/4"
+  },
+  {
+   "id": "abc-00001427",
+   "group": "held-out",
+   "import": {
+    "model": "00001427",
+    "sha256": "2b5299a8c5413abeabd3ac50ee0c74098cfba5544f9a717dbe2940c95696b221"
+   },
+   "append": [
+    {
+     "id": "round",
+     "op": "fillet",
+     "body": "imported",
+     "radius": "1/10",
+     "edges": "all"
+    }
+   ],
+   "result": "round",
+   "format": "catallax-recipe/4"
+  },
+  {
+   "id": "abc-00001453",
+   "group": "held-out",
+   "import": {
+    "model": "00001453",
+    "sha256": "27336190d92e880732ff6cc267d8fdcf278f05a8bc88fae292671847b2a2289e"
+   },
+   "append": [
+    {
+     "id": "round",
+     "op": "fillet",
+     "body": "imported",
+     "radius": "1/10",
+     "edges": "all"
+    }
+   ],
+   "result": "round",
+   "format": "catallax-recipe/4"
+  },
+  {
+   "id": "abc-00001533",
+   "group": "held-out",
+   "import": {
+    "model": "00001533",
+    "sha256": "bcba4d0499c4ca1d28fa6dd456094934b04ae58c7d9cf4635ae4fae8369bdafc"
+   },
+   "append": [
+    {
+     "id": "round",
+     "op": "fillet",
+     "body": "imported",
+     "radius": "1/10",
+     "edges": "all"
+    }
+   ],
+   "result": "round",
+   "format": "catallax-recipe/4"
+  },
+  {
+   "id": "abc-00001534",
+   "group": "held-out",
+   "import": {
+    "model": "00001534",
+    "sha256": "355360ad1bc98c15a112d6e1cb4290b27893d535ae539136e9e1b2bfcbabda7f"
+   },
+   "append": [
+    {
+     "id": "round",
+     "op": "fillet",
+     "body": "imported",
+     "radius": "1/10",
+     "edges": "all"
+    }
+   ],
+   "result": "round",
+   "format": "catallax-recipe/4"
+  },
+  {
+   "id": "abc-00001598",
+   "group": "held-out",
+   "import": {
+    "model": "00001598",
+    "sha256": "7373112640904d45c7776da2fb2790797321e2394486182533bffd7ad34e3b6f"
+   },
+   "append": [
+    {
+     "id": "round",
+     "op": "fillet",
+     "body": "imported",
+     "radius": "1/10",
+     "edges": "all"
+    }
+   ],
+   "result": "round",
+   "format": "catallax-recipe/4"
+  },
+  {
+   "id": "abc-00001664",
+   "group": "held-out",
+   "import": {
+    "model": "00001664",
+    "sha256": "a0dab229f3db4076e6616295461b32cc4dc8f87c1649fe2853f36468c0f476a7"
+   },
+   "append": [
+    {
+     "id": "round",
+     "op": "fillet",
+     "body": "imported",
+     "radius": "1/10",
+     "edges": "all"
+    }
+   ],
+   "result": "round",
+   "format": "catallax-recipe/4"
+  },
+  {
+   "id": "abc-00001883",
+   "group": "held-out",
+   "import": {
+    "model": "00001883",
+    "sha256": "e04ae445a3ee19c95c1a7835e0413c4ae2d33f45dde207f3c31bf3e9af4fa46b"
+   },
+   "append": [
+    {
+     "id": "round",
+     "op": "fillet",
+     "body": "imported",
+     "radius": "1/10",
+     "edges": "all"
+    }
+   ],
+   "result": "round",
+   "format": "catallax-recipe/4"
+  }
+ ]
+}

@@ -10,7 +10,7 @@ use crate::{
     support::Support,
 };
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal, Sign};
-use catallax_recipe::{Axis, Origin, Role, StepId};
+use catallax_recipe::{Axis, ElementId, Origin, Role, StepId};
 use catallax_shapes::{
     Cone, Cylinder, EllipticCylinder, Isometry, Plane, Point3, RPoint3, RVector3, Sphere, Surface,
     Torus, Vector3,
@@ -89,6 +89,17 @@ fn side(segment: &catallax_recipe::ElementId) -> Role {
 }
 
 impl Feature {
+    /// Whether this leaf is a straight fillet strip: an elementary rolling
+    /// ball section along a line edge, extruded over its run (4.2a step 5).
+    pub(crate) fn is_straight_strip(&self) -> bool {
+        self.chamfer.is_none()
+            && matches!(self.sweep, Sweep::Extrude { .. })
+            && self
+                .fillet
+                .as_ref()
+                .is_some_and(|f| matches!(f.edge, catallax_shapes::Curve::Line(_)))
+    }
+
     /// Complete polygonal meridian of a full revolution, in world coordinates.
     pub(crate) fn linear_revolution(&self) -> Option<LinearRevolution> {
         let Sweep::Revolve {
@@ -1440,8 +1451,9 @@ impl Feature {
     /// function is affine in `q` and `t`, so its least value is at `t` = 0 or
     /// 1 and, on a segment, at an end or, on an arc, at the arc point whose
     /// radius points against the function's gradient when the arc holds it.
-    /// A face of a Boolean result lies in its leaf's face. Every other face
-    /// answers `false`.
+    /// A face of a Boolean result lies in its leaf's face. A straight fillet
+    /// strip's face, named by its blend, is its section's `blend` arc swept
+    /// along the edge (4.2a step 5). Every other face answers `false`.
     pub(crate) fn face_above(
         &self,
         role: &Role,
@@ -1453,11 +1465,16 @@ impl Feature {
         while let Role::Copy { of, .. } = role {
             role = &of.role;
         }
-        let (Sweep::Extrude { vector, through }, Role::Side { segment, .. }) = (&self.sweep, role)
-        else {
+        let blend = ElementId::new("blend").expect("fixed section id");
+        let segment = match role {
+            Role::Side { segment, .. } if self.fillet.is_none() => segment,
+            Role::Blend { .. } if self.fillet.is_some() => &blend,
+            _ => return Ok(false),
+        };
+        let Sweep::Extrude { vector, through } = &self.sweep else {
             return Ok(false);
         };
-        if self.fillet.is_some() || self.chamfer.is_some() {
+        if self.chamfer.is_some() {
             return Ok(false);
         }
         dec.charge_work(1)?;

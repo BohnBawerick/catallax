@@ -37,6 +37,17 @@ pub(super) struct Run {
     // a junction with a tangent neighbour piece. A face on the far side of
     // one cannot enter the region.
     junctions: Vec<(Point3, Vector3)>,
+    // A solid cylinder that holds the region: a ring whose ball lies inside
+    // its cylinder support (4.2a step 5).
+    inside: Option<Solid>,
+}
+/// The closed solid cylinder of squared radius `radius_sq` about the axis
+/// through `point` along `axis`.
+#[derive(Clone, Debug)]
+pub(super) struct Solid {
+    pub(super) point: Point3,
+    pub(super) axis: Vector3,
+    pub(super) radius_sq: Real,
 }
 impl Run {
     pub(super) fn new(piece: Piece, faces: [usize; 2], ends: Vec<usize>) -> Self {
@@ -45,11 +56,17 @@ impl Run {
             faces,
             ends,
             junctions: Vec::new(),
+            inside: None,
         }
     }
     /// The run with the half-spaces of its junctions.
     pub(super) fn with_junctions(mut self, junctions: Vec<(Point3, Vector3)>) -> Self {
         self.junctions = junctions;
+        self
+    }
+    /// The run whose region lies in the closed solid cylinder `solid`.
+    pub(super) fn inside(mut self, solid: Solid) -> Self {
+        self.inside = Some(solid);
         self
     }
 }
@@ -970,7 +987,7 @@ impl Plan {
             for panel in boxes.as_deref().unwrap_or_default() {
                 dec.charge_work(1)?;
                 if face.polynomial.eval_ball(panel, dec)?.contains_zero() {
-                    if self.beyond_junction(run, i, dec)? {
+                    if self.beyond_junction(run, i, dec)? || self.outside_solid(run, i, dec)? {
                         break;
                     }
                     return Err(overflow());
@@ -978,6 +995,28 @@ impl Plan {
             }
         }
         Ok(())
+    }
+
+    /// Whether face `i` is a plane that keeps the run's solid cylinder on
+    /// one side: parallel to its axis and at least its radius from it. The
+    /// region lies in that closed solid (a ring's wall `rho^2 <= R^2` when
+    /// its ball lies inside its cylinder support), so the plane meets it at
+    /// most on its boundary, along the line where a tangent plane touches
+    /// the cylinder: the face of an earlier round's tangent neighbour, which
+    /// passes through the box of the ring that rolls over that round (4.2a
+    /// step 5). A plane that supports a convex set meets it only on its
+    /// boundary.
+    fn outside_solid(&self, run: &Run, i: usize, dec: &mut Decider) -> Result<bool, Refusal> {
+        let (Some(solid), Surface::Plane(plane)) = (&run.inside, &self.faces[i].surface) else {
+            return Ok(false);
+        };
+        dec.charge_work(1)?;
+        if geometry::sign(&plane.normal.dot(&solid.axis), dec)? != Sign::Zero {
+            return Ok(false);
+        }
+        let offset = plane.normal.dot(&solid.point.minus(&plane.origin));
+        let reach = &solid.radius_sq * &plane.normal.norm_squared();
+        Ok(geometry::sign(&(&offset.square() - &reach), dec)? != Sign::Negative)
     }
 
     /// Whether face `i` lies on the far side of one of the run's junctions,

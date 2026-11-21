@@ -764,20 +764,20 @@ fn fillets_over_fillets_not_built_yet_refuse_with_typed_codes() {
         "{}",
         refusal.detail
     );
-    // The field compiler has no roll-over over earlier strips.
-    for recipe in [
-        boss(4, "3", "1", false),
-        pocket("3", "3"),
-        mitred(4, "3", "3", false),
+    // The field rolls a chain over an earlier strip (4.2a step 5, part 1).
+    // A ball as wide as the round it rolls over, which sweeps a sphere, and
+    // an upright under an earlier mitre are later parts of that step.
+    assert!(
+        catallax_field::Plan::compile_checked(&boss(4, "3", "1", false), &mut decider()).is_ok()
+    );
+    for (recipe, code) in [
+        (pocket("3", "3"), "field.rolling-path-reach"),
+        (mitred(4, "3", "3", false), "fillet.unsupported-overflow"),
     ] {
         let Err(refusal) = catallax_field::Plan::compile_checked(&recipe, &mut decider()) else {
-            panic!("the field compiled a fillet over a fillet");
+            panic!("the field compiled a sphere corner or a mitre");
         };
-        assert_eq!(
-            refusal.code, "fillet.unsupported-overflow",
-            "{}",
-            refusal.detail
-        );
+        assert_eq!(refusal.code, code, "{}", refusal.detail);
     }
 }
 

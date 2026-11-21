@@ -1764,6 +1764,557 @@
    "result": "cut"
   },
   {
+   "id": "loft-ruled-fillet-r1_10",
+   "group": "phase-5",
+   "inline": {
+    "format": "catallax-recipe/5",
+    "name": "m11 loft fillet",
+    "steps": [
+     {
+      "id": "section0",
+      "op": "sketch",
+      "plane": {
+       "rotation": [
+        "1",
+        "0",
+        "0",
+        "0"
+       ],
+       "translation": [
+        "0",
+        "0",
+        "0"
+       ]
+      },
+      "loops": [
+       [
+        {
+         "kind": "line",
+         "id": "a_0",
+         "to": [
+          "1",
+          "-1"
+         ]
+        },
+        {
+         "kind": "line",
+         "id": "a_1",
+         "to": [
+          "1",
+          "1"
+         ]
+        },
+        {
+         "kind": "line",
+         "id": "a_2",
+         "to": [
+          "-1",
+          "1"
+         ]
+        },
+        {
+         "kind": "line",
+         "id": "a_3",
+         "to": [
+          "-1",
+          "-1"
+         ]
+        }
+       ]
+      ]
+     },
+     {
+      "id": "section1",
+      "op": "sketch",
+      "plane": {
+       "rotation": [
+        "1",
+        "0",
+        "0",
+        "0"
+       ],
+       "translation": [
+        "0",
+        "0",
+        "2"
+       ]
+      },
+      "loops": [
+       [
+        {
+         "kind": "line",
+         "id": "b_0",
+         "to": [
+          "1",
+          "0"
+         ]
+        },
+        {
+         "kind": "line",
+         "id": "b_1",
+         "to": [
+          "0",
+          "2"
+         ]
+        },
+        {
+         "kind": "line",
+         "id": "b_2",
+         "to": [
+          "-2",
+          "0"
+         ]
+        },
+        {
+         "kind": "line",
+         "id": "b_3",
+         "to": [
+          "0",
+          "-1"
+         ]
+        }
+       ]
+      ]
+     },
+     {
+      "id": "loft",
+      "op": "loft",
+      "shape": "ruled",
+      "sections": [
+       {
+        "profile": "section0",
+        "start": [
+         "a_0"
+        ]
+       },
+       {
+        "profile": "section1",
+        "start": [
+         "b_0"
+        ]
+       }
+      ]
+     },
+     {
+      "id": "round",
+      "op": "fillet",
+      "body": "loft",
+      "radius": "1/10",
+      "edges": [
+       {
+        "between": [
+         {
+          "step": "loft",
+          "role": {
+           "side": {
+            "segment": "a_0"
+           }
+          }
+         },
+         {
+          "step": "loft",
+          "role": {
+           "side": {
+            "segment": "a_1"
+           }
+          }
+         }
+        ]
+       }
+      ]
+     }
+    ],
+    "result": "round"
+   }
+  },
+  {
+   "id": "loft-ruled-fillet-r1_4",
+   "group": "phase-5",
+   "inline": {
+    "format": "catallax-recipe/5",
+    "name": "m11 loft fillet",
+    "steps": [
+     {
+      "id": "section0",
+      "op": "sketch",
+      "plane": {
+       "rotation": [
+        "1",
+        "0",
+        "0",
+        "0"
+       ],
+       "translation": [
+        "0",
+        "0",
+        "0"
+       ]
+      },
+      "loops": [
+       [
+        {
+         "kind": "line",
+         "id": "a_0",
+         "to": [
+          "1",
+          "-1"
+         ]
+        },
+        {
+         "kind": "line",
+         "id": "a_1",
+         "to": [
+          "1",
+          "1"
+         ]
+        },
+        {
+         "kind": "line",
+         "id": "a_2",
+         "to": [
+          "-1",
+          "1"
+         ]
+        },
+        {
+         "kind": "line",
+         "id": "a_3",
+         "to": [
+          "-1",
+          "-1"
+         ]
+        }
+       ]
+      ]
+     },
+     {
+      "id": "section1",
+      "op": "sketch",
+      "plane": {
+       "rotation": [
+        "1",
+        "0",
+        "0",
+        "0"
+       ],
+       "translation": [
+        "0",
+        "0",
+        "2"
+       ]
+      },
+      "loops": [
+       [
+        {
+         "kind": "line",
+         "id": "b_0",
+         "to": [
+          "1",
+          "0"
+         ]
+        },
+        {
+         "kind": "line",
+         "id": "b_1",
+         "to": [
+          "0",
+          "2"
+         ]
+        },
+        {
+         "kind": "line",
+         "id": "b_2",
+         "to": [
+          "-2",
+          "0"
+         ]
+        },
+        {
+         "kind": "line",
+         "id": "b_3",
+         "to": [
+          "0",
+          "-1"
+         ]
+        }
+       ]
+      ]
+     },
+     {
+      "id": "loft",
+      "op": "loft",
+      "shape": "ruled",
+      "sections": [
+       {
+        "profile": "section0",
+        "start": [
+         "a_0"
+        ]
+       },
+       {
+        "profile": "section1",
+        "start": [
+         "b_0"
+        ]
+       }
+      ]
+     },
+     {
+      "id": "round",
+      "op": "fillet",
+      "body": "loft",
+      "radius": "1/4",
+      "edges": [
+       {
+        "between": [
+         {
+          "step": "loft",
+          "role": {
+           "side": {
+            "segment": "a_0"
+           }
+          }
+         },
+         {
+          "step": "loft",
+          "role": {
+           "side": {
+            "segment": "a_1"
+           }
+          }
+         }
+        ]
+       }
+      ]
+     }
+    ],
+    "result": "round"
+   }
+  },
+  {
+   "id": "loft-smooth-fillet-r1_10",
+   "group": "phase-5",
+   "inline": {
+    "format": "catallax-recipe/5",
+    "name": "m11 smooth loft fillet",
+    "steps": [
+     {
+      "id": "section0",
+      "op": "sketch",
+      "plane": {
+       "rotation": [
+        "1",
+        "0",
+        "0",
+        "0"
+       ],
+       "translation": [
+        "0",
+        "0",
+        "0"
+       ]
+      },
+      "loops": [
+       [
+        {
+         "kind": "line",
+         "id": "a_0",
+         "to": [
+          "1",
+          "-1"
+         ]
+        },
+        {
+         "kind": "line",
+         "id": "a_1",
+         "to": [
+          "1",
+          "1"
+         ]
+        },
+        {
+         "kind": "line",
+         "id": "a_2",
+         "to": [
+          "-1",
+          "1"
+         ]
+        },
+        {
+         "kind": "line",
+         "id": "a_3",
+         "to": [
+          "-1",
+          "-1"
+         ]
+        }
+       ]
+      ]
+     },
+     {
+      "id": "section1",
+      "op": "sketch",
+      "plane": {
+       "rotation": [
+        "1",
+        "0",
+        "0",
+        "0"
+       ],
+       "translation": [
+        "0",
+        "0",
+        "2"
+       ]
+      },
+      "loops": [
+       [
+        {
+         "kind": "line",
+         "id": "b_0",
+         "to": [
+          "1",
+          "0"
+         ]
+        },
+        {
+         "kind": "line",
+         "id": "b_1",
+         "to": [
+          "0",
+          "2"
+         ]
+        },
+        {
+         "kind": "line",
+         "id": "b_2",
+         "to": [
+          "-2",
+          "0"
+         ]
+        },
+        {
+         "kind": "line",
+         "id": "b_3",
+         "to": [
+          "0",
+          "-1"
+         ]
+        }
+       ]
+      ]
+     },
+     {
+      "id": "middle",
+      "op": "sketch",
+      "plane": {
+       "rotation": [
+        "1",
+        "0",
+        "0",
+        "0"
+       ],
+       "translation": [
+        "0",
+        "0",
+        "1"
+       ]
+      },
+      "loops": [
+       [
+        {
+         "kind": "line",
+         "id": "m_0",
+         "to": [
+          "5/4",
+          "-1/2"
+         ]
+        },
+        {
+         "kind": "line",
+         "id": "m_1",
+         "to": [
+          "1/2",
+          "3/2"
+         ]
+        },
+        {
+         "kind": "line",
+         "id": "m_2",
+         "to": [
+          "-3/2",
+          "1/2"
+         ]
+        },
+        {
+         "kind": "line",
+         "id": "m_3",
+         "to": [
+          "-1/2",
+          "-1"
+         ]
+        }
+       ]
+      ]
+     },
+     {
+      "id": "loft",
+      "op": "loft",
+      "shape": "smooth",
+      "sections": [
+       {
+        "profile": "section0",
+        "start": [
+         "a_0"
+        ]
+       },
+       {
+        "profile": "middle",
+        "start": [
+         "m_0"
+        ]
+       },
+       {
+        "profile": "section1",
+        "start": [
+         "b_0"
+        ]
+       }
+      ]
+     },
+     {
+      "id": "round",
+      "op": "fillet",
+      "body": "loft",
+      "radius": "1/10",
+      "edges": [
+       {
+        "between": [
+         {
+          "step": "loft",
+          "role": {
+           "side": {
+            "segment": "a_0"
+           }
+          }
+         },
+         {
+          "step": "loft",
+          "role": {
+           "side": {
+            "segment": "a_1"
+           }
+          }
+         }
+        ]
+       }
+      ]
+     }
+    ],
+    "result": "round"
+   }
+  },
+  {
    "id": "abc-00000240",
    "group": "held-out",
    "import": {

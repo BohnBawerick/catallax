@@ -1518,20 +1518,27 @@ fn evaluate_impl(
                         // resolved their selection (`predictor.rs`): reaching
                         // it is a refusal of the attempt like any other.
                         Some(context) => {
-                            let refunded = || catallax_numbers::current_operation_work().refunded;
-                            let used = || catallax_numbers::current_operation_work().used;
-                            let (before, returned) = (used(), refunded());
+                            let work = catallax_numbers::current_operation_work;
+                            // Everything counted for the request so far:
+                            // refunded work only grows, so this never falls.
+                            let counted = || {
+                                let work = work();
+                                work.used + work.refunded + work.uncharged
+                            };
+                            let (used, refunded, before) =
+                                (work().used, work().refunded, counted());
                             match catallax_numbers::capped_attempt(|| exact(model, dec)) {
                                 Ok(result) => {
                                     crate::predictor::record(
                                         &step.id,
                                         crate::predictor::Path::Exact,
-                                        used() - before,
+                                        work().used - used,
+                                        counted() - before,
                                     );
                                     result
                                 }
                                 Err(refusal) => {
-                                    let attempt = refunded() - returned;
+                                    let attempt = work().refunded - refunded;
                                     let fitted = context.fillet(
                                         model,
                                         target,
@@ -1553,6 +1560,7 @@ fn evaluate_impl(
                                             crate::predictor::Path::Refused
                                         },
                                         attempt,
+                                        counted() - before,
                                     );
                                     fitted?;
                                     return Ok(None);

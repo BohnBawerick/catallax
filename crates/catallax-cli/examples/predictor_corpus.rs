@@ -87,6 +87,8 @@ fn recipe_of(
     let mut source = None;
     let mut recipe = if let Some(path) = row["recipe"].as_str() {
         read(path)?
+    } else if row["inline"].is_object() {
+        row["inline"].clone()
     } else if let Some(path) = row["cases"].as_str() {
         let case = row["case"].as_str().ok_or("a cases row names its case")?;
         let text = fs::read_to_string(root.join(path))?;
@@ -114,7 +116,7 @@ fn recipe_of(
                 "pose": {"rotation": ["1", "0", "0", "0"], "translation": ["0", "0", "0"]}}],
             "result": "imported"})
     } else {
-        return Err("a row has a recipe, a case or an import".into());
+        return Err("a row has a recipe, an inline recipe, a case or an import".into());
     };
     if let Some(steps) = row["append"].as_array() {
         recipe["steps"]
@@ -189,7 +191,7 @@ fn measure_here(text: &str, source: Option<&(String, Vec<u8>)>, max_work: u64) -
                     "tier": look.tier().name(), "cap": look.tier().cap(), "read": look.read})
             });
             json!({"step": choice.step, "look": look, "path": choice.path.name(),
-                "attempt_work": choice.attempt_work})
+                "attempt_work": choice.attempt_work, "operation_work": choice.operation_work})
         })
         .collect();
     let (status, refusal) = match &outcome {
@@ -429,16 +431,7 @@ fn check(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             };
             looks += 1;
             let attempt = choice["attempt_work"].as_u64().unwrap_or(0);
-            // The operation's charged work. A refused attempt's work is not
-            // in it, so it is added.
-            let operation: u64 = line["operations"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter(|entry| entry["id"] == choice["step"])
-                .map(|entry| entry["used"].as_u64().unwrap_or(0))
-                .sum::<u64>()
-                + if path == "exact" { 0 } else { attempt };
+            let operation = choice["operation_work"].as_u64().unwrap_or(0);
             let share = read as f64 / operation.max(1) as f64;
             if share > worst_share {
                 worst_share = share;

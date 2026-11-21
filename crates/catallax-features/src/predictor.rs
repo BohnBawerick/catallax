@@ -362,6 +362,7 @@ pub(crate) fn cap_fillet_attempt(
                 look: Some(look),
                 path: Path::Open,
                 attempt_work: 0,
+                operation_work: 0,
             });
         }
     });
@@ -408,6 +409,10 @@ pub struct Choice {
     /// The work the attempt charged: kept in `used` where the path is exact,
     /// and returned to the allowance and counted in `refunded` otherwise.
     pub attempt_work: u64,
+    /// The whole operation's work, the attempt and the fitted construction
+    /// after it: what it added to `used`, `refunded` and `uncharged`
+    /// together. The quick look's `read` is part of it.
+    pub operation_work: u64,
 }
 
 thread_local! {
@@ -434,7 +439,7 @@ pub fn with_log<T>(run: impl FnOnce() -> T) -> (T, Vec<Choice>) {
 }
 
 /// Completes the record of the attempt of `step` that just ended.
-pub(crate) fn record(step: &impl ToString, path: Path, attempt_work: u64) {
+pub(crate) fn record(step: &impl ToString, path: Path, attempt_work: u64, operation_work: u64) {
     LOG.with(|log| {
         if let Some(choices) = log.borrow_mut().as_mut() {
             let step = step.to_string();
@@ -446,12 +451,14 @@ pub(crate) fn record(step: &impl ToString, path: Path, attempt_work: u64) {
                 Some(choice) => {
                     choice.path = path;
                     choice.attempt_work = attempt_work;
+                    choice.operation_work = operation_work;
                 }
                 None => choices.push(Choice {
                     step,
                     look: None,
                     path,
                     attempt_work,
+                    operation_work,
                 }),
             }
         }

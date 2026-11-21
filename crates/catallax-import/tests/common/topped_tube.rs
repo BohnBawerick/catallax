@@ -132,3 +132,20 @@ pub fn with_one_uv_curve_at_another_speed(text: &str) -> String {
         ),
     )
 }
+
+/// The last straight u/v curve of the spline face, written over half its
+/// edge's interval. The gap rule for imports does not read a u/v curve whose
+/// interval does not hold its edge's parameter range, so as written the body
+/// is refused for it.
+#[allow(dead_code)]
+pub fn with_one_uv_curve_over_half_its_interval(text: &str) -> String {
+    let curve = text
+        .lines()
+        .rfind(|line| {
+            line.contains("=B_SPLINE_CURVE_WITH_KNOTS('',1,") && line.contains("(2,2),(0.,1.),")
+        })
+        .expect("a straight u/v curve over the edge's interval");
+    let halved = curve.replace("(2,2),(0.,1.),", "(2,2),(0.,0.5),");
+    assert_ne!(halved, curve);
+    text.replace(curve, &halved)
+}

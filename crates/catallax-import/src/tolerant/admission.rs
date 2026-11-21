@@ -1,6 +1,7 @@
 //! Default tolerant B-reps: measured local tolerances and sampled native fits.
 //! Certified construction remains a separate, higher-authority result.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use catallax_numbers::{Decider, Rational, Refusal};
@@ -767,12 +768,12 @@ pub(super) fn edge_work_cap(error: &Error) -> bool {
 /// is spent.
 ///
 /// A body one round admits is not tried again, and a body one round refuses
-/// is tried by the next, with one exception. Every round gives each edge of
-/// the body a fresh work allowance, so a body that an edge refused by its
-/// work cap would get a second allowance for that edge in the next round, and
-/// the repair round may read the edge through another carrier. The cap is
-/// hard, so that refusal ends the body: it is not tried again and its
-/// refusal stands. Other bodies are not affected.
+/// is tried by the next, with one exception. An edge has one work allowance
+/// for all the rounds of its body (`fit::Context::edge_spent`), so a body
+/// that an edge refused by its work cap has nothing left for that edge in
+/// the next round, and the repair round may read the edge through another
+/// carrier. The cap is hard, so that refusal ends the body: it is not tried
+/// again and its refusal stands. Other bodies are not affected.
 ///
 /// Returns the admitted bodies in the order they were admitted and, by
 /// source index, the last refusal of each body that was not.
@@ -836,6 +837,43 @@ fn admit_under(
     recorded_mm: Option<&Rational>,
     dec: &mut Decider,
 ) -> Result<TolerantImport, Error> {
+    let (measured, incomplete): (&[bool], Option<&[bool]>) = match policy {
+        AdmissionPolicy::Repair => (&[true], None),
+        AdmissionPolicy::MainFirst(incomplete) => (&[false, true], Some(incomplete)),
+    };
+    let rounds: Vec<Round> = recorded_mm
+        .map(|_| Round::Recorded)
+        .into_iter()
+        .chain(
+            measured
+                .iter()
+                .map(|&repair_boundaries| Round::Measured { repair_boundaries }),
+        )
+        .collect();
+    admit_rounds(
+        edge_work,
+        parsed,
+        source,
+        angles,
+        &rounds,
+        incomplete,
+        recorded_mm,
+        dec,
+    )
+}
+
+/// [`admit_under`] with its rounds stated, and which bodies they try.
+#[allow(clippy::too_many_arguments)]
+fn admit_rounds(
+    edge_work: u64,
+    parsed: Arc<ParsedStep>,
+    source: Arc<TolerantFile>,
+    angles: AngleUnit,
+    rounds: &[Round],
+    incomplete: Option<&[bool]>,
+    recorded_mm: Option<&Rational>,
+    dec: &mut Decider,
+) -> Result<TolerantImport, Error> {
     let mut fits = fit::Context::new(
         &parsed,
         &source.mm_per_unit,
@@ -858,22 +896,13 @@ fn admit_under(
         native_domains: Vec::new(),
         import_gaps: Vec::new(),
     };
-    let (measured, incomplete): (&[bool], Option<&[bool]>) = match policy {
-        AdmissionPolicy::Repair => (&[true], None),
-        AdmissionPolicy::MainFirst(incomplete) => (&[false, true], Some(incomplete)),
-    };
-    let rounds: Vec<Round> = recorded_mm
-        .map(|_| Round::Recorded)
-        .into_iter()
-        .chain(
-            measured
-                .iter()
-                .map(|&repair_boundaries| Round::Measured { repair_boundaries }),
-        )
-        .collect();
+    // What the edges of each source body have counted against their
+    // allowances so far, by `EDGE_CURVE` name. A body's rounds share it.
+    let mut spent: Vec<BTreeMap<String, u64>> = vec![BTreeMap::new(); source.bodies.len()];
     // One source body in one round: its topology repair, then its check.
     let attempt = |round: Round, source_index: usize| -> Result<TolerantSolid, NativeBodyFailure> {
         let original = &source.bodies[source_index];
+        fits.edge_spent = std::mem::take(&mut spent[source_index]);
         // A recorded pass reads the written source parameters, as the first
         // measured pass of the main-first policy does.
         fits.repair_boundaries = matches!(
@@ -914,6 +943,16 @@ fn admit_under(
                     "the file's topology needed a repair, so its recorded tolerance does not describe the repaired body",
                 ));
             }
+            fits.sewn = repaired
+                .changes
+                .iter()
+                .filter_map(|change| match change {
+                    healing::HealingChange::EdgesSewn {
+                        retained, replaced, ..
+                    } => Some((replaced.clone(), retained.clone())),
+                    _ => None,
+                })
+                .collect();
             evidence.repairs.extend(repaired.changes);
             evidence.topology_checks.extend(repaired.checks);
             evidence.topology_measurements.extend(repaired.measurements);
@@ -952,6 +991,7 @@ fn admit_under(
                 recorded_mm: recorded.cloned(),
             })
         })();
+        spent[source_index] = std::mem::take(&mut fits.edge_spent);
         candidate.map_err(|error| {
             evidence.rollback(checkpoint);
             if recorded.is_some() && !super::native::control(&error) {
@@ -977,7 +1017,7 @@ fn admit_under(
         })
     };
     let (mut bodies, body_errors) =
-        over_rounds(source.bodies.len(), &rounds, incomplete, attempt, || {
+        over_rounds(source.bodies.len(), rounds, incomplete, attempt, || {
             catallax_numbers::current_operation_work().exhausted
         });
     bodies.sort_unstable_by_key(TolerantSolid::source_index);
@@ -1136,9 +1176,91 @@ mod round_tests {
     /// measures its faces, after its edges were read under an allowance they
     /// could spend. The second body is measured and admitted as before, and
     /// carries no refusal.
+    /// Section 4.2 step 8 across the rounds of one body: "A hard per-edge
+    /// work cap refuses by name." One file of one body: the tube whose first
+    /// u/v curve is at another speed, so its edge is the costly one, and
+    /// whose last u/v curve covers half its edge's interval, which the gap
+    /// rule does not read. As written the body is refused for that last
+    /// curve, after the costly edge was read. That is not a cap refusal, so
+    /// another round follows on the same source body.
+    ///
+    /// The control runs the as-written round twice, so the second round
+    /// reads the costly edge exactly as the first did. (This tube's edges
+    /// are lines, which the repair round reads under the parameters of the
+    /// lines it recognises, so that round reads none of the file's u/v
+    /// curves and cannot show the edge read twice.)
+    ///
+    /// With an allowance of what one round counts on the edge, the first
+    /// round ends on the unread curve, and the second is refused by the
+    /// cap's name: the edge has nothing left. With twice that, both rounds
+    /// end on the unread curve. A fresh ledger for the second round would
+    /// end it on the unread curve under either allowance.
+    #[test]
+    fn an_edge_has_one_allowance_for_the_rounds_of_its_body() {
+        let plain = String::from_utf8(topped_tube::unstamped(
+            &topped_tube::written(&topped_tube::spline_topped_tube()).0,
+        ))
+        .unwrap();
+        let bytes = topped_tube::with_one_uv_curve_over_half_its_interval(
+            &topped_tube::with_one_uv_curve_at_another_speed(&plain),
+        )
+        .into_bytes();
+        let sha = crate::sha256_hex(&bytes);
+        // The refusal the rounds end on, by its code.
+        let ends_on = |rounds: &[Round], edge_work: u64| -> &'static str {
+            let (import, request) =
+                catallax_numbers::with_operation_budget(100_000_000_000, || {
+                    let mut dec = Decider::default();
+                    let (parsed, source, angles) =
+                        prepare(&bytes, &sha, ToleranceOptions::default(), &mut dec).unwrap();
+                    admit_rounds(
+                        edge_work, parsed, source, angles, rounds, None, None, &mut dec,
+                    )
+                    .unwrap()
+                });
+            assert!(!request.exhausted, "{request:?}");
+            assert!(import.bodies.is_empty());
+            let failure = import.body_errors[0].as_ref().expect("a refused body");
+            // Either refusal comes after the body's faces were being read.
+            assert!(failure.work_used > 0, "{failure:?}");
+            match &failure.error {
+                Error::Numerical(refusal) => refusal.code,
+                other => panic!("{other:?}"),
+            }
+        };
+        const UNREAD: &str = "import.tolerant-inconsistent-trace";
+        // One round under the checker's cap ends on the unread curve.
+        assert_eq!(ends_on(&[AS_WRITTEN], EDGE_WORK), UNREAD);
+        // What that round counts on its costliest edge before it ends: the
+        // least allowance under which it is not the cap that ends it.
+        let (mut capped, mut read) = (0, EDGE_WORK);
+        while read - capped > 1 {
+            let middle = capped + (read - capped) / 2;
+            if ends_on(&[AS_WRITTEN], middle) == WORK_CAP {
+                capped = middle;
+            } else {
+                read = middle;
+            }
+        }
+        assert!(read > 1, "the costly edge counts {read}");
+        assert_eq!(ends_on(&[AS_WRITTEN], read), UNREAD);
+
+        // Two rounds on the same source body. The first is not capped and
+        // ends on the unread curve. The second reads the costly edge under
+        // what the first left.
+        let twice = [AS_WRITTEN, AS_WRITTEN];
+        assert_eq!(ends_on(&twice, read), WORK_CAP);
+        assert_eq!(ends_on(&twice, 2 * read - 1), WORK_CAP);
+        assert_eq!(ends_on(&twice, 2 * read), UNREAD);
+        println!(
+            "one tube, two rounds: the costly edge counts {read} units a round; with {} for an edge the second round is refused by the cap, with {} it is not",
+            2 * read - 1,
+            2 * read
+        );
+    }
+
     #[test]
     fn a_capped_edge_refuses_its_own_body_after_it_was_measured_and_no_other() {
-        use std::collections::BTreeMap;
         let plain = String::from_utf8(topped_tube::unstamped(
             &topped_tube::written(&topped_tube::spline_topped_tube()).0,
         ))

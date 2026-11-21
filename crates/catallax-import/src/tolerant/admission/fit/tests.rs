@@ -513,3 +513,32 @@ fn an_unread_use_has_spent_its_work_on_the_edge() {
     assert_eq!(second_use(once + 1), Err("numerical.gap-work-cap"));
     assert_eq!(second_use(2 * once), Ok(once));
 }
+
+/// Section 4.2 step 8 across the rounds of a body, where sewing replaced
+/// one edge by another: the retained edge starts a round with what both
+/// counted, and a later round does not count any of it twice.
+#[test]
+fn a_sewn_edge_starts_with_what_both_edges_counted_and_nothing_twice() {
+    let mut spent = BTreeMap::from([("#10".to_owned(), 5), ("#20".to_owned(), 7)]);
+    // No sewing: each edge starts with its own count, and a new edge with
+    // none.
+    assert_eq!(carried(&spent, &[], "#10"), 5);
+    assert_eq!(carried(&spent, &[], "#20"), 7);
+    assert_eq!(carried(&spent, &[], "#30"), 0);
+    // Sewing replaced #20 by #10.
+    let sewn = [("#20".to_owned(), "#10".to_owned())];
+    assert_eq!(carried(&spent, &sewn, "#10"), 12);
+    assert_eq!(carried(&spent, &sewn, "#30"), 0);
+    // The round counts 3 more on the retained edge and ends at 15.
+    keep(&mut spent, &sewn, "#10", 15);
+    assert_eq!(carried(&spent, &sewn, "#10"), 15);
+    // A round that reads nothing more of the edge leaves the ledger alone.
+    keep(&mut spent, &sewn, "#10", 15);
+    assert_eq!(carried(&spent, &sewn, "#10"), 15);
+    // A round that does not sew gives each edge its own part and no more
+    // than the two had together.
+    assert_eq!(
+        carried(&spent, &[], "#10") + carried(&spent, &[], "#20"),
+        15
+    );
+}

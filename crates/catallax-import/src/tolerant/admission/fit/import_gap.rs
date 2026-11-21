@@ -321,6 +321,20 @@ impl EdgeAllowances {
         Ok(outcome)
     }
 
+    /// Starts `edge` with what its readings counted in earlier rounds of
+    /// the same admission, so the cap holds over all of them.
+    pub(super) fn carry(&mut self, edge: usize, counted: u64) {
+        if counted > 0 {
+            self.count(edge, counted);
+        }
+    }
+
+    /// What each edge has counted so far, by its place: what it was started
+    /// with and what its uses added.
+    pub(super) fn counted(&self) -> impl Iterator<Item = (usize, u64)> + '_ {
+        self.counted.iter().map(|(edge, counted)| (*edge, *counted))
+    }
+
     /// What the edge has left for its next use.
     pub(super) fn left(&self, edge: usize) -> gap::Limits {
         gap::Limits {

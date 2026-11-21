@@ -126,16 +126,18 @@ fn verdict(name: &str, text: &str) -> (String, String) {
             resolved.as_ref().unwrap_err().code,
             "assembly.mass-unresolved"
         );
+        // The field compiles P5 since 4.2a step 4; its mass route does not
+        // cover the rim piece.
         assert_eq!(
             independent.as_ref().unwrap_err().code,
-            "fillet.unsupported-overflow"
+            "field.print-coverage"
         );
         assert_eq!(brep.as_ref().unwrap_err().code, "assembly.mass-accuracy");
     } else {
         let resolved = resolved.as_ref().unwrap_or_else(|r| panic!("{name}: {r}"));
         let expected_source = match name {
-            "P1" | "P6" => assembly::MassSource::Field,
-            "P2" | "P4" => assembly::MassSource::Agreed,
+            "P6" => assembly::MassSource::Field,
+            "P1" | "P2" | "P4" => assembly::MassSource::Agreed,
             "P3" => assembly::MassSource::Brep,
             _ => unreachable!(),
         };

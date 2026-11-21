@@ -168,7 +168,7 @@ fn magnitude(x: &Real, dec: &mut Decider) -> Result<Real, Refusal> {
     })
 }
 /// An orthonormal pair perpendicular to the unit `axis`.
-pub(super) fn basis_of(axis: &Vector3, dec: &mut Decider) -> Result<[Vector3; 2], Refusal> {
+pub(crate) fn basis_of(axis: &Vector3, dec: &mut Decider) -> Result<[Vector3; 2], Refusal> {
     for k in [[1, 0, 0], [0, 1, 0]] {
         let k = Vector3::new(k[0].into(), k[1].into(), k[2].into());
         let e = axis.cross(&k);
@@ -189,7 +189,7 @@ fn divide(a: &Ball, b: &Ball) -> Result<Ball, Refusal> {
     a.checked_div(b)
         .ok_or_else(|| gap("the conic's denominator enclosure contains zero"))
 }
-pub(super) fn hull_points(points: &[[Ball; 3]]) -> [Ball; 3] {
+pub(crate) fn hull_points(points: &[[Ball; 3]]) -> [Ball; 3] {
     std::array::from_fn(|i| {
         points
             .iter()

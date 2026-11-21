@@ -8,7 +8,9 @@
 //! [`generator`] the straight paths between supports parallel to one line
 //! (4.2a step 2). [`coaxial`] holds two curved supports about one axis and
 //! [`saddle`] a cylinder with a second cylinder or a sphere off its axis
-//! (4.2a step 3). [`piece`] compiles any of them as a field leaf.
+//! (4.2a step 3). [`rim`] holds a ring whose plane contact crosses circular
+//! mouths, the field's own P5 rim contact (4.2a step 4). [`piece`] compiles
+//! any of them as a field leaf.
 //!
 //! Only [`piece`] admits recipe fillets; the other building blocks are not
 //! admissions. See `docs/M18-ROLLING-REGION.md` for the rim region's explicit set and its
@@ -25,6 +27,7 @@ pub mod generator;
 pub mod path;
 pub mod piece;
 pub mod revolved;
+pub mod rim;
 pub mod saddle;
 mod sectors;
 pub use path::{Answer, Range};
@@ -47,6 +50,43 @@ fn interval(lo: &Rational, hi: &Rational) -> Ball {
 }
 fn gap(detail: &str) -> Refusal {
     Refusal::new("field.rolling-region-unresolved", detail)
+}
+/// The box of a rational box's image under an exact rigid motion: the box
+/// of its moved corners, each widened to its certified binary64 bounds. A
+/// corner without finite bounds widens the box to one no region reaches past.
+pub(crate) fn moved_box(
+    pose: &catallax_shapes::Isometry,
+    b: &[[Rational; 2]; 3],
+) -> [[Rational; 2]; 3] {
+    let far = Rational::from_i64(1 << 40);
+    let mut moved: Option<[[Rational; 2]; 3]> = None;
+    for corner in 0..8 {
+        let [x, y, z] = std::array::from_fn(|i| b[i][(corner >> i) & 1].clone());
+        let image = pose.apply_point(&catallax_shapes::RPoint3::new(x, y, z).to_real());
+        let c = [image.x, image.y, image.z].map(|v| {
+            if let Some(v) = v.as_rational() {
+                return [v.clone(), v];
+            }
+            let e = v.approx();
+            match (
+                Rational::from_f64_exact(e.lo()),
+                Rational::from_f64_exact(e.hi()),
+            ) {
+                (Some(lo), Some(hi)) => [lo, hi],
+                _ => [-&far, far.clone()],
+            }
+        });
+        moved = Some(match moved {
+            None => c,
+            Some(m) => std::array::from_fn(|i| {
+                [
+                    m[i][0].clone().min(c[i][0].clone()),
+                    m[i][1].clone().max(c[i][1].clone()),
+                ]
+            }),
+        });
+    }
+    moved.expect("eight corners")
 }
 fn div(a: &Ball, b: &Ball) -> Result<Ball, Refusal> {
     a.checked_div(b)

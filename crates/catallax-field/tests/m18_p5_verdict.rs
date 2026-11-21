@@ -3,7 +3,8 @@
 //! The untrimmed torus plane rail crosses each countersink mouth. The numbers
 //! below are derived from the public part and from the compiler's own admitted
 //! radius-1/2 torus, and the exact rim-contact envelope is constructed at the
-//! authored radius. No recipe answer, tolerance or allowance changes here.
+//! authored radius. Since 4.2a step 4 the field builds the authored radius
+//! with its own rim piece; `rolling_ends.rs` checks it against the B-rep.
 use catallax_field::Plan;
 use catallax_field::rolling_region::Region;
 use catallax_numbers::{Decider, Outcome, Rational, StrictSign};
@@ -163,16 +164,15 @@ fn the_rim_contact_continuation_is_exact_at_radius_two() {
     }
 }
 
+/// The strictly clear side keeps the elementary torus. From radius 1, where
+/// the rail touches each mouth, the field's rim piece takes the ring
+/// (4.2a step 4): at radius 2 its ball drops onto every mouth's edge.
 #[test]
-fn only_the_strictly_clear_side_builds() {
-    for (radius, builds) in [("1/2", true), ("3/4", true), ("1", false), ("2", false)] {
+fn both_sides_of_the_mouth_contact_build() {
+    for (radius, pieces) in [("1/2", 0), ("3/4", 0), ("1", 1), ("2", 1)] {
         let mut dec = Decider::default();
-        match Plan::compile_checked(&authored(radius), &mut dec) {
-            Ok(_) => assert!(builds, "radius {radius} unexpectedly built"),
-            Err(refusal) => {
-                assert!(!builds, "radius {radius} unexpectedly refused");
-                assert_eq!(refusal.code, "fillet.unsupported-overflow", "{radius}");
-            }
-        }
+        let plan = Plan::compile_checked(&authored(radius), &mut dec)
+            .unwrap_or_else(|refusal| panic!("radius {radius}: {refusal:?}"));
+        assert_eq!(plan.rolling_pieces().count(), pieces, "radius {radius}");
     }
 }

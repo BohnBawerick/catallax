@@ -12,6 +12,8 @@ use crate::{Instruction, Location, Plan, features::Feature, geometry, profile};
 
 #[path = "fillet_network.rs"]
 mod network;
+#[path = "fillet_rim.rs"]
+mod rim;
 #[path = "fillet_rolling.rs"]
 mod rolling;
 #[path = "fillet_smooth.rs"]
@@ -752,6 +754,10 @@ impl Plan {
                 .any(|(_, meeting)| meeting.len() > 1 && meeting.contains(&index));
             let fallback = (alone && matches!(definition.edge, Curve::Line(_)))
                 .then(|| (definition.clone(), run));
+            // A concave ring that another support reaches may meet mouths in
+            // its plane; the rim route runs only where this one refuses.
+            let ring = (!convex && matches!(definition.edge, Curve::Circle(_)))
+                .then(|| definition.clone());
             let built = self
                 .fillet_domain(
                     &definition,
@@ -770,6 +776,16 @@ impl Plan {
                     runs.push(self.converted_run(&definition, &run, source_faces, step, dec)?);
                     continue;
                 }
+                (Err(refusal), _) if refusal.code == "fillet.unsupported-overflow" => match &ring {
+                    Some(ring) => match self.rim_run(root, ring, source_faces, step, dec)? {
+                        Some(found) => {
+                            runs.push(found);
+                            continue;
+                        }
+                        None => return Err(refusal),
+                    },
+                    None => return Err(refusal),
+                },
                 (Err(refusal), _) => return Err(refusal),
             };
             let node = self.leaf(geometry::Leaf::Feature(feature), faces, dec)?;

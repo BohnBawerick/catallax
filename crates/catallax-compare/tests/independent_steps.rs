@@ -113,13 +113,15 @@ fn work_exhaustion_never_counts_as_built() {
 
 #[test]
 fn target_parts_report_all_authored_steps_without_cross_kernel_fallback() {
-    // P5's authored radius-2 refusal is deliberately retained.
+    // Since 4.2a step 4 the field builds P5's authored radius-2 fillet on
+    // its own, with its rim piece over the four countersink mouths.
     let r = Recipe::parse(include_str!("../../../parts/P5-flanged-housing.json")).unwrap();
     let rows = independent_steps(&r, &ImportFiles::new(), 20_000_000).unwrap();
     assert_eq!(rows.len(), r.steps.len());
     let last = rows.last().unwrap();
-    let Construction::Refused { refusal, .. } = &last.field.construction else {
-        panic!("radius-2 field verdict changed");
-    };
-    assert_eq!(refusal.code, "fillet.unsupported-overflow");
+    assert!(
+        matches!(last.field.construction, Construction::Built { .. }),
+        "radius-2 field verdict changed: {:?}",
+        last.field.construction
+    );
 }

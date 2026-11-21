@@ -191,7 +191,8 @@ fn complete_public_targets_are_identical_at_one_two_four_workers() {
         "mass unresolved: field.print-coverage; relation=Unresolved",
         "mass unresolved: field.print-coverage; relation=Unresolved",
         "mass unresolved: field.mass-budget; relation=Clear",
-        "compile: fillet.unsupported-overflow",
+        // P5 compiles since 4.2a step 4, with the field's own rim piece.
+        "mass unresolved: field.print-coverage; relation=Unresolved",
         "mass unresolved: field.mass-budget; relation=Clear",
     ]) {
         assert!(record.starts_with(expected), "{record}");

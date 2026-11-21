@@ -6,15 +6,16 @@ use std::num::NonZeroUsize;
 
 use catallax_app::DEFAULT_BUILD_WORK;
 use catallax_app::views::{
-    CONTOUR_FIT_MARK, DRAWING_FIT_MARK, HiddenLineView, StrokeSource, VIEW_RAY_MARK,
-    VIEW_SPLIT_MARK, ViewStroke, contour_generators, hidden_line_view,
+    CONTOUR_FIT_MARK, DRAWING_FIT_MARK, DrawingCurve, HiddenLineView, StrokeSource, VIEW_RAY_MARK,
+    VIEW_SHORT_PIECE_MARK, VIEW_SPLIT_MARK, ViewStroke, contour_generators, hidden_line_view,
+    stroke_drawing,
 };
 use catallax_boolean::{BoolOp, boolean};
 use catallax_features::evaluate;
 use catallax_numbers::{Answer, Decider, Rational, Real, set_threads, with_operation_budget};
 use catallax_recipe::Recipe;
 use catallax_shapes::{Curve, Point3, PointId, Pose, RVector3, Rotation, Surface};
-use catallax_topology::{BodyId, EdgeId, FaceId, Model, cone, cylinder, sphere, torus};
+use catallax_topology::{BodyId, EdgeId, FaceId, Model, block, cone, cylinder, sphere, torus};
 
 #[allow(dead_code)]
 mod rational_patch_cases;
@@ -596,4 +597,218 @@ fn intersection_branch_edges_agree_with_an_independent_ray_march() {
         }
         assert!(fitted >= 2, "{d:?}");
     }
+}
+
+/// The holed ball with a square post of half-width `1 / n` about the line
+/// x = -6/5, y = 0, from z = 4 inside the ball to z = 8 above it, just
+/// outside the top branch edge.
+fn holed_ball_with_post(n: i64) -> (Model, BodyId, f64) {
+    let (mut model, holed) = holed_ball();
+    let h = Rational::from(1) / Rational::from(n);
+    let w = &h + &h;
+    let x = Rational::from(-6) / Rational::from(5);
+    let post = block(
+        &mut model,
+        [w.clone(), w, 4.into()],
+        &Pose::from_rational(
+            Rotation::identity(),
+            RVector3::new(&x - &h, -h.clone(), 4.into()),
+        ),
+    )
+    .unwrap();
+    let body = boolean(
+        &mut model,
+        holed,
+        post,
+        BoolOp::Unite,
+        &mut Decider::default(),
+    )
+    .unwrap()
+    .body;
+    (model, body, h.to_f64_nearest())
+}
+
+/// Whether the open ray from `p` along `d`, which has no zero component,
+/// passes inside the post of half-width `h`: the slab method on the post
+/// shrunk by 1e-12, so that a ray leaving one of its faces stays out.
+fn post_hides(p: [f64; 3], d: [f64; 3], h: f64) -> bool {
+    let lo = [-1.2 - h, -h, 4.0];
+    let hi = [-1.2 + h, h, 8.0];
+    let (mut enter, mut leave) = (0.0_f64, f64::INFINITY);
+    for (((lo, hi), p), d) in lo.iter().zip(hi).zip(p).zip(d) {
+        let a = (lo + 1e-12 - p) / d;
+        let b = (hi - 1e-12 - p) / d;
+        enter = enter.max(a.min(b));
+        leave = leave.min(a.max(b));
+    }
+    leave > enter
+}
+
+/// The point at `t` of a clamped NURBS, by de Boor's algorithm on
+/// homogeneous points (Piegl and Tiller, "The NURBS Book", algorithm A4.1).
+fn nurbs_point(
+    degree: usize,
+    knots: &[f64],
+    points: &[[f64; 3]],
+    weights: &[f64],
+    t: f64,
+) -> [f64; 3] {
+    let span = (degree..points.len())
+        .rev()
+        .find(|&i| knots[i] <= t)
+        .unwrap_or(degree);
+    let weight = |i: usize| if weights.is_empty() { 1.0 } else { weights[i] };
+    let mut h: Vec<[f64; 4]> = (0..=degree)
+        .map(|j| {
+            let i = span - degree + j;
+            let w = weight(i);
+            [points[i][0] * w, points[i][1] * w, points[i][2] * w, w]
+        })
+        .collect();
+    for r in 1..=degree {
+        for j in (r..=degree).rev() {
+            let i = span - degree + j;
+            let alpha = (t - knots[i]) / (knots[i + degree + 1 - r] - knots[i]);
+            h[j] = std::array::from_fn(|k| (1.0 - alpha) * h[j - 1][k] + alpha * h[j][k]);
+        }
+    }
+    let q = h[degree];
+    [q[0] / q[3], q[1] / q[3], q[2] / q[3]]
+}
+
+/// A binary64 point in the middle of a stroke, from its drawing curve; for a
+/// fitted stroke, the true branch point nearest it.
+fn drawn_middle(view: &HiddenLineView, s: &ViewStroke) -> [f64; 3] {
+    let drawn = stroke_drawing(view, s, &mut Decider::default())
+        .unwrap()
+        .value;
+    match drawn.curve {
+        DrawingCurve::Line { a, b } => std::array::from_fn(|k| (a[k] + b[k]) / 2.0),
+        DrawingCurve::Arc {
+            center,
+            normal,
+            x_axis,
+            radius,
+            start_deg,
+            end_deg,
+        } => {
+            let y_axis = [
+                normal[1] * x_axis[2] - normal[2] * x_axis[1],
+                normal[2] * x_axis[0] - normal[0] * x_axis[2],
+                normal[0] * x_axis[1] - normal[1] * x_axis[0],
+            ];
+            let (sin, cos) = ((start_deg + end_deg) / 2.0).to_radians().sin_cos();
+            std::array::from_fn(|k| center[k] + radius * (cos * x_axis[k] + sin * y_axis[k]))
+        }
+        DrawingCurve::Circle {
+            center,
+            normal,
+            radius,
+        } => {
+            // Any point: a whole circle has one visibility.
+            let x_axis = if normal[0].abs() < 0.9 {
+                [0.0, normal[2], -normal[1]]
+            } else {
+                [-normal[2], 0.0, normal[0]]
+            };
+            let n = dot3(x_axis, x_axis).sqrt();
+            std::array::from_fn(|k| center[k] + radius * x_axis[k] / n)
+        }
+        DrawingCurve::Nurbs {
+            degree,
+            knots,
+            points,
+            weights,
+        } => {
+            let t = (knots[degree] + knots[points.len()]) / 2.0;
+            let p = nurbs_point(degree, &knots, &points, &weights, t);
+            if s.fit.is_some() { on_branch(p) } else { p }
+        }
+    }
+}
+
+/// Every stroke of a view of the holed ball with a post agrees with the
+/// independent judge at its middle.
+fn agrees_with_the_judge(view: &HiddenLineView, d64: [f64; 3], h: f64) {
+    for s in &view.strokes {
+        let p = drawn_middle(view, s);
+        let hidden = holed_ball_hides(p, d64) || post_hides(p, d64, h);
+        assert_eq!(!hidden, s.visible, "{:?} at {p:?}", s.source);
+    }
+}
+
+#[test]
+fn a_thin_post_hides_a_thin_piece_of_a_fitted_edge() {
+    // The post stands between the viewer and the top branch edge and hides
+    // a piece of it a few times its half-width long. The piece's middle lies
+    // a few first offsets of a ray's start (twice the fit's tolerance) from
+    // its ends; the start stays within the piece, so the piece stays hidden
+    // between its visible neighbours.
+    let (model, body, h) = holed_ball_with_post(200_000);
+    let d = vector(-4, 1, 4);
+    let d64 = [-4.0, 1.0, 4.0];
+    let answer = steady(&model, body, &d);
+    let fit = answer
+        .marks
+        .iter()
+        .find(|m| m.code == DRAWING_FIT_MARK)
+        .expect("fitted edges")
+        .bound
+        .to_f64_nearest();
+    assert!(!has(&answer, VIEW_SHORT_PIECE_MARK));
+    let view = &answer.value;
+    agrees_with_the_judge(view, d64, h);
+    let geom = view.model.geom();
+    let hidden_under_post: Vec<&ViewStroke> = view
+        .strokes
+        .iter()
+        .filter(|s| s.fit.is_some() && !s.visible)
+        .filter(|s| post_hides(drawn_middle(view, s), d64, h))
+        .collect();
+    assert_eq!(hidden_under_post.len(), 1);
+    let s = hidden_under_post[0];
+    let [a, b] = [s.start, s.end].map(|p| close(&geom.position(p.unwrap())));
+    let length = (0..3).map(|k| (a[k] - b[k]).powi(2)).sum::<f64>().sqrt();
+    assert!(length > 2.0 * h && length < 8.0 * h, "{length}");
+    assert!(
+        length / 2.0 > 2.0 * fit && length / 2.0 < 8.0 * fit,
+        "{length} {fit}"
+    );
+}
+
+#[test]
+fn a_piece_too_short_for_the_fit_takes_its_neighbours_visibility() {
+    // A post ten times thinner hides a piece of the top branch edge shorter
+    // than the first offset that clears the fit: no exact face point beside
+    // it lies within its ends. It takes the visibility of the edge around
+    // it, and the view says so with a bound covering the piece.
+    let (model, body, h) = holed_ball_with_post(2_000_000);
+    let d = vector(-4, 1, 4);
+    let d64 = [-4.0, 1.0, 4.0];
+    let answer = steady(&model, body, &d);
+    let fit = answer
+        .marks
+        .iter()
+        .find(|m| m.code == DRAWING_FIT_MARK)
+        .expect("fitted edges")
+        .bound
+        .to_f64_nearest();
+    let short = answer
+        .marks
+        .iter()
+        .find(|m| m.code == VIEW_SHORT_PIECE_MARK)
+        .expect("a short piece")
+        .bound
+        .to_f64_nearest();
+    assert!(short > 2.0 * h && short < 8.0 * fit, "{short} {fit}");
+    let view = &answer.value;
+    agrees_with_the_judge(view, d64, h);
+    // The top branch edge is one visible stroke.
+    let top: Vec<&ViewStroke> = view
+        .strokes
+        .iter()
+        .filter(|s| s.fit.is_some() && drawn_middle(view, s)[2] > 0.0)
+        .collect();
+    assert_eq!(top.len(), 1);
+    assert!(top[0].visible && top[0].start.is_none());
 }

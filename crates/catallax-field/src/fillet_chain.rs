@@ -1142,7 +1142,10 @@ impl Plan {
         }
         let [d0, d1, d2] = &corner.directions;
         let vertex = corner.centre.plus(&d0.plus(d1).plus(d2).scaled(radius));
-        let mut names: Vec<Origin> = corner.faces[..3]
+        // RECIPE 4.5.1 names a junction sector after the operation's input
+        // vertex: the run's end, where its two planes meet the two rounds.
+        let [a, b, _, first, second] = corner.faces;
+        let mut names: Vec<Origin> = [a, b, first, second]
             .iter()
             .map(|&i| self.faces[i].origin.clone())
             .collect();

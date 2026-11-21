@@ -162,6 +162,9 @@ enum Shape {
         // +1 or -1: the sign of h0 (rho - R) - (C - R) h at the edge, the
         // meridian wall's edge side.
         facing: Real,
+        // +1 or -1: the sign of C - R, the centre circle's side of the core
+        // circle.
+        branch: Real,
     },
 }
 
@@ -419,6 +422,7 @@ impl Revolved {
                         height,
                         edge,
                         facing,
+                        branch,
                     },
                     basis,
                     Some(circle),
@@ -944,9 +948,9 @@ impl Revolved {
                 centre,
                 major: big,
                 minor,
-                offset,
                 height: h0,
                 facing,
+                branch,
                 ..
             } => {
                 let o = fp(centre);
@@ -963,7 +967,7 @@ impl Revolved {
                 let station = add(c, f(&circle.major), dir);
                 let spread = rho - f(big);
                 let support = b * (sqrt(spread * spread + h * h) - f(minor));
-                let face = sqrt(spread * spread + f(h0) * f(h0)) - f(offset);
+                let face = f(branch) * (spread - (f(&circle.major) - f(big)));
                 let meridian = f(facing) * (f(h0) * spread - (f(&circle.major) - f(big)) * h);
                 (support, station, [-b * face, meridian])
             }
@@ -1257,9 +1261,9 @@ impl Path for Revolved {
                 centre,
                 major: big,
                 minor,
-                offset,
                 height: h0,
                 facing,
+                branch,
                 ..
             } => {
                 // In the meridian half-plane the torus is the circle of radius
@@ -1272,10 +1276,15 @@ impl Path for Revolved {
                 if self.outside {
                     walls.push(&(minor + &(&two * r)).square() - &tube);
                 }
-                walls.push(-&(&b * &(&(&spread.square() + &h0.square()) - &offset.square())));
+                // The station's normal to the plane: the point's meridian
+                // distance from the axis is on the edge's side of the centre
+                // circle's. Squared, `(rho - R)^2 + h0^2 - a'^2` would also
+                // hold on the far side of the core circle, where the other
+                // centre circle's fan lies.
+                let circle = self.circle.as_ref().expect("a torus path is a circle");
+                walls.push(-&(&b * &(branch * &(&spread - &(&circle.major - big)))));
                 // The offset tube's normal line through the station passes
                 // through the core circle's point (R, 0) of the meridian.
-                let circle = self.circle.as_ref().expect("a torus path is a circle");
                 walls.push(facing * &(&(h0 * &spread) - &(&(&circle.major - big) * &h)));
             }
         }

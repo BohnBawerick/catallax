@@ -143,7 +143,10 @@ fn cases() -> Vec<Case> {
         // Cut at z = -1, below the core circle's plane, r = 1/5: the offset
         // plane at z = -4/5 meets the offset tube in circles of radius
         // 6 +- sqrt(65) / 5, and the edges are at 6 +- sqrt(3). Derived:
-        // inside each ball, cut outside them, and uncut material.
+        // inside each ball, cut outside them, and uncut material. The last
+        // inside point is in the outer ball, in the zone where the inner
+        // centre circle's fan reached across the core circle while its
+        // offset wall was squared.
         Case::new(
             "torus cut below its centre",
             cut_torus("-1", "1/5"),
@@ -151,6 +154,7 @@ fn cases() -> Vec<Case> {
                 ([38, 5], [0, 1], [-4, 5]),
                 ([22, 5], [0, 1], [-4, 5]),
                 ([6, 1], [0, 1], [0, 1]),
+                ([77, 10], [0, 1], [-17, 20]),
             ],
             &[
                 ([771, 100], [0, 1], [-99, 100]),
@@ -383,5 +387,138 @@ fn torus_blend_vertices_lie_on_the_field_face() {
             start.elapsed(),
             worst.to_f64_nearest()
         );
+    }
+}
+
+/// The display vertices of the B-rep's blend faces made by `step`, split
+/// into those inside a blend face and those also on a triangle of another
+/// face, which lie on the blend's edges.
+fn split_blend_vertices(recipe: &Recipe, step: &str, chord: &str) -> [Vec<Point3>; 2] {
+    let built = evaluate(recipe, &mut decider()).unwrap();
+    let mesh = mesh_body(
+        &built.model,
+        built.result,
+        &MeshOptions {
+            chord_tolerance: Rational::parse(chord).unwrap(),
+            ..MeshOptions::default()
+        },
+        &mut decider(),
+    )
+    .unwrap()
+    .value;
+    let mut blend = std::collections::BTreeSet::new();
+    let mut other = std::collections::BTreeSet::new();
+    for face in &mesh.faces {
+        let is_blend = built
+            .model
+            .face_origins(face.face)
+            .iter()
+            .any(|o| o.step.as_str() == step && matches!(o.role, Role::Blend { .. }));
+        for triangle in &mesh.triangles[face.triangles.clone()] {
+            if is_blend {
+                blend.extend(triangle.vertices);
+            } else {
+                other.extend(triangle.vertices);
+            }
+        }
+    }
+    let point = |v: usize| {
+        let [x, y, z] = mesh.positions[v].map(|c| Rational::from_f64_exact(c).unwrap());
+        Point3::new(x.into(), y.into(), z.into())
+    };
+    let (edge, inner): (Vec<usize>, Vec<usize>) =
+        blend.into_iter().partition(|v| other.contains(v));
+    [
+        inner.into_iter().map(point).collect(),
+        edge.into_iter().map(point).collect(),
+    ]
+}
+
+/// Compare bounds a B-rep display vertex from above with a point of a field
+/// face (`Prepared::point_to_face_witness`). The blend tori of `torus-slice`
+/// and of the cut below the centre have irrational radii, so no rational
+/// point lies near the vertices; the witness is then the face's nearest
+/// point in closed form, kept where every clip of the piece is positive and
+/// the plan's other leaves leave it on the result's boundary. Every vertex
+/// inside a blend face finds one on a blend face within 1 nm, each query
+/// under the 20,000-unit cap of the vertex checks. (`torus-intersection`'s
+/// centre circle has radius 6, so its blend torus has rational points and
+/// keeps the rational witness. A vertex on a blend's edge may find its
+/// witness on the neighbouring face instead, which compare also tries.) A
+/// point by the outer blend torus opposite its face arc has no witness on
+/// either blend face, though its nearest point on the outer torus is less
+/// than 1 nm away.
+#[test]
+fn torus_blend_vertices_have_field_face_witnesses() {
+    use catallax_field::FaceId;
+    let tolerance = ratio(1, 1_000_000);
+    for case in cases() {
+        if case.name == "torus-intersection" {
+            continue;
+        }
+        let start = std::time::Instant::now();
+        let mut dec = decider();
+        let plan = Plan::compile_checked(&case.recipe, &mut dec).unwrap();
+        let prepared = plan.prepare_distances(&mut dec).unwrap();
+        let blends: Vec<FaceId> = (0..plan.faces().len())
+            .filter_map(|i| plan.result_face(i))
+            .filter(|id| {
+                let origin = &plan.faces()[id.index()].origin;
+                origin.step.as_str() == "round" && matches!(origin.role, Role::Blend { .. })
+            })
+            .collect();
+        assert_eq!(blends.len(), 2, "{}: blend faces", case.name);
+        let witness = |p: &Point3, cap: u64| -> (Option<Rational>, u64) {
+            let mut best = None::<Rational>;
+            let mut most = 0;
+            for &id in &blends {
+                let mut dec = Decider::new(BudgetPolicy {
+                    max_work: cap,
+                    ..Default::default()
+                });
+                let bounds = prepared
+                    .point_to_face_witness(id, p, &tolerance, &mut dec)
+                    .unwrap();
+                if let Some(upper) = bounds.upper
+                    && best.as_ref().is_none_or(|b| &upper < b)
+                {
+                    best = Some(upper);
+                }
+                most = most.max(dec.stats().work);
+            }
+            (best, most)
+        };
+        let [inner, _] = split_blend_vertices(&case.recipe, "round", "1/50");
+        assert!(!inner.is_empty(), "{}: no inner blend vertices", case.name);
+        let mut worst = Rational::zero();
+        let mut most = 0;
+        for p in &inner {
+            let (found, work) = witness(p, 20_000);
+            let found = found.unwrap_or_else(|| panic!("{}: no witness at {p:?}", case.name));
+            assert!(found <= tolerance, "{}: {found:?} at {p:?}", case.name);
+            worst = worst.max(found);
+            most = most.max(work);
+        }
+        eprintln!(
+            "{}: {} inner blend vertices with face witnesses in {:?}, worst {}, at most {most} work a query",
+            case.name,
+            inner.len(),
+            start.elapsed(),
+            worst.to_f64_nearest()
+        );
+        if case.name == "torus-slice" {
+            // The outer centre circle has radius 6 + 4 sqrt(2) / 5, about
+            // 7.1313708, at z = 7/5, and the face arc turns outward from
+            // the plane foot below it; its innermost point, about 6.9313708,
+            // is off the arc, inside the material, 8.5e-7 from this point.
+            let off = [ratio(693_137, 100_000), ratio(0, 1), ratio(7, 5)];
+            let mut built = evaluate(&case.recipe, &mut decider()).unwrap();
+            assert_eq!(brep_location(&mut built, &off), Location::Inside);
+            let (found, _) = witness(&real_point(&off), 1_000_000);
+            assert!(
+                found.as_ref().is_none_or(|u| u > &ratio(1, 10)),
+                "a witness off the face arc: {found:?}"
+            );
+        }
     }
 }

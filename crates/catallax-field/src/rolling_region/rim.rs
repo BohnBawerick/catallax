@@ -220,6 +220,16 @@ impl Rim {
         ))
     }
 
+    /// A world enclosure of a point enclosed in the ring's frame.
+    pub(super) fn world_point(
+        &self,
+        local: &[Ball; 3],
+        dec: &mut Decider,
+    ) -> Result<[Ball; 3], Refusal> {
+        let (origin, frame) = self.frame(dec)?;
+        Ok(world(&origin, &frame, local))
+    }
+
     /// The fan's panels as world boxes.
     fn panel_boxes(&self, dec: &mut Decider) -> Result<Vec<[Ball; 3]>, Refusal> {
         let (origin, frame) = self.frame(dec)?;

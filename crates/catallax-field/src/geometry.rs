@@ -909,6 +909,9 @@ impl Leaf {
         planes: &mut Vec<Vector3>,
         dec: &mut Decider,
     ) -> Result<bool, Refusal> {
+        if let Self::Rolling(piece) = self {
+            return piece.planes_at(p, planes, dec);
+        }
         if let Self::Draft(region) = self
             && let crate::draft::Cell::Polyhedral(poly) = &region.cell
         {
@@ -975,6 +978,34 @@ impl Leaf {
             found = true;
         }
         Ok(found)
+    }
+
+    /// The polynomial of the one smooth surface that bounds the leaf near a
+    /// boundary point `p`, where the leaf is one side of it there: a
+    /// primitive's or cell's one constraint through `p`, or a rolling piece's
+    /// face or support wall ([`crate::rolling_region::piece::Piece::smooth_side`]).
+    /// `None` for any other leaf or where more than one surface passes.
+    pub(crate) fn smooth_side(
+        &self,
+        p: &[Rational; 3],
+        dec: &mut Decider,
+    ) -> Result<Option<RealPoly>, Refusal> {
+        match self {
+            Self::Primitive(_) | Self::Cell(_) => {
+                let mut found = None;
+                for constraint in self.constraints() {
+                    if crate::polynomial_sign(&constraint.polynomial, p, dec)? == Sign::Zero {
+                        if found.is_some() {
+                            return Ok(None);
+                        }
+                        found = Some(constraint.polynomial.clone());
+                    }
+                }
+                Ok(found)
+            }
+            Self::Rolling(piece) => piece.smooth_side(p, dec),
+            _ => Ok(None),
+        }
     }
 
     pub fn ray(
@@ -1268,10 +1299,12 @@ impl Primitive {
         }
         let angular = angular.get_or_init(|| crate::samples::circle(n));
         // An imported complete sphere or torus keeps the file's face name on
-        // the primitive's only face.
+        // the primitive's only face, and a fillet's ball or strip keeps its
+        // blend or corner name on its curved face (4.2a).
         let wall = matches!(role, Role::Side { segment, .. } if segment.as_str() == "wall")
             || (matches!(self.kind, Kind::Sphere | Kind::Torus)
-                && matches!(role, Role::Imported { .. }));
+                && matches!(role, Role::Imported { .. }))
+            || matches!(role, Role::Blend { .. } | Role::Corner { .. });
         match self.kind {
             Kind::Round => {
                 if wall {

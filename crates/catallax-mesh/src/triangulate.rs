@@ -3,7 +3,9 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use catallax_numbers::{
     Answer, Answered, Decider, Interval, Outcome, Rational, Real, RealPoly, Refusal, StrictSign,
 };
-use catallax_shapes::{Curve, Sphere, SplineSupport, Surface, Vector3};
+use catallax_shapes::{
+    Curve, Sphere, SplineSupport, Surface, Vector3, tessellation::checked_triangle_bound,
+};
 use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense};
 use spade::{
     ConstrainedDelaunayTriangulation, HasPosition, HierarchyHintGenerator, Point2,
@@ -1078,16 +1080,16 @@ impl FaceBuilder<'_> {
                     chart::filtered_chord_bound(&uvs, &self.filtered_hessian)
                         + Interval::point(filtered_residual).unwrap()
                 };
-                let error = if spline.is_some()
+                let (interpolation, replacement) = if spline.is_some()
                     || filtered.is_finite() && filtered.hi() <= filtered_tolerance.lo()
                 {
                     if !filtered.is_finite() {
                         return Err(failure("spline interpolation bound exceeds binary64"));
                     }
-                    chart::q(filtered.hi())
+                    (chart::q(filtered.hi()), Rational::zero())
                 } else {
                     let hessian = self.chart.hessian(vmax, self.dec)?;
-                    &chord_bound(&uvs, &hessian) + residual
+                    (chord_bound(&uvs, &hessian), residual.clone())
                 };
                 if let Some(limit) = &self.options.max_edge_length {
                     let lengths = std::array::from_fn::<_, 3, _>(|i| {
@@ -1106,7 +1108,11 @@ impl FaceBuilder<'_> {
                         continue;
                     }
                 }
-                if error > self.options.chord_tolerance {
+                let Some(error) = checked_triangle_bound(
+                    &interpolation,
+                    &replacement,
+                    &self.options.chord_tolerance,
+                ) else {
                     let mut center = self.chart.canonical(center);
                     for (value, periodic) in center.iter_mut().zip(self.chart.periodic) {
                         if periodic {
@@ -1116,7 +1122,7 @@ impl FaceBuilder<'_> {
                     }
                     pending.insert(key(center), center);
                     continue;
-                }
+                };
                 let positions = vertices.map(|i| self.positions[i]);
                 let angular_limit = if spline.is_some() {
                     None

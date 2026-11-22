@@ -55,6 +55,20 @@ pub fn triangle_chord_bound_interval(
         .unwrap_or(box_bound)
 }
 
+/// Checks the two-sided triangle bound after replacing chart vertices.
+///
+/// The triangle uses convex interpolation of the vertices, so the largest
+/// replacement distance bounds its displacement at every barycentric point.
+/// An already-enclosed combined bound can use a zero replacement distance.
+pub fn checked_triangle_bound(
+    interpolation: &Rational,
+    replacement: &Rational,
+    tolerance: &Rational,
+) -> Option<Rational> {
+    let bound = interpolation + replacement;
+    (bound <= *tolerance).then_some(bound)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

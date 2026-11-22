@@ -337,6 +337,43 @@ fn a_mapped_leaf_with_its_own_translation_is_refused() {
 }
 
 #[test]
+fn solid_colours_must_agree_on_both_sides() {
+    let (first, _, _) = export_and_read(1);
+    let source = String::from_utf8(first).unwrap();
+    let style = "#220=SURFACE_STYLE_USAGE(.BOTH.,#219);";
+    let assignment = "#221=PRESENTATION_STYLE_ASSIGNMENT((#220));";
+    assert!(source.contains(style));
+    assert!(source.contains(assignment));
+    let one_side = source.replace(style, "#220=SURFACE_STYLE_USAGE(.POSITIVE.,#219);");
+    let mut dec = Decider::default();
+    let refusal = read_step_assembly(one_side.as_bytes(), &mut dec)
+        .err()
+        .expect("a positive-side colour must not become a uniform part colour");
+    assert!(
+        matches!(refusal, catallax_import::ImportRefusal::Malformed { detail }
+        if detail.contains("both sides"))
+    );
+
+    let two_sides = one_side.replace(
+        assignment,
+        concat!(
+            "#410=SURFACE_STYLE_USAGE(.NEGATIVE.,#219);\n",
+            "#221=PRESENTATION_STYLE_ASSIGNMENT((#220,#410));",
+        ),
+    );
+    let assembly = read_step_assembly(two_sides.as_bytes(), &mut Decider::default()).unwrap();
+    let base = assembly
+        .products
+        .iter()
+        .find(|p| p.name == "Base's plate")
+        .unwrap();
+    let ProductContent::Part(part) = &base.content else {
+        panic!("expected a solid part");
+    };
+    assert_eq!(part.colour, Some([q("0.125"), q("0.25"), q("0.5")]));
+}
+
+#[test]
 fn a_cyclic_assembly_leaves_the_sink_untouched() {
     let assembly = Assembly {
         root: 0,

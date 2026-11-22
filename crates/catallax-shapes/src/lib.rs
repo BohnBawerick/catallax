@@ -37,6 +37,7 @@ mod spline_surface;
 pub mod spline_tools;
 mod store;
 mod surface;
+pub mod tessellation;
 mod vector;
 
 #[cfg(test)]

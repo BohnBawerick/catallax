@@ -600,10 +600,7 @@ impl Chart {
             let radius = &cell.range[1][1] * &self.lipschitz[1];
             return &(&radius * &u) * &u;
         }
-        (&(&self.hessian[0] * &u) * &u
-            + (&(&self.hessian[1] * &u) * &v).mul_pow2(1)
-            + &(&self.hessian[2] * &v) * &v)
-            .mul_pow2(-3)
+        catallax_shapes::tessellation::chord_bound([&u, &v], &self.hessian)
     }
 }
 

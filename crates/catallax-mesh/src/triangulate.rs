@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use catallax_numbers::{
     Answer, Answered, Decider, Interval, Outcome, Rational, Real, RealPoly, Refusal, StrictSign,
 };
-use catallax_shapes::{Curve, Sphere, Surface, Vector3};
+use catallax_shapes::{Curve, Sphere, SplineSupport, Surface, Vector3};
 use catallax_topology::{BodyId, EdgeId, FaceId, Loop, Model, Sense};
 use spade::{
     ConstrainedDelaunayTriangulation, HasPosition, HierarchyHintGenerator, Point2,
@@ -53,7 +53,7 @@ struct FaceBuilder<'a> {
     bounds: [[f64; 2]; 2],
     hessian: [Rational; 3],
     filtered_hessian: [Interval; 3],
-    dec: &'a Decider,
+    dec: &'a mut Decider,
 }
 
 impl FaceBuilder<'_> {
@@ -81,12 +81,28 @@ impl FaceBuilder<'_> {
             self.canonical.insert(key(canonical), (mesh, 0));
             (mesh, 0)
         } else {
-            let (p, residual) = self.chart.sample(
-                canonical,
-                boundary.map(|index| self.positions[index]),
-                &self.options.chord_tolerance,
-                self.dec,
-            )?;
+            let replacement = boundary.map(|index| self.positions[index]);
+            let (p, residual) = if let Some(spline) = self.chart.spline() {
+                let enclosed = spline.evaluate(canonical, self.dec)?;
+                let p = replacement.unwrap_or_else(|| enclosed.map(|component| component.mid()));
+                let mut residual = Interval::point(0.0).unwrap();
+                for (actual, expected) in p.into_iter().zip(enclosed) {
+                    let delta = Interval::point(actual).unwrap() - expected;
+                    residual =
+                        residual + Interval::point(delta.lo().abs().max(delta.hi().abs())).unwrap();
+                }
+                if !residual.is_finite() {
+                    return Err(failure("spline sample residual exceeds binary64"));
+                }
+                (p, chart::q(residual.hi()))
+            } else {
+                self.chart.sample(
+                    canonical,
+                    replacement,
+                    &self.options.chord_tolerance,
+                    self.dec,
+                )?
+            };
             let mesh = if let Some(index) = boundary {
                 index
             } else {
@@ -419,6 +435,21 @@ impl FaceBuilder<'_> {
     }
 
     fn grid(&mut self) -> Result<(), Refusal> {
+        if let Some(spline) = self.chart.spline() {
+            let remaining = self
+                .options
+                .max_vertices
+                .saturating_sub(self.positions.len());
+            let grid = spline.seed_grid(
+                &self.options.chord_tolerance.mul_pow2(-1),
+                remaining,
+                self.dec,
+            )?;
+            for uv in grid {
+                self.free_point(uv)?;
+            }
+            return Ok(());
+        }
         let widths = self.bounds.map(|b| b[1] - b[0]);
         let bounded_torus =
             matches!(self.chart.surface, Surface::Torus(_)) && !self.chart.periodic[1];
@@ -906,11 +937,23 @@ impl FaceBuilder<'_> {
         &mut self,
         face: FaceId,
         sense: Sense,
-        dec: &Decider,
     ) -> Result<(Vec<Triangle>, Rational, Rational, Option<Rational>), Refusal> {
         let filtered_tolerance = Interval::from_rational(&self.options.chord_tolerance);
+        let spline = self.chart.spline();
+        let cosine = if spline.is_some() {
+            self.options
+                .angular_deviation
+                .as_ref()
+                .map(|angle| {
+                    crate::controls::cosine_limit(angle, self.dec)
+                        .map(|q| Interval::from_rational(&q))
+                })
+                .transpose()?
+        } else {
+            None
+        };
         for _ in 0..48 {
-            dec.check_deadline()?;
+            self.dec.check_deadline()?;
             let labels = self.labels()?;
             let mut pending = BTreeMap::new();
             let mut triangles = Vec::new();
@@ -966,7 +1009,9 @@ impl FaceBuilder<'_> {
                     .map(|n| self.filtered_errors[n.error].hi())
                     .fold(0.0_f64, f64::max);
                 let vmax = uvs[0][1].abs().max(uvs[1][1].abs()).max(uvs[2][1].abs());
-                let filtered = if matches!(self.chart.surface, Surface::Cone(_)) {
+                let filtered = if let Some(spline) = spline {
+                    spline.chord(&uvs, self.dec)? + Interval::point(filtered_residual).unwrap()
+                } else if matches!(self.chart.surface, Surface::Cone(_)) {
                     let scale = Interval::point(vmax).unwrap()
                         / Interval::point(self.bounds[1][0].abs().max(self.bounds[1][1].abs()))
                             .unwrap();
@@ -981,10 +1026,15 @@ impl FaceBuilder<'_> {
                     chart::filtered_chord_bound(&uvs, &self.filtered_hessian)
                         + Interval::point(filtered_residual).unwrap()
                 };
-                let error = if filtered.is_finite() && filtered.hi() <= filtered_tolerance.lo() {
+                let error = if spline.is_some()
+                    || filtered.is_finite() && filtered.hi() <= filtered_tolerance.lo()
+                {
+                    if !filtered.is_finite() {
+                        return Err(failure("spline interpolation bound exceeds binary64"));
+                    }
                     chart::q(filtered.hi())
                 } else {
-                    let hessian = self.chart.hessian(vmax, dec)?;
+                    let hessian = self.chart.hessian(vmax, self.dec)?;
                     &chord_bound(&uvs, &hessian) + residual
                 };
                 if let Some(limit) = &self.options.max_edge_length {
@@ -1015,14 +1065,18 @@ impl FaceBuilder<'_> {
                     pending.insert(key(center), center);
                     continue;
                 }
-                let (ratio, angular_reached) = crate::controls::quality(
-                    self.chart,
-                    &uvs,
-                    vertices.map(|i| self.positions[i]),
-                    self.options.angular_deviation.as_ref(),
-                    dec,
-                )?;
+                let positions = vertices.map(|i| self.positions[i]);
+                let angular_limit = if spline.is_some() {
+                    None
+                } else {
+                    self.options.angular_deviation.as_ref()
+                };
+                let (ratio, mut angular_reached) =
+                    crate::controls::quality(self.chart, &uvs, positions, angular_limit, self.dec)?;
                 let ratio = ratio.ok_or_else(|| failure("display triangle has zero area"))?;
+                if let Some(spline) = spline {
+                    angular_reached = spline.normals_within(&uvs, positions, cosine, self.dec)?;
+                }
                 if !angular_reached {
                     let mut center = self.chart.canonical(center);
                     for (value, periodic) in center.iter_mut().zip(self.chart.periodic) {
@@ -1095,17 +1149,31 @@ fn face_mesh(
     boundaries: &mut Boundaries,
     options: &MeshOptions,
     prior_chords: &BTreeSet<(usize, usize)>,
-    dec: &Decider,
+    dec: &mut Decider,
 ) -> Result<(), Refusal> {
     let face = model.face(face_id);
     let mut segments = Vec::new();
     let mut projected = Vec::new();
+    let mut parameters = BTreeMap::new();
+    let goal = options.chord_tolerance.mul_pow2(-6).to_f64_nearest();
+    let mut project = |index, seed, dec: &mut Decider| -> Result<Uv, Refusal> {
+        let position = boundaries.mesh.positions[index];
+        if let Some(spline) = chart.spline() {
+            if let Some(&uv) = parameters.get(&index) {
+                return Ok(uv);
+            }
+            let uv = spline.project(position, seed, goal, dec)?;
+            parameters.insert(index, uv);
+            Ok(uv)
+        } else {
+            Ok(chart.project(position))
+        }
+    };
     for &l in &face.loops {
         match model.loop_(l) {
-            Loop::Vertex(v) => {
-                projected.push(chart.project(boundaries.mesh.positions[boundaries.vertices[v]]))
-            }
+            Loop::Vertex(v) => projected.push(project(boundaries.vertices[v], None, dec)?),
             Loop::Coedges(cs) => {
+                let mut previous = None;
                 for &c in cs {
                     let c = model.coedge(c);
                     let edge = &boundaries.mesh.edges[boundaries.edges[&c.edge]];
@@ -1115,12 +1183,9 @@ fn face_mesh(
                         } else {
                             [pair[1], pair[0]]
                         };
-                        let a = chart.project(boundaries.mesh.positions[pair[0]]);
-                        let b = align(
-                            chart.project(boundaries.mesh.positions[pair[1]]),
-                            a,
-                            chart.periodic,
-                        );
+                        let a = project(pair[0], previous, dec)?;
+                        let b = align(project(pair[1], Some(a), dec)?, a, chart.periodic);
+                        previous = Some(b);
                         projected.extend([a, b]);
                         segments.push((a, b, pair[0], pair[1]));
                     }
@@ -1151,7 +1216,13 @@ fn face_mesh(
             "face has no finite two-dimensional parameter region",
         ));
     }
-    let hessian = chart.hessian(bounds[1][0].abs().max(bounds[1][1].abs()), dec)?;
+    let hessian = if chart.spline().is_some() {
+        std::array::from_fn(|_| Rational::zero())
+    } else {
+        chart
+            .hessian(bounds[1][0].abs().max(bounds[1][1].abs()), dec)?
+            .into_owned()
+    };
     let is_ruled = ruled(model, face_id, chart, options);
     let mut builder = FaceBuilder {
         chart,
@@ -1169,13 +1240,13 @@ fn face_mesh(
         prior_chords,
         bounds,
         filtered_hessian: hessian.each_ref().map(Interval::from_rational),
-        hessian: hessian.into_owned(),
+        hessian,
         dec,
     };
     builder.boundary(&segments, face.sense)?;
     builder.grid()?;
     let (triangles, max_chord_error, max_aspect_ratio, max_angular_deviation) =
-        builder.finish(face_id, face.sense, dec).map_err(|mut e| {
+        builder.finish(face_id, face.sense).map_err(|mut e| {
             e.detail = format!("face {}: {}", face_id.index(), e.detail);
             e
         })?;
@@ -1547,8 +1618,21 @@ pub(crate) fn build(
         return crate::oblique_draft::build(model, body, options, dec);
     }
     let faces = model.faces_of_body(body);
-    let junction = crate::junction::prepare(model, &faces, options, dec)?;
-    if junction.is_none()
+    let use_spline_charts =
+        faces.iter().all(
+            |&face| match model.geom().surface(model.face(face).surface) {
+                Surface::BSpline(SplineSupport::RationalPatch(_)) => true,
+                Surface::BSpline(_) => false,
+                _ => true,
+            },
+        );
+    let junction = if use_spline_charts {
+        None
+    } else {
+        crate::junction::prepare(model, &faces, options, dec)?
+    };
+    if !use_spline_charts
+        && junction.is_none()
         && faces.iter().any(|face| {
             matches!(
                 model.geom().surface(model.face(*face).surface),
@@ -1607,7 +1691,17 @@ fn build_junction(
     let mut charts = faces
         .iter()
         .filter(|&&f| !fitted(f))
-        .map(|&f| Ok((f, regular_chart(model, f, options, dec)?)))
+        .map(|&f| {
+            let chart = match model.geom().surface(model.face(f).surface) {
+                Surface::BSpline(support @ SplineSupport::RationalPatch(_))
+                    if junction.is_none() =>
+                {
+                    Chart::from_spline(support, dec)?
+                }
+                _ => regular_chart(model, f, options, dec)?,
+            };
+            Ok((f, chart))
+        })
         .collect::<Result<BTreeMap<_, _>, Refusal>>()?;
     let mut boundaries = edges::sample(model, body, &charts, junction.as_ref(), options, dec)?;
     let boundary_limit = boundaries.mesh.positions.len();

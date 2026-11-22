@@ -416,10 +416,10 @@ pub(crate) fn sample(
             match model.loop_(l) {
                 Loop::Coedges(cs) => {
                     for &c in cs {
-                        adjacent
-                            .entry(model.coedge(c).edge)
-                            .or_default()
-                            .push(chart);
+                        let incident = adjacent.entry(model.coedge(c).edge).or_default();
+                        if chart.spline().is_none() {
+                            incident.push(chart);
+                        }
                     }
                 }
                 Loop::Vertex(v) => {

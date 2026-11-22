@@ -96,6 +96,26 @@ pub(super) fn prepare(
     options: &MeshOptions,
     dec: &mut Decider,
 ) -> Result<Junction, Refusal> {
+    prepare_scope(model, faces, None, options, dec)
+}
+
+pub(super) fn prepare_face(
+    model: &Model,
+    faces: &[FaceId],
+    face: FaceId,
+    options: &MeshOptions,
+    dec: &mut Decider,
+) -> Result<Junction, Refusal> {
+    prepare_scope(model, faces, Some(face), options, dec)
+}
+
+fn prepare_scope(
+    model: &Model,
+    faces: &[FaceId],
+    selected: Option<FaceId>,
+    options: &MeshOptions,
+    dec: &mut Decider,
+) -> Result<Junction, Refusal> {
     catallax_numbers::reuse_operation_enclosures();
     let blends: Vec<_> = faces
         .iter()
@@ -113,6 +133,11 @@ pub(super) fn prepare(
         )));
     };
     let (blend, fillet) = (*blend, *fillet);
+    if selected.is_some_and(|face| face != blend) {
+        return Err(bad(
+            "the selected face is not the spline blend in this body",
+        ));
+    }
     let borders = fillet.borders();
     if borders.len() != 4 || (borders[0] < borders[1]) != (borders[2] < borders[3]) {
         return Err(bad(format!(
@@ -284,6 +309,9 @@ pub(super) fn prepare(
     )?;
     let mut definitions = Vec::new();
     for &face in faces {
+        if selected.is_some_and(|selected| face != selected) {
+            continue;
+        }
         if face == blend {
             definitions.push(Definition {
                 face,

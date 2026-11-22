@@ -682,15 +682,15 @@ fn a_plane_offset_can_enter_the_spline_spine_system_at_zero_offset() {
 
 #[test]
 fn the_biquadratic_brep_carrier_display_lies_within_the_field_sweep_range() {
-    use catallax_shapes::{
-        Curve, PointDef, SplineBoundary, SplineFillet, SplineFilletDefinition, Surface,
-    };
-    use catallax_topology::{
-        Body, BodyKind, Coedge, Edge, Face, Loop, Lump, Model, Sense, Shell, Vertex,
-    };
+    use catallax_shapes::{SplineFillet, SplineFilletDefinition};
     let mut dec = Decider::default();
     let (_, definition) = definition(2, &mut dec);
-    let spine = Spine::prove(&definition, &mut dec).unwrap();
+    let (spine, field_work) = with_operation_budget(ALLOWANCE, || {
+        let spine = Spine::prove(&definition, &mut dec).unwrap();
+        Sweep::new(&spine, &mut dec).unwrap();
+        spine
+    });
+    assert!(!field_work.exhausted);
     let sweep = Sweep::new(&spine, &mut dec).unwrap();
     let shape = SplineFilletDefinition::new(
         definition.supports,
@@ -704,94 +704,44 @@ fn the_biquadratic_brep_carrier_display_lies_within_the_field_sweep_range() {
     assert!(!work.exhausted);
     let fit = fit.unwrap();
 
-    let (display, display_work) = with_operation_budget(100_000_000 - work.used, || {
-        // Mesh the fitted carrier as a bounded B-rep sheet. This frozen row
-        // specifies a support pair and a parameter range, with no cap faces.
-        let patch = RationalPatch::new(fit.carrier().clone(), &mut dec)
-            .map_err(|error| ("B-rep carrier admission", error))?;
-        let domain = patch.domain();
-        let mut model = Model::default();
-        let vertices = [[0, 0], [1, 0], [1, 1], [0, 1]].map(|[i, j]| {
-            let t = [domain[0][i].clone().into(), domain[1][j].clone().into()];
-            let p = patch.point_at(&t, &mut dec).unwrap();
-            let p = model.geom_mut().add_point(PointDef::Explicit(p));
-            model.add_vertex(Vertex {
-                point: p,
-                tolerance: None,
-            })
-        });
-        let mut coedges = Vec::new();
-        for (i, (side, sense)) in [
-            (SplineBoundary::VMin, Sense::Same),
-            (SplineBoundary::UMax, Sense::Same),
-            (SplineBoundary::VMax, Sense::Reversed),
-            (SplineBoundary::UMin, Sense::Reversed),
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            let curve = model
-                .geom_mut()
-                .add_curve(Curve::BSpline(patch.boundary(side)));
-            let edge = model.add_edge(Edge {
-                curve,
-                sense,
-                start: Some(vertices[i]),
-                end: Some(vertices[(i + 1) % 4]),
-                tolerance: None,
-            });
-            coedges.push(model.add_coedge(Coedge {
-                edge,
-                sense: Sense::Same,
-            }));
-        }
-        let boundary = model.add_loop(Loop::Coedges(coedges));
-        let surface = model.geom_mut().add_surface(Surface::BSpline(patch.into()));
-        let face = model.add_face(Face {
-            surface,
-            sense: Sense::Same,
-            loops: vec![boundary],
-            tolerance: None,
-        });
-        let shell = model.add_shell(Shell { faces: vec![face] });
-        let lump = model.add_lump(Lump {
-            shells: vec![shell],
-        });
-        let body = model.add_body(Body {
-            kind: BodyKind::Surface,
-            lumps: vec![lump],
-            wires: vec![],
-            marks: Default::default(),
-        });
+    let spent = work.used + field_work.used;
+    let (result, comparison_work) = with_operation_budget(100_000_000 - spent, || {
         let options = catallax_mesh::MeshOptions {
             chord_tolerance: r("1/200"),
             ..Default::default()
         };
-        let mesh = catallax_mesh::compare_position_mesh(&model, body, &options, &mut dec)
-            .map_err(|error| ("B-rep positional display", error))?
-            .geometry;
-        let bound = &fit.bound().upper + &r("1/1000000");
-        assert!(!mesh.positions.is_empty());
+        let mesh = catallax_mesh::display_spline_fillet_carrier(&fit, &options, &mut dec)?;
+        let display_work = catallax_numbers::current_operation_work().used;
+        let bound = &fit.bound().upper + &mesh.maximum_deviation;
+        let accuracy = r("1/100");
+        let goal = &accuracy - &bound;
+        assert!(!mesh.positions.is_empty() && goal.sign() == Sign::Positive);
+        let mut farthest = Q::zero();
         for point in &mesh.positions {
             let [x, y, z] = point.map(|x| Q::from_f64_exact(x).unwrap());
             let p = RPoint3::new(x, y, z);
-            let d = sweep.distance(&p, &bound, &mut dec).unwrap();
-            assert!(
-                d.upper.as_ref().is_some_and(|u| u <= &bound),
-                "{p:?}: {d:?}"
-            );
+            let distance = sweep.distance(&p, &goal, &mut dec)?;
+            assert!(distance.lower <= bound, "{p:?}: {distance:?}");
+            let upper = distance.upper.expect("curve-face witness");
+            assert!(upper <= goal, "{p:?}: {upper} exceeds {goal}");
+            farthest = farthest.max(upper);
         }
         println!(
-            "biquadratic fitted carrier: {} display vertices within {bound} mm",
-            mesh.positions.len()
+            "biquadratic fitted carrier: {:?}, {} vertices, display bound {:.9e} mm, farthest distance upper {:.9e} mm, {display_work} display work, {} B-rep fit work",
+            mesh.dimensions,
+            mesh.positions.len(),
+            mesh.maximum_deviation.to_f64_nearest(),
+            farthest.to_f64_nearest(),
+            work.used,
         );
-        Ok::<_, (&str, catallax_numbers::Refusal)>(())
+        Ok::<_, catallax_numbers::Refusal>(())
     });
     println!(
-        "biquadratic comparison: {} work, {display:?}",
-        work.used + display_work.used
+        "biquadratic comparison: {} work, {result:?}",
+        spent + comparison_work.used
     );
-    display.unwrap();
+    assert!(!comparison_work.exhausted, "{result:?}");
+    result.unwrap();
 }
 
 #[test]

@@ -188,6 +188,61 @@ pub(crate) fn prepare_position(
     rational_patch::prepare_definitions(model, definitions, options, true, dec)
 }
 
+pub(crate) fn spline_fillet_face(
+    model: &Model,
+    body: BodyId,
+    face: FaceId,
+    options: &MeshOptions,
+    dec: &mut Decider,
+) -> Result<Boundaries, Refusal> {
+    let junction =
+        spline_fillet::prepare_face(model, &model.faces_of_body(body), face, options, dec)?;
+    let mut boundaries = crate::edges::sample_selected(
+        model,
+        body,
+        junction.seeds.keys().copied(),
+        &BTreeMap::new(),
+        Some(&junction),
+        options,
+        dec,
+    )?;
+    junction.triangulate(face, &mut boundaries, options, true)?;
+    Ok(boundaries)
+}
+
+pub(crate) fn spline_fillet_carrier(
+    fillet: &catallax_shapes::SplineFillet,
+    options: &MeshOptions,
+    dec: &mut Decider,
+) -> Result<crate::SplineCarrierDisplay, Refusal> {
+    catallax_numbers::reuse_operation_enclosures();
+    let tolerance = rational_patch::measured_tolerance(&options.chord_tolerance);
+    let grid =
+        rational_patch::measured_grid(fillet.carrier(), &tolerance, options, [&[], &[]], dec)?.grid;
+    let positions = grid
+        .points
+        .iter()
+        .map(chart::position)
+        .collect::<Result<Vec<_>, _>>()?;
+    let rounding = positions
+        .iter()
+        .zip(&grid.points)
+        .map(|(position, exact)| chart::residual(position, exact))
+        .max()
+        .unwrap_or_else(Rational::zero);
+    let maximum_deviation = &grid.chord + &rounding;
+    if maximum_deviation > options.chord_tolerance {
+        return Err(failure(
+            "rounded carrier grid exceeds the requested chord tolerance",
+        ));
+    }
+    Ok(crate::SplineCarrierDisplay {
+        positions,
+        dimensions: [grid.columns, grid.rows],
+        maximum_deviation,
+    })
+}
+
 /// The grids of a body's envelope faces. `None` for a body without one, or with
 /// any other spline face, which keeps its own route.
 pub(crate) fn prepare(

@@ -41,13 +41,13 @@ fn compare(brep: &Recipe, field: &Recipe, options: &Options) -> Report {
 
 #[test]
 fn loft_spline_rounds_report_display_coverage_or_a_named_brep_refusal() {
-    let polygon = |prefix: &str, points: [[i64; 2]; 4], divisor: i64| {
+    let polygon = |prefix: &str, points: [[i64; 2]; 4]| {
         points
             .into_iter()
             .enumerate()
             .map(|(i, [x, y])| {
                 json!({"kind":"line","id":format!("{prefix}_{i}"),
-                "to":[format!("{x}/{divisor}"),format!("{y}/{divisor}")]})
+                "to":[x.to_string(),y.to_string()]})
             })
             .collect::<Vec<_>>()
     };
@@ -56,71 +56,56 @@ fn loft_spline_rounds_report_display_coverage_or_a_named_brep_refusal() {
         json!({"id":format!("section{i}"),"op":"sketch","loops":[loop_],
           "plane":{"rotation":["1","0","0","0"],"translation":["0","0",height]}})
     };
-    let mut missing = Vec::new();
-    for ([a, b], planar, divisor, known_refusal) in [
-        (
-            [0, 1],
-            false,
-            1,
-            Some(("numbers.operation-budget", "B-rep positional display")),
-        ),
-        (
-            [1, 2],
-            false,
-            1,
-            Some(("numbers.operation-budget", "B-rep positional display")),
-        ),
-        (
-            [0, 1],
-            true,
-            1,
-            Some(("fillet.unsupported-contact", "B-rep build")),
-        ),
-        ([0, 1], false, 8, None),
-    ] {
-        let bottom = polygon("a", [[1, -1], [1, 1], [-1, 1], [-1, -1]], divisor);
+    for ([a, b], planar) in [([0, 1], false), ([1, 2], false), ([0, 1], true)] {
+        let bottom = polygon("a", [[1, -1], [1, 1], [-1, 1], [-1, -1]]);
         let top = if planar {
             [[1, 0], [1, 2], [-2, 0], [0, -1]]
         } else {
             [[1, 0], [0, 2], [-2, 0], [0, -1]]
         };
-        let top = polygon("b", top, divisor);
+        let top = polygon("b", top);
         let recipe = Recipe::parse(&json!({
             "format":"catallax-recipe/5","name":"M11 loft comparison","steps":[
-                section(0,"0",&bottom), section(1,&format!("2/{divisor}"),&top),
+                section(0,"0",&bottom), section(1,"2",&top),
                 {"id":"loft","op":"loft","shape":"ruled","sections":[
                     {"profile":"section0","start":["a_0"]},{"profile":"section1","start":["b_0"]}]},
-                {"id":"round","op":"fillet","body":"loft","radius":format!("1/{}",10*divisor),
+                {"id":"round","op":"fillet","body":"loft","radius":"1/10",
                     "edges":[{"between":[side(a),side(b)]}]}
             ],"result":"round"
         }).to_string()).unwrap();
         let (report, work) =
             catallax_numbers::with_operation_budget(100_000_000, || check(&recipe));
         println!(
-            "loft edges {a}/{b} planar {planar} divisor {divisor}: {} forward vertices, {} work, {:?}",
-            report.forward_vertices, work.used, report.refusal
+            "loft edges {a}/{b} planar {planar}: {} forward vertices, {} work, upper {:?}, refusal {:?}",
+            report.forward_vertices,
+            work.used,
+            report
+                .sampled_distance_upper
+                .as_ref()
+                .map(Rational::to_f64_nearest),
+            report.refusal
         );
-        if let Some((code, source)) = known_refusal
-            && report.refusal.as_ref().is_some_and(|e| e.code == code)
-        {
+        assert!(!work.exhausted, "{report:?}");
+        if planar {
             assert_eq!(report.forward_vertices, 0);
+            assert_eq!(
+                report.refusal.as_ref().map(|e| e.code),
+                Some("fillet.unsupported-contact")
+            );
             assert!(report.findings.iter().any(|f| {
-                matches!(&f.reason, Reason::Unresolved(reason) if reason.starts_with(source))
+                matches!(&f.reason, Reason::Unresolved(reason) if reason.starts_with("B-rep build"))
             }));
             continue;
         }
+        assert_eq!(report.forward_vertices, if a == 0 { 245 } else { 335 });
+        assert!(report.refusal.is_none(), "{report:?}");
         let findings: Vec<_> = report
             .findings
             .iter()
             .filter(|f| f.pass == Pass::Forward)
             .collect();
-        if report.forward_vertices == 0 || report.refusal.is_some() || !findings.is_empty() {
-            missing.push(format!(
-                "loft edges {a}/{b} planar {planar} divisor {divisor}: {report:?}"
-            ));
-        }
+        assert!(findings.is_empty(), "{findings:?}");
     }
-    assert!(missing.is_empty(), "{}", missing.join("\n"));
 }
 
 #[test]

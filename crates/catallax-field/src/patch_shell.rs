@@ -516,19 +516,6 @@ impl Shell {
         round.distance(&RPoint3::new(x, y, z), width, dec).map(Some)
     }
 
-    pub(crate) fn surviving_face_bound(
-        &self,
-        p: &RPoint3,
-        width: &Rational,
-        dec: &mut Decider,
-    ) -> Result<Option<Rational>, Refusal> {
-        let Some(round) = &self.round else {
-            return Ok(None);
-        };
-        let [x, y, z] = self.local(&point(p));
-        self.local_face_bound(&RPoint3::new(x, y, z), round, width, dec)
-    }
-
     fn local_face_bound(
         &self,
         p: &RPoint3,

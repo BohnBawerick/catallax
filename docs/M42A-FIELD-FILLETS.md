@@ -499,21 +499,50 @@ graph replaces the sharp corner while preserving the remaining sides
 and caps. Whole patches from other sources and subsequent rounds on
 the trimmed loft keep their typed refusals.
 
-On Blade, the focused debug tests sampled 505 independent arc points
-per edge. Median distance query times were 424 us for M27, 297 us for
-the next edge and 468 us for the biquadratic edge. These runs shared the
-machine and are evidence from the query test, without a timing isolation
-claim. The cap regression also tests a point above the first rail's last
-station and below the cap, using an independent solve for the second rail.
+The focused release tests sampled 505 independent arc points per edge.
+Median distance query times on the work PC were 4.388 us for M27, 4.474 us
+for the next edge and 7.215 us for the biquadratic edge. These were
+shared-machine runs. The cap regression also tests a point above the
+first rail's last station and below the cap, using an independent solve
+for the second rail.
+
+### Forward display comparison
+
+The comparison uses the existing complete-cell positional grid at
+0.005 mm. The two caps identify the trimmed fillet's boundary. Only
+the selected fillet face supplies a grid or edge stations. The
+biquadratic fixture displays the complete fitted carrier, which has
+no body cuts. The forward comparison includes the positional display
+bound and the B-rep fit bound.
+
+| Edge | Forward vertices | Total work | Largest comparison upper bound (mm) |
+| --- | ---: | ---: | ---: |
+| M27 loft | 245 | 36,439,567 | 0.008877664 |
+| Next M11 loft | 335 | 63,981,015 | 0.008631433 |
+| Biquadratic | 104 | 72,199,474 | 0.004836388 |
+
+The two loft reports agreed at 1, 2 and 4 workers with no forward
+findings. On the biquadratic row, the 4 by 26 carrier grid took
+54,998,702 work after the 16,433,004-work B-rep fit. Its display
+bound was 0.004836298487 mm and the maximum field distance upper
+bound before widening was 9.460012726e-9 mm. All three comparisons
+used the existing 100M request allowance.
+
+The whole-body B-rep display remains open for both lofts. Reverse
+normal and origin coverage for the fitted blends also remains open.
 
 ## Steps 7.5 to 7.7: near tangency and a plane chart
 
 The synthetic edge uses one parabolic side and one plane. The plane's
 slope at the shared edge runs from `1` to `2^-24` in dyadic steps.
 The smallest tested angle with a full tube and reach proof was
-0.003497057 degrees (`2^-14`), at 261,400 work and a tube radius of
+0.003497057 degrees (`2^-14`), at 261,376 work and a tube radius of
 `8.77e-11 mm`. Lower angles failed at the seed, a border proof or the
 support-domain check. The exact tangent control refuses by name.
+When the feet point into the same half plane, the chord between them
+bounds the distance from either rail to every point of the short arc.
+The sweep labels this bound when it fits the spine target. At the smallest
+tested angle that passed, the rail bound was 6.142 nm.
 
 An analytic plane stays a plane at its offset. Its rational chart is
 translated exactly along the normal and enters the field solver at
@@ -522,7 +551,14 @@ This follows the same-family offset route described in
 [the viability study](research/cp2-grill/sdf-spline-viability.md#3-does-m10-accept-analytic-against-spline-offsets).
 The spline-plane control checks the centre against the exact offset
 equation `15x + 8y = 17/10`. The control's tube radius is
-`1.224362e-14 mm` at 347,890 work.
+`1.224362e-14 mm` at 347,890 work. The field proof and work agree
+at 1, 2 and 4 workers. The median query took 4.762 us over 99
+independently generated points on the work PC.
+
+**Step 7 and 4.2a remain open.** The B-rep spline-plane loft
+fillet refuses with `fillet.unsupported-contact` after 896,220
+comparison work. Forward display coverage for that row waits for
+the B-rep build.
 
 ## Open for the done-when line
 
@@ -561,4 +597,4 @@ The list does not change during the milestone. A case added later joins the next
 | 4 | Ends at an edge or vertex, P5 at radius 2 | part 1, rim contact and hole rings: [#733](https://github.com/BohnBawerick/catallax/pull/733); part 2, the slot file: [#738](https://github.com/BohnBawerick/catallax/pull/738); part 3, `l-mixed-all` and `vertex-4-one`: [#742](https://github.com/BohnBawerick/catallax/pull/742) |
 | 5 | Fillet over fillet, nested path | part 1, chains over an earlier straight round with the ball on its axis side: [#744](https://github.com/BohnBawerick/catallax/pull/744); part 2, sphere corners and cliffs; part 3, an upright under an earlier mitre; the face registry for rolling pieces and compare on rolling faces; part 4, a ball outside the round's cylinder (`mixed-ordered`); part 5, a ball narrower than a mitre's rounds (`narrow-mitres`); part 6, every edge at once and a third round over rolling pieces: this change |
 | 6 | Torus pairs | `torus-slice`, `torus-intersection` and a cut below the centre plane: this change |
-| 7 | Spline faces (7.0 to 7.7 of the decisions) | 7.1, certified distance to a whole patch; 7.2, the patch shell and ruled loft; 7.3, certified spline spine |
+| 7 | Spline faces (7.0 to 7.7 of the decisions) | Whole patches, independent spine and sweep queries, and forward coverage for the three M11 spline-pair rows. Spline-plane display remains open with B-rep refusal `fillet.unsupported-contact`. |

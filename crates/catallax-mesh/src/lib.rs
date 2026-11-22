@@ -28,7 +28,8 @@ mod chart;
 mod controls;
 mod display;
 pub use display::{
-    DisplayMeasurement, DisplayMesh, SPLINE_DISPLAY_RULE, compare_position_mesh, display_mesh_body,
+    DisplayMeasurement, DisplayMesh, SPLINE_DISPLAY_RULE, SplineCarrierDisplay, display_mesh_body,
+    display_spline_fillet_carrier, display_spline_fillet_face,
 };
 mod edges;
 mod evaluate;

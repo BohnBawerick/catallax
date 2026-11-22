@@ -319,23 +319,6 @@ impl Plan {
         shell.blend_distance(point, width, dec)
     }
 
-    /// Distance upper bound from a proved retained side or cap witness on
-    /// a rounded loft result, if a projection finds one within `width`.
-    pub fn rounded_loft_face_bound(
-        &self,
-        point: &RPoint3,
-        width: &Rational,
-        dec: &mut Decider,
-    ) -> Result<Option<Rational>, Refusal> {
-        let Instruction::Leaf(index) = self.instructions[self.root] else {
-            return Ok(None);
-        };
-        match &self.leaves[index] {
-            geometry::Leaf::Shell(shell) => shell.surviving_face_bound(point, width, dec),
-            _ => Ok(None),
-        }
-    }
-
     /// Removed-face provenance from draft operations, in recipe order.
     /// These records never make a vanished face selectable.
     pub fn consumed_faces(&self) -> &[catallax_features::ConsumedFace] {

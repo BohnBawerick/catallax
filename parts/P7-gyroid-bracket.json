@@ -1,0 +1,22 @@
+{
+  "format": "catallax-recipe/3",
+  "name": "P7 gyroid-filled bracket",
+  "description": "mm. P6's shell, overlap and bore with a level-zero network gyroid on a 2 mm period.",
+  "steps": [
+    {"id":"stock","op":"block","size":["12","8","8"],"pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}},
+    {"id":"notch","op":"block","size":["14","6","6"],"pose":{"rotation":["1","0","0","0"],"translation":["-1","3","3"]}},
+    {"id":"envelope","op":"boolean","kind":"subtract","target":"stock","tool":"notch"},
+    {"id":"base-core","op":"block","size":["10","6","1"],"pose":{"rotation":["1","0","0","0"],"translation":["1","1","1"]}},
+    {"id":"flange-core","op":"block","size":["10","1","6"],"pose":{"rotation":["1","0","0","0"],"translation":["1","1","1"]}},
+    {"id":"cavity","op":"boolean","kind":"union","target":"base-core","tool":"flange-core"},
+    {"id":"shell","op":"boolean","kind":"subtract","target":"envelope","tool":"cavity"},
+    {"id":"base-fill","op":"block","size":["10.5","6.5","1.5"],"pose":{"rotation":["1","0","0","0"],"translation":["0.75","0.75","0.75"]}},
+    {"id":"flange-fill","op":"block","size":["10.5","1.5","6.5"],"pose":{"rotation":["1","0","0","0"],"translation":["0.75","0.75","0.75"]}},
+    {"id":"fill-region","op":"boolean","kind":"union","target":"base-fill","tool":"flange-fill"},
+    {"id":"infill","op":"gyroid","region":"fill-region","kind":"network","period":"2","frame":{"rotation":["1","0","0","0"],"translation":["0","0","0"]},"level":{"constant":"0"}},
+    {"id":"filled","op":"boolean","kind":"union","target":"shell","tool":"infill"},
+    {"id":"bore","op":"cylinder","radius":"0.5","height":"5","pose":{"rotation":["1","0","0","0"],"translation":["6","5","-1"]}},
+    {"id":"part","op":"boolean","kind":"subtract","target":"filled","tool":"bore"}
+  ],
+  "result":"part"
+}

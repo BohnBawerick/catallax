@@ -313,6 +313,11 @@ const KNOWN: &[(&str, &str, Kind)] = &[
     ),
     (
         "catallax-shapes/src/tessellation/rational.rs",
+        "previous",
+        Kind::Guarded,
+    ),
+    (
+        "catallax-shapes/src/tessellation/rational.rs",
         "derivative_rows",
         Kind::Guarded,
     ),

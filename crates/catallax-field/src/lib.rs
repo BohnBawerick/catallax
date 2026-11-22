@@ -338,6 +338,7 @@ impl Plan {
         };
         let mut steps = BTreeMap::new();
         let mut profiles = BTreeMap::new();
+        let mut bezier_profiles = BTreeSet::new();
         let mut step_faces: BTreeMap<catallax_recipe::StepId, Vec<usize>> = BTreeMap::new();
         let mut step_domains = ownership::Snapshots::new();
         for step in &recipe.steps {
@@ -352,7 +353,23 @@ impl Plan {
                     // Reference data, RECIPE.md section 4.19.1: never a body.
                     Operation::ScanImport { .. } => return Ok(None),
                     Operation::Sketch { plane, loops } => {
-                        profiles.insert(step.id.clone(), profile::Profile::new(plane, loops, dec)?);
+                        if loops
+                            .iter()
+                            .flat_map(|boundary| &boundary.0)
+                            .any(|segment| {
+                                matches!(segment, catallax_recipe::Segment::Bezier { .. })
+                            })
+                            && !recipe.steps.iter().any(|consumer| {
+                                !matches!(consumer.op, Operation::Loft { .. })
+                                    && consumer.op.inputs().iter().any(|(id, _)| *id == &step.id)
+                            })
+                        {
+                            catallax_features::Profile::new(plane, loops, dec)?;
+                            bezier_profiles.insert(step.id.clone());
+                        } else {
+                            profiles
+                                .insert(step.id.clone(), profile::Profile::new(plane, loops, dec)?);
+                        }
                         return Ok(None);
                     }
                     Operation::Path { .. } => return Ok(None),
@@ -378,7 +395,14 @@ impl Plan {
                         )?
                     }
                     Operation::Loft { sections, shape } => {
-                        plan.loft(recipe, sections, *shape, &profiles, &step.id, dec)?
+                        if sections
+                            .iter()
+                            .any(|section| bezier_profiles.contains(&section.profile))
+                        {
+                            plan.bezier_loft(recipe, sections, *shape, dec)?
+                        } else {
+                            plan.loft(recipe, sections, *shape, &profiles, &step.id, dec)?
+                        }
                     }
                     Operation::SmoothBlend {
                         kind,
@@ -1444,6 +1468,17 @@ impl Plan {
     /// [`Self::face_query`] to establish membership in the selected result.
     pub fn faces(&self) -> &[Face] {
         &self.faces
+    }
+
+    /// The closed patch shell when it alone defines the result.
+    pub fn result_patch_shell(&self) -> Option<&patch_shell::Shell> {
+        let Instruction::Leaf(index) = self.instructions[self.root] else {
+            return None;
+        };
+        match &self.leaves[index] {
+            geometry::Leaf::Shell(shell) => Some(shell),
+            _ => None,
+        }
     }
     /// The rolling-ball path pieces the plan's fillets compiled to (4.2a), in
     /// compile order. A piece whose face lies on a ring torus, a sphere or a

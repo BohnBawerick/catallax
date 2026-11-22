@@ -340,7 +340,14 @@ impl Gyroid {
         let k = self.wave;
         let k2 = self.wave_squared;
         let k3 = (k2 * k).hi();
-        let slope = self.grade.piece_gradient(piece);
+        let curved = if piece == Piece::Curved {
+            Some(self.grade.curved_derivatives(world)?)
+        } else {
+            None
+        };
+        let slope = curved
+            .as_ref()
+            .map_or_else(|| self.grade.piece_gradient(piece), |(slope, _)| *slope);
         let r = radius.map(point);
         let reach = (r[0] + r[1] + r[2]).hi();
         let gradient = [
@@ -373,7 +380,11 @@ impl Gyroid {
             ],
         ];
         let spread = (point(2.0 * k3) * point(reach)).hi();
-        let hessian = hessian.map(|row| row.map(|v| v + Interval::new(-spread, spread).unwrap()));
+        let mut hessian =
+            hessian.map(|row| row.map(|v| v + Interval::new(-spread, spread).unwrap()));
+        if let Some((_, grade)) = curved {
+            hessian = std::array::from_fn(|i| std::array::from_fn(|j| hessian[i][j] - grade[i][j]));
+        }
         Some((gradient, hessian))
     }
 
@@ -450,12 +461,14 @@ impl Gyroid {
             return self.expansion(world, |_| self.interval_level, zero);
         }
         match self.grade.piece(world) {
+            Some(Piece::Curved) | None => {
+                Some(self.expansion(world, |_| point(0.0), zero)? - self.grade.interval(world))
+            }
             Some(piece) => self.expansion(
                 world,
                 |centre| self.grade.piece_value(piece, &centre),
                 self.grade.piece_gradient(piece),
             ),
-            None => Some(self.expansion(world, |_| point(0.0), zero)? - self.grade.interval(world)),
         }
     }
 
@@ -514,7 +527,7 @@ impl Gyroid {
         let [sines, cosines] = self.exact_terms(p, dec)?;
         let value = &(&(&(&sines[0] * &cosines[1]) + &(&sines[1] * &cosines[2]))
             + &(&sines[2] * &cosines[0]))
-            - &Real::from(self.grade.value(p));
+            - &self.grade.real(p);
         Ok(match geometry::sign(&value, dec)? {
             Sign::Negative => Location::Inside,
             Sign::Zero => Location::Boundary,
@@ -548,9 +561,8 @@ impl Gyroid {
         let [sx, cx] = turn(&p.x);
         let [sy, cy] = turn(&p.y);
         let [sz, cz] = turn(&p.z);
-        let level = self.grade.value(&[p.x.clone(), p.y.clone(), p.z.clone()]);
-        let value = &(&(&(&sx * &cy) + &(&sy * &cz)) + &(&sz * &cx))
-            - &Ball::from_rational(&level, PRECISION);
+        let level = self.grade.ball(&[p.x.clone(), p.y.clone(), p.z.clone()]);
+        let value = &(&(&(&sx * &cy) + &(&sy * &cz)) + &(&sz * &cx)) - &level;
         value
             .checked_div(&Ball::from_rational(&self.lipschitz, PRECISION))
             .expect("positive Lipschitz bound")

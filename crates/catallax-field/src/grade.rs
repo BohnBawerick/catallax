@@ -18,6 +18,8 @@ use catallax_recipe::Grade;
 use catallax_shapes::Vector3;
 
 mod faces;
+mod radius;
+use radius::Radius;
 
 fn q(n: i64) -> Rational {
     Rational::from_i64(n)
@@ -66,6 +68,7 @@ pub(crate) enum GradeDef {
     Constant(Rational),
     Linear(Box<Linear>),
     Faces(Box<FaceDistance>),
+    Radius(Box<Radius>),
 }
 
 /// The piece of a clamped linear grade that holds over a whole box.
@@ -79,6 +82,8 @@ pub(crate) enum Piece {
     End,
     /// The ramp on one selected rectangular face's side of the bisectors.
     Face(usize),
+    /// A smooth ramp in the distance to a centre or axis.
+    Curved,
 }
 
 impl GradeDef {
@@ -152,14 +157,63 @@ impl GradeDef {
                 }))
             }
             Grade::Distance { .. } => return Ok(None),
+            Grade::Point {
+                centre,
+                r0,
+                r1,
+                start,
+                end,
+            } => {
+                catallax_features::lattice::validate_distance_radii(grade, impossible)?;
+                Self::from_radius(
+                    &centre.0,
+                    None,
+                    [r0.value(), r1.value()],
+                    [start.value(), end.value()],
+                )
+            }
+            Grade::Radial {
+                origin,
+                direction,
+                r0,
+                r1,
+                start,
+                end,
+            } => {
+                catallax_features::lattice::validate_distance_radii(grade, impossible)?;
+                Self::from_radius(
+                    &origin.0,
+                    Some(&direction.0),
+                    [r0.value(), r1.value()],
+                    [start.value(), end.value()],
+                )
+            }
         }))
+    }
+
+    fn from_radius(
+        origin: &[catallax_recipe::Number; 3],
+        direction: Option<&[catallax_recipe::Number; 3]>,
+        [r0, r1]: [&Rational; 2],
+        [start, end]: [&Rational; 2],
+    ) -> Self {
+        if start == end {
+            return Self::Constant(start.clone());
+        }
+        let values = |p: &[catallax_recipe::Number; 3]| p.each_ref().map(|n| n.value().clone());
+        Self::Radius(Box::new(Radius::new(
+            values(origin),
+            direction.map(values),
+            [r0.clone(), r1.clone()],
+            [start.clone(), end.clone()],
+        )))
     }
 
     /// The constant value, or `None` for a ramp.
     pub(crate) fn constant(&self) -> Option<&Rational> {
         match self {
             Self::Constant(c) => Some(c),
-            Self::Linear(_) | Self::Faces(_) => None,
+            Self::Linear(_) | Self::Faces(_) | Self::Radius(_) => None,
         }
     }
 
@@ -178,6 +232,9 @@ impl GradeDef {
     pub(crate) fn slope_bound(&self) -> Rational {
         if let Self::Faces(faces) = self {
             return faces.slope.clone();
+        }
+        if let Self::Radius(radius) = self {
+            return radius.slope.abs();
         }
         let Self::Linear(linear) = self else {
             return q(0);
@@ -206,9 +263,9 @@ impl GradeDef {
         &linear.start + &(&t * &(&linear.end - &linear.start))
     }
 
-    /// The exact value at a rational point.
-    pub(crate) fn value(&self, p: &[Rational; 3]) -> Rational {
-        match self {
+    /// The exact value for grades whose value at a rational point is rational.
+    pub(crate) fn rational_value(&self, p: &[Rational; 3]) -> Option<Rational> {
+        Some(match self {
             Self::Constant(c) => c.clone(),
             Self::Linear(linear) => Self::interpolate(linear, Self::parameter(linear, p)),
             Self::Faces(faces) => Self::interpolate(
@@ -220,6 +277,21 @@ impl GradeDef {
                     .min()
                     .expect("selected faces"),
             ),
+            Self::Radius(_) => return None,
+        })
+    }
+
+    pub(crate) fn real(&self, p: &[Rational; 3]) -> Real {
+        match self {
+            Self::Radius(radius) => radius.real(p),
+            _ => Real::from(self.rational_value(p).expect("rational grade")),
+        }
+    }
+
+    pub(crate) fn ball(&self, p: &[Rational; 3]) -> Ball {
+        match self {
+            Self::Radius(radius) => radius.ball(p),
+            _ => Ball::from_rational(&self.rational_value(p).expect("rational grade"), PRECISION),
         }
     }
 
@@ -246,6 +318,7 @@ impl GradeDef {
                     .map(|plane| Self::fast_parameter(plane, p))
                     .fold(f64::INFINITY, f64::min),
             ),
+            Self::Radius(radius) => radius.fast(p),
         }
     }
 
@@ -279,6 +352,7 @@ impl GradeDef {
                         .expect("selected faces"),
                 ),
             ),
+            Self::Radius(radius) => radius.interval(p),
         }
     }
 
@@ -290,6 +364,9 @@ impl GradeDef {
     /// The piece that holds over the whole box, or `None` when the box meets an
     /// anchor plane's two sides. A constant is one ramp-free piece everywhere.
     pub(crate) fn piece(&self, p: &[Interval; 3]) -> Option<Piece> {
+        if let Self::Radius(radius) = self {
+            return radius.piece(p);
+        }
         if let Self::Faces(faces) = self {
             return face_piece(
                 &faces.planes,
@@ -316,7 +393,7 @@ impl GradeDef {
     }
 
     pub(crate) fn has_affine_extension(&self) -> bool {
-        !matches!(self, Self::Faces(_))
+        matches!(self, Self::Constant(_) | Self::Linear(_))
     }
 
     /// The unclamped affine extension of the ramp over a box: `v0 + t (v1 - v0)`.
@@ -330,7 +407,7 @@ impl GradeDef {
                         * (Interval::from_rational(&linear.end)
                             - Interval::from_rational(&linear.start))
             }
-            Self::Faces(_) => unreachable!("a face distance needs a selected smooth piece"),
+            Self::Faces(_) | Self::Radius(_) => unreachable!("this grade has no affine extension"),
         }
     }
 
@@ -339,7 +416,7 @@ impl GradeDef {
         match self {
             Self::Constant(_) => [Interval::point(0.0).unwrap(); 3],
             Self::Linear(linear) => Self::linear_gradient(linear),
-            Self::Faces(_) => unreachable!("a face distance needs a selected smooth piece"),
+            Self::Faces(_) | Self::Radius(_) => unreachable!("this grade has no affine extension"),
         }
     }
 
@@ -353,7 +430,7 @@ impl GradeDef {
     pub(crate) fn piece_value(&self, piece: Piece, p: &[Interval; 3]) -> Interval {
         match piece {
             Piece::Ramp => self.affine(p),
-            Piece::Start | Piece::End => self.interval(p),
+            Piece::Start | Piece::End | Piece::Curved => self.interval(p),
             Piece::Face(i) => {
                 let Self::Faces(faces) = self else {
                     unreachable!("face grade piece")
@@ -368,7 +445,7 @@ impl GradeDef {
     pub(crate) fn piece_gradient(&self, piece: Piece) -> [Interval; 3] {
         match piece {
             Piece::Ramp => self.gradient(),
-            Piece::Start | Piece::End => [Interval::point(0.0).unwrap(); 3],
+            Piece::Start | Piece::End | Piece::Curved => [Interval::point(0.0).unwrap(); 3],
             Piece::Face(i) => {
                 let Self::Faces(faces) = self else {
                     unreachable!("face grade piece")
@@ -376,6 +453,16 @@ impl GradeDef {
                 Self::linear_gradient(&faces.planes[i])
             }
         }
+    }
+
+    pub(crate) fn curved_derivatives(
+        &self,
+        p: &[Interval; 3],
+    ) -> Option<([Interval; 3], [[Interval; 3]; 3])> {
+        let Self::Radius(radius) = self else {
+            return None;
+        };
+        radius.derivatives(p)
     }
 
     /// The exact range of `t` over a closed rational box.
@@ -397,6 +484,9 @@ impl GradeDef {
     /// The piece that holds over a whole closed rational box, decided exactly, or
     /// `None` when the box meets both sides of an anchor plane.
     pub(crate) fn exact_piece(&self, lo: &[Rational; 3], hi: &[Rational; 3]) -> Option<Piece> {
+        if let Self::Radius(radius) = self {
+            return radius.piece(&interval_box(lo, hi));
+        }
         if let Self::Faces(faces) = self {
             return face_piece(
                 &faces.planes,
@@ -452,6 +542,14 @@ impl GradeDef {
                 });
                 [a.clone().min(b.clone()), a.max(b)]
             }
+            Self::Radius(radius) => {
+                let value = radius.interval(&interval_box(lo, hi));
+                let [a, b] = &radius.values;
+                [
+                    Rational::from_f64_exact(value.lo()).unwrap_or_else(|| a.min(b).clone()),
+                    Rational::from_f64_exact(value.hi()).unwrap_or_else(|| a.max(b).clone()),
+                ]
+            }
         }
     }
 
@@ -465,6 +563,9 @@ impl GradeDef {
     ) -> Result<Option<Real>, Refusal> {
         if let Self::Faces(faces) = self {
             return faces.rate(p, d, dec);
+        }
+        if let Self::Radius(radius) = self {
+            return radius.rate(p, d, dec);
         }
         let Self::Linear(linear) = self else {
             return Ok(None);
@@ -505,6 +606,7 @@ impl GradeDef {
             Self::Constant(_) => return,
             Self::Linear(linear) => std::slice::from_mut(linear.as_mut()),
             Self::Faces(faces) => &mut faces.planes,
+            Self::Radius(radius) => return radius.transform(m, t),
         };
         for linear in planes {
             let apply = |v: &[Rational; 3]| -> [Rational; 3] {
@@ -515,6 +617,10 @@ impl GradeDef {
             linear.direction = apply(&linear.direction);
         }
     }
+}
+
+fn interval_box(lo: &[Rational; 3], hi: &[Rational; 3]) -> [Interval; 3] {
+    std::array::from_fn(|i| Interval::from_rational(&lo[i]).hull(&Interval::from_rational(&hi[i])))
 }
 
 fn face_piece<T: PartialOrd>(
@@ -597,6 +703,15 @@ pub(crate) fn check_certified(
     [low, high]: [&Rational; 2],
     max_slope: &Rational,
 ) -> Result<(), Refusal> {
+    if let GradeDef::Radius(radius) = grade {
+        return check_limits(
+            radius.values.each_ref(),
+            [low, high],
+            || radius.slope.abs(),
+            max_slope,
+            range,
+        );
+    }
     let GradeDef::Linear(linear) = grade else {
         return Ok(());
     };

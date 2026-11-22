@@ -1,4 +1,4 @@
-//! Terminal distance grades share one definition for preview, export and mass.
+//! Face, point and axis distance grades share one definition for preview, export and mass.
 
 use catallax_field::{
     Location, Workspace,
@@ -60,6 +60,20 @@ fn distance(faces: Value, near: &str, far: &str, span: &str) -> Grade {
 fn linear(z0: &str, z1: &str, start: &str, end: &str) -> Grade {
     serde_json::from_value(json!({
         "linear":{"from":["0","0",z0],"to":["0","0",z1],"start":start,"end":end}
+    }))
+    .unwrap()
+}
+
+fn point(centre: [&str; 3], r0: &str, r1: &str, start: &str, end: &str) -> Grade {
+    serde_json::from_value(
+        json!({"point":{"centre":centre,"r0":r0,"r1":r1,"start":start,"end":end}}),
+    )
+    .unwrap()
+}
+
+fn radial(direction: [&str; 3], r0: &str, r1: &str, start: &str, end: &str) -> Grade {
+    serde_json::from_value(json!({
+        "radial":{"origin":["0","0","0"],"direction":direction,"r0":r0,"r1":r1,"start":start,"end":end}
     }))
     .unwrap()
 }
@@ -251,5 +265,100 @@ fn extrusion_faces_use_the_current_rectangular_trim() {
                 .location,
             location
         );
+    }
+}
+
+#[test]
+#[cfg_attr(debug_assertions, ignore = "certification runs in release mode")]
+fn point_and_radial_grades_export_and_measure_both_families() {
+    let body = block(["6", "6", "10"], ["-3", "-3", "20"]);
+    let a = outputs(
+        &body,
+        lattice(radial(["0", "0", "1"], "1/2", "3/2", "1", "5/4")),
+    );
+    let b = outputs(
+        &body,
+        lattice(radial(["0", "0", "-2"], "1/2", "3/2", "1", "5/4")),
+    );
+    assert!(
+        a == b,
+        "reversing and scaling the radial axis changed the outputs"
+    );
+    outputs(
+        &body,
+        lattice(point(["0", "0", "25"], "1", "2", "1", "9/8")),
+    );
+
+    let body = block(["2", "2", "2"], ["-1", "-1", "-1"]);
+    outputs(
+        &body,
+        gyroid(radial(["1", "2", "3"], "1/2", "3/2", "-1/50", "1/50")),
+    );
+    outputs(
+        &body,
+        gyroid(point(["0", "0", "0"], "1/2", "3/2", "-1/50", "1/50")),
+    );
+}
+
+#[test]
+fn point_grade_proves_an_irrational_contact() {
+    let body = block(["6", "6", "10"], ["-3", "-3", "20"]);
+    let spec = lattice(point(["-1", "-1", "25"], "2", "4", "1", "2"));
+    let stage = Stage::new(&body, spec, settings(), &mut Decider::default()).unwrap();
+    // At (1, 1, 25), the distance to the centre is sqrt(8). The radius
+    // is sqrt(8)/2, exactly the beam distance sqrt(2).
+    for (x, expected) in [
+        ("99/100", Location::Inside),
+        ("1", Location::Boundary),
+        ("101/100", Location::Outside),
+    ] {
+        let p = RPoint3::new(q(x), q("1"), q("25"));
+        assert_eq!(
+            stage.plan().proven(&p, &mut Workspace::default()).location,
+            expected
+        );
+    }
+}
+
+#[test]
+fn point_and_radial_grade_refusals_keep_family_limits() {
+    let body = block(["2", "2", "2"], ["-1", "-1", "-1"]);
+    for (grade, expected) in [
+        (
+            point(["0", "0", "0"], "1", "1", "1", "2"),
+            "lattice.impossible",
+        ),
+        (
+            radial(["0", "0", "0"], "0", "1", "1", "2"),
+            "lattice.impossible",
+        ),
+        (
+            radial(["0", "0", "2"], "0", "1", "1", "2"),
+            "lattice.grade-range-unsupported",
+        ),
+    ] {
+        let code = Stage::new(&body, lattice(grade), settings(), &mut Decider::default())
+            .unwrap_err()
+            .code;
+        assert_eq!(code, expected);
+    }
+    for (grade, expected) in [
+        (
+            point(["0", "0", "0"], "-1", "1", "0", "1/10"),
+            "gyroid.impossible",
+        ),
+        (
+            radial(["1", "0", "0"], "0", "1", "0", "10001/100000"),
+            "gyroid.grade-range-unsupported",
+        ),
+        (
+            point(["0", "0", "0"], "0", "100", "1/4", "25001/100000"),
+            "gyroid.grade-range-unsupported",
+        ),
+    ] {
+        let code = Stage::new(&body, gyroid(grade), settings(), &mut Decider::default())
+            .unwrap_err()
+            .code;
+        assert_eq!(code, expected);
     }
 }

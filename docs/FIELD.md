@@ -34,6 +34,10 @@ The grade varies from `near` on the selected faces to `far` at `span` millimetre
 
 Unsupported region geometry refuses with `field.grade-face-coverage`. A reference that selects nothing refuses with `field.grade-face-missing`, and a `near` selector that ties refuses with `field.grade-face-ambiguous`. The existing export and mass limits still apply to each plan.
 
+Point and radial grades take a distance from a fixed centre or a fixed line in part coordinates. Both use `start` at and below `r0` and `end` at and above `r1`. Between them the slope is `K = |end - start|/(r1 - r0)`. The same family endpoint and slope limits apply. The radii must satisfy `0 <= r0 < r1`, and a radial axis direction must be nonzero. Invalid distances or directions refuse with the family's `impossible` code.
+
+Point classification compares exact expressions in the distance. Box classification encloses the projected squared distance and its square root. Mass integration uses the gradient and Hessian of the distance on smooth ramp cells and a mixed-cell bound at the axis, centre or clamps. Preview, export and mass use the same grade. Point and radial grades on gyroid sheets still refuse with `gyroid.unsupported`.
+
 ## Watertight field printing
 
 `catallax_field::printing::mesh_plan` accepts a plan, explicit output tolerance, cell and vertex limits, and the caller's decider. It supports primitive solid cells, analytic constraint cells, certified convex planar profile extrusions and periodic beams composed by the existing Boolean tape. Other leaf definitions refuse with `field.print-coverage`; no B-rep builder is used.

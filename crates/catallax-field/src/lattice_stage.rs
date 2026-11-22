@@ -6,7 +6,7 @@
 //! The stage owns no cache: editing the body means calling [`Stage::new`] again with
 //! the edited recipe, so nothing computed from the earlier body can be reused.
 
-use crate::grade::{GradeDef, check_certified, check_distance};
+use crate::grade::{GradeDef, check_distance};
 use crate::{Plan, display::PreviewOptions, printing};
 use catallax_numbers::{Decider, Rational, Refusal, Sign};
 use catallax_recipe::{
@@ -68,18 +68,7 @@ impl TerminalField for LatticeSpec {
         }
         let grade = GradeDef::compile(&self.radius, "lattice.impossible")?
             .expect("distance grades are validated above");
-        check_certified(
-            &grade,
-            [
-                "lattice.grade-function-unsupported",
-                "lattice.grade-range-unsupported",
-            ],
-            [
-                &Rational::zero(),
-                &(self.size.value() * &Rational::from_ratio(1, 4).unwrap()),
-            ],
-            &Rational::from_ratio(1, 2).unwrap(),
-        )
+        crate::lattice::check_certified_radius(self.size.value(), &grade)
     }
     fn operation(&self, region: StepId) -> Operation {
         Operation::Lattice {

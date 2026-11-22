@@ -876,7 +876,7 @@ impl Leaf {
             Self::Feature(a) => a.location(p, dec),
             Self::Cell(a) => a.location(p, dec),
             Self::Draft(a) => a.location(p, dec),
-            Self::Lattice(a) => Ok(a.location(p)),
+            Self::Lattice(a) => a.location(p, dec),
             Self::Gyroid(a) => a.location(p, dec),
             Self::Mesh(a) => a.location(p, dec),
             Self::Shell(a) => a.location(p, dec),
@@ -1109,7 +1109,7 @@ impl Leaf {
             }
             Self::Feature(a) => a.on_face(role, p, dec).map(Some),
             Self::Cell(_) => Ok(Some(true)),
-            Self::Lattice(a) => Ok(Some(a.location(p) == Location::Boundary)),
+            Self::Lattice(a) => Ok(Some(a.location(p, dec)? == Location::Boundary)),
             Self::Gyroid(a) => Ok(Some(a.location(p, dec)? == Location::Boundary)),
             Self::Mesh(a) => Ok(Some(a.location(p, dec)? == Location::Boundary)),
             Self::Shell(a) => Ok(Some(a.location(p, dec)? == Location::Boundary)),

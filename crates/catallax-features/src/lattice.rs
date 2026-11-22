@@ -171,7 +171,42 @@ pub fn radius_range(grade: &Grade) -> Result<[Rational; 2], Refusal> {
             let (a, b) = (near.value().clone(), far.value().clone());
             Ok([a.clone().min(b.clone()), a.max(b)])
         }
+        Grade::Point { start, end, .. } | Grade::Radial { start, end, .. } => {
+            validate_distance_radii(grade, "lattice.impossible")?;
+            let (a, b) = (start.value().clone(), end.value().clone());
+            Ok([a.clone().min(b.clone()), a.max(b)])
+        }
     }
+}
+
+/// Validates the distance interval and, for a radial grade, its axis direction.
+pub fn validate_distance_radii(grade: &Grade, impossible: &'static str) -> Result<(), Refusal> {
+    let (r0, r1) = match grade {
+        Grade::Point { r0, r1, .. } => (r0, r1),
+        Grade::Radial {
+            direction, r0, r1, ..
+        } => {
+            if direction
+                .0
+                .iter()
+                .all(|coordinate| coordinate.value().is_zero())
+            {
+                return Err(Refusal::new(
+                    impossible,
+                    "a radial grade needs a nonzero axis direction",
+                ));
+            }
+            (r0, r1)
+        }
+        _ => return Ok(()),
+    };
+    if r0.value() < &Rational::zero() || r1.value() <= r0.value() {
+        return Err(Refusal::new(
+            impossible,
+            "a point or radial grade needs 0 <= r0 < r1",
+        ));
+    }
+    Ok(())
 }
 
 /// Checks the impossible cases of RECIPE.md section 4.15 and returns the cell.
@@ -216,7 +251,7 @@ pub fn validate_gyroid(period: &Rational, level: &Grade) -> Result<(), Refusal> 
             "a linear grade needs two distinct points",
         ));
     }
-    Ok(())
+    validate_distance_radii(level, "gyroid.impossible")
 }
 
 #[cfg(test)]

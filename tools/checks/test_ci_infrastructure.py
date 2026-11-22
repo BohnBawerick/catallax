@@ -4,6 +4,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -72,6 +73,19 @@ class PackageTests(unittest.TestCase):
         self.assertIn('--no-download', calls[0])
         self.assertIn('linux-perf', calls[0])
         self.assertEqual((delays, source), ([], ''))
+
+    def test_perf_package_requires_an_apt_candidate(self):
+        for candidate, available in (('(none)', False), ('7.0.0-14.14', True)):
+            with self.subTest(candidate=candidate), tempfile.TemporaryDirectory() as directory:
+                calls = []
+                policy = subprocess.CompletedProcess(
+                    [], 0, stdout=f'linux-perf:\n  Installed: (none)\n  Candidate: {candidate}\n')
+                with patch.object(deps.subprocess, 'run', return_value=policy):
+                    result = deps.install(Path(directory), 'noble',
+                                          run=lambda call: calls.append(call) or True)
+                self.assertEqual(result['source'], 'cache')
+                self.assertIn('linux-tools-generic', calls[0])
+                self.assertEqual('linux-perf' in calls[0], available)
 
     def test_dns_failure_moves_to_an_independent_signed_mirror(self):
         result, calls, delays, source = self.attempt(iter([False, False, True, True]))

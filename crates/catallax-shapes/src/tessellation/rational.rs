@@ -13,6 +13,7 @@ pub struct RationalSpan {
     centre: [f64; 3],
     control: Net<Interval>,
     first: [Net<Interval>; 2],
+    position_first: [Interval; 2],
     hessian: [Interval; 3],
     affine_hessian: [Interval; 3],
     radius: Interval,
@@ -194,6 +195,7 @@ impl RationalSpan {
             centre,
             control,
             first,
+            position_first,
             hessian,
             affine_hessian,
             radius,
@@ -221,6 +223,11 @@ impl RationalSpan {
     /// Cartesian control hull enclosing the whole span.
     pub fn coordinate_bounds(&self) -> [Interval; 3] {
         self.coordinate_bounds
+    }
+
+    /// Bounds on the speed along the two local span coordinates.
+    pub fn first_derivative_bounds(&self) -> [Interval; 2] {
+        self.position_first
     }
 
     /// Cartesian second derivative bounds for affine parameter interpolation.

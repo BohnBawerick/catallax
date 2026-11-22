@@ -440,13 +440,49 @@ impl FaceBuilder<'_> {
                 .options
                 .max_vertices
                 .saturating_sub(self.positions.len());
-            let grid = spline.seed_grid(
+            let mut grid = spline.seed_grid(
                 &self.options.chord_tolerance.mul_pow2(-1),
                 remaining,
                 self.dec,
             )?;
+            // Use the fixed trim before inserting any seeds. Remove those
+            // outside it and protect the shared segments' diametral disks,
+            // as for analytic trim lattices.
+            let labels = self.labels()?;
+            grid.retain(|&uv| match self.cdt.locate(self.place(uv)) {
+                PositionInTriangulation::InFace(f) => labels[f.index()],
+                PositionInTriangulation::OnEdge(e) => {
+                    !self.cdt.is_constraint_edge(e.as_undirected())
+                        && labels[self.cdt.directed_edge(e).face().index()]
+                }
+                _ => false,
+            });
+            grid.sort_by(|a, b| a[0].total_cmp(&b[0]).then(a[1].total_cmp(&b[1])));
+            let mut protected = BTreeSet::new();
+            for edge in self
+                .cdt
+                .undirected_edges()
+                .filter(|edge| edge.is_constraint_edge())
+            {
+                self.dec.check_deadline()?;
+                let [a, b] = edge.positions();
+                let radius = (a.x - b.x).hypot(a.y - b.y) * 0.5;
+                let middle = (a.x + b.x) * 0.5;
+                let first = grid.partition_point(|uv| uv[0] < middle - radius);
+                for &uv in grid[first..]
+                    .iter()
+                    .take_while(|uv| uv[0] <= middle + radius)
+                {
+                    let at = self.place(uv);
+                    if (at.x - a.x) * (at.x - b.x) + (at.y - a.y) * (at.y - b.y) < 0.0 {
+                        protected.insert(key(uv));
+                    }
+                }
+            }
             for uv in grid {
-                self.free_point(uv)?;
+                if !protected.contains(&key(uv)) {
+                    self.free_point(uv)?;
+                }
             }
             return Ok(());
         }
@@ -1224,11 +1260,16 @@ fn face_mesh(
             .into_owned()
     };
     let is_ruled = ruled(model, face_id, chart, options);
+    // Spade uses one metric per face. Scale its second coordinate by the
+    // physical speeds while evaluating and certifying in the original chart.
+    let stretch = chart
+        .spline()
+        .map_or(1.0, |spline| spline.triangulation_stretch());
     let mut builder = FaceBuilder {
         chart,
         options,
         ruled: is_ruled,
-        stretch: 1.0,
+        stretch,
         unproved: false,
         positions: &mut boundaries.mesh.positions,
         rails: &boundaries.rails,

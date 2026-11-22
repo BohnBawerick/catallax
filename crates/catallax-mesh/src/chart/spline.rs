@@ -232,6 +232,19 @@ impl SplineChart {
             .evaluate_box(span.local_box(uv.map(|value| [value; 2])), dec)
     }
 
+    pub(crate) fn triangulation_stretch(&self) -> f64 {
+        let [du, dv] = self.spans.iter().fold([0.0_f64; 2], |speed, span| {
+            let local = span.rational.first_derivative_bounds();
+            std::array::from_fn(|i| speed[i].max(local[i].hi() / span.width[i].lo()))
+        });
+        let stretch = dv / du;
+        if stretch.is_finite() && stretch > 0.0 {
+            stretch
+        } else {
+            1.0
+        }
+    }
+
     pub(crate) fn chord(&self, uv: &[Uv; 3], dec: &mut Decider) -> Result<Interval, Refusal> {
         let b = parameter_box(uv);
         let width = b.map(|[lo, hi]| point(hi) - point(lo));

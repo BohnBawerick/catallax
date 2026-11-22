@@ -34,6 +34,10 @@ unresolved. There is no change to the 20M work target or 100M allowance.
 
 ## Exact recipe inventory
 
+Fixed spline caps orient each ring according to nesting and use an outer ring
+for the cap normal. The coaxial loft builds compatible circular sections at
+their saved angular starts, including loops authored as quarter arcs.
+
 Both kernels built 19 of the 27 saved or reconstructed sweep and loft
 prefixes within 20M work. This count covers construction, including an
 empty coplanar loft. The results and work matched at 1, 2 and 4 threads.

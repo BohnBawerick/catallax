@@ -500,9 +500,7 @@ impl Plan {
         profiles: &BTreeMap<StepId, Profile>,
         dec: &mut Decider,
     ) -> Result<usize, Refusal> {
-        if sections.len() > 2
-            && let Some(node) = self.circular_station_loft(sections, shape, profiles, dec)?
-        {
+        if let Some(node) = self.circular_station_loft(recipe, sections, shape, profiles, dec)? {
             return Ok(node);
         }
         let node = self.patch_loft(sections, profiles, dec)?;
@@ -724,8 +722,13 @@ impl Plan {
         {
             return Ok(None);
         }
-        // Circle charts start at the same local +x point in both sections.
-        if sections[0].start[0] != a.ids[0] || sections[1].start[0] != b.ids[0] {
+        // A whole-circle segment starts at local +x. Merged arc loops can
+        // carry a different start and need the station loft's phase check.
+        if sections.iter().any(|section| {
+            !matches!(authored_loops(recipe, &section.profile), [lp]
+                if matches!(lp.0.as_slice(), [catallax_recipe::Segment::Circle { id, .. }]
+                    if id == &section.start[0]))
+        }) {
             return Ok(None);
         }
         let normal = crate::profile::rational_vector(

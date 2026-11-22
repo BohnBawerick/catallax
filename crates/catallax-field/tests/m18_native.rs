@@ -67,6 +67,85 @@ fn fixed_spline_caps_exclude_a_nested_polygon() {
 }
 
 #[test]
+fn fixed_spline_caps_exclude_a_clockwise_hole_listed_first() {
+    let source = include_str!("../../catallax-features/tests/fixtures/spline-sweep-spatial.json");
+    let mut source: Json = serde_json::from_str(source).unwrap();
+    source["steps"][0]["loops"].as_array_mut().unwrap().insert(
+        0,
+        json!([
+            {"kind":"line","id":"h0","to":["1","1/2"]},
+            {"kind":"line","id":"h1","to":["1","3/2"]},
+            {"kind":"line","id":"h2","to":["2","3/2"]},
+            {"kind":"line","id":"h3","to":["2","1/2"]}
+        ]),
+    );
+    source["steps"][1]["segments"][0] = json!({
+        "kind":"spline","id":"travel","degree":1,
+        "control_points":[["0","0","0"],["0","0","3"]],
+        "weights":["1","1"],"knots":["0","0","1","1"]
+    });
+    let recipe = Recipe::parse(&source.to_string()).unwrap();
+    let (plan, work) = with_operation_budget(20_000_000, || Plan::compile(&recipe));
+    assert!(!work.exhausted);
+    let plan = plan.unwrap();
+    assert_eq!(
+        location(&plan, &p("19/10", "1", "29/10")),
+        Location::Outside
+    );
+    assert_eq!(location(&plan, &p("1/2", "1", "29/10")), Location::Inside);
+    assert_eq!(location(&plan, &p("3/2", "1", "3")), Location::Outside);
+    assert_eq!(location(&plan, &p("3", "1", "3")), Location::Boundary);
+    assert!(
+        plan.fast([3.0, 1.0, 2.9], &mut Workspace::default())
+            .unwrap()
+            .value
+            < 0.0
+    );
+}
+
+#[test]
+fn ruled_circular_loft_keeps_the_saved_quarter_arc_phase() {
+    for station_count in [3, 2] {
+        let cardinal = [["1", "0"], ["0", "1"], ["-1", "0"], ["0", "-1"]];
+        let ids = ["a", "b", "c", "d"];
+        let profiles = ["low", "middle", "high"];
+        let heights = ["0", "2", "4"];
+        let mut steps = Vec::new();
+        let mut sections = Vec::new();
+        for i in 0..station_count {
+            let phase = usize::from(i == 1);
+            let ring: Vec<_> = (0..4)
+                .map(|j| {
+                    json!({"kind":"arc","id":ids[j],"centre":["0","0"],
+                    "to":cardinal[(phase+j+1)%4],"turn":"ccw"})
+                })
+                .collect();
+            steps.push(
+                json!({"id":profiles[i],"op":"sketch","plane":pose("0","0",heights[i]),
+                "loops":[ring]}),
+            );
+            sections.push(json!({"profile":profiles[i],"start":["a"]}));
+        }
+        steps.push(json!({"id":"loft","op":"loft","sections":sections,"shape":"ruled"}));
+        let recipe = recipe(steps);
+        let (plan, work) = with_operation_budget(20_000_000, || Plan::compile(&recipe));
+        assert!(!work.exhausted, "{station_count} stations used {work:?}");
+        let plan = plan.unwrap();
+        // Halfway between +X and +Y phases the radius is sqrt(1/2).
+        assert_eq!(location(&plan, &p("9/10", "0", "1")), Location::Outside);
+        assert_eq!(location(&plan, &p("7/10", "0", "1")), Location::Inside);
+        assert_eq!(
+            location(&plan, &p("0", "0", "2")),
+            if station_count == 2 {
+                Location::Boundary
+            } else {
+                Location::Inside
+            }
+        );
+    }
+}
+
+#[test]
 fn natural_circle_loft_uses_uniform_stations_instead_of_physical_spacing() {
     let source = include_str!("../../catallax-features/tests/fixtures/loft-natural-circles.json");
     let mut source: Json = serde_json::from_str(source).unwrap();

@@ -142,21 +142,30 @@ impl Plan {
                 }
             }
         }
-        let mut rings = rings.into_iter();
-        let (mut start, positive, _) = rings.next().expect("nonempty profile");
-        let mut finish: Vec<_> = start.iter().map(|p| p.plus(&end)).collect();
-        if positive {
-            start.reverse();
-        } else {
-            finish.reverse();
-        }
-        let other_start: Vec<_> = rings.map(|(vertices, _, _)| vertices).collect();
-        let other_finish = other_start
+        // The cap uses the first ring for its normal. Use a material ring
+        // there and orient every ring by nesting, regardless of authored order.
+        let outer = rings
             .iter()
-            .map(|vertices| vertices.iter().map(|p| p.plus(&end)).collect())
-            .collect();
-        for (outer, inner) in [(start, other_start), (finish, other_finish)] {
-            faces.push(Face::Polygon(Box::new(Polygon::with_rings(outer, inner)?)));
+            .position(|(_, _, hole)| !hole)
+            .expect("validated profile");
+        rings.swap(0, outer);
+        for at_end in [false, true] {
+            let mut cap = rings.iter().map(|(ring, positive, hole)| {
+                let mut vertices = if at_end {
+                    ring.iter().map(|p| p.plus(&end)).collect()
+                } else {
+                    ring.clone()
+                };
+                if (*positive != *hole) != at_end {
+                    vertices.reverse();
+                }
+                vertices
+            });
+            let first = cap.next().expect("nonempty profile");
+            faces.push(Face::Polygon(Box::new(Polygon::with_rings(
+                first,
+                cap.collect(),
+            )?)));
         }
         let shell = Shell::new(faces)?;
         self.leaf(Leaf::Shell(Box::new(shell)), vec![], dec)

@@ -403,9 +403,7 @@ impl Builder<'_> {
                 minor: minor.clone().into(),
                 ref_dir: vector(&p.ref_dir),
             }),
-            Surface::BSpline(source) => {
-                crate::spline_build::surface(&face.name, source, &mut self.dec)?
-            }
+            Surface::BSpline(source) => crate::spline_build::surface(face, source, &mut self.dec)?,
         })
     }
 

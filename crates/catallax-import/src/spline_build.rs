@@ -6,7 +6,7 @@ use catallax_numbers::{
 };
 use catallax_shapes::{BSplineCurve, Curve, Line, RPoint3, RVector3, RationalPatch, Surface};
 
-use crate::{ImportRefusal, OrientedEdge, StepSplineSurface};
+use crate::{Face, ImportRefusal, OrientedEdge, StepSplineSurface};
 
 pub(crate) fn refused(entity: &str, kind: &str, step: &str, error: Refusal) -> ImportRefusal {
     if current_operation_work().exhausted {
@@ -19,16 +19,125 @@ pub(crate) fn refused(entity: &str, kind: &str, step: &str, error: Refusal) -> I
 }
 
 pub(crate) fn surface(
-    entity: &str,
+    face: &Face,
     source: &StepSplineSurface,
     dec: &mut Decider,
 ) -> Result<Surface, ImportRefusal> {
-    let support = source
-        .geometry
-        .to_surface(dec)
-        .and_then(|carrier| RationalPatch::new(carrier, dec))
-        .map_err(|error| refused(entity, "ADVANCED_FACE", "support admission", error))?;
+    let carrier = &source.geometry;
+    let result = (|| {
+        let trimmed = rectangular_trim(face, source, dec)?
+            .map(|domain| carrier.extracted(domain.each_ref().map(|axis| axis.each_ref()), dec))
+            .transpose()?;
+        RationalPatch::new(trimmed.as_ref().unwrap_or(carrier).to_surface(dec)?, dec)
+    })();
+    let support =
+        result.map_err(|error| refused(&face.name, "ADVANCED_FACE", "support admission", error))?;
     Ok(Surface::BSpline(support.into()))
+}
+
+// A nonplanar bilinear carrier has unique coordinates in the basis
+// (P10-P00, P01-P00, P11-P10-P01+P00). A straight physical edge
+// can follow an iso-row exactly. The four full rows are checked later
+// against the clipped carrier by RationalPatchFace.
+fn rectangular_trim(
+    face: &Face,
+    source: &StepSplineSurface,
+    dec: &mut Decider,
+) -> Result<Option<[[Rational; 2]; 2]>, Refusal> {
+    use crate::exact::{cross, dot, sub};
+    let [ring] = face.loops.as_slice() else {
+        return Ok(None);
+    };
+    let carrier = &source.geometry;
+    let [p00, p01, p10, p11] = carrier.controls() else {
+        return Ok(None);
+    };
+    if carrier.degrees() != [1, 1]
+        || carrier.weights().iter().any(|w| w != &carrier.weights()[0])
+        || ring.edges.len() != 4
+        || !ring.edges.iter().all(|edge| match &edge.curve {
+            crate::Curve::Line(..) => true,
+            crate::Curve::BSpline(spline) => {
+                spline.geometry.degree() == 1 && spline.geometry.controls().len() == 2
+            }
+            _ => false,
+        })
+        || ring
+            .edges
+            .iter()
+            .all(|edge| carrier.controls().contains(&edge.start.point))
+    {
+        return Ok(None);
+    }
+
+    let limbs: u64 = carrier
+        .controls()
+        .iter()
+        .chain(
+            ring.edges
+                .iter()
+                .flat_map(|edge| [&edge.start.point, &edge.end.point]),
+        )
+        .flatten()
+        .map(Rational::limbs)
+        .max()
+        .unwrap_or(1);
+    // The only unbounded arithmetic here is on the input rational limbs.
+    // There are four edges and a fixed number of dot and cross products.
+    dec.charge_work(limbs.saturating_mul(limbs).saturating_mul(128))?;
+
+    Ok((|| {
+        let u = sub(p10, p00);
+        let v = sub(p01, p00);
+        let uv = sub(&sub(p11, p10), &v);
+        let dual_u = cross(&v, &uv);
+        let dual_v = cross(&uv, &u);
+        let dual_uv = cross(&u, &v);
+        let volume = dot(&u, &dual_u);
+        if volume.is_zero() {
+            return None;
+        }
+        let coordinate = |p: &crate::Vec3| {
+            let q = sub(p, p00);
+            let a = &dot(&q, &dual_u) / &volume;
+            let b = &dot(&q, &dual_v) / &volume;
+            let in_range = |x: &Rational| Rational::zero() <= *x && *x <= Rational::one();
+            (in_range(&a) && in_range(&b) && dot(&q, &dual_uv) == &(&a * &b) * &volume)
+                .then_some([a, b])
+        };
+        let mut vertices = std::collections::BTreeSet::new();
+        for edge in &ring.edges {
+            let a = coordinate(&edge.start.point)?;
+            let b = coordinate(&edge.end.point)?;
+            if (a[0] == b[0]) == (a[1] == b[1]) {
+                return None;
+            }
+            vertices.extend([a, b]);
+        }
+        if vertices.len() != 4 {
+            return None;
+        }
+        let unit_bounds: [[Rational; 2]; 2] = std::array::from_fn(|axis| {
+            let values = || vertices.iter().map(|uv| &uv[axis]);
+            [
+                values().min().unwrap().clone(),
+                values().max().unwrap().clone(),
+            ]
+        });
+        if unit_bounds.iter().any(|[lo, hi]| lo >= hi)
+            || !vertices
+                .iter()
+                .all(|uv| (0..2).all(|axis| unit_bounds[axis].contains(&uv[axis])))
+        {
+            return None;
+        }
+        let domain = carrier.domain();
+        let trimmed = std::array::from_fn(|axis| {
+            let [lo, hi] = domain[axis];
+            unit_bounds[axis].each_ref().map(|t| lo + &(t * &(hi - lo)))
+        });
+        (trimmed.each_ref().map(|axis| axis.each_ref()) != domain).then_some(trimmed)
+    })())
 }
 
 fn point(p: &[Rational; 3]) -> catallax_shapes::Point3 {

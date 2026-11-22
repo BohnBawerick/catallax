@@ -303,7 +303,20 @@ pub(crate) fn check_faces_with_deadline(
             let outcome = match ready {
                 Ok(s) => {
                     let (fa, fb) = (s.faces[i], s.faces[j]);
-                    crate::curved::pair_intersects(&mut s.model, fa, fb, &mut dec)
+                    crate::hull::apart_on_trimmed_carriers(
+                        &faces[i],
+                        &faces[j],
+                        &s.model,
+                        [fa, fb],
+                        &mut dec,
+                    )
+                    .and_then(|apart| {
+                        if apart {
+                            Ok(false)
+                        } else {
+                            crate::curved::pair_intersects(&mut s.model, fa, fb, &mut dec)
+                        }
+                    })
                 }
                 Err(reason) => Err(reason.clone()),
             };

@@ -2,13 +2,13 @@
 //! elapsed time: the manifest, the operation log, the work count, a refusal
 //! when the allowance runs out, and the bytes of every file are those of one
 //! thread.
+
+mod support;
+
 use serde_json::{Value, json};
-use std::{
-    fs,
-    io::Write,
-    path::Path,
-    process::{Command, Stdio},
-};
+use std::{fs, io::Write, path::Path, process::Stdio};
+
+use support::bin_command;
 
 // Small enough to run ten times, wide enough to pass through the Boolean
 // stages, a fillet-free STEP export with curved pcurves, and a refusal.
@@ -102,7 +102,7 @@ fn run(label: &str, threads: Option<usize>, mode: Option<&str>) -> Run {
     let dir = std::env::temp_dir().join(format!("catallax-threads-{}-{label}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
-    let mut command = Command::new(env!("CARGO_BIN_EXE_catallax-verify"));
+    let mut command = bin_command!("catallax-verify");
     command.env_remove("CATALLAX_THREADS");
     command.env_remove("CATALLAX_RUN_AHEAD");
     if let Some(threads) = threads {
@@ -184,13 +184,13 @@ fn thread_count_changes_only_elapsed_time() {
 #[test]
 fn a_thread_count_must_be_positive() {
     for count in ["0", "many"] {
-        let output = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+        let output = bin_command!("catallax-verify")
             .args(["--threads", count, "about"])
             .output()
             .unwrap();
         assert_eq!(output.status.code(), Some(64), "--threads {count}");
     }
-    let output = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+    let output = bin_command!("catallax-verify")
         .args(["--threads", "3", "about"])
         .output()
         .unwrap();

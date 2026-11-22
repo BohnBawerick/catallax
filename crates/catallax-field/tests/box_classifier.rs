@@ -17,7 +17,7 @@ use serde_json::json;
 type Corners = ([Rational; 3], [Rational; 3]);
 
 fn part(name: &str) -> Plan {
-    let path = format!("{}/../../parts/{name}.json", env!("CARGO_MANIFEST_DIR"));
+    let path = format!("../../parts/{name}.json");
     let recipe = Recipe::parse(&std::fs::read_to_string(path).unwrap()).unwrap();
     Plan::compile_checked(&recipe, &mut Decider::default()).unwrap()
 }

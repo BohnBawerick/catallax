@@ -377,10 +377,7 @@ fn an_arc_with_an_irrational_radius_is_refused() {
 /// Files from another writer: OpenCASCADE 8.0 (`cadquery-ocp==8.0.1.1.0`,
 /// `IGESControl_Writer("MM", 1)`, B-rep mode), with the author field replaced.
 fn occt(name: &str) -> Vec<u8> {
-    let path = format!(
-        "{}/tests/fixtures/iges/occt-{name}.igs",
-        env!("CARGO_MANIFEST_DIR")
-    );
+    let path = format!("tests/fixtures/iges/occt-{name}.igs");
     std::fs::read(path).unwrap()
 }
 

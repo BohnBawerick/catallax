@@ -1,11 +1,17 @@
 //! Exercise the persistent public command through stdin and output artifacts.
+
+mod support;
+
 use serde_json::{Value, json};
 use std::{
     fs,
     io::Write,
-    process::{Command, Stdio},
+    process::Stdio,
     sync::atomic::{AtomicUsize, Ordering},
 };
+
+use support::bin_command;
+
 static NEXT: AtomicUsize = AtomicUsize::new(0);
 
 #[test]
@@ -25,7 +31,7 @@ fn a_surface_import_remains_typed_in_the_command_and_written_step() {
         std::process::id(),
         NEXT.fetch_add(1, Ordering::Relaxed)
     ));
-    let mut child = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+    let mut child = bin_command!("catallax-verify")
         .arg("stream")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -76,7 +82,7 @@ fn stream_ignores_wall_limit_and_resets_operation_budget() {
         NEXT.fetch_add(1, Ordering::Relaxed)
     ));
     fs::create_dir_all(&dir).unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+    let mut child = bin_command!("catallax-verify")
         .arg("stream")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -197,7 +203,7 @@ fn exported_recipe_replays_geometry_work_and_operation_outcomes() {
         max_work: 12_345_678,
     })
     .unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+    let output = bin_command!("catallax-verify")
         .args([
             "replay",
             directory.join("question.json").to_str().unwrap(),
@@ -617,7 +623,7 @@ fn planar_drafts_export_checked_step_at_the_application_allowance() {
         assert_eq!(text.matches("=PLANE(").count(), 6);
         assert!(!text.contains("B_SPLINE"));
 
-        let replay = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+        let replay = bin_command!("catallax-verify")
             .args([
                 "replay",
                 dir.join("application/question.json").to_str().unwrap(),
@@ -883,7 +889,7 @@ fn a_fitted_recipe_answers_with_its_certificate_through_both_routes() {
         NEXT.fetch_add(1, Ordering::Relaxed)
     ));
     fs::create_dir_all(&dir).unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+    let mut child = bin_command!("catallax-verify")
         .arg("stream")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -935,7 +941,7 @@ fn a_fitted_recipe_answers_with_its_certificate_through_both_routes() {
 
 #[test]
 fn the_seamed_step_wrapper_checks_every_written_file() {
-    let about = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+    let about = bin_command!("catallax-verify")
         .arg("about")
         .output()
         .unwrap();
@@ -964,7 +970,7 @@ fn the_seamed_step_wrapper_checks_every_written_file() {
         NEXT.fetch_add(1, Ordering::Relaxed)
     ));
     fs::create_dir_all(&dir).unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+    let mut child = bin_command!("catallax-verify")
         .arg("stream")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

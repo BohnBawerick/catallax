@@ -1,4 +1,7 @@
-use std::ops::{Add, Mul, Sub};
+use std::{
+    cell::RefCell,
+    ops::{Add, Div, Mul, Sub},
+};
 
 use catallax_numbers::{Decider, Interval, Rational, Refusal};
 
@@ -22,6 +25,12 @@ pub struct RationalSpan {
     radius: Interval,
     min_weight: Interval,
     coordinate_bounds: [Interval; 3],
+    position_row: RefCell<Option<PositionRow>>,
+}
+
+struct PositionRow {
+    u: u64,
+    controls: Net<Interval>,
 }
 
 /// A floating-point chart parameter and an outward bound on its point residual.
@@ -240,6 +249,7 @@ impl RationalSpan {
             radius,
             min_weight,
             coordinate_bounds,
+            position_row: RefCell::default(),
         })
     }
 
@@ -347,26 +357,51 @@ impl RationalSpan {
         }
         let center = uv.map(|value| point(value.mid()));
         let delta = std::array::from_fn(|i| uv[i] - center[i]);
-        let [x, y, z, weight] = if uv.iter().all(|axis| axis.width() == 0.0) {
-            intersect_hull(
-                evaluate(&self.control, self.degree, uv, point, |i| i, dec)?,
-                self.control_hull,
-            )
-        } else {
-            centered_range(
-                &self.control,
-                self.degree,
-                [center, delta],
-                self.control_hull,
-                self.first_hulls,
-                dec,
-            )?
-        };
+        let at = self.homogeneous_position(center.map(|axis| axis.mid()), dec)?;
+        let [x, y, z, weight] = expand_center(at, delta, self.control_hull, self.first_hulls, dec)?;
         let weight = Interval::new(weight.lo().max(self.min_weight.lo()), weight.hi())
             .ok_or_else(|| refuse("evaluated weight and control bounds do not overlap"))?;
         Ok(std::array::from_fn(|i| {
             [x, y, z][i] / weight + point(self.centre[i])
         }))
+    }
+
+    fn homogeneous_position(
+        &self,
+        [u, v]: [f64; 2],
+        dec: &mut Decider,
+    ) -> Result<[Interval; 4], Refusal> {
+        // On a tensor grid, consecutive points have the same u. Collapse
+        // that axis once when the saved tensor products cover the contraction.
+        if self.degree[0] < 3 || self.degree[1] == 0 || !(0.0 < u && u < 1.0) {
+            return evaluate(&self.control, self.degree, [u, v], point, |i| i, dec);
+        }
+        let key = u.to_bits();
+        let mut row = self.position_row.borrow_mut();
+        if row.as_ref().is_none_or(|entry| entry.u != key) {
+            if v <= 0.0 || v >= 1.0 {
+                return evaluate(&self.control, self.degree, [u, v], point, |i| i, dec);
+            }
+            let (weights, products) = basis(self.degree[0], u, &point);
+            dec.charge_work((products + 4 * self.control.len()) as u64)?;
+            let mut controls = vec![[point(0.0); 4]; self.degree[1] + 1];
+            for (values, weight) in self.control.chunks_exact(controls.len()).zip(weights) {
+                for (column, value) in controls.iter_mut().zip(values) {
+                    for (out, component) in column.iter_mut().zip(value) {
+                        *out = *out + weight * *component;
+                    }
+                }
+            }
+            *row = Some(PositionRow { u: key, controls });
+        }
+        evaluate(
+            &row.as_ref().unwrap().controls,
+            [0, self.degree[1]],
+            [0.0, v],
+            point,
+            |i| i,
+            dec,
+        )
     }
 
     /// Encloses a positive multiple of the parameter normal over a cell.
@@ -528,13 +563,53 @@ fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
 
-fn basis<T>(degree: usize, t: T, one: T, zero: T) -> Vec<T>
+fn basis<T>(degree: usize, at: f64, scalar: &impl Fn(f64) -> T) -> (Vec<T>, usize)
 where
-    T: Copy + Add<Output = T> + Sub<Output = T> + Mul<Output = T>,
+    T: Copy + Add<Output = T> + Sub<Output = T> + Mul<Output = T> + Div<Output = T>,
 {
+    let one = scalar(1.0);
+    let t = scalar(at);
+    let complement = one - t;
+    if degree > 2 {
+        // Consecutive Bernstein basis functions have the ratio in Woźny and
+        // Chudy (2020), section 2. Reverse the order to divide by max(t, 1-t).
+        let reversed = at > 0.5;
+        let (major, minor) = if reversed {
+            (t, complement)
+        } else {
+            (complement, t)
+        };
+        let odds = minor / major;
+        let mut power = major;
+        let mut exponent = degree;
+        let mut weight = one;
+        let mut products = 0;
+        while exponent != 0 {
+            if exponent & 1 == 1 {
+                weight = weight * power;
+                products += 1;
+            }
+            exponent >>= 1;
+            if exponent != 0 {
+                power = power * power;
+                products += 1;
+            }
+        }
+        let mut values = Vec::with_capacity(degree + 1);
+        values.push(weight);
+        for i in 1..=degree {
+            let ratio = scalar((degree - i + 1) as f64) / scalar(i as f64);
+            weight = weight * (ratio * odds);
+            values.push(weight);
+        }
+        if reversed {
+            values.reverse();
+        }
+        return (values, products + 2 * degree);
+    }
+    let zero = scalar(0.0);
     let mut values = vec![zero; degree + 1];
     values[0] = one;
-    let complement = one - t;
     for order in 1..=degree {
         values[order] = values[order - 1] * t;
         for i in (1..order).rev() {
@@ -542,34 +617,30 @@ where
         }
         values[0] = values[0] * complement;
     }
-    values
+    (values, degree * (degree + 1))
 }
 
 fn evaluate<T>(
     net: &[[Interval; 4]],
     [u, v]: [usize; 2],
-    uv: [T; 2],
+    uv: [f64; 2],
     scalar: impl Fn(f64) -> T,
     value: impl Fn(Interval) -> T,
     dec: &mut Decider,
 ) -> Result<[T; 4], Refusal>
 where
-    T: Copy + PartialEq + Add<Output = T> + Sub<Output = T> + Mul<Output = T>,
+    T: Copy + Add<Output = T> + Sub<Output = T> + Mul<Output = T> + Div<Output = T>,
 {
     let zero = scalar(0.0);
     let one = scalar(1.0);
-    let active_basis = |degree, parameter| {
-        if degree == 0 || parameter == zero {
+    let active_basis = |degree, parameter: f64| {
+        if degree == 0 || parameter <= 0.0 {
             (0, vec![one], 0)
-        } else if parameter == one {
+        } else if parameter >= 1.0 {
             (degree, vec![one], 0)
         } else {
-            // Each recurrence order k has 2k products.
-            (
-                0,
-                basis(degree, parameter, one, zero),
-                degree * (degree + 1),
-            )
+            let (weights, products) = basis(degree, parameter, &scalar);
+            (0, weights, products)
         }
     };
     let (first_row, rows, u_products) = active_basis(u, uv[0]);
@@ -619,7 +690,24 @@ fn centered_range(
 ) -> Result<[Interval; 4], Refusal> {
     // Mean value form on the box. The Bernstein hulls bound the two
     // derivatives along both coordinate displacements from the centre.
-    let at = evaluate(net, degree, center, point, |i| i, dec)?;
+    let at = evaluate(
+        net,
+        degree,
+        center.map(|axis| axis.mid()),
+        point,
+        |i| i,
+        dec,
+    )?;
+    expand_center(at, [du, dv], hull, [u, v], dec)
+}
+
+fn expand_center(
+    at: [Interval; 4],
+    [du, dv]: [Interval; 2],
+    hull: [Interval; 4],
+    [u, v]: [[Interval; 4]; 2],
+    dec: &mut Decider,
+) -> Result<[Interval; 4], Refusal> {
     let zero = point(0.0);
     let u_delta = if du == zero {
         [zero; 4]
@@ -652,6 +740,53 @@ fn intersect_hull(evaluated: [Interval; 4], hull: [Interval; 4]) -> [Interval; 4
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bernstein_basis_encloses_cubic_weights_from_both_ends() {
+        let exact = [27.0, 27.0, 9.0, 1.0].map(|entry| entry / 64.0);
+        for (at, expected) in [
+            (0.25, exact),
+            (0.75, [exact[3], exact[2], exact[1], exact[0]]),
+        ] {
+            let (weights, _) = basis(3, at, &point);
+            assert!(
+                weights
+                    .into_iter()
+                    .zip(expected)
+                    .all(|(weight, value)| weight.contains(value))
+            );
+        }
+    }
+
+    #[test]
+    fn contracted_rows_enclose_positions_before_and_after_row_changes() {
+        // The controls represent S(u, v) = (u³, v, u³v).
+        let controls = (0..4)
+            .flat_map(|i| {
+                let x = f64::from(u8::from(i == 3));
+                [0.0, 1.0].map(move |v| [x, v, x * v, 1.0].map(point))
+            })
+            .collect();
+        let mut dec = Decider::default();
+        let span = RationalSpan::prepare(
+            std::array::from_fn(|_| [Rational::zero(), Rational::one()]),
+            [3, 1],
+            controls,
+            &mut dec,
+        )
+        .unwrap();
+        for u in [0.25_f64, 0.75, 0.25] {
+            let x = u.powi(3);
+            for v in [0.25, 0.5, 1.0] {
+                let xyz = span.evaluate([u, v], &mut dec).unwrap();
+                assert!(
+                    xyz.into_iter()
+                        .zip([x, v, x * v])
+                        .all(|(a, b)| a.contains(b))
+                );
+            }
+        }
+    }
 
     #[test]
     fn bilinear_chart_bounds_triangle_interior_and_projects_an_exact_point() {

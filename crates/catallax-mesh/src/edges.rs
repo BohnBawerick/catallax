@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use catallax_intersect::{TracePiece, trace};
 use catallax_numbers::{Ball, Decider, Interval, MarkLog, Rational, Real, Refusal};
-use catallax_shapes::FilletCut;
+use catallax_shapes::{DisplayCut, FilletCut};
 use catallax_topology::{BodyId, EdgeId, Loop, Model, Sense, VertexId};
 
 use crate::{
@@ -155,9 +155,16 @@ pub(crate) fn trace_chord(
     })
 }
 
+struct Cap<'a> {
+    cut: &'a FilletCut,
+    chart: DisplayCut,
+    forward: bool,
+    coefficient: Rational,
+}
+
 struct Sampler<'a> {
     piece: &'a Arc<TracePiece>,
-    cap: Option<(&'a FilletCut, Rational)>,
+    cap: Option<Cap<'a>>,
     charts: &'a [&'a Chart],
     spline_cosine: Option<Interval>,
     options: &'a MeshOptions,
@@ -170,8 +177,8 @@ struct Sampler<'a> {
 
 impl Sampler<'_> {
     fn acceleration(&self, interval: &Ball) -> Result<Rational, Refusal> {
-        if let Some((_, coefficient)) = &self.cap {
-            return Ok(coefficient.clone());
+        if let Some(cap) = &self.cap {
+            return Ok(cap.coefficient.clone());
         }
         if let Some(jets) = self
             .piece
@@ -198,7 +205,7 @@ impl Sampler<'_> {
     fn insert_middle(&mut self, mut position: [f64; 3], t: &Rational) -> Result<usize, Refusal> {
         let index = self.positions.len();
         if let Some(points) = &mut self.exact_positions {
-            let point = if let Some((cut, _)) = &self.cap {
+            let point = if let Some(Cap { cut, .. }) = &self.cap {
                 let mut coordinates = position.map(chart::q);
                 // Spell the point exactly on the cap plane for its trim
                 // predicates. The chord check includes this replacement.
@@ -223,18 +230,26 @@ impl Sampler<'_> {
         Ok(index)
     }
 
-    fn enclose_point(&self, t: &Rational) -> Result<[Ball; 3], Refusal> {
-        if let Some(jets) = self
-            .piece
-            .taylor_interval(Interval::from_rational(t), 0, self.dec)?
-        {
-            let values = jets[0];
+    fn enclose_point(&mut self, t: &Rational) -> Result<[Ball; 3], Refusal> {
+        let goal = Interval::from_rational(&self.options.chord_tolerance.mul_pow2(-4)).lo();
+        let parameter = Interval::from_rational(t);
+        let filtered = if let Some(cap) = &self.cap {
+            let theta = if cap.forward {
+                parameter
+            } else {
+                Interval::point(1.0).unwrap() - parameter
+            };
+            cap.chart.enclose(theta, goal, self.dec)?
+        } else {
+            self.piece
+                .taylor_interval(parameter, 0, self.dec)?
+                .map(|jets| jets[0])
+        };
+        if let Some(values) = filtered {
             let width = values.iter().fold(Interval::point(0.0).unwrap(), |sum, x| {
                 sum + Interval::point(x.width()).unwrap()
             });
-            if width.is_finite()
-                && chart::q(width.hi()) <= self.options.chord_tolerance.mul_pow2(-4)
-            {
+            if width.is_finite() && width.hi() <= goal {
                 return Ok(values.map(|x| {
                     Ball::from_rational(&chart::q(x.lo()), BITS)
                         .hull(&Ball::from_rational(&chart::q(x.hi()), BITS))
@@ -561,9 +576,13 @@ pub(crate) fn sample(
             let start = *indices.last().unwrap();
             let cap = piece
                 .fillet_cut()
-                .map(|cut| {
-                    cut.display_acceleration(dec)
-                        .map(|acceleration| (cut.cut(), acceleration.mul_pow2(-1)))
+                .map(|(trace, forward)| {
+                    Ok::<_, Refusal>(Cap {
+                        cut: trace.cut(),
+                        chart: trace.display_chart(dec)?,
+                        forward,
+                        coefficient: trace.display_acceleration(dec)?.mul_pow2(-1),
+                    })
                 })
                 .transpose()?;
             Sampler {

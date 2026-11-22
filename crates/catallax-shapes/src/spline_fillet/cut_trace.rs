@@ -1,6 +1,7 @@
 //! Enclosures of a proved cap cut, without replacing it by its STEP fit.
 
 use super::*;
+use crate::tessellation::{RationalSpan, rational_spans};
 use catallax_numbers::Interval;
 
 /// A proved plane cut, parametrised by the carrier's second parameter.
@@ -10,6 +11,18 @@ pub struct FilletCutTrace {
     fillet: SplineFillet,
     cut: FilletCut,
     coefficients: Vec<[Vec<Rational>; 3]>,
+}
+
+/// Binary64 enclosures of the same cap equation and carrier used by the trace.
+pub struct DisplayCut {
+    spans: Vec<DisplaySpan>,
+    before: Sign,
+}
+
+struct DisplaySpan {
+    g: [Vec<Interval>; 3],
+    speed: Interval,
+    carrier: RationalSpan,
 }
 
 fn evaluate(mut row: Vec<Ball>, t: &Ball) -> Ball {
@@ -70,6 +83,27 @@ impl FilletCutTrace {
         self.fillet
             .rail_point(side, &self.cut.ends[side])
             .expect("a cut ends at rail nodes")
+    }
+
+    /// Prepares outward-rounded coefficients for repeated display sampling.
+    pub fn display_chart(&self, dec: &mut Decider) -> Result<DisplayCut, Refusal> {
+        let spans = rational_spans(self.fillet.carrier(), dec)?
+            .into_iter()
+            .skip(self.cut.spans[0])
+            .zip(&self.coefficients)
+            .map(|(carrier, rows)| {
+                let g = rows
+                    .each_ref()
+                    .map(|row| row.iter().map(Interval::from_rational).collect::<Vec<_>>());
+                let speed = hull(g.iter().flat_map(|row| difference(row)));
+                dec.charge_work(g.iter().map(|row| row.len() - 1).sum::<usize>() as u64)?;
+                Ok(DisplaySpan { g, speed, carrier })
+            })
+            .collect::<Result<Vec<_>, Refusal>>()?;
+        Ok(DisplayCut {
+            spans,
+            before: self.cut.before,
+        })
     }
 
     /// Upper bound on the spatial acceleration with respect to theta.
@@ -210,5 +244,75 @@ impl FilletCutTrace {
         }
         let tau = ball(&lower[0]).hull(&ball(&upper[1]));
         self.fillet.carrier().evaluate(&tau, &theta, dec)
+    }
+}
+
+impl DisplayCut {
+    /// Encloses the cut point by interval Newton inside the Bernstein spans.
+    /// A sample that does not converge in binary64 uses the original trace.
+    pub fn enclose(
+        &self,
+        theta: Interval,
+        output_width: f64,
+        dec: &mut Decider,
+    ) -> Result<Option<[Interval; 3]>, Refusal> {
+        let one = Interval::point(1.0).unwrap();
+        let blend = |a: Interval, b: Interval| a + (b - a) * theta;
+        let side = |g: Interval, sign: Sign| match sign {
+            Sign::Positive => g.lo() > 0.0,
+            Sign::Negative => g.hi() < 0.0,
+            Sign::Zero => false,
+        };
+        let after = if self.before == Sign::Positive {
+            Sign::Negative
+        } else {
+            Sign::Positive
+        };
+        let mut found: Option<[Interval; 3]> = None;
+        for span in &self.spans {
+            let [a, b, c] = &span.g;
+            let column = |i: usize| blend(blend(a[i], b[i]), blend(b[i], c[i]));
+            let end = a.len() - 1;
+            dec.charge_work(6)?;
+            if side(column(0), after) || side(column(end), self.before) {
+                continue;
+            }
+            if span.speed.lo() <= 0.0 && span.speed.hi() >= 0.0 {
+                return Ok(None);
+            }
+            let values: Vec<_> = (0..=end).map(column).collect();
+            dec.charge_work((3 * values.len()) as u64)?;
+            let mut work = values.clone();
+            let mut root = Interval::new(0.0, 1.0).unwrap();
+            let speed = span.carrier.first_derivative_bounds()[0].hi();
+            for _ in 0..f64::MANTISSA_DIGITS {
+                if root.width() * speed <= output_width {
+                    break;
+                }
+                work.copy_from_slice(&values);
+                let middle = Interval::point(root.mid()).unwrap();
+                let complement = one - middle;
+                dec.charge_work((end * (end + 1)) as u64)?;
+                for step in 1..=end {
+                    for i in 0..=end - step {
+                        work[i] = work[i] * complement + work[i + 1] * middle;
+                    }
+                }
+                let next = middle - work[0] / span.speed;
+                let Some(next) = Interval::new(root.lo().max(next.lo()), root.hi().min(next.hi()))
+                else {
+                    return Ok(None);
+                };
+                if next.width() >= root.width() {
+                    return Ok(None);
+                }
+                root = next;
+            }
+            let point = span.carrier.evaluate_box([root, theta], dec)?;
+            found = Some(found.map_or(point, |cover| {
+                std::array::from_fn(|i| cover[i].hull(&point[i]))
+            }));
+        }
+        Ok(found)
     }
 }

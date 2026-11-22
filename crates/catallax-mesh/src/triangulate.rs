@@ -450,7 +450,7 @@ impl FaceBuilder<'_> {
             // as for analytic trim lattices.
             let labels = self.labels()?;
             grid.retain(|&uv| match self.cdt.locate(self.place(uv)) {
-                PositionInTriangulation::InFace(f) => labels[f.index()],
+                PositionInTriangulation::OnFace(f) => labels[f.index()],
                 PositionInTriangulation::OnEdge(e) => {
                     !self.cdt.is_constraint_edge(e.as_undirected())
                         && labels[self.cdt.directed_edge(e).face().index()]
@@ -466,7 +466,7 @@ impl FaceBuilder<'_> {
             {
                 self.dec.check_deadline()?;
                 let [a, b] = edge.positions();
-                let radius = (a.x - b.x).hypot(a.y - b.y) * 0.5;
+                let radius = libm::hypot(a.x - b.x, a.y - b.y) * 0.5;
                 let middle = (a.x + b.x) * 0.5;
                 let first = grid.partition_point(|uv| uv[0] < middle - radius);
                 for &uv in grid[first..]

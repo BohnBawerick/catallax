@@ -297,9 +297,9 @@ impl TracePiece {
     }
 
     /// The retained monotone cap equation of a fitted fillet trace.
-    pub fn fillet_cut(&self) -> Option<&catallax_shapes::FilletCutTrace> {
+    pub fn fillet_cut(&self) -> Option<(&catallax_shapes::FilletCutTrace, bool)> {
         match &self.coords {
-            TraceCoordinates::FilletCut(cut, _) => Some(cut),
+            TraceCoordinates::FilletCut(cut, forward) => Some((cut, *forward)),
             _ => None,
         }
     }

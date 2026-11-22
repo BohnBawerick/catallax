@@ -79,7 +79,7 @@ pub use rolling_saddle::{
 pub use rolling_sphere::{ROLLING_SPHERE_TARGET_NM, RollingSphere, RollingSphereDefinition};
 pub use rolling_torus::{InscribedTorus, RollingTorus};
 pub use spline_fillet::{
-    CutCurve, FilletCut, FilletCutTrace, NumericalFilletCorner, NumericalFilletCut,
+    CutCurve, DisplayCut, FilletCut, FilletCutTrace, NumericalFilletCorner, NumericalFilletCut,
     NumericalFilletSpine, NumericalFilletSupport, NumericalSpineNode, NumericalSplineFillet,
     NumericalSurfaceCut, RailBorder, RailSpan, SPLINE_FILLET_CLEARANCE, SPLINE_FILLET_CUT,
     SPLINE_FILLET_DEFINITION, SPLINE_FILLET_DEVIATION, SPLINE_FILLET_IRREGULAR,

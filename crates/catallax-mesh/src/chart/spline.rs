@@ -426,13 +426,19 @@ impl SplineChart {
     pub(crate) fn seed_grid(
         &self,
         limit: &Rational,
-        max_vertices: usize,
+        candidate_limit: usize,
         dec: &mut Decider,
     ) -> Result<Vec<Uv>, Refusal> {
         let limit = Interval::from_rational(limit).lo();
         let mut total = 0usize;
         let mut grids = Vec::with_capacity(self.spans.len());
-        for span in &self.spans {
+        'spans: for span in &self.spans {
+            let remaining = candidate_limit - total;
+            if remaining < 4 {
+                break;
+            }
+            let vertices =
+                |[u, v]: [usize; 2]| u.saturating_add(1).saturating_mul(v.saturating_add(1));
             let hessian = span
                 .local_affine_hessian
                 .unwrap_or_else(|| span.rational.chord_coefficients());
@@ -457,10 +463,9 @@ impl SplineChart {
                     usize::from(counts[1] < counts[0])
                 };
                 counts[axis] = counts[axis].saturating_mul(2);
-                if counts[0].saturating_mul(counts[1]) >= max_vertices {
-                    return Err(failure(format!(
-                        "spline grid needs more than {max_vertices} points"
-                    )));
+                if vertices(counts) > remaining.saturating_mul(4) {
+                    // Leave very large seed grids to adaptive facet refinement.
+                    continue 'spans;
                 }
             }
             // A dyadic grid supplies a feasible upper bound. Search for the
@@ -468,9 +473,7 @@ impl SplineChart {
             // display prototype. Each candidate column count needs only a
             // monotone search of the other axis.
             let short = usize::from(counts[1] < counts[0]);
-            let vertices =
-                |[u, v]: [usize; 2]| u.saturating_add(1).saturating_mul(v.saturating_add(1));
-            let mut best = vertices(counts);
+            let mut best = vertices(counts).min(remaining.saturating_add(1));
             let mut columns = 1;
             while columns + 1 < best.div_ceil(2) {
                 let mut candidate = [1; 2];
@@ -498,13 +501,10 @@ impl SplineChart {
                 }
                 columns += 1;
             }
-            total = total.saturating_add((counts[0] + 1).saturating_mul(counts[1] + 1));
-            if total > max_vertices {
-                return Err(failure(format!(
-                    "spline grid needs at least {total} points, cap {max_vertices}"
-                )));
+            if vertices(counts) <= remaining {
+                total += vertices(counts);
+                grids.push((span, counts));
             }
-            grids.push((span, counts));
         }
         let mut coordinates = Vec::with_capacity(total);
         for (span, [u, v]) in grids {

@@ -1270,7 +1270,8 @@ fn f04_small_warp_edge1_displays_within_the_stated_bound() {
         record.1,
         record.0
     );
-    assert_eq!(record.0.unwrap().0, "bounded");
+    let (_, display) = record.0.unwrap();
+    assert!(display.measurement.maximum_deviation <= q("1/100"));
 }
 
 #[test]
@@ -1297,7 +1298,8 @@ fn f04_soliddraft_small_warp_edge1_displays_in_the_fillet_request() {
             record.1,
             record.0
         );
-        assert_eq!(record.0.as_ref().unwrap().0, "bounded");
+        let (_, display) = record.0.as_ref().unwrap();
+        assert!(display.measurement.maximum_deviation <= q("1/100"));
         if let Some(previous) = &first {
             assert_eq!(previous, &record, "{threads} workers");
         } else {

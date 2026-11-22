@@ -224,6 +224,7 @@ pub(super) fn apply(
                 sense: Sense::Same,
                 start: Some(start),
                 end: Some(end),
+                tolerance: None,
             });
             let error = [&wedge.wire[0], &wedge.wire[2]]
                 .map(|c| {

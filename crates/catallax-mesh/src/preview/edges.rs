@@ -341,7 +341,13 @@ mod tests {
                 let point = model
                     .geom_mut()
                     .add_point(PointDef::Explicit(Point3::new(x, y, z)));
-                (model.add_vertex(Vertex { point }), index)
+                (
+                    model.add_vertex(Vertex {
+                        point,
+                        tolerance: None,
+                    }),
+                    index,
+                )
             })
             .collect::<BTreeMap<_, _>>();
         let curve = model.geom_mut().add_curve(Curve::Line(Line {
@@ -356,6 +362,7 @@ mod tests {
                     sense: Sense::Same,
                     start: Some(ends[0]),
                     end: Some(ends[1]),
+                    tolerance: None,
                 }),
                 vertices: vec![0, 1],
             })

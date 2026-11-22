@@ -22,7 +22,7 @@ pub(super) fn arithmetic(
     dec: &mut Decider,
 ) -> Result<Real, Refusal> {
     if let (Some(a), Some(b)) = (a.rational_ref(), b.rational_ref()) {
-        dec.reserve_exact_arithmetic(a, b, multiply)?;
+        dec.reserve_uncounted_arithmetic(a, b, multiply)?;
     } else {
         dec.charge_work(1)?;
     }
@@ -35,7 +35,7 @@ fn difference(a: &Real, b: &Real, dec: &mut Decider) -> Result<Real, Refusal> {
 
 fn quotient(a: &Real, b: &Real, dec: &mut Decider) -> Result<Real, Refusal> {
     if let (Some(a), Some(b)) = (a.rational_ref(), b.rational_ref()) {
-        dec.reserve_exact_arithmetic(a, b, true)?;
+        dec.reserve_uncounted_arithmetic(a, b, true)?;
     } else {
         dec.charge_work(1)?;
     }

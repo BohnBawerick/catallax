@@ -11,7 +11,10 @@ fn point(model: &mut Model, value: &[Rational; 3]) -> VertexId {
     let point = model.geom_mut().add_point(PointDef::Explicit(
         RPoint3::new(value[0].clone(), value[1].clone(), value[2].clone()).to_real(),
     ));
-    model.add_vertex(Vertex { point })
+    model.add_vertex(Vertex {
+        point,
+        tolerance: None,
+    })
 }
 
 fn comparison_work(value: &[Rational; 3], dec: &mut Decider) -> Result<(), Refusal> {
@@ -105,6 +108,7 @@ pub fn spline_wire(
             sense: Sense::Same,
             start: Some(start),
             end: Some(end),
+            tolerance: None,
         });
         coedges.push(model.add_coedge(Coedge {
             edge,

@@ -439,6 +439,7 @@ mod tests {
                     surface: original.surface,
                     sense,
                     loops: vec![lp],
+                    tolerance: None,
                 },
                 origins.clone(),
             );

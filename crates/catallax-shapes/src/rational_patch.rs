@@ -83,19 +83,22 @@ impl Span {
     }
 
     fn normal_polynomials(&self) -> &[RealPoly; 3] {
+        // An uncharged memo on a shared patch: its fill is not counted.
         self.normal.get_or_init(|| {
-            let tangents: [[RealPoly; 3]; 2] = std::array::from_fn(|axis| {
-                std::array::from_fn(|i| {
-                    &self.first[axis][i] * &self.coordinates[3]
-                        - &self.coordinates[i] * &self.first[axis][3]
-                })
-            });
-            let [u, v] = &tangents;
-            [
-                &u[1] * &v[2] - &u[2] * &v[1],
-                &u[2] * &v[0] - &u[0] * &v[2],
-                &u[0] * &v[1] - &u[1] * &v[0],
-            ]
+            catallax_numbers::uncounted_memo(|| {
+                let tangents: [[RealPoly; 3]; 2] = std::array::from_fn(|axis| {
+                    std::array::from_fn(|i| {
+                        &self.first[axis][i] * &self.coordinates[3]
+                            - &self.coordinates[i] * &self.first[axis][3]
+                    })
+                });
+                let [u, v] = &tangents;
+                [
+                    &u[1] * &v[2] - &u[2] * &v[1],
+                    &u[2] * &v[0] - &u[0] * &v[2],
+                    &u[0] * &v[1] - &u[1] * &v[0],
+                ]
+            })
         })
     }
 }
@@ -324,7 +327,7 @@ impl RationalPatch {
                 (Some(x), Some(y), Some(z), Some(w)) => {
                     let aa = aa.as_rational().expect("rational centre tangent");
                     let bb = bb.as_rational().expect("rational centre tangent");
-                    dec.reserve_exact_arithmetic(&aa, &bb, true)?;
+                    dec.reserve_uncounted_arithmetic(&aa, &bb, true)?;
                     let exponent = bb.numerator().bit_length() as i64
                         + aa.denominator().bit_length() as i64
                         - bb.denominator().bit_length() as i64

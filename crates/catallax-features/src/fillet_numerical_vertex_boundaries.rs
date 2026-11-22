@@ -150,10 +150,10 @@ impl Chart {
         for (i, contact) in vertex.ball.contacts().iter().enumerate() {
             let delta =
                 std::array::from_fn(|j| &Ball::from_rational(&contact[j], BITS) - &origin[j]);
-            angles[i] = dot(&delta, &axes[1])
-                .mid()
-                .to_f64_nearest()
-                .atan2(dot(&delta, &axes[0]).mid().to_f64_nearest());
+            angles[i] = libm::atan2(
+                dot(&delta, &axes[1]).mid().to_f64_nearest(),
+                dot(&delta, &axes[0]).mid().to_f64_nearest(),
+            );
         }
         angles.sort_by(f64::total_cmp);
         let mut largest = 0;

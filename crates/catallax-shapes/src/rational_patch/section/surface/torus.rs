@@ -30,7 +30,7 @@ pub(super) fn torus_net(
         for j in i..3 {
             let numerator = exact(axis[i], axis[j], true, dec)?;
             if let (Some(a), Some(b)) = (numerator.rational_ref(), norm.rational_ref()) {
-                dec.reserve_exact_arithmetic(a, b, true)?;
+                dec.reserve_uncounted_arithmetic(a, b, true)?;
             }
             let coefficient = -(&numerator / &norm);
             let coefficient = if i == j {

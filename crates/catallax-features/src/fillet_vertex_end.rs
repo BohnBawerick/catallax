@@ -247,7 +247,10 @@ pub(super) fn build(
         }
     }
     let hub = hub.ok_or_else(|| bad("the end-wall junction has no hit in the strip sector"))?;
-    let hub = model.add_vertex(Vertex { point: hub });
+    let hub = model.add_vertex(Vertex {
+        point: hub,
+        tolerance: None,
+    });
     let feet = [vertex(model, a), vertex(model, b)];
     let mut caps = Vec::with_capacity(2);
     for (wall, from, to, other) in [
@@ -579,7 +582,10 @@ pub(super) fn build_pair(
     }
     let (curve, point) =
         junction.ok_or_else(|| bad("no end-wall junction lies in both strip sectors"))?;
-    let hub = model.add_vertex(Vertex { point });
+    let hub = model.add_vertex(Vertex {
+        point,
+        tolerance: None,
+    });
     let avoid = model.geom_mut().add_point(PointDef::Explicit(antipode));
     let sense = match decided(catallax_intersect::cyclic_order(
         model.geom(),
@@ -643,12 +649,14 @@ pub(super) fn build_pair(
     }
     let q = model.add_vertex(Vertex {
         point: crossing.ok_or_else(|| bad("no exposed normal-cone cliff crossing"))?,
+        tolerance: None,
     });
     let shared = model.add_edge(Edge {
         curve,
         sense,
         start: Some(q),
         end: Some(hub),
+        tolerance: None,
     });
     contained_arc(
         model,
@@ -741,6 +749,7 @@ pub(super) fn build_pair(
             sense: input.sense,
             start: Some(start),
             end: Some(end),
+            tolerance: None,
         });
         let rail_sense = reverse(run.senses[index]);
         let from = edge_blend::ends(model, rail, rail_sense).1.unwrap();
@@ -792,6 +801,7 @@ pub(super) fn build_pair(
             sense: Sense::Same,
             start: Some(sphere_foot),
             end: Some(contact_vertex),
+            tolerance: None,
         });
         let at_first = if reverse(run.senses[0]) == Sense::Same {
             input.end
@@ -820,6 +830,7 @@ pub(super) fn build_pair(
         sense: Sense::Same,
         start: Some(sphere_feet[0]),
         end: Some(sphere_feet[1]),
+        tolerance: None,
     });
     let arc_sense =
         if edge_blend::ends(model, sphere_caps[0].0, sphere_caps[0].1).0 == Some(sphere_feet[0]) {

@@ -88,7 +88,10 @@ fn sketch(
             let point = model
                 .geom_mut()
                 .add_point(PointDef::Explicit(pose.apply_point(&point.to_real())));
-            model.add_vertex(Vertex { point })
+            model.add_vertex(Vertex {
+                point,
+                tolerance: None,
+            })
         })
         .collect::<Vec<_>>();
     let surfaces = surfaces
@@ -112,6 +115,7 @@ fn sketch(
                 sense: Sense::Same,
                 start: Some(vertices[from]),
                 end: Some(vertices[to]),
+                tolerance: None,
             })
         })
         .collect::<Vec<_>>();
@@ -138,6 +142,7 @@ fn sketch(
                 surface,
                 sense: Sense::Same,
                 loops,
+                tolerance: None,
             })
         })
         .collect();
@@ -335,6 +340,7 @@ pub(super) fn void_block() -> (Model, BodyId) {
             surface: face.surface,
             sense: Sense::Reversed,
             loops,
+            tolerance: None,
         }));
     }
     let inner_shell = model.add_shell(Shell { faces: inner_faces });
@@ -397,6 +403,7 @@ pub(super) fn through_hole(scale: &Rational, pose: &Pose) -> (Model, BodyId) {
             sense: Sense::Same,
             start: None,
             end: None,
+            tolerance: None,
         });
         let hole_coedge = model.add_coedge(Coedge {
             edge,
@@ -428,12 +435,14 @@ pub(super) fn through_hole(scale: &Rational, pose: &Pose) -> (Model, BodyId) {
             surface: old_face.surface,
             sense: old_face.sense,
             loops,
+            tolerance: None,
         });
     }
     faces.push(model.add_face(Face {
         surface: wall,
         sense: Sense::Reversed,
         loops: wall_loops,
+        tolerance: None,
     }));
     let body = finish(&mut model, faces);
     assert!(model.check(body).is_empty(), "{:?}", model.check(body));
@@ -478,6 +487,7 @@ pub(super) fn half_torus_posed(pose: &Pose) -> (Model, BodyId) {
             sense: Sense::Same,
             start: None,
             end: None,
+            tolerance: None,
         });
         rings.push(edge);
         caps.push(plane);
@@ -499,6 +509,7 @@ pub(super) fn half_torus_posed(pose: &Pose) -> (Model, BodyId) {
             surface: caps[i],
             sense: Sense::Same,
             loops: vec![boundary],
+            tolerance: None,
         }));
     }
     faces.insert(
@@ -507,6 +518,7 @@ pub(super) fn half_torus_posed(pose: &Pose) -> (Model, BodyId) {
             surface: torus,
             sense: Sense::Same,
             loops,
+            tolerance: None,
         }),
     );
     let body = finish(&mut model, faces);
@@ -543,6 +555,7 @@ pub(super) fn cap(radius: i64, height: i64) -> (Model, BodyId) {
         sense: Sense::Same,
         start: None,
         end: None,
+        tolerance: None,
     });
     let mut faces = Vec::new();
     for (surface, sense) in [(sphere, Sense::Same), (plane, Sense::Reversed)] {
@@ -552,6 +565,7 @@ pub(super) fn cap(radius: i64, height: i64) -> (Model, BodyId) {
             surface,
             sense: Sense::Same,
             loops: vec![boundary],
+            tolerance: None,
         }));
     }
     let body = finish(&mut model, faces);
@@ -578,6 +592,7 @@ pub(super) fn coplanar_split_block() -> (Model, BodyId) {
         sense: Sense::Same,
         start: None,
         end: None,
+        tolerance: None,
     });
     let inner = model.add_coedge(Coedge {
         edge,
@@ -600,6 +615,7 @@ pub(super) fn coplanar_split_block() -> (Model, BodyId) {
         surface: original.surface,
         sense: Sense::Same,
         loops,
+        tolerance: None,
     });
     let disc = model.add_coedge(Coedge {
         edge,
@@ -610,6 +626,7 @@ pub(super) fn coplanar_split_block() -> (Model, BodyId) {
         surface: original.surface,
         sense: Sense::Same,
         loops: vec![disc],
+        tolerance: None,
     }));
     let body = finish(&mut model, faces);
     assert!(model.check(body).is_empty(), "{:?}", model.check(body));

@@ -711,7 +711,8 @@ impl GeomStore {
     /// Borrowed `Curve::equations` of a curve in this store.
     pub fn curve_equations(&self, c: CurveId) -> Option<&[RealPoly]> {
         self.curve_equations.0[c.index as usize]
-            .get_or_init(|| self.curve(c).equations(self))
+            // An uncharged memo on a shared store: its fill is not counted.
+            .get_or_init(|| catallax_numbers::uncounted_memo(|| self.curve(c).equations(self)))
             .as_deref()
     }
 

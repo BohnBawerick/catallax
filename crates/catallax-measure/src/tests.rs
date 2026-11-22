@@ -463,6 +463,7 @@ fn centroid_separation_ignores_the_absolute_floor() {
         surface,
         sense: Sense::Reversed,
         loops: Vec::new(),
+        tolerance: None,
     });
     let void = model.add_shell(Shell { faces: vec![face] });
     let outside = model.lump(model.body(outer).lumps[0]).shells[0];
@@ -582,6 +583,7 @@ fn integer_periodic_lifts_keep_the_whole_surface_in_the_enclosure() {
         sense: Sense::Same,
         start: None,
         end: None,
+        tolerance: None,
     });
     let mut loops = Vec::new();
     for sense in [Sense::Same, Sense::Reversed] {
@@ -592,6 +594,7 @@ fn integer_periodic_lifts_keep_the_whole_surface_in_the_enclosure() {
         surface,
         sense: Sense::Same,
         loops,
+        tolerance: None,
     });
     let shell = model.add_shell(Shell { faces: vec![face] });
     let lump = model.add_lump(Lump {

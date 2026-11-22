@@ -134,7 +134,7 @@ pub(super) fn vertices(
         };
         let axial = dot(delta, n);
         let radial = std::array::from_fn(|i| delta[i] - axial * n[i]);
-        let phase = dot(radial, frame.y).atan2(dot(radial, frame.x));
+        let phase = libm::atan2(dot(radial, frame.y), dot(radial, frame.x));
         let point = frame.point(phase);
         let position = [exact(point[0])?, exact(point[1])?, exact(point[2])?];
         rings.insert(id, vertices.len());
@@ -169,7 +169,7 @@ fn angular_direction(
     } else {
         &edge.parameters[1]
     };
-    let (sin, cos) = parameter.to_f64_nearest().sin_cos();
+    let (sin, cos) = libm::sincos(parameter.to_f64_nearest());
     let tangent = std::array::from_fn(|i| -sin * frame.x[i] + cos * frame.y[i]);
     let at = trim.uv[0].each_ref().map(|q| Ball::from_rational(q, BITS));
     let du = surface.derivatives(&at[0], &at[1], dec)?[0]

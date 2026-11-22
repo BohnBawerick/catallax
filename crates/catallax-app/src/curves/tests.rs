@@ -559,7 +559,10 @@ fn attach_span(
     use catallax_topology::{Body, BodyKind, Coedge, Edge, Face, Lump, Shell, Vertex};
     let mut vertex = |position| {
         let point = model.geom_mut().add_point(PointDef::Explicit(position));
-        model.add_vertex(Vertex { point })
+        model.add_vertex(Vertex {
+            point,
+            tolerance: None,
+        })
     };
     let (start, end) = match ends {
         Some((a, b)) => (Some(vertex(a)), Some(vertex(b))),
@@ -570,6 +573,7 @@ fn attach_span(
         sense,
         start,
         end,
+        tolerance: None,
     });
     let coedge = model.add_coedge(Coedge {
         edge,
@@ -585,6 +589,7 @@ fn attach_span(
         surface,
         sense: Sense::Same,
         loops: vec![lp],
+        tolerance: None,
     });
     let shell = model.add_shell(Shell { faces: vec![face] });
     let lump = model.add_lump(Lump {

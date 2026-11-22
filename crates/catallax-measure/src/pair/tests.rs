@@ -132,7 +132,10 @@ fn segments(pairs: &[[RPoint3; 2]], reversed: bool) -> (Model, Vec<EdgeId>) {
             let point = model
                 .geom_mut()
                 .add_point(PointDef::Explicit(q.clone().into()));
-            model.add_vertex(Vertex { point })
+            model.add_vertex(Vertex {
+                point,
+                tolerance: None,
+            })
         });
         let (sense, start, end) = if reversed {
             (Sense::Reversed, b, a)
@@ -144,6 +147,7 @@ fn segments(pairs: &[[RPoint3; 2]], reversed: bool) -> (Model, Vec<EdgeId>) {
             sense,
             start: Some(start),
             end: Some(end),
+            tolerance: None,
         }));
     }
     (model, edges)
@@ -345,13 +349,17 @@ fn query_domains_and_work_are_explicit() {
     ]
     .map(|q| {
         let point = irrational.geom_mut().add_point(PointDef::Explicit(q));
-        irrational.add_vertex(Vertex { point })
+        irrational.add_vertex(Vertex {
+            point,
+            tolerance: None,
+        })
     });
     let tilted = irrational.add_edge(Edge {
         curve,
         sense: Sense::Same,
         start: Some(a),
         end: Some(b),
+        tolerance: None,
     });
     for request in ALL {
         for (a, b) in [(ids[0], ids[1]), (ids[1], ids[0])] {

@@ -333,7 +333,10 @@ impl Builder<'_> {
             .model
             .geom_mut()
             .add_point(PointDef::Explicit(point(p)));
-        let v = self.model.add_vertex(Vertex { point: id });
+        let v = self.model.add_vertex(Vertex {
+            point: id,
+            tolerance: None,
+        });
         self.vertices.insert(p.clone(), v);
         v
     }
@@ -496,6 +499,7 @@ impl Builder<'_> {
             sense,
             start: ends[0],
             end: ends[1],
+            tolerance: None,
         });
         if line {
             self.segments.insert(key, (id, ends));
@@ -640,6 +644,7 @@ impl Builder<'_> {
                     Sense::Reversed
                 },
                 loops,
+                tolerance: None,
             },
             origins,
         );

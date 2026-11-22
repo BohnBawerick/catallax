@@ -388,6 +388,7 @@ impl Model {
                 TopoOp::Vertex(vertex) => {
                     self.add_vertex(Vertex {
                         point: geom.point(vertex.point),
+                        ..vertex.clone()
                     });
                 }
                 TopoOp::Edge(edge) => {
@@ -500,14 +501,21 @@ mod tests {
                 surfaces: [flat, upright],
                 witness,
             }));
-        let start = model.add_vertex(Vertex { point: witness });
+        let start = model.add_vertex(Vertex {
+            point: witness,
+            tolerance: None,
+        });
         let far = point(&mut model, 1);
-        let end = model.add_vertex(Vertex { point: far });
+        let end = model.add_vertex(Vertex {
+            point: far,
+            tolerance: None,
+        });
         let edge = model.add_edge(Edge {
             curve,
             sense: Sense::Same,
             start: Some(start),
             end: Some(end),
+            tolerance: None,
         });
         (model, flat, curve, start, edge)
     }
@@ -525,12 +533,16 @@ mod tests {
         edge: EdgeId,
     ) -> Made {
         let place = point(model, 5);
-        let corner = model.add_vertex(Vertex { point: place });
+        let corner = model.add_vertex(Vertex {
+            point: place,
+            tolerance: None,
+        });
         let side = model.add_edge(Edge {
             curve,
             sense: Sense::Reversed,
             start: Some(vertex),
             end: Some(corner),
+            tolerance: None,
         });
         let out = model.add_coedge(Coedge {
             edge: side,
@@ -546,12 +558,14 @@ mod tests {
             surface,
             sense: Sense::Same,
             loops: vec![ring],
+            tolerance: None,
         });
         model.add_named_face(
             Face {
                 surface,
                 sense: Sense::Reversed,
                 loops: vec![ring],
+                tolerance: None,
             },
             Vec::new(),
         );
@@ -571,12 +585,16 @@ mod tests {
         // The original gains a point, a vertex, an edge and a coedge on the
         // old edge before the replay.
         let extra = point(&mut original, 9);
-        let extra = original.add_vertex(Vertex { point: extra });
+        let extra = original.add_vertex(Vertex {
+            point: extra,
+            tolerance: None,
+        });
         original.add_edge(Edge {
             curve,
             sense: Sense::Same,
             start: Some(vertex),
             end: Some(extra),
+            tolerance: None,
         });
         original.add_coedge(Coedge {
             edge,
@@ -681,12 +699,16 @@ mod tests {
 
         // Meanwhile the original gains an edge of its own with a coedge.
         let extra = point(&mut original, 9);
-        let extra = original.add_vertex(Vertex { point: extra });
+        let extra = original.add_vertex(Vertex {
+            point: extra,
+            tolerance: None,
+        });
         let theirs = original.add_edge(Edge {
             curve,
             sense: Sense::Same,
             start: Some(vertex),
             end: Some(extra),
+            tolerance: None,
         });
         original.add_coedge(Coedge {
             edge: theirs,
@@ -732,6 +754,7 @@ mod tests {
             surface,
             sense: Sense::Same,
             loops: vec![ring],
+            tolerance: None,
         });
         assert_eq!(grown.owner_of_coedge(lone), Some((ring, face)));
         assert!(!grown.unchanged_where_read(&base, &reads));

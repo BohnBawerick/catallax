@@ -356,6 +356,7 @@ fn store_face(model: &mut Model, old: FaceId, wires: Wires) -> FaceId {
         surface: f.surface,
         sense: f.sense,
         loops,
+        tolerance: f.tolerance.clone(),
     })
 }
 fn after(wire: &[Coedge], edge: EdgeId) -> Vec<Coedge> {
@@ -382,6 +383,7 @@ fn apply(prepared: &mut Prepared, shell: ShellId, contact: Contact) -> ShellId {
             sense,
             start: Some(start),
             end: Some(end),
+            tolerance: source.tolerance.clone(),
         })
     });
     let mut joined = vec![Coedge {

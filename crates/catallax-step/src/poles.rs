@@ -88,6 +88,7 @@ pub(crate) fn split(
             sense: Sense::Same,
             start: None,
             end: None,
+            tolerance: None,
         });
         // The circle turns counterclockwise about the axis. Its cap lies to
         // the left of travel, seen against the face normal, when the pole side
@@ -106,6 +107,7 @@ pub(crate) fn split(
             surface: frame,
             sense: source.sense,
             loops: vec![cap_loop],
+            tolerance: source.tolerance.clone(),
         }));
         let hole = split.add_coedge(Coedge {
             edge,

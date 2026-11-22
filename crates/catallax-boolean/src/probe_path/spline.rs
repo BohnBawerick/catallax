@@ -351,6 +351,7 @@ mod tests {
                 sense: Sense::Same,
                 start: None,
                 end: None,
+                tolerance: None,
             })
         })
         .to_vec();
@@ -411,6 +412,7 @@ mod tests {
             sense: Sense::Same,
             start: None,
             end: None,
+            tolerance: None,
         }));
         for (denominator, clear) in [(16, true), (8, false), (4, false)] {
             let step = Real::from(Rational::from_ratio(1, denominator).unwrap());

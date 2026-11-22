@@ -188,7 +188,7 @@ pub(super) fn excluded(
             }
             let touch = a.exact_box(dec)?[axis][usize::from(high)].clone();
             let other = b.exact_box(dec)?[axis][usize::from(!high)].clone();
-            dec.reserve_exact_arithmetic(&touch, &other, true)?;
+            dec.reserve_uncounted_arithmetic(&touch, &other, true)?;
             if touch == other
                 && (a.extreme_on_border(axis, high, &passed(ctx, a, 0), dec)?
                     || b.extreme_on_border(axis, !high, &passed(ctx, b, 2), dec)?)

@@ -67,11 +67,11 @@ and the side. Neither proof replaces the other.
 
 | Entity | Fields | Rules |
 | --- | --- | --- |
-| `Vertex` | `point: PointId` | Any point definition. |
-| `Edge` | `curve: CurveId`, `sense: Sense`, `start`, `end: Option<VertexId>` | `sense` relates the edge direction to the curve's natural direction. `start` and `end` are given along the edge direction. Both `None` is a ring edge covering a whole closed curve; otherwise both are `Some`, and they are equal only on a closed curve with one vertex. |
+| `Vertex` | `point: PointId`, `tolerance: Option<Tolerance>` | Any point definition. |
+| `Edge` | `curve: CurveId`, `sense: Sense`, `start`, `end: Option<VertexId>`, `tolerance: Option<Tolerance>` | `sense` relates the edge direction to the curve's natural direction. `start` and `end` are given along the edge direction. Both `None` is a ring edge covering a whole closed curve; otherwise both are `Some`, and they are equal only on a closed curve with one vertex. |
 | `Coedge` | `edge: EdgeId`, `sense: Sense` | One use of an edge by one loop. `sense` relates the loop's direction of travel to the edge direction. An edge may have any number of coedges. |
 | `Loop` | `Coedges(Vec<CoedgeId>)` or `Vertex(VertexId)` | A cycle of coedges, each ending where the next starts; or a single point boundary, such as a cone's apex. |
-| `Face` | `surface: SurfaceId`, `sense: Sense`, `loops: Vec<LoopId>` | The face normal is the surface normal (`Same`) or its reverse (`Reversed`). No loop is outer. Zero loops means the whole closed surface (a sphere or a torus). |
+| `Face` | `surface: SurfaceId`, `sense: Sense`, `loops: Vec<LoopId>`, `tolerance: Option<Tolerance>` | The face normal is the surface normal (`Same`) or its reverse (`Reversed`). No loop is outer. Zero loops means the whole closed surface (a sphere or a torus). |
 | `Shell` | `faces: Vec<FaceId>` | A connected set of faces. |
 | `Lump` | `shells: Vec<ShellId>` | The first shell is the outer boundary; the rest bound voids. |
 | `Body` | `kind: BodyKind`, `lumps: Vec<LumpId>`, `marks: MarkLog` | `marks` are the marks of the operation that produced the body, merged with those of its operands. |
@@ -79,6 +79,18 @@ and the side. Neither proof replaces the other.
 `BodyKind` is `Solid` or `Empty`. It is non-exhaustive: sheets, wires, meshes and lattices come later (DESIGN.md, scope).
 
 A coedge's start vertex is its edge's `start` when its sense is `Same`, and its edge's `end` when `Reversed`; its end vertex is the other one. A ring edge's coedges have neither.
+
+### Exact and tolerant entities
+
+One model holds exact and tolerant entities ([Checkpoint 2 decisions, section 4.5](../checkpoints/checkpoint-2-decisions.md#45-item-30b-one-model-and-the-predictor), Q12). The structure is Parasolid's (Jackson 1995, "Boundary representation modelling with local tolerances"): a tolerance belongs to topology, and points, curves and surfaces are stored as they are.
+
+- A vertex, an edge or a face whose `tolerance` is `None` is exact. It stores no tolerance and has no size limit (rule T0).
+- `Some(Tolerance)` is a length in millimetres, always greater than zero. `Tolerance::new` refuses zero and negative values with `topology.tolerance-not-positive`: exact is `None`, never a tolerance of zero.
+- A vertex's tolerance is how far its point may lie from the end of each of its edges' curves. An edge's is how far its curve may lie from its copy on each of its faces. A face's is how far its surface may lie from the surface it stands for.
+- The order is vertex >= edge >= face, with exact counting as zero. A tolerant edge forces its vertices to at least its own tolerance. It never forces a face: an exact face beside a tolerant edge stays exact.
+- The builder that makes an entity measures its tolerance (rules T1 to T4). `check` reads the value and measures nothing.
+
+A copy that keeps an entity's geometry keeps its tolerance: an isometry copy (`transformed_body`), a journal replay and a handover. The builders of this piece, and every exact operation of the later pieces, make exact entities.
 
 ### Orientation
 
@@ -114,8 +126,8 @@ Bodies are walked in one fixed order: lumps in order, then each lump's shells in
 
 ## Topology check
 
-`check(b)` returns every topological fault of a body, or an empty list for a sound body.
-It reads the entities and the fact book only, and makes no numeric decision. Geometric facts that topology needs (an edge's curve lies on its face's surface) are checked as recorded facts. A geometric fault with no topological sign (a vertex moved off its surfaces with its facts still recorded) is out of its reach.
+`check(b)` returns every topological fault of a body, or an empty list for a sound body. It is the one checker of exact, tolerant and mixed bodies.
+It reads the entities, their tolerances and the fact book only, and makes no numeric decision. Geometric facts that topology needs (an edge's curve lies on its face's surface) are checked as recorded facts where both entities are exact. Where either is tolerant, its tolerance is the record: its builder measured the distance and stored the result on the entity, as an exact builder records its fact. A geometric fault with no topological sign (a vertex moved off its surfaces with its facts still recorded, or a tolerance smaller than the true distance) is out of its reach.
 
 | Code | Fault |
 | --- | --- |
@@ -129,7 +141,8 @@ It reads the entities and the fact book only, and makes no numeric decision. Geo
 | `topology.vertex-loop` | A face with a vertex loop and no coedge loop, or a face where a vertex loop's vertex also appears in another loop of the same face. |
 | `topology.disconnected-shell` | A shell whose faces are not all connected through edges they share; two faces are neighbours when coedges of both use one edge. A shell with one face is connected. |
 | `topology.euler` | A shell whose Euler characteristic, counted as below, is not of the form `2 - 2g` for a whole number `g >= 0`. |
-| `topology.missing-incidence` | A fact the body needs is not recorded: an edge's curve `Incident` on the surface of a face that uses the edge; an edge's start or end point `Incident` on the edge's curve; a vertex loop's point `Incident` on its face's surface. Each is asked of the fact book with `holds(Incident, ...)`. |
+| `topology.missing-incidence` | A fact the body needs is not recorded: an edge's curve `Incident` on the surface of a face that uses the edge; an edge's start or end point `Incident` on the edge's curve; a vertex loop's point `Incident` on its face's surface. Each is asked of the fact book with `holds(Incident, ...)`. A pair needs its fact only where both of its entities are exact. |
+| `topology.tolerance-order` | A vertex whose tolerance is less than that of an edge that ends at it; an edge whose tolerance is less than that of a face that uses it; a vertex loop's vertex whose tolerance is less than its face's. No tolerance counts as zero. |
 
 The Euler characteristic of a shell is `V + R - E + sum over faces of chi(face)`, where `V` counts the shell's distinct vertices (vertex-loop vertices included), `R` its distinct ring edges (each ring edge counts as one edge with one virtual vertex), `E` its distinct edges (ring edges included), and `chi(face)` is `2 - k` for a face with `k` loops (vertex loops included), except that a loopless face on a torus counts 0.
 This reads each face as a sphere with `k` holes and the closed torus as a torus. The count is a necessary condition only.
@@ -242,7 +255,9 @@ A builder may record more facts, but only facts its construction makes true. So 
 
 Refusals: `topology.non-positive-size`, `topology.cone-is-cylinder`, `topology.torus-self-intersecting`.
 
-Faults: `topology.body-kind`, `topology.empty-part`, `topology.shared-entity`, `topology.loop-not-closed`, `topology.edge-ends`, `topology.edge-use`, `topology.unbounded-face`, `topology.vertex-loop`, `topology.disconnected-shell`, `topology.euler`, `topology.missing-incidence`.
+Refusal of `Tolerance::new`: `topology.tolerance-not-positive`.
+
+Faults: `topology.body-kind`, `topology.empty-part`, `topology.shared-entity`, `topology.loop-not-closed`, `topology.edge-ends`, `topology.edge-use`, `topology.unbounded-face`, `topology.vertex-loop`, `topology.disconnected-shell`, `topology.euler`, `topology.missing-incidence`, `topology.tolerance-order`.
 
 ## Exact public interface
 
@@ -260,12 +275,19 @@ pub type BodyId = Handle<Body>;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum Sense { Same, Reversed }
+// A length in millimetres, greater than zero. `None` in an entity is exact.
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct Tolerance(/* private */);
+impl Tolerance {
+    pub fn new(mm: Rational) -> Result<Self, Refusal>;
+    pub fn mm(&self) -> &Rational;
+}
 // Each struct below: #[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub struct Vertex { pub point: PointId }
-pub struct Edge { pub curve: CurveId, pub sense: Sense, pub start: Option<VertexId>, pub end: Option<VertexId> }
+pub struct Vertex { pub point: PointId, pub tolerance: Option<Tolerance> }
+pub struct Edge { pub curve: CurveId, pub sense: Sense, pub start: Option<VertexId>, pub end: Option<VertexId>, pub tolerance: Option<Tolerance> }
 pub struct Coedge { pub edge: EdgeId, pub sense: Sense }
 pub enum Loop { Coedges(Vec<CoedgeId>), Vertex(VertexId) }
-pub struct Face { pub surface: SurfaceId, pub sense: Sense, pub loops: Vec<LoopId> }
+pub struct Face { pub surface: SurfaceId, pub sense: Sense, pub loops: Vec<LoopId>, pub tolerance: Option<Tolerance> }
 pub struct Shell { pub faces: Vec<FaceId> }
 pub struct Lump { pub shells: Vec<ShellId> }
 #[non_exhaustive]
@@ -380,6 +402,16 @@ Each is built from new entities, mostly reusing a builder's. Each must give the 
 30. A shell holding all twelve faces of two separate blocks: `topology.disconnected-shell`.
 31. A body whose two lumps list the same shell, and a body listing one lump twice: `topology.shared-entity`.
 32. A `Solid` body with no lumps, and an `Empty` body with one lump: `topology.body-kind`. A lump with no shells: `topology.empty-part`.
+
+### Exact and tolerant entities in one body
+
+Each body is a block rebuilt over the block's own geometry and facts, with tolerances set on chosen entities.
+
+32a. One edge at 1e-6 mm with both its vertices at 1e-6 mm, everything else exact: an empty `check`, and no face has a tolerance. The same with the two vertices at 1e-3 mm: an empty `check`.
+32b. That edge at 1e-6 mm with exact vertices: `topology.tolerance-order` twice and nothing else. With one vertex at 1e-7 mm: once.
+32c. One face at 1e-6 mm, its four edges at 2e-6 mm and their four vertices at 3e-6 mm: an empty `check`. The face alone at 1e-6 mm: `topology.tolerance-order` four times.
+32d. One edge moved to a new handle of its own line, for which no fact is recorded: exact, every fault is `topology.missing-incidence`; with the edge and its two vertices at 1e-6 mm, an empty `check`.
+32e. The body of 32c keeps every tolerance through `transformed_body` by a translation and by a reflection, through a journal replay onto a model that has grown, and through a handover.
 
 ### Determinism
 

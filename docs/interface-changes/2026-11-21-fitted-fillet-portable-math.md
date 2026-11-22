@@ -1,0 +1,6 @@
+## 2026-11-21: the fitted fillet computes the same on every machine
+
+Pieces: 2 (shapes), 7 (features), and every caller that keeps the work or the bytes of a fillet the rolling ball built
+Change: the binary64 code of the fitted fillet and of bend and twist takes its sines, cosines, arctangents, arccosines and hypotenuses from the `libm` crate instead of the methods of `f64`, which call the platform's math library. `catallax-shapes` gains the dependency `libm`. A fillet the rolling ball builds, or tries and refuses, now has the same charged work and the same exported bytes on x86_64 Linux and on arm64 macOS. On Linux those numbers move against the previous revision: on the predictor's corpus, 12 of 117 rows change their charged work by at most 0.72%, up or down, and the nine that build change their STEP bytes. No status changes and no exact result changes.
+Why: Checkpoint 2 decisions, section 4.5, a done-when line of the predictor: "path choice and work are identical at 1, 2, 4 and 24 threads and on two machines". Measured before and after in [the predictor note](../milestones/3.0B-predictor.md#the-same-work-on-two-machines).
+Migration: a stored baseline of the work or of the STEP bytes of a fillet built by the rolling ball is taken again. New binary64 code whose result decides how much work follows calls `libm`, not `f64`'s own transcendental methods.

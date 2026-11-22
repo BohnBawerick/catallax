@@ -58,6 +58,7 @@ fn edge(model: &mut Model, curve: Curve, start: VertexId, end: VertexId) -> Edge
         sense: Sense::Same,
         start: Some(start),
         end: Some(end),
+        tolerance: None,
     })
 }
 
@@ -104,6 +105,7 @@ fn face(model: &mut Model, surface: Surface, uses: &[(EdgeId, Sense)], label: &s
             surface,
             sense: Sense::Same,
             loops: vec![loop_],
+            tolerance: None,
         },
         vec![origin],
     )
@@ -143,7 +145,10 @@ pub fn solid(kind: Roof) -> Fixture {
                     let point = model
                         .geom_mut()
                         .add_point(PointDef::Explicit(point(i, layer, y)));
-                    model.add_vertex(Vertex { point })
+                    model.add_vertex(Vertex {
+                        point,
+                        tolerance: None,
+                    })
                 })
             })
         })

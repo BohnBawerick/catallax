@@ -437,7 +437,10 @@ mod tests {
             .iter()
             .map(|p| {
                 let point = model.geom_mut().add_point(PointDef::Explicit(p.clone()));
-                model.add_vertex(Vertex { point })
+                model.add_vertex(Vertex {
+                    point,
+                    tolerance: None,
+                })
             })
             .collect();
         let mut coedges = Vec::new();
@@ -485,6 +488,7 @@ mod tests {
                 sense: Sense::Same,
                 start: Some(vertices[index]),
                 end: Some(vertices[next]),
+                tolerance: None,
             });
             coedges.push(model.add_coedge(Coedge {
                 edge,
@@ -507,6 +511,7 @@ mod tests {
                 Sense::Same
             },
             loops: vec![loop_],
+            tolerance: None,
         })
     }
 
@@ -583,6 +588,7 @@ mod tests {
             surface: model.face(outer).surface,
             sense: Sense::Same,
             loops,
+            tolerance: None,
         });
         locations(
             &mut model,
@@ -630,8 +636,14 @@ mod tests {
         ));
         let a = model.geom_mut().add_point(PointDef::Explicit(at(5, 0)));
         let b = model.geom_mut().add_point(PointDef::Explicit(at(0, 5)));
-        let va = model.add_vertex(Vertex { point: a });
-        let vb = model.add_vertex(Vertex { point: b });
+        let va = model.add_vertex(Vertex {
+            point: a,
+            tolerance: None,
+        });
+        let vb = model.add_vertex(Vertex {
+            point: b,
+            tolerance: None,
+        });
         let line = model.geom_mut().add_curve(Curve::Line(Line {
             origin: at(0, 5),
             dir: at(5, 0).minus(&at(0, 5)),
@@ -644,6 +656,7 @@ mod tests {
                     sense: Sense::Same,
                     start: Some(start),
                     end: Some(end),
+                    tolerance: None,
                 });
                 model.add_coedge(Coedge {
                     edge,
@@ -668,6 +681,7 @@ mod tests {
             sense: Sense::Same,
             start: None,
             end: None,
+            tolerance: None,
         });
         let hole_coedge = model.add_coedge(Coedge {
             edge: hole_edge,
@@ -695,6 +709,7 @@ mod tests {
             surface,
             sense: Sense::Same,
             loops: vec![outer, hole],
+            tolerance: None,
         });
         // In this orthonormal frame the section has x²+y²=25 and xy=1.
         // Its algebraic coordinates need not be re-eliminated to prove the

@@ -158,9 +158,9 @@ fn the_allowance_runs_out_at_the_same_charge() {
     }
 }
 
-// What `computation(_, index, _)` counts without charging: the two limbs of
-// 1/3 by the `index + 2` of the power of two, and the unit of a charge's
-// deadline check.
+// What the rational product of `computation(_, index, _)` counts: the two
+// limbs of 1/3 by the `index + 2` of the power of two, and the unit of a
+// charge's deadline check.
 fn counted(index: usize) -> u64 {
     2 * (index as u64 + 2) + 1
 }
@@ -173,14 +173,10 @@ fn computation(shared: &[Real], index: usize, dec: &Decider) -> Vec<String> {
     };
     let n = Real::from_i64(index as i64 + 2);
     let steep = Ball::from_rational(&r("17/3"), 160 + 32 * (index as u32 % 3));
-    // Arithmetic the computation counts and does not charge. The power of two
-    // grows by a limb with each index, so each computation counts an amount
-    // of its own, `counted(index)`.
-    count_exact_arithmetic(
-        &r("1/3"),
-        &Rational::from_i64(1).mul_pow2(64 * index as i64 + 1),
-        true,
-    );
+    // A rational product outside any decision. The power of two grows by a
+    // limb with each index, so each computation counts an amount of its own,
+    // `counted(index)`, beside its ball arithmetic.
+    drop(&r("1/3") * &Rational::from_i64(1).mul_pow2(64 * index as i64 + 1));
     vec![
         show(steep.atan_checked(dec)),
         show(Ball::from_rational(&r("1/7"), 200).atan_checked(dec)),
@@ -244,10 +240,18 @@ fn recorded_computations_charge_what_cold_ones_do() {
     };
     let cold = alone(u64::MAX);
     assert!(cold.1 > 10_000, "the computations do real work: {}", cold.1);
-    // What they counted without charging is in neither `used` nor the
+    // What they ran outside a decision is counted and not charged: the ball
+    // arithmetic of the checked arctangents and of the pi series they share,
+    // and one rational product each. It is in neither `used` nor the
     // allowance, and a record carries it to the writer: the count is the same
-    // adopted or cold, at every allowance below.
-    assert_eq!(cold.3, (0..COUNT).map(counted).sum::<u64>());
+    // adopted or cold, at every allowance below. A pi series counts where it
+    // is charged, once for the request, whichever computation ran it.
+    let products = (0..COUNT).map(counted).sum::<u64>();
+    assert!(
+        cold.3 > products,
+        "{} counted, {products} of it products",
+        cold.3
+    );
     let before = run_ahead_adopted();
     assert_eq!(helped(u64::MAX), cold);
     assert_eq!(run_ahead_adopted() - before, COUNT as u64);
@@ -275,7 +279,7 @@ fn a_nested_allowance_inside_a_record_stays_isolated_and_is_not_adopted() {
                             let mut shared_inside = None;
                             let (seen, charges) = record(|| {
                                 let first = show(Ball::pi_checked(96, dec));
-                                count_exact_arithmetic(&r("1/3"), &r("1/7"), true);
+                                drop(&r("1/3") * &r("1/7"));
                                 let nested = OperationAllowance::reserve(100_000).unwrap();
                                 let (second, inner) = nested.run(|| {
                                     shared_inside = Some(shared_caches());

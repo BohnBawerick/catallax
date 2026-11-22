@@ -309,7 +309,10 @@ pub fn record(m: &mut Model, kind: FactKind, a: GeomKey, b: GeomKey) {
 }
 pub fn vertex(m: &mut Model, point: RPoint3) -> VertexId {
     let point = m.geom_mut().add_point(PointDef::Explicit((point).into()));
-    m.add_vertex(Vertex { point })
+    m.add_vertex(Vertex {
+        point,
+        tolerance: None,
+    })
 }
 pub fn edge(m: &mut Model, curve: Curve, start: Option<VertexId>, end: Option<VertexId>) -> EdgeId {
     let curve = m.geom_mut().add_curve(curve);
@@ -326,6 +329,7 @@ pub fn edge(m: &mut Model, curve: Curve, start: Option<VertexId>, end: Option<Ve
         sense: Sense::Same,
         start,
         end,
+        tolerance: None,
     })
 }
 pub fn cycle(m: &mut Model, uses: &[(EdgeId, Sense)]) -> LoopId {
@@ -372,6 +376,7 @@ pub fn face_on(
         surface,
         sense,
         loops,
+        tolerance: None,
     })
 }
 pub fn body_from_lumps(m: &mut Model, lumps: Vec<LumpId>) -> BodyId {
@@ -450,12 +455,16 @@ pub fn lengths(m: &Model) -> [usize; 12] {
     let p = probe
         .geom_mut()
         .add_point(PointDef::Explicit((p(0, 0, 0)).into()));
-    let v = probe.add_vertex(Vertex { point: p });
+    let v = probe.add_vertex(Vertex {
+        point: p,
+        tolerance: None,
+    });
     let e = probe.add_edge(Edge {
         curve: c,
         sense: Sense::Same,
         start: None,
         end: None,
+        tolerance: None,
     });
     let co = probe.add_coedge(Coedge {
         edge: e,
@@ -466,6 +475,7 @@ pub fn lengths(m: &Model) -> [usize; 12] {
         surface: s,
         sense: Sense::Same,
         loops: vec![l],
+        tolerance: None,
     });
     let sh = probe.add_shell(Shell { faces: vec![f] });
     let lu = probe.add_lump(Lump { shells: vec![sh] });

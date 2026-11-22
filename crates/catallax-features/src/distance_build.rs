@@ -59,6 +59,7 @@ fn closed(model: &mut Model, band: RadialBand) -> BodyId {
                 surface,
                 sense,
                 loops: Vec::new(),
+                tolerance: None,
             },
             origins,
         );
@@ -121,6 +122,7 @@ fn cylinder(model: &mut Model, skin: &crate::cylinder_skin::CylinderSkin) -> Bod
             sense: Sense::Same,
             start: None,
             end: None,
+            tolerance: None,
         })
     });
     let surfaces = skin.surfaces();

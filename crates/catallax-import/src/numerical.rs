@@ -188,11 +188,51 @@ pub fn import_step(
     options: &n::NumericalOptions,
     dec: &mut Decider,
 ) -> Result<StepImport, ImportError> {
+    import_step_under(
+        &mut EdgeCap::of_the_checker(),
+        bytes,
+        expected_sha256,
+        step,
+        options,
+        dec,
+    )
+}
+
+/// The hard work cap of each edge in one admission of a file's solids
+/// (Checkpoint 2 decisions, section 4.2 step 8: "A hard per-edge work cap
+/// refuses by name"), and the solid it refused.
+pub(crate) struct EdgeCap {
+    /// Units the gap readings of one edge may spend: the checker's cap
+    /// (`gap::EDGE_WORK`). Only a test of the cap gives less.
+    pub(crate) work: u64,
+    /// The solid whose admission the cap refused, by its name in the file.
+    /// The refusal ends the admission of the file, so there is at most one.
+    pub(crate) refused: Option<String>,
+}
+
+impl EdgeCap {
+    pub(crate) fn of_the_checker() -> Self {
+        Self {
+            work: n::gap::EDGE_WORK,
+            refused: None,
+        }
+    }
+}
+
+/// [`import_step`] under `cap`, which also says which solid its cap refused.
+pub(crate) fn import_step_under(
+    cap: &mut EdgeCap,
+    bytes: &[u8],
+    expected_sha256: &str,
+    step: &StepId,
+    options: &n::NumericalOptions,
+    dec: &mut Decider,
+) -> Result<StepImport, ImportError> {
     if operation_budget_active() {
-        return import_inner(bytes, expected_sha256, step, options, dec);
+        return import_inner(cap, bytes, expected_sha256, step, options, dec);
     }
     let (result, work) = with_operation_budget(n::DEFAULT_WORK, || {
-        import_inner(bytes, expected_sha256, step, options, dec)
+        import_inner(cap, bytes, expected_sha256, step, options, dec)
     });
     if work.exhausted {
         return Err(ImportRefusal::ResourceLimit.into());
@@ -201,6 +241,7 @@ pub fn import_step(
 }
 
 fn import_inner(
+    cap: &mut EdgeCap,
     bytes: &[u8],
     expected_sha256: &str,
     step: &StepId,
@@ -228,13 +269,13 @@ fn import_inner(
             })));
         }
         Err(error) if cones::eligible(bytes, &error, dec)? => {
-            return analytic::import(bytes, expected_sha256, error, options, recorded, dec);
+            return analytic::import(cap, bytes, expected_sha256, error, options, recorded, dec);
         }
         Err(error @ ImportRefusal::NotSolid { .. }) if matches!(&error, ImportRefusal::NotSolid { detail } if detail.contains("exactly")) => {
             error
         }
         Err(error) if analytic::eligible(&error) => {
-            return analytic::import(bytes, expected_sha256, error, options, recorded, dec);
+            return analytic::import(cap, bytes, expected_sha256, error, options, recorded, dec);
         }
         Err(error) => return Err(error.into()),
     };
@@ -252,6 +293,7 @@ fn import_inner(
     let file = crate::read_step(bytes)?;
     if cones::in_file(&file, None, dec)? {
         return analytic::import(
+            cap,
             bytes,
             expected_sha256,
             strict_refusal,
@@ -272,10 +314,10 @@ fn import_inner(
     ) {
         Ok(imported) => imported,
         Err(error) if cones::eligible(bytes, &error, dec)? => {
-            return analytic::import(bytes, expected_sha256, error, options, recorded, dec);
+            return analytic::import(cap, bytes, expected_sha256, error, options, recorded, dec);
         }
         Err(error) if analytic::eligible(&error) => {
-            return analytic::import(bytes, expected_sha256, error, options, recorded, dec);
+            return analytic::import(cap, bytes, expected_sha256, error, options, recorded, dec);
         }
         Err(error) => return Err(error.into()),
     };
@@ -315,7 +357,7 @@ fn import_inner(
         let definition = planar_definition(solid, dec)?;
         bodies.push((
             solid.name.clone(),
-            admit(definition, options, recorded, dec)?,
+            admit(&solid.name, definition, options, recorded, cap, dec)?,
         ));
     }
     Ok(StepImport::Numerical(Box::new(NumericalImport {
@@ -328,10 +370,16 @@ fn import_inner(
 /// Admission of one definition read from a file: with the tolerance the file
 /// recorded where it has one (check once), and measured under rule T3
 /// otherwise.
+///
+/// A measured admission gives each edge `cap.work` units. Where an edge
+/// spends them the refusal is the cap's, and `cap.refused` names `solid`, so
+/// a caller that goes on with the file's other bodies can end this one.
 fn admit(
+    solid: &str,
     definition: n::NumericalDefinition,
     options: &n::NumericalOptions,
     recorded: Option<&Rational>,
+    cap: &mut EdgeCap,
     dec: &mut Decider,
 ) -> Result<n::NumericalBody, Refusal> {
     match recorded {
@@ -343,7 +391,18 @@ fn admit(
             recorded,
             dec,
         ),
-        None => n::admit_import(definition, Vec::new(), options.clone(), dec),
+        None => n::admit_import_under(
+            n::gap::Limits { work: cap.work },
+            definition,
+            Vec::new(),
+            options.clone(),
+            dec,
+        )
+        .inspect_err(|refusal| {
+            if refusal.code == n::gap::WORK_CAP {
+                cap.refused = Some(solid.to_owned());
+            }
+        }),
     }
 }
 
@@ -357,6 +416,7 @@ pub(crate) fn admit_retained_definition(
     strict_refusal: ImportRefusal,
     options: &n::NumericalOptions,
     recorded: Option<&Rational>,
+    cap: &mut EdgeCap,
     dec: &mut Decider,
 ) -> Result<StepImport, ImportError> {
     if options.tolerance_mm.sign() != Sign::Positive
@@ -367,6 +427,7 @@ pub(crate) fn admit_retained_definition(
         ));
     }
     analytic::admit_definition(
+        cap,
         file,
         verified_sha256,
         strict_refusal,

@@ -894,7 +894,32 @@ fn evaluate_impl(
         let mut build = |model: &mut Model,
                          dec: &mut Decider|
          -> Result<Option<BodyValue>, Refusal> {
-            if let Some(context) = numerical.as_deref() {
+            if let Some(context) = numerical.as_deref_mut() {
+                // A hole in a body with tolerant entities has a construction
+                // of its own. Nothing else that reads one does yet.
+                if let Operation::Hole {
+                    target,
+                    at,
+                    diameter,
+                    depth,
+                    tip,
+                    head,
+                } = &step.op
+                    && context.has(target)
+                {
+                    context.hole(
+                        target,
+                        at,
+                        diameter.value(),
+                        depth,
+                        tip,
+                        head.as_ref(),
+                        &step.id,
+                        recipe,
+                        dec,
+                    )?;
+                    return Ok(None);
+                }
                 context.exact_inputs(step)?;
             }
             if let Some((body, radius)) = crate::stock::build(model, &step.op, &step.id, dec)? {
@@ -1513,12 +1538,33 @@ fn evaluate_impl(
                         // charged as it always was. A refusal of theirs is no
                         // verdict on the fillet and returns what it charged,
                         // so the rolling-ball construction keeps the whole
-                        // allowance it found.
+                        // allowance it found. The attempt runs under the cap
+                        // of its tier, which the builders set once they have
+                        // resolved their selection (`predictor.rs`): reaching
+                        // it is a refusal of the attempt like any other.
                         Some(context) => {
-                            match catallax_numbers::refund_on_refusal(|| exact(model, dec)) {
-                                Ok(result) => result,
+                            let work = catallax_numbers::current_operation_work;
+                            // Everything counted for the request so far:
+                            // refunded work only grows, so this never falls.
+                            let counted = || {
+                                let work = work();
+                                work.used + work.refunded + work.uncharged
+                            };
+                            let (used, refunded, before) =
+                                (work().used, work().refunded, counted());
+                            match catallax_numbers::capped_attempt(|| exact(model, dec)) {
+                                Ok(result) => {
+                                    crate::predictor::record(
+                                        &step.id,
+                                        crate::predictor::Path::Exact,
+                                        work().used - used,
+                                        counted() - before,
+                                    );
+                                    result
+                                }
                                 Err(refusal) => {
-                                    context.fillet(
+                                    let attempt = work().refunded - refunded;
+                                    let fitted = context.fillet(
                                         model,
                                         target,
                                         edges,
@@ -1530,7 +1576,18 @@ fn evaluate_impl(
                                         recipe,
                                         refusal,
                                         dec,
-                                    )?;
+                                    );
+                                    crate::predictor::record(
+                                        &step.id,
+                                        if fitted.is_ok() {
+                                            crate::predictor::Path::Fitted
+                                        } else {
+                                            crate::predictor::Path::Refused
+                                        },
+                                        attempt,
+                                        counted() - before,
+                                    );
+                                    fitted?;
                                     return Ok(None);
                                 }
                             }

@@ -320,7 +320,10 @@ blind_test!(incidence_is_required_for_endpoint_and_vertex_loop, {
         let point = m
             .geom_mut()
             .add_point(PointDef::Explicit(p(0, 0, 4).into()));
-        let replacement = m.add_vertex(Vertex { point });
+        let replacement = m.add_vertex(Vertex {
+            point,
+            tolerance: None,
+        });
         if vertex_loop {
             let fs = m.shell(shell_of(&m, b)).faces.clone();
             let side = m.face(fs[1]).clone();
@@ -341,6 +344,7 @@ blind_test!(incidence_is_required_for_endpoint_and_vertex_loop, {
                 sense: Sense::Same,
                 start: Some(old),
                 end: Some(replacement),
+                tolerance: None,
             });
             let l = cycle(&mut m, &[(e, Sense::Same), (e, Sense::Reversed)]);
             let f = face(&mut m, sphere_surface(r(4)), Sense::Same, vec![l]);

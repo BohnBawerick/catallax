@@ -1,5 +1,11 @@
 //! Versioned numerical records; v02 has no sampled-carrier declarations and
 //! v03 no tolerance report.
+//!
+//! The body's model is written as every model is. One written before format
+//! version 3 of the handover has no tolerance on its vertices and edges, so
+//! reading it stores them again from the body's own records
+//! ([`NumericalBody::restore_model_tolerances`]): a numerical body is never
+//! read back as exact.
 use super::{
     BodyId, Model, NumericalBody, NumericalDefinition, NumericalHistory, NumericalNativeTrim,
     NumericalOptions, ToleranceReport,
@@ -49,6 +55,7 @@ impl Codec for NumericalBody {
     fn read(r: &mut Reader<'_>) -> Result<Self, Refusal> {
         // v04 adds the tolerance report. A v03 body reads without one: its
         // report is empty, and a rebuild makes it again.
+        let without_tolerances = r.version() < 3;
         let tag = r.take(8)?;
         let (carriers, report) = match tag {
             t if t == BODY => (true, true),
@@ -90,10 +97,13 @@ impl Codec for NumericalBody {
             // and are not stored.
             import_gaps: Vec::new(),
         })
-        .map(|mut body: NumericalBody| {
+        .and_then(|mut body: NumericalBody| {
             // The options skip the vertex cap; the report keeps it.
             body.options.vertex_tolerance_mm = body.tolerances.vertex_cap_mm.clone();
-            body
+            if without_tolerances {
+                body.restore_model_tolerances()?;
+            }
+            Ok(body)
         })
     }
     fn register(r: &mut Registry) {

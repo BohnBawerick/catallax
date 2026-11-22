@@ -7,7 +7,7 @@
 //! The contract is `docs/pieces/04-intersections.md`.
 
 use catallax_numbers::{
-    Answered, Ball, Decider, Interval, Outcome, Rational, Refusal, StrictOrder,
+    Answered, Ball, Decider, Interval, Outcome, Rational, Refusal, StrictOrder, uncounted_memo,
 };
 use catallax_shapes::{
     Apart, CurveId, GeomStore, Point3, PointId, SplineSupport, Surface, SurfaceId, SurfaceKind,
@@ -394,7 +394,7 @@ impl TracePiece {
         };
         let program = explicit
             .program
-            .get_or_init(|| chart::JetProgram::new(&explicit.coords));
+            .get_or_init(|| uncounted_memo(|| chart::JetProgram::new(&explicit.coords)));
         chart::interval_jets(program, t, order, dec)
     }
 }
@@ -411,7 +411,7 @@ impl ExplicitTrace {
             // A worker leaves the shared panel cache unfilled for the writer.
             let program = self
                 .program
-                .get_or_init(|| chart::JetProgram::new(&self.coords));
+                .get_or_init(|| uncounted_memo(|| chart::JetProgram::new(&self.coords)));
             let jets = chart::ball_jets(program, t, order, dec)?;
             dec.check_deadline()?;
             return Ok(jets);
@@ -430,7 +430,7 @@ impl ExplicitTrace {
         }
         let program = self
             .program
-            .get_or_init(|| chart::JetProgram::new(&self.coords));
+            .get_or_init(|| uncounted_memo(|| chart::JetProgram::new(&self.coords)));
         let jets = chart::ball_jets(program, t, order, dec)?;
         if cache.len() == 128 {
             cache.pop_front();

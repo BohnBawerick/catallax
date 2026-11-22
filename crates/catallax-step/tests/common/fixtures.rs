@@ -99,6 +99,7 @@ pub fn void_block() -> (Model, BodyId) {
             surface: f.surface,
             sense: flip(f.sense),
             loops,
+            tolerance: None,
         }));
     }
     let inner = m.add_shell(Shell { faces });
@@ -135,6 +136,7 @@ pub fn split_sphere() -> (Model, BodyId) {
         sense: Sense::Same,
         start: None,
         end: None,
+        tolerance: None,
     });
     let mut faces = Vec::new();
     for sense in [Sense::Same, Sense::Reversed] {
@@ -144,6 +146,7 @@ pub fn split_sphere() -> (Model, BodyId) {
             surface,
             sense: Sense::Same,
             loops: vec![l],
+            tolerance: None,
         }));
     }
     let shell = m.add_shell(Shell { faces });
@@ -171,7 +174,13 @@ pub fn touching_blocks() -> (Model, BodyId) {
                 break;
             }
         }
-        vertices.insert(v, m.add_vertex(Vertex { point: p }));
+        vertices.insert(
+            v,
+            m.add_vertex(Vertex {
+                point: p,
+                tolerance: None,
+            }),
+        );
     }
     let mut edges = BTreeMap::new();
     for e in m.edges_of_body(b) {
@@ -203,6 +212,7 @@ pub fn touching_blocks() -> (Model, BodyId) {
                 sense: old.sense,
                 start,
                 end,
+                tolerance: None,
             }),
         );
     }
@@ -239,6 +249,7 @@ pub fn touching_blocks() -> (Model, BodyId) {
             surface: f.surface,
             sense: f.sense,
             loops,
+            tolerance: None,
         }));
     }
     let shell = m.add_shell(Shell { faces });

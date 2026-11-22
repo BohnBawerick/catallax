@@ -131,6 +131,7 @@ pub(crate) fn split(
             sense: Sense::Same,
             start: None,
             end: None,
+            tolerance: None,
         });
         // The equator turns counterclockwise about the axis, and the outward
         // normal there points away from it, so a face in the torus's sense
@@ -151,6 +152,7 @@ pub(crate) fn split(
                 surface: source.surface,
                 sense: source.sense,
                 loops: vec![source.loops[1 - low], upper_cut],
+                tolerance: source.tolerance.clone(),
             }),
         );
         lowers.insert(
@@ -159,6 +161,7 @@ pub(crate) fn split(
                 surface: reversed,
                 sense: source.sense,
                 loops: vec![low_ring, lower_cut],
+                tolerance: source.tolerance.clone(),
             }),
         );
     }
@@ -191,6 +194,7 @@ pub(crate) fn split(
                 surface: reversed,
                 sense: source.sense,
                 loops: source.loops,
+                tolerance: source.tolerance.clone(),
             }),
         );
     }

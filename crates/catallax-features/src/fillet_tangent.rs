@@ -294,6 +294,7 @@ pub(super) fn build(
             sense,
             start: Some(start),
             end: Some(end),
+            tolerance: None,
         })
     };
     // Each cap holds the rail arc from its contact to the seam; the main patch
@@ -346,6 +347,7 @@ pub(super) fn build(
             sense: Sense::Same,
             start: Some(corner.rail),
             end: Some(corner.mouth),
+            tolerance: None,
         });
         let hole_turn = turn(model, uses, axis, ring.plane_face, mouth.edge, dec)?;
         let cap_arc = cap_arcs[i].expect("every mouth has a place in the order");
@@ -406,6 +408,7 @@ pub(super) fn build(
         sense: input.sense,
         start: None,
         end: None,
+        tolerance: None,
     });
     replaced.insert(
         ring.cylinder_face,

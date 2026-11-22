@@ -25,7 +25,10 @@ fn noncircular_torus_loop_keeps_cells_across_the_seam_and_chart_pole() {
         let point = model
             .geom_mut()
             .add_point(PointDef::Explicit(Point3::new(x, y, z)));
-        model.add_vertex(Vertex { point })
+        model.add_vertex(Vertex {
+            point,
+            tolerance: None,
+        })
     });
     // Rational half-angle parameters (u,v) map to
     // ((3+cos(v))*cos(u),(3+cos(v))*sin(u),sin(v)).
@@ -68,6 +71,7 @@ fn noncircular_torus_loop_keeps_cells_across_the_seam_and_chart_pole() {
             sense: Sense::Same,
             start: Some(vertices[i]),
             end: Some(vertices[(i + 1) % 3]),
+            tolerance: None,
         });
         coedges.push(model.add_coedge(Coedge {
             edge,
@@ -79,6 +83,7 @@ fn noncircular_torus_loop_keeps_cells_across_the_seam_and_chart_pole() {
         surface,
         sense: Sense::Same,
         loops: vec![lp],
+        tolerance: None,
     });
     let mut faces = vec![(face, false)];
     for (sense, complement) in [(Sense::Same, true), (Sense::Reversed, false)] {
@@ -99,6 +104,7 @@ fn noncircular_torus_loop_keeps_cells_across_the_seam_and_chart_pole() {
                 surface,
                 sense,
                 loops: vec![lp],
+                tolerance: None,
             }),
             complement,
         ));

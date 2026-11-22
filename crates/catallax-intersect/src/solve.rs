@@ -161,7 +161,13 @@ fn groebner(generators: Vec<P>) -> Arc<[P]> {
     }) {
         return basis;
     }
-    let basis: Arc<[P]> = uncached_groebner(generators.clone()).into();
+    // The memo outlives the request on this thread, so its fill is not
+    // counted: a count of it would differ with what the thread ran before. A
+    // count of the fill at every use, found or filled, was tried and dropped:
+    // a basis is found far more often than it is filled, so that counted
+    // 4.4 thousand million units on one cut for 14 seconds of work.
+    let basis: Arc<[P]> =
+        catallax_numbers::uncounted_memo(|| uncached_groebner(generators.clone())).into();
     BASES.with(|bases| {
         let mut bases = bases.borrow_mut();
         if bases.len() == 32 {

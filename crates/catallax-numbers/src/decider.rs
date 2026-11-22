@@ -1414,15 +1414,59 @@ impl Decider {
     /// Reserves the existing exact-arithmetic cost before a producer performs
     /// rational addition or multiplication outside the numeric decision layer.
     /// This uses the caller's current operation allowance and per-decision cap.
+    ///
+    /// For a caller that runs the [`Rational`] operation itself, next. That
+    /// operation counts itself when it runs, so a reservation that succeeds
+    /// takes its price off [`crate::OperationWork::uncharged`], and what was
+    /// charged is not counted a second time. A caller whose arithmetic will
+    /// not count itself reserves with [`Self::reserve_uncounted_arithmetic`].
     pub fn reserve_exact_arithmetic(
         &mut self,
         a: &Rational,
         b: &Rational,
         multiply: bool,
     ) -> Result<(), Refusal> {
+        self.reserve(a, b, multiply, true)
+    }
+
+    /// The same charge as [`Self::reserve_exact_arithmetic`], for exact
+    /// arithmetic that does not count itself when it runs, so nothing is
+    /// taken off [`crate::OperationWork::uncharged`]:
+    ///
+    /// - an operation of a [`Real`], which runs when the value's rational
+    ///   form is first read, inside the value's own memo;
+    /// - a comparison or an equality test of two rationals, which
+    ///   cross-multiplies inside the comparison;
+    /// - a shift by a power of two, a floor, a ceiling or a larger-of;
+    /// - arithmetic on integers done directly.
+    ///
+    /// The count has no price for any of these, and taking the reservation
+    /// off it would leave the count short by what was charged.
+    pub fn reserve_uncounted_arithmetic(
+        &mut self,
+        a: &Rational,
+        b: &Rational,
+        multiply: bool,
+    ) -> Result<(), Refusal> {
+        self.reserve(a, b, multiply, false)
+    }
+
+    fn reserve(
+        &mut self,
+        a: &Rational,
+        b: &Rational,
+        multiply: bool,
+        counts_itself: bool,
+    ) -> Result<(), Refusal> {
         let mut work = Work::new(self.policy, self.deadline);
         let result = work.exact(a, b, multiply);
         self.account(&work);
+        drop(work);
+        if result.is_ok() && counts_itself {
+            // The caller's operation counts itself when it runs. It is paid
+            // for here: the limb rule, and the unit of the deadline check.
+            crate::operation::reserved_arithmetic(exact_cost(a, b, multiply).saturating_add(1));
+        }
         result.map_err(|code| Refusal::new(code, "exact geometric proof arithmetic stopped"))
     }
     fn expired(&self) -> bool {
@@ -1671,6 +1715,9 @@ pub(crate) struct Work {
     pub used: u64,
     pub bits: u32,
     reuse_complete_enclosure: bool,
+    // A decision charges its own arithmetic, so the number types do not count
+    // it a second time while this account is open (`count_arithmetic`).
+    _charged_here: crate::operation::Uncounted,
 }
 impl Work {
     pub fn new(policy: BudgetPolicy, deadline: Option<Instant>) -> Self {
@@ -1680,6 +1727,7 @@ impl Work {
             used: 0,
             bits: 0,
             reuse_complete_enclosure: false,
+            _charged_here: crate::operation::Uncounted::enter(),
         }
     }
     fn unbounded_enclosure(precision: u32, deadline: Option<Instant>) -> Self {
@@ -1702,6 +1750,7 @@ impl Work {
             used,
             bits: 0,
             reuse_complete_enclosure: false,
+            _charged_here: crate::operation::Uncounted::enter(),
         }
     }
     /// Takes over recorded cold arithmetic: its request work and its decision
@@ -1752,12 +1801,7 @@ impl Work {
         if p > self.policy.max_precision_bits {
             return Err("numbers.precision-limit");
         }
-        let l = u64::from(p).div_ceil(64).max(1);
-        self.charge(if mul {
-            l.saturating_mul(l).saturating_mul(8)
-        } else {
-            l.saturating_mul(4)
-        })?;
+        self.charge(ball_cost(p, mul))?;
         self.bits = self.bits.max(p);
         Ok(())
     }
@@ -1826,16 +1870,12 @@ impl Work {
     }
 }
 fn limbs(r: &Rational) -> u64 {
-    r.numerator()
-        .bit_length()
-        .div_ceil(64)
-        .max(1)
-        .saturating_add(r.denominator().bit_length().div_ceil(64).max(1))
+    r.limbs()
 }
 
 // The limb rule for one exact rational operation: the product of the operands'
 // limb counts for a product, their sum for a sum or a difference.
-fn exact_cost(a: &Rational, b: &Rational, mul: bool) -> u64 {
+pub(crate) fn exact_cost(a: &Rational, b: &Rational, mul: bool) -> u64 {
     let a = limbs(a);
     let b = limbs(b);
     if mul {
@@ -1845,20 +1885,16 @@ fn exact_cost(a: &Rational, b: &Rational, mul: bool) -> u64 {
     }
 }
 
-/// Counts one exact rational product (`multiply`) or sum of `a` and `b` that
-/// the caller does outside a decision, without charging it.
-///
-/// The amount is what [`Decider::reserve_exact_arithmetic`] charges for the
-/// same operation: the limb rule above, and one unit more, because every
-/// charge also pays for its deadline check (`Work::charge`). It goes to
-/// [`crate::OperationWork::uncharged`] and nowhere else: the allowance, `used`
-/// and every refusal stay as they are, no deadline is read, and nothing is
-/// counted outside a request.
-///
-/// For arithmetic whose cost belongs on the record and has no cheaper path
-/// yet for a cap to fall back to.
-pub fn count_exact_arithmetic(a: &Rational, b: &Rational, multiply: bool) {
-    crate::operation::count_uncharged(exact_cost(a, b, multiply).saturating_add(1));
+// The decider's price of one ball operation at working precision `p`: 4L for
+// a sum or a difference and 8L^2 for a product, a quotient or a square root,
+// with L = ceil(p / 64).
+pub(crate) fn ball_cost(p: u32, mul: bool) -> u64 {
+    let l = u64::from(p).div_ceil(64).max(1);
+    if mul {
+        l.saturating_mul(l).saturating_mul(8)
+    } else {
+        l.saturating_mul(4)
+    }
 }
 
 enum EvalError {

@@ -286,7 +286,9 @@ impl DisplayCut {
             let mut root = Interval::new(0.0, 1.0).unwrap();
             let speed = span.carrier.first_derivative_bounds()[0].hi();
             for _ in 0..f64::MANTISSA_DIGITS {
-                if root.width() * speed <= output_width {
+                // The Euclidean speed bounds the L1 output width after
+                // multiplication by sqrt(3), bounded here by two.
+                if root.width() * speed <= output_width * 0.5 {
                     break;
                 }
                 work.copy_from_slice(&values);

@@ -13,6 +13,9 @@ pub struct RationalSpan {
     centre: [f64; 3],
     control: Net<Interval>,
     first: [Net<Interval>; 2],
+    control_hull: [Interval; 4],
+    first_hulls: [[Interval; 4]; 2],
+    second_hulls: [[Interval; 4]; 3],
     position_first: [Interval; 2],
     hessian: [Interval; 3],
     affine_hessian: [Interval; 3],
@@ -118,6 +121,28 @@ pub fn rational_spans(
 }
 
 impl RationalSpan {
+    /// Prepares a normalized rational Bézier curve as a one-parameter chart.
+    pub fn from_curve(controls: Vec<[Interval; 4]>, dec: &mut Decider) -> Result<Self, Refusal> {
+        let degree = controls
+            .len()
+            .checked_sub(1)
+            .ok_or_else(|| refuse("empty curve net"))?;
+        if controls
+            .iter()
+            .any(|point| point.iter().any(|x| !x.is_finite()) || point[3].lo() <= 0.0)
+        {
+            return Err(refuse(
+                "homogeneous controls need finite coordinates and positive weights",
+            ));
+        }
+        Self::prepare(
+            std::array::from_fn(|_| [Rational::zero(), Rational::one()]),
+            [degree, 0],
+            controls,
+            dec,
+        )
+    }
+
     fn prepare(
         domain: [[Rational; 2]; 2],
         degree: [usize; 2],
@@ -193,6 +218,9 @@ impl RationalSpan {
             domain,
             degree,
             centre,
+            control_hull: control_hull(&control),
+            first_hulls: first.each_ref().map(|net| control_hull(net)),
+            second_hulls: second.each_ref().map(|net| control_hull(net)),
             control,
             first,
             position_first,
@@ -306,8 +334,25 @@ impl RationalSpan {
         if uv.iter().any(|axis| axis.lo() < 0.0 || axis.hi() > 1.0) {
             return Err(refuse("span evaluation leaves its unit rectangle"));
         }
-        dec.charge_work(eval_products(self.degree))?;
-        let [x, y, z, weight] = evaluate_range(&self.control, self.degree, uv);
+        let center = uv.map(|value| point(value.mid()));
+        let delta = std::array::from_fn(|i| uv[i] - center[i]);
+        let [x, y, z, weight] = if uv.iter().all(|axis| axis.width() == 0.0) {
+            dec.charge_work(eval_products(self.degree))?;
+            intersect_hull(
+                evaluate(&self.control, self.degree, uv, point, |i| i),
+                self.control_hull,
+            )
+        } else {
+            dec.charge_work(eval_products(self.degree) + 2 * 4)?;
+            centered_range(
+                &self.control,
+                self.degree,
+                center,
+                delta,
+                self.control_hull,
+                self.first_hulls,
+            )
+        };
         let weight = Interval::new(weight.lo().max(self.min_weight.lo()), weight.hi())
             .ok_or_else(|| refuse("evaluated weight and control bounds do not overlap"))?;
         Ok(std::array::from_fn(|i| {
@@ -328,16 +373,32 @@ impl RationalSpan {
         if uv.iter().any(|axis| axis.lo() < 0.0 || axis.hi() > 1.0) {
             return Err(refuse("normal enclosure leaves its knot span"));
         }
-        dec.charge_work(eval_products(self.degree))?;
-        let homogeneous = evaluate_range(&self.control, self.degree, uv);
+        let center = uv.map(|value| point(value.mid()));
+        let delta = std::array::from_fn(|i| uv[i] - center[i]);
+        dec.charge_work(eval_products(self.degree) + 2 * 4)?;
+        let homogeneous = centered_range(
+            &self.control,
+            self.degree,
+            center,
+            delta,
+            self.control_hull,
+            self.first_hulls,
+        );
         let mut tangents = [[point(0.0); 3]; 2];
         for (axis, tangent) in tangents.iter_mut().enumerate() {
             if self.first[axis].is_empty() {
                 continue;
             }
             let degree = lower_degree(self.degree, axis);
-            dec.charge_work(eval_products(degree) + 2 * 3)?;
-            let first = evaluate_range(&self.first[axis], degree, uv);
+            dec.charge_work(eval_products(degree) + 2 * 4 + 2 * 3)?;
+            let first = centered_range(
+                &self.first[axis],
+                degree,
+                center,
+                delta,
+                self.first_hulls[axis],
+                [self.second_hulls[axis], self.second_hulls[axis + 1]],
+            );
             *tangent =
                 std::array::from_fn(|i| homogeneous[3] * first[i] - homogeneous[i] * first[3]);
         }
@@ -373,6 +434,10 @@ impl RationalSpan {
         uv = uv.map(|value| value.clamp(0.0, 1.0));
         let relative = std::array::from_fn(|i| target[i] - self.centre[i]);
         let mut difference = self.offset(uv, relative, dec)?;
+        // A merely acceptable residual can leave an exact rail on alternating
+        // sides of its chart line. Continue toward the rounding scale before
+        // using the residual to decide whether the projection is admissible.
+        let rounding_goal = goal.min(self.radius.hi() * f64::EPSILON);
 
         // Damped Gauss-Newton (Nocedal and Wright, Numerical Optimization,
         // chapter 10). A bounded span may put the minimum on an edge. Clamp
@@ -380,7 +445,7 @@ impl RationalSpan {
         for _ in 0..f64::MANTISSA_DIGITS {
             dec.charge_work(3)?;
             let distance_squared = dot(difference, difference);
-            if distance_squared.sqrt() <= goal {
+            if distance_squared.sqrt() <= rounding_goal {
                 break;
             }
             let [du, dv] = self.jacobian(uv, dec)?;
@@ -507,11 +572,30 @@ where
     sum
 }
 
-fn evaluate_range(net: &[[Interval; 4]], degree: [usize; 2], uv: [Interval; 2]) -> [Interval; 4] {
-    let evaluated = evaluate(net, degree, uv, point, |i| i);
-    let hull = net.iter().skip(1).fold(net[0], |bounds, control| {
+fn control_hull(net: &[[Interval; 4]]) -> [Interval; 4] {
+    let Some((first, rest)) = net.split_first() else {
+        return [point(0.0); 4];
+    };
+    rest.iter().fold(*first, |bounds, control| {
         std::array::from_fn(|i| bounds[i].hull(&control[i]))
-    });
+    })
+}
+
+fn centered_range(
+    net: &[[Interval; 4]],
+    degree: [usize; 2],
+    center: [Interval; 2],
+    [du, dv]: [Interval; 2],
+    hull: [Interval; 4],
+    [u, v]: [[Interval; 4]; 2],
+) -> [Interval; 4] {
+    // Mean value form on the box. The Bernstein hulls bound the two
+    // derivatives along both coordinate displacements from the centre.
+    let at = evaluate(net, degree, center, point, |i| i);
+    intersect_hull(std::array::from_fn(|i| at[i] + du * u[i] + dv * v[i]), hull)
+}
+
+fn intersect_hull(evaluated: [Interval; 4], hull: [Interval; 4]) -> [Interval; 4] {
     std::array::from_fn(|i| {
         // The whole patch is also inside its Bernstein control hull. Preserve
         // exact constants when wide parameter intervals obscure partition of unity.

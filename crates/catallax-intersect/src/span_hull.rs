@@ -7,7 +7,7 @@
 //! stretch hold it by the convex hull property, so the box shrinks with the curve.
 
 use catallax_numbers::{Ball, Decider, Rational, Real, Refusal};
-use catallax_shapes::BSplineCurve;
+use catallax_shapes::{BSplineCurve, tessellation::RationalSpan};
 use std::sync::{Arc, Mutex};
 
 type Homogeneous = [Ball; 4];
@@ -55,6 +55,21 @@ impl SpanHull {
             range,
             controls: Mutex::new(None),
         }
+    }
+
+    pub(crate) fn display_span(&self, dec: &mut Decider) -> Result<Option<RationalSpan>, Refusal> {
+        let bits = dec.policy().max_precision_bits.min(128);
+        let Some(controls) = self.controls(bits, dec)? else {
+            return Ok(None);
+        };
+        RationalSpan::from_curve(
+            controls
+                .iter()
+                .map(|p| p.each_ref().map(Ball::to_interval))
+                .collect(),
+            dec,
+        )
+        .map(Some)
     }
 
     // The span's own Bezier controls, as the blossom at its two knots.

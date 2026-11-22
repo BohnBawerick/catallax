@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use catallax_intersect::{TracePiece, trace};
 use catallax_numbers::{Ball, Decider, Interval, MarkLog, Rational, Real, Refusal};
-use catallax_shapes::{DisplayCut, FilletCut};
+use catallax_shapes::{DisplayCut, FilletCut, tessellation::RationalSpan};
 use catallax_topology::{BodyId, EdgeId, Loop, Model, Sense, VertexId};
 
 use crate::{
@@ -165,6 +165,7 @@ struct Cap<'a> {
 struct Sampler<'a> {
     piece: &'a Arc<TracePiece>,
     cap: Option<Cap<'a>>,
+    spline: Option<RationalSpan>,
     charts: &'a [&'a Chart],
     spline_cosine: Option<Interval>,
     options: &'a MeshOptions,
@@ -179,6 +180,11 @@ impl Sampler<'_> {
     fn acceleration(&self, interval: &Ball) -> Result<Rational, Refusal> {
         if let Some(cap) = &self.cap {
             return Ok(cap.coefficient.clone());
+        }
+        if let Some(spline) = &self.spline {
+            // The same chord formula uses this scaled Bernstein coefficient.
+            // Positive vertex weights reparameterize the straight chord.
+            return Ok(chart::q(spline.chord_coefficients()[0].hi()).mul_pow2(-1));
         }
         if let Some(jets) = self
             .piece
@@ -240,6 +246,8 @@ impl Sampler<'_> {
                 Interval::point(1.0).unwrap() - parameter
             };
             cap.chart.enclose(theta, goal, self.dec)?
+        } else if let Some(spline) = &self.spline {
+            Some(spline.evaluate_box([parameter, Interval::point(0.0).unwrap()], self.dec)?)
         } else {
             self.piece
                 .taylor_interval(parameter, 0, self.dec)?
@@ -585,9 +593,18 @@ pub(crate) fn sample(
                     })
                 })
                 .transpose()?;
+            let spline = if adjacent[&edge_id]
+                .iter()
+                .any(|chart| chart.spline().is_some())
+            {
+                piece.display_spline_span(dec)?
+            } else {
+                None
+            };
             Sampler {
                 piece,
                 cap,
+                spline,
                 charts: &adjacent[&edge_id],
                 spline_cosine,
                 options,

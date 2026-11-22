@@ -304,6 +304,20 @@ impl TracePiece {
         }
     }
 
+    /// Bernstein bounds for the retained spline piece in display parameters.
+    pub fn display_spline_span(
+        &self,
+        dec: &mut Decider,
+    ) -> Result<Option<catallax_shapes::tessellation::RationalSpan>, Refusal> {
+        let TraceCoordinates::Explicit(piece) = &self.coords else {
+            return Ok(None);
+        };
+        match &piece.span {
+            Some(span) => span.display_span(dec),
+            None => Ok(None),
+        }
+    }
+
     /// Source chart jets when this piece retains a finite patch section.
     pub fn section_parameters(
         &self,

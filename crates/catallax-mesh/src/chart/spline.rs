@@ -109,7 +109,7 @@ impl Span {
             .into_iter()
             .zip(position)
             .fold(0.0_f64, |score, (bounds, x)| {
-                score.max((bounds.lo() - x).max(x - bounds.hi()))
+                score.max((bounds.lo() - x).max(x - bounds.hi()).next_down())
             })
     }
 }
@@ -203,7 +203,9 @@ impl SplineChart {
         let mut ordered: Vec<_> = self
             .spans
             .iter()
+            .filter(|span| neighbours.is_none_or(|near| !std::ptr::eq(*span, near)))
             .map(|span| (span.distance_score(position), span))
+            .filter(|(gap, _)| *gap <= goal)
             .collect();
         ordered.sort_by(|a, b| a.0.total_cmp(&b.0));
         for (_, span) in ordered {

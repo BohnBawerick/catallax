@@ -1366,11 +1366,22 @@ impl Plan {
         let mut live = vec![false; end];
         live[source] = true;
         for i in (0..end).rev() {
-            if live[i]
-                && let Instruction::Boolean { a, b, .. } = self.instructions[i]
-            {
-                live[a] = true;
-                live[b] = true;
+            if !live[i] {
+                continue;
+            }
+            match self.instructions[i] {
+                Instruction::Boolean { a, b, .. } => {
+                    live[a] = true;
+                    live[b] = true;
+                }
+                Instruction::Leaf(id) if matches!(&self.leaves[id], geometry::Leaf::Shell(shell) if shell.blend_origin().is_some()) =>
+                {
+                    return Err(Refusal::new(
+                        "field.spline-copy",
+                        "rounded spline shells cannot be copied by a pattern or mirror",
+                    ));
+                }
+                _ => {}
             }
         }
         let mut remap = vec![0; end];

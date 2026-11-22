@@ -665,7 +665,7 @@ impl<'a> Sweep<'a> {
         {
             upper = upper.min(self.arc(&p, &self.enclose(span, point(guess))).1);
         }
-        if upper <= limit.lo() {
+        if upper.is_finite() && upper <= limit.lo() {
             charge(dec)?;
             return Ok(Range {
                 lower: Rational::zero(),
@@ -703,9 +703,9 @@ impl<'a> Sweep<'a> {
         {
             let lower = lower.min(upper);
             let converged = if threshold {
-                upper <= limit.lo() || lower > limit.hi()
+                (upper.is_finite() && upper <= limit.lo()) || lower > limit.hi()
             } else {
-                (point(upper) - point(lower)).hi() <= limit.lo()
+                upper.is_finite() && (point(upper) - point(lower)).hi() <= limit.lo()
             };
             let mid = lo.midpoint(hi);
             if converged || panels >= PANELS || depth >= DEPTH || mid <= lo || mid >= hi {

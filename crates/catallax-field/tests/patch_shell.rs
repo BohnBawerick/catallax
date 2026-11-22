@@ -570,6 +570,11 @@ fn rounded_loft_previews_skip_removed_corners_without_proof_work() {
     });
     assert_eq!(work.used, 0);
     assert!(!work.exhausted);
+    let far = RPoint3::new(Q::from_f64_exact(1e200).unwrap(), q(0), q(1));
+    let error = plan
+        .proven_checked(&far, &mut Workspace::default(), &mut decider())
+        .unwrap_err();
+    assert_eq!(error.code, "field.patch-shell", "{error:?}");
 }
 
 #[test]

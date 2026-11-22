@@ -603,7 +603,9 @@ pub(crate) fn run(
         Err(e) => {
             report.sampled_distance_upper = None;
             whole_failure(&mut report, format!("field build {}: {}", e.code, e.detail));
-            report.refusal = Some(e);
+            if e.code.starts_with("field.spline-") || e.code == "fillet.unsupported-spline" {
+                report.refusal = Some(e);
+            }
             return revision.publish(report);
         }
     };

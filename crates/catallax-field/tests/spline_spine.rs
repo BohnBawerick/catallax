@@ -586,6 +586,87 @@ fn the_m27_cap_keeps_the_blend_past_the_first_rail_end() {
     assert!(stopped.lower > r("1/1000"), "{stopped:?}");
 }
 
+#[test]
+fn capped_loft_edges_time_independent_points_near_both_cuts() {
+    let mut dec = Decider::default();
+    let width = r("1/1000000");
+    let caps = [
+        (RPoint3::origin(), RVector3::new(q(0), q(0), q(1))),
+        (
+            RPoint3::new(q(0), q(0), q(2)),
+            RVector3::new(q(0), q(0), q(-1)),
+        ),
+    ];
+    let pairs: [(Surface, Surface); 2] = [(support_a, support_b), (support_b, support_c)];
+    for (index, (first, second)) in pairs.into_iter().enumerate() {
+        let (name, definition) = definition(index, &mut dec);
+        let [_, continued] = cap_continuation(&definition, &mut dec).unwrap();
+        let sweep = Sweep::between_caps(&continued, &caps, &mut dec).unwrap();
+
+        for (cap, direction) in [(0.0_f64, 1.0), (2.0, -1.0)] {
+            for clipped in [false, true] {
+                let mut times = Vec::new();
+                for i in 1..10 {
+                    let angle = f64::from(i) / 10.0;
+                    let height = if clipped { cap } else { cap + direction * 0.2 };
+                    let section = |tau| {
+                        let ([u, s, t], centre) =
+                            spine_point(first, second, tau, [0.94, 0.05, tau]);
+                        let (a, b) = (first(u, tau)[0], second(s, t)[0]);
+                        let radial: [f64; 3] = std::array::from_fn(|j| {
+                            (a[j] - centre[j]) * (1.0 - angle) + (b[j] - centre[j]) * angle
+                        });
+                        let length = radial.iter().map(|x| x * x).sum::<f64>().sqrt();
+                        let point: [f64; 3] =
+                            std::array::from_fn(|j| centre[j] + radial[j] * 0.1 / length);
+                        (point, [a[2], b[2]], centre[2])
+                    };
+                    let (mut lo, mut hi) = (height / 2.0 - 0.15, height / 2.0 + 0.15);
+                    assert!(section(lo).0[2] < height && section(hi).0[2] > height);
+                    for _ in 0..44 {
+                        let tau = lo.midpoint(hi);
+                        if section(tau).0[2] < height {
+                            lo = tau;
+                        } else {
+                            hi = tau;
+                        }
+                    }
+                    let (point, rails, centre_z) = section(lo.midpoint(hi));
+                    assert!((point[2] - height).abs() < 1e-12);
+                    if clipped {
+                        if (rails[0] - cap) * (rails[1] - cap) >= 0.0 {
+                            continue;
+                        }
+                    } else {
+                        assert!(centre_z > 0.1 && centre_z < 1.9);
+                    }
+                    let [x, y, z] =
+                        [point[0], point[1], height].map(|x| Q::from_f64_exact(x).unwrap());
+                    let p = RPoint3::new(x, y, z);
+                    let before = Instant::now();
+                    let range = sweep.distance(&p, &width, &mut dec).unwrap();
+                    times.push(before.elapsed());
+                    assert!(
+                        range.lower <= r("1/1000000000000"),
+                        "{name} {p:?}: {range:?}"
+                    );
+                    assert!(
+                        range.upper.as_ref().is_some_and(|u| u <= &width),
+                        "{name} {p:?}: {range:?}"
+                    );
+                }
+                assert!(times.len() >= 3, "{name}: cap {cap}, clipped {clipped}");
+                times.sort_unstable();
+                println!(
+                    "{name}: cap {cap}, clipped {clipped}, {} points, median {:?}",
+                    times.len(),
+                    times[times.len() / 2]
+                );
+            }
+        }
+    }
+}
+
 fn near_tangent(slope: Q, dec: &mut Decider) -> SpineDefinition {
     let u = MPoly::var(2, 0);
     let v = MPoly::var(2, 1);

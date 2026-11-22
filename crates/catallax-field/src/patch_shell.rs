@@ -327,10 +327,13 @@ fn transpose(m: &[[Rational; 3]; 3]) -> [[Rational; 3]; 3] {
     std::array::from_fn(|i| std::array::from_fn(|j| m[j][i].clone()))
 }
 
-fn ball(interval: Interval) -> Ball {
-    let end =
-        |x: f64| Ball::from_rational(&Rational::from_f64_exact(x).expect("finite"), PRECISION);
-    end(interval.lo()).hull(&end(interval.hi()))
+fn ball(interval: Interval) -> Result<Ball, Refusal> {
+    let end = |x| {
+        Rational::from_f64_exact(x)
+            .map(|value| Ball::from_rational(&value, PRECISION))
+            .ok_or_else(|| refusal("the shell distance has no finite enclosure"))
+    };
+    Ok(end(interval.lo())?.hull(&end(interval.hi())?))
 }
 
 impl Shell {
@@ -745,7 +748,7 @@ impl Shell {
         } else {
             self.classify(p, dec)?.1
         };
-        let distance = ball(distance);
+        let distance = ball(distance)?;
         Ok(match location {
             Location::Inside => -distance,
             Location::Outside => distance,

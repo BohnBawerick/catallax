@@ -516,6 +516,20 @@ shared-machine runs. The cap regression also tests a point above the
 first rail's last station and below the cap, using an independent solve
 for the second rail.
 
+The capped sweep timing test uses nine independent binary64 arc samples
+per group. The near-cut controls sit 0.2 mm inside the cap on sections
+clear of both cuts. The on-cap samples come from sections whose two
+rails straddle that cap. These median query times are in microseconds
+from a focused release run on the shared Blade with field optimization
+level 1.
+
+| Loft edge | Cap height (mm) | Near cut | On cut |
+| --- | ---: | ---: | ---: |
+| M27 | 0 | 16.817 | 21.201 |
+| M27 | 2 | 15.505 | 22.734 |
+| Next M11 | 0 | 15.542 | 21.390 |
+| Next M11 | 2 | 15.261 | 22.808 |
+
 ### Forward display comparison
 
 The comparison uses the existing complete-cell positional grid at

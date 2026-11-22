@@ -17,7 +17,8 @@ B-rep without depending on the B-rep's offset or fitted carrier.
 Migration: callers of the spline sweep set the part tolerance when proving
 its spine. The tube proof runs in test fixtures and in sampled comparison
 through `Plan::compile_for_comparison`. Ordinary recipe compilation keeps
-its spline fillet refusal.
+its spline fillet refusal. Mirrors and patterns that copy a rounded
+spline shell return `field.spline-copy`.
 Compare checks every vertex of the named spline loft blend and reports
 missing reverse coverage. Its positional certificate covers the selected
 face. Refusals are reported under

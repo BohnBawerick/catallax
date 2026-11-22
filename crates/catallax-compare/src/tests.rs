@@ -117,6 +117,39 @@ fn loft_spline_rounds_report_display_coverage_or_a_named_brep_refusal() {
 }
 
 #[test]
+fn spline_copy_refusals_are_typed_but_analytic_build_findings_are_not() {
+    let analytic = recipe(vec![
+        block("stock", "4", "0"),
+        json!({"id":"round","op":"fillet","body":"stock","radius":"1/10",
+            "edges":[{"between":[{"step":"stock","role":{"side":{"segment":"x_min"}}},
+                {"step":"stock","role":{"side":{"segment":"x_max"}}}]}]}),
+    ]);
+    let report = check(&analytic);
+    assert_eq!(report.verdict, Verdict::Unresolved);
+    assert!(report.refusal.is_none());
+    assert!(report.findings.iter().any(|finding| {
+        matches!(&finding.reason, Reason::Unresolved(reason) if reason.starts_with("field build "))
+    }));
+
+    let original = m11_loft([0, 1], false, ["0", "2"]);
+    for copy in [
+        json!({"id":"copy","op":"mirror","body":"round","plane":{"point":["0","0","0"],"normal":["1","0","0"]},"keep_original":false}),
+        json!({"id":"copy","op":"mirror","body":"round","plane":{"point":["0","0","0"],"normal":["1","0","0"]},"keep_original":true}),
+        json!({"id":"copy","op":"pattern","body":"round","layout":{"linear":{"vector":["4","0","0"],"count":2}}}),
+    ] {
+        let mut value = serde_json::to_value(&original).unwrap();
+        value["steps"].as_array_mut().unwrap().push(copy);
+        value["result"] = json!("copy");
+        let report = check(&Recipe::parse(&value.to_string()).unwrap());
+        assert_eq!(
+            report.refusal.as_ref().map(|e| e.code),
+            Some("field.spline-copy"),
+            "{report:?}"
+        );
+    }
+}
+
+#[test]
 fn loft_vertices_must_fit_the_brep_bound_even_below_display_accuracy() {
     let field = m11_loft([0, 1], false, ["0", "2"]);
     let brep = m11_loft([0, 1], false, ["3/250", "503/250"]);

@@ -17,7 +17,12 @@ pub(crate) struct SplineChart {
     seams: Vec<Seam>,
     // A chart lives for one mesh request. The edge plan uses a projection
     // goal at least as strict as the face that consumes it.
-    edge_parameters: RefCell<BTreeMap<[u64; 3], (Uv, Option<Interval>)>>,
+    edge_projections: RefCell<BTreeMap<[u64; 3], EdgeProjection>>,
+}
+
+struct EdgeProjection {
+    uv: Uv,
+    error: Option<Interval>,
 }
 
 struct Span {
@@ -233,7 +238,7 @@ impl SplineChart {
         Ok(Self {
             spans,
             seams,
-            edge_parameters: RefCell::default(),
+            edge_projections: RefCell::default(),
         })
     }
 
@@ -245,11 +250,13 @@ impl SplineChart {
         dec: &mut Decider,
     ) -> Result<Uv, Refusal> {
         let key = position.map(f64::to_bits);
-        if let Some(&(uv, _)) = self.edge_parameters.borrow().get(&key) {
-            return Ok(uv);
+        if let Some(projection) = self.edge_projections.borrow().get(&key) {
+            return Ok(projection.uv);
         }
         let uv = self.project_uncached(position, seed, goal, dec)?;
-        self.edge_parameters.borrow_mut().insert(key, (uv, None));
+        self.edge_projections
+            .borrow_mut()
+            .insert(key, EdgeProjection { uv, error: None });
         Ok(uv)
     }
 
@@ -313,11 +320,12 @@ impl SplineChart {
         dec: &mut Decider,
     ) -> Result<([f64; 3], Interval), Refusal> {
         if let Some(position) = replacement
-            && let Some(&(at, Some(error))) = self
-                .edge_parameters
+            && let Some(projection) = self
+                .edge_projections
                 .borrow()
                 .get(&position.map(f64::to_bits))
-            && super::key(at) == super::key(uv)
+            && super::key(projection.uv) == super::key(uv)
+            && let Some(error) = projection.error
         {
             return Ok((position, error));
         }
@@ -432,8 +440,8 @@ impl SplineChart {
         dec: &mut Decider,
     ) -> Result<Uv, Refusal> {
         let key = position.map(f64::to_bits);
-        if let Some(&(uv, _)) = self.edge_parameters.borrow().get(&key) {
-            return Ok(uv);
+        if let Some(projection) = self.edge_projections.borrow().get(&key) {
+            return Ok(projection.uv);
         }
         if let Some(uv) = hint
             && self.spans.iter().any(|span| span.contains(uv))
@@ -441,9 +449,13 @@ impl SplineChart {
             let expected = self.evaluate(uv, dec)?;
             let error = residual(position, expected);
             if error.hi() <= goal {
-                self.edge_parameters
-                    .borrow_mut()
-                    .insert(key, (uv, Some(error)));
+                self.edge_projections.borrow_mut().insert(
+                    key,
+                    EdgeProjection {
+                        uv,
+                        error: Some(error),
+                    },
+                );
                 return Ok(uv);
             }
         }

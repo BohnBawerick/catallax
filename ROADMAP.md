@@ -280,7 +280,7 @@ Done when, for one model: exact and tolerant entities coexist under the rules ab
 
 **3.5 steps**
 
-1. Freeze the display corpus and record current work, point counts, bounds and refusals. Include P1 to P5, the [phase 5 work cases](docs/phase5-work-cases.md), the three M11 loft fillets, the small-warp loft, saddle and ellipse fillets, and phase 2 spline bodies.
+1. Freeze the display corpus and record current work, point counts, bounds and refusals. Include P1 to P5, the [phase 5 work cases](docs/phase5-work-cases.md), the three M11 loft fillets, the small-warp loft, saddle and ellipse fillets, phase 2 spline bodies, and the SolidDraft three-turn coil.
 2. Put spline charts on the shared path. Bound derivatives per span. Project in floating point, starting from the neighbouring point, and include the projection residual in the bound. Split charts where first derivatives vanish.
 3. Plan each edge once using the stricter of the curve chord rule and the chord and normal limits of both incident charts. Cache those checks and sample one polyline on the edge curve for both faces, without retries or exchanges between faces. Record the charged work on the frozen corpus. Reuse the analytic path's trim triangulation and keep its chord checks and the spline angle and no-fold checks. Remove the junction, spline prism and oblique family grids.
 4. Make preview, bounded and proven levels of one option. Fold the preview routes into it.
@@ -299,6 +299,7 @@ Done when, for one model: exact and tolerant entities coexist under the rules ab
 - `catallax-mesh` has at least 2,000 fewer lines than at the baseline.
 - SolidDraft draws the M11 loft fillet with one later feature on top (R2).
 - Compare's whole-body forward pass runs on the M11 rows and the [P5 flanged housing](parts/P5-flanged-housing.json) inside 100M work.
+- SolidDraft's three-turn helical sweep (2 mm wire diameter, 34 mm coil diameter, 3 mm pitch) displays inside 100M work with its periodic seam represented in the display chart. Target under 20M display work for a few turns.
 - Field chart display draws each 4.2a fillet row the field builds, including the filleted M11 loft, and the patch shells without `field.display-unsupported`. The same dense-sampling test checks their proven two-sided bounds.
 
 This sets the full bar for [coverage line Q1](docs/COVERAGE.md#meshes-and-queries-8). Keep the existing display entry points, the 20M work target and the 100M allowance.

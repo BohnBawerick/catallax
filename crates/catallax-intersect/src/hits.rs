@@ -1096,6 +1096,45 @@ pub(super) fn with_line_parameter(
     intersect_with(geom, c, s, PointConstruction::LineParameter, dec)
 }
 
+pub(super) fn plane_points(
+    geom: &mut GeomStore,
+    curve: CurveId,
+    plane: Plane,
+    dec: &mut Decider,
+) -> Answered<Option<Vec<catallax_shapes::PointId>>> {
+    dec.check_deadline()?;
+    let surface = geom.add_surface(Surface::Plane(plane));
+    if matches!(geom.curve(curve), Curve::Circle(_))
+        && let Some(Solutions::Points(points)) =
+            algebraic_circle_plane(&query::form(geom, curve, dec)?, geom.surface(surface), dec)?
+    {
+        // The chord formula gives all the points. The drawing orders cuts
+        // after clipping them to the stroke.
+        return Ok(Answer::exact(Some(
+            points
+                .into_iter()
+                .map(|point| {
+                    geom.add_point(PointDef::Meet(Meet {
+                        of: MeetOf::CurveSurface(curve, surface),
+                        position: Position::Closed(point),
+                    }))
+                })
+                .collect(),
+        )));
+    }
+    let construction = match geom.curve(curve) {
+        Curve::Line(_) => PointConstruction::LineParameter,
+        _ => PointConstruction::Framed,
+    };
+    let hits = intersect_with(geom, curve, surface, construction, dec)?;
+    let points = match hits.value {
+        CurveSurface::Disjoint => Some(Vec::new()),
+        CurveSurface::Contained => None,
+        CurveSurface::Meets(hits) => Some(hits.into_iter().map(|hit| hit.point).collect()),
+    };
+    Ok(Answer::with_marks(points, hits.marks))
+}
+
 fn intersect_with(
     geom: &mut GeomStore,
     c: CurveId,

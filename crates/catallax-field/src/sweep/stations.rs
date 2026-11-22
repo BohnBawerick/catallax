@@ -2,6 +2,7 @@
 
 use catallax_numbers::{Decider, Rational, Real, Refusal, Sign};
 use catallax_recipe::{LoftSection, LoftShape, Recipe, Segment, StepId};
+use catallax_shapes::spline_tools::RationalSplineSurface;
 use catallax_shapes::{BSplineSurface, RPoint3, RVector3, RationalPatch};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -9,7 +10,7 @@ use crate::{
     Plan,
     geometry::Leaf,
     patch_shell::{Face, PatchFace, Polygon, Shell},
-    profile::{P, Profile, cross, dot, rational_vector, sqrt, sub},
+    profile::{P, Profile, cross, dot, rational_vector, sub},
 };
 
 fn integer(n: i64) -> Rational {
@@ -71,26 +72,67 @@ const QUARTERS: [[[i64; 2]; 3]; 4] = [
     [[0, -1], [1, -1], [1, 0]],
 ];
 
-fn quarter_patch(
+// Describe the authored chart cuts in coordinates relative to the saved start.
+// Equal cuts and turns give all sections a common reparameterization by the
+// quarters above, even when their starting directions differ.
+fn circular_phase(
+    recipe: &Recipe,
+    section: &LoftSection,
+    centre: &P,
+    squared_radius: &Rational,
+) -> Option<(P, Vec<P>)> {
+    let [loop_] = super::authored_loops(recipe, &section.profile) else {
+        return None;
+    };
+    let segments = &loop_.0;
+    let start = segments.iter().position(|s| s.id() == &section.start[0])?;
+    if let [Segment::Circle { radius, .. }] = segments.as_slice() {
+        let cuts = QUARTERS.map(|[_, _, end]| end.map(integer)).into();
+        return Some(([radius.value().clone(), Rational::zero()], cuts));
+    }
+    let endpoint = |i: usize| match &segments[i] {
+        Segment::Arc { to, .. } => Some(sub(&to.0.each_ref().map(|n| n.value().clone()), centre)),
+        _ => None,
+    };
+    let phase = endpoint((start + segments.len() - 1) % segments.len())?;
+    let cuts = (start..start + segments.len())
+        .map(|i| {
+            let end = endpoint(i % segments.len())?;
+            Some([
+                &dot(&phase, &end) / squared_radius,
+                &cross(&phase, &end) / squared_radius,
+            ])
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some((phase, cuts))
+}
+
+fn quarter_carrier(
     width: usize,
     positions: Vec<RPoint3>,
-    outward: bool,
-    dec: &mut Decider,
-) -> Result<Face, Refusal> {
-    let half = Real::from(Rational::one().mul_pow2(-1));
-    let weights = [Real::one(), half.clone(), half]
+    dec: &Decider,
+) -> Result<RationalSplineSurface, Refusal> {
+    let half = Rational::one().mul_pow2(-1);
+    let weights = [Rational::one(), half.clone(), half]
         .into_iter()
         .flat_map(|w| std::iter::repeat_n(w, width))
         .collect();
-    let carrier = BSplineSurface::new(
+    RationalSplineSurface::new(
         [2, width - 1],
         [knots(3), knots(width)],
         [3, width],
-        positions.iter().map(RPoint3::to_real).collect(),
+        positions.into_iter().map(|p| [p.x, p.y, p.z]).collect(),
         weights,
         dec,
-    )?;
-    let patch = RationalPatch::new(carrier, dec)?;
+    )
+}
+
+fn quarter_patch(
+    carrier: &RationalSplineSurface,
+    outward: bool,
+    dec: &mut Decider,
+) -> Result<Face, Refusal> {
+    let patch = RationalPatch::new(carrier.to_surface(dec)?, dec)?;
     Ok(Face::Patch(Box::new(PatchFace::new(&patch, outward, dec)?)))
 }
 
@@ -266,6 +308,7 @@ impl Plan {
 
     pub(super) fn circular_station_loft(
         &mut self,
+        recipe: &Recipe,
         sections: &[LoftSection],
         shape: LoftShape,
         profiles: &BTreeMap<StepId, Profile>,
@@ -280,7 +323,8 @@ impl Plan {
         });
         let [x, y, normal] = basis;
         let mut centre: Option<RPoint3> = None;
-        let mut radii = Vec::new();
+        let mut phases = Vec::new();
+        let mut chart_law = None;
         let mut heights = Vec::new();
         for section in sections {
             let profile = &profiles[&section.profile];
@@ -290,11 +334,10 @@ impl Plan {
             let [edge] = loop_edges.as_slice() else {
                 return Ok(None);
             };
-            let Some((local, squared, _)) = &edge.circle else {
+            let Some((local, squared, turn)) = &edge.circle else {
                 return Ok(None);
             };
             if !edge.full
-                || section.start[0] != edge.ids[0]
                 || !profile
                     .pose
                     .rotation
@@ -302,9 +345,15 @@ impl Plan {
             {
                 return Ok(None);
             }
-            let Some(radius) = sqrt(squared) else {
+            let Some((phase, cuts)) = circular_phase(recipe, section, local, squared) else {
                 return Ok(None);
             };
+            // Antipodal cuts do not distinguish clockwise and
+            // counterclockwise traversal.
+            let law = (*turn, cuts);
+            if chart_law.get_or_insert_with(|| law.clone()) != &law {
+                return Ok(None);
+            }
             let current = profile.world(local);
             let origin = centre.get_or_insert(current.clone());
             let delta = current.minus(origin);
@@ -312,19 +361,19 @@ impl Plan {
                 return Ok(None);
             }
             heights.push(delta.dot(&normal));
-            radii.push(radius);
+            phases.push(phase);
         }
 
         let up = heights.last().expect("checked stations").sign();
-        let radius_rows = station_controls(&radii, shape);
+        let [phase_x, phase_y] = [0, 1].map(|axis| {
+            let values: Vec<_> = phases.iter().map(|phase| phase[axis].clone()).collect();
+            station_controls(&values, shape)
+        });
         let height_rows = station_controls(&heights, shape);
-        // Positive radius controls exclude pinches. Strictly ordered height
-        // controls keep the sections disjoint over the full cubic spans.
+        // Strictly ordered height controls keep the sections disjoint over
+        // the full cubic spans. A common open half-plane for the Bernstein
+        // phase controls keeps every interpolated section away from zero.
         if up == Sign::Zero
-            || radius_rows
-                .iter()
-                .flatten()
-                .any(|r| r.sign() != Sign::Positive)
             || height_rows
                 .iter()
                 .any(|row| row.windows(2).any(|p| (&p[1] - &p[0]).sign() != up))
@@ -332,42 +381,66 @@ impl Plan {
             return Ok(None);
         }
         let centre = centre.expect("checked stations");
-        let world = |[u, v]: [i64; 2], radius: &Rational, height: &Rational| {
+        let world = |[u, v]: [i64; 2], phase: &P, height: &Rational| {
+            let [u, v] = [u, v].map(integer);
             centre
                 .plus(&normal.scaled(height))
-                .plus(&x.scaled(&(radius * &integer(u))))
-                .plus(&y.scaled(&(radius * &integer(v))))
+                .plus(&x.scaled(&(&phase[0] * &u - &phase[1] * &v)))
+                .plus(&y.scaled(&(&phase[1] * &u + &phase[0] * &v)))
         };
         let mut faces = Vec::new();
-        for (radii, heights) in radius_rows.iter().zip(&height_rows) {
+        for (span, heights) in height_rows.iter().enumerate() {
+            let controls: Vec<P> = phase_x[span]
+                .iter()
+                .zip(&phase_y[span])
+                .map(|(x, y)| [x.clone(), y.clone()])
+                .collect();
+            let across = std::array::from_fn(|i| &phases[span][i] + &phases[span + 1][i]);
+            if controls
+                .iter()
+                .any(|p| dot(p, &across).sign() != Sign::Positive)
+            {
+                return Ok(None);
+            }
             for quarter in QUARTERS {
                 let positions = quarter
                     .into_iter()
                     .flat_map(|axes| {
-                        radii
+                        controls
                             .iter()
                             .zip(heights)
-                            .map(move |(r, h)| world(axes, r, h))
+                            .map(move |(phase, h)| world(axes, phase, h))
                     })
                     .collect();
-                faces.push(quarter_patch(
-                    radii.len(),
-                    positions,
-                    up == Sign::Positive,
-                    dec,
-                )?);
+                let carrier = quarter_carrier(controls.len(), positions, dec)?;
+                let outward = up == Sign::Positive;
+                match quarter_patch(&carrier, outward, dec) {
+                    Ok(face) => faces.push(face),
+                    Err(e) if e.code == "shapes.rational-patch-unproven" => {
+                        // A rotating quarter can span a half turn in space.
+                        // Exact knot insertion gives narrower projections
+                        // while retaining the same correspondence and seams.
+                        let mid = Rational::one().mul_pow2(-1);
+                        for column in carrier.split(0, &mid, dec)? {
+                            for piece in column.split(1, &mid, dec)? {
+                                faces.push(quarter_patch(&piece, outward, dec)?);
+                            }
+                        }
+                    }
+                    Err(e) => return Err(e),
+                }
             }
         }
         for (station, positive_normal) in [
             (0, up == Sign::Negative),
             (sections.len() - 1, up == Sign::Positive),
         ] {
-            let r = &radii[station];
+            let phase = &phases[station];
             let h = &heights[station];
             // A central diamond and four annular pieces partition the disk.
             // Each piece interpolates between the chord and the quarter circle
             // on a common positive denominator.
-            let inner = r.mul_pow2(-1);
+            let inner = phase.each_ref().map(|v| v.mul_pow2(-1));
             let mut centre_cap = Vec::with_capacity(4);
             for [a, b, c] in QUARTERS {
                 let first = world(a, &inner, h);
@@ -375,19 +448,19 @@ impl Plan {
                 let midpoint =
                     first.plus(&last.minus(&first).scaled(&Rational::one().mul_pow2(-1)));
                 centre_cap.push(first.clone());
-                faces.push(quarter_patch(
+                let carrier = quarter_carrier(
                     2,
                     vec![
                         first,
-                        world(a, r, h),
+                        world(a, phase, h),
                         midpoint,
-                        world(b, r, h),
+                        world(b, phase, h),
                         last,
-                        world(c, r, h),
+                        world(c, phase, h),
                     ],
-                    !positive_normal,
                     dec,
-                )?);
+                )?;
+                faces.push(quarter_patch(&carrier, !positive_normal, dec)?);
             }
             if !positive_normal {
                 centre_cap.reverse();

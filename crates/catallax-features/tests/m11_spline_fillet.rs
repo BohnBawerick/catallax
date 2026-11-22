@@ -1223,6 +1223,45 @@ fn display_low_curvature_spline_fillet_answers_or_names_its_budget() {
 }
 
 #[test]
+fn m11_fitted_lofts_meet_display_tolerances_and_work_limits() {
+    let (small_warp, build_work) = with_operation_budget(ALLOWANCE, || {
+        evaluate(&small_warp_recipe(), &mut Decider::default())
+    });
+    assert!(!build_work.exhausted, "{build_work:?}");
+    for (name, built) in [
+        ("authored ruled loft", build("1/10").0),
+        ("imported ruled loft", imported("1/10").0),
+        ("small-warp loft", small_warp.unwrap()),
+    ] {
+        for (chord, limit) in [("1/100", ALLOWANCE), ("1/200", 1_000_000)] {
+            let options = catallax_mesh::MeshOptions {
+                chord_tolerance: q(chord),
+                ..Default::default()
+            };
+            let (answer, work) = with_operation_budget(limit, || {
+                catallax_mesh::mesh_body(
+                    &built.model,
+                    built.result,
+                    &options,
+                    &mut Decider::default(),
+                )
+            });
+            eprintln!("{name} at {chord} mm: {} work", work.used);
+            let mesh = answer
+                .unwrap_or_else(|error| panic!("{name} at {chord} mm: {work:?}, {error:?}"))
+                .value;
+            assert!(!work.exhausted && work.used < limit, "{name}: {work:?}");
+            assert_eq!(
+                mesh.faces.len(),
+                built.model.faces_of_body(built.result).len()
+            );
+            assert!(mesh.faces.iter().all(|face| !face.triangles.is_empty()
+                && face.max_chord_error <= options.chord_tolerance));
+        }
+    }
+}
+
+#[test]
 fn f04_small_warp_edge1_displays_within_the_stated_bound() {
     let record = display(&small_warp_recipe());
     assert!(

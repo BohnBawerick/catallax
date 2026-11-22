@@ -67,5 +67,7 @@ can obtain a display mesh or run a field boundary query.
 
 The P8 rows indicate routing to a fitted evaluator. The fitted P8 part has
 its own recorded refusal at the threaded union. The standalone fitted helix,
-guide and twist comparisons are the next part of 4.2.
+guide and twist comparisons are the next part of 4.2; they use the fitted
+comparison adapter.
 [Fitted sweep evidence](../RECIPE.md#work-recorded-for-phase-5)
+[Fitted sweep comparison](2026-11-22-fitted-sweep-comparison.md)

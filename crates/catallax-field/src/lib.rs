@@ -27,6 +27,7 @@ mod empty;
 mod end_condition;
 mod features;
 mod fillet;
+pub mod fitted_motion;
 mod geometry;
 mod grade;
 mod gyroid;

@@ -30,6 +30,7 @@ Sources:
 | `recipe` | `catallax-numerical-step/1` | Explicit positive `tolerance_mm`, numerical admission and approximate STEP, with the source's checks and the tolerance the file records. See [Numerical STEP output](#numerical-step-output). |
 | `recipe` | `catallax-stand-in/1` | Explicit field-moment measurement and an opt-in massless surface envelope plus unit-density STEP solids. This does not convert the field boundary to B-rep. |
 | `compare` | `catallax-recipe/3`, `catallax-recipe/4`, `catallax-recipe/5` | Run `catallax-compare` with its default options. Report sampled `agree`, `disagree` or `unresolved`, findings and unsupported operations. No STEP output. |
+| `compare` | `catallax-fitted-compare/1` | Compare the fitted sweep and its certified display against the authored motion. See [Fitted sweep comparison](#fitted-sweep-comparison). |
 | `field` | `catallax-recipe/3`, `catallax-recipe/4`, `catallax-recipe/5` | Independently compile the field plan and build its native bounded display mesh in `display.obj`. Report candidate source-face count, proven emptiness and `face_measurements.display`. No B-rep builder, STEP or volume measurement. Unsupported operations and geometry retain their specific refusal codes, with no display fallback. |
 | `print` | `catallax-print/1`, or an unwrapped recipe using default print options | Qualify a B-rep tessellation for ordinary parts or a field mesh for native-field definitions. Write binary `print.stl` and matching `display.obj`, with a two-sided file-to-definition bound and file-bound metadata. No STEP output or silent route fallback. |
 | `iges` | `catallax-iges/1` | Build the recipe through `catallax-features` only, then write `answer.igs` with the existing IGES writer. Report the writer's actual bounds, units, topology counts and artifact identity as `iges`. No STEP, display, mass or property request. |
@@ -41,6 +42,29 @@ A new source implements one evaluation adapter returning a manifest. External co
 `catallax-import-recipe/1` contains exactly `format`, `recipe` and `files`. `files` maps SHA-256 strings to complete UTF-8 STEP or ASCII IGES text, for `import_step` and `import_iges` steps. Every supplied hash is checked against the decoded bytes. The recipe retains its ordinary `import_step` file references, poses and saved repair decisions. File names are labels, never paths opened by this adapter. The field currently admits polygonal planar parts, one cylindrical or conical wall capped by perpendicular circular disks, a pointed cone with one disk, and a complete sphere or torus. Cones at any semi-angle use the shared importer's rim-built cone. Unsupported finite trims, including trimmed spheres and tori, return `field.import-domain`; spline faces return `field.import-spline` with M10, and unsupported source families return `field.import-unsupported`.
 
 For these wrappers, the comparison manifest adds `comparison.import_agreement`. It records 125 exact containment samples, `brep_volume_mm3` and `field_volume_mm3` with rational `lower` and `upper`, and `volume_difference_upper_mm3`, `volume_difference_allowed_mm3` and `volume_agrees`. The default volume difference bound uses relative `1e-12` or absolute `1e-30` cubic millimetres, whichever is larger at the certified volume magnitude. Both complete enclosures must fit that difference bound. Refused or unresolved checks cannot produce agreement. This sampled comparison is not a global containment certificate. Portable replay retains the embedded source and original work allowance. See [the field import contract](interface-changes/2026-11-11-field-step-import-subset.md).
+
+### Fitted sweep comparison
+
+`catallax-fitted-compare/1` contains exactly `format`, an ordinary
+`recipe`, and a positive exact `tolerance_mm` string for the B-rep fit.
+The recipe result is a single sweep with sketch and path inputs. The
+verification command uses the existing 0.01 mm comparison accuracy and
+0.005 mm display chord tolerance. It shares the request work allowance
+across fitting, admission, independent source evaluation, meshing and
+comparison. The driver accepts fitted wrappers with `auto` or `compare`.
+
+An answered `catallax-manifest/3` has `exact: false` and a
+`comparison` object with `proof: "fitted-sweep-distance"` and
+`verdict: "agree"`. It records the number of covered faces and display
+vertices, the modelling tolerance and comparison accuracy, and three
+rational bounds in millimetres. `source_upper_mm` is the maximum whole-face
+bound between the authored and fitted surfaces in either direction.
+`display_upper_mm` is the largest fitted surface-to-mesh bound.
+`composed_upper_mm` is the maximum per-face sum of those two errors.
+A refusal carries the kernel code, and the operation log records the
+work and any completed stages. The command writes the manifest, operation
+log and replayable question. See the [coverage and proof
+notes](interface-changes/2026-11-22-fitted-sweep-comparison.md).
 
 ### Field printing
 

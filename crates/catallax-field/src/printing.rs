@@ -20,6 +20,7 @@ pub mod adaptive;
 mod box_tests;
 pub mod brep;
 pub(crate) mod certified;
+mod lattice_isotopy;
 mod membership;
 pub(crate) mod preview;
 

@@ -199,6 +199,8 @@ pub(crate) fn evaluate(problem: &Value, out: &Path, force_field: bool) -> std::i
         record["orientation"] = json!("material-outward-including-cavities");
         record["coverage"] = json!(if route == Route::Brep {
             "complete certified finite face/trim correspondence; affine encoding isotopy"
+        } else if output.field_material_isotopy() {
+            "complete certified material isotopy of the field and encoded STL"
         } else {
             "interval-excluded cells and witnessed neighbouring boundary cells"
         });

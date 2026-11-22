@@ -44,6 +44,8 @@ Before publication, every mesh edge must have two oppositely oriented incident f
 
 The verification CLI accepts `catallax-print/1` through `print`, or through `field` when an explicit print wrapper is supplied. See [VERIFY-INTERFACE.md](VERIFY-INTERFACE.md#field-printing). P6's enclosing shell uses explicit region Booleans, not a substitute implementation of the separate shell operation.
 
+The CLI's [fine cubic lattice route](milestones/4.3-printing.md) certifies material correspondence through the field approximation and STL encoding. It supports constant axis-aligned cubic lattices, blocks and vertical cylinders in the Boolean expression.
+
 The dedicated benchmark builds with `cargo build --release -p catallax-field --bench printing -j 1`. Run its `target/release/deps/printing-*` executable with a `catallax-print/1` request, an external output directory and a positive repetition count. It records compilation, meshing, file STL, file OBJ and compile/mesh/write milliseconds in `samples.json`, plus separate in-memory STL and OBJ serializer-only milliseconds that are excluded from the complete-request total and checked byte-equal to the file output, with the unchanged 100M verification work allowance, requested controls, cell count and mesh counts. It writes the final STL and OBJ through plain `File` sinks like the verification adapter. Pin baseline and candidate executables to the same allowed core, retain both byte streams, and alternate order. Measure the complete public request with the verification driver's matched pairs as well; neither lower work nor mesh-only timing proves the complete 1000 ms wait target.
 
 ### Prepared box classifier

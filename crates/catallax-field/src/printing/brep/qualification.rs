@@ -1,16 +1,18 @@
 //! Certify the affine binary64-to-binary32 vertex motion, not just its endpoints.
 //! Separating planes keep every triangle pair disjoint except its shared simplex.
 //! Bernstein coefficients bound the complete motion parameter in [0, 1].
-use catallax_numbers::{Decider, Rational, Refusal};
+use catallax_numbers::{Decider, Interval, Rational, Refusal};
 use std::collections::{BTreeMap, BTreeSet};
+
+mod motion_filter;
 
 type Vector = [Polynomial; 3];
 #[derive(Clone)]
 struct Polynomial([Rational; 5]);
 impl Polynomial {
-    fn constant(x: f64) -> Self {
+    fn constant(x: Rational) -> Self {
         let mut p = Self::zero();
-        p.0[0] = Rational::from_f64_exact(x).expect("finite mesh coordinate");
+        p.0[0] = x;
         p
     }
     fn zero() -> Self {
@@ -288,6 +290,44 @@ pub(super) fn motion(
     triangles: &[[usize; 3]],
     dec: &Decider,
 ) -> Result<(), Refusal> {
+    certify_motion(
+        encoded,
+        triangles,
+        dec,
+        |v, i| Rational::from_f64_exact(original[v][i]).expect("finite mesh coordinate"),
+        |v, i| [original[v][i]; 2],
+        None,
+    )
+}
+
+pub(super) fn motion_rational(
+    original: &[[Rational; 3]],
+    encoded: &[[f32; 3]],
+    triangles: &[[usize; 3]],
+    dec: &Decider,
+) -> Result<(), Refusal> {
+    let bounds: Vec<_> = original
+        .iter()
+        .map(|p| p.each_ref().map(Interval::from_rational))
+        .collect();
+    certify_motion(
+        encoded,
+        triangles,
+        dec,
+        |v, i| original[v][i].clone(),
+        |v, i| [bounds[v][i].lo(), bounds[v][i].hi()],
+        Some(motion_filter::Filter::new(bounds.clone(), encoded)),
+    )
+}
+
+fn certify_motion(
+    encoded: &[[f32; 3]],
+    triangles: &[[usize; 3]],
+    dec: &Decider,
+    point: impl Fn(usize, usize) -> Rational,
+    extent: impl Fn(usize, usize) -> [f64; 2],
+    filter: Option<motion_filter::Filter>,
+) -> Result<(), Refusal> {
     let mut positions = BTreeSet::new();
     for point in encoded {
         dec.check_deadline()?;
@@ -296,12 +336,12 @@ pub(super) fn motion(
             return Err(failure("binary32 rounding joins distinct vertices"));
         }
     }
-    let p: Vec<Vector> = original
+    let p: Vec<Vector> = encoded
         .iter()
-        .zip(encoded)
-        .map(|(a, b)| {
+        .enumerate()
+        .map(|(index, b)| {
             std::array::from_fn(|i| {
-                let mut v = Polynomial::constant(a[i]);
+                let mut v = Polynomial::constant(point(index, i));
                 v.0[1] = &Rational::from_f64_exact(f64::from(b[i])).unwrap() - &v.0[0];
                 v
             })
@@ -309,6 +349,9 @@ pub(super) fn motion(
         .collect();
     for t in triangles {
         dec.check_deadline()?;
+        if filter.as_ref().is_some_and(|filter| filter.orientation(*t)) {
+            continue;
+        }
         let n = cross(&sub(&p[t[1]], &p[t[0]]), &sub(&p[t[2]], &p[t[0]]));
         let initial: Vector = std::array::from_fn(|i| {
             let mut v = Polynomial::zero();
@@ -329,12 +372,12 @@ pub(super) fn motion(
         .map(|t| Bounds {
             lo: std::array::from_fn(|axis| {
                 t.iter()
-                    .map(|&i| original[i][axis].min(f64::from(encoded[i][axis])))
+                    .map(|&i| extent(i, axis)[0].min(f64::from(encoded[i][axis])))
                     .fold(f64::INFINITY, f64::min)
             }),
             hi: std::array::from_fn(|axis| {
                 t.iter()
-                    .map(|&i| original[i][axis].max(f64::from(encoded[i][axis])))
+                    .map(|&i| extent(i, axis)[1].max(f64::from(encoded[i][axis])))
                     .fold(f64::NEG_INFINITY, f64::max)
             }),
         })
@@ -359,6 +402,12 @@ pub(super) fn motion(
             pending.extend([(a, x), (a, y)]);
         } else {
             let (x, y) = (a_node.triangle, b_node.triangle);
+            if filter
+                .as_ref()
+                .is_some_and(|filter| filter.separated(triangles[x], triangles[y]))
+            {
+                continue;
+            }
             if !separated(&triangles[x], &triangles[y], &p, dec)? {
                 return Err(failure(format!(
                     "no complete separation proof for facets {x} and {y} during encoding"

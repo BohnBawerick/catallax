@@ -154,3 +154,72 @@ fn p6_allowance_refusal_keeps_settings_cleans_files_and_matches_workers() {
 fn fine_sheet_allowance_refusal_keeps_settings_cleans_files_and_matches_workers() {
     check("sheet-fine-budget", &controls()[3..], 1000);
 }
+
+#[test]
+#[cfg_attr(debug_assertions, ignore = "full P6 proof runs in release mode")]
+fn full_p6_writes_the_same_material_certificate_and_stl_at_each_worker_count() {
+    let (_, recipe, accuracy) = &controls()[0];
+    let root =
+        std::env::temp_dir().join(format!("catallax-p6-material-print-{}", std::process::id()));
+    let mut reference = None;
+    for workers in [1, 2, 4] {
+        let dir = root.join(workers.to_string());
+        let mut child = Command::new(env!("CARGO_BIN_EXE_catallax-verify"))
+            .env_remove("CATALLAX_THREADS")
+            .args(["--threads", &workers.to_string(), "stream"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        writeln!(
+            child.stdin.take().unwrap(),
+            "{}",
+            json!({
+                "format":"catallax-request/1", "source":"print", "max_work":100_000_000,
+                "problem":{"format":"catallax-print/1","recipe":recipe,
+                    "tolerance":accuracy,"route":"field"}, "out":dir
+            })
+        )
+        .unwrap();
+        let response = child.wait_with_output().unwrap();
+        assert!(response.status.success());
+        let mut row: Value = serde_json::from_slice(&response.stdout).unwrap();
+        assert_eq!(row["work"]["limit"], 100_000_000);
+        assert_eq!(row["work"]["target"], 20_000_000);
+        assert_eq!(row["work"]["exhausted"], false);
+        let manifest = &row["manifest"];
+        assert_eq!(manifest["status"], "answered", "{row}");
+        let record = &manifest["printing"];
+        assert_eq!(record["route"], "field");
+        assert_eq!(
+            record["coverage"],
+            "complete certified material isotopy of the field and encoded STL"
+        );
+        assert_eq!(record["tolerance_mm"], "1/100");
+        assert_eq!(record["max_cells"], 2_000_000);
+        assert_eq!(record["max_vertices"], 1_000_000);
+        let bound: catallax_numbers::Rational = record["deviation_bound_mm"]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!(bound <= "1/100".parse().unwrap());
+        let saved: Value =
+            serde_json::from_slice(&fs::read(dir.join("manifest.json")).unwrap()).unwrap();
+        assert_eq!(&saved, manifest);
+        let stl = fs::read(dir.join("print.stl")).unwrap();
+        assert_eq!(&stl[..12], b"CXPRINT1\x02\x01\x01\x01");
+        assert_eq!(
+            stl.len() as u64,
+            84 + 50 * record["triangles"].as_u64().unwrap()
+        );
+        without_clocks(&mut row);
+        if let Some((expected_row, expected_stl)) = &reference {
+            assert_eq!(expected_row, &row, "workers={workers}");
+            assert_eq!(expected_stl, &stl, "workers={workers}");
+        } else {
+            reference = Some((row, stl));
+        }
+    }
+    fs::remove_dir_all(root).unwrap();
+}

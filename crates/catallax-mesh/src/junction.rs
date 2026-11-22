@@ -25,7 +25,7 @@ use crate::{
     chart::{self, BITS},
     edges::Boundaries,
     failure,
-    preview::{PreviewEdge, PreviewFace, PreviewMesh, PreviewOptions},
+    preview::{PreviewMesh, PreviewOptions},
 };
 
 /// One boundary row's grid points, with the row's distance to its grid polyline.
@@ -121,26 +121,7 @@ pub(crate) fn preview(
         dec,
     )?
     .value;
-    Ok(PreviewMesh {
-        positions: mesh.positions,
-        triangles: mesh.triangles,
-        faces: mesh
-            .faces
-            .into_iter()
-            .map(|face| PreviewFace {
-                face: face.face,
-                triangles: face.triangles,
-            })
-            .collect(),
-        edges: mesh
-            .edges
-            .into_iter()
-            .map(|edge| PreviewEdge {
-                edge: edge.edge,
-                vertices: edge.vertices,
-            })
-            .collect(),
-    })
+    Ok(PreviewMesh::from_mesh(mesh))
 }
 
 /// A rendering-only junction with complete positional bounds.

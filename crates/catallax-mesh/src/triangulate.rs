@@ -75,7 +75,13 @@ impl FaceBuilder<'_> {
             let mesh = if let Some(index) = boundary {
                 index
             } else {
-                let point = self.chart.preview_position(canonical, self.dec)?;
+                let point = if let Some(spline) = self.chart.spline() {
+                    spline
+                        .evaluate(canonical, self.dec)?
+                        .map(|value| value.mid())
+                } else {
+                    self.chart.preview_position(canonical, self.dec)?
+                };
                 let index = self.positions.len();
                 self.positions.push(point);
                 index
@@ -1042,6 +1048,15 @@ impl FaceBuilder<'_> {
                 if split {
                     continue;
                 }
+                if self.unproved {
+                    if sense == Sense::Reversed {
+                        vertices.swap(1, 2);
+                    }
+                    let first = (0..3).min_by_key(|&i| vertices[i]).unwrap();
+                    vertices.rotate_left(first);
+                    triangles.push(Triangle { vertices, face });
+                    continue;
+                }
                 // A later CDT round does not move an unchanged spline facet.
                 // Key by the cyclic vertex order to retain its proved normal.
                 let first = (0..3).min_by_key(|&i| vertices[i]).unwrap();
@@ -1206,12 +1221,13 @@ fn ruled(model: &Model, face: FaceId, chart: &Chart, options: &MeshOptions) -> b
 fn face_mesh(
     model: &Model,
     face_id: FaceId,
-    chart: &mut Chart,
+    chart: &Chart,
     boundaries: &mut Boundaries,
-    options: &MeshOptions,
+    plan: Plan<'_>,
     prior_chords: &BTreeSet<(usize, usize)>,
     dec: &mut Decider,
 ) -> Result<(), Refusal> {
+    let Plan { options, level } = plan;
     let face = model.face(face_id);
     let mut segments = Vec::new();
     let mut projected = Vec::new();
@@ -1295,7 +1311,7 @@ fn face_mesh(
         options,
         ruled: is_ruled,
         stretch,
-        unproved: false,
+        unproved: level == Level::Preview,
         positions: &mut boundaries.mesh.positions,
         rails: &boundaries.rails,
         cdt: Cdt::new(),
@@ -1336,7 +1352,7 @@ fn face_mesh(
         face: face_id,
         triangles: start..boundaries.mesh.triangles.len(),
         max_chord_error,
-        max_aspect_ratio: Some(max_aspect_ratio),
+        max_aspect_ratio: (level != Level::Preview).then_some(max_aspect_ratio),
         max_angular_deviation,
     });
     Ok(())
@@ -1689,6 +1705,60 @@ fn spline_chart(surface: &Surface) -> Option<&SplineSupport> {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Level {
+    Preview,
+    Bounded,
+    Proven,
+}
+
+#[derive(Clone, Copy)]
+struct Plan<'a> {
+    options: &'a MeshOptions,
+    level: Level,
+}
+
+pub(crate) fn shared_spline_preview(
+    model: &Model,
+    body: BodyId,
+    options: &crate::PreviewOptions,
+    dec: &mut Decider,
+) -> Option<Result<crate::PreviewMesh, Refusal>> {
+    let faces = model.faces_of_body(body);
+    let mut found_spline = false;
+    for face in faces {
+        let surface = model.geom().surface(model.face(face).surface);
+        if matches!(surface, Surface::BSpline(_)) {
+            spline_chart(surface)?;
+            found_spline = true;
+        }
+    }
+    if !found_spline || options.angular_deviation.is_some() {
+        return None;
+    }
+    let options = MeshOptions {
+        chord_tolerance: options.chord_tolerance.clone(),
+        angular_deviation: None,
+        max_vertices: options.max_vertices,
+        max_edge_length: None,
+        max_aspect_ratio: None,
+    };
+    Some(
+        build_junction(
+            model,
+            body,
+            Plan {
+                options: &options,
+                level: Level::Preview,
+            },
+            None,
+            None,
+            dec,
+        )
+        .map(|(mesh, _)| crate::PreviewMesh::from_mesh(mesh)),
+    )
+}
+
 pub(crate) fn build(
     model: &Model,
     body: BodyId,
@@ -1727,9 +1797,11 @@ pub(crate) fn build(
     let (value, marks) = build_junction(
         model,
         body,
-        options,
+        Plan {
+            options,
+            level: Level::Proven,
+        },
         junction,
-        false,
         previous.as_ref(),
         dec,
     )?;
@@ -1752,18 +1824,28 @@ pub(crate) fn build_position(
     }
     let faces = model.faces_of_body(body);
     let junction = crate::junction::prepare_position(model, &faces, options, dec)?;
-    build_junction(model, body, options, Some(junction), true, None, dec)
+    build_junction(
+        model,
+        body,
+        Plan {
+            options,
+            level: Level::Bounded,
+        },
+        Some(junction),
+        None,
+        dec,
+    )
 }
 
 fn build_junction(
     model: &Model,
     body: BodyId,
-    options: &MeshOptions,
+    plan: Plan<'_>,
     junction: Option<crate::junction::Junction>,
-    position_only: bool,
     previous: Option<&crate::reuse::Previous<'_>>,
     dec: &mut Decider,
 ) -> Result<(Mesh, catallax_numbers::MarkLog), Refusal> {
+    let Plan { options, level } = plan;
     let faces = model.faces_of_body(body);
     let fitted = |face: FaceId| junction.as_ref().is_some_and(|j| j.contains(face));
     let mut charts = faces
@@ -1794,7 +1876,7 @@ fn build_junction(
                     face,
                     &mut boundaries,
                     options,
-                    position_only,
+                    level == Level::Bounded,
                 )?;
             } else if let Surface::Plane(plane) = &charts[&face].surface {
                 crate::planar::build(model, face, plane, &mut boundaries, options, dec).map_err(
@@ -1832,9 +1914,9 @@ fn build_junction(
                     let result = face_mesh(
                         model,
                         face,
-                        charts.get_mut(&face).unwrap(),
+                        &charts[&face],
                         &mut boundaries,
-                        options,
+                        plan,
                         &prior_chords,
                         dec,
                     );

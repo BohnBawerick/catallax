@@ -58,26 +58,7 @@ fn rendering(
         .unwrap_or_else(Rational::zero);
     let covered_faces = mesh.faces.len();
     DisplayMesh {
-        geometry: PreviewMesh {
-            positions: mesh.positions,
-            triangles: mesh.triangles,
-            faces: mesh
-                .faces
-                .into_iter()
-                .map(|f| PreviewFace {
-                    face: f.face,
-                    triangles: f.triangles,
-                })
-                .collect(),
-            edges: mesh
-                .edges
-                .into_iter()
-                .map(|e| PreviewEdge {
-                    edge: e.edge,
-                    vertices: e.vertices,
-                })
-                .collect(),
-        },
+        geometry: PreviewMesh::from_mesh(mesh),
         source_marks,
         measurement: DisplayMeasurement {
             method,

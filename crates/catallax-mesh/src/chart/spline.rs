@@ -25,6 +25,7 @@ struct Span {
     bounds: [[f64; 2]; 2],
     width: [Interval; 2],
     affine_hessian: [Interval; 3],
+    local_affine_hessian: Option<[Interval; 3]>,
     normal: [Interval; 3],
     normal_cells: RefCell<BTreeMap<[u64; 4], [Interval; 3]>>,
 }
@@ -57,6 +58,11 @@ impl Span {
         let width = bounds.map(|[lo, hi]| point(hi) - point(lo));
         let [u, v] = width;
         let local = rational.affine_hessian();
+        let local_affine_hessian = local
+            .iter()
+            .zip(rational.chord_coefficients())
+            .any(|(affine, homogeneous)| affine.hi() < homogeneous.hi())
+            .then_some(local);
         let affine_hessian = [
             local[0] / u.square(),
             local[1] / (u * v),
@@ -68,6 +74,7 @@ impl Span {
             bounds,
             width,
             affine_hessian,
+            local_affine_hessian,
             normal,
             normal_cells: RefCell::default(),
         })
@@ -113,6 +120,33 @@ impl Span {
             .fold(0.0_f64, |score, (bounds, x)| {
                 score.max((bounds.lo() - x).max(x - bounds.hi()).next_down())
             })
+    }
+
+    fn chord_bound(
+        &self,
+        local: [Interval; 2],
+        edges: Option<[[Interval; 2]; 3]>,
+        dec: &mut Decider,
+    ) -> Result<Interval, Refusal> {
+        let mut bound = |hessian| match edges {
+            Some(edges) => {
+                // Box formula, diagonal metric and three squared edge lengths.
+                dec.charge_work(6 + 2 + 3 * 4)?;
+                Ok::<_, Refusal>(triangle_chord_bound_interval(edges, local, &hessian))
+            }
+            None => {
+                dec.charge_work(6)?;
+                Ok(chord_bound_interval(local, &hessian))
+            }
+        };
+        let homogeneous = bound(self.rational.chord_coefficients())?;
+        if let Some(hessian) = self.local_affine_hessian {
+            let affine = bound(hessian)?;
+            if affine.hi() < homogeneous.hi() {
+                return Ok(affine);
+            }
+        }
+        Ok(homogeneous)
     }
 
     fn normal_cell(
@@ -298,14 +332,7 @@ impl SplineChart {
         let Some(second) = cover.next() else {
             let local = [width[0] / first.width[0], width[1] / first.width[1]];
             let edges = edges.map(|e| [e[0] / first.width[0], e[1] / first.width[1]]);
-            // Box bound (six products), diagonal metric (two), measured
-            // edges (four per edge). Divisions and comparisons need no products.
-            dec.charge_work(6 + 2 + 3 * 4)?;
-            return Ok(triangle_chord_bound_interval(
-                edges,
-                local,
-                &first.rational.chord_coefficients(),
-            ));
+            return first.chord_bound(local, Some(edges), dec);
         };
         let mut hessian = first.affine_hessian;
         for span in std::iter::once(second).chain(cover) {
@@ -406,12 +433,13 @@ impl SplineChart {
         let mut total = 0usize;
         let mut grids = Vec::with_capacity(self.spans.len());
         for span in &self.spans {
-            let hessian = span.rational.chord_coefficients();
+            let hessian = span
+                .local_affine_hessian
+                .unwrap_or_else(|| span.rational.chord_coefficients());
             let mut counts = [1usize; 2];
             loop {
                 let width = counts.map(|count| point(1.0) / point(count as f64));
-                dec.charge_work(6)?;
-                if chord_bound_interval(width, &hessian).hi() <= limit {
+                if span.chord_bound(width, None, dec)?.hi() <= limit {
                     break;
                 }
                 // The larger pure quadratic term gains most by halving its
@@ -452,8 +480,7 @@ impl SplineChart {
                 let mut fits = |rows| {
                     candidate[axis] = rows;
                     let width = candidate.map(|count| point(1.0) / point(count as f64));
-                    dec.charge_work(6)?;
-                    Ok::<_, Refusal>(chord_bound_interval(width, &hessian).hi() <= limit)
+                    Ok::<_, Refusal>(span.chord_bound(width, None, dec)?.hi() <= limit)
                 };
                 if fits(max_rows)? {
                     let (mut low, mut high) = (1, max_rows);

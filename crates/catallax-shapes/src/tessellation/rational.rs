@@ -93,6 +93,110 @@ fn derivative_bound(net: &[[Interval; 4]], radius: Interval, weight: Interval) -
     point(upper)
 }
 
+fn max_bound(bounds: impl IntoIterator<Item = Interval>) -> Interval {
+    point(
+        bounds
+            .into_iter()
+            .map(|bound| bound.hi())
+            .fold(0.0, f64::max),
+    )
+}
+
+// Differentiate N = W C after translating this curve's own control hull.
+// The division and the 2 W' C' term are the ordinary rational quotient rule.
+fn curve_derivatives(
+    mut control: Net<Interval>,
+    dec: &mut Decider,
+) -> Result<[Interval; 2], Refusal> {
+    let degree = control.len() - 1;
+    let [x, y, z, weight] = control[0];
+    let center = [x, y, z].map(|x| (x / weight).mid());
+    let mut min_weight = f64::INFINITY;
+    let mut radius = 0.0_f64;
+    dec.charge_work(6 * control.len() as u64)?;
+    for h in &mut control {
+        let weight = h[3];
+        min_weight = min_weight.min(weight.lo());
+        for i in 0..3 {
+            h[i] = h[i] - point(center[i]) * weight;
+        }
+        radius = radius.max(vector_length([h[0], h[1], h[2]].map(|x| x / weight)).hi());
+    }
+    let weight = point(min_weight);
+    let radius = point(radius);
+    let first = difference(&control, [degree, 0], 0);
+    let second = difference(&first, [degree.saturating_sub(1), 0], 0);
+    dec.charge_work(8 * (first.len() + second.len()) as u64 + 2)?;
+    let speed = derivative_bound(&first, radius, weight);
+    let weight_speed = max_bound(first.iter().map(|h| magnitude(h[3])));
+    let acceleration =
+        derivative_bound(&second, radius, weight) + point(2.0) * speed * weight_speed / weight;
+    Ok([speed, acceleration])
+}
+
+// When weights are independent of one parameter, the surface is a
+// polynomial blend of rational curves in the other. Differentiate that
+// blend before bounding its curves, so the long sweep does not contribute
+// to the transverse acceleration through the quotient rule.
+fn polynomial_axis_hessian(
+    control: &[[Interval; 4]],
+    degree: [usize; 2],
+    axis: usize,
+    dec: &mut Decider,
+) -> Result<[Interval; 3], Refusal> {
+    let other = 1 - axis;
+    let curve = |j: usize| {
+        (0..=degree[other])
+            .map(|i| {
+                let at = if axis == 1 { [i, j] } else { [j, i] };
+                control[at[0] * (degree[1] + 1) + at[1]]
+            })
+            .collect::<Vec<_>>()
+    };
+    let rows: Vec<_> = (0..=degree[axis]).map(curve).collect();
+    let mut transverse = 0.0_f64;
+    for row in &rows {
+        transverse = transverse.max(curve_derivatives(row.clone(), dec)?[1].hi());
+    }
+    let scale = point(degree[axis] as f64);
+    let first: Vec<Net<Interval>> = rows
+        .windows(2)
+        .map(|pair| {
+            pair[0]
+                .iter()
+                .zip(&pair[1])
+                .map(|(a, b)| {
+                    [
+                        (b[0] - a[0]) * scale,
+                        (b[1] - a[1]) * scale,
+                        (b[2] - a[2]) * scale,
+                        a[3],
+                    ]
+                })
+                .collect()
+        })
+        .collect();
+    dec.charge_work(3 * first.iter().map(Vec::len).sum::<usize>() as u64)?;
+    let mut mixed = 0.0_f64;
+    for row in &first {
+        mixed = mixed.max(curve_derivatives(row.clone(), dec)?[0].hi());
+    }
+    let mut longitudinal = 0.0_f64;
+    let scale = point(degree[axis].saturating_sub(1) as f64);
+    for pair in first.windows(2) {
+        dec.charge_work(6 * pair[0].len() as u64)?;
+        for (a, b) in pair[0].iter().zip(&pair[1]) {
+            let difference = std::array::from_fn(|i| ((b[i] - a[i]) / a[3]) * scale);
+            longitudinal = longitudinal.max(vector_length(difference).hi());
+        }
+    }
+    let mut result = [transverse, mixed, longitudinal].map(point);
+    if axis == 0 {
+        result.swap(0, 2);
+    }
+    Ok(result)
+}
+
 /// Prepares the carrier's complete nonzero knot spans in u-major order.
 pub fn rational_spans(
     surface: &BSplineSurface,
@@ -117,6 +221,22 @@ pub(crate) fn rational_span_range(
                 [span[axis], span[axis] + 1].map(|i| surface.knots()[axis][i].clone())
             });
             let exact = surface.span_bezier_controls(span, dec)?;
+            let stride = degree[1] + 1;
+            let varying_weights = exact.iter().any(|h| !h[3].same_definition(&exact[0][3]));
+            let polynomial_axis = if varying_weights {
+                (0..2).find(|&axis| {
+                    exact.iter().enumerate().all(|(i, h)| {
+                        let first = if axis == 1 {
+                            i / stride * stride
+                        } else {
+                            i % stride
+                        };
+                        h[3].same_definition(&exact[first][3])
+                    })
+                })
+            } else {
+                None
+            };
             let mut control = Vec::with_capacity(exact.len());
             for homogeneous in exact {
                 let mut values = [point(0.0); 4];
@@ -136,7 +256,14 @@ pub(crate) fn rational_span_range(
                 }
                 control.push(values);
             }
-            RationalSpan::prepare(domain, degree, control, dec)
+            let mut span = RationalSpan::prepare(domain, degree, control, dec)?;
+            if let Some(axis) = polynomial_axis {
+                let tighter = polynomial_axis_hessian(&span.control, degree, axis, dec)?;
+                span.affine_hessian = std::array::from_fn(|i| {
+                    point(span.affine_hessian[i].hi().min(tighter[i].hi()))
+                });
+            }
+            Ok(span)
         })
         .collect()
 }
@@ -658,9 +785,9 @@ fn evaluate_row(
     previous: &RefCell<Option<PositionRow>>,
     dec: &mut Decider,
 ) -> Result<[Interval; 4], Refusal> {
-    // Collapse a tensor axis once when the saved products cover the
-    // contraction. Grid points and nearby normal boxes often share u.
-    if degree[0] < 3 || degree[1] == 0 || !(0.0 < u && u < 1.0) {
+    // A quadratic row costs one extra product per column on the first
+    // evaluation and saves products on every subsequent evaluation at u.
+    if degree[0] < 2 || degree[1] == 0 || !(0.0 < u && u < 1.0) {
         return evaluate(net, degree, [u, v], point, |i| i, dec);
     }
     let key = u.to_bits();
@@ -746,6 +873,36 @@ mod tests {
                     .all(|(weight, value)| weight.contains(value))
             );
         }
+    }
+
+    #[test]
+    fn polynomial_axis_removes_long_translation_from_rational_curvature() {
+        // S(u,v) = (2u/(1+u), 100v, 2uv²/(1+u)). The three derivative
+        // bounds must cover the pure and mixed maxima at u = 0 or v = 1.
+        let control = [
+            [0.0, 0.0, 0.0, 1.0],
+            [0.0, 50.0, 0.0, 1.0],
+            [0.0, 100.0, 0.0, 1.0],
+            [2.0, 0.0, 0.0, 2.0],
+            [2.0, 100.0, 0.0, 2.0],
+            [2.0, 200.0, 2.0, 2.0],
+        ];
+        let control = control.map(|h| h.map(point));
+        let mut dec = Decider::default();
+        let specialized = polynomial_axis_hessian(&control, [1, 2], 1, &mut dec).unwrap();
+        let generic = RationalSpan::prepare(
+            std::array::from_fn(|_| [Rational::zero(), Rational::one()]),
+            [1, 2],
+            control.to_vec(),
+            &mut dec,
+        )
+        .unwrap()
+        .affine_hessian();
+        assert!(specialized[0].hi() >= 32_f64.sqrt());
+        assert!(specialized[1].hi() >= 4.0);
+        assert!(specialized[2].hi() >= 2.0);
+        assert!(specialized[0].hi() < generic[0].hi());
+        assert!(specialized[1].hi() < generic[1].hi());
     }
 
     #[test]

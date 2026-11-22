@@ -93,6 +93,20 @@ fn level_limits() -> ([Rational; 2], Rational) {
     ([-&quarter, quarter], Rational::from_ratio(1, 10).unwrap())
 }
 
+pub(crate) fn check_distance_grade(
+    near: &Rational,
+    far: &Rational,
+    span: &Rational,
+) -> Result<(), Refusal> {
+    let ([low, high], slope) = level_limits();
+    crate::grade::check_distance(
+        [near, far, span],
+        [&low, &high],
+        &slope,
+        ["gyroid.impossible", "gyroid.grade-range-unsupported"],
+    )
+}
+
 impl Gyroid {
     /// Compiles the leaf. An impossible period or coincident grade anchors refuse
     /// with `gyroid.impossible`; deferred functions refuse with `gyroid.unsupported`.
@@ -121,6 +135,16 @@ impl Gyroid {
         kind: GyroidKind,
         frame: &Pose,
     ) -> Result<Self, Refusal> {
+        Self::certified_resolved(period, level, kind, frame, None)
+    }
+
+    pub(crate) fn certified_resolved(
+        period: &Rational,
+        level: &Grade,
+        kind: GyroidKind,
+        frame: &Pose,
+        resolved: Option<GradeDef>,
+    ) -> Result<Self, Refusal> {
         if period.sign() != Sign::Positive {
             return Err(Refusal::new(
                 "gyroid.impossible",
@@ -133,11 +157,14 @@ impl Gyroid {
                 "sheet gyroids are not supported yet; this field builds the network",
             ));
         }
-        let Some(grade) = GradeDef::compile(level, "gyroid.impossible")? else {
-            return Err(Refusal::new(
-                "gyroid.unsupported",
-                "a distance-graded gyroid level is not supported yet; use a constant or linear level",
-            ));
+        let grade = match resolved {
+            Some(grade) => grade,
+            None => GradeDef::compile(level, "gyroid.impossible")?.ok_or_else(|| {
+                Refusal::new(
+                    "gyroid.unsupported",
+                    "a distance-graded gyroid level needs selected faces of a supported region",
+                )
+            })?,
         };
         let ([low, high], slope) = level_limits();
         check_certified(
@@ -287,6 +314,10 @@ impl Gyroid {
         self.grade.planes()
     }
 
+    pub(crate) fn has_affine_level_extension(&self) -> bool {
+        self.grade.has_affine_extension()
+    }
+
     /// Encloses `∇(g - c)` and the Hessian of `g` over a box on which the level is
     /// the given piece. Values at the centre are widened by the next derivative's
     /// bound times the half-widths: second derivatives of `g` are at most `2k²` on
@@ -421,10 +452,7 @@ impl Gyroid {
         match self.grade.piece(world) {
             Some(piece) => self.expansion(
                 world,
-                |centre| match piece {
-                    Piece::Ramp => self.grade.affine(&centre),
-                    Piece::Start | Piece::End => self.grade.interval(&centre),
-                },
+                |centre| self.grade.piece_value(piece, &centre),
                 self.grade.piece_gradient(piece),
             ),
             None => Some(self.expansion(world, |_| point(0.0), zero)? - self.grade.interval(world)),

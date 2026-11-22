@@ -18,6 +18,7 @@ mod analytic;
 pub use analytic::volume;
 mod columns;
 mod graph;
+pub(crate) use graph::prism;
 mod revolved;
 pub use revolved::properties as revolved_properties;
 mod prismatic;

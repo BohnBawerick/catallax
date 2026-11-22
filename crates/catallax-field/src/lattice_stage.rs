@@ -6,7 +6,7 @@
 //! The stage owns no cache: editing the body means calling [`Stage::new`] again with
 //! the edited recipe, so nothing computed from the earlier body can be reused.
 
-use crate::grade::{GradeDef, check_certified};
+use crate::grade::{GradeDef, check_certified, check_distance};
 use crate::{Plan, display::PreviewOptions, printing};
 use catallax_numbers::{Decider, Rational, Refusal, Sign};
 use catallax_recipe::{
@@ -23,8 +23,8 @@ pub struct LatticeSpec {
     /// Places the cell grid.
     pub frame: Pose,
     /// Beam radius in millimetres, read at the query point. It controls density. A
-    /// linear grade must have anchors that differ along one part axis, endpoints of
-    /// at most a quarter of the cell size and a slope of at most `1/2`.
+    /// nonconstant grade needs endpoints of at most a quarter of the cell size
+    /// and a slope of at most `1/2`.
     pub radius: Grade,
 }
 
@@ -34,9 +34,8 @@ pub struct GyroidSpec {
     /// Length of one period.
     pub period: Number,
     /// The dimensionless level of the gyroid function that bounds the solid: a
-    /// constant, or a linear grade whose anchors differ along one part axis, with
-    /// endpoints in `[-1/4, 1/4]` and a slope of at most `1/10` per millimetre. It
-    /// is not a wall thickness.
+    /// constant or a grade with endpoints in `[-1/4, 1/4]` and a slope of at most
+    /// `1/10` per millimetre.
     pub level: Grade,
     /// Network or positive-level sheet; sheets reuse two exact networks.
     pub kind: GyroidKind,
@@ -58,8 +57,17 @@ impl TerminalField for LatticeSpec {
     const STEP: &'static str = "lattice";
     fn validate(&self) -> Result<(), Refusal> {
         catallax_features::lattice::validate(&self.cell, self.size.value(), &self.radius)?;
+        if let Grade::Distance {
+            near, far, span, ..
+        } = &self.radius
+        {
+            return check_lattice_distance(
+                self.size.value(),
+                [near.value(), far.value(), span.value()],
+            );
+        }
         let grade = GradeDef::compile(&self.radius, "lattice.impossible")?
-            .expect("validation refuses distance grades");
+            .expect("distance grades are validated above");
         check_certified(
             &grade,
             [
@@ -84,11 +92,37 @@ impl TerminalField for LatticeSpec {
     }
 }
 
+pub(crate) fn check_lattice_distance(
+    size: &Rational,
+    parameters: [&Rational; 3],
+) -> Result<(), Refusal> {
+    check_distance(
+        parameters,
+        [
+            &Rational::zero(),
+            &(size * &Rational::from_ratio(1, 4).unwrap()),
+        ],
+        &Rational::from_ratio(1, 2).unwrap(),
+        ["lattice.impossible", "lattice.grade-range-unsupported"],
+    )
+}
+
 impl TerminalField for GyroidSpec {
     const STEP: &'static str = "gyroid";
     fn validate(&self) -> Result<(), Refusal> {
         if self.kind == GyroidKind::Sheet {
             return crate::sheet::sides(self.period.value(), &self.level, &self.frame).map(|_| ());
+        }
+        if let Grade::Distance {
+            faces,
+            near,
+            far,
+            span,
+        } = &self.level
+            && !faces.is_empty()
+        {
+            catallax_features::lattice::validate_gyroid(self.period.value(), &self.level)?;
+            return crate::gyroid::check_distance_grade(near.value(), far.value(), span.value());
         }
         crate::gyroid::Gyroid::certified(self.period.value(), &self.level, self.kind, &self.frame)
             .map(|_| ())
@@ -236,7 +270,10 @@ impl<S: TerminalField> Stage<S> {
     /// lattice or gyroid, `lattice.settings` for non-positive accuracy, detail or
     /// limits, `lattice.impossible` or `gyroid.impossible` for impossible field
     /// parameters (including coincident grade anchors), `lattice.unsupported-grade`
-    /// or `gyroid.unsupported` for a distance grade, a sheet or a framed gyroid,
+    /// or `gyroid.unsupported` for a missing distance grade face set or an unsupported
+    /// gyroid definition, `field.grade-face-coverage` for an unsupported distance
+    /// grade region, `field.grade-face-missing` or `field.grade-face-ambiguous` when
+    /// a reference has no unique resolution,
     /// `lattice.grade-function-unsupported` or `gyroid.grade-function-unsupported`
     /// for linear anchors that do not differ along one part axis,
     /// `lattice.grade-range-unsupported` or `gyroid.grade-range-unsupported` for an

@@ -228,7 +228,7 @@ struct Model<'a> {
 }
 
 /// The axis bounds of a convex prism whose faces are all axis planes.
-pub(super) fn prism(
+pub(crate) fn prism(
     feature: &crate::features::Feature,
     dec: &mut Decider,
 ) -> Result<Option<Bounds>, Refusal> {

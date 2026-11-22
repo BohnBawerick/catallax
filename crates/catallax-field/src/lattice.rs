@@ -163,6 +163,7 @@ impl Lattice {
         size: &Rational,
         frame: &catallax_recipe::Pose,
         grade: &Grade,
+        resolved: Option<GradeDef>,
     ) -> Result<Self, Refusal> {
         let template = catallax_features::lattice::validate(cell, size, grade)?;
         let radius_range = catallax_features::lattice::radius_range(grade)?;
@@ -225,8 +226,15 @@ impl Lattice {
                     )
                 })?
         };
-        let grade = GradeDef::compile(grade, "lattice.impossible")?
-            .expect("validate refuses distance grades");
+        let grade = match resolved {
+            Some(grade) => grade,
+            None => GradeDef::compile(grade, "lattice.impossible")?.ok_or_else(|| {
+                Refusal::new(
+                    "lattice.unsupported-grade",
+                    "a distance grade needs a region",
+                )
+            })?,
+        };
         let lipschitz = &q(1) + &grade.slope_bound();
         Ok(Self {
             cubic: matches!(cell, LatticeCell::Cubic),
@@ -281,9 +289,9 @@ impl Lattice {
         self.axis_cubic().then_some(&self.radius_range[0])
     }
 
-    /// Whether the radius is a linear grade whose anchors differ along one part axis.
+    /// Whether the radius uses a nonconstant grade with terminal certification.
     pub(crate) fn axis_graded(&self) -> bool {
-        self.grade.axis().is_some()
+        self.grade.axis().is_some() || matches!(self.grade, GradeDef::Faces(_))
     }
 
     /// The axis and positions of an axis grade's anchor planes.

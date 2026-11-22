@@ -150,10 +150,27 @@ pub fn radius_range(grade: &Grade) -> Result<[Rational; 2], Refusal> {
             let (a, b) = (start.value().clone(), end.value().clone());
             Ok([a.clone().min(b.clone()), a.max(b)])
         }
-        Grade::Distance { .. } => Err(Refusal::new(
-            "lattice.unsupported-grade",
-            "distance grades need trimmed-face distance; unfinished coverage",
-        )),
+        Grade::Distance {
+            faces,
+            near,
+            far,
+            span,
+        } => {
+            if span.value().sign() != catallax_numbers::Sign::Positive {
+                return Err(Refusal::new(
+                    "lattice.impossible",
+                    "a distance grade needs a positive span",
+                ));
+            }
+            if faces.is_empty() {
+                return Err(Refusal::new(
+                    "lattice.unsupported-grade",
+                    "a distance grade needs at least one face reference",
+                ));
+            }
+            let (a, b) = (near.value().clone(), far.value().clone());
+            Ok([a.clone().min(b.clone()), a.max(b)])
+        }
     }
 }
 

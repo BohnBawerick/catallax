@@ -4,6 +4,7 @@ use super::{Ball, Checked, Coefficients, Program, Rational, Refusal, Stop, Work,
 use catallax_numbers::Sign;
 
 mod tensor;
+pub(crate) use tensor::NativeArea;
 
 pub(super) const ORDER: usize = 16;
 const SIZE: usize = ORDER + 1;
@@ -14,6 +15,7 @@ const DERIVATIVE: [i64; 8] = [51480, 0, -72072, 0, 27720, 0, -2520, 0];
 
 pub(crate) struct Rule {
     points: Vec<(Ball, Ball)>,
+    native: std::sync::OnceLock<Vec<(catallax_numbers::Interval, catallax_numbers::Interval)>>,
 }
 
 fn certificate() -> Stop {
@@ -60,6 +62,23 @@ fn polynomial(x: &Rational, work: &mut Work) -> Checked<Rational> {
 }
 
 impl Rule {
+    fn native_points(&self) -> &[(catallax_numbers::Interval, catallax_numbers::Interval)] {
+        use catallax_numbers::Interval;
+        self.native.get_or_init(|| {
+            let interval = |a: &Ball| {
+                Interval::new(
+                    Interval::from_rational(&a.lo()).lo(),
+                    Interval::from_rational(&a.hi()).hi(),
+                )
+                .unwrap()
+            };
+            self.points
+                .iter()
+                .map(|(x, w)| (interval(x), interval(w)))
+                .collect()
+        })
+    }
+
     pub(crate) fn new(work: &mut Work) -> Checked<Self> {
         let threshold = Rational::one().mul_pow2(-i64::from(work.precision) - 16);
         let mut points = Vec::with_capacity(8);
@@ -112,7 +131,10 @@ impl Rule {
             points.push((work.sub(&zero, &point)?, weight.clone()));
             points.push((point, weight));
         }
-        Ok(Self { points })
+        Ok(Self {
+            points,
+            native: std::sync::OnceLock::new(),
+        })
     }
 }
 

@@ -472,6 +472,21 @@ fn the_m11_fillet_replaces_its_named_loft_edge() {
             .unwrap();
         assert_eq!(result.location, location, "{p:?}: {result:?}");
     }
+    let rail = [0.9074607460926539, -0.5308464179691144, 1.0];
+    let [x, y, z] = rail.map(|x| Q::from_f64_exact(x).unwrap());
+    let mut workspace = Workspace::default();
+    let proof = plan
+        .proven_checked(&RPoint3::new(x, y, z), &mut workspace, &mut decider())
+        .unwrap();
+    assert_eq!(proof.location, Location::Indeterminate);
+    assert!(plan.fast(rail, &mut workspace).unwrap().value.abs() < 1e-6);
+    assert!(
+        plan.unproved_preview(rail, &mut workspace)
+            .unwrap()
+            .value
+            .abs()
+            < 1e-6
+    );
 }
 
 /// The print classifier settles a box of the loft only where the box meets

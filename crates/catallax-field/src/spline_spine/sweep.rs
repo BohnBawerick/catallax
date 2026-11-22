@@ -151,36 +151,28 @@ fn cap_gap(detail: &str) -> Refusal {
 }
 
 /// Proves the whole-support spine, then a continuation on extensions of
-/// the same supports along their edge parameters. The second chart axis is
-/// given separately because it may differ from the first's.
+/// the same supports along their common edge parameter axis.
 pub fn cap_continuation(
     definition: &SpineDefinition,
-    second_axis: usize,
     dec: &mut Decider,
 ) -> Result<[Spine; 2], Refusal> {
-    if second_axis > 1 {
-        return Err(cap_gap("the second edge axis must be u or v"));
-    }
     let plane = definition
         .supports
         .iter()
         .position(|patch| crate::flat_support(&Surface::BSpline(patch.clone().into())).is_some());
     let original = Spine::prove_offsets(definition, plane, dec)?;
-    let axes = [definition.axis, second_axis];
+    let axis = definition.axis;
     // Use the support extension of M11 (docs/M11-OFFSET-PROOF.md), one
     // quarter of the edge length on either end of its parameter interval.
     let quarter = Rational::one().mul_pow2(-2);
     let scale = &Rational::one() + &quarter.mul_pow2(1);
     let mut extended = definition.clone();
-    for (i, axis) in axes.into_iter().enumerate() {
-        let mut domain = definition.supports[i]
-            .carrier()
-            .domain()
-            .map(|d| d.map(Clone::clone));
+    for support in &mut extended.supports {
+        let mut domain = support.carrier().domain().map(|d| d.map(Clone::clone));
         let margin = (&domain[axis][1] - &domain[axis][0]).mul_pow2(-2);
         domain[axis][0] = &domain[axis][0] - &margin;
         domain[axis][1] = &domain[axis][1] + &margin;
-        extended.supports[i] = definition.supports[i].extended(domain, dec)?;
+        *support = support.extended(domain, dec)?;
     }
     extended.seed = &(&definition.seed + &quarter) / &scale;
     let extension = Spine::prove_offsets(&extended, plane, dec)?;
@@ -194,7 +186,7 @@ pub fn cap_continuation(
     let new_tau = &(&old_tau + &quarter) / &scale;
     let scale = Interval::from_rational(&scale);
     let quarter = Interval::from_rational(&quarter);
-    for (i, axis) in axes.into_iter().enumerate() {
+    for i in 0..2 {
         let slot = PARAMETERS + 2 * i + axis;
         root[slot] = (root[slot] + quarter) / scale;
         root[LENGTHS + i] = product(root[LENGTHS + i], scale);

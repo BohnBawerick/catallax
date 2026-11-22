@@ -513,19 +513,22 @@ The comparison uses the existing complete-cell positional grid at
 the selected fillet face supplies a grid or edge stations. The
 biquadratic fixture displays the complete fitted carrier, which has
 no body cuts. The forward comparison includes the positional display
-bound and the B-rep fit bound.
+bound and the B-rep fit bound. A vertex passes when the widened field
+range contains zero and its upper bound fits the display accuracy.
+The bare carrier test in `catallax-compare` charges the field proof and
+sweep, B-rep fit, grid and vertex queries to one request.
 
 | Edge | Forward vertices | Total work | Largest comparison upper bound (mm) |
 | --- | ---: | ---: | ---: |
-| M27 loft | 245 | 36,439,567 | 0.008877664 |
+| M27 loft | 245 | 36,439,567 | 0.008877663 |
 | Next M11 loft | 335 | 63,981,015 | 0.008631433 |
-| Biquadratic | 104 | 72,199,474 | 0.004836388 |
+| Biquadratic | 104 | 72,210,034 | 0.004916114 |
 
 The two loft reports agreed at 1, 2 and 4 workers with no forward
-findings. On the biquadratic row, the 4 by 26 carrier grid took
-54,998,702 work after the 16,433,004-work B-rep fit. Its display
-bound was 0.004836298487 mm and the maximum field distance upper
-bound before widening was 9.460012726e-9 mm. All three comparisons
+findings. On the biquadratic row, the field proof and sweep took
+667,145 work, the B-rep fit took 16,438,284, and the 4 by 26 carrier
+grid took 54,998,702. The grid's display bound was 0.004836298487 mm.
+Vertex queries took the remaining 105,903 work. All three comparisons
 used the existing 100M request allowance.
 
 The whole-body B-rep display remains open for both lofts. Reverse

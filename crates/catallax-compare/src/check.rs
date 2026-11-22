@@ -341,11 +341,13 @@ fn distance_finding(
     names: Vec<Vec<Origin>>,
     field: Vec<Origin>,
     bounds: (Rational, Option<Rational>),
-    options: &Options,
+    limits: (&Rational, &Rational),
 ) {
     let (lo, hi) = bounds;
+    let (gap_threshold, upper_limit) = limits;
     retain_distance_upper(report, hi.as_ref());
-    if lo > options.accuracy {
+    if &lo > gap_threshold {
+        report.verdict = Verdict::Disagree;
         let low = Interval::from_rational(&lo).lo();
         let high = hi
             .as_ref()
@@ -358,7 +360,7 @@ fn distance_finding(
             reason: Reason::Gap,
             gap: Some(Interval::new(low, high).unwrap()),
         });
-    } else if hi.is_none_or(|h| h > options.accuracy) {
+    } else if hi.is_none_or(|h| &h > upper_limit) {
         unresolved(
             report,
             pass,
@@ -485,7 +487,7 @@ fn spline_display(
         whole_failure(report, "spline display inherits marked geometry");
     }
     let error = &display.measurement.maximum_deviation + fit_bound;
-    let goal = (&options.accuracy - &error).max(r(0));
+    let goal = spline_distance_goal(&error, &options.accuracy);
     let mut first = None;
     for position in display.geometry.positions {
         if revision.is_cancelled() {
@@ -505,19 +507,7 @@ fn spline_display(
         let range = field
             .spline_blend_distance(origin, &p, &goal, dec)?
             .expect("the field has the named blend");
-        let bounds = (
-            (&range.lower - &error).max(r(0)),
-            range.upper.as_ref().map(|u| u + &error),
-        );
-        distance_finding(
-            report,
-            Pass::Forward,
-            &p,
-            vec![vec![origin.clone()]],
-            vec![origin.clone()],
-            bounds,
-            options,
-        );
+        spline_vertex(report, &p, Some(origin), range, &error, &options.accuracy);
     }
     if let Some(p) = first {
         unresolved(
@@ -529,10 +519,33 @@ fn spline_display(
             "selected B-rep face lacks complete sampled origin/direction coverage",
         );
     }
-    if report.findings.iter().any(|f| f.reason == Reason::Gap) {
-        report.verdict = Verdict::Disagree;
-    }
     Ok(true)
+}
+
+pub(super) fn spline_distance_goal(error: &Rational, accuracy: &Rational) -> Rational {
+    (accuracy - error).max(r(0))
+}
+
+pub(super) fn spline_vertex(
+    report: &mut Report,
+    point: &RPoint3,
+    origin: Option<&Origin>,
+    range: catallax_field::rolling_region::Range,
+    error: &Rational,
+    accuracy: &Rational,
+) {
+    distance_finding(
+        report,
+        Pass::Forward,
+        point,
+        origin.into_iter().map(|o| vec![o.clone()]).collect(),
+        origin.into_iter().cloned().collect(),
+        (
+            (&range.lower - error).max(r(0)),
+            range.upper.as_ref().map(|u| u + error),
+        ),
+        (&r(0), accuracy),
+    );
 }
 
 pub(crate) fn run(
@@ -1045,7 +1058,7 @@ pub(crate) fn run(
                 names,
                 field_names,
                 (lower, upper),
-                options,
+                (&options.accuracy, &options.accuracy),
             );
         } else if d.lo() == f64::INFINITY && field.is_proven_empty() {
             report.findings.push(Finding {
@@ -1330,7 +1343,7 @@ pub(crate) fn run(
                 names.clone(),
                 origins.clone(),
                 (lower, upper.clone()),
-                options,
+                (&options.accuracy, &options.accuracy),
             );
         } else {
             retain_distance_upper(&mut report, None);

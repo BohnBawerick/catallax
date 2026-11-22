@@ -90,7 +90,7 @@ impl Round {
             // The M11 fitted face's 1 um maximum deviation.
             tolerance: Rational::from_ratio(1, 1000).expect("nonzero"),
         };
-        let [_, spine] = cap_continuation(&definition, 1, dec)?;
+        let [_, spine] = cap_continuation(&definition, dec)?;
         let sweep = Sweep::between_caps(&spine, caps, dec)?;
         let (bottom, up) = &caps[0];
         let height = up.scaled(&(&Rational::one() / &up.dot(&caps[1].0.minus(bottom))));
@@ -229,6 +229,8 @@ impl Round {
         let sign = match location {
             Ok(Location::Inside) => -1.0,
             Ok(Location::Outside) => 1.0,
+            Ok(Location::Indeterminate) if old != 0.0 => old.signum(),
+            Ok(Location::Indeterminate) => return old,
             Ok(Location::Boundary) => return 0.0,
             _ => return f64::NAN,
         };

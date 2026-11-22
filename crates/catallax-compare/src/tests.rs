@@ -39,8 +39,7 @@ fn compare(brep: &Recipe, field: &Recipe, options: &Options) -> Report {
     controller.latest().unwrap()
 }
 
-#[test]
-fn loft_spline_rounds_report_display_coverage_or_a_named_brep_refusal() {
+fn m11_loft([a, b]: [usize; 2], planar: bool, heights: [&str; 2]) -> Recipe {
     let polygon = |prefix: &str, points: [[i64; 2]; 4]| {
         points
             .into_iter()
@@ -56,23 +55,32 @@ fn loft_spline_rounds_report_display_coverage_or_a_named_brep_refusal() {
         json!({"id":format!("section{i}"),"op":"sketch","loops":[loop_],
           "plane":{"rotation":["1","0","0","0"],"translation":["0","0",height]}})
     };
-    for ([a, b], planar) in [([0, 1], false), ([1, 2], false), ([0, 1], true)] {
-        let bottom = polygon("a", [[1, -1], [1, 1], [-1, 1], [-1, -1]]);
-        let top = if planar {
-            [[1, 0], [1, 2], [-2, 0], [0, -1]]
-        } else {
-            [[1, 0], [0, 2], [-2, 0], [0, -1]]
-        };
-        let top = polygon("b", top);
-        let recipe = Recipe::parse(&json!({
+    let bottom = polygon("a", [[1, -1], [1, 1], [-1, 1], [-1, -1]]);
+    let top = if planar {
+        [[1, 0], [1, 2], [-2, 0], [0, -1]]
+    } else {
+        [[1, 0], [0, 2], [-2, 0], [0, -1]]
+    };
+    let top = polygon("b", top);
+    Recipe::parse(
+        &json!({
             "format":"catallax-recipe/5","name":"M11 loft comparison","steps":[
-                section(0,"0",&bottom), section(1,"2",&top),
+                section(0,heights[0],&bottom), section(1,heights[1],&top),
                 {"id":"loft","op":"loft","shape":"ruled","sections":[
                     {"profile":"section0","start":["a_0"]},{"profile":"section1","start":["b_0"]}]},
                 {"id":"round","op":"fillet","body":"loft","radius":"1/10",
                     "edges":[{"between":[side(a),side(b)]}]}
             ],"result":"round"
-        }).to_string()).unwrap();
+        })
+        .to_string(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn loft_spline_rounds_report_display_coverage_or_a_named_brep_refusal() {
+    for ([a, b], planar) in [([0, 1], false), ([1, 2], false), ([0, 1], true)] {
+        let recipe = m11_loft([a, b], planar, ["0", "2"]);
         let (report, work) =
             catallax_numbers::with_operation_budget(100_000_000, || check(&recipe));
         println!(
@@ -106,6 +114,148 @@ fn loft_spline_rounds_report_display_coverage_or_a_named_brep_refusal() {
             .collect();
         assert!(findings.is_empty(), "{findings:?}");
     }
+}
+
+#[test]
+fn loft_vertices_must_fit_the_brep_bound_even_below_display_accuracy() {
+    let field = m11_loft([0, 1], false, ["0", "2"]);
+    let brep = m11_loft([0, 1], false, ["3/250", "503/250"]);
+    let mut options = options();
+    options.region = Some(Region {
+        min: ["-2", "-2", "503/250"].map(|x| Rational::parse(x).unwrap()),
+        max: ["2", "2", "503/250"].map(|x| Rational::parse(x).unwrap()),
+    });
+    let (report, work) =
+        catallax_numbers::with_operation_budget(100_000_000, || compare(&brep, &field, &options));
+    assert!(!work.exhausted && report.refusal.is_none(), "{report:?}");
+    assert_eq!(report.verdict, Verdict::Disagree, "{report:?}");
+    let shifted_cap = Rational::parse("503/250").unwrap().to_f64_nearest();
+    assert!(
+        report.findings.iter().any(|f| {
+            f.pass == Pass::Forward
+                && f.reason == Reason::Gap
+                && (f.point.z.to_f64_nearest() - shifted_cap).abs() < 1e-9
+                && f.gap.unwrap().lo() < options.accuracy.to_f64_nearest()
+        }),
+        "{report:?}"
+    );
+    let (partial, spent) =
+        catallax_numbers::with_operation_budget(work.used - 1, || compare(&brep, &field, &options));
+    assert!(spent.exhausted && partial.refusal.is_some(), "{partial:?}");
+    assert_eq!(partial.verdict, Verdict::Disagree, "{partial:?}");
+    assert!(partial.findings.iter().any(|f| f.reason == Reason::Gap));
+}
+
+fn biquadratic_supports(dec: &mut Decider) -> [catallax_shapes::RationalPatch; 2] {
+    use catallax_numbers::Real;
+    use catallax_shapes::{BSplineSurface, Point3, RationalPatch};
+    let q = Rational::from_i64;
+    let quarter = |n| q(n).mul_pow2(-2);
+    [false, true].map(|second| {
+        let mut controls = Vec::new();
+        for i in 0..3 {
+            for j in 0..3 {
+                let (x, y) = if second {
+                    (quarter(4 - i * j), quarter(-4 + 4 * i + 2 * j))
+                } else {
+                    (quarter(-4 + 4 * i + 2 * j - i * j), quarter(-4 + i * j))
+                };
+                let z = if i == 1 && j == 1 {
+                    q(j) + Rational::from_ratio(if second { -1 } else { 1 }, 20).unwrap()
+                } else {
+                    q(j)
+                };
+                controls.push(Point3::new(x.into(), y.into(), z.into()));
+            }
+        }
+        let patch = BSplineSurface::new(
+            [2, 2],
+            std::array::from_fn(|_| [0, 0, 0, 1, 1, 1].map(q).to_vec()),
+            [3, 3],
+            controls,
+            vec![Real::one(); 9],
+            dec,
+        )
+        .unwrap();
+        RationalPatch::new(patch, dec).unwrap()
+    })
+}
+
+#[test]
+fn biquadratic_carrier_vertices_fit_the_field_within_one_request() {
+    use catallax_field::spline_spine::{Spine, SpineDefinition, sweep::Sweep};
+    use catallax_numbers::{Refusal, Sign, current_operation_work, with_operation_budget};
+    use catallax_shapes::{SplineFillet, SplineFilletDefinition};
+    let options = options();
+    let (result, work) = with_operation_budget(100_000_000, || {
+        let mut dec = Decider::default();
+        let radius = Rational::parse("1/10").unwrap();
+        let sides = [Sign::Negative; 2];
+        let supports = biquadratic_supports(&mut dec);
+        let spine = Spine::prove(
+            &SpineDefinition {
+                supports,
+                radius: radius.clone(),
+                sides,
+                axis: 1,
+                seed: Rational::parse("1/2").unwrap(),
+                tolerance: Rational::parse("1/1000").unwrap(),
+            },
+            &mut dec,
+        )?;
+        let sweep = Sweep::new(&spine, &mut dec)?;
+        let field_work = current_operation_work().used;
+        assert!(field_work <= 20_000_000);
+
+        let definition = SplineFilletDefinition::new(
+            biquadratic_supports(&mut dec),
+            radius,
+            sides,
+            1,
+            [Rational::parse("1/32").unwrap(), Rational::one()],
+        )?;
+        let fit = SplineFillet::fit(definition, &mut dec)?;
+        let fitted_work = current_operation_work().used;
+        let fit_work = fitted_work - field_work;
+        assert!(fit_work <= 20_000_000);
+        let grid = catallax_mesh::display_spline_fillet_carrier(&fit, &options.mesh, &mut dec)?;
+        let display_work = current_operation_work().used - fitted_work;
+        assert_eq!(grid.dimensions, [4, 26]);
+        assert!(grid.maximum_deviation <= options.mesh.chord_tolerance);
+        let error = &fit.bound().upper + &grid.maximum_deviation;
+        let goal = check::spline_distance_goal(&error, &options.accuracy);
+        let mut report = Report {
+            import_agreement: None,
+            revision: 0,
+            region: None,
+            verdict: Verdict::Unresolved,
+            forward_vertices: 0,
+            reverse_samples: 0,
+            sampled_distance_upper: Some(Rational::zero()),
+            findings: vec![],
+            not_comparable: vec![],
+            refusal: None,
+        };
+        for point in grid.positions {
+            let [x, y, z] = point.map(|x| Rational::from_f64_exact(x).unwrap());
+            let p = RPoint3::new(x, y, z);
+            report.forward_vertices += 1;
+            let range = sweep.distance(&p, &goal, &mut dec)?;
+            check::spline_vertex(&mut report, &p, None, range, &error, &options.accuracy);
+        }
+        assert_eq!(report.forward_vertices, 104);
+        assert!(report.findings.is_empty(), "{report:?}");
+        println!(
+            "biquadratic carrier: {} vertices, {:.9e} mm display bound, {:.9e} mm widened upper, {field_work} field work, {fit_work} fit work, {display_work} display work",
+            report.forward_vertices,
+            grid.maximum_deviation.to_f64_nearest(),
+            report.sampled_distance_upper.unwrap().to_f64_nearest(),
+        );
+        Ok::<_, Refusal>(())
+    });
+    println!("biquadratic comparison: {} work", work.used);
+    assert!(!work.exhausted, "{result:?}");
+    result.unwrap();
 }
 
 #[test]

@@ -76,7 +76,7 @@ pub enum Pass {
 /// Why the kernels disagree, or why a sample could not be settled.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Reason {
-    /// A certified distance lower bound exceeds the display accuracy.
+    /// A certified distance lower bound exceeds the applicable comparison limit.
     Gap,
     /// A certified field origin is absent from the matching B-rep face.
     Origins,

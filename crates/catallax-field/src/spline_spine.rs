@@ -1273,7 +1273,6 @@ pub struct SpineEnd {
 /// A proved spine.
 #[derive(Clone, Debug)]
 pub struct Spine {
-    axis: usize,
     spans: Vec<SpineSpan>,
     ends: [SpineEnd; 2],
     eps: f64,
@@ -1444,7 +1443,6 @@ impl Spine {
             ));
         }
         let mut spine = Self {
-            axis: definition.axis,
             eps: spans.iter().map(|s| s.eps).fold(0.0, f64::max),
             spans,
             ends,
@@ -1631,11 +1629,6 @@ impl Spine {
         self.target
     }
 
-    /// Which parameter of the first support is `tau`.
-    pub fn axis(&self) -> usize {
-        self.axis
-    }
-
     /// Bounds on the nine values at `tau`: centre, the first support's `u`
     /// and `v`, the second's, `L_A` and `L_B`. `None` outside the spans.
     pub fn at(&self, tau: f64) -> Option<[Interval; 9]> {
@@ -1643,7 +1636,7 @@ impl Spine {
             .spans
             .iter()
             .find(|s| s.tau[0] <= tau && tau <= s.tau[1])?;
-        let pinned = PARAMETERS + self.axis;
+        let pinned = self.system.tau();
         let s = span.variable(point(tau));
         let mut out = [point(tau); 9];
         for (i, &index) in free(pinned).iter().enumerate() {

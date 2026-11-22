@@ -10,6 +10,7 @@
 //! proof, and finds every solution inside the proved tube.
 
 use std::num::NonZeroUsize;
+use std::sync::Mutex;
 use std::time::Instant;
 
 use catallax_field::Location;
@@ -21,6 +22,7 @@ use catallax_shapes::{BSplineSurface, Point3, RPoint3, RVector3, RationalPatch};
 type Q = Rational;
 
 const ALLOWANCE: u64 = 20_000_000;
+static THREAD_COUNT: Mutex<()> = Mutex::new(());
 
 fn q(n: i64) -> Q {
     Q::from_i64(n)
@@ -215,6 +217,7 @@ fn each_m11_spine_is_proved_inside_its_tube() {
 
 #[test]
 fn the_spine_is_the_same_at_one_two_and_four_workers() {
+    let _guard = THREAD_COUNT.lock().unwrap();
     let mut dec = Decider::default();
     let mut seen: Option<Vec<Record>> = None;
     for threads in [Some(1), Some(2), Some(4), None] {
@@ -553,7 +556,7 @@ fn independently_sampled_arcs_on_the_three_m11_edges_lie_in_the_sweep_range() {
 fn the_m27_cap_keeps_the_blend_past_the_first_rail_end() {
     let mut dec = Decider::default();
     let (_, definition) = definition(0, &mut dec);
-    let [original, continued] = cap_continuation(&definition, 1, &mut dec).unwrap();
+    let [original, continued] = cap_continuation(&definition, &mut dec).unwrap();
     let caps = [
         (
             RPoint3::new(q(0), q(0), q(0)),
@@ -612,6 +615,7 @@ fn near_tangent(slope: Q, dec: &mut Decider) -> SpineDefinition {
 
 #[test]
 fn a_plane_offset_can_enter_the_spline_spine_system_at_zero_offset() {
+    let guard = THREAD_COUNT.lock().unwrap();
     let mut dec = Decider::default();
     let mut record = None;
     for workers in [1, 2, 4] {
@@ -628,6 +632,7 @@ fn a_plane_offset_can_enter_the_spline_spine_system_at_zero_offset() {
         record = Some((spine, work.used, signature));
     }
     catallax_numbers::set_threads(None);
+    drop(guard);
     let (spine, work, _) = record.unwrap();
     let [x, y, z, ..] = spine.at(0.5).unwrap();
     // The plane is 15x + 8y = 0. Offset its exact unit normal by 1/10.
@@ -636,25 +641,8 @@ fn a_plane_offset_can_enter_the_spline_spine_system_at_zero_offset() {
     assert!(z.contains(1.0));
     assert!(spine.eps() <= spine.target());
     let sweep = Sweep::new(&spine, &mut dec).unwrap();
-    // Reduce the offset intersection to a scalar solve on the first rail.
-    // Its offset x-coordinate has derivative at least 1 - (1/10)/8.
-    let centre = |u: f64| {
-        let slope = u / 8.0;
-        let length = (1.0 + slope * slope).sqrt();
-        [u - 0.1 * slope / length, u * u / 16.0 + 0.1 / length]
-    };
-    let (mut lo, mut hi) = (0.0_f64, 1.0_f64);
-    while hi > lo.next_up() {
-        let u = lo.midpoint(hi);
-        let [x, y] = centre(u);
-        if 15.0 * x + 8.0 * y < 1.7 {
-            lo = u;
-        } else {
-            hi = u;
-        }
-    }
-    let [cx, cy] = centre(lo);
-    let radial = [lo - cx - 1.5 / 17.0, lo * lo / 16.0 - cy - 0.8 / 17.0];
+    let ([cx, cy], [a, b]) = mixed_contact([15.0, 8.0]);
+    let radial = [a[0] - cx + b[0] - cx, a[1] - cy + b[1] - cy];
     let scale = 0.1 / radial[0].hypot(radial[1]);
     let exact = |x| Q::from_f64_exact(x).unwrap();
     let width = r("1/1000000");
@@ -680,68 +668,29 @@ fn a_plane_offset_can_enter_the_spline_spine_system_at_zero_offset() {
     );
 }
 
-#[test]
-fn the_biquadratic_brep_carrier_display_lies_within_the_field_sweep_range() {
-    use catallax_shapes::{SplineFillet, SplineFilletDefinition};
-    let mut dec = Decider::default();
-    let (_, definition) = definition(2, &mut dec);
-    let (spine, field_work) = with_operation_budget(ALLOWANCE, || {
-        let spine = Spine::prove(&definition, &mut dec).unwrap();
-        Sweep::new(&spine, &mut dec).unwrap();
-        spine
-    });
-    assert!(!field_work.exhausted);
-    let sweep = Sweep::new(&spine, &mut dec).unwrap();
-    let shape = SplineFilletDefinition::new(
-        definition.supports,
-        definition.radius,
-        definition.sides,
-        definition.axis,
-        [r("1/32"), q(1)],
-    )
-    .unwrap();
-    let (fit, work) = with_operation_budget(ALLOWANCE, || SplineFillet::fit(shape, &mut dec));
-    assert!(!work.exhausted);
-    let fit = fit.unwrap();
-
-    let spent = work.used + field_work.used;
-    let (result, comparison_work) = with_operation_budget(100_000_000 - spent, || {
-        let options = catallax_mesh::MeshOptions {
-            chord_tolerance: r("1/200"),
-            ..Default::default()
-        };
-        let mesh = catallax_mesh::display_spline_fillet_carrier(&fit, &options, &mut dec)?;
-        let display_work = catallax_numbers::current_operation_work().used;
-        let bound = &fit.bound().upper + &mesh.maximum_deviation;
-        let accuracy = r("1/100");
-        let goal = &accuracy - &bound;
-        assert!(!mesh.positions.is_empty() && goal.sign() == Sign::Positive);
-        let mut farthest = Q::zero();
-        for point in &mesh.positions {
-            let [x, y, z] = point.map(|x| Q::from_f64_exact(x).unwrap());
-            let p = RPoint3::new(x, y, z);
-            let distance = sweep.distance(&p, &goal, &mut dec)?;
-            assert!(distance.lower <= bound, "{p:?}: {distance:?}");
-            let upper = distance.upper.expect("curve-face witness");
-            assert!(upper <= goal, "{p:?}: {upper} exceeds {goal}");
-            farthest = farthest.max(upper);
+fn mixed_contact(plane: [f64; 2]) -> ([f64; 2], [[f64; 2]; 2]) {
+    let length = plane[0].hypot(plane[1]);
+    let centre = |u: f64| {
+        let slope = u / 8.0;
+        let length = (1.0 + slope * slope).sqrt();
+        [u - 0.1 * slope / length, u * u / 16.0 + 0.1 / length]
+    };
+    let (mut lo, mut hi) = (0.0_f64, 1.0_f64);
+    while hi > lo.next_up() {
+        let u = lo.midpoint(hi);
+        let [x, y] = centre(u);
+        if plane[0] * x + plane[1] * y < 0.1 * length {
+            lo = u;
+        } else {
+            hi = u;
         }
-        println!(
-            "biquadratic fitted carrier: {:?}, {} vertices, display bound {:.9e} mm, farthest distance upper {:.9e} mm, {display_work} display work, {} B-rep fit work",
-            mesh.dimensions,
-            mesh.positions.len(),
-            mesh.maximum_deviation.to_f64_nearest(),
-            farthest.to_f64_nearest(),
-            work.used,
-        );
-        Ok::<_, catallax_numbers::Refusal>(())
-    });
-    println!(
-        "biquadratic comparison: {} work, {result:?}",
-        spent + comparison_work.used
-    );
-    assert!(!comparison_work.exhausted, "{result:?}");
-    result.unwrap();
+    }
+    let [cx, cy] = centre(lo);
+    let feet = [
+        [lo, lo * lo / 16.0],
+        [cx - 0.1 * plane[0] / length, cy - 0.1 * plane[1] / length],
+    ];
+    ([cx, cy], feet)
 }
 
 #[test]
@@ -757,6 +706,16 @@ fn near_tangent_sweep_has_a_deterministic_certified_cutoff() {
             Ok::<_, catallax_numbers::Refusal>((spine.eps(), sweep.tail_bound()))
         });
         let degrees = slope.to_f64_nearest().atan().to_degrees();
+        if power == 14 {
+            let (_, tail) = result.as_ref().expect("the 2^-14 sweep must prove");
+            let bound = tail.as_ref().expect("expected a certified rail bound");
+            let (_, [a, b]) = mixed_contact([slope.to_f64_nearest(), 1.0]);
+            let chord = (a[0] - b[0]).hypot(a[1] - b[1]);
+            assert!(
+                chord > 0.0 && &Q::from_f64_exact(chord).unwrap() <= bound,
+                "rail chord {chord:e} mm exceeds the bound {bound} mm"
+            );
+        }
         match result {
             Ok((width, tail)) => {
                 last = Some(power);
@@ -764,9 +723,6 @@ fn near_tangent_sweep_has_a_deterministic_certified_cutoff() {
                 if let Some(bound) = &tail {
                     assert!(bound <= &r("1/10000"));
                     println!("  labelled near-tangent rail bound {bound} mm");
-                }
-                if power == 14 {
-                    assert!(tail.is_some(), "expected a certified rail bound");
                 }
             }
             Err(refusal) => {

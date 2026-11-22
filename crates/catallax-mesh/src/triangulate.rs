@@ -83,14 +83,7 @@ impl FaceBuilder<'_> {
         } else {
             let replacement = boundary.map(|index| self.positions[index]);
             let (p, residual, filtered) = if let Some(spline) = self.chart.spline() {
-                let enclosed = spline.evaluate(canonical, self.dec)?;
-                let p = replacement.unwrap_or_else(|| enclosed.map(|component| component.mid()));
-                let mut residual = Interval::point(0.0).unwrap();
-                for (actual, expected) in p.into_iter().zip(enclosed) {
-                    let delta = Interval::point(actual).unwrap() - expected;
-                    residual =
-                        residual + Interval::point(delta.lo().abs().max(delta.hi().abs())).unwrap();
-                }
+                let (p, residual) = spline.vertex(canonical, replacement, self.dec)?;
                 if !residual.is_finite() {
                     return Err(failure("spline sample residual exceeds binary64"));
                 }
@@ -451,7 +444,7 @@ impl FaceBuilder<'_> {
     fn grid(&mut self) -> Result<(), Refusal> {
         if let Some(spline) = self.chart.spline() {
             let mut grid = spline.seed_grid(
-                &self.options.chord_tolerance.mul_pow2(-1),
+                &self.options.chord_tolerance,
                 self.options.max_vertices,
                 self.dec,
             )?;
@@ -1072,7 +1065,9 @@ impl FaceBuilder<'_> {
                     .fold(0.0_f64, f64::max);
                 let vmax = uvs[0][1].abs().max(uvs[1][1].abs()).max(uvs[2][1].abs());
                 let filtered = if let Some(spline) = spline {
-                    spline.chord(&uvs, self.dec)? + Interval::point(filtered_residual).unwrap()
+                    let replacement = Interval::point(filtered_residual).unwrap();
+                    spline.chord(&uvs, (filtered_tolerance - replacement).lo(), self.dec)?
+                        + replacement
                 } else if matches!(self.chart.surface, Surface::Cone(_)) {
                     let scale = Interval::point(vmax).unwrap()
                         / Interval::point(self.bounds[1][0].abs().max(self.bounds[1][1].abs()))

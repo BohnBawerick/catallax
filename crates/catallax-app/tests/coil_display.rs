@@ -1,3 +1,5 @@
+//! Display of the retained three-turn round-wire sweep.
+
 use catallax_app::{NumericalOptions, numerical_sweeps};
 use catallax_mesh::{MeshOptions, PreviewOptions};
 use catallax_numbers::{Decider, with_operation_budget};

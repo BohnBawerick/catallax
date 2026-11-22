@@ -17,7 +17,7 @@ pub(crate) struct SplineChart {
     seams: Vec<Seam>,
     // A chart lives for one mesh request. The edge plan uses a projection
     // goal at least as strict as the face that consumes it.
-    edge_parameters: RefCell<BTreeMap<[u64; 3], Uv>>,
+    edge_parameters: RefCell<BTreeMap<[u64; 3], (Uv, Option<Interval>)>>,
 }
 
 struct Span {
@@ -245,11 +245,11 @@ impl SplineChart {
         dec: &mut Decider,
     ) -> Result<Uv, Refusal> {
         let key = position.map(f64::to_bits);
-        if let Some(&uv) = self.edge_parameters.borrow().get(&key) {
+        if let Some(&(uv, _)) = self.edge_parameters.borrow().get(&key) {
             return Ok(uv);
         }
         let uv = self.project_uncached(position, seed, goal, dec)?;
-        self.edge_parameters.borrow_mut().insert(key, uv);
+        self.edge_parameters.borrow_mut().insert(key, (uv, None));
         Ok(uv)
     }
 
@@ -306,6 +306,26 @@ impl SplineChart {
             .evaluate_box(span.local_box(uv.map(|value| [value; 2])), dec)
     }
 
+    pub(crate) fn vertex(
+        &self,
+        uv: Uv,
+        replacement: Option<[f64; 3]>,
+        dec: &mut Decider,
+    ) -> Result<([f64; 3], Interval), Refusal> {
+        if let Some(position) = replacement
+            && let Some(&(at, Some(error))) = self
+                .edge_parameters
+                .borrow()
+                .get(&position.map(f64::to_bits))
+            && super::key(at) == super::key(uv)
+        {
+            return Ok((position, error));
+        }
+        let enclosed = self.evaluate(uv, dec)?;
+        let position = replacement.unwrap_or_else(|| enclosed.map(|value| value.mid()));
+        Ok((position, residual(position, enclosed)))
+    }
+
     pub(crate) fn triangulation_stretch(&self) -> f64 {
         let [du, dv] = self.spans.iter().fold([0.0_f64; 2], |speed, span| {
             let local = span.rational.first_derivative_bounds();
@@ -319,19 +339,30 @@ impl SplineChart {
         }
     }
 
-    pub(crate) fn chord(&self, uv: &[Uv; 3], dec: &mut Decider) -> Result<Interval, Refusal> {
+    pub(crate) fn chord(
+        &self,
+        uv: &[Uv; 3],
+        limit: f64,
+        dec: &mut Decider,
+    ) -> Result<Interval, Refusal> {
         let b = parameter_box(uv);
         let width = b.map(|[lo, hi]| point(hi) - point(lo));
-        let edges: [[Interval; 2]; 3] = std::array::from_fn(|i| {
-            std::array::from_fn(|axis| point(uv[(i + 1) % 3][axis]) - point(uv[i][axis]))
-        });
+        let edges = || {
+            std::array::from_fn(|i| {
+                std::array::from_fn(|axis| point(uv[(i + 1) % 3][axis]) - point(uv[i][axis]))
+            })
+        };
         let mut cover = self.spans.iter().filter(|span| overlaps(span.bounds, b));
         let first = cover
             .next()
             .ok_or_else(|| failure("triangle has no spline span"))?;
         let Some(second) = cover.next() else {
             let local = [width[0] / first.width[0], width[1] / first.width[1]];
-            let edges = edges.map(|e| [e[0] / first.width[0], e[1] / first.width[1]]);
+            let box_bound = first.chord_bound(local, None, dec)?;
+            if box_bound.hi() <= limit {
+                return Ok(box_bound);
+            }
+            let edges = edges().map(|e| [e[0] / first.width[0], e[1] / first.width[1]]);
             return first.chord_bound(local, Some(edges), dec);
         };
         let mut hessian = first.affine_hessian;
@@ -339,7 +370,7 @@ impl SplineChart {
             hessian = std::array::from_fn(|i| hessian[i].hull(&span.affine_hessian[i]));
         }
         dec.charge_work(6 + 2 + 3 * 4)?;
-        let mut bound = triangle_chord_bound_interval(edges, width, &hessian);
+        let mut bound = triangle_chord_bound_interval(edges(), width, &hessian);
         for seam in &self.seams {
             let [lo, hi] = b[seam.axis];
             let [a, z] = b[1 - seam.axis];
@@ -368,7 +399,7 @@ impl SplineChart {
         let seed = std::array::from_fn(|i| a[i].midpoint(b[i]));
         let m = self.project_edge(middle, middle_hint, Some(seed), goal, dec)?;
         let uv = [a, m, b];
-        if self.chord(&uv, dec)?.hi() > chord.lo() {
+        if self.chord(&uv, chord.lo(), dec)?.hi() > chord.lo() {
             return Ok(false);
         }
         let bounds = parameter_box(&uv);
@@ -401,22 +432,18 @@ impl SplineChart {
         dec: &mut Decider,
     ) -> Result<Uv, Refusal> {
         let key = position.map(f64::to_bits);
-        if let Some(&uv) = self.edge_parameters.borrow().get(&key) {
+        if let Some(&(uv, _)) = self.edge_parameters.borrow().get(&key) {
             return Ok(uv);
         }
         if let Some(uv) = hint
             && self.spans.iter().any(|span| span.contains(uv))
         {
             let expected = self.evaluate(uv, dec)?;
-            let residual = position
-                .into_iter()
-                .zip(expected)
-                .fold(point(0.0), |sum, (x, y)| {
-                    let delta = point(x) - y;
-                    sum + point(delta.lo().abs().max(delta.hi().abs()))
-                });
-            if residual.hi() <= goal {
-                self.edge_parameters.borrow_mut().insert(key, uv);
+            let error = residual(position, expected);
+            if error.hi() <= goal {
+                self.edge_parameters
+                    .borrow_mut()
+                    .insert(key, (uv, Some(error)));
                 return Ok(uv);
             }
         }
@@ -560,6 +587,20 @@ impl SplineChart {
                 ]
             });
             let local = span.local_box(intersection);
+            // A coarse cover is shared by the regular grid and the transition
+            // triangles next to the trims. The tighter test handles slivers.
+            let coarse = local.map(|axis| {
+                Interval::new(
+                    (axis.lo() * 4.0).floor() * 0.25,
+                    (axis.hi() * 4.0).ceil() * 0.25,
+                )
+                .unwrap()
+            });
+            if coarse != [Interval::new(0.0, 1.0).unwrap(); 2]
+                && normals_agree(direction, span.normal_cell(coarse, dec)?, cosine, dec)?
+            {
+                continue;
+            }
             // Whole-cell certificates can serve adjacent facets with different
             // trim triangles. Fall back to the triangle's tighter rectangle.
             let cell = local.map(dyadic_cell);
@@ -578,6 +619,16 @@ impl SplineChart {
         }
         Ok(true)
     }
+}
+
+fn residual(position: [f64; 3], enclosed: [Interval; 3]) -> Interval {
+    position
+        .into_iter()
+        .zip(enclosed)
+        .fold(point(0.0), |sum, (x, y)| {
+            let delta = point(x) - y;
+            sum + point(delta.lo().abs().max(delta.hi().abs()))
+        })
 }
 
 fn normals_agree(
@@ -715,7 +766,7 @@ mod tests {
         .unwrap();
         let chart = SplineChart::new(&surface, &mut dec).unwrap();
         let bound = chart
-            .chord(&[[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]], &mut dec)
+            .chord(&[[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]], 0.0, &mut dec)
             .unwrap();
         assert!(bound.hi() >= 0.5);
         assert!(bound.hi() < 0.5 + f64::EPSILON.sqrt());

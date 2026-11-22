@@ -226,19 +226,26 @@ impl<'a> Sweep<'a> {
 
     fn admit(
         spine: &'a Spine,
-        caps: Option<[HalfSpace; 2]>,
+        caps: Option<&[Cap; 2]>,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
         PRODUCTS.with(|c| c.set(0));
-        let mut sweep = Self {
-            spine,
-            caps,
-            tail_bound: 0.0,
-        };
-        let checked = sweep.check();
+        let checked = (|| {
+            let caps = caps
+                .map(|[a, b]| -> Result<_, Refusal> {
+                    Ok([HalfSpace::new(a)?, HalfSpace::new(b)?])
+                })
+                .transpose()?;
+            let mut sweep = Self {
+                spine,
+                caps,
+                tail_bound: 0.0,
+            };
+            sweep.tail_bound = sweep.check()?;
+            Ok(sweep)
+        })();
         charge(dec)?;
-        sweep.tail_bound = checked?;
-        Ok(sweep)
+        checked
     }
 
     /// Maximum distance from a near-tangent section to either contact rail
@@ -256,7 +263,6 @@ impl<'a> Sweep<'a> {
         caps: &[Cap; 2],
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
-        let caps = [HalfSpace::new(&caps[0])?, HalfSpace::new(&caps[1])?];
         let sweep = Self::admit(spine, Some(caps), dec)?;
         let checked = sweep.check_caps();
         charge(dec)?;

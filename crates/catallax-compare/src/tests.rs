@@ -117,6 +117,72 @@ fn loft_spline_rounds_report_display_coverage_or_a_named_brep_refusal() {
 }
 
 #[test]
+fn analytic_named_boss_loop_keeps_the_base_refusal() {
+    let sides = ["x_min", "y_min", "x_max", "y_max"];
+    let side = |segment| json!({"step":"block","role":{"side":{"segment":segment}}});
+    let cap = json!({"step":"block","role":"end"});
+    let upright_edges = (0..4)
+        .map(|i| json!({"between":[side(sides[i]), side(sides[(i + 1) % 4])]}))
+        .collect::<Vec<_>>();
+    let mut top_edges = sides
+        .map(|segment| json!({"between":[cap, side(segment)]}))
+        .to_vec();
+    top_edges.push(json!({"between":[cap, {"step":"upright"}]}));
+    let mut stock = block("block", "20", "0");
+    stock["size"][2] = json!("10");
+    let boss = Recipe::parse(
+        &json!({"format":"catallax-recipe/4","name":"fillet over fillet","result":"top","steps":[
+            stock,
+            {"id":"upright","op":"fillet","body":"block","radius":"1","edges":upright_edges},
+            {"id":"top","op":"fillet","body":"upright","radius":"3","edges":top_edges}
+        ]})
+        .to_string(),
+    )
+    .unwrap();
+    let report = check(&boss);
+    assert_eq!(report.verdict, Verdict::Unresolved);
+    assert_eq!(
+        report.refusal.as_ref().map(|error| error.code),
+        Some("field.rolling-path-reach"),
+    );
+    assert_eq!(report.sampled_distance_upper, Some(Rational::zero()));
+}
+
+#[test]
+fn analytic_forward_gap_leaves_a_refused_comparison_unresolved() {
+    use catallax_numbers::with_operation_budget;
+
+    let brep = recipe(vec![block("stock", "4", "0")]);
+    let field = recipe(vec![block("stock", "4", "5")]);
+    let built = evaluate(&brep, &mut Decider::default()).unwrap();
+    let compare = || {
+        let controller = Controller::default();
+        assert_eq!(
+            controller.begin().check_built(&built, &field, &options()),
+            Completion::Published,
+        );
+        controller.latest().unwrap()
+    };
+    let (complete, work) = with_operation_budget(1_000_000, compare);
+    assert_eq!(complete.verdict, Verdict::Disagree);
+    assert!(complete.refusal.is_none());
+    let (partial, spent) = with_operation_budget(work.used - 1, compare);
+    assert!(spent.exhausted);
+    assert!(
+        partial
+            .findings
+            .iter()
+            .any(|finding| { finding.pass == Pass::Forward && finding.reason == Reason::Gap })
+    );
+    assert_eq!(partial.verdict, Verdict::Unresolved);
+    assert_eq!(
+        partial.refusal.as_ref().map(|error| error.code),
+        Some("numbers.operation-budget"),
+    );
+    assert_eq!(partial.sampled_distance_upper, None);
+}
+
+#[test]
 fn analytic_build_and_rounded_copy_refusals_remain_typed() {
     let analytic = recipe(vec![
         block("stock", "4", "0"),
@@ -126,8 +192,10 @@ fn analytic_build_and_rounded_copy_refusals_remain_typed() {
     ]);
     let report = check(&analytic);
     assert_eq!(report.verdict, Verdict::Unresolved);
-    let original_refusal = catallax_field::Plan::compile(&analytic).unwrap_err();
-    assert_eq!(report.refusal, Some(original_refusal));
+    assert_eq!(
+        report.refusal.as_ref().map(|error| error.code),
+        Some("fillet.lost-edge"),
+    );
     assert_eq!(report.sampled_distance_upper, Some(Rational::zero()));
     assert!(report.findings.iter().any(|finding| {
         matches!(&finding.reason, Reason::Unresolved(reason) if reason.starts_with("field build "))
@@ -148,6 +216,7 @@ fn analytic_build_and_rounded_copy_refusals_remain_typed() {
             Some("field.spline-copy"),
             "{report:?}"
         );
+        assert_eq!(report.sampled_distance_upper, None);
     }
 }
 
@@ -175,6 +244,7 @@ fn a_mirrored_loft_can_be_queried_but_not_filleted_with_stale_origins() {
         report.refusal.as_ref().map(|e| e.code),
         Some("fillet.unsupported-spline")
     );
+    assert_eq!(report.sampled_distance_upper, None);
 }
 
 #[test]

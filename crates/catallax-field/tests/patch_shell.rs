@@ -454,6 +454,31 @@ fn a_loft_whose_slices_are_not_convex_still_refuses() {
 }
 
 #[test]
+fn points_inward_of_both_projected_rails_are_certifiably_inside() {
+    use catallax_field::{Plan, Workspace};
+
+    let bottom = polygon("a", &[("0", "0"), ("-2", "0"), ("-2", "-2"), ("0", "-2")]);
+    let top = polygon(
+        "b",
+        &[("3/2", "0"), ("-1/2", "0"), ("-1/2", "-2"), ("3/2", "-2")],
+    );
+    let plan = Plan::compile_for_comparison(
+        &ruled_loft(bottom, top, "b_0", true),
+        &catallax_features::ImportFiles::new(),
+        &mut decider(),
+    )
+    .unwrap();
+    let mut workspace = Workspace::default();
+    for (x, y) in [("3/4", "-1/10"), ("5/8", "0")] {
+        let point = RPoint3::new(r(x) - r("4/100"), r(y) - r("5/100"), q(1));
+        let proof = plan
+            .proven_checked(&point, &mut workspace, &mut decider())
+            .unwrap();
+        assert_eq!(proof.location, Location::Inside, "{point:?}");
+    }
+}
+
+#[test]
 fn the_m11_fillet_replaces_its_named_loft_edge() {
     use catallax_field::{Plan, Workspace};
     use catallax_numbers::with_operation_budget;

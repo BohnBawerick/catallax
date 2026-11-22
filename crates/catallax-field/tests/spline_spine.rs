@@ -417,7 +417,7 @@ fn an_unreachable_tolerance_refuses_with_the_width_reached() {
 }
 
 #[test]
-fn support_conversion_reserves_each_coefficient_before_computing_it() {
+fn support_conversion_reserves_basis_arithmetic_before_computing_it() {
     let mut dec = Decider::default();
     let (_, definition) = definition(0, &mut dec);
     for support in &definition.supports {
@@ -426,7 +426,7 @@ fn support_conversion_reserves_each_coefficient_before_computing_it() {
     let (result, work) = with_operation_budget(7, || Spine::prove(&definition, &mut dec));
     assert_eq!(result.unwrap_err().code, "numbers.operation-budget");
     assert!(work.exhausted);
-    assert_eq!(work.used, 6);
+    assert_eq!(work.uncharged, 0, "{work:?}");
 }
 
 #[test]

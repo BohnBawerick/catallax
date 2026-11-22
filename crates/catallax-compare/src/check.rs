@@ -347,7 +347,6 @@ fn distance_finding(
     let (gap_threshold, upper_limit) = limits;
     retain_distance_upper(report, hi.as_ref());
     if &lo > gap_threshold {
-        report.verdict = Verdict::Disagree;
         let low = Interval::from_rational(&lo).lo();
         let high = hi
             .as_ref()
@@ -546,6 +545,9 @@ pub(super) fn spline_vertex(
             "field.spline-bound-unresolved",
         );
     } else {
+        if &range.lower > error {
+            report.verdict = Verdict::Disagree;
+        }
         distance_finding(
             report,
             Pass::Forward,
@@ -602,6 +604,9 @@ pub(crate) fn run(
         Ok(f) => f,
         Err(e) => {
             whole_failure(&mut report, format!("field build {}: {}", e.code, e.detail));
+            if e.code.starts_with("field.spline-") || e.code == "fillet.unsupported-spline" {
+                report.sampled_distance_upper = None;
+            }
             report.refusal = Some(e);
             return revision.publish(report);
         }

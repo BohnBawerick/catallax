@@ -398,9 +398,7 @@ impl Round {
         if side.hi() < low.lo() || side.lo() > high.hi() {
             return Ok(kept);
         }
-        if side.lo() <= low.hi() || side.hi() >= high.lo() {
-            return Ok(Location::Indeterminate);
-        }
+        let projection_inside = side.lo() > low.hi() && side.hi() < high.lo();
         let (mut lo, mut hi) = (0.0_f64, 1.0_f64);
         let depth = |v: &V| dot(&self.outward, &sub3(v, p));
         for _ in 0..DEPTH {
@@ -410,7 +408,7 @@ impl Round {
             if gap.lo() > 0.0 {
                 return Ok(kept);
             }
-            if gap.hi() < 0.0 {
+            if projection_inside && gap.hi() < 0.0 {
                 return Ok(Location::Outside);
             }
             let old = (lo, hi);

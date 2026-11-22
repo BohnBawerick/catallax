@@ -365,12 +365,6 @@ struct Support {
     contact_side: Interval,
 }
 
-fn binomial(n: usize, k: usize) -> Rational {
-    (0..k).fold(Rational::one(), |out, i| {
-        &(&out * &Rational::from_i64((n - i) as i64)) / &Rational::from_i64((i + 1) as i64)
-    })
-}
-
 fn enclose(value: &Real, dec: &mut Decider) -> Result<Interval, Refusal> {
     Ok(match value.rational_ref() {
         Some(rational) => Interval::from_rational(rational),
@@ -411,20 +405,35 @@ impl Support {
             net.push(c);
         }
         // `B_i^m(u) = sum_{a >= i} C(m, a) C(a, i) (-1)^(a - i) u^a`.
-        let basis = degrees.map(|degree| {
-            (0..=degree)
-                .map(|a| {
-                    let outer = binomial(degree, a);
-                    (0..=a)
-                        .map(|i| {
-                            let term = &outer * &binomial(a, i);
+        let basis = |degree: usize, dec: &mut Decider| -> Result<Vec<Vec<Interval>>, Refusal> {
+            let mut binomial = vec![vec![Rational::one()]];
+            for a in 1..=degree {
+                let mut row = vec![Rational::one()];
+                for pair in binomial[a - 1].windows(2) {
+                    dec.reserve_exact_arithmetic(&pair[0], &pair[1], false)?;
+                    row.push(&pair[0] + &pair[1]);
+                }
+                row.push(Rational::one());
+                binomial.push(row);
+            }
+            binomial
+                .iter()
+                .enumerate()
+                .map(|(a, row)| {
+                    let outer = &binomial[degree][a];
+                    row.iter()
+                        .enumerate()
+                        .map(|(i, coefficient)| {
+                            dec.reserve_exact_arithmetic(outer, coefficient, true)?;
+                            let term = outer * coefficient;
                             let signed = if (a - i) % 2 == 0 { term } else { -term };
-                            Interval::from_rational(&signed)
+                            Ok(Interval::from_rational(&signed))
                         })
-                        .collect::<Vec<_>>()
+                        .collect()
                 })
-                .collect::<Vec<_>>()
-        });
+                .collect()
+        };
+        let basis = [basis(m, dec)?, basis(n, dec)?];
         let mut value = vec![[zero(); 4]; (m + 1) * rows];
         for a in 0..=m {
             for b in 0..=n {

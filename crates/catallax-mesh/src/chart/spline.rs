@@ -138,27 +138,18 @@ impl Span {
     }
 }
 
-/// The smallest closed dyadic cell that contains a nonempty range.
+/// A cover of at most two adjacent cells at the range's dyadic scale.
 fn dyadic_cell(range: Interval) -> Interval {
-    if range.width() == 0.0 {
+    let width = range.width();
+    // Below the spacing at the unit endpoint, there is no useful common grid.
+    if width < f64::EPSILON {
         return range;
     }
-    let mut lo = 0.0_f64;
-    let mut hi = 1.0_f64;
-    loop {
-        let middle = lo.midpoint(hi);
-        if middle <= lo || middle >= hi {
-            break;
-        }
-        if range.hi() <= middle {
-            hi = middle;
-        } else if range.lo() >= middle {
-            lo = middle;
-        } else {
-            break;
-        }
-    }
-    Interval::new(lo, hi).unwrap()
+    let (_, exponent) = libm::frexp(width);
+    let step = libm::ldexp(1.0, exponent).min(1.0);
+    let lo = (range.lo() / step).floor() * step;
+    let hi = (range.hi() / step).ceil() * step;
+    Interval::new(lo.min(range.lo()), hi.max(range.hi())).unwrap()
 }
 
 impl SplineChart {
@@ -443,6 +434,42 @@ impl SplineChart {
                         "spline grid needs more than {max_vertices} points"
                     )));
                 }
+            }
+            // A dyadic grid supplies a feasible upper bound. Search for the
+            // fewest vertices under the same chord formula, as in the 3.5
+            // display prototype. Each candidate column count needs only a
+            // monotone search of the other axis.
+            let short = usize::from(counts[1] < counts[0]);
+            let vertices =
+                |[u, v]: [usize; 2]| u.saturating_add(1).saturating_mul(v.saturating_add(1));
+            let mut best = vertices(counts);
+            let mut columns = 1;
+            while columns + 1 < best.div_ceil(2) {
+                let mut candidate = [1; 2];
+                candidate[short] = columns;
+                let axis = 1 - short;
+                let max_rows = (best - 1) / (columns + 1) - 1;
+                let mut fits = |rows| {
+                    candidate[axis] = rows;
+                    let width = candidate.map(|count| point(1.0) / point(count as f64));
+                    dec.charge_work(6)?;
+                    Ok::<_, Refusal>(chord_bound_interval(width, &hessian).hi() <= limit)
+                };
+                if fits(max_rows)? {
+                    let (mut low, mut high) = (1, max_rows);
+                    while low < high {
+                        let mid = low + (high - low) / 2;
+                        if fits(mid)? {
+                            high = mid;
+                        } else {
+                            low = mid + 1;
+                        }
+                    }
+                    candidate[axis] = low;
+                    counts = candidate;
+                    best = vertices(counts);
+                }
+                columns += 1;
             }
             total = total.saturating_add((counts[0] + 1).saturating_mul(counts[1] + 1));
             if total > max_vertices {

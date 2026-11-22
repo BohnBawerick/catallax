@@ -26,6 +26,7 @@ pub struct RationalSpan {
     min_weight: Interval,
     coordinate_bounds: [Interval; 3],
     position_row: RefCell<Option<PositionRow>>,
+    derivative_rows: [RefCell<Option<PositionRow>>; 2],
 }
 
 struct PositionRow {
@@ -250,6 +251,7 @@ impl RationalSpan {
             min_weight,
             coordinate_bounds,
             position_row: RefCell::default(),
+            derivative_rows: Default::default(),
         })
     }
 
@@ -357,51 +359,19 @@ impl RationalSpan {
         }
         let center = uv.map(|value| point(value.mid()));
         let delta = std::array::from_fn(|i| uv[i] - center[i]);
-        let at = self.homogeneous_position(center.map(|axis| axis.mid()), dec)?;
+        let at = evaluate_row(
+            &self.control,
+            self.degree,
+            center.map(|axis| axis.mid()),
+            &self.position_row,
+            dec,
+        )?;
         let [x, y, z, weight] = expand_center(at, delta, self.control_hull, self.first_hulls, dec)?;
         let weight = Interval::new(weight.lo().max(self.min_weight.lo()), weight.hi())
             .ok_or_else(|| refuse("evaluated weight and control bounds do not overlap"))?;
         Ok(std::array::from_fn(|i| {
             [x, y, z][i] / weight + point(self.centre[i])
         }))
-    }
-
-    fn homogeneous_position(
-        &self,
-        [u, v]: [f64; 2],
-        dec: &mut Decider,
-    ) -> Result<[Interval; 4], Refusal> {
-        // On a tensor grid, consecutive points have the same u. Collapse
-        // that axis once when the saved tensor products cover the contraction.
-        if self.degree[0] < 3 || self.degree[1] == 0 || !(0.0 < u && u < 1.0) {
-            return evaluate(&self.control, self.degree, [u, v], point, |i| i, dec);
-        }
-        let key = u.to_bits();
-        let mut row = self.position_row.borrow_mut();
-        if row.as_ref().is_none_or(|entry| entry.u != key) {
-            if v <= 0.0 || v >= 1.0 {
-                return evaluate(&self.control, self.degree, [u, v], point, |i| i, dec);
-            }
-            let (weights, products) = basis(self.degree[0], u, &point);
-            dec.charge_work((products + 4 * self.control.len()) as u64)?;
-            let mut controls = vec![[point(0.0); 4]; self.degree[1] + 1];
-            for (values, weight) in self.control.chunks_exact(controls.len()).zip(weights) {
-                for (column, value) in controls.iter_mut().zip(values) {
-                    for (out, component) in column.iter_mut().zip(value) {
-                        *out = *out + weight * *component;
-                    }
-                }
-            }
-            *row = Some(PositionRow { u: key, controls });
-        }
-        evaluate(
-            &row.as_ref().unwrap().controls,
-            [0, self.degree[1]],
-            [0.0, v],
-            point,
-            |i| i,
-            dec,
-        )
     }
 
     /// Encloses a positive multiple of the parameter normal over a cell.
@@ -419,24 +389,25 @@ impl RationalSpan {
         }
         let center = uv.map(|value| point(value.mid()));
         let delta = std::array::from_fn(|i| uv[i] - center[i]);
-        let homogeneous = centered_range(
-            &self.control,
-            self.degree,
-            [center, delta],
-            self.control_hull,
-            self.first_hulls,
-            dec,
-        )?;
+        let at = center.map(|axis| axis.mid());
+        let value = evaluate_row(&self.control, self.degree, at, &self.position_row, dec)?;
+        let homogeneous = expand_center(value, delta, self.control_hull, self.first_hulls, dec)?;
         let mut tangents = [[point(0.0); 3]; 2];
         for (axis, tangent) in tangents.iter_mut().enumerate() {
             if self.first[axis].is_empty() {
                 continue;
             }
             let degree = lower_degree(self.degree, axis);
-            let first = centered_range(
+            let value = evaluate_row(
                 &self.first[axis],
                 degree,
-                [center, delta],
+                at,
+                &self.derivative_rows[axis],
+                dec,
+            )?;
+            let first = expand_center(
+                value,
+                delta,
                 self.first_hulls[axis],
                 [self.second_hulls[axis], self.second_hulls[axis + 1]],
                 dec,
@@ -680,25 +651,44 @@ fn control_hull(net: &[[Interval; 4]]) -> [Interval; 4] {
     })
 }
 
-fn centered_range(
+fn evaluate_row(
     net: &[[Interval; 4]],
     degree: [usize; 2],
-    [center, [du, dv]]: [[Interval; 2]; 2],
-    hull: [Interval; 4],
-    [u, v]: [[Interval; 4]; 2],
+    [u, v]: [f64; 2],
+    previous: &RefCell<Option<PositionRow>>,
     dec: &mut Decider,
 ) -> Result<[Interval; 4], Refusal> {
-    // Mean value form on the box. The Bernstein hulls bound the two
-    // derivatives along both coordinate displacements from the centre.
-    let at = evaluate(
-        net,
-        degree,
-        center.map(|axis| axis.mid()),
+    // Collapse a tensor axis once when the saved products cover the
+    // contraction. Grid points and nearby normal boxes often share u.
+    if degree[0] < 3 || degree[1] == 0 || !(0.0 < u && u < 1.0) {
+        return evaluate(net, degree, [u, v], point, |i| i, dec);
+    }
+    let key = u.to_bits();
+    let mut row = previous.borrow_mut();
+    if row.as_ref().is_none_or(|entry| entry.u != key) {
+        if v <= 0.0 || v >= 1.0 {
+            return evaluate(net, degree, [u, v], point, |i| i, dec);
+        }
+        let (weights, products) = basis(degree[0], u, &point);
+        dec.charge_work((products + 4 * net.len()) as u64)?;
+        let mut controls = vec![[point(0.0); 4]; degree[1] + 1];
+        for (values, weight) in net.chunks_exact(controls.len()).zip(weights) {
+            for (column, value) in controls.iter_mut().zip(values) {
+                for (out, component) in column.iter_mut().zip(value) {
+                    *out = *out + weight * *component;
+                }
+            }
+        }
+        *row = Some(PositionRow { u: key, controls });
+    }
+    evaluate(
+        &row.as_ref().unwrap().controls,
+        [0, degree[1]],
+        [0.0, v],
         point,
         |i| i,
         dec,
-    )?;
-    expand_center(at, [du, dv], hull, [u, v], dec)
+    )
 }
 
 fn expand_center(

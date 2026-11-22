@@ -423,7 +423,9 @@ fn support_conversion_reserves_basis_arithmetic_before_computing_it() {
     for support in &definition.supports {
         assert_eq!(support.bezier_spans(&dec).unwrap().count(), 1);
     }
-    let (result, work) = with_operation_budget(7, || Spine::prove(&definition, &mut dec));
+    let conversion_work = (2 + 16) * (q(1).limbs().pow(2) + 1);
+    let (result, work) =
+        with_operation_budget(conversion_work + 4, || Spine::prove(&definition, &mut dec));
     assert_eq!(result.unwrap_err().code, "numbers.operation-budget");
     assert!(work.exhausted);
     assert_eq!(work.uncharged, 0, "{work:?}");
@@ -571,21 +573,43 @@ fn independently_sampled_arcs_on_the_three_m11_edges_lie_in_the_sweep_range() {
 }
 
 #[test]
-fn capped_sweep_reserves_cap_normals_before_reach_panels() {
+fn capped_sweep_reserves_cap_normals_before_evaluating_them() {
     let mut dec = Decider::default();
     let (_, definition) = definition(0, &mut dec);
     let [_, continued] = cap_continuation(&definition, &mut dec).unwrap();
     let caps = [
-        (RPoint3::origin(), RVector3::new(q(0), q(0), q(1))),
+        (RPoint3::origin(), RVector3::new(q(0), q(0), q(0))),
         (
             RPoint3::new(q(0), q(0), q(2)),
             RVector3::new(q(0), q(0), q(-1)),
         ),
     ];
-    let (result, work) =
-        with_operation_budget(7, || Sweep::between_caps(&continued, &caps, &mut dec));
-    assert_eq!(result.unwrap_err().code, "numbers.operation-budget");
-    assert!(work.exhausted && work.used >= 6, "{work:?}");
+    let conversion_work = 6 * (q(0).limbs().pow(2) + 1);
+    let (refused, work) = with_operation_budget(conversion_work + 2, || {
+        Sweep::between_caps(&continued, &caps, &mut dec)
+    });
+    assert_eq!(refused.unwrap_err().code, "numbers.operation-budget");
+    assert!(work.exhausted, "{work:?}");
+
+    let (invalid, work) =
+        with_operation_budget(1000, || Sweep::between_caps(&continued, &caps, &mut dec));
+    assert_eq!(invalid.unwrap_err().code, "field.spline-sweep-cap");
+    assert!(!work.exhausted, "{work:?}");
+}
+
+#[test]
+fn spline_query_reserves_rational_conversion_before_overflow() {
+    let (_, spine, _) = proved(0);
+    let mut dec = Decider::default();
+    let sweep = Sweep::new(&spine, &mut dec).unwrap();
+    let point = RPoint3::new(q(1).mul_pow2(32_768), q(0), q(0));
+    let (refused, work) = with_operation_budget(1000, || sweep.distance(&point, &q(1), &mut dec));
+    assert_eq!(refused.unwrap_err().code, "numbers.operation-budget");
+    assert!(work.exhausted, "{work:?}");
+    assert_eq!(
+        sweep.distance(&point, &q(1), &mut dec).unwrap_err().code,
+        "field.spline-sweep"
+    );
 }
 
 #[test]

@@ -397,34 +397,37 @@ impl Plan {
     }
 
     fn selected_fillet_lineage(recipe: &Recipe) -> BTreeSet<&catallax_recipe::StepId> {
+        let mut bodies = BTreeMap::new();
+        for (index, step) in recipe.steps.iter().enumerate() {
+            let body = match &step.op {
+                Operation::Pattern { body, layout } if layout.count() == 1 => bodies[body],
+                Operation::Boolean { kind, target, tool } => {
+                    Self::boolean_identity(*kind, bodies[target], bodies[tool]).unwrap_or(index + 1)
+                }
+                _ => index + 1,
+            };
+            bodies.insert(&step.id, body);
+        }
         let mut lineage = BTreeSet::new();
-        let mut id = &recipe.result;
+        let mut index = bodies[&recipe.result];
         let mut selected = false;
-        for step in recipe.steps.iter().rev() {
-            if &step.id != id {
-                continue;
-            }
-            lineage.insert(id);
-            match &step.op {
+        while index != 0 {
+            let step = &recipe.steps[index - 1];
+            lineage.insert(&step.id);
+            let source = match &step.op {
                 Operation::Fillet { body, .. } if !selected => {
                     selected = true;
-                    id = body;
+                    body
                 }
                 Operation::Mirror {
                     body,
                     keep_original,
                     ..
-                } if !selected || !keep_original => id = body,
-                Operation::Pattern { body, layout } if !selected || layout.count() == 1 => {
-                    id = body
-                }
-                Operation::Boolean {
-                    kind: BooleanKind::Union | BooleanKind::Intersect,
-                    target,
-                    tool,
-                } if target == tool => id = target,
+                } if !selected || !keep_original => body,
+                Operation::Pattern { body, .. } if !selected => body,
                 _ => break,
-            }
+            };
+            index = bodies[source];
         }
         if selected { lineage } else { BTreeSet::new() }
     }
@@ -465,6 +468,12 @@ impl Plan {
             let span =
                 catallax_numbers::OperationSpan::begin("field", &step.id, step.op.name(), dec);
             let first_face = plan.faces.len();
+            let selected = spline_sources.contains(&step.id);
+            let shell_refusal: fn(Refusal) -> ComparisonBuildRefusal = if selected {
+                ComparisonBuildRefusal::Spline
+            } else {
+                ComparisonBuildRefusal::Ordinary
+            };
             let result = (|| -> Result<Option<usize>, ComparisonBuildRefusal> {
                 let node = match &step.op {
                     Operation::ImportStep { .. } | Operation::ImportIges { .. } => {
@@ -530,7 +539,7 @@ impl Plan {
                                 sections,
                                 *shape,
                                 &profiles,
-                                (&step.id, spline_sources.contains(&step.id)),
+                                (&step.id, shell_refusal),
                                 dec,
                             )?
                         }
@@ -800,7 +809,7 @@ impl Plan {
                                 source,
                                 (&step_faces[body], &step_domains[body]),
                                 &map,
-                                (&step.id, spline_sources.contains(&step.id)),
+                                (&step.id, shell_refusal),
                                 instance,
                                 dec,
                             )?;
@@ -819,7 +828,7 @@ impl Plan {
                             source,
                             (&step_faces[body], &step_domains[body]),
                             &map,
-                            (&step.id, spline_sources.contains(&step.id)),
+                            (&step.id, shell_refusal),
                             1,
                             dec,
                         )?;
@@ -926,7 +935,7 @@ impl Plan {
                             radius: &radius.value().clone().into(),
                             closure: corner.unwrap_or(catallax_recipe::FilletCorner::Cliff),
                             roll_over: recipe.format != catallax_recipe::FORMAT,
-                            spline_proofs,
+                            spline_proofs: selected,
                             overflow: overflow.as_ref(),
                         },
                         &step.id,
@@ -1237,12 +1246,6 @@ impl Plan {
                 result.as_ref().err().map(ComparisonBuildRefusal::refusal),
                 None,
             );
-            let result = result.map_err(|error| match error {
-                ComparisonBuildRefusal::Spline(refusal) if !spline_sources.contains(&step.id) => {
-                    ComparisonBuildRefusal::Ordinary(refusal)
-                }
-                other => other,
-            });
             if let Some(node) = result? {
                 let mut faces = match &step.op {
                     Operation::Boolean { target, tool, .. } => step_faces[target]
@@ -1439,7 +1442,10 @@ impl Plan {
         source: usize,
         source_faces: (&[usize], &[usize]),
         map: &Isometry,
-        (step, spline_source): (&catallax_recipe::StepId, bool),
+        (step, shell_refusal): (
+            &catallax_recipe::StepId,
+            fn(Refusal) -> ComparisonBuildRefusal,
+        ),
         instance: u32,
         dec: &mut Decider,
     ) -> Result<usize, ComparisonBuildRefusal> {
@@ -1459,7 +1465,7 @@ impl Plan {
                 }
                 Instruction::Leaf(id) if matches!(&self.leaves[id], geometry::Leaf::Shell(shell) if shell.blend_origin().is_some()) =>
                 {
-                    return Err(ComparisonBuildRefusal::Spline(Refusal::new(
+                    return Err(shell_refusal(Refusal::new(
                         "field.spline-copy",
                         "rounded spline shells cannot be copied by a pattern or mirror",
                     )));
@@ -1479,8 +1485,8 @@ impl Plan {
                 }
                 Instruction::Leaf(id) => {
                     let mut leaf = self.leaves[id].clone();
-                    let refusal = if spline_source && matches!(&leaf, geometry::Leaf::Shell(_)) {
-                        ComparisonBuildRefusal::Spline
+                    let refusal = if matches!(&leaf, geometry::Leaf::Shell(_)) {
+                        shell_refusal
                     } else {
                         ComparisonBuildRefusal::Ordinary
                     };
@@ -1536,18 +1542,24 @@ impl Plan {
         {
             return Ok(0);
         }
-        Ok(match kind {
-            Union if a == b || b == 0 => a,
-            Union if a == 0 => b,
-            Intersect if a == 0 || b == 0 => 0,
-            Intersect if a == b => a,
-            Subtract if a == 0 || a == b => 0,
-            Subtract if b == 0 => a,
-            _ => {
-                self.instructions.push(Instruction::Boolean { kind, a, b });
-                self.instructions.len() - 1
-            }
-        })
+        if let Some(node) = Self::boolean_identity(kind, a, b) {
+            return Ok(node);
+        }
+        self.instructions.push(Instruction::Boolean { kind, a, b });
+        Ok(self.instructions.len() - 1)
+    }
+
+    fn boolean_identity(kind: BooleanKind, a: usize, b: usize) -> Option<usize> {
+        use BooleanKind::*;
+        match kind {
+            Union if a == b || b == 0 => Some(a),
+            Union if a == 0 => Some(b),
+            Intersect if a == 0 || b == 0 => Some(0),
+            Intersect if a == b => Some(a),
+            Subtract if a == 0 || a == b => Some(0),
+            Subtract if b == 0 => Some(a),
+            _ => None,
+        }
     }
 
     fn compact(&mut self) {

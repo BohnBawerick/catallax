@@ -367,7 +367,7 @@ impl Plan {
         sections: &[LoftSection],
         shape: LoftShape,
         profiles: &BTreeMap<StepId, Profile>,
-        (step, spline_source): (&StepId, bool),
+        (step, shell_refusal): (&StepId, fn(Refusal) -> ComparisonBuildRefusal),
         dec: &mut Decider,
     ) -> Result<usize, ComparisonBuildRefusal> {
         if recipe.loft_parameterization().ok()
@@ -398,7 +398,7 @@ impl Plan {
                 sections,
                 shape,
                 profiles,
-                (step, spline_source),
+                (step, shell_refusal),
                 dec,
             ),
         }
@@ -525,7 +525,7 @@ impl Plan {
         sections: &[LoftSection],
         shape: LoftShape,
         profiles: &BTreeMap<StepId, Profile>,
-        (step, spline_source): (&StepId, bool),
+        (step, shell_refusal): (&StepId, fn(Refusal) -> ComparisonBuildRefusal),
         dec: &mut Decider,
     ) -> Result<usize, ComparisonBuildRefusal> {
         if let Some(node) = self.circular_station_loft(recipe, sections, shape, profiles, dec)? {
@@ -533,13 +533,7 @@ impl Plan {
         }
         if let Some(outline) = Self::patch_outline(sections, profiles, dec)
             .map_err(ComparisonBuildRefusal::Ordinary)?
-            && let Some(node) = self
-                .patch_loft(outline, step, dec)
-                .map_err(if spline_source {
-                    ComparisonBuildRefusal::Spline
-                } else {
-                    ComparisonBuildRefusal::Ordinary
-                })?
+            && let Some(node) = self.patch_loft(outline, step, dec).map_err(shell_refusal)?
         {
             return Ok(node);
         }

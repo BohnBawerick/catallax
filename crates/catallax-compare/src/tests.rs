@@ -217,6 +217,11 @@ fn analytic_build_and_rounded_copy_refusals_remain_typed() {
             "{report:?}"
         );
         assert_eq!(report.sampled_distance_upper, None);
+
+        value["result"] = json!("round");
+        let report = check(&Recipe::parse(&value.to_string()).unwrap());
+        assert_eq!(report.refusal.as_ref().unwrap().code, "field.spline-copy");
+        assert_eq!(report.sampled_distance_upper, Some(Rational::zero()));
     }
 }
 
@@ -278,6 +283,69 @@ fn spline_build_refusals_have_no_sampled_distance_bound() {
         assert_eq!(report.forward_vertices, 0);
         assert_eq!(report.sampled_distance_upper, None);
     }
+}
+
+#[test]
+fn selected_spline_refusals_follow_pattern_boolean_aliases() {
+    use catallax_numbers::with_operation_budget;
+
+    let m27 = m11_loft([0, 1], false, ["0", "2"]);
+    let mut plain = serde_json::to_value(&m27).unwrap();
+    plain["steps"].as_array_mut().unwrap().pop();
+    plain["result"] = json!("loft");
+    let plain = Recipe::parse(&plain.to_string()).unwrap();
+    let (built, loft_work) =
+        with_operation_budget(20_000_000, || catallax_field::Plan::compile(&plain));
+    assert!(built.is_ok());
+
+    for kind in ["union", "intersect"] {
+        for (source, before_fillet) in [("loft", true), ("round", false)] {
+            let mut value = serde_json::to_value(&m27).unwrap();
+            let steps = value["steps"].as_array_mut().unwrap();
+            let fillet = before_fillet.then(|| steps.pop().unwrap());
+            steps.push(json!({"id":"alias", "op":"pattern", "body":source,
+                "layout":{"linear":{"vector":["4","0","0"],"count":1}}}));
+            steps.push(json!({"id":"same","op":"boolean","kind":kind,
+                "target":"alias","tool":source}));
+            if let Some(mut fillet) = fillet {
+                fillet["body"] = json!("same");
+                steps.push(fillet);
+            } else {
+                value["result"] = json!("same");
+            }
+            let recipe = Recipe::parse(&value.to_string()).unwrap();
+            let allowance = if before_fillet {
+                loft_work.used - 1
+            } else {
+                100_000
+            };
+            let (report, work) = with_operation_budget(allowance, || check(&recipe));
+            assert!(work.exhausted);
+            assert_eq!(
+                report.refusal.as_ref().unwrap().code,
+                "numbers.operation-budget"
+            );
+            assert_eq!(report.forward_vertices, 0);
+            assert_eq!(report.sampled_distance_upper, None);
+        }
+    }
+}
+
+#[test]
+fn an_unselected_m27_fillet_keeps_the_ordinary_refusal() {
+    let mut value = serde_json::to_value(m11_loft([0, 1], false, ["0", "2"])).unwrap();
+    value["steps"]
+        .as_array_mut()
+        .unwrap()
+        .push(block("stock", "4", "10"));
+    value["result"] = json!("stock");
+    let recipe = Recipe::parse(&value.to_string()).unwrap();
+    let (report, work) = catallax_numbers::with_operation_budget(100_000_000, || check(&recipe));
+    assert!(!work.exhausted);
+    assert_eq!(report.refusal.as_ref().unwrap().code, "fillet.lost-edge");
+    assert_eq!(report.verdict, Verdict::Unresolved);
+    assert_eq!(report.forward_vertices, 0);
+    assert_eq!(report.sampled_distance_upper, Some(Rational::zero()));
 }
 
 #[test]

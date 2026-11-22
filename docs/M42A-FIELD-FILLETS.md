@@ -671,9 +671,10 @@ The corresponding historical medians were 31.247, 31.883, 57.260 and
 | Next M11 | 0 | 14.708 | 19.482 | 15.892 / 23.885 | 18.444 / 24.989 |
 | Next M11 | 2 | 15.068 | 19.139 | 17.575 / 11.215 | 7.052 / 10.220 |
 
-### Spine proof and exact query reservations
+### Historical spine proof and exact query reservations
 
-The spine proof reserves binary64 work before support and seed evaluation,
+These measurements are from `cedef5e3`, before the rational conversion
+reservations. The spine proof reserves binary64 work before support and seed evaluation,
 Newton solves, span proofs and root joins. It reserves Taylor products from
 the coefficient lengths and zero terms in the support equations. Rounded
 loft queries use operand limb counts for rational frame, cap and side tests
@@ -720,6 +721,49 @@ over 99 independent points.
 | M27 | 2 | 91.778 | 111.309 |
 | Next M11 | 0 | 100.422 | 119.959 |
 | Next M11 | 2 | 67.159 | 90.854 |
+
+### Measurements with rational conversion reservations
+
+Spline proofs and queries reserve rational-to-interval conversion before
+rounding, using the square of the rational operand's limb count. The
+focused release tests used optimization level 0 for `catallax-field`.
+Spine certificates and work agreed at 1, 2 and 4 workers under the 20M
+allowance.
+
+| Edge | Spine work | Tube radius (nm, rounded up) | Median arc query (µs) |
+| --- | ---: | ---: | ---: |
+| M27 loft | 516,211 | 0.009859 | 37.585 |
+| Next M11 loft | 513,941 | 0.008290 | 37.485 |
+| Biquadratic | 767,416 | 0.006276 | 55.297 |
+
+The four field builds stayed within 20M. The comparisons and their
+work agreed at 1, 2 and 4 workers under the shared 100M allowance.
+
+| Edge | Field build work | Comparison work | Forward vertices | Widened upper bound (mm) |
+| --- | ---: | ---: | ---: | ---: |
+| M27 loft | 1,057,344 | 37,041,149 | 245 | 0.002888316 |
+| Next M11 loft | 1,052,021 | 64,741,542 | 335 | 0.004464352 |
+| Biquadratic | 775,435 | 72,354,612 | 104 | 0.004916114 |
+| Spline-plane loft | 1,055,546 | 1,064,365 | 0 | absent |
+
+The biquadratic fit used 16,438,284 work. Its 4 by 26 bare carrier grid
+used 54,998,702 work with a positional bound of 0.004836298487 mm.
+Vertex queries used 142,191 work. The spline-plane row stays open at
+`fillet.unsupported-contact` in the B-rep.
+
+The smallest tested certified angle was 0.003497057 degrees (`2^-14`).
+It used 421,694 work and reached an `8.77e-11 mm` tube and a 6.142 nm rail
+bound. The adjacent `2^-15` case used 34,839 work and refused at the seed
+with `field.spline-spine`. The exact tangent control refused. The
+spline-plane control used 422,019 work at all three worker counts,
+with a `1.224362e-14 mm` tube and an 81.001 µs median over 99 points.
+
+| Loft edge | Cap height (mm) | Near cut (µs) | On cut (µs) |
+| --- | ---: | ---: | ---: |
+| M27 | 0 | 55.563 | 41.874 |
+| M27 | 2 | 34.327 | 63.725 |
+| Next M11 | 0 | 22.008 | 39.310 |
+| Next M11 | 2 | 29.922 | 29.591 |
 
 ## Open for the done-when line
 

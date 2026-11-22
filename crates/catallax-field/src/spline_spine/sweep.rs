@@ -96,9 +96,10 @@ impl Arc {
 }
 
 impl HalfSpace {
-    fn new((p, n): &Cap) -> Result<Self, Refusal> {
-        let origin = [&p.x, &p.y, &p.z].map(Interval::from_rational);
-        let inward = [&n.x, &n.y, &n.z].map(Interval::from_rational);
+    fn new((p, n): &Cap, dec: &mut Decider) -> Result<Self, Refusal> {
+        let origin = exact::interval3([&p.x, &p.y, &p.z], dec)?;
+        let inward = exact::interval3([&n.x, &n.y, &n.z], dec)?;
+        reserve_panel(dec, 3)?;
         let length = norm(&inward);
         if length.lo() <= 0.0 || !length.is_finite() || origin.iter().any(|x| !x.is_finite()) {
             return Err(cap_gap(
@@ -200,15 +201,15 @@ pub fn cap_continuation(
     let t = extension.system.tau();
     let old_tau = Rational::from_f64_exact(root[t].lo()).expect("finite proved seed");
     let new_tau = exact::div(&exact::add(&old_tau, &quarter, dec)?, &scale, dec)?;
-    let scale = Interval::from_rational(&scale);
-    let quarter = Interval::from_rational(&quarter);
+    let scale = exact::interval(&scale, dec)?;
+    let quarter = exact::interval(&quarter, dec)?;
     reserve_panel(dec, 2)?;
     for i in 0..2 {
         let slot = PARAMETERS + 2 * i + axis;
         root[slot] = (root[slot] + quarter) / scale;
         root[LENGTHS + i] = product(root[LENGTHS + i], scale);
     }
-    root[t] = Interval::from_rational(&new_tau);
+    root[t] = exact::interval(&new_tau, dec)?;
     let mut joined = false;
     for span in &extension.spans {
         if root[t].lo() < span.tau[0] || root[t].hi() > span.tau[1] {
@@ -255,8 +256,7 @@ impl<'a> Sweep<'a> {
         let checked = (|| {
             let caps = caps
                 .map(|[a, b]| -> Result<_, Refusal> {
-                    reserve_panel(dec, 6)?;
-                    Ok([HalfSpace::new(a)?, HalfSpace::new(b)?])
+                    Ok([HalfSpace::new(a, dec)?, HalfSpace::new(b, dec)?])
                 })
                 .transpose()?;
             let mut sweep = Self {
@@ -737,17 +737,17 @@ impl<'a> Sweep<'a> {
         if limit.sign() == Sign::Negative {
             return Err(gap("requested distance limit must be non-negative"));
         }
-        let p = [&query.x, &query.y, &query.z].map(Interval::from_rational);
+        let p = exact::interval3([&query.x, &query.y, &query.z], dec)?;
         if p.iter().any(|v| !v.is_finite()) {
             return Err(gap("the query is outside the interval coordinate range"));
         }
+        let limit = exact::interval(limit, dec)?;
         let tau = self.spine.system.tau();
         let [a, b] = &self.spine.ends;
         let mut upper = self
             .evaluate_arc(&p, Ok(&a.point), dec)?
             .1
             .min(self.evaluate_arc(&p, Ok(&b.point), dec)?.1);
-        let limit = Interval::from_rational(limit);
         let guess = self.guess(&p, dec)?;
         if a.point[tau].hi() <= guess
             && guess <= b.point[tau].lo()

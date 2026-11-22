@@ -604,7 +604,7 @@ impl Shell {
         }
         for (d, candidate) in candidates {
             if round.location(&candidate, dec)? == Location::Boundary {
-                let upper = Interval::from_rational(&d).sqrt().unwrap().hi();
+                let upper = exact::interval(&d, dec)?.sqrt().unwrap().hi();
                 return Ok(Rational::from_f64_exact(upper));
             }
         }
@@ -836,21 +836,21 @@ impl Shell {
         }
         let width = Rational::from_ratio(1, 1_000_000).expect("one nanometre");
         if let Some(upper) = self.local_face_bound(p, round, &width, dec)? {
-            return Ok(Interval::new(0.0, Interval::from_rational(&upper).hi()).unwrap());
+            return Ok(Interval::new(0.0, exact::interval(&upper, dec)?.hi()).unwrap());
         }
         let blend = round.distance(p, &width, dec)?;
-        let mut lower = Interval::from_rational(&blend.lower).lo();
+        let mut lower = exact::interval(&blend.lower, dec)?.lo();
         let mut upper = blend
             .upper
             .as_ref()
-            .map_or(f64::INFINITY, |v| Interval::from_rational(v).hi());
+            .map(|v| exact::interval(v, dec).map(|bound| bound.hi()))
+            .transpose()?
+            .unwrap_or(f64::INFINITY);
         for (i, face) in self.faces.iter().enumerate() {
             let distance = match face {
-                Face::Polygon(polygon) => {
-                    Interval::from_rational(&polygon.squared_rounded(q, dec)?)
-                        .sqrt()
-                        .unwrap()
-                }
+                Face::Polygon(polygon) => exact::interval(&polygon.squared_rounded(q, dec)?, dec)?
+                    .sqrt()
+                    .unwrap(),
                 Face::Patch(patch) => patch.distance.distance(p, dec)?.distance,
             };
             lower = lower.min(distance.lo());

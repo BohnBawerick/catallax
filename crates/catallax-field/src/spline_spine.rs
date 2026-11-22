@@ -131,7 +131,19 @@ const SEED_GRID: usize = 9;
 const INFLATIONS: usize = 8;
 
 pub(crate) mod exact {
-    use super::{Decider, Rational, Refusal};
+    use super::{Decider, Interval, Rational, Refusal};
+
+    pub(crate) fn interval(value: &Rational, dec: &mut Decider) -> Result<Interval, Refusal> {
+        dec.reserve_uncounted_arithmetic(value, value, true)?;
+        Ok(Interval::from_rational(value))
+    }
+
+    pub(crate) fn interval3(
+        [x, y, z]: [&Rational; 3],
+        dec: &mut Decider,
+    ) -> Result<[Interval; 3], Refusal> {
+        Ok([interval(x, dec)?, interval(y, dec)?, interval(z, dec)?])
+    }
 
     pub(crate) fn add(a: &Rational, b: &Rational, dec: &mut Decider) -> Result<Rational, Refusal> {
         dec.reserve_exact_arithmetic(a, b, false)?;
@@ -493,7 +505,7 @@ struct Support {
 
 fn enclose(value: &Real, dec: &mut Decider) -> Result<Interval, Refusal> {
     Ok(match value.rational_ref() {
-        Some(rational) => Interval::from_rational(rational),
+        Some(rational) => exact::interval(rational, dec)?,
         None => dec.enclose_budgeted_at(value, 128)?.to_interval(),
     })
 }
@@ -553,7 +565,7 @@ impl Support {
                             dec.reserve_exact_arithmetic(outer, coefficient, true)?;
                             let term = outer * coefficient;
                             let signed = if (a - i) % 2 == 0 { term } else { -term };
-                            Ok(Interval::from_rational(&signed))
+                            exact::interval(&signed, dec)
                         })
                         .collect()
                 })
@@ -1544,7 +1556,7 @@ impl Spine {
         {
             return Err(definition_refusal("the seed must lie in [0, 1]"));
         }
-        let radius = Interval::from_rational(&definition.radius);
+        let radius = exact::interval(&definition.radius, dec)?;
         let mut supports = Vec::with_capacity(2);
         for (i, (patch, orientation)) in
             definition.supports.iter().zip(definition.sides).enumerate()
@@ -1587,14 +1599,14 @@ impl Spine {
             supports.push(prepared?);
         }
         let half_tolerance = exact::div(&definition.tolerance, &Rational::from_i64(2), dec)?;
-        let target = TUBE_CAP.min(Interval::from_rational(&half_tolerance).lo());
+        let target = TUBE_CAP.min(exact::interval(&half_tolerance, dec)?.lo());
         let mut system = System {
             supports: [supports[0].clone(), supports[1].clone()],
             axis: definition.axis,
             taylor_work: [0; 2],
         };
         let tau = system.tau();
-        let seed_tau = Interval::from_rational(&definition.seed).mid();
+        let seed_tau = exact::interval(&definition.seed, dec)?.mid();
         let seed = system
             .seed(seed_tau, dec)?
             .ok_or_else(|| refusal("no spine point was found at the seed"))?;

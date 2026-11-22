@@ -166,10 +166,8 @@ impl Round {
         let proposal =
             add3(&a, &b).map(|x| Rational::from_f64_exact(x.mid()).expect("finite seed"));
         let outward = exact::cross(&up, &exact::cross(&proposal, &up, dec)?, dec)?;
-        let across = exact::cross(&up, &outward, dec)?
-            .each_ref()
-            .map(Interval::from_rational);
-        let outward = outward.each_ref().map(Interval::from_rational);
+        let across = exact::interval3(exact::cross(&up, &outward, dec)?.each_ref(), dec)?;
+        let outward = exact::interval3(outward.each_ref(), dec)?;
         let prepared_caps = sweep.caps.clone().expect("checked caps");
         let round = Self {
             origin,
@@ -198,8 +196,23 @@ impl Round {
 
     fn check(&self, dec: &mut Decider) -> Result<(), Refusal> {
         let sweep = self.sweep();
-        let height = vector(&self.height);
-        let bottom = xyz(&self.bottom);
+        let height = exact::interval3([&self.height.x, &self.height.y, &self.height.z], dec)?;
+        let bottom = exact::interval3([&self.bottom.x, &self.bottom.y, &self.bottom.z], dec)?;
+        let sides: Vec<_> = self
+            .sides
+            .iter()
+            .map(|side| {
+                let vector =
+                    |v: &RVector3, dec: &mut Decider| exact::interval3([&v.x, &v.y, &v.z], dec);
+                let RPoint3 { x, y, z } = &side.start;
+                Ok((
+                    vector(&side.turn, dec)?,
+                    vector(&side.normal, dec)?,
+                    vector(&side.shift, dec)?,
+                    exact::interval3([x, y, z], dec)?,
+                ))
+            })
+            .collect::<Result<_, Refusal>>()?;
         let r = self.spine.radius;
         for span in &self.spine.spans {
             let mut pending = vec![(span.tau, 0)];
@@ -222,29 +235,33 @@ impl Round {
                 }
                 let projected = radial.iter().all(|v| dot(&self.outward, v).lo() > 0.0);
                 let rails_inside = [z[3], z[5]].iter().all(|u| u.lo() > 0.0 && u.hi() < 1.0);
-                let clear = self.sides.iter().enumerate().all(|(i, side)| {
-                    let turn = vector(&side.turn);
-                    let normal = |h| add3(&vector(&side.normal), &mul3(&h, &turn));
-                    let shift = vector(&side.shift);
-                    let start = xyz(&side.start);
-                    // Exact quadratic Taylor remainder of F(x) =
-                    // n(h) . (x - start(h)), with h affine in x.
-                    let remainder = norm(&turn) * norm(&height)
-                        + dot(&turn, &shift).square().sqrt().unwrap() * norm(&height).square();
-                    if let Some(rail) = self.selected.iter().position(|&j| i == j) {
-                        let foot = add3(&c, &radial[rail]);
-                        let foot_h = dot(&height, &sub3(&foot, &bottom));
-                        // At the contact, grad F is outward and parallel
-                        // to the radius. On the ball sphere its linear
-                        // term is -|grad F| |delta|^2 / (2 r).
-                        (point(2.0) * r * remainder).hi() < norm(&normal(foot_h)).lo()
-                    } else {
-                        let x = sub3(&sub3(&c, &start), &mul3(&h, &shift));
-                        let n = normal(h);
-                        let grad = add3(&n, &mul3(&(dot(&turn, &x) - dot(&n, &shift)), &height));
-                        (dot(&n, &x) + norm(&grad) * r + remainder * r.square()).hi() < 0.0
-                    }
-                });
+                let clear =
+                    sides
+                        .iter()
+                        .copied()
+                        .enumerate()
+                        .all(|(i, (turn, n, shift, start))| {
+                            let normal = |h| add3(&n, &mul3(&h, &turn));
+                            // Exact quadratic Taylor remainder of F(x) =
+                            // n(h) . (x - start(h)), with h affine in x.
+                            let remainder = norm(&turn) * norm(&height)
+                                + dot(&turn, &shift).square().sqrt().unwrap()
+                                    * norm(&height).square();
+                            if let Some(rail) = self.selected.iter().position(|&j| i == j) {
+                                let foot = add3(&c, &radial[rail]);
+                                let foot_h = dot(&height, &sub3(&foot, &bottom));
+                                // At the contact, grad F is outward and parallel
+                                // to the radius. On the ball sphere its linear
+                                // term is -|grad F| |delta|^2 / (2 r).
+                                (point(2.0) * r * remainder).hi() < norm(&normal(foot_h)).lo()
+                            } else {
+                                let x = sub3(&sub3(&c, &start), &mul3(&h, &shift));
+                                let n = normal(h);
+                                let grad =
+                                    add3(&n, &mul3(&(dot(&turn, &x) - dot(&n, &shift)), &height));
+                                (dot(&n, &x) + norm(&grad) * r + remainder * r.square()).hi() < 0.0
+                            }
+                        });
                 if projected && rails_inside && clear {
                     continue;
                 }
@@ -420,7 +437,7 @@ impl Round {
             Location::Inside
         };
 
-        let p = xyz(q);
+        let p = exact::interval3([&q.x, &q.y, &q.z], dec)?;
         self.clip_location(&p, kept, dec)
     }
 
@@ -551,7 +568,6 @@ impl Round {
                 });
             }
         }
-        reserve_panel(dec, 3)?;
         Ok(bound.expect("the spans cover every station"))
     }
 

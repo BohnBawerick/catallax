@@ -7,6 +7,9 @@ use catallax_shapes::{Circle, Curve, Point3, Surface, SurfaceId, Vector3};
 use catallax_topology::{BodyId, BodyKind, EdgeId, FaceId, Loop, Model, Sense, ShellId, VertexId};
 use std::collections::{BTreeMap, BTreeSet};
 
+#[path = "round.rs"]
+mod round;
+
 struct Exporter<'a> {
     model: &'a Model,
     dec: &'a mut Decider,
@@ -49,7 +52,11 @@ pub(crate) fn prepare(
             let surface = model.geom().surface(model.face(f).surface);
             if !matches!(
                 surface,
-                Surface::Plane(_) | Surface::Cylinder(_) | Surface::Cone(_)
+                Surface::Plane(_)
+                    | Surface::Cylinder(_)
+                    | Surface::Cone(_)
+                    | Surface::Sphere(_)
+                    | Surface::Torus(_)
             ) {
                 return Err(IgesError::UnsupportedSurface(surface.kind()));
             }
@@ -252,6 +259,40 @@ impl Exporter<'_> {
                         ],
                     )
                 }
+            }
+            Surface::Sphere(s) => {
+                let center = self.point(&s.center)?;
+                let axis = self.direction(&s.axis)?;
+                let reference = self.direction(&s.ref_dir)?;
+                let radius = ex::rational(&s.radius, self.dec)?;
+                self.graph.add(
+                    196,
+                    1,
+                    vec![
+                        center.into(),
+                        Value::Length(radius),
+                        axis.into(),
+                        reference.into(),
+                    ],
+                )
+            }
+            Surface::Torus(s) => {
+                let center = self.point(&s.center)?;
+                let axis = self.direction(&s.axis)?;
+                let reference = self.direction(&s.ref_dir)?;
+                let major = ex::rational(&s.major, self.dec)?;
+                let minor = ex::rational(&s.minor, self.dec)?;
+                self.graph.add(
+                    198,
+                    1,
+                    vec![
+                        center.into(),
+                        axis.into(),
+                        Value::Length(major),
+                        Value::Length(minor),
+                        reference.into(),
+                    ],
+                )
             }
             s => return Err(IgesError::UnsupportedSurface(s.kind())),
         };
@@ -600,6 +641,12 @@ impl Exporter<'_> {
     fn face(&mut self, id: FaceId) -> Result<usize, IgesError> {
         let f = self.model.face(id).clone();
         let mut loops = Vec::new();
+        if matches!(
+            self.model.geom().surface(f.surface),
+            Surface::Sphere(_) | Surface::Torus(_)
+        ) {
+            return self.round_face(&f);
+        }
         if f.loops.is_empty() {
             return Err(IgesError::UnrepresentableDefinition("unbounded face"));
         }

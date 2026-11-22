@@ -48,8 +48,8 @@ Defaults are 0.01 mm display accuracy, 0.005 mm mesh chord tolerance, four ratio
 | Sketch, extrude, two-sided/one-sided extrude-through, revolve | Same two-way path for the shared rational support subset, including profile holes and segment aliases; specific unfinished frame/surface refusals stay unresolved |
 | Linear/circular body patterns and mirrors | Same two-way path, including nested copy origins and transformed stock/feature candidates; rational-placement curved copies use independently admitted trimmed-face witnesses, while algebraic-only sampling and numeric refusals remain unresolved |
 | Named hole, elementary fillet, extrude-to, extrude-next | Both adapters build supported analytic bands, strips and planar first-hit caps; unfinished domains and budget refusals remain visible |
-| Path, sweep | Not comparable: the field adapter implements neither. The B-rep adapter accepts empty or one-line paths and their exact sweeps; curved and multi-segment paths remain coverage refusals |
-| Chamfer, shell, offset, thicken, draft, loft, STEP import | Not comparable: neither recipe adapter implements the operation |
+| Path, sweep and loft | Supported analytic reductions use the regular comparison. A terminal motion whose field result is a whole patch shell checks every selected B-rep display vertex against the field shell's unsigned distance bounds. Reverse names and directions remain unresolved for these shells. |
+| Chamfer, shell, offset, thicken, draft, STEP import | Coverage depends on both adapters admitting the recipe and their surviving face queries. |
 | Lattice, gyroid, smooth blend, mesh import | Not comparable: the field implementation is missing; a B-rep implementation is not planned |
 
 Every unsupported step is returned with its operation-specific reason, not only the first step. Builds, meshes and query proofs that fail stay unresolved. A proven discrepancy takes precedence over unresolved observations, which remain in the report. Exact expression identities and opposite coincident primitive halfspaces can certify agreement of two empty results without boundary samples. General emptiness is not inferred from missing samples.

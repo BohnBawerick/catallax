@@ -1,4 +1,10 @@
-//! Exact translational sweep and loft reductions over field profile definitions.
+//! Exact sweep and loft constructions over field profile definitions.
+
+mod affine_loft;
+mod bezier_loft;
+mod spline;
+mod stations;
+mod turning;
 
 use crate::{Plan, features::Feature, profile::Profile};
 use catallax_numbers::{Decider, Rational, Refusal, Sign};
@@ -180,6 +186,17 @@ impl Plan {
             unreachable!("checked path reference")
         };
         let origin = point(start);
+        if let [segment @ catallax_recipe::PathSegment::Spline { .. }] = segments.as_slice()
+            && orientation == SweepOrientation::Fixed
+        {
+            return self.spline_sweep(profile, segment, dec);
+        }
+        if orientation == SweepOrientation::RotationMinimising
+            && segments.len() > 1
+            && turning::needs_turn(&origin, segments)
+        {
+            return self.turning_sweep(profile, origin, segments, step, dec);
+        }
         if let [
             catallax_recipe::PathSegment::Arc {
                 id,
@@ -221,6 +238,13 @@ impl Plan {
                     "1 arc span: angle is outside 90, 180 and 270 degrees",
                 ));
             };
+            let normal = crate::profile::rational_vector(
+                &profile.pose,
+                &RVector3::new(Rational::zero(), Rational::zero(), Rational::one()),
+            );
+            if axis_vector.cross(&normal).is_zero() {
+                return Ok(0);
+            }
             let first = self.faces.len();
             let built = Feature::revolve(
                 profile,
@@ -258,6 +282,10 @@ impl Plan {
         let mut previous = origin.clone();
         let mut incoming: Option<RVector3> = None;
         let mut result = 0;
+        let normal = crate::profile::rational_vector(
+            &profile.pose,
+            &RVector3::new(Rational::zero(), Rational::zero(), Rational::one()),
+        );
         for (index, segment) in segments.iter().enumerate() {
             let catallax_recipe::PathSegment::Line { id, to, .. } = segment else {
                 return Err(Refusal::new(
@@ -289,6 +317,11 @@ impl Plan {
                         segments.len()
                     ),
                 ));
+            }
+            if vector.dot(&normal).is_zero() {
+                previous = end;
+                incoming = Some(vector);
+                continue;
             }
             let mut span = profile.clone();
             // M(0) is identity: the path start never relocates the sketch.
@@ -369,7 +402,29 @@ impl Plan {
         );
         let height = vector.dot(&normal);
         if height.is_zero() {
-            return self.patch_or(fail(sections.len() - 1), sections, shape, profiles, dec);
+            if sections.iter().all(|section| {
+                let pose = &profiles[&section.profile].pose;
+                let other_normal = crate::profile::rational_vector(
+                    pose,
+                    &RVector3::new(Rational::zero(), Rational::zero(), Rational::one()),
+                );
+                other_normal.cross(&normal).is_zero()
+                    && pose
+                        .translation
+                        .minus(&first.pose.translation)
+                        .as_rational()
+                        .is_some_and(|shift| shift.dot(&normal).is_zero())
+            }) {
+                return Ok(0);
+            }
+            return self.patch_or(
+                recipe,
+                fail(sections.len() - 1),
+                sections,
+                shape,
+                profiles,
+                dec,
+            );
         }
         let mut previous = Rational::zero();
         for (index, section) in sections.iter().enumerate() {
@@ -382,12 +437,12 @@ impl Plan {
                         || a.0.iter().zip(&b.0).any(|(a, b)| !same_segments(a, b))
                 })
             {
-                return self.patch_or(fail(index), sections, shape, profiles, dec);
+                return self.patch_or(recipe, fail(index), sections, shape, profiles, dec);
             }
             if !p.pose.rotation.same_rotation(&first.pose.rotation, dec)?
                 || p.loops.len() != first.loops.len()
             {
-                return self.patch_or(fail(index), sections, shape, profiles, dec);
+                return self.patch_or(recipe, fail(index), sections, shape, profiles, dec);
             }
             for (a, b) in first.loops.iter().zip(&p.loops) {
                 if a.len() != b.len()
@@ -398,7 +453,7 @@ impl Plan {
                             || a.full != b.full
                     })
                 {
-                    return self.patch_or(fail(index), sections, shape, profiles, dec);
+                    return self.patch_or(recipe, fail(index), sections, shape, profiles, dec);
                 }
             }
             for (a, b) in sections[0].start.iter().zip(&section.start) {
@@ -408,7 +463,7 @@ impl Plan {
                     })
                 };
                 if locate(original, a) != locate(current, b) {
-                    return self.patch_or(fail(index), sections, shape, profiles, dec);
+                    return self.patch_or(recipe, fail(index), sections, shape, profiles, dec);
                 }
             }
             let shift = p
@@ -419,13 +474,13 @@ impl Plan {
                 .ok_or_else(|| fail(index))?;
             let t = shift.dot(&normal) / height.clone();
             if !shift.cross(&vector).is_zero() || t < previous || t > Rational::one() {
-                return self.patch_or(fail(index), sections, shape, profiles, dec);
+                return self.patch_or(recipe, fail(index), sections, shape, profiles, dec);
             }
             if shape == LoftShape::Smooth
                 && t != Rational::from_ratio(index as i64, (sections.len() - 1) as i64)
                     .expect("checked sections")
             {
-                return self.patch_or(fail(index), sections, shape, profiles, dec);
+                return self.patch_or(recipe, fail(index), sections, shape, profiles, dec);
             }
             previous = t;
         }
@@ -435,25 +490,35 @@ impl Plan {
         )
     }
 
-    /// `refusal`, unless the loft is one `patch_loft` holds.
+    /// Tries the patch-shell lofts before returning the correspondence refusal.
     fn patch_or(
         &mut self,
+        recipe: &Recipe,
         refusal: Refusal,
         sections: &[LoftSection],
         shape: LoftShape,
         profiles: &BTreeMap<StepId, Profile>,
         dec: &mut Decider,
     ) -> Result<usize, Refusal> {
-        match self.patch_loft(sections, shape, profiles, dec)? {
-            Some(node) => Ok(node),
-            None => Err(refusal),
+        if let Some(node) = self.circular_station_loft(recipe, sections, shape, profiles, dec)? {
+            return Ok(node);
         }
+        let node = self.patch_loft(sections, profiles, dec)?;
+        if let Some(node) = node {
+            return Ok(node);
+        }
+        if let Some(node) = self.affine_loft(sections, profiles, dec)? {
+            return Ok(node);
+        }
+        self.polygon_station_loft(recipe, sections, shape, profiles, dec)?
+            .ok_or(refusal)
     }
 
-    /// A ruled loft between two parallel polygons, every slice of which is a
+    /// A loft between two parallel polygons, every slice of which is a
     /// convex polygon, held as a patch shell (4.2a step 7.2): a bilinear side
     /// for each pair of corresponding segments, and the two sections as
-    /// polygon caps. `None` for any other loft.
+    /// polygon caps. With two stations natural interpolation is linear, so
+    /// ruled and smooth use the same sides. `None` for any other loft.
     ///
     /// The sections share a rotation, so the slice at `v` in `[0, 1]` of the
     /// height is the polygon whose vertices are `(1 - v) a_i + v b_i`, with
@@ -473,13 +538,12 @@ impl Plan {
     fn patch_loft(
         &mut self,
         sections: &[LoftSection],
-        shape: LoftShape,
         profiles: &BTreeMap<StepId, Profile>,
         dec: &mut Decider,
     ) -> Result<Option<usize>, Refusal> {
         use crate::patch_shell::{Face, PatchFace, Polygon, Shell};
         use catallax_shapes::{BSplineSurface, Point3, RationalPatch};
-        if sections.len() != 2 || shape != LoftShape::Ruled {
+        if sections.len() != 2 {
             return Ok(None);
         }
         let first = &profiles[&sections[0].profile];
@@ -658,8 +722,13 @@ impl Plan {
         {
             return Ok(None);
         }
-        // Circle charts start at the same local +x point in both sections.
-        if sections[0].start[0] != a.ids[0] || sections[1].start[0] != b.ids[0] {
+        // A whole-circle segment starts at local +x. Merged arc loops can
+        // carry a different start and need the station loft's phase check.
+        if sections.iter().any(|section| {
+            !matches!(authored_loops(recipe, &section.profile), [lp]
+                if matches!(lp.0.as_slice(), [catallax_recipe::Segment::Circle { id, .. }]
+                    if id == &section.start[0]))
+        }) {
             return Ok(None);
         }
         let normal = crate::profile::rational_vector(

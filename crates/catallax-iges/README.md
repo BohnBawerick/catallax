@@ -21,6 +21,7 @@ agrees with this separation. No existing crate API needed modification.
 | Planar faces with finite line/circular-arc wires, including holes | Exact type 190 supports and shared trims |
 | Cylindrical/conical bands between two full vertexless circular edges | Exact type 192/194 supports, one added seam per band |
 | Finite axial cylinder/cone sectors with two circular arcs and two generators | One unwrapped four-edge wire; cardinal endpoints in the retained surface frame, including 90/180/270-degree spans and seam crossings |
+| Whole spheres and ring tori | Analytic type 196/198 supports, with circular seams and two degenerate pole uses on spheres |
 | Box, bored plate, public P2 collar | Independently tested with 6, 7, 6 faces |
 | Rational placements and dimensions whose circle frames have terminating decimal unit coordinates | Exact definitions, followed by the certified common scale |
 | A cone half-angle with a proved finite decimal degree encoding | Exact type 194 angle; rational slope 1 has angle 45 degrees |
@@ -29,8 +30,8 @@ agrees with this separation. No existing crate API needed modification.
 | Marked input without a retained whole-definition certificate | `UncertifiedModel` |
 
 These are coverage limits, not claims that the refused geometry is impossible.
-In particular this first writer does **not** cover every body made of the three
-surface kinds. It fails closed on uncovered definitions and periodic trims.
+Uncovered definitions and periodic trims return typed refusals. The sphere and
+torus path accepts whole supports.
 Non-millimetre output is not exposed. The caller supplies geometrically valid
 closed bodies; `Model::check` additionally checks the public structural contract.
 This is not a new geometric body validator.
@@ -39,7 +40,7 @@ Input edges remain shared. The format requires a vertex on each vertexless ring;
 the report counts those additions. A periodic seam is an exact straight
 rational degree-one type 126 curve, shared by its two opposite coedge uses.
 No input edge or face is merged, and the source model is immutable. Faces use
-190/192/194, original curves use 110/100 (sector generators use bounded degree-one
+190/192/194/196/198, original curves use 110/100 (sector generators use bounded degree-one
 126 curves), and topology uses 502/504/508/510/514/186.
 There is no tessellated or fitted surface fallback.
 
@@ -82,6 +83,9 @@ The coordinate bound `B` is an L1 bound on the **whole** finite boundary:
 - Every point of a cylindrical or conical band is a convex combination of the
   corresponding points on its two boundary circles. The endpoint circle bounds
   therefore cover the entire band, including its seam.
+- A sphere has Euclidean radius `r`, and a ring torus is within `R + r` of
+  its centre. Three times these distances bound the L1 displacement from the
+  centre, as in the circle bound.
 
 Consequently `|s*x - x|_2 <= |s-1|*B` everywhere, in both directions under the
 same correspondence. This is not a sampled residual test.

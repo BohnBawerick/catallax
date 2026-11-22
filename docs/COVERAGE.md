@@ -95,6 +95,8 @@ Kernels: B = both OpenCASCADE and SMLib; O = OpenCASCADE only; S = SMLib only. "
 | X7 | Surface, wire and multi-body files | B | 0.5 | 0.5 | Surface, wire and multi-body exchange; sheets and wires export as sewn shells, not loose geometric sets. Change 6. |
 | X8 | Assemblies, colours, names and annotations in files | O | 0 | 0 | Assemblies, colours, names and annotations round-trip in STEP. Change 11. The annotations include the P1 semantic-PMI C1 to C5 acceptance; drawings alone do not close the rest of X8. |
 
+[Item 3.2](milestones/3.2-assemblies-and-exchange.md) records the kernel exchange checks and remaining scope for X3 and X8.
+
 ## Meshes and queries (8)
 
 | ID | Capability | Kernels | 14 Nov | 19 Nov | Full bar |

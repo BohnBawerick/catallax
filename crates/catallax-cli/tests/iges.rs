@@ -44,6 +44,11 @@ fn sphere() -> Value {
         "steps":[{"id":"ball","op":"sphere","radius":"2",
         "pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}}],"result":"ball"})
 }
+fn torus() -> Value {
+    json!({"format":"catallax-recipe/3","name":"ring",
+        "steps":[{"id":"ring","op":"torus","major":"5","minor":"2",
+        "pose":{"rotation":["1","0","0","0"],"translation":["0","0","0"]}}],"result":"ring"})
+}
 fn iges(recipe: Value) -> Value {
     json!({"format":"catallax-iges/1","recipe":recipe})
 }
@@ -93,8 +98,12 @@ fn strip_timing(mut response: Value) -> Value {
 
 #[test]
 fn supported_parts_publish_the_actual_report_and_artifact_identity() {
-    // Faces, solids and the bore's cylinder pin the topology the writer reports.
-    for (name, recipe, faces) in [("box", block(["2", "3", "5"]), 6), ("bored", bored(), 7)] {
+    for (name, recipe, faces) in [
+        ("box", block(["2", "3", "5"]), 6),
+        ("bored", bored(), 7),
+        ("sphere", sphere(), 1),
+        ("torus", torus(), 1),
+    ] {
         let (response, dir) = answer(iges(recipe), 100_000_000);
         let manifest = &response["manifest"];
         assert_eq!(manifest["status"], "answered", "{name}: {manifest}");
@@ -158,7 +167,6 @@ fn refusals_are_typed_and_remove_the_previous_artifact() {
     let tight = json!({"format":"catallax-iges/1","recipe":block(["1/3","2/7","5/11"]),
         "tolerance":"1/1000000000000000000000000000000000000"});
     let cases = [
-        (iges(sphere()), 100_000_000, "iges.unsupported-surface"),
         (tight, 100_000_000, "iges.tolerance-exceeded"),
         (
             json!({"format":"catallax-iges/1","recipe":block(["2","3","5"]),"scale_digits":0}),
@@ -233,6 +241,7 @@ fn replay_and_worker_counts_reproduce_outcomes_work_and_bytes() {
         iges(bored()),
         iges(collar()),
         iges(sphere()),
+        iges(torus()),
     ];
     let baseline_dir = scratch("base");
     let requests: Vec<_> = problems

@@ -164,7 +164,7 @@ fn decode(raw: &str) -> String {
     out
 }
 
-fn string(param: Option<&Param>) -> Option<String> {
+pub(crate) fn string(param: Option<&Param>) -> Option<String> {
     match param {
         Some(Param::Str(text)) => Some(decode(text)),
         _ => None,
@@ -219,6 +219,37 @@ impl<'a> Reader<'a> {
 
     fn entity(&self, id: u64) -> Option<&'a Entity> {
         self.g.get(&id)
+    }
+
+    fn owner_shapes(&self, id: u64) -> BTreeSet<u64> {
+        let mut pending = vec![id];
+        // A surface texture representation is owned through its property.
+        pending.extend(
+            self.sharing_at(id, "PROPERTY_DEFINITION_REPRESENTATION", 1)
+                .into_iter()
+                .filter_map(|(_, params)| reference(params.first())),
+        );
+        let mut seen = BTreeSet::new();
+        let mut shapes = BTreeSet::new();
+        while let Some(id) = pending.pop() {
+            let Some(entity) = self.entity(id).filter(|_| seen.insert(id)) else {
+                continue;
+            };
+            if entity.type_name() == "PRODUCT_DEFINITION_SHAPE" {
+                shapes.insert(id);
+                continue;
+            }
+            // Ownership is through the aspect or property, never geometry.
+            if matches!(entity.type_name(), "PRODUCT_DEFINITION" | "ADVANCED_FACE")
+                || entity.type_name().ends_with("SHAPE_REPRESENTATION")
+            {
+                continue;
+            }
+            for (_, params) in &entity.parts {
+                collect_references(params, &mut pending);
+            }
+        }
+        shapes
     }
 
     fn has(&self, id: u64, part: &str) -> bool {
@@ -909,10 +940,21 @@ impl<'a> Reader<'a> {
     }
 
     /// The notes written as user defined attributes of the product.
-    fn part_notes(&self) -> PartNotes {
+    fn part_notes(&self, scope: Option<(u64, u64)>) -> PartNotes {
         let mut notes = PartNotes::default();
         let mut numbered = Vec::new();
-        for (id, entity) in self.g {
+        let candidates: Box<dyn Iterator<Item = (&u64, &Entity)>> = match scope {
+            Some((definition, shape)) => Box::new(
+                [definition, shape]
+                    .into_iter()
+                    .flat_map(|target| self.sharing.get(&target).into_iter().flatten())
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .filter_map(|id| self.entity(*id).map(|entity| (id, entity))),
+            ),
+            None => Box::new(self.g.iter()),
+        };
+        for (id, entity) in candidates {
             if entity.type_name() != "PROPERTY_DEFINITION" || entity.parts.len() != 1 {
                 continue;
             }
@@ -920,9 +962,12 @@ impl<'a> Reader<'a> {
             if string(params.get(1)).as_deref() != Some("user defined attribute") {
                 continue;
             }
-            let on_product = reference(params.get(2)).is_some_and(|target| {
-                self.has(target, "PRODUCT_DEFINITION")
-                    || self.has(target, "PRODUCT_DEFINITION_SHAPE")
+            let on_product = reference(params.get(2)).is_some_and(|target| match scope {
+                Some((definition, shape)) => target == definition || target == shape,
+                None => {
+                    self.has(target, "PRODUCT_DEFINITION")
+                        || self.has(target, "PRODUCT_DEFINITION_SHAPE")
+                }
             });
             let Some(name) = string(params.first()).filter(|_| on_product) else {
                 continue;
@@ -958,6 +1003,95 @@ impl<'a> Reader<'a> {
 pub fn read_step_pmi(bytes: &[u8]) -> Result<StepPmi, ImportRefusal> {
     let graph = parse(bytes)?;
     let reader = Reader::new(&graph);
+    Ok(read_items(
+        &reader,
+        graph
+            .iter()
+            .filter_map(|(&id, entity)| candidate(id, entity)),
+        None,
+    ))
+}
+
+pub(crate) fn read_assembly_pmi(
+    graph: &Graph,
+    shapes: &BTreeMap<u64, u64>,
+) -> Result<BTreeMap<u64, StepPmi>, ImportRefusal> {
+    let reader = Reader::new(graph);
+    let mut items = BTreeMap::<u64, Vec<Candidate<'_>>>::new();
+    for item in graph
+        .iter()
+        .filter_map(|(&id, entity)| candidate(id, entity))
+    {
+        let owners = reader.owner_shapes(item.id);
+        let owner = owners
+            .first()
+            .filter(|id| owners.len() == 1 && shapes.contains_key(id));
+        let Some(&owner) = owner else {
+            return Err(ImportRefusal::Unsupported {
+                entity: format!("#{}", item.id),
+                type_name: "PMI without a unique part attachment".into(),
+            });
+        };
+        items.entry(owner).or_default().push(item);
+    }
+    Ok(shapes
+        .iter()
+        .map(|(&shape, &definition)| {
+            let pmi = read_items(
+                &reader,
+                items.remove(&shape).unwrap_or_default(),
+                Some((definition, shape)),
+            );
+            (shape, pmi)
+        })
+        .collect())
+}
+
+enum PmiKind {
+    Unread(&'static str, &'static str),
+    Datum,
+    Size,
+    Location,
+    Texture,
+    Tolerance(Characteristic),
+}
+
+struct Candidate<'a> {
+    id: u64,
+    entity: &'a Entity,
+    kind: PmiKind,
+}
+
+fn candidate(id: u64, entity: &Entity) -> Option<Candidate<'_>> {
+    let name = entity.type_name();
+    let kind = if let Some(&(part, reason)) =
+        UNREAD.iter().find(|(part, _)| entity.part(part).is_some())
+    {
+        PmiKind::Unread(part, reason)
+    } else if name == "DATUM" && entity.parts.len() == 1 {
+        PmiKind::Datum
+    } else if name == "DIMENSIONAL_SIZE" && entity.parts.len() == 1 {
+        PmiKind::Size
+    } else if entity.part("DIMENSIONAL_LOCATION").is_some() {
+        PmiKind::Location
+    } else if name == "SURFACE_TEXTURE_REPRESENTATION" && entity.parts.len() == 1 {
+        PmiKind::Texture
+    } else {
+        PmiKind::Tolerance(
+            entity
+                .parts
+                .iter()
+                .find_map(|(part, _)| Characteristic::of_entity(part))?,
+        )
+    };
+    Some(Candidate { id, entity, kind })
+}
+
+fn read_items<'a>(
+    reader: &Reader<'a>,
+    candidates: impl IntoIterator<Item = Candidate<'a>>,
+    scope: Option<(u64, u64)>,
+) -> StepPmi {
     let mut found = Vec::new();
     let mut skipped = Vec::new();
     let mut skip = |id: u64, kind: &str, reason: String| {
@@ -967,30 +1101,19 @@ pub fn read_step_pmi(bytes: &[u8]) -> Result<StepPmi, ImportRefusal> {
             reason,
         });
     };
-    for (id, entity) in &graph {
-        let id = *id;
-        let kind = entity.type_name();
-        if let Some((part, reason)) = UNREAD.iter().find(|(part, _)| entity.part(part).is_some()) {
-            skip(id, part, (*reason).to_owned());
-            continue;
-        }
-        let read = if kind == "DATUM" && entity.parts.len() == 1 {
-            reader.datum(id)
-        } else if kind == "DIMENSIONAL_SIZE" && entity.parts.len() == 1 {
-            reader.size(id, entity.parts[0].1.as_slice())
-        } else if entity.part("DIMENSIONAL_LOCATION").is_some() {
-            reader.location(id)
-        } else if kind == "SURFACE_TEXTURE_REPRESENTATION" && entity.parts.len() == 1 {
-            reader.texture(id, entity.parts[0].1.as_slice())
-        } else if let Some(characteristic) = entity
-            .parts
-            .iter()
-            .find_map(|(part, _)| Characteristic::of_entity(part))
-        {
-            reader.tolerance(id, characteristic)
-        } else {
-            continue;
+    for Candidate { id, entity, kind } in candidates {
+        let read = match kind {
+            PmiKind::Unread(part, reason) => {
+                skip(id, part, reason.to_owned());
+                continue;
+            }
+            PmiKind::Datum => reader.datum(id),
+            PmiKind::Size => reader.size(id, &entity.parts[0].1),
+            PmiKind::Location => reader.location(id),
+            PmiKind::Texture => reader.texture(id, &entity.parts[0].1),
+            PmiKind::Tolerance(characteristic) => reader.tolerance(id, characteristic),
         };
+        let kind = entity.type_name();
         match read {
             Ok(item) => found.push((kind.to_owned(), item)),
             Err(reason) => skip(id, kind, reason),
@@ -1001,7 +1124,7 @@ pub fn read_step_pmi(bytes: &[u8]) -> Result<StepPmi, ImportRefusal> {
     // A tolerance needs its datums, so datums are settled first.
     let mut pmi = Pmi::<String> {
         items: Vec::new(),
-        part: reader.part_notes(),
+        part: reader.part_notes(scope),
     };
     let mut names = BTreeSet::new();
     let mut letters = BTreeSet::new();
@@ -1091,7 +1214,7 @@ pub fn read_step_pmi(bytes: &[u8]) -> Result<StepPmi, ImportRefusal> {
             kind: item.kind,
         });
     }
-    Ok(StepPmi { pmi, skipped })
+    StepPmi { pmi, skipped }
 }
 
 #[cfg(test)]

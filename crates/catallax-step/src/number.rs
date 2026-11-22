@@ -261,6 +261,13 @@ pub(crate) fn direction(value: &Vector3, digits: u32, dec: &mut Decider) -> Resu
     })
 }
 
+pub(crate) fn frame_error(reference: &Point, axis: &Point) -> Rational {
+    // STEP normalizes the axis, then projects and normalizes the reference.
+    // For a unit u, |normalize(w)-u| <= 2|w-u|. Gram-Schmidt gives
+    // |dx|+|dy|+|dz| <= 8|reference-e1|+12|axis-e3|.
+    reference.error() * Rational::from_i64(8) + axis.error() * Rational::from_i64(12)
+}
+
 /// One component of `source / sqrt(norm_squared)`. A ball holding the component
 /// and a nonzero decimal gives them one sign, so `source^2 = decimal^2 *
 /// norm_squared` proves equality without the radical.

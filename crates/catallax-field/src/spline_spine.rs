@@ -80,7 +80,9 @@ use std::cell::Cell;
 use std::f64::consts::FRAC_1_SQRT_2;
 
 use catallax_numbers::{Decider, Interval, Rational, Real, Refusal, Sign};
-use catallax_shapes::RationalPatch;
+use catallax_shapes::{Pose, RationalPatch, Rotation, Surface};
+
+pub mod sweep;
 
 /// Degree of each span's model of the spine in the span's own variable.
 pub const MODEL_DEGREE: usize = 5;
@@ -206,6 +208,50 @@ impl Num for f64 {
     }
 }
 
+impl Num for Interval {
+    fn constant(value: Interval) -> Self {
+        value
+    }
+    fn plus(&self, other: &Self) -> Self {
+        *self + *other
+    }
+    fn minus(&self, other: &Self) -> Self {
+        *self - *other
+    }
+    fn times(&self, other: &Self) -> Self {
+        product(*self, *other)
+    }
+    fn scaled(&self, k: Interval) -> Self {
+        product(*self, k)
+    }
+}
+
+/// The value and first two coefficients of a directional Taylor expansion.
+/// The product rule here gives the Hessian applied twice to one direction,
+/// without forming a separate Hessian for each of the eight equations.
+#[derive(Clone)]
+struct Directional([Interval; 3]);
+
+impl Num for Directional {
+    fn constant(value: Interval) -> Self {
+        Self([value, zero(), zero()])
+    }
+    fn plus(&self, other: &Self) -> Self {
+        Self(add3(&self.0, &other.0))
+    }
+    fn minus(&self, other: &Self) -> Self {
+        Self(sub3(&self.0, &other.0))
+    }
+    fn times(&self, other: &Self) -> Self {
+        Self(std::array::from_fn(|k| {
+            (0..=k).fold(zero(), |s, i| s + product(self.0[i], other.0[k - i]))
+        }))
+    }
+    fn scaled(&self, k: Interval) -> Self {
+        Self(mul3(&k, &self.0))
+    }
+}
+
 /// A polynomial in `s` on `[-1, 1]` with interval coefficients, at most
 /// `ORDER` in degree. It stands for every polynomial whose coefficients lie in
 /// the intervals; a term dropped above `ORDER` is bounded by its coefficient's
@@ -315,6 +361,8 @@ struct Support {
     tables: [Vec<[Interval; 4]>; 6],
     /// The side times the radius.
     side: Interval,
+    /// Radius for measuring back to the original contact from the centre.
+    contact_side: Interval,
 }
 
 fn binomial(n: usize, k: usize) -> Rational {
@@ -421,6 +469,7 @@ impl Support {
             degrees,
             tables: [value, u, v, uu, uv, vv],
             side,
+            contact_side: side,
         })
     }
 
@@ -706,10 +755,10 @@ fn krawczyk(
 /// preconditioned interval linear systems (Neumaier, "Interval Methods for
 /// Systems of Equations", 1990, chapter 4). The identity then narrows the
 /// bounds, eight times at most.
-fn slope(proof: &Krawczyk, jacobian: &[[Interval; 9]; 8], pinned: usize) -> Option<[Interval; 8]> {
+fn solve_derivative(proof: &Krawczyk, load: [Interval; 8]) -> Option<[Interval; 8]> {
     let pull: [Interval; 8] = std::array::from_fn(|i| {
         -(0..8).fold(zero(), |sum, k| {
-            sum + product(point(proof.preconditioner[i][k]), jacobian[k][pinned])
+            sum + product(point(proof.preconditioner[i][k]), load[k])
         })
     });
     let y = &proof.radius;
@@ -1079,7 +1128,19 @@ impl System {
             charge(dec)?;
             return Ok(None);
         };
-        let slope = slope(&proof, &j, tau);
+        let slope = solve_derivative(&proof, j.map(|row| row[tau]));
+        // Twice differentiating F(z(tau)) = 0 gives the same linear
+        // system with the directional second derivative of F as its load.
+        let acceleration = slope.and_then(|d| {
+            let mut z: [Directional; 9] = std::array::from_fn(|_| Directional::constant(zero()));
+            z[tau] = Directional([Interval::new(t[0], t[1]).unwrap(), point(1.0), zero()]);
+            for (i, index) in unknowns.into_iter().enumerate() {
+                z[index] = Directional([models[i].range() + proof.image[i], d[i], zero()]);
+            }
+            let (g, _) = self.system(&z, false);
+            let second = solve_derivative(&proof, g.map(|value| product(point(2.0), value.0[2])))?;
+            Some([second[0], second[1], second[2]])
+        });
         charge(dec)?;
         let eps = (0..3)
             .fold(zero(), |sum, i| {
@@ -1087,12 +1148,25 @@ impl System {
             })
             .sqrt()
             .map_or(f64::INFINITY, |e| e.hi());
+        // Scaling the uniqueness box preserves the weighted contraction,
+        // and J already covers BOX in every coordinate. Retain the smaller
+        // image for the tube, but allow an independently enclosed end root
+        // to join in the larger box even when the model residual is tiny.
+        let mut uniqueness = proof.radius;
+        let mut largest = uniqueness.into_iter().fold(0.0, f64::max);
+        while largest <= BOX / 2.0 {
+            uniqueness = uniqueness.map(|r| r * 2.0);
+            largest *= 2.0;
+            count(9);
+        }
+        charge(dec)?;
         Ok(Some(SpineSpan {
             tau: t,
             model,
             offset: proof.image,
-            radius: proof.radius,
+            radius: uniqueness,
             slope,
+            acceleration,
             eps,
         }))
     }
@@ -1159,6 +1233,7 @@ pub struct SpineSpan {
     /// Bounds on `dz / dtau` over the span, where the operator contracts in
     /// the maximum norm.
     pub slope: Option<[Interval; 8]>,
+    acceleration: Option<[Interval; 3]>,
     /// The tube's width on this span: the largest distance from the model's
     /// centre to the spine's centre, in millimetres.
     pub eps: f64,
@@ -1203,6 +1278,9 @@ pub struct Spine {
     ends: [SpineEnd; 2],
     eps: f64,
     target: f64,
+    system: System,
+    radius: Interval,
+    seed_root: [Interval; 9],
 }
 
 impl Spine {
@@ -1214,6 +1292,28 @@ impl Spine {
     /// and `field.spline-spine-eps` with the width reached where every span is
     /// proved but some tube stays wider than the target.
     pub fn prove(definition: &SpineDefinition, dec: &mut Decider) -> Result<Self, Refusal> {
+        Self::prove_offsets(definition, None, dec)
+    }
+
+    /// Proves a spline meeting a plane's exact rational parametrization.
+    /// The selected planar chart is translated to the analytic offset,
+    /// then enters the system with zero offset, as in M10's offset model.
+    pub fn prove_spline_plane(
+        definition: &SpineDefinition,
+        plane_index: usize,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        if plane_index >= definition.supports.len() {
+            return Err(definition_refusal("the plane must be support zero or one"));
+        }
+        Self::prove_offsets(definition, Some(plane_index), dec)
+    }
+
+    fn prove_offsets(
+        definition: &SpineDefinition,
+        plane_index: Option<usize>,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
         PRODUCTS.with(|c| c.set(0));
         if definition.radius.sign() != Sign::Positive {
             return Err(definition_refusal("the radius must be positive"));
@@ -1229,13 +1329,42 @@ impl Spine {
         }
         let radius = Interval::from_rational(&definition.radius);
         let mut supports = Vec::with_capacity(2);
-        for (patch, side) in definition.supports.iter().zip(definition.sides) {
-            let side = match side {
+        for (i, (patch, orientation)) in
+            definition.supports.iter().zip(definition.sides).enumerate()
+        {
+            let side = match orientation {
                 Sign::Positive => radius,
                 Sign::Negative => -radius,
                 Sign::Zero => return Err(definition_refusal("each side must be nonzero")),
             };
-            let prepared = Support::new(patch, side, dec);
+            let prepared = if plane_index == Some(i) {
+                let surface = Surface::BSpline(patch.clone().into());
+                let Some(Surface::Plane(plane)) = crate::flat_support(&surface) else {
+                    return Err(definition_refusal(
+                        "the analytic support must be a whole bilinear plane chart",
+                    ));
+                };
+                let n = plane.normal;
+                let d = match orientation {
+                    Sign::Positive => definition.radius.clone(),
+                    Sign::Negative => -&definition.radius,
+                    Sign::Zero => unreachable!("the side was validated"),
+                };
+                let translation = if let Some(n) = n.as_rational()
+                    && let Some(length) = crate::profile::sqrt(&n.norm_squared())
+                {
+                    n.scaled(&(&d / &length)).to_real()
+                } else {
+                    n.scaled(&(&Real::from(d) / &n.norm_squared().sqrt()))
+                };
+                let pose = Pose::new(Rotation::identity(), translation, dec)?;
+                Support::new(&patch.transformed(&pose), zero(), dec).map(|mut p| {
+                    p.contact_side = side;
+                    p
+                })
+            } else {
+                Support::new(patch, side, dec)
+            };
             charge(dec)?;
             supports.push(prepared?);
         }
@@ -1314,21 +1443,29 @@ impl Spine {
                 ),
             ));
         }
-        let spine = Self {
+        let mut spine = Self {
             axis: definition.axis,
             eps: spans.iter().map(|s| s.eps).fold(0.0, f64::max),
             spans,
             ends,
             target,
+            system,
+            radius,
+            seed_root: [zero(); 9],
         };
-        spine.check(&system, &seed, dec)?;
+        spine.seed_root = spine.check(&spine.system, &seed, dec)?;
         charge(dec)?;
         Ok(spine)
     }
 
     /// The proofs that tie the spans together: joins, ends, contacts inside
     /// their supports, positive lengths.
-    fn check(&self, system: &System, seed: &[f64; 9], dec: &mut Decider) -> Result<(), Refusal> {
+    fn check(
+        &self,
+        system: &System,
+        seed: &[f64; 9],
+        dec: &mut Decider,
+    ) -> Result<[Interval; 9], Refusal> {
         let tau = system.tau();
         let unknowns = free(tau);
         for pair in self.spans.windows(2) {
@@ -1471,7 +1608,7 @@ impl Spine {
                 }
             }
         }
-        Ok(())
+        Ok(seed_root)
     }
 
     /// The proved spans, in increasing `tau`.

@@ -558,6 +558,12 @@ impl Plan {
         dec: &mut Decider,
     ) -> Result<usize, Refusal> {
         let (radius, roll_over) = (settings.radius, settings.roll_over);
+        if let Instruction::Leaf(i) = self.instructions[root]
+            && let geometry::Leaf::Shell(shell) = &self.leaves[i]
+        {
+            let rounded = shell.fillet(selection, step, q(radius)?, dec)?;
+            return self.leaf(geometry::Leaf::Shell(Box::new(rounded)), Vec::new(), dec);
+        }
         if self.rolling_below(root).0 {
             // Only the chain route takes a straight rolling piece's
             // registered face as a support and keeps clear of the pieces

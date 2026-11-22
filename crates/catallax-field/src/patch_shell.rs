@@ -19,11 +19,14 @@
 //! [Checkpoint 2 decisions, section 4.6]: ../../../docs/checkpoints/checkpoint-2-decisions.md
 
 use catallax_numbers::{Ball, Decider, Interval, Rational, Refusal};
-use catallax_shapes::{Isometry, RPoint3, RationalPatch};
+use catallax_recipe::{EdgeName, EdgeSelection, Origin, Role, StepId};
+use catallax_shapes::{Isometry, RPoint3, RVector3, RationalPatch};
 
 use crate::Location;
 use crate::metric::PRECISION;
 use crate::patch_distance::PatchDistance;
+use crate::rolling_region::Range;
+use crate::spline_spine::sweep::{Cap, loft::Round};
 
 fn refusal(detail: &str) -> Refusal {
     Refusal::new("field.patch-shell", detail)
@@ -267,6 +270,7 @@ impl Polygon {
 #[derive(Clone, Debug)]
 pub struct PatchFace {
     distance: PatchDistance,
+    support: RationalPatch,
     /// Whether the patch's natural normal `S_u x S_v` points out of the solid.
     outward: bool,
 }
@@ -277,6 +281,7 @@ impl PatchFace {
     pub fn new(patch: &RationalPatch, outward: bool, dec: &mut Decider) -> Result<Self, Refusal> {
         Ok(Self {
             distance: PatchDistance::new(patch, dec)?,
+            support: patch.clone(),
             outward,
         })
     }
@@ -302,6 +307,8 @@ pub struct Shell {
     rotation: [[Rational; 3]; 3],
     translation: V,
     inverse_rotation: [[Rational; 3]; 3],
+    loft_sides: Vec<Origin>,
+    round: Option<Round>,
 }
 
 fn apply(m: &[[Rational; 3]; 3], v: &V) -> V {
@@ -400,7 +407,152 @@ impl Shell {
             inverse_rotation: identity.clone(),
             rotation: identity,
             translation: std::array::from_fn(|_| Rational::zero()),
+            loft_sides: Vec::new(),
+            round: None,
         })
+    }
+
+    pub(crate) fn named_loft(mut self, sides: Vec<Origin>) -> Self {
+        self.loft_sides = sides;
+        self
+    }
+
+    pub(crate) fn fillet(
+        &self,
+        edges: &EdgeSelection,
+        step: &StepId,
+        radius: Rational,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        let unsupported = || {
+            Refusal::new(
+                "fillet.unsupported-spline",
+                "a field spline fillet needs one named edge of an untrimmed convex ruled loft",
+            )
+        };
+        let EdgeSelection::Refs(refs) = edges else {
+            return Err(unsupported());
+        };
+        let [reference] = refs.as_slice() else {
+            return Err(unsupported());
+        };
+        let sides = &self.loft_sides;
+        if self.round.is_some()
+            || sides.is_empty()
+            || reference.near.is_some()
+            || !reference.touching.is_empty()
+        {
+            return Err(unsupported());
+        }
+        let adjacent: Vec<_> = (0..sides.len())
+            .map(|i| [i, (i + 1) % sides.len()])
+            .filter(|&[i, j]| {
+                let [a, b] = &reference.between;
+                (a.matches(&sides[i]) && b.matches(&sides[j]))
+                    || (a.matches(&sides[j]) && b.matches(&sides[i]))
+            })
+            .collect();
+        let [selected] = adjacent.as_slice() else {
+            return Err(Refusal::new(
+                "fillet.lost-edge",
+                "the side origins do not select one shared loft edge",
+            ));
+        };
+        let edge = EdgeName::new(sides[selected[0]].clone(), sides[selected[1]].clone())
+            .map_err(|e| refusal(&e.to_string()))?;
+        let origin = Origin {
+            step: step.clone(),
+            role: Role::Blend { edge },
+        };
+        let patches = self.faces[..sides.len()]
+            .iter()
+            .map(|face| match face {
+                Face::Patch(face) => Ok((&face.support, face.outward)),
+                Face::Polygon(_) => Err(unsupported()),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let cap = |face: &Face| -> Result<Cap, Refusal> {
+            let Face::Polygon(face) = face else {
+                return Err(unsupported());
+            };
+            let [x, y, z] = face.vertices[0].clone();
+            let [nx, ny, nz] = face.normal.clone();
+            Ok((RPoint3::new(x, y, z), RVector3::new(-nx, -ny, -nz)))
+        };
+        let caps = [
+            cap(&self.faces[sides.len()])?,
+            cap(&self.faces[sides.len() + 1])?,
+        ];
+        let mut shell = self.clone();
+        shell.round = Some(Round::prove(
+            origin, *selected, &patches, &caps, radius, dec,
+        )?);
+        Ok(shell)
+    }
+
+    pub(crate) fn blend_origin(&self) -> Option<&Origin> {
+        self.round.as_ref().map(|r| &r.origin)
+    }
+
+    pub(crate) fn blend_distance(
+        &self,
+        p: &RPoint3,
+        width: &Rational,
+        dec: &mut Decider,
+    ) -> Result<Option<Range>, Refusal> {
+        let Some(round) = &self.round else {
+            return Ok(None);
+        };
+        let [x, y, z] = self.local(&point(p));
+        round.distance(&RPoint3::new(x, y, z), width, dec).map(Some)
+    }
+
+    pub(crate) fn surviving_face_bound(
+        &self,
+        p: &RPoint3,
+        width: &Rational,
+        dec: &mut Decider,
+    ) -> Result<Option<Rational>, Refusal> {
+        let Some(round) = &self.round else {
+            return Ok(None);
+        };
+        let [x, y, z] = self.local(&point(p));
+        self.local_face_bound(&RPoint3::new(x, y, z), round, width, dec)
+    }
+
+    fn local_face_bound(
+        &self,
+        p: &RPoint3,
+        round: &Round,
+        width: &Rational,
+        dec: &mut Decider,
+    ) -> Result<Option<Rational>, Refusal> {
+        let query = point(p);
+        let caps = self.faces.iter().filter_map(|face| {
+            let Face::Polygon(poly) = face else {
+                return None;
+            };
+            let factor = &dot(&poly.normal, &sub(&query, &poly.vertices[0]))
+                / &dot(&poly.normal, &poly.normal);
+            let [x, y, z] = std::array::from_fn(|i| &query[i] - &(&factor * &poly.normal[i]));
+            Some(RPoint3::new(x, y, z))
+        });
+        let square = width * width;
+        let mut candidates: Vec<_> = caps
+            .chain(round.side_witnesses(p))
+            .filter_map(|q| {
+                let d = p.minus(&q).norm_squared();
+                (d <= square).then_some((d, q))
+            })
+            .collect();
+        candidates.sort_by(|a, b| a.0.cmp(&b.0));
+        for (d, candidate) in candidates {
+            if round.location(&candidate, dec)? == Location::Boundary {
+                let upper = Interval::from_rational(&d).sqrt().unwrap().hi();
+                return Ok(Rational::from_f64_exact(upper));
+            }
+        }
+        Ok(None)
     }
 
     fn local(&self, p: &V) -> V {
@@ -487,6 +639,9 @@ impl Shell {
                 Face::Patch(patch) => out.extend(patch.distance.boxes().into_iter().map(world)),
             }
         }
+        if let Some(round) = &self.round {
+            out.extend(round.boxes().map(world));
+        }
         out
     }
 
@@ -497,6 +652,12 @@ impl Shell {
         dec: &mut Decider,
     ) -> Result<(Location, Interval), Refusal> {
         let q = self.local(&point(p));
+        if let Some(round) = &self.round {
+            let p = RPoint3::new(q[0].clone(), q[1].clone(), q[2].clone());
+            let location = round.location(&p, dec)?;
+            let distance = self.rounded_distance(&p, &q, round, location, dec)?;
+            return Ok((location, distance));
+        }
         let mut lo = f64::INFINITY;
         let mut hi = f64::INFINITY;
         for face in &self.faces {
@@ -562,6 +723,10 @@ impl Shell {
 
     /// Exact classification of a rational world point.
     pub fn location(&self, p: &[Rational; 3], dec: &mut Decider) -> Result<Location, Refusal> {
+        if let Some(round) = &self.round {
+            let [x, y, z] = self.local(p);
+            return round.location(&RPoint3::new(x, y, z), dec);
+        }
         let p = RPoint3::new(p[0].clone(), p[1].clone(), p[2].clone());
         Ok(self.classify(&p, dec)?.0)
     }
@@ -576,13 +741,55 @@ impl Shell {
         if location == Location::Boundary {
             return Ok(Ball::from_rational(&Rational::zero(), PRECISION));
         }
-        let (_, distance) = self.classify(p, dec)?;
+        let distance = if let Some(round) = &self.round {
+            let q = self.local(&point(p));
+            let local = RPoint3::new(q[0].clone(), q[1].clone(), q[2].clone());
+            self.rounded_distance(&local, &q, round, location, dec)?
+        } else {
+            self.classify(p, dec)?.1
+        };
         let distance = ball(distance);
         Ok(match location {
             Location::Inside => -distance,
             Location::Outside => distance,
             _ => (-distance.clone()).hull(&distance),
         })
+    }
+
+    fn rounded_distance(
+        &self,
+        p: &RPoint3,
+        q: &V,
+        round: &Round,
+        location: Location,
+        dec: &mut Decider,
+    ) -> Result<Interval, Refusal> {
+        if location == Location::Boundary {
+            return Ok(Interval::point(0.0).unwrap());
+        }
+        let width = Rational::from_ratio(1, 1_000_000).expect("one nanometre");
+        let blend = round.distance(p, &width, dec)?;
+        let mut lower = Interval::from_rational(&blend.lower).lo();
+        let mut upper = blend
+            .upper
+            .as_ref()
+            .map_or(f64::INFINITY, |v| Interval::from_rational(v).hi());
+        for (i, face) in self.faces.iter().enumerate() {
+            let distance = match face {
+                Face::Polygon(polygon) => {
+                    Interval::from_rational(&polygon.squared(q)).sqrt().unwrap()
+                }
+                Face::Patch(patch) => patch.distance.distance(p, dec)?.distance,
+            };
+            lower = lower.min(distance.lo());
+            // Only an uncut face can furnish a witness from a whole-face
+            // minimum. The blend itself already supplies an upper witness.
+            if i < self.loft_sides.len() && !round.selected.contains(&i) {
+                upper = upper.min(distance.hi());
+            }
+        }
+        Interval::new(lower, upper)
+            .ok_or_else(|| refusal("the rounded shell distance is not ordered"))
     }
 
     /// Tentative signed distance from binary64 searches: the nearest face's
@@ -609,6 +816,9 @@ impl Shell {
             }
         }
         let magnitude = crate::metric::Scalar::sqrt(&best.0);
-        if best.1 < 0.0 { -magnitude } else { magnitude }
+        let old = if best.1 < 0.0 { -magnitude } else { magnitude };
+        self.round
+            .as_ref()
+            .map_or(old, |round| round.preview(q, old))
     }
 }

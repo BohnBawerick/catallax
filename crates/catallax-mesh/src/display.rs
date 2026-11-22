@@ -87,6 +87,36 @@ fn rendering(
     }
 }
 
+/// Measures only position on finite spline faces for geometric comparison.
+/// Every face is covered at the requested chord tolerance. The rendering
+/// result carries no facet normal, edge-length or aspect-ratio certificate.
+pub fn compare_position_mesh(
+    model: &Model,
+    body: BodyId,
+    options: &MeshOptions,
+    dec: &mut Decider,
+) -> Result<DisplayMesh, catallax_numbers::Refusal> {
+    if options.chord_tolerance <= Rational::zero()
+        || options.max_vertices < 4
+        || options.angular_deviation.is_some()
+        || options.max_edge_length.is_some()
+        || options.max_aspect_ratio.is_some()
+    {
+        return Err(catallax_numbers::Refusal::new(
+            "mesh.invalid-options",
+            "positional comparison needs a positive chord tolerance and no facet controls",
+        ));
+    }
+    let (mesh, marks) = crate::triangulate::build_position(model, body, options, dec)?;
+    let result = rendering(mesh, marks, "complete-cell position enclosures");
+    if result.measurement.covered_faces != model.faces_of_body(body).len()
+        || result.measurement.maximum_deviation > options.chord_tolerance
+    {
+        return Err(failure("positional comparison has incomplete coverage"));
+    }
+    Ok(result)
+}
+
 /// Tries certification first, then the fixed 0.01 mm spline rendering rule.
 /// Certification retains the caller's full remaining allowance. A refusal can
 /// use the remainder for direct measurement; exhaustion returns a named refusal.

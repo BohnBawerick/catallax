@@ -449,14 +449,29 @@ fn a_loft_whose_slices_are_not_convex_still_refuses() {
     assert_eq!(refusal.code, "field.loft-correspondence-unsupported");
 }
 
-/// The M11 fillet recipe now passes its loft in the field and reaches the
-/// fillet step, which refuses until the field's spline spine exists.
 #[test]
-fn the_m11_fillet_reaches_the_fillet_step_in_the_field() {
-    use catallax_field::Plan;
-    let refusal = Plan::compile(&recipe("b_0", true)).unwrap_err();
-    println!("M11 fillet in the field: {refusal:?}");
-    assert_ne!(refusal.code, "field.loft-correspondence-unsupported");
+fn the_m11_fillet_replaces_its_named_loft_edge() {
+    use catallax_field::{Plan, Workspace};
+    use catallax_numbers::with_operation_budget;
+    use catallax_recipe::Role;
+    let (plan, work) = with_operation_budget(20_000_000, || Plan::compile(&recipe("b_0", true)));
+    let plan = plan.unwrap();
+    let origin = plan.spline_blend_origin().expect("rounded loft face");
+    assert!(matches!(origin.role, Role::Blend { .. }));
+    assert_eq!(origin.step.as_str(), "round");
+    println!("M27 rounded loft: {} work", work.used);
+    for ([x, y, z], location) in [
+        (["1", "-1/2", "1"], Location::Outside),
+        (["1", "0", "2"], Location::Outside),
+        (["0", "0", "0"], Location::Boundary),
+        (["0", "0", "1"], Location::Inside),
+    ] {
+        let p = RPoint3::new(r(x), r(y), r(z));
+        let result = plan
+            .proven_checked(&p, &mut Workspace::default(), &mut decider())
+            .unwrap();
+        assert_eq!(result.location, location, "{p:?}: {result:?}");
+    }
 }
 
 /// The print classifier settles a box of the loft only where the box meets

@@ -27,7 +27,9 @@ mod bounded;
 mod chart;
 mod controls;
 mod display;
-pub use display::{DisplayMeasurement, DisplayMesh, SPLINE_DISPLAY_RULE, display_mesh_body};
+pub use display::{
+    DisplayMeasurement, DisplayMesh, SPLINE_DISPLAY_RULE, compare_position_mesh, display_mesh_body,
+};
 mod edges;
 mod evaluate;
 mod junction;

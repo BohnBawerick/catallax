@@ -456,10 +456,73 @@ the enclosure to within the oracle's binary64 test slack. A tighter
 part tolerance forces subdivision, and an unattainable tolerance returns
 `field.spline-spine-eps` with the width reached.
 
-This certificate covers the component selected by the seed. Recipe
-admission still needs a proof that the component belongs to the named edge,
-clearance, the rolling sector and the cap cuts. A cap can meet the two rails
-at different stations, so the border roots alone do not describe its cut.
+This certificate covers the component selected by the seed. The next step
+ties it to the named edge of a convex ruled loft.
+
+## Step 7.4: the swept-ball distance
+
+The distance query covers the short circular sections between the two
+contact rails. A panel supplies a lower bound. Only a certified station
+inside the finite domain, or a certified endpoint, supplies an upper
+witness. A binary64 Newton proposal can place a witness sooner without
+entering the proof. OpenCASCADE refines sampled point-to-curve extrema
+in `Extrema_GExtPC`. SMLib uses short circular sections in
+`SmCircularCrossSectionFSG`. The field uses the interval panel cover
+from step 1 on the spline's certified centre and contact enclosures.
+[OpenCASCADE](https://raw.githubusercontent.com/Open-Cascade-SAS/OCCT/V7_9_0/src/Extrema/Extrema_GExtPC.gxx)
+[SMLib](https://docs.nvidia.com/smlib/manual/smlib/fillets/)
+
+Differentiate the span's offset system twice to bound the centre's speed
+and acceleration. If the centre moves at least `m` per unit of parameter
+along a fixed direction and its acceleration is at most `M`, a chord
+for a parameter increment `dt` has length at least `m |dt|`.
+Its projection on a unit normal is at most `M dt² / 2`.
+The normal sections at radius `r` therefore clear every other ball when
+`r M < m²`. This is the normal/chord reach inequality.
+[Federer, *Curvature Measures*, Theorem 4.18](https://doi.org/10.1090/S0002-9947-1959-0110078-1)
+
+The two rails of a loft can meet one cap at different stations. Follow the
+same offset component onto the exact extended charts, tying it to the
+whole-patch proof at the seed. Every short arc direction crosses each
+cap once, as its cap-height derivative keeps one strict sign. A distance
+witness on a clipped section comes from its nearest circle point, a
+retained rail point, or a circle-plane intersection. This keeps the part
+between the caps even where its first rail has left the original chart.
+
+The loft route supports one named convex edge between adjacent sides.
+For a ruled loft, each side is an exact quadratic inequality obtained
+from its moving horizontal edge. A quadratic remainder bound proves
+the rolling ball stays inside both touched sides and clears every other
+side. The section's radial normal proves that the new face projects
+one-to-one between the two rails along a common outward direction. That
+graph replaces the sharp corner while preserving the remaining sides
+and caps. Whole patches from other sources and subsequent rounds on
+the trimmed loft keep their typed refusals.
+
+On Blade, the focused debug tests sampled 505 independent arc points
+per edge. Median distance query times were 424 us for M27, 297 us for
+the next edge and 468 us for the biquadratic edge. These runs shared the
+machine and are evidence from the query test, without a timing isolation
+claim. The cap regression also tests a point above the first rail's last
+station and below the cap, using an independent solve for the second rail.
+
+## Steps 7.5 to 7.7: near tangency and a plane chart
+
+The synthetic edge uses one parabolic side and one plane. The plane's
+slope at the shared edge runs from `1` to `2^-24` in dyadic steps.
+The smallest tested angle with a full tube and reach proof was
+0.003497057 degrees (`2^-14`), at 261,400 work and a tube radius of
+`8.77e-11 mm`. Lower angles failed at the seed, a border proof or the
+support-domain check. The exact tangent control refuses by name.
+
+An analytic plane stays a plane at its offset. Its rational chart is
+translated exactly along the normal and enters the field solver at
+zero offset. The original normal still gives its contact direction.
+This follows the same-family offset route described in
+[the viability study](research/cp2-grill/sdf-spline-viability.md#3-does-m10-accept-analytic-against-spline-offsets).
+The spline-plane control checks the centre against the exact offset
+equation `15x + 8y = 17/10`. The control's tube radius is
+`1.224362e-14 mm` at 347,890 work.
 
 ## Open for the done-when line
 

@@ -12,9 +12,11 @@
 use std::num::NonZeroUsize;
 use std::time::Instant;
 
+use catallax_field::Location;
+use catallax_field::spline_spine::sweep::{Sweep, cap_continuation};
 use catallax_field::spline_spine::{Spine, SpineDefinition, TUBE_CAP};
 use catallax_numbers::{Decider, MPoly, Rational, Real, Sign, with_operation_budget};
-use catallax_shapes::{BSplineSurface, Point3, RationalPatch};
+use catallax_shapes::{BSplineSurface, Point3, RPoint3, RVector3, RationalPatch};
 
 type Q = Rational;
 
@@ -441,4 +443,333 @@ fn definitions_are_checked() {
     let (code, detail) = refused(&|d| d.sides = [Sign::Positive, Sign::Positive]);
     assert_eq!(code, "field.spline-spine", "{detail}");
     println!("outside both: {detail}");
+}
+
+#[test]
+fn a_sweep_distance_accounts_for_the_short_arc_and_its_ends() {
+    let mut dec = Decider::default();
+    let z = MPoly::constant(2, q(0));
+    let u = MPoly::var(2, 0);
+    let v = MPoly::var(2, 1);
+    let a = patch(&[z.clone(), u.clone(), v.scale(&q(2))], [1, 1], &mut dec);
+    let b = patch(
+        &[u, z, &v + &MPoly::constant(2, r("1/2"))],
+        [1, 1],
+        &mut dec,
+    );
+    let definition = SpineDefinition {
+        supports: [a, b],
+        radius: r("1/10"),
+        sides: [Sign::Positive, Sign::Negative],
+        axis: 1,
+        seed: r("1/2"),
+        tolerance: r("1/1000"),
+    };
+    let spine = Spine::prove(&definition, &mut dec).unwrap();
+    let sweep = Sweep::new(&spine, &mut dec).unwrap();
+    let width = r("1/1000000");
+    // A 3-4-5 direction in the short arc at z=1, the same direction below
+    // the end, and a point opposite the arc whose nearest point is a rail.
+    for ([x, y, z], expected) in [
+        (["1/25", "1/50", "1"], q(0)),
+        (["1/25", "1/50", "1/4"], r("1/4")),
+        (["0", "1/5", "1"], r("1/10")),
+    ] {
+        let p = RPoint3::new(r(x), r(y), r(z));
+        let result = sweep.distance(&p, &width, &mut dec).unwrap();
+        assert!(result.converged, "{p:?}: {result:?}");
+        assert!(
+            result.lower <= expected && result.upper.as_ref().unwrap() >= &expected,
+            "{p:?}: expected {expected}, got {result:?}"
+        );
+    }
+    for ([x, y], expected) in [
+        (["7/100", "3/50"], Location::Inside),
+        (["1/100", "-1/50"], Location::Outside),
+    ] {
+        let p = RPoint3::new(r(x), r(y), q(1));
+        assert_eq!(
+            sweep.query(&p, &width, &mut dec).unwrap().location,
+            expected
+        );
+    }
+}
+
+#[test]
+fn independently_sampled_arcs_on_the_three_m11_edges_lie_in_the_sweep_range() {
+    let mut dec = Decider::default();
+    let pairs: [(Surface, Surface); 3] = [
+        (support_a, support_b),
+        (support_b, support_c),
+        (bumped_a, bumped_b),
+    ];
+    let width = r("1/1000000");
+    for (index, (first, second)) in pairs.into_iter().enumerate() {
+        let (name, spine, _) = proved(index);
+        let sweep = Sweep::new(&spine, &mut dec).unwrap_or_else(|e| panic!("{name}: {e:?}"));
+        let start = spine.ends()[0].point;
+        let [from, to] = [start[4].hi(), spine.ends()[1].point[4].lo()];
+        let mut guess = [start[3].mid(), start[5].mid(), start[6].mid()];
+        let mut durations = Vec::new();
+        for i in 0..=100 {
+            let tau = from + (to - from) * f64::from(i) / 100.0;
+            let (x, centre) = spine_point(first, second, tau, guess);
+            guess = x;
+            let a = first(x[0], tau)[0];
+            let b = second(x[1], x[2])[0];
+            for angle in [0.0, 0.25, 0.5, 0.75, 1.0] {
+                let radial: [f64; 3] = std::array::from_fn(|j| {
+                    (a[j] - centre[j]) * (1.0 - angle) + (b[j] - centre[j]) * angle
+                });
+                let l = radial.iter().map(|x| x * x).sum::<f64>().sqrt();
+                let p: [Q; 3] = std::array::from_fn(|j| {
+                    Q::from_f64_exact(centre[j] + radial[j] * 0.1 / l).unwrap()
+                });
+                let [x, y, z] = p;
+                let p = RPoint3::new(x, y, z);
+                let before = Instant::now();
+                let range = sweep.distance(&p, &width, &mut dec).unwrap();
+                durations.push(before.elapsed());
+                assert!(
+                    range.lower <= r("1/1000000000000"),
+                    "{name} {tau}: {range:?}"
+                );
+                assert!(
+                    range.upper.as_ref().is_some_and(|u| u <= &width),
+                    "{name} {tau}: {range:?}"
+                );
+            }
+        }
+        durations.sort_unstable();
+        println!(
+            "{name}: {} distance queries, median {:?}",
+            durations.len(),
+            durations[durations.len() / 2]
+        );
+    }
+}
+
+#[test]
+fn the_m27_cap_keeps_the_blend_past_the_first_rail_end() {
+    let mut dec = Decider::default();
+    let (_, definition) = definition(0, &mut dec);
+    let [original, continued] = cap_continuation(&definition, 1, &mut dec).unwrap();
+    let caps = [
+        (
+            RPoint3::new(q(0), q(0), q(0)),
+            RVector3::new(q(0), q(0), q(1)),
+        ),
+        (
+            RPoint3::new(q(0), q(0), q(2)),
+            RVector3::new(q(0), q(0), q(-1)),
+        ),
+    ];
+    let sweep = Sweep::between_caps(&continued, &caps, &mut dec).unwrap();
+    let finite = Sweep::new(&original, &mut dec).unwrap();
+    // tau = 1.01 is beyond the first rail's top border. The second rail
+    // is still below the cap here. Its point must survive the cap cut.
+    let tau = 1.01;
+    let (parameters, _) = spine_point(support_a, support_b, tau, [0.94, 0.04, 0.98]);
+    let rail = support_b(parameters[1], parameters[2])[0];
+    assert!(rail[2] < 2.0);
+    let [x, y, z] = rail.map(|x| Q::from_f64_exact(x).unwrap());
+    let p = RPoint3::new(x, y, z);
+    let width = r("1/1000000");
+    let trimmed = sweep.distance(&p, &width, &mut dec).unwrap();
+    let stopped = finite.distance(&p, &width, &mut dec).unwrap();
+    assert!(
+        trimmed.upper.as_ref().is_some_and(|d| d <= &width),
+        "{trimmed:?}"
+    );
+    assert!(stopped.lower > r("1/1000"), "{stopped:?}");
+}
+
+fn near_tangent(slope: Q, dec: &mut Decider) -> SpineDefinition {
+    let u = MPoly::var(2, 0);
+    let v = MPoly::var(2, 1);
+    let v2 = v.scale(&q(2));
+    let a = patch(
+        &[u.clone(), (&u * &u).scale(&r("1/16")), v2.clone()],
+        [2, 1],
+        dec,
+    );
+    // The skew along the edge gives the two contact rails different border
+    // stations without changing the second face's plane or the shared edge.
+    let b = patch(
+        &[u.scale(&q(-1)), u.scale(&slope), &v2 + &u.scale(&r("1/8"))],
+        [1, 1],
+        dec,
+    );
+    SpineDefinition {
+        supports: [a, b],
+        radius: r("1/10"),
+        sides: [Sign::Negative, Sign::Positive],
+        axis: 1,
+        seed: r("1/2"),
+        tolerance: r("1/1000"),
+    }
+}
+
+#[test]
+fn a_plane_offset_can_enter_the_spline_spine_system_at_zero_offset() {
+    let mut dec = Decider::default();
+    let mixed = near_tangent(r("15/8"), &mut dec);
+    let (spine, work) =
+        with_operation_budget(ALLOWANCE, || Spine::prove_spline_plane(&mixed, 1, &mut dec));
+    let spine = spine.unwrap();
+    let [x, y, z, ..] = spine.at(0.5).unwrap();
+    // The second side is y = -(15/8)x, and the ball is above that
+    // plane. Since |(15,8)|=17, its offset is 15x + 8y = 17/10.
+    let p = |x| catallax_numbers::Interval::point(x).unwrap();
+    assert!((x * p(15.0) + y * p(8.0)).contains(1.7));
+    assert!(z.contains(1.0));
+    assert!(spine.eps() <= spine.target());
+    assert!(!work.exhausted);
+    Sweep::new(&spine, &mut dec).unwrap();
+    println!(
+        "spline-plane tube {:.6e} mm, {} work",
+        spine.eps(),
+        work.used
+    );
+}
+
+#[test]
+fn the_biquadratic_brep_carrier_display_lies_within_the_field_sweep_range() {
+    use catallax_shapes::{
+        Curve, PointDef, SplineBoundary, SplineFillet, SplineFilletDefinition, Surface,
+    };
+    use catallax_topology::{
+        Body, BodyKind, Coedge, Edge, Face, Loop, Lump, Model, Sense, Shell, Vertex,
+    };
+    let mut dec = Decider::default();
+    let (_, definition) = definition(2, &mut dec);
+    let spine = Spine::prove(&definition, &mut dec).unwrap();
+    let sweep = Sweep::new(&spine, &mut dec).unwrap();
+    let shape = SplineFilletDefinition::new(
+        definition.supports,
+        definition.radius,
+        definition.sides,
+        definition.axis,
+        [r("1/32"), q(1)],
+    )
+    .unwrap();
+    let (fit, work) = with_operation_budget(ALLOWANCE, || SplineFillet::fit(shape, &mut dec));
+    assert!(!work.exhausted);
+    let fit = fit.unwrap();
+
+    // Mesh the fitted carrier as a bounded B-rep sheet. This frozen row
+    // specifies a support pair and a parameter range, with no cap faces.
+    let patch = RationalPatch::new(fit.carrier().clone(), &mut dec).unwrap();
+    let domain = patch.domain();
+    let mut model = Model::default();
+    let vertices = [[0, 0], [1, 0], [1, 1], [0, 1]].map(|[i, j]| {
+        let t = [domain[0][i].clone().into(), domain[1][j].clone().into()];
+        let p = patch.point_at(&t, &mut dec).unwrap();
+        let p = model.geom_mut().add_point(PointDef::Explicit(p));
+        model.add_vertex(Vertex {
+            point: p,
+            tolerance: None,
+        })
+    });
+    let mut coedges = Vec::new();
+    for (i, (side, sense)) in [
+        (SplineBoundary::VMin, Sense::Same),
+        (SplineBoundary::UMax, Sense::Same),
+        (SplineBoundary::VMax, Sense::Reversed),
+        (SplineBoundary::UMin, Sense::Reversed),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let curve = model
+            .geom_mut()
+            .add_curve(Curve::BSpline(patch.boundary(side)));
+        let edge = model.add_edge(Edge {
+            curve,
+            sense,
+            start: Some(vertices[i]),
+            end: Some(vertices[(i + 1) % 4]),
+            tolerance: None,
+        });
+        coedges.push(model.add_coedge(Coedge {
+            edge,
+            sense: Sense::Same,
+        }));
+    }
+    let boundary = model.add_loop(Loop::Coedges(coedges));
+    let surface = model.geom_mut().add_surface(Surface::BSpline(patch.into()));
+    let face = model.add_face(Face {
+        surface,
+        sense: Sense::Same,
+        loops: vec![boundary],
+        tolerance: None,
+    });
+    let shell = model.add_shell(Shell { faces: vec![face] });
+    let lump = model.add_lump(Lump {
+        shells: vec![shell],
+    });
+    let body = model.add_body(Body {
+        kind: BodyKind::Surface,
+        lumps: vec![lump],
+        wires: vec![],
+        marks: Default::default(),
+    });
+    let mesh = catallax_mesh::compare_position_mesh(&model, body, &Default::default(), &mut dec)
+        .unwrap()
+        .geometry;
+    let bound = &fit.bound().upper + &r("1/1000000");
+    assert!(!mesh.positions.is_empty());
+    for point in &mesh.positions {
+        let [x, y, z] = point.map(|x| Q::from_f64_exact(x).unwrap());
+        let p = RPoint3::new(x, y, z);
+        let d = sweep.distance(&p, &bound, &mut dec).unwrap();
+        assert!(
+            d.upper.as_ref().is_some_and(|u| u <= &bound),
+            "{p:?}: {d:?}"
+        );
+    }
+    println!(
+        "biquadratic fitted carrier: {} display vertices within {bound} mm",
+        mesh.positions.len()
+    );
+}
+
+#[test]
+fn near_tangent_sweep_has_a_deterministic_certified_cutoff() {
+    let mut dec = Decider::default();
+    let mut last = None;
+    for power in 0..=24 {
+        let slope = Q::one().mul_pow2(-power);
+        let definition = near_tangent(slope.clone(), &mut dec);
+        let (result, work) = with_operation_budget(ALLOWANCE, || {
+            let spine = Spine::prove(&definition, &mut dec)?;
+            Sweep::new(&spine, &mut dec)?;
+            Ok::<_, catallax_numbers::Refusal>(spine.eps())
+        });
+        let degrees = slope.to_f64_nearest().atan().to_degrees();
+        match result {
+            Ok(width) => {
+                last = Some(power);
+                println!("{degrees:e} degrees: {} work, {width:e} mm", work.used);
+            }
+            Err(refusal) => {
+                println!(
+                    "{degrees:e} degrees: {} work, {} {}",
+                    work.used, refusal.code, refusal.detail
+                );
+            }
+        }
+    }
+    assert!(
+        last.is_some_and(|power| power >= 14),
+        "the certified cutoff regressed"
+    );
+    let tangent = near_tangent(q(0), &mut dec);
+    let (result, _) = with_operation_budget(ALLOWANCE, || {
+        let spine = Spine::prove(&tangent, &mut dec)?;
+        Sweep::new(&spine, &mut dec)?;
+        Ok::<_, catallax_numbers::Refusal>(())
+    });
+    let refusal = result.unwrap_err();
+    assert!(refusal.code.starts_with("field.spline-"), "{refusal:?}");
 }

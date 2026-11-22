@@ -60,6 +60,55 @@ fn motion_shell_comparison_checks_spline_sweep_vertices_and_reports_reverse_gap(
         assert!(report.sampled_distance_upper.unwrap() <= options.accuracy);
     }
 }
+
+#[test]
+fn loft_spline_rounds_have_forward_display_coverage() {
+    let polygon = |prefix: &str, points: [[i64; 2]; 4]| {
+        points.into_iter().enumerate().map(|(i, [x, y])| {
+            json!({"kind":"line","id":format!("{prefix}_{i}"),"to":[x.to_string(),y.to_string()]})
+        }).collect::<Vec<_>>()
+    };
+    let bottom = polygon("a", [[1, -1], [1, 1], [-1, 1], [-1, -1]]);
+    let side = |i: usize| json!({"step":"loft","role":{"side":{"segment":format!("a_{i}")}}});
+    let section = |i: usize, height: &str, loop_: &[_]| {
+        json!({"id":format!("section{i}"),"op":"sketch","loops":[loop_],
+          "plane":{"rotation":["1","0","0","0"],"translation":["0","0",height]}})
+    };
+    for ([a, b], planar) in [([0, 1], false), ([1, 2], false), ([0, 1], true)] {
+        let top = if planar {
+            [[1, 0], [1, 2], [-2, 0], [0, -1]]
+        } else {
+            [[1, 0], [0, 2], [-2, 0], [0, -1]]
+        };
+        let top = polygon("b", top);
+        let recipe = Recipe::parse(&json!({
+            "format":"catallax-recipe/5","name":"M11 loft comparison","steps":[
+                section(0,"0",&bottom), section(1,"2",&top),
+                {"id":"loft","op":"loft","shape":"ruled","sections":[
+                    {"profile":"section0","start":["a_0"]},{"profile":"section1","start":["b_0"]}]},
+                {"id":"round","op":"fillet","body":"loft","radius":"1/10",
+                    "edges":[{"between":[side(a),side(b)]}]}
+            ],"result":"round"
+        }).to_string()).unwrap();
+        let (report, work) =
+            catallax_numbers::with_operation_budget(100_000_000, || check(&recipe));
+        println!(
+            "loft edges {a}/{b} planar {planar}: {} forward vertices, {} work, {:?}",
+            report.forward_vertices, work.used, report.refusal
+        );
+        assert!(
+            report.forward_vertices > 0 && report.refusal.is_none(),
+            "{report:?}"
+        );
+        let findings: Vec<_> = report
+            .findings
+            .iter()
+            .filter(|f| f.pass == Pass::Forward)
+            .collect();
+        assert!(findings.is_empty(), "{findings:?}");
+    }
+}
+
 #[test]
 fn thin_boolean_faces_receive_trim_checked_reverse_samples() {
     let part = recipe(vec![

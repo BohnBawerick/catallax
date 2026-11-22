@@ -287,6 +287,55 @@ pub struct Plan {
 }
 
 impl Plan {
+    /// Origin of the surviving spline blend on a result that is a rounded
+    /// loft shell.
+    pub fn spline_blend_origin(&self) -> Option<&Origin> {
+        let Instruction::Leaf(index) = self.instructions[self.root] else {
+            return None;
+        };
+        match &self.leaves[index] {
+            geometry::Leaf::Shell(shell) => shell.blend_origin(),
+            _ => None,
+        }
+    }
+
+    /// Guaranteed distance range to the result's named spline blend face.
+    pub fn spline_blend_distance(
+        &self,
+        origin: &Origin,
+        point: &RPoint3,
+        width: &Rational,
+        dec: &mut Decider,
+    ) -> Result<Option<rolling_region::Range>, Refusal> {
+        if self.spline_blend_origin() != Some(origin) {
+            return Ok(None);
+        }
+        let Instruction::Leaf(index) = self.instructions[self.root] else {
+            unreachable!("the origin belongs to a result leaf");
+        };
+        let geometry::Leaf::Shell(shell) = &self.leaves[index] else {
+            unreachable!("the origin belongs to a loft shell");
+        };
+        shell.blend_distance(point, width, dec)
+    }
+
+    /// Distance upper bound from a proved retained side or cap witness on
+    /// a rounded loft result, if a projection finds one within `width`.
+    pub fn rounded_loft_face_bound(
+        &self,
+        point: &RPoint3,
+        width: &Rational,
+        dec: &mut Decider,
+    ) -> Result<Option<Rational>, Refusal> {
+        let Instruction::Leaf(index) = self.instructions[self.root] else {
+            return Ok(None);
+        };
+        match &self.leaves[index] {
+            geometry::Leaf::Shell(shell) => shell.surviving_face_bound(point, width, dec),
+            _ => Ok(None),
+        }
+    }
+
     /// Removed-face provenance from draft operations, in recipe order.
     /// These records never make a vanished face selectable.
     pub fn consumed_faces(&self) -> &[catallax_features::ConsumedFace] {
@@ -1536,8 +1585,12 @@ impl Plan {
     }
 
     fn true_distance_formula(&self) -> bool {
-        matches!(self.instructions[self.root], Instruction::Leaf(i) if self.leaves[i].true_distance())
-            || self.separated_unions.contains(&self.root)
+        let distance = matches!(self.instructions[self.root], Instruction::Leaf(i) if self.leaves[i].true_distance())
+            || self.separated_unions.contains(&self.root);
+        distance && !self.leaves.iter().enumerate().any(|(i, leaf)| {
+            self.leaf_registers[i].is_some()
+                && matches!(leaf, geometry::Leaf::Shell(shell) if shell.blend_origin().is_some())
+        })
     }
 
     fn tentative<A: Arithmetic>(

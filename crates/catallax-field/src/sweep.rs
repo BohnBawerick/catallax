@@ -423,6 +423,7 @@ impl Plan {
                 sections,
                 shape,
                 profiles,
+                step,
                 dec,
             );
         }
@@ -437,12 +438,12 @@ impl Plan {
                         || a.0.iter().zip(&b.0).any(|(a, b)| !same_segments(a, b))
                 })
             {
-                return self.patch_or(recipe, fail(index), sections, shape, profiles, dec);
+                return self.patch_or(recipe, fail(index), sections, shape, profiles, step, dec);
             }
             if !p.pose.rotation.same_rotation(&first.pose.rotation, dec)?
                 || p.loops.len() != first.loops.len()
             {
-                return self.patch_or(recipe, fail(index), sections, shape, profiles, dec);
+                return self.patch_or(recipe, fail(index), sections, shape, profiles, step, dec);
             }
             for (a, b) in first.loops.iter().zip(&p.loops) {
                 if a.len() != b.len()
@@ -453,7 +454,7 @@ impl Plan {
                             || a.full != b.full
                     })
                 {
-                    return self.patch_or(recipe, fail(index), sections, shape, profiles, dec);
+                    return self.patch_or(recipe, fail(index), sections, shape, profiles, step, dec);
                 }
             }
             for (a, b) in sections[0].start.iter().zip(&section.start) {
@@ -463,7 +464,7 @@ impl Plan {
                     })
                 };
                 if locate(original, a) != locate(current, b) {
-                    return self.patch_or(recipe, fail(index), sections, shape, profiles, dec);
+                    return self.patch_or(recipe, fail(index), sections, shape, profiles, step, dec);
                 }
             }
             let shift = p
@@ -474,13 +475,13 @@ impl Plan {
                 .ok_or_else(|| fail(index))?;
             let t = shift.dot(&normal) / height.clone();
             if !shift.cross(&vector).is_zero() || t < previous || t > Rational::one() {
-                return self.patch_or(recipe, fail(index), sections, shape, profiles, dec);
+                return self.patch_or(recipe, fail(index), sections, shape, profiles, step, dec);
             }
             if shape == LoftShape::Smooth
                 && t != Rational::from_ratio(index as i64, (sections.len() - 1) as i64)
                     .expect("checked sections")
             {
-                return self.patch_or(recipe, fail(index), sections, shape, profiles, dec);
+                return self.patch_or(recipe, fail(index), sections, shape, profiles, step, dec);
             }
             previous = t;
         }
@@ -498,12 +499,13 @@ impl Plan {
         sections: &[LoftSection],
         shape: LoftShape,
         profiles: &BTreeMap<StepId, Profile>,
+        step: &StepId,
         dec: &mut Decider,
     ) -> Result<usize, Refusal> {
         if let Some(node) = self.circular_station_loft(recipe, sections, shape, profiles, dec)? {
             return Ok(node);
         }
-        let node = self.patch_loft(sections, profiles, dec)?;
+        let node = self.patch_loft(sections, profiles, step, dec)?;
         if let Some(node) = node {
             return Ok(node);
         }
@@ -539,6 +541,7 @@ impl Plan {
         &mut self,
         sections: &[LoftSection],
         profiles: &BTreeMap<StepId, Profile>,
+        step: &StepId,
         dec: &mut Decider,
     ) -> Result<Option<usize>, Refusal> {
         use crate::patch_shell::{Face, PatchFace, Polygon, Shell};
@@ -685,7 +688,16 @@ impl Plan {
         }
         faces.push(Face::Polygon(Box::new(Polygon::new(bottom)?)));
         faces.push(Face::Polygon(Box::new(Polygon::new(top)?)));
-        let shell = Shell::new(faces)?;
+        let sides = (0..n)
+            .map(|k| catallax_recipe::Origin {
+                step: step.clone(),
+                role: Role::Side {
+                    segment: a[(sa + k) % n].ids[0].clone(),
+                    path: None,
+                },
+            })
+            .collect();
+        let shell = Shell::new(faces)?.named_loft(sides);
         self.leaf(crate::geometry::Leaf::Shell(Box::new(shell)), vec![], dec)
             .map(Some)
     }

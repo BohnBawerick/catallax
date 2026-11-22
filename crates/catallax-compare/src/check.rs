@@ -468,6 +468,117 @@ fn forward_patch_shell(
     Ok(())
 }
 
+/// The B-rep's rounded loft has a positional display but no strict
+/// facet mesh. Use its own certified positional bound at the caller's
+/// chord tolerance, and retain the missing reverse coverage.
+#[allow(clippy::too_many_arguments)]
+fn spline_display(
+    revision: &Revision,
+    model: &catallax_topology::Model,
+    body: catallax_topology::BodyId,
+    field: &Plan,
+    origin: &Origin,
+    report: &mut Report,
+    options: &Options,
+    dec: &mut Decider,
+) -> Result<bool, Refusal> {
+    let display = catallax_mesh::compare_position_mesh(model, body, &options.mesh, dec)?;
+    if !display.source_marks.is_empty() {
+        whole_failure(report, "spline display inherits marked geometry");
+    }
+    let mesh = display.geometry;
+    let error = display.measurement.maximum_deviation;
+    let names: Vec<_> = mesh
+        .faces
+        .iter()
+        .map(|f| model.face_origins(f.face).to_vec())
+        .collect();
+    let mut incident = vec![BTreeSet::new(); mesh.positions.len()];
+    let mut fitted = Vec::with_capacity(mesh.faces.len());
+    for (i, face) in mesh.faces.iter().enumerate() {
+        for triangle in &mesh.triangles[face.triangles.clone()] {
+            for &v in &triangle.vertices {
+                incident[v].insert(i);
+            }
+        }
+        let bound = match model.geom().surface(model.face(face.face).surface) {
+            Surface::BSpline(catallax_shapes::SplineSupport::SplineFillet(fit)) => {
+                fit.bound().upper.clone()
+            }
+            _ => r(0),
+        };
+        fitted.push(bound);
+    }
+    if !names.iter().any(|set| set.contains(origin)) {
+        whole_failure(report, "the B-rep display lacks the named spline blend");
+    }
+    let mut saw = vec![None; mesh.faces.len()];
+    for (i, position) in mesh.positions.into_iter().enumerate() {
+        if revision.is_cancelled() {
+            return Ok(false);
+        }
+        let [x, y, z] = position.map(|x| Rational::from_f64_exact(x).expect("finite display"));
+        let p = RPoint3::new(x, y, z);
+        if options
+            .region
+            .as_ref()
+            .is_some_and(|b| !b.contains(&p, &error))
+        {
+            continue;
+        }
+        report.forward_vertices += 1;
+        for &face in &incident[i] {
+            saw[face].get_or_insert_with(|| p.clone());
+        }
+        let matching = incident[i]
+            .iter()
+            .find(|&&face| names[face].contains(origin));
+        let fit = matching.map_or_else(|| r(0), |&face| fitted[face].clone());
+        let error = &error + &fit;
+        let goal = (&options.accuracy - &error).max(r(0));
+        let bounds = if matching.is_some() {
+            let range = field
+                .spline_blend_distance(origin, &p, &goal, dec)?
+                .expect("the field has the named blend");
+            (
+                (&range.lower - &error).max(r(0)),
+                range.upper.as_ref().map(|u| u + &error),
+            )
+        } else {
+            let bound = field.rounded_loft_face_bound(&p, &goal, dec)?;
+            (r(0), bound.as_ref().map(|u| u + &error))
+        };
+        distance_finding(
+            report,
+            Pass::Forward,
+            &p,
+            incident[i]
+                .iter()
+                .map(|&face| names[face].clone())
+                .collect(),
+            matching.map_or_else(Vec::new, |_| vec![origin.clone()]),
+            bounds,
+            options,
+        );
+    }
+    for (p, names) in saw.into_iter().zip(names) {
+        if let Some(p) = p {
+            unresolved(
+                report,
+                Pass::Reverse,
+                &p,
+                vec![names],
+                vec![],
+                "selected B-rep face lacks complete sampled origin/direction coverage",
+            );
+        }
+    }
+    if report.findings.iter().any(|f| f.reason == Reason::Gap) {
+        report.verdict = Verdict::Disagree;
+    }
+    Ok(true)
+}
+
 pub(crate) fn run(
     revision: &Revision,
     recipe: &Recipe,
@@ -593,6 +704,29 @@ pub(crate) fn run(
     }
     if revision.is_cancelled() {
         return Completion::Cancelled;
+    }
+    if let Some(origin) = field.spline_blend_origin() {
+        match spline_display(
+            revision,
+            &model,
+            result,
+            &field,
+            origin,
+            &mut report,
+            options,
+            &mut dec,
+        ) {
+            Ok(true) => (),
+            Ok(false) => return Completion::Cancelled,
+            Err(e) => {
+                whole_failure(
+                    &mut report,
+                    format!("spline display {}: {}", e.code, e.detail),
+                );
+                report.refusal = Some(e);
+            }
+        }
+        return revision.publish(report);
     }
     let mesh = match catallax_mesh::mesh_body(&model, result, &options.mesh, &mut dec) {
         Ok(m) => {

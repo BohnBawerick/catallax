@@ -125,10 +125,8 @@ impl Gyroid {
         })
     }
 
-    /// As [`Gyroid::new`], but a linear level outside the supported function names
-    /// its reason: `gyroid.grade-function-unsupported` for anchors that do not
-    /// differ along one part axis, `gyroid.grade-range-unsupported` for an endpoint
-    /// outside `[-1/4, 1/4]` or a slope above `1/10` per millimetre.
+    /// As [`Gyroid::new`], with `gyroid.grade-range-unsupported` for a graded
+    /// endpoint outside `[-1/4, 1/4]` or slope above `1/10` per millimetre.
     pub(crate) fn certified(
         period: &Rational,
         level: &Grade,
@@ -169,10 +167,7 @@ impl Gyroid {
         let ([low, high], slope) = level_limits();
         check_certified(
             &grade,
-            [
-                "gyroid.grade-function-unsupported",
-                "gyroid.grade-range-unsupported",
-            ],
+            "gyroid.grade-range-unsupported",
             [&low, &high],
             &slope,
         )?;
@@ -314,11 +309,16 @@ impl Gyroid {
         self.grade.planes()
     }
 
-    pub(crate) fn has_affine_level_extension(&self) -> bool {
+    pub(crate) fn supports_affine_clip(&self, bounds: &[[Rational; 2]; 3]) -> bool {
         self.grade.has_affine_extension()
+            && self.level_piece(bounds).is_some_and(|piece| {
+                piece == Piece::Ramp
+                    || self.grade.constant().is_some()
+                    || self.grade.axis().is_some()
+            })
     }
 
-    /// Encloses `∇(g - c)` and the Hessian of `g` over a box on which the level is
+    /// Encloses the gradient and Hessian of `g - c` over a box on which the level is
     /// the given piece. Values at the centre are widened by the next derivative's
     /// bound times the half-widths: second derivatives of `g` are at most `2k²` on
     /// the diagonal and `k²` off it, and third derivatives at most `2k³`.

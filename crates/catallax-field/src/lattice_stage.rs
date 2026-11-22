@@ -263,8 +263,6 @@ impl<S: TerminalField> Stage<S> {
     /// gyroid definition, `field.grade-face-coverage` for an unsupported distance
     /// grade region, `field.grade-face-missing` or `field.grade-face-ambiguous` when
     /// a reference has no unique resolution,
-    /// `lattice.grade-function-unsupported` or `gyroid.grade-function-unsupported`
-    /// for linear anchors that do not differ along one part axis,
     /// `lattice.grade-range-unsupported` or `gyroid.grade-range-unsupported` for an
     /// endpoint or slope outside the certified range, and the field's own codes when
     /// the body cannot be compiled. A grade with equal endpoints is its constant.

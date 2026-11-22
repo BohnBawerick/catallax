@@ -109,12 +109,9 @@ impl<'a> Clip<'a> {
             }
         }
         let (leaf, gyroid) = network?;
-        if !gyroid.has_affine_level_extension() {
-            return None;
-        }
         let lower = [lower[0]?, lower[1]?, lower[2]?];
         let upper = [upper[0]?, upper[1]?, upper[2]?];
-        gyroid.level_piece(bounds).is_some().then_some(Self {
+        gyroid.supports_affine_clip(bounds).then_some(Self {
             gyroid,
             leaf,
             lower,

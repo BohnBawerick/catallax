@@ -1,15 +1,8 @@
-//! The supported position functions of RECIPE.md section 4.16, shared by the
-//! lattice radius and the gyroid level.
+//! Clamped grades shared by lattice radii and gyroid levels.
 //!
-//! A grade is a constant or `v0 + clamp(t, 0, 1) (v1 - v0)` with
-//! `t = ((p - f) · (g - f)) / |g - f|²`. Equal endpoints are the constant they
-//! equal, so a constant written either way compiles to the same definition. The
-//! anchors are part coordinates: nothing here reads a body's bounds, so editing
-//! the body never moves them.
-//!
-//! A terminal field certifies the subset whose anchors differ along exactly one
-//! part axis, with family limits on the endpoints and on the slope
-//! `K = |v1 - v0| / |g - f|`. Other valid grades stay valid definitions.
+//! Linear anchors, centres and axes are fixed in part coordinates. Face-distance
+//! grades resolve against the current region. The grade's endpoint values and slope
+//! determine admission to terminal certification.
 
 use crate::geometry;
 use crate::metric::{PRECISION, Scalar};
@@ -121,9 +114,8 @@ impl GradeDef {
         }))
     }
 
-    /// Compiles a constant or linear grade. A linear grade with coincident anchors
-    /// refuses with `impossible`; equal endpoint values give the constant. A
-    /// distance grade is not a position function here and returns `None`.
+    /// Compiles a grade with no region dependency. Equal endpoint values give the
+    /// constant. Face-distance grades are resolved separately against a region.
     pub(crate) fn compile(
         grade: &Grade,
         impossible: &'static str,
@@ -521,7 +513,8 @@ impl GradeDef {
         Some((axis, [from, to]))
     }
 
-    /// The exact range of the grade over a closed rational box.
+    /// Bounds a grade over a closed rational box. Constants and linear grades
+    /// return the exact extremes.
     pub(crate) fn range(&self, lo: &[Rational; 3], hi: &[Rational; 3]) -> [Rational; 2] {
         match self {
             Self::Constant(c) => [c.clone(), c.clone()],
@@ -692,14 +685,11 @@ impl FaceDistance {
     }
 }
 
-/// Checks the terminal certification subset of one field family. A constant, or
-/// a linear grade whose endpoints are equal, is always in it. Otherwise the
-/// anchors must differ along exactly one part axis (`{family}.grade-function-unsupported`),
-/// both endpoints must lie in `[low, high]` and the slope must be at most
-/// `max_slope` (`{family}.grade-range-unsupported`). Nothing is clamped.
+/// Checks the endpoint and slope limits of one field family. Constants keep
+/// their own route. Face distances check these limits before face resolution.
 pub(crate) fn check_certified(
     grade: &GradeDef,
-    [function, range]: [&'static str; 2],
+    range: &'static str,
     [low, high]: [&Rational; 2],
     max_slope: &Rational,
 ) -> Result<(), Refusal> {
@@ -716,10 +706,13 @@ pub(crate) fn check_certified(
         return Ok(());
     };
     if grade.axis().is_none() {
-        return Err(Refusal::new(
-            function,
-            "a terminal field certifies linear grades whose anchors differ along one part axis",
-        ));
+        check_endpoints([&linear.start, &linear.end], [low, high], range)?;
+        let rise = &linear.end - &linear.start;
+        let allowed_sq = &(max_slope * max_slope) * &linear.length_sq;
+        if &rise * &rise > allowed_sq {
+            return Err(slope_refusal(&grade.slope_bound(), max_slope, range));
+        }
+        return Ok(());
     }
     check_limits(
         [&linear.start, &linear.end],
@@ -737,6 +730,26 @@ fn check_limits(
     max_slope: &Rational,
     range: &'static str,
 ) -> Result<(), Refusal> {
+    check_endpoints(endpoints, [low, high], range)?;
+    let slope = slope();
+    if &slope > max_slope {
+        return Err(slope_refusal(&slope, max_slope, range));
+    }
+    Ok(())
+}
+
+fn slope_refusal(slope: &Rational, max_slope: &Rational, range: &'static str) -> Refusal {
+    Refusal::new(
+        range,
+        format!("grade slope {slope} per mm exceeds the certified {max_slope} per mm"),
+    )
+}
+
+fn check_endpoints(
+    endpoints: [&Rational; 2],
+    [low, high]: [&Rational; 2],
+    range: &'static str,
+) -> Result<(), Refusal> {
     for value in endpoints {
         if value < low || value > high {
             return Err(Refusal::new(
@@ -744,13 +757,6 @@ fn check_limits(
                 format!("grade endpoint {value} is outside the certified range [{low}, {high}]"),
             ));
         }
-    }
-    let slope = slope();
-    if &slope > max_slope {
-        return Err(Refusal::new(
-            range,
-            format!("grade slope {slope} per mm exceeds the certified {max_slope} per mm"),
-        ));
     }
     Ok(())
 }
@@ -779,14 +785,13 @@ pub(crate) fn check_distance(
     )
 }
 
-/// The exact range of a constant or linear grade over a closed rational box, as a
-/// terminal field reads it. A box across an anchor plane holds the clamped value,
-/// never an unclamped endpoint or the value at the box centre.
+/// Bounds a grade over a closed rational box. Constant and linear grades return
+/// their exact clamped range. Point and radial grades return an enclosure.
 ///
 /// Refusals: `field.grade-box` when a lower corner exceeds its upper corner,
-/// `field.grade-unsupported` for a distance grade, the family-neutral
-/// `field.grade-impossible` for coincident anchors, and the decider's work and
-/// deadline outcomes.
+/// `field.grade-unsupported` for a grade needing region faces,
+/// `field.grade-impossible` for invalid grade parameters, and the decider's
+/// work and deadline outcomes.
 pub fn grade_range(
     grade: &Grade,
     lo: &[Rational; 3],

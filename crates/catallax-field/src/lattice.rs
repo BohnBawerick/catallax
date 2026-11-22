@@ -294,9 +294,15 @@ impl Lattice {
     }
 
     /// Whether the radius uses a nonconstant grade with terminal certification.
-    pub(crate) fn axis_graded(&self) -> bool {
-        self.grade.axis().is_some()
-            || matches!(self.grade, GradeDef::Faces(_) | GradeDef::Radius(_))
+    pub(crate) fn certified_grade(&self) -> bool {
+        match &self.grade {
+            GradeDef::Constant(_) => false,
+            GradeDef::Linear(_) => {
+                self.grade.axis().is_some()
+                    || check_certified_radius(&self.size, &self.grade).is_ok()
+            }
+            GradeDef::Faces(_) | GradeDef::Radius(_) => true,
+        }
     }
 
     /// The axis and positions of an axis grade's anchor planes.
@@ -361,8 +367,7 @@ impl Lattice {
         Some(beta - self.grade.interval(world))
     }
 
-    /// `∇(β - ρ)` and its Hessian over a box inside a line piece's box. The radius is
-    /// affine there, so the Hessian is that of `β`.
+    /// Encloses the gradient and Hessian of `β - ρ` over a smooth line piece.
     pub(crate) fn line_derivatives(
         &self,
         piece: &LinePiece,
@@ -754,10 +759,7 @@ impl Lattice {
 pub(crate) fn check_certified_radius(size: &Rational, grade: &GradeDef) -> Result<(), Refusal> {
     grade::check_certified(
         grade,
-        [
-            "lattice.grade-function-unsupported",
-            "lattice.grade-range-unsupported",
-        ],
+        "lattice.grade-range-unsupported",
         [
             &Rational::zero(),
             &(size * &Rational::from_ratio(1, 4).unwrap()),

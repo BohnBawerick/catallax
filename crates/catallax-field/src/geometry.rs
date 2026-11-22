@@ -680,11 +680,10 @@ pub(crate) enum Leaf {
     Rolling(Box<crate::rolling_region::piece::Piece>),
 }
 impl Leaf {
-    /// Whether a lattice radius or gyroid level is a linear grade whose anchors differ
-    /// along one part axis.
-    pub(crate) fn axis_graded(&self) -> bool {
+    /// Whether a nonconstant grade uses terminal certification.
+    pub(crate) fn certified_grade(&self) -> bool {
         match self {
-            Self::Lattice(lattice) => lattice.axis_graded(),
+            Self::Lattice(lattice) => lattice.certified_grade(),
             Self::Gyroid(gyroid) => gyroid.graded(),
             _ => false,
         }

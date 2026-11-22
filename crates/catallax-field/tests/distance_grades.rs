@@ -1,4 +1,4 @@
-//! Face, point and axis distance grades share one definition for preview, export and mass.
+//! Terminal grades share one definition for preview, export and mass.
 
 use catallax_field::{
     Location, Workspace,
@@ -58,8 +58,12 @@ fn distance(faces: Value, near: &str, far: &str, span: &str) -> Grade {
 }
 
 fn linear(z0: &str, z1: &str, start: &str, end: &str) -> Grade {
+    linear_between(["0", "0", z0], ["0", "0", z1], start, end)
+}
+
+fn linear_between(from: [&str; 3], to: [&str; 3], start: &str, end: &str) -> Grade {
     serde_json::from_value(json!({
-        "linear":{"from":["0","0",z0],"to":["0","0",z1],"start":start,"end":end}
+        "linear":{"from":from,"to":to,"start":start,"end":end}
     }))
     .unwrap()
 }
@@ -360,5 +364,61 @@ fn point_and_radial_grade_refusals_keep_family_limits() {
             .unwrap_err()
             .code;
         assert_eq!(code, expected);
+    }
+}
+
+#[test]
+#[cfg_attr(debug_assertions, ignore = "certification runs in release mode")]
+fn oblique_linear_grades_export_and_measure_both_families() {
+    let body = block(["6", "6", "10"], ["-3", "-3", "20"]);
+    let spec = lattice(linear_between(
+        ["-1", "0", "18"],
+        ["1", "0", "32"],
+        "1",
+        "2",
+    ));
+    let stage = Stage::new(&body, spec.clone(), settings(), &mut Decider::default()).unwrap();
+    for (x, expected) in [("3/2", Location::Inside), ("-3/2", Location::Outside)] {
+        let point = RPoint3::new(q(x), q("0"), q("25"));
+        assert_eq!(
+            stage
+                .plan()
+                .proven(&point, &mut Workspace::default())
+                .location,
+            expected
+        );
+    }
+    outputs(&body, spec);
+
+    let body = block(["2", "2", "2"], ["-1", "-1", "-1"]);
+    for (from, to) in [
+        (["-4", "0", "-4"], ["4", "0", "4"]),
+        (["-1/2", "0", "-1/2"], ["1/2", "0", "1/2"]),
+    ] {
+        outputs(&body, gyroid(linear_between(from, to, "-1/50", "1/50")));
+    }
+}
+
+#[test]
+fn oblique_slope_limits_use_the_exact_anchor_length() {
+    let body = block(["2", "2", "2"], ["-1", "-1", "-1"]);
+    let origin = ["0", "0", "0"];
+    for (end, accepted) in [("7/2", true), ("3500001/1000000", false)] {
+        let grade = linear_between(origin, ["3", "4", "0"], "1", end);
+        let result = Stage::new(&body, lattice(grade), settings(), &mut Decider::default());
+        if accepted {
+            assert!(result.is_ok());
+        } else {
+            assert_eq!(result.unwrap_err().code, "lattice.grade-range-unsupported");
+        }
+    }
+    for (end, accepted) in [("1/10", true), ("100001/1000000", false)] {
+        let grade = linear_between(origin, ["3/5", "4/5", "0"], "0", end);
+        let result = Stage::new(&body, gyroid(grade), settings(), &mut Decider::default());
+        if accepted {
+            assert!(result.is_ok());
+        } else {
+            assert_eq!(result.unwrap_err().code, "gyroid.grade-range-unsupported");
+        }
     }
 }

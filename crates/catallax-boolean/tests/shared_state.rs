@@ -304,6 +304,23 @@ const KNOWN: &[(&str, &str, Kind)] = &[
         "known",
         Kind::PerThread,
     ),
+    // Run-ahead workers skip these charged per-span row caches and invalidate
+    // their records; the request thread alone reads and fills them.
+    (
+        "catallax-shapes/src/tessellation/rational.rs",
+        "position_row",
+        Kind::Guarded,
+    ),
+    (
+        "catallax-shapes/src/tessellation/rational.rs",
+        "previous",
+        Kind::Guarded,
+    ),
+    (
+        "catallax-shapes/src/tessellation/rational.rs",
+        "derivative_rows",
+        Kind::Guarded,
+    ),
     ("catallax-intersect/src/chart.rs", "balls", Kind::Guarded),
     // Uncharged for a rational constant; guarded where an enclosure fills it.
     ("catallax-intersect/src/chart.rs", "interval", Kind::Guarded),

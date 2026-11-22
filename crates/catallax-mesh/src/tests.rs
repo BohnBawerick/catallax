@@ -9,6 +9,130 @@ use catallax_topology::{
 
 use crate::{Mesh, MeshOptions, mesh_body};
 
+fn affine_patch(z: i64, lo: i64, hi: i64, dec: &mut Decider) -> Surface {
+    use catallax_shapes::{BSplineSurface, RationalPatch, SplineSupport};
+
+    let knots = vec![0.into(), 0.into(), 1.into(), 1.into()];
+    let points = [[lo, lo], [lo, hi], [hi, lo], [hi, hi]]
+        .map(|[x, y]| RPoint3::new(x.into(), y.into(), z.into()).to_real());
+    let carrier = BSplineSurface::new(
+        [1, 1],
+        [knots.clone(), knots],
+        [2, 2],
+        points.to_vec(),
+        vec![catallax_numbers::Real::one(); 4],
+        dec,
+    )
+    .unwrap();
+    Surface::BSpline(SplineSupport::RationalPatch(
+        RationalPatch::new(carrier, dec).unwrap(),
+    ))
+}
+
+#[test]
+fn affine_spline_face_bound_covers_curved_trim() {
+    let mut model = Model::new();
+    let dec = &mut Decider::default();
+    let surface = model.geom_mut().add_surface(affine_patch(0, -2, 2, dec));
+    let curve = model.geom_mut().add_curve(Curve::Circle(
+        Circle::new(
+            RPoint3::origin().into(),
+            RVector3::new(0.into(), 0.into(), 1.into()).into(),
+            1.into(),
+            RVector3::new(1.into(), 0.into(), 0.into()).into(),
+            dec,
+        )
+        .unwrap(),
+    ));
+    let edge = model.add_edge(Edge {
+        curve,
+        sense: Sense::Same,
+        start: None,
+        end: None,
+        tolerance: None,
+    });
+    let coedge = model.add_coedge(Coedge {
+        edge,
+        sense: Sense::Same,
+    });
+    let boundary = model.add_loop(Loop::Coedges(vec![coedge]));
+    let face = model.add_face(Face {
+        surface,
+        sense: Sense::Same,
+        loops: vec![boundary],
+        tolerance: None,
+    });
+    let shell = model.add_shell(Shell { faces: vec![face] });
+    let lump = model.add_lump(Lump {
+        shells: vec![shell],
+    });
+    let body = model.add_body(Body {
+        kind: BodyKind::Surface,
+        lumps: vec![lump],
+        wires: Vec::new(),
+        marks: MarkLog::new(),
+    });
+    let mesh = mesh_body(&model, body, &MeshOptions::default(), dec)
+        .unwrap()
+        .value;
+    let bound = mesh.faces[0].max_chord_error.to_f64_nearest();
+    for pair in mesh.edges[0].vertices.windows(2) {
+        let [ax, ay, _] = mesh.positions[pair[0]];
+        let [bx, by, _] = mesh.positions[pair[1]];
+        let length = (bx - ax).hypot(by - ay);
+        for i in 0..=1024 {
+            let t = f64::from(i) * std::f64::consts::TAU / 1024.0;
+            let (y, x) = t.sin_cos();
+            // The triangles lie to the left of this trim chord.
+            let distance = ((by - ay) * (x - ax) - (bx - ax) * (y - ay)) / length;
+            assert!(
+                distance <= bound + 1e-12,
+                "trim sample {distance} mm, face bound {bound} mm"
+            );
+        }
+    }
+}
+
+#[test]
+fn affine_spline_grid_reuses_box_corners_under_vertex_cap() {
+    let mut model = Model::new();
+    let dec = &mut Decider::default();
+    let box_body = topology::block(
+        &mut model,
+        [1.into(), 1.into(), 1.into()],
+        &Pose::identity(),
+    )
+    .unwrap();
+    let mut faces = model.faces_of_body(box_body);
+    let top = faces.last_mut().unwrap();
+    let mut face = model.face(*top).clone();
+    face.surface = model.geom_mut().add_surface(affine_patch(1, 0, 1, dec));
+    let Loop::Coedges(coedges) = model.loop_(face.loops[0]) else {
+        panic!("box top must have a coedge loop");
+    };
+    let coedges: Vec<_> = coedges.iter().map(|&id| model.coedge(id).clone()).collect();
+    let coedges = coedges.into_iter().map(|c| model.add_coedge(c)).collect();
+    face.loops = vec![model.add_loop(Loop::Coedges(coedges))];
+    *top = model.add_face(face);
+    let shell = model.add_shell(Shell { faces });
+    let lump = model.add_lump(Lump {
+        shells: vec![shell],
+    });
+    let body = model.add_body(Body {
+        kind: BodyKind::Solid,
+        lumps: vec![lump],
+        wires: Vec::new(),
+        marks: MarkLog::new(),
+    });
+    let options = MeshOptions {
+        max_vertices: 11,
+        ..MeshOptions::default()
+    };
+    let mesh = mesh_body(&model, body, &options, dec).unwrap().value;
+    assert_eq!(mesh.positions.len(), 8);
+    assert_closed(&mesh);
+}
+
 fn options() -> MeshOptions {
     MeshOptions {
         chord_tolerance: Rational::parse("0.15").unwrap(),

@@ -790,6 +790,11 @@ fn evaluate_row(
     if degree[0] < 2 || degree[1] == 0 || !(0.0 < u && u < 1.0) {
         return evaluate(net, degree, [u, v], point, |i| i, dec);
     }
+    // Workers leave the charged row caches alone. Their records are dropped,
+    // and the request thread recomputes these samples with its own cache.
+    if !catallax_numbers::shared_caches() {
+        return evaluate(net, degree, [u, v], point, |i| i, dec);
+    }
     let key = u.to_bits();
     let mut row = previous.borrow_mut();
     if row.as_ref().is_none_or(|entry| entry.u != key) {

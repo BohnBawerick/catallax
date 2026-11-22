@@ -1873,7 +1873,13 @@ impl Builder<'_> {
                 id
             };
         }
-        if error + rounding > self.options.tolerance {
+        if catallax_shapes::tessellation::checked_triangle_bound(
+            &error,
+            &rounding,
+            &self.options.tolerance,
+        )
+        .is_none()
+        {
             return Err(failure(
                 "field.display-precision",
                 "coordinate rounding exceeds the certified display tolerance",

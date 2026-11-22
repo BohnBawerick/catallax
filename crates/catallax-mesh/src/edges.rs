@@ -2,6 +2,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use catallax_intersect::{TracePiece, trace};
 use catallax_numbers::{Ball, Decider, Interval, MarkLog, Rational, Real, Refusal};
+use catallax_shapes::FilletCut;
 use catallax_topology::{BodyId, EdgeId, Loop, Model, Sense, VertexId};
 
 use crate::{
@@ -156,6 +157,7 @@ pub(crate) fn trace_chord(
 
 struct Sampler<'a> {
     piece: &'a Arc<TracePiece>,
+    cap: Option<(&'a FilletCut, Rational)>,
     charts: &'a [&'a Chart],
     spline_cosine: Option<Interval>,
     options: &'a MeshOptions,
@@ -168,6 +170,9 @@ struct Sampler<'a> {
 
 impl Sampler<'_> {
     fn acceleration(&self, interval: &Ball) -> Result<Rational, Refusal> {
+        if let Some((_, coefficient)) = &self.cap {
+            return Ok(coefficient.clone());
+        }
         if let Some(jets) = self
             .piece
             .taylor_interval(interval.to_interval(), 2, self.dec)?
@@ -188,6 +193,34 @@ impl Sampler<'_> {
             .unwrap()
             .iter()
             .fold(Rational::zero(), |s, x| s + x.lo().abs().max(x.hi().abs())))
+    }
+
+    fn insert_middle(&mut self, mut position: [f64; 3], t: &Rational) -> Result<usize, Refusal> {
+        let index = self.positions.len();
+        if let Some(points) = &mut self.exact_positions {
+            let point = if let Some((cut, _)) = &self.cap {
+                let mut coordinates = position.map(chart::q);
+                // Spell the point exactly on the cap plane for its trim
+                // predicates. The chord check includes this replacement.
+                let axis = (0..3).max_by_key(|&i| cut.normal[i].abs()).unwrap();
+                let numerator = (0..3)
+                    .filter(|&i| i != axis)
+                    .fold(cut.offset.clone(), |value, i| {
+                        value - &cut.normal[i] * &coordinates[i]
+                    });
+                coordinates[axis] = numerator / &cut.normal[axis];
+                position[axis] = coordinates[axis].to_f64_nearest();
+                if !position[axis].is_finite() {
+                    return Err(failure("cap sample exceeds finite binary64 coordinates"));
+                }
+                Position::Exact(coordinates.map(Real::from_rational))
+            } else {
+                Position::Trace(self.piece.clone(), t.clone())
+            };
+            points.insert(index, point);
+        }
+        self.positions.push(position);
+        Ok(index)
     }
 
     fn enclose_point(&self, t: &Rational) -> Result<[Ball; 3], Refusal> {
@@ -300,11 +333,7 @@ impl Sampler<'_> {
                 "edge refinement exhausted the deterministic vertex/precision limit",
             ));
         }
-        let index = self.positions.len();
-        self.positions.push(middle);
-        if let Some(points) = &mut self.exact_positions {
-            points.insert(index, Position::Trace(self.piece.clone(), mid.clone()));
-        }
+        let index = self.insert_middle(middle, &mid)?;
         self.segment(
             lo,
             mid.clone(),
@@ -530,8 +559,16 @@ pub(crate) fn sample(
                 index
             };
             let start = *indices.last().unwrap();
+            let cap = piece
+                .fillet_cut()
+                .map(|cut| {
+                    cut.display_acceleration(dec)
+                        .map(|acceleration| (cut.cut(), acceleration.mul_pow2(-1)))
+                })
+                .transpose()?;
             Sampler {
                 piece,
+                cap,
                 charts: &adjacent[&edge_id],
                 spline_cosine,
                 options,

@@ -296,6 +296,14 @@ impl TracePiece {
         (Rational::zero(), Rational::one())
     }
 
+    /// The retained monotone cap equation of a fitted fillet trace.
+    pub fn fillet_cut(&self) -> Option<&catallax_shapes::FilletCutTrace> {
+        match &self.coords {
+            TraceCoordinates::FilletCut(cut, _) => Some(cut),
+            _ => None,
+        }
+    }
+
     /// Source chart jets when this piece retains a finite patch section.
     pub fn section_parameters(
         &self,

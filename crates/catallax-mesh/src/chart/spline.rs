@@ -5,7 +5,9 @@ use std::{cell::RefCell, collections::BTreeMap};
 use catallax_numbers::{Decider, Interval, Rational, Refusal};
 use catallax_shapes::{
     BSplineSurface,
-    tessellation::{RationalSpan, chord_bound_interval, rational_spans},
+    tessellation::{
+        RationalSpan, chord_bound_interval, rational_spans, triangle_chord_bound_interval,
+    },
 };
 
 use super::{Uv, failure};
@@ -233,14 +235,21 @@ impl SplineChart {
     pub(crate) fn chord(&self, uv: &[Uv; 3], dec: &mut Decider) -> Result<Interval, Refusal> {
         let b = parameter_box(uv);
         let width = b.map(|[lo, hi]| point(hi) - point(lo));
+        let edges: [[Interval; 2]; 3] = std::array::from_fn(|i| {
+            std::array::from_fn(|axis| point(uv[(i + 1) % 3][axis]) - point(uv[i][axis]))
+        });
         let mut cover = self.spans.iter().filter(|span| overlaps(span.bounds, b));
         let first = cover
             .next()
             .ok_or_else(|| failure("triangle has no spline span"))?;
         let Some(second) = cover.next() else {
             let local = [width[0] / first.width[0], width[1] / first.width[1]];
-            dec.charge_work(6)?;
-            return Ok(chord_bound_interval(
+            let edges = edges.map(|e| [e[0] / first.width[0], e[1] / first.width[1]]);
+            // Box bound (six products), diagonal metric (two), measured
+            // edges (four per edge). Divisions and comparisons need no products.
+            dec.charge_work(6 + 2 + 3 * 4)?;
+            return Ok(triangle_chord_bound_interval(
+                edges,
                 local,
                 &first.rational.chord_coefficients(),
             ));
@@ -249,8 +258,8 @@ impl SplineChart {
         for span in std::iter::once(second).chain(cover) {
             hessian = std::array::from_fn(|i| hessian[i].hull(&span.affine_hessian[i]));
         }
-        dec.charge_work(6)?;
-        let mut bound = chord_bound_interval(width, &hessian);
+        dec.charge_work(6 + 2 + 3 * 4)?;
+        let mut bound = triangle_chord_bound_interval(edges, width, &hessian);
         for seam in &self.seams {
             let [lo, hi] = b[seam.axis];
             let [a, z] = b[1 - seam.axis];

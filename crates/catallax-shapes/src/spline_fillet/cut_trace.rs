@@ -1,6 +1,7 @@
 //! Enclosures of a proved cap cut, without replacing it by its STEP fit.
 
 use super::*;
+use catallax_numbers::Interval;
 
 /// A proved plane cut, parametrised by the carrier's second parameter.
 /// Its private coefficients retain the monotonicity proof of `plane_cut`.
@@ -18,6 +19,20 @@ fn evaluate(mut row: Vec<Ball>, t: &Ball) -> Ball {
         }
     }
     row[0].clone()
+}
+
+fn difference(row: &[Interval]) -> Vec<Interval> {
+    let degree = Interval::point(row.len().saturating_sub(1) as f64).unwrap();
+    row.windows(2)
+        .map(|pair| degree * (pair[1] - pair[0]))
+        .collect()
+}
+
+fn hull(values: impl IntoIterator<Item = Interval>) -> Interval {
+    values
+        .into_iter()
+        .reduce(|a, b| a.hull(&b))
+        .unwrap_or_else(|| Interval::point(0.0).unwrap())
 }
 
 impl SplineFillet {
@@ -55,6 +70,78 @@ impl FilletCutTrace {
         self.fillet
             .rail_point(side, &self.cut.ends[side])
             .expect("a cut ends at rail nodes")
+    }
+
+    /// Upper bound on the spatial acceleration with respect to theta.
+    /// The display sampler uses this to plan chords of the proved plane cut.
+    pub fn display_acceleration(&self, dec: &mut Decider) -> Result<Rational, Refusal> {
+        let carrier = self.fillet.carrier();
+        let [degree, across] = carrier.degrees();
+        let fit = &self.fillet.data.fit;
+        let bits = dec.policy().max_precision_bits.min(128);
+        let zero = Interval::point(0.0).unwrap();
+        let twice = Interval::point(2.0).unwrap();
+        let mut maximum = 0.0_f64;
+        let mut workspace = [Vec::new(), Vec::new()];
+        for (span, rows) in (self.cut.spans[0]..).zip(&self.coefficients) {
+            let g = rows
+                .each_ref()
+                .map(|row| row.iter().map(Interval::from_rational).collect::<Vec<_>>());
+            let gs = g.each_ref().map(|row| difference(row));
+            let gt = std::array::from_fn::<_, 2, _>(|i| {
+                g[i + 1]
+                    .iter()
+                    .zip(&g[i])
+                    .map(|(&b, &a)| twice * (b - a))
+                    .collect::<Vec<_>>()
+            });
+            dec.charge_work(
+                (3 * degree + 2 * (degree + 1) + 3 * (degree - 1) + 2 * degree) as u64,
+            )?;
+            let gss = hull(gs.iter().flat_map(|row| difference(row)));
+            let gst = hull(gt.iter().flat_map(|row| difference(row)));
+            let gtt = hull(gt[1].iter().zip(&gt[0]).map(|(&b, &a)| b - a));
+            let gs = hull(gs.into_iter().flatten());
+            if gs.lo() <= 0.0 && gs.hi() >= 0.0 {
+                return Err(Refusal::new(
+                    SPLINE_FILLET_CUT,
+                    "binary64 could not separate the plane cut's monotone derivative",
+                ));
+            }
+            // Implicit differentiation of g(s(theta), theta) = 0.
+            // The carrier composes Hermite spans with shared first jets, so
+            // crossing a knot does not introduce a jump in the curve tangent.
+            let rate = -hull(gt.into_iter().flatten()) / gs;
+            let rate_sq = rate.square();
+            let accel = -(gtt + twice * gst * rate + gss * rate_sq) / gs;
+            let domain = [
+                [fit.nodes[span].tau.clone(), fit.nodes[span + 1].tau.clone()],
+                [Rational::zero(), Rational::one()],
+            ];
+            let width = Interval::from_rational(&(&domain[0][1] - &domain[0][0]));
+            let jet = carrier.jet_on_span(
+                [(span + 1) * degree, across],
+                &domain,
+                bits,
+                dec,
+                &mut workspace,
+            )?;
+            let tau_rate = rate * width;
+            let tau_accel = accel * width;
+            let tau_rate_sq = tau_rate.square();
+            dec.charge_work(2 + 4 + 1 + 3 * 4)?;
+            let bound = (0..3).fold(zero, |sum, i| {
+                let acceleration = jet.second[2][i].to_interval()
+                    + twice * jet.second[1][i].to_interval() * tau_rate
+                    + jet.second[0][i].to_interval() * tau_rate_sq
+                    + jet.first[0][i].to_interval() * tau_accel;
+                sum + Interval::point(acceleration.lo().abs().max(acceleration.hi().abs())).unwrap()
+            });
+            maximum = maximum.max(bound.hi());
+        }
+        Rational::from_f64_exact(maximum).ok_or_else(|| {
+            Refusal::new(SPLINE_FILLET_CUT, "plane cut acceleration exceeds binary64")
+        })
     }
 
     /// Encloses every cut point for `theta` in `[0,1]`. Bisection only

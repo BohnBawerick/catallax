@@ -1621,7 +1621,9 @@ pub(crate) fn build(
     let use_spline_charts =
         faces.iter().all(
             |&face| match model.geom().surface(model.face(face).surface) {
-                Surface::BSpline(SplineSupport::RationalPatch(_)) => true,
+                Surface::BSpline(
+                    SplineSupport::RationalPatch(_) | SplineSupport::SplineFillet(_),
+                ) => true,
                 Surface::BSpline(_) => false,
                 _ => true,
             },
@@ -1693,11 +1695,9 @@ fn build_junction(
         .filter(|&&f| !fitted(f))
         .map(|&f| {
             let chart = match model.geom().surface(model.face(f).surface) {
-                Surface::BSpline(support @ SplineSupport::RationalPatch(_))
-                    if junction.is_none() =>
-                {
-                    Chart::from_spline(support, dec)?
-                }
+                Surface::BSpline(
+                    support @ (SplineSupport::RationalPatch(_) | SplineSupport::SplineFillet(_)),
+                ) if junction.is_none() => Chart::from_spline(support, dec)?,
                 _ => regular_chart(model, f, options, dec)?,
             };
             Ok((f, chart))

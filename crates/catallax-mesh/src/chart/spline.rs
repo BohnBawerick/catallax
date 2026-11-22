@@ -1,5 +1,7 @@
 //! A piecewise rational face chart for the constrained triangulation.
 
+use std::{cell::RefCell, collections::BTreeMap};
+
 use catallax_numbers::{Decider, Interval, Rational, Refusal};
 use catallax_shapes::{
     BSplineSurface,
@@ -11,6 +13,9 @@ use super::{Uv, failure};
 pub(crate) struct SplineChart {
     spans: Vec<Span>,
     seams: Vec<Seam>,
+    // A chart lives for one mesh request. The edge plan uses a projection
+    // goal at least as strict as the face that consumes it.
+    edge_parameters: RefCell<BTreeMap<[u64; 3], Uv>>,
 }
 
 struct Span {
@@ -151,10 +156,30 @@ impl SplineChart {
                 });
             }
         }
-        Ok(Self { spans, seams })
+        Ok(Self {
+            spans,
+            seams,
+            edge_parameters: RefCell::default(),
+        })
     }
 
     pub(crate) fn project(
+        &self,
+        position: [f64; 3],
+        seed: Option<Uv>,
+        goal: f64,
+        dec: &mut Decider,
+    ) -> Result<Uv, Refusal> {
+        let key = position.map(f64::to_bits);
+        if let Some(&uv) = self.edge_parameters.borrow().get(&key) {
+            return Ok(uv);
+        }
+        let uv = self.project_uncached(position, seed, goal, dec)?;
+        self.edge_parameters.borrow_mut().insert(key, uv);
+        Ok(uv)
+    }
+
+    fn project_uncached(
         &self,
         position: [f64; 3],
         seed: Option<Uv>,
@@ -240,6 +265,30 @@ impl SplineChart {
         Ok(bound)
     }
 
+    pub(crate) fn edge_within(
+        &self,
+        [a, middle, b]: [[f64; 3]; 3],
+        chord: Interval,
+        cosine: Option<Interval>,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
+        let goal = (chord * point(0.125)).lo();
+        let a = self.project(a, None, goal, dec)?;
+        let m = self.project(middle, Some(a), goal, dec)?;
+        let b = self.project(b, Some(m), goal, dec)?;
+        let uv = [a, m, b];
+        if self.chord(&uv, dec)?.hi() > chord.lo() {
+            return Ok(false);
+        }
+        let bounds = parameter_box(&uv);
+        let span = self.spans.iter().find(|span| span.contains(m)).unwrap();
+        let at = span
+            .rational
+            .normal_box(span.local_box(m.map(|x| [x; 2])), dec)?;
+        let direction = at.map(|n| point(n.mid()));
+        self.check_normal_box(bounds, direction, cosine, dec)
+    }
+
     pub(crate) fn seed_grid(
         &self,
         limit: &Rational,
@@ -316,12 +365,22 @@ impl SplineChart {
             a[2] * b[0] - a[0] * b[2],
             a[0] * b[1] - a[1] * b[0],
         ];
+        self.check_normal_box(bounds, facet, cosine, dec)
+    }
+
+    fn check_normal_box(
+        &self,
+        bounds: [[f64; 2]; 2],
+        direction: [Interval; 3],
+        cosine: Option<Interval>,
+        dec: &mut Decider,
+    ) -> Result<bool, Refusal> {
         for span in self
             .spans
             .iter()
             .filter(|span| overlaps(span.bounds, bounds))
         {
-            if normals_agree(facet, span.normal, cosine, dec)? {
+            if normals_agree(direction, span.normal, cosine, dec)? {
                 continue;
             }
             let intersection = std::array::from_fn(|i| {
@@ -333,7 +392,7 @@ impl SplineChart {
             let normal = span
                 .rational
                 .normal_box(span.local_box(intersection), dec)?;
-            if !normals_agree(facet, normal, cosine, dec)? {
+            if !normals_agree(direction, normal, cosine, dec)? {
                 return Ok(false);
             }
         }
@@ -352,17 +411,23 @@ fn normals_agree(
     if dot.lo() <= 0.0 {
         return Ok(false);
     }
-    if let Some(cosine) = cosine {
-        dec.charge_work(2 * 3 + 2)?;
-        let required = length(facet) * length(normal) * cosine;
-        Ok(dot.lo() >= required.hi())
+    if let Some(cosine) = cosine.filter(|cosine| cosine.hi() > 0.0) {
+        // With a positive dot product, the angle is bounded by the ratio of
+        // the cross product to the dot product. Lagrange's identity gives
+        // the squared inequality without independently bounding two lengths.
+        dec.charge_work(2 * 3 + 7)?;
+        let cross = [
+            facet[1] * normal[2] - facet[2] * normal[1],
+            facet[2] * normal[0] - facet[0] * normal[2],
+            facet[0] * normal[1] - facet[1] * normal[0],
+        ];
+        let cross_sq = cross.into_iter().fold(point(0.0), |s, x| s + x.square());
+        let cosine_sq = cosine.square();
+        let required = (point(1.0) - cosine_sq) * dot.square();
+        Ok((cross_sq * cosine_sq).hi() <= required.lo())
     } else {
         Ok(true)
     }
-}
-
-fn length([x, y, z]: [Interval; 3]) -> Interval {
-    (x.square() + y.square() + z.square()).sqrt().unwrap()
 }
 
 pub(super) fn parameter_box(uv: &[Uv; 3]) -> [[f64; 2]; 2] {
@@ -375,9 +440,13 @@ pub(super) fn parameter_box(uv: &[Uv; 3]) -> [[f64; 2]; 2] {
 }
 
 fn overlaps(a: [[f64; 2]; 2], b: [[f64; 2]; 2]) -> bool {
-    a.into_iter()
-        .zip(b)
-        .all(|([alo, ahi], [blo, bhi])| alo < bhi && blo < ahi)
+    a.into_iter().zip(b).all(|([alo, ahi], [blo, bhi])| {
+        if blo < bhi {
+            alo < bhi && blo < ahi
+        } else {
+            alo <= blo && blo <= ahi
+        }
+    })
 }
 
 #[cfg(test)]
@@ -385,6 +454,48 @@ mod tests {
     use super::*;
     use catallax_numbers::Real;
     use catallax_shapes::Point3;
+
+    #[test]
+    fn straight_trim_splits_when_its_incident_surface_normals_turn() {
+        // The edge v = 0 is straight, but S(u, v) = (u, v, uv) has
+        // normals turning by pi/4 from one end of the edge to the other.
+        let zero = Rational::zero();
+        let one = Rational::one();
+        let knots = vec![zero.clone(), zero, one.clone(), one];
+        let controls = [[0, 0, 0], [0, 1, 0], [1, 0, 0], [1, 1, 1]]
+            .map(|[x, y, z]| Point3::new(Real::from_i64(x), Real::from_i64(y), Real::from_i64(z)));
+        let mut dec = Decider::default();
+        let surface = BSplineSurface::new(
+            [1, 1],
+            [knots.clone(), knots],
+            [2, 2],
+            controls.to_vec(),
+            vec![Real::one(); 4],
+            &mut dec,
+        )
+        .unwrap();
+        let chart = SplineChart::new(&surface, &mut dec).unwrap();
+        let chord = point(0.00125);
+        let half_angle = Interval::from_rational(
+            &crate::controls::cosine_limit(&Rational::from_ratio(13, 100).unwrap(), &dec).unwrap(),
+        );
+        let edge = |a: f64, b: f64| [a, (a + b) * 0.5, b].map(|u| [u, 0.0, 0.0]);
+        assert!(
+            chart
+                .edge_within(edge(0.0, 1.0), chord, None, &mut dec)
+                .unwrap()
+        );
+        assert!(
+            !chart
+                .edge_within(edge(0.0, 1.0), chord, Some(half_angle), &mut dec)
+                .unwrap()
+        );
+        assert!(
+            chart
+                .edge_within(edge(0.0, 0.0625), chord, Some(half_angle), &mut dec)
+                .unwrap()
+        );
+    }
 
     #[test]
     fn a_triangle_crossing_a_knot_includes_the_derivative_jump() {

@@ -157,8 +157,9 @@ pub(crate) fn trace_chord(
 struct Sampler<'a> {
     piece: &'a Arc<TracePiece>,
     charts: &'a [&'a Chart],
+    spline_cosine: Option<Interval>,
     options: &'a MeshOptions,
-    dec: &'a Decider,
+    dec: &'a mut Decider,
     positions: &'a mut Vec<[f64; 3]>,
     indices: &'a mut Vec<usize>,
     error: &'a mut Rational,
@@ -245,6 +246,17 @@ impl Sampler<'_> {
                 <= limit * limit;
         }
         for chart in self.charts {
+            if let Some(spline) = chart.spline() {
+                if small {
+                    small = spline.edge_within(
+                        [self.positions[first], middle, self.positions[last]],
+                        Interval::from_rational(&self.options.chord_tolerance.mul_pow2(-3)),
+                        self.spline_cosine,
+                        self.dec,
+                    )?;
+                }
+                continue;
+            }
             let a = chart.project(self.positions[first]);
             let b = align(chart.project(self.positions[last]), a, chart.periodic);
             let m = align(chart.project(middle), a, chart.periodic);
@@ -417,9 +429,7 @@ pub(crate) fn sample(
                 Loop::Coedges(cs) => {
                     for &c in cs {
                         let incident = adjacent.entry(model.coedge(c).edge).or_default();
-                        if chart.spline().is_none() {
-                            incident.push(chart);
-                        }
+                        incident.push(chart);
                     }
                 }
                 Loop::Vertex(v) => {
@@ -428,6 +438,20 @@ pub(crate) fn sample(
             }
         }
     }
+    let spline_cosine = if charts.values().any(|chart| chart.spline().is_some()) {
+        // Keep the pairwise spread within the angular tolerance by testing
+        // a cone of half that angle around the middle sample's direction.
+        options
+            .angular_deviation
+            .as_ref()
+            .map(|angle| {
+                crate::controls::cosine_limit(&angle.mul_pow2(-1), dec)
+                    .map(|cosine| Interval::from_rational(&cosine))
+            })
+            .transpose()?
+    } else {
+        None
+    };
     for edge_id in model.edges_of_body(body) {
         if let Some(seed) = junction.and_then(|junction| junction.seed(edge_id)) {
             seeded(model, edge_id, seed, options, dec, &mut result)?;
@@ -509,6 +533,7 @@ pub(crate) fn sample(
             Sampler {
                 piece,
                 charts: &adjacent[&edge_id],
+                spline_cosine,
                 options,
                 dec,
                 positions: &mut result.mesh.positions,
@@ -532,8 +557,9 @@ pub(crate) fn sample(
         while i < indices.len() {
             let (a, b) = (indices[i - 1], indices[i]);
             let collapses = adjacent[&edge_id].iter().any(|chart| {
-                chart::key(chart.canonical(chart.project(result.mesh.positions[a])))
-                    == chart::key(chart.canonical(chart.project(result.mesh.positions[b])))
+                chart.spline().is_none()
+                    && chart::key(chart.canonical(chart.project(result.mesh.positions[a])))
+                        == chart::key(chart.canonical(chart.project(result.mesh.positions[b])))
             });
             if collapses && !(a == first && b == end) {
                 let displacement = (0..3).fold(Rational::zero(), |sum, k| {

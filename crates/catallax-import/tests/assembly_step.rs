@@ -327,8 +327,7 @@ fn a_mapped_leaf_with_its_own_translation_is_refused() {
         1,
     );
     let refusal = read_step_assembly(mapped.as_bytes(), &mut Decider::default())
-        .err()
-        .expect("the mapped leaf needs a transform this reader does not apply");
+        .expect_err("the mapped leaf needs a transform this reader does not apply");
     assert!(matches!(
         refusal,
         catallax_import::ImportRefusal::Unsupported { entity, type_name }
@@ -347,8 +346,7 @@ fn solid_colours_must_agree_on_both_sides() {
     let one_side = source.replace(style, "#220=SURFACE_STYLE_USAGE(.POSITIVE.,#219);");
     let mut dec = Decider::default();
     let refusal = read_step_assembly(one_side.as_bytes(), &mut dec)
-        .err()
-        .expect("a positive-side colour must not become a uniform part colour");
+        .expect_err("a positive-side colour must not become a uniform part colour");
     assert!(
         matches!(refusal, catallax_import::ImportRefusal::Malformed { detail }
         if detail.contains("both sides"))

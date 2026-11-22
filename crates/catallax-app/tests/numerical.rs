@@ -83,13 +83,24 @@ fn general_trim_returns_checked_geometry_with_scoped_samples_not_complete_bounds
             .max()
             .unwrap();
         assert!(measured >= expected && &measured - &expected < q("1e-12"));
-        let faults = body.exact_topology_faults();
-        assert!(!faults.is_empty());
-        assert!(
-            faults
-                .iter()
-                .all(|f| f.code == "topology.missing-incidence")
-        );
+        // The one checker passes the body. Each vertex of its model stores
+        // the tolerance the report states, and so does each edge that was not
+        // re-tightened to exact.
+        assert_eq!(body.topology_faults(), Vec::new());
+        assert!(!body.tolerances().entities.is_empty());
+        for entity in &body.tolerances().entities {
+            let stored = body
+                .stored_tolerance(entity.kind, &entity.key)
+                .map(|stored| stored.mm());
+            assert!(
+                stored == Some(&entity.tolerance_mm)
+                    || (stored.is_none()
+                        && entity.kind
+                            == catallax_topology::numerical::tolerance::EntityKind::Edge),
+                "{}",
+                entity.key
+            );
+        }
         // Material witnesses from the independently known graph and footprint.
         let Surface::BSpline(support) = &body
             .definition()

@@ -99,6 +99,7 @@ fn oblique_circle_extrusion_has_exact_measurements_and_step_geometry() {
             sense: Sense::Same,
             start: None,
             end: None,
+            tolerance: None,
         }));
     }
     let bottom_loop = loop_for(&mut model, edges[0], Sense::Reversed);
@@ -110,16 +111,19 @@ fn oblique_circle_extrusion_has_exact_measurements_and_step_geometry() {
             surface: caps[0],
             sense: Sense::Same,
             loops: vec![bottom_loop],
+            tolerance: None,
         }),
         model.add_face(Face {
             surface: caps[1],
             sense: Sense::Same,
             loops: vec![top_loop],
+            tolerance: None,
         }),
         model.add_face(Face {
             surface: side,
             sense: Sense::Same,
             loops: vec![side_bottom, side_top],
+            tolerance: None,
         }),
     ];
     let shell = model.add_shell(Shell { faces });

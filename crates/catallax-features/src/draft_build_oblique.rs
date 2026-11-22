@@ -66,6 +66,7 @@ pub(super) fn assemble(
             sense: Sense::Same,
             start: None,
             end: None,
+            tolerance: None,
         });
         let (plane, origins) = &cell.caps[i];
         let cap_sense = if i == 0 { Sense::Reversed } else { Sense::Same };
@@ -118,6 +119,7 @@ pub(super) fn assemble_annular(
                 sense: Sense::Same,
                 start: None,
                 end: None,
+                tolerance: None,
             });
             let cap_sense = if i == j { Sense::Reversed } else { Sense::Same };
             cap_paths.push(vec![(edge, cap_sense)]);

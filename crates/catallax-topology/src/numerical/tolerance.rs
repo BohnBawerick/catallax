@@ -370,14 +370,42 @@ pub enum PairVerdict {
     Warn,
     /// `t_a + t_b > d/2`: an error.
     Error,
+    /// The distance was measured, and the error comparison falls within
+    /// what the measurement can tell. Neither an error nor its absence is
+    /// stated.
+    Unresolved,
 }
 
-/// Rule T5 for two entities with tolerances `t_a` and `t_b` at distance `d`.
-pub fn pair_verdict(t_a: f64, t_b: f64, distance_mm: f64) -> PairVerdict {
+/// Rule T5 for two entities with tolerances `t_a` and `t_b` whose distance
+/// `d` was found by a search in binary64.
+///
+/// The decisions ask that a decision with a tolerant participant goes
+/// "f64, then interval, then exact" (section 4.5). A pair of points and
+/// straight edges has an exact distance and is decided by
+/// [`predicate`](crate::numerical::predicate). A pair with a curved edge or
+/// a face has none. Its distance is the value the search found, known to
+/// `rounding_mm`: the rounding the checker's evaluations state for a point
+/// of each of the two entities. The value with that to either side is its
+/// interval. An error is stated only where the whole interval is under
+/// `2 (t_a + t_b)`, and where the interval holds that value the pair is
+/// [`PairVerdict::Unresolved`]. A warning is given wherever the interval
+/// reaches under `5 (t_a + t_b)`.
+///
+/// The search itself is not bounded by this: it finds a least distance by
+/// samples and polish, as the edge-gap checker finds a largest gap, and the
+/// value it finds is at least the true one.
+///
+/// Two entities with no tolerance are clear at any distance: the rule
+/// compares tolerances, and they have none.
+pub fn pair_verdict(t_a: f64, t_b: f64, distance_mm: f64, rounding_mm: f64) -> PairVerdict {
     let sum = t_a + t_b;
-    if sum > distance_mm / PAIR_ERROR_DIVISOR {
+    if sum <= 0.0 {
+        PairVerdict::Clear
+    } else if sum > (distance_mm + rounding_mm) / PAIR_ERROR_DIVISOR {
         PairVerdict::Error
-    } else if sum > distance_mm / PAIR_WARNING_DIVISOR {
+    } else if sum > (distance_mm - rounding_mm) / PAIR_ERROR_DIVISOR {
+        PairVerdict::Unresolved
+    } else if sum > (distance_mm - rounding_mm) / PAIR_WARNING_DIVISOR {
         PairVerdict::Warn
     } else {
         PairVerdict::Clear
@@ -872,11 +900,22 @@ mod tests {
     fn t5_thresholds() {
         // t_a + t_b = 0.75: clear at d = 3.75, a warning just under it and
         // at d = 1.5, an error just under 1.5.
-        assert_eq!(pair_verdict(0.25, 0.5, 3.75), PairVerdict::Clear);
-        assert_eq!(pair_verdict(0.25, 0.5, 3.74), PairVerdict::Warn);
-        assert_eq!(pair_verdict(0.25, 0.5, 1.5), PairVerdict::Warn);
-        assert_eq!(pair_verdict(0.25, 0.5, 1.49), PairVerdict::Error);
+        assert_eq!(pair_verdict(0.25, 0.5, 3.75, 0.0), PairVerdict::Clear);
+        assert_eq!(pair_verdict(0.25, 0.5, 3.74, 0.0), PairVerdict::Warn);
+        assert_eq!(pair_verdict(0.25, 0.5, 1.5, 0.0), PairVerdict::Warn);
+        assert_eq!(pair_verdict(0.25, 0.5, 1.49, 0.0), PairVerdict::Error);
         assert_eq!(PAIR_INFLATION, 5.0);
+        // A measured distance is known to its rounding. Within it of the
+        // error threshold neither answer is given.
+        assert_eq!(pair_verdict(0.25, 0.5, 1.5, 0.01), PairVerdict::Unresolved);
+        assert_eq!(
+            pair_verdict(0.25, 0.5, 1.495, 0.01),
+            PairVerdict::Unresolved
+        );
+        assert_eq!(pair_verdict(0.25, 0.5, 1.48, 0.01), PairVerdict::Error);
+        assert_eq!(pair_verdict(0.25, 0.5, 1.52, 0.01), PairVerdict::Warn);
+        // Two exact entities have no tolerance to compare.
+        assert_eq!(pair_verdict(0.0, 0.0, 0.001, 0.01), PairVerdict::Clear);
     }
 
     #[test]

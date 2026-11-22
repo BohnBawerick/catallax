@@ -372,7 +372,10 @@ pub(crate) fn thicken(
 
     let vertex = |model: &mut Model, p: &Point3| -> VertexId {
         let point = model.geom_mut().add_point(PointDef::Explicit(p.clone()));
-        model.add_vertex(Vertex { point })
+        model.add_vertex(Vertex {
+            point,
+            tolerance: None,
+        })
     };
     struct Ring {
         base_edges: Vec<EdgeId>,
@@ -389,6 +392,7 @@ pub(crate) fn thicken(
             sense: Sense::Same,
             start: Some(a),
             end: Some(b),
+            tolerance: None,
         })
     };
     let mut rings = Vec::new();

@@ -40,7 +40,7 @@
 //! both ways, `refit.rs` gives a face copy the parameter of its 3D curve, and
 //! `numerical::admit_import` decides between them (decision Q9). The search
 //! above then measures the copy that is kept. All of that draws on the one
-//! work allowance of the edge use ([`Limits`]).
+//! work allowance of the use's edge ([`Limits`]).
 //!
 //! A carrier with no kernel form, such as an imported surface a reader holds
 //! in the file's own terms, is read through its own binary64 evaluator
@@ -63,6 +63,7 @@ mod numeric;
 /// and T8) and a change of parameter of the copy it has (decision Q9).
 pub mod refit;
 
+pub(in crate::numerical) use geometric::measure_geometric_counted;
 pub use geometric::{GeometricMeasure, measure_geometric};
 
 use lift::{Curve64, Face64, Lifted, Revolved, Scratch, Surface64};
@@ -101,6 +102,25 @@ impl FramedSurface {
     /// The point at `uv`.
     pub(in crate::numerical) fn point(&mut self, uv: [f64; 2]) -> [f64; 3] {
         self.surface.point(uv, &mut self.scratch).value
+    }
+
+    /// A bound of the binary64 rounding of a point of this surface over a
+    /// parameter rectangle, as a length: the largest bound its evaluation
+    /// states for a coordinate at the rectangle's four corners and its
+    /// middle, times [`COORDINATES`]. Five readings.
+    pub(in crate::numerical) fn rounding(&mut self, rect: [[f64; 2]; 2]) -> f64 {
+        let [u, v] = rect;
+        COORDINATES
+            * [
+                [u[0], v[0]],
+                [u[0], v[1]],
+                [u[1], v[0]],
+                [u[1], v[1]],
+                [u[0] / 2.0 + u[1] / 2.0, v[0] / 2.0 + v[1] / 2.0],
+            ]
+            .into_iter()
+            .map(|uv| self.surface.point(uv, &mut self.scratch).error)
+            .fold(0.0, f64::max)
     }
 
     /// The foot of `target` from a seed. `spend` is asked before each
@@ -233,6 +253,19 @@ impl FramedUvCurve {
     }
 }
 
+/// Source: the Euclidean norm of three coordinates. A point moves by at
+/// most the square root of three times the largest error of one of its
+/// coordinates, and this is that factor rounded up.
+const COORDINATES: f64 = 2.0;
+
+/// A bound of the rounding of a point read from rationals into binary64, as
+/// a length: one unit roundoff of its largest coordinate (Higham, "Accuracy
+/// and Stability of Numerical Algorithms", 2nd ed., section 2.1), times
+/// [`COORDINATES`].
+pub(in crate::numerical) fn point_rounding(point: &[f64; 3]) -> f64 {
+    COORDINATES * numeric::UNIT_ROUNDOFF * point.iter().fold(0.0_f64, |most, c| most.max(c.abs()))
+}
+
 /// Source: the allowance `lift.rs` gives a domain border, sixteen roundings
 /// of the largest coordinate, here for the corners of a box.
 const BOX_ROUNDINGS: f64 = 16.0;
@@ -294,6 +327,18 @@ impl FramedCurve {
     /// The point at `t`.
     pub(in crate::numerical) fn point(&mut self, t: f64) -> [f64; 3] {
         self.curve.point(t, &mut self.scratch).value
+    }
+
+    /// A bound of the binary64 rounding of a point of this curve, as a
+    /// length: the largest bound its evaluation states for a coordinate at
+    /// its two ends and its middle, times [`COORDINATES`]. Three readings.
+    pub(in crate::numerical) fn rounding(&mut self) -> f64 {
+        let [low, high] = self.range;
+        COORDINATES
+            * [low, low / 2.0 + high / 2.0, high]
+                .into_iter()
+                .map(|t| self.curve.point(t, &mut self.scratch).error)
+                .fold(0.0, f64::max)
     }
 
     /// A box that holds the curve over its range: the two ends of a line,
@@ -512,15 +557,24 @@ pub struct Limits {
     /// domain probe: everything the measurement does that grows with the
     /// edge.
     ///
-    /// An edge use has one allowance. Where a use is read more than once,
-    /// as the gap rule for imports reads it, each reading is given what the
-    /// readings before it left, so the cap holds for all of them together.
+    /// The allowance belongs to the edge. Where the edge is read more than
+    /// once, on another of its faces or as the gap rule for imports reads a
+    /// use again, each reading is given what the readings before it left,
+    /// so the cap holds for all of them together.
     pub work: u64,
 }
 
 /// Source: judgement; no source gives a per-edge cap. One million units is
 /// five percent of the 20M operation target (ROADMAP, rules that stay fixed
 /// between checkpoints).
+///
+/// The cap is one allowance for the topological edge (section 4.2 step 8:
+/// "A hard per-edge work cap refuses by name"). One measurement reads one
+/// use of an edge, its 3D curve against its copy on one face, and is given
+/// what the edge has left as its [`Limits`]. An edge between two faces is
+/// read twice, and the second reading draws on what the first left. An
+/// admission keeps the allowances and takes each reading's work off its
+/// edge's.
 pub const EDGE_WORK: u64 = crate::numerical::DEFAULT_WORK / 20;
 
 impl Default for Limits {
@@ -625,7 +679,7 @@ fn unsupported(detail: &str) -> Refusal {
 /// The checker's refusal when an edge would spend more than its allowance.
 /// Source: decision Q6, section 4.2 step 8: a hard per-edge work cap refuses
 /// by name.
-pub(super) const WORK_CAP: &str = "numerical.gap-work-cap";
+pub const WORK_CAP: &str = "numerical.gap-work-cap";
 
 fn work_cap(detail: &str) -> Refusal {
     Refusal::new(WORK_CAP, detail)
@@ -1076,15 +1130,30 @@ pub fn measure(
     limits: Limits,
     dec: &mut Decider,
 ) -> Result<GapMeasure, Refusal> {
-    under_allowance(copies, limits, dec, |search, dec| {
+    measure_counted(copies, hints, limits, &mut 0, dec)
+}
+
+/// [`measure`], with the work the search counted added to `spent` whether
+/// or not it finished. A reading that is refused has still spent what it
+/// counted, and an admission takes that off the edge's allowance too.
+pub(in crate::numerical) fn measure_counted(
+    copies: &EdgeCopies<'_>,
+    hints: &Hints,
+    limits: Limits,
+    spent: &mut u64,
+    dec: &mut Decider,
+) -> Result<GapMeasure, Refusal> {
+    under_allowance(copies, limits, spent, dec, |search, dec| {
         search_edge(search, hints, dec)
     })
 }
 
-/// Runs one search of an edge under its allowance.
+/// Runs one search of an edge under its allowance, and adds what the search
+/// counted to `spent`, finished or refused.
 fn under_allowance<T>(
     copies: &EdgeCopies<'_>,
     limits: Limits,
+    spent: &mut u64,
     dec: &mut Decider,
     run: impl FnOnce(&mut Search<'_>, &mut Decider) -> Result<T, Refusal>,
 ) -> Result<T, Refusal> {
@@ -1105,15 +1174,16 @@ fn under_allowance<T>(
         charged: 0,
     };
     let found = run(&mut search, dec);
+    *spent = spent.saturating_add(search.spent());
     if let Err(refusal) = &found {
         // Work done before a refusal is still work: it is charged to the
         // operation before the refusal is returned. If the operation's own
         // allowance is gone as well, the edge's refusal is still the answer.
-        let (spent, limit) = (search.spent(), search.limit);
+        let (counted, limit) = (search.spent(), search.limit);
         search.settle(dec).ok();
         if refusal.code == WORK_CAP {
             return Err(work_cap(&format!(
-                "{}; {spent} of {limit} units were spent",
+                "{}; {counted} of {limit} units were spent",
                 refusal.detail
             )));
         }
@@ -1363,7 +1433,7 @@ fn polish<S: Peak>(
 /// The gap at the two ends of an edge alone, for a face copy that is
 /// declared only there.
 ///
-/// `limits` is what the edge use has left of its one allowance when another
+/// `limits` is what the use's edge has left of its one allowance when another
 /// measurement of the same use came first. The two end samples and the
 /// closing probes draw on it, and it refuses by name like [`measure`].
 pub fn measure_ends(
@@ -1371,7 +1441,18 @@ pub fn measure_ends(
     limits: Limits,
     dec: &mut Decider,
 ) -> Result<GapMeasure, Refusal> {
-    under_allowance(copies, limits, dec, |search, dec| {
+    measure_ends_counted(copies, limits, &mut 0, dec)
+}
+
+/// [`measure_ends`], with the work counted added to `spent` whether or not
+/// the reading finished.
+pub(in crate::numerical) fn measure_ends_counted(
+    copies: &EdgeCopies<'_>,
+    limits: Limits,
+    spent: &mut u64,
+    dec: &mut Decider,
+) -> Result<GapMeasure, Refusal> {
+    under_allowance(copies, limits, spent, dec, |search, dec| {
         let [first, last] = search.lifted.parameters;
         let ends = [search.sample(first)?, search.sample(last)?];
         let best = if ends[1].squared > ends[0].squared {

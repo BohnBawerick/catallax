@@ -390,6 +390,7 @@ pub(crate) fn build(
                 },
                 start: Some(rail[usize::from(!named_forward)]),
                 end: Some(rail[usize::from(named_forward)]),
+                tolerance: None,
             });
             edit.edges
                 .insert((band.input.faces[side], band.input.edge), edge);
@@ -403,6 +404,7 @@ pub(crate) fn build(
                     sense: Sense::Same,
                     start: Some(feet[0][end]),
                     end: Some(feet[1][end]),
+                    tolerance: None,
                 });
                 let first_finishes = if reverse(band.input.senses[0]) == Sense::Same {
                     input.end == Some(old)

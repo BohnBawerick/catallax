@@ -499,6 +499,7 @@ fn unproved_spline_face_trims_refuse_and_zero_work_preserves_the_body() {
         surface,
         sense: model.face(side).sense,
         loops: vec![],
+        tolerance: None,
     });
     let mut partial = model.face(side).clone();
     partial.loops.pop();

@@ -70,6 +70,7 @@ impl FaceCut {
             surface: self.surface,
             sense,
             loops,
+            tolerance: None,
         });
         (
             face,
@@ -396,6 +397,7 @@ pub(crate) fn cut_face(
                 start: Some(start),
                 end: Some(end),
                 sense: Sense::Same,
+                tolerance: None,
             });
             seams.insert(edge);
             walks.add(

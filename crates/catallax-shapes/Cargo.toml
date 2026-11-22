@@ -13,6 +13,7 @@ publish.workspace = true
 work-span = ["catallax-numbers/work-span"]
 
 [dependencies]
+libm = "0.2"
 im.workspace = true
 catallax-numbers.workspace = true
 

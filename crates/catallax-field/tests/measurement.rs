@@ -285,8 +285,14 @@ fn reversed_major_arc_cannot_be_replaced_by_its_complement_in_a_face_cover() {
     let curve = model.geom_mut().add_curve(Curve::Circle(circle));
     let a = model.geom_mut().add_point(PointDef::Explicit(p(1, 0, 0)));
     let b = model.geom_mut().add_point(PointDef::Explicit(p(0, 1, 0)));
-    let a = model.add_vertex(Vertex { point: a });
-    let b = model.add_vertex(Vertex { point: b });
+    let a = model.add_vertex(Vertex {
+        point: a,
+        tolerance: None,
+    });
+    let b = model.add_vertex(Vertex {
+        point: b,
+        tolerance: None,
+    });
     // Clockwise A -> B is the major arc. Tracing A -> B in the carrier's
     // natural direction instead would select the small first-quadrant arc.
     let arc = model.add_edge(Edge {
@@ -294,6 +300,7 @@ fn reversed_major_arc_cannot_be_replaced_by_its_complement_in_a_face_cover() {
         sense: Sense::Reversed,
         start: Some(a),
         end: Some(b),
+        tolerance: None,
     });
     let chord = model.geom_mut().add_curve(Curve::Line(
         Line::new(p(0, 1, 0), v(1, -1, 0), &mut dec).unwrap(),
@@ -303,6 +310,7 @@ fn reversed_major_arc_cannot_be_replaced_by_its_complement_in_a_face_cover() {
         sense: Sense::Same,
         start: Some(b),
         end: Some(a),
+        tolerance: None,
     });
     let arc = model.add_coedge(Coedge {
         edge: arc,
@@ -319,6 +327,7 @@ fn reversed_major_arc_cannot_be_replaced_by_its_complement_in_a_face_cover() {
         surface: support,
         sense: Sense::Reversed,
         loops: vec![boundary],
+        tolerance: None,
     });
     let original =
         Surface::Plane(Plane::new(p(2, 0, 0), v(1, 0, 0), v(0, 0, 1), &mut dec).unwrap());

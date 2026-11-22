@@ -188,6 +188,7 @@ pub(super) fn build(
             sense: Sense::Same,
             start: Some(feet[a]),
             end: Some(feet[b]),
+            tolerance: None,
         });
         run.caps.insert(old, vec![cap]);
     }

@@ -337,6 +337,7 @@ pub fn coalesce_rational_charts(
                     sense: Sense::Same,
                     start: (!ring).then_some(start).flatten(),
                     end: (!ring).then_some(end).flatten(),
+                    tolerance: None,
                 })
             };
             let logical = if let Some(line) = rational_line(model, logical) {
@@ -347,6 +348,7 @@ pub fn coalesce_rational_charts(
                     sense: Sense::Same,
                     start: edge.start,
                     end: edge.end,
+                    tolerance: None,
                 })
             } else {
                 logical
@@ -379,6 +381,7 @@ pub fn coalesce_rational_charts(
                 surface: group.surface,
                 sense: group.sense,
                 loops,
+                tolerance: None,
             },
             group.origins,
         ));

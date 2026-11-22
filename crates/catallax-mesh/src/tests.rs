@@ -543,6 +543,7 @@ fn split_torus_closes_both_periodic_dimensions_across_shared_rings() {
                 sense: Sense::Same,
                 start: None,
                 end: None,
+                tolerance: None,
             })
         })
         .collect();
@@ -563,6 +564,7 @@ fn split_torus_closes_both_periodic_dimensions_across_shared_rings() {
             surface,
             sense: Sense::Same,
             loops,
+            tolerance: None,
         }));
     }
     let shell = model.add_shell(Shell { faces });
@@ -660,6 +662,7 @@ fn a_sphere_boundary_through_definition_poles_uses_a_regular_chart() {
         sense: Sense::Same,
         start: None,
         end: None,
+        tolerance: None,
     });
     let mut faces = Vec::new();
     for sense in [Sense::Same, Sense::Reversed] {
@@ -669,6 +672,7 @@ fn a_sphere_boundary_through_definition_poles_uses_a_regular_chart() {
             surface,
             sense: Sense::Same,
             loops: vec![l],
+            tolerance: None,
         }));
     }
     let shell = model.add_shell(Shell { faces });
@@ -1041,6 +1045,7 @@ fn elliptic_cylinder(placement: &Pose, oblique_caps: bool) -> (Model, BodyId) {
             sense: Sense::Same,
             start: None,
             end: None,
+            tolerance: None,
         });
         let cap = Surface::Plane(
             Plane::new(center, cap_axis.clone(), cap_reference.clone(), &mut dec).unwrap(),
@@ -1052,6 +1057,7 @@ fn elliptic_cylinder(placement: &Pose, oblique_caps: bool) -> (Model, BodyId) {
             surface: cap,
             sense,
             loops: vec![boundary],
+            tolerance: None,
         }));
         let coedge = model.add_coedge(Coedge {
             edge,
@@ -1067,6 +1073,7 @@ fn elliptic_cylinder(placement: &Pose, oblique_caps: bool) -> (Model, BodyId) {
         surface,
         sense: Sense::Same,
         loops: side_loops,
+        tolerance: None,
     }));
     let shell = model.add_shell(Shell { faces });
     let lump = model.add_lump(Lump {
@@ -1227,7 +1234,10 @@ fn conic_section(parabola: bool) -> (Model, BodyId) {
         let point = model
             .geom_mut()
             .add_point(PointDef::Explicit(point(x, y, height.clone())));
-        model.add_vertex(Vertex { point })
+        model.add_vertex(Vertex {
+            point,
+            tolerance: None,
+        })
     });
     let line = model.geom_mut().add_curve(Curve::Line(
         Line::new(
@@ -1258,6 +1268,7 @@ fn conic_section(parabola: bool) -> (Model, BodyId) {
             sense: Sense::Same,
             start: Some(endpoints[0]),
             end: Some(endpoints[1]),
+            tolerance: None,
         })
     });
     let cap = model.geom_mut().add_surface(Surface::Plane(
@@ -1299,6 +1310,7 @@ fn conic_section(parabola: bool) -> (Model, BodyId) {
                 surface,
                 sense: if i == 0 && !parabola { reversed } else { same },
                 loops: vec![boundary],
+                tolerance: None,
             })
         })
         .collect();
@@ -1442,6 +1454,7 @@ fn oblique_elliptic_cylinder_shares_circular_cap_rails() {
             sense: Sense::Same,
             start: None,
             end: None,
+            tolerance: None,
         });
         rings.push(edge);
         let coedge = model.add_coedge(Coedge {
@@ -1457,6 +1470,7 @@ fn oblique_elliptic_cylinder_shares_circular_cap_rails() {
             surface,
             sense: Sense::Same,
             loops: vec![ring],
+            tolerance: None,
         }));
     }
     let loops = rings
@@ -1471,6 +1485,7 @@ fn oblique_elliptic_cylinder_shares_circular_cap_rails() {
         surface: side,
         sense: Sense::Same,
         loops,
+        tolerance: None,
     }));
     let shell = model.add_shell(Shell { faces });
     let lump = model.add_lump(Lump {
@@ -1534,6 +1549,7 @@ fn torus_trimmed_between_non_grid_latitudes_closes_across_both_seams() {
                 sense: Sense::Same,
                 start: None,
                 end: None,
+                tolerance: None,
             })
         })
         .collect();
@@ -1555,6 +1571,7 @@ fn torus_trimmed_between_non_grid_latitudes_closes_across_both_seams() {
             surface,
             sense: Sense::Same,
             loops,
+            tolerance: None,
         })
     })
     .collect();

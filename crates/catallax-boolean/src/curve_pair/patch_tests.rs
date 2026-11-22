@@ -454,6 +454,7 @@ fn finite_atlas_incidence_uses_parameters_without_a_global_side() {
             surface,
             sense: catallax_topology::Sense::Same,
             loops: Vec::new(),
+            tolerance: None,
         });
         for (position, expected) in [(on, true), (off, false)] {
             let point = model

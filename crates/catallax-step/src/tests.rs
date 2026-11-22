@@ -596,6 +596,7 @@ fn branch_body_with_sense(source_sense: Sense) -> (Model, BodyId) {
         sense: source_sense,
         start: None,
         end: None,
+        tolerance: None,
     });
     let mut faces = Vec::new();
     for (surface, sense) in [(cylinder, Sense::Same), (sphere, Sense::Reversed)] {
@@ -612,6 +613,7 @@ fn branch_body_with_sense(source_sense: Sense) -> (Model, BodyId) {
             surface,
             sense: Sense::Same,
             loops: vec![loop_],
+            tolerance: None,
         }));
     }
     let shell = model.add_shell(Shell { faces });
@@ -843,6 +845,7 @@ fn irrational_intersection_circles_remain_analytic() {
             sense: Sense::Same,
             start: None,
             end: None,
+            tolerance: None,
         });
         let coedge = model.add_coedge(Coedge {
             edge,
@@ -858,12 +861,14 @@ fn irrational_intersection_circles_remain_analytic() {
             surface: sphere,
             sense: Sense::Same,
             loops: vec![loop_],
+            tolerance: None,
         }));
     }
     let cylinder_face = model.add_face(Face {
         surface: cylinder,
         sense: Sense::Same,
         loops: cylinder_loops,
+        tolerance: None,
     });
     let shell = model.add_shell(Shell {
         faces: std::iter::once(cylinder_face).chain(sphere_faces).collect(),
@@ -1018,6 +1023,7 @@ fn irrational_intersection_lines_and_trimmed_seam_arcs_remain_analytic() {
             assert_eq!(hits.len(), 1);
             vertices.push(model.add_vertex(Vertex {
                 point: hits[0].point,
+                tolerance: None,
             }));
         }
     }
@@ -1044,6 +1050,7 @@ fn irrational_intersection_lines_and_trimmed_seam_arcs_remain_analytic() {
             sense,
             start: Some(start),
             end: Some(end),
+            tolerance: None,
         })
     };
     let base_arc = edge(bottom_circle, a, b, Sense::Reversed);
@@ -1112,6 +1119,7 @@ fn irrational_intersection_lines_and_trimmed_seam_arcs_remain_analytic() {
             surface,
             sense,
             loops: vec![loop_],
+            tolerance: None,
         }));
     }
     let shell = model.add_shell(Shell { faces });
@@ -1187,6 +1195,7 @@ fn irrational_radius_cap() -> (Model, BodyId) {
         sense: Sense::Same,
         start: None,
         end: None,
+        tolerance: None,
     });
     let mut faces = Vec::new();
     for (surface, sense) in [(sphere, Sense::Same), (plane, Sense::Reversed)] {
@@ -1203,6 +1212,7 @@ fn irrational_radius_cap() -> (Model, BodyId) {
             surface,
             sense: Sense::Same,
             loops: vec![loop_],
+            tolerance: None,
         }));
     }
     let shell = model.add_shell(Shell { faces });
@@ -1409,8 +1419,14 @@ fn steinmetz_ellipse_arcs_stay_analytic_with_a_valid_deviation_bound() {
     let Component::Curve { singular, .. } = &components[0] else {
         unreachable!()
     };
-    let start = model.add_vertex(Vertex { point: singular[0] });
-    let end = model.add_vertex(Vertex { point: singular[1] });
+    let start = model.add_vertex(Vertex {
+        point: singular[0],
+        tolerance: None,
+    });
+    let end = model.add_vertex(Vertex {
+        point: singular[1],
+        tolerance: None,
+    });
     let mut edges = Vec::new();
     for curve in curves {
         edges.push(model.add_edge(Edge {
@@ -1418,12 +1434,14 @@ fn steinmetz_ellipse_arcs_stay_analytic_with_a_valid_deviation_bound() {
             sense: Sense::Same,
             start: Some(start),
             end: Some(end),
+            tolerance: None,
         }));
         edges.push(model.add_edge(Edge {
             curve,
             sense: Sense::Same,
             start: Some(end),
             end: Some(start),
+            tolerance: None,
         }));
     }
     let mut faces = Vec::new();
@@ -1445,6 +1463,7 @@ fn steinmetz_ellipse_arcs_stay_analytic_with_a_valid_deviation_bound() {
             surface,
             sense: Sense::Same,
             loops: vec![loop_],
+            tolerance: None,
         }));
     }
     let shell = model.add_shell(Shell { faces });

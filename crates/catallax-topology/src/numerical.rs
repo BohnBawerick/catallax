@@ -9,9 +9,11 @@ use catallax_numbers::{
 };
 use catallax_shapes::{Curve, Point3, PointDef, SplineSupport, Surface};
 
+use catallax_shapes::{CurveId, PointId, SurfaceId};
+
 use crate::{
     Body, BodyId, BodyKind, Coedge, Edge, EntityCounts, Face, Loop, Lump, Model, Sense, Shell,
-    Vertex,
+    Tolerance, Vertex,
 };
 
 mod analytic;
@@ -23,8 +25,14 @@ pub use edge_gap::{DerivedCopyAudit, audit_derived_copies};
 pub mod gap;
 mod handover;
 mod import_gap;
-pub use import_gap::{ImportGapOutcome, ImportGapRow, ImportUseReading, read_import_use};
+pub use import_gap::{
+    ImportGapOutcome, ImportGapRow, ImportUseReading, read_import_use, read_import_use_counted,
+};
 mod native;
+/// The filtered predicate of a decision with a tolerant participant
+/// (Checkpoint 2 decisions, section 4.5).
+pub mod predicate;
+mod retighten;
 pub use native::{NumericalNativeTrim, build_with_native_trims, build_with_sampled_carriers};
 mod source;
 pub use source::definition_from_model;
@@ -37,7 +45,13 @@ pub use tolerance::{ToleranceReport, ToleranceWarning};
 #[cfg(test)]
 mod known_answers;
 #[cfg(test)]
+mod model_tests;
+#[cfg(test)]
 mod segment_tests;
+/// The quarter cylinder of the tests under `tests/`.
+#[cfg(test)]
+#[path = "../tests/common/analytic.rs"]
+mod test_fixture;
 
 /// Shared default work limit for a numerical build or continuation.
 pub const DEFAULT_WORK: u64 = 20_000_000;
@@ -279,6 +293,14 @@ impl NumericalOptions {
 /// Approximate export requires a numerical writer and its own output checks.
 /// Existing exact builds and exporters retain their interfaces and behavior.
 ///
+/// The body's topology is a body of the one model type (section 4.5 of the
+/// Checkpoint 2 decisions). Each of its vertices and edges stores the
+/// tolerance admission measured for it, no face stores one, and
+/// [`Model::check`] is its checker ([`Self::topology_faults`]). This type is
+/// a view of that body together with what the model does not hold: the
+/// stable keys, the face copy of each edge use, the copy tags, the evidence
+/// and the history.
+///
 /// ```compile_fail
 /// use catallax_numbers::Answer;
 /// use catallax_topology::numerical::NumericalBody;
@@ -429,18 +451,27 @@ impl NumericalBody {
         self.refit_face_copies_on(above_mm, None, dec)
     }
 
-    /// [`Self::refit_face_copies`] on the accounts of an import admission
-    /// (rule T3), one per edge use in definition order: each refit draws on
-    /// what its use has left of its one work allowance, the checker's
-    /// reading of a kept refit goes into the account, and the admission of
-    /// the refitted body uses the kept readings. Without accounts each
-    /// candidate and each use is read under the checker's cap.
+    /// [`Self::refit_face_copies`] on the accounts of the admission it is
+    /// part of: each refit draws on what its use's edge has left of its one
+    /// work allowance, the checker's reading of a kept refit goes into the
+    /// accounts, and the admission of the refitted body uses the kept
+    /// readings. An import admission passes its own accounts (rule T3).
+    /// Without them this refit and its admission start accounts of their
+    /// own, with the checker's cap for every edge.
     fn refit_face_copies_on(
         &self,
         above_mm: &Rational,
-        mut accounts: Option<&mut [edge_gap::UseAccount]>,
+        accounts: Option<&mut edge_gap::Accounts>,
         dec: &mut Decider,
     ) -> Result<(Self, Vec<RefitRow>), Refusal> {
+        let mut own;
+        let accounts = match accounts {
+            Some(accounts) => accounts,
+            None => {
+                own = edge_gap::Accounts::for_definition(&self.definition, gap::Limits::default());
+                &mut own
+            }
+        };
         guarded(|| {
             let records = tolerance::use_records(&self.evidence);
             let mut chosen = Vec::new();
@@ -458,7 +489,7 @@ impl NumericalBody {
                 }
             }
             let target = above_mm.to_f64_nearest();
-            match self.refit_uses(&chosen, target, accounts.as_deref_mut(), dec)? {
+            match self.refit_uses(&chosen, target, accounts, dec)? {
                 None => Ok((self.clone(), Vec::new())),
                 Some((native_trims, rows)) => {
                     let mut next = build_inner_kind_on(
@@ -468,7 +499,7 @@ impl NumericalBody {
                         self.sampled_carriers.clone(),
                         self.options.clone(),
                         self.evidence.repairs().to_vec(),
-                        accounts,
+                        Some(accounts),
                         None,
                         dec,
                     )?;
@@ -483,15 +514,15 @@ impl NumericalBody {
     /// that brings its use's stored tolerance under `target_mm`, or `None`
     /// when none does.
     ///
-    /// With the accounts of an import admission, each refit draws on its
-    /// use's account, and the checker's reading of a refit that is kept
-    /// replaces the old copy's reading there.
+    /// Each refit draws on what its use's edge has left of its one work
+    /// allowance in `accounts`, and the checker's reading of a refit that
+    /// is kept replaces the old copy's reading there.
     #[allow(clippy::type_complexity)]
     fn refit_uses(
         &self,
         chosen: &[((usize, usize, usize), Rational)],
         target_mm: f64,
-        mut accounts: Option<&mut [edge_gap::UseAccount]>,
+        accounts: &mut edge_gap::Accounts,
         dec: &mut Decider,
     ) -> Result<Option<(Vec<NumericalNativeTrim>, Vec<RefitRow>)>, Refusal> {
         if chosen.is_empty() {
@@ -510,27 +541,14 @@ impl NumericalBody {
             let trim = &face.loops[*boundary][*use_index];
             let edge = &self.definition.edges[trim.edge];
             let native = index.get(*face_index, *boundary, *use_index);
-            let mut account = match accounts.as_deref_mut() {
-                Some(all) => Some(
-                    all.get_mut(use_slot(
-                        &self.definition,
-                        *face_index,
-                        *boundary,
-                        *use_index,
-                    ))
-                    .ok_or_else(|| bad("definition", "an edge use has no work account"))?,
-                ),
-                None => None,
-            };
-            let Some(found) = edge_gap::refit_use(
-                face,
-                trim,
-                edge,
-                native,
-                target_mm,
-                account.as_deref_mut(),
-                dec,
-            )?
+            let mut account = accounts.draw(use_slot(
+                &self.definition,
+                *face_index,
+                *boundary,
+                *use_index,
+            ))?;
+            let Some(found) =
+                edge_gap::refit_use(face, trim, edge, native, target_mm, &mut account, dec)?
             else {
                 continue;
             };
@@ -541,9 +559,7 @@ impl NumericalBody {
             if after >= *before || after.to_f64_nearest() > target_mm {
                 continue;
             }
-            if let Some(account) = account {
-                account.replace(found.reading);
-            }
+            account.replace(found.reading);
             native_trims.retain(|binding| {
                 !(binding.face == face.key
                     && binding.boundary == *boundary
@@ -623,16 +639,22 @@ impl NumericalBody {
                 }
             }
         }
-        let Some((native_trims, _)) = self.refit_uses(&chosen, target, None, dec)? else {
+        // The refits and the admission of the refitted body are one pass
+        // over the body, on one allowance for each edge.
+        let mut accounts =
+            edge_gap::Accounts::for_definition(&self.definition, gap::Limits::default());
+        let Some((native_trims, _)) = self.refit_uses(&chosen, target, &mut accounts, dec)? else {
             return Ok(self);
         };
-        let mut next = build_inner_kind(
+        let mut next = build_inner_kind_on(
             self.kind(),
             self.definition.clone(),
             native_trims,
             self.sampled_carriers.clone(),
             self.options.clone(),
             self.evidence.repairs().to_vec(),
+            Some(&mut accounts),
+            None,
             dec,
         )?;
         next.inherit(previous, dec)?;
@@ -694,11 +716,84 @@ impl NumericalBody {
         self.model.counts(self.body)
     }
 
-    /// Diagnostics from the unchanged exact topology checker. Missing exact
-    /// incidence remains missing even when every numerical sample is zero.
-    /// The raw model stays private so this result cannot enter exact consumers.
-    pub fn exact_topology_faults(&self) -> Vec<crate::TopologyFault> {
+    /// What [`Model::check`] says of this body's model: the one checker of
+    /// exact, tolerant and mixed bodies. An admitted body has no fault.
+    ///
+    /// Every vertex and edge of the model stores the tolerance of
+    /// [`Self::tolerances`], and no face stores one. So nothing here is
+    /// exact, even where every measured distance is zero: a tolerance is
+    /// never under rule T1's floor.
+    ///
+    /// The model itself stays private. Operations on exact bodies do not yet
+    /// keep tolerant entities out of the exact intersector (section 4.5 of
+    /// the Checkpoint 2 decisions); until they do, this body does not enter
+    /// them.
+    pub fn topology_faults(&self) -> Vec<crate::TopologyFault> {
         self.model.check(self.body)
+    }
+
+    /// Builds this body's model again with a tolerance on every vertex and
+    /// edge, for a body read from a record whose model had none (a handover
+    /// written before format version 3).
+    ///
+    /// The values are those of the body's tolerance report. A record older
+    /// than the report has none; every vertex and edge of such a body takes
+    /// the largest tolerance its evidence records
+    /// ([`tolerance::largest_recorded`]), or rule T1's fixed 1e-7 mm where
+    /// that is larger. That is an upper value for each entity, and a rebuild
+    /// measures each one again.
+    pub(super) fn restore_model_tolerances(&mut self) -> Result<(), Refusal> {
+        let definition = &self.definition;
+        let indices_hold = definition
+            .edges
+            .iter()
+            .all(|edge| edge.vertices.iter().all(|v| *v < definition.vertices.len()))
+            && definition
+                .faces
+                .iter()
+                .flat_map(|face| face.loops.iter().flatten())
+                .all(|trim| trim.edge < definition.edges.len());
+        if !indices_hold {
+            return Err(catallax_numbers::transfer::invalid(
+                "a numerical definition names a vertex or an edge it does not have",
+            ));
+        }
+        let stored = if self.tolerances.entities.is_empty() {
+            let largest =
+                tolerance::largest_recorded(&self.evidence).max(tolerance::floor_minimum_mm());
+            StoredTolerances::uniform(definition, Tolerance::new(largest)?)
+        } else {
+            StoredTolerances::of(definition, &self.tolerances)?
+        };
+        let (model, body) =
+            ModelGeometry::of(definition).topology(definition, self.kind(), Some(&stored));
+        self.model = model;
+        self.body = body;
+        Ok(())
+    }
+
+    /// The tolerance of the vertex or the edge with this key, read from the
+    /// body's model: the same field every body's entities have. `None` for
+    /// an unknown key and for a face, which stores none.
+    ///
+    /// It is the value [`Self::tolerances`] reports for the entity. The
+    /// model's vertices and edges are in the order of the definition's
+    /// tables, so a key's place in its table is its entity's place in the
+    /// model.
+    pub fn stored_tolerance(&self, kind: tolerance::EntityKind, key: &str) -> Option<&Tolerance> {
+        match kind {
+            tolerance::EntityKind::Vertex => {
+                let index = self.definition.vertices.iter().position(|v| v.key == key)?;
+                let vertex = *self.model.vertex_handles().get(index)?;
+                self.model.vertex(vertex).tolerance.as_ref()
+            }
+            tolerance::EntityKind::Edge => {
+                let index = self.definition.edges.iter().position(|e| e.key == key)?;
+                let edge = *self.model.edge_handles().get(index)?;
+                self.model.edge(edge).tolerance.as_ref()
+            }
+            tolerance::EntityKind::Face => None,
+        }
     }
 
     /// Replaces one support and rechecks its retained trims and the complete body.
@@ -827,14 +922,15 @@ const TOLERANCE_EXCEEDED: &str = "numbers.numerical-tolerance-exceeded";
 /// reparametrised copy is returned as imported, unless the refusal says
 /// that work or time ran out.
 ///
-/// Work: an edge use has one allowance for this whole admission, the
-/// checker's hard per-edge cap (section 4.2 step 8). Admission's reading of
-/// the use draws on it first, then the gap rule's geometric reading and its
-/// change of parameter, then rule T3's refit where the use is still over
-/// the cap. The checker reads each copy once: the rule uses the reading
-/// admission took, and every later admission, rule T3's probe among them,
-/// uses the readings already taken, a new copy's among them. A use that
-/// spends its allowance refuses the admission with `numerical.gap-work-cap`.
+/// Work: an edge has one allowance for this whole admission, the checker's
+/// hard per-edge cap (section 4.2 step 8), and every use of the edge draws
+/// on it. Admission's reading of a use comes first, then the gap rule's
+/// geometric reading and its change of parameter, then rule T3's refit
+/// where the use is still over the cap. The checker reads each copy once:
+/// the rule uses the reading admission took, and every later admission,
+/// rule T3's probe among them, uses the readings already taken, a new
+/// copy's among them. An edge whose uses together spend its allowance
+/// refuses the admission with `numerical.gap-work-cap`.
 /// That refusal is returned by name wherever it comes from, and so are the
 /// operation's allowance and its deadline. The body as imported is not
 /// returned in their place.
@@ -844,21 +940,38 @@ pub fn admit_import(
     options: NumericalOptions,
     dec: &mut Decider,
 ) -> Result<NumericalBody, Refusal> {
-    // One account per edge use for the whole admission, each with the
-    // checker's cap.
-    let mut accounts = edge_gap::UseAccount::for_uses(&definition, gap::Limits::default());
+    admit_import_under(
+        gap::Limits::default(),
+        definition,
+        native_trims,
+        options,
+        dec,
+    )
+}
+
+/// [`admit_import`] with `limits` as each edge's allowance in place of the
+/// checker's cap ([`gap::EDGE_WORK`]). Only a test of the cap gives less.
+pub fn admit_import_under(
+    limits: gap::Limits,
+    definition: NumericalDefinition,
+    native_trims: Vec<NumericalNativeTrim>,
+    options: NumericalOptions,
+    dec: &mut Decider,
+) -> Result<NumericalBody, Refusal> {
+    // One allowance per edge for the whole admission.
+    let mut accounts = edge_gap::Accounts::for_definition(&definition, limits);
     admit_import_on(definition, native_trims, options, &mut accounts, dec)
 }
 
-/// [`admit_import`] on the accounts of its edge uses, one per use in
-/// definition order. Admission's reading of a use is the first to draw on
-/// its account, and the reading is kept there. Only the tests that spend an
-/// allowance pass accounts with less than the checker's cap.
+/// [`admit_import`] on the accounts of its edges and edge uses. Admission's
+/// reading of a use is the first to draw on its edge's allowance, and the
+/// reading is kept. Only the tests that spend an allowance pass accounts
+/// with less than the checker's cap.
 fn admit_import_on(
     definition: NumericalDefinition,
     native_trims: Vec<NumericalNativeTrim>,
     options: NumericalOptions,
-    accounts: &mut [edge_gap::UseAccount],
+    accounts: &mut edge_gap::Accounts,
     dec: &mut Decider,
 ) -> Result<NumericalBody, Refusal> {
     if options.tolerance_mm > tolerance::import_opt_in_limit_mm() {
@@ -901,18 +1014,14 @@ fn admit_import_on(
     let admitted = import_gap::settled_body(first, with_new_copies, &mut rows, |refusal| {
         // Rule T3 on the copies as imported. A use whose new copy was tried
         // goes back to the reading of its copy as imported.
-        for account in accounts.iter_mut() {
-            account.back_to_imported();
-        }
+        accounts.back_to_imported();
         refit_under_cap(definition, native_trims, options, refusal, accounts, dec)
     });
     admitted.map(|mut body| {
         // What the whole admission counted for each use the rule read, the
         // refit of rule T3 included.
         for (row, slot) in rows.iter_mut().zip(&slots) {
-            if let Some(account) = accounts.get(*slot) {
-                row.work = account.spent();
-            }
+            row.work = accounts.spent_by_use(*slot);
         }
         body.import_gaps = rows;
         body
@@ -920,13 +1029,13 @@ fn admit_import_on(
 }
 
 /// Admits a definition as [`build_with_native_trims`] does, on the accounts
-/// of an import admission: a use is read under what it has left of its one
-/// allowance, and a use whose reading is kept is not read again.
+/// of an import admission: a use is read under what its edge has left of
+/// its one allowance, and a use whose reading is kept is not read again.
 fn admit_on(
     definition: NumericalDefinition,
     native_trims: Vec<NumericalNativeTrim>,
     options: NumericalOptions,
-    accounts: &mut [edge_gap::UseAccount],
+    accounts: &mut edge_gap::Accounts,
     dec: &mut Decider,
 ) -> Result<NumericalBody, Refusal> {
     guarded(|| {
@@ -951,7 +1060,7 @@ fn admit_under_cap(
     definition: NumericalDefinition,
     native_trims: Vec<NumericalNativeTrim>,
     options: NumericalOptions,
-    accounts: &mut [edge_gap::UseAccount],
+    accounts: &mut edge_gap::Accounts,
     dec: &mut Decider,
 ) -> Result<NumericalBody, Refusal> {
     match admit_on(
@@ -976,15 +1085,15 @@ fn admit_under_cap(
 ///
 /// All of it is on the accounts of the import admission, which hold the
 /// readings of `native_trims`. The probe and the last admission use the
-/// kept readings and read nothing. Each refit draws on what its use has
-/// left of its one allowance, and a use that spends it refuses with
+/// kept readings and read nothing. Each refit draws on what its use's edge
+/// has left of its one allowance, and an edge that spends it refuses with
 /// `numerical.gap-work-cap`.
 fn refit_under_cap(
     definition: NumericalDefinition,
     native_trims: Vec<NumericalNativeTrim>,
     options: NumericalOptions,
     refusal: Refusal,
-    accounts: &mut [edge_gap::UseAccount],
+    accounts: &mut edge_gap::Accounts,
     dec: &mut Decider,
 ) -> Result<NumericalBody, Refusal> {
     let probe = admit_on(
@@ -1015,7 +1124,8 @@ fn refit_under_cap(
     })
 }
 
-/// The place of an edge use in definition order, where its work account is.
+/// The place of an edge use in definition order, where its record in the
+/// work accounts is.
 fn use_slot(
     definition: &NumericalDefinition,
     face_index: usize,
@@ -1323,16 +1433,17 @@ fn build_inner_kind(
     )
 }
 
-/// [`build_inner_kind`] on the accounts of an import admission, one per edge
-/// use in definition order: each use is read under what it has left of its
-/// one work allowance, and a use whose reading is kept in its account is not
-/// read again ([`edge_gap::UseAccount`]). Without accounts every use is read
-/// under the checker's cap.
+/// [`build_inner_kind`] on the accounts of the admission it is part of
+/// ([`edge_gap::Accounts`]): each use is read under what its edge has left
+/// of its one work allowance (section 4.2 step 8: "A hard per-edge work cap
+/// refuses by name"), and a use whose reading is kept there is not read
+/// again. An admission that passes none starts accounts of its own here,
+/// with the checker's cap for every edge, so the uses of one edge share one
+/// allowance in every admission.
 ///
 /// With `recorded`, the tolerance a file recorded at export stands for every
 /// distance: the structure and every u/v walk are checked as always, and
-/// nothing is measured ([`admit_recorded`]). It has no accounts, because it
-/// reads no use.
+/// nothing is measured ([`admit_recorded`]), so no allowance is drawn on.
 #[allow(clippy::too_many_arguments)]
 fn build_inner_kind_on(
     kind: BodyKind,
@@ -1341,10 +1452,18 @@ fn build_inner_kind_on(
     sampled_carriers: BTreeSet<String>,
     options: NumericalOptions,
     repairs: Vec<NumericalRepair>,
-    mut accounts: Option<&mut [edge_gap::UseAccount]>,
+    accounts: Option<&mut edge_gap::Accounts>,
     recorded: Option<&Rational>,
     dec: &mut Decider,
 ) -> Result<NumericalBody, Refusal> {
+    let mut own_accounts;
+    let accounts = match accounts {
+        Some(accounts) => accounts,
+        None => {
+            own_accounts = edge_gap::Accounts::for_definition(&definition, gap::Limits::default());
+            &mut own_accounts
+        }
+    };
     precision_allowed(dec)?;
     dec.charge_work(1)?;
     if definition.name.trim().is_empty() || options.tolerance_mm.sign() != Sign::Positive {
@@ -1373,21 +1492,25 @@ fn build_inner_kind_on(
         }
     }
     let native = native::Index::new(&definition, &native_trims, &sampled_carriers, dec)?;
-    let mut model = Model::new();
-    let vertices: Vec<_> = definition
+    // The geometry of the body's model. Its topology is built twice from it,
+    // by `topology`: without tolerances for the structure check that comes
+    // before any measurement, and with the measured ones for the result.
+    let mut geometry = Model::new();
+    let points: Vec<PointId> = definition
         .vertices
         .iter()
         .map(|v| {
             let [x, y, z] = v.position.clone();
-            let point = model.geom_mut().add_point(PointDef::Explicit(Point3::new(
-                x.into(),
-                y.into(),
-                z.into(),
-            )));
-            model.add_vertex(Vertex { point })
+            geometry
+                .geom_mut()
+                .add_point(PointDef::Explicit(Point3::new(
+                    x.into(),
+                    y.into(),
+                    z.into(),
+                )))
         })
         .collect();
-    let mut edges = Vec::new();
+    let mut curves: Vec<CurveId> = Vec::new();
     for edge in &definition.edges {
         dec.charge_work(1)?;
         match &edge.curve {
@@ -1416,7 +1539,7 @@ fn build_inner_kind_on(
                 ));
             }
         }
-        if edge.vertices.iter().any(|i| *i >= vertices.len())
+        if edge.vertices.iter().any(|i| *i >= points.len())
             || edge.parameters[0] == edge.parameters[1]
         {
             return Err(bad(
@@ -1424,19 +1547,9 @@ fn build_inner_kind_on(
                 "edge has an invalid vertex index or empty parameter interval",
             ));
         }
-        let curve = model.geom_mut().add_curve(edge.curve.clone());
-        edges.push(model.add_edge(Edge {
-            curve,
-            sense: if edge.parameters[0] < edge.parameters[1] {
-                Sense::Same
-            } else {
-                Sense::Reversed
-            },
-            start: Some(vertices[edge.vertices[0]]),
-            end: Some(vertices[edge.vertices[1]]),
-        }));
+        curves.push(geometry.geom_mut().add_curve(edge.curve.clone()));
     }
-    let mut faces = Vec::new();
+    let mut surfaces: Vec<SurfaceId> = Vec::new();
     for (face_index, face) in definition.faces.iter().enumerate() {
         dec.charge_work(1)?;
         if !analytic::supports(&face.surface) {
@@ -1491,47 +1604,37 @@ fn build_inner_kind_on(
             )?;
             check_distinct_boundary_vertices(face, &definition.edges, dec)?;
         }
-        let mut loops = Vec::new();
-        for boundary in &face.loops {
-            let mut uses = Vec::new();
-            for trim in boundary {
-                dec.charge_work(1)?;
-                let edge = *edges
-                    .get(trim.edge)
-                    .ok_or_else(|| bad("definition", "trim names an invalid edge index"))?;
-                uses.push(model.add_coedge(Coedge {
-                    edge,
-                    sense: trim.sense,
-                }));
+        for trim in face.loops.iter().flatten() {
+            dec.charge_work(1)?;
+            if trim.edge >= curves.len() {
+                return Err(bad("definition", "trim names an invalid edge index"));
             }
-            loops.push(model.add_loop(Loop::Coedges(uses)));
         }
-        let surface = model.geom_mut().add_surface(face.surface.clone());
-        faces.push(model.add_face(Face {
-            surface,
-            sense: face.sense,
-            loops,
-        }));
+        surfaces.push(geometry.geom_mut().add_surface(face.surface.clone()));
     }
-    let shell = model.add_shell(Shell { faces });
-    let lump = model.add_lump(Lump {
-        shells: vec![shell],
-    });
-    let body = model.add_body(Body {
-        kind,
-        lumps: vec![lump],
-        wires: Vec::new(),
-        marks: MarkLog::new(),
-    });
-    if let Some(fault) = crate::check::structure(&model, body).into_iter().next() {
-        return Err(Refusal::new(fault.code, fault.detail));
-    }
-    let counts = model.counts(body);
-    if counts.vertices != definition.vertices.len() || counts.edges != definition.edges.len() {
-        return Err(bad(
-            "definition",
-            "unused vertices or edges are not part of this result",
-        ));
+    let geometry = ModelGeometry {
+        model: geometry,
+        points,
+        curves,
+        surfaces,
+    };
+    {
+        // The structure does not depend on any tolerance, so a broken shell
+        // refuses here, before a distance is measured.
+        let (unmeasured, body) = geometry.topology(&definition, kind, None);
+        if let Some(fault) = crate::check::structure(&unmeasured, body)
+            .into_iter()
+            .next()
+        {
+            return Err(Refusal::new(fault.code, fault.detail));
+        }
+        let counts = unmeasured.counts(body);
+        if counts.vertices != definition.vertices.len() || counts.edges != definition.edges.len() {
+            return Err(bad(
+                "definition",
+                "unused vertices or edges are not part of this result",
+            ));
+        }
     }
     let mut checks = vec![NumericalCheck::Passed {
         name: "topology.structure".into(),
@@ -1679,13 +1782,7 @@ fn build_inner_kind_on(
             .flat_map(|(b, row)| row.iter().enumerate().map(move |(u, t)| (b, u, t)))
             .enumerate()
         {
-            let account = match accounts.as_deref_mut() {
-                Some(all) => Some(
-                    all.get_mut(slot)
-                        .ok_or_else(|| bad("definition", "an edge use has no work account"))?,
-                ),
-                None => None,
-            };
+            let at = slot;
             slot += 1;
             let edge = &definition.edges[trim.edge];
             let numerical_pair = native.numerical_pair(trim.edge);
@@ -1736,7 +1833,7 @@ fn build_inner_kind_on(
                     .tag(face_index, boundary_index, use_index)
                     .unwrap_or(&trim.tag),
                 &options.tolerance_mm,
-                account,
+                accounts.draw(at)?,
                 dec,
             )?;
             checks.push(NumericalCheck::Samples {
@@ -1763,6 +1860,17 @@ fn build_inner_kind_on(
     };
     let evidence = NumericalEvidence::new(evidence_tolerance, checks, repairs)?;
     let tolerances = tolerance_report(&definition, &native, &evidence, &options, recorded, dec)?;
+    // The body's model: every vertex and edge with the tolerance admission
+    // just stored for it, and every face with none, since a face's surface is
+    // the authoritative copy and the gap lives on its edges. The model then
+    // goes through the checker every body goes through. That check reads the
+    // entities and compares their stored tolerances; it evaluates nothing and
+    // makes no decision, so like every `Model::check` it is not charged.
+    let stored = StoredTolerances::of(&definition, &tolerances)?;
+    let (model, body) = geometry.topology(&definition, kind, Some(&stored));
+    if let Some(fault) = model.check(body).into_iter().next() {
+        return Err(Refusal::new(fault.code, fault.detail));
+    }
     dec.check_deadline()?;
     Ok(NumericalBody {
         source: definition.clone(),
@@ -1779,6 +1887,200 @@ fn build_inner_kind_on(
         tolerances,
         import_gaps: Vec::new(),
     })
+}
+
+/// The geometry of a numerical body's model: one point per vertex, one
+/// curve per edge and one surface per face of its definition, in definition
+/// order.
+struct ModelGeometry {
+    model: Model,
+    points: Vec<PointId>,
+    curves: Vec<CurveId>,
+    surfaces: Vec<SurfaceId>,
+}
+
+/// The tolerance of every vertex and every edge of a definition, in
+/// definition order.
+struct StoredTolerances {
+    vertices: Vec<Tolerance>,
+    edges: Vec<Tolerance>,
+}
+
+impl StoredTolerances {
+    /// The tolerances a report holds for `definition`: one per vertex, then
+    /// one per edge, as admission writes them.
+    fn of(definition: &NumericalDefinition, report: &ToleranceReport) -> Result<Self, Refusal> {
+        let mismatch = || {
+            Refusal::new(
+                "numerical.invalid-definition",
+                "the tolerance report does not match the definition's vertices and edges",
+            )
+        };
+        let (vertices, edges) = report
+            .entities
+            .split_at_checked(definition.vertices.len())
+            .filter(|(_, edges)| edges.len() == definition.edges.len())
+            .ok_or_else(mismatch)?;
+        let read = |entities: &[tolerance::EntityTolerance], kind: tolerance::EntityKind| {
+            entities
+                .iter()
+                .map(|entity| {
+                    if entity.kind == kind {
+                        Tolerance::new(entity.tolerance_mm.clone())
+                    } else {
+                        Err(mismatch())
+                    }
+                })
+                .collect::<Result<Vec<_>, _>>()
+        };
+        Ok(Self {
+            vertices: read(vertices, tolerance::EntityKind::Vertex)?,
+            edges: read(edges, tolerance::EntityKind::Edge)?,
+        })
+    }
+
+    /// One tolerance for every vertex and edge of `definition`.
+    fn uniform(definition: &NumericalDefinition, tolerance: Tolerance) -> Self {
+        Self {
+            vertices: vec![tolerance.clone(); definition.vertices.len()],
+            edges: vec![tolerance; definition.edges.len()],
+        }
+    }
+}
+
+impl ModelGeometry {
+    /// The geometry of a definition that admission has accepted before, with
+    /// nothing validated again.
+    fn of(definition: &NumericalDefinition) -> Self {
+        let mut model = Model::new();
+        let points = definition
+            .vertices
+            .iter()
+            .map(|v| {
+                let [x, y, z] = v.position.clone();
+                model.geom_mut().add_point(PointDef::Explicit(Point3::new(
+                    x.into(),
+                    y.into(),
+                    z.into(),
+                )))
+            })
+            .collect();
+        let curves = definition
+            .edges
+            .iter()
+            .map(|edge| model.geom_mut().add_curve(edge.curve.clone()))
+            .collect();
+        let surfaces = definition
+            .faces
+            .iter()
+            .map(|face| model.geom_mut().add_surface(face.surface.clone()))
+            .collect();
+        Self {
+            model,
+            points,
+            curves,
+            surfaces,
+        }
+    }
+
+    /// One body of `kind` over a copy of this geometry: a vertex, an edge and
+    /// a face per entry of the definition's tables, one coedge per edge use,
+    /// one shell and one lump.
+    ///
+    /// With `tolerances`, each vertex and each edge stores its own, except an
+    /// edge whose curve lies exactly on the surfaces of its faces: that one
+    /// is re-tightened to exact, with its `Incident` facts (`retighten.rs`).
+    /// Without, every entity stores none; that body is for the structure
+    /// check only and never leaves admission. A face stores none either way.
+    ///
+    /// The caller has validated every index of the definition.
+    fn topology(
+        &self,
+        definition: &NumericalDefinition,
+        kind: BodyKind,
+        tolerances: Option<&StoredTolerances>,
+    ) -> (Model, BodyId) {
+        let mut model = self.model.clone();
+        let exact = tolerances.map(|_| retighten::exact_edges(definition));
+        let vertices: Vec<_> = self
+            .points
+            .iter()
+            .enumerate()
+            .map(|(index, point)| {
+                model.add_vertex(Vertex {
+                    point: *point,
+                    tolerance: tolerances.map(|stored| stored.vertices[index].clone()),
+                })
+            })
+            .collect();
+        let edges: Vec<_> = definition
+            .edges
+            .iter()
+            .enumerate()
+            .map(|(index, edge)| {
+                model.add_edge(Edge {
+                    curve: self.curves[index],
+                    sense: if edge.parameters[0] < edge.parameters[1] {
+                        Sense::Same
+                    } else {
+                        Sense::Reversed
+                    },
+                    start: Some(vertices[edge.vertices[0]]),
+                    end: Some(vertices[edge.vertices[1]]),
+                    tolerance: tolerances
+                        .filter(|_| !exact.as_ref().is_some_and(|exact| exact[index]))
+                        .map(|stored| stored.edges[index].clone()),
+                })
+            })
+            .collect();
+        if let Some(exact) = &exact {
+            for (index, face) in definition.faces.iter().enumerate() {
+                for trim in face.loops.iter().flatten().filter(|trim| exact[trim.edge]) {
+                    retighten::record(&mut model, self.curves[trim.edge], self.surfaces[index]);
+                }
+            }
+        }
+        let faces = definition
+            .faces
+            .iter()
+            .enumerate()
+            .map(|(index, face)| {
+                let loops = face
+                    .loops
+                    .iter()
+                    .map(|boundary| {
+                        let uses = boundary
+                            .iter()
+                            .map(|trim| {
+                                model.add_coedge(Coedge {
+                                    edge: edges[trim.edge],
+                                    sense: trim.sense,
+                                })
+                            })
+                            .collect();
+                        model.add_loop(Loop::Coedges(uses))
+                    })
+                    .collect();
+                model.add_face(Face {
+                    surface: self.surfaces[index],
+                    sense: face.sense,
+                    loops,
+                    tolerance: None,
+                })
+            })
+            .collect();
+        let shell = model.add_shell(Shell { faces });
+        let lump = model.add_lump(Lump {
+            shells: vec![shell],
+        });
+        let body = model.add_body(Body {
+            kind,
+            lumps: vec![lump],
+            wires: Vec::new(),
+            marks: MarkLog::new(),
+        });
+        (model, body)
+    }
 }
 
 /// The tolerance rules on an admitted definition: every entity's tolerance

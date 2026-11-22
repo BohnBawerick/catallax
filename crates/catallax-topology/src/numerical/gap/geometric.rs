@@ -293,8 +293,8 @@ fn sweep(
 /// and its same-parameter gap is already the distance of the 3D curve from
 /// the plane.
 ///
-/// `limits` is what the edge use has left of its one allowance when another
-/// measurement of the same use came first. One unit is counted per break and
+/// `limits` is what the use's edge has left of its one allowance when another
+/// measurement of the same edge came first. One unit is counted per break and
 /// per halving while planning, as [`measure`](super::measure) counts them,
 /// and one per evaluation of either copy. It refuses with
 /// `numerical.gap-work-cap` where the allowance runs out, and the same units
@@ -305,10 +305,22 @@ pub fn measure_geometric(
     limits: Limits,
     dec: &mut Decider,
 ) -> Result<Option<GeometricMeasure>, Refusal> {
+    measure_geometric_counted(copies, hints, limits, &mut 0, dec)
+}
+
+/// [`measure_geometric`], with the work counted added to `spent` whether or
+/// not the reading finished.
+pub(in crate::numerical) fn measure_geometric_counted(
+    copies: &EdgeCopies<'_>,
+    hints: &Hints,
+    limits: Limits,
+    spent: &mut u64,
+    dec: &mut Decider,
+) -> Result<Option<GeometricMeasure>, Refusal> {
     if matches!(copies.face_copy, FaceCopyRef::Projected) {
         return Ok(None);
     }
-    under_allowance(copies, limits, dec, |search, dec| {
+    under_allowance(copies, limits, spent, dec, |search, dec| {
         let breaks = breaks(search, hints, dec)?;
         let plan = planned(search.lifted, &breaks);
         let planning = search.spent();

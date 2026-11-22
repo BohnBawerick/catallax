@@ -1,4 +1,25 @@
-//! Structural checks only. Incidence is read from the fact book, never recomputed.
+//! The one checker of a body, whether its entities are exact, tolerant or
+//! both (section 4.5 of the Checkpoint 2 decisions). It reads what builders
+//! recorded and measures nothing.
+//!
+//! Structure comes first: kinds, sharing, loop closure, edge uses,
+//! connectivity and the Euler count. None of it depends on a tolerance.
+//!
+//! Then each pair that must meet is asked for its record. The pairs are a
+//! vertex on its edge's curve, an edge's curve on its face's surface and a
+//! vertex loop's point on its face's surface. Two exact entities need their
+//! `Incident` fact in the fact book, which is never recomputed here. A
+//! tolerant entity has its tolerance as the record. Its builder measured the
+//! distance and stored the result on the entity (rule T4), as an exact
+//! builder records its fact.
+//!
+//! Last, the order. A vertex's tolerance is at least that of every edge that
+//! ends at it, and an edge's at least that of every face it bounds, with
+//! exact counting as zero. Parasolid keeps this order (Jackson 1995,
+//! "Boundary representation modelling with local tolerances") and so does
+//! OpenCASCADE (`BRepLib::UpdateTolerances`). A tolerant edge therefore
+//! forces its vertices up and never its faces, and an exact face beside it
+//! stays exact.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -7,13 +28,17 @@ use catallax_shapes::GeomKey;
 
 use crate::{
     BodyId, BodyKind, CoedgeId, EdgeId, FaceId, Loop, LoopId, LumpId, Model, Sense, ShellId,
-    TopologyFault, VertexId,
+    Tolerance, TopologyFault, VertexId,
 };
 
 pub(super) fn check(model: &Model, body: BodyId) -> Vec<TopologyFault> {
     check_with_incidence(model, body, true)
 }
 
+/// The structure part of [`check`] alone. Numerical admission runs it on a
+/// body whose tolerances it has not measured yet, so that a broken shell
+/// refuses before any distance is taken; the admitted body then goes through
+/// [`check`] like every other.
 pub(super) fn structure(model: &Model, body: BodyId) -> Vec<TopologyFault> {
     check_with_incidence(model, body, false)
 }
@@ -151,8 +176,34 @@ impl Checker<'_> {
         });
     }
 
-    fn incidence(&mut self, a: GeomKey, b: GeomKey) {
-        if self.exact_incidence && !self.model.geom().facts().holds(FactKind::Incident, a, b) {
+    /// The incidence of `a` on `b`, where `a` belongs to the entity with
+    /// tolerance `inner` and `b` to the one with tolerance `outer`: a vertex
+    /// on an edge, an edge on a face, a vertex on a face.
+    ///
+    /// Two exact entities need the recorded fact. A tolerant one has its
+    /// tolerance as the record. The inner entity's tolerance may not be less
+    /// than the outer's.
+    fn incidence(
+        &mut self,
+        inner: (&dyn std::fmt::Debug, Option<&Tolerance>, GeomKey),
+        outer: (&dyn std::fmt::Debug, Option<&Tolerance>, GeomKey),
+    ) {
+        let (inner_id, inner_tolerance, a) = inner;
+        let (outer_id, outer_tolerance, b) = outer;
+        if inner_tolerance < outer_tolerance {
+            self.fault("topology.tolerance-order", || {
+                format!(
+                    "{inner_id:?} has {} and bounds {outer_id:?}, which has {}",
+                    stated(inner_tolerance),
+                    stated(outer_tolerance)
+                )
+            });
+        }
+        if self.exact_incidence
+            && inner_tolerance.is_none()
+            && outer_tolerance.is_none()
+            && !self.model.geom().facts().holds(FactKind::Incident, a, b)
+        {
             self.fault("topology.missing-incidence", || {
                 format!("missing Incident({a:?}, {b:?})")
             });
@@ -368,9 +419,10 @@ impl Checker<'_> {
                 Loop::Vertex(v) => {
                     visit(*v);
                     vertex_loops.insert(*v);
+                    let vertex = m.vertex(*v);
                     self.incidence(
-                        GeomKey::Point(m.vertex(*v).point),
-                        GeomKey::Surface(face.surface),
+                        (v, vertex.tolerance.as_ref(), GeomKey::Point(vertex.point)),
+                        (&f, face.tolerance.as_ref(), GeomKey::Surface(face.surface)),
                     );
                 }
                 Loop::Coedges(cs) => {
@@ -409,7 +461,14 @@ impl Checker<'_> {
                                 format!("loop {l:?} is broken at coedge {c:?}")
                             });
                         }
-                        self.incidence(GeomKey::Curve(edge.curve), GeomKey::Surface(face.surface));
+                        self.incidence(
+                            (
+                                &coedge.edge,
+                                edge.tolerance.as_ref(),
+                                GeomKey::Curve(edge.curve),
+                            ),
+                            (&f, face.tolerance.as_ref(), GeomKey::Surface(face.surface)),
+                        );
                         let first_face = if let Some(uses) = scan.edges.get_mut(&coedge.edge) {
                             match coedge.sense {
                                 Sense::Same => uses.same += 1,
@@ -465,10 +524,18 @@ impl Checker<'_> {
             });
         }
         for v in [edge.start, edge.end].into_iter().flatten() {
+            let vertex = m.vertex(v);
             self.incidence(
-                GeomKey::Point(m.vertex(v).point),
-                GeomKey::Curve(edge.curve),
+                (&v, vertex.tolerance.as_ref(), GeomKey::Point(vertex.point)),
+                (&e, edge.tolerance.as_ref(), GeomKey::Curve(edge.curve)),
             );
         }
+    }
+}
+
+fn stated(tolerance: Option<&Tolerance>) -> String {
+    match tolerance {
+        Some(tolerance) => format!("tolerance {} mm", tolerance.mm()),
+        None => "no tolerance".into(),
     }
 }

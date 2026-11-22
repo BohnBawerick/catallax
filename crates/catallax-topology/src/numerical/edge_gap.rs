@@ -88,27 +88,38 @@ fn largest_settled<'a, T: Copy>(
     largest.ok_or_else(|| bad("trim", "an edge use has no gap reading"))
 }
 
-/// The work allowance of one edge use across an import admission, with what
-/// the checker has read of the use so far.
+/// The work allowance of one edge across an admission.
 ///
-/// Section 4.2 step 8: "A hard per-edge work cap refuses by name." An import
-/// admission does more than one thing with a use. Admission reads its
-/// same-parameter gap. The gap rule for imports (decision Q9) reads its
-/// geometric gap and may give its face copy the edge's parameter. The body
-/// is then admitted with the new copies. All of that takes its work from
-/// this one account, and each step is given what the steps before it left.
-///
-/// Where a stored tolerance is over the cap, rule T3's refit and the
-/// admissions around it draw on the same account.
+/// Section 4.2 step 8: "A hard per-edge work cap refuses by name." The edge
+/// is the topological edge. Every use of it, on each of its faces, draws on
+/// this one allowance, and so does everything an admission does with a use:
+/// the checker's reading of its same-parameter gap, the geometric reading
+/// and the change of parameter of the gap rule for imports (decision Q9),
+/// and a refit of its face copy (rules T3, T7 and T8). Each step is given
+/// what the steps before it left, on this use and on the edge's other uses.
+/// The uses are read in definition order, so what a use is left with is the
+/// same on every run.
+#[derive(Clone, Debug)]
+struct EdgeAccount {
+    /// The one allowance of the edge.
+    limit: u64,
+    /// What every reading of every use so far has counted against it.
+    spent: u64,
+}
+
+/// What the checker has read of one edge use so far in an admission, and
+/// what the use has counted against its edge's allowance.
 ///
 /// A reading that is kept here is not taken again. A later step of the same
 /// admission uses it as it stands, so no copy is read twice and no reading
 /// starts a new cap.
 #[derive(Clone, Debug)]
-pub(super) struct UseAccount {
-    /// The one allowance of the use.
-    limit: u64,
-    /// What every reading so far has counted against it.
+struct UseAccount {
+    /// The edge of the use, as its place in the definition's edge table.
+    /// `None` for a use that names an edge the definition does not have,
+    /// which admission refuses before it reads anything.
+    edge: Option<usize>,
+    /// What the readings of this use have counted.
     spent: u64,
     /// The checker's readings of the copy the use has now: the copy itself
     /// and, for a projected copy, its two declared ends. `None` before the
@@ -119,74 +130,173 @@ pub(super) struct UseAccount {
     imported: Option<Vec<gap::GapMeasure>>,
 }
 
-impl UseAccount {
-    /// The account of a use that has not been read, with the allowance
-    /// `allowance`.
-    pub(super) fn new(allowance: Limits) -> Self {
-        Self {
-            limit: allowance.work,
-            spent: 0,
-            readings: None,
-            imported: None,
-        }
-    }
+/// The work accounts of one admission: one allowance per edge, and what was
+/// read and counted of each edge use, in definition order.
+#[derive(Clone, Debug)]
+pub(super) struct Accounts {
+    edges: Vec<EdgeAccount>,
+    uses: Vec<UseAccount>,
+}
 
-    /// One account per edge use of `definition`, in definition order, each
-    /// with the allowance `each_use`.
-    pub(super) fn for_uses(definition: &NumericalDefinition, each_use: Limits) -> Vec<Self> {
+impl Accounts {
+    /// The accounts of a definition none of whose uses has been read, with
+    /// the allowance `each_edge` for every edge.
+    pub(super) fn for_definition(definition: &NumericalDefinition, each_edge: Limits) -> Self {
+        let edges = vec![
+            EdgeAccount {
+                limit: each_edge.work,
+                spent: 0,
+            };
+            definition.edges.len()
+        ];
         let uses = definition
             .faces
             .iter()
-            .flat_map(|face| &face.loops)
-            .map(Vec::len)
-            .sum();
-        vec![Self::new(each_use); uses]
+            .flat_map(|face| face.loops.iter().flatten())
+            .map(|trim| UseAccount {
+                edge: (trim.edge < definition.edges.len()).then_some(trim.edge),
+                spent: 0,
+                readings: None,
+                imported: None,
+            })
+            .collect();
+        Self { edges, uses }
     }
 
-    /// What the use has left of its allowance.
-    pub(super) fn left(&self) -> Limits {
-        Limits {
-            work: self.limit.saturating_sub(self.spent),
+    /// The accounts of one use that is read by itself, on an edge that has
+    /// `left` of its allowance.
+    pub(super) fn of_one_use(left: Limits) -> Self {
+        Self {
+            edges: vec![EdgeAccount {
+                limit: left.work,
+                spent: 0,
+            }],
+            uses: vec![UseAccount {
+                edge: Some(0),
+                spent: 0,
+                readings: None,
+                imported: None,
+            }],
         }
     }
 
-    /// The work counted against the allowance so far.
-    pub(super) fn spent(&self) -> u64 {
-        self.spent
+    /// The use at `slot` in definition order, to read it on its edge's
+    /// allowance.
+    pub(super) fn draw(&mut self, slot: usize) -> Result<UseDraw<'_>, Refusal> {
+        let missing = || bad("definition", "an edge use has no work account");
+        let account = self.uses.get_mut(slot).ok_or_else(missing)?;
+        let edge = account
+            .edge
+            .and_then(|edge| self.edges.get_mut(edge))
+            .ok_or_else(missing)?;
+        Ok(UseDraw { edge, account })
     }
 
-    /// Counts work that a reading took from [`Self::left`].
-    pub(super) fn spend(&mut self, work: u64) {
-        self.spent = self.spent.saturating_add(work);
+    /// The work the readings of the use at `slot` have counted.
+    pub(super) fn spent_by_use(&self, slot: usize) -> u64 {
+        self.uses.get(slot).map_or(0, |account| account.spent)
+    }
+
+    /// The work counted against the allowance of the edge at `edge` in the
+    /// definition's edge table, by all of its uses together.
+    #[cfg(test)]
+    pub(super) fn spent_by_edge(&self, edge: usize) -> u64 {
+        self.edges.get(edge).map_or(0, |account| account.spent)
+    }
+
+    /// Gives the edge at `edge` the allowance `work` in place of the one it
+    /// has. For the tests that spend an allowance.
+    #[cfg(test)]
+    pub(super) fn limit_edge(&mut self, edge: usize, work: u64) {
+        self.edges[edge].limit = work;
+    }
+
+    /// The kept reading of the copy the use at `slot` has now.
+    #[cfg(test)]
+    pub(super) fn reading_of(&self, slot: usize) -> Option<&gap::GapMeasure> {
+        self.uses[slot].readings.as_ref()?.first()
+    }
+
+    /// How many edge uses the accounts hold.
+    #[cfg(test)]
+    pub(super) fn uses(&self) -> usize {
+        self.uses.len()
+    }
+
+    /// Goes back to the copies as imported: the readings of every use are
+    /// the kept ones again. Only a use whose copy was replaced changes. What
+    /// was counted stays counted.
+    pub(super) fn back_to_imported(&mut self) {
+        for account in &mut self.uses {
+            account.readings = account.imported.clone();
+        }
+    }
+}
+
+/// One edge use being read: its own record, and the allowance of its edge.
+pub(super) struct UseDraw<'a> {
+    edge: &'a mut EdgeAccount,
+    account: &'a mut UseAccount,
+}
+
+impl UseDraw<'_> {
+    /// What the edge has left of its allowance.
+    pub(super) fn left(&self) -> Limits {
+        Limits {
+            work: self.edge.limit.saturating_sub(self.edge.spent),
+        }
+    }
+
+    /// The work this use has counted so far.
+    pub(super) fn spent(&self) -> u64 {
+        self.account.spent
+    }
+
+    /// Counts work that a reading of this use took from [`Self::left`].
+    fn spend(&mut self, work: u64) {
+        self.account.spent = self.account.spent.saturating_add(work);
+        self.edge.spent = self.edge.spent.saturating_add(work);
+    }
+
+    /// Runs one reading of this use under what its edge has left, and takes
+    /// what the reading counted off the edge's allowance.
+    ///
+    /// `read` is given the limits and a count to add its work to. The count
+    /// is taken off whether the reading finished or was refused: a reading
+    /// that is refused has still spent what it counted, and the edge's
+    /// other uses do not get those units again.
+    pub(super) fn draw_on<T>(
+        &mut self,
+        read: impl FnOnce(Limits, &mut u64) -> Result<T, Refusal>,
+    ) -> Result<T, Refusal> {
+        let mut counted = 0;
+        let found = read(self.left(), &mut counted);
+        self.spend(counted);
+        found
     }
 
     /// The checker's reading of the copy the use has now, where one is
     /// kept.
     pub(super) fn reading(&self) -> Option<&gap::GapMeasure> {
-        self.readings.as_ref().and_then(|kept| kept.first())
+        self.account.readings.as_ref().and_then(|kept| kept.first())
     }
 
-    /// Counts and keeps readings of the copy as imported that were taken
-    /// from [`Self::left`].
+    /// Every kept reading of the copy the use has now.
+    fn readings(&self) -> Option<&[gap::GapMeasure]> {
+        self.account.readings.as_deref()
+    }
+
+    /// Keeps readings of the copy as imported. Their work was counted when
+    /// they were taken ([`Self::draw_on`]).
     pub(super) fn keep(&mut self, readings: &[gap::GapMeasure]) {
-        for reading in readings {
-            self.spend(reading.work);
-        }
-        self.readings = Some(readings.to_vec());
-        self.imported = self.readings.clone();
+        self.account.readings = Some(readings.to_vec());
+        self.account.imported = self.account.readings.clone();
     }
 
     /// Keeps `reading` as the reading of a new copy of the use, in place of
     /// the old copy's. Its work was counted when it was taken.
     pub(super) fn replace(&mut self, reading: gap::GapMeasure) {
-        self.readings = Some(vec![reading]);
-    }
-
-    /// Goes back to the copy as imported: its readings are the kept ones
-    /// again. Only a use whose copy was replaced changes. What was counted
-    /// stays counted.
-    pub(super) fn back_to_imported(&mut self) {
-        self.readings = self.imported.clone();
+        self.account.readings = Some(vec![reading]);
     }
 }
 
@@ -215,14 +325,16 @@ fn face_copy<'a>(
     }
 }
 
-/// The checker's reading of one edge use against its face copy, under the
-/// checker's cap, for the audit of derived copies. Admission does not read
+/// The checker's reading of one edge use against its face copy, under
+/// `limits`, for the audit of derived copies. Admission does not read
 /// through here: it takes its readings in [`stored_sample`].
 fn audit_reading<'a>(
     face: &'a NumericalFace,
     trim: &'a NumericalTrim,
     edge: &'a NumericalEdge,
     native: Option<&'a BSplineCurve>,
+    limits: Limits,
+    spent: &mut u64,
     dec: &mut Decider,
 ) -> Result<(FaceCopyRef<'a>, gap::GapMeasure), Refusal> {
     let copy = face_copy(face, trim, edge, native);
@@ -232,13 +344,14 @@ fn audit_reading<'a>(
         surface: GapSurface::Kernel(&face.surface),
         face_copy: copy,
     };
-    let found = gap::measure(&copies, &Hints::default(), Limits::default(), dec)?;
+    let found = gap::measure_counted(&copies, &Hints::default(), limits, spent, dec)?;
     Ok((copy, found))
 }
 
-/// The checker's readings of one measured edge use under `limits`, the use's
-/// one allowance: the copy itself and, for a projected copy, its two
-/// declared ends.
+/// The checker's readings of one measured edge use under `limits`, what its
+/// edge has left of its one allowance: the copy itself and, for a projected
+/// copy, its two declared ends. What the readings count is added to
+/// `spent`, also where one is refused.
 ///
 /// A projected copy has no u/v of its own between its ends, but its two
 /// declared end values are part of the trim and are measured. It is the same
@@ -250,9 +363,10 @@ fn take_readings(
     trim: &NumericalTrim,
     projected: bool,
     limits: Limits,
+    spent: &mut u64,
     dec: &mut Decider,
 ) -> Result<Vec<gap::GapMeasure>, Refusal> {
-    let found = gap::measure(copies, &Hints::default(), limits, dec)?;
+    let found = gap::measure_counted(copies, &Hints::default(), limits, spent, dec)?;
     if !projected || found.domain_exit.is_some() {
         return Ok(vec![found]);
     }
@@ -263,7 +377,7 @@ fn take_readings(
     let left = Limits {
         work: limits.work.saturating_sub(found.work),
     };
-    let ends = gap::measure_ends(&declared, left, dec)?;
+    let ends = gap::measure_ends_counted(&declared, left, spent, dec)?;
     Ok(vec![found, ends])
 }
 
@@ -271,17 +385,16 @@ fn take_readings(
 /// T8) until rule T4's stored tolerance is at most `target_mm`. `None` for a
 /// curve projected on a plane, which has no u/v copy of its own.
 ///
-/// `account` is the use's account in an import admission (rule T3). The
-/// refit then draws on what the use has left of its one allowance, and its
-/// work is counted there with or without a new copy. The refit of an own
-/// build passes `None`.
+/// `account` is the use in the accounts of its admission. The refit draws on
+/// what the use's edge has left of its one allowance, and its work is
+/// counted there with or without a new copy, and where it is refused.
 pub(super) fn refit_use(
     face: &NumericalFace,
     trim: &NumericalTrim,
     edge: &NumericalEdge,
     native: Option<&BSplineCurve>,
     target_mm: f64,
-    account: Option<&mut UseAccount>,
+    account: &mut UseDraw<'_>,
     dec: &mut Decider,
 ) -> Result<Option<gap::refit::Refit>, Refusal> {
     let copy = match native {
@@ -295,14 +408,10 @@ pub(super) fn refit_use(
         surface: GapSurface::Kernel(&face.surface),
         face_copy: copy,
     };
-    match account {
-        None => gap::refit::refit(&copies, target_mm, dec),
-        Some(account) => {
-            let fit = gap::refit::refit_within(&copies, target_mm, account.left(), dec)?;
-            account.spend(fit.work);
-            Ok(fit.copy)
-        }
-    }
+    let fit = account.draw_on(|limits, spent| {
+        gap::refit::refit_within_counted(&copies, target_mm, limits, spent, dec)
+    })?;
+    Ok(fit.copy)
 }
 
 /// One derived copy as the full check reads it.
@@ -336,6 +445,9 @@ impl DerivedCopyAudit {
 /// Returns one row per derived copy. A caller fails when a row does not
 /// [`hold`](DerivedCopyAudit::holds). Plane-projected uses are left out:
 /// admission measures them whatever their tag says.
+///
+/// The audit is one pass over the body, so each edge has one work allowance
+/// for it, shared by the edge's derived uses (section 4.2 step 8).
 pub fn audit_derived_copies(
     body: &NumericalBody,
     dec: &mut Decider,
@@ -348,9 +460,13 @@ pub fn audit_derived_copies(
         dec,
     )?;
     let mut rows = Vec::new();
+    let mut accounts = Accounts::for_definition(definition, Limits::default());
+    let mut slot = 0;
     for (face_index, face) in definition.faces.iter().enumerate() {
         for (boundary, row) in face.loops.iter().enumerate() {
             for (use_index, trim) in row.iter().enumerate() {
+                let mut account = accounts.draw(slot)?;
+                slot += 1;
                 let edge = &definition.edges[trim.edge];
                 let native = index.get(face_index, boundary, use_index);
                 let tag = index
@@ -362,7 +478,9 @@ pub fn audit_derived_copies(
                 if native.is_none() && analytic::projected_edge(face, edge) {
                     continue;
                 }
-                let (_, found) = audit_reading(face, trim, edge, native, dec)?;
+                let (_, found) = account.draw_on(|limits, spent| {
+                    audit_reading(face, trim, edge, native, limits, spent, dec)
+                })?;
                 rows.push(DerivedCopyAudit {
                     face: face.key.clone(),
                     edge: edge.key.clone(),
@@ -388,11 +506,10 @@ pub fn audit_derived_copies(
 /// A plane-projected use has two readings, the projected curve and its two
 /// declared ends. Both are settled by [`settled`] and the larger is stored.
 ///
-/// `account` is the use's account in an import admission. The readings are
-/// then taken under what the use has left of its one allowance, counted and
-/// kept. Where the account already keeps the readings of this copy, they
-/// are used as they stand and the checker does not read the use again.
-/// Every other admission passes `None` and reads under the checker's cap.
+/// `account` is the use in the accounts of its admission. The readings are
+/// taken under what the use's edge has left of its one allowance, counted
+/// and kept. Where the account already keeps the readings of this copy,
+/// they are used as they stand and the checker does not read the use again.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn stored_sample(
     face: &NumericalFace,
@@ -401,7 +518,7 @@ pub(super) fn stored_sample(
     native: Option<&BSplineCurve>,
     tag: &CopyTag,
     limit: &Rational,
-    account: Option<&mut UseAccount>,
+    mut account: UseDraw<'_>,
     dec: &mut Decider,
 ) -> Result<(bool, NumericalSample), Refusal> {
     let ends = traversal(trim, edge);
@@ -437,19 +554,13 @@ pub(super) fn stored_sample(
         surface: GapSurface::Kernel(&face.surface),
         face_copy: copy,
     };
-    let readings = match account
-        .as_deref()
-        .and_then(|account| account.readings.clone())
-    {
-        Some(kept) => kept,
+    let readings = match account.readings() {
+        Some(kept) => kept.to_vec(),
         None => {
-            let limits = account
-                .as_deref()
-                .map_or_else(Limits::default, UseAccount::left);
-            let taken = take_readings(&copies, trim, projected, limits, dec)?;
-            if let Some(account) = account {
-                account.keep(&taken);
-            }
+            let taken = account.draw_on(|limits, spent| {
+                take_readings(&copies, trim, projected, limits, spent, dec)
+            })?;
+            account.keep(&taken);
             taken
         }
     };

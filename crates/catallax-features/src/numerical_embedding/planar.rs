@@ -10,7 +10,7 @@ fn unit(vector: &catallax_shapes::Vector3, dec: &Decider) -> Result<[f64; 3], Re
         scalar(&vector.z, dec)?,
     ]
     .map(|v| v.to_f64_nearest());
-    let length = values[0].hypot(values[1]).hypot(values[2]);
+    let length = libm::hypot(libm::hypot(values[0], values[1]), values[2]);
     if !length.is_finite() || length <= 0.0 {
         return Err(fit_failure(
             "a planar boundary has no finite projection normal",
@@ -50,7 +50,7 @@ fn area(
                 let projection = dot(normal, unit(&circle.normal, dec)?);
                 let radius_sq = scalar(&circle.radius_sq, dec)?.to_f64_nearest();
                 // Green's integral for the projected arc, including its bulge.
-                area += cross(a, b) + radius_sq * projection * (angle - angle.sin());
+                area += cross(a, b) + radius_sq * projection * (angle - libm::sin(angle));
             }
             Curve::BSpline(curve) => {
                 let forward = parameters[0] < parameters[1];

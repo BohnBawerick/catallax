@@ -281,14 +281,14 @@ fn minus(a: &Rational, b: &Rational, dec: &mut Decider) -> Result<Rational, NotV
 
 fn compare(a: &Rational, b: &Rational, dec: &mut Decider) -> Result<Ordering, NotVerified> {
     // Fraction ordering can cross-multiply twice.
-    dec.reserve_exact_arithmetic(a, b, true)?;
-    dec.reserve_exact_arithmetic(a, b, true)?;
+    dec.reserve_uncounted_arithmetic(a, b, true)?;
+    dec.reserve_uncounted_arithmetic(a, b, true)?;
     Ok(a.cmp(b))
 }
 
 fn same(a: &Vec3, b: &Vec3, dec: &mut Decider) -> Result<bool, NotVerified> {
     for i in 0..3 {
-        dec.reserve_exact_arithmetic(&a[i], &b[i], false)?;
+        dec.reserve_uncounted_arithmetic(&a[i], &b[i], false)?;
         if a[i] != b[i] {
             return Ok(false);
         }

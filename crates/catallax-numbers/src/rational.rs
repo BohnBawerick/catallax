@@ -1,5 +1,6 @@
 //! Exact rationals in normal form.
 
+use crate::gcd::{gcd, word};
 use crate::{Integer, ParseErrorKind, ParseNumberError, Sign};
 use num_bigint::BigInt;
 use num_integer::Integer as _;
@@ -27,7 +28,8 @@ impl Ord for Rational {
             return sign;
         }
         if let (Some((a, b)), Some((c, d))) = (self.small(), other.small()) {
-            return (a * d).cmp(&(c * b));
+            let wide = i128::from;
+            return (wide(a) * wide(d)).cmp(&(wide(c) * wide(b)));
         }
         (&self.n.0 * &other.d.0).cmp(&(&other.n.0 * &self.d.0))
     }
@@ -73,7 +75,20 @@ impl Rational {
                 d: Integer(denominator.0.abs() >> cancel),
             });
         }
-        let mut g = numerator.0.gcd(&denominator.0);
+        let mut g = gcd(&numerator.0, &denominator.0);
+        if g.is_one() {
+            return Some(if denominator.0.is_negative() {
+                Self {
+                    n: Integer(-numerator.0),
+                    d: Integer(-denominator.0),
+                }
+            } else {
+                Self {
+                    n: numerator,
+                    d: denominator,
+                }
+            });
+        }
         if denominator.0.is_negative() {
             g = -g;
         }
@@ -197,10 +212,18 @@ impl Rational {
     /// Integer power; `None` for zero to a negative power.
     pub fn pow(&self, exp: i32) -> Option<Self> {
         let r = if exp < 0 { self.recip()? } else { self.clone() };
-        Some(Self {
+        let power = Self {
             n: r.n.pow(exp.unsigned_abs()),
             d: r.d.pow(exp.unsigned_abs()),
-        })
+        };
+        // Counted as the products a repeated multiplication takes, one fewer
+        // than the exponent, each priced as the largest of them: the power by
+        // the base.
+        crate::operation::count_arithmetic(
+            u64::from(exp.unsigned_abs().saturating_sub(1))
+                .saturating_mul(power.limbs().saturating_mul(self.limbs())),
+        );
+        Some(power)
     }
     /// Largest integer not above the value.
     pub fn floor(&self) -> Integer {
@@ -298,6 +321,7 @@ impl Rational {
     }
     /// Exact terminating decimal, or `None` for other denominators.
     pub fn to_decimal_exact(&self) -> Option<String> {
+        let _whole = self.decimal_conversion();
         let mut d = self.d.0.clone();
         let mut twos = 0u32;
         let mut fives = 0u32;
@@ -322,6 +346,7 @@ impl Rational {
         if self.is_zero() {
             return ("0".into(), "0".into());
         }
+        let _whole = self.decimal_conversion();
         let r = self.abs();
         let mut e = r.n.0.to_str_radix(10).len() as i64 - r.d.0.to_str_radix(10).len() as i64;
         let ten = |k: i64| {
@@ -347,6 +372,24 @@ impl Rational {
             format_significant(&scaled.ceil().0, step),
         )
     }
+    // Counts the writing of this value in decimal as one operation. That
+    // converts the numerator and the denominator to base ten and divides one
+    // by the other, each quadratic in the value's own limbs with schoolbook
+    // arithmetic (Knuth, volume 2, section 4.3.1 algorithm D and section 4.4),
+    // so it is priced as the value times itself.
+    fn decimal_conversion(&self) -> crate::operation::Uncounted {
+        crate::operation::Uncounted::whole(self.limbs().saturating_mul(self.limbs()))
+    }
+    /// The limbs of the numerator and of the denominator, added: the size
+    /// the decider prices this value's arithmetic by (`decider.rs`, "Logical
+    /// arithmetic costs").
+    pub fn limbs(&self) -> u64 {
+        self.n
+            .bit_length()
+            .div_ceil(64)
+            .max(1)
+            .saturating_add(self.d.bit_length().div_ceil(64).max(1))
+    }
     pub(crate) fn binary_exponent(&self) -> i64 {
         assert!(!self.is_zero());
         let mut e = self.n.bit_length() as i64 - self.d.bit_length() as i64;
@@ -364,6 +407,7 @@ impl Rational {
         self.add_sub(rhs, false)
     }
     fn add_sub(&self, rhs: &Self, subtract: bool) -> Self {
+        crate::operation::count_arithmetic(self.limbs().saturating_add(rhs.limbs()));
         if rhs.is_zero() {
             return self.clone();
         }
@@ -371,8 +415,7 @@ impl Rational {
             return if subtract { -rhs } else { rhs.clone() };
         }
         if let (Some((a, b)), Some((c, d))) = (self.small(), rhs.small()) {
-            let c = if subtract { -c } else { c };
-            return Self::reduced(a * d + c * b, b * d);
+            return Self::sum_of_small(a, b, if subtract { -c } else { c }, d);
         }
         let a = self.d.0.trailing_zeros().unwrap();
         let b = rhs.d.0.trailing_zeros().unwrap();
@@ -417,7 +460,16 @@ impl Rational {
             };
             return Self::new(numerator, self.d.clone()).expect("positive denominator");
         }
-        let g = self.d.0.gcd(&rhs.d.0);
+        let g = gcd(&self.d.0, &rhs.d.0);
+        if g.is_one() {
+            // Coprime denominators: the cross sum is already in lowest terms.
+            let left = &self.n.0 * &rhs.d.0;
+            let right = &rhs.n.0 * &self.d.0;
+            return Self {
+                n: Integer(if subtract { left - right } else { left + right }),
+                d: Integer(&self.d.0 * &rhs.d.0),
+            };
+        }
         let a = &self.d.0 / &g;
         let b = &rhs.d.0 / &g;
         let left = &self.n.0 * &b;
@@ -425,7 +477,13 @@ impl Rational {
         // The reduced numerator is coprime to both denominator quotients.
         // Only a factor of the shared denominator GCD can remain.
         let n = if subtract { left - right } else { left + right };
-        let cancel = n.gcd(&g);
+        let cancel = gcd(&n, &g);
+        if cancel.is_one() {
+            return Self {
+                n: Integer(n),
+                d: Integer(a * &rhs.d.0),
+            };
+        }
         Self {
             n: Integer(n / &cancel),
             d: Integer(a * (&rhs.d.0 / cancel)),
@@ -436,39 +494,75 @@ impl Rational {
     }
     // Parts below 2^62 in magnitude keep every product and sum of two
     // operands below 2^125, so machine arithmetic is exact.
-    fn small(&self) -> Option<(i128, i128)> {
+    fn small(&self) -> Option<(i64, i64)> {
         const LIMIT: u64 = 1 << 62;
         let n = self.n.0.to_i64()?;
         let d = self.d.0.to_i64()?;
-        (n.unsigned_abs() < LIMIT && d.unsigned_abs() < LIMIT)
-            .then(|| (i128::from(n), i128::from(d)))
+        (n.unsigned_abs() < LIMIT && d.unsigned_abs() < LIMIT).then_some((n, d))
     }
-    // The normal form of `n / d` for a positive `d`, which is unique.
-    fn reduced(n: i128, d: i128) -> Self {
-        debug_assert!(d > 0);
-        let (n, d) = if (d as u128).is_power_of_two() {
-            // A dyadic denominator can only share trailing zero bits.
-            let cancel = n.trailing_zeros().min(d.trailing_zeros());
-            (n >> cancel, d >> cancel)
+    // `a/b + c/d` in lowest terms, for two small operands in lowest terms.
+    //
+    // Knuth's method for fractions (The Art of Computer Programming, volume
+    // 2, section 4.5.1): with g the divisor of the two denominators, only a
+    // factor of g can be cancelled from the sum over the common denominator.
+    // Every divisor is then taken of single words, and none of the
+    // double-word cross products, which is what the reduction cost before.
+    fn sum_of_small(a: i64, b: i64, c: i64, d: i64) -> Self {
+        let wide = i128::from;
+        let g = word(b.unsigned_abs(), d.unsigned_abs()) as i64;
+        let (n, d) = if g == 1 {
+            (wide(a) * wide(d) + wide(c) * wide(b), wide(b) * wide(d))
         } else {
-            let g = gcd(n.unsigned_abs(), d.unsigned_abs());
-            // 128-bit division is a library call; skip it or divide in 64 bits.
-            if g == 1 {
-                (n, d)
-            } else if let (Ok(n), Ok(d), Ok(g)) =
-                (i64::try_from(n), i64::try_from(d), i64::try_from(g))
-            {
-                (i128::from(n / g), i128::from(d / g))
-            } else {
-                (n / g as i128, d / g as i128)
-            }
+            let (b, d_over_g) = (b / g, d / g);
+            let n = wide(a) * wide(d_over_g) + wide(c) * wide(b);
+            // Double-word division is a library call; divide in one word
+            // where the numerator fits one.
+            let (cancel, n) = match i64::try_from(n) {
+                Ok(n) => {
+                    let cancel = word((n % g).unsigned_abs(), g.unsigned_abs()) as i64;
+                    (cancel, wide(n / cancel))
+                }
+                Err(_) => {
+                    let rest = (n % wide(g)).unsigned_abs() as u64;
+                    let cancel = word(rest, g.unsigned_abs()) as i64;
+                    (cancel, if cancel == 1 { n } else { n / wide(cancel) })
+                }
+            };
+            (n, wide(b) * wide(d / cancel))
         };
+        if n == 0 {
+            return Self::zero();
+        }
         Self {
             n: Integer(BigInt::from(n)),
             d: Integer(BigInt::from(d)),
         }
     }
+    // `a/b * c/d` in lowest terms, for two small non-zero operands in lowest
+    // terms: each numerator is cancelled against the other denominator
+    // first, and the products of what is left share no factor (the same
+    // section of Knuth).
+    fn product_of_small(a: i64, b: i64, c: i64, d: i64) -> Self {
+        let wide = i128::from;
+        let first = word(a.unsigned_abs(), d.unsigned_abs()) as i64;
+        let second = word(c.unsigned_abs(), b.unsigned_abs()) as i64;
+        let (a, d) = if first == 1 {
+            (a, d)
+        } else {
+            (a / first, d / first)
+        };
+        let (c, b) = if second == 1 {
+            (c, b)
+        } else {
+            (c / second, b / second)
+        };
+        Self {
+            n: Integer(BigInt::from(wide(a) * wide(c))),
+            d: Integer(BigInt::from(wide(b) * wide(d))),
+        }
+    }
     pub(crate) fn mul(&self, rhs: &Self) -> Self {
+        crate::operation::count_arithmetic(self.limbs().saturating_mul(rhs.limbs()));
         if self.is_zero() || rhs.is_zero() {
             return Self::zero();
         }
@@ -479,7 +573,7 @@ impl Rational {
             return self.clone();
         }
         if let (Some((a, b)), Some((c, d))) = (self.small(), rhs.small()) {
-            return Self::reduced(a * c, b * d);
+            return Self::product_of_small(a, b, c, d);
         }
         let a = self.d.0.trailing_zeros().unwrap();
         let b = rhs.d.0.trailing_zeros().unwrap();
@@ -516,24 +610,6 @@ impl Rational {
         }
     }
 }
-// Binary GCD; `gcd(0, b)` is `b`.
-fn gcd(mut a: u128, mut b: u128) -> u128 {
-    if a == 0 || b == 0 {
-        return a | b;
-    }
-    let twos = (a | b).trailing_zeros();
-    a >>= a.trailing_zeros();
-    loop {
-        b >>= b.trailing_zeros();
-        if a > b {
-            std::mem::swap(&mut a, &mut b);
-        }
-        b -= a;
-        if b == 0 {
-            return a << twos;
-        }
-    }
-}
 // Denominators are positive. Dyadic cancellation only needs trailing bits.
 fn cancel(n: &BigInt, d: &BigInt) -> (BigInt, BigInt) {
     let twos = d.trailing_zeros().unwrap();
@@ -541,8 +617,12 @@ fn cancel(n: &BigInt, d: &BigInt) -> (BigInt, BigInt) {
         let shift = n.trailing_zeros().unwrap_or(twos).min(twos);
         (n >> shift, d >> shift)
     } else {
-        let g = n.gcd(d);
-        (n / &g, d / g)
+        let g = gcd(n, d);
+        if g.is_one() {
+            (n.clone(), d.clone())
+        } else {
+            (n / &g, d / g)
+        }
     }
 }
 fn format_plain(n: &BigInt, step: i64) -> String {

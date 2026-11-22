@@ -100,6 +100,7 @@ pub(crate) fn face_on(
             surface,
             sense,
             loops,
+            tolerance: None,
         },
         origins,
     )
@@ -278,7 +279,10 @@ pub(crate) fn extrude_vector(
                             let point = model.geom_mut().add_point(PointDef::Explicit(
                                 profile.world(&s.start, &offset).into(),
                             ));
-                            model.add_vertex(Vertex { point })
+                            model.add_vertex(Vertex {
+                                point,
+                                tolerance: None,
+                            })
                         })
                     })
                     .collect()
@@ -296,6 +300,7 @@ pub(crate) fn extrude_vector(
                         sense: Sense::Same,
                         start: Some(pair[0]),
                         end: Some(pair[1]),
+                        tolerance: None,
                     })
                 })
                 .collect();
@@ -375,6 +380,7 @@ pub(crate) fn extrude_vector(
                         sense,
                         start,
                         end,
+                        tolerance: None,
                     }));
                 }
                 start_path.push((edges[0], reverse(forward)));

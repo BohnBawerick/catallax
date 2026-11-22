@@ -238,6 +238,26 @@ fn control_refusal(error: &Error) -> bool {
         || matches!(error, Error::Numerical(r) if r.code == "numbers.deadline")
 }
 
+/// The bodies the native admission still has to try: those no earlier
+/// admission took, less any that an edge's hard work cap refused (Checkpoint
+/// 2 decisions, section 4.2 step 8: "A hard per-edge work cap refuses by
+/// name").
+///
+/// The native admission measures a body again and gives each of its edges a
+/// fresh work allowance. A body whose refusal is the cap's has spent an
+/// edge's allowance already, so it is ended here, with its refusal, and its
+/// siblings go on. The check is of the body's own refusal. `control_refusal`
+/// stops every body and does not know the cap.
+fn still_to_admit(bodies: &[BodyOutcome]) -> Vec<bool> {
+    bodies
+        .iter()
+        .map(|body| {
+            body.tier == Tier::SurfaceBody
+                && !body.refusal.as_ref().is_some_and(admission::edge_work_cap)
+        })
+        .collect()
+}
+
 fn retain_surface(outcome: &mut BodyOutcome, error: Error) {
     outcome.storage = Storage::Source;
     outcome.tier = Tier::SurfaceBody;
@@ -356,11 +376,7 @@ fn open_prepared(
         });
     }
     result.checked_upgrade_work_used = current_operation_work().used.saturating_sub(before);
-    let incomplete: Vec<_> = result
-        .bodies
-        .iter()
-        .map(|body| body.tier == Tier::SurfaceBody)
-        .collect();
+    let incomplete = still_to_admit(&result.bodies);
     if incomplete.iter().all(|needed| !needed) {
         return Ok(result);
     }
@@ -445,6 +461,7 @@ fn upgrade_native(result: &mut OpenedStep, step: &StepId, dec: &mut Decider) {
                 strict_refusal,
                 &options,
                 body.recorded_tolerance_mm(),
+                &mut numerical::EdgeCap::of_the_checker(),
                 dec,
             )?;
             outcome.tier = Tier::RepairedSolid;
@@ -550,12 +567,46 @@ fn checked_admit(
     bounds: healing::IncidenceBounds,
     dec: &mut Decider,
 ) {
+    checked_admit_under(n::gap::EDGE_WORK, bytes, step, result, bounds, dec);
+}
+
+/// [`checked_admit`] with `edge_work` units for each edge's gap readings in
+/// each admission, in place of the checker's cap. Only a test of the cap
+/// gives less.
+///
+/// The admission of the whole file comes first and gives every solid's edges
+/// an allowance. Where an edge spends it (Checkpoint 2 decisions, section 4.2
+/// step 8: "A hard per-edge work cap refuses by name"), the refusal is one
+/// error for the file, and the admission says which solid it was. That body
+/// is ended with the cap's refusal: it is not built, healed or measured
+/// again body by body, where its edges would get a fresh allowance, and
+/// `still_to_admit` keeps it from the native admission. The file's other
+/// bodies go on.
+fn checked_admit_under(
+    edge_work: u64,
+    bytes: &[u8],
+    step: &StepId,
+    result: &mut OpenedStep,
+    bounds: healing::IncidenceBounds,
+    dec: &mut Decider,
+) {
     let expected_sha256 = result.source.source_sha256.as_str();
     let numerical_options = upgrade_options(&result.source.options.maximum_mm);
     let recorded = crate::recorded::written_tolerance(bytes)
         .and_then(|written| written.in_millimetres(&result.source.mm_per_unit));
     let before = current_operation_work().used;
-    let admission = numerical::import_step(bytes, expected_sha256, step, &numerical_options, dec);
+    let mut cap = numerical::EdgeCap {
+        work: edge_work,
+        refused: None,
+    };
+    let admission = numerical::import_step_under(
+        &mut cap,
+        bytes,
+        expected_sha256,
+        step,
+        &numerical_options,
+        dec,
+    );
     result.file_admission_work_used = current_operation_work().used.saturating_sub(before);
     match admission {
         Ok(admitted) => {
@@ -589,7 +640,20 @@ fn checked_admit(
                 .into(),
             );
         }
-        Err(error) => result.first_refusal = Some(error),
+        Err(error) => {
+            // The file's solids and the source's bodies are the same
+            // entities under the same names.
+            if let Some(solid) = cap.refused.take()
+                && let Some(index) = result
+                    .source
+                    .bodies
+                    .iter()
+                    .position(|body| body.name == solid)
+            {
+                result.bodies[index].refusal = Some(error.clone());
+            }
+            result.first_refusal = Some(error);
+        }
     }
     if result.first_refusal.as_ref().is_some_and(control_refusal) {
         return;
@@ -599,6 +663,13 @@ fn checked_admit(
             break;
         }
         let outcome = &mut result.bodies[index];
+        if outcome
+            .refusal
+            .as_ref()
+            .is_some_and(admission::edge_work_cap)
+        {
+            continue;
+        }
         let single = match result.source.one_body(index, dec) {
             Ok(single) => single,
             Err(error) => {
@@ -682,6 +753,10 @@ fn checked_admit(
                     strict_refusal,
                     &numerical_options,
                     recorded,
+                    &mut numerical::EdgeCap {
+                        work: edge_work,
+                        refused: None,
+                    },
                     dec,
                 )
             }) {
@@ -753,9 +828,249 @@ pub fn reopen(
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
+#[path = "../../../catallax-topology/tests/common/analytic.rs"]
+mod quarter_fixture;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use catallax_numbers::{TestDeadline, TestDeadlinePoint};
+
+    /// The quarter cylinder as a numerical export writes it, with one wall
+    /// moved by a nanometre and the export's stamp taken off, so the file is
+    /// measured as any import is.
+    fn gapped_quarter() -> String {
+        let body = n::build(
+            quarter_fixture::quarter(),
+            n::NumericalOptions::default(),
+            &mut Decider::default(),
+        )
+        .unwrap();
+        let file = catallax_step::numerical::build(
+            &body,
+            &catallax_step::numerical::NumericalStepOptions::default(),
+            &mut Decider::default(),
+        )
+        .unwrap();
+        let text = std::str::from_utf8(file.bytes()).unwrap();
+        let line = |id: &str| {
+            text.lines()
+                .find(|line| line.starts_with(&format!("#{id}=")))
+                .unwrap()
+        };
+        let first_reference = |line: &str| -> String {
+            let after = line.split_once('=').unwrap().1;
+            let after = &after[after.find('#').unwrap() + 1..];
+            after.chars().take_while(char::is_ascii_digit).collect()
+        };
+        let plane = text
+            .lines()
+            .find(|line| line.contains("=PLANE('f2',"))
+            .unwrap();
+        let origin = first_reference(line(&first_reference(plane)));
+        text.replace(
+            line(&origin),
+            &format!("#{origin}=CARTESIAN_POINT('',(0.,0.000001,0.));"),
+        )
+        .replacen(
+            "catallax numerical approximate;",
+            "another system approximate;",
+            1,
+        )
+    }
+
+    /// `second` appended to `first` as one file of two bodies, its entities
+    /// numbered after those of `first`.
+    fn one_file(first: &str, second: &str) -> Vec<u8> {
+        let end = first.rfind("ENDSEC;").unwrap();
+        let offset = first
+            .lines()
+            .filter_map(|line| {
+                line.strip_prefix('#')?
+                    .split('=')
+                    .next()?
+                    .parse::<u64>()
+                    .ok()
+            })
+            .max()
+            .unwrap();
+        let data = second.split_once("DATA;").unwrap().1;
+        let mut rest = &data[..data.rfind("ENDSEC;").unwrap()];
+        let mut renumbered = String::new();
+        while let Some(at) = rest.find('#') {
+            renumbered.push_str(&rest[..=at]);
+            rest = &rest[at + 1..];
+            let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
+            if digits > 0 {
+                let id: u64 = rest[..digits].parse().unwrap();
+                renumbered.push_str(&(id + offset).to_string());
+                rest = &rest[digits..];
+            }
+        }
+        renumbered.push_str(rest);
+        format!(
+            "{}{}{}",
+            &first[..end],
+            renumbered.trim_start(),
+            &first[end..]
+        )
+        .into_bytes()
+    }
+
+    /// Section 4.2 step 8 at the first boundary of a reopen: "A hard per-edge
+    /// work cap refuses by name." A file of two bodies: a quarter cylinder
+    /// with a gap of a nanometre at one wall, then a box. The certified
+    /// reading refuses the file for the gap, so the numerical admission of
+    /// the whole file measures its solids in order, each edge under one
+    /// allowance.
+    ///
+    /// Under the checker's cap the file is admitted. The least allowance
+    /// that admits it is found by halving, and with one unit less the
+    /// quarter's costliest edge spends its allowance. The refusal is one
+    /// error for the file. The quarter is ended with it: it is not built,
+    /// healed or measured again as a body of its own, and is not given to
+    /// the native admission. The box goes on and is taken exactly.
+    #[test]
+    fn a_solid_the_whole_file_admission_capped_is_ended_and_its_sibling_goes_on() {
+        use crate::incidence_features::common::{BoxFixture, box_step};
+        let bytes = one_file(
+            &gapped_quarter(),
+            &box_step(BoxFixture::new(["2", "3", "4"])),
+        );
+        let sha = crate::sha256_hex(&bytes);
+        let step = StepId::new("source").unwrap();
+        let open_under = |edge_work: u64| {
+            with_operation_budget(100_000_000_000, || {
+                let mut dec = Decider::default();
+                let (parsed, source, _) =
+                    admission::prepare(&bytes, &sha, ToleranceOptions::default(), &mut dec)
+                        .unwrap();
+                let mut result = OpenedStep {
+                    bodies: source
+                        .bodies
+                        .iter()
+                        .map(|_| BodyOutcome {
+                            tier: Tier::SurfaceBody,
+                            approximate: true,
+                            storage: Storage::Source,
+                            healed: None,
+                            refusal: None,
+                            checked_refusal: None,
+                            healing_failure: None,
+                            upgrade_refusal: None,
+                            first_blocker: None,
+                        })
+                        .collect(),
+                    source,
+                    source_graph: Some(parsed),
+                    admission: None,
+                    native_admission: None,
+                    first_refusal: None,
+                    read_work_used: 0,
+                    file_admission_work_used: 0,
+                    native_admission_work_used: 0,
+                    checked_upgrade_work_used: 0,
+                };
+                checked_admit_under(
+                    edge_work,
+                    &bytes,
+                    &step,
+                    &mut result,
+                    healing::IncidenceBounds::CapCertified,
+                    &mut dec,
+                );
+                result
+            })
+        };
+
+        let (whole, _) = open_under(n::gap::EDGE_WORK);
+        assert_eq!(whole.bodies.len(), 2);
+        assert!(
+            matches!(&whole.admission, Some(StepImport::Numerical(file)) if file.bodies().len() == 2),
+            "{:?}",
+            whole.first_refusal
+        );
+
+        let (mut refused, mut admitted) = (0, n::gap::EDGE_WORK);
+        while admitted - refused > 1 {
+            let middle = refused + (admitted - refused) / 2;
+            if open_under(middle).0.admission.is_some() {
+                admitted = middle;
+            } else {
+                refused = middle;
+            }
+        }
+        // The edge that is refused had an allowance it could spend.
+        assert!(refused > 0, "an edge that costs one unit");
+
+        let (capped, request) = open_under(refused);
+        assert!(!request.exhausted, "{request:?}");
+        assert!(capped.admission.is_none());
+        assert!(capped.file_admission_work_used > 0);
+        assert!(
+            capped
+                .first_refusal
+                .as_ref()
+                .is_some_and(admission::edge_work_cap),
+            "{:?}",
+            capped.first_refusal
+        );
+        let [quarter, sibling] = &capped.bodies[..] else {
+            panic!("two bodies")
+        };
+        assert!(
+            quarter
+                .refusal
+                .as_ref()
+                .is_some_and(admission::edge_work_cap),
+            "{:?}",
+            quarter.refusal
+        );
+        // Ended where the cap refused it: no strict build, no healing and
+        // no second measurement were made of it.
+        assert!(matches!(quarter.storage, Storage::Source));
+        assert_eq!(quarter.tier, Tier::SurfaceBody);
+        assert!(quarter.healed.is_none() && quarter.healing_failure.is_none());
+        assert_eq!(still_to_admit(&capped.bodies), [false, false]);
+        // Its sibling is tried as a body of its own.
+        assert!(sibling.refusal.is_none(), "{:?}", sibling.refusal);
+        assert_eq!(sibling.tier, Tier::ValidSolid);
+        assert!(matches!(sibling.storage, Storage::Certified { .. }));
+        println!(
+            "quarter and box: the file is admitted with {admitted} units for an edge and refused with {refused}"
+        );
+    }
+
+    #[test]
+    fn a_body_an_edge_cap_refused_is_not_given_to_the_native_admission() {
+        let unsettled = |refusal: Option<&'static str>| BodyOutcome {
+            tier: Tier::SurfaceBody,
+            approximate: true,
+            storage: Storage::Source,
+            healed: None,
+            refusal: refusal.map(|code| {
+                Error::Numerical(catallax_numbers::Refusal::new(code, "a test refusal"))
+            }),
+            checked_refusal: None,
+            healing_failure: None,
+            upgrade_refusal: None,
+            first_blocker: None,
+        };
+        let mut taken = unsettled(None);
+        taken.tier = Tier::RepairedSolid;
+        let bodies = [
+            unsettled(Some(n::gap::WORK_CAP)),
+            unsettled(Some("numbers.numerical-tolerance-exceeded")),
+            unsettled(None),
+            taken,
+        ];
+        // The capped body is ended. One refused for its geometry and one not
+        // tried yet are measured, and one already taken is left alone.
+        assert_eq!(still_to_admit(&bodies), [false, true, true, false]);
+        // What stops every body does not know the cap, and is not asked.
+        assert!(!control_refusal(bodies[0].refusal.as_ref().unwrap()));
+    }
 
     #[test]
     fn strict_retry_expiry_retains_prepaid_surfaces_before_healing() {

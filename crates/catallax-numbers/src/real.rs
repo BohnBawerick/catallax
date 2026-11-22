@@ -287,7 +287,11 @@ impl<'a> CacheTask<'a> {
         (!second.ready()).then_some(second)
     }
 
+    // The fill of a value's own memo is not counted (`uncounted_memo`): the
+    // node is shared, and whichever thread or request reads it first fills
+    // it, once.
     fn materialize(self) {
+        let _memo = crate::operation::Uncounted::enter();
         match self {
             Self::Rational(node) => {
                 node.rational.get_or_init(|| node.calculate_rational());

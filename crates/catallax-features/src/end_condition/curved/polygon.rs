@@ -178,7 +178,10 @@ impl Polygon {
             .iter()
             .map(|p| {
                 let point = model.geom_mut().add_point(PointDef::Explicit(p.clone()));
-                model.add_vertex(Vertex { point })
+                model.add_vertex(Vertex {
+                    point,
+                    tolerance: None,
+                })
             })
             .collect();
         let mut cycles = Vec::with_capacity(n + 2);
@@ -216,6 +219,7 @@ impl Polygon {
                         sense: Sense::Same,
                         start: Some(vertices[key.0]),
                         end: Some(vertices[key.1]),
+                        tolerance: None,
                     })
                 });
                 path.push((edge, if a < b { Sense::Same } else { Sense::Reversed }));

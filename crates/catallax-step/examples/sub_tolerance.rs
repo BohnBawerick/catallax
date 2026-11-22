@@ -63,7 +63,10 @@ fn main() {
                 at: None,
                 origin: FactOrigin::Construction("sub_tolerance.split"),
             });
-            let vertex = model.add_vertex(Vertex { point });
+            let vertex = model.add_vertex(Vertex {
+                point,
+                tolerance: None,
+            });
             let first = model.add_edge(Edge {
                 end: Some(vertex),
                 ..edge.clone()

@@ -307,7 +307,10 @@ impl Blueprint {
             .iter()
             .map(|p| {
                 let point = m.geom_mut().add_point(PointDef::Explicit(point(p)));
-                m.add_vertex(Vertex { point })
+                m.add_vertex(Vertex {
+                    point,
+                    tolerance: None,
+                })
             })
             .collect();
         let es: Vec<_> = self
@@ -329,6 +332,7 @@ impl Blueprint {
                     sense: Sense::Same,
                     start: a.map(|i| vs[i]),
                     end: b.map(|i| vs[i]),
+                    tolerance: None,
                 })
             })
             .collect();
@@ -364,6 +368,7 @@ impl Blueprint {
                     surface,
                     sense: f.sense,
                     loops,
+                    tolerance: None,
                 });
                 (id, f.area.clone() * from_kernel(scale) * from_kernel(scale))
             })
@@ -833,6 +838,7 @@ pub fn thin_spherical_shell(gap: &Rational) -> Fixture {
             surface,
             sense,
             loops: vec![],
+            tolerance: None,
         });
         shells.push(model.add_shell(Shell { faces: vec![face] }));
         faces.push((

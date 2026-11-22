@@ -618,6 +618,100 @@ fn skipped_carriers_keep_the_complete_section_order() {
     }
 }
 
+/// A copy of `source` whose first edge, and the two vertices it ends at,
+/// store a tolerance. Everything else of the copy is exact.
+fn with_a_tolerant_edge(model: &mut Model, source: BodyId) -> BodyId {
+    use catallax_topology::{Body, Coedge, Edge, Face, Loop, Lump, Shell, Tolerance, Vertex};
+    use std::collections::BTreeMap;
+    let stored = Tolerance::new(Rational::parse("1/1000000").unwrap()).unwrap();
+    let edge = model.edges_of_body(source)[0];
+    let ends = [model.edge(edge).start, model.edge(edge).end];
+    let mut vertices = BTreeMap::new();
+    for v in model.vertices_of_body(source) {
+        let copy = Vertex {
+            tolerance: ends.contains(&Some(v)).then(|| stored.clone()),
+            ..model.vertex(v).clone()
+        };
+        vertices.insert(v, model.add_vertex(copy));
+    }
+    let mut edges = BTreeMap::new();
+    for e in model.edges_of_body(source) {
+        let old = model.edge(e).clone();
+        let copy = Edge {
+            start: old.start.map(|v| vertices[&v]),
+            end: old.end.map(|v| vertices[&v]),
+            tolerance: (e == edge).then(|| stored.clone()),
+            ..old
+        };
+        edges.insert(e, model.add_edge(copy));
+    }
+    let mut faces = Vec::new();
+    for f in model.faces_of_body(source) {
+        let old = model.face(f).clone();
+        let mut loops = Vec::new();
+        for l in &old.loops {
+            let Loop::Coedges(uses) = model.loop_(*l).clone() else {
+                unreachable!("a block face has loops of coedges")
+            };
+            let uses = uses
+                .into_iter()
+                .map(|c| {
+                    let c = model.coedge(c).clone();
+                    model.add_coedge(Coedge {
+                        edge: edges[&c.edge],
+                        sense: c.sense,
+                    })
+                })
+                .collect();
+            loops.push(model.add_loop(Loop::Coedges(uses)));
+        }
+        faces.push(model.add_face(Face { loops, ..old }));
+    }
+    let shell = model.add_shell(Shell { faces });
+    let lump = model.add_lump(Lump {
+        shells: vec![shell],
+    });
+    model.add_body(Body {
+        kind: BodyKind::Solid,
+        lumps: vec![lump],
+        wires: Vec::new(),
+        marks: Default::default(),
+    })
+}
+
+#[test]
+fn a_tolerant_entity_never_reaches_the_exact_intersector() {
+    // Checkpoint 2 decisions, section 4.5. One tolerant edge in an otherwise
+    // exact block is enough: the boolean refuses by name before it makes a
+    // decision, whichever operand holds it and whatever the operation.
+    let mut model = Model::new();
+    let exact = block(&mut model, [r(4), r(4), r(4)], &pose(0, 0, 0)).unwrap();
+    let tool = cylinder(&mut model, r(1), r(10), &pose(2, 2, -3)).unwrap();
+    let mixed = with_a_tolerant_edge(&mut model, exact);
+    assert_eq!(model.check(mixed), Vec::new());
+    assert_eq!(model.tolerant_entity(exact), None);
+    assert!(
+        model
+            .tolerant_entity(mixed)
+            .is_some_and(|entity| entity.starts_with("edge "))
+    );
+    let mut dec = Decider::default();
+    for op in [BoolOp::Subtract, BoolOp::Unite, BoolOp::Intersect] {
+        for (a, b) in [(mixed, tool), (tool, mixed), (mixed, mixed)] {
+            let (refused, work) = catallax_numbers::with_operation_budget(1_000_000, || {
+                boolean(&mut model, a, b, op, &mut dec).unwrap_err()
+            });
+            assert_eq!(refused.refusal.code, crate::TOLERANT_PARTICIPANT);
+            assert_eq!(refused.stage, crate::Stage::Intersect);
+            // Nothing was decided and nothing was charged.
+            assert_eq!((work.used, work.refunded), (0, 0), "{op:?}");
+            assert_eq!(dec.stats().decisions, 0);
+        }
+    }
+    // The same cut of the exact block is answered as before.
+    assert!(boolean(&mut model, exact, tool, BoolOp::Subtract, &mut dec).is_ok());
+}
+
 mod tolerance_publication {
     use super::*;
 

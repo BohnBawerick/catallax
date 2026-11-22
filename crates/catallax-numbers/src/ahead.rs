@@ -298,6 +298,10 @@ struct PiProof {
     result: Result<crate::Ball, crate::Refusal>,
     /// Request work the series charged.
     ops: u64,
+    /// Arithmetic the series counted without charging it, as a wrapping
+    /// count. A replay counts it where it charges `ops`: when the writer's
+    /// cache does not hold the enclosure.
+    counted: u64,
 }
 
 enum Item {
@@ -815,7 +819,7 @@ fn decide_ahead<H: Host, T: Clone + Send + Sync + 'static>(
                 stats: delta,
                 tape: recording.tape,
                 most: recording.most,
-                uncharged: crate::operation::uncharged().saturating_sub(recording.uncharged),
+                uncharged: crate::operation::uncharged().wrapping_sub(recording.uncharged),
             })
         });
     if let Some(Deciding {
@@ -875,6 +879,7 @@ fn replay(tape: &[Item], pairing: &Pairing, epoch: u64) {
                 let dec = Decider::new(*policy);
                 let _ = crate::ball::pi_enclosure(*precision, Some(&dec), &mut |_| {
                     crate::operation::charge(proof.ops);
+                    crate::operation::count_uncharged(proof.counted);
                     proof.result.clone()
                 });
             }
@@ -1048,13 +1053,19 @@ pub(crate) fn record_pi(precision: u32, dec: &Decider) -> Result<crate::Ball, cr
         }
         None => {
             let ops = crate::operation::used();
+            let counted = crate::operation::uncharged();
             let result = dec
                 .check_deadline()
                 .and_then(|()| crate::ball::pi_series(precision, Some(dec)));
+            let counted = crate::operation::uncharged().wrapping_sub(counted);
+            // The series' count goes with the proof, not with the recording:
+            // a writer that already holds the enclosure runs no series.
+            crate::operation::count_uncharged(counted.wrapping_neg());
             // The entry check belongs to the protocol, not to the series.
             let proof = Arc::new(PiProof {
                 result: result.clone(),
                 ops: (crate::operation::used() - ops).saturating_sub(1),
+                counted,
             });
             (proof, result)
         }
@@ -1182,7 +1193,7 @@ pub fn record<T>(code: impl FnOnce() -> T) -> (T, Option<Charges>) {
             Charges {
                 tape: recording.tape,
                 most: recording.most,
-                uncharged: crate::operation::uncharged().saturating_sub(recording.uncharged),
+                uncharged: crate::operation::uncharged().wrapping_sub(recording.uncharged),
                 epoch,
             }
         });

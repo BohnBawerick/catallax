@@ -48,11 +48,7 @@ fn skew_collar_builds_edits_saves_reopens_and_exports_with_native_names() {
             let hole = next.hole();
             let body = hole.body();
             assert_eq!(body.kind(), catallax_topology::BodyKind::Solid);
-            assert!(
-                body.exact_topology_faults()
-                    .iter()
-                    .all(|fault| fault.code == "topology.missing-incidence")
-            );
+            assert_eq!(body.topology_faults(), Vec::new());
             assert_eq!(body.options().tolerance_mm, q("1e-7"));
             assert_eq!(body.history().len(), usize::from(label == "edited"));
             assert_eq!(

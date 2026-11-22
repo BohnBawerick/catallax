@@ -77,6 +77,7 @@ pub(super) fn pieces(
             surface: original.surface,
             sense: original.sense,
             loops: vec![boundary_loop],
+            tolerance: original.tolerance.clone(),
         });
         let band = BezierExtrusionBand::of_face(model, temporary, dec)?
             .ok_or_else(|| coverage("an arrangement walk has no checked strip domain"))?;
@@ -175,6 +176,7 @@ pub(super) fn pieces(
                         surface: original.surface,
                         sense: original.sense,
                         loops: vec![cell.boundary],
+                        tolerance: original.tolerance.clone(),
                     },
                     origins.clone(),
                 )
@@ -229,7 +231,10 @@ mod tests {
         ];
         let vertices = positions.clone().map(|point| {
             let point = model.geom_mut().add_point(PointDef::Explicit(point));
-            model.add_vertex(Vertex { point })
+            model.add_vertex(Vertex {
+                point,
+                tolerance: None,
+            })
         });
         let row = |height: &Real| {
             BSplineCurve::new(
@@ -273,6 +278,7 @@ mod tests {
                 sense: Sense::Same,
                 start: Some(vertices[from]),
                 end: Some(vertices[to]),
+                tolerance: None,
             })
         });
         let coedges = edges
@@ -294,6 +300,7 @@ mod tests {
             surface,
             sense: Sense::Same,
             loops: vec![boundary_loop],
+            tolerance: None,
         });
         (face, boundary_loop, edges.into_iter().collect())
     }

@@ -136,7 +136,13 @@ pub enum Containment {
     Outside,
 }
 
+/// The refusal of a boolean on a body that holds a tolerant entity.
+pub const TOLERANT_PARTICIPANT: &str = "boolean.tolerant-participant";
+
 /// Adds the regularised result body, using set rules for repeated operands.
+/// Both operands are exact bodies: one that stores a tolerance on a vertex,
+/// an edge or a face is refused with [`TOLERANT_PARTICIPANT`] before any
+/// decision is made.
 pub fn boolean(
     model: &mut Model,
     a: BodyId,
@@ -153,6 +159,25 @@ pub fn boolean(
             refusal: geometry::refusal(
                 "boolean.not-solid",
                 "boolean operands must be solid or empty",
+            ),
+        });
+    }
+    // Checkpoint 2 decisions, section 4.5: "Tolerant entities never reach
+    // the exact intersector." Everything below decides by exact predicates
+    // on exact entities, and this is the one entry to it. A body with a
+    // tolerance on any entity is cut by a construction that decides distance
+    // against the tolerance instead, or it is refused here by name.
+    if let Some((body, entity)) = [a, b]
+        .into_iter()
+        .find_map(|body| Some((body, model.tolerant_entity(body)?)))
+    {
+        return Err(BooleanRefusal {
+            stage: Stage::Intersect,
+            refusal: geometry::refusal(
+                TOLERANT_PARTICIPANT,
+                format!(
+                    "{entity} of body {body:?} stores a tolerance; the exact boolean takes exact entities only"
+                ),
             ),
         });
     }

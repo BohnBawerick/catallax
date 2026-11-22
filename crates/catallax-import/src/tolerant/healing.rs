@@ -663,8 +663,8 @@ fn arithmetic(a: &Rational, b: &Rational, op: char, dec: &mut Decider) -> Result
 }
 
 fn compare(a: &Rational, b: &Rational, dec: &mut Decider) -> Result<std::cmp::Ordering, Error> {
-    dec.reserve_exact_arithmetic(a, b, true)?;
-    dec.reserve_exact_arithmetic(a, b, true)?;
+    dec.reserve_uncounted_arithmetic(a, b, true)?;
+    dec.reserve_uncounted_arithmetic(a, b, true)?;
     Ok(a.cmp(b))
 }
 

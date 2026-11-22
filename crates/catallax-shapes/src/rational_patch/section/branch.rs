@@ -368,7 +368,7 @@ impl Net {
 }
 fn reserve_values(a: &Real, b: &Real, multiply: bool, dec: &mut Decider) -> Result<(), Refusal> {
     if let (Some(a), Some(b)) = (a.rational_ref(), b.rational_ref()) {
-        dec.reserve_exact_arithmetic(a, b, multiply)?;
+        dec.reserve_uncounted_arithmetic(a, b, multiply)?;
     }
     Ok(())
 }

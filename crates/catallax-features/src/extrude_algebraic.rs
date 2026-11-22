@@ -68,7 +68,10 @@ pub(super) fn extrude(
                             let point = model
                                 .geom_mut()
                                 .add_point(PointDef::Explicit(world(profile, &s.start, &offset)));
-                            model.add_vertex(Vertex { point })
+                            model.add_vertex(Vertex {
+                                point,
+                                tolerance: None,
+                            })
                         })
                     })
                     .collect()
@@ -86,6 +89,7 @@ pub(super) fn extrude(
                         sense: Sense::Same,
                         start: Some(pair[0]),
                         end: Some(pair[1]),
+                        tolerance: None,
                     })
                 })
                 .collect();
@@ -134,6 +138,7 @@ pub(super) fn extrude(
                         sense,
                         start,
                         end,
+                        tolerance: None,
                     }));
                 }
                 start_path.push((edges[0], reverse(forward)));

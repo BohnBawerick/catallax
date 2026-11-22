@@ -145,6 +145,8 @@ fn fixture(name: &str) -> (Model, BodyId) {
         "box" => block(&mut m, [q("2"), q("3"), q("5")], &Pose::identity()).unwrap(),
         "cylinder" => cylinder(&mut m, q("2"), q("5"), &Pose::identity()).unwrap(),
         "cone" => cone(&mut m, q("3"), q("1"), q("2"), &Pose::identity()).unwrap(),
+        "sphere" => sphere(&mut m, q("2"), &Pose::identity()).unwrap(),
+        "torus" => torus(&mut m, q("5"), q("2"), &Pose::identity()).unwrap(),
         "rounded-box" => block(&mut m, [q("1/3"), q("2/7"), q("5/11")], &Pose::identity()).unwrap(),
         "posed-cylinder" => {
             let pose = Pose::new(
@@ -193,6 +195,8 @@ fn public_fixtures_are_deterministic_shared_breps() {
         ("P2-collar", 6),
         ("cylinder", 3),
         ("cone", 3),
+        ("sphere", 1),
+        ("torus", 1),
     ] {
         let (m, b) = fixture(name);
         let (a, r) = export(&m, b, &IgesOptions::default());
@@ -400,26 +404,7 @@ fn strict_bound_gate_is_inclusive_and_never_touches_sink_on_refusal() {
     assert_eq!(out, before);
 }
 #[test]
-fn unsupported_kinds_and_options_are_typed_and_atomic() {
-    let mut m = Model::new();
-    let bodies = [
-        sphere(&mut m, q("2"), &Pose::identity()).unwrap(),
-        torus(&mut m, q("3"), q("1"), &Pose::identity()).unwrap(),
-    ];
-    for b in bodies {
-        let mut out = vec![];
-        assert!(matches!(
-            write_iges(
-                &m,
-                &[b],
-                &IgesOptions::default(),
-                &mut Decider::default(),
-                &mut out
-            ),
-            Err(IgesError::UnsupportedSurface(_))
-        ));
-        assert!(out.is_empty());
-    }
+fn invalid_options_are_typed_and_atomic() {
     let (m, b) = fixture("box");
     let mut out = vec![];
     let o = IgesOptions {
@@ -492,6 +477,8 @@ fn write_readback_fixtures() {
         "cone",
         "rounded-box",
         "posed-cylinder",
+        "sphere",
+        "torus",
         "cylinder-sector-90",
         "cylinder-sector-180",
         "cylinder-sector-270",

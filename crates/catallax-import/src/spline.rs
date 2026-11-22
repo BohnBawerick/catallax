@@ -3,7 +3,7 @@
 use super::*;
 use catallax_numbers::Refusal;
 
-pub(super) fn source_error(error: Refusal) -> ImportRefusal {
+pub(crate) fn source_error(error: Refusal) -> ImportRefusal {
     if error.code.starts_with("numbers.") {
         ImportRefusal::ResourceLimit
     } else {

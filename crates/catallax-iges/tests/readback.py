@@ -12,6 +12,7 @@ from pathlib import Path
 import sys
 
 import OCP
+from OCP.BRep import BRep_Tool
 from OCP.BRepAdaptor import BRepAdaptor_Surface, BRepAdaptor_Curve, BRepAdaptor_Curve2d
 from OCP.BRepCheck import BRepCheck_Analyzer
 from OCP.BRepGProp import BRepGProp
@@ -31,6 +32,8 @@ CASES = {
     'P2-collar': ({'Plane': 2, 'Cylinder': 2, 'Cone': 2}, 3818 * math.pi / 3),
     'cylinder': ({'Plane': 2, 'Cylinder': 1}, 20 * math.pi),
     'cone': ({'Plane': 2, 'Cone': 1}, 26 * math.pi / 3),
+    'sphere': ({'Sphere': 1}, 32 * math.pi / 3),
+    'torus': ({'Torus': 1}, 40 * math.pi ** 2),
     'rounded-box': ({'Plane': 6}, 10 / 231),
     'posed-cylinder': ({'Plane': 2, 'Cylinder': 1}, 20 * math.pi / 63),
     **{f'cylinder-sector-{angle}': ({'Plane': 4, 'Cylinder': 2},
@@ -94,6 +97,10 @@ def check(directory, name, expected_kinds, expected_volume):
                     for f in faces)
     assert kinds == expected_kinds, (name, kinds)
     edges = unique(shape, TopAbs_EDGE)
+    as_edge = getattr(TopoDS, 'Edge_s', None) or TopoDS.Edge
+    degenerate = [edge for edge in edges if BRep_Tool.Degenerated_s(as_edge(edge))]
+    assert len(degenerate) == (2 if name == 'sphere' else 0), name
+    edges = [edge for edge in edges if not BRep_Tool.Degenerated_s(as_edge(edge))]
     assert len(edges) == report['edges'] == report['source_edges'] + report['added_edges']
     assert report['vertices'] == report['source_vertices'] + report['added_vertices']
     seams = 0

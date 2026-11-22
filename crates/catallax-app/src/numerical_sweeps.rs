@@ -93,8 +93,12 @@ impl SweepBody {
         accuracy: &Accuracy,
         dec: &mut Decider,
     ) -> Result<SweepProperties, Refusal> {
-        let answer =
-            catallax_measure::volume_area_centroid(&self.fitted, self.fitted_body, accuracy, dec)?;
+        let answer = catallax_measure::swept_volume_area_centroid(
+            &self.fitted,
+            self.fitted_body,
+            accuracy,
+            dec,
+        )?;
         Ok(SweepProperties {
             fitted: answer.value,
             marks: answer.marks,

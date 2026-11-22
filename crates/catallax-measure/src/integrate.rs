@@ -12,7 +12,7 @@ mod analytic;
 mod gauss;
 mod gauss_nodes;
 pub(crate) use analytic::Analytic;
-pub(crate) use gauss::Rule as GaussRule;
+pub(crate) use gauss::{NativeArea, Rule as GaussRule};
 
 const ORDER: usize = 20;
 const SIZE: usize = ORDER + 1;
@@ -40,6 +40,9 @@ pub(crate) struct Work<'a> {
     remaining: u64,
     zero: Ball,
     pub(crate) quadrature_dominates: bool,
+    pub(crate) tensor_error: [f64; 2],
+    pub(crate) native_area: bool,
+    pub(crate) tensor_depth: [u32; 2],
     gauss: Option<Arc<GaussRule>>,
 }
 
@@ -60,8 +63,18 @@ impl<'a> Work<'a> {
             remaining,
             zero: Ball::from_rational(&Rational::zero(), precision),
             quadrature_dominates: false,
+            tensor_error: [0.; 2],
+            native_area: false,
+            tensor_depth: [0; 2],
             gauss: None,
         })
+    }
+
+    pub(crate) fn charge_native(&mut self, units: u64) -> Checked<()> {
+        self.dec.check_deadline()?;
+        self.remaining = self.remaining.checked_sub(units).ok_or(Stop::Budget)?;
+        catallax_numbers::OperationAllowance::reserve(units)?;
+        Ok(())
     }
 
     pub(crate) fn remaining(&self) -> u64 {

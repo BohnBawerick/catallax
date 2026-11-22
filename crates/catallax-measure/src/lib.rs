@@ -244,6 +244,19 @@ pub fn volume_area_centroid(
     )
 }
 
+/// Properties of a retained sweep fit. Complete patch faces can reduce
+/// the travel integral when the homogeneous weight is independent of travel.
+pub fn swept_volume_area_centroid(
+    model: &Model,
+    body: BodyId,
+    accuracy: &Accuracy,
+    dec: &mut Decider,
+) -> Answered<VolumeAreaCentroid> {
+    let mut traces = engine::TraceCache::grouped();
+    traces.fitted_patches = true;
+    base_properties(model, body, accuracy, &mut traces, dec)
+}
+
 fn base_properties(
     model: &Model,
     body: BodyId,

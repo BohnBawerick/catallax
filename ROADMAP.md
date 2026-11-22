@@ -298,7 +298,7 @@ Done when, for one model: exact and tolerant entities coexist under the rules ab
 - Mesh bytes and work agree at 1, 2, 4 and 24 workers, and on two machines.
 - `catallax-mesh` has at least 2,000 fewer lines than at the baseline.
 - SolidDraft draws the M11 loft fillet with one later feature on top (R2).
-- Compare's whole-body forward pass runs on the M11 rows inside 100M work.
+- Compare's whole-body forward pass runs on the M11 rows and the [P5 flanged housing](parts/P5-flanged-housing.json) inside 100M work.
 - Field chart display draws each 4.2a fillet row the field builds, including the filleted M11 loft, and the patch shells without `field.display-unsupported`. The same dense-sampling test checks their proven two-sided bounds.
 
 This sets the full bar for [coverage line Q1](docs/COVERAGE.md#meshes-and-queries-8). Keep the existing display entry points, the 20M work target and the 100M allowance.

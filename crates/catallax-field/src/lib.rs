@@ -299,12 +299,12 @@ impl Plan {
         }
     }
 
-    /// Guaranteed distance range to the result's named spline blend face.
+    /// Guaranteed distance range to the named blend, refined against a distance bound.
     pub fn spline_blend_distance(
         &self,
         origin: &Origin,
         point: &RPoint3,
-        width: &Rational,
+        bound: &Rational,
         dec: &mut Decider,
     ) -> Result<Option<rolling_region::Range>, Refusal> {
         if self.spline_blend_origin() != Some(origin) {
@@ -316,7 +316,7 @@ impl Plan {
         let geometry::Leaf::Shell(shell) = &self.leaves[index] else {
             unreachable!("the origin belongs to a loft shell");
         };
-        shell.blend_distance(point, width, dec)
+        shell.blend_distance(point, bound, dec)
     }
 
     /// Removed-face provenance from draft operations, in recipe order.

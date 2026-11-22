@@ -143,7 +143,28 @@ fn loft_vertices_must_fit_the_brep_bound_even_below_display_accuracy() {
         catallax_numbers::with_operation_budget(work.used - 1, || compare(&brep, &field, &options));
     assert!(spent.exhausted && partial.refusal.is_some(), "{partial:?}");
     assert_eq!(partial.verdict, Verdict::Disagree, "{partial:?}");
+    assert_eq!(partial.forward_vertices + 1, report.forward_vertices);
+    assert!(partial.sampled_distance_upper.is_none());
     assert!(partial.findings.iter().any(|f| f.reason == Reason::Gap));
+}
+
+#[test]
+fn an_empty_spline_region_explains_missing_coverage() {
+    let mut options = options();
+    options.region = Some(Region {
+        min: [10; 3].map(Rational::from_i64),
+        max: [11; 3].map(Rational::from_i64),
+    });
+    let (report, work) = catallax_numbers::with_operation_budget(100_000_000, || {
+        check_with_options(&m11_loft([0, 1], false, ["0", "2"]), &options)
+    });
+    assert!(!work.exhausted && report.refusal.is_none(), "{report:?}");
+    assert_eq!(report.verdict, Verdict::Unresolved);
+    assert_eq!(report.forward_vertices, 0);
+    assert!(report.sampled_distance_upper.is_none());
+    assert!(report.findings.iter().any(|f| {
+        matches!(&f.reason, Reason::Unresolved(reason) if reason == "no spline display vertices in the requested scope")
+    }));
 }
 
 fn biquadratic_supports(dec: &mut Decider) -> [catallax_shapes::RationalPatch; 2] {
@@ -223,7 +244,6 @@ fn biquadratic_carrier_vertices_fit_the_field_within_one_request() {
         assert_eq!(grid.dimensions, [4, 26]);
         assert!(grid.maximum_deviation <= options.mesh.chord_tolerance);
         let error = &fit.bound().upper + &grid.maximum_deviation;
-        let goal = check::spline_distance_goal(&error, &options.accuracy);
         let mut report = Report {
             import_agreement: None,
             revision: 0,
@@ -239,8 +259,7 @@ fn biquadratic_carrier_vertices_fit_the_field_within_one_request() {
         for point in grid.positions {
             let [x, y, z] = point.map(|x| Rational::from_f64_exact(x).unwrap());
             let p = RPoint3::new(x, y, z);
-            report.forward_vertices += 1;
-            let range = sweep.distance(&p, &goal, &mut dec)?;
+            let range = sweep.distance_at_most(&p, &error, &mut dec)?;
             check::spline_vertex(&mut report, &p, None, range, &error, &options.accuracy);
         }
         assert_eq!(report.forward_vertices, 104);

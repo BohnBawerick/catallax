@@ -237,7 +237,7 @@ impl Polygon {
 
     /// Tentative squared distance and the side of the plane, from binary64
     /// arithmetic only.
-    fn fast_squared(&self, q: [f64; 3]) -> (f64, f64) {
+    fn fast_sample(&self, q: [f64; 3]) -> (f64, f64, [f64; 3]) {
         let v0 = self.vertices[0].each_ref().map(Rational::to_f64_nearest);
         let n = self.normal.each_ref().map(Rational::to_f64_nearest);
         let length = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
@@ -249,7 +249,7 @@ impl Polygon {
             _ => [0, 1],
         };
         let mut inside = false;
-        let mut edges = f64::INFINITY;
+        let mut edge = (f64::INFINITY, q);
         for (s, t) in self.segments() {
             let [s, t] = [s, t].map(|v| v.each_ref().map(Rational::to_f64_nearest));
             if (s[b] > foot[b]) != (t[b] > foot[b])
@@ -260,9 +260,17 @@ impl Polygon {
             let e: [f64; 3] = std::array::from_fn(|k| t[k] - s[k]);
             let ee = e[0] * e[0] + e[1] * e[1] + e[2] * e[2];
             let along = ((0..3).map(|k| (q[k] - s[k]) * e[k]).sum::<f64>() / ee).clamp(0.0, 1.0);
-            edges = edges.min((0..3).map(|k| (q[k] - s[k] - along * e[k]).powi(2)).sum());
+            let candidate = std::array::from_fn(|k| s[k] + along * e[k]);
+            let distance = (0..3).map(|k| (q[k] - s[k] - along * e[k]).powi(2)).sum();
+            if distance < edge.0 {
+                edge = (distance, candidate);
+            }
         }
-        (if inside { side * side } else { edges }, side)
+        if inside {
+            (side * side, side, foot)
+        } else {
+            (edge.0, side, edge.1)
+        }
     }
 }
 
@@ -506,14 +514,16 @@ impl Shell {
     pub(crate) fn blend_distance(
         &self,
         p: &RPoint3,
-        width: &Rational,
+        bound: &Rational,
         dec: &mut Decider,
     ) -> Result<Option<Range>, Refusal> {
         let Some(round) = &self.round else {
             return Ok(None);
         };
         let [x, y, z] = self.local(&point(p));
-        round.distance(&RPoint3::new(x, y, z), width, dec).map(Some)
+        round
+            .distance_at_most(&RPoint3::new(x, y, z), bound, dec)
+            .map(Some)
     }
 
     fn local_face_bound(
@@ -802,22 +812,31 @@ impl Shell {
         let s: [f64; 3] = std::array::from_fn(|k| p[k] - t[k]);
         let q: [f64; 3] = std::array::from_fn(|i| m[i][0] * s[0] + m[i][1] * s[1] + m[i][2] * s[2]);
         let mut best = (f64::INFINITY, 1.0);
-        for face in &self.faces {
-            let (squared, side) = match face {
-                Face::Polygon(polygon) => polygon.fast_squared(q),
+        for (i, face) in self.faces.iter().enumerate() {
+            let (squared, side, candidate) = match face {
+                Face::Polygon(polygon) => polygon.fast_sample(q),
                 Face::Patch(patch) => {
-                    let (squared, side) = patch.distance.fast_nearest(q);
-                    (squared, if patch.outward { side } else { -side })
+                    let (squared, side, candidate) = patch.distance.fast_sample(q);
+                    (squared, if patch.outward { side } else { -side }, candidate)
                 }
             };
-            if squared < best.0 {
+            if squared < best.0
+                && !self.round.as_ref().is_some_and(|round| {
+                    (i >= self.loft_sides.len() || round.selected.contains(&i))
+                        && round.preview(candidate).0
+                })
+            {
                 best = (squared, side);
             }
         }
         let magnitude = crate::metric::Scalar::sqrt(&best.0);
-        let old = if best.1 < 0.0 { -magnitude } else { magnitude };
-        self.round
-            .as_ref()
-            .map_or(old, |round| round.preview(q, old))
+        if let Some(round) = &self.round {
+            let (_, blend) = round.preview(q);
+            blend.abs().min(magnitude).copysign(blend)
+        } else if best.1 < 0.0 {
+            -magnitude
+        } else {
+            magnitude
+        }
     }
 }

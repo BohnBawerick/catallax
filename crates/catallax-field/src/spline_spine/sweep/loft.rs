@@ -4,6 +4,8 @@
 
 use catallax_recipe::Origin;
 
+use crate::Location;
+
 use super::*;
 
 fn vector(v: &RVector3) -> V {
@@ -220,31 +222,73 @@ impl Round {
         self.sweep().distance(p, width, dec)
     }
 
-    pub(crate) fn preview(&self, p: [f64; 3], old: f64) -> f64 {
-        let [Some(x), Some(y), Some(z)] = p.map(Rational::from_f64_exact) else {
-            return f64::NAN;
-        };
-        let query = RPoint3::new(x, y, z);
-        let location = self.location(&query, &mut Decider::default());
-        let sign = match location {
-            Ok(Location::Inside) => -1.0,
-            Ok(Location::Outside) => 1.0,
-            Ok(Location::Indeterminate) if old != 0.0 => old.signum(),
-            Ok(Location::Indeterminate) => return old,
-            Ok(Location::Boundary) => return 0.0,
-            _ => return f64::NAN,
-        };
-        let sweep = self.sweep();
-        let p = p.map(point);
-        let t = sweep.guess(&p);
-        let upper = sweep.span_at(t).map_or(f64::INFINITY, |span| {
-            sweep.arc(&p, &sweep.enclose(span, point(t))).1
-        });
-        if sign * old >= 0.0 && old != 0.0 {
-            sign * old.abs().min(upper)
-        } else {
-            sign * upper
-        }
+    pub(crate) fn distance_at_most(
+        &self,
+        p: &RPoint3,
+        bound: &Rational,
+        dec: &mut Decider,
+    ) -> Result<Range, Refusal> {
+        self.sweep().distance_at_most(p, bound, dec)
+    }
+
+    pub(crate) fn preview(&self, query: [f64; 3]) -> (bool, f64) {
+        PRODUCTS.with(|products| {
+            let saved = products.get();
+            let p = query.map(point);
+            let sweep = self.sweep();
+            let max_height = self.caps[0].at(&self.caps[1].origin).mid();
+            let height = self.caps[0].at(&p).mid().clamp(0.0, max_height);
+            let section = |angle| {
+                let [a, b] = &self.spine.ends;
+                let t = self.spine.system.tau();
+                let (mut lo, mut hi) = (a.point[t].lo(), b.point[t].hi());
+                while hi - lo > NEWTON_STOP {
+                    let mid = lo.midpoint(hi);
+                    let q = self.section_at(&sweep, mid, point(angle));
+                    if self.caps[0].at(&q).mid() < height {
+                        lo = mid;
+                    } else {
+                        hi = mid;
+                    }
+                }
+                self.section_at(&sweep, lo.midpoint(hi), point(angle))
+            };
+            let across = |q: &V| dot(&self.across, q).mid();
+            let x = across(&p);
+            let (mut start, mut end) = (0.0_f64, 1.0_f64);
+            let (mut left, mut right) = (section(start), section(end));
+            if across(&left) > across(&right) {
+                std::mem::swap(&mut left, &mut right);
+                std::mem::swap(&mut start, &mut end);
+            }
+            let (in_fan, nearest) = if x < across(&left) {
+                (false, left)
+            } else if x > across(&right) {
+                (false, right)
+            } else {
+                while (end - start).abs() > NEWTON_STOP {
+                    let mid = start.midpoint(end);
+                    if across(&section(mid)) < x {
+                        start = mid;
+                    } else {
+                        end = mid;
+                    }
+                }
+                (true, section(start.midpoint(end)))
+            };
+            let cut = in_fan && dot(&self.outward, &sub3(&p, &nearest)).mid() > 0.0;
+            let h = dot(&vector(&self.height), &sub3(&p, &xyz(&self.bottom)));
+            let outside = cut
+                || self.caps.iter().any(|cap| cap.at(&p).mid() < 0.0)
+                || self.sides.iter().any(|side| {
+                    let start = add3(&xyz(&side.start), &mul3(&h, &vector(&side.shift)));
+                    let normal = add3(&vector(&side.normal), &mul3(&h, &vector(&side.turn)));
+                    dot(&normal, &sub3(&p, &start)).mid() > 0.0
+                });
+            let magnitude = norm(&sub3(&p, &nearest)).mid();
+            products.set(saved);
+            (cut, if outside { magnitude } else { -magnitude })
+        })
     }
 
     pub(crate) fn boxes(&self) -> impl Iterator<Item = V> + '_ {
@@ -368,11 +412,7 @@ impl Round {
         let t = self.spine.system.tau();
         let [a, b] = &self.spine.ends;
         let (mut lo, mut hi) = (a.point[t].lo(), b.point[t].hi());
-        let point_at = |tau| {
-            let span = sweep.span_at(tau).expect("proved continuation");
-            let z = sweep.enclose(span, point(tau));
-            self.section(sweep, &z, angle)
-        };
+        let point_at = |tau| self.section_at(sweep, tau, angle);
         for _ in 0..DEPTH {
             let mid = lo.midpoint(hi);
             if mid <= lo || mid >= hi {
@@ -415,6 +455,11 @@ impl Round {
             }
         }
         Ok(bound.expect("the spans cover every station"))
+    }
+
+    fn section_at(&self, sweep: &Sweep<'_>, tau: f64, angle: Interval) -> V {
+        let span = sweep.span_at(tau).expect("proved continuation");
+        self.section(sweep, &sweep.enclose(span, point(tau)), angle)
     }
 
     fn section(&self, sweep: &Sweep<'_>, z: &[Interval; 9], angle: Interval) -> V {

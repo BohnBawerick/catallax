@@ -3,10 +3,11 @@
 Pieces: field, mesh and compare
 Change: `Spine::prove_spline_plane` accepts the offset of a plane chart.
 `spline_spine::sweep::Sweep` bounds the distance to the finite short-arc
-face, with optional proved cap cuts. Its `query` also classifies membership
-of the swept balls. A rounded loft exposes its blend origin and guaranteed
+face, with optional proved cap cuts. `Sweep::distance_at_most` refines
+the range against a distance bound. The rounded shell classifies solid
+membership. A rounded loft exposes its blend origin and guaranteed
 blend range through `Plan::spline_blend_origin` and
-`Plan::spline_blend_distance`.
+`Plan::spline_blend_distance`, which refines against the supplied bound.
 `catallax_mesh::display_spline_fillet_face` supplies a measured B-rep
 display of the selected trimmed face at the requested chord tolerance.
 `display_spline_fillet_carrier` supplies the positional grid and bound

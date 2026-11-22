@@ -487,7 +487,6 @@ fn spline_display(
         whole_failure(report, "spline display inherits marked geometry");
     }
     let error = &display.measurement.maximum_deviation + fit_bound;
-    let goal = spline_distance_goal(&error, &options.accuracy);
     let mut first = None;
     for position in display.geometry.positions {
         if revision.is_cancelled() {
@@ -502,11 +501,10 @@ fn spline_display(
         {
             continue;
         }
-        first.get_or_insert_with(|| p.clone());
-        report.forward_vertices += 1;
         let range = field
-            .spline_blend_distance(origin, &p, &goal, dec)?
+            .spline_blend_distance(origin, &p, &error, dec)?
             .expect("the field has the named blend");
+        first.get_or_insert_with(|| p.clone());
         spline_vertex(report, &p, Some(origin), range, &error, &options.accuracy);
     }
     if let Some(p) = first {
@@ -518,12 +516,11 @@ fn spline_display(
             vec![],
             "selected B-rep face lacks complete sampled origin/direction coverage",
         );
+    } else {
+        report.sampled_distance_upper = None;
+        whole_failure(report, "no spline display vertices in the requested scope");
     }
     Ok(true)
-}
-
-pub(super) fn spline_distance_goal(error: &Rational, accuracy: &Rational) -> Rational {
-    (accuracy - error).max(r(0))
 }
 
 pub(super) fn spline_vertex(
@@ -534,18 +531,31 @@ pub(super) fn spline_vertex(
     error: &Rational,
     accuracy: &Rational,
 ) {
-    distance_finding(
-        report,
-        Pass::Forward,
-        point,
-        origin.into_iter().map(|o| vec![o.clone()]).collect(),
-        origin.into_iter().cloned().collect(),
-        (
-            (&range.lower - error).max(r(0)),
-            range.upper.as_ref().map(|u| u + error),
-        ),
-        (&r(0), accuracy),
-    );
+    report.forward_vertices += 1;
+    let names = origin.into_iter().map(|o| vec![o.clone()]).collect();
+    let field = origin.into_iter().cloned().collect();
+    let upper = range.upper.as_ref().map(|u| u + error);
+    if &range.lower <= error && range.upper.is_none_or(|upper| &upper > error) {
+        retain_distance_upper(report, upper.as_ref());
+        unresolved(
+            report,
+            Pass::Forward,
+            point,
+            names,
+            field,
+            "field.spline-bound-unresolved",
+        );
+    } else {
+        distance_finding(
+            report,
+            Pass::Forward,
+            point,
+            names,
+            field,
+            ((&range.lower - error).max(r(0)), upper),
+            (&r(0), accuracy),
+        );
+    }
 }
 
 pub(crate) fn run(
@@ -591,6 +601,7 @@ pub(crate) fn run(
     let field = match Plan::compile_with_files_checked(recipe, files, &mut dec) {
         Ok(f) => f,
         Err(e) => {
+            report.sampled_distance_upper = None;
             whole_failure(&mut report, format!("field build {}: {}", e.code, e.detail));
             report.refusal = Some(e);
             return revision.publish(report);
@@ -645,6 +656,7 @@ pub(crate) fn run(
                 if field.spline_blend_origin().is_some()
                     && let catallax_features::BuildError::Geometry { refusal, .. } = e
                 {
+                    report.sampled_distance_upper = None;
                     report.refusal = Some(refusal);
                 }
                 return revision.publish(report);
@@ -686,12 +698,14 @@ pub(crate) fn run(
             .filter(|&face| model.face_origins(face).contains(origin))
             .collect();
         let [face] = faces.as_slice() else {
+            report.sampled_distance_upper = None;
             whole_failure(&mut report, "the B-rep has no unique named spline blend");
             return revision.publish(report);
         };
         let Surface::BSpline(catallax_shapes::SplineSupport::SplineFillet(fit)) =
             model.geom().surface(model.face(*face).surface)
         else {
+            report.sampled_distance_upper = None;
             whole_failure(
                 &mut report,
                 "the named B-rep blend is not a fitted spline fillet",
@@ -711,6 +725,7 @@ pub(crate) fn run(
                     &mut report,
                     format!("B-rep positional display {}: {}", e.code, e.detail),
                 );
+                report.sampled_distance_upper = None;
                 report.refusal = Some(e);
                 return revision.publish(report);
             }
@@ -732,6 +747,7 @@ pub(crate) fn run(
                     &mut report,
                     format!("field spline comparison {}: {}", e.code, e.detail),
                 );
+                report.sampled_distance_upper = None;
                 report.refusal = Some(e);
             }
         }

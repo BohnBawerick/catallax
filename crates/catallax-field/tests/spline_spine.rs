@@ -13,7 +13,6 @@ use std::num::NonZeroUsize;
 use std::sync::Mutex;
 use std::time::Instant;
 
-use catallax_field::Location;
 use catallax_field::spline_spine::sweep::{Sweep, cap_continuation};
 use catallax_field::spline_spine::{Spine, SpineDefinition, TUBE_CAP};
 use catallax_numbers::{Decider, MPoly, Rational, Real, Sign, with_operation_budget};
@@ -486,16 +485,16 @@ fn a_sweep_distance_accounts_for_the_short_arc_and_its_ends() {
             "{p:?}: expected {expected}, got {result:?}"
         );
     }
-    for ([x, y], expected) in [
-        (["7/100", "3/50"], Location::Inside),
-        (["1/100", "-1/50"], Location::Outside),
-    ] {
-        let p = RPoint3::new(r(x), r(y), q(1));
-        assert_eq!(
-            sweep.query(&p, &width, &mut dec).unwrap().location,
-            expected
-        );
-    }
+    let past = RPoint3::new(r("1/25"), r("1/50"), r("301/200"));
+    let exact = r("1/200");
+    let bound = r("1229/250000");
+    let coarse = sweep
+        .distance(&past, &(&r("1/100") - &bound), &mut dec)
+        .unwrap();
+    assert!(coarse.lower <= bound && coarse.upper.unwrap() >= exact);
+    let result = sweep.distance_at_most(&past, &bound, &mut dec).unwrap();
+    assert!(bound < result.lower && result.lower <= exact, "{result:?}");
+    assert!(result.upper.unwrap() >= exact);
 }
 
 #[test]

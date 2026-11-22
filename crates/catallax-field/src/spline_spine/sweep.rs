@@ -12,7 +12,6 @@ use std::collections::BinaryHeap;
 use catallax_shapes::{RPoint3, RVector3};
 
 use super::*;
-use crate::Location;
 use crate::rolling_region::Range;
 
 pub(crate) mod loft;
@@ -217,16 +216,6 @@ pub struct Sweep<'a> {
     spine: &'a Spine,
     caps: Option<[HalfSpace; 2]>,
     tail_bound: f64,
-}
-
-/// Membership of the swept balls and distance to their short-arc envelope.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Query {
-    /// Strictly inside or outside the union of the balls. Indeterminate
-    /// when the tube cannot separate the point from that union's boundary.
-    pub location: Location,
-    /// Distance to the arc face, limited to the caps when supplied.
-    pub distance: Range,
 }
 
 impl<'a> Sweep<'a> {
@@ -636,9 +625,30 @@ impl<'a> Sweep<'a> {
         width: &Rational,
         dec: &mut Decider,
     ) -> Result<Range, Refusal> {
+        self.distance_range(query, width, false, dec)
+    }
+
+    /// Refines the distance range until it proves or disproves the given bound.
+    /// A range still straddles the bound if the refinement limits are reached.
+    pub fn distance_at_most(
+        &self,
+        query: &RPoint3,
+        bound: &Rational,
+        dec: &mut Decider,
+    ) -> Result<Range, Refusal> {
+        self.distance_range(query, bound, true, dec)
+    }
+
+    fn distance_range(
+        &self,
+        query: &RPoint3,
+        limit: &Rational,
+        threshold: bool,
+        dec: &mut Decider,
+    ) -> Result<Range, Refusal> {
         PRODUCTS.with(|c| c.set(0));
-        if width.sign() == Sign::Negative {
-            return Err(gap("requested distance width must be non-negative"));
+        if limit.sign() == Sign::Negative {
+            return Err(gap("requested distance limit must be non-negative"));
         }
         let p = [&query.x, &query.y, &query.z].map(Interval::from_rational);
         if p.iter().any(|v| !v.is_finite()) {
@@ -647,7 +657,7 @@ impl<'a> Sweep<'a> {
         let tau = self.spine.system.tau();
         let [a, b] = &self.spine.ends;
         let mut upper = self.arc(&p, &a.point).1.min(self.arc(&p, &b.point).1);
-        let width = Interval::from_rational(width).lo();
+        let limit = Interval::from_rational(limit);
         let guess = self.guess(&p);
         if a.point[tau].hi() <= guess
             && guess <= b.point[tau].lo()
@@ -655,7 +665,7 @@ impl<'a> Sweep<'a> {
         {
             upper = upper.min(self.arc(&p, &self.enclose(span, point(guess))).1);
         }
-        if upper <= width {
+        if upper <= limit.lo() {
             charge(dec)?;
             return Ok(Range {
                 lower: Rational::zero(),
@@ -692,7 +702,11 @@ impl<'a> Sweep<'a> {
         })) = pending.pop()
         {
             let lower = lower.min(upper);
-            let converged = (point(upper) - point(lower)).hi() <= width;
+            let converged = if threshold {
+                upper <= limit.lo() || lower > limit.hi()
+            } else {
+                (point(upper) - point(lower)).hi() <= limit.lo()
+            };
             let mid = lo.midpoint(hi);
             if converged || panels >= PANELS || depth >= DEPTH || mid <= lo || mid >= hi {
                 return Ok(Range {
@@ -726,73 +740,6 @@ impl<'a> Sweep<'a> {
             charge(dec)?;
         }
         Err(gap("the sweep has no stations"))
-    }
-
-    /// Classifies the point against the union of the balls and encloses
-    /// its distance to the arc face. The ball test includes the end balls.
-    pub fn query(
-        &self,
-        query: &RPoint3,
-        width: &Rational,
-        dec: &mut Decider,
-    ) -> Result<Query, Refusal> {
-        let distance = self.distance(query, width, dec)?;
-        let p = [&query.x, &query.y, &query.z].map(Interval::from_rational);
-        let location = self.ball_location(&p, dec)?;
-        Ok(Query { location, distance })
-    }
-
-    fn ball_location(&self, p: &V, dec: &mut Decider) -> Result<Location, Refusal> {
-        let distance = |z: &[Interval; 9]| norm(&sub3(p, &[z[0], z[1], z[2]]));
-        let radius = self.spine.radius;
-        let t = self.spine.system.tau();
-        let [a, b] = &self.spine.ends;
-        if [a, b]
-            .into_iter()
-            .any(|end| distance(&end.point).hi() < radius.lo())
-        {
-            charge(dec)?;
-            return Ok(Location::Inside);
-        }
-        let mut pending = Vec::new();
-        for span in self.spine.spans.iter().rev() {
-            let lo = span.tau[0].max(a.point[t].lo());
-            let hi = span.tau[1].min(b.point[t].hi());
-            if lo <= hi {
-                pending.push((span, lo, hi, 0));
-            }
-        }
-        let mut uncertain = false;
-        let mut panels = 0;
-        while let Some((span, lo, hi, depth)) = pending.pop() {
-            let bounds = distance(&self.enclose(span, Interval::new(lo, hi).unwrap()));
-            charge(dec)?;
-            if bounds.lo() > radius.hi() {
-                continue;
-            }
-            let mid = lo.midpoint(hi);
-            if a.point[t].hi() <= mid && mid <= b.point[t].lo() {
-                let witness = distance(&self.enclose(span, point(mid)));
-                charge(dec)?;
-                if witness.hi() < radius.lo() {
-                    return Ok(Location::Inside);
-                }
-            }
-            panels += 1;
-            if panels >= PANELS {
-                return Ok(Location::Indeterminate);
-            }
-            if depth == DEPTH || mid <= lo || mid >= hi {
-                uncertain = true;
-                continue;
-            }
-            pending.extend([(span, mid, hi, depth + 1), (span, lo, mid, depth + 1)]);
-        }
-        Ok(if uncertain {
-            Location::Indeterminate
-        } else {
-            Location::Outside
-        })
     }
 }
 

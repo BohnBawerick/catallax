@@ -489,6 +489,44 @@ fn the_m11_fillet_replaces_its_named_loft_edge() {
     );
 }
 
+#[test]
+fn rounded_loft_previews_skip_removed_corners_without_proof_work() {
+    use catallax_field::{Plan, UnprovedBatch, Workspace};
+    use catallax_numbers::with_operation_budget;
+
+    let plan = Plan::compile(&recipe("b_0", true)).unwrap();
+    let points = [
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0],
+        [1.000000001, -0.5, 1.0],
+        [1.000000001, 0.0, 2.0],
+        [0.999999999, -0.5, 1.0],
+        [0.999999999, 0.0, 2.0],
+    ];
+    let ((), work) = with_operation_budget(0, || {
+        let mut workspace = Workspace::default();
+        let values = points.map(|p| {
+            let fast = plan.fast(p, &mut workspace).unwrap().value;
+            let preview = plan.unproved_preview(p, &mut workspace).unwrap().value;
+            if p[0] == 0.0 {
+                assert!(fast < 0.0 && preview < 0.0);
+            } else {
+                assert!(fast > 0.01 && preview > 0.01, "{p:?}: {fast}, {preview}");
+            }
+            preview.to_bits()
+        });
+        for workers in [1, 2] {
+            let mut storage = UnprovedBatch::default();
+            let batch = plan
+                .unproved_preview_batch(&points, workers, &mut storage)
+                .unwrap();
+            assert!(batch.iter().map(|v| v.value.to_bits()).eq(values));
+        }
+    });
+    assert_eq!(work.used, 0);
+    assert!(!work.exhausted);
+}
+
 /// The print classifier settles a box of the loft only where the box meets
 /// no face's box, and then as the shell does at its corners and centre; a
 /// box across a side stays unknown.

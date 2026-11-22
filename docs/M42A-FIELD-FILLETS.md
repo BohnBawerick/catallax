@@ -17,8 +17,11 @@ Code the field shares with the B-rep, and what a bug in it would do:
 | `catallax_shapes::RollingEnvelopeDefinition` | the M18 `Region` building block's input, in the M18 tests only | Replaced in step 4: the field's rim piece (`rolling_region::rim`) finds each mouth from its own leaves and supports and checks the regime itself. The M18 `Region` still takes the B-rep's definition as its input format; no recipe compiles through it. |
 | `catallax_features::fillet::FilletDefinition` and `CornerDefinition` | today's compiled plane-plane and plane-cylinder field fillets (edge, contacts, section) | These elementary definitions predate 4.2a. The step 1 path pieces do not use them; the step 1 tests compare the two, so a bug in either shows. Production keeps them until a later step moves the compile route onto the path pieces. |
 | `catallax-intersect` support intersection | finding which support pairs meet at a sharp edge | Edge discovery only. The ball path is not computed there. |
-| `RationalPatch::bezier_spans` | step 7, each span's exact homogeneous Bezier controls, which `PatchDistance` encloses | Blossom extraction shared with every spline route. A wrong control would move the patch for both kernels; the step 7.1 test checks every distance against binary64 points of the support's own polynomials, which do not go through it. |
-| M10 pair search (`offset_meeting`) | step 7 only, spline spine topology | Named by the decisions. Step 7 adds the dense binary64 third check that catches a bug shared through M10. |
+| `RationalPatch::bezier_spans` | step 7, exact homogeneous Bézier controls for patch distance and the spine's polynomial charts | Both kernels use the same blossom extraction. The step 7.1 distance check uses binary64 points from the original support polynomials as its oracle. |
+
+M10's pair search informed the design. The field computes and certifies its
+own seed, trace and border roots. The dense binary64 check solves the contact
+equations from the original support polynomials independently.
 
 ## Query contract (Q23)
 
@@ -513,19 +516,23 @@ The comparison uses the existing complete-cell positional grid at
 the selected fillet face supplies a grid or edge stations. The
 biquadratic fixture displays the complete fitted carrier, which has
 no body cuts. The forward comparison includes the positional display
-bound and the B-rep fit bound. A vertex passes when the widened field
-range contains zero and its upper bound fits the display accuracy.
+bound and the B-rep fit bound. A vertex passes when the field proves
+its distance is at most the combined bound and the widened upper bound
+fits the display accuracy. A field lower bound above the combined bound
+proves a gap. A range that still straddles the combined bound after
+refinement reports `field.spline-bound-unresolved`.
 The bare carrier test in `catallax-compare` charges the field proof and
 sweep, B-rep fit, grid and vertex queries to one request.
 
 | Edge | Forward vertices | Total work | Largest comparison upper bound (mm) |
 | --- | ---: | ---: | ---: |
-| M27 loft | 245 | 36,439,567 | 0.008877663 |
-| Next M11 loft | 335 | 63,981,015 | 0.008631433 |
+| M27 loft | 245 | 36,448,207 | 0.002888316 |
+| Next M11 loft | 335 | 63,995,011 | 0.004464352 |
 | Biquadratic | 104 | 72,210,034 | 0.004916114 |
 
-The two loft reports agreed at 1, 2 and 4 workers with no forward
-findings. On the biquadratic row, the field proof and sweep took
+Both lofts passed every forward vertex check. The earlier comparison
+runs also matched reports and work at 1, 2 and 4 workers. On the
+biquadratic row, the field proof and sweep took
 667,145 work, the B-rep fit took 16,438,284, and the 4 by 26 carrier
 grid took 54,998,702. The grid's display bound was 0.004836298487 mm.
 Vertex queries took the remaining 105,903 work. All three comparisons

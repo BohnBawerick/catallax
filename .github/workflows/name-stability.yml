@@ -13,7 +13,7 @@ on:
       - '.claude/skills/verify-catallax/scripts/**'
       - '.github/workflows/name-stability.yml'
   push:
-    branches: [main]
+    branches: [main, 'release/**']
     paths:
       - 'crates/**'
       - 'Cargo.*'

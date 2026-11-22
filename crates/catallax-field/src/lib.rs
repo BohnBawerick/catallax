@@ -315,6 +315,19 @@ pub struct Plan {
     planar_memberships: distance::PlanarMembershipCache,
 }
 
+fn boolean_identity<T: Copy + Eq>(kind: BooleanKind, a: T, b: T, empty: T) -> Option<T> {
+    use BooleanKind::*;
+    match kind {
+        Union if a == b || b == empty => Some(a),
+        Union if a == empty => Some(b),
+        Intersect if a == empty || b == empty => Some(empty),
+        Intersect if a == b => Some(a),
+        Subtract if a == empty || a == b => Some(empty),
+        Subtract if b == empty => Some(a),
+        _ => None,
+    }
+}
+
 impl Plan {
     /// Origin of the surviving spline blend on a result that is a rounded
     /// loft shell.
@@ -387,75 +400,82 @@ impl Plan {
             .map_err(ComparisonBuildRefusal::into_refusal)
     }
 
-    fn requests_patch_loft(recipe: &Recipe, sections: &[catallax_recipe::LoftSection]) -> bool {
-        use catallax_recipe::Segment;
+    fn spline_prerequisite(
+        &self,
+        recipe: &Recipe,
+        steps: &BTreeMap<catallax_recipe::StepId, usize>,
+    ) -> bool {
+        use catallax_recipe::StepId;
 
-        let [first, second] = sections else {
-            return false;
-        };
-        let outline = |section: &catallax_recipe::LoftSection| {
-            let Operation::Sketch { plane, loops } = &recipe.step(&section.profile)?.op else {
-                return None;
-            };
-            let [outline] = loops.as_slice() else {
-                return None;
-            };
-            let ends = outline
-                .0
-                .iter()
-                .map(|segment| match segment {
-                    Segment::Line { to, .. } => Some(to),
-                    _ => None,
-                })
-                .collect::<Option<Vec<_>>>()?;
-            let station = outline
-                .0
-                .iter()
-                .position(|segment| section.start.first() == Some(segment.id()));
-            (ends.len() >= 3).then_some((plane, ends, station))
-        };
-        let (Some((first_plane, a, first_start)), Some((second_plane, b, second_start))) =
-            (outline(first), outline(second))
-        else {
-            return false;
-        };
-        let first_rotation = first_plane.rotation.each_ref().map(|n| n.value());
-        let second_rotation = second_plane.rotation.each_ref().map(|n| n.value());
-        let same_rotation = first_rotation == second_rotation
-            || first_rotation
-                .into_iter()
-                .zip(second_rotation)
-                .all(|(a, b)| *a == -b);
-        a.len() == b.len() && (a != b || first_start != second_start || !same_rotation)
-    }
+        #[derive(Clone, Copy, PartialEq, Eq)]
+        enum Body<'a> {
+            Built(usize),
+            Pending(&'a StepId),
+        }
 
-    fn requests_spline_fillet(recipe: &Recipe) -> bool {
-        let mut lofts = BTreeSet::new();
-        for step in &recipe.steps {
-            match &step.op {
-                Operation::Loft {
-                    shape: catallax_recipe::LoftShape::Ruled,
-                    sections,
-                } if Self::requests_patch_loft(recipe, sections) => {
-                    lofts.insert(&step.id);
+        fn body<'a>(
+            recipe: &'a Recipe,
+            id: &'a StepId,
+            steps: &BTreeMap<StepId, usize>,
+        ) -> Body<'a> {
+            if let Some(&node) = steps.get(id) {
+                return Body::Built(node);
+            }
+            match recipe.step(id).map(|step| &step.op) {
+                Some(Operation::Boolean { kind, target, tool }) => {
+                    let left = body(recipe, target, steps);
+                    let right = if target == tool {
+                        left
+                    } else {
+                        body(recipe, tool, steps)
+                    };
+                    boolean_identity(*kind, left, right, Body::Built(0))
+                        .unwrap_or(Body::Pending(id))
                 }
-                Operation::Mirror {
-                    body,
-                    keep_original: false,
-                    ..
-                } if lofts.contains(body) => {
-                    lofts.insert(&step.id);
-                }
-                Operation::Pattern { body, layout }
-                    if layout.count() == 1 && lofts.contains(body) =>
-                {
-                    lofts.insert(&step.id);
-                }
-                Operation::Fillet { body, .. } if lofts.contains(body) => return true,
-                _ => (),
+                Some(Operation::Pattern {
+                    body: source,
+                    layout,
+                }) if layout.count() == 1 => body(recipe, source, steps),
+                _ => Body::Pending(id),
             }
         }
-        false
+
+        let mut result = &recipe.result;
+        let source = loop {
+            let Body::Pending(id) = body(recipe, result, steps) else {
+                return false;
+            };
+            match recipe.step(id).map(|step| &step.op) {
+                Some(Operation::Fillet { body, .. }) => break body,
+                Some(Operation::Mirror { body, .. } | Operation::Pattern { body, .. }) => {
+                    result = body
+                }
+                _ => return false,
+            }
+        };
+        let mut source = source;
+        loop {
+            match body(recipe, source, steps) {
+                Body::Built(node) => {
+                    return matches!(self.instructions[node],
+                    Instruction::Leaf(i) if matches!(self.leaves[i], geometry::Leaf::Shell(_)));
+                }
+                Body::Pending(id) => match recipe.step(id).map(|step| &step.op) {
+                    Some(Operation::Loft { sections, shape }) => {
+                        return Self::comparison_patch_loft(recipe, sections, *shape);
+                    }
+                    Some(
+                        Operation::Mirror {
+                            body,
+                            keep_original: false,
+                            ..
+                        }
+                        | Operation::Fillet { body, .. },
+                    ) => source = body,
+                    _ => return false,
+                },
+            }
+        }
     }
 
     /// Compiles a sampled comparison plan with experimental spline fillet proofs.
@@ -464,12 +484,7 @@ impl Plan {
         files: &catallax_features::ImportFiles<'_>,
         dec: &mut Decider,
     ) -> Result<Self, ComparisonBuildRefusal> {
-        Self::compile_recipe(recipe, files, dec, true).map_err(|error| match error {
-            ComparisonBuildRefusal::Ordinary(refusal) if Self::requests_spline_fillet(recipe) => {
-                ComparisonBuildRefusal::Spline(refusal)
-            }
-            other => other,
-        })
+        Self::compile_recipe(recipe, files, dec, true)
     }
 
     fn compile_recipe(
@@ -1264,6 +1279,14 @@ impl Plan {
                 result.as_ref().err().map(ComparisonBuildRefusal::refusal),
                 None,
             );
+            let result = result.map_err(|error| match error {
+                ComparisonBuildRefusal::Ordinary(refusal)
+                    if spline_proofs && plan.spline_prerequisite(recipe, &steps) =>
+                {
+                    ComparisonBuildRefusal::Spline(refusal)
+                }
+                other => other,
+            });
             if let Some(node) = result? {
                 let mut faces = match &step.op {
                     Operation::Boolean { target, tool, .. } => step_faces[target]
@@ -1551,18 +1574,10 @@ impl Plan {
         {
             return Ok(0);
         }
-        Ok(match kind {
-            Union if a == b || b == 0 => a,
-            Union if a == 0 => b,
-            Intersect if a == 0 || b == 0 => 0,
-            Intersect if a == b => a,
-            Subtract if a == 0 || a == b => 0,
-            Subtract if b == 0 => a,
-            _ => {
-                self.instructions.push(Instruction::Boolean { kind, a, b });
-                self.instructions.len() - 1
-            }
-        })
+        Ok(boolean_identity(kind, a, b, 0).unwrap_or_else(|| {
+            self.instructions.push(Instruction::Boolean { kind, a, b });
+            self.instructions.len() - 1
+        }))
     }
 
     fn compact(&mut self) {

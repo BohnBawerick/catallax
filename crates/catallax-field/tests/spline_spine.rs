@@ -604,6 +604,15 @@ fn the_m27_cap_keeps_the_blend_past_the_first_rail_end() {
         ),
     ];
     let sweep = Sweep::between_caps(&continued, &caps, &mut dec).unwrap();
+    let beyond_cap = RPoint3::new(q(0), q(0), q(3));
+    let width = r("1/1000000");
+    for allowance in [0, 500] {
+        let (distance, work) =
+            with_operation_budget(allowance, || sweep.distance(&beyond_cap, &width, &mut dec));
+        assert_eq!(distance.unwrap_err().code, "numbers.operation-budget");
+        assert!(work.exhausted && work.used <= allowance);
+        assert_eq!(work.used > 0, allowance > 0);
+    }
     let finite = Sweep::new(&original, &mut dec).unwrap();
     // tau = 1.01 is beyond the first rail's top border. The second rail
     // is still below the cap here. Its point must survive the cap cut.

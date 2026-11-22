@@ -598,13 +598,16 @@ fillet refuses with `fillet.unsupported-contact`. The comparison used
 896,264 work at `e30b732a`, before the basis-table and cap-normal charges.
 Forward display coverage for that row waits for the B-rep build.
 
-### Measurements with sweep panel reservations
+### Measurements with sweep proof and query reservations
 
 Focused release tests on the shared Blade used field optimization level 1.
 Before admitting a sweep proof panel, the decider charges for the dense
 coefficient tables, the span enclosure and the largest vector-product
-count on that panel. The spline face comparison skips analytic support
-grouping. The older work figures above record the earlier charge policies.
+count on that panel. Certified queries also reserve work per endpoint,
+station proposal, bracket evaluation and distance panel. Clipped arcs
+reserve for both cap intersections. The spline face comparison skips
+analytic support grouping. The older figures above record earlier charge
+policies.
 
 The spine certificates and charged work agreed at 1, 2 and 4 workers
 under the 20M field allowance.
@@ -621,15 +624,20 @@ comparison used the same 100M request for both kernels and sampling.
 
 | Edge | Field build work | Comparison work | Forward vertices | Widened upper bound (mm) |
 | --- | ---: | ---: | ---: | ---: |
-| M27 loft | 903,363 | 36,450,293 | 245 | 0.002888316 |
-| Next M11 loft | 899,201 | 63,997,211 | 335 | 0.004464352 |
-| Biquadratic | 667,827 | 72,210,716 | 104 | 0.004916114 |
-| Spline-plane loft | 889,487 | 898,306 | 0 | absent |
+| M27 loft | 903,528 | 36,704,963 | 245 | 0.002888316 |
+| Next M11 loft | 899,366 | 64,339,737 | 335 | 0.004464352 |
+| Biquadratic | 667,827 | 72,229,429 | 104 | 0.004916114 |
+| Spline-plane loft | 889,652 | 898,471 | 0 | absent |
 
 The biquadratic fit used 16,438,284 work. Its 4 by 26 display grid used
 54,998,702 work and had a positional bound of 0.004836298487 mm. Vertex
-queries used 105,903 work. The spline-plane row remains open at the B-rep
+queries used 124,616 work. The spline-plane row remains open at the B-rep
 refusal `fillet.unsupported-contact`.
+
+The historical proof-panel run at `23d30ee7` recorded field build work
+of 903,363, 899,201, 667,827 and 889,487 in table order. The respective
+comparison totals were 36,450,293, 63,997,211, 72,210,716 and 898,306.
+Bare-carrier queries used 105,903 work at that revision.
 
 The smallest tested angle certified under 20M was 0.003497057 degrees
 (`2^-14`). It used 262,044 work, with an `8.77e-11 mm` tube and a
@@ -640,15 +648,17 @@ control used 347,999 work at all three worker counts and retained its
 `1.224362e-14 mm` tube.
 
 On this shared-machine run, the independent arc-query medians were
-14.348 µs for M27, 14.121 µs for the next loft edge and 23.896 µs for the
-biquadratic edge. The spline-plane median was 30.603 µs on 99 points.
+31.247 µs for M27, 31.883 µs for the next loft edge and 57.260 µs for the
+biquadratic edge. The spline-plane median was 24.618 µs on 99 points.
+The corresponding historical medians at `23d30ee7` were 14.348, 14.121,
+23.896 and 30.603 µs.
 
-| Loft edge | Cap height (mm) | Near cut (µs) | On cut (µs) |
-| --- | ---: | ---: | ---: |
-| M27 | 0 | 16.826 | 22.374 |
-| M27 | 2 | 14.640 | 21.484 |
-| Next M11 | 0 | 18.444 | 24.989 |
-| Next M11 | 2 | 7.052 | 10.220 |
+| Loft edge | Cap height (mm) | Near cut (µs) | On cut (µs) | Historical near cut (µs) | Historical on cut (µs) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| M27 | 0 | 17.052 | 23.232 | 16.826 | 22.374 |
+| M27 | 2 | 22.783 | 32.722 | 14.640 | 21.484 |
+| Next M11 | 0 | 15.892 | 23.885 | 18.444 | 24.989 |
+| Next M11 | 2 | 17.575 | 11.215 | 7.052 | 10.220 |
 
 ## Open for the done-when line
 

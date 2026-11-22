@@ -160,13 +160,21 @@ impl Profile {
     ) -> Result<Self, Refusal> {
         // One validator, including tangencies, odd nesting and impossible-input codes.
         catallax_features::Profile::new(plane, loops, dec)?;
+        let pose = Self::outline_pose(plane)?;
+        let pose = Pose::new(pose.rotation, pose.translation, dec)?;
+        Self::from_outline(pose, loops)
+    }
+
+    pub(crate) fn outline_pose(plane: &catallax_recipe::Pose) -> Result<Pose, Refusal> {
         let [w, x, y, z] = plane.rotation.each_ref().map(|n| n.value().clone());
         let [tx, ty, tz] = plane.translation.0.each_ref().map(|n| n.value().clone());
-        let pose = Pose::new(
+        Ok(Pose::from_rational(
             Rotation::from_quaternion(w, x, y, z)?,
-            RVector3::new(tx, ty, tz).into(),
-            dec,
-        )?;
+            RVector3::new(tx, ty, tz),
+        ))
+    }
+
+    pub(crate) fn from_outline(pose: Pose, loops: &[Loop]) -> Result<Self, Refusal> {
         let mut boundaries = Vec::new();
         for lp in loops.iter().filter(|lp| !lp.0.is_empty()) {
             let mut edges = Vec::new();

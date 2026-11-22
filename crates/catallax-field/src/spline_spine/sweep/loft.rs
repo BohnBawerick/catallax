@@ -99,21 +99,18 @@ impl Round {
         };
         let [_, spine] = cap_continuation(&definition, dec)?;
         let sweep = Sweep::between_caps(&spine, caps, dec)?;
+        reserve_panel(dec, 12)?;
         let (bottom, up) = &caps[0];
         let height = up.scaled(&(&Rational::one() / &up.dot(&caps[1].0.minus(bottom))));
         let sides = patches
             .iter()
             .map(|(patch, forward)| {
-                let controls: Vec<_> = patch
-                    .carrier()
-                    .controls()
-                    .iter()
-                    .map(catallax_shapes::Point3::as_rational)
-                    .collect::<Option<_>>()
-                    .ok_or_else(clearance)?;
-                let [a, b, c, d] = controls.as_slice() else {
+                reserve_panel(dec, 30)?;
+                let [a, b, c, d] = patch.carrier().controls() else {
                     return Err(clearance());
                 };
+                let [a, b, c, d] = [a, b, c, d].map(|p| p.as_rational().ok_or_else(clearance));
+                let (a, b, c, d) = (a?, b?, c?, d?);
                 let normal = |edge: RVector3| {
                     if *forward {
                         edge.cross(up)
@@ -121,11 +118,11 @@ impl Round {
                         up.cross(&edge)
                     }
                 };
-                let n = normal(c.minus(a));
+                let n = normal(c.minus(&a));
                 Ok(Side {
                     start: a.clone(),
-                    shift: b.minus(a),
-                    turn: normal(d.minus(b)).minus(&n),
+                    shift: b.minus(&a),
+                    turn: normal(d.minus(&b)).minus(&n),
                     normal: n,
                 })
             })
@@ -135,6 +132,7 @@ impl Round {
         let [a, b] = sweep.radials(&spine.seed_root);
         let proposal =
             add3(&a, &b).map(|x| Rational::from_f64_exact(x.mid()).expect("finite seed"));
+        reserve_panel(dec, 27)?;
         let [x, y, z] = proposal;
         let outward = up.cross(&RVector3::new(x, y, z).cross(up));
         let across = vector(&up.cross(&outward));
@@ -361,6 +359,7 @@ impl Round {
     /// clears the ball. Hence the projection runs monotonically between
     /// the two rail projections, and cuts only the selected corner.
     pub(crate) fn location(&self, q: &RPoint3, dec: &mut Decider) -> Result<Location, Refusal> {
+        reserve_panel(dec, 8)?;
         let d = q.minus(&self.bottom);
         let height = self.height.dot(&d);
         if height < Rational::zero() || height > Rational::one() {
@@ -368,6 +367,7 @@ impl Round {
         }
         let mut boundary = height.is_zero() || height == Rational::one();
         for side in &self.sides {
+            reserve_panel(dec, 17)?;
             match side.value(q, &height) {
                 Sign::Positive => return Ok(Location::Outside),
                 Sign::Zero => boundary = true,
@@ -381,13 +381,12 @@ impl Round {
         };
         PRODUCTS.with(|c| c.set(0));
         let p = xyz(q);
-        let result = self.clip_location(&p, kept, dec);
-        charge(dec)?;
-        result
+        self.clip_location(&p, kept, dec)
     }
 
     fn clip_location(&self, p: &V, kept: Location, dec: &mut Decider) -> Result<Location, Refusal> {
         let sweep = self.sweep();
+        reserve_panel(dec, 6)?;
         let height = self.caps[0].at(p);
         let side = dot(&self.across, p);
         let first = dot(
@@ -455,14 +454,27 @@ impl Round {
         let t = self.spine.system.tau();
         let [a, b] = &self.spine.ends;
         let (mut lo, mut hi) = (a.point[t].lo(), b.point[t].hi());
-        let point_at = |tau| self.section_at(sweep, tau, angle);
+        let section_products = sweep.radial_products()
+            + if is_zero(angle) || angle == point(1.0) {
+                0
+            } else {
+                12
+            };
+        let point_at = |tau, dec: &mut Decider| {
+            let span = sweep.span_at(tau).expect("proved continuation");
+            reserve_panel(dec, Sweep::enclosure_products(span) + section_products + 3)?;
+            Ok::<_, Refusal>(self.caps[0].at(&self.section(
+                sweep,
+                &sweep.enclose(span, point(tau)),
+                angle,
+            )))
+        };
         for _ in 0..DEPTH {
             let mid = lo.midpoint(hi);
             if mid <= lo || mid >= hi {
                 break;
             }
-            let value = self.caps[0].at(&point_at(mid));
-            charge(dec)?;
+            let value = point_at(mid, dec)?;
             if value.hi() < height.lo() {
                 lo = mid;
             } else if value.lo() > height.hi() {
@@ -470,17 +482,16 @@ impl Round {
             } else {
                 let left = lo.midpoint(mid);
                 let right = mid.midpoint(hi);
-                let next_lo = if self.caps[0].at(&point_at(left)).hi() < height.lo() {
+                let next_lo = if point_at(left, dec)?.hi() < height.lo() {
                     left
                 } else {
                     lo
                 };
-                let next_hi = if self.caps[0].at(&point_at(right)).lo() > height.hi() {
+                let next_hi = if point_at(right, dec)?.lo() > height.hi() {
                     right
                 } else {
                     hi
                 };
-                charge(dec)?;
                 if next_lo <= lo && next_hi >= hi {
                     break;
                 }
@@ -490,6 +501,7 @@ impl Round {
         let mut bound: Option<V> = None;
         for span in &self.spine.spans {
             if let Some(panel) = Interval::new(lo.max(span.tau[0]), hi.min(span.tau[1])) {
+                reserve_panel(dec, Sweep::enclosure_products(span) + section_products)?;
                 let section = self.section(sweep, &sweep.enclose(span, panel), angle);
                 bound = Some(match bound {
                     Some(old) => std::array::from_fn(|i| old[i].hull(&section[i])),
@@ -497,6 +509,7 @@ impl Round {
                 });
             }
         }
+        reserve_panel(dec, 3)?;
         Ok(bound.expect("the spans cover every station"))
     }
 

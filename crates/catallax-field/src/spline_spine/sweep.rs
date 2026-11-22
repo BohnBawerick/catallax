@@ -496,6 +496,24 @@ impl<'a> Sweep<'a> {
         })
     }
 
+    fn evaluate_arc(
+        &self,
+        p: &V,
+        end: Result<&[Interval; 9], (&SpineSpan, Interval)>,
+        dec: &mut Decider,
+    ) -> Result<(f64, f64), Refusal> {
+        let arc_products = if self.caps.is_some() { 252 } else { 51 };
+        let enclosure = end
+            .as_ref()
+            .err()
+            .map_or(0, |(span, _)| Self::enclosure_products(span));
+        reserve_panel(dec, self.radial_products() + arc_products + enclosure)?;
+        Ok(match end {
+            Ok(point) => self.arc(p, point),
+            Err((span, domain)) => self.arc(p, &self.enclose(span, domain)),
+        })
+    }
+
     // At a station these are lower/upper bounds on distance to the arc.
     // Over a panel the lower bound applies to every station in the panel.
     fn arc(&self, p: &V, z: &[Interval; 9]) -> (f64, f64) {
@@ -624,7 +642,8 @@ impl<'a> Sweep<'a> {
     /// Propose the perpendicular centre station using the stored model.
     /// This is the stationary equation used by OCCT's Extrema_GExtPC.
     /// Its answer only contributes if the interval arc supplies a witness.
-    fn guess(&self, p: &V) -> f64 {
+    fn guess(&self, p: &V, dec: &mut Decider) -> Result<f64, Refusal> {
+        reserve_panel(dec, 7)?;
         let [a, b] = self.spine.ends.each_ref().map(|e| &e.point);
         let t = self.spine.system.tau();
         let direction: [f64; 3] = std::array::from_fn(|i| b[i].mid() - a[i].mid());
@@ -650,6 +669,7 @@ impl<'a> Sweep<'a> {
             [value, first, second]
         };
         for _ in 0..NEWTON_STEPS {
+            reserve_panel(dec, (9 * (TERMS - 1) + 10) as u64)?;
             let Some(span) = self.span_at(tau) else {
                 break;
             };
@@ -670,14 +690,14 @@ impl<'a> Sweep<'a> {
             }
             tau = next;
         }
-        tau
+        Ok(tau)
     }
 
     fn span_at(&self, tau: f64) -> Option<&SpineSpan> {
-        self.spine
-            .spans
-            .iter()
-            .find(|s| s.tau[0] <= tau && tau <= s.tau[1])
+        let spans = &self.spine.spans;
+        spans
+            .get(spans.partition_point(|span| span.tau[1] < tau))
+            .filter(|span| span.tau[0] <= tau && tau <= span.tau[1])
     }
 
     /// A guaranteed unsigned distance range in millimetres to this sweep's
@@ -719,17 +739,19 @@ impl<'a> Sweep<'a> {
         }
         let tau = self.spine.system.tau();
         let [a, b] = &self.spine.ends;
-        let mut upper = self.arc(&p, &a.point).1.min(self.arc(&p, &b.point).1);
+        let mut upper = self
+            .evaluate_arc(&p, Ok(&a.point), dec)?
+            .1
+            .min(self.evaluate_arc(&p, Ok(&b.point), dec)?.1);
         let limit = Interval::from_rational(limit);
-        let guess = self.guess(&p);
+        let guess = self.guess(&p, dec)?;
         if a.point[tau].hi() <= guess
             && guess <= b.point[tau].lo()
             && let Some(span) = self.span_at(guess)
         {
-            upper = upper.min(self.arc(&p, &self.enclose(span, point(guess))).1);
+            upper = upper.min(self.evaluate_arc(&p, Err((span, point(guess))), dec)?.1);
         }
         if upper.is_finite() && upper <= limit.lo() {
-            charge(dec)?;
             return Ok(Range {
                 lower: Rational::zero(),
                 upper: Rational::from_f64_exact(upper),
@@ -741,7 +763,7 @@ impl<'a> Sweep<'a> {
             let lo = span.tau[0].max(a.point[tau].lo());
             let hi = span.tau[1].min(b.point[tau].hi());
             if let Some(domain) = Interval::new(lo, hi) {
-                let (lower, _) = self.arc(&p, &self.enclose(span, domain));
+                let (lower, _) = self.evaluate_arc(&p, Err((span, domain)), dec)?;
                 if lower.is_infinite() {
                     continue;
                 }
@@ -754,7 +776,6 @@ impl<'a> Sweep<'a> {
                 }));
             }
         }
-        charge(dec)?;
         let mut panels = 0;
         while let Some(Reverse(Panel {
             lower,
@@ -784,11 +805,11 @@ impl<'a> Sweep<'a> {
             // The outer interval bounds every actual station. A witness
             // needs a parameter in the inner interval or a certified end.
             if a.point[tau].hi() <= mid && mid <= b.point[tau].lo() {
-                upper = upper.min(self.arc(&p, &self.enclose(span, point(mid))).1);
+                upper = upper.min(self.evaluate_arc(&p, Err((span, point(mid))), dec)?.1);
             }
             for (lo, hi) in [(lo, mid), (mid, hi)] {
                 let domain = Interval::new(lo, hi).expect("ordered panel");
-                let (lower, _) = self.arc(&p, &self.enclose(span, domain));
+                let (lower, _) = self.evaluate_arc(&p, Err((span, domain)), dec)?;
                 if lower.is_infinite() {
                     continue;
                 }
@@ -800,7 +821,6 @@ impl<'a> Sweep<'a> {
                     depth: depth + 1,
                 }));
             }
-            charge(dec)?;
         }
         Err(gap("the sweep has no stations"))
     }

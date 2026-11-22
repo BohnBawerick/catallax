@@ -231,10 +231,24 @@ fn spline_build_refusals_have_no_sampled_distance_bound() {
         with_operation_budget(budget, || catallax_field::Plan::compile(&valid_edge));
     assert_eq!(unrounded.unwrap_err().code, "fillet.lost-edge");
 
+    let (prerequisite_refusal, no_work) = with_operation_budget(0, || check(&valid_edge));
+    assert!(no_work.exhausted);
+    let mut translated = serde_json::to_value(&valid_edge).unwrap();
+    translated["steps"][1]["loops"] = translated["steps"][0]["loops"].clone();
+    translated["steps"][2]["sections"][1]["start"] = json!(["a_0"]);
+    let translated = Recipe::parse(&translated.to_string()).unwrap();
+    let (analytic, _) = with_operation_budget(0, || check(&translated));
+    assert_eq!(
+        analytic.refusal.as_ref().map(|error| error.code),
+        Some("numbers.operation-budget")
+    );
+    assert_eq!(analytic.sampled_distance_upper, Some(Rational::zero()));
+
     let (budget_refusal, work) = with_operation_budget(budget, || check(&valid_edge));
     assert!(work.exhausted);
     for (report, code) in [
         (check(&missing_edge), "fillet.lost-edge"),
+        (prerequisite_refusal, "numbers.operation-budget"),
         (budget_refusal, "numbers.operation-budget"),
     ] {
         assert_eq!(report.refusal.as_ref().map(|error| error.code), Some(code));

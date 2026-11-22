@@ -615,45 +615,51 @@ pub(crate) fn run(
             return revision.publish(report);
         }
     };
-    let supports = match field
-        .faces()
-        .iter()
-        .map(|face| support(&face.surface, &mut dec))
-        .collect::<Result<Vec<_>, _>>()
-    {
-        Ok(supports) => supports,
-        Err(e) => {
-            whole_failure(
-                &mut report,
-                format!("support normalisation {}: {}", e.code, e.detail),
-            );
-            return revision.publish(report);
-        }
-    };
-    let mut registry = BTreeMap::<Origin, Vec<catallax_field::FaceId>>::new();
-    for (index, face) in field.faces().iter().enumerate() {
-        if let Some(id) = field.result_face(index) {
-            registry.entry(face.origin.clone()).or_default().push(id);
-        }
-    }
-    let mut groups = Vec::with_capacity(supports.len());
-    for source in &supports {
-        let mut group = Vec::new();
-        for (i, other) in supports.iter().enumerate() {
-            match source.equals(other, &mut dec) {
-                Ok(true) => group.push(i),
-                Ok(false) => (),
-                Err(e) => {
-                    whole_failure(
-                        &mut report,
-                        format!("support comparison {}: {}", e.code, e.detail),
-                    );
-                    return revision.publish(report);
-                }
+    let spline_origin = field.spline_blend_origin();
+    let analytic_supports = if spline_origin.is_none() {
+        let supports = match field
+            .faces()
+            .iter()
+            .map(|face| support(&face.surface, &mut dec))
+            .collect::<Result<Vec<_>, _>>()
+        {
+            Ok(supports) => supports,
+            Err(e) => {
+                whole_failure(
+                    &mut report,
+                    format!("support normalisation {}: {}", e.code, e.detail),
+                );
+                return revision.publish(report);
+            }
+        };
+        let mut registry = BTreeMap::<Origin, Vec<catallax_field::FaceId>>::new();
+        for (index, face) in field.faces().iter().enumerate() {
+            if let Some(id) = field.result_face(index) {
+                registry.entry(face.origin.clone()).or_default().push(id);
             }
         }
-        groups.push(group);
-    }
+        let mut groups = Vec::with_capacity(supports.len());
+        for source in &supports {
+            let mut group = Vec::new();
+            for (i, other) in supports.iter().enumerate() {
+                match source.equals(other, &mut dec) {
+                    Ok(true) => group.push(i),
+                    Ok(false) => (),
+                    Err(e) => {
+                        whole_failure(
+                            &mut report,
+                            format!("support comparison {}: {}", e.code, e.detail),
+                        );
+                        return revision.publish(report);
+                    }
+                }
+            }
+            groups.push(group);
+        }
+        Some((supports, registry, groups))
+    } else {
+        None
+    };
     let (mut model, result) = if let Some(b) = built {
         (b.model.clone(), b.result)
     } else {
@@ -661,7 +667,7 @@ pub(crate) fn run(
             Ok(b) => b,
             Err(e) => {
                 whole_failure(&mut report, format!("B-rep build: {e}"));
-                if field.spline_blend_origin().is_some()
+                if spline_origin.is_some()
                     && let catallax_features::BuildError::Geometry { refusal, .. } = e
                 {
                     report.sampled_distance_upper = None;
@@ -699,7 +705,7 @@ pub(crate) fn run(
     if revision.is_cancelled() {
         return Completion::Cancelled;
     }
-    if let Some(origin) = field.spline_blend_origin() {
+    if let Some(origin) = spline_origin {
         let faces: Vec<_> = model
             .faces_of_body(result)
             .into_iter()
@@ -761,6 +767,7 @@ pub(crate) fn run(
         }
         return revision.publish(report);
     }
+    let (supports, registry, groups) = analytic_supports.expect("analytic comparison supports");
     let mesh = match catallax_mesh::mesh_body(&model, result, &options.mesh, &mut dec) {
         Ok(m) => {
             if !m.marks.is_empty() {

@@ -387,13 +387,89 @@ impl Plan {
             .map_err(ComparisonBuildRefusal::into_refusal)
     }
 
+    fn requests_patch_loft(recipe: &Recipe, sections: &[catallax_recipe::LoftSection]) -> bool {
+        use catallax_recipe::Segment;
+
+        let [first, second] = sections else {
+            return false;
+        };
+        let outline = |section: &catallax_recipe::LoftSection| {
+            let Operation::Sketch { plane, loops } = &recipe.step(&section.profile)?.op else {
+                return None;
+            };
+            let [outline] = loops.as_slice() else {
+                return None;
+            };
+            let ends = outline
+                .0
+                .iter()
+                .map(|segment| match segment {
+                    Segment::Line { to, .. } => Some(to),
+                    _ => None,
+                })
+                .collect::<Option<Vec<_>>>()?;
+            let station = outline
+                .0
+                .iter()
+                .position(|segment| section.start.first() == Some(segment.id()));
+            (ends.len() >= 3).then_some((plane, ends, station))
+        };
+        let (Some((first_plane, a, first_start)), Some((second_plane, b, second_start))) =
+            (outline(first), outline(second))
+        else {
+            return false;
+        };
+        let first_rotation = first_plane.rotation.each_ref().map(|n| n.value());
+        let second_rotation = second_plane.rotation.each_ref().map(|n| n.value());
+        let same_rotation = first_rotation == second_rotation
+            || first_rotation
+                .into_iter()
+                .zip(second_rotation)
+                .all(|(a, b)| *a == -b);
+        a.len() == b.len() && (a != b || first_start != second_start || !same_rotation)
+    }
+
+    fn requests_spline_fillet(recipe: &Recipe) -> bool {
+        let mut lofts = BTreeSet::new();
+        for step in &recipe.steps {
+            match &step.op {
+                Operation::Loft {
+                    shape: catallax_recipe::LoftShape::Ruled,
+                    sections,
+                } if Self::requests_patch_loft(recipe, sections) => {
+                    lofts.insert(&step.id);
+                }
+                Operation::Mirror {
+                    body,
+                    keep_original: false,
+                    ..
+                } if lofts.contains(body) => {
+                    lofts.insert(&step.id);
+                }
+                Operation::Pattern { body, layout }
+                    if layout.count() == 1 && lofts.contains(body) =>
+                {
+                    lofts.insert(&step.id);
+                }
+                Operation::Fillet { body, .. } if lofts.contains(body) => return true,
+                _ => (),
+            }
+        }
+        false
+    }
+
     /// Compiles a sampled comparison plan with experimental spline fillet proofs.
     pub fn compile_for_comparison(
         recipe: &Recipe,
         files: &catallax_features::ImportFiles<'_>,
         dec: &mut Decider,
     ) -> Result<Self, ComparisonBuildRefusal> {
-        Self::compile_recipe(recipe, files, dec, true)
+        Self::compile_recipe(recipe, files, dec, true).map_err(|error| match error {
+            ComparisonBuildRefusal::Ordinary(refusal) if Self::requests_spline_fillet(recipe) => {
+                ComparisonBuildRefusal::Spline(refusal)
+            }
+            other => other,
+        })
     }
 
     fn compile_recipe(

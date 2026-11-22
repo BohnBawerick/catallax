@@ -598,6 +598,58 @@ fillet refuses with `fillet.unsupported-contact`. The comparison used
 896,264 work at `e30b732a`, before the basis-table and cap-normal charges.
 Forward display coverage for that row waits for the B-rep build.
 
+### Measurements with sweep panel reservations
+
+Focused release tests on the shared Blade used field optimization level 1.
+Before admitting a sweep proof panel, the decider charges for the dense
+coefficient tables, the span enclosure and the largest vector-product
+count on that panel. The spline face comparison skips analytic support
+grouping. The older work figures above record the earlier charge policies.
+
+The spine certificates and charged work agreed at 1, 2 and 4 workers
+under the 20M field allowance.
+
+| Edge | Spine work | Tube radius (nm, rounded up) |
+| --- | ---: | ---: |
+| M27 loft | 438,880 | 0.009859 |
+| Next M11 loft | 437,113 | 0.008290 |
+| Biquadratic | 659,811 | 0.006276 |
+
+The capped loft builds and the bare carrier field build also agreed at
+1, 2 and 4 workers. All four stayed within the 20M field target. Each
+comparison used the same 100M request for both kernels and sampling.
+
+| Edge | Field build work | Comparison work | Forward vertices | Widened upper bound (mm) |
+| --- | ---: | ---: | ---: | ---: |
+| M27 loft | 903,363 | 36,450,293 | 245 | 0.002888316 |
+| Next M11 loft | 899,201 | 63,997,211 | 335 | 0.004464352 |
+| Biquadratic | 667,827 | 72,210,716 | 104 | 0.004916114 |
+| Spline-plane loft | 889,487 | 898,306 | 0 | absent |
+
+The biquadratic fit used 16,438,284 work. Its 4 by 26 display grid used
+54,998,702 work and had a positional bound of 0.004836298487 mm. Vertex
+queries used 105,903 work. The spline-plane row remains open at the B-rep
+refusal `fillet.unsupported-contact`.
+
+The smallest tested angle certified under 20M was 0.003497057 degrees
+(`2^-14`). It used 262,044 work, with an `8.77e-11 mm` tube and a
+6.142 nm rail bound. The adjacent `2^-15` case used 24,803 work and
+refused with `field.spline-spine` because it found no spine point at
+the seed. The exact tangent control also refused. The spline-plane
+control used 347,999 work at all three worker counts and retained its
+`1.224362e-14 mm` tube.
+
+On this shared-machine run, the independent arc-query medians were
+14.348 µs for M27, 14.121 µs for the next loft edge and 23.896 µs for the
+biquadratic edge. The spline-plane median was 30.603 µs on 99 points.
+
+| Loft edge | Cap height (mm) | Near cut (µs) | On cut (µs) |
+| --- | ---: | ---: | ---: |
+| M27 | 0 | 16.826 | 22.374 |
+| M27 | 2 | 14.640 | 21.484 |
+| Next M11 | 0 | 18.444 | 24.989 |
+| Next M11 | 2 | 7.052 | 10.220 |
+
 ## Open for the done-when line
 
 - Samples on rolling faces, for the reverse coverage findings. Rational samples exist on rational tori, cylinders and spheres; irrational faces need another route.

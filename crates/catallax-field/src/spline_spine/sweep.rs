@@ -29,11 +29,23 @@ fn norm(v: &V) -> Interval {
         .expect("sum of squares")
 }
 
+fn reserve_panel(dec: &mut Decider, products: u64) -> Result<(), Refusal> {
+    PRODUCTS.with(|count| count.set(0));
+    dec.charge_work(products)
+}
+
 fn gap(detail: &str) -> Refusal {
     Refusal::new("field.spline-sweep", detail)
 }
 
 impl Support {
+    fn normal_products(&self, multiply: u64, scale: u64) -> u64 {
+        let [m, n] = self.degrees.map(|degree| degree as u64);
+        let powers = m.saturating_sub(1) + n.saturating_sub(1) + (m + 1) * n;
+        let coefficients = 12 * (m + 1) * (n + 1);
+        (powers + 18) * multiply + coefficients * scale
+    }
+
     fn normal_numerator<N: Num>(&self, u: N, v: N) -> [N; 3] {
         let f = self.values(&u, &v, 3);
         let xyz = |row: usize| std::array::from_fn(|i| f[row][i].clone());
@@ -185,23 +197,29 @@ pub fn cap_continuation(
     let new_tau = &(&old_tau + &quarter) / &scale;
     let scale = Interval::from_rational(&scale);
     let quarter = Interval::from_rational(&quarter);
+    reserve_panel(dec, 2)?;
     for i in 0..2 {
         let slot = PARAMETERS + 2 * i + axis;
         root[slot] = (root[slot] + quarter) / scale;
         root[LENGTHS + i] = product(root[LENGTHS + i], scale);
     }
     root[t] = Interval::from_rational(&new_tau);
-    let joined = extension.spans.iter().any(|span| {
+    let mut joined = false;
+    for span in &extension.spans {
         if root[t].lo() < span.tau[0] || root[t].hi() > span.tau[1] {
-            return false;
+            continue;
         }
+        reserve_panel(dec, Sweep::enclosure_products(span))?;
         let s = span.variable(root[t]);
-        free(t).into_iter().enumerate().all(|(i, k)| {
+        if free(t).into_iter().enumerate().all(|(i, k)| {
             let residual = root[k] - span.model_at(i, s);
             residual.lo() > -span.radius[i] && residual.hi() < span.radius[i]
-        })
-    });
-    charge(dec)?;
+        }) {
+            joined = true;
+            break;
+        }
+    }
+    PRODUCTS.with(|c| c.set(0));
     if !joined {
         return Err(cap_gap(
             "the extended spine is not tied to the original seed",
@@ -229,10 +247,10 @@ impl<'a> Sweep<'a> {
         caps: Option<&[Cap; 2]>,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
-        PRODUCTS.with(|c| c.set(0));
         let checked = (|| {
             let caps = caps
                 .map(|[a, b]| -> Result<_, Refusal> {
+                    reserve_panel(dec, 6)?;
                     Ok([HalfSpace::new(a)?, HalfSpace::new(b)?])
                 })
                 .transpose()?;
@@ -241,10 +259,10 @@ impl<'a> Sweep<'a> {
                 caps,
                 tail_bound: 0.0,
             };
-            sweep.tail_bound = sweep.check()?;
+            sweep.tail_bound = sweep.check(dec)?;
             Ok(sweep)
         })();
-        charge(dec)?;
+        PRODUCTS.with(|c| c.set(0));
         checked
     }
 
@@ -264,35 +282,42 @@ impl<'a> Sweep<'a> {
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
         let sweep = Self::admit(spine, Some(caps), dec)?;
-        let checked = sweep.check_caps();
-        charge(dec)?;
+        let checked = sweep.check_caps(dec);
+        PRODUCTS.with(|c| c.set(0));
         checked?;
         Ok(sweep)
     }
 
-    fn check_caps(&self) -> Result<(), Refusal> {
+    fn check_caps(&self, dec: &mut Decider) -> Result<(), Refusal> {
         let caps = self.caps.as_ref().expect("has caps");
         let extent = |p: &[Interval; 9], cap: &HalfSpace| {
             let reach = (self.spine.radius * cap.length).hi();
             cap.at(&[p[0], p[1], p[2]]) + spread(reach)
         };
         let [a, b] = &self.spine.ends;
+        reserve_panel(dec, 6)?;
         if extent(&a.point, &caps[0]).hi() >= 0.0 || extent(&b.point, &caps[1]).hi() >= 0.0 {
             return Err(cap_gap("an end sphere is not proved outside its cap"));
         }
-        if !self.spine.spans.iter().any(|span| {
+        let mut has_interior = false;
+        for span in &self.spine.spans {
             let mid = span.tau[0].midpoint(span.tau[1]);
             let t = self.spine.system.tau();
             if mid <= a.point[t].hi() || mid >= b.point[t].lo() {
-                return false;
+                continue;
             }
+            reserve_panel(dec, Self::enclosure_products(span) + 6)?;
             let station = self.enclose(span, point(mid));
-            caps.iter().all(|cap| extent(&station, cap).lo() > 0.0)
-        }) {
+            if caps.iter().all(|cap| extent(&station, cap).lo() > 0.0) {
+                has_interior = true;
+                break;
+            }
+        }
+        if !has_interior {
             return Err(cap_gap("no section sphere is proved between the caps"));
         }
         for span in &self.spine.spans {
-            self.check_cap_slope(span, span.tau, 0)?;
+            self.check_cap_slope(span, span.tau, 0, dec)?;
         }
         Ok(())
     }
@@ -302,7 +327,19 @@ impl<'a> Sweep<'a> {
         span: &SpineSpan,
         [lo, hi]: [f64; 2],
         depth: usize,
+        dec: &mut Decider,
     ) -> Result<(), Refusal> {
+        let slope_products = self
+            .spine
+            .system
+            .supports
+            .iter()
+            .map(|support| support.normal_products(6, 3) + 6)
+            .sum::<u64>();
+        reserve_panel(
+            dec,
+            Self::enclosure_products(span) + self.radial_products() + slope_products + 15,
+        )?;
         let pinned = self.spine.system.tau();
         let d = span.slope.expect("reach proved the slope");
         let z = self.enclose(span, Interval::new(lo, hi).unwrap());
@@ -353,11 +390,11 @@ impl<'a> Sweep<'a> {
                 "a cap height is not proved monotone along the sweep",
             ));
         }
-        self.check_cap_slope(span, [lo, mid], depth + 1)?;
-        self.check_cap_slope(span, [mid, hi], depth + 1)
+        self.check_cap_slope(span, [lo, mid], depth + 1, dec)?;
+        self.check_cap_slope(span, [mid, hi], depth + 1, dec)
     }
 
-    fn check(&self) -> Result<f64, Refusal> {
+    fn check(&self, dec: &mut Decider) -> Result<f64, Refusal> {
         let reach = || {
             Refusal::new(
                 "field.spline-sweep-reach",
@@ -367,6 +404,7 @@ impl<'a> Sweep<'a> {
         let mut speed: Option<V> = None;
         let mut acceleration: f64 = 0.0;
         for span in &self.spine.spans {
+            reserve_panel(dec, 3)?;
             let d = span.slope.ok_or_else(reach)?;
             let d = [d[0], d[1], d[2]];
             speed = Some(speed.map_or(d, |a| std::array::from_fn(|i| a[i].hull(&d[i]))));
@@ -387,7 +425,7 @@ impl<'a> Sweep<'a> {
             return Err(reach());
         }
         self.spine.spans.iter().try_fold(0.0_f64, |bound, span| {
-            Ok(bound.max(self.check_sector(span, span.tau, 0)?))
+            Ok(bound.max(self.check_sector(span, span.tau, 0, dec)?))
         })
     }
 
@@ -396,7 +434,13 @@ impl<'a> Sweep<'a> {
         span: &SpineSpan,
         [lo, hi]: [f64; 2],
         depth: usize,
+        dec: &mut Decider,
     ) -> Result<f64, Refusal> {
+        let sector_products = if self.caps.is_some() { 9 } else { 15 };
+        reserve_panel(
+            dec,
+            Self::enclosure_products(span) + self.radial_products() + sector_products,
+        )?;
         let z = self.enclose(span, Interval::new(lo, hi).unwrap());
         let [a, b] = self.radials(&z);
         // The chord from either rail increases with central angle on the
@@ -418,8 +462,21 @@ impl<'a> Sweep<'a> {
                 "the two contact directions are not proved transverse",
             ));
         }
-        let first = self.check_sector(span, [lo, mid], depth + 1)?;
-        Ok(first.max(self.check_sector(span, [mid, hi], depth + 1)?))
+        let first = self.check_sector(span, [lo, mid], depth + 1, dec)?;
+        Ok(first.max(self.check_sector(span, [mid, hi], depth + 1, dec)?))
+    }
+
+    fn enclosure_products(span: &SpineSpan) -> u64 {
+        (span.model.len() * span.model[0].len()) as u64
+    }
+
+    fn radial_products(&self) -> u64 {
+        self.spine
+            .system
+            .supports
+            .iter()
+            .map(|support| support.normal_products(1, 1) + 3)
+            .sum()
     }
 
     fn enclose(&self, span: &SpineSpan, tau: Interval) -> [Interval; 9] {

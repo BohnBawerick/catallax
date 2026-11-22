@@ -131,6 +131,7 @@ impl Round {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
+        reserve_panel(dec, sweep.radial_products())?;
         let [a, b] = sweep.radials(&spine.seed_root);
         let proposal =
             add3(&a, &b).map(|x| Rational::from_f64_exact(x.mid()).expect("finite seed"));
@@ -150,8 +151,8 @@ impl Round {
             outward,
             across,
         };
-        let checked = round.check();
-        charge(dec)?;
+        let checked = round.check(dec);
+        PRODUCTS.with(|c| c.set(0));
         checked?;
         Ok(round)
     }
@@ -164,7 +165,7 @@ impl Round {
         }
     }
 
-    fn check(&self) -> Result<(), Refusal> {
+    fn check(&self, dec: &mut Decider) -> Result<(), Refusal> {
         let sweep = self.sweep();
         let height = vector(&self.height);
         let bottom = xyz(&self.bottom);
@@ -172,6 +173,13 @@ impl Round {
         for span in &self.spine.spans {
             let mut pending = vec![(span.tau, 0)];
             while let Some(([lo, hi], depth)) = pending.pop() {
+                reserve_panel(
+                    dec,
+                    Sweep::enclosure_products(span)
+                        + sweep.radial_products()
+                        + 12
+                        + 33 * self.sides.len() as u64,
+                )?;
                 let z = sweep.enclose(span, Interval::new(lo, hi).expect("ordered panel"));
                 let c = [z[0], z[1], z[2]];
                 let radial = sweep.radials(&z);

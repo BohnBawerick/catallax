@@ -571,6 +571,24 @@ fn independently_sampled_arcs_on_the_three_m11_edges_lie_in_the_sweep_range() {
 }
 
 #[test]
+fn capped_sweep_reserves_cap_normals_before_reach_panels() {
+    let mut dec = Decider::default();
+    let (_, definition) = definition(0, &mut dec);
+    let [_, continued] = cap_continuation(&definition, &mut dec).unwrap();
+    let caps = [
+        (RPoint3::origin(), RVector3::new(q(0), q(0), q(1))),
+        (
+            RPoint3::new(q(0), q(0), q(2)),
+            RVector3::new(q(0), q(0), q(-1)),
+        ),
+    ];
+    let (result, work) =
+        with_operation_budget(7, || Sweep::between_caps(&continued, &caps, &mut dec));
+    assert_eq!(result.unwrap_err().code, "numbers.operation-budget");
+    assert!(work.exhausted && work.used >= 6, "{work:?}");
+}
+
+#[test]
 fn the_m27_cap_keeps_the_blend_past_the_first_rail_end() {
     let mut dec = Decider::default();
     let (_, definition) = definition(0, &mut dec);

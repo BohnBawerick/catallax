@@ -6,7 +6,7 @@ mod spline;
 mod stations;
 mod turning;
 
-use crate::{Plan, features::Feature, profile::Profile};
+use crate::{ComparisonBuildRefusal, Plan, features::Feature, profile::Profile};
 use catallax_numbers::{Decider, Rational, Refusal, Sign};
 use catallax_recipe::{
     BooleanKind, LoftSection, LoftShape, Operation, Recipe, Role, StepId, SweepOrientation,
@@ -369,26 +369,30 @@ impl Plan {
         profiles: &BTreeMap<StepId, Profile>,
         step: &StepId,
         dec: &mut Decider,
-    ) -> Result<usize, Refusal> {
+    ) -> Result<usize, ComparisonBuildRefusal> {
         if recipe.loft_parameterization().ok()
             != Some(catallax_recipe::LoftParameterization::RationalCharts)
         {
-            return Err(Refusal::new(
+            return Err(ComparisonBuildRefusal::BeforeRoute(Refusal::new(
                 "loft.legacy-parameterization",
                 "legacy arc-length lofts are not rational-chart lofts",
-            ));
+            )));
         }
         let first = &profiles[&sections[0].profile];
         if let Some(node) = self.circular_loft(recipe, sections, profiles, step, dec)? {
             return Ok(node);
         }
-        match Self::loft_translation(recipe, sections, shape, profiles, dec)? {
+        match Self::loft_translation(recipe, sections, shape, profiles, dec)
+            .map_err(ComparisonBuildRefusal::BeforeRoute)?
+        {
             Ok(None) => Ok(0),
-            Ok(Some(vector)) => self.motion_feature(
-                Feature::extrude_vector(first, step, vector, false, dec)?,
-                dec,
-            ),
-            Err(refusal) => self.patch_or(refusal, sections, shape, profiles, step, dec),
+            Ok(Some(vector)) => self
+                .motion_feature(
+                    Feature::extrude_vector(first, step, vector, false, dec)?,
+                    dec,
+                )
+                .map_err(ComparisonBuildRefusal::Ordinary),
+            Err(refusal) => self.patch_or(recipe, refusal, sections, shape, profiles, step, dec),
         }
     }
 
@@ -515,19 +519,23 @@ impl Plan {
         profiles: &BTreeMap<StepId, Profile>,
         step: &StepId,
         dec: &mut Decider,
-    ) -> Result<usize, Refusal> {
+    ) -> Result<usize, ComparisonBuildRefusal> {
         if let Some(node) = self.circular_station_loft(recipe, sections, shape, profiles, dec)? {
             return Ok(node);
         }
-        let node = self.patch_loft(sections, profiles, step, dec)?;
-        if let Some(node) = node {
+        if let Some(outline) = Self::patch_outline(sections, profiles, dec)
+            .map_err(ComparisonBuildRefusal::BeforeRoute)?
+            && let Some(node) = self
+                .patch_loft(outline, step, dec)
+                .map_err(ComparisonBuildRefusal::Spline)?
+        {
             return Ok(node);
         }
         if let Some(node) = self.affine_loft(sections, profiles, dec)? {
             return Ok(node);
         }
         self.polygon_station_loft(recipe, sections, shape, profiles, dec)?
-            .ok_or(refusal)
+            .ok_or(ComparisonBuildRefusal::BeforeRoute(refusal))
     }
 
     /// A loft between two parallel polygons, every slice of which is a
@@ -553,22 +561,18 @@ impl Plan {
     /// of corresponding line segments.
     fn patch_loft(
         &mut self,
-        sections: &[LoftSection],
-        profiles: &BTreeMap<StepId, Profile>,
+        outline: PatchOutline,
         step: &StepId,
         dec: &mut Decider,
     ) -> Result<Option<usize>, Refusal> {
         use crate::patch_shell::{Face, PatchFace, Polygon, Shell};
         use catallax_shapes::{BSplineSurface, Point3, RationalPatch};
-        let Some(PatchOutline {
+        let PatchOutline {
             bottom,
             top,
             outward,
             segments,
-        }) = Self::patch_outline(sections, profiles, dec)?
-        else {
-            return Ok(None);
-        };
+        } = outline;
         let n = bottom.len();
         let control =
             |p: &RPoint3| Point3::new(p.x.clone().into(), p.y.clone().into(), p.z.clone().into());
@@ -735,55 +739,6 @@ impl Plan {
             outward: counterclockwise == up,
             segments,
         }))
-    }
-
-    pub(crate) fn comparison_patch_loft(
-        recipe: &Recipe,
-        sections: &[LoftSection],
-        shape: LoftShape,
-    ) -> bool {
-        use catallax_recipe::Segment;
-
-        if sections.len() != 2
-            || shape != LoftShape::Ruled
-            || recipe.loft_parameterization().ok()
-                != Some(catallax_recipe::LoftParameterization::RationalCharts)
-        {
-            return false;
-        }
-        let profiles = sections
-            .iter()
-            .map(|section| {
-                let Operation::Sketch { plane, loops } = &recipe.step(&section.profile)?.op else {
-                    return None;
-                };
-                let [outline] = loops.as_slice() else {
-                    return None;
-                };
-                if outline.0.len() < 3
-                    || !outline
-                        .0
-                        .iter()
-                        .all(|edge| matches!(edge, Segment::Line { .. }))
-                {
-                    return None;
-                }
-                let pose = Profile::outline_pose(plane).ok()?;
-                let profile = Profile::from_outline(pose, loops).ok()?;
-                Some((section.profile.clone(), profile))
-            })
-            .collect::<Option<BTreeMap<_, _>>>();
-        let Some(profiles) = profiles else {
-            return false;
-        };
-        let mut dec = Decider::default();
-        matches!(
-            Self::loft_translation(recipe, sections, shape, &profiles, &mut dec),
-            Ok(Err(_))
-        ) && matches!(
-            Self::patch_outline(sections, shape, &profiles, &mut dec),
-            Ok(Some(_))
-        )
     }
 
     fn circular_loft(

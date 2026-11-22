@@ -603,9 +603,11 @@ pub(crate) fn run(
     let field = match Plan::compile_for_comparison(recipe, files, &mut dec) {
         Ok(f) => f,
         Err(error) => {
+            use catallax_field::ComparisonBuildRefusal;
             let e = match error {
-                catallax_field::ComparisonBuildRefusal::Ordinary(refusal) => refusal,
-                catallax_field::ComparisonBuildRefusal::Spline(refusal) => {
+                ComparisonBuildRefusal::BeforeRoute(refusal)
+                | ComparisonBuildRefusal::Ordinary(refusal) => refusal,
+                ComparisonBuildRefusal::Spline(refusal) => {
                     report.sampled_distance_upper = None;
                     refusal
                 }

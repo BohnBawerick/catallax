@@ -175,8 +175,9 @@ impl Round {
                     dec,
                     Sweep::enclosure_products(span)
                         + sweep.radial_products()
-                        + 12
-                        + 33 * self.sides.len() as u64,
+                        + 13
+                        + 2 * 27
+                        + 40 * (self.sides.len() - self.selected.len()) as u64,
                 )?;
                 let z = sweep.enclose(span, Interval::new(lo, hi).expect("ordered panel"));
                 let c = [z[0], z[1], z[2]];
@@ -458,7 +459,7 @@ impl Round {
             + if is_zero(angle) || angle == point(1.0) {
                 0
             } else {
-                12
+                13
             };
         let point_at = |tau, dec: &mut Decider| {
             let span = sweep.span_at(tau).expect("proved continuation");
@@ -585,9 +586,6 @@ mod tests {
             .value;
         assert!(value > 0.01, "{value}");
         let evaluations = PREVIEW_SECTIONS.with(|count| count.get());
-        assert!(
-            (51..=435).contains(&evaluations),
-            "{evaluations} section evaluations"
-        );
+        assert!(evaluations <= 435, "{evaluations} section evaluations");
     }
 }

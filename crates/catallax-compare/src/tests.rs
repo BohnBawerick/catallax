@@ -233,6 +233,14 @@ fn spline_build_refusals_have_no_sampled_distance_bound() {
 
     let (prerequisite_refusal, no_work) = with_operation_budget(0, || check(&valid_edge));
     assert!(no_work.exhausted);
+    assert_eq!(
+        prerequisite_refusal.refusal.as_ref().unwrap().code,
+        "numbers.operation-budget"
+    );
+    assert_eq!(
+        prerequisite_refusal.sampled_distance_upper,
+        Some(Rational::zero())
+    );
     let mut translated = serde_json::to_value(&valid_edge).unwrap();
     translated["steps"][1]["loops"] = translated["steps"][0]["loops"].clone();
     translated["steps"][2]["sections"][1]["start"] = json!(["a_0"]);
@@ -253,13 +261,13 @@ fn spline_build_refusals_have_no_sampled_distance_bound() {
         json!({"id":"same","op":"boolean","kind":"union","target":"loft","tool":"loft"}),
     );
     let union = Recipe::parse(&union.to_string()).unwrap();
-    let (union_refusal, _) = with_operation_budget(0, || check(&union));
+    let (union_refusal, work) = with_operation_budget(budget, || check(&union));
+    assert!(work.exhausted);
 
     let (budget_refusal, work) = with_operation_budget(budget, || check(&valid_edge));
     assert!(work.exhausted);
     for (report, code) in [
         (check(&missing_edge), "fillet.lost-edge"),
-        (prerequisite_refusal, "numbers.operation-budget"),
         (union_refusal, "numbers.operation-budget"),
         (budget_refusal, "numbers.operation-budget"),
     ] {
@@ -268,6 +276,56 @@ fn spline_build_refusals_have_no_sampled_distance_bound() {
         assert_eq!(report.forward_vertices, 0);
         assert_eq!(report.sampled_distance_upper, None);
     }
+}
+
+#[test]
+fn invalid_spline_prerequisites_keep_the_sketch_refusal() {
+    let mut value = serde_json::to_value(m11_loft([0, 1], false, ["0", "2"])).unwrap();
+    for (section, prefix, scale) in [(0, 'a', 1), (1, 'b', 2)] {
+        let edges = [(0, 4), (3, -3), (-4, 1), (4, 1), (-3, -3)]
+            .into_iter()
+            .enumerate()
+            .map(|(i, (x, y))| {
+                json!({"kind":"line","id":format!("{prefix}_{i}"),
+                    "to":[(scale * x).to_string(),y.to_string()]})
+            })
+            .collect::<Vec<_>>();
+        value["steps"][section]["loops"] = json!([edges]);
+    }
+
+    let report = check(&Recipe::parse(&value.to_string()).unwrap());
+    assert_eq!(
+        report.refusal.as_ref().unwrap().code,
+        "sketch.self-intersection"
+    );
+    assert_eq!(report.sampled_distance_upper, Some(Rational::zero()));
+}
+
+#[test]
+fn spline_prerequisite_refusal_does_not_expand_shared_unions() {
+    let mut value = serde_json::to_value(m11_loft([0, 1], false, ["0", "2"])).unwrap();
+    let steps = value["steps"].as_array_mut().unwrap();
+    let mut fillet = steps.pop().unwrap();
+    let mut inputs = ["loft".to_owned(), "loft".to_owned()];
+    for depth in 0..30 {
+        let outputs = [format!("left{depth}"), format!("right{depth}")];
+        for id in &outputs {
+            steps.push(json!({"id":id,"op":"boolean","kind":"union",
+                "target":inputs[0],"tool":inputs[1]}));
+        }
+        inputs = outputs;
+    }
+    fillet["body"] = json!(inputs[0]);
+    steps.push(fillet);
+
+    let recipe = Recipe::parse(&value.to_string()).unwrap();
+    let (report, work) = catallax_numbers::with_operation_budget(0, || check(&recipe));
+    assert!(work.exhausted);
+    assert_eq!(
+        report.refusal.as_ref().unwrap().code,
+        "numbers.operation-budget"
+    );
+    assert_eq!(report.sampled_distance_upper, Some(Rational::zero()));
 }
 
 #[test]

@@ -295,7 +295,7 @@ impl<'a> Sweep<'a> {
             cap.at(&[p[0], p[1], p[2]]) + spread(reach)
         };
         let [a, b] = &self.spine.ends;
-        reserve_panel(dec, 6)?;
+        reserve_panel(dec, 8)?;
         if extent(&a.point, &caps[0]).hi() >= 0.0 || extent(&b.point, &caps[1]).hi() >= 0.0 {
             return Err(cap_gap("an end sphere is not proved outside its cap"));
         }
@@ -306,7 +306,7 @@ impl<'a> Sweep<'a> {
             if mid <= a.point[t].hi() || mid >= b.point[t].lo() {
                 continue;
             }
-            reserve_panel(dec, Self::enclosure_products(span) + 6)?;
+            reserve_panel(dec, Self::enclosure_products(span) + 8)?;
             let station = self.enclose(span, point(mid));
             if caps.iter().all(|cap| extent(&station, cap).lo() > 0.0) {
                 has_interior = true;
@@ -334,11 +334,11 @@ impl<'a> Sweep<'a> {
             .system
             .supports
             .iter()
-            .map(|support| support.normal_products(6, 3) + 6)
+            .map(|support| support.normal_products(6, 3) + 7)
             .sum::<u64>();
         reserve_panel(
             dec,
-            Self::enclosure_products(span) + self.radial_products() + slope_products + 15,
+            Self::enclosure_products(span) + self.radial_products() + slope_products + 20,
         )?;
         let pinned = self.spine.system.tau();
         let d = span.slope.expect("reach proved the slope");
@@ -421,6 +421,7 @@ impl<'a> Sweep<'a> {
             .map(|v| v.lo().max(-v.hi()).max(0.0))
             .into_iter()
             .fold(0.0, f64::max);
+        reserve_panel(dec, 2)?;
         if (self.spine.radius * point(acceleration)).hi() >= point(m).square().lo() {
             return Err(reach());
         }
@@ -502,7 +503,7 @@ impl<'a> Sweep<'a> {
         end: Result<&[Interval; 9], (&SpineSpan, Interval)>,
         dec: &mut Decider,
     ) -> Result<(f64, f64), Refusal> {
-        let arc_products = if self.caps.is_some() { 252 } else { 51 };
+        let arc_products = if self.caps.is_some() { 257 } else { 54 };
         let enclosure = end
             .as_ref()
             .err()
@@ -657,7 +658,7 @@ impl<'a> Sweep<'a> {
         let mut tau = (start + (end - start) * (offset / length)).clamp(start, end);
         count(1);
         let eval = |coefficients: &[f64], s: f64| {
-            count((3 * (coefficients.len() - 1)) as u64);
+            count((4 * (coefficients.len() - 1)) as u64);
             let mut value = *coefficients.last().unwrap();
             let mut first = 0.0;
             let mut second = 0.0;
@@ -669,10 +670,10 @@ impl<'a> Sweep<'a> {
             [value, first, second]
         };
         for _ in 0..NEWTON_STEPS {
-            reserve_panel(dec, (9 * (TERMS - 1) + 10) as u64)?;
             let Some(span) = self.span_at(tau) else {
                 break;
             };
+            reserve_panel(dec, (12 * (TERMS - 1) + 10) as u64)?;
             let half = (span.tau[1] - span.tau[0]) / 2.0;
             let s = (tau - span.tau[0].midpoint(span.tau[1])) / half;
             let mut f = 0.0;

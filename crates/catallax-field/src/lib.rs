@@ -267,6 +267,8 @@ pub struct Batch {
 /// A refusal from the field build of a sampled comparison.
 #[derive(Debug)]
 pub enum ComparisonBuildRefusal {
+    /// A prerequisite refused before the compiler could select a route.
+    BeforeRoute(Refusal),
     /// The field refused outside the experimental spline route.
     Ordinary(Refusal),
     /// The experimental spline route refused before comparison sampling.
@@ -276,13 +278,13 @@ pub enum ComparisonBuildRefusal {
 impl ComparisonBuildRefusal {
     fn refusal(&self) -> &Refusal {
         match self {
-            Self::Ordinary(refusal) | Self::Spline(refusal) => refusal,
+            Self::BeforeRoute(refusal) | Self::Ordinary(refusal) | Self::Spline(refusal) => refusal,
         }
     }
 
     fn into_refusal(self) -> Refusal {
         match self {
-            Self::Ordinary(refusal) | Self::Spline(refusal) => refusal,
+            Self::BeforeRoute(refusal) | Self::Ordinary(refusal) | Self::Spline(refusal) => refusal,
         }
     }
 }
@@ -313,19 +315,6 @@ pub struct Plan {
     separated_unions: BTreeSet<usize>,
     domains: Vec<ownership::Domain>,
     planar_memberships: distance::PlanarMembershipCache,
-}
-
-fn boolean_identity<T: Copy + Eq>(kind: BooleanKind, a: T, b: T, empty: T) -> Option<T> {
-    use BooleanKind::*;
-    match kind {
-        Union if a == b || b == empty => Some(a),
-        Union if a == empty => Some(b),
-        Intersect if a == empty || b == empty => Some(empty),
-        Intersect if a == b => Some(a),
-        Subtract if a == empty || a == b => Some(empty),
-        Subtract if b == empty => Some(a),
-        _ => None,
-    }
 }
 
 impl Plan {
@@ -400,84 +389,6 @@ impl Plan {
             .map_err(ComparisonBuildRefusal::into_refusal)
     }
 
-    fn spline_prerequisite(
-        &self,
-        recipe: &Recipe,
-        steps: &BTreeMap<catallax_recipe::StepId, usize>,
-    ) -> bool {
-        use catallax_recipe::StepId;
-
-        #[derive(Clone, Copy, PartialEq, Eq)]
-        enum Body<'a> {
-            Built(usize),
-            Pending(&'a StepId),
-        }
-
-        fn body<'a>(
-            recipe: &'a Recipe,
-            id: &'a StepId,
-            steps: &BTreeMap<StepId, usize>,
-        ) -> Body<'a> {
-            if let Some(&node) = steps.get(id) {
-                return Body::Built(node);
-            }
-            match recipe.step(id).map(|step| &step.op) {
-                Some(Operation::Boolean { kind, target, tool }) => {
-                    let left = body(recipe, target, steps);
-                    let right = if target == tool {
-                        left
-                    } else {
-                        body(recipe, tool, steps)
-                    };
-                    boolean_identity(*kind, left, right, Body::Built(0))
-                        .unwrap_or(Body::Pending(id))
-                }
-                Some(Operation::Pattern {
-                    body: source,
-                    layout,
-                }) if layout.count() == 1 => body(recipe, source, steps),
-                _ => Body::Pending(id),
-            }
-        }
-
-        let mut result = &recipe.result;
-        let source = loop {
-            let Body::Pending(id) = body(recipe, result, steps) else {
-                return false;
-            };
-            match recipe.step(id).map(|step| &step.op) {
-                Some(Operation::Fillet { body, .. }) => break body,
-                Some(Operation::Mirror { body, .. } | Operation::Pattern { body, .. }) => {
-                    result = body
-                }
-                _ => return false,
-            }
-        };
-        let mut source = source;
-        loop {
-            match body(recipe, source, steps) {
-                Body::Built(node) => {
-                    return matches!(self.instructions[node],
-                    Instruction::Leaf(i) if matches!(self.leaves[i], geometry::Leaf::Shell(_)));
-                }
-                Body::Pending(id) => match recipe.step(id).map(|step| &step.op) {
-                    Some(Operation::Loft { sections, shape }) => {
-                        return Self::comparison_patch_loft(recipe, sections, *shape);
-                    }
-                    Some(
-                        Operation::Mirror {
-                            body,
-                            keep_original: false,
-                            ..
-                        }
-                        | Operation::Fillet { body, .. },
-                    ) => source = body,
-                    _ => return false,
-                },
-            }
-        }
-    }
-
     /// Compiles a sampled comparison plan with experimental spline fillet proofs.
     pub fn compile_for_comparison(
         recipe: &Recipe,
@@ -493,9 +404,9 @@ impl Plan {
         dec: &mut Decider,
         spline_proofs: bool,
     ) -> Result<Self, ComparisonBuildRefusal> {
-        recipe
-            .check()
-            .map_err(|e| Refusal::new("field.recipe", e.to_string()))?;
+        recipe.check().map_err(|e| {
+            ComparisonBuildRefusal::BeforeRoute(Refusal::new("field.recipe", e.to_string()))
+        })?;
         let mut plan = Self {
             instructions: vec![Instruction::Empty],
             leaves: vec![],
@@ -537,11 +448,15 @@ impl Plan {
                                     && consumer.op.inputs().iter().any(|(id, _)| *id == &step.id)
                             })
                         {
-                            catallax_features::Profile::new(plane, loops, dec)?;
+                            catallax_features::Profile::new(plane, loops, dec)
+                                .map_err(ComparisonBuildRefusal::BeforeRoute)?;
                             bezier_profiles.insert(step.id.clone());
                         } else {
-                            profiles
-                                .insert(step.id.clone(), profile::Profile::new(plane, loops, dec)?);
+                            profiles.insert(
+                                step.id.clone(),
+                                profile::Profile::new(plane, loops, dec)
+                                    .map_err(ComparisonBuildRefusal::BeforeRoute)?,
+                            );
                         }
                         return Ok(None);
                     }
@@ -1279,14 +1194,6 @@ impl Plan {
                 result.as_ref().err().map(ComparisonBuildRefusal::refusal),
                 None,
             );
-            let result = result.map_err(|error| match error {
-                ComparisonBuildRefusal::Ordinary(refusal)
-                    if spline_proofs && plan.spline_prerequisite(recipe, &steps) =>
-                {
-                    ComparisonBuildRefusal::Spline(refusal)
-                }
-                other => other,
-            });
             if let Some(node) = result? {
                 let mut faces = match &step.op {
                     Operation::Boolean { target, tool, .. } => step_faces[target]
@@ -1574,10 +1481,18 @@ impl Plan {
         {
             return Ok(0);
         }
-        Ok(boolean_identity(kind, a, b, 0).unwrap_or_else(|| {
-            self.instructions.push(Instruction::Boolean { kind, a, b });
-            self.instructions.len() - 1
-        }))
+        Ok(match kind {
+            Union if a == b || b == 0 => a,
+            Union if a == 0 => b,
+            Intersect if a == 0 || b == 0 => 0,
+            Intersect if a == b => a,
+            Subtract if a == 0 || a == b => 0,
+            Subtract if b == 0 => a,
+            _ => {
+                self.instructions.push(Instruction::Boolean { kind, a, b });
+                self.instructions.len() - 1
+            }
+        })
     }
 
     fn compact(&mut self) {

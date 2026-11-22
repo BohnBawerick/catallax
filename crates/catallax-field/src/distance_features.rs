@@ -473,6 +473,10 @@ impl Plan {
         }
         Ok(result)
     }
+    pub(crate) fn offset_identity(node: usize, distance: &Rational) -> Option<usize> {
+        (node == 0 || distance.is_zero()).then_some(node)
+    }
+
     pub(crate) fn distance_offset(
         &mut self,
         node: usize,
@@ -480,7 +484,7 @@ impl Plan {
         step: &StepId,
         dec: &mut Decider,
     ) -> Result<usize, Refusal> {
-        if d.is_zero() || node == 0 {
+        if let Some(node) = Self::offset_identity(node, d) {
             return Ok(node);
         }
         let bound = self.node_radius(node, dec)? + d.abs();

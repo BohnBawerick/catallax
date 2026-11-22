@@ -765,6 +765,16 @@ with a `1.224362e-14 mm` tube and an 81.001 µs median over 99 points.
 | Next M11 | 0 | 22.008 | 39.310 |
 | Next M11 | 2 | 29.922 | 29.591 |
 
+Rounded-shell distance queries reserve the local coordinate enclosures
+once for the blend and patch faces. The four canonical comparison rows
+were rerun after this change. Their work and coverage match the table
+above. The high-limb rounded-shell query also passed within 20M.
+
+The M27 alias regression covers zero offsets and Boolean identities
+before and after the fillet. It compares the field's touching-block
+union and subtraction cases against an independently built M27 B-rep.
+The combined B-rep union recipe refuses at `intersect.unsupported-curve`.
+
 ## Open for the done-when line
 
 - Samples on rolling faces, for the reverse coverage findings. Rational samples exist on rational tori, cylinders and spheres; irrational faces need another route.

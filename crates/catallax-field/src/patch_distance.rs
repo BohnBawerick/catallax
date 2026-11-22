@@ -312,6 +312,23 @@ impl PatchDistance {
             return Err(refusal("the requested width must be positive"));
         }
         let p = [&p.x, &p.y, &p.z].map(Interval::from_rational);
+        self.distance_enclosed_within(&p, width, dec)
+    }
+
+    pub(crate) fn distance_enclosed(
+        &self,
+        p: &[Interval; 3],
+        dec: &mut Decider,
+    ) -> Result<Enclosure, Refusal> {
+        self.distance_enclosed_within(p, WIDTH, dec)
+    }
+
+    fn distance_enclosed_within(
+        &self,
+        p: &[Interval; 3],
+        width: f64,
+        dec: &mut Decider,
+    ) -> Result<Enclosure, Refusal> {
         let mut heap = BinaryHeap::new();
         let mut upper = f64::INFINITY;
         let mut order = 0u64;
@@ -319,7 +336,7 @@ impl PatchDistance {
         for net in &self.spans {
             dec.charge_work(1)?;
             cells += 1;
-            let (lower, corner) = self.bounds(net, &p)?;
+            let (lower, corner) = self.bounds(net, p)?;
             upper = upper.min(corner);
             heap.push(Cell {
                 lower,
@@ -367,7 +384,7 @@ impl PatchDistance {
             for net in self.split(&cell.net) {
                 dec.charge_work(1)?;
                 cells += 1;
-                let (lower, corner) = self.bounds(&net, &p)?;
+                let (lower, corner) = self.bounds(&net, p)?;
                 upper = upper.min(corner);
                 if lower <= upper {
                     heap.push(Cell {

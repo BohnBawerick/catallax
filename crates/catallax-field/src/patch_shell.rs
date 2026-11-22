@@ -838,7 +838,8 @@ impl Shell {
         if let Some(upper) = self.local_face_bound(p, round, &width, dec)? {
             return Ok(Interval::new(0.0, exact::interval(&upper, dec)?.hi()).unwrap());
         }
-        let blend = round.distance(p, &width, dec)?;
+        let enclosed = exact::interval3(q.each_ref(), dec)?;
+        let blend = round.distance_enclosed(enclosed, &width, dec)?;
         let mut lower = exact::interval(&blend.lower, dec)?.lo();
         let mut upper = blend
             .upper
@@ -851,7 +852,7 @@ impl Shell {
                 Face::Polygon(polygon) => exact::interval(&polygon.squared_rounded(q, dec)?, dec)?
                     .sqrt()
                     .unwrap(),
-                Face::Patch(patch) => patch.distance.distance(p, dec)?.distance,
+                Face::Patch(patch) => patch.distance.distance_enclosed(&enclosed, dec)?.distance,
             };
             lower = lower.min(distance.lo());
             // Only an uncut face can furnish a witness from a whole-face

@@ -396,13 +396,65 @@ impl Plan {
         Self::compile_recipe(recipe, files, dec, true)
     }
 
+    fn touching_blocks(a: &Operation, b: &Operation) -> bool {
+        let interval = |operation: &Operation, axis: usize| {
+            let Operation::Block { size, pose } = operation else {
+                return None;
+            };
+            if pose.rotation[0].value().is_zero()
+                || pose.rotation[1..].iter().any(|q| !q.value().is_zero())
+                || size
+                    .iter()
+                    .any(|length| length.value().sign() != Sign::Positive)
+            {
+                return None;
+            }
+            let parts = |n: &Rational| {
+                Some((
+                    i128::from(n.numerator().to_i64()?),
+                    i128::from(n.denominator().to_i64()?),
+                ))
+            };
+            let (lo, ld) = parts(pose.translation.0[axis].value())?;
+            let (length, d) = parts(size[axis].value())?;
+            let hi = (lo * d).checked_add(length * ld)?;
+            Some(((lo, ld), (hi, ld * d)))
+        };
+        let equal = |(n, d): (i128, i128), (m, e): (i128, i128)| {
+            n.checked_mul(e)
+                .zip(m.checked_mul(d))
+                .is_some_and(|(a, b)| a == b)
+        };
+        (0..3).any(|axis| match (interval(a, axis), interval(b, axis)) {
+            (Some((lo, hi)), Some((other_lo, other_hi))) => {
+                equal(hi, other_lo) || equal(other_hi, lo)
+            }
+            _ => false,
+        })
+    }
+
     fn selected_fillet_lineage(recipe: &Recipe) -> BTreeSet<&catallax_recipe::StepId> {
-        let mut bodies = BTreeMap::new();
+        let mut bodies: BTreeMap<_, usize> = BTreeMap::new();
         for (index, step) in recipe.steps.iter().enumerate() {
             let body = match &step.op {
                 Operation::Pattern { body, layout } if layout.count() == 1 => bodies[body],
+                Operation::Offset { body, distance } => {
+                    Self::offset_identity(bodies[body], distance.value()).unwrap_or(index + 1)
+                }
                 Operation::Boolean { kind, target, tool } => {
-                    Self::boolean_identity(*kind, bodies[target], bodies[tool]).unwrap_or(index + 1)
+                    let (a, b) = (bodies[target], bodies[tool]);
+                    match Self::boolean_identity(*kind, a, b) {
+                        Some(node) => node,
+                        None if *kind == BooleanKind::Intersect
+                            && Self::touching_blocks(
+                                &recipe.steps[a - 1].op,
+                                &recipe.steps[b - 1].op,
+                            ) =>
+                        {
+                            0
+                        }
+                        None => index + 1,
+                    }
                 }
                 _ => index + 1,
             };
@@ -1707,10 +1759,6 @@ impl Plan {
             return self.leaves[i].true_distance() && !rounded_shell(i);
         }
         self.separated_unions.contains(&self.root)
-            && !self
-                .instructions
-                .iter()
-                .any(|instruction| matches!(instruction, Instruction::Leaf(i) if rounded_shell(*i)))
     }
 
     fn tentative<A: Arithmetic>(

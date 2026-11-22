@@ -509,6 +509,13 @@ fn the_m11_fillet_replaces_its_named_loft_edge() {
             .unwrap();
         assert_eq!(result.location, location, "{p:?}: {result:?}");
     }
+    let interior = RPoint3::new(r("1/3") + Q::one().mul_pow2(-2048), q(0), r("3/2"));
+    let (proof, work) = with_operation_budget(20_000_000, || {
+        plan.proven_checked(&interior, &mut Workspace::default(), &mut decider())
+    });
+    assert!(!work.exhausted, "{work:?}");
+    assert_eq!(proof.unwrap().location, Location::Inside);
+
     let above = RPoint3::new(q(0), q(0), q(3) + Q::one().mul_pow2(-32_768));
     let (outside, work) = with_operation_budget(16, || {
         plan.proven_checked(&above, &mut Workspace::default(), &mut decider())

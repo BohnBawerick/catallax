@@ -275,13 +275,13 @@ impl Round {
         Ok(())
     }
 
-    pub(crate) fn distance(
+    pub(crate) fn distance_enclosed(
         &self,
-        p: &RPoint3,
+        p: V,
         width: &Rational,
         dec: &mut Decider,
     ) -> Result<Range, Refusal> {
-        self.sweep().distance(p, width, dec)
+        self.sweep().distance_enclosed(p, width, false, dec)
     }
 
     pub(crate) fn distance_at_most(

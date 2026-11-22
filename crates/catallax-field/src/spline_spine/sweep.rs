@@ -738,6 +738,16 @@ impl<'a> Sweep<'a> {
             return Err(gap("requested distance limit must be non-negative"));
         }
         let p = exact::interval3([&query.x, &query.y, &query.z], dec)?;
+        self.distance_enclosed(p, limit, threshold, dec)
+    }
+
+    pub(super) fn distance_enclosed(
+        &self,
+        p: V,
+        limit: &Rational,
+        threshold: bool,
+        dec: &mut Decider,
+    ) -> Result<Range, Refusal> {
         if p.iter().any(|v| !v.is_finite()) {
             return Err(gap("the query is outside the interval coordinate range"));
         }

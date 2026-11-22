@@ -117,6 +117,60 @@ fn loft_spline_rounds_report_display_coverage_or_a_named_brep_refusal() {
 }
 
 #[test]
+fn m27_identity_aliases_reach_the_scoped_vertex_pass() {
+    let m27 = m11_loft([0, 1], false, ["0", "2"]);
+    for (kind, before_fillet) in [
+        ("offset", false),
+        ("offset", true),
+        ("union", false),
+        ("subtract", false),
+        ("union", true),
+        ("subtract", true),
+    ] {
+        let mut value = serde_json::to_value(&m27).unwrap();
+        let steps = value["steps"].as_array_mut().unwrap();
+        let fillet = before_fillet.then(|| steps.pop().unwrap());
+        let body = if before_fillet { "loft" } else { "round" };
+        if kind == "offset" {
+            steps.push(json!({"id":"alias","op":"offset","body":body,"distance":"0"}));
+        } else {
+            steps.push(block("a", "4", "10"));
+            steps.push(block("b", "4", "14"));
+            steps.push(json!({"id":"empty","op":"boolean","kind":"intersect",
+                "target":"a","tool":"b"}));
+            steps.push(json!({"id":"alias","op":"boolean","kind":kind,
+                "target":body,"tool":"empty"}));
+        }
+        if let Some(mut fillet) = fillet {
+            fillet["body"] = json!("alias");
+            steps.push(fillet);
+        } else {
+            value["result"] = json!("alias");
+        }
+        let recipe = Recipe::parse(&value.to_string()).unwrap();
+        let (report, work) = catallax_numbers::with_operation_budget(100_000_000, || {
+            if kind == "offset" {
+                check(&recipe)
+            } else {
+                compare(&m27, &recipe, &options())
+            }
+        });
+        assert!(
+            !work.exhausted && report.refusal.is_none(),
+            "{kind}, {before_fillet}: {report:?}"
+        );
+        assert_eq!(report.forward_vertices, 245);
+        assert!(report.sampled_distance_upper.unwrap() < Rational::parse("0.005").unwrap());
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|finding| finding.pass == Pass::Forward)
+        );
+    }
+}
+
+#[test]
 fn analytic_named_boss_loop_keeps_the_base_refusal() {
     let sides = ["x_min", "y_min", "x_max", "y_max"];
     let side = |segment| json!({"step":"block","role":{"side":{"segment":segment}}});

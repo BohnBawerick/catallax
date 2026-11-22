@@ -406,8 +406,27 @@ fn an_unreachable_tolerance_refuses_with_the_width_reached() {
     let (record, _) = run(&definition);
     let (code, detail) = record.answer.unwrap_err();
     assert_eq!(code, "field.spline-spine-eps", "{detail}");
-    assert!(detail.contains("the tube reached"), "{detail}");
+    let (width, _) = detail
+        .strip_prefix("the tube reached ")
+        .and_then(|reached| reached.split_once(" nm "))
+        .unwrap_or_else(|| panic!("{detail}"));
+    let width = width.parse::<f64>().unwrap();
+    let limit_nm = definition.tolerance.to_f64_nearest() * 0.5e6;
+    assert!(width.is_finite() && width > limit_nm, "{detail}");
     println!("{detail}");
+}
+
+#[test]
+fn support_conversion_reserves_each_coefficient_before_computing_it() {
+    let mut dec = Decider::default();
+    let (_, definition) = definition(0, &mut dec);
+    for support in &definition.supports {
+        assert_eq!(support.bezier_spans(&dec).unwrap().count(), 1);
+    }
+    let (result, work) = with_operation_budget(7, || Spine::prove(&definition, &mut dec));
+    assert_eq!(result.unwrap_err().code, "numbers.operation-budget");
+    assert!(work.exhausted);
+    assert_eq!(work.used, 6);
 }
 
 #[test]

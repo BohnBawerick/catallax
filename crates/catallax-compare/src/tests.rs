@@ -117,7 +117,7 @@ fn loft_spline_rounds_report_display_coverage_or_a_named_brep_refusal() {
 }
 
 #[test]
-fn spline_copy_refusals_are_typed_but_analytic_build_findings_are_not() {
+fn analytic_build_and_rounded_copy_refusals_remain_typed() {
     let analytic = recipe(vec![
         block("stock", "4", "0"),
         json!({"id":"round","op":"fillet","body":"stock","radius":"1/10",
@@ -126,7 +126,9 @@ fn spline_copy_refusals_are_typed_but_analytic_build_findings_are_not() {
     ]);
     let report = check(&analytic);
     assert_eq!(report.verdict, Verdict::Unresolved);
-    assert!(report.refusal.is_none());
+    let original_refusal = catallax_field::Plan::compile(&analytic).unwrap_err();
+    assert_eq!(report.refusal, Some(original_refusal));
+    assert_eq!(report.sampled_distance_upper, Some(Rational::zero()));
     assert!(report.findings.iter().any(|finding| {
         matches!(&finding.reason, Reason::Unresolved(reason) if reason.starts_with("field build "))
     }));
@@ -147,6 +149,84 @@ fn spline_copy_refusals_are_typed_but_analytic_build_findings_are_not() {
             "{report:?}"
         );
     }
+}
+
+#[test]
+fn a_mirrored_loft_can_be_queried_but_not_filleted_with_stale_origins() {
+    use catallax_field::{Plan, Workspace};
+
+    let mut value = serde_json::to_value(m11_loft([0, 1], false, ["0", "2"])).unwrap();
+    let steps = value["steps"].as_array_mut().unwrap();
+    let mut fillet = steps.pop().unwrap();
+    steps.push(json!({"id":"copy","op":"mirror","body":"loft",
+        "plane":{"point":["5","0","0"],"normal":["1","0","0"]},"keep_original":false}));
+    value["result"] = json!("copy");
+    let mirrored = Recipe::parse(&value.to_string()).unwrap();
+    let plan = Plan::compile(&mirrored).unwrap();
+    let mut workspace = Workspace::default();
+    assert!(plan.fast([10.0, 0.0, 1.0], &mut workspace).unwrap().value < 0.0);
+    assert!(plan.fast([0.0, 0.0, 1.0], &mut workspace).unwrap().value > 0.0);
+
+    fillet["body"] = json!("copy");
+    value["steps"].as_array_mut().unwrap().push(fillet);
+    value["result"] = json!("round");
+    let report = check(&Recipe::parse(&value.to_string()).unwrap());
+    assert_eq!(
+        report.refusal.as_ref().map(|e| e.code),
+        Some("fillet.unsupported-spline")
+    );
+}
+
+#[test]
+fn scoped_spline_display_selects_either_blend_in_a_disjoint_body() {
+    use catallax_shapes::{Isometry, RVector3, SplineSupport, Surface};
+    let recipe = m11_loft([0, 1], false, ["0", "2"]);
+    let ((), work) = catallax_numbers::with_operation_budget(100_000_000, || {
+        let mut dec = Decider::default();
+        let mut built = evaluate(&recipe, &mut dec).unwrap();
+        let map = Isometry::translation(RVector3::new(
+            Rational::from_i64(8),
+            Rational::zero(),
+            Rational::zero(),
+        ));
+        let copied =
+            catallax_topology::transformed_body(&mut built.model, built.result, &map, Clone::clone);
+        let mut body = built.model.body(built.result).clone();
+        body.lumps
+            .extend_from_slice(&built.model.body(copied).lumps);
+        let body = built.model.add_body(body);
+        let mut extents = Vec::new();
+        for face in built.model.faces_of_body(body) {
+            if !matches!(
+                built.model.geom().surface(built.model.face(face).surface),
+                Surface::BSpline(SplineSupport::SplineFillet(_))
+            ) {
+                continue;
+            }
+            let display = catallax_mesh::display_spline_fillet_face(
+                &built.model,
+                body,
+                face,
+                &Options::default().mesh,
+                &mut dec,
+            )
+            .unwrap();
+            assert_eq!(display.measurement.covered_faces, 1);
+            assert_eq!(display.geometry.positions.len(), 245);
+            let xs: Vec<_> = display.geometry.positions.iter().map(|p| p[0]).collect();
+            extents.push((
+                xs.iter().copied().fold(f64::INFINITY, f64::min),
+                xs.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+            ));
+        }
+        extents.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let [original, translated] = extents.as_slice() else {
+            panic!("{extents:?}")
+        };
+        assert!((translated.0 - original.0 - 8.0).abs() < 1e-9);
+        assert!((translated.1 - original.1 - 8.0).abs() < 1e-9);
+    });
+    assert!(!work.exhausted);
 }
 
 #[test]

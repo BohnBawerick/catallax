@@ -117,27 +117,30 @@ fn prepare_scope(
     dec: &mut Decider,
 ) -> Result<Junction, Refusal> {
     catallax_numbers::reuse_operation_enclosures();
-    let blends: Vec<_> = faces
-        .iter()
-        .filter_map(
-            |&face| match model.geom().surface(model.face(face).surface) {
-                Surface::BSpline(SplineSupport::SplineFillet(fillet)) => Some((face, fillet)),
-                _ => None,
-            },
-        )
-        .collect();
-    let [(blend, fillet)] = blends.as_slice() else {
-        return Err(bad(format!(
-            "one spline blend is supported, got {}",
-            blends.len()
-        )));
+    let fillet_at = |face| match model.geom().surface(model.face(face).surface) {
+        Surface::BSpline(SplineSupport::SplineFillet(fillet)) => Some(fillet),
+        _ => None,
     };
-    let (blend, fillet) = (*blend, *fillet);
-    if selected.is_some_and(|face| face != blend) {
-        return Err(bad(
-            "the selected face is not the spline blend in this body",
-        ));
-    }
+    let (blend, fillet) = if let Some(face) = selected {
+        let fillet = faces
+            .contains(&face)
+            .then(|| fillet_at(face))
+            .flatten()
+            .ok_or_else(|| bad("the selected face is not a spline blend in this body"))?;
+        (face, fillet)
+    } else {
+        let blends: Vec<_> = faces
+            .iter()
+            .filter_map(|&face| fillet_at(face).map(|fillet| (face, fillet)))
+            .collect();
+        let [(blend, fillet)] = blends.as_slice() else {
+            return Err(bad(format!(
+                "one spline blend is supported, got {}",
+                blends.len()
+            )));
+        };
+        (*blend, *fillet)
+    };
     let borders = fillet.borders();
     if borders.len() != 4 || (borders[0] < borders[1]) != (borders[2] < borders[3]) {
         return Err(bad(format!(
@@ -155,12 +158,18 @@ fn prepare_scope(
         fillet.rail_curve(0, &ranges[0][0], &ranges[0][1], dec)?,
         fillet.rail_curve(1, &ranges[1][0], &ranges[1][1], dec)?,
     ];
-    let mut uses = BTreeMap::<EdgeId, Vec<FaceId>>::new();
+    let blend_coedges = coedges(model, blend)?;
+    let mut uses: BTreeMap<EdgeId, Vec<FaceId>> = blend_coedges
+        .iter()
+        .map(|&coedge| (model.coedge(coedge).edge, Vec::new()))
+        .collect();
     for &face in faces {
         for lp in &model.face(face).loops {
             if let Loop::Coedges(cs) = model.loop_(*lp) {
                 for c in cs {
-                    uses.entry(model.coedge(*c).edge).or_default().push(face);
+                    if let Some(neighbours) = uses.get_mut(&model.coedge(*c).edge) {
+                        neighbours.push(face);
+                    }
                 }
             }
         }
@@ -169,7 +178,7 @@ fn prepare_scope(
     let mut side_faces = [None; 2];
     let mut cuts: [Option<CutCurve>; 2] = [None, None];
     let mut planes = [None, None];
-    for c in coedges(model, blend)? {
+    for c in blend_coedges {
         let c = model.coedge(c);
         let e = model.edge(c.edge);
         let neighbours = uses[&c.edge]

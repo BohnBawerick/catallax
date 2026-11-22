@@ -601,11 +601,8 @@ pub(crate) fn run(
     let field = match Plan::compile_for_comparison(recipe, files, &mut dec) {
         Ok(f) => f,
         Err(e) => {
-            report.sampled_distance_upper = None;
             whole_failure(&mut report, format!("field build {}: {}", e.code, e.detail));
-            if e.code.starts_with("field.spline-") || e.code == "fillet.unsupported-spline" {
-                report.refusal = Some(e);
-            }
+            report.refusal = Some(e);
             return revision.publish(report);
         }
     };

@@ -428,6 +428,10 @@ impl Shell {
         self
     }
 
+    pub(crate) fn forget_loft_sides(&mut self) {
+        self.loft_sides.clear();
+    }
+
     pub(crate) fn fillet(
         &self,
         edges: &EdgeSelection,

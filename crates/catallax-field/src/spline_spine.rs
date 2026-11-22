@@ -428,43 +428,48 @@ impl Support {
         let mut value = vec![[zero(); 4]; (m + 1) * rows];
         for a in 0..=m {
             for b in 0..=n {
+                dec.charge_work(5 * (a as u64 + 1) * (b as u64 + 1))?;
                 let mut out = [zero(); 4];
                 for i in 0..=a {
                     for j in 0..=b {
-                        let factor = product(basis[0][a][i], basis[1][b][j]);
+                        let factor = basis[0][a][i] * basis[1][b][j];
                         for (o, c) in out.iter_mut().zip(net[i * rows + j]) {
-                            *o = *o + product(factor, c);
+                            *o = *o + factor * c;
                         }
                     }
                 }
                 value[a * rows + b] = out;
             }
         }
-        let along_u = |table: &[[Interval; 4]]| -> Vec<[Interval; 4]> {
-            let mut out = vec![[zero(); 4]; table.len()];
-            for i in 0..m {
-                for j in 0..=n {
-                    let k = point((i + 1) as f64);
-                    out[i * rows + j] = table[(i + 1) * rows + j].map(|c| product(c, k));
+        let along_u =
+            |table: &[[Interval; 4]], dec: &mut Decider| -> Result<Vec<[Interval; 4]>, Refusal> {
+                let mut out = vec![[zero(); 4]; table.len()];
+                for i in 0..m {
+                    dec.charge_work(4 * rows as u64)?;
+                    for j in 0..=n {
+                        let k = point((i + 1) as f64);
+                        out[i * rows + j] = table[(i + 1) * rows + j].map(|c| c * k);
+                    }
                 }
-            }
-            out
-        };
-        let along_v = |table: &[[Interval; 4]]| -> Vec<[Interval; 4]> {
-            let mut out = vec![[zero(); 4]; table.len()];
-            for i in 0..=m {
-                for j in 0..n {
-                    let k = point((j + 1) as f64);
-                    out[i * rows + j] = table[i * rows + j + 1].map(|c| product(c, k));
+                Ok(out)
+            };
+        let along_v =
+            |table: &[[Interval; 4]], dec: &mut Decider| -> Result<Vec<[Interval; 4]>, Refusal> {
+                let mut out = vec![[zero(); 4]; table.len()];
+                for i in 0..=m {
+                    dec.charge_work(4 * n as u64)?;
+                    for j in 0..n {
+                        let k = point((j + 1) as f64);
+                        out[i * rows + j] = table[i * rows + j + 1].map(|c| c * k);
+                    }
                 }
-            }
-            out
-        };
-        let u = along_u(&value);
-        let v = along_v(&value);
-        let uu = along_u(&u);
-        let uv = along_v(&u);
-        let vv = along_v(&v);
+                Ok(out)
+            };
+        let u = along_u(&value, dec)?;
+        let v = along_v(&value, dec)?;
+        let uu = along_u(&u, dec)?;
+        let uv = along_v(&u, dec)?;
+        let vv = along_v(&v, dec)?;
         Ok(Self {
             degrees,
             tables: [value, u, v, uu, uv, vv],
@@ -1364,7 +1369,6 @@ impl Spine {
             } else {
                 Support::new(patch, side, dec)
             };
-            charge(dec)?;
             supports.push(prepared?);
         }
         let half_tolerance = &definition.tolerance / &Rational::from_i64(2);

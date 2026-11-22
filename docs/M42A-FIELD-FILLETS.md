@@ -547,15 +547,15 @@ sweep, B-rep fit, grid and vertex queries to one request.
 
 | Edge | Forward vertices | Total work | Largest comparison upper bound (mm) |
 | --- | ---: | ---: | ---: |
-| M27 loft | 245 | 36,448,207 | 0.002888316 |
-| Next M11 loft | 335 | 63,995,011 | 0.004464352 |
-| Biquadratic | 104 | 72,210,034 | 0.004916114 |
+| M27 loft | 245 | 36,448,251 | 0.002888316 |
+| Next M11 loft | 335 | 63,995,055 | 0.004464352 |
+| Biquadratic | 104 | 72,210,076 | 0.004916114 |
 
 Both lofts passed every forward vertex check. With fresh inputs at 1, 2
 and 4 workers, the field build records and work matched for all four rows.
-The capped field builds used 901,277 work for M27, 897,001 for the next
-loft edge, and 887,401 for the spline-plane loft. The bare biquadratic
-field proof and sweep used 667,145 work. On that row, the B-rep fit
+The capped field builds used 901,321 work for M27, 897,045 for the next
+loft edge, and 887,445 for the spline-plane loft. The bare biquadratic
+field proof and sweep used 667,187 work. On that row, the B-rep fit
 took 16,438,284, and the 4 by 26 carrier
 grid took 54,998,702. The grid's display bound was 0.004836298487 mm.
 Vertex queries took the remaining 105,903 work. All three comparisons
@@ -589,7 +589,7 @@ at 1, 2 and 4 workers. The median query took 4.762 us over 99
 independently generated points on the work PC.
 
 **Step 7 and 4.2a remain open.** The B-rep spline-plane loft
-fillet refuses with `fillet.unsupported-contact` after 896,220
+fillet refuses with `fillet.unsupported-contact` after 896,264
 comparison work. Forward display coverage for that row waits for
 the B-rep build.
 

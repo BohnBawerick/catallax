@@ -442,6 +442,11 @@ impl Plan {
                 Operation::Offset { body, distance } => {
                     Self::offset_identity(bodies[body], distance.value()).unwrap_or(index + 1)
                 }
+                Operation::Fillet {
+                    body,
+                    edges: catallax_recipe::EdgeSelection::Refs(refs),
+                    ..
+                } if refs.is_empty() => bodies[body],
                 Operation::Boolean { kind, target, tool } => {
                     let (a, b) = (bodies[target], bodies[tool]);
                     match Self::boolean_identity(*kind, a, b) {
@@ -468,7 +473,11 @@ impl Plan {
             let step = &recipe.steps[index - 1];
             lineage.insert(&step.id);
             let source = match &step.op {
-                Operation::Fillet { body, .. } if !selected => {
+                Operation::Fillet {
+                    body,
+                    edges: catallax_recipe::EdgeSelection::Refs(_),
+                    ..
+                } if !selected => {
                     selected = true;
                     body
                 }
@@ -1538,10 +1547,11 @@ impl Plan {
                 }
                 Instruction::Leaf(id) => {
                     let mut leaf = self.leaves[id].clone();
-                    let refusal = if matches!(&leaf, geometry::Leaf::Shell(_)) {
-                        shell_refusal
-                    } else {
-                        ComparisonBuildRefusal::Ordinary
+                    let refusal = match &leaf {
+                        geometry::Leaf::Shell(shell) if shell.has_named_loft_sides() => {
+                            shell_refusal
+                        }
+                        _ => ComparisonBuildRefusal::Ordinary,
                     };
                     if let geometry::Leaf::Shell(shell) = &mut leaf {
                         shell.forget_loft_sides();

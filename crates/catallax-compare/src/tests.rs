@@ -78,6 +78,99 @@ fn m11_loft([a, b]: [usize; 2], planar: bool, heights: [&str; 2]) -> Recipe {
 }
 
 #[test]
+fn empty_m27_fillet_keeps_the_loft_and_any_selected_blend() {
+    let rounded = m11_loft([0, 1], false, ["0", "2"]);
+    let mut plain = serde_json::to_value(&rounded).unwrap();
+    plain["steps"][3]["edges"] = json!([]);
+    let plain = Recipe::parse(&plain.to_string()).unwrap();
+    let plan = catallax_field::Plan::compile_for_comparison(
+        &plain,
+        &catallax_features::ImportFiles::new(),
+        &mut Decider::default(),
+    )
+    .unwrap();
+    assert!(plan.spline_blend_origin().is_none());
+    let shell = plan
+        .result_patch_shell()
+        .expect("the unmodified loft shell");
+    let (location, _) = shell
+        .classify(
+            &catallax_shapes::RPoint3::new(0.into(), 0.into(), 1.into()),
+            &mut Decider::default(),
+        )
+        .unwrap();
+    assert_eq!(location, catallax_field::Location::Inside);
+    assert!(evaluate(&plain, &mut Decider::default()).is_ok());
+
+    let mut later = serde_json::to_value(&rounded).unwrap();
+    later["steps"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"id":"noop","op":"fillet","body":"round","radius":"1/10","edges":[]}));
+    later["result"] = json!("noop");
+    let later = Recipe::parse(&later.to_string()).unwrap();
+    let (report, work) = catallax_numbers::with_operation_budget(100_000_000, || check(&later));
+    assert!(!work.exhausted && report.refusal.is_none(), "{report:?}");
+    assert_eq!(report.forward_vertices, 245);
+}
+
+#[test]
+fn all_edges_on_bezier_loft_keeps_the_ordinary_refusal() {
+    let mut value: Value = serde_json::from_str(include_str!(
+        "../../catallax-features/tests/fixtures/loft-spline-prism.json"
+    ))
+    .unwrap();
+    value["steps"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"id":"round","op":"fillet","body":"loft","radius":"1/10","edges":"all"}));
+    value["result"] = json!("round");
+    let recipe = Recipe::parse(&value.to_string()).unwrap();
+    let report = check(&recipe);
+    assert_eq!(report.refusal.as_ref().unwrap().code, "fillet.lost-edge");
+    assert_eq!(report.sampled_distance_upper, Some(Rational::zero()));
+    assert_eq!(report.forward_vertices, 0);
+}
+
+#[test]
+fn selected_spline_import_refusal_has_no_sampled_bound() {
+    let mut dec = Decider::default();
+    let built = evaluate(&recipe(vec![block("stock", "4", "10")]), &mut dec).unwrap();
+    let mut bytes = Vec::new();
+    catallax_step::write_step(
+        &built.model,
+        &[built.result],
+        &Default::default(),
+        &mut dec,
+        &mut bytes,
+    )
+    .unwrap();
+    let digest = catallax_import::sha256_hex(&bytes);
+    let mut value = serde_json::to_value(m11_loft([0, 1], false, ["0", "2"])).unwrap();
+    value["steps"].as_array_mut().unwrap().push(
+        json!({"id":"imported","op":"import_step","file":{"name":"box.step","sha256":digest},
+            "pose":pose("0")}),
+    );
+    let files = catallax_features::ImportFiles::from([(digest, bytes.as_slice())]);
+    let recipe = Recipe::parse(&value.to_string()).unwrap();
+    let controller = Controller::default();
+    let (completion, work) = catallax_numbers::with_operation_budget(100_000_000, || {
+        controller
+            .begin()
+            .check_with_files(&recipe, &files, &options())
+    });
+    assert!(!work.exhausted);
+    assert_eq!(completion, Completion::Published);
+    let report = controller.latest().unwrap();
+    assert_eq!(
+        report.refusal.as_ref().unwrap().code,
+        "field.volume-definition"
+    );
+    assert_eq!(report.forward_vertices, 0);
+    assert_eq!(report.sampled_distance_upper, None);
+}
+
+#[test]
 fn loft_spline_rounds_report_display_coverage_or_a_named_brep_refusal() {
     for ([a, b], planar) in [([0, 1], false), ([1, 2], false), ([0, 1], true)] {
         let recipe = m11_loft([a, b], planar, ["0", "2"]);
@@ -499,9 +592,9 @@ fn a_mirrored_loft_can_be_queried_but_not_filleted_with_stale_origins() {
     let report = check(&Recipe::parse(&value.to_string()).unwrap());
     assert_eq!(
         report.refusal.as_ref().map(|e| e.code),
-        Some("fillet.unsupported-spline")
+        Some("fillet.lost-edge")
     );
-    assert_eq!(report.sampled_distance_upper, None);
+    assert_eq!(report.sampled_distance_upper, Some(Rational::zero()));
 }
 
 #[test]

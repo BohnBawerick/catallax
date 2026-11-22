@@ -562,11 +562,17 @@ impl Plan {
         dec: &mut Decider,
     ) -> Result<usize, ComparisonBuildRefusal> {
         let (radius, roll_over) = (settings.radius, settings.roll_over);
-        let shell = match self.instructions[root] {
-            Instruction::Leaf(i) if settings.spline_proofs => match &self.leaves[i] {
-                geometry::Leaf::Shell(shell) => Some(shell),
-                _ => None,
-            },
+        let shell = match (self.instructions[root], selection) {
+            (Instruction::Leaf(i), EdgeSelection::Refs(refs))
+                if settings.spline_proofs && !refs.is_empty() =>
+            {
+                match &self.leaves[i] {
+                    geometry::Leaf::Shell(shell) if shell.has_named_loft_sides() => {
+                        Some((shell, refs.as_slice()))
+                    }
+                    _ => None,
+                }
+            }
             _ => None,
         };
         if matches!(
@@ -583,7 +589,7 @@ impl Plan {
                 ComparisonBuildRefusal::Ordinary(refusal)
             });
         }
-        if let Some(shell) = shell {
+        if let Some((shell, refs)) = shell {
             let rounded = (|| {
                 let radius = q(radius)?;
                 if radius.sign() != Sign::Positive {
@@ -598,7 +604,7 @@ impl Plan {
                         "a field spline loft fillet closes at its original cap planes",
                     ));
                 }
-                shell.fillet(selection, step, radius, dec)
+                shell.fillet(refs, step, radius, dec)
             })()
             .map_err(ComparisonBuildRefusal::Spline)?;
             return self

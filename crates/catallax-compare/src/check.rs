@@ -463,7 +463,7 @@ fn forward_patch_shell(
             faces.iter().map(|&i| face_origins[i].clone()).collect(),
             vec![],
             ((&lower - error).max(r(0)), upper),
-            options,
+            (&options.accuracy, &options.accuracy),
         );
     }
     Ok(())
@@ -617,6 +617,9 @@ pub(crate) fn run(
         }
     };
     let spline_origin = field.spline_blend_origin();
+    if spline_origin.is_some() {
+        report.sampled_distance_upper = None;
+    }
     let analytic_supports = if spline_origin.is_none() {
         let supports = match field
             .faces()
@@ -671,7 +674,6 @@ pub(crate) fn run(
                 if spline_origin.is_some()
                     && let catallax_features::BuildError::Geometry { refusal, .. } = e
                 {
-                    report.sampled_distance_upper = None;
                     report.refusal = Some(refusal);
                 }
                 return revision.publish(report);
@@ -713,14 +715,12 @@ pub(crate) fn run(
             .filter(|&face| model.face_origins(face).contains(origin))
             .collect();
         let [face] = faces.as_slice() else {
-            report.sampled_distance_upper = None;
             whole_failure(&mut report, "the B-rep has no unique named spline blend");
             return revision.publish(report);
         };
         let Surface::BSpline(catallax_shapes::SplineSupport::SplineFillet(fit)) =
             model.geom().surface(model.face(*face).surface)
         else {
-            report.sampled_distance_upper = None;
             whole_failure(
                 &mut report,
                 "the named B-rep blend is not a fitted spline fillet",
@@ -740,11 +740,11 @@ pub(crate) fn run(
                     &mut report,
                     format!("B-rep positional display {}: {}", e.code, e.detail),
                 );
-                report.sampled_distance_upper = None;
                 report.refusal = Some(e);
                 return revision.publish(report);
             }
         };
+        report.sampled_distance_upper = Some(r(0));
         match spline_display(
             revision,
             display,

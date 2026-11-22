@@ -21,7 +21,7 @@
 use crate::spline_spine::exact;
 
 use catallax_numbers::{Ball, Decider, Interval, Rational, Refusal, Sign};
-use catallax_recipe::{EdgeName, EdgeSelection, Origin, Role, StepId};
+use catallax_recipe::{EdgeName, EdgeRef, Origin, Role, StepId};
 use catallax_shapes::{Isometry, RPoint3, RVector3, RationalPatch};
 
 use crate::Location;
@@ -478,13 +478,17 @@ impl Shell {
         self
     }
 
+    pub(crate) fn has_named_loft_sides(&self) -> bool {
+        !self.loft_sides.is_empty()
+    }
+
     pub(crate) fn forget_loft_sides(&mut self) {
         self.loft_sides.clear();
     }
 
     pub(crate) fn fillet(
         &self,
-        edges: &EdgeSelection,
+        edges: &[EdgeRef],
         step: &StepId,
         radius: Rational,
         dec: &mut Decider,
@@ -495,18 +499,11 @@ impl Shell {
                 "a field spline fillet needs one named edge of an untrimmed convex ruled loft",
             )
         };
-        let EdgeSelection::Refs(refs) = edges else {
-            return Err(unsupported());
-        };
-        let [reference] = refs.as_slice() else {
+        let [reference] = edges else {
             return Err(unsupported());
         };
         let sides = &self.loft_sides;
-        if self.round.is_some()
-            || sides.is_empty()
-            || reference.near.is_some()
-            || !reference.touching.is_empty()
-        {
+        if self.round.is_some() || reference.near.is_some() || !reference.touching.is_empty() {
             return Err(unsupported());
         }
         let adjacent: Vec<_> = (0..sides.len())

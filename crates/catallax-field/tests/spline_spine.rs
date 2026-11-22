@@ -429,6 +429,16 @@ fn support_conversion_reserves_basis_arithmetic_before_computing_it() {
     assert_eq!(result.unwrap_err().code, "numbers.operation-budget");
     assert!(work.exhausted);
     assert_eq!(work.uncharged, 0, "{work:?}");
+
+    let coefficient_work = 2 * 3 * 2 * (2 * 2 + 1);
+    let first_table_entry_work = 5 + 1;
+    let expected = conversion_work + coefficient_work + first_table_entry_work;
+    let (result, work) =
+        with_operation_budget(expected + 6, || Spine::prove(&definition, &mut dec));
+    assert_eq!(result.unwrap_err().code, "numbers.operation-budget");
+    assert!(work.exhausted);
+    assert_eq!(work.used, expected, "{work:?}");
+    assert_eq!(work.uncharged, 0, "{work:?}");
 }
 
 #[test]

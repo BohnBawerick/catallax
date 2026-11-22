@@ -496,9 +496,10 @@ A box with all twelve edges rounded stays exact at 9,467 to 13,195 work.
 ## Round-wire helical sweeps
 
 The application built the 34 mm coil diameter, 2 mm wire recipe with default
-numerical options. Build, properties and STEP each had a separate 100M
-request allowance. Properties reached the default accuracy for the stored
-fit. STEP work includes reading and checking the bytes the writer produced.
+numerical options. The 100M work allowance applies per application request:
+build, properties and STEP export are separate requests, each with its own
+allowance. Properties reached the default accuracy for the stored fit. STEP
+work includes reading and checking the bytes the writer produced.
 
 | Turns | Pitch | Build work | Properties work | STEP work |
 |---|---:|---:|---:|---:|

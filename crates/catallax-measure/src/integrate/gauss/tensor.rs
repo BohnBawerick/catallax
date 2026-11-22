@@ -98,14 +98,6 @@ impl Program {
 mod tests {
     use super::*;
 
-    mod native_area;
-    pub(crate) use native_area::NativeArea;
-
-    // DLMF 3.5.E19. The jet holds the derivative divided by 16!.
-    fn remainder_factor(widths: &[Rational; 2], axis: usize) -> Rational {
-        widths[axis].pow(17).unwrap() * widths[1 - axis].clone()
-            / Rational::from_i64(17 * 12870 * 12870)
-    }
     use crate::integrate::Builder;
     use catallax_numbers::{Decider, with_operation_budget};
 

@@ -5,10 +5,17 @@ use catallax_measure::{Accuracy, Enclosure};
 use catallax_numbers::{Decider, with_operation_budget};
 use catallax_recipe::Recipe;
 use catallax_step::numerical as step;
+use std::collections::HashMap;
 use std::f64::consts::PI;
+use std::ffi::OsStr;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 const APP_WORK: u64 = 100_000_000;
 const TARGET_WORK: u64 = 20_000_000;
+static SPRING_DUMP_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
 
 fn spring(turns: u32, pitch_mm: u32) -> Recipe {
     serde_json::from_value(serde_json::json!({
@@ -34,6 +41,71 @@ fn near(enclosure: &Enclosure, expected: f64, difference: f64) {
             && enclosure.hi.to_f64_nearest() <= expected + difference,
         "{enclosure:?} should lie within {difference} of {expected}"
     );
+}
+
+fn write_step_dump(requested: &OsStr, turns: u32, pitch_mm: u32, bytes: &[u8]) -> PathBuf {
+    let requested = Path::new(requested);
+    let stem = requested
+        .file_stem()
+        .unwrap_or_else(|| requested.file_name().unwrap_or_default())
+        .to_string_lossy();
+    let extension = requested
+        .extension()
+        .and_then(OsStr::to_str)
+        .unwrap_or("step");
+    let (output, mut file) = loop {
+        let sequence = SPRING_DUMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let output = requested.with_file_name(format!(
+            "{stem}-{turns}turn-{pitch_mm}mm-{}-{sequence}.{extension}",
+            std::process::id()
+        ));
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&output)
+        {
+            Ok(file) => break (output, file),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => panic!("create {}: {error}", output.display()),
+        }
+    };
+    file.write_all(bytes)
+        .unwrap_or_else(|error| panic!("write {}: {error}", output.display()));
+    output
+}
+
+fn step_vertex_z_bounds(text: &str) -> (f64, f64) {
+    let mut points = HashMap::new();
+    let mut vertex_points = Vec::new();
+    for entity in text.split(';') {
+        let Some((id, definition)) = entity.trim().split_once('=') else {
+            continue;
+        };
+        let id = id.trim();
+        if definition.starts_with("CARTESIAN_POINT(") {
+            let Some((_, coordinates)) = definition.split_once(",(") else {
+                continue;
+            };
+            let Some(z) = coordinates
+                .split(')')
+                .next()
+                .and_then(|values| values.split(',').nth(2))
+                .and_then(|value| value.trim().parse().ok())
+            else {
+                continue;
+            };
+            points.insert(id.to_owned(), z);
+        } else if definition.starts_with("VERTEX_POINT(") {
+            if let Some((_, point)) = definition.split_once(",#") {
+                vertex_points.push(format!("#{}", point.trim_end_matches(')')));
+            }
+        }
+    }
+    let mut z_values = vertex_points
+        .iter()
+        .filter_map(|point| points.get(point).copied());
+    let first = z_values.next().expect("STEP has vertex points");
+    z_values.fold((first, first), |(min, max), z| (min.min(z), max.max(z)))
 }
 
 #[test]
@@ -78,8 +150,8 @@ fn measure_and_export(turns: u32, pitch_mm: u32, work_target: u64) {
         let dec = &mut Decider::default();
         let file = step::build(body.body(), &Default::default(), dec)?;
         if let Some(path) = std::env::var_os("CATALLAX_SPRING_STEP") {
-            std::fs::write(&path, file.bytes()).unwrap();
-            file.check_written(&std::fs::read(path).unwrap(), dec)?;
+            let path = write_step_dump(&path, turns, pitch_mm, file.bytes());
+            file.check_written(&fs::read(path).unwrap(), dec)?;
         } else {
             file.check_written(file.bytes(), dec)?;
         }
@@ -88,13 +160,60 @@ fn measure_and_export(turns: u32, pitch_mm: u32, work_target: u64) {
     let file = file.unwrap();
     assert!(!export_work.exhausted && export_work.used <= work_target);
     let text = std::str::from_utf8(file.bytes()).unwrap();
-    assert!(text.contains("catallax numerical approximate"));
+    let provenance = &file.report().source_evidence;
+    let provenance_stamp = format!(
+        "catallax numerical approximate;source={};source_tolerance_mm={};source_checks={};source_repairs={};",
+        file.report().source_name,
+        provenance.tolerance_mm(),
+        provenance.checks().len(),
+        provenance.repairs().len(),
+    );
+    assert_eq!(file.report().source_name, "spring");
+    assert!(
+        text.contains(&provenance_stamp),
+        "missing provenance: {provenance_stamp}"
+    );
     assert_eq!(text.matches("MANIFOLD_SOLID_BREP(").count(), 1);
+    let (min_z, max_z) = step_vertex_z_bounds(text);
+    let mut source_z = file
+        .report()
+        .source_definition
+        .vertices
+        .iter()
+        .map(|vertex| vertex.position[2].to_f64_nearest());
+    let first = source_z.next().expect("spring source has vertices");
+    let (source_min_z, source_max_z) =
+        source_z.fold((first, first), |(min, max), z| (min.min(z), max.max(z)));
+    assert!(
+        (min_z - source_min_z).abs() <= 0.01 && (max_z - source_max_z).abs() <= 0.01,
+        "STEP vertex z bounds {min_z}..{max_z} differ from source bounds {source_min_z}..{source_max_z}"
+    );
     eprintln!("sweep properties {:?}", properties.fitted);
     eprintln!(
         "spring work: build {}, properties {}, STEP and reread {}",
         build_work.used, property_work.used, export_work.used
     );
+}
+
+#[test]
+fn spring_step_dump_preserves_existing_file_and_uses_unique_paths() {
+    let sequence = SPRING_DUMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let requested = std::env::temp_dir().join(format!(
+        "catallax-spring-step-{}-{sequence}.step",
+        std::process::id()
+    ));
+    fs::write(&requested, b"existing artifact").unwrap();
+    let first = write_step_dump(requested.as_os_str(), 3, 3, b"first STEP");
+    let second = write_step_dump(requested.as_os_str(), 3, 3, b"second STEP");
+
+    assert_eq!(fs::read(&requested).unwrap(), b"existing artifact");
+    assert_ne!(first, second);
+    assert_eq!(fs::read(&first).unwrap(), b"first STEP");
+    assert_eq!(fs::read(&second).unwrap(), b"second STEP");
+
+    fs::remove_file(requested).unwrap();
+    fs::remove_file(first).unwrap();
+    fs::remove_file(second).unwrap();
 }
 
 #[test]

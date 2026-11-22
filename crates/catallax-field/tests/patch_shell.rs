@@ -454,7 +454,15 @@ fn the_m11_fillet_replaces_its_named_loft_edge() {
     use catallax_field::{Plan, Workspace};
     use catallax_numbers::with_operation_budget;
     use catallax_recipe::Role;
-    let (plan, work) = with_operation_budget(20_000_000, || Plan::compile(&recipe("b_0", true)));
+    let recipe = recipe("b_0", true);
+    assert_eq!(Plan::compile(&recipe).unwrap_err().code, "fillet.lost-edge");
+    let (plan, work) = with_operation_budget(20_000_000, || {
+        Plan::compile_for_comparison(
+            &recipe,
+            &catallax_features::ImportFiles::new(),
+            &mut decider(),
+        )
+    });
     let plan = plan.unwrap();
     let origin = plan.spline_blend_origin().expect("rounded loft face");
     assert!(matches!(origin.role, Role::Blend { .. }));
@@ -491,10 +499,15 @@ fn the_m11_fillet_replaces_its_named_loft_edge() {
 
 #[test]
 fn rounded_loft_previews_skip_removed_corners_without_proof_work() {
-    use catallax_field::{Plan, UnprovedBatch, Workspace};
+    use catallax_field::{Batch, Plan, UnprovedBatch, Workspace};
     use catallax_numbers::with_operation_budget;
 
-    let plan = Plan::compile(&recipe("b_0", true)).unwrap();
+    let plan = Plan::compile_for_comparison(
+        &recipe("b_0", true),
+        &catallax_features::ImportFiles::new(),
+        &mut decider(),
+    )
+    .unwrap();
     let points = [
         [0.0, 0.0, 1.0],
         [0.0, 0.0, 1.0],
@@ -507,7 +520,9 @@ fn rounded_loft_previews_skip_removed_corners_without_proof_work() {
         let mut workspace = Workspace::default();
         let values = points.map(|p| {
             let fast = plan.fast(p, &mut workspace).unwrap().value;
-            let preview = plan.unproved_preview(p, &mut workspace).unwrap().value;
+            let preview = plan.unproved_preview(p, &mut workspace).unwrap();
+            assert!(!preview.true_distance_formula);
+            let preview = preview.value;
             if p[0] == 0.0 {
                 assert!(fast < 0.0 && preview < 0.0);
             } else {
@@ -521,6 +536,25 @@ fn rounded_loft_previews_skip_removed_corners_without_proof_work() {
                 .unproved_preview_batch(&points, workers, &mut storage)
                 .unwrap();
             assert!(batch.iter().map(|v| v.value.to_bits()).eq(values));
+            assert!(batch.iter().all(|v| !v.true_distance_formula));
+        }
+        let overflow = [1e200, 0.0, 1.0];
+        let mut batch = Batch::default();
+        let fast = plan.fast_batch(&points, &mut batch).unwrap();
+        assert!(fast.iter().all(|v| !v.true_distance_formula));
+        for code in [
+            plan.fast(overflow, &mut workspace).unwrap_err().code,
+            plan.unproved_preview(overflow, &mut workspace)
+                .unwrap_err()
+                .code,
+            plan.fast_batch(&[points[0], overflow], &mut batch)
+                .unwrap_err()
+                .code,
+            plan.unproved_preview_batch(&[points[0], overflow], 2, &mut UnprovedBatch::default())
+                .unwrap_err()
+                .code,
+        ] {
+            assert_eq!(code, "field.fast-range");
         }
     });
     assert_eq!(work.used, 0);

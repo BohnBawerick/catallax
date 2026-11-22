@@ -354,6 +354,24 @@ impl Plan {
         files: &catallax_features::ImportFiles<'_>,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
+        Self::compile_recipe(recipe, files, dec, false)
+    }
+
+    /// Compiles a sampled comparison plan with experimental spline fillet proofs.
+    pub fn compile_for_comparison(
+        recipe: &Recipe,
+        files: &catallax_features::ImportFiles<'_>,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
+        Self::compile_recipe(recipe, files, dec, true)
+    }
+
+    fn compile_recipe(
+        recipe: &Recipe,
+        files: &catallax_features::ImportFiles<'_>,
+        dec: &mut Decider,
+        spline_proofs: bool,
+    ) -> Result<Self, Refusal> {
         recipe
             .check()
             .map_err(|e| Refusal::new("field.recipe", e.to_string()))?;
@@ -839,6 +857,7 @@ impl Plan {
                                 radius: &radius.value().clone().into(),
                                 closure: corner.unwrap_or(catallax_recipe::FilletCorner::Cliff),
                                 roll_over: recipe.format != catallax_recipe::FORMAT,
+                                spline_proofs,
                             },
                             &step.id,
                             dec,
@@ -1571,12 +1590,15 @@ impl Plan {
     }
 
     fn true_distance_formula(&self) -> bool {
-        let distance = matches!(self.instructions[self.root], Instruction::Leaf(i) if self.leaves[i].true_distance())
-            || self.separated_unions.contains(&self.root);
-        distance && !self.leaves.iter().enumerate().any(|(i, leaf)| {
-            self.leaf_registers[i].is_some()
-                && matches!(leaf, geometry::Leaf::Shell(shell) if shell.blend_origin().is_some())
-        })
+        let rounded_shell = |i: usize| matches!(&self.leaves[i], geometry::Leaf::Shell(shell) if shell.blend_origin().is_some());
+        if let Instruction::Leaf(i) = self.instructions[self.root] {
+            return self.leaves[i].true_distance() && !rounded_shell(i);
+        }
+        self.separated_unions.contains(&self.root)
+            && !self
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::Leaf(i) if rounded_shell(*i)))
     }
 
     fn tentative<A: Arithmetic>(
@@ -2175,12 +2197,16 @@ impl Plan {
         storage: &'a mut Batch,
     ) -> Result<&'a [Approximate], Refusal> {
         let results = workers::map_init(points, Workspace::default, |workspace, &point| {
-            self.fast(point, workspace)
+            self.tentative::<Deterministic>(point, workspace)
         });
+        let true_distance_formula = self.true_distance_formula();
         storage.fast.clear();
         for result in results {
             match result {
-                Ok(value) => storage.fast.push(value),
+                Ok(value) => storage.fast.push(Approximate {
+                    value,
+                    true_distance_formula,
+                }),
                 Err(error) => {
                     storage.fast.clear();
                     return Err(error);

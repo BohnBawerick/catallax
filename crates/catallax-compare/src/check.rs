@@ -598,7 +598,7 @@ pub(crate) fn run(
         return revision.publish(report);
     }
     let mut dec = Decider::default();
-    let field = match Plan::compile_with_files_checked(recipe, files, &mut dec) {
+    let field = match Plan::compile_for_comparison(recipe, files, &mut dec) {
         Ok(f) => f,
         Err(e) => {
             report.sampled_distance_upper = None;

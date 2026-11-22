@@ -32,6 +32,7 @@ pub(crate) struct Settings<'a> {
     /// Whether a run continues across tangent neighbours (recipe version 4
     /// on); version 3 runs a straight strip past its rails instead.
     pub roll_over: bool,
+    pub spline_proofs: bool,
 }
 
 fn bad(detail: &str) -> Refusal {
@@ -558,7 +559,8 @@ impl Plan {
         dec: &mut Decider,
     ) -> Result<usize, Refusal> {
         let (radius, roll_over) = (settings.radius, settings.roll_over);
-        if let Instruction::Leaf(i) = self.instructions[root]
+        if settings.spline_proofs
+            && let Instruction::Leaf(i) = self.instructions[root]
             && let geometry::Leaf::Shell(shell) = &self.leaves[i]
         {
             let radius = q(radius)?;

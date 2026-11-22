@@ -15,7 +15,9 @@ for an entire fitted carrier without body cuts.
 Why: a field fillet should prove its own sweep and compare it against the
 B-rep without depending on the B-rep's offset or fitted carrier.
 Migration: callers of the spline sweep set the part tolerance when proving
-its spine. A rounded loft builds through the ordinary recipe compiler.
+its spine. The tube proof runs in test fixtures and in sampled comparison
+through `Plan::compile_for_comparison`. Ordinary recipe compilation keeps
+its spline fillet refusal.
 Compare checks every vertex of the named spline loft blend and reports
 missing reverse coverage. Its positional certificate covers the selected
 face. Refusals are reported under

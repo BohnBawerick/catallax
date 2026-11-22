@@ -238,11 +238,11 @@ impl Round {
             let sweep = self.sweep();
             let max_height = self.caps[0].at(&self.caps[1].origin).mid();
             let height = self.caps[0].at(&p).mid().clamp(0.0, max_height);
+            let [a, b] = &self.spine.ends;
+            let t = self.spine.system.tau();
             let section = |angle| {
-                let [a, b] = &self.spine.ends;
-                let t = self.spine.system.tau();
                 let (mut lo, mut hi) = (a.point[t].lo(), b.point[t].hi());
-                while hi - lo > NEWTON_STOP {
+                for _ in 0..24 {
                     let mid = lo.midpoint(hi);
                     let q = self.section_at(&sweep, mid, point(angle));
                     if self.caps[0].at(&q).mid() < height {
@@ -251,30 +251,38 @@ impl Round {
                         hi = mid;
                     }
                 }
-                self.section_at(&sweep, lo.midpoint(hi), point(angle))
+                let tau = lo.midpoint(hi);
+                (tau, self.section_at(&sweep, tau, point(angle)))
             };
             let across = |q: &V| dot(&self.across, q).mid();
             let x = across(&p);
-            let (mut start, mut end) = (0.0_f64, 1.0_f64);
-            let (mut left, mut right) = (section(start), section(end));
-            if across(&left) > across(&right) {
+            let (mut left, mut right) = (section(0.0), section(1.0));
+            let mut angles = [0.0, 1.0];
+            if across(&left.1) > across(&right.1) {
                 std::mem::swap(&mut left, &mut right);
-                std::mem::swap(&mut start, &mut end);
+                angles.swap(0, 1);
             }
+            let [start_angle, end_angle] = angles;
+            let (start_tau, left) = left;
+            let (end_tau, right) = right;
             let (in_fan, nearest) = if x < across(&left) {
                 (false, left)
             } else if x > across(&right) {
                 (false, right)
             } else {
-                while (end - start).abs() > NEWTON_STOP {
-                    let mid = start.midpoint(end);
-                    if across(&section(mid)) < x {
-                        start = mid;
+                let (mut lo, mut hi) = (0.0_f64, 1.0_f64);
+                let angle = |s| start_angle + (end_angle - start_angle) * s;
+                for _ in 0..24 {
+                    let mid = lo.midpoint(hi);
+                    let tau = start_tau + (end_tau - start_tau) * mid;
+                    let sample = self.section_at(&sweep, tau, point(angle(mid)));
+                    if across(&sample) < x {
+                        lo = mid;
                     } else {
-                        end = mid;
+                        hi = mid;
                     }
                 }
-                (true, section(start.midpoint(end)))
+                (true, section(angle(lo.midpoint(hi))).1)
             };
             let cut = in_fan && dot(&self.outward, &sub3(&p, &nearest)).mid() > 0.0;
             let h = dot(&vector(&self.height), &sub3(&p, &xyz(&self.bottom)));
@@ -285,7 +293,12 @@ impl Round {
                     let normal = add3(&vector(&side.normal), &mul3(&h, &vector(&side.turn)));
                     dot(&normal, &sub3(&p, &start)).mid() > 0.0
                 });
-            let magnitude = norm(&sub3(&p, &nearest)).mid();
+            let magnitude = query
+                .into_iter()
+                .zip(nearest)
+                .map(|(coordinate, sample)| (coordinate - sample.mid()).powi(2))
+                .sum::<f64>()
+                .sqrt();
             products.set(saved);
             (cut, if outside { magnitude } else { -magnitude })
         })

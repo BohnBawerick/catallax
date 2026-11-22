@@ -413,7 +413,7 @@ The print and display classifier treats a shell as it treats a mesh: a box that 
 
 The first producer is the field's own ruled loft (`Plan::patch_loft`), tried where the translated-loft route refuses: two parallel sections of line segments, one loop each, with as many segments. Each pair of corresponding segments gives a bilinear side, the straight lines between points at equal parameters, which is the B-rep's ruled side (the M11 loft's patches in `catallax-shapes/tests/spline_fillet.rs`). The slice at fraction `v` of the height is the polygon with vertices `(1 - v) a_i + v b_i`, so the turn at a vertex is a quadratic in `v`; its Bernstein coefficients `a' x a''`, `(a' x b'' + b' x a'') / 2` and `b' x b''` (edges `'` before and `''` after the vertex) all of one strict sign at every vertex prove every slice a strictly convex polygon. Then the sides meet only along the lines through corresponding vertices and the caps only along the sections' edges, which is the closed shell the leaf needs. Any other loft keeps `field.loft-correspondence-unsupported`; a correspondence turned half a turn, whose middle slice collapses, is the test's case.
 
-Results (`patch_shell.rs`, release build on the work PC, 4.6 s for the file). On 1,521 grid points round the M11 loft, the shell answers 294 inside and 1,216 outside, each as the B-rep does, and 3 points exactly on a side `Indeterminate`, where the B-rep says boundary. The B-rep refuses 8 points on the vertical line through the loft's corner `(1, -1)` (`shapes.rational-patch-unproven`, "the line is tangent to the finite rational patch"); the field answers outside there. Every distance agrees with a binary64 search of the six faces, and its bounds are within 2^-24 mm. Cap points are on the boundary, side points at rational parameters stay `Indeterminate`, a rotated and mirrored copy answers as the original, and answers and work are the same at 1, 2 and 4 threads. Through `Plan::compile`, the field builds the M11 loft and agrees with the B-rep at 505 points. The print classifier on 1,521 boxes of side 1/4 mm round it settles 159 inside and 533 outside, each as the shell answers at its corners and centre, and leaves 829 near the faces unknown, among them a box across a side. The M11 fillet recipe now passes its loft in the field and stops at the fillet with `fillet.lost-edge` (the shell registers no named face yet), which the field's spline spine (7.3 and 7.4) replaces.
+Results (`patch_shell.rs`, release build on the work PC, 4.6 s for the file). On 1,521 grid points round the M11 loft, the shell answers 294 inside and 1,216 outside, each as the B-rep does, and 3 points exactly on a side `Indeterminate`, where the B-rep says boundary. The B-rep refuses 8 points on the vertical line through the loft's corner `(1, -1)` (`shapes.rational-patch-unproven`, "the line is tangent to the finite rational patch"); the field answers outside there. Every distance agrees with a binary64 search of the six faces, and its bounds are within 2^-24 mm. Cap points are on the boundary, side points at rational parameters stay `Indeterminate`, a rotated and mirrored copy answers as the original, and answers and work are the same at 1, 2 and 4 threads. Through `Plan::compile`, the field builds the M11 loft and agrees with the B-rep at 505 points. The print classifier on 1,521 boxes of side 1/4 mm round it settles 159 inside and 533 outside, each as the shell answers at its corners and centre, and leaves 829 near the faces unknown, among them a box across a side. Ordinary compilation builds the M11 loft and stops at the fillet with `fillet.lost-edge`. Sampled comparison and test fixtures use the independent spline proof from steps 7.3 and 7.4.
 
 ## Step 7.3: an independent spline spine
 
@@ -502,6 +502,12 @@ graph replaces the sharp corner while preserving the remaining sides
 and caps. Whole patches from other sources and subsequent rounds on
 the trimmed loft keep their typed refusals.
 
+Sampled comparison opts into the tube proof. Its tentative evaluator
+interpolates the station between the two rail cuts for angular samples.
+Each bracket uses 24 bisections, leaving at most one part in `2^24`
+of its initial parameter interval. The final height search refines the
+selected angle's station at the query height clamped between the caps.
+
 The focused release tests sampled 505 independent arc points per edge.
 Median distance query times on the work PC were 4.388 us for M27, 4.474 us
 for the next edge and 7.215 us for the biquadratic edge. These were
@@ -574,6 +580,7 @@ the B-rep build.
 
 - Samples on rolling faces, for the reverse coverage findings. Rational samples exist on rational tori, cylinders and spheres; irrational faces need another route.
 - B-rep faces with no equation. `tangent-boss` and `narrow-cone` have horn-torus or fitted B-rep blend faces, which compare refuses before it reaches the field (`surface comparison needs a finite parametric correspondence solver`). The saddle and ellipse rows of steps 2 and 3 are fitted on the B-rep side too. For them the step tests run the same check directly against the pieces.
+- The original and mirrored sphere-ring cases from `rolling_quadrics.rs` have membership checks. Both display comparisons remain open because the B-rep cannot display the ring bands. The frozen `sphere-cylinder` recipe has a separate B-rep build refusal.
 
 ## Frozen case list for the done-when lines
 

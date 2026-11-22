@@ -208,7 +208,7 @@ impl Sampler<'_> {
                     .fold(cut.offset.clone(), |value, i| {
                         value - &cut.normal[i] * &coordinates[i]
                     });
-                coordinates[axis] = numerator / &cut.normal[axis];
+                coordinates[axis] = &numerator / &cut.normal[axis];
                 position[axis] = coordinates[axis].to_f64_nearest();
                 if !position[axis].is_finite() {
                     return Err(failure("cap sample exceeds finite binary64 coordinates"));

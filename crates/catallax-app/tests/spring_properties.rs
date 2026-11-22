@@ -95,10 +95,10 @@ fn step_vertex_z_bounds(text: &str) -> (f64, f64) {
                 continue;
             };
             points.insert(id.to_owned(), z);
-        } else if definition.starts_with("VERTEX_POINT(") {
-            if let Some((_, point)) = definition.split_once(",#") {
-                vertex_points.push(format!("#{}", point.trim_end_matches(')')));
-            }
+        } else if definition.starts_with("VERTEX_POINT(")
+            && let Some((_, point)) = definition.split_once(",#")
+        {
+            vertex_points.push(format!("#{}", point.trim_end_matches(')')));
         }
     }
     let mut z_values = vertex_points

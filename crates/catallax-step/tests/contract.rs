@@ -194,6 +194,50 @@ blind_test!(case10_void_shell_reverses_model_face_senses, {
         }
     }
 });
+
+#[test]
+fn an_assembly_leaf_with_a_void_shell_is_refused_before_writing() {
+    use catallax_step::assembly::{
+        Assembly, Occurrence, Part, Product, ProductContent, write_step_assembly,
+    };
+
+    let (model, body) = void_block();
+    let (file, _, _) = export(&model, &[body], &options(17));
+    assert!(matches!(
+        catallax_import::read_step(&file),
+        Err(catallax_import::ImportRefusal::Unsupported { type_name, .. })
+            if type_name == "BREP_WITH_VOIDS"
+    ));
+    let assembly = Assembly {
+        root: 0,
+        products: vec![
+            Product {
+                name: "Housing assembly".into(),
+                content: ProductContent::Assembly(vec![Occurrence {
+                    name: "Housing".into(),
+                    product: 1,
+                    pose: Pose::identity(),
+                }]),
+            },
+            Product {
+                name: "Hollow housing".into(),
+                content: ProductContent::Part(Part {
+                    model: &model,
+                    body,
+                    colour: None,
+                    pmi: None,
+                }),
+            },
+        ],
+    };
+    let mut out = b"prior output".to_vec();
+    let refusal = write_step_assembly(&assembly, &options(17), &mut Decider::default(), &mut out)
+        .err()
+        .expect("the assembly reader cannot round-trip void shells");
+    assert_eq!(refusal.code, "step.assembly-unsupported-part");
+    assert_eq!(out, b"prior output");
+}
+
 blind_test!(case11_bodies_keep_lump_order_and_geometry_sharing, {
     let mut m = Model::new();
     let a = block(&mut m, [n(2), n(3), n(5)], &Pose::identity()).unwrap();

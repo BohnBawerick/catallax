@@ -33,6 +33,193 @@ fn location(plan: &Plan, point: &RPoint3) -> Location {
 }
 
 #[test]
+fn fixed_spline_transports_the_profile_through_exact_parallel_sections() {
+    let source = include_str!("../../catallax-features/tests/fixtures/spline-sweep-spatial.json");
+    let recipe = Recipe::parse(source).unwrap();
+    let (plan, work) = with_operation_budget(20_000_000, || Plan::compile(&recipe));
+    assert!(!work.exhausted);
+    let plan = plan.unwrap();
+
+    // At t=1/2 the displacement is exactly (3/4, 1/2, 3/2).
+    assert_eq!(location(&plan, &p("1", "1", "3/2")), Location::Inside);
+    assert_eq!(location(&plan, &p("1/2", "1", "3/2")), Location::Outside);
+    assert_eq!(location(&plan, &p("2", "1", "0")), Location::Boundary);
+    assert_eq!(location(&plan, &p("2", "2", "3")), Location::Boundary);
+}
+
+#[test]
+fn fixed_spline_caps_exclude_a_nested_polygon() {
+    let source = include_str!("../../catallax-features/tests/fixtures/spline-sweep-spatial.json");
+    let mut source: Json = serde_json::from_str(source).unwrap();
+    source["steps"][0]["loops"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!([
+            {"kind":"line","id":"h0","to":["1","1/2"]},
+            {"kind":"line","id":"h1","to":["2","1/2"]},
+            {"kind":"line","id":"h2","to":["2","3/2"]},
+            {"kind":"line","id":"h3","to":["1","3/2"]}
+        ]));
+    let plan = Plan::compile(&Recipe::parse(&source.to_string()).unwrap()).unwrap();
+    assert_eq!(location(&plan, &p("9/4", "3/2", "3/2")), Location::Outside);
+    assert_eq!(location(&plan, &p("3/2", "1", "0")), Location::Outside);
+    assert_eq!(location(&plan, &p("5/2", "1", "0")), Location::Boundary);
+}
+
+#[test]
+fn fixed_spline_caps_exclude_a_clockwise_hole_listed_first() {
+    let source = include_str!("../../catallax-features/tests/fixtures/spline-sweep-spatial.json");
+    let mut source: Json = serde_json::from_str(source).unwrap();
+    source["steps"][0]["loops"].as_array_mut().unwrap().insert(
+        0,
+        json!([
+            {"kind":"line","id":"h0","to":["1","1/2"]},
+            {"kind":"line","id":"h1","to":["1","3/2"]},
+            {"kind":"line","id":"h2","to":["2","3/2"]},
+            {"kind":"line","id":"h3","to":["2","1/2"]}
+        ]),
+    );
+    source["steps"][1]["segments"][0] = json!({
+        "kind":"spline","id":"travel","degree":1,
+        "control_points":[["0","0","0"],["0","0","3"]],
+        "weights":["1","1"],"knots":["0","0","1","1"]
+    });
+    let recipe = Recipe::parse(&source.to_string()).unwrap();
+    let (plan, work) = with_operation_budget(20_000_000, || Plan::compile(&recipe));
+    assert!(!work.exhausted);
+    let plan = plan.unwrap();
+    assert_eq!(
+        location(&plan, &p("19/10", "1", "29/10")),
+        Location::Outside
+    );
+    assert_eq!(location(&plan, &p("1/2", "1", "29/10")), Location::Inside);
+    assert_eq!(location(&plan, &p("3/2", "1", "3")), Location::Outside);
+    assert_eq!(location(&plan, &p("3", "1", "3")), Location::Boundary);
+    assert!(
+        plan.fast([3.0, 1.0, 2.9], &mut Workspace::default())
+            .unwrap()
+            .value
+            < 0.0
+    );
+}
+
+#[test]
+fn ruled_circular_loft_keeps_the_saved_quarter_arc_phase() {
+    for station_count in [3, 2] {
+        let cardinal = [["1", "0"], ["0", "1"], ["-1", "0"], ["0", "-1"]];
+        let ids = ["a", "b", "c", "d"];
+        let profiles = ["low", "middle", "high"];
+        let heights = ["0", "2", "4"];
+        let mut steps = Vec::new();
+        let mut sections = Vec::new();
+        for i in 0..station_count {
+            let phase = usize::from(i == 1);
+            let ring: Vec<_> = (0..4)
+                .map(|j| {
+                    json!({"kind":"arc","id":ids[j],"centre":["0","0"],
+                    "to":cardinal[(phase+j+1)%4],"turn":"ccw"})
+                })
+                .collect();
+            steps.push(
+                json!({"id":profiles[i],"op":"sketch","plane":pose("0","0",heights[i]),
+                "loops":[ring]}),
+            );
+            sections.push(json!({"profile":profiles[i],"start":["a"]}));
+        }
+        steps.push(json!({"id":"loft","op":"loft","sections":sections,"shape":"ruled"}));
+        let recipe = recipe(steps);
+        let (plan, work) = with_operation_budget(20_000_000, || Plan::compile(&recipe));
+        assert!(!work.exhausted, "{station_count} stations used {work:?}");
+        let plan = plan.unwrap();
+        // Halfway between +X and +Y phases the radius is sqrt(1/2).
+        assert_eq!(location(&plan, &p("9/10", "0", "1")), Location::Outside);
+        assert_eq!(location(&plan, &p("7/10", "0", "1")), Location::Inside);
+        assert_eq!(
+            location(&plan, &p("0", "0", "2")),
+            if station_count == 2 {
+                Location::Boundary
+            } else {
+                Location::Inside
+            }
+        );
+    }
+}
+
+#[test]
+fn natural_circle_loft_uses_uniform_stations_instead_of_physical_spacing() {
+    let source = include_str!("../../catallax-features/tests/fixtures/loft-natural-circles.json");
+    let mut source: Json = serde_json::from_str(source).unwrap();
+    source["steps"][2]["plane"]["translation"][2] = json!("5");
+    source["steps"][1]["plane"]["translation"][2] = json!("2");
+    let recipe = Recipe::parse(&source.to_string()).unwrap();
+    let plan = Plan::compile(&recipe).unwrap();
+
+    // Halfway from station 0 to 1 the natural cubics give height 29/32
+    // and radius 27/16, including the effect of the uneven third station.
+    assert_eq!(location(&plan, &p("8/5", "0", "29/32")), Location::Inside);
+    assert_eq!(
+        location(&plan, &p("17/10", "0", "29/32")),
+        Location::Outside
+    );
+    assert_eq!(location(&plan, &p("0", "0", "5")), Location::Boundary);
+}
+
+#[test]
+fn parallel_bezier_lofts_keep_the_authored_roof_and_cap() {
+    let prism = include_str!("../../catallax-features/tests/fixtures/loft-spline-prism.json");
+    let smooth = include_str!("../../catallax-features/tests/fixtures/m10-smooth-loft.json");
+    for (source, expected) in [(prism, Location::Outside), (smooth, Location::Inside)] {
+        let recipe = Recipe::parse(source).unwrap();
+        let (plan, work) = with_operation_budget(20_000_000, || Plan::compile(&recipe));
+        assert!(!work.exhausted);
+        let plan = plan.unwrap();
+        assert_eq!(location(&plan, &p("2", "5/2", "1")), expected);
+        assert_eq!(location(&plan, &p("2", "1", "1")), Location::Inside);
+        assert_eq!(location(&plan, &p("2", "1", "-1/10")), Location::Outside);
+    }
+}
+
+#[test]
+fn tilted_affine_loft_keeps_the_spatial_volume() {
+    let recipe = recipe(vec![
+        json!({"id":"a","op":"sketch","plane":pose("0","0","0"),"loops":rectangle()}),
+        json!({"id":"b","op":"sketch","plane":{"rotation":["1","0","1/10","0"],
+             "translation":["0","0","4"]},"loops":rectangle()}),
+        json!({"id":"loft","op":"loft","sections":[{"profile":"a","start":["bottom"]},
+             {"profile":"b","start":["bottom"]}],"shape":"ruled"}),
+    ]);
+    let plan = Plan::compile(&recipe).unwrap();
+    assert_eq!(location(&plan, &p("2", "3/2", "2")), Location::Inside);
+    assert_eq!(location(&plan, &p("5", "3/2", "2")), Location::Outside);
+}
+
+#[test]
+fn rotation_minimising_corner_carries_the_profile_into_the_outgoing_span() {
+    let source = include_str!("../../catallax-features/tests/fixtures/round-turn-sweep.json");
+    let recipe = Recipe::parse(source).unwrap();
+    let plan = Plan::compile(&recipe).unwrap();
+    assert_eq!(location(&plan, &p("1", "-3/2", "2")), Location::Inside);
+    assert_eq!(location(&plan, &p("1", "-1", "5")), Location::Inside);
+    assert_eq!(location(&plan, &p("1", "2", "11/2")), Location::Inside);
+    assert_eq!(location(&plan, &p("1", "-2", "6")), Location::Outside);
+}
+
+#[test]
+fn coplanar_sweep_motion_regularizes_to_empty() {
+    let source = include_str!("../../catallax-features/tests/fixtures/round-turn-sweep.json");
+    let mut source: Json = serde_json::from_str(source).unwrap();
+    source["steps"][1]["segments"] = json!([
+        {"kind":"line","id":"first","to":["4","0","0"]},
+        {"kind":"line","id":"second","to":["4","4","0"]}
+    ]);
+    for orientation in ["fixed", "rotation_minimising"] {
+        source["steps"][2]["orientation"] = json!(orientation);
+        let recipe = Recipe::parse(&source.to_string()).unwrap();
+        assert!(Plan::compile(&recipe).unwrap().is_proven_empty());
+    }
+}
+
+#[test]
 fn straight_sweep_keeps_world_displacement_and_path_names() {
     let r = recipe(vec![
         json!({"id":"profile","op":"sketch","plane":pose("0","0","0"),"loops":rectangle()}),
@@ -375,7 +562,7 @@ fn smooth_stock_distances_preserve_unblended_boundaries_in_placed_frames() {
 }
 
 #[test]
-fn translated_loft_checks_authored_segmentation_before_reducing_the_field() {
+fn loft_keeps_the_authored_parameter_breaks_after_collinear_normalisation() {
     let mut split = rectangle();
     split[0]
         .as_array_mut()
@@ -386,9 +573,13 @@ fn translated_loft_checks_authored_segmentation_before_reducing_the_field() {
         json!({"id":"b","op":"sketch","plane":pose("0","0","3"),"loops":split}),
         json!({"id":"loft","op":"loft","sections":[{"profile":"a","start":["bottom"]},{"profile":"b","start":["split"]}],"shape":"ruled"}),
     ]);
+    let plan = Plan::compile(&r).unwrap();
+    assert_eq!(location(&plan, &p("2", "3/2", "3/2")), Location::Inside);
+    // At half height the authored correspondence clips the lower right
+    // corner of the section. The translated-prism reduction would keep it.
     assert_eq!(
-        Plan::compile(&r).unwrap_err().code,
-        "field.loft-correspondence-unsupported"
+        location(&plan, &p("19/5", "1/10", "3/2")),
+        Location::Outside
     );
 }
 

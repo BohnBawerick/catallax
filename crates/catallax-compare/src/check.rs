@@ -400,6 +400,74 @@ fn endpoint_distance(
     Ok(upper)
 }
 
+fn incident_faces(mesh: &catallax_mesh::Mesh) -> Vec<BTreeSet<usize>> {
+    let mut incident = vec![BTreeSet::new(); mesh.positions.len()];
+    for (index, face) in mesh.faces.iter().enumerate() {
+        for triangle in &mesh.triangles[face.triangles.clone()] {
+            for &vertex in &triangle.vertices {
+                incident[vertex].insert(index);
+            }
+        }
+    }
+    incident
+}
+
+fn forward_patch_shell(
+    revision: &Revision,
+    report: &mut Report,
+    mesh: &catallax_mesh::Mesh,
+    face_origins: &[Vec<Origin>],
+    shell: &catallax_field::patch_shell::Shell,
+    options: &Options,
+    dec: &mut Decider,
+) -> Result<(), Refusal> {
+    for (position, faces) in mesh.positions.iter().zip(incident_faces(mesh)) {
+        if revision.is_cancelled() {
+            break;
+        }
+        let [x, y, z] = position.map(|p| Rational::from_f64_exact(p).expect("finite mesh"));
+        let p = RPoint3::new(x, y, z);
+        let Some(error) = faces.iter().map(|&i| &mesh.faces[i].max_chord_error).max() else {
+            unresolved(
+                report,
+                Pass::Forward,
+                &p,
+                vec![],
+                vec![],
+                "mesh vertex has no incident face",
+            );
+            continue;
+        };
+        if options
+            .region
+            .as_ref()
+            .is_some_and(|region| !region.contains(&p, error))
+        {
+            continue;
+        }
+        report.forward_vertices += 1;
+        let limit = &options.accuracy - error;
+        let width = if limit > r(0) {
+            limit
+        } else {
+            options.accuracy.clone()
+        };
+        let distance = shell.boundary_distance_within(&p, width.to_f64_nearest(), dec)?;
+        let upper = Rational::from_f64_exact(distance.hi()).map(|h| &h + error);
+        let lower = Rational::from_f64_exact(distance.lo()).unwrap_or_else(|| r(0));
+        distance_finding(
+            report,
+            Pass::Forward,
+            &p,
+            faces.iter().map(|&i| face_origins[i].clone()).collect(),
+            vec![],
+            ((&lower - error).max(r(0)), upper),
+            options,
+        );
+    }
+    Ok(())
+}
+
 pub(crate) fn run(
     revision: &Revision,
     recipe: &Recipe,
@@ -560,6 +628,43 @@ pub(crate) fn run(
         .iter()
         .map(|f| model.face_origins(f.face).to_vec())
         .collect();
+    if matches!(
+        recipe.step(&recipe.result).map(|step| &step.op),
+        Some(Operation::Sweep { .. } | Operation::Loft { .. })
+    ) && let Some(shell) = field.result_patch_shell()
+    {
+        if let Err(error) = forward_patch_shell(
+            revision,
+            &mut report,
+            &mesh,
+            &face_origins,
+            shell,
+            options,
+            &mut dec,
+        ) {
+            whole_failure(
+                &mut report,
+                format!("field shell distance {}: {}", error.code, error.detail),
+            );
+            report.refusal = Some(error);
+        }
+        unresolved(
+            &mut report,
+            Pass::Reverse,
+            &RPoint3::new(r(0), r(0), r(0)),
+            vec![],
+            vec![],
+            "patch shell has no named reverse samples",
+        );
+        if report
+            .findings
+            .iter()
+            .any(|finding| finding.reason == Reason::Gap)
+        {
+            report.verdict = Verdict::Disagree;
+        }
+        return revision.publish(report);
+    }
     let surfaces: Vec<_> = mesh
         .faces
         .iter()
@@ -580,14 +685,7 @@ pub(crate) fn run(
         .iter()
         .map(|p| std::array::from_fn(|i| p.partial(i)))
         .collect();
-    let mut incident: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); mesh.positions.len()];
-    for (i, face) in mesh.faces.iter().enumerate() {
-        for triangle in &mesh.triangles[face.triangles.clone()] {
-            for &v in &triangle.vertices {
-                incident[v].insert(i);
-            }
-        }
-    }
+    let incident = incident_faces(&mesh);
     let mut endpoints = BTreeMap::<usize, BTreeSet<catallax_topology::VertexId>>::new();
     for boundary in &mesh.edges {
         let edge = model.edge(boundary.edge);

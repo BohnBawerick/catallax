@@ -14,6 +14,7 @@ use crate::part21::{Entity, Graph, Param, parse};
 
 #[path = "spline.rs"]
 mod spline;
+pub(crate) use spline::source_error;
 #[path = "swept.rs"]
 mod swept;
 
@@ -692,7 +693,7 @@ fn boolean(a: &[Param], i: usize) -> Result<bool, ImportRefusal> {
 }
 
 /// An exact decimal. `1.` and `.5`-free STEP reals are normalised first.
-fn number(p: &Param) -> Result<Rational, ImportRefusal> {
+pub(crate) fn number(p: &Param) -> Result<Rational, ImportRefusal> {
     let Param::Number(text) = p else {
         return Err(malformed("expected a number"));
     };

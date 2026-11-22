@@ -149,7 +149,7 @@ pub struct Range {
     /// Proven upper bound from an exact point on the face; `None` if no
     /// witness was certified.
     pub upper: Option<Rational>,
-    /// Whether the requested width was reached before the refinement limits.
+    /// Whether refinement reached the requested width or resolved the requested bound.
     pub converged: bool,
 }
 

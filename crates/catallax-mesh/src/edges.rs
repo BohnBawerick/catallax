@@ -401,6 +401,26 @@ pub(crate) fn sample(
     options: &MeshOptions,
     dec: &mut Decider,
 ) -> Result<Boundaries, Refusal> {
+    sample_selected(
+        model,
+        body,
+        model.edges_of_body(body),
+        charts,
+        junction,
+        options,
+        dec,
+    )
+}
+
+pub(crate) fn sample_selected(
+    model: &Model,
+    body: BodyId,
+    selected: impl IntoIterator<Item = EdgeId>,
+    charts: &BTreeMap<catallax_topology::FaceId, Chart>,
+    junction: Option<&crate::junction::Junction>,
+    options: &MeshOptions,
+    dec: &mut Decider,
+) -> Result<Boundaries, Refusal> {
     let mut result = Boundaries {
         mesh: Mesh::default(),
         edges: BTreeMap::new(),
@@ -428,7 +448,7 @@ pub(crate) fn sample(
             }
         }
     }
-    for edge_id in model.edges_of_body(body) {
+    for edge_id in selected {
         if let Some(seed) = junction.and_then(|junction| junction.seed(edge_id)) {
             seeded(model, edge_id, seed, options, dec, &mut result)?;
             continue;

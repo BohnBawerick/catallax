@@ -397,7 +397,7 @@ fn scan(root: &Path, dir: &Path, found: &mut BTreeSet<(String, String)>) {
 
 #[test]
 fn every_shared_cell_a_worker_can_reach_is_accounted_for() {
-    let crates = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let crates = Path::new("..");
     let mut found = BTreeSet::new();
     for name in CRATES {
         scan(crates, &crates.join(name).join("src"), &mut found);

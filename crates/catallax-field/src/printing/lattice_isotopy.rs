@@ -238,8 +238,15 @@ struct Branch {
     gradient: Range,
     motion: Interval,
 }
+impl Branch {
+    fn reversed(self) -> Self {
+        Self {
+            gradient: self.gradient.map(negative),
+            motion: self.motion,
+        }
+    }
+}
 
-#[derive(Clone)]
 struct Jet {
     value: Interval,
     active: Vec<Branch>,
@@ -256,38 +263,52 @@ impl Jet {
         gradient[axis] = ip(sense);
         Self::new(value, gradient, ip(0.0))
     }
-    fn reversed(&self) -> Self {
-        Self {
-            value: negative(self.value),
-            active: self
-                .active
-                .iter()
-                .map(|branch| Branch {
-                    gradient: branch.gradient.map(negative),
-                    motion: branch.motion,
-                })
-                .collect(),
-        }
+}
+
+fn extreme_value(maximum: bool, a: Interval, b: Interval) -> Interval {
+    let pick = if maximum { f64::max } else { f64::min };
+    Interval::new(pick(a.lo(), b.lo()), pick(a.hi(), b.hi())).unwrap()
+}
+
+fn can_be_active(maximum: bool, value: Interval, operand: Interval) -> bool {
+    if maximum {
+        operand.hi() >= value.lo()
+    } else {
+        operand.lo() <= value.hi()
     }
 }
 
 fn extreme(maximum: bool, parts: &[Jet]) -> Jet {
-    let pick = if maximum { f64::max } else { f64::min };
-    let value = parts.iter().skip(1).fold(parts[0].value, |a, b| {
-        Interval::new(pick(a.lo(), b.value.lo()), pick(a.hi(), b.value.hi())).unwrap()
-    });
+    let value = parts
+        .iter()
+        .skip(1)
+        .fold(parts[0].value, |a, b| extreme_value(maximum, a, b.value));
     let active = parts
         .iter()
-        .filter(|j| {
-            if maximum {
-                j.value.hi() >= value.lo()
-            } else {
-                j.value.lo() <= value.hi()
-            }
-        })
+        .filter(|j| can_be_active(maximum, value, j.value))
         .flat_map(|j| j.active.iter().copied())
         .collect();
     Jet { value, active }
+}
+
+fn operand_value(tape: &[Jet], index: usize, reversed: bool) -> Interval {
+    let value = tape[index].value;
+    if reversed { negative(value) } else { value }
+}
+
+fn join_blocks(a: &Box3, b: &Box3) -> Option<Box3> {
+    let axis = (0..3).find(|&axis| a[axis] != b[axis])?;
+    if (0..3).any(|i| i != axis && a[i] != b[i])
+        || (a[axis][1] != b[axis][0] && b[axis][1] != a[axis][0])
+    {
+        return None;
+    }
+    let mut joined = a.clone();
+    joined[axis] = [
+        a[axis][0].clone().min(b[axis][0].clone()),
+        a[axis][1].clone().max(b[axis][1].clone()),
+    ];
+    Some(joined)
 }
 
 // Each interval contains squared distance and every one-sided derivative
@@ -436,15 +457,16 @@ impl Prepared {
     }
 }
 
-fn separates(branches: &[Branch], distance: Interval) -> bool {
-    let fits = |dir: [f64; 3]| {
+fn separates(branches: &[Branch], distance: Interval, dec: &mut Decider) -> Result<bool, Refusal> {
+    let mut fits = |dir: [f64; 3]| {
+        dec.charge_work(branches.len() as u64)?;
         let v = dir.map(ip);
         let norm2 = v.iter().fold(ip(0.0), |s, a| s + a.square());
-        branches.iter().all(|branch| {
+        Ok::<_, Refusal>(branches.iter().all(|branch| {
             let slope = (0..3).fold(ip(0.0), |s, i| s + branch.gradient[i] * v[i]);
             slope.lo() > 0.0
                 && (slope * distance).square().lo() > (branch.motion.square() * norm2).hi()
-        })
+        }))
     };
     let midpoint = |b: &Branch| b.gradient.map(|x| x.mid());
     let mut combined = [0.0; 3];
@@ -457,14 +479,54 @@ fn separates(branches: &[Branch], distance: Interval) -> bool {
             }
         }
     }
-    fits(combined)
-        || branches.iter().any(|b| fits(midpoint(b)))
-        || (-1..=1).any(|x| {
-            (-1..=1).any(|y| (-1..=1).any(|z| fits([f64::from(x), f64::from(y), f64::from(z)])))
-        })
+    if fits(combined)? {
+        return Ok(true);
+    }
+    for b in branches {
+        if fits(midpoint(b))? {
+            return Ok(true);
+        }
+    }
+    for x in -1..=1 {
+        for y in -1..=1 {
+            for z in -1..=1 {
+                if fits([f64::from(x), f64::from(y), f64::from(z)])? {
+                    return Ok(true);
+                }
+            }
+        }
+    }
+    Ok(false)
 }
 
 impl Model<'_> {
+    fn joined_blocks(&self) -> Vec<Option<Prepared>> {
+        let mut boxes: Vec<Option<Box3>> = Vec::with_capacity(self.plan.instructions.len());
+        let mut prepared = Vec::with_capacity(self.plan.instructions.len());
+        for instruction in &self.plan.instructions {
+            let joined = match *instruction {
+                Instruction::Boolean {
+                    kind: BooleanKind::Union,
+                    a,
+                    b,
+                } => boxes[a]
+                    .as_ref()
+                    .zip(boxes[b].as_ref())
+                    .and_then(|(a, b)| join_blocks(a, b)),
+                _ => None,
+            };
+            prepared.push(joined.clone().map(|b| Prepared::new(&Support::Block(b))));
+            boxes.push(match *instruction {
+                Instruction::Leaf(i) => match &self.supports[i] {
+                    Some(Support::Block(b)) => Some(b.clone()),
+                    _ => None,
+                },
+                _ => joined,
+            });
+        }
+        prepared
+    }
+
     fn prove(&self, budget: &mut Budget<'_>, dec: &mut Decider) -> Result<(), Refusal> {
         let prepared: Vec<_> = self
             .supports
@@ -475,31 +537,79 @@ impl Model<'_> {
         let error = radial_interpolation_error(pitch);
         let distance = Interval::from_rational(&self.displacement);
         let mut pending = vec![self.domain.each_ref().map(enclosure)];
-        let mut tape: Vec<Jet> = Vec::with_capacity(self.plan.instructions.len());
+        let instructions = &self.plan.instructions;
+        let tape_work = instructions.len() as u64;
+        dec.charge_work(tape_work)?;
+        // A face-to-face block union is exactly a block throughout the homotopy.
+        // Its shared face is interior, even where the original min field is zero.
+        let joined = self.joined_blocks();
+        let mut tape: Vec<Jet> = Vec::with_capacity(instructions.len());
+        let mut needed = vec![[false; 2]; instructions.len()];
+        let mut branches = Vec::new();
         while let Some(cell) = pending.pop() {
             budget.visit(dec)?;
-            dec.charge_work(self.plan.instructions.len() as u64)?;
+            dec.charge_work(tape_work)?;
             tape.clear();
-            for instruction in &self.plan.instructions {
+            for (index, instruction) in instructions.iter().enumerate() {
+                if let Some(block) = &joined[index] {
+                    tape.push(block.jet(&cell, pitch, error));
+                    continue;
+                }
                 let jet = match *instruction {
                     Instruction::Empty => Jet::new(ip(1.0), [ip(0.0); 3], ip(0.0)),
                     Instruction::Leaf(i) => prepared[i]
                         .as_ref()
                         .expect("live support")
                         .jet(&cell, pitch, error),
-                    Instruction::Boolean { kind, a, b } => {
-                        let tool = if kind == BooleanKind::Subtract {
-                            tape[b].reversed()
-                        } else {
-                            tape[b].clone()
-                        };
-                        extreme(kind != BooleanKind::Union, &[tape[a].clone(), tool])
-                    }
+                    Instruction::Boolean { kind, a, b } => Jet {
+                        value: extreme_value(
+                            kind != BooleanKind::Union,
+                            tape[a].value,
+                            operand_value(&tape, b, kind == BooleanKind::Subtract),
+                        ),
+                        active: Vec::new(),
+                    },
                 };
                 tape.push(jet);
             }
-            let root = &tape[self.plan.root];
-            if !root.value.contains_zero() || separates(&root.active, distance) {
+            if !tape[self.plan.root].value.contains_zero() {
+                continue;
+            }
+            // Walk the active DAG once per sign. Shared operands may reach
+            // the root along exponentially many paths but have only two signs.
+            dec.charge_work(tape_work)?;
+            needed.fill([false; 2]);
+            needed[self.plan.root][0] = true;
+            branches.clear();
+            for (index, instruction) in instructions.iter().enumerate().rev() {
+                let [forward, reversed] = needed[index];
+                if !forward && !reversed {
+                    continue;
+                }
+                let jet = &tape[index];
+                if let Instruction::Boolean { kind, a, b } = *instruction
+                    && joined[index].is_none()
+                {
+                    for (operand, flip) in [(a, false), (b, kind == BooleanKind::Subtract)] {
+                        if can_be_active(
+                            kind != BooleanKind::Union,
+                            jet.value,
+                            operand_value(&tape, operand, flip),
+                        ) {
+                            needed[operand][usize::from(flip)] |= forward;
+                            needed[operand][usize::from(!flip)] |= reversed;
+                        }
+                    }
+                } else {
+                    if forward {
+                        branches.extend(jet.active.iter().copied());
+                    }
+                    if reversed {
+                        branches.extend(jet.active.iter().map(|branch| branch.reversed()));
+                    }
+                }
+            }
+            if separates(&branches, distance, dec)? {
                 continue;
             }
             let middle = cell.map(|axis| axis.mid());

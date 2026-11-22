@@ -88,21 +88,32 @@ impl Plane {
     }
 }
 
+struct Face {
+    polygon: Polygon,
+    plane: Plane,
+    clipping_bounds: Option<Box3>,
+}
+
 struct Solid {
     leaf: usize,
     bounds: Box3,
-    faces: Vec<Polygon>,
-    planes: Vec<Plane>,
+    faces: Vec<Face>,
 }
 impl Solid {
     fn from_faces(leaf: usize, faces: Vec<Polygon>) -> Self {
         let bounds = box_of(faces.iter().flatten());
-        let planes = faces.iter().map(|face| Plane::new(face)).collect();
+        let faces = faces
+            .into_iter()
+            .map(|polygon| Face {
+                plane: Plane::new(&polygon),
+                polygon,
+                clipping_bounds: None,
+            })
+            .collect();
         Self {
             leaf,
             bounds,
             faces,
-            planes,
         }
     }
     fn block(leaf: usize, bounds: &Box3) -> Self {
@@ -149,22 +160,32 @@ impl Solid {
     }
     // Membership at a point infinitesimally before/after the candidate face
     // along its normal. Exact ties use the linear directional coefficient.
-    fn sides(&self, p: &Point, normal: &Point, dec: &mut Decider) -> Result<[bool; 2], Refusal> {
+    fn sides(
+        &self,
+        p: &Point,
+        normal: &Point,
+        earlier: bool,
+        dec: &mut Decider,
+    ) -> Result<([bool; 2], bool), Refusal> {
         let mut inside = [true; 2];
+        let mut can_emit = false;
         let enclosure = p.each_ref().map(Interval::from_rational);
-        for plane in &self.planes {
+        for face in &self.faces {
             dec.charge_work(1)?;
-            match plane.sign(p, &enclosure) {
-                Sign::Positive => return Ok([false; 2]),
+            match face.plane.sign(p, &enclosure) {
+                Sign::Positive => return Ok(([false; 2], false)),
                 Sign::Zero => {
-                    let slope = dot(&plane.normal, normal);
+                    let slope = dot(&face.plane.normal, normal);
                     inside[0] &= slope >= q(0);
                     inside[1] &= slope <= q(0);
+                    can_emit |= earlier
+                        && face.clipping_bounds.is_some()
+                        && !nonzero(&cross(&face.plane.normal, normal));
                 }
                 Sign::Negative => {}
             }
         }
-        Ok(inside)
+        Ok((inside, can_emit && inside[0] != inside[1]))
     }
 }
 
@@ -376,8 +397,8 @@ fn divide(
 ) -> Result<Vec<Polygon>, Refusal> {
     let mut inner = poly.clone();
     let mut outside = Vec::new();
-    for plane in &solid.planes {
-        let (new_inner, outer) = split(&inner, plane, dec)?;
+    for face in &solid.faces {
+        let (new_inner, outer) = split(&inner, &face.plane, dec)?;
         if new_inner.is_empty() {
             return Ok(vec![poly]);
         }
@@ -417,16 +438,16 @@ fn emit(
         if !(0..3).all(|i| solid.bounds[i][0] <= p[i] && p[i] <= solid.bounds[i][1]) {
             continue;
         }
-        let sides = solid.sides(&p, normal, dec)?;
-        // Coincident finite faces use their first owner. Their vertex joins
-        // are otherwise split by the same geometric supports.
-        if i < source && sides[0] != sides[1] {
+        let (sides, can_emit) = solid.sides(&p, normal, i < source, dec)?;
+        // Only a face scheduled for clipping can own a coincident polygon.
+        if can_emit {
             return Ok(false);
         }
         for j in 0..2 {
             leaves[solid.leaf][j] |= sides[j];
         }
     }
+    dec.charge_work(model.plan.instructions.len() as u64)?;
     let mut tape: Vec<[bool; 2]> = Vec::with_capacity(model.plan.instructions.len());
     for instruction in &model.plan.instructions {
         let sides = match *instruction {
@@ -545,24 +566,31 @@ pub(super) fn mesh(
     dec: &mut Decider,
 ) -> Result<Triangles, Refusal> {
     let regions = regions::leaf_regions(model, budget, dec)?;
-    let solids = supports(model, &regions, budget, dec)?;
-    let mut boundary = Vec::new();
-    for (source, solid) in solids.iter().enumerate() {
-        for (seed, plane) in solid.faces.iter().zip(&solid.planes) {
+    let mut solids = supports(model, &regions, budget, dec)?;
+    for solid in &mut solids {
+        for face in &mut solid.faces {
             budget.visit(dec)?;
-            let bounds = box_of(seed.iter());
-            if !regions[solid.leaf]
+            let bounds = box_of(face.polygon.iter());
+            if regions[solid.leaf]
                 .iter()
                 .any(|region| overlaps(&bounds, region))
             {
-                continue;
+                face.clipping_bounds = Some(bounds);
             }
-            let mut cells = vec![seed.clone()];
+        }
+    }
+    let mut boundary = Vec::new();
+    for (source, solid) in solids.iter().enumerate() {
+        for face in &solid.faces {
+            let Some(bounds) = &face.clipping_bounds else {
+                continue;
+            };
+            let mut cells = vec![face.polygon.clone()];
             dec.charge_work(solids.len() as u64)?;
             let near: Vec<_> = solids
                 .iter()
                 .enumerate()
-                .filter_map(|(i, s)| overlaps(&bounds, &s.bounds).then_some(i))
+                .filter_map(|(i, s)| overlaps(bounds, &s.bounds).then_some(i))
                 .collect();
             for &i in &near {
                 if i == source {
@@ -579,7 +607,15 @@ pub(super) fn mesh(
                 cells = divided;
             }
             for mut poly in cells {
-                if emit(model, &solids, &near, source, &plane.normal, &mut poly, dec)? {
+                if emit(
+                    model,
+                    &solids,
+                    &near,
+                    source,
+                    &face.plane.normal,
+                    &mut poly,
+                    dec,
+                )? {
                     boundary.push(poly);
                 }
             }

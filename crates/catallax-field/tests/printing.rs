@@ -3,8 +3,9 @@ use catallax_field::{
     Plan,
     printing::{self, Mesh, Options},
 };
-use catallax_numbers::{Decider, Rational};
+use catallax_numbers::{Decider, Rational, with_operation_budget};
 use catallax_recipe::Recipe;
+use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 
 fn mesh(steps: &str, result: &str) -> Mesh {
@@ -158,6 +159,123 @@ fn a_regularised_union_does_not_print_its_buried_contact_plane() {
     let crossings = vertical_crossings(&mesh, 0.43, 0.57);
     assert_eq!(crossings.len(), 2, "{crossings:?}");
     assert!(crossings[0].0 <= 0.5 && crossings[1].0 >= 1.5);
+}
+
+fn block(id: &str, size: [&str; 3], translation: [&str; 3]) -> Value {
+    json!({"id":id,"op":"block","size":size,
+        "pose":{"rotation":["1","0","0","0"],"translation":translation}})
+}
+
+fn boolean(id: &str, kind: &str, target: &str, tool: &str) -> Value {
+    json!({"id":id,"op":"boolean","kind":kind,"target":target,"tool":tool})
+}
+
+fn cubic(region: &str) -> Value {
+    json!({"id":"infill","op":"lattice","region":region,"cell":"cubic","size":"4",
+        "frame":{"rotation":["1","0","0","0"],"translation":["0","0","0"]},
+        "radius":{"constant":"1.25"}})
+}
+
+fn fine_lattice(steps: Vec<Value>, result: &str) -> Mesh {
+    let recipe = Recipe::parse(
+        &json!({"format":"catallax-recipe/3",
+        "name":"fine print regression","steps":steps,"result":result})
+        .to_string(),
+    )
+    .unwrap();
+    let plan = Plan::compile(&recipe).unwrap();
+    let options = Options {
+        tolerance: Rational::one(),
+        ..Options::default()
+    };
+    let (result, work) = with_operation_budget(100_000_000, || {
+        printing::brep::field(&plan, &options, &mut Decider::default())
+    });
+    let output = result.unwrap();
+    assert!(work.used <= 20_000_000, "{work:?}");
+    assert!(output.field_material_isotopy());
+    output.mesh().clone()
+}
+
+#[test]
+fn fine_lattice_print_keeps_faces_shared_with_clipped_blocks() {
+    let mut steps = vec![];
+    for axis in 0..3 {
+        for (side, size, start) in [(0, "5", "0"), (1, "5", "-1")] {
+            let mut sizes = ["6"; 3];
+            let mut starts = ["-1"; 3];
+            sizes[axis] = size;
+            starts[axis] = start;
+            steps.push(block(&format!("earlier-{axis}-{side}"), sizes, starts));
+        }
+    }
+    steps.push(block("cube", ["4"; 3], ["0"; 3]));
+    steps.push(block("inner", ["2"; 3], ["1"; 3]));
+    let mut root = "cube".to_owned();
+    for axis in 0..3 {
+        for side in 0..2 {
+            let clipped = format!("clipped-{axis}-{side}");
+            let union = format!("union-{axis}-{side}");
+            steps.push(boolean(
+                &clipped,
+                "intersect",
+                &format!("earlier-{axis}-{side}"),
+                "inner",
+            ));
+            steps.push(boolean(&union, "union", &root, &clipped));
+            root = union;
+        }
+    }
+    steps.push(cubic("inner"));
+    steps.push(boolean("result", "union", &root, "infill"));
+    let mesh = fine_lattice(steps, "result");
+    assert_eq!(topology(&mesh), (1, 2));
+    assert_eq!(
+        vertical_crossings(&mesh, 1.43, 2.57),
+        [(0.0, false), (4.0, true)]
+    );
+}
+
+#[test]
+fn fine_lattice_proof_bounds_shared_boolean_branches() {
+    let mut steps = vec![
+        block("region", ["0.5"; 3], ["0"; 3]),
+        cubic("region"),
+        block("a", ["16"; 3], ["-5"; 3]),
+        block("b", ["18"; 3], ["-6"; 3]),
+    ];
+    let mut root = "infill".to_owned();
+    for level in 0..30 {
+        let left = format!("left-{level}");
+        let right = format!("right-{level}");
+        let union = format!("union-{level}");
+        steps.push(boolean(&left, "intersect", &root, "a"));
+        steps.push(boolean(&right, "intersect", &root, "b"));
+        steps.push(boolean(&union, "union", &left, &right));
+        root = union;
+    }
+    let mesh = fine_lattice(steps, &root);
+    assert_eq!(topology(&mesh), (1, 2));
+}
+
+#[test]
+fn fine_lattice_print_ignores_the_buried_face_of_abutting_blocks() {
+    let steps = vec![
+        block("left", ["1"; 3], ["0"; 3]),
+        block("right", ["1"; 3], ["1", "0", "0"]),
+        boolean("both", "union", "left", "right"),
+        block("inner", ["0.5"; 3], ["0.25"; 3]),
+        cubic("inner"),
+        boolean("result", "union", "both", "infill"),
+    ];
+    let mut mesh = fine_lattice(steps, "result");
+    assert_eq!(topology(&mesh), (1, 2));
+    for point in &mut mesh.positions {
+        point.swap(0, 2);
+    }
+    let crossings = vertical_crossings(&mesh, 0.43, 0.57);
+    assert_eq!(crossings.len(), 2, "{crossings:?}");
+    assert_eq!([crossings[0].0, crossings[1].0], [0.0, 2.0]);
 }
 
 #[test]

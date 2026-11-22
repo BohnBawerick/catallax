@@ -104,7 +104,7 @@ impl Definition {
     }
 }
 
-fn measured_grid(
+pub(super) fn measured_grid(
     surface: &catallax_shapes::BSplineSurface,
     tolerance: &Rational,
     options: &MeshOptions,
@@ -127,6 +127,11 @@ fn measured_grid(
         |at| Ok(at.clone()),
         dec,
     )
+}
+
+pub(super) fn measured_tolerance(chord: &Rational) -> Rational {
+    // Reserve the same rounding margin for isolated and joined grids.
+    chord * &Rational::from_ratio(63, 64).unwrap()
 }
 
 struct Patch {
@@ -282,7 +287,7 @@ pub(super) fn prepare_definitions(
     let mut count = 0;
     reserve(&mut count, vertices.len(), options.max_vertices)?;
     let tolerance = if measured {
-        &options.chord_tolerance * &Rational::from_ratio(63, 64).unwrap()
+        measured_tolerance(&options.chord_tolerance)
     } else {
         options.chord_tolerance.mul_pow2(-1)
     };

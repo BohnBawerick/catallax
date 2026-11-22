@@ -59,7 +59,7 @@ fn hardware_preview_is_fenced_from_proof_and_export_routes() {
             .iter()
             .all(|a| !FORBIDDEN.iter().any(|f| a.starts_with(f)))
     );
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let root = Path::new("../..");
     let mut files = Vec::new();
     for crate_dir in std::fs::read_dir(root.join("crates")).unwrap() {
         let src = crate_dir.unwrap().path().join("src");
@@ -76,7 +76,7 @@ fn hardware_preview_is_fenced_from_proof_and_export_routes() {
     let mut offenders = Vec::new();
     for file in files {
         let relative = file
-            .strip_prefix(&root)
+            .strip_prefix(root)
             .unwrap()
             .to_string_lossy()
             .replace('\\', "/");

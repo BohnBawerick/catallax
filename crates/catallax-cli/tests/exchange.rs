@@ -1,14 +1,18 @@
 //! End-to-end checks of the kernel-side exchange, without judge dependencies.
 
+mod support;
+
 use std::{
     fs,
     path::PathBuf,
-    process::{Command, Output},
+    process::Output,
     sync::atomic::{AtomicU64, Ordering},
 };
 
 use catallax_numbers::Rational;
 use serde_json::{Value, json};
+
+use support::bin_command;
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
@@ -26,7 +30,7 @@ impl Sandbox {
     }
 
     fn run(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_exact-brep"))
+        bin_command!("exact-brep")
             .args(args)
             .env_clear()
             .current_dir(&self.0)
@@ -594,7 +598,7 @@ fn boolean_deadlines_abandon_work_and_publish_only_a_refusal() {
         fs::create_dir(sandbox.0.join("out")).unwrap();
         fs::write(sandbox.0.join("out/answer.step"), "stale answer").unwrap();
         let start = Instant::now();
-        let mut child = Command::new(env!("CARGO_BIN_EXE_exact-brep"))
+        let mut child = bin_command!("exact-brep")
             .args(["answer", "question.json", "--out", "out"])
             .env_clear()
             // The dev-only numbers feature freezes the deadline until the

@@ -62,11 +62,7 @@ fn case(name: &str, recipe: Recipe, inside: &[[&str; 3]], outside: &[[&str; 3]])
 }
 
 fn corpus(id: &str) -> Case {
-    let text = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../parts/fillets/cases.jsonl"
-    ))
-    .unwrap();
+    let text = std::fs::read_to_string("../../parts/fillets/cases.jsonl").unwrap();
     let row: Value = text
         .lines()
         .map(|line| serde_json::from_str::<Value>(line).unwrap())

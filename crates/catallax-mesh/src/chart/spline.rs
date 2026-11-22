@@ -292,14 +292,16 @@ impl SplineChart {
     pub(crate) fn edge_within(
         &self,
         [a, middle, b]: [[f64; 3]; 3],
+        [first_hint, middle_hint, last_hint]: [Option<Uv>; 3],
         chord: Interval,
         cosine: Option<Interval>,
         dec: &mut Decider,
     ) -> Result<bool, Refusal> {
         let goal = (chord * point(0.125)).lo();
-        let a = self.project(a, None, goal, dec)?;
-        let m = self.project(middle, Some(a), goal, dec)?;
-        let b = self.project(b, Some(m), goal, dec)?;
+        let a = self.project_edge(a, first_hint, None, goal, dec)?;
+        let b = self.project_edge(b, last_hint, Some(a), goal, dec)?;
+        let seed = std::array::from_fn(|i| a[i].midpoint(b[i]));
+        let m = self.project_edge(middle, middle_hint, Some(seed), goal, dec)?;
         let uv = [a, m, b];
         if self.chord(&uv, dec)?.hi() > chord.lo() {
             return Ok(false);
@@ -311,6 +313,37 @@ impl SplineChart {
             .normal_box(span.local_box(m.map(|x| [x; 2])), dec)?;
         let direction = at.map(|n| point(n.mid()));
         self.check_normal_box(bounds, direction, cosine, dec)
+    }
+
+    fn project_edge(
+        &self,
+        position: [f64; 3],
+        hint: Option<Uv>,
+        seed: Option<Uv>,
+        goal: f64,
+        dec: &mut Decider,
+    ) -> Result<Uv, Refusal> {
+        let key = position.map(f64::to_bits);
+        if let Some(&uv) = self.edge_parameters.borrow().get(&key) {
+            return Ok(uv);
+        }
+        if let Some(uv) = hint
+            && self.spans.iter().any(|span| span.contains(uv))
+        {
+            let expected = self.evaluate(uv, dec)?;
+            let residual = position
+                .into_iter()
+                .zip(expected)
+                .fold(point(0.0), |sum, (x, y)| {
+                    let delta = point(x) - y;
+                    sum + point(delta.lo().abs().max(delta.hi().abs()))
+                });
+            if residual.hi() <= goal {
+                self.edge_parameters.borrow_mut().insert(key, uv);
+                return Ok(uv);
+            }
+        }
+        self.project(position, hint.or(seed), goal, dec)
     }
 
     pub(crate) fn seed_grid(
@@ -506,17 +539,23 @@ mod tests {
         let edge = |a: f64, b: f64| [a, (a + b) * 0.5, b].map(|u| [u, 0.0, 0.0]);
         assert!(
             chart
-                .edge_within(edge(0.0, 1.0), chord, None, &mut dec)
+                .edge_within(edge(0.0, 1.0), [None; 3], chord, None, &mut dec)
                 .unwrap()
         );
         assert!(
             !chart
-                .edge_within(edge(0.0, 1.0), chord, Some(half_angle), &mut dec)
+                .edge_within(edge(0.0, 1.0), [None; 3], chord, Some(half_angle), &mut dec)
                 .unwrap()
         );
         assert!(
             chart
-                .edge_within(edge(0.0, 0.0625), chord, Some(half_angle), &mut dec)
+                .edge_within(
+                    edge(0.0, 0.0625),
+                    [None; 3],
+                    chord,
+                    Some(half_angle),
+                    &mut dec
+                )
                 .unwrap()
         );
     }

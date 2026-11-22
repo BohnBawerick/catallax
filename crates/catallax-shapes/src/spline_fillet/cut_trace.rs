@@ -19,6 +19,14 @@ pub struct DisplayCut {
     before: Sign,
 }
 
+/// A point enclosure and its parameter enclosure on the cut's own carrier.
+pub struct DisplayCutSample {
+    /// Cartesian coordinate bounds in millimetres.
+    pub position: [Interval; 3],
+    /// Axial and across-fillet parameters, in carrier coordinates.
+    pub parameters: [Interval; 2],
+}
+
 struct DisplaySpan {
     g: [Vec<Interval>; 3],
     speed: Interval,
@@ -76,6 +84,11 @@ impl FilletCutTrace {
     /// The checked cut, including its exact rail endpoints.
     pub fn cut(&self) -> &FilletCut {
         &self.cut
+    }
+
+    /// The fillet whose carrier supplies the cut's parameters.
+    pub fn fillet(&self) -> &SplineFillet {
+        &self.fillet
     }
 
     /// The exact endpoint on rail `side`.
@@ -255,7 +268,7 @@ impl DisplayCut {
         theta: Interval,
         output_width: f64,
         dec: &mut Decider,
-    ) -> Result<Option<[Interval; 3]>, Refusal> {
+    ) -> Result<Option<DisplayCutSample>, Refusal> {
         let one = Interval::point(1.0).unwrap();
         let blend = |a: Interval, b: Interval| a + (b - a) * theta;
         let side = |g: Interval, sign: Sign| match sign {
@@ -268,7 +281,7 @@ impl DisplayCut {
         } else {
             Sign::Positive
         };
-        let mut found: Option<[Interval; 3]> = None;
+        let mut found: Option<DisplayCutSample> = None;
         for span in &self.spans {
             let [a, b, c] = &span.g;
             let column = |i: usize| blend(blend(a[i], b[i]), blend(b[i], c[i]));
@@ -310,10 +323,21 @@ impl DisplayCut {
                 }
                 root = next;
             }
-            let point = span.carrier.evaluate_box([root, theta], dec)?;
-            found = Some(found.map_or(point, |cover| {
-                std::array::from_fn(|i| cover[i].hull(&point[i]))
-            }));
+            let position = span.carrier.evaluate_box([root, theta], dec)?;
+            let [low, high] = &span.carrier.domain()[0];
+            let origin = Interval::from_rational(low);
+            dec.charge_work(1)?;
+            let parameter = origin + Interval::from_rational(&(high - low)) * root;
+            let (position, parameter) = found.map_or((position, parameter), |cover| {
+                (
+                    std::array::from_fn(|i| cover.position[i].hull(&position[i])),
+                    cover.parameters[0].hull(&parameter),
+                )
+            });
+            found = Some(DisplayCutSample {
+                position,
+                parameters: [parameter, theta],
+            });
         }
         Ok(found)
     }

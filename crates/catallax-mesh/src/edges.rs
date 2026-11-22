@@ -2,12 +2,14 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use catallax_intersect::{TracePiece, trace};
 use catallax_numbers::{Ball, Decider, Interval, MarkLog, Rational, Real, Refusal};
-use catallax_shapes::{DisplayCut, FilletCut, tessellation::RationalSpan};
+use catallax_shapes::{
+    DisplayCut, FilletCutTrace, SplineSupport, Surface, tessellation::RationalSpan,
+};
 use catallax_topology::{BodyId, EdgeId, Loop, Model, Sense, VertexId};
 
 use crate::{
     EdgeMesh, Mesh, MeshOptions,
-    chart::{self, BITS, Chart, align},
+    chart::{self, BITS, Chart, Uv, align},
     failure,
 };
 
@@ -156,10 +158,15 @@ pub(crate) fn trace_chord(
 }
 
 struct Cap<'a> {
-    cut: &'a FilletCut,
+    trace: &'a FilletCutTrace,
     chart: DisplayCut,
     forward: bool,
     coefficient: Rational,
+}
+
+struct EdgePoint {
+    xyz: [Ball; 3],
+    cap_hint: Option<Uv>,
 }
 
 struct Sampler<'a> {
@@ -211,7 +218,8 @@ impl Sampler<'_> {
     fn insert_middle(&mut self, mut position: [f64; 3], t: &Rational) -> Result<usize, Refusal> {
         let index = self.positions.len();
         if let Some(points) = &mut self.exact_positions {
-            let point = if let Some(Cap { cut, .. }) = &self.cap {
+            let point = if let Some(cap) = &self.cap {
+                let cut = cap.trace.cut();
                 let mut coordinates = position.map(chart::q);
                 // Spell the point exactly on the cap plane for its trim
                 // predicates. The chord check includes this replacement.
@@ -236,16 +244,20 @@ impl Sampler<'_> {
         Ok(index)
     }
 
-    fn enclose_point(&mut self, t: &Rational) -> Result<[Ball; 3], Refusal> {
+    fn enclose_point(&mut self, t: &Rational) -> Result<EdgePoint, Refusal> {
         let goal = Interval::from_rational(&self.options.chord_tolerance.mul_pow2(-4)).lo();
         let parameter = Interval::from_rational(t);
+        let mut cap_hint = None;
         let filtered = if let Some(cap) = &self.cap {
             let theta = if cap.forward {
                 parameter
             } else {
                 Interval::point(1.0).unwrap() - parameter
             };
-            cap.chart.enclose(theta, goal, self.dec)?
+            cap.chart.enclose(theta, goal, self.dec)?.map(|sample| {
+                cap_hint = Some(sample.parameters.map(|value| value.mid()));
+                sample.position
+            })
         } else if let Some(spline) = &self.spline {
             Some(spline.evaluate_box([parameter, Interval::point(0.0).unwrap()], self.dec)?)
         } else {
@@ -258,13 +270,21 @@ impl Sampler<'_> {
                 sum + Interval::point(x.width()).unwrap()
             });
             if width.is_finite() && width.hi() <= goal {
-                return Ok(values.map(|x| {
-                    Ball::from_rational(&chart::q(x.lo()), BITS)
-                        .hull(&Ball::from_rational(&chart::q(x.hi()), BITS))
-                }));
+                return Ok(EdgePoint {
+                    xyz: values.map(|x| {
+                        Ball::from_rational(&chart::q(x.lo()), BITS)
+                            .hull(&Ball::from_rational(&chart::q(x.hi()), BITS))
+                    }),
+                    cap_hint,
+                });
             }
         }
-        self.piece.evaluate(&Ball::from_rational(t, BITS), self.dec)
+        Ok(EdgePoint {
+            xyz: self
+                .piece
+                .evaluate(&Ball::from_rational(t, BITS), self.dec)?,
+            cap_hint,
+        })
     }
 
     fn segment(
@@ -274,15 +294,15 @@ impl Sampler<'_> {
         indices: [usize; 2],
         depth: u32,
         inherited_acceleration: Option<&Rational>,
-        endpoints: [&[Ball; 3]; 2],
+        endpoints: [&EdgePoint; 2],
     ) -> Result<(), Refusal> {
         self.dec.check_deadline()?;
         let [first, last] = indices;
         let [a, b] = endpoints;
         let interval = Ball::from_rational(&lo, BITS).hull(&Ball::from_rational(&hi, BITS));
         let width = &hi - &lo;
-        let residual = chart::residual(&self.positions[first], a)
-            .max(chart::residual(&self.positions[last], b));
+        let residual = chart::residual(&self.positions[first], &a.xyz)
+            .max(chart::residual(&self.positions[last], &b.xyz));
         let distance =
             |acceleration: &Rational| &(&(acceleration * &width) * &width).mul_pow2(-2) + &residual;
         let acceleration = if let Some(acceleration) = inherited_acceleration
@@ -294,18 +314,35 @@ impl Sampler<'_> {
         };
         let bound = distance(&acceleration);
         let mid = (&lo + &hi).mul_pow2(-1);
-        let middle_values = self.enclose_point(&mid)?;
-        let middle = chart::position(&middle_values)?;
+        let middle_point = self.enclose_point(&mid)?;
+        let middle = chart::position(&middle_point.xyz)?;
         let mut small = bound <= self.options.chord_tolerance.mul_pow2(-3);
         if let Some(limit) = &self.options.max_edge_length {
             small &= crate::controls::length_squared(self.positions[first], self.positions[last])
                 <= limit * limit;
         }
         for chart in self.charts {
-            if let Some(spline) = chart.spline() {
+            if let (Some(spline), Surface::BSpline(support)) = (chart.spline(), &chart.surface) {
                 if small {
+                    let hints = if let (Some(cap), SplineSupport::SplineFillet(fillet)) =
+                        (&self.cap, support)
+                        && cap.trace.fillet().shares_definition_nodes(fillet)
+                    {
+                        [a.cap_hint, middle_point.cap_hint, b.cap_hint]
+                    } else {
+                        let carrier = Chart::carrier(support);
+                        [
+                            self.piece
+                                .display_boundary_parameters(carrier, &lo, self.dec)?,
+                            self.piece
+                                .display_boundary_parameters(carrier, &mid, self.dec)?,
+                            self.piece
+                                .display_boundary_parameters(carrier, &hi, self.dec)?,
+                        ]
+                    };
                     small = spline.edge_within(
                         [self.positions[first], middle, self.positions[last]],
+                        hints,
                         Interval::from_rational(&self.options.chord_tolerance.mul_pow2(-3)),
                         self.spline_cosine,
                         self.dec,
@@ -363,7 +400,7 @@ impl Sampler<'_> {
             [first, index],
             depth + 1,
             Some(&acceleration),
-            [a, &middle_values],
+            [a, &middle_point],
         )?;
         self.segment(
             mid,
@@ -371,7 +408,7 @@ impl Sampler<'_> {
             [index, last],
             depth + 1,
             Some(&acceleration),
-            [&middle_values, b],
+            [&middle_point, b],
         )
     }
 }
@@ -586,13 +623,22 @@ pub(crate) fn sample(
                 .fillet_cut()
                 .map(|(trace, forward)| {
                     Ok::<_, Refusal>(Cap {
-                        cut: trace.cut(),
+                        trace,
                         chart: trace.display_chart(dec)?,
                         forward,
                         coefficient: trace.display_acceleration(dec)?.mul_pow2(-1),
                     })
                 })
                 .transpose()?;
+            let endpoint = |i: usize, xyz| EdgePoint {
+                xyz,
+                cap_hint: cap.as_ref().map(|cap| {
+                    let side = if cap.forward { i } else { 1 - i };
+                    [cap.trace.cut().ends[side].to_f64_nearest(), side as f64]
+                }),
+            };
+            let first_point = endpoint(0, first_values.clone());
+            let last_point = endpoint(1, last_values);
             let spline = if adjacent[&edge_id]
                 .iter()
                 .any(|chart| chart.spline().is_some())
@@ -620,7 +666,7 @@ pub(crate) fn sample(
                 [start, last],
                 0,
                 None,
-                [first_values, &last_values],
+                [&first_point, &last_point],
             )?;
         }
         // Chart seams can add a trace sample closer to an endpoint than the

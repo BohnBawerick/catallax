@@ -337,21 +337,19 @@ impl RationalSpan {
         let center = uv.map(|value| point(value.mid()));
         let delta = std::array::from_fn(|i| uv[i] - center[i]);
         let [x, y, z, weight] = if uv.iter().all(|axis| axis.width() == 0.0) {
-            dec.charge_work(eval_products(self.degree))?;
             intersect_hull(
-                evaluate(&self.control, self.degree, uv, point, |i| i),
+                evaluate(&self.control, self.degree, uv, point, |i| i, dec)?,
                 self.control_hull,
             )
         } else {
-            dec.charge_work(eval_products(self.degree) + 2 * 4)?;
             centered_range(
                 &self.control,
                 self.degree,
-                center,
-                delta,
+                [center, delta],
                 self.control_hull,
                 self.first_hulls,
-            )
+                dec,
+            )?
         };
         let weight = Interval::new(weight.lo().max(self.min_weight.lo()), weight.hi())
             .ok_or_else(|| refuse("evaluated weight and control bounds do not overlap"))?;
@@ -375,30 +373,29 @@ impl RationalSpan {
         }
         let center = uv.map(|value| point(value.mid()));
         let delta = std::array::from_fn(|i| uv[i] - center[i]);
-        dec.charge_work(eval_products(self.degree) + 2 * 4)?;
         let homogeneous = centered_range(
             &self.control,
             self.degree,
-            center,
-            delta,
+            [center, delta],
             self.control_hull,
             self.first_hulls,
-        );
+            dec,
+        )?;
         let mut tangents = [[point(0.0); 3]; 2];
         for (axis, tangent) in tangents.iter_mut().enumerate() {
             if self.first[axis].is_empty() {
                 continue;
             }
             let degree = lower_degree(self.degree, axis);
-            dec.charge_work(eval_products(degree) + 2 * 4 + 2 * 3)?;
             let first = centered_range(
                 &self.first[axis],
                 degree,
-                center,
-                delta,
+                [center, delta],
                 self.first_hulls[axis],
                 [self.second_hulls[axis], self.second_hulls[axis + 1]],
-            );
+                dec,
+            )?;
+            dec.charge_work(2 * 3)?;
             *tangent =
                 std::array::from_fn(|i| homogeneous[3] * first[i] - homogeneous[i] * first[3]);
         }
@@ -493,16 +490,14 @@ impl RationalSpan {
         target: [f64; 3],
         dec: &mut Decider,
     ) -> Result<[f64; 3], Refusal> {
-        dec.charge_work(eval_products(self.degree))?;
-        let homogeneous = evaluate(&self.control, self.degree, uv, |x| x, |x| x.mid());
+        let homogeneous = evaluate(&self.control, self.degree, uv, |x| x, |x| x.mid(), dec)?;
         Ok(std::array::from_fn(|i| {
             homogeneous[i] / homogeneous[3] - target[i]
         }))
     }
 
     fn jacobian(&self, uv: [f64; 2], dec: &mut Decider) -> Result<[[f64; 3]; 2], Refusal> {
-        dec.charge_work(eval_products(self.degree))?;
-        let [x, y, z, weight] = evaluate(&self.control, self.degree, uv, |x| x, |x| x.mid());
+        let [x, y, z, weight] = evaluate(&self.control, self.degree, uv, |x| x, |x| x.mid(), dec)?;
         let position = [x / weight, y / weight, z / weight];
         let mut derivatives = [[0.0; 3]; 2];
         for (axis, row) in derivatives.iter_mut().enumerate() {
@@ -510,8 +505,8 @@ impl RationalSpan {
                 continue;
             }
             let degree = lower_degree(self.degree, axis);
-            dec.charge_work(eval_products(degree) + 3)?;
-            let value = evaluate(&self.first[axis], degree, uv, |x| x, |x| x.mid());
+            let value = evaluate(&self.first[axis], degree, uv, |x| x, |x| x.mid(), dec)?;
+            dec.charge_work(3)?;
             *row = std::array::from_fn(|i| (value[i] - position[i] * value[3]) / weight);
         }
         Ok(derivatives)
@@ -520,13 +515,6 @@ impl RationalSpan {
 
 fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
-
-// Bernstein basis recurrence. Each order contributes two products per basis
-// entry, then the tensor evaluation pays one product for the basis and four
-// for the homogeneous coordinates of each control.
-fn eval_products([u, v]: [usize; 2]) -> u64 {
-    (u * (u + 1) + v * (v + 1) + 5 * (u + 1) * (v + 1)) as u64
 }
 
 fn basis<T>(degree: usize, t: T, one: T, zero: T) -> Vec<T>
@@ -552,24 +540,53 @@ fn evaluate<T>(
     uv: [T; 2],
     scalar: impl Fn(f64) -> T,
     value: impl Fn(Interval) -> T,
-) -> [T; 4]
+    dec: &mut Decider,
+) -> Result<[T; 4], Refusal>
 where
-    T: Copy + Add<Output = T> + Sub<Output = T> + Mul<Output = T>,
+    T: Copy + PartialEq + Add<Output = T> + Sub<Output = T> + Mul<Output = T>,
 {
     let zero = scalar(0.0);
     let one = scalar(1.0);
-    let rows = basis(u, uv[0], one, zero);
-    let columns = basis(v, uv[1], one, zero);
+    let active_basis = |degree, parameter| {
+        if degree == 0 || parameter == zero {
+            (0, vec![one], 0)
+        } else if parameter == one {
+            (degree, vec![one], 0)
+        } else {
+            // Each recurrence order k has 2k products.
+            (
+                0,
+                basis(degree, parameter, one, zero),
+                degree * (degree + 1),
+            )
+        }
+    };
+    let (first_row, rows, u_products) = active_basis(u, uv[0]);
+    let (first_column, columns, v_products) = active_basis(v, uv[1]);
+    let products = match (rows.len(), columns.len()) {
+        (1, 1) => return Ok(net[first_row * (v + 1) + first_column].map(value)),
+        (1, columns) => 4 * columns,
+        (rows, 1) => 4 * rows,
+        (rows, columns) => 5 * rows * columns,
+    };
+    dec.charge_work((u_products + v_products + products) as u64)?;
     let mut sum = [zero; 4];
-    for (row, &row_weight) in net.chunks_exact(v + 1).zip(&rows) {
-        for (control, &column_weight) in row.iter().zip(&columns) {
-            let weight = row_weight * column_weight;
+    let row_iter = net.chunks_exact(v + 1).skip(first_row).zip(&rows);
+    for (row, &row_weight) in row_iter {
+        for (control, &column_weight) in row[first_column..].iter().zip(&columns) {
+            let weight = if rows.len() == 1 {
+                column_weight
+            } else if columns.len() == 1 {
+                row_weight
+            } else {
+                row_weight * column_weight
+            };
             for (slot, &control) in sum.iter_mut().zip(control) {
                 *slot = *slot + value(control) * weight;
             }
         }
     }
-    sum
+    Ok(sum)
 }
 
 fn control_hull(net: &[[Interval; 4]]) -> [Interval; 4] {
@@ -584,15 +601,31 @@ fn control_hull(net: &[[Interval; 4]]) -> [Interval; 4] {
 fn centered_range(
     net: &[[Interval; 4]],
     degree: [usize; 2],
-    center: [Interval; 2],
-    [du, dv]: [Interval; 2],
+    [center, [du, dv]]: [[Interval; 2]; 2],
     hull: [Interval; 4],
     [u, v]: [[Interval; 4]; 2],
-) -> [Interval; 4] {
+    dec: &mut Decider,
+) -> Result<[Interval; 4], Refusal> {
     // Mean value form on the box. The Bernstein hulls bound the two
     // derivatives along both coordinate displacements from the centre.
-    let at = evaluate(net, degree, center, point, |i| i);
-    intersect_hull(std::array::from_fn(|i| at[i] + du * u[i] + dv * v[i]), hull)
+    let at = evaluate(net, degree, center, point, |i| i, dec)?;
+    let zero = point(0.0);
+    let u_delta = if du == zero {
+        [zero; 4]
+    } else {
+        dec.charge_work(4)?;
+        u.map(|d| du * d)
+    };
+    let v_delta = if dv == zero {
+        [zero; 4]
+    } else {
+        dec.charge_work(4)?;
+        v.map(|d| dv * d)
+    };
+    Ok(intersect_hull(
+        std::array::from_fn(|i| at[i] + u_delta[i] + v_delta[i]),
+        hull,
+    ))
 }
 
 fn intersect_hull(evaluated: [Interval; 4], hull: [Interval; 4]) -> [Interval; 4] {

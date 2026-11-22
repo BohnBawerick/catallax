@@ -988,6 +988,7 @@ impl FaceBuilder<'_> {
         } else {
             None
         };
+        let mut certificates = BTreeMap::<[usize; 3], (Rational, Rational)>::new();
         for _ in 0..48 {
             self.dec.check_deadline()?;
             let labels = self.labels()?;
@@ -1037,6 +1038,21 @@ impl FaceBuilder<'_> {
                     }
                 }
                 if split {
+                    continue;
+                }
+                // A later CDT round does not move an unchanged spline facet.
+                // Key by the cyclic vertex order to retain its proved normal.
+                let first = (0..3).min_by_key(|&i| vertices[i]).unwrap();
+                let mut certificate_key = vertices;
+                certificate_key.rotate_left(first);
+                if let Some((error, ratio)) = certificates.get(&certificate_key) {
+                    maximum = maximum.max(error.clone());
+                    aspect = aspect.max(ratio.clone());
+                    vertices = certificate_key;
+                    if sense == Sense::Reversed {
+                        vertices.swap(1, 2);
+                    }
+                    triangles.push(Triangle { vertices, face });
                     continue;
                 }
                 let residual = nodes.iter().map(|n| &self.errors[n.error]).max().unwrap();
@@ -1123,6 +1139,9 @@ impl FaceBuilder<'_> {
                     }
                     pending.insert(key(center), center);
                     continue;
+                }
+                if spline.is_some() {
+                    certificates.insert(certificate_key, (error.clone(), ratio.clone()));
                 }
                 aspect = aspect.max(ratio);
                 maximum = maximum.max(error);

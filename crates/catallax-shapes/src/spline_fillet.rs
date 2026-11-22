@@ -58,7 +58,7 @@ mod order;
 #[path = "spline_fillet/surface.rs"]
 mod surface;
 
-pub use cut_trace::{DisplayCut, FilletCutTrace};
+pub use cut_trace::{DisplayCut, DisplayCutSample, FilletCutTrace};
 use jets::{Exact, Jet, Support};
 pub use numerical::{
     NumericalFilletCorner, NumericalFilletCut, NumericalFilletSpine, NumericalFilletSupport,

@@ -318,6 +318,21 @@ impl TracePiece {
         }
     }
 
+    /// Chart parameters when this trace follows a shared spline boundary.
+    pub fn display_boundary_parameters(
+        &self,
+        surface: &catallax_shapes::BSplineSurface,
+        parameter: &Rational,
+        dec: &mut Decider,
+    ) -> Result<Option<[f64; 2]>, Refusal> {
+        let TraceCoordinates::Explicit(piece) = &self.coords else {
+            return Ok(None);
+        };
+        piece.span.as_ref().map_or(Ok(None), |span| {
+            span.display_parameters(surface, parameter, dec)
+        })
+    }
+
     /// Source chart jets when this piece retains a finite patch section.
     pub fn section_parameters(
         &self,

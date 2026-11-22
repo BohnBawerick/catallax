@@ -21,9 +21,8 @@ its spline fillet refusal. Mirrors and patterns that copy a rounded
 spline shell return `field.spline-copy`. Copied unrounded lofts support
 field queries. A later spline fillet on a copy returns
 `fillet.unsupported-spline`.
-Compare checks every vertex of the named spline loft blend and reports
-missing reverse coverage. Its positional certificate covers the selected
-face. Refusals are reported under
+See [selected spline fillet comparison](../COMPARE.md#selected-spline-fillet)
+for report semantics. Sweep refusals are reported under
 `field.spline-sweep`, `field.spline-sweep-reach`,
 `field.spline-sweep-sector`, `field.spline-sweep-cap`, or
 `field.spline-sweep-clearance` as applicable.

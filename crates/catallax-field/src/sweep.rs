@@ -382,26 +382,32 @@ impl Plan {
         if let Some(node) = self.circular_loft(recipe, sections, profiles, step, dec)? {
             return Ok(node);
         }
-        match Self::loft_translation(recipe, sections, shape, profiles, dec)
+        let refusal = match Self::loft_translation(recipe, sections, shape, profiles, dec)
             .map_err(ComparisonBuildRefusal::Ordinary)?
         {
-            Ok(None) => Ok(0),
-            Ok(Some(vector)) => self
-                .motion_feature(
-                    Feature::extrude_vector(first, step, vector, false, dec)?,
-                    dec,
-                )
-                .map_err(ComparisonBuildRefusal::Ordinary),
-            Err(refusal) => self.patch_or(
-                recipe,
-                refusal,
-                sections,
-                shape,
-                profiles,
-                (step, shell_refusal),
-                dec,
-            ),
+            Ok(None) => return Ok(0),
+            Ok(Some(vector)) => {
+                let built = Feature::extrude_vector(first, step, vector, false, dec)?;
+                return self
+                    .motion_feature(built, dec)
+                    .map_err(ComparisonBuildRefusal::Ordinary);
+            }
+            Err(refusal) => refusal,
+        };
+        if let Some(node) = self.circular_station_loft(recipe, sections, shape, profiles, dec)? {
+            return Ok(node);
         }
+        if let Some(outline) = Self::patch_outline(sections, profiles, dec)
+            .map_err(ComparisonBuildRefusal::Ordinary)?
+            && let Some(node) = self.patch_loft(outline, step, dec).map_err(shell_refusal)?
+        {
+            return Ok(node);
+        }
+        if let Some(node) = self.affine_loft(sections, profiles, dec)? {
+            return Ok(node);
+        }
+        self.polygon_station_loft(recipe, sections, shape, profiles, dec)?
+            .ok_or(ComparisonBuildRefusal::Ordinary(refusal))
     }
 
     fn loft_translation(
@@ -515,33 +521,6 @@ impl Plan {
             previous = t;
         }
         Ok(Ok(Some(vector)))
-    }
-
-    /// Tries the patch-shell lofts before returning the correspondence refusal.
-    fn patch_or(
-        &mut self,
-        recipe: &Recipe,
-        refusal: Refusal,
-        sections: &[LoftSection],
-        shape: LoftShape,
-        profiles: &BTreeMap<StepId, Profile>,
-        (step, shell_refusal): (&StepId, fn(Refusal) -> ComparisonBuildRefusal),
-        dec: &mut Decider,
-    ) -> Result<usize, ComparisonBuildRefusal> {
-        if let Some(node) = self.circular_station_loft(recipe, sections, shape, profiles, dec)? {
-            return Ok(node);
-        }
-        if let Some(outline) = Self::patch_outline(sections, profiles, dec)
-            .map_err(ComparisonBuildRefusal::Ordinary)?
-            && let Some(node) = self.patch_loft(outline, step, dec).map_err(shell_refusal)?
-        {
-            return Ok(node);
-        }
-        if let Some(node) = self.affine_loft(sections, profiles, dec)? {
-            return Ok(node);
-        }
-        self.polygon_station_loft(recipe, sections, shape, profiles, dec)?
-            .ok_or(ComparisonBuildRefusal::Ordinary(refusal))
     }
 
     /// A loft between two parallel polygons, every slice of which is a

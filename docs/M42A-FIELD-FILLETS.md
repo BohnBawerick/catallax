@@ -533,16 +533,9 @@ level 1.
 
 ### Forward display comparison
 
-The comparison uses the existing complete-cell positional grid at
-0.005 mm. The two caps identify the trimmed fillet's boundary. Only
-the selected fillet face supplies a grid or edge stations. The
-biquadratic fixture displays the complete fitted carrier, which has
-no body cuts. The forward comparison includes the positional display
-bound and the B-rep fit bound. A vertex passes when the field proves
-its distance is at most the combined bound and the widened upper bound
-fits the display accuracy. A field lower bound above the combined bound
-proves a gap. A range that still straddles the combined bound after
-refinement reports `field.spline-bound-unresolved`.
+The loft fixtures use the [selected spline fillet comparison](COMPARE.md#selected-spline-fillet)
+at 0.005 mm chord tolerance. The biquadratic fixture displays the
+complete fitted carrier, which has no body cuts.
 The bare carrier test in `catallax-compare` charges the field proof and
 sweep, B-rep fit, grid and vertex queries to one request. The comparison
 totals and field build work recorded at `e30b732a` predate charging for

@@ -387,7 +387,8 @@ impl Plan {
             .map_err(ComparisonBuildRefusal::into_refusal)
     }
 
-    /// Compiles a sampled comparison plan with experimental spline fillet proofs.
+    /// Compiles a sampled comparison plan, enabling experimental proofs for
+    /// supported spline fillets on the selected result's lineage.
     pub fn compile_for_comparison(
         recipe: &Recipe,
         files: &catallax_features::ImportFiles<'_>,
@@ -1690,13 +1691,13 @@ impl Plan {
         &self.faces
     }
 
-    /// The closed patch shell when it alone defines the result.
+    /// The unrounded closed patch shell when it alone defines the result.
     pub fn result_patch_shell(&self) -> Option<&patch_shell::Shell> {
         let Instruction::Leaf(index) = self.instructions[self.root] else {
             return None;
         };
         match &self.leaves[index] {
-            geometry::Leaf::Shell(shell) => Some(shell),
+            geometry::Leaf::Shell(shell) if shell.blend_origin().is_none() => Some(shell),
             _ => None,
         }
     }

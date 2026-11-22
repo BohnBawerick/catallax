@@ -18,6 +18,13 @@ Two nonparallel polygon sections can use a patch shell when an affine correspond
 
 These constructions reuse the [whole patch shell](M42A-FIELD-FILLETS.md#step-72-whole-patches-in-a-field-solid). It classifies points by signed ray crossings and bounds the true distance to the nearest face through Bernstein subdivision. It recognizes exact hits on polygon caps. A curved-face query whose distance interval reaches zero can remain `Indeterminate`. Patch shells currently provide neither named field faces nor mass properties.
 
+`Plan::compile_for_comparison` can prove a single supported convex spline
+fillet on a ruled loft when the blend survives in the selected result.
+Ordinary compilation still refuses the spline fillet. The rounded shell
+proves membership and exposes its blend origin and distance range through
+`Plan::spline_blend_origin` and `Plan::spline_blend_distance`. See [the
+loft proof and cap cuts](M42A-FIELD-FILLETS.md#step-74-the-swept-ball-distance).
+
 Lattice point queries compile the periodic beam definitions of RECIPE section 4.15, intersected with the region. Constant and linear grades use exact rational squared-distance classification and a labelled Lipschitz-scaled residual `(β - ρ)/(1 + K)`, not true distance; `K` is exact when the anchors differ along one axis and a rational upper bound otherwise. Cell indices retain arbitrary precision. Distance grades and reflected frames are unfinished coverage. The support-chart display cannot cover periodic beams; the separate `printing::mesh_plan` path produces their watertight STL and OBJ outputs directly from the field. Ordinary solid-only STEP refuses an envelope-only lattice or gyroid. The explicit stand-in exchange below keeps surface-envelope and mass geometry separate.
 
 ### Graded fields

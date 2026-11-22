@@ -253,22 +253,18 @@ impl<'a> Sweep<'a> {
         caps: Option<&[Cap; 2]>,
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
-        let checked = (|| {
-            let caps = caps
-                .map(|[a, b]| -> Result<_, Refusal> {
-                    Ok([HalfSpace::new(a, dec)?, HalfSpace::new(b, dec)?])
-                })
-                .transpose()?;
-            let mut sweep = Self {
-                spine,
-                caps,
-                tail_bound: 0.0,
-            };
-            sweep.tail_bound = sweep.check(dec)?;
-            Ok(sweep)
-        })();
-
-        checked
+        let caps = caps
+            .map(|[a, b]| -> Result<_, Refusal> {
+                Ok([HalfSpace::new(a, dec)?, HalfSpace::new(b, dec)?])
+            })
+            .transpose()?;
+        let mut sweep = Self {
+            spine,
+            caps,
+            tail_bound: 0.0,
+        };
+        sweep.tail_bound = sweep.check(dec)?;
+        Ok(sweep)
     }
 
     /// Maximum distance from a near-tangent section to either contact rail

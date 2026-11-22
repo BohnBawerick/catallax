@@ -1,9 +1,8 @@
 //! Sampled display comparison. The spline fillet path checks the selected
 //! face in the forward direction and leaves reverse coverage unresolved.
-//! Agreement is not a global Hausdorff
-//! certificate or a pre-export accuracy certificate. Imported definitions also
+//! Agreement covers sampled display accuracy. Imported definitions also
 //! compare exact containment samples and independent volume enclosures.
-//! See `docs/archive/PLAN-2026-11.md` for coverage and measured costs.
+//! See `docs/COMPARE.md` for coverage and measured costs.
 #![forbid(unsafe_code)]
 
 use catallax_numbers::{Interval, Rational, Refusal};
@@ -47,7 +46,8 @@ pub struct Options {
     pub divisions: u32,
     /// Minimum dot product of unit normals. Default is 999/1000.
     pub normal_cosine: Rational,
-    /// Restricts queries to this closed region, padded by mesh error forward.
+    /// Restricts queries to this closed region. Forward selection pads it by
+    /// display error, including the fit bound on the spline path.
     /// `None` uses all samples in the comparison scope. For spline fillets,
     /// that scope is the selected face.
     pub region: Option<Region>,
@@ -141,7 +141,8 @@ pub struct Report {
     /// Number of certified surviving field samples checked.
     pub reverse_samples: usize,
     /// Maximum certified distance upper bound over checked samples, including
-    /// forward mesh error. `None` means at least one distance is unbounded.
+    /// forward display error. `None` indicates an unbounded sampled distance
+    /// or a spline comparison without a complete forward bound.
     /// This is not a whole-boundary Hausdorff certificate.
     pub sampled_distance_upper: Option<Rational>,
     /// Proven disagreements and explicit unresolved observations, in fixed order.

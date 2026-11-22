@@ -7,9 +7,10 @@ Background comparison contract, current coverage and historical whole-check meas
 
 `catallax-compare` supplies the library check. `Controller::begin` invalidates the previous revision and clears its published result. Dispatch `Revision::check` on an application-owned worker, or use `check_built` with a cached B-rep build and the field recipe. Only a complete report for the still-current revision can publish. `cancel` invalidates its own revision without touching a newer edit. No library thread pool, clock deadline or app-side edit tracking is added.
 
-The forward pass preserves exact binary64 mesh coordinates as rationals. It uses
-the certified field query, then prepared field-native trimmed-face witnesses when
-the residual alone cannot settle proximity. After such a witness succeeds, later
+The ordinary forward pass preserves exact binary64 mesh coordinates as
+rationals. It uses the certified field query, then prepared field-native
+trimmed-face witnesses when the residual alone cannot settle proximity.
+After such a witness succeeds, later
 vertices try incident witnesses before repeating the signed query. An exact
 admitted boundary point already proves unsigned proximity; no signed classification
 at the mesh point is needed for that upper certificate. A failed seed retains the
@@ -37,9 +38,32 @@ or normal proof.
 
 Origin comparisons use canonical sets from `Model::face_origins`. A maximal merged face can contain different creating origins on adjacent patches, so the check collects the locally witnessed names over that face rather than requiring every name at every point. Field normal enclosures and exact B-rep gradients check outward direction at the reverse witnesses. Sharp mesh vertices do not acquire fabricated unique normals. Missing origin or direction coverage stays unresolved.
 
-`Report::sampled_distance_upper` is the maximum checked distance upper, including forward mesh error. `None` means at least one checked distance remains unbounded. The verification CLI publishes it as `comparison.sampled_distance_upper_mm`. It is a sampled bound, not a whole-part Hausdorff certificate. See [trimmed minimum distances](FIELD.md#trimmed-minimum-distances) for the shared interval engine and the independent trim adapters.
+`Report::sampled_distance_upper` is the maximum certified upper bound over checked distances, including forward display error. An unbounded sampled distance gives `None`. A selected spline comparison also reports `None` if construction or sampling refuses or if no vertices fall within scope. Missing reverse coverage can coexist with a finite forward bound. See [the verification response](VERIFY-INTERFACE.md#response-and-geometric-manifest) for the CLI field and [trimmed minimum distances](FIELD.md#trimmed-minimum-distances) for the shared interval engine and independent trim adapters.
 
-Defaults are 0.01 mm display accuracy, 0.005 mm mesh chord tolerance, four rational intervals per sampling parameter interval, and minimum normal cosine 999/1000. These are sampled display checks, not a global Hausdorff certificate or the finer 1 nm pre-export check. Raising `divisions` increases independent reverse sampling. A closed rational `Region` restricts both passes; forward selection pads the box by the local mesh error. A scope with no two-way samples stays unresolved. A merged-face origin whose extent cannot be established within the region stays unresolved rather than causing a remote naming change to fail the local check. The library still rebuilds and meshes the complete B-rep, so regional rechecks reduce query work, not build cost. Cancellation is cooperative between kernel calls and individual samples; existing build and meshing calls are not interrupted internally.
+Defaults are 0.01 mm display accuracy, 0.005 mm mesh chord tolerance, four rational intervals per sampling parameter interval, and minimum normal cosine 999/1000. Whole-part Hausdorff and 1 nm pre-export certificates require separate proofs. Raising `divisions` increases independent reverse sampling on the ordinary path. A closed rational `Region` restricts the samples. Ordinary forward selection pads the box by the local mesh error. A scope with no two-way samples stays unresolved. A merged-face origin whose extent cannot be established within the region stays unresolved. Regional rechecks in the ordinary path reduce query work while still building and meshing the complete B-rep. Cancellation is cooperative between kernel calls and individual samples.
+
+### Selected spline fillet
+
+When the field result retains a supported spline blend on a ruled loft,
+the comparison builds both kernels and meshes only the selected B-rep
+fillet face. Construction, display and sampling share the caller's work
+allowance. The face display uses positional chord tolerance and refuses
+optional facet controls.
+
+The comparison checks every vertex in scope against the field's certified
+distance range. Let `e` be the sum of the B-rep positional display bound
+and the fit bound. A region uses `e` as padding. A field lower bound above
+`e` proves a gap. A vertex passes when the field upper bound is at most
+`e` and the upper bound plus `e` fits the display accuracy. If refinement
+leaves the range straddling `e`, the comparison reports an unresolved
+vertex with detail `field.spline-bound-unresolved`. Reverse origin and direction coverage
+remain unresolved, so passing all forward vertices still gives an
+unresolved verdict.
+
+See [the 4.2a fixture results](M42A-FIELD-FILLETS.md#forward-display-comparison)
+for the measured loft and bare-carrier checks.
+
+### Ordinary comparison coverage at the initial rollout
 
 | Recipe operations | Comparison coverage |
 |---|---|

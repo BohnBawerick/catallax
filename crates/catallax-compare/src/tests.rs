@@ -40,73 +40,87 @@ fn compare(brep: &Recipe, field: &Recipe, options: &Options) -> Report {
 }
 
 #[test]
-fn motion_shell_comparison_checks_spline_sweep_vertices_and_reports_reverse_gap() {
-    for source in [
-        include_str!("../../catallax-features/tests/fixtures/spline-sweep-planar.json"),
-        include_str!("../../catallax-features/tests/fixtures/spline-sweep-spatial.json"),
-    ] {
-        let recipe = Recipe::parse(source).unwrap();
-        let options = Options::default();
-        let (report, work) = catallax_numbers::with_operation_budget(100_000_000, || {
-            check_with_options(&recipe, &options)
-        });
-        assert!(!work.exhausted, "{work:?}");
-        assert!(report.refusal.is_none(), "{:?}", report.refusal);
-        assert!(report.forward_vertices > 0);
-        assert_eq!(report.reverse_samples, 0);
-        assert_eq!(report.verdict, Verdict::Unresolved);
-        assert_eq!(report.findings.len(), 1, "{:?}", report.findings.first());
-        assert_eq!(report.findings[0].pass, Pass::Reverse);
-        assert!(report.sampled_distance_upper.unwrap() <= options.accuracy);
-    }
-}
-
-#[test]
-fn loft_spline_rounds_have_forward_display_coverage() {
-    let polygon = |prefix: &str, points: [[i64; 2]; 4]| {
-        points.into_iter().enumerate().map(|(i, [x, y])| {
-            json!({"kind":"line","id":format!("{prefix}_{i}"),"to":[x.to_string(),y.to_string()]})
-        }).collect::<Vec<_>>()
+fn loft_spline_rounds_report_display_coverage_or_a_named_brep_refusal() {
+    let polygon = |prefix: &str, points: [[i64; 2]; 4], divisor: i64| {
+        points
+            .into_iter()
+            .enumerate()
+            .map(|(i, [x, y])| {
+                json!({"kind":"line","id":format!("{prefix}_{i}"),
+                "to":[format!("{x}/{divisor}"),format!("{y}/{divisor}")]})
+            })
+            .collect::<Vec<_>>()
     };
-    let bottom = polygon("a", [[1, -1], [1, 1], [-1, 1], [-1, -1]]);
     let side = |i: usize| json!({"step":"loft","role":{"side":{"segment":format!("a_{i}")}}});
     let section = |i: usize, height: &str, loop_: &[_]| {
         json!({"id":format!("section{i}"),"op":"sketch","loops":[loop_],
           "plane":{"rotation":["1","0","0","0"],"translation":["0","0",height]}})
     };
-    for ([a, b], planar) in [([0, 1], false), ([1, 2], false), ([0, 1], true)] {
+    let mut missing = Vec::new();
+    for ([a, b], planar, divisor, known_refusal) in [
+        (
+            [0, 1],
+            false,
+            1,
+            Some(("numbers.operation-budget", "B-rep positional display")),
+        ),
+        (
+            [1, 2],
+            false,
+            1,
+            Some(("numbers.operation-budget", "B-rep positional display")),
+        ),
+        (
+            [0, 1],
+            true,
+            1,
+            Some(("fillet.unsupported-contact", "B-rep build")),
+        ),
+        ([0, 1], false, 8, None),
+    ] {
+        let bottom = polygon("a", [[1, -1], [1, 1], [-1, 1], [-1, -1]], divisor);
         let top = if planar {
             [[1, 0], [1, 2], [-2, 0], [0, -1]]
         } else {
             [[1, 0], [0, 2], [-2, 0], [0, -1]]
         };
-        let top = polygon("b", top);
+        let top = polygon("b", top, divisor);
         let recipe = Recipe::parse(&json!({
             "format":"catallax-recipe/5","name":"M11 loft comparison","steps":[
-                section(0,"0",&bottom), section(1,"2",&top),
+                section(0,"0",&bottom), section(1,&format!("2/{divisor}"),&top),
                 {"id":"loft","op":"loft","shape":"ruled","sections":[
                     {"profile":"section0","start":["a_0"]},{"profile":"section1","start":["b_0"]}]},
-                {"id":"round","op":"fillet","body":"loft","radius":"1/10",
+                {"id":"round","op":"fillet","body":"loft","radius":format!("1/{}",10*divisor),
                     "edges":[{"between":[side(a),side(b)]}]}
             ],"result":"round"
         }).to_string()).unwrap();
         let (report, work) =
             catallax_numbers::with_operation_budget(100_000_000, || check(&recipe));
         println!(
-            "loft edges {a}/{b} planar {planar}: {} forward vertices, {} work, {:?}",
+            "loft edges {a}/{b} planar {planar} divisor {divisor}: {} forward vertices, {} work, {:?}",
             report.forward_vertices, work.used, report.refusal
         );
-        assert!(
-            report.forward_vertices > 0 && report.refusal.is_none(),
-            "{report:?}"
-        );
+        if let Some((code, source)) = known_refusal
+            && report.refusal.as_ref().is_some_and(|e| e.code == code)
+        {
+            assert_eq!(report.forward_vertices, 0);
+            assert!(report.findings.iter().any(|f| {
+                matches!(&f.reason, Reason::Unresolved(reason) if reason.starts_with(source))
+            }));
+            continue;
+        }
         let findings: Vec<_> = report
             .findings
             .iter()
             .filter(|f| f.pass == Pass::Forward)
             .collect();
-        assert!(findings.is_empty(), "{findings:?}");
+        if report.forward_vertices == 0 || report.refusal.is_some() || !findings.is_empty() {
+            missing.push(format!(
+                "loft edges {a}/{b} planar {planar} divisor {divisor}: {report:?}"
+            ));
+        }
     }
+    assert!(missing.is_empty(), "{}", missing.join("\n"));
 }
 
 #[test]
@@ -934,4 +948,26 @@ fn separated_curved_features_keep_finite_gap_bounds_after_near_samples() {
         }),
         "{report:?}"
     );
+}
+
+#[test]
+fn motion_shell_comparison_checks_spline_sweep_vertices_and_reports_reverse_gap() {
+    for source in [
+        include_str!("../../catallax-features/tests/fixtures/spline-sweep-planar.json"),
+        include_str!("../../catallax-features/tests/fixtures/spline-sweep-spatial.json"),
+    ] {
+        let recipe = Recipe::parse(source).unwrap();
+        let options = Options::default();
+        let (report, work) = catallax_numbers::with_operation_budget(100_000_000, || {
+            check_with_options(&recipe, &options)
+        });
+        assert!(!work.exhausted, "{work:?}");
+        assert!(report.refusal.is_none(), "{:?}", report.refusal);
+        assert!(report.forward_vertices > 0);
+        assert_eq!(report.reverse_samples, 0);
+        assert_eq!(report.verdict, Verdict::Unresolved);
+        assert_eq!(report.findings.len(), 1, "{:?}", report.findings.first());
+        assert_eq!(report.findings[0].pass, Pass::Reverse);
+        assert!(report.sampled_distance_upper.unwrap() <= options.accuracy);
+    }
 }

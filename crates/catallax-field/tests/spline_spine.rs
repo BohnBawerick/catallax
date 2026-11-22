@@ -613,23 +613,70 @@ fn near_tangent(slope: Q, dec: &mut Decider) -> SpineDefinition {
 #[test]
 fn a_plane_offset_can_enter_the_spline_spine_system_at_zero_offset() {
     let mut dec = Decider::default();
-    let mixed = near_tangent(r("15/8"), &mut dec);
-    let (spine, work) =
-        with_operation_budget(ALLOWANCE, || Spine::prove_spline_plane(&mixed, 1, &mut dec));
-    let spine = spine.unwrap();
+    let mut record = None;
+    for workers in [1, 2, 4] {
+        catallax_numbers::set_threads(NonZeroUsize::new(workers));
+        let mixed = near_tangent(r("15/8"), &mut dec);
+        let (spine, work) =
+            with_operation_budget(ALLOWANCE, || Spine::prove_spline_plane(&mixed, 1, &mut dec));
+        let spine = spine.unwrap();
+        assert!(!work.exhausted);
+        let signature = format!("{:?} {:?}", spine.spans(), spine.ends());
+        if let Some((_, seen_work, seen)) = &record {
+            assert_eq!((&work.used, &signature), (seen_work, seen));
+        }
+        record = Some((spine, work.used, signature));
+    }
+    catallax_numbers::set_threads(None);
+    let (spine, work, _) = record.unwrap();
     let [x, y, z, ..] = spine.at(0.5).unwrap();
-    // The second side is y = -(15/8)x, and the ball is above that
-    // plane. Since |(15,8)|=17, its offset is 15x + 8y = 17/10.
+    // The plane is 15x + 8y = 0. Offset its exact unit normal by 1/10.
     let p = |x| catallax_numbers::Interval::point(x).unwrap();
     assert!((x * p(15.0) + y * p(8.0)).contains(1.7));
     assert!(z.contains(1.0));
     assert!(spine.eps() <= spine.target());
-    assert!(!work.exhausted);
-    Sweep::new(&spine, &mut dec).unwrap();
+    let sweep = Sweep::new(&spine, &mut dec).unwrap();
+    // Reduce the offset intersection to a scalar solve on the first rail.
+    // Its offset x-coordinate has derivative at least 1 - (1/10)/8.
+    let centre = |u: f64| {
+        let slope = u / 8.0;
+        let length = (1.0 + slope * slope).sqrt();
+        [u - 0.1 * slope / length, u * u / 16.0 + 0.1 / length]
+    };
+    let (mut lo, mut hi) = (0.0_f64, 1.0_f64);
+    while hi > lo.next_up() {
+        let u = lo.midpoint(hi);
+        let [x, y] = centre(u);
+        if 15.0 * x + 8.0 * y < 1.7 {
+            lo = u;
+        } else {
+            hi = u;
+        }
+    }
+    let [cx, cy] = centre(lo);
+    let radial = [lo - cx - 1.5 / 17.0, lo * lo / 16.0 - cy - 0.8 / 17.0];
+    let scale = 0.1 / radial[0].hypot(radial[1]);
+    let exact = |x| Q::from_f64_exact(x).unwrap();
+    let width = r("1/1000000");
+    let mut times = Vec::new();
+    for i in 1..100 {
+        let p = RPoint3::new(
+            exact(cx + scale * radial[0]),
+            exact(cy + scale * radial[1]),
+            r("1/50") * q(i),
+        );
+        let before = Instant::now();
+        let range = sweep.distance(&p, &width, &mut dec).unwrap();
+        times.push(before.elapsed());
+        assert!(range.lower <= r("1/1000000000000"));
+        assert!(range.upper.is_some_and(|u| u <= width));
+    }
+    times.sort_unstable();
     println!(
-        "spline-plane tube {:.6e} mm, {} work",
+        "spline-plane tube {:.6e} mm, {work} work, median {:?} at {} independent points",
         spine.eps(),
-        work.used
+        times[times.len() / 2],
+        times.len()
     );
 }
 
@@ -657,81 +704,94 @@ fn the_biquadratic_brep_carrier_display_lies_within_the_field_sweep_range() {
     assert!(!work.exhausted);
     let fit = fit.unwrap();
 
-    // Mesh the fitted carrier as a bounded B-rep sheet. This frozen row
-    // specifies a support pair and a parameter range, with no cap faces.
-    let patch = RationalPatch::new(fit.carrier().clone(), &mut dec).unwrap();
-    let domain = patch.domain();
-    let mut model = Model::default();
-    let vertices = [[0, 0], [1, 0], [1, 1], [0, 1]].map(|[i, j]| {
-        let t = [domain[0][i].clone().into(), domain[1][j].clone().into()];
-        let p = patch.point_at(&t, &mut dec).unwrap();
-        let p = model.geom_mut().add_point(PointDef::Explicit(p));
-        model.add_vertex(Vertex {
-            point: p,
-            tolerance: None,
-        })
-    });
-    let mut coedges = Vec::new();
-    for (i, (side, sense)) in [
-        (SplineBoundary::VMin, Sense::Same),
-        (SplineBoundary::UMax, Sense::Same),
-        (SplineBoundary::VMax, Sense::Reversed),
-        (SplineBoundary::UMin, Sense::Reversed),
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        let curve = model
-            .geom_mut()
-            .add_curve(Curve::BSpline(patch.boundary(side)));
-        let edge = model.add_edge(Edge {
-            curve,
-            sense,
-            start: Some(vertices[i]),
-            end: Some(vertices[(i + 1) % 4]),
+    let (display, display_work) = with_operation_budget(100_000_000 - work.used, || {
+        // Mesh the fitted carrier as a bounded B-rep sheet. This frozen row
+        // specifies a support pair and a parameter range, with no cap faces.
+        let patch = RationalPatch::new(fit.carrier().clone(), &mut dec)
+            .map_err(|error| ("B-rep carrier admission", error))?;
+        let domain = patch.domain();
+        let mut model = Model::default();
+        let vertices = [[0, 0], [1, 0], [1, 1], [0, 1]].map(|[i, j]| {
+            let t = [domain[0][i].clone().into(), domain[1][j].clone().into()];
+            let p = patch.point_at(&t, &mut dec).unwrap();
+            let p = model.geom_mut().add_point(PointDef::Explicit(p));
+            model.add_vertex(Vertex {
+                point: p,
+                tolerance: None,
+            })
+        });
+        let mut coedges = Vec::new();
+        for (i, (side, sense)) in [
+            (SplineBoundary::VMin, Sense::Same),
+            (SplineBoundary::UMax, Sense::Same),
+            (SplineBoundary::VMax, Sense::Reversed),
+            (SplineBoundary::UMin, Sense::Reversed),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let curve = model
+                .geom_mut()
+                .add_curve(Curve::BSpline(patch.boundary(side)));
+            let edge = model.add_edge(Edge {
+                curve,
+                sense,
+                start: Some(vertices[i]),
+                end: Some(vertices[(i + 1) % 4]),
+                tolerance: None,
+            });
+            coedges.push(model.add_coedge(Coedge {
+                edge,
+                sense: Sense::Same,
+            }));
+        }
+        let boundary = model.add_loop(Loop::Coedges(coedges));
+        let surface = model.geom_mut().add_surface(Surface::BSpline(patch.into()));
+        let face = model.add_face(Face {
+            surface,
+            sense: Sense::Same,
+            loops: vec![boundary],
             tolerance: None,
         });
-        coedges.push(model.add_coedge(Coedge {
-            edge,
-            sense: Sense::Same,
-        }));
-    }
-    let boundary = model.add_loop(Loop::Coedges(coedges));
-    let surface = model.geom_mut().add_surface(Surface::BSpline(patch.into()));
-    let face = model.add_face(Face {
-        surface,
-        sense: Sense::Same,
-        loops: vec![boundary],
-        tolerance: None,
-    });
-    let shell = model.add_shell(Shell { faces: vec![face] });
-    let lump = model.add_lump(Lump {
-        shells: vec![shell],
-    });
-    let body = model.add_body(Body {
-        kind: BodyKind::Surface,
-        lumps: vec![lump],
-        wires: vec![],
-        marks: Default::default(),
-    });
-    let mesh = catallax_mesh::compare_position_mesh(&model, body, &Default::default(), &mut dec)
-        .unwrap()
-        .geometry;
-    let bound = &fit.bound().upper + &r("1/1000000");
-    assert!(!mesh.positions.is_empty());
-    for point in &mesh.positions {
-        let [x, y, z] = point.map(|x| Q::from_f64_exact(x).unwrap());
-        let p = RPoint3::new(x, y, z);
-        let d = sweep.distance(&p, &bound, &mut dec).unwrap();
-        assert!(
-            d.upper.as_ref().is_some_and(|u| u <= &bound),
-            "{p:?}: {d:?}"
+        let shell = model.add_shell(Shell { faces: vec![face] });
+        let lump = model.add_lump(Lump {
+            shells: vec![shell],
+        });
+        let body = model.add_body(Body {
+            kind: BodyKind::Surface,
+            lumps: vec![lump],
+            wires: vec![],
+            marks: Default::default(),
+        });
+        let options = catallax_mesh::MeshOptions {
+            chord_tolerance: r("1/200"),
+            ..Default::default()
+        };
+        let mesh = catallax_mesh::compare_position_mesh(&model, body, &options, &mut dec)
+            .map_err(|error| ("B-rep positional display", error))?
+            .geometry;
+        let bound = &fit.bound().upper + &r("1/1000000");
+        assert!(!mesh.positions.is_empty());
+        for point in &mesh.positions {
+            let [x, y, z] = point.map(|x| Q::from_f64_exact(x).unwrap());
+            let p = RPoint3::new(x, y, z);
+            let d = sweep.distance(&p, &bound, &mut dec).unwrap();
+            assert!(
+                d.upper.as_ref().is_some_and(|u| u <= &bound),
+                "{p:?}: {d:?}"
+            );
+        }
+        println!(
+            "biquadratic fitted carrier: {} display vertices within {bound} mm",
+            mesh.positions.len()
         );
-    }
+        Ok::<_, (&str, catallax_numbers::Refusal)>(())
+    });
     println!(
-        "biquadratic fitted carrier: {} display vertices within {bound} mm",
-        mesh.positions.len()
+        "biquadratic comparison: {} work, {display:?}",
+        work.used + display_work.used
     );
+    display.unwrap();
 }
 
 #[test]
@@ -743,14 +803,21 @@ fn near_tangent_sweep_has_a_deterministic_certified_cutoff() {
         let definition = near_tangent(slope.clone(), &mut dec);
         let (result, work) = with_operation_budget(ALLOWANCE, || {
             let spine = Spine::prove(&definition, &mut dec)?;
-            Sweep::new(&spine, &mut dec)?;
-            Ok::<_, catallax_numbers::Refusal>(spine.eps())
+            let sweep = Sweep::new(&spine, &mut dec)?;
+            Ok::<_, catallax_numbers::Refusal>((spine.eps(), sweep.tail_bound()))
         });
         let degrees = slope.to_f64_nearest().atan().to_degrees();
         match result {
-            Ok(width) => {
+            Ok((width, tail)) => {
                 last = Some(power);
                 println!("{degrees:e} degrees: {} work, {width:e} mm", work.used);
+                if let Some(bound) = &tail {
+                    assert!(bound <= &r("1/10000"));
+                    println!("  labelled near-tangent rail bound {bound} mm");
+                }
+                if power == 14 {
+                    assert!(tail.is_some(), "expected a certified rail bound");
+                }
             }
             Err(refusal) => {
                 println!(

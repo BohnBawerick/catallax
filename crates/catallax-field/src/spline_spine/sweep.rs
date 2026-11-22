@@ -224,6 +224,7 @@ pub fn cap_continuation(
 pub struct Sweep<'a> {
     spine: &'a Spine,
     caps: Option<[HalfSpace; 2]>,
+    tail_bound: f64,
 }
 
 /// Membership of the swept balls and distance to their short-arc envelope.
@@ -239,12 +240,31 @@ pub struct Query {
 impl<'a> Sweep<'a> {
     /// Checks reach and the contact sector on every span.
     pub fn new(spine: &'a Spine, dec: &mut Decider) -> Result<Self, Refusal> {
+        Self::admit(spine, None, dec)
+    }
+
+    fn admit(
+        spine: &'a Spine,
+        caps: Option<[HalfSpace; 2]>,
+        dec: &mut Decider,
+    ) -> Result<Self, Refusal> {
         PRODUCTS.with(|c| c.set(0));
-        let sweep = Self { spine, caps: None };
+        let mut sweep = Self {
+            spine,
+            caps,
+            tail_bound: 0.0,
+        };
         let checked = sweep.check();
         charge(dec)?;
-        checked?;
+        sweep.tail_bound = checked?;
         Ok(sweep)
+    }
+
+    /// Maximum distance from a near-tangent section to either contact rail
+    /// in panels admitted by the chord bound, in millimetres.
+    pub fn tail_bound(&self) -> Option<Rational> {
+        (self.tail_bound > 0.0)
+            .then(|| Rational::from_f64_exact(self.tail_bound).expect("proved finite bound"))
     }
 
     /// Checks and clips a continuation against the two cap planes, in spine
@@ -255,8 +275,8 @@ impl<'a> Sweep<'a> {
         caps: &[Cap; 2],
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
-        let mut sweep = Self::new(spine, dec)?;
-        sweep.caps = Some([HalfSpace::new(&caps[0])?, HalfSpace::new(&caps[1])?]);
+        let caps = [HalfSpace::new(&caps[0])?, HalfSpace::new(&caps[1])?];
+        let sweep = Self::admit(spine, Some(caps), dec)?;
         let checked = sweep.check_caps();
         charge(dec)?;
         checked?;
@@ -350,7 +370,7 @@ impl<'a> Sweep<'a> {
         self.check_cap_slope(span, [mid, hi], depth + 1)
     }
 
-    fn check(&self) -> Result<(), Refusal> {
+    fn check(&self) -> Result<f64, Refusal> {
         let reach = || {
             Refusal::new(
                 "field.spline-sweep-reach",
@@ -379,10 +399,9 @@ impl<'a> Sweep<'a> {
         if (self.spine.radius * point(acceleration)).hi() >= point(m).square().lo() {
             return Err(reach());
         }
-        for span in &self.spine.spans {
-            self.check_sector(span, span.tau, 0)?;
-        }
-        Ok(())
+        self.spine.spans.iter().try_fold(0.0_f64, |bound, span| {
+            Ok(bound.max(self.check_sector(span, span.tau, 0)?))
+        })
     }
 
     fn check_sector(
@@ -390,11 +409,20 @@ impl<'a> Sweep<'a> {
         span: &SpineSpan,
         [lo, hi]: [f64; 2],
         depth: usize,
-    ) -> Result<(), Refusal> {
+    ) -> Result<f64, Refusal> {
         let z = self.enclose(span, Interval::new(lo, hi).unwrap());
         let [a, b] = self.radials(&z);
+        // The chord from either rail increases with central angle on the
+        // short arc. Its maximum is the distance to the other rail.
+        // This also covers a point section when the two feet coincide.
+        if self.caps.is_none() && dot(&a, &b).lo() > 0.0 {
+            let chord = norm(&sub3(&a, &b)).hi();
+            if chord <= self.spine.target {
+                return Ok(chord);
+            }
+        }
         if norm(&cross(&a, &b)).lo() > 0.0 {
-            return Ok(());
+            return Ok(0.0);
         }
         let mid = lo.midpoint(hi);
         if depth >= (LAST_LEVEL - FIRST_LEVEL) as usize || mid <= lo || mid >= hi {
@@ -403,8 +431,8 @@ impl<'a> Sweep<'a> {
                 "the two contact directions are not proved transverse",
             ));
         }
-        self.check_sector(span, [lo, mid], depth + 1)?;
-        self.check_sector(span, [mid, hi], depth + 1)
+        let first = self.check_sector(span, [lo, mid], depth + 1)?;
+        Ok(first.max(self.check_sector(span, [mid, hi], depth + 1)?))
     }
 
     fn enclose(&self, span: &SpineSpan, tau: Interval) -> [Interval; 9] {
@@ -446,13 +474,18 @@ impl<'a> Sweep<'a> {
         let foot_lo = feet[0].lo().min(feet[1].lo());
         let foot_hi = feet[0].hi().min(feet[1].hi());
         let sphere = (norm(&v) - radius).square().sqrt().expect("square").lo();
+        let chord = norm(&sub3(&a, &b));
+        let rail_bound = || (point(foot_lo) - chord).lo().max(sphere);
+        if self.caps.is_none() && dot(&a, &b).lo() > 0.0 && chord.hi() <= self.spine.target {
+            return (rail_bound(), foot_hi);
+        }
 
         // Both radii are perpendicular to C'. Their cross product is a
         // section normal with the orientation from rail A toward rail B.
         let n = cross(&a, &b);
         let length = norm(&n);
         if length.lo() <= 0.0 {
-            return (sphere, active_caps.map_or(foot_hi, |_| f64::INFINITY));
+            return (rail_bound(), active_caps.map_or(foot_hi, |_| f64::INFINITY));
         }
         let normal = n.map(|x| x / length);
         let height = dot(&v, &normal);

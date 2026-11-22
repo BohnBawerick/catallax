@@ -475,14 +475,13 @@ fn forward_patch_shell(
 fn spline_display(
     revision: &Revision,
     model: &catallax_topology::Model,
-    body: catallax_topology::BodyId,
+    display: catallax_mesh::DisplayMesh,
     field: &Plan,
     origin: &Origin,
     report: &mut Report,
     options: &Options,
     dec: &mut Decider,
 ) -> Result<bool, Refusal> {
-    let display = catallax_mesh::compare_position_mesh(model, body, &options.mesh, dec)?;
     if !display.source_marks.is_empty() {
         whole_failure(report, "spline display inherits marked geometry");
     }
@@ -673,6 +672,11 @@ pub(crate) fn run(
             Ok(b) => b,
             Err(e) => {
                 whole_failure(&mut report, format!("B-rep build: {e}"));
+                if field.spline_blend_origin().is_some()
+                    && let catallax_features::BuildError::Geometry { refusal, .. } = e
+                {
+                    report.refusal = Some(refusal);
+                }
                 return revision.publish(report);
             }
         };
@@ -706,10 +710,22 @@ pub(crate) fn run(
         return Completion::Cancelled;
     }
     if let Some(origin) = field.spline_blend_origin() {
+        let display =
+            match catallax_mesh::compare_position_mesh(&model, result, &options.mesh, &mut dec) {
+                Ok(display) => display,
+                Err(e) => {
+                    whole_failure(
+                        &mut report,
+                        format!("B-rep positional display {}: {}", e.code, e.detail),
+                    );
+                    report.refusal = Some(e);
+                    return revision.publish(report);
+                }
+            };
         match spline_display(
             revision,
             &model,
-            result,
+            display,
             &field,
             origin,
             &mut report,
@@ -721,7 +737,7 @@ pub(crate) fn run(
             Err(e) => {
                 whole_failure(
                     &mut report,
-                    format!("spline display {}: {}", e.code, e.detail),
+                    format!("field spline comparison {}: {}", e.code, e.detail),
                 );
                 report.refusal = Some(e);
             }

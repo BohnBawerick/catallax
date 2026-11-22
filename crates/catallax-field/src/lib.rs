@@ -1385,6 +1385,9 @@ impl Plan {
                     let mut leaf = self.leaves[id].clone();
                     leaf.transform(map)?;
                     leaf.rebuild_after_transform(dec)?;
+                    if let geometry::Leaf::Shell(shell) = &mut leaf {
+                        shell.rename_copy(step, instance);
+                    }
                     let mut faces = source_faces
                         .iter()
                         .map(|i| &self.faces[*i])

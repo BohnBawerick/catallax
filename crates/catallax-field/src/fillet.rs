@@ -561,7 +561,20 @@ impl Plan {
         if let Instruction::Leaf(i) = self.instructions[root]
             && let geometry::Leaf::Shell(shell) = &self.leaves[i]
         {
-            let rounded = shell.fillet(selection, step, q(radius)?, dec)?;
+            let radius = q(radius)?;
+            if radius.sign() != Sign::Positive {
+                return Err(Refusal::new(
+                    "fillet.non-positive-radius",
+                    "fillet radius must be positive",
+                ));
+            }
+            if settings.closure == catallax_recipe::FilletCorner::Smooth {
+                return Err(Refusal::new(
+                    "fillet.unsupported-spline",
+                    "a field spline loft fillet closes at its original cap planes",
+                ));
+            }
+            let rounded = shell.fillet(selection, step, radius, dec)?;
             return self.leaf(geometry::Leaf::Shell(Box::new(rounded)), Vec::new(), dec);
         }
         if self.rolling_below(root).0 {

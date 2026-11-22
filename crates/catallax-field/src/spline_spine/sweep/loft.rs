@@ -153,6 +153,7 @@ impl Round {
         Sweep {
             spine: &self.spine,
             caps: Some(self.caps.clone()),
+            tail_bound: 0.0,
         }
     }
 

@@ -494,6 +494,15 @@ impl Shell {
         self.round.as_ref().map(|r| &r.origin)
     }
 
+    pub(crate) fn rename_copy(&mut self, step: &StepId, instance: u32) {
+        for side in &mut self.loft_sides {
+            *side = catallax_features::copy_origin(step, instance, side);
+        }
+        if let Some(round) = &mut self.round {
+            round.origin = catallax_features::copy_origin(step, instance, &round.origin);
+        }
+    }
+
     pub(crate) fn blend_distance(
         &self,
         p: &RPoint3,
@@ -768,6 +777,9 @@ impl Shell {
             return Ok(Interval::point(0.0).unwrap());
         }
         let width = Rational::from_ratio(1, 1_000_000).expect("one nanometre");
+        if let Some(upper) = self.local_face_bound(p, round, &width, dec)? {
+            return Ok(Interval::new(0.0, Interval::from_rational(&upper).hi()).unwrap());
+        }
         let blend = round.distance(p, &width, dec)?;
         let mut lower = Interval::from_rational(&blend.lower).lo();
         let mut upper = blend

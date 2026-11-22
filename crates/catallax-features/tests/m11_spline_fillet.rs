@@ -1270,6 +1270,8 @@ fn f04_small_warp_edge1_displays_within_the_stated_bound() {
         record.1,
         record.0
     );
+    // The shared mesher's certified whole-cell chord and embedding bounds prove this mesh.
+    assert_eq!(record.0.as_ref().unwrap().0, "proved");
     let (_, display) = record.0.unwrap();
     assert!(display.measurement.maximum_deviation <= q("1/100"));
 }
@@ -1289,7 +1291,7 @@ fn f04_soliddraft_small_warp_edge1_displays_in_the_fillet_request() {
     // (1,-999/1000,2), with exact midpoint (1,-1999/2000,1).
     let prefix = prefix.unwrap();
     let mut first = None;
-    for threads in [1, 2, 4] {
+    for threads in [1, 2, 4, 24] {
         catallax_numbers::set_threads(NonZeroUsize::new(threads));
         let record = display_from(&definition, Some(prefix.clone()));
         assert!(
@@ -1298,6 +1300,8 @@ fn f04_soliddraft_small_warp_edge1_displays_in_the_fillet_request() {
             record.1,
             record.0
         );
+        // The shared mesher's certified whole-cell chord and embedding bounds prove this mesh.
+        assert_eq!(record.0.as_ref().unwrap().0, "proved");
         let (_, display) = record.0.as_ref().unwrap();
         assert!(display.measurement.maximum_deviation <= q("1/100"));
         if let Some(previous) = &first {

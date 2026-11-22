@@ -264,6 +264,35 @@ pub struct Batch {
     fast: Vec<Approximate>,
 }
 
+/// A refusal from the field build of a sampled comparison.
+#[derive(Debug)]
+pub enum ComparisonBuildRefusal {
+    /// The field refused outside the experimental spline route.
+    Ordinary(Refusal),
+    /// The experimental spline route refused before comparison sampling.
+    Spline(Refusal),
+}
+
+impl ComparisonBuildRefusal {
+    fn refusal(&self) -> &Refusal {
+        match self {
+            Self::Ordinary(refusal) | Self::Spline(refusal) => refusal,
+        }
+    }
+
+    fn into_refusal(self) -> Refusal {
+        match self {
+            Self::Ordinary(refusal) | Self::Spline(refusal) => refusal,
+        }
+    }
+}
+
+impl From<Refusal> for ComparisonBuildRefusal {
+    fn from(refusal: Refusal) -> Self {
+        Self::Ordinary(refusal)
+    }
+}
+
 /// An owned, fixed-order field plan compiled from a checked recipe.
 /// Face identities remain outside the tape, including folded-away candidates.
 #[derive(Clone, Debug)]
@@ -355,6 +384,7 @@ impl Plan {
         dec: &mut Decider,
     ) -> Result<Self, Refusal> {
         Self::compile_recipe(recipe, files, dec, false)
+            .map_err(ComparisonBuildRefusal::into_refusal)
     }
 
     /// Compiles a sampled comparison plan with experimental spline fillet proofs.
@@ -362,7 +392,7 @@ impl Plan {
         recipe: &Recipe,
         files: &catallax_features::ImportFiles<'_>,
         dec: &mut Decider,
-    ) -> Result<Self, Refusal> {
+    ) -> Result<Self, ComparisonBuildRefusal> {
         Self::compile_recipe(recipe, files, dec, true)
     }
 
@@ -371,7 +401,7 @@ impl Plan {
         files: &catallax_features::ImportFiles<'_>,
         dec: &mut Decider,
         spline_proofs: bool,
-    ) -> Result<Self, Refusal> {
+    ) -> Result<Self, ComparisonBuildRefusal> {
         recipe
             .check()
             .map_err(|e| Refusal::new("field.recipe", e.to_string()))?;
@@ -397,7 +427,7 @@ impl Plan {
             let span =
                 catallax_numbers::OperationSpan::begin("field", &step.id, step.op.name(), dec);
             let first_face = plan.faces.len();
-            let result = (|| -> Result<Option<usize>, Refusal> {
+            let result = (|| -> Result<Option<usize>, ComparisonBuildRefusal> {
                 let node = match &step.op {
                     Operation::ImportStep { .. } | Operation::ImportIges { .. } => {
                         plan.import_step(step, files, dec)?
@@ -436,7 +466,7 @@ impl Plan {
                             return Err(Refusal::new(
                                 "field.unfinished-operation",
                                 "guided and twisted sweeps are numerical B-reps; their field definitions remain in phase 4",
-                            ));
+                            ).into());
                         }
                         plan.sweep(
                             &profiles[profile],
@@ -469,7 +499,7 @@ impl Plan {
                                     "smooth step {} is not result {}; 0 downstream implicit-boundary consumers admitted",
                                     step.id, recipe.result
                                 ),
-                            ));
+                            ).into());
                         }
 
                         for source in [target, tool] {
@@ -486,7 +516,7 @@ impl Plan {
                                     format!(
                                         "operand {source}: exact stock distance required; 0 composite distance definitions admitted"
                                     ),
-                                ));
+                                ).into());
                             }
                         }
                         plan.smooth(
@@ -781,7 +811,7 @@ impl Plan {
                                 &step.id,
                                 dec,
                             )?;
-                            return plan.restore_preserved(drafted, &preserved, dec).map(Some);
+                            return Ok(Some(plan.restore_preserved(drafted, &preserved, dec)?));
                         }
                         let filtered_planar = faces.iter().any(|reference| {
                             !reference.touching.is_empty() || reference.near.is_some()
@@ -839,30 +869,20 @@ impl Plan {
                         radius,
                         overflow,
                         corner,
-                    } => {
-                        if matches!(
-                            overflow,
-                            Some(catallax_recipe::FilletOverflow::KeepNeighbours(_))
-                        ) {
-                            return Err(Refusal::new(
-                                "fillet.unsupported-overflow",
-                                "explicit station-plane clipping needs a proved field region",
-                            ));
-                        }
-                        plan.fillet(
-                            steps[body],
-                            &step_faces[body],
-                            edges,
-                            fillet::Settings {
-                                radius: &radius.value().clone().into(),
-                                closure: corner.unwrap_or(catallax_recipe::FilletCorner::Cliff),
-                                roll_over: recipe.format != catallax_recipe::FORMAT,
-                                spline_proofs,
-                            },
-                            &step.id,
-                            dec,
-                        )?
-                    }
+                    } => plan.fillet(
+                        steps[body],
+                        &step_faces[body],
+                        edges,
+                        fillet::Settings {
+                            radius: &radius.value().clone().into(),
+                            closure: corner.unwrap_or(catallax_recipe::FilletCorner::Cliff),
+                            roll_over: recipe.format != catallax_recipe::FORMAT,
+                            spline_proofs,
+                            overflow: overflow.as_ref(),
+                        },
+                        &step.id,
+                        dec,
+                    )?,
                     Operation::ExtrudeTo {
                         target,
                         profile,
@@ -1099,7 +1119,7 @@ impl Plan {
                                     "step {}: mesh source {} sha256 mismatch: expected {}, actual {actual}",
                                     step.id, file.name, file.sha256
                                 ),
-                            ));
+                            ).into());
                         }
                         let read =
                             catallax_import::mesh::ClosedMesh::read(source, scale.value(), dec)?;
@@ -1134,9 +1154,13 @@ impl Plan {
                         frame,
                     } => {
                         if *kind == catallax_recipe::GyroidKind::Sheet {
-                            return plan
-                                .sheet(steps[region], period.value(), level, frame, dec)
-                                .map(Some);
+                            return Ok(Some(plan.sheet(
+                                steps[region],
+                                period.value(),
+                                level,
+                                frame,
+                                dec,
+                            )?));
                         }
                         let gyroid = gyroid::Gyroid::new(period.value(), level, *kind, frame)?;
                         match gyroid.saturated() {
@@ -1159,7 +1183,11 @@ impl Plan {
                 };
                 Ok(Some(node))
             })();
-            span.finish(dec, result.as_ref().err(), None);
+            span.finish(
+                dec,
+                result.as_ref().err().map(ComparisonBuildRefusal::refusal),
+                None,
+            );
             if let Some(node) = result? {
                 let mut faces = match &step.op {
                     Operation::Boolean { target, tool, .. } => step_faces[target]
@@ -1359,7 +1387,7 @@ impl Plan {
         step: &catallax_recipe::StepId,
         instance: u32,
         dec: &mut Decider,
-    ) -> Result<usize, Refusal> {
+    ) -> Result<usize, ComparisonBuildRefusal> {
         let (source_faces, source_domains) = source_faces;
         let end = source + 1;
         let first_face = self.faces.len();
@@ -1376,10 +1404,10 @@ impl Plan {
                 }
                 Instruction::Leaf(id) if matches!(&self.leaves[id], geometry::Leaf::Shell(shell) if shell.blend_origin().is_some()) =>
                 {
-                    return Err(Refusal::new(
+                    return Err(ComparisonBuildRefusal::Spline(Refusal::new(
                         "field.spline-copy",
                         "rounded spline shells cannot be copied by a pattern or mirror",
-                    ));
+                    )));
                 }
                 _ => {}
             }

@@ -221,6 +221,30 @@ fn analytic_build_and_rounded_copy_refusals_remain_typed() {
 }
 
 #[test]
+fn spline_build_refusals_have_no_sampled_distance_bound() {
+    use catallax_numbers::with_operation_budget;
+
+    let missing_edge = m11_loft([0, 2], false, ["0", "2"]);
+    let valid_edge = m11_loft([0, 1], false, ["0", "2"]);
+    let budget = 100_000;
+    let (unrounded, _) =
+        with_operation_budget(budget, || catallax_field::Plan::compile(&valid_edge));
+    assert_eq!(unrounded.unwrap_err().code, "fillet.lost-edge");
+
+    let (budget_refusal, work) = with_operation_budget(budget, || check(&valid_edge));
+    assert!(work.exhausted);
+    for (report, code) in [
+        (check(&missing_edge), "fillet.lost-edge"),
+        (budget_refusal, "numbers.operation-budget"),
+    ] {
+        assert_eq!(report.refusal.as_ref().map(|error| error.code), Some(code));
+        assert_eq!(report.verdict, Verdict::Unresolved);
+        assert_eq!(report.forward_vertices, 0);
+        assert_eq!(report.sampled_distance_upper, None);
+    }
+}
+
+#[test]
 fn a_mirrored_loft_can_be_queried_but_not_filleted_with_stale_origins() {
     use catallax_field::{Plan, Workspace};
 

@@ -602,11 +602,15 @@ pub(crate) fn run(
     let mut dec = Decider::default();
     let field = match Plan::compile_for_comparison(recipe, files, &mut dec) {
         Ok(f) => f,
-        Err(e) => {
+        Err(error) => {
+            let e = match error {
+                catallax_field::ComparisonBuildRefusal::Ordinary(refusal) => refusal,
+                catallax_field::ComparisonBuildRefusal::Spline(refusal) => {
+                    report.sampled_distance_upper = None;
+                    refusal
+                }
+            };
             whole_failure(&mut report, format!("field build {}: {}", e.code, e.detail));
-            if e.code.starts_with("field.spline-") || e.code == "fillet.unsupported-spline" {
-                report.sampled_distance_upper = None;
-            }
             report.refusal = Some(e);
             return revision.publish(report);
         }

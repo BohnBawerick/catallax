@@ -444,7 +444,8 @@ contacts on the patches. The centre enclosure must fit
 `min(100 nm, part tolerance / 2)` in Euclidean distance.
 [Certified continuation](https://doi.org/10.1137/130906544)
 
-All three M11 fixtures pass with eight spans each.
+All three M11 fixtures passed with eight spans each. The spine work
+recorded at `1a7321fc` predates charging for basis-table arithmetic.
 
 | Edge | Work | Tube radius (nm, rounded up) |
 | --- | ---: | ---: |
@@ -543,7 +544,9 @@ fits the display accuracy. A field lower bound above the combined bound
 proves a gap. A range that still straddles the combined bound after
 refinement reports `field.spline-bound-unresolved`.
 The bare carrier test in `catallax-compare` charges the field proof and
-sweep, B-rep fit, grid and vertex queries to one request.
+sweep, B-rep fit, grid and vertex queries to one request. The comparison
+totals and field build work recorded at `e30b732a` predate charging for
+basis-table arithmetic and cap normals.
 
 | Edge | Forward vertices | Total work | Largest comparison upper bound (mm) |
 | --- | ---: | ---: | ---: |
@@ -570,8 +573,10 @@ The synthetic edge uses one parabolic side and one plane. The plane's
 slope at the shared edge runs from `1` to `2^-24` in dyadic steps.
 The smallest tested angle with a full tube and reach proof was
 0.003497057 degrees (`2^-14`), at 261,376 work and a tube radius of
-`8.77e-11 mm`. Lower angles failed at the seed, a border proof or the
-support-domain check. The exact tangent control refuses by name.
+`8.77e-11 mm`. The near-tangent and plane-control work recorded at
+`69b8a363` predates charging for basis-table arithmetic. Lower angles
+failed at the seed, a border proof or the support-domain check. The exact
+tangent control refuses by name.
 When the feet point into the same half plane, the chord between them
 bounds the distance from either rail to every point of the short arc.
 The sweep labels this bound when it fits the spine target. At the smallest
@@ -589,9 +594,9 @@ at 1, 2 and 4 workers. The median query took 4.762 us over 99
 independently generated points on the work PC.
 
 **Step 7 and 4.2a remain open.** The B-rep spline-plane loft
-fillet refuses with `fillet.unsupported-contact` after 896,264
-comparison work. Forward display coverage for that row waits for
-the B-rep build.
+fillet refuses with `fillet.unsupported-contact`. The comparison used
+896,264 work at `e30b732a`, before the basis-table and cap-normal charges.
+Forward display coverage for that row waits for the B-rep build.
 
 ## Open for the done-when line
 
